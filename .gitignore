@@ -1,0 +1,41 @@
+# Configs
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+.pnpm-store
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+firebase-debug.log*
+firebase-debug.log
+
+# Editor directories and files
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build
+dist/
+build/
+.next/
+out/
+
+# Supabase
+supabase/config.toml
+# Keep other supabase definitions if needed, but usually config keys are sensitive
+
+# Directus
+uploads/
+extensions/
+database/
+snapshots/

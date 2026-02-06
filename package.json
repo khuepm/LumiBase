@@ -1,0 +1,13 @@
+{
+  "name": "lumibase",
+  "version": "1.0.0",
+  "description": "The Ultimate Launchpad for Modern Apps. A premium starter-kit combining Firebase, Supabase, and Directus.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Khue Pham",
+  "license": "ISC",
+  "type": "commonjs"
+}
