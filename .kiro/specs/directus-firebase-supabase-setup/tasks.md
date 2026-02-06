@@ -12,8 +12,8 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
   - Tạo file .gitignore để exclude .env và sensitive files
   - Tạo README.md với hướng dẫn setup cơ bản
   - Verify Git repository đã được initialized (chạy `git init` nếu chưa)
-  - cài npm install supabase --save-dev nếu cần thiết
-  - cài npm install -g firebase-tools nếu cần thiết
+  - Cài npm install supabase --save-dev nếu cần thiết
+  - Cài npm install -g firebase-tools nếu cần thiết
   - Commit và push thay đổi: `git add . && git commit -m "feat(task-1): setup project structure and environment configuration" && git push`
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 9.1, 11.1, 11.2, 11.3, 11.4, 11.7_
 
@@ -126,20 +126,22 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add functions/src/ && git commit -m "feat(task-7.2): implement Cloud Function to sync users to Supabase" && git push`
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [~] 7.3 Implement Cloud Function để delete users (optional)
+  - [ ] 7.3 Implement Cloud Function để delete users (optional)
+
     - Viết function deleteUserFromSupabase trigger onDelete
     - Implement delete logic từ Supabase
     - Add error handling và logging
     - Commit và push: `git add functions/src/ && git commit -m "feat(task-7.3): implement Cloud Function to delete users from Supabase" && git push`
     - _Requirements: 6.1, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ]* 7.4 Viết property test cho Cloud Function data extraction
+  - [ ] 7.4 Viết property test cho Cloud Function data extraction
     - **Property 4: Cloud Function Data Extraction**
     - **Validates: Requirements 6.2**
     - Commit và push: `git add functions/test/ && git commit -m "test(task-7.4): add property test for Cloud Function data extraction" && git push`
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
   
-  - [ ]* 7.5 Viết unit tests cho Cloud Functions
+  - [ ] 7.5 Viết unit tests cho Cloud Functions
+
     - Test function extract đúng fields từ Firebase user object
     - Test upsert logic với mock Supabase client
     - Test error handling khi insert fails
@@ -166,7 +168,8 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add README.md docs/ && git commit -m "docs(task-9.1): add Supabase project setup guide" && git push`
     - _Requirements: 3.2, 3.4, 3.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ]* 9.2 Viết integration tests cho Supabase JWT verification
+  - [ ] 9.2 Viết integration tests cho Supabase JWT verification
+
     - Test Supabase accept valid Firebase JWT tokens
     - Test Supabase reject invalid JWT signatures
     - Test Supabase reject expired JWT tokens
@@ -175,7 +178,8 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add tests/ && git commit -m "test(task-9.2): add integration tests for Supabase JWT verification" && git push`
     - _Requirements: 3.3, 3.5, 10.1, 10.2, 10.3, 10.4, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ]* 9.3 Viết property test cho JWT token validation
+  - [ ] 9.3 Viết property test cho JWT token validation
+
     - **Property 5: JWT Token Validation**
     - **Validates: Requirements 10.2, 10.4**
     - Commit và push: `git add tests/ && git commit -m "test(task-9.3): add property test for JWT token validation" && git push`
@@ -198,7 +202,8 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add client/ && git commit -m "feat(task-11.1): add client-side integration example" && git push`
     - _Requirements: 2.3, 3.5, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ]* 11.2 Viết tests cho client integration
+  - [~] 11.2 Viết tests cho client integration
+
     - Test signInWithGoogle returns valid JWT
     - Test getUserData fetch đúng user data
     - Test error handling
@@ -221,7 +226,8 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add scripts/ && git commit -m "feat(task-12.2): add database reset script" && git push`
     - _Requirements: 9.5, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ]* 12.3 Viết property test cho environment configuration completeness
+  - [ ] 12.3 Viết property test cho environment configuration completeness
+
     - **Property 3: Environment Configuration Completeness**
     - **Validates: Requirements 8.1, 8.3, 8.4, 8.5, 8.6, 8.7**
     - Commit và push: `git add tests/ && git commit -m "test(task-12.3): add property test for environment configuration" && git push`
@@ -235,13 +241,15 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add docker-compose.test.yml package.json && git commit -m "feat(task-13.1): configure test environment" && git push`
     - _Requirements: 9.2, 9.3, 11.1, 11.2, 11.3, 11.7_
   
-  - [~] 13.2 Setup Firebase emulator (optional)
+  - [ ] 13.2 Setup Firebase emulator
+
     - Configure Firebase emulator suite
     - Document cách chạy tests với emulator
     - Commit và push: `git add firebase.json .firebaserc docs/ && git commit -m "feat(task-13.2): setup Firebase emulator" && git push`
     - _Requirements: 9.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ]* 13.3 Setup CI/CD pipeline
+  - [ ] 13.3 Setup CI/CD pipeline
+
     - Tạo GitHub Actions workflow
     - Configure automated testing
     - Setup test coverage reporting
@@ -266,7 +274,8 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add docs/ README.md && git commit -m "docs(task-14.2): document testing procedures" && git push`
     - _Requirements: 9.6, 9.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [~] 14.3 Document deployment procedures
+  - [ ] 14.3 Document deployment procedures
+
     - Add production deployment checklist
     - Add security best practices
     - Add monitoring và logging setup
