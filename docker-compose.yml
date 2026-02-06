@@ -22,9 +22,40 @@ services:
       timeout: 5s
       retries: 5
 
+  directus:
+    image: directus/directus:10-latest
+    container_name: directus-cms
+    restart: unless-stopped
+    ports:
+      - "8055:8055"
+    environment:
+      KEY: ${DIRECTUS_KEY}
+      SECRET: ${DIRECTUS_SECRET}
+      ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD}
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      CORS_ENABLED: true
+      CORS_ORIGIN: true
+      PUBLIC_URL: http://localhost:8055
+    volumes:
+      - directus_uploads:/directus/uploads
+      - directus_extensions:/directus/extensions
+    networks:
+      - directus-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 networks:
   directus-network:
     driver: bridge
 
 volumes:
   postgres_data:
+  directus_uploads:
+  directus_extensions:
