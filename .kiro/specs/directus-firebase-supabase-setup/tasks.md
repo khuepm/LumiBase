@@ -6,7 +6,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
 
 ## Tasks
 
-- [-] 1. Thiết lập cấu trúc project và environment configuration
+- [x] 1. Thiết lập cấu trúc project và environment configuration
   - Tạo cấu trúc thư mục cho project
   - Tạo file .env.example với tất cả environment variables cần thiết
   - Tạo file .gitignore để exclude .env và sensitive files
@@ -18,7 +18,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 9.1, 11.1, 11.2, 11.3, 11.4, 11.7_
 
 - [ ] 2. Tạo Docker Compose configuration
-  - [~] 2.1 Viết docker-compose.yml với PostgreSQL service
+  - [x] 2.1 Viết docker-compose.yml với PostgreSQL service
     - Định nghĩa PostgreSQL 15 service với health checks
     - Configure volumes cho data persistence
     - Setup environment variables từ .env
