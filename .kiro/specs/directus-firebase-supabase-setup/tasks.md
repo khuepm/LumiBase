@@ -6,7 +6,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
 
 ## Tasks
 
-- [ ] 1. Thiết lập cấu trúc project và environment configuration
+- [-] 1. Thiết lập cấu trúc project và environment configuration
   - Tạo cấu trúc thư mục cho project
   - Tạo file .env.example với tất cả environment variables cần thiết
   - Tạo file .gitignore để exclude .env và sensitive files
@@ -18,14 +18,14 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 9.1, 11.1, 11.2, 11.3, 11.4, 11.7_
 
 - [ ] 2. Tạo Docker Compose configuration
-  - [ ] 2.1 Viết docker-compose.yml với PostgreSQL service
+  - [~] 2.1 Viết docker-compose.yml với PostgreSQL service
     - Định nghĩa PostgreSQL 15 service với health checks
     - Configure volumes cho data persistence
     - Setup environment variables từ .env
     - Commit và push: `git add docker-compose.yml && git commit -m "feat(task-2.1): add PostgreSQL service to docker-compose" && git push`
     - _Requirements: 1.2, 1.4, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 2.2 Thêm Directus service vào docker-compose.yml
+  - [~] 2.2 Thêm Directus service vào docker-compose.yml
     - Định nghĩa Directus 10+ service
     - Configure kết nối đến PostgreSQL
     - Setup volumes cho uploads và extensions
@@ -43,14 +43,14 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add tests/ && git commit -m "test(task-2.3): add docker-compose configuration tests" && git push`
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.7, 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 3. Checkpoint - Verify Docker setup
+- [~] 3. Checkpoint - Verify Docker setup
   - Chạy `docker-compose up` và verify tất cả services start thành công
   - Verify Directus accessible tại http://localhost:8055
   - Verify PostgreSQL connection từ Directus
   - Hỏi user nếu có vấn đề phát sinh
 
 - [ ] 4. Tạo database schema và migration scripts
-  - [ ] 4.1 Viết SQL migration script để tạo users table
+  - [~] 4.1 Viết SQL migration script để tạo users table
     - Tạo file init-scripts/01-create-schema.sql
     - Định nghĩa bảng public.users với tất cả columns
     - Thêm primary key constraint trên firebase_uid
@@ -75,7 +75,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 4.1, 4.2, 4.3, 4.6, 4.7, 11.1, 11.2, 11.3, 11.7_
 
 - [ ] 5. Implement Row Level Security policies
-  - [ ] 5.1 Viết SQL script để setup RLS policies
+  - [~] 5.1 Viết SQL script để setup RLS policies
     - Tạo file init-scripts/02-setup-rls.sql
     - Enable RLS trên bảng public.users
     - Tạo policy cho users đọc own data
@@ -101,7 +101,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add tests/ && git commit -m "test(task-5.3): add integration tests for RLS policies" && git push`
     - _Requirements: 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 6. Checkpoint - Verify database setup
+- [~] 6. Checkpoint - Verify database setup
   - Restart Docker containers để apply migrations
   - Verify schema được tạo đúng trong PostgreSQL
   - Verify RLS policies được enable
@@ -109,7 +109,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
   - Hỏi user nếu có vấn đề phát sinh
 
 - [ ] 7. Setup Firebase project và Cloud Functions
-  - [ ] 7.1 Initialize Firebase project structure
+  - [~] 7.1 Initialize Firebase project structure
     - Chạy `firebase init` để setup Functions
     - Configure TypeScript cho Functions
     - Setup Firebase Admin SDK
@@ -117,7 +117,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add functions/ firebase.json .firebaserc && git commit -m "feat(task-7.1): initialize Firebase project structure" && git push`
     - _Requirements: 2.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 7.2 Implement Cloud Function để sync users
+  - [~] 7.2 Implement Cloud Function để sync users
     - Viết function syncUserToSupabase trigger onCreate
     - Implement logic trích xuất user data từ Firebase
     - Implement upsert logic vào Supabase
@@ -126,7 +126,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add functions/src/ && git commit -m "feat(task-7.2): implement Cloud Function to sync users to Supabase" && git push`
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 7.3 Implement Cloud Function để delete users (optional)
+  - [~] 7.3 Implement Cloud Function để delete users (optional)
     - Viết function deleteUserFromSupabase trigger onDelete
     - Implement delete logic từ Supabase
     - Add error handling và logging
@@ -148,7 +148,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add functions/test/ && git commit -m "test(task-7.5): add unit tests for Cloud Functions" && git push`
     - _Requirements: 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 8. Configure Firebase Authentication providers
+- [~] 8. Configure Firebase Authentication providers
   - Tạo hướng dẫn trong README.md để enable Google OAuth provider
   - Tạo hướng dẫn để enable Email/Password authentication
   - Tạo hướng dẫn để enable Firebase Analytics
@@ -158,7 +158,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
   - _Requirements: 2.1, 2.2, 2.6, 2.7, 11.1, 11.2, 11.3, 11.7_
 
 - [ ] 9. Configure Supabase project
-  - [ ] 9.1 Tạo hướng dẫn setup Supabase project
+  - [~] 9.1 Tạo hướng dẫn setup Supabase project
     - Document cách tạo Supabase project
     - Document cách get API URL và keys
     - Document cách configure Firebase third-party auth
@@ -181,7 +181,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add tests/ && git commit -m "test(task-9.3): add property test for JWT token validation" && git push`
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 10. Checkpoint - Verify Firebase và Supabase integration
+- [~] 10. Checkpoint - Verify Firebase và Supabase integration
   - Deploy Cloud Functions lên Firebase
   - Test tạo user mới trong Firebase Auth
   - Verify user được sync vào Supabase database
@@ -190,7 +190,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
   - Hỏi user nếu có vấn đề phát sinh
 
 - [ ] 11. Implement client-side integration example
-  - [ ] 11.1 Tạo example client code
+  - [~] 11.1 Tạo example client code
     - Viết auth.ts với Firebase authentication logic
     - Implement signInWithGoogle function
     - Implement getUserData function với Supabase client
@@ -206,14 +206,14 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 2.3, 3.5, 11.1, 11.2, 11.3, 11.7_
 
 - [ ] 12. Create development workflow scripts
-  - [ ] 12.1 Viết script để seed initial data
+  - [~] 12.1 Viết script để seed initial data
     - Tạo script seed-data.sh hoặc seed-data.ts
     - Add sample users vào database
     - Document cách chạy script
     - Commit và push: `git add scripts/ && git commit -m "feat(task-12.1): add seed data script" && git push`
     - _Requirements: 9.4, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 12.2 Viết script để reset database
+  - [~] 12.2 Viết script để reset database
     - Tạo script reset-db.sh
     - Drop và recreate database
     - Re-run migrations
@@ -228,14 +228,14 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
 
 - [ ] 13. Setup testing infrastructure
-  - [ ] 13.1 Configure test environment
+  - [~] 13.1 Configure test environment
     - Tạo docker-compose.test.yml cho test environment
     - Setup test database
     - Configure test scripts trong package.json
     - Commit và push: `git add docker-compose.test.yml package.json && git commit -m "feat(task-13.1): configure test environment" && git push`
     - _Requirements: 9.2, 9.3, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 13.2 Setup Firebase emulator (optional)
+  - [~] 13.2 Setup Firebase emulator (optional)
     - Configure Firebase emulator suite
     - Document cách chạy tests với emulator
     - Commit và push: `git add firebase.json .firebaserc docs/ && git commit -m "feat(task-13.2): setup Firebase emulator" && git push`
@@ -249,7 +249,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 9.2, 11.1, 11.2, 11.3, 11.7_
 
 - [ ] 14. Complete documentation
-  - [ ] 14.1 Viết comprehensive README.md
+  - [~] 14.1 Viết comprehensive README.md
     - Add architecture overview với diagrams
     - Add step-by-step setup instructions
     - Add troubleshooting guide
@@ -257,7 +257,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add README.md docs/ && git commit -m "docs(task-14.1): complete comprehensive documentation" && git push`
     - _Requirements: 9.1, 9.6, 9.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 14.2 Document testing procedures
+  - [~] 14.2 Document testing procedures
     - Add hướng dẫn chạy unit tests
     - Add hướng dẫn chạy property tests
     - Add hướng dẫn chạy integration tests
@@ -266,7 +266,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add docs/ README.md && git commit -m "docs(task-14.2): document testing procedures" && git push`
     - _Requirements: 9.6, 9.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 14.3 Document deployment procedures
+  - [~] 14.3 Document deployment procedures
     - Add production deployment checklist
     - Add security best practices
     - Add monitoring và logging setup
@@ -274,7 +274,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add docs/ && git commit -m "docs(task-14.3): document deployment procedures" && git push`
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 15. Final checkpoint - End-to-end verification
+- [~] 15. Final checkpoint - End-to-end verification
   - Chạy full test suite (unit + property + integration)
   - Verify tất cả tests pass
   - Test complete authentication flow từ đầu đến cuối

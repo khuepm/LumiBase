@@ -1,4 +1,4 @@
-# Configs
+# Environment Variables
 .env
 .env.*
 !.env.example
@@ -6,23 +6,31 @@
 # Dependencies
 node_modules/
 .pnpm-store
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # OS
 .DS_Store
 Thumbs.db
+*.log
 
 # Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 firebase-debug.log*
-firebase-debug.log
+firebase-debug.*.log
 
 # Editor directories and files
 .idea
 .vscode
 *.swp
 *.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 
 # Build
 dist/
@@ -30,12 +38,38 @@ build/
 .next/
 out/
 
+# Firebase
+.firebase/
+.firebaserc
+firebase-debug.log
+ui-debug.log
+firestore-debug.log
+database-debug.log
+pubsub-debug.log
+functions/lib/
+functions/node_modules/
+
 # Supabase
+supabase/.temp/
 supabase/config.toml
-# Keep other supabase definitions if needed, but usually config keys are sensitive
 
 # Directus
-uploads/
-extensions/
-database/
-snapshots/
+directus_uploads/
+directus_extensions/
+directus_database/
+directus_snapshots/
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+
+# Test
+coverage/
+.nyc_output/
+*.test.js.snap
+
+# Misc
+*.bak
+*.tmp
+*.temp
+.cache/

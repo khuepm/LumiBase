@@ -4,10 +4,26 @@
   "description": "The Ultimate Launchpad for Modern Apps. A premium starter-kit combining Firebase, Supabase, and Directus.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Tests will be configured in later tasks\"",
+    "test:unit": "echo \"Unit tests will be configured in later tasks\"",
+    "test:integration": "echo \"Integration tests will be configured in later tasks\"",
+    "test:property": "echo \"Property-based tests will be configured in later tasks\"",
+    "test:coverage": "echo \"Coverage tests will be configured in later tasks\""
   },
-  "keywords": [],
+  "keywords": [
+    "firebase",
+    "supabase",
+    "directus",
+    "cms",
+    "authentication",
+    "postgresql",
+    "starter-kit",
+    "boilerplate"
+  ],
   "author": "Khue Pham",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "devDependencies": {
+    "supabase": "^2.75.5"
+  }
 }
