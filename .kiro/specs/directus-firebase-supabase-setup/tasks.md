@@ -25,7 +25,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add docker-compose.yml && git commit -m "feat(task-2.1): add PostgreSQL service to docker-compose" && git push`
     - _Requirements: 1.2, 1.4, 11.1, 11.2, 11.3, 11.7_
   
-  - [~] 2.2 Thêm Directus service vào docker-compose.yml
+  - [x] 2.2 Thêm Directus service vào docker-compose.yml
     - Định nghĩa Directus 10+ service
     - Configure kết nối đến PostgreSQL
     - Setup volumes cho uploads và extensions
