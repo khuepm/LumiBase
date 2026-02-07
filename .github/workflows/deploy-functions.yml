@@ -1,0 +1,45 @@
+name: Deploy Firebase Functions
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'functions/**'
+      - '.github/workflows/deploy-functions.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+      
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+      
+      - name: Install function dependencies
+        working-directory: functions
+        run: npm ci
+      
+      - name: Build functions
+        working-directory: functions
+        run: npm run build
+      
+      - name: Run function tests
+        working-directory: functions
+        run: npm test
+      
+      - name: Deploy to Firebase
+        working-directory: functions
+        run: firebase deploy --only functions --token "${{ secrets.FIREBASE_TOKEN }}"
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}

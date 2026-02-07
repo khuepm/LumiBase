@@ -599,6 +599,56 @@ npm run test:with-env
 
 For detailed testing documentation, see [Test Environment Guide](./docs/TEST-ENVIRONMENT-GUIDE.md).
 
+## 🔄 CI/CD Pipeline
+
+LumiBase includes automated CI/CD workflows using GitHub Actions for continuous integration and deployment.
+
+### Automated Workflows
+
+**Test Suite** (runs on every push and PR):
+- ✅ Unit, integration, and property-based tests
+- ✅ Docker configuration validation
+- ✅ TypeScript type checking
+- ✅ Security vulnerability scanning
+- ✅ Test coverage reporting
+
+**Deploy Firebase Functions** (runs on push to main):
+- ✅ Builds and tests Cloud Functions
+- ✅ Deploys to Firebase automatically
+- ✅ Can be triggered manually
+
+### Setup CI/CD
+
+1. **Configure GitHub Secrets**:
+   - Go to repository **Settings** → **Secrets and variables** → **Actions**
+   - Add required secrets:
+     - `SUPABASE_URL`
+     - `SUPABASE_ANON_KEY`
+     - `SUPABASE_SERVICE_ROLE_KEY`
+     - `FIREBASE_TOKEN` (get with `firebase login:ci`)
+     - `FIREBASE_PROJECT_ID`
+     - `CODECOV_TOKEN` (optional)
+
+2. **Push to GitHub**:
+   ```bash
+   git push origin main
+   ```
+
+3. **Monitor Workflows**:
+   - Go to **Actions** tab in GitHub
+   - View workflow runs and logs
+
+### Workflow Status Badges
+
+Add these to your README to show build status:
+
+```markdown
+![Test Suite](https://github.com/YOUR_USERNAME/YOUR_REPO/workflows/Test%20Suite/badge.svg)
+![Deploy Functions](https://github.com/YOUR_USERNAME/YOUR_REPO/workflows/Deploy%20Firebase%20Functions/badge.svg)
+```
+
+For detailed CI/CD setup instructions, see [CI/CD Setup Guide](./docs/CI-CD-SETUP-GUIDE.md).
+
 ## 🔧 Development Workflow
 
 ### Starting Development

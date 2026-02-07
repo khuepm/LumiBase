@@ -1,0 +1,122 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: directus
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: directus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Setup test environment variables
+        run: |
+          cp .env.test.example .env.test
+          echo "DB_HOST=localhost" >> .env.test
+          echo "DB_PORT=5432" >> .env.test
+          echo "DB_USER=directus" >> .env.test
+          echo "DB_PASSWORD=test_password" >> .env.test
+          echo "DB_NAME=directus_test" >> .env.test
+      
+      - name: Run database migrations
+        run: |
+          PGPASSWORD=test_password psql -h localhost -U directus -d directus_test -f init-scripts/01-create-schema.sql
+          PGPASSWORD=test_password psql -h localhost -U directus -d directus_test -f init-scripts/02-setup-rls.sql
+      
+      - name: Run unit tests
+        run: npm run test:unit
+      
+      - name: Run property tests
+        run: npm run test:property
+        env:
+          VITEST_PROPERTY_RUNS: 100
+      
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      
+      - name: Generate test coverage
+        run: npm run test:coverage
+      
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/coverage-final.json
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Check TypeScript types
+        run: npx tsc --noEmit || true
+      
+      - name: Check for security vulnerabilities
+        run: npm audit --audit-level=moderate || true
+
+  docker:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Validate docker-compose.yml
+        run: docker-compose config
+      
+      - name: Validate docker-compose.test.yml
+        run: docker-compose -f docker-compose.test.yml config
+      
+      - name: Test Docker services startup
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+          sleep 10
+          docker-compose -f docker-compose.test.yml ps
+          docker-compose -f docker-compose.test.yml down -v
