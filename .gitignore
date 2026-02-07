@@ -40,7 +40,6 @@ out/
 
 # Firebase
 .firebase/
-.firebaserc
 firebase-debug.log
 ui-debug.log
 firestore-debug.log

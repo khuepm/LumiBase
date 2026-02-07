@@ -163,21 +163,189 @@ docker-compose ps
 docker-compose logs -f
 ```
 
-### Step 8: Verify Setup
+### Step 8: Verify Setup (Task 3 Checkpoint)
 
-1. **Check Directus**: Open [http://localhost:8055](http://localhost:8055)
-   - Login with your admin credentials
-   - You should see the Directus admin panel
+**📋 Quick Verification Checklist**: See [docs/task-3-checkpoint-checklist.md](docs/task-3-checkpoint-checklist.md)
 
-2. **Check PostgreSQL**: 
+**📖 Detailed Verification Guide**: See [docs/docker-verification-guide.md](docs/docker-verification-guide.md)
+
+#### Quick Verification Steps:
+
+1. **Check Docker Services**:
    ```bash
-   docker-compose exec postgres psql -U directus -d directus -c "\dt"
+   docker-compose ps
    ```
+   Both `directus-cms` and `directus-postgres` should show status `Up`
 
-3. **Check Health**:
+2. **Check PostgreSQL Connection**: 
+   ```bash
+   docker-compose exec postgres pg_isready -U directus
+   ```
+   Should return: `/var/run/postgresql:5432 - accepting connections`
+
+3. **Check Directus Health**:
    ```bash
    curl http://localhost:8055/server/health
    ```
+   Should return: `{"status": "ok", "checks": {"database": "ok"}}`
+
+4. **Check Directus UI**: Open [http://localhost:8055](http://localhost:8055)
+   - Login with your admin credentials
+   - You should see the Directus admin panel
+
+5. **View Logs** (if needed):
+   ```bash
+   # All services
+   docker-compose logs
+   
+   # Specific service
+   docker-compose logs directus
+   docker-compose logs postgres
+   ```
+
+**✅ All checks passed?** You're ready to proceed to Task 4 (Database Schema)!
+
+**❌ Having issues?** Check the [Docker Verification Guide](docs/docker-verification-guide.md) for detailed troubleshooting.
+
+### Step 9: Verify Database Setup (Task 6 Checkpoint)
+
+After creating database schema and RLS policies (Tasks 4-5), verify the database setup:
+
+**📋 Quick Checklist**: See [docs/TASK-6-CHECKLIST.md](docs/TASK-6-CHECKLIST.md)
+
+**📖 Detailed Guide**: See [docs/TASK-6-DATABASE-VERIFICATION.md](docs/TASK-6-DATABASE-VERIFICATION.md)
+
+#### Automated Verification (Recommended):
+
+**On Linux/Mac:**
+```bash
+# Make script executable
+chmod +x scripts/verify-database-setup.sh
+
+# Run verification
+./scripts/verify-database-setup.sh
+```
+
+**On Windows PowerShell:**
+```powershell
+# Run verification
+.\scripts\verify-database-setup.ps1
+```
+
+The script will automatically verify:
+- ✅ Database schema (tables, columns, constraints, indexes)
+- ✅ RLS policies (enabled and correctly configured)
+- ✅ Trigger functionality (auto-update timestamps)
+- ✅ Container health and connectivity
+
+#### Manual Verification:
+
+```bash
+# 1. Restart containers to apply migrations
+docker-compose down && docker-compose up -d
+
+# 2. Connect to PostgreSQL
+docker-compose exec postgres psql -U directus -d directus
+
+# 3. Verify schema
+\d public.users
+
+# 4. Verify RLS is enabled
+SELECT rowsecurity FROM pg_tables WHERE tablename = 'users';
+
+# 5. List RLS policies
+SELECT policyname, cmd FROM pg_policies WHERE tablename = 'users';
+
+# 6. Exit
+\q
+```
+
+**✅ All checks passed?** Database setup is complete! Proceed to Task 7 (Firebase Setup).
+
+**❌ Having issues?** Check the [Database Verification Guide](docs/TASK-6-DATABASE-VERIFICATION.md) for troubleshooting.
+
+### Step 10: Setup Firebase Cloud Functions (Task 7)
+
+Firebase Cloud Functions automatically sync user data from Firebase Authentication to Supabase database.
+
+#### Prerequisites:
+
+1. **Firebase CLI installed** (already done in Step 6)
+2. **Firebase project created** (already done in Step 2)
+3. **Firebase login**:
+   ```bash
+   firebase login
+   ```
+
+#### Configure Firebase Project:
+
+1. **Update `.firebaserc` with your project ID**:
+   ```bash
+   # Edit .firebaserc and replace "your-firebase-project-id" with your actual project ID
+   ```
+
+2. **Set Firebase project**:
+   ```bash
+   firebase use <your-project-id>
+   ```
+
+3. **Configure Supabase credentials for Cloud Functions**:
+   ```bash
+   firebase functions:config:set supabase.url="<your-supabase-url>"
+   firebase functions:config:set supabase.service_key="<your-supabase-service-role-key>"
+   ```
+
+#### Install Dependencies and Build:
+
+```bash
+cd functions
+npm install
+npm run build
+cd ..
+```
+
+#### Test Locally (Optional):
+
+```bash
+cd functions
+npm run serve
+```
+
+This starts the Firebase emulator suite:
+- Functions: http://localhost:5001
+- Auth: http://localhost:9099
+- Emulator UI: http://localhost:4000
+
+#### Deploy to Firebase:
+
+```bash
+cd functions
+npm run deploy
+```
+
+#### Verify Functions:
+
+1. **Check deployed functions**:
+   ```bash
+   firebase functions:list
+   ```
+
+2. **View function logs**:
+   ```bash
+   firebase functions:log
+   ```
+
+3. **Test the sync**:
+   - Go to Firebase Console → Authentication
+   - Create a test user (Email/Password or Google)
+   - Check Supabase database to verify user was synced:
+     ```bash
+     docker-compose exec postgres psql -U directus -d directus -c "SELECT * FROM public.users;"
+     ```
+
+**✅ Functions deployed successfully?** Your Firebase-Supabase integration is complete!
+
+**❌ Having issues?** Check the [Firebase Functions README](functions/README.md) for detailed troubleshooting.
 
 ## 📁 Project Structure
 
@@ -196,6 +364,8 @@ LumiBase/
 │   ├── 01-create-schema.sql  # Create users table and indexes
 │   └── 02-setup-rls.sql      # Row Level Security policies
 ├── scripts/                   # Development utility scripts
+│   ├── verify-database-setup.sh   # Verify database setup (Bash)
+│   ├── verify-database-setup.ps1  # Verify database setup (PowerShell)
 │   ├── seed-data.sh          # Seed initial data
 │   └── reset-db.sh           # Reset database
 ├── tests/                     # Test suites
