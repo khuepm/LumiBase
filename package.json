@@ -4,11 +4,11 @@
   "description": "The Ultimate Launchpad for Modern Apps. A premium starter-kit combining Firebase, Supabase, and Directus.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Tests will be configured in later tasks\"",
-    "test:unit": "echo \"Unit tests will be configured in later tasks\"",
-    "test:integration": "echo \"Integration tests will be configured in later tasks\"",
-    "test:property": "echo \"Property-based tests will be configured in later tasks\"",
-    "test:coverage": "echo \"Coverage tests will be configured in later tasks\""
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:property": "vitest run tests/property",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "firebase",
@@ -24,6 +24,9 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
-    "supabase": "^2.75.5"
+    "@types/node": "^20.0.0",
+    "supabase": "^2.75.5",
+    "vitest": "^1.0.0",
+    "yaml": "^2.3.4"
   }
 }
