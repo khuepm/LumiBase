@@ -35,7 +35,6 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 1.1, 1.3, 1.5, 1.6, 1.7, 7.1, 7.5, 7.6, 7.7, 11.1, 11.2, 11.3, 11.7_
   
   - [x] 2.3 Viết tests cho Docker Compose configuration
-
     - Test Directus image version >= 10
     - Test PostgreSQL image version >= 15
     - Test network configuration
@@ -62,14 +61,12 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.6, 4.7, 11.1, 11.2, 11.3, 11.7_
   
   - [x] 4.2 Viết property test cho database schema integrity
-
     - **Property 1: Database Schema Integrity**
     - **Validates: Requirements 4.1, 4.2, 4.3, 4.6**
     - Commit và push: `git add tests/ && git commit -m "test(task-4.2): add property test for database schema integrity" && git push`
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
   
   - [x] 4.3 Viết unit tests cho database schema
-
     - Test bảng users tồn tại với đúng columns
     - Test data types và constraints
     - Test indexes tồn tại
@@ -89,14 +86,12 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.6, 11.1, 11.2, 11.3, 11.7_
   
   - [x] 5.2 Viết property test cho RLS access control
-
     - **Property 2: Row Level Security Access Control**
     - **Validates: Requirements 5.2, 5.3, 5.4, 5.5, 5.6, 5.7**
     - Commit và push: `git add tests/ && git commit -m "test(task-5.2): add property test for RLS access control" && git push`
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
   
   - [x] 5.3 Viết integration tests cho RLS policies
-
     - Test user có thể đọc own data với valid JWT
     - Test user không thể đọc data của user khác
     - Test user có thể update own data
@@ -132,7 +127,6 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 11.1, 11.2, 11.3, 11.7_
   
   - [x] 7.3 Implement Cloud Function để delete users (optional)
-
     - Viết function deleteUserFromSupabase trigger onDelete
     - Implement delete logic từ Supabase
     - Add error handling và logging
@@ -146,7 +140,6 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
   
   - [x] 7.5 Viết unit tests cho Cloud Functions
-
     - Test function extract đúng fields từ Firebase user object
     - Test upsert logic với mock Supabase client
     - Test error handling khi insert fails
@@ -164,7 +157,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
   - Commit và push: `git add README.md && git commit -m "docs(task-8): add Firebase Authentication configuration guide" && git push`
   - _Requirements: 2.1, 2.2, 2.6, 2.7, 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 9. Configure Supabase project
+- [x] 9. Configure Supabase project
   - [x] 9.1 Tạo hướng dẫn setup Supabase project
     - Document cách tạo Supabase project
     - Document cách get API URL và keys
@@ -174,7 +167,6 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 3.2, 3.4, 3.7, 11.1, 11.2, 11.3, 11.7_
   
   - [x] 9.2 Viết integration tests cho Supabase JWT verification
-
     - Test Supabase accept valid Firebase JWT tokens
     - Test Supabase reject invalid JWT signatures
     - Test Supabase reject expired JWT tokens
@@ -184,7 +176,6 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 3.3, 3.5, 10.1, 10.2, 10.3, 10.4, 11.1, 11.2, 11.3, 11.7_
   
   - [x] 9.3 Viết property test cho JWT token validation
-
     - **Property 5: JWT Token Validation**
     - **Validates: Requirements 10.2, 10.4**
     - Commit và push: `git add tests/ && git commit -m "test(task-9.3): add property test for JWT token validation" && git push`
@@ -198,7 +189,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
   - Chạy integration tests
   - Hỏi user nếu có vấn đề phát sinh
 
-- [ ] 11. Implement client-side integration example
+- [x] 11. Implement client-side integration example
   - [x] 11.1 Tạo example client code
     - Viết auth.ts với Firebase authentication logic
     - Implement signInWithGoogle function
@@ -208,7 +199,6 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 2.3, 3.5, 11.1, 11.2, 11.3, 11.7_
   
   - [x] 11.2 Viết tests cho client integration
-
     - Test signInWithGoogle returns valid JWT
     - Test getUserData fetch đúng user data
     - Test error handling
@@ -232,7 +222,6 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 9.5, 11.1, 11.2, 11.3, 11.7_
   
   - [x] 12.3 Viết property test cho environment configuration completeness
-
     - **Property 3: Environment Configuration Completeness**
     - **Validates: Requirements 8.1, 8.3, 8.4, 8.5, 8.6, 8.7**
     - Commit và push: `git add tests/ && git commit -m "test(task-12.3): add property test for environment configuration" && git push`
@@ -247,14 +236,12 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 9.2, 9.3, 11.1, 11.2, 11.3, 11.7_
   
   - [x] 13.2 Setup Firebase emulator
-
     - Configure Firebase emulator suite
     - Document cách chạy tests với emulator
     - Commit và push: `git add firebase.json .firebaserc docs/ && git commit -m "feat(task-13.2): setup Firebase emulator" && git push`
     - _Requirements: 9.7, 11.1, 11.2, 11.3, 11.7_
   
   - [x] 13.3 Setup CI/CD pipeline
-
     - Tạo GitHub Actions workflow
     - Configure automated testing
     - Setup test coverage reporting
@@ -280,7 +267,6 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - _Requirements: 9.6, 9.7, 11.1, 11.2, 11.3, 11.7_
   
   - [x] 14.3 Document deployment procedures
-
     - Add production deployment checklist
     - Add security best practices
     - Add monitoring và logging setup
