@@ -258,6 +258,10 @@ And Firebase Functions should be configured with:
 
 ### Step 3: Configure Supabase
 
+**📖 Detailed Guide**: For comprehensive Supabase setup instructions, see [Supabase Project Setup Guide](docs/supabase-project-setup-guide.md)
+
+#### Quick Setup Steps:
+
 1. Go to [Supabase Dashboard](https://app.supabase.com/)
 2. Create a new project
 3. Go to **Settings** → **API**
@@ -265,11 +269,14 @@ And Firebase Functions should be configured with:
    - `SUPABASE_URL` (Project URL)
    - `SUPABASE_ANON_KEY` (anon public key)
    - `SUPABASE_SERVICE_ROLE_KEY` (service_role secret key)
-5. Generate a JWT secret:
-   ```bash
-   openssl rand -base64 32
-   ```
-6. Add it to `SUPABASE_JWT_SECRET` in `.env`
+   - `SUPABASE_JWT_SECRET` (JWT Secret from Settings → API)
+5. Configure Firebase as third-party auth provider:
+   - Go to **Authentication** → **Providers**
+   - Enable **Firebase** provider
+   - Enter your Firebase Project ID
+   - Set Issuer URL: `https://securetoken.google.com/your-firebase-project-id`
+
+**⚠️ Security Warning**: Never expose `SUPABASE_SERVICE_ROLE_KEY` in client-side code! It bypasses all Row Level Security policies.
 
 ### Step 4: Configure Directus
 
