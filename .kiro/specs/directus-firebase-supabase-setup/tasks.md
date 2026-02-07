@@ -155,7 +155,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add functions/test/ && git commit -m "test(task-7.5): add unit tests for Cloud Functions" && git push`
     - _Requirements: 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 8. Configure Firebase Authentication providers
+- [x] 8. Configure Firebase Authentication providers
   - Tạo hướng dẫn trong README.md để enable Google OAuth provider
   - Tạo hướng dẫn để enable Email/Password authentication
   - Tạo hướng dẫn để enable Firebase Analytics
@@ -165,7 +165,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
   - _Requirements: 2.1, 2.2, 2.6, 2.7, 11.1, 11.2, 11.3, 11.7_
 
 - [ ] 9. Configure Supabase project
-  - [ ] 9.1 Tạo hướng dẫn setup Supabase project
+  - [x] 9.1 Tạo hướng dẫn setup Supabase project
     - Document cách tạo Supabase project
     - Document cách get API URL và keys
     - Document cách configure Firebase third-party auth
@@ -183,14 +183,14 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add tests/ && git commit -m "test(task-9.2): add integration tests for Supabase JWT verification" && git push`
     - _Requirements: 3.3, 3.5, 10.1, 10.2, 10.3, 10.4, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 9.3 Viết property test cho JWT token validation
+  - [x] 9.3 Viết property test cho JWT token validation
 
     - **Property 5: JWT Token Validation**
     - **Validates: Requirements 10.2, 10.4**
     - Commit và push: `git add tests/ && git commit -m "test(task-9.3): add property test for JWT token validation" && git push`
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 10. Checkpoint - Verify Firebase và Supabase integration
+- [x] 10. Checkpoint - Verify Firebase và Supabase integration
   - Deploy Cloud Functions lên Firebase
   - Test tạo user mới trong Firebase Auth
   - Verify user được sync vào Supabase database
@@ -199,7 +199,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
   - Hỏi user nếu có vấn đề phát sinh
 
 - [ ] 11. Implement client-side integration example
-  - [ ] 11.1 Tạo example client code
+  - [x] 11.1 Tạo example client code
     - Viết auth.ts với Firebase authentication logic
     - Implement signInWithGoogle function
     - Implement getUserData function với Supabase client
@@ -207,7 +207,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add client/ && git commit -m "feat(task-11.1): add client-side integration example" && git push`
     - _Requirements: 2.3, 3.5, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 11.2 Viết tests cho client integration
+  - [x] 11.2 Viết tests cho client integration
 
     - Test signInWithGoogle returns valid JWT
     - Test getUserData fetch đúng user data
@@ -215,15 +215,15 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add client/tests/ && git commit -m "test(task-11.2): add tests for client integration" && git push`
     - _Requirements: 2.3, 3.5, 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 12. Create development workflow scripts
-  - [ ] 12.1 Viết script để seed initial data
+- [x] 12. Create development workflow scripts
+  - [x] 12.1 Viết script để seed initial data
     - Tạo script seed-data.sh hoặc seed-data.ts
     - Add sample users vào database
     - Document cách chạy script
     - Commit và push: `git add scripts/ && git commit -m "feat(task-12.1): add seed data script" && git push`
     - _Requirements: 9.4, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 12.2 Viết script để reset database
+  - [x] 12.2 Viết script để reset database
     - Tạo script reset-db.sh
     - Drop và recreate database
     - Re-run migrations
@@ -231,29 +231,29 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add scripts/ && git commit -m "feat(task-12.2): add database reset script" && git push`
     - _Requirements: 9.5, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 12.3 Viết property test cho environment configuration completeness
+  - [x] 12.3 Viết property test cho environment configuration completeness
 
     - **Property 3: Environment Configuration Completeness**
     - **Validates: Requirements 8.1, 8.3, 8.4, 8.5, 8.6, 8.7**
     - Commit và push: `git add tests/ && git commit -m "test(task-12.3): add property test for environment configuration" && git push`
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 13. Setup testing infrastructure
-  - [ ] 13.1 Configure test environment
+- [x] 13. Setup testing infrastructure
+  - [x] 13.1 Configure test environment
     - Tạo docker-compose.test.yml cho test environment
     - Setup test database
     - Configure test scripts trong package.json
     - Commit và push: `git add docker-compose.test.yml package.json && git commit -m "feat(task-13.1): configure test environment" && git push`
     - _Requirements: 9.2, 9.3, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 13.2 Setup Firebase emulator
+  - [x] 13.2 Setup Firebase emulator
 
     - Configure Firebase emulator suite
     - Document cách chạy tests với emulator
     - Commit và push: `git add firebase.json .firebaserc docs/ && git commit -m "feat(task-13.2): setup Firebase emulator" && git push`
     - _Requirements: 9.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 13.3 Setup CI/CD pipeline
+  - [x] 13.3 Setup CI/CD pipeline
 
     - Tạo GitHub Actions workflow
     - Configure automated testing
@@ -261,8 +261,8 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add .github/workflows/ && git commit -m "ci(task-13.3): setup CI/CD pipeline" && git push`
     - _Requirements: 9.2, 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 14. Complete documentation
-  - [ ] 14.1 Viết comprehensive README.md
+- [x] 14. Complete documentation
+  - [x] 14.1 Viết comprehensive README.md
     - Add architecture overview với diagrams
     - Add step-by-step setup instructions
     - Add troubleshooting guide
@@ -270,7 +270,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add README.md docs/ && git commit -m "docs(task-14.1): complete comprehensive documentation" && git push`
     - _Requirements: 9.1, 9.6, 9.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 14.2 Document testing procedures
+  - [x] 14.2 Document testing procedures
     - Add hướng dẫn chạy unit tests
     - Add hướng dẫn chạy property tests
     - Add hướng dẫn chạy integration tests
@@ -279,7 +279,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add docs/ README.md && git commit -m "docs(task-14.2): document testing procedures" && git push`
     - _Requirements: 9.6, 9.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 14.3 Document deployment procedures
+  - [x] 14.3 Document deployment procedures
 
     - Add production deployment checklist
     - Add security best practices
@@ -288,7 +288,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add docs/ && git commit -m "docs(task-14.3): document deployment procedures" && git push`
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 15. Final checkpoint - End-to-end verification
+- [x] 15. Final checkpoint - End-to-end verification
   - Chạy full test suite (unit + property + integration)
   - Verify tất cả tests pass
   - Test complete authentication flow từ đầu đến cuối
