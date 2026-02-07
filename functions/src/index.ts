@@ -136,32 +136,98 @@ export const syncUserToSupabase = functions
   });
 
 /**
- * Optional: Cloud Function to handle user deletion
- * Removes user data from Supabase when deleted from Firebase Auth
+ * Cloud Function triggered when a user is deleted from Firebase Auth
+ * Removes user data from Supabase database
  * 
- * @param user - The Firebase user object
+ * Requirements:
+ * - 6.1: Triggers on onDelete event
+ * - 11.1: Commits changes with descriptive message
+ * - 11.2: Includes task number in commit message
+ * - 11.3: Pushes commits to remote repository
+ * - 11.7: Follows commit message format
+ * 
+ * @param user - The Firebase user object being deleted
  * @returns Promise with success status
  */
-export const deleteUserFromSupabase = functions.auth.user().onDelete(async (user) => {
-  const { uid } = user;
+export const deleteUserFromSupabase = functions
+  .runWith({
+    timeoutSeconds: 5, // Ensure function completes within reasonable time
+    memory: '256MB'
+  })
+  .auth.user().onDelete(async (user) => {
+    const startTime = Date.now();
+    const { uid, email } = user;
 
-  console.log(`Deleting user from Supabase: ${uid}`);
+    console.log(`[deleteUserFromSupabase] Starting deletion for user: ${uid}`, {
+      email: email || 'unknown'
+    });
 
-  try {
-    const { error } = await supabase
-      .from('users')
-      .delete()
-      .eq('firebase_uid', uid);
+    // Retry logic for handling transient errors
+    const maxRetries = 2;
+    let lastError: any = null;
 
-    if (error) {
-      console.error('Error deleting user from Supabase:', error);
-      throw error;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[deleteUserFromSupabase] Attempt ${attempt}/${maxRetries} for user: ${uid}`);
+
+        // Delete user from Supabase using service role key (bypasses RLS)
+        const { error } = await supabase
+          .from('users')
+          .delete()
+          .eq('firebase_uid', uid);
+
+        if (error) {
+          // Log specific error details
+          console.error(`[deleteUserFromSupabase] Supabase error on attempt ${attempt}:`, {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            uid
+          });
+
+          throw error;
+        }
+
+        // Success - log completion time
+        const duration = Date.now() - startTime;
+        console.log(`[deleteUserFromSupabase] Successfully deleted user ${uid} in ${duration}ms`);
+
+        // Verify completion time
+        if (duration > 5000) {
+          console.warn(`[deleteUserFromSupabase] Function took ${duration}ms, exceeding 5 second target`);
+        }
+
+        return { success: true, uid, duration };
+
+      } catch (error: any) {
+        lastError = error;
+        console.error(`[deleteUserFromSupabase] Attempt ${attempt} failed:`, {
+          error: error.message,
+          code: error.code,
+          uid
+        });
+
+        // If not last attempt, wait before retry with exponential backoff
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+        }
+      }
     }
 
-    console.log('Successfully deleted user from Supabase:', uid);
-    return { success: true, uid };
-  } catch (error: any) {
-    console.error('Failed to delete user:', error);
-    return { success: false, error: error.message };
-  }
-});
+    // All retries failed
+    const duration = Date.now() - startTime;
+    console.error(`[deleteUserFromSupabase] Failed to delete user ${uid} after ${maxRetries} attempts in ${duration}ms`, {
+      lastError: lastError?.message,
+      code: lastError?.code
+    });
+
+    // Don't throw - log error but don't block Firebase user deletion
+    return {
+      success: false,
+      uid,
+      error: lastError?.message || 'Unknown error',
+      attempts: maxRetries,
+      duration
+    };
+  });
