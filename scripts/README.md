@@ -92,21 +92,66 @@ chmod +x scripts/verify-database-setup.sh
 
 ---
 
-### 3. Database Reset Script (Coming Soon)
+### 3. Database Reset Scripts
 
-Reset database to initial state.
+Reset database to initial state by dropping all tables and re-running migrations.
 
-#### `reset-db.sh`
+#### `reset-db.sh` (Linux/Mac)
 
 **Usage:**
 ```bash
+# Make executable
+chmod +x scripts/reset-db.sh
+
+# Run script
 ./scripts/reset-db.sh
 ```
 
+#### `reset-db.ps1` (Windows PowerShell)
+
+**Usage:**
+```powershell
+# Run script
+.\scripts\reset-db.ps1
+```
+
 **What it does:**
-- Drops all tables
-- Re-runs migration scripts
-- Optionally seeds initial data
+- ⚠️ **Prompts for confirmation** (requires typing "yes" to proceed)
+- ✅ Drops all tables in the database
+- ✅ Drops functions and triggers
+- ✅ Re-runs migration script `01-create-schema.sql`
+- ✅ Re-runs RLS setup script `02-setup-rls.sql`
+- ✅ Verifies database setup after reset
+- ✅ Displays summary and next steps
+
+**⚠️ CRITICAL WARNING:**
+- **ALL DATA WILL BE LOST!** This script drops all tables and recreates them from scratch.
+- This is intended for **development only** - never run in production!
+- Always backup important data before running this script.
+- The script will prompt for confirmation before proceeding.
+
+**When to use:**
+- When you need to start fresh with a clean database
+- After modifying migration scripts and want to test them
+- When database schema gets corrupted during development
+- When switching between different development branches
+
+**Requirements:**
+- Docker containers must be running (`docker-compose up -d`)
+- `.env` file must be configured with database credentials
+- Migration scripts must exist in `init-scripts/` directory
+
+**Example workflow:**
+```bash
+# Reset database
+./scripts/reset-db.sh
+
+# Seed sample data
+./scripts/seed-data.sh
+
+# Verify everything is working
+./scripts/verify-database-setup.sh
+```
 
 ---
 
