@@ -25,6 +25,9 @@
   "type": "commonjs",
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/pg": "^8.16.0",
+    "fast-check": "^4.5.3",
+    "pg": "^8.18.0",
     "supabase": "^2.75.5",
     "vitest": "^1.0.0",
     "yaml": "^2.3.4"
