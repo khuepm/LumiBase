@@ -712,6 +712,61 @@ Add these to your README to show build status:
 
 For detailed CI/CD setup instructions, see [CI/CD Setup Guide](./docs/CI-CD-SETUP-GUIDE.md).
 
+## 🚀 Production Deployment
+
+Ready to deploy LumiBase to production? Follow our comprehensive deployment guide.
+
+**📖 Complete Deployment Guide**: See [Deployment Procedures Guide](./docs/DEPLOYMENT-PROCEDURES.md) for:
+- Production deployment checklist
+- Security best practices
+- Monitoring and logging setup
+- Backup and recovery procedures
+- Scaling considerations
+- Troubleshooting production issues
+
+### Quick Deployment Overview
+
+1. **Prepare Environment**
+   - Set up production Firebase project
+   - Create production Supabase project
+   - Configure production environment variables
+   - Generate strong secrets and passwords
+
+2. **Deploy Database**
+   - Apply database migrations to production
+   - Enable RLS policies
+   - Configure backups
+
+3. **Deploy Cloud Functions**
+   ```bash
+   cd functions
+   firebase use production
+   firebase deploy --only functions
+   ```
+
+4. **Deploy Directus CMS**
+   - Deploy to cloud platform (AWS, GCP, Azure) or VPS
+   - Configure SSL/TLS certificates
+   - Set up reverse proxy (nginx)
+
+5. **Deploy Client Application**
+   - Build production bundle
+   - Deploy to hosting (Vercel, Netlify, Firebase Hosting)
+
+6. **Configure Monitoring**
+   - Set up error tracking (Sentry)
+   - Configure uptime monitoring
+   - Set up log aggregation
+   - Configure alerts
+
+7. **Verify Deployment**
+   - Test authentication flow
+   - Verify data sync
+   - Check monitoring and alerts
+   - Run smoke tests
+
+For detailed instructions, security best practices, and troubleshooting, see the [Deployment Procedures Guide](./docs/DEPLOYMENT-PROCEDURES.md).
+
 ## 🔧 Development Workflow
 
 ### Starting Development
@@ -842,8 +897,10 @@ npm run serve
 - [Firebase Authentication Guide](./docs/firebase-authentication-guide.md) - Complete Firebase Authentication setup guide
 - [Supabase Project Setup Guide](./docs/supabase-project-setup-guide.md) - Complete Supabase configuration guide
 - [Test Environment Guide](./docs/TEST-ENVIRONMENT-GUIDE.md) - Testing infrastructure and procedures
+- [Testing Procedures Guide](./docs/TESTING-PROCEDURES.md) - Comprehensive testing guide
 - [Firebase Emulator Guide](./docs/FIREBASE-EMULATOR-GUIDE.md) - Local Firebase development
 - [CI/CD Setup Guide](./docs/CI-CD-SETUP-GUIDE.md) - Continuous integration and deployment
+- [Deployment Procedures Guide](./docs/DEPLOYMENT-PROCEDURES.md) - Production deployment, security, monitoring, and backup
 - [Firebase Documentation](https://firebase.google.com/docs)
 - [Supabase Documentation](https://supabase.com/docs)
 - [Directus Documentation](https://docs.directus.io/)
