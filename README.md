@@ -90,17 +90,171 @@ cp .env.example .env
 
 ### Step 2: Configure Firebase
 
+#### 2.1 Create Firebase Project
+
 1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Create a new project or select existing one
-3. Enable **Authentication** → Enable **Google** and **Email/Password** providers
-4. Go to **Project Settings** → **Service Accounts**
-5. Click **Generate New Private Key** and download the JSON file
-6. Extract these values to your `.env` file:
-   - `FIREBASE_PROJECT_ID`
-   - `FIREBASE_CLIENT_EMAIL`
-   - `FIREBASE_PRIVATE_KEY` (keep the `\n` characters)
-7. Go to **Project Settings** → **General** → **Web API Key**
-8. Copy the API Key to `FIREBASE_WEB_API_KEY` in `.env`
+2. Click **Add project** or select an existing project
+3. Enter your project name (e.g., "LumiBase")
+4. (Optional) Enable Google Analytics for your project
+5. Click **Create project** and wait for setup to complete
+
+#### 2.2 Enable Google OAuth Provider
+
+1. In Firebase Console, go to **Authentication** → **Sign-in method**
+2. Click on **Google** provider
+3. Toggle **Enable** switch to ON
+4. Configure OAuth consent screen:
+   - **Project support email**: Select your email
+   - **Project public-facing name**: Enter your app name (e.g., "LumiBase")
+5. Click **Save**
+
+**Important Notes:**
+- Google OAuth requires a valid OAuth consent screen configuration
+- For production, you'll need to verify your domain
+- Users will see the app name during Google sign-in
+
+#### 2.3 Enable Email/Password Authentication
+
+1. In Firebase Console, go to **Authentication** → **Sign-in method**
+2. Click on **Email/Password** provider
+3. Toggle **Enable** switch to ON
+4. (Optional) Enable **Email link (passwordless sign-in)** if needed
+5. Click **Save**
+
+**Security Recommendations:**
+- Enable email verification for new accounts
+- Set password requirements in Firebase Console
+- Consider enabling multi-factor authentication (MFA) for production
+
+#### 2.4 Enable Firebase Analytics (Optional but Recommended)
+
+1. In Firebase Console, go to **Project Settings** (gear icon)
+2. Click on **Integrations** tab
+3. Find **Google Analytics** and click **Enable**
+4. Select an existing Analytics account or create a new one
+5. Configure Analytics settings:
+   - **Analytics location**: Select your region
+   - **Data sharing settings**: Configure as needed
+6. Click **Enable Analytics**
+
+**Benefits of Firebase Analytics:**
+- Track user authentication events
+- Monitor user engagement
+- Analyze user demographics
+- Debug authentication issues
+
+#### 2.5 Download Service Account Credentials
+
+Service account credentials are required for server-side operations (Cloud Functions).
+
+1. Go to **Project Settings** → **Service Accounts** tab
+2. Click **Generate New Private Key**
+3. A dialog will appear warning about keeping the key secure
+4. Click **Generate Key** - a JSON file will be downloaded
+
+**⚠️ Security Warning:**
+- **NEVER commit this file to Git**
+- Store it securely (use environment variables or secret managers)
+- Rotate keys regularly (every 90 days recommended)
+
+5. Open the downloaded JSON file and extract these values to your `.env` file:
+   ```json
+   {
+     "project_id": "your-project-id",
+     "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+     "client_email": "firebase-adminsdk-xxxxx@your-project-id.iam.gserviceaccount.com"
+   }
+   ```
+
+6. Add to `.env`:
+   ```bash
+   FIREBASE_PROJECT_ID=your-project-id
+   FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project-id.iam.gserviceaccount.com
+   FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+   ```
+
+**Important:** Keep the `\n` characters in the private key - they represent line breaks.
+
+#### 2.6 Get Web API Key
+
+The Web API Key is used for client-side Firebase SDK initialization.
+
+1. Go to **Project Settings** → **General** tab
+2. Scroll down to **Your apps** section
+3. If you haven't added a web app yet:
+   - Click the **</>** (Web) icon
+   - Register your app with a nickname (e.g., "LumiBase Web")
+   - (Optional) Set up Firebase Hosting
+   - Click **Register app**
+4. Copy the **Web API Key** from the Firebase SDK snippet
+5. Add to `.env`:
+   ```bash
+   FIREBASE_WEB_API_KEY=AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+   ```
+
+#### 2.7 Configure Firebase for Cloud Functions
+
+After setting up authentication, you'll need to configure Firebase Functions to sync user data to Supabase.
+
+**Set Supabase Configuration:**
+
+```bash
+# Login to Firebase CLI
+firebase login
+
+# Select your project
+firebase use <your-project-id>
+
+# Set Supabase URL
+firebase functions:config:set supabase.url="https://xxxxxxxxxxxxx.supabase.co"
+
+# Set Supabase Service Role Key
+firebase functions:config:set supabase.service_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+**Verify Configuration:**
+
+```bash
+# View current configuration
+firebase functions:config:get
+```
+
+**For Local Development:**
+
+Create `functions/.runtimeconfig.json` (this file is gitignored):
+
+```json
+{
+  "supabase": {
+    "url": "https://xxxxxxxxxxxxx.supabase.co",
+    "service_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+```
+
+**⚠️ Important:** Never commit `.runtimeconfig.json` to Git!
+
+#### 2.8 Firebase Configuration Summary
+
+After completing all steps, your `.env` file should have:
+
+```bash
+# Firebase Configuration
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project-id.iam.gserviceaccount.com
+FIREBASE_WEB_API_KEY=AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+```
+
+And Firebase Functions should be configured with:
+- ✅ Supabase URL
+- ✅ Supabase Service Role Key
+
+**Next Steps:**
+- Proceed to Step 3 to configure Supabase
+- After completing all setup, deploy Cloud Functions (Step 10)
+
+**📖 Detailed Guide:** For comprehensive Firebase Authentication setup instructions, troubleshooting, and security best practices, see [Firebase Authentication Guide](docs/firebase-authentication-guide.md)
 
 ### Step 3: Configure Supabase
 
@@ -473,6 +627,7 @@ npm run serve
 - [Project Specifications](./project_specs.md) - Detailed project requirements
 - [Architecture Design](./.kiro/specs/directus-firebase-supabase-setup/design.md) - System architecture and design decisions
 - [Implementation Tasks](./.kiro/specs/directus-firebase-supabase-setup/tasks.md) - Step-by-step implementation guide
+- [Firebase Authentication Guide](./docs/firebase-authentication-guide.md) - Complete Firebase Authentication setup guide
 - [Firebase Documentation](https://firebase.google.com/docs)
 - [Supabase Documentation](https://supabase.com/docs)
 - [Directus Documentation](https://docs.directus.io/)
