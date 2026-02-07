@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: directus-postgres-test
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-test_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-test_password}
+      POSTGRES_DB: ${DB_NAME:-test_db}
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - directus-test-network
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-test_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  directus-test:
+    image: directus/directus:10-latest
+    container_name: directus-cms-test
+    restart: unless-stopped
+    ports:
+      - "8056:8055"
+    environment:
+      KEY: ${DIRECTUS_KEY:-test-key-32-chars-minimum-length}
+      SECRET: ${DIRECTUS_SECRET:-test-secret-32-chars-minimum-length}
+      ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL:-test@example.com}
+      ADMIN_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD:-test_password}
+      DB_CLIENT: pg
+      DB_HOST: postgres-test
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_NAME:-test_db}
+      DB_USER: ${DB_USER:-test_user}
+      DB_PASSWORD: ${DB_PASSWORD:-test_password}
+      CORS_ENABLED: true
+      CORS_ORIGIN: true
+      PUBLIC_URL: http://localhost:8056
+    volumes:
+      - directus_test_uploads:/directus/uploads
+      - directus_test_extensions:/directus/extensions
+    networks:
+      - directus-test-network
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+
+networks:
+  directus-test-network:
+    driver: bridge
+
+volumes:
+  postgres_test_data:
+  directus_test_uploads:
+  directus_test_extensions:

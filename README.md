@@ -542,6 +542,35 @@ LumiBase/
 
 ## 🧪 Testing
 
+LumiBase includes comprehensive testing infrastructure with isolated test environment.
+
+### Test Environment
+
+The test environment runs on separate ports to avoid conflicts with development:
+
+```bash
+# Start test environment
+npm run test:env:up
+
+# Check test environment status
+npm run test:env:status
+
+# View test environment logs
+npm run test:env:logs
+
+# Stop test environment
+npm run test:env:down
+
+# Clean test environment (remove all data)
+npm run test:env:clean
+```
+
+**Test Environment Ports:**
+- PostgreSQL: `5433` (dev: 5432)
+- Directus: `8056` (dev: 8055)
+
+### Running Tests
+
 ```bash
 # Run all tests
 npm test
@@ -557,7 +586,18 @@ npm run test:property
 
 # Run with coverage
 npm run test:coverage
+
+# Run tests with automatic environment setup/teardown
+npm run test:with-env
 ```
+
+### Test Types
+
+- **Unit Tests**: Test individual functions and components in isolation
+- **Integration Tests**: Test interactions between components (database, API, etc.)
+- **Property-Based Tests**: Test universal properties across many generated inputs
+
+For detailed testing documentation, see [Test Environment Guide](./docs/TEST-ENVIRONMENT-GUIDE.md).
 
 ## 🔧 Development Workflow
 
