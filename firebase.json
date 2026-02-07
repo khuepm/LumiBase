@@ -22,8 +22,12 @@
       "port": 9099
     },
     "ui": {
-      "enabled": true
+      "enabled": true,
+      "port": 4000
     },
-    "singleProjectMode": true
+    "singleProjectMode": true,
+    "logging": {
+      "level": "DEBUG"
+    }
   }
 }

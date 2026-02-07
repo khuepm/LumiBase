@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "serve": "npm run build && firebase emulators:start --only functions",
+    "serve": "npm run build && firebase emulators:start --only functions,auth",
+    "serve:debug": "npm run build && firebase emulators:start --only functions,auth --inspect-functions",
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "npm run build && firebase deploy --only functions",
@@ -18,7 +19,10 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:property": "vitest run test/**/*.property.test.ts",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:emulator": "firebase emulators:exec --only auth,functions 'npm test'",
+    "test:integration:emulator": "firebase emulators:exec --only auth,functions 'npm run test:integration'",
+    "test:integration": "vitest run test/**/*.integration.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.38.0",

@@ -95,26 +95,72 @@ firebase functions:log --only syncUserToSupabase
 
 ### Local Testing with Emulator
 
-1. Start the Firebase emulator:
+1. **Start the Firebase emulator:**
    ```bash
    npm run serve
    ```
 
-2. The emulator will run on:
+2. **The emulator will run on:**
    - Functions: http://localhost:5001
    - Auth: http://localhost:9099
    - Emulator UI: http://localhost:4000
 
-3. Create a test user in the Auth emulator to trigger the function
+3. **Create a test user in the Auth emulator to trigger the function**
+
+### Running Tests with Emulator
+
+**Run all tests with emulator:**
+```bash
+npm run test:emulator
+```
+
+**Run integration tests with emulator:**
+```bash
+npm run test:integration:emulator
+```
+
+**Run tests manually with emulator running:**
+```bash
+# Terminal 1: Start emulator
+npm run serve
+
+# Terminal 2: Run tests
+export FIREBASE_AUTH_EMULATOR_HOST=localhost:9099
+npm test
+```
+
+**Debug mode with VS Code:**
+```bash
+npm run serve:debug
+```
+
+Then attach VS Code debugger (F5) to debug functions with breakpoints.
 
 ### Environment Variables for Local Testing
 
-Create a `.env` file in the functions directory (not committed to Git):
+Create a `functions/.runtimeconfig.json` file (not committed to Git):
+
+```json
+{
+  "supabase": {
+    "url": "https://xxxxx.supabase.co",
+    "service_key": "your-service-role-key"
+  }
+}
+```
+
+Or use environment variables:
 
 ```bash
-SUPABASE_URL=https://xxxxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+export SUPABASE_URL=https://xxxxx.supabase.co
+export SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
+
+### Comprehensive Testing Guide
+
+For detailed information about testing with Firebase Emulator, see:
+- [Firebase Emulator Guide](../docs/FIREBASE-EMULATOR-GUIDE.md)
+- [Test Environment Guide](../docs/TEST-ENVIRONMENT-GUIDE.md)
 
 ## Error Handling
 
