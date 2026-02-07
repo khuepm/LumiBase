@@ -587,15 +587,67 @@ docker-compose down -v
 
 ### Database Management
 
+#### Seed Initial Data
+
+Add sample users to the database for development and testing:
+
+**On Linux/Mac:**
 ```bash
-# Seed initial data
+# Make script executable
+chmod +x scripts/seed-data.sh
+
+# Run seed script
 ./scripts/seed-data.sh
+```
 
-# Reset database
+**On Windows PowerShell:**
+```powershell
+# Run seed script
+.\scripts\seed-data.ps1
+```
+
+**Using TypeScript (Cross-platform):**
+```bash
+# Install tsx if not already installed
+npm install -g tsx
+
+# Run seed script
+npx tsx scripts/seed-data.ts
+```
+
+The seed script will:
+- ✅ Load environment variables from `.env`
+- ✅ Connect to PostgreSQL database
+- ✅ Insert 5 sample users (or update if they already exist)
+- ✅ Display all users in the database
+
+**Sample Users Created:**
+1. alice@example.com (Alice Johnson)
+2. bob@example.com (Bob Smith)
+3. charlie@example.com (Charlie Brown)
+4. diana@example.com (Diana Prince)
+5. eve@example.com (Eve Wilson)
+
+**⚠️ Note**: These are test users for development only. In production, users should be created via Firebase Authentication and synced automatically by Cloud Functions.
+
+#### Reset Database
+
+```bash
+# Reset database (coming soon)
 ./scripts/reset-db.sh
+```
 
+#### Access PostgreSQL Shell
+
+```bash
 # Access PostgreSQL shell
 docker-compose exec postgres psql -U directus -d directus
+
+# View all users
+SELECT * FROM public.users;
+
+# Exit shell
+\q
 ```
 
 ### Firebase Cloud Functions
