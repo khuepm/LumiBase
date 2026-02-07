@@ -17,7 +17,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
   - Commit và push thay đổi: `git add . && git commit -m "feat(task-1): setup project structure and environment configuration" && git push`
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 9.1, 11.1, 11.2, 11.3, 11.4, 11.7_
 
-- [ ] 2. Tạo Docker Compose configuration
+- [x] 2. Tạo Docker Compose configuration
   - [x] 2.1 Viết docker-compose.yml với PostgreSQL service
     - Định nghĩa PostgreSQL 15 service với health checks
     - Configure volumes cho data persistence
@@ -34,7 +34,8 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add docker-compose.yml && git commit -m "feat(task-2.2): add Directus service to docker-compose" && git push`
     - _Requirements: 1.1, 1.3, 1.5, 1.6, 1.7, 7.1, 7.5, 7.6, 7.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ]* 2.3 Viết tests cho Docker Compose configuration
+  - [x] 2.3 Viết tests cho Docker Compose configuration
+
     - Test Directus image version >= 10
     - Test PostgreSQL image version >= 15
     - Test network configuration
@@ -43,14 +44,14 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add tests/ && git commit -m "test(task-2.3): add docker-compose configuration tests" && git push`
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.7, 11.1, 11.2, 11.3, 11.7_
 
-- [~] 3. Checkpoint - Verify Docker setup
+- [x] 3. Checkpoint - Verify Docker setup
   - Chạy `docker-compose up` và verify tất cả services start thành công
   - Verify Directus accessible tại http://localhost:8055
   - Verify PostgreSQL connection từ Directus
   - Hỏi user nếu có vấn đề phát sinh
 
-- [ ] 4. Tạo database schema và migration scripts
-  - [~] 4.1 Viết SQL migration script để tạo users table
+- [x] 4. Tạo database schema và migration scripts
+  - [x] 4.1 Viết SQL migration script để tạo users table
     - Tạo file init-scripts/01-create-schema.sql
     - Định nghĩa bảng public.users với tất cả columns
     - Thêm primary key constraint trên firebase_uid
@@ -60,13 +61,15 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add init-scripts/ && git commit -m "feat(task-4.1): add database schema migration script" && git push`
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.6, 4.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ]* 4.2 Viết property test cho database schema integrity
+  - [x] 4.2 Viết property test cho database schema integrity
+
     - **Property 1: Database Schema Integrity**
     - **Validates: Requirements 4.1, 4.2, 4.3, 4.6**
     - Commit và push: `git add tests/ && git commit -m "test(task-4.2): add property test for database schema integrity" && git push`
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
   
-  - [ ]* 4.3 Viết unit tests cho database schema
+  - [x] 4.3 Viết unit tests cho database schema
+
     - Test bảng users tồn tại với đúng columns
     - Test data types và constraints
     - Test indexes tồn tại
@@ -74,8 +77,8 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add tests/ && git commit -m "test(task-4.3): add unit tests for database schema" && git push`
     - _Requirements: 4.1, 4.2, 4.3, 4.6, 4.7, 11.1, 11.2, 11.3, 11.7_
 
-- [ ] 5. Implement Row Level Security policies
-  - [~] 5.1 Viết SQL script để setup RLS policies
+- [x] 5. Implement Row Level Security policies
+  - [x] 5.1 Viết SQL script để setup RLS policies
     - Tạo file init-scripts/02-setup-rls.sql
     - Enable RLS trên bảng public.users
     - Tạo policy cho users đọc own data
@@ -85,13 +88,15 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add init-scripts/ && git commit -m "feat(task-5.1): add RLS policies for users table" && git push`
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.6, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ]* 5.2 Viết property test cho RLS access control
+  - [x] 5.2 Viết property test cho RLS access control
+
     - **Property 2: Row Level Security Access Control**
     - **Validates: Requirements 5.2, 5.3, 5.4, 5.5, 5.6, 5.7**
     - Commit và push: `git add tests/ && git commit -m "test(task-5.2): add property test for RLS access control" && git push`
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
   
-  - [ ]* 5.3 Viết integration tests cho RLS policies
+  - [x] 5.3 Viết integration tests cho RLS policies
+
     - Test user có thể đọc own data với valid JWT
     - Test user không thể đọc data của user khác
     - Test user có thể update own data
@@ -101,15 +106,15 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add tests/ && git commit -m "test(task-5.3): add integration tests for RLS policies" && git push`
     - _Requirements: 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 11.1, 11.2, 11.3, 11.7_
 
-- [~] 6. Checkpoint - Verify database setup
+- [x] 6. Checkpoint - Verify database setup
   - Restart Docker containers để apply migrations
   - Verify schema được tạo đúng trong PostgreSQL
   - Verify RLS policies được enable
   - Chạy database tests
   - Hỏi user nếu có vấn đề phát sinh
 
-- [ ] 7. Setup Firebase project và Cloud Functions
-  - [~] 7.1 Initialize Firebase project structure
+- [x] 7. Setup Firebase project và Cloud Functions
+  - [x] 7.1 Initialize Firebase project structure
     - Chạy `firebase init` để setup Functions
     - Configure TypeScript cho Functions
     - Setup Firebase Admin SDK
@@ -117,7 +122,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add functions/ firebase.json .firebaserc && git commit -m "feat(task-7.1): initialize Firebase project structure" && git push`
     - _Requirements: 2.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [~] 7.2 Implement Cloud Function để sync users
+  - [x] 7.2 Implement Cloud Function để sync users
     - Viết function syncUserToSupabase trigger onCreate
     - Implement logic trích xuất user data từ Firebase
     - Implement upsert logic vào Supabase
@@ -126,7 +131,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add functions/src/ && git commit -m "feat(task-7.2): implement Cloud Function to sync users to Supabase" && git push`
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 7.3 Implement Cloud Function để delete users (optional)
+  - [x] 7.3 Implement Cloud Function để delete users (optional)
 
     - Viết function deleteUserFromSupabase trigger onDelete
     - Implement delete logic từ Supabase
@@ -134,13 +139,13 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add functions/src/ && git commit -m "feat(task-7.3): implement Cloud Function to delete users from Supabase" && git push`
     - _Requirements: 6.1, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 7.4 Viết property test cho Cloud Function data extraction
+  - [x] 7.4 Viết property test cho Cloud Function data extraction
     - **Property 4: Cloud Function Data Extraction**
     - **Validates: Requirements 6.2**
     - Commit và push: `git add functions/test/ && git commit -m "test(task-7.4): add property test for Cloud Function data extraction" && git push`
     - _Requirements: 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 7.5 Viết unit tests cho Cloud Functions
+  - [x] 7.5 Viết unit tests cho Cloud Functions
 
     - Test function extract đúng fields từ Firebase user object
     - Test upsert logic với mock Supabase client
@@ -168,7 +173,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add README.md docs/ && git commit -m "docs(task-9.1): add Supabase project setup guide" && git push`
     - _Requirements: 3.2, 3.4, 3.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 9.2 Viết integration tests cho Supabase JWT verification
+  - [x] 9.2 Viết integration tests cho Supabase JWT verification
 
     - Test Supabase accept valid Firebase JWT tokens
     - Test Supabase reject invalid JWT signatures
@@ -178,7 +183,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add tests/ && git commit -m "test(task-9.2): add integration tests for Supabase JWT verification" && git push`
     - _Requirements: 3.3, 3.5, 10.1, 10.2, 10.3, 10.4, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 9.3 Viết property test cho JWT token validation
+  - [~] 9.3 Viết property test cho JWT token validation
 
     - **Property 5: JWT Token Validation**
     - **Validates: Requirements 10.2, 10.4**
@@ -226,7 +231,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add scripts/ && git commit -m "feat(task-12.2): add database reset script" && git push`
     - _Requirements: 9.5, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 12.3 Viết property test cho environment configuration completeness
+  - [~] 12.3 Viết property test cho environment configuration completeness
 
     - **Property 3: Environment Configuration Completeness**
     - **Validates: Requirements 8.1, 8.3, 8.4, 8.5, 8.6, 8.7**
@@ -241,14 +246,14 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add docker-compose.test.yml package.json && git commit -m "feat(task-13.1): configure test environment" && git push`
     - _Requirements: 9.2, 9.3, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 13.2 Setup Firebase emulator
+  - [~] 13.2 Setup Firebase emulator
 
     - Configure Firebase emulator suite
     - Document cách chạy tests với emulator
     - Commit và push: `git add firebase.json .firebaserc docs/ && git commit -m "feat(task-13.2): setup Firebase emulator" && git push`
     - _Requirements: 9.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 13.3 Setup CI/CD pipeline
+  - [~] 13.3 Setup CI/CD pipeline
 
     - Tạo GitHub Actions workflow
     - Configure automated testing
@@ -274,7 +279,7 @@ Plan này hướng dẫn từng bước để thiết lập môi trường phát
     - Commit và push: `git add docs/ README.md && git commit -m "docs(task-14.2): document testing procedures" && git push`
     - _Requirements: 9.6, 9.7, 11.1, 11.2, 11.3, 11.7_
   
-  - [ ] 14.3 Document deployment procedures
+  - [~] 14.3 Document deployment procedures
 
     - Add production deployment checklist
     - Add security best practices
