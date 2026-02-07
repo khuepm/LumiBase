@@ -32,30 +32,84 @@ LumiBase is forged from the best modern technologies:
 
 ## 🏗 Architecture Overview
 
+### System Architecture Diagram
+
+```mermaid
+graph TB
+    Client[Client Application]
+    Firebase[Firebase Auth]
+    Functions[Cloud Functions]
+    Supabase[Supabase PostgreSQL]
+    Directus[Directus CMS]
+    
+    Client -->|1. Authenticate| Firebase
+    Firebase -->|2. JWT Token| Client
+    Client -->|3. API Request + JWT| Supabase
+    Supabase -->|4. Verify JWT| Firebase
+    Firebase -->|5. onCreate Trigger| Functions
+    Functions -->|6. Sync User Data| Supabase
+    Directus -->|7. Direct DB Connection| Supabase
+    
+    subgraph "Docker Environment"
+        Directus
+        Supabase
+    end
 ```
-┌─────────────┐
-│   Client    │
-│ Application │
-└──────┬──────┘
-       │
-       ├──────────────┐
-       │              │
-       ▼              ▼
-┌──────────┐   ┌──────────────┐
-│ Firebase │   │   Supabase   │
-│   Auth   │◄──┤  PostgreSQL  │
-└────┬─────┘   └──────▲───────┘
-     │                │
-     │         ┌──────┴───────┐
-     │         │   Directus   │
-     │         │     CMS      │
-     │         └──────────────┘
-     │
-     ▼
-┌──────────────┐
-│    Cloud     │
-│  Functions   │
-└──────────────┘
+
+### Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Client
+    participant Firebase
+    participant CloudFn
+    participant Supabase
+    
+    User->>Client: Sign in (Google/Email)
+    Client->>Firebase: Authenticate
+    Firebase->>Firebase: Create user
+    Firebase->>CloudFn: Trigger onCreate
+    CloudFn->>Supabase: INSERT INTO users
+    Firebase->>Client: JWT Token
+    Client->>Supabase: API Request + JWT
+    Supabase->>Firebase: Verify JWT
+    Firebase->>Supabase: Valid + firebase_uid
+    Supabase->>Supabase: Check RLS policies
+    Supabase->>Client: Data response
+```
+
+### Docker Architecture
+
+```mermaid
+graph LR
+    subgraph "Docker Compose"
+        Directus[Directus Container<br/>Port 8055]
+        Postgres[PostgreSQL Container<br/>Port 5432]
+        Network[Docker Network<br/>directus-network]
+        
+        Directus -.->|connects via| Network
+        Postgres -.->|connects via| Network
+        Directus -->|DB Connection| Postgres
+    end
+    
+    Host[Host Machine] -->|Port Mapping| Directus
+    Volumes[Docker Volumes] -->|Data Persistence| Postgres
+    Volumes2[Docker Volumes] -->|Uploads/Extensions| Directus
+```
+
+### Data Model
+
+```mermaid
+erDiagram
+    USERS {
+        varchar firebase_uid PK
+        varchar email UK
+        varchar display_name
+        text photo_url
+        timestamp created_at
+        timestamp updated_at
+    }
 ```
 
 ### How It Works
@@ -66,6 +120,7 @@ LumiBase is forged from the best modern technologies:
 4. **Verification**: Supabase verifies JWT token with Firebase
 5. **Auto-Sync**: Cloud Functions automatically sync user data from Firebase to Supabase
 6. **Content Management**: Directus connects directly to Supabase database for content management
+7. **Row Level Security**: Supabase RLS policies ensure users can only access their own data
 
 ## 🚀 Getting Started
 
@@ -777,65 +832,998 @@ npm run serve
 - [Architecture Design](./.kiro/specs/directus-firebase-supabase-setup/design.md) - System architecture and design decisions
 - [Implementation Tasks](./.kiro/specs/directus-firebase-supabase-setup/tasks.md) - Step-by-step implementation guide
 - [Firebase Authentication Guide](./docs/firebase-authentication-guide.md) - Complete Firebase Authentication setup guide
+- [Supabase Project Setup Guide](./docs/supabase-project-setup-guide.md) - Complete Supabase configuration guide
+- [Test Environment Guide](./docs/TEST-ENVIRONMENT-GUIDE.md) - Testing infrastructure and procedures
+- [Firebase Emulator Guide](./docs/FIREBASE-EMULATOR-GUIDE.md) - Local Firebase development
+- [CI/CD Setup Guide](./docs/CI-CD-SETUP-GUIDE.md) - Continuous integration and deployment
 - [Firebase Documentation](https://firebase.google.com/docs)
 - [Supabase Documentation](https://supabase.com/docs)
 - [Directus Documentation](https://docs.directus.io/)
+
+## 🔌 API Documentation
+
+### Supabase REST API
+
+LumiBase uses Supabase's auto-generated REST API for database operations.
+
+#### Base URL
+```
+https://your-project-id.supabase.co/rest/v1
+```
+
+#### Authentication
+All requests must include JWT token in Authorization header:
+```bash
+Authorization: Bearer <firebase-jwt-token>
+```
+
+#### Get Current User Data
+
+```bash
+GET /users?firebase_uid=eq.<user-firebase-uid>
+```
+
+**Example Request:**
+```bash
+curl -X GET 'https://xxxxx.supabase.co/rest/v1/users?firebase_uid=eq.abc123' \
+  -H "Authorization: Bearer <jwt-token>" \
+  -H "apikey: <supabase-anon-key>"
+```
+
+**Example Response:**
+```json
+[
+  {
+    "firebase_uid": "abc123",
+    "email": "user@example.com",
+    "display_name": "John Doe",
+    "photo_url": "https://example.com/photo.jpg",
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T00:00:00Z"
+  }
+]
+```
+
+#### Update User Profile
+
+```bash
+PATCH /users?firebase_uid=eq.<user-firebase-uid>
+```
+
+**Example Request:**
+```bash
+curl -X PATCH 'https://xxxxx.supabase.co/rest/v1/users?firebase_uid=eq.abc123' \
+  -H "Authorization: Bearer <jwt-token>" \
+  -H "apikey: <supabase-anon-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "display_name": "Jane Doe",
+    "photo_url": "https://example.com/new-photo.jpg"
+  }'
+```
+
+**Example Response:**
+```json
+{
+  "firebase_uid": "abc123",
+  "email": "user@example.com",
+  "display_name": "Jane Doe",
+  "photo_url": "https://example.com/new-photo.jpg",
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-02T10:30:00Z"
+}
+```
+
+#### Error Responses
+
+**401 Unauthorized** - Invalid or expired JWT token:
+```json
+{
+  "code": "PGRST301",
+  "message": "JWT expired",
+  "details": null,
+  "hint": null
+}
+```
+
+**403 Forbidden** - RLS policy violation:
+```json
+{
+  "code": "42501",
+  "message": "new row violates row-level security policy",
+  "details": null,
+  "hint": null
+}
+```
+
+### Directus REST API
+
+Directus provides a comprehensive REST API for content management.
+
+#### Base URL
+```
+http://localhost:8055
+```
+
+#### Authentication
+
+**Login:**
+```bash
+POST /auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "your-password"
+}
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expires": 900000,
+    "refresh_token": "abc123..."
+  }
+}
+```
+
+#### Get Users
+
+```bash
+GET /items/users
+Authorization: Bearer <directus-access-token>
+```
+
+**Example Response:**
+```json
+{
+  "data": [
+    {
+      "firebase_uid": "abc123",
+      "email": "user@example.com",
+      "display_name": "John Doe",
+      "photo_url": "https://example.com/photo.jpg",
+      "created_at": "2024-01-01T00:00:00Z",
+      "updated_at": "2024-01-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+#### Create/Update User
+
+```bash
+POST /items/users
+Authorization: Bearer <directus-access-token>
+Content-Type: application/json
+
+{
+  "firebase_uid": "new-user-123",
+  "email": "newuser@example.com",
+  "display_name": "New User"
+}
+```
+
+### Firebase Cloud Functions
+
+#### syncUserToSupabase
+
+**Trigger:** Firebase Auth onCreate
+**Purpose:** Automatically sync new users to Supabase database
+
+**Triggered automatically when:**
+- User signs up with Email/Password
+- User signs in with Google OAuth for the first time
+
+**Function behavior:**
+1. Extracts user data from Firebase Auth user object
+2. Inserts or updates user in Supabase `public.users` table
+3. Uses service role key to bypass RLS policies
+4. Logs success/failure for monitoring
+
+**No manual invocation required** - this function runs automatically.
+
+#### deleteUserFromSupabase (Optional)
+
+**Trigger:** Firebase Auth onDelete
+**Purpose:** Remove user data from Supabase when deleted from Firebase
+
+**Triggered automatically when:**
+- User is deleted from Firebase Authentication
+
+**Function behavior:**
+1. Extracts firebase_uid from deleted user
+2. Deletes corresponding row from Supabase `public.users` table
+3. Logs success/failure for monitoring
+
+### Client SDK Examples
+
+#### Firebase Authentication
+
+```typescript
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+
+const firebaseConfig = {
+  apiKey: process.env.FIREBASE_WEB_API_KEY,
+  authDomain: `${process.env.FIREBASE_PROJECT_ID}.firebaseapp.com`,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+// Sign in with Google
+async function signInWithGoogle() {
+  const provider = new GoogleAuthProvider();
+  const result = await signInWithPopup(auth, provider);
+  const token = await result.user.getIdToken();
+  return { user: result.user, token };
+}
+
+// Sign in with Email/Password
+async function signInWithEmail(email: string, password: string) {
+  const result = await signInWithEmailAndPassword(auth, email, password);
+  const token = await result.user.getIdToken();
+  return { user: result.user, token };
+}
+```
+
+#### Supabase Client
+
+```typescript
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!
+);
+
+// Set Firebase JWT token
+async function setAuthToken(firebaseToken: string) {
+  await supabase.auth.setSession({
+    access_token: firebaseToken,
+    refresh_token: '',
+  });
+}
+
+// Get current user data
+async function getUserData(firebaseUid: string) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('firebase_uid', firebaseUid)
+    .single();
+  
+  if (error) throw error;
+  return data;
+}
+
+// Update user profile
+async function updateUserProfile(firebaseUid: string, updates: any) {
+  const { data, error } = await supabase
+    .from('users')
+    .update(updates)
+    .eq('firebase_uid', firebaseUid)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data;
+}
+```
+
+#### Complete Authentication Flow
+
+```typescript
+// 1. Sign in with Firebase
+const { user, token } = await signInWithGoogle();
+
+// 2. Set token for Supabase
+await setAuthToken(token);
+
+// 3. Wait for Cloud Function to sync (usually < 2 seconds)
+await new Promise(resolve => setTimeout(resolve, 2000));
+
+// 4. Fetch user data from Supabase
+const userData = await getUserData(user.uid);
+
+console.log('User authenticated and synced:', userData);
+```
+
+### Rate Limits
+
+**Supabase:**
+- Free tier: 500 requests per second
+- Pro tier: 1000+ requests per second
+
+**Firebase:**
+- Authentication: 10 requests per second per IP
+- Cloud Functions: 1000 concurrent executions (free tier)
+
+**Directus:**
+- No built-in rate limiting (configure via reverse proxy if needed)
 
 ## 🐛 Troubleshooting
 
 ### Docker Issues
 
-**Problem**: Port 8055 already in use
-```bash
-# Find process using port
+#### Port Already in Use
+
+**Problem**: Port 8055 or 5432 already in use
+
+**On Windows:**
+```powershell
+# Find process using port 8055
 netstat -ano | findstr :8055
 
-# Kill the process or change port in docker-compose.yml
+# Kill the process (replace PID with actual process ID)
+taskkill /PID <PID> /F
+
+# Or change port in docker-compose.yml
 ```
 
-**Problem**: PostgreSQL won't start
+**On Linux/Mac:**
+```bash
+# Find process using port 8055
+lsof -i :8055
+
+# Kill the process
+kill -9 <PID>
+
+# Or change port in docker-compose.yml
+```
+
+**Solution**: Change port mapping in `docker-compose.yml`:
+```yaml
+services:
+  directus:
+    ports:
+      - "8056:8055"  # Use different host port
+```
+
+#### PostgreSQL Won't Start
+
+**Problem**: PostgreSQL container keeps restarting
+
+**Diagnosis:**
 ```bash
 # Check logs
 docker-compose logs postgres
 
-# Remove volumes and restart
+# Check container status
+docker-compose ps
+```
+
+**Common causes:**
+1. **Port conflict**: Port 5432 already in use
+2. **Permission issues**: Volume mount permissions
+3. **Corrupted data**: Previous incomplete shutdown
+
+**Solutions:**
+```bash
+# Solution 1: Remove volumes and restart
 docker-compose down -v
+docker-compose up -d
+
+# Solution 2: Check port availability
+netstat -ano | findstr :5432  # Windows
+lsof -i :5432                 # Linux/Mac
+
+# Solution 3: Verify environment variables
+docker-compose config
+```
+
+#### Directus Container Crashes
+
+**Problem**: Directus container exits immediately after starting
+
+**Diagnosis:**
+```bash
+# View detailed logs
+docker-compose logs directus --tail=100
+
+# Check environment variables
+docker-compose exec directus env | grep DB_
+```
+
+**Common causes:**
+1. **Database connection failure**: Wrong credentials or PostgreSQL not ready
+2. **Missing environment variables**: KEY, SECRET, or ADMIN credentials
+3. **Port conflict**: Port 8055 already in use
+
+**Solutions:**
+```bash
+# Verify database connection
+docker-compose exec postgres pg_isready -U directus
+
+# Check environment variables in .env
+cat .env | grep -E "DB_|DIRECTUS_"
+
+# Restart with fresh logs
+docker-compose down
+docker-compose up
+```
+
+#### Network Issues
+
+**Problem**: Containers can't communicate with each other
+
+**Diagnosis:**
+```bash
+# List networks
+docker network ls
+
+# Inspect network
+docker network inspect directus-network
+
+# Test connectivity
+docker-compose exec directus ping postgres
+```
+
+**Solution:**
+```bash
+# Recreate network
+docker-compose down
+docker network prune
 docker-compose up -d
 ```
 
 ### Directus Issues
 
-**Problem**: Can't login to Directus
+#### Can't Login to Directus
+
+**Problem**: Admin credentials don't work
+
+**Solution 1 - Reset via environment variables:**
 ```bash
-# Reset admin password
-docker-compose exec directus npx directus users create --email admin@example.com --password newpassword --role administrator
+# Update .env file with new credentials
+DIRECTUS_ADMIN_EMAIL=admin@example.com
+DIRECTUS_ADMIN_PASSWORD=newpassword
+
+# Restart Directus
+docker-compose restart directus
 ```
 
-**Problem**: Database connection error
-- Verify `DB_USER`, `DB_PASSWORD`, `DB_NAME` in `.env`
-- Ensure PostgreSQL is running: `docker-compose ps`
+**Solution 2 - Create new admin user:**
+```bash
+docker-compose exec directus npx directus users create \
+  --email admin@example.com \
+  --password newpassword \
+  --role administrator
+```
+
+**Solution 3 - Reset database:**
+```bash
+# WARNING: This deletes all data
+docker-compose down -v
+docker-compose up -d
+```
+
+#### Database Connection Error
+
+**Problem**: Directus shows "Database connection failed"
+
+**Diagnosis:**
+```bash
+# Check PostgreSQL is running
+docker-compose ps postgres
+
+# Test connection from Directus container
+docker-compose exec directus nc -zv postgres 5432
+```
+
+**Common causes:**
+1. Wrong database credentials in `.env`
+2. PostgreSQL not fully started (check health)
+3. Network issues between containers
+
+**Solutions:**
+```bash
+# Verify environment variables
+echo "DB_HOST: $DB_HOST"
+echo "DB_USER: $DB_USER"
+echo "DB_NAME: $DB_NAME"
+
+# Wait for PostgreSQL health check
+docker-compose up -d postgres
+sleep 10
+docker-compose up -d directus
+
+# Check PostgreSQL logs
+docker-compose logs postgres
+```
+
+#### CORS Errors
+
+**Problem**: Browser shows CORS errors when accessing Directus API
+
+**Solution**: Update `docker-compose.yml`:
+```yaml
+services:
+  directus:
+    environment:
+      CORS_ENABLED: "true"
+      CORS_ORIGIN: "true"  # Allow all origins (dev only)
+      # For production, specify exact origins:
+      # CORS_ORIGIN: "https://yourdomain.com,https://app.yourdomain.com"
+```
+
+Then restart:
+```bash
+docker-compose restart directus
+```
 
 ### Firebase Issues
 
-**Problem**: Cloud Functions not deploying
+#### Cloud Functions Not Deploying
+
+**Problem**: `firebase deploy --only functions` fails
+
+**Diagnosis:**
 ```bash
-# Check Firebase login
+# Check Firebase login status
 firebase login --reauth
 
 # Verify project
 firebase projects:list
-firebase use <project-id>
+firebase use --add
 
-# Check functions logs
-firebase functions:log
+# Check Node.js version
+node --version  # Should be 18+
+```
+
+**Common causes:**
+1. Not logged in to Firebase CLI
+2. Wrong project selected
+3. Build errors in TypeScript
+4. Missing dependencies
+
+**Solutions:**
+```bash
+# Re-authenticate
+firebase login --reauth
+
+# Select correct project
+firebase use <your-project-id>
+
+# Build and check for errors
+cd functions
+npm install
+npm run build
+
+# Deploy with verbose logging
+firebase deploy --only functions --debug
+```
+
+#### Functions Timeout
+
+**Problem**: Cloud Functions timeout after 60 seconds
+
+**Diagnosis:**
+```bash
+# View function logs
+firebase functions:log --only syncUserToSupabase
+
+# Check function execution time
+```
+
+**Solutions:**
+
+1. **Increase timeout** in `functions/src/index.ts`:
+```typescript
+export const syncUserToSupabase = functions
+  .runWith({ timeoutSeconds: 120 })  // Increase to 120 seconds
+  .auth.user().onCreate(async (user) => {
+    // ... function code
+  });
+```
+
+2. **Optimize function code**:
+- Use connection pooling for Supabase client
+- Reduce unnecessary API calls
+- Add proper error handling
+
+3. **Check network latency**:
+```bash
+# Test Supabase connection speed
+curl -w "@curl-format.txt" -o /dev/null -s https://your-project.supabase.co
+```
+
+#### Function Configuration Missing
+
+**Problem**: Functions can't access Supabase credentials
+
+**Diagnosis:**
+```bash
+# Check current configuration
+firebase functions:config:get
+
+# Should show:
+# {
+#   "supabase": {
+#     "url": "https://...",
+#     "service_key": "eyJ..."
+#   }
+# }
+```
+
+**Solution:**
+```bash
+# Set configuration
+firebase functions:config:set supabase.url="https://xxxxx.supabase.co"
+firebase functions:config:set supabase.service_key="eyJhbGc..."
+
+# Deploy functions
+firebase deploy --only functions
+```
+
+**For local development**, create `functions/.runtimeconfig.json`:
+```json
+{
+  "supabase": {
+    "url": "https://xxxxx.supabase.co",
+    "service_key": "eyJhbGc..."
+  }
+}
 ```
 
 ### Supabase Issues
 
-**Problem**: JWT verification fails
-- Verify `SUPABASE_JWT_SECRET` matches Firebase configuration
-- Check JWT token expiration
-- Ensure Firebase public keys are accessible
+#### JWT Verification Fails
+
+**Problem**: Supabase returns 401 Unauthorized with valid Firebase token
+
+**Diagnosis:**
+```bash
+# Decode JWT token to check claims
+# Use https://jwt.io or:
+echo "<token>" | cut -d. -f2 | base64 -d | jq
+```
+
+**Common causes:**
+1. Firebase not configured as auth provider in Supabase
+2. Wrong JWT secret
+3. Token expired
+4. Issuer mismatch
+
+**Solutions:**
+
+1. **Configure Firebase in Supabase Dashboard:**
+   - Go to Authentication → Providers
+   - Enable Firebase
+   - Set Project ID: `your-firebase-project-id`
+   - Set Issuer: `https://securetoken.google.com/your-firebase-project-id`
+
+2. **Verify JWT secret matches:**
+```bash
+# In Supabase Dashboard: Settings → API → JWT Secret
+# Should match SUPABASE_JWT_SECRET in .env
+```
+
+3. **Check token expiration:**
+```typescript
+// Refresh token if expired
+const token = await user.getIdToken(true);  // Force refresh
+```
+
+#### RLS Policy Blocks Access
+
+**Problem**: User can't access their own data despite valid JWT
+
+**Diagnosis:**
+```sql
+-- Connect to database
+docker-compose exec postgres psql -U directus -d directus
+
+-- Check if RLS is enabled
+SELECT rowsecurity FROM pg_tables WHERE tablename = 'users';
+
+-- List policies
+SELECT * FROM pg_policies WHERE tablename = 'users';
+
+-- Test policy manually
+SET request.jwt.claims = '{"sub": "test-firebase-uid"}';
+SELECT * FROM public.users WHERE firebase_uid = 'test-firebase-uid';
+```
+
+**Common causes:**
+1. RLS policies not created correctly
+2. JWT doesn't contain firebase_uid claim
+3. Policy uses wrong claim name
+
+**Solutions:**
+
+1. **Verify RLS policies exist:**
+```sql
+-- Should show policies for SELECT, UPDATE, INSERT
+SELECT policyname, cmd FROM pg_policies WHERE tablename = 'users';
+```
+
+2. **Check JWT claims:**
+```typescript
+// Ensure Firebase token contains user_id or sub claim
+const token = await user.getIdToken();
+const decoded = JSON.parse(atob(token.split('.')[1]));
+console.log('JWT claims:', decoded);
+```
+
+3. **Recreate policies** if needed:
+```bash
+# Re-run RLS setup script
+docker-compose exec postgres psql -U directus -d directus -f /docker-entrypoint-initdb.d/02-setup-rls.sql
+```
+
+#### Connection Pool Exhausted
+
+**Problem**: "remaining connection slots are reserved" error
+
+**Diagnosis:**
+```sql
+-- Check active connections
+SELECT count(*) FROM pg_stat_activity;
+
+-- Check max connections
+SHOW max_connections;
+```
+
+**Solutions:**
+
+1. **Increase max connections** in `docker-compose.yml`:
+```yaml
+services:
+  postgres:
+    command: postgres -c max_connections=200
+```
+
+2. **Use connection pooling** in application code:
+```typescript
+import { createClient } from '@supabase/supabase-js';
+
+// Create single client instance (reuse across requests)
+const supabase = createClient(url, key, {
+  db: { schema: 'public' },
+  auth: { persistSession: false }
+});
+```
+
+3. **Close idle connections:**
+```sql
+-- Kill idle connections
+SELECT pg_terminate_backend(pid) 
+FROM pg_stat_activity 
+WHERE state = 'idle' 
+AND state_change < NOW() - INTERVAL '5 minutes';
+```
+
+### Testing Issues
+
+#### Tests Fail with "Connection Refused"
+
+**Problem**: Tests can't connect to database
+
+**Diagnosis:**
+```bash
+# Check test environment is running
+npm run test:env:status
+
+# Check test database port
+docker-compose -f docker-compose.test.yml ps
+```
+
+**Solution:**
+```bash
+# Start test environment
+npm run test:env:up
+
+# Wait for services to be ready
+sleep 10
+
+# Run tests
+npm test
+```
+
+#### Property Tests Fail Intermittently
+
+**Problem**: Property-based tests pass sometimes, fail other times
+
+**Diagnosis:**
+- Check test logs for specific failing inputs
+- Look for race conditions or timing issues
+
+**Solutions:**
+
+1. **Increase test timeout:**
+```typescript
+describe('Property Test', () => {
+  it('should pass', async () => {
+    // ... test code
+  }, 10000);  // 10 second timeout
+});
+```
+
+2. **Add proper cleanup:**
+```typescript
+afterEach(async () => {
+  // Clean up test data
+  await supabase.from('users').delete().neq('firebase_uid', '');
+});
+```
+
+3. **Use deterministic seeds:**
+```typescript
+import fc from 'fast-check';
+
+fc.assert(
+  fc.property(/* ... */),
+  { seed: 42, numRuns: 100 }  // Reproducible tests
+);
+```
+
+### Environment Variable Issues
+
+#### Missing Environment Variables
+
+**Problem**: Application fails with "undefined" errors
+
+**Diagnosis:**
+```bash
+# Check .env file exists
+ls -la .env
+
+# Verify variables are loaded
+docker-compose config | grep -A 20 environment
+```
+
+**Solution:**
+```bash
+# Copy from example
+cp .env.example .env
+
+# Edit with your values
+nano .env  # or use your preferred editor
+
+# Restart services to load new variables
+docker-compose down
+docker-compose up -d
+```
+
+#### Environment Variables Not Loading
+
+**Problem**: Docker Compose doesn't load .env file
+
+**Common causes:**
+1. `.env` file in wrong location (must be in same directory as `docker-compose.yml`)
+2. Syntax errors in `.env` file
+3. Variables with spaces not quoted
+
+**Solutions:**
+
+1. **Verify file location:**
+```bash
+# .env should be in project root
+ls -la .env
+pwd
+```
+
+2. **Check syntax:**
+```bash
+# Variables should be in format: KEY=value
+# No spaces around =
+# Quote values with spaces: KEY="value with spaces"
+
+# Test loading
+docker-compose config
+```
+
+3. **Use explicit env_file:**
+```yaml
+services:
+  directus:
+    env_file:
+      - .env
+```
+
+### Performance Issues
+
+#### Slow Database Queries
+
+**Problem**: Queries take too long to execute
+
+**Diagnosis:**
+```sql
+-- Enable query logging
+ALTER DATABASE directus SET log_statement = 'all';
+
+-- Check slow queries
+SELECT query, calls, total_time, mean_time
+FROM pg_stat_statements
+ORDER BY mean_time DESC
+LIMIT 10;
+```
+
+**Solutions:**
+
+1. **Add indexes:**
+```sql
+-- Already created in schema, but verify:
+CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
+CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON public.users(firebase_uid);
+```
+
+2. **Optimize queries:**
+```typescript
+// Use select() to fetch only needed columns
+const { data } = await supabase
+  .from('users')
+  .select('firebase_uid, email, display_name')  // Don't use *
+  .eq('firebase_uid', uid)
+  .single();
+```
+
+3. **Enable connection pooling** (see Connection Pool Exhausted above)
+
+#### High Memory Usage
+
+**Problem**: Docker containers use too much memory
+
+**Diagnosis:**
+```bash
+# Check container stats
+docker stats
+
+# Check PostgreSQL memory
+docker-compose exec postgres free -h
+```
+
+**Solutions:**
+
+1. **Limit container memory** in `docker-compose.yml`:
+```yaml
+services:
+  postgres:
+    mem_limit: 512m
+  directus:
+    mem_limit: 256m
+```
+
+2. **Optimize PostgreSQL:**
+```yaml
+services:
+  postgres:
+    command: |
+      postgres
+      -c shared_buffers=256MB
+      -c effective_cache_size=512MB
+      -c work_mem=16MB
+```
+
+### Getting More Help
+
+If you're still experiencing issues:
+
+1. **Check logs** for detailed error messages:
+   ```bash
+   docker-compose logs --tail=100 -f
+   ```
+
+2. **Search existing issues**: [GitHub Issues](https://github.com/khuepm/LumiBase/issues)
+
+3. **Create a new issue** with:
+   - Detailed description of the problem
+   - Steps to reproduce
+   - Error messages and logs
+   - Environment details (OS, Docker version, Node version)
+
+4. **Join discussions**: [GitHub Discussions](https://github.com/khuepm/LumiBase/discussions)
+
+5. **Check documentation**:
+   - [Firebase Docs](https://firebase.google.com/docs)
+   - [Supabase Docs](https://supabase.com/docs)
+   - [Directus Docs](https://docs.directus.io/)
+   - [Docker Docs](https://docs.docker.com/)
 
 ## 🤝 Contributing
 
