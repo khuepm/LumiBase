@@ -599,6 +599,33 @@ LumiBase/
 
 LumiBase includes comprehensive testing infrastructure with isolated test environment.
 
+**📖 Complete Testing Guide**: See [Testing Procedures Guide](./docs/TESTING-PROCEDURES.md) for comprehensive instructions on:
+- Running unit tests, property-based tests, and integration tests
+- Testing authentication flow locally
+- Debugging Cloud Functions locally
+- Continuous integration setup
+
+### Quick Start
+
+```bash
+# Start test environment
+npm run test:env:up
+
+# Run all tests
+npm test
+
+# Run specific test types
+npm run test:unit          # Unit tests only
+npm run test:property      # Property-based tests only
+npm run test:integration   # Integration tests only
+
+# Run with coverage
+npm run test:coverage
+
+# Stop test environment
+npm run test:env:down
+```
+
 ### Test Environment
 
 The test environment runs on separate ports to avoid conflicts with development:
@@ -624,35 +651,16 @@ npm run test:env:clean
 - PostgreSQL: `5433` (dev: 5432)
 - Directus: `8056` (dev: 8055)
 
-### Running Tests
-
-```bash
-# Run all tests
-npm test
-
-# Run unit tests
-npm run test:unit
-
-# Run integration tests
-npm run test:integration
-
-# Run property-based tests
-npm run test:property
-
-# Run with coverage
-npm run test:coverage
-
-# Run tests with automatic environment setup/teardown
-npm run test:with-env
-```
-
 ### Test Types
 
 - **Unit Tests**: Test individual functions and components in isolation
 - **Integration Tests**: Test interactions between components (database, API, etc.)
 - **Property-Based Tests**: Test universal properties across many generated inputs
 
-For detailed testing documentation, see [Test Environment Guide](./docs/TEST-ENVIRONMENT-GUIDE.md).
+For detailed testing documentation, see:
+- [Testing Procedures Guide](./docs/TESTING-PROCEDURES.md) - Complete testing guide
+- [Test Environment Guide](./docs/TEST-ENVIRONMENT-GUIDE.md) - Test environment setup
+- [Firebase Emulator Guide](./docs/FIREBASE-EMULATOR-GUIDE.md) - Local Firebase testing
 
 ## 🔄 CI/CD Pipeline
 
