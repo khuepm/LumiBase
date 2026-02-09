@@ -31,21 +31,56 @@ Triggered when a user is deleted from Firebase Authentication. Removes the corre
 
 ### Configuration
 
-1. **Set Firebase project:**
+⚠️ **Important:** Firebase has deprecated `functions:config` API. It will stop working in March 2026.
+
+#### Method 1: Environment Variables (Recommended for Development)
+
+1. **Create `.env` file:**
    ```bash
-   firebase use <your-project-id>
+   cd functions
+   cp .env.example .env
    ```
 
-2. **Configure Supabase credentials:**
+2. **Edit `.env` with your Supabase credentials:**
    ```bash
-   firebase functions:config:set supabase.url="https://xxxxx.supabase.co"
-   firebase functions:config:set supabase.service_key="your-service-role-key"
+   SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
    ```
 
-3. **Install dependencies:**
+3. **The `.env` file is automatically loaded by Firebase emulator**
+
+   ⚠️ Never commit `.env` to Git! (Already in `.gitignore`)
+
+#### Method 2: Firebase Secrets (Recommended for Production)
+
+1. **Set secrets:**
    ```bash
-   npm install
+   firebase functions:secrets:set SUPABASE_URL
+   # Enter URL when prompted
+
+   firebase functions:secrets:set SUPABASE_SERVICE_ROLE_KEY
+   # Enter service role key when prompted
    ```
+
+2. **Verify secrets:**
+   ```bash
+   firebase functions:secrets:list
+   ```
+
+#### Method 3: Legacy Config (Deprecated - Not Recommended)
+
+⚠️ **Warning:** This method will stop working in March 2026.
+
+```bash
+# Enable legacy commands (temporary)
+firebase experiments:enable legacyRuntimeConfigCommands
+
+# Set configuration
+firebase functions:config:set supabase.url="https://xxxxx.supabase.co"
+firebase functions:config:set supabase.service_key="your-service-role-key"
+```
+
+📖 **Migration Guide:** See [Firebase Config Migration Guide](../docs/FIREBASE-CONFIG-MIGRATION.md)
 
 ### Development
 
@@ -138,6 +173,17 @@ Then attach VS Code debugger (F5) to debug functions with breakpoints.
 
 ### Environment Variables for Local Testing
 
+**Method 1: Using .env file (Recommended)**
+
+Create `functions/.env`:
+
+```bash
+SUPABASE_URL=https://xxxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+```
+
+**Method 2: Using .runtimeconfig.json (Legacy)**
+
 Create a `functions/.runtimeconfig.json` file (not committed to Git):
 
 ```json
@@ -149,12 +195,14 @@ Create a `functions/.runtimeconfig.json` file (not committed to Git):
 }
 ```
 
-Or use environment variables:
+**Method 3: Using environment variables**
 
 ```bash
 export SUPABASE_URL=https://xxxxx.supabase.co
 export SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
+
+⚠️ **Note:** `.env` method is preferred as it's automatically loaded by Firebase emulator.
 
 ### Comprehensive Testing Guide
 

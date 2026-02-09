@@ -251,43 +251,61 @@ The Web API Key is used for client-side Firebase SDK initialization.
 
 After setting up authentication, you'll need to configure Firebase Functions to sync user data to Supabase.
 
+⚠️ **Important:** Firebase has deprecated `functions:config` API. See [Firebase Config Migration Guide](./docs/FIREBASE-CONFIG-MIGRATION.md) for details.
+
 **Set Supabase Configuration:**
 
+**Method 1: Environment Variables (Recommended for Development)**
+
+Create `functions/.env` file:
+
 ```bash
-# Login to Firebase CLI
-firebase login
+cd functions
+```
 
-# Select your project
-firebase use <your-project-id>
+Add to `functions/.env`:
 
-# Set Supabase URL
-firebase functions:config:set supabase.url="https://xxxxxxxxxxxxx.supabase.co"
+```bash
+SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
 
-# Set Supabase Service Role Key
+**⚠️ Important:** Never commit `.env` to Git! (Already in `.gitignore`)
+
+**Method 2: Firebase Secrets (Production)**
+
+```bash
+# Set secrets for production deployment
+firebase functions:secrets:set SUPABASE_URL
+# Enter URL when prompted: https://xxxxx.supabase.co
+
+firebase functions:secrets:set SUPABASE_SERVICE_ROLE_KEY
+# Enter service role key when prompted
+```
+
+**Method 3: Legacy Config (Deprecated)**
+
+⚠️ **Warning:** This method will stop working in March 2026.
+
+```bash
+# Only use if necessary
+firebase experiments:enable legacyRuntimeConfigCommands
+firebase functions:config:set supabase.url="https://xxxxx.supabase.co"
 firebase functions:config:set supabase.service_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```
 
 **Verify Configuration:**
 
 ```bash
-# View current configuration
+# For environment variables
+cat functions/.env
+
+# For secrets
+firebase functions:secrets:access SUPABASE_URL
+
+# For legacy config
 firebase functions:config:get
 ```
-
-**For Local Development:**
-
-Create `functions/.runtimeconfig.json` (this file is gitignored):
-
-```json
-{
-  "supabase": {
-    "url": "https://xxxxxxxxxxxxx.supabase.co",
-    "service_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-  }
-}
-```
-
-**⚠️ Important:** Never commit `.runtimeconfig.json` to Git!
 
 #### 2.8 Firebase Configuration Summary
 
@@ -506,10 +524,27 @@ Firebase Cloud Functions automatically sync user data from Firebase Authenticati
    ```
 
 3. **Configure Supabase credentials for Cloud Functions**:
+
+   ⚠️ **Note:** Legacy `functions:config` is deprecated. Use environment variables or secrets instead.
+
+   **Option A: Environment Variables (Development)**
    ```bash
-   firebase functions:config:set supabase.url="<your-supabase-url>"
-   firebase functions:config:set supabase.service_key="<your-supabase-service-role-key>"
+   cd functions
    ```
+   
+   Create `functions/.env`:
+   ```bash
+   SUPABASE_URL=<your-supabase-url>
+   SUPABASE_SERVICE_ROLE_KEY=<your-supabase-service-role-key>
+   ```
+
+   **Option B: Firebase Secrets (Production)**
+   ```bash
+   firebase functions:secrets:set SUPABASE_URL
+   firebase functions:secrets:set SUPABASE_SERVICE_ROLE_KEY
+   ```
+
+   📖 **Migration Guide**: See [Firebase Config Migration Guide](./docs/FIREBASE-CONFIG-MIGRATION.md)
 
 #### Install Dependencies and Build:
 

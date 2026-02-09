@@ -175,11 +175,9 @@ FIREBASE_WEB_API_KEY=AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```bash
 # Chọn project
 firebase use <your-project-id>
-
-# Cấu hình Supabase cho Cloud Functions (sẽ làm sau khi có Supabase)
-firebase functions:config:set supabase.url="https://xxxxx.supabase.co"
-firebase functions:config:set supabase.service_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```
+
+**Lưu ý**: Cấu hình Supabase cho Cloud Functions sẽ được thực hiện sau khi có Supabase (xem Bước 7).
 
 📖 **Hướng dẫn chi tiết**: Xem [docs/firebase-authentication-guide.md](docs/firebase-authentication-guide.md)
 
@@ -221,7 +219,58 @@ SUPABASE_JWT_SECRET=your-super-secret-jwt-token-with-at-least-32-characters-long
    - **Issuer URL**: `https://securetoken.google.com/your-firebase-project-id`
 5. Click **Save**
 
-### Bước 4: Tạo Database Schema
+### Bước 4: Cấu hình Firebase Cloud Functions với Supabase
+
+Sau khi có Supabase URL và Service Role Key, cấu hình cho Firebase Functions:
+
+#### Phương pháp 1: Sử dụng .env file (Khuyến nghị)
+
+1. Tạo file `.env` trong thư mục `functions/`:
+
+```bash
+cd functions
+```
+
+2. Tạo file `.env` với nội dung:
+
+```bash
+SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+3. Cập nhật `functions/.gitignore` để không commit file này:
+
+```bash
+# Đã có sẵn trong .gitignore
+.env
+.env.*
+```
+
+#### Phương pháp 2: Sử dụng Firebase Secrets (Production)
+
+```bash
+# Set secrets cho production
+firebase functions:secrets:set SUPABASE_URL
+# Nhập URL khi được hỏi: https://xxxxx.supabase.co
+
+firebase functions:secrets:set SUPABASE_SERVICE_ROLE_KEY
+# Nhập service role key khi được hỏi
+```
+
+#### Phương pháp 3: Legacy Config (Deprecated - Không khuyến nghị)
+
+⚠️ **Cảnh báo**: Phương pháp này sẽ ngừng hoạt động vào tháng 3/2026.
+
+```bash
+# Chỉ dùng nếu cần thiết
+firebase experiments:enable legacyRuntimeConfigCommands
+firebase functions:config:set supabase.url="https://xxxxx.supabase.co"
+firebase functions:config:set supabase.service_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+**Khuyến nghị**: Sử dụng Phương pháp 1 cho development và Phương pháp 2 cho production.
+
+### Bước 5: Tạo Database Schema
 
 Schema sẽ được tạo tự động khi khởi động Docker (xem bước tiếp theo).
 
@@ -763,11 +812,30 @@ firebase use <your-project-id>
 # Kiểm tra billing (Functions cần Blaze plan)
 # Vào Firebase Console → Upgrade to Blaze plan
 
-# Build lại
+# Kiểm tra cấu hình
 cd functions
+cat .env  # Kiểm tra environment variables
+
+# Build lại
 npm run build
 npm run deploy
 ```
+
+**Lỗi "functions.config() is deprecated":**
+
+Firebase đã ngừng hỗ trợ `functions:config` API. Sử dụng environment variables thay thế:
+
+```bash
+# Tạo file .env trong thư mục functions
+cd functions
+echo "SUPABASE_URL=https://xxxxx.supabase.co" > .env
+echo "SUPABASE_SERVICE_ROLE_KEY=your-key" >> .env
+
+# Deploy lại
+npm run deploy
+```
+
+📖 **Chi tiết**: Xem [Firebase Config Migration Guide](docs/FIREBASE-CONFIG-MIGRATION.md)
 
 ### User không được sync vào Supabase
 
@@ -778,17 +846,26 @@ npm run deploy
 # Kiểm tra Firebase Functions logs
 firebase functions:log
 
-# Kiểm tra config
-firebase functions:config:get
+# Kiểm tra environment variables
+cd functions
+cat .env
 
-# Set lại config nếu cần
-firebase functions:config:set supabase.url="YOUR_URL"
-firebase functions:config:set supabase.service_key="YOUR_KEY"
+# Nếu dùng secrets, kiểm tra:
+firebase functions:secrets:list
+
+# Set lại config nếu cần (environment variables)
+cd functions
+nano .env  # Hoặc notepad .env trên Windows
+
+# Hoặc dùng secrets (production)
+firebase functions:secrets:set SUPABASE_URL
+firebase functions:secrets:set SUPABASE_SERVICE_ROLE_KEY
 
 # Deploy lại functions
-cd functions
 npm run deploy
 ```
+
+📖 **Chi tiết**: Xem [Firebase Config Migration Guide](docs/FIREBASE-CONFIG-MIGRATION.md)
 
 ### RLS policies chặn truy cập
 
@@ -843,6 +920,7 @@ lsof -i :8055
 - [README.md](README.md) - Tổng quan dự án (English)
 - [project_specs.md](project_specs.md) - Đặc tả kỹ thuật
 - [docs/firebase-authentication-guide.md](docs/firebase-authentication-guide.md) - Hướng dẫn Firebase
+- [docs/FIREBASE-CONFIG-MIGRATION.md](docs/FIREBASE-CONFIG-MIGRATION.md) - Migration từ functions:config sang environment variables
 - [docs/supabase-project-setup-guide.md](docs/supabase-project-setup-guide.md) - Hướng dẫn Supabase
 - [docs/TESTING-PROCEDURES.md](docs/TESTING-PROCEDURES.md) - Hướng dẫn testing
 - [docs/DEPLOYMENT-PROCEDURES.md](docs/DEPLOYMENT-PROCEDURES.md) - Hướng dẫn deployment
