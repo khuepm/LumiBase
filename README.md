@@ -598,7 +598,15 @@ npm run deploy
 
 **❌ Having issues?** Check the [Firebase Functions README](functions/README.md) for detailed troubleshooting.
 
+## ⚡ Performance Optimization
+
+To ensure LumiBase can handle thousands of concurrent multi-tenant websites, we follow specific performance strategies:
+
+- [Performance Optimization Guide (EN)](docs/performance/PERFORMANCE-OPTIMIZATION-EN.md) - Deep dive into caching, database indexing, and infrastructure.
+- [Chiến lược Tối ưu hóa Hiệu năng (VN)](docs/performance/PERFORMANCE-OPTIMIZATION-VN.md) - Hướng dẫn chi tiết về tối ưu hóa đa website trên một mã nguồn.
+
 ## 📁 Project Structure
+
 
 ```
 LumiBase/
