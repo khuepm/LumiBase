@@ -4,9 +4,11 @@ import type { AppEnv } from './env';
 import { withAuth } from './middleware/auth';
 import { withDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
+import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { withTenant } from './middleware/tenant';
 import { activityRouter } from './routes/activity';
+import { adminRouter } from './routes/admin';
 import { authRouter } from './routes/auth';
 import { collectionsRouter } from './routes/collections';
 import { deliverRouter } from './routes/deliver';
@@ -58,7 +60,7 @@ app.route('/health', healthRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withAuth(), withDb());
+api.use('*', withTenant(), withAuth(), withDb(), withRls());
 api.route('/auth', authRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
@@ -80,6 +82,7 @@ api.route('/webhooks', webhooksRouter);
 api.route('/activity', activityRouter);
 api.route('/realtime', realtimeRouter);
 api.route('/extensions', extensionsRouter);
+api.route('/admin', adminRouter);
 
 app.route('/api/v1', api);
 
