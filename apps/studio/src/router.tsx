@@ -4,29 +4,64 @@ import {
   createRouter,
   Outlet,
 } from '@tanstack/react-router';
+import { lazy, Suspense } from 'react';
 import { AppShell } from './components/app-shell';
-import { AccessLayout } from './modules/access/layout';
-import { PermissionMatrixPage } from './modules/access/permission-matrix';
-import { PoliciesListPage } from './modules/access/policies-page';
-import { PolicyDetailPage } from './modules/access/policy-detail';
-import { RoleDetailPage } from './modules/access/role-detail';
-import { RolesListPage } from './modules/access/roles-page';
-import { TestSandboxPage } from './modules/access/test-sandbox';
-import { ContentIndexPage } from './modules/content/index-page';
-import { ItemDetailPage } from './modules/content/item-detail';
-import { ItemsListPage } from './modules/content/items-list';
-import { CollectionsListPage } from './modules/data-model/list';
-import { CollectionDetailPage } from './modules/data-model/detail';
-import { CollectionWizardPage } from './modules/data-model/wizard';
-import { FilesPage } from './modules/files';
-import { DeveloperTypesPage } from './modules/settings/types-page';
-import { TranslationsPage } from './modules/translations';
-import { WebhooksPage } from './modules/settings/webhooks-page';
-import { ActivityPage } from './modules/settings/activity-page';
-import { ExtensionsPage } from './modules/settings/extensions-page';
-import { UsersLayout } from './modules/users/layout';
-import { TeamsPage } from './modules/users/teams-page';
-import { UsersPage } from './modules/users/users-page';
+
+// ---------------------------------------------------------------------------
+// Lazy-loaded route components — each import() becomes a separate chunk.
+// Heavy dependencies (Monaco, WYSIWYG, etc.) are pulled in only when needed.
+// ---------------------------------------------------------------------------
+const AccessLayout         = lazy(() => import('./modules/access/layout').then((m) => ({ default: m.AccessLayout })));
+const PermissionMatrixPage = lazy(() => import('./modules/access/permission-matrix').then((m) => ({ default: m.PermissionMatrixPage })));
+const PoliciesListPage     = lazy(() => import('./modules/access/policies-page').then((m) => ({ default: m.PoliciesListPage })));
+const PolicyDetailPage     = lazy(() => import('./modules/access/policy-detail').then((m) => ({ default: m.PolicyDetailPage })));
+const RoleDetailPage       = lazy(() => import('./modules/access/role-detail').then((m) => ({ default: m.RoleDetailPage })));
+const RolesListPage        = lazy(() => import('./modules/access/roles-page').then((m) => ({ default: m.RolesListPage })));
+const TestSandboxPage      = lazy(() => import('./modules/access/test-sandbox').then((m) => ({ default: m.TestSandboxPage })));
+const ContentIndexPage     = lazy(() => import('./modules/content/index-page').then((m) => ({ default: m.ContentIndexPage })));
+const ItemDetailPage       = lazy(() => import('./modules/content/item-detail').then((m) => ({ default: m.ItemDetailPage })));
+const ItemsListPage        = lazy(() => import('./modules/content/items-list').then((m) => ({ default: m.ItemsListPage })));
+const CollectionsListPage  = lazy(() => import('./modules/data-model/list').then((m) => ({ default: m.CollectionsListPage })));
+const CollectionDetailPage = lazy(() => import('./modules/data-model/detail').then((m) => ({ default: m.CollectionDetailPage })));
+const CollectionWizardPage = lazy(() => import('./modules/data-model/wizard').then((m) => ({ default: m.CollectionWizardPage })));
+const FilesPage            = lazy(() => import('./modules/files').then((m) => ({ default: m.FilesPage })));
+const DeveloperTypesPage   = lazy(() => import('./modules/settings/types-page').then((m) => ({ default: m.DeveloperTypesPage })));
+const TranslationsPage     = lazy(() => import('./modules/translations').then((m) => ({ default: m.TranslationsPage })));
+const WebhooksPage         = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
+const ActivityPage         = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
+const ExtensionsPage       = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
+const UsersLayout          = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
+const TeamsPage            = lazy(() => import('./modules/users/teams-page').then((m) => ({ default: m.TeamsPage })));
+const UsersPage            = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
+
+// ---------------------------------------------------------------------------
+// Shared suspense boundary — shows a lightweight spinner while chunks load.
+// ---------------------------------------------------------------------------
+function PageLoader() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading page"
+      className="flex h-full items-center justify-center p-12"
+    >
+      <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    </div>
+  );
+}
+
+function withSuspense(Component: React.ComponentType) {
+  return function SuspenseWrapper(props: Record<string, unknown>) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <Component {...props} />
+      </Suspense>
+    );
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Route tree
+// ---------------------------------------------------------------------------
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -39,151 +74,151 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  component: ContentIndexPage,
+  component: withSuspense(ContentIndexPage),
 });
 
 const contentCollectionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/content/$collection',
-  component: ItemsListPage,
+  component: withSuspense(ItemsListPage),
 });
 
 const contentItemRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/content/$collection/$id',
-  component: ItemDetailPage,
+  component: withSuspense(ItemDetailPage),
 });
 
 const dataModelRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/data-model',
-  component: CollectionsListPage,
+  component: withSuspense(CollectionsListPage),
 });
 
 const dataModelNewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/data-model/new',
-  component: CollectionWizardPage,
+  component: withSuspense(CollectionWizardPage),
 });
 
 const dataModelDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/data-model/$name',
-  component: CollectionDetailPage,
+  component: withSuspense(CollectionDetailPage),
 });
 
 const filesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/files',
-  component: () => (
+  component: withSuspense(() => (
     <div className="p-6">
       <FilesPage />
     </div>
-  ),
+  )),
 });
 
 const settingsTypesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/developer/types',
-  component: DeveloperTypesPage,
+  component: withSuspense(DeveloperTypesPage),
 });
 
 const translationsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/translations',
-  component: TranslationsPage,
+  component: withSuspense(TranslationsPage),
 });
 
 const webhooksRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/webhooks',
-  component: WebhooksPage,
+  component: withSuspense(WebhooksPage),
 });
 
 const activityRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/activity',
-  component: ActivityPage,
+  component: withSuspense(ActivityPage),
 });
 
 const extensionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/extensions',
-  component: ExtensionsPage,
+  component: withSuspense(ExtensionsPage),
 });
 
 const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/users',
-  component: () => (
+  component: withSuspense(() => (
     <UsersLayout>
       <Outlet />
     </UsersLayout>
-  ),
+  )),
 });
 
 const usersIndexRoute = createRoute({
   getParentRoute: () => usersRoute,
   path: '/',
-  component: UsersPage,
+  component: withSuspense(UsersPage),
 });
 
 const usersTeamsRoute = createRoute({
   getParentRoute: () => usersRoute,
   path: '/teams',
-  component: TeamsPage,
+  component: withSuspense(TeamsPage),
 });
 
 const accessRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/access',
-  component: () => (
+  component: withSuspense(() => (
     <AccessLayout>
       <Outlet />
     </AccessLayout>
-  ),
+  )),
 });
 
 const accessIndexRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: '/',
-  component: RolesListPage,
+  component: withSuspense(RolesListPage),
 });
 
 const accessRolesRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: 'roles',
-  component: RolesListPage,
+  component: withSuspense(RolesListPage),
 });
 
 const accessRoleDetailRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: 'roles/$id',
-  component: RoleDetailPage,
+  component: withSuspense(RoleDetailPage),
 });
 
 const accessPoliciesRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: 'policies',
-  component: PoliciesListPage,
+  component: withSuspense(PoliciesListPage),
 });
 
 const accessPolicyDetailRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: 'policies/$id',
-  component: PolicyDetailPage,
+  component: withSuspense(PolicyDetailPage),
 });
 
 const accessMatrixRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: 'matrix',
-  component: PermissionMatrixPage,
+  component: withSuspense(PermissionMatrixPage),
 });
 
 const accessSandboxRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: 'sandbox',
-  component: TestSandboxPage,
+  component: withSuspense(TestSandboxPage),
 });
 
 const routeTree = rootRoute.addChildren([
