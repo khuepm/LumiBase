@@ -183,3 +183,69 @@ export const extensions = pgTable(
     siteNameIdx: index('extensions_site_name_idx').on(t.siteId, t.name),
   }),
 );
+
+
+// ---------------------------------------------------------------------------
+// PGA1 — Translation Memory + MT provider config tables.
+// ---------------------------------------------------------------------------
+
+/**
+ * Translation Memory entries. Each row is a `(source, target)` pair with
+ * a quality score and optional context. Used for fuzzy-match suggestions
+ * during translation work and as a corpus to fine-tune MT output.
+ */
+export const translationMemory = pgTable(
+  'translation_memory',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    sourceLang: text('source_lang').notNull(),
+    targetLang: text('target_lang').notNull(),
+    sourceText: text('source_text').notNull(),
+    targetText: text('target_text').notNull(),
+    /** Optional context tag, e.g. `posts.title` or `glossary`. */
+    context: text('context'),
+    /** 0–100 quality score (TM matches above ~85 are usually safe to apply). */
+    quality: integer('quality').default(100).notNull(),
+    /** `human` | `mt` | `imported` */
+    source: text('source').default('human').notNull(),
+    /** Provider when `source = 'mt'` (e.g. `deepl`, `openai`, `workers-ai`). */
+    provider: text('provider'),
+    /** Hits — counter increments every time this entry is reused. */
+    hits: integer('hits').default(0).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    sitePairIdx: index('tm_site_pair_idx').on(t.siteId, t.sourceLang, t.targetLang),
+    contextIdx: index('tm_context_idx').on(t.siteId, t.context),
+  }),
+);
+
+/**
+ * Glossary entries — terminology that must be translated consistently
+ * (or kept verbatim). Higher priority than fuzzy TM matches.
+ */
+export const glossary = pgTable(
+  'glossary',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    sourceLang: text('source_lang').notNull(),
+    targetLang: text('target_lang').notNull(),
+    term: text('term').notNull(),
+    translation: text('translation').notNull(),
+    /** `do-not-translate` | `prefer` | `forbidden` */
+    rule: text('rule').default('prefer').notNull(),
+    note: text('note'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    sitePairIdx: index('glossary_site_pair_idx').on(t.siteId, t.sourceLang, t.targetLang),
+    termIdx: index('glossary_term_idx').on(t.siteId, t.term),
+  }),
+);

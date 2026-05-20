@@ -28,6 +28,7 @@ import { searchRouter } from './routes/search';
 import { settingsRouter } from './routes/settings';
 import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
+import { tmRouter } from './routes/translation-memory';
 import { typegenRouter } from './routes/typegen';
 import { usersRouter } from './routes/users';
 import { utilsRouter } from './routes/utils';
@@ -83,6 +84,7 @@ api.route('/activity', activityRouter);
 api.route('/realtime', realtimeRouter);
 api.route('/extensions', extensionsRouter);
 api.route('/admin', adminRouter);
+api.route('/tm', tmRouter);
 
 app.route('/api/v1', api);
 
