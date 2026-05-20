@@ -24,6 +24,7 @@ import { relationsRouter } from './routes/relations';
 import { rolesRouter } from './routes/roles';
 import { healthRouter } from './routes/health';
 import { mediaRouter } from './routes/media';
+import { marketplaceRouter } from './routes/marketplace';
 import { metricsRouter, withMetrics } from './routes/metrics';
 import { searchRouter } from './routes/search';
 import { scimRouter } from './routes/scim';
@@ -93,6 +94,7 @@ api.route('/extensions', extensionsRouter);
 api.route('/admin', adminRouter);
 api.route('/tm', tmRouter);
 api.route('/flows', flowsRouter);
+api.route('/marketplace', marketplaceRouter);
 
 app.route('/api/v1', api);
 

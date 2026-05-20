@@ -178,9 +178,26 @@ export const extensions = pgTable(
     capabilities: jsonb('capabilities').default([]).notNull(),
     installedBy: text('installed_by').references(() => users.id),
     installedAt: createdAt(),
+    // PGA5 — Marketplace fields.
+    /** Detached signature over the bundle SHA-256, base64-encoded. */
+    signature: text('signature'),
+    /** Algorithm used (e.g. `ed25519`, `rsa-pss-sha256`). */
+    signatureAlg: text('signature_alg'),
+    /** Public key id used to sign — looked up against the marketplace registry. */
+    publisherKeyId: text('publisher_key_id'),
+    /** Marketplace publisher (organization). */
+    publisher: text('publisher'),
+    /** Marketplace listing slug, used to build the public detail page URL. */
+    marketplaceSlug: text('marketplace_slug'),
+    /** When the extension was published to the marketplace (null = unpublished). */
+    publishedAt: timestamp('published_at'),
+    /** SHA-256 of the bundle for integrity verification at install time. */
+    bundleSha256: text('bundle_sha256'),
   },
   (t) => ({
     siteNameIdx: index('extensions_site_name_idx').on(t.siteId, t.name),
+    publisherIdx: index('extensions_publisher_idx').on(t.publisher, t.publishedAt),
+    marketplaceSlugIdx: index('extensions_marketplace_slug_idx').on(t.marketplaceSlug),
   }),
 );
 
