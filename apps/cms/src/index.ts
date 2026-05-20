@@ -26,6 +26,7 @@ import { healthRouter } from './routes/health';
 import { mediaRouter } from './routes/media';
 import { metricsRouter, withMetrics } from './routes/metrics';
 import { searchRouter } from './routes/search';
+import { scimRouter } from './routes/scim';
 import { settingsRouter } from './routes/settings';
 import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
@@ -59,6 +60,11 @@ app.route('/api/v1/utils', utilsRouter);
 app.route('/metrics', metricsRouter);
 // Comprehensive health check — tests DB, cache, search, storage, queue connectivity.
 app.route('/health', healthRouter);
+
+// SCIM 2.0 provisioning. Auth happens inside the router using SCIM_TOKEN.
+// Needs withDb() so it can write to the users/teams tables.
+app.use('/scim/v2/*', withDb());
+app.route('/scim/v2', scimRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();

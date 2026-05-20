@@ -1,0 +1,308 @@
+/**
+ * SCIM 2.0 provisioning routes — POST-GA4.
+ *
+ * Subset of RFC 7644 sufficient for Okta / Azure AD / Logto provisioning:
+ *
+ *   GET    /scim/v2/Users          — list users (with filtering)
+ *   GET    /scim/v2/Users/:id      — get user
+ *   POST   /scim/v2/Users          — create user
+ *   PUT    /scim/v2/Users/:id      — replace user
+ *   PATCH  /scim/v2/Users/:id      — partial update
+ *   DELETE /scim/v2/Users/:id      — soft delete (active = false)
+ *   GET    /scim/v2/Groups         — list groups (mapped to LumiBase teams)
+ *   POST   /scim/v2/Groups         — create group
+ *   GET    /scim/v2/ServiceProviderConfig
+ *   GET    /scim/v2/Schemas
+ *   GET    /scim/v2/ResourceTypes
+ *
+ * Auth: this router expects a separate `Authorization: Bearer <token>` set
+ * outside the normal Logto JWT pipeline. The expected token is read from
+ * `c.env.SCIM_TOKEN`. For local dev, set `SCIM_TOKEN=dev-scim` in wrangler.toml.
+ */
+
+import { teams, teamMembers, userSites, users } from '@lumibase/database';
+import { and, eq, ilike, or } from 'drizzle-orm';
+import { Hono } from 'hono';
+import type { AppEnv } from '../env';
+
+export const scimRouter = new Hono<AppEnv>();
+
+const SCIM_USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
+const SCIM_GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
+const SCIM_LIST_RESPONSE = 'urn:ietf:params:scim:api:messages:2.0:ListResponse';
+const SCIM_ERROR = 'urn:ietf:params:scim:api:messages:2.0:Error';
+
+// ── auth middleware ────────────────────────────────────────────────────────
+
+scimRouter.use('*', async (c, next) => {
+  const expected = (c.env as Record<string, string | undefined>)['SCIM_TOKEN'];
+  const auth = c.req.header('Authorization');
+  if (!expected || auth !== `Bearer ${expected}`) {
+    return c.json(
+      {
+        schemas: [SCIM_ERROR],
+        status: '401',
+        detail: 'Unauthorized SCIM client',
+      },
+      401,
+    );
+  }
+  await next();
+});
+
+// ── helpers ────────────────────────────────────────────────────────────────
+
+interface ScimUser {
+  schemas: string[];
+  id: string;
+  externalId?: string;
+  userName: string;
+  name: { givenName?: string | null; familyName?: string | null };
+  emails: Array<{ value: string; primary: boolean }>;
+  active: boolean;
+  meta: { resourceType: 'User'; created?: string; lastModified?: string };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toScimUser(u: any): ScimUser {
+  return {
+    schemas: [SCIM_USER_SCHEMA],
+    id: u.id,
+    externalId: u.logtoId,
+    userName: u.email,
+    name: { givenName: u.firstName, familyName: u.lastName },
+    emails: [{ value: u.email, primary: true }],
+    active: u.status === 'active',
+    meta: {
+      resourceType: 'User',
+      created: u.createdAt?.toISOString?.() ?? undefined,
+      lastModified: u.updatedAt?.toISOString?.() ?? undefined,
+    },
+  };
+}
+
+function parseFilter(filter: string): { field?: string; value?: string } {
+  // Accept simple filters: `userName eq "alice@example.com"`
+  const match = filter.match(/^(\w+)\s+eq\s+"([^"]+)"$/);
+  if (!match) return {};
+  return { field: match[1], value: match[2] };
+}
+
+// ── service provider config ───────────────────────────────────────────────
+
+scimRouter.get('/ServiceProviderConfig', (c) =>
+  c.json({
+    schemas: ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'],
+    documentationUri: 'https://docs.lumibase.dev/scim',
+    patch: { supported: true },
+    bulk: { supported: false, maxOperations: 0 },
+    filter: { supported: true, maxResults: 200 },
+    changePassword: { supported: false },
+    sort: { supported: false },
+    etag: { supported: false },
+    authenticationSchemes: [
+      { name: 'Bearer', description: 'OAuth Bearer Token', type: 'oauthbearertoken' },
+    ],
+  }),
+);
+
+scimRouter.get('/Schemas', (c) =>
+  c.json({
+    schemas: [SCIM_LIST_RESPONSE],
+    totalResults: 2,
+    Resources: [{ id: SCIM_USER_SCHEMA }, { id: SCIM_GROUP_SCHEMA }],
+  }),
+);
+
+scimRouter.get('/ResourceTypes', (c) =>
+  c.json({
+    schemas: [SCIM_LIST_RESPONSE],
+    totalResults: 2,
+    Resources: [
+      { id: 'User', name: 'User', endpoint: '/Users', schema: SCIM_USER_SCHEMA },
+      { id: 'Group', name: 'Group', endpoint: '/Groups', schema: SCIM_GROUP_SCHEMA },
+    ],
+  }),
+);
+
+// ── /Users ─────────────────────────────────────────────────────────────────
+
+scimRouter.get('/Users', async (c) => {
+  const db = c.get('db');
+  const filter = c.req.query('filter');
+
+  let rows;
+  if (filter) {
+    const parsed = parseFilter(filter);
+    if (parsed.field === 'userName' && parsed.value) {
+      rows = await db.select().from(users).where(eq(users.email, parsed.value));
+    } else if (parsed.field === 'externalId' && parsed.value) {
+      rows = await db.select().from(users).where(eq(users.logtoId, parsed.value));
+    } else {
+      rows = await db.select().from(users).where(or(ilike(users.email, `%${parsed.value ?? ''}%`)));
+    }
+  } else {
+    rows = await db.select().from(users).limit(200);
+  }
+
+  return c.json({
+    schemas: [SCIM_LIST_RESPONSE],
+    totalResults: rows.length,
+    startIndex: 1,
+    itemsPerPage: rows.length,
+    Resources: rows.map(toScimUser),
+  });
+});
+
+scimRouter.get('/Users/:id', async (c) => {
+  const db = c.get('db');
+  const id = c.req.param('id');
+  const [row] = await db.select().from(users).where(eq(users.id, id));
+  if (!row) {
+    return c.json(
+      { schemas: [SCIM_ERROR], status: '404', detail: 'User not found' },
+      404,
+    );
+  }
+  return c.json(toScimUser(row));
+});
+
+scimRouter.post('/Users', async (c) => {
+  const db = c.get('db');
+  const body = (await c.req.json()) as Partial<ScimUser> & { password?: string };
+
+  if (!body.userName) {
+    return c.json(
+      { schemas: [SCIM_ERROR], status: '400', detail: 'userName required' },
+      400,
+    );
+  }
+
+  const inserted = await db
+    .insert(users)
+    .values({
+      logtoId: body.externalId ?? body.userName,
+      email: body.userName,
+      firstName: body.name?.givenName ?? null,
+      lastName: body.name?.familyName ?? null,
+      status: body.active === false ? 'suspended' : 'active',
+    })
+    .returning();
+
+  return c.json(toScimUser(inserted[0]), 201);
+});
+
+scimRouter.put('/Users/:id', async (c) => {
+  const db = c.get('db');
+  const id = c.req.param('id');
+  const body = (await c.req.json()) as Partial<ScimUser>;
+
+  const updated = await db
+    .update(users)
+    .set({
+      email: body.userName ?? undefined,
+      firstName: body.name?.givenName ?? null,
+      lastName: body.name?.familyName ?? null,
+      status: body.active === false ? 'suspended' : 'active',
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, id))
+    .returning();
+
+  if (updated.length === 0) {
+    return c.json(
+      { schemas: [SCIM_ERROR], status: '404', detail: 'User not found' },
+      404,
+    );
+  }
+  return c.json(toScimUser(updated[0]));
+});
+
+scimRouter.patch('/Users/:id', async (c) => {
+  const db = c.get('db');
+  const id = c.req.param('id');
+  const body = (await c.req.json()) as { Operations?: Array<{ op: string; path?: string; value?: unknown }> };
+
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  for (const op of body.Operations ?? []) {
+    if (op.op.toLowerCase() === 'replace') {
+      if (op.path === 'active') set['status'] = op.value ? 'active' : 'suspended';
+      else if (op.path === 'name.givenName') set['firstName'] = op.value;
+      else if (op.path === 'name.familyName') set['lastName'] = op.value;
+      else if (op.path === 'userName') set['email'] = op.value;
+    }
+  }
+
+  const updated = await db.update(users).set(set).where(eq(users.id, id)).returning();
+  if (updated.length === 0) {
+    return c.json(
+      { schemas: [SCIM_ERROR], status: '404', detail: 'User not found' },
+      404,
+    );
+  }
+  return c.json(toScimUser(updated[0]));
+});
+
+scimRouter.delete('/Users/:id', async (c) => {
+  const db = c.get('db');
+  const id = c.req.param('id');
+  await db.update(users).set({ status: 'suspended', updatedAt: new Date() }).where(eq(users.id, id));
+  return c.body(null, 204);
+});
+
+// ── /Groups (mapped to LumiBase teams) ────────────────────────────────────
+
+scimRouter.get('/Groups', async (c) => {
+  const db = c.get('db');
+  const rows = await db.select().from(teams).limit(200);
+
+  return c.json({
+    schemas: [SCIM_LIST_RESPONSE],
+    totalResults: rows.length,
+    startIndex: 1,
+    itemsPerPage: rows.length,
+    Resources: rows.map((t) => ({
+      schemas: [SCIM_GROUP_SCHEMA],
+      id: t.id,
+      displayName: t.name,
+      meta: { resourceType: 'Group' },
+    })),
+  });
+});
+
+scimRouter.post('/Groups', async (c) => {
+  const db = c.get('db');
+  const siteId = c.req.header('X-Lumi-Site');
+  if (!siteId) {
+    return c.json(
+      { schemas: [SCIM_ERROR], status: '400', detail: 'X-Lumi-Site header required' },
+      400,
+    );
+  }
+
+  const body = (await c.req.json()) as { displayName: string; members?: Array<{ value: string }> };
+  const inserted = await db
+    .insert(teams)
+    .values({ siteId, name: body.displayName })
+    .returning();
+
+  if (body.members?.length) {
+    for (const m of body.members) {
+      await db.insert(teamMembers).values({ teamId: inserted[0]!.id, userId: m.value }).onConflictDoNothing();
+      await db
+        .insert(userSites)
+        .values({ userId: m.value, siteId })
+        .onConflictDoNothing();
+    }
+  }
+
+  return c.json(
+    {
+      schemas: [SCIM_GROUP_SCHEMA],
+      id: inserted[0]!.id,
+      displayName: inserted[0]!.name,
+      meta: { resourceType: 'Group' },
+    },
+    201,
+  );
+});
