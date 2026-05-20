@@ -70,6 +70,51 @@ export const searchDuration = new Histogram({
 });
 
 // ---------------------------------------------------------------------------
+// SLO / business metrics — Phase G8
+// ---------------------------------------------------------------------------
+
+/** Item mutations (create/update/delete) — used for SLO + business KPIs. */
+export const itemMutationsTotal = new Counter({
+  name: 'lumibase_item_mutations_total',
+  help: 'Total item mutations performed',
+  labelNames: ['collection', 'action', 'status'] as const,
+  registers: [register],
+});
+
+/** Permission denials counter — security signal. */
+export const permissionDenialsTotal = new Counter({
+  name: 'lumibase_permission_denials_total',
+  help: 'Total permission denials',
+  labelNames: ['collection', 'action'] as const,
+  registers: [register],
+});
+
+/** Realtime / WebSocket connection gauge (current open connections). */
+export const realtimeConnectionsTotal = new Counter({
+  name: 'lumibase_realtime_connections_total',
+  help: 'Cumulative realtime connections opened',
+  labelNames: ['site'] as const,
+  registers: [register],
+});
+
+/** Webhook dispatch outcome counter (success / failure). */
+export const webhookDispatchTotal = new Counter({
+  name: 'lumibase_webhook_dispatch_total',
+  help: 'Total webhook dispatches',
+  labelNames: ['target', 'status'] as const,
+  registers: [register],
+});
+
+/** Database query duration histogram (per operation type). */
+export const dbQueryDuration = new Histogram({
+  name: 'lumibase_db_query_duration_seconds',
+  help: 'Database query duration in seconds',
+  labelNames: ['operation'] as const,
+  buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5],
+  registers: [register],
+});
+
+// ---------------------------------------------------------------------------
 // Metrics middleware — records request count + duration for every request
 // ---------------------------------------------------------------------------
 
