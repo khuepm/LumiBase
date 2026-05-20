@@ -318,3 +318,50 @@ export const operations = pgTable(
     flowKeyUnique: uniqueIndex('operations_flow_key_unique').on(t.flowId, t.key),
   }),
 );
+
+
+// ---------------------------------------------------------------------------
+// PGA6 — Materialized collections.
+//
+// For hot-path read traffic (high-RPS Delivery API), expensive JSONB
+// queries can be cached in a denormalized table refreshed on a schedule
+// or after writes.
+// ---------------------------------------------------------------------------
+
+export const materializedCollections = pgTable(
+  'materialized_collections',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** The source collection name. */
+    collection: text('collection').notNull(),
+    /** Materialized view name (target table). */
+    target: text('target').notNull(),
+    /** `auto` | `cron` | `manual` */
+    refreshStrategy: text('refresh_strategy').default('manual').notNull(),
+    /** Cron expression when `refreshStrategy = 'cron'`. */
+    refreshCron: text('refresh_cron'),
+    /** Pre-computed projection: which fields to flatten + ordering. */
+    projection: jsonb('projection').default({ fields: ['*'] }).notNull(),
+    /** Optional row filter (subset of items). */
+    filter: jsonb('filter').default({}).notNull(),
+    /** Last successful refresh timestamp. */
+    lastRefreshedAt: timestamp('last_refreshed_at'),
+    /** Total rows in the materialized target as of last refresh. */
+    rowCount: integer('row_count').default(0).notNull(),
+    /** `idle` | `refreshing` | `error` */
+    status: text('status').default('idle').notNull(),
+    error: text('error'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteCollectionUnique: uniqueIndex('mc_site_collection_unique').on(
+      t.siteId,
+      t.collection,
+      t.target,
+    ),
+  }),
+);
