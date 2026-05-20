@@ -5,6 +5,7 @@ import { docTree } from 'virtual:docs-registry';
 import { Sidebar } from './Sidebar';
 import { SearchDialog } from './SearchDialog';
 import { TableOfContents } from './TableOfContents';
+import { siteConfig } from '../lib/site-config';
 
 /**
  * App layout shell with three-column responsive structure.
@@ -87,10 +88,48 @@ export function Layout() {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="ml-3 text-sm font-semibold md:hidden">Lumibase Docs</span>
-          <span className="hidden text-sm font-semibold md:inline">Lumibase Docs</span>
-          <div className="ml-auto">
+          <span className="ml-3 text-sm font-semibold md:hidden">{siteConfig.title} Docs</span>
+          <span className="hidden text-sm font-semibold md:inline">{siteConfig.title} Docs</span>
+          <nav aria-label="Primary" className="ml-6 hidden items-center gap-4 md:flex">
+            {siteConfig.navbar.items
+              .filter((item) => item.position !== 'right')
+              .map((item) =>
+                item.href ? (
+                  <a
+                    key={item.label}
+                    href={item.href}
+                    className="text-sm text-muted-foreground hover:text-foreground"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {item.label}
+                  </a>
+                ) : (
+                  <a
+                    key={item.label}
+                    href={item.to}
+                    className="text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    {item.label}
+                  </a>
+                ),
+              )}
+          </nav>
+          <div className="ml-auto flex items-center gap-3">
             <SearchDialog />
+            {siteConfig.navbar.items
+              .filter((item) => item.position === 'right')
+              .map((item) => (
+                <a
+                  key={item.label}
+                  href={item.href ?? item.to}
+                  target={item.href ? '_blank' : undefined}
+                  rel={item.href ? 'noreferrer' : undefined}
+                  className="hidden text-sm text-muted-foreground hover:text-foreground md:inline"
+                >
+                  {item.label}
+                </a>
+              ))}
           </div>
         </header>
 
@@ -108,6 +147,40 @@ export function Layout() {
             </div>
           </aside>
         </div>
+
+        <footer
+          className={`border-t px-6 py-6 text-xs ${siteConfig.footer.style === 'dark'
+              ? 'bg-zinc-900 text-zinc-400'
+              : 'bg-muted text-muted-foreground'
+            }`}
+        >
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            {siteConfig.footer.links.map((col) => (
+              <div key={col.title}>
+                <h3 className="mb-2 text-sm font-semibold text-foreground">
+                  {col.title}
+                </h3>
+                <ul className="space-y-1">
+                  {col.items.map((item) => (
+                    <li key={item.label}>
+                      <a
+                        className="hover:underline"
+                        href={item.href ?? item.to}
+                        target={item.href ? '_blank' : undefined}
+                        rel={item.href ? 'noreferrer' : undefined}
+                      >
+                        {item.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <p className="mt-6 border-t pt-4 text-center">
+            {siteConfig.footer.copyright}
+          </p>
+        </footer>
       </div>
     </div>
   );

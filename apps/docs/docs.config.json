@@ -1,0 +1,107 @@
+{
+  "title": "LumiBase",
+  "tagline": "Edge-native, multi-tenant headless CMS — built on Cloudflare Workers, Hyperdrive, R2 and Durable Objects.",
+  "url": "https://docs.lumibase.dev",
+  "baseUrl": "/",
+  "favicon": "img/favicon.ico",
+  "organizationName": "lumibase",
+  "projectName": "lumibase",
+  "i18n": {
+    "defaultLocale": "en",
+    "locales": ["en", "vi"]
+  },
+  "navbar": {
+    "title": "LumiBase",
+    "logo": { "alt": "LumiBase logo", "src": "img/logo.svg" },
+    "items": [
+      { "label": "Docs", "to": "/docs/README", "position": "left" },
+      { "label": "API", "to": "/docs/api", "position": "left" },
+      { "label": "Roadmap", "to": "/docs/roadmap/tasks", "position": "left" },
+      { "label": "GitHub", "href": "https://github.com/lumibase/lumibase", "position": "right" }
+    ]
+  },
+  "sidebar": {
+    "docs": [
+      {
+        "type": "category",
+        "label": "Getting Started",
+        "items": ["README", "vision-and-positioning", "data-model", "ai-skills"]
+      },
+      {
+        "type": "category",
+        "label": "Architecture",
+        "items": [
+          "architecture/overview",
+          "architecture/runtime-abstraction",
+          "architecture/multi-tenancy",
+          "architecture/permission-engine"
+        ]
+      },
+      {
+        "type": "category",
+        "label": "Features",
+        "items": [
+          "features/collections-builder",
+          "features/field-types-and-config",
+          "features/permissions-rbac",
+          "features/raw-data-editing",
+          "features/typegen",
+          "features/extensions-system",
+          "features/websockets-realtime"
+        ]
+      },
+      {
+        "type": "category",
+        "label": "API Reference",
+        "items": ["api/hono-api-spec", "api/openapi"]
+      },
+      {
+        "type": "category",
+        "label": "Deployment",
+        "items": [
+          "deployment/overview",
+          "deployment/cloudflare",
+          "deployment/docker",
+          "deployment/environment-variables",
+          "deployment/local-development"
+        ]
+      },
+      {
+        "type": "category",
+        "label": "Guides",
+        "items": ["guides/backup-recovery", "guides/tooling-recommendations"]
+      },
+      {
+        "type": "category",
+        "label": "Roadmap",
+        "items": [
+          "roadmap/tasks",
+          "roadmap/consumer-sdk",
+          "roadmap/phase-d1-users",
+          "roadmap/studio-content-slices"
+        ]
+      }
+    ]
+  },
+  "footer": {
+    "style": "dark",
+    "links": [
+      {
+        "title": "Docs",
+        "items": [
+          { "label": "Getting Started", "to": "/docs/README" },
+          { "label": "API Reference", "to": "/docs/api/hono-api-spec" }
+        ]
+      },
+      {
+        "title": "Community",
+        "items": [{ "label": "GitHub", "href": "https://github.com/lumibase/lumibase" }]
+      }
+    ],
+    "copyright": "Copyright (c) 2025 LumiBase. Built with React + Vite + MDX."
+  },
+  "themeConfig": {
+    "colorMode": { "defaultMode": "light", "respectPrefersColorScheme": true },
+    "prism": { "theme": "github-light", "darkTheme": "github-dark" }
+  }
+}

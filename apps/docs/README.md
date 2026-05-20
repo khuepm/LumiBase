@@ -1,0 +1,55 @@
+# LumiBase Docs
+
+Public documentation site for [LumiBase](https://github.com/lumibase/lumibase) — an edge-native, multi-tenant headless CMS.
+
+This is a **Vite + React + MDX** static docs viewer that consumes markdown from the project root `docs/` folder via a virtual module produced by `vite-plugin-docs-loader`.
+
+## Stack
+
+- **Vite 5** — fast dev server + static build
+- **React 18** — UI runtime
+- **React Router v7** — client-side routing
+- **react-markdown + remark-gfm** — markdown rendering with GitHub-flavored extensions
+- **Shiki** — syntax highlighting (loaded lazily per language)
+- **MiniSearch** — client-side full-text search
+- **Tailwind CSS** — styling
+
+## Configuration (Docusaurus-style)
+
+Site metadata, navbar items, sidebar groups and footer links are declared in [`docs.config.json`](./docs.config.json). The schema mirrors the relevant parts of Docusaurus' `docusaurus.config.ts`, so contributors familiar with Docusaurus can edit it without learning a new format.
+
+```jsonc
+{
+  "title": "LumiBase",
+  "navbar": { "items": [/* ... */] },
+  "sidebar": { "docs": [/* category + items */] },
+  "footer": { "links": [/* ... */] }
+}
+```
+
+## Local development
+
+```bash
+pnpm --filter @lumibase/docs dev      # http://localhost:5173
+pnpm --filter @lumibase/docs build    # static output in dist/
+pnpm --filter @lumibase/docs preview  # serve the build locally
+```
+
+## Content source
+
+All `.md` files under the repo root `docs/` directory are auto-discovered. Front-matter is parsed with `gray-matter`; the title falls back to the filename in title-case if not provided.
+
+```markdown
+---
+title: My great doc
+---
+```
+
+## Deploying
+
+The build output (`dist/`) is a fully static site — drop it on Cloudflare Pages, Netlify, Vercel static, S3, or any HTTP server.
+
+```bash
+pnpm --filter @lumibase/docs build
+# upload apps/docs/dist/ to your CDN
+```
