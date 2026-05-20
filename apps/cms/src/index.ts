@@ -14,6 +14,7 @@ import { collectionsRouter } from './routes/collections';
 import { deliverRouter } from './routes/deliver';
 import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
+import { flowsRouter } from './routes/flows';
 import { itemsRouter } from './routes/items';
 import { permissionsRouter } from './routes/permissions';
 import { policiesRouter } from './routes/policies';
@@ -85,6 +86,7 @@ api.route('/realtime', realtimeRouter);
 api.route('/extensions', extensionsRouter);
 api.route('/admin', adminRouter);
 api.route('/tm', tmRouter);
+api.route('/flows', flowsRouter);
 
 app.route('/api/v1', api);
 

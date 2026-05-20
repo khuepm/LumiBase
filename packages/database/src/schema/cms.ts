@@ -227,3 +227,94 @@ export const activity = pgTable(
     actorIdx: index('activity_actor_idx').on(t.userId, t.createdAt),
   }),
 );
+
+
+// ---------------------------------------------------------------------------
+// PGA3 — Flows / Operations engine.
+//
+// A Flow is a directed graph of Operations executed when a Trigger fires.
+// Triggers: webhook, item.* event, schedule (cron), manual.
+// Operations: condition, transform, http, mail, log, sleep, run-extension.
+// ---------------------------------------------------------------------------
+
+export const flows = pgTable(
+  'flows',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    /** `active` | `inactive` | `draft` */
+    status: text('status').default('draft').notNull(),
+    /** `webhook` | `event` | `schedule` | `manual` */
+    triggerType: text('trigger_type').notNull(),
+    /** Trigger-specific config (collection, action, cron expr, headers, ...). */
+    triggerOptions: jsonb('trigger_options').default({}).notNull(),
+    /** Graph of operations: `{ nodes: [{ id, key, options, next?, onError? }] }`. */
+    graph: jsonb('graph').default({ nodes: [] }).notNull(),
+    /** When status = active and triggerType = schedule, the next run time. */
+    nextRunAt: timestamp('next_run_at'),
+    accountability: text('accountability').default('all').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteIdx: index('flows_site_idx').on(t.siteId, t.status),
+    nextRunIdx: index('flows_next_run_idx').on(t.nextRunAt),
+  }),
+);
+
+export const flowRuns = pgTable(
+  'flow_runs',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    flowId: text('flow_id')
+      .notNull()
+      .references(() => flows.id, { onDelete: 'cascade' }),
+    /** `pending` | `running` | `success` | `error` | `cancelled` */
+    status: text('status').default('pending').notNull(),
+    /** Initial payload (trigger event / webhook body). */
+    input: jsonb('input').default({}).notNull(),
+    /** Per-node output, keyed by node id. */
+    steps: jsonb('steps').default({}).notNull(),
+    /** Final output (last node) or error stack trace. */
+    output: jsonb('output').default({}).notNull(),
+    error: text('error'),
+    startedAt: timestamp('started_at').defaultNow().notNull(),
+    finishedAt: timestamp('finished_at'),
+  },
+  (t) => ({
+    flowIdx: index('flow_runs_flow_idx').on(t.flowId, t.startedAt),
+    statusIdx: index('flow_runs_status_idx').on(t.siteId, t.status),
+  }),
+);
+
+export const operations = pgTable(
+  'operations',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    flowId: text('flow_id')
+      .notNull()
+      .references(() => flows.id, { onDelete: 'cascade' }),
+    /** Stable key referenced by graph edges. */
+    key: text('key').notNull(),
+    /** `condition` | `transform` | `http` | `mail` | `log` | `sleep` | `run-extension` | `item.create` | `item.update` | `item.delete` | `notify` */
+    type: text('type').notNull(),
+    name: text('name'),
+    options: jsonb('options').default({}).notNull(),
+    /** Position info for the visual editor; not used at runtime. */
+    position: jsonb('position').default({}).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    flowKeyUnique: uniqueIndex('operations_flow_key_unique').on(t.flowId, t.key),
+  }),
+);
