@@ -117,3 +117,7 @@ app.onError((err, c) => {
 });
 
 export default app;
+
+// Durable Object exports — required by Wrangler to register the classes.
+export { SiteRoom } from './realtime/site-room';
+

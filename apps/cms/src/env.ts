@@ -14,6 +14,8 @@ export interface Bindings {
   CONFIG_CACHE?: KVNamespace;
   /** @deprecated Use `c.get('runtime').storage` (StorageProvider) instead of accessing R2 directly. */
   MEDIA?: R2Bucket;
+  /** SiteRoom Durable Object namespace — one DO instance per siteId. */
+  SITE_ROOM?: DurableObjectNamespace;
   LUMIBASE_ENV: string;
   /** Runtime mode: `'cloudflare'` or `'docker'`. Defaults to `'docker'`. */
   LUMIBASE_RUNTIME?: string;

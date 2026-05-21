@@ -28,3 +28,20 @@ LUMIBASE_DEV_AUTH = "true"
 # Logto OIDC. Override per environment.
 LOGTO_ISSUER = ""
 LOGTO_AUDIENCE = ""
+
+# ─── Durable Objects ──────────────────────────────────────────────────────────
+# One SiteRoom DO instance per siteId handles all WebSocket connections for
+# that site (presence, subscriptions, realtime event fan-out).
+[[durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
+
+[durable_objects.migrations]
+tag = "v1"
+new_classes = ["SiteRoom"]
+
+# ─── Queues ───────────────────────────────────────────────────────────────────
+# Used by ItemService to publish mutation events to SiteRoom without blocking.
+# [[queues.producers]]
+# binding = "REALTIME_QUEUE"
+# queue = "lumibase-realtime"
