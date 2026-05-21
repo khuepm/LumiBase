@@ -6,6 +6,7 @@ import type { FieldResource, ItemRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePermissions, type PermissionHelpers } from '@/lib/use-permissions';
+import { PresenceChip } from '@/components/presence-chip';
 import { resolveInterface } from './interfaces/registry';
 import { RawToggle } from './interfaces/raw-toggle';
 import { RevisionsPanel } from './revisions-panel';
@@ -141,6 +142,8 @@ export function ItemDetailPage() {
           </h1>
         </div>
         <div className="flex items-center gap-2">
+          {/* Presence chip — shows other users currently editing this item */}
+          <PresenceChip collection={collection} itemId={id} />
           <button
             type="button"
             onClick={() => deleteMutation.mutate()}
