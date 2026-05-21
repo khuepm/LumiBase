@@ -19,6 +19,7 @@ import { ToggleInterface } from './toggle';
 import { TranslatableText } from './translatable-text';
 import { WysiwygInterface } from './wysiwyg';
 import type { InterfaceComponent } from './types';
+import { getExtension } from '@/lib/extension-loader';
 
 /**
  * Maps the schema engine's `field.interface` string to a Studio component.
@@ -66,12 +67,28 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
 };
 
 export function resolveInterface(field: FieldResource): InterfaceComponent<unknown> {
-  // Prefer explicit `interface`, then fall back to type, then JSON.
-  return (
-    REGISTRY[field.interface] ??
-    REGISTRY[field.type] ??
-    JsonRawInterface
-  ) as InterfaceComponent<unknown>;
+  // 1. Static registry (Phase A-F built-ins).
+  if (REGISTRY[field.interface]) return REGISTRY[field.interface] as InterfaceComponent<unknown>;
+  if (REGISTRY[field.type]) return REGISTRY[field.type] as InterfaceComponent<unknown>;
+
+  // 2. Dynamically loaded extension interfaces (Phase F).
+  // Extension must declare type: 'interface' and name matching field.interface.
+  const extEntry = getExtension(field.interface);
+  if (extEntry?.slot === 'interface') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return extEntry.component as InterfaceComponent<any>;
+  }
+
+  return JsonRawInterface as InterfaceComponent<unknown>;
 }
 
 export const INTERFACE_NAMES = Object.keys(REGISTRY);
+
+/**
+ * Register an extension-provided interface at runtime.
+ * Called by the extension loader after bundle import.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function registerExtensionInterface(name: string, component: InterfaceComponent<any>): void {
+  REGISTRY[name] = component;
+}
