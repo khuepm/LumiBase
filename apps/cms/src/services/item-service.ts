@@ -92,6 +92,11 @@ export interface ItemServiceDeps {
   permissionCtx?: MagicContext;
   /** Optional base64 AES-GCM key for field encryption. */
   encryptionKey?: string;
+  /**
+   * SiteRoom Durable Object namespace (Cloudflare Workers only).
+   * When provided, item mutations are published to connected WebSocket clients.
+   */
+  realtimeNamespace?: DurableObjectNamespace;
 }
 
 const STRUCTURAL_FIELDS = new Set([
@@ -344,6 +349,7 @@ export class ItemService {
     await this.writeActivity('create', coll.name, row.id, { data: payload.data });
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', false);
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
+    await this.publishRealtimeEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     return row;
   }
 
@@ -384,6 +390,7 @@ export class ItemService {
     
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', false);
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
+    await this.publishRealtimeEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     return row;
   }
 
@@ -423,6 +430,7 @@ export class ItemService {
       );
     await this.writeActivity('delete', coll.name, id, {});
     await this.deindexItem(collectionName, id);
+    await this.publishRealtimeEvent(collectionName, 'delete', id, {});
     return { ok: true } as const;
   }
 
@@ -523,6 +531,43 @@ export class ItemService {
     } catch (err) {
       // Search de-indexing is non-critical — log and continue.
       console.error('[item-service] search deindex failed', { collectionName, id, err });
+    }
+  }
+
+  /**
+   * Publish an item mutation event to SiteRoom for realtime fan-out.
+   * Non-critical: errors are caught and logged, never blocking the main response.
+   */
+  private async publishRealtimeEvent(
+    collection: string,
+    action: 'create' | 'update' | 'delete',
+    itemId: string,
+    payload: unknown,
+  ): Promise<void> {
+    if (!this.deps.realtimeNamespace) return;
+    try {
+      const id = this.deps.realtimeNamespace.idFromName(this.deps.siteId);
+      const stub = this.deps.realtimeNamespace.get(id);
+      // Call the SiteRoom's publish() method via a synthetic HTTP request.
+      // SiteRoom exposes publish() as a durable object method; we invoke it
+      // via the DO's fetch() with a special internal path.
+      await stub.fetch(
+        new Request('https://internal/publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'event',
+            collection,
+            action,
+            itemId,
+            payload,
+            actorUserId: this.deps.userId ?? undefined,
+          }),
+        }),
+      );
+    } catch (err) {
+      // Realtime fan-out is non-critical — log and continue.
+      console.error('[item-service] realtime publish failed', { collection, itemId, err });
     }
   }
 

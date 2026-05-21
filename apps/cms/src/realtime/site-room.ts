@@ -80,12 +80,24 @@ export class SiteRoom extends DurableObject<any> {
    * Entry point — called for every incoming HTTP/WS request forwarded to this DO.
    */
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+
+    // Internal publish path — called by ItemService to fan-out mutation events.
+    if (url.pathname === '/publish' && request.method === 'POST') {
+      try {
+        const event = (await request.json()) as RealtimeEvent;
+        await this.publish(event);
+      } catch {
+        /* malformed — ignore */
+      }
+      return new Response(null, { status: 204 });
+    }
+
     const upgradeHeader = request.headers.get('Upgrade');
     if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
       return new Response('Expected Upgrade: websocket', { status: 426 });
     }
 
-    const url = new URL(request.url);
     const userId = url.searchParams.get('userId') ?? 'anon';
 
     const pair = new WebSocketPair();

@@ -48,6 +48,8 @@ const buildService = (c: Context<AppEnv>) => {
   c.req.raw.headers.forEach((value, key) => {
     headers[key.toLowerCase()] = value;
   });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const realtimeNamespace = (c.env as unknown as Record<string, any>)['SITE_ROOM'] as DurableObjectNamespace | undefined;
   return new ItemService({
     db: c.get('db'),
     siteId: c.get('siteId'),
@@ -55,6 +57,7 @@ const buildService = (c: Context<AppEnv>) => {
     cache: runtime.cache,
     search: runtime.search,
     queue: runtime.queue,
+    realtimeNamespace,
     permissionCtx: {
       userId: auth?.userId ?? null,
       siteId: c.get('siteId'),
