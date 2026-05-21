@@ -1,6 +1,7 @@
 import {
   activity,
   collections,
+  extensions as extensionsTable,
   items,
   revisions,
   scopeSite,
@@ -13,6 +14,8 @@ import type { CacheProvider, SearchProvider, QueueProvider } from '@lumibase/run
 import { PermissionService, type PermissionAction } from './permission-service';
 import type { MagicContext } from './permission-dsl';
 import { CryptoService } from './crypto-service';
+import { ExtensionSandbox } from '../extensions/sandbox';
+import { HookDispatcher } from '../extensions/hook-dispatcher';
 
 /**
  * ItemService — generic CRUD over the `items` JSONB store, driven by the
@@ -97,6 +100,11 @@ export interface ItemServiceDeps {
    * When provided, item mutations are published to connected WebSocket clients.
    */
   realtimeNamespace?: DurableObjectNamespace;
+  /**
+   * Environment bindings passed to ExtensionSandbox for capability-gated access.
+   * When omitted, extension hooks are skipped.
+   */
+  extensionEnv?: Record<string, unknown>;
 }
 
 const STRUCTURAL_FIELDS = new Set([
@@ -218,6 +226,8 @@ export class ItemService {
   private readonly schemaService: SchemaService;
   private readonly permissions: PermissionService | null;
   private readonly cryptoService: CryptoService | null;
+  private hookDispatcher: HookDispatcher | null = null;
+
   constructor(private readonly deps: ItemServiceDeps) {
     this.schemaService = new SchemaService({
       db: deps.db,
@@ -238,6 +248,26 @@ export class ItemService {
       throw new ItemServiceError('FORBIDDEN', `Action "${action}" on "${collectionName}" is not allowed.`, 403);
     }
     return granted;
+  }
+
+  /**
+   * Lazily load the HookDispatcher for this site's enabled extensions.
+   * Cached after first call; re-loaded if extensions change (evict from sandbox).
+   */
+  private async getHookDispatcher(): Promise<HookDispatcher | null> {
+    if (!this.deps.extensionEnv) return null;
+    if (this.hookDispatcher) return this.hookDispatcher;
+    try {
+      const rows = await this.deps.db
+        .select()
+        .from(extensionsTable)
+        .where(and(eq(extensionsTable.siteId, this.deps.siteId), eq(extensionsTable.enabled, true)));
+      const sandbox = new ExtensionSandbox(this.deps.extensionEnv as never, this.deps.db);
+      this.hookDispatcher = new HookDispatcher(sandbox, rows);
+    } catch {
+      /* non-critical — return null if extensions can't be loaded */
+    }
+    return this.hookDispatcher;
   }
 
   private async resolveCollection(name: string) {
@@ -330,7 +360,18 @@ export class ItemService {
     if (perm && this.permissions && !this.permissions.matches(perm, withPresets)) {
       throw new ItemServiceError('FORBIDDEN', 'Item violates create rule.', 403);
     }
-    const data = await this.runValidation(collectionName, withPresets, false);
+
+    // Before hook — extensions can mutate data before insert.
+    const hooks = await this.getHookDispatcher();
+    const hookCtx = await hooks?.dispatch('items.create.before', {
+      collection: collectionName,
+      item: withPresets,
+      userId: this.deps.userId ?? null,
+      siteId: this.deps.siteId,
+    }) ?? { collection: collectionName, item: withPresets };
+    const hookedData = (hookCtx.item as Record<string, unknown>) ?? withPresets;
+
+    const data = await this.runValidation(collectionName, hookedData, false);
     const encryptedData = await this.processCrypto(collectionName, data, 'encrypt', true);
     const [row] = await this.deps.db
       .insert(items)
@@ -350,6 +391,8 @@ export class ItemService {
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', false);
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
+    // After hook — fire-and-forget.
+    hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     return row;
   }
 
@@ -371,10 +414,23 @@ export class ItemService {
 
     const encryptedMerged = await this.processCrypto(collectionName, merged, 'encrypt', true);
 
+    // Before hook — extensions can mutate patch data before update.
+    const hooks = await this.getHookDispatcher();
+    const hookCtx = await hooks?.dispatch('items.update.before', {
+      collection: collectionName,
+      patch: patch.data,
+      itemId: id,
+      userId: this.deps.userId ?? null,
+      siteId: this.deps.siteId,
+    }) ?? { collection: collectionName };
+    const hookedMerged = hookCtx.patch
+      ? await this.processCrypto(collectionName, { ...merged, ...hookCtx.patch }, 'encrypt', true)
+      : encryptedMerged;
+
     const [row] = await this.deps.db
       .update(items)
       .set({
-        data: encryptedMerged,
+        data: hookedMerged,
         status: patch.status ?? rawRow.status,
         sort: patch.sort ?? rawRow.sort,
         userUpdated: this.deps.userId ?? null,
@@ -391,6 +447,8 @@ export class ItemService {
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', false);
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
+    // After hook — fire-and-forget.
+    hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     return row;
   }
 
@@ -418,6 +476,16 @@ export class ItemService {
 
   async softDelete(collectionName: string, id: string) {
     const coll = await this.resolveCollection(collectionName);
+
+    // Before hook — extension can cancel by throwing.
+    const hooks = await this.getHookDispatcher();
+    await hooks?.dispatch('items.delete.before', {
+      collection: collectionName,
+      itemId: id,
+      userId: this.deps.userId ?? null,
+      siteId: this.deps.siteId,
+    });
+
     await this.deps.db
       .update(items)
       .set({ deletedAt: new Date(), userUpdated: this.deps.userId ?? null })
@@ -431,6 +499,8 @@ export class ItemService {
     await this.writeActivity('delete', coll.name, id, {});
     await this.deindexItem(collectionName, id);
     await this.publishRealtimeEvent(collectionName, 'delete', id, {});
+    // After hook — fire-and-forget.
+    hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     return { ok: true } as const;
   }
 

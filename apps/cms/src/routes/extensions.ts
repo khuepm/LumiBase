@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { ExtensionSandbox } from '../extensions/sandbox';
 
 export const extensionsRouter = new Hono<AppEnv>();
 
@@ -70,4 +71,60 @@ extensionsRouter.delete('/:id', async (c) => {
 
   if (!row) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
   return c.json({ data: null });
+});
+
+/**
+ * Dynamic endpoint mount — forwards requests to extension-provided Hono sub-apps.
+ *
+ * Extensions of type `endpoint` may export a `handler(app)` function that mounts
+ * routes on a Hono instance. Those routes are served under /extensions/:name/*.
+ *
+ * The extension bundle is loaded lazily via ExtensionSandbox and cached.
+ * If the extension does not exist, is not enabled, or has no handler, 404 is returned.
+ */
+extensionsRouter.all('/:name/*', async (c) => {
+  const name = c.req.param('name');
+  const siteId = c.get('siteId');
+  const db = c.get('db');
+
+  // Look up the extension in DB.
+  const [ext] = await db
+    .select()
+    .from(extensions)
+    .where(and(eq(extensions.siteId, siteId), eq(extensions.name, name), eq(extensions.enabled, true)))
+    .limit(1);
+
+  if (!ext || ext.type !== 'endpoint') {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: `Extension "${name}" not found or not enabled.` }] }, 404);
+  }
+
+  // Load via sandbox.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sandbox = new ExtensionSandbox(c.env as unknown as Record<string, unknown>, db as any);
+  const mod = await sandbox.load({
+    name: ext.name,
+    bundleUrl: ext.bundleUrl,
+    capabilities: (ext.capabilities as string[]) ?? [],
+  });
+
+  if (!mod?.handler) {
+    return c.json({ errors: [{ code: 'NO_HANDLER', message: `Extension "${name}" does not export a handler.` }] }, 501);
+  }
+
+  // Mount the extension's sub-router on a fresh Hono instance.
+  const subApp = new Hono();
+  try {
+    mod.handler(subApp);
+  } catch (err) {
+    console.error(`[extensions] handler mount failed for "${name}":`, err);
+    return c.json({ errors: [{ code: 'HANDLER_ERROR', message: 'Extension handler threw during mount.' }] }, 500);
+  }
+
+  // Strip the /extensions/:name prefix so the sub-app sees a clean path.
+  const prefix = `/extensions/${name}`;
+  const originalPath = new URL(c.req.url).pathname;
+  const subPath = originalPath.startsWith(prefix) ? originalPath.slice(prefix.length) || '/' : '/';
+  const subUrl = new URL(subPath + new URL(c.req.url).search, c.req.url);
+
+  return subApp.fetch(new Request(subUrl.toString(), c.req.raw), c.env, c.executionCtx);
 });

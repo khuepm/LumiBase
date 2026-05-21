@@ -58,6 +58,8 @@ const buildService = (c: Context<AppEnv>) => {
     search: runtime.search,
     queue: runtime.queue,
     realtimeNamespace,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    extensionEnv: c.env as unknown as Record<string, unknown>,
     permissionCtx: {
       userId: auth?.userId ?? null,
       siteId: c.get('siteId'),
