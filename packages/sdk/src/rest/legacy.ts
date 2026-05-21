@@ -1,4 +1,5 @@
 import { LumiClient } from "../client";
+import { RealtimeClient } from "../realtime";
 import {
   CollectionResource,
   FieldResource,
@@ -500,12 +501,28 @@ export function legacyRest() {
       activity,
       extensions,
       realtime: {
+        /**
+         * Create a RealtimeClient for the current site.
+         *
+         * @param token  Bearer token (or dev token) for the WS handshake.
+         * @param opts   Optional overrides (userId, backoff timing).
+         */
+        create: (
+          token: string,
+          opts?: { userId?: string; initialBackoffMs?: number; maxBackoffMs?: number },
+        ) => {
+          return new RealtimeClient({
+            baseUrl: client.url,
+            token,
+            siteId: client.siteId ?? '',
+            ...opts,
+          });
+        },
+        /** @deprecated Use .realtime.create() instead. */
         connect: (siteId: string) => {
-          // This is a stub for the realtime client.
           const wsUrl = client.url.replace(/^http/, 'ws') + '/api/v1/realtime?siteId=' + siteId;
-          const ws = new WebSocket(wsUrl);
-          return ws;
-        }
+          return new WebSocket(wsUrl);
+        },
       },
       auth: {
         me: () =>
