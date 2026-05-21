@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { NotificationsPanel } from '@/components/notifications-panel';
 
 interface ModuleDef {
   id: string;
@@ -112,14 +113,9 @@ export function AppShell({ children }: AppShellProps) {
               dev
             </span>
           </div>
-          {/* Live region: announces route changes to screen readers */}
-          <div
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            className="text-xs text-muted-foreground"
-          >
-            Phase G — Hardening &amp; GA
+          {/* Right-side topbar actions */}
+          <div className="flex items-center gap-2">
+            <NotificationsPanel />
           </div>
         </header>
 
