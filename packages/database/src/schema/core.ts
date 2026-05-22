@@ -31,7 +31,8 @@ export const users = pgTable(
   'users',
   {
     id: id(),
-    logtoId: text('logto_id').notNull(),
+    externalId: text('external_id'),
+    passwordHash: text('password_hash'),
     email: text('email').notNull(),
     firstName: text('first_name'),
     lastName: text('last_name'),
@@ -47,7 +48,7 @@ export const users = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => ({
-    logtoIdUnique: uniqueIndex('users_logto_id_unique').on(t.logtoId),
+    externalIdUnique: uniqueIndex('users_external_id_unique').on(t.externalId),
   }),
 );
 

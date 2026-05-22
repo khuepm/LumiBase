@@ -15,6 +15,13 @@
       "when": 1778703576807,
       "tag": "0001_round_maggott",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779384558922,
+      "tag": "0002_lying_machine_man",
+      "breakpoints": true
     }
   ]
 }
