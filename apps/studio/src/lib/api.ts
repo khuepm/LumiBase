@@ -11,7 +11,7 @@ const STORAGE_KEY = {
   site: 'lumibase.dev.site',
 };
 
-const DEFAULT_DEV_TOKEN = 'dev:studio';
+const DEFAULT_DEV_TOKEN = 'dev:admin@lumibase.dev:admin';
 const DEFAULT_DEV_SITE = 'site_demo';
 
 export function getActiveSite(): string {
@@ -23,7 +23,13 @@ export function setActiveSite(siteId: string): void {
 }
 
 export function getActiveToken(): string {
-  return localStorage.getItem(STORAGE_KEY.token) || DEFAULT_DEV_TOKEN;
+  const token = localStorage.getItem(STORAGE_KEY.token);
+  if (token) return token;
+  // In local dev, use mock admin token. In production, CF Access handles JWT via cookies.
+  if (import.meta.env.DEV) {
+    return DEFAULT_DEV_TOKEN;
+  }
+  return '';
 }
 
 function createApiClient(token: string, site: string) {
