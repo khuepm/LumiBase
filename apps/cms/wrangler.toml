@@ -22,12 +22,13 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 LUMIBASE_ENV = "development"
-# Set to "true" only in local dev. Accepts `Bearer dev:<logtoId>` tokens
+# Set to "true" only in local dev. Accepts `Bearer dev:<email>` tokens
 # and `?site=<id>` query for tenant resolution.
 LUMIBASE_DEV_AUTH = "true"
-# Logto OIDC. Override per environment.
-LOGTO_ISSUER = ""
-LOGTO_AUDIENCE = ""
+# Cloudflare Access & Custom JWT bindings. Override per environment.
+CF_ACCESS_CERTS_URL = ""
+CF_ACCESS_AUDIENCE = ""
+JWT_SECRET = "dev_secret_key"
 
 # ─── Durable Objects ──────────────────────────────────────────────────────────
 # One SiteRoom DO instance per siteId handles all WebSocket connections for
