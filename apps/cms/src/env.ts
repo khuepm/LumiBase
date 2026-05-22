@@ -19,10 +19,12 @@ export interface Bindings {
   LUMIBASE_ENV: string;
   /** Runtime mode: `'cloudflare'` or `'docker'`. Defaults to `'docker'`. */
   LUMIBASE_RUNTIME?: string;
-  /** Logto OIDC issuer, e.g. https://auth.lumibase.dev/oidc */
-  LOGTO_ISSUER?: string;
-  /** Expected `aud` claim, e.g. https://api.lumibase.dev */
-  LOGTO_AUDIENCE?: string;
+  /** Cloudflare Access Certificates URL (JWKS format) */
+  CF_ACCESS_CERTS_URL?: string;
+  /** Cloudflare Access Application Audience (AUD) */
+  CF_ACCESS_AUDIENCE?: string;
+  /** Secret key for signing internal Custom JWTs (for frontend users) */
+  JWT_SECRET?: string;
   /** When set to `"true"`, withAuth allows dev tokens (skip JWKS verify). */
   LUMIBASE_DEV_AUTH?: string;
   /** Secret key for AES-GCM per-field encryption (base64 encoded). */
@@ -33,12 +35,14 @@ export interface Bindings {
  * Authenticated principal resolved by `withAuth`.
  */
 export interface AuthPrincipal {
-  /** `sub` claim from Logto (== users.logto_id). */
-  logtoId: string;
-  /** Internal users.id, resolved lazily. May be undefined on first login. */
+  /** Users.external_id (resolved from CF Access or OAuth). */
+  externalId?: string;
+  /** Internal users.id in PostgreSQL database. */
   userId?: string;
   email?: string;
   roles?: string[];
+  /** Flag to identify if this principal is a frontend end-user (authenticated via Custom JWT) */
+  isFrontendUser?: boolean;
   raw: Record<string, unknown>;
 }
 
