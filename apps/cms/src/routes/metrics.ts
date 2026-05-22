@@ -13,7 +13,15 @@ import type { AppEnv } from '../env';
 // ---------------------------------------------------------------------------
 
 export const register = new Registry();
-collectDefaultMetrics({ register });
+try {
+  if (typeof process !== 'undefined' && typeof process.cpuUsage === 'function') {
+    collectDefaultMetrics({ register });
+  } else {
+    console.warn('[metrics] process.cpuUsage is not available. Skipping default metrics collection.');
+  }
+} catch (err) {
+  console.warn('[metrics] Failed to collect default metrics:', err);
+}
 
 // ---------------------------------------------------------------------------
 // Custom metrics

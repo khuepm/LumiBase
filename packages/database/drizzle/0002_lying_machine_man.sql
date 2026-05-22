@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS "translation_memory" (
 );
 --> statement-breakpoint
 ALTER TABLE "users" RENAME COLUMN "logto_id" TO "external_id";--> statement-breakpoint
+ALTER TABLE "users" ALTER COLUMN "external_id" DROP NOT NULL;--> statement-breakpoint
 DROP INDEX IF EXISTS "users_logto_id_unique";--> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "password_hash" text;--> statement-breakpoint
 ALTER TABLE "extensions" ADD COLUMN "signature" text;--> statement-breakpoint

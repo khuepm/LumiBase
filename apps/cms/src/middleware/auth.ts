@@ -29,6 +29,11 @@ async function verifyCustomJwt(token: string, secret: string): Promise<any> {
  * E.g., `Bearer dev:admin@lumibase.dev:admin`
  */
 export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
+  const path = c.req.path;
+  if (path === '/api/v1/auth/register' || path === '/api/v1/auth/login') {
+    return next();
+  }
+
   const authHeader = c.req.header('authorization') ?? '';
   const [scheme, token] = authHeader.split(' ');
 
