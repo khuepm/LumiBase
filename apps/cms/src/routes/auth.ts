@@ -234,6 +234,7 @@ authRouter.get('/me', async (c) => {
 
   return c.json({
     data: {
+      logtoId: auth.externalId ?? auth.userId ?? 'anon', // Alias for backward compatibility
       userId: auth.userId,
       externalId: auth.externalId,
       email: auth.email,
