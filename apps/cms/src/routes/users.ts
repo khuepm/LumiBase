@@ -77,11 +77,10 @@ usersRouter.post('/invite', async (c) => {
   let [existingUser] = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
 
   if (!existingUser) {
-    // Mock creating a shadow user since Logto is the real source of truth
     const dummyLogtoId = `shadow_${nanoid()}`;
     const [newUser] = await db.insert(users).values({
       email: input.email,
-      logtoId: dummyLogtoId,
+      externalId: dummyLogtoId,
       status: 'invited',
     }).returning();
     existingUser = newUser!;

@@ -53,7 +53,7 @@ realtimeRouter.get('/', async (c) => {
 
   // Pass userId from auth context so the DO can associate the session.
   const auth = c.get('auth');
-  const userId = auth?.userId ?? auth?.logtoId ?? 'anon';
+  const userId = auth?.userId ?? auth?.externalId ?? 'anon';
 
   // Forward the raw Request to the DO — it handles the WS upgrade internally.
   const url = new URL(c.req.url);

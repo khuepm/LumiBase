@@ -68,7 +68,7 @@ function toScimUser(u: any): ScimUser {
   return {
     schemas: [SCIM_USER_SCHEMA],
     id: u.id,
-    externalId: u.logtoId,
+    externalId: u.externalId,
     userName: u.email,
     name: { givenName: u.firstName, familyName: u.lastName },
     emails: [{ value: u.email, primary: true }],
@@ -137,7 +137,7 @@ scimRouter.get('/Users', async (c) => {
     if (parsed.field === 'userName' && parsed.value) {
       rows = await db.select().from(users).where(eq(users.email, parsed.value));
     } else if (parsed.field === 'externalId' && parsed.value) {
-      rows = await db.select().from(users).where(eq(users.logtoId, parsed.value));
+      rows = await db.select().from(users).where(eq(users.externalId, parsed.value));
     } else {
       rows = await db.select().from(users).where(or(ilike(users.email, `%${parsed.value ?? ''}%`)));
     }
@@ -181,7 +181,7 @@ scimRouter.post('/Users', async (c) => {
   const inserted = await db
     .insert(users)
     .values({
-      logtoId: body.externalId ?? body.userName,
+      externalId: body.externalId ?? body.userName,
       email: body.userName,
       firstName: body.name?.givenName ?? null,
       lastName: body.name?.familyName ?? null,

@@ -27,7 +27,7 @@ export const withLogger = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         status: c.res.status,
         durMs,
         site: c.get('siteId'),
-        user: c.get('auth')?.logtoId,
+        user: c.get('auth')?.userId ?? c.get('auth')?.externalId,
       }),
     );
   }
