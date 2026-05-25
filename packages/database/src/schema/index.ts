@@ -7,3 +7,4 @@ export * from './core';
 export * from './access';
 export * from './cms';
 export * from './platform';
+export * from './ai';
