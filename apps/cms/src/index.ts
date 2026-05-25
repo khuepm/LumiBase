@@ -37,6 +37,7 @@ import { typegenRouter } from './routes/typegen';
 import { usersRouter } from './routes/users';
 import { utilsRouter } from './routes/utils';
 import { webhooksRouter } from './routes/webhooks';
+import { testAuthRouter } from './routes/test-auth';
 
 const app = new Hono<AppEnv>();
 
@@ -62,6 +63,8 @@ app.route('/api/v1/utils', utilsRouter);
 app.route('/metrics', metricsRouter);
 // Comprehensive health check — tests DB, cache, search, storage, queue connectivity.
 app.route('/health', healthRouter);
+// Serves interactive auth testing page
+app.route('/test-auth', testAuthRouter);
 
 // SCIM 2.0 provisioning. Auth happens inside the router using SCIM_TOKEN.
 // Needs withDb() so it can write to the users/teams tables.
