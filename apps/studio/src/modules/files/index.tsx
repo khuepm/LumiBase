@@ -48,12 +48,20 @@ export function FilesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['files'] }),
   });
 
-  // Mock upload logic
+  // Real upload logic
   const uploadFileMutation = useMutation({
     mutationFn: async (file: File) => {
       const { data: presigned } = await client.files.getPresignedUrl(file.name);
-      // In a real app we would do: await fetch(presigned.url, { method: 'PUT', body: file })
-      // Now we just register the file in the DB
+      
+      // Perform the actual upload to R2/S3 via Hono Worker proxy
+      await fetch(presigned.url, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+      });
+
       return client.files.create({
         filenameDisk: presigned.key,
         filenameDownload: file.name,

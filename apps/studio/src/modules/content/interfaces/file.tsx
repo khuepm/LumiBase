@@ -1,6 +1,7 @@
 import { File, Upload, X } from 'lucide-react';
 import { useRef, useState, type DragEvent } from 'react';
 import { cn } from '@/lib/cn';
+import { getApiClient } from '@/lib/api';
 import { readOptions, type InterfaceComponent } from './types';
 
 interface FileOptions {
@@ -27,13 +28,41 @@ export const FileInterface: InterfaceComponent<string> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
 
+  const client = getApiClient();
+  const [uploading, setUploading] = useState(false);
+
   const handle = async (file: File) => {
     if (opts.maxSize && file.size > opts.maxSize) {
       alert(`File exceeds max size (${opts.maxSize} bytes).`);
       return;
     }
-    // Phase E will swap this for a real presigned upload.
-    onChange(`lumibase://pending/${encodeURIComponent(file.name)}`);
+    
+    setUploading(true);
+    try {
+      const { data: presigned } = await client.files.getPresignedUrl(file.name);
+      
+      await fetch(presigned.url, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+      });
+
+      const { data: fileRecord } = await client.files.create({
+        filenameDisk: presigned.key,
+        filenameDownload: file.name,
+        mime: file.type || 'application/octet-stream',
+        filesize: file.size,
+      });
+
+      onChange(fileRecord.filenameDisk);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to upload file.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
@@ -79,9 +108,9 @@ export const FileInterface: InterfaceComponent<string> = ({
       role="button"
     >
       <Upload className="h-4 w-4" />
-      <span>Drop a file or click to browse</span>
+      <span>{uploading ? 'Uploading...' : 'Drop a file or click to browse'}</span>
       <span className="text-[10px]">
-        upload stub — real storage in Phase E
+        uploads to Cloudflare R2 / S3 storage
       </span>
       <input
         ref={inputRef}

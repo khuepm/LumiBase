@@ -30,7 +30,11 @@ async function verifyCustomJwt(token: string, secret: string): Promise<any> {
  */
 export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const path = c.req.path;
-  if (path === '/api/v1/auth/register' || path === '/api/v1/auth/login') {
+  if (
+    path === '/api/v1/auth/register' ||
+    path === '/api/v1/auth/login' ||
+    path.startsWith('/api/v1/files/upload/')
+  ) {
     return next();
   }
 

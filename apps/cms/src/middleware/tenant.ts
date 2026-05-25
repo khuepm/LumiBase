@@ -13,6 +13,11 @@ import type { AppEnv } from '../env';
  * (Strict Rule #2: multi-tenancy at the ORM/query layer).
  */
 export const withTenant = (): MiddlewareHandler<AppEnv> => async (c, next) => {
+  const path = c.req.path;
+  if (path.startsWith('/api/v1/files/upload/')) {
+    return next();
+  }
+
   const headerSite = c.req.header('x-lumi-site');
   if (headerSite) {
     c.set('siteId', headerSite);
