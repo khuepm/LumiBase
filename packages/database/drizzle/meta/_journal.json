@@ -22,6 +22,13 @@
       "when": 1779384558922,
       "tag": "0002_lying_machine_man",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779760703260,
+      "tag": "0003_parallel_jackpot",
+      "breakpoints": true
     }
   ]
 }
