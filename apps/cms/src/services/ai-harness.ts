@@ -1,5 +1,6 @@
 import { aiApprovals } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
+import { and, eq } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
@@ -253,5 +254,88 @@ export class AISecureHarness {
       const message = err instanceof Error ? err.message : 'Unknown execution error';
       return { success: false, error: message };
     }
+  }
+
+  // ---------- Approval Management ----------
+
+  /**
+   * Executes a previously approved action.
+   * Queries the approval record by id + siteId, verifies it is still pending,
+   * runs the stored skill, and updates the record on success.
+   * If the skill fails, the record remains in 'pending' state so the admin can retry.
+   */
+  async executeApproved(
+    approvalId: string,
+    userId: string,
+  ): Promise<HarnessExecutionResult> {
+    // Query approval record scoped to current site
+    const [record] = await this.db
+      .select()
+      .from(aiApprovals)
+      .where(
+        and(
+          eq(aiApprovals.id, approvalId),
+          eq(aiApprovals.siteId, this.siteId),
+        ),
+      );
+
+    // If not found or not pending, deny
+    if (!record || record.status !== 'pending') {
+      return {
+        status: 'denied',
+        message: 'Approval not found or already processed',
+      };
+    }
+
+    // Execute the stored skill
+    const result = await this.runSkill(
+      record.skillName,
+      record.arguments as Record<string, unknown>,
+    );
+
+    if (result.success) {
+      // Skill succeeded — update record to 'approved'
+      await this.db
+        .update(aiApprovals)
+        .set({
+          status: 'approved',
+          decidedAt: new Date(),
+          decidedBy: userId,
+        })
+        .where(
+          and(
+            eq(aiApprovals.id, approvalId),
+            eq(aiApprovals.siteId, this.siteId),
+          ),
+        );
+
+      return { status: 'executed', data: result.data };
+    }
+
+    // Skill failed — keep record as 'pending' so admin can retry
+    return { status: 'denied', message: result.error };
+  }
+
+  /**
+   * Rejects an approval record.
+   * Updates the status to 'rejected' and records who rejected it and when.
+   */
+  async rejectApproval(
+    approvalId: string,
+    userId: string,
+  ): Promise<void> {
+    await this.db
+      .update(aiApprovals)
+      .set({
+        status: 'rejected',
+        decidedAt: new Date(),
+        decidedBy: userId,
+      })
+      .where(
+        and(
+          eq(aiApprovals.id, approvalId),
+          eq(aiApprovals.siteId, this.siteId),
+        ),
+      );
   }
 }
