@@ -38,6 +38,7 @@ import { usersRouter } from './routes/users';
 import { utilsRouter } from './routes/utils';
 import { webhooksRouter } from './routes/webhooks';
 import { testAuthRouter } from './routes/test-auth';
+import { aiRouter } from './routes/ai';
 
 const app = new Hono<AppEnv>();
 
@@ -100,6 +101,7 @@ api.route('/tm', tmRouter);
 api.route('/flows', flowsRouter);
 api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
+api.route('/ai', aiRouter);
 
 app.route('/api/v1', api);
 
