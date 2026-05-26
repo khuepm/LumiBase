@@ -4,6 +4,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { AISecureHarness } from '../services/ai-harness';
+import { SchemaService } from '../services/schema-service';
+import { ItemService } from '../services/item-service';
 
 // ---------------------------------------------------------------------------
 // Zod Schemas
@@ -126,11 +128,27 @@ aiRouter.post('/chat', async (c) => {
     const db = c.get('db');
     const siteId = c.get('siteId');
     const auth = c.get('auth');
+    const runtime = c.get('runtime');
 
     // Derive capabilities from auth principal roles or default to empty
     const userCapabilities = auth.roles ?? [];
 
-    const harness = new AISecureHarness({ db, siteId });
+    // Wire up real services for skill execution
+    const schemaService = new SchemaService({
+      db,
+      siteId,
+      cache: runtime.cache,
+    });
+    const itemService = new ItemService({
+      db,
+      siteId,
+      userId: auth.userId ?? null,
+      cache: runtime.cache,
+      search: runtime.search,
+      queue: runtime.queue,
+    });
+
+    const harness = new AISecureHarness({ db, siteId, schemaService, itemService });
     const result = await harness.execute(
       intent.skillName,
       intent.args,
@@ -201,9 +219,25 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
   const auth = c.get('auth');
+  const runtime = c.get('runtime');
   const userId = auth.userId ?? auth.externalId ?? 'unknown';
 
-  const harness = new AISecureHarness({ db, siteId });
+  // Wire up real services for skill execution on approval
+  const schemaService = new SchemaService({
+    db,
+    siteId,
+    cache: runtime.cache,
+  });
+  const itemService = new ItemService({
+    db,
+    siteId,
+    userId: auth.userId ?? null,
+    cache: runtime.cache,
+    search: runtime.search,
+    queue: runtime.queue,
+  });
+
+  const harness = new AISecureHarness({ db, siteId, schemaService, itemService });
 
   if (decision === 'approved') {
     const result = await harness.executeApproved(approvalId, userId);

@@ -1,6 +1,8 @@
 import { aiApprovals } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
+import type { SchemaService } from './schema-service';
+import type { ItemService } from './item-service';
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
@@ -13,6 +15,8 @@ export interface SkillDefinition {
   name: string;
   description: string;
   requiredCapabilities: string[];
+  /** Service this skill connects to (for documentation/tracing). */
+  service: 'schema' | 'items';
   handler: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
@@ -28,76 +32,162 @@ export interface HarnessExecutionResult {
 
 /**
  * Configuration required to instantiate the AISecureHarness.
+ *
+ * The `schemaService` and `itemService` fields enable real service integration.
+ * When provided, CORE_SKILLS handlers delegate to these services.
+ * When omitted (e.g. in tests), handlers fall back to stub responses.
  */
 export interface AISecureHarnessConfig {
   db: Database;
   siteId: string;
+  /** SchemaService instance for schema:read/write skills (listCollections, createCollection, deleteCollection). */
+  schemaService?: SchemaService;
+  /** ItemService instance for items:read/write skills (listItems, createItem, deleteItem). */
+  itemService?: ItemService;
 }
 
 // ---------------------------------------------------------------------------
-// Core Skills Registry
+// Core Skills Registry Factory
 // ---------------------------------------------------------------------------
 
 /**
- * CORE_SKILLS — registry of all skills the AI agent can invoke.
- * Each skill declares its required capabilities and a handler function.
+ * Service dependencies passed to the skill factory.
+ * Both are optional — when absent, handlers return stub data.
  */
-export const CORE_SKILLS: Record<string, SkillDefinition> = {
-  listCollections: {
-    name: 'listCollections',
-    description: 'List all collections in the current site',
-    requiredCapabilities: ['schema:read'],
-    handler: async (_args) => {
-      // Stub: will be connected to SchemaService in task 7.1
-      return { collections: [] };
+interface SkillServices {
+  schemaService?: SchemaService;
+  itemService?: ItemService;
+}
+
+/**
+ * Creates the CORE_SKILLS registry with handlers wired to real services.
+ *
+ * Each skill declares:
+ * - `service`: which service it connects to (for tracing/documentation)
+ * - `requiredCapabilities`: capabilities the user must have
+ * - `handler`: the actual execution logic delegating to SchemaService or ItemService
+ *
+ * When a service is not provided, the handler returns a stub response
+ * indicating the service is not configured.
+ */
+function buildCoreSkills(services: SkillServices): Record<string, SkillDefinition> {
+  const { schemaService, itemService } = services;
+
+  return {
+    listCollections: {
+      name: 'listCollections',
+      description: 'List all collections in the current site',
+      requiredCapabilities: ['schema:read'],
+      service: 'schema',
+      handler: async (_args) => {
+        // Connects to: SchemaService.listCollections()
+        if (!schemaService) {
+          return { collections: [] };
+        }
+        const collections = await schemaService.listCollections();
+        return { collections };
+      },
     },
-  },
-  createCollection: {
-    name: 'createCollection',
-    description: 'Create a new collection',
-    requiredCapabilities: ['schema:write'],
-    handler: async (_args) => {
-      // Stub: will be connected to SchemaService in task 7.1
-      return { created: true };
+
+    createCollection: {
+      name: 'createCollection',
+      description: 'Create a new collection with the given name and options',
+      requiredCapabilities: ['schema:write'],
+      service: 'schema',
+      handler: async (args) => {
+        // Connects to: SchemaService.createCollection(input)
+        if (!schemaService) {
+          return { created: true };
+        }
+        const name = args['name'] as string;
+        const result = await schemaService.createCollection({
+          name,
+          singleton: (args['singleton'] as boolean) ?? false,
+        });
+        return { created: true, collection: result };
+      },
     },
-  },
-  deleteCollection: {
-    name: 'deleteCollection',
-    description: 'Delete an existing collection',
-    requiredCapabilities: ['schema:write'],
-    handler: async (_args) => {
-      // Stub: will be connected to SchemaService in task 7.1
-      return { deleted: true };
+
+    deleteCollection: {
+      name: 'deleteCollection',
+      description: 'Delete an existing collection by name',
+      requiredCapabilities: ['schema:write'],
+      service: 'schema',
+      handler: async (args) => {
+        // Connects to: SchemaService.deleteCollection(name)
+        if (!schemaService) {
+          return { deleted: true };
+        }
+        const name = args['name'] as string;
+        const result = await schemaService.deleteCollection(name);
+        return { deleted: true, result };
+      },
     },
-  },
-  listItems: {
-    name: 'listItems',
-    description: 'List items in a collection',
-    requiredCapabilities: ['items:read'],
-    handler: async (_args) => {
-      // Stub: will be connected to ItemService in task 7.1
-      return { items: [] };
+
+    listItems: {
+      name: 'listItems',
+      description: 'List items in a collection with optional filtering',
+      requiredCapabilities: ['items:read'],
+      service: 'items',
+      handler: async (args) => {
+        // Connects to: ItemService.list(collectionName, params)
+        if (!itemService) {
+          return { items: [] };
+        }
+        const collection = args['collection'] as string;
+        const limit = args['limit'] as number | undefined;
+        const offset = args['offset'] as number | undefined;
+        const result = await itemService.list(collection, { limit, offset });
+        return result;
+      },
     },
-  },
-  createItem: {
-    name: 'createItem',
-    description: 'Create a new item in a collection',
-    requiredCapabilities: ['items:write'],
-    handler: async (_args) => {
-      // Stub: will be connected to ItemService in task 7.1
-      return { created: true };
+
+    createItem: {
+      name: 'createItem',
+      description: 'Create a new item in a collection',
+      requiredCapabilities: ['items:write'],
+      service: 'items',
+      handler: async (args) => {
+        // Connects to: ItemService.create(collectionName, payload)
+        if (!itemService) {
+          return { created: true };
+        }
+        const collection = args['collection'] as string;
+        const data = (args['data'] as Record<string, unknown>) ?? {};
+        const status = args['status'] as string | undefined;
+        const result = await itemService.create(collection, { data, status });
+        return { created: true, item: result };
+      },
     },
-  },
-  deleteItem: {
-    name: 'deleteItem',
-    description: 'Delete an item from a collection',
-    requiredCapabilities: ['items:write'],
-    handler: async (_args) => {
-      // Stub: will be connected to ItemService in task 7.1
-      return { deleted: true };
+
+    deleteItem: {
+      name: 'deleteItem',
+      description: 'Delete an item from a collection (soft delete)',
+      requiredCapabilities: ['items:write'],
+      service: 'items',
+      handler: async (args) => {
+        // Connects to: ItemService.softDelete(collectionName, id)
+        if (!itemService) {
+          return { deleted: true };
+        }
+        const collection = args['collection'] as string;
+        const id = args['id'] as string;
+        const result = await itemService.softDelete(collection, id);
+        return { deleted: true, result };
+      },
     },
-  },
-};
+  };
+}
+
+/**
+ * CORE_SKILLS — default registry with stub handlers (no services connected).
+ * Used by tests and code that doesn't need real service integration.
+ * For production use, pass `schemaService` and `itemService` to `AISecureHarness`
+ * which builds skills wired to real services.
+ *
+ * Note: This object is mutable to support test overrides of individual handlers.
+ */
+export const CORE_SKILLS: Record<string, SkillDefinition> = buildCoreSkills({});
 
 // ---------------------------------------------------------------------------
 // AI Secure Harness
@@ -111,14 +201,34 @@ export const CORE_SKILLS: Record<string, SkillDefinition> = {
  * - Check that the user session has all required capabilities
  * - Evaluate risk and decide whether to execute directly or require approval
  * - Execute skills after approval
+ *
+ * Service Integration:
+ * - When `schemaService` is provided, schema skills (listCollections, createCollection,
+ *   deleteCollection) delegate to SchemaService methods.
+ * - When `itemService` is provided, item skills (listItems, createItem, deleteItem)
+ *   delegate to ItemService methods.
+ * - When services are not provided, handlers return stub responses.
  */
 export class AISecureHarness {
   private readonly db: Database;
   private readonly siteId: string;
+  private readonly skills: Record<string, SkillDefinition>;
 
   constructor(config: AISecureHarnessConfig) {
     this.db = config.db;
     this.siteId = config.siteId;
+
+    // When services are provided, build fresh skills wired to real services.
+    // When no services are provided, use the shared CORE_SKILLS object
+    // (allows tests to mutate handlers directly on the exported object).
+    if (config.schemaService || config.itemService) {
+      this.skills = buildCoreSkills({
+        schemaService: config.schemaService,
+        itemService: config.itemService,
+      });
+    } else {
+      this.skills = CORE_SKILLS;
+    }
   }
 
   // ---------- Validation ----------
@@ -128,10 +238,10 @@ export class AISecureHarness {
    * @returns The SkillDefinition if found, or undefined if the skill is not registered.
    */
   validateSkill(skillName: string): SkillDefinition | undefined {
-    if (!Object.hasOwn(CORE_SKILLS, skillName)) {
+    if (!Object.hasOwn(this.skills, skillName)) {
       return undefined;
     }
-    return CORE_SKILLS[skillName];
+    return this.skills[skillName];
   }
 
   /**
@@ -227,15 +337,19 @@ export class AISecureHarness {
   /**
    * Executes a skill handler with error handling and a 30-second timeout.
    * Uses Promise.race to enforce the timeout.
+   *
+   * The handler is resolved from the instance-level `skills` map, which
+   * contains handlers wired to real services (SchemaService, ItemService)
+   * when those services were provided at construction time.
    */
   async runSkill(
     skillName: string,
     args: Record<string, unknown>,
   ): Promise<{ success: true; data: unknown } | { success: false; error: string }> {
-    if (!Object.hasOwn(CORE_SKILLS, skillName)) {
+    if (!Object.hasOwn(this.skills, skillName)) {
       return { success: false, error: `Skill not found: ${skillName}` };
     }
-    const skill = CORE_SKILLS[skillName]!;
+    const skill = this.skills[skillName]!;
 
     const TIMEOUT_MS = 30_000;
 

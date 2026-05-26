@@ -111,6 +111,7 @@ describe('Feature: ai-first-cms-engine, Property 2: Capability checking với wi
       name: 'noCapSkill',
       description: 'A skill requiring no capabilities',
       requiredCapabilities: [],
+      service: 'items',
       handler: async () => ({}),
     };
 
