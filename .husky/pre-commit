@@ -1,1 +1,5 @@
+# Ensure pnpm is on PATH when hook runs from a GUI client
+# (VS Code, GitKraken, etc.) which launches with a minimal PATH.
+export PATH="$HOME/Library/pnpm:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 pnpm test
