@@ -1,3 +1,5 @@
+import { aiApprovals } from '@lumibase/database';
+import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
@@ -147,4 +149,98 @@ aiRouter.post('/chat', async (c) => {
       500,
     );
   }
+});
+
+/**
+ * GET /approvals
+ * Returns pending approval records for the current site, sorted by createdAt DESC, max 100.
+ */
+aiRouter.get('/approvals', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+
+  const data = await db
+    .select()
+    .from(aiApprovals)
+    .where(
+      and(
+        eq(aiApprovals.siteId, siteId),
+        eq(aiApprovals.status, 'pending'),
+      ),
+    )
+    .orderBy(desc(aiApprovals.createdAt))
+    .limit(100);
+
+  return c.json({ data });
+});
+
+/**
+ * POST /approvals/:id/decide
+ * Approves or rejects a pending approval record.
+ */
+aiRouter.post('/approvals/:id/decide', async (c) => {
+  // Step 1: Parse and validate input
+  const body = await c.req.json().catch(() => null);
+  const parsed = decideSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(
+      {
+        errors: parsed.error.issues.map((issue) => ({
+          code: 'VALIDATION',
+          message: issue.message,
+          path: issue.path.map(String),
+        })),
+      },
+      400,
+    );
+  }
+
+  const { decision } = parsed.data;
+  const approvalId = c.req.param('id');
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  const userId = auth.userId ?? auth.externalId ?? 'unknown';
+
+  const harness = new AISecureHarness({ db, siteId });
+
+  if (decision === 'approved') {
+    const result = await harness.executeApproved(approvalId, userId);
+
+    if (result.status === 'denied') {
+      return c.json(
+        {
+          errors: [{ code: 'FORBIDDEN', message: result.message ?? 'Approval not found or already processed' }],
+        },
+        403,
+      );
+    }
+
+    return c.json({ data: result });
+  }
+
+  // decision === 'rejected'
+  // Verify the approval exists and belongs to the current site before rejecting
+  const [existing] = await db
+    .select({ id: aiApprovals.id, status: aiApprovals.status })
+    .from(aiApprovals)
+    .where(
+      and(
+        eq(aiApprovals.id, approvalId),
+        eq(aiApprovals.siteId, siteId),
+      ),
+    );
+
+  if (!existing || existing.status !== 'pending') {
+    return c.json(
+      {
+        errors: [{ code: 'FORBIDDEN', message: 'Approval not found or already processed' }],
+      },
+      403,
+    );
+  }
+
+  await harness.rejectApproval(approvalId, userId);
+  return c.json({ data: { success: true } });
 });
