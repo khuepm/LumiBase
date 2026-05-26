@@ -95,10 +95,10 @@
       },
       {
         "title": "Community",
-        "items": [{ "label": "GitHub", "href": "https://github.com/lumibase/lumibase" }]
+        "items": [{ "label": "GitHub", "href": "https://github.com/khuepm/lumibase" }]
       }
     ],
-    "copyright": "Copyright (c) 2025 LumiBase. Built with React + Vite + MDX."
+    "copyright": "Copyright (c) 2025 LumiBase."
   },
   "themeConfig": {
     "colorMode": { "defaultMode": "light", "respectPrefersColorScheme": true },

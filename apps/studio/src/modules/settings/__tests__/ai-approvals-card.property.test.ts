@@ -130,7 +130,7 @@ describe('Feature: ai-first-cms-engine, Property 14: Approval card rendering com
           const indentedLines = lines.filter((line) => line.startsWith(' '));
           for (const line of indentedLines) {
             const leadingSpaces = line.match(/^( +)/);
-            if (leadingSpaces) {
+            if (leadingSpaces && leadingSpaces[1] !== undefined) {
               // Indentation must be a multiple of 2
               expect(leadingSpaces[1].length % 2).toBe(0);
             }

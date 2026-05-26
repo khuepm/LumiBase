@@ -17,6 +17,12 @@
     "db:generate": "pnpm --filter @lumibase/database generate",
     "db:migrate": "pnpm --filter @lumibase/database migrate",
     "db:studio": "pnpm --filter @lumibase/database studio",
+    "auth:reset-all": "pnpm --filter @lumibase/auth dev:reset-all",
+    "auth:create-user": "pnpm --filter @lumibase/auth dev:create-user",
+    "auth:reset-user": "pnpm --filter @lumibase/auth dev:reset-user",
+    "landing:dev": "pnpm --filter @lumibase/landing dev",
+    "landing:build": "pnpm --filter @lumibase/landing build",
+    "landing:preview": "pnpm --filter @lumibase/landing preview",
     "prepare": "husky"
   },
   "devDependencies": {
