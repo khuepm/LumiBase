@@ -1,13 +1,27 @@
 # Data Model (Drizzle / Postgres)
 
-Tài liệu định nghĩa các bảng cần bổ sung cho `packages/database/src/schema.ts`. Tất cả PK là `nanoid` text. Domain table luôn có `site_id`.
+Tài liệu mô tả các bảng đã được khai báo trong `packages/database/src/schema/`. Tất cả PK là `nanoid` text. Domain table luôn có `site_id`.
 
-## 1. Core tenancy & identity
+Schema được tách theo domain:
 
-### `sites` (đã có)
+| File | Bảng |
+|------|------|
+| `core.ts` | `sites`, `users`, `user_sites`, `teams`, `team_members`, `notifications` |
+| `access.ts` | `roles`, `policies`, `role_policies`, `user_policies`, `permissions` |
+| `cms.ts` | `pages`, `collections`, `fields`, `relations`, `items`, `revisions`, `activity`, `flows`, `flow_runs`, `operations`, `materialized_collections` |
+| `platform.ts` | `folders`, `files`, `presets`, `translations`, `settings`, `webhooks`, `extensions`, `translation_memory`, `glossary` |
+| `ai.ts` | `ai_approvals` |
+
+Migrations đầy đủ trong `packages/database/migrations/` và `packages/database/drizzle/`.
+
+---
+
+## 1. Core tenancy & identity (`core.ts`)
+
+### `sites`
 - `id`, `name`, `domain`, `createdAt`.
 
-### `users` (mở rộng)
+### `users`
 | Column | Type | Note |
 |---|---|---|
 | `id` | text PK | nanoid |
@@ -25,7 +39,13 @@ Tài liệu định nghĩa các bảng cần bổ sung cho `packages/database/sr
 - `teams`: `id`, `siteId`, `name`, `description`.
 - `team_members`: `teamId`, `userId`. PK composite.
 
-## 2. Schema (no-code)
+### `notifications`
+- Persistent inbox cho mention, denial reason, system events (kèm flow `realtime`).
+
+## 2. Schema (no-code) — `cms.ts`
+
+### `pages`
+- Page-builder pages (consumed bởi `/deliver`).
 
 ### `collections`
 | Column | Type | Note |
@@ -48,31 +68,16 @@ Tài liệu định nghĩa các bảng cần bổ sung cho `packages/database/sr
 | `id` | text PK |
 | `siteId`, `collectionId` | text FK |
 | `name` | text | machine |
-| `type` | text | `string`,`text`,`integer`,`decimal`,`boolean`,`json`,`uuid`,`date`,`datetime`,`time`,`uuid`,`csv`,`hash`,`geometry`,`alias` (relational virtual) |
-| `interface` | text | UI editor key (e.g. `input`,`wysiwyg`,`select-dropdown`,`file-image`,`relation-m2m`,`code`,`json-raw`) |
+| `type` | text | `string`,`text`,`integer`,`decimal`,`boolean`,`json`,`uuid`,`date`,`datetime`,`time`,`csv`,`hash`,`geometry`,`alias` |
+| `interface` | text | UI editor key |
 | `display` | text | display formatter key |
-| `options` | jsonb | per-interface options |
-| `displayOptions` | jsonb |
-| `validation` | jsonb | Zod-like DSL + JSONata expressions |
-| `conditions` | jsonb | conditional show/hide/required |
-| `permissionsHint` | jsonb | gợi ý mặc định (override ở `permissions`) |
-| `required`, `readonly`, `hidden` | boolean |
+| `options`, `displayOptions`, `validation`, `conditions`, `permissionsHint`, `translations` | jsonb |
+| `required`, `readonly`, `hidden`, `encrypted`, `versioned`, `rawEnabled` | boolean |
 | `sortOrder` | integer |
-| `width` | text | `half`/`full`/`fill` |
-| `group` | text | field group/section |
-| `translations` | jsonb | label/help per locale |
-| `encrypted` | boolean | per-field encryption |
-| `versioned` | boolean |
-| `rawEnabled` | boolean default true |
+| `width`, `group` | text |
 
 ### `relations`
 - `id`, `siteId`, `manyCollection`, `manyField`, `oneCollection`, `oneField`, `junctionCollection?`, `sortField?`, `onDelete`, `meta jsonb`.
-
-## 3. Content (dynamic)
-
-- LumiBase **không** tạo bảng vật lý mỗi collection ở MVP. Thay vào đó: `items` chung dạng EAV-lite + JSONB.
-  - Lý do: edge-deploy + multi-tenant không thuận lợi cho DDL runtime.
-- Khi cần performance, hỗ trợ "materialize" collection thành bảng riêng (Phase 2).
 
 ### `items`
 | Column | Type |
@@ -92,9 +97,31 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`.
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
 
 ### `activity`
-- `id`, `siteId`, `action` (`create`/`update`/`delete`/`login`/...), `userId`, `collection`, `itemId`, `ip`, `userAgent`, `comment`, `payload jsonb`, `createdAt`.
+- `id`, `siteId`, `action`, `userId`, `collection`, `itemId`, `ip`, `userAgent`, `comment`, `payload jsonb`, `createdAt`.
 
-## 4. Permissions
+### `flows` (POST-GA3)
+| Column | Type | Note |
+|---|---|---|
+| `id`, `siteId` | PK + FK |
+| `name`, `description` | text |
+| `status` | text | `active` / `inactive` / `draft` |
+| `triggerType` | text | `webhook` / `event` / `schedule` / `manual` |
+| `triggerOptions`, `graph` | jsonb | graph: `{ entry?, nodes: [{ id, key, options, next?, onError? }] }` |
+| `nextRunAt` | timestamp | dùng cho schedule trigger |
+| `accountability` | text |
+
+### `flow_runs`
+- Mỗi run lưu `status`, `input`, `steps` (per-node output), `output`, `error`, `startedAt`, `finishedAt`.
+
+### `operations`
+- Khai báo từng operation node trong flow (key + type + options + position).
+- Type: `condition` / `transform` / `http` / `mail` / `log` / `sleep` / `run-extension` / `item.create|update|delete` / `notify`.
+
+### `materialized_collections` (POST-GA6)
+- Định nghĩa "denormalized read tables" cho hot path.
+- `target`, `refreshStrategy` (`auto`/`cron`/`manual`), `refreshCron`, `projection jsonb`, `filter jsonb`, `lastRefreshedAt`, `rowCount`, `status`, `error`.
+
+## 3. Permissions (`access.ts`)
 
 ### `roles`
 - `id`, `siteId`, `name`, `description`, `icon`, `adminAccess` boolean, `appAccess` boolean.
@@ -102,32 +129,29 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`.
 ### `policies`
 - `id`, `siteId`, `name`, `description`, `rules jsonb`. Policy độc lập có thể attach vào nhiều roles/users.
 
-### `role_policies`
-- `roleId`, `policyId`, `priority`. PK composite.
-
-### `user_policies`
-- `userId`, `policyId`, `siteId`, `priority`. Cho phép gán policy trực tiếp user (override role).
+### `role_policies` / `user_policies`
+- Many-to-many với `priority`. `user_policies` cho phép gán policy trực tiếp user (override role).
 
 ### `permissions`
 - `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (row-level rule DSL), `validation jsonb`, `presets jsonb`, `fields text[]` (field-level allow list, `*` = all).
 
-## 5. Files & Assets
+## 4. Files & Assets (`platform.ts`)
 
 ### `files`
-- `id`, `siteId`, `storage` (`r2`/`s3`), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `createdAt`.
+- `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `createdAt`.
 
 ### `folders`
 - `id`, `siteId`, `name`, `parent`.
 
-## 6. UX state
+## 5. UX state (`platform.ts`)
 
 ### `presets` (bookmark + view state)
-- `id`, `siteId`, `bookmark` text nullable (null = default view), `collection`, `userId?`, `roleId?`, `layout` (`tabular`/`cards`/`kanban`/`calendar`/`map`), `layoutQuery jsonb`, `layoutOptions jsonb`, `search`, `filter jsonb`, `icon`, `color`, `refreshInterval`.
+- `id`, `siteId`, `bookmark` text nullable, `collection`, `userId?`, `roleId?`, `layout` (`tabular`/`cards`/`kanban`/`calendar`/`map`), `layoutQuery jsonb`, `layoutOptions jsonb`, `search`, `filter jsonb`, `icon`, `color`, `refreshInterval`.
 
 ### `translations` (UI strings + content)
 - `id`, `siteId`, `language`, `namespace` (`ui`/`field`/`content`), `key`, `value`. Unique `(siteId, language, namespace, key)`.
 
-## 7. Settings & Config
+## 6. Settings & Config (`platform.ts`)
 
 ### `settings` (key/value per site)
 - `id`, `siteId`, `key`, `value jsonb`, `scope` (`site`/`module`), `updatedAt`.
@@ -135,17 +159,60 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`.
 ### `webhooks`
 - `id`, `siteId`, `name`, `url`, `actions text[]`, `collections text[]`, `headers jsonb`, `status`, `secret`, `createdAt`.
 
-## 8. Extensions
+## 7. Extensions + Marketplace (`platform.ts`)
 
 ### `extensions`
-- `id`, `siteId?` (null = global), `name`, `version`, `type` (`hook`/`endpoint`/`module`/`interface`/`display`/`layout`/`panel`/`operation`), `enabled`, `bundleUrl` (R2 path), `manifest jsonb`, `capabilities text[]`, `installedBy`, `installedAt`.
+| Column | Type | Note |
+|---|---|---|
+| `id` | text PK |
+| `siteId` | nullable text FK | null = global |
+| `name`, `version` | text |
+| `type` | text | `hook`/`endpoint`/`module`/`interface`/`display`/`layout`/`panel`/`operation` |
+| `enabled` | boolean |
+| `bundleUrl` | text | R2/S3 path |
+| `manifest` | jsonb |
+| `capabilities` | jsonb | granted subset of manifest |
+| `installedBy`, `installedAt` |
+| **Marketplace fields (POST-GA5)**: `signature`, `signatureAlg` (`ed25519`/`rsa-pss-sha256`), `publisherKeyId`, `publisher`, `marketplaceSlug`, `publishedAt`, `bundleSha256` |
 
-## 9. Realtime / Notifications
+Indexes: `(siteId, name)`, `(publisher, publishedAt)`, `marketplaceSlug`.
+
+## 8. Translation Memory (`platform.ts`, POST-GA1)
+
+### `translation_memory`
+- `(sourceLang, targetLang, sourceText, targetText)` + `quality` (0-100), `source` (`human`/`mt`/`imported`), `provider`, `hits`, `context`.
+
+### `glossary`
+- Term-level constraints: `rule` (`do-not-translate`/`prefer`/`forbidden`), `term`, `translation`, `note`.
+
+## 9. Realtime / Notifications (`core.ts`)
 
 ### `notifications`
 - `id`, `siteId`, `recipient` (userId), `sender?`, `subject`, `message`, `collection?`, `item?`, `status`, `createdAt`.
 
-## 10. Indexing & RLS
+> Realtime cursor data (CRDT-lite) **không** persist trong Postgres — chỉ broadcast qua Durable Object/host process. Xem `apps/cms/src/services/cursor-protocol.ts`.
+
+## 10. AI Copilot — HITL (`ai.ts`)
+
+### `ai_approvals`
+| Column | Type | Note |
+|---|---|---|
+| `id` | text PK | nanoid(21) |
+| `siteId` | text FK → sites CASCADE |
+| `agentName` | text | default `'lumibase-copilot'` |
+| `skillName` | text | từ `CORE_SKILLS` registry |
+| `arguments` | jsonb | đối số skill |
+| `status` | text | `pending` / `approved` / `rejected` |
+| `context` | text nullable | message gốc của user |
+| `createdAt`, `decidedAt` | timestamp |
+| `decidedBy` | text FK → users SET NULL |
+
+Index: `(siteId, status)`.
+
+Hành vi: Skill nguy hiểm (`schema:write` hoặc tên bắt đầu bằng `delete`) bắt buộc tạo `ai_approvals` row chờ duyệt thay vì execute trực tiếp. Xem `docs/features/ai-copilot.md`.
+
+## 11. Indexing & RLS
 
 - Bắt buộc index `(siteId, …)` ở mọi bảng domain.
-- Áp dụng Drizzle helper `scopeSite(siteId)` ở tầng repo; bổ sung Postgres RLS policy ở Phase 2 cho defence-in-depth.
+- Áp dụng Drizzle helper `scopeSite(siteId)` ở tầng repo.
+- Postgres RLS được bật qua middleware `withRls()` (`apps/cms/src/middleware/rls.ts`) — set session var để defence-in-depth.
