@@ -423,10 +423,10 @@ describe('Integration: Internal link navigation', () => {
     });
 
     // The markdown content has a link to ./features/collections.md
-    // It should be rewritten to /docs/features/collections
+    // It should be rewritten to /{locale}/docs/features/collections
     await waitFor(() => {
       const link = screen.getByRole('link', { name: 'Collections Guide' });
-      expect(link).toHaveAttribute('href', '/docs/features/collections');
+      expect(link).toHaveAttribute('href', '/en/docs/features/collections');
     });
   });
 

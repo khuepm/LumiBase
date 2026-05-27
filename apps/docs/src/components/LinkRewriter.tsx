@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AnchorHTMLAttributes, MouseEvent, ReactNode } from 'react';
+import { pathFor } from '../lib/url';
 
 /**
  * Props for the LinkRewriter component factory.
@@ -8,7 +9,10 @@ import type { AnchorHTMLAttributes, MouseEvent, ReactNode } from 'react';
  */
 export interface LinkRewriterContext {
   currentSlug: string;
+  /** Set of slugs known across ALL locales (union) — used for broken-link detection */
   knownSlugs: Set<string>;
+  /** Current active locale — used for link rewriting with locale prefix */
+  currentLocale: string;
 }
 
 /**
@@ -48,10 +52,14 @@ export function resolveRelativeSlug(currentSlug: string, href: string): string {
 
 /**
  * Classifies a link href into one of three categories:
- * - 'internal': relative .md link that resolves to a known slug
+ * - 'internal': relative .md link that resolves to a slug known in ANY locale
  * - 'external': absolute URL (http:// or https://)
- * - 'broken': relative .md link that does NOT resolve to a known slug
+ * - 'broken': relative .md link that does NOT resolve to a slug in ANY locale
  * - 'passthrough': any other link (anchors, non-.md relative links, etc.)
+ *
+ * Broken-link logic: target slug ∉ ANY locale → broken.
+ * If target slug exists in at least one locale (even just default), it's internal —
+ * fallback will handle it at runtime.
  */
 export function classifyLink(
   href: string,
@@ -81,15 +89,17 @@ export function classifyLink(
 
 /**
  * Creates a custom `<a>` component override for react-markdown that:
- * - Rewrites relative .md links to /docs/{slug} and uses React Router navigation
+ * - Rewrites relative .md links to /{currentLocale}/docs/{slug} using pathFor()
+ *   and uses React Router navigation
  * - Opens absolute URLs in a new tab with rel="noopener noreferrer"
- * - Renders broken links (unknown slugs) with strikethrough and prevents navigation
+ * - Renders broken links (slug not in ANY locale) with strikethrough and prevents navigation
  *
  * Requirements: 8.1, 8.2, 8.3, 8.4
  */
 export function LinkRewriter({
   currentSlug,
   knownSlugs,
+  currentLocale,
   href,
   children,
   ...props
@@ -97,9 +107,9 @@ export function LinkRewriter({
   const navigate = useNavigate();
 
   const handleInternalClick = useCallback(
-    (e: MouseEvent<HTMLAnchorElement>, slug: string) => {
+    (e: MouseEvent<HTMLAnchorElement>, targetPath: string) => {
       e.preventDefault();
-      navigate(`/docs/${slug}`);
+      navigate(targetPath);
     },
     [navigate],
   );
@@ -122,10 +132,11 @@ export function LinkRewriter({
     case 'internal': {
       // Preserve any fragment from the original href
       const fragment = href.includes('#') ? `#${href.split('#')[1]}` : '';
+      const targetPath = pathFor(currentLocale, classification.slug) + fragment;
       return (
         <a
-          href={`/docs/${classification.slug}${fragment}`}
-          onClick={(e) => handleInternalClick(e, `${classification.slug}${fragment}`)}
+          href={targetPath}
+          onClick={(e) => handleInternalClick(e, targetPath)}
           className="text-primary underline underline-offset-2 hover:text-primary/80"
           {...props}
         >

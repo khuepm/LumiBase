@@ -8,6 +8,7 @@ import { createHighlighter, type Highlighter } from 'shiki';
 import type { Components } from 'react-markdown';
 import type { HTMLAttributes, TableHTMLAttributes } from 'react';
 import { LinkRewriter } from './LinkRewriter';
+import { defaultLocale } from 'virtual:docs-registry';
 
 /**
  * MarkdownRenderer — renders Markdown content as styled HTML using
@@ -238,7 +239,7 @@ export function MarkdownRenderer({
   content,
   currentSlug,
   knownSlugs,
-  currentLocale: _currentLocale,
+  currentLocale,
 }: MarkdownRendererProps) {
   const [highlighter, setHighlighter] = useState<Highlighter | null>(null);
 
@@ -255,11 +256,12 @@ export function MarkdownRenderer({
         <LinkRewriter
           currentSlug={currentSlug}
           knownSlugs={knownSlugs}
+          currentLocale={currentLocale ?? defaultLocale}
           {...props}
         />
       ),
     }),
-    [currentSlug, knownSlugs],
+    [currentSlug, knownSlugs, currentLocale],
   );
 
   // Build rehype plugins — only include shiki when highlighter is ready

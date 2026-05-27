@@ -324,12 +324,28 @@ export function buildDocTreeBySlug(entries: DocEntry[]): DocNode[] {
       if (!current.has(dirName)) {
         current.set(dirName, new Map());
       }
-      current = current.get(dirName) as Map<string, unknown>;
+      const next = current.get(dirName);
+      // If a file entry already occupies this key, promote it to a directory Map
+      // and preserve the file entry under a special '__file__' key
+      if (!(next instanceof Map)) {
+        const dirMap = new Map<string, unknown>();
+        dirMap.set('__file__', next); // preserve the existing file entry
+        current.set(dirName, dirMap);
+        current = dirMap;
+      } else {
+        current = next as Map<string, unknown>;
+      }
     }
 
-    // Set the file entry at the leaf
+    // Set the file entry at the leaf (only if not already a directory Map)
     const fileName = parts[parts.length - 1]!;
-    current.set(fileName, entry);
+    const existing = current.get(fileName);
+    if (existing instanceof Map) {
+      // A directory already exists at this key; store the file entry as a special __file__ key
+      existing.set('__file__', entry);
+    } else {
+      current.set(fileName, entry);
+    }
   }
 
   return mapToDocNodes(root);
@@ -374,7 +390,15 @@ function mapToDocNodes(map: Map<string, unknown>): DocNode[] {
   const files: DocNode[] = [];
 
   for (const [key, value] of map) {
-    if (value instanceof Map) {
+    if (key === '__file__') {
+      // A file entry stored alongside directory children (slug is both file and dir prefix)
+      const entry = value as DocEntry;
+      files.push({
+        type: 'file',
+        name: entry.title,
+        slug: entry.slug,
+      });
+    } else if (value instanceof Map) {
       // Directory node
       directories.push({
         type: 'directory',
