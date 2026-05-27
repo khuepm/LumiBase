@@ -26,6 +26,8 @@
     "docs:dev": "pnpm --filter @lumibase/docs dev",
     "docs:build": "pnpm --filter @lumibase/docs build",
     "docs:preview": "pnpm --filter @lumibase/docs preview",
+    "landing:deploy": "pnpm landing:build && wrangler pages deploy apps/landing/out --project-name lumibase-landing",
+    "docs:deploy": "pnpm docs:build && wrangler pages deploy apps/docs/dist --project-name lumibase-docs",
     "prepare": "husky"
   },
   "devDependencies": {

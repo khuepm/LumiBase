@@ -10,5 +10,4 @@ command = "npm run build"
 cwd = "."
 
 # Site configuration for Cloudflare Pages
-[[pages_build_output]]
-# This is for Cloudflare Pages deployment
+pages_build_output_dir = "out"
