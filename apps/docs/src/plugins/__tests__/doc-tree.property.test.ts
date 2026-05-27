@@ -55,6 +55,7 @@ function buildDocEntries(filePaths: string[]): DocEntry[] {
     const slug = filePath.replace(/\.md$/, '').split(path.sep).join('/');
     return {
       slug,
+      locale: 'en',
       title: path.basename(filePath, '.md'),
       filePath,
       content: '',

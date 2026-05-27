@@ -7,8 +7,9 @@ import matter from 'gray-matter';
 
 export interface DocEntry {
   slug: string;
+  locale: string;
   title: string;
-  filePath: string;
+  filePath: string; // relative to docsRootDir, e.g. "en/features/ai-copilot.md"
   content: string;
   lastModified?: string;
 }
@@ -21,7 +22,8 @@ export interface DocNode {
 }
 
 export interface VitePluginDocsLoaderOptions {
-  docsDir?: string; // absolute path to docs directory
+  docsDir?: string; // absolute path to docs root directory (contains locale folders)
+  config?: { i18n: { locales: string[]; defaultLocale: string } };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -58,34 +60,41 @@ export function deriveTitle(
 }
 
 /**
- * Discover all .md files under the docs directory and build the registry.
+ * Discover all .md files for a single locale under docsDir/{locale}/ and return entries.
  */
-export function buildRegistry(docsDir: string): {
-  docTree: DocNode[];
-  docIndex: Record<string, DocEntry>;
-  docList: DocEntry[];
-} {
-  const docIndex: Record<string, DocEntry> = {};
-  const docList: DocEntry[] = [];
+export function discoverLocaleEntries(
+  docsDir: string,
+  locale: string,
+): DocEntry[] {
+  const localeDir = path.join(docsDir, locale);
+  const entries: DocEntry[] = [];
 
-  // Discover all .md files
-  const pattern = path.join(docsDir, '**/*.md');
+  // If locale directory doesn't exist, return empty (valid per spec)
+  if (!fs.existsSync(localeDir)) {
+    return entries;
+  }
+
+  // Discover all .md files under docsDir/{locale}/
+  const pattern = path.join(localeDir, '**/*.md');
   let mdFiles: string[];
   try {
     mdFiles = fs.globSync(pattern);
   } catch {
     // Fallback: recursive readdir
-    mdFiles = findMdFiles(docsDir);
+    mdFiles = findMdFiles(localeDir);
   }
 
   for (const absPath of mdFiles) {
-    const relativePath = path.relative(docsDir, absPath);
-    const slug = deriveSlug(relativePath);
+    // Path relative to the locale folder → used for slug derivation
+    const relativeToLocale = path.relative(localeDir, absPath);
+    const slug = deriveSlug(relativeToLocale);
+    // Path relative to docsDir root → includes locale prefix, e.g. "en/features/ai-copilot.md"
+    const filePath = path.relative(docsDir, absPath).split(path.sep).join('/');
 
     try {
       const raw = fs.readFileSync(absPath, 'utf-8');
       const { data: frontMatter, content } = matter(raw);
-      const title = deriveTitle(frontMatter.title, relativePath);
+      const title = deriveTitle(frontMatter.title, relativeToLocale);
 
       let lastModified: string | undefined;
       try {
@@ -97,27 +106,126 @@ export function buildRegistry(docsDir: string): {
 
       const entry: DocEntry = {
         slug,
+        locale,
         title,
-        filePath: relativePath,
+        filePath,
         content,
         lastModified,
       };
 
-      docIndex[slug] = entry;
-      docList.push(entry);
+      entries.push(entry);
     } catch (err) {
       console.warn(
-        `[vite-plugin-docs-loader] Failed to parse ${relativePath}:`,
+        `[vite-plugin-docs-loader] Failed to parse ${filePath}:`,
         err instanceof Error ? err.message : err,
       );
       // Exclude file from registry on parse error
     }
   }
 
-  // Build tree from the collected entries
-  const docTree = buildDocTree(docList, docsDir);
+  return entries;
+}
 
-  return { docTree, docIndex, docList };
+/**
+ * Discover all .md files across all locales and build the multi-locale registry.
+ * Validates that defaultLocale is in locales array.
+ */
+export function buildRegistry(
+  docsDir: string,
+  config?: { i18n: { locales: string[]; defaultLocale: string } },
+): {
+  docTree: DocNode[];
+  docIndex: Record<string, DocEntry>;
+  docList: DocEntry[];
+  docIndexByLocale: Record<string, Record<string, DocEntry>>;
+} {
+  // If no i18n config provided, fall back to single-locale behavior (backward compat)
+  if (!config) {
+    const docIndex: Record<string, DocEntry> = {};
+    const docList: DocEntry[] = [];
+
+    const pattern = path.join(docsDir, '**/*.md');
+    let mdFiles: string[];
+    try {
+      mdFiles = fs.globSync(pattern);
+    } catch {
+      mdFiles = findMdFiles(docsDir);
+    }
+
+    for (const absPath of mdFiles) {
+      const relativePath = path.relative(docsDir, absPath);
+      const slug = deriveSlug(relativePath);
+
+      try {
+        const raw = fs.readFileSync(absPath, 'utf-8');
+        const { data: frontMatter, content } = matter(raw);
+        const title = deriveTitle(frontMatter.title, relativePath);
+
+        let lastModified: string | undefined;
+        try {
+          const stat = fs.statSync(absPath);
+          lastModified = stat.mtime.toISOString();
+        } catch {
+          // ignore stat errors
+        }
+
+        const entry: DocEntry = {
+          slug,
+          locale: '',
+          title,
+          filePath: relativePath,
+          content,
+          lastModified,
+        };
+
+        docIndex[slug] = entry;
+        docList.push(entry);
+      } catch (err) {
+        console.warn(
+          `[vite-plugin-docs-loader] Failed to parse ${relativePath}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+
+    const docTree = buildDocTree(docList, docsDir);
+    return { docTree, docIndex, docList, docIndexByLocale: { '': docIndex } };
+  }
+
+  const { locales, defaultLocale } = config.i18n;
+
+  // Validate: defaultLocale must be in locales
+  if (!locales.includes(defaultLocale)) {
+    throw new Error(
+      `[vite-plugin-docs-loader] defaultLocale "${defaultLocale}" is not in locales [${locales.join(', ')}]. ` +
+        `Please ensure defaultLocale is included in the locales array in docs.config.json.`,
+    );
+  }
+
+  const docList: DocEntry[] = [];
+  const docIndexByLocale: Record<string, Record<string, DocEntry>> = {};
+
+  // Discover entries for each locale
+  for (const locale of locales) {
+    const entries = discoverLocaleEntries(docsDir, locale);
+    const localeIndex: Record<string, DocEntry> = {};
+
+    for (const entry of entries) {
+      localeIndex[entry.slug] = entry;
+      docList.push(entry);
+    }
+
+    docIndexByLocale[locale] = localeIndex;
+  }
+
+  // Build docIndex as alias for default locale (backward compat)
+  const docIndex = docIndexByLocale[defaultLocale] ?? {};
+
+  // Build tree from default locale entries (backward compat)
+  const defaultLocaleEntries = Object.values(docIndex);
+  const docTree = buildDocTree(defaultLocaleEntries, docsDir);
+
+  return { docTree, docIndex, docList, docIndexByLocale };
 }
 
 /**
@@ -212,6 +320,7 @@ export default function vitePluginDocsLoader(
   options: VitePluginDocsLoaderOptions = {},
 ): Plugin {
   const docsDir = options.docsDir ?? path.resolve(process.cwd(), '../../docs');
+  const config = options.config;
 
   return {
     name: 'vite-plugin-docs-loader',
@@ -224,12 +333,16 @@ export default function vitePluginDocsLoader(
 
     load(id: string) {
       if (id === RESOLVED_VIRTUAL_MODULE_ID) {
-        const { docTree, docIndex, docList } = buildRegistry(docsDir);
+        const { docTree, docIndex, docList, docIndexByLocale } = buildRegistry(
+          docsDir,
+          config,
+        );
 
         const code = `
 export const docTree = ${JSON.stringify(docTree, null, 2)};
 export const docIndex = ${JSON.stringify(docIndex, null, 2)};
 export const docList = ${JSON.stringify(docList, null, 2)};
+export const docIndexByLocale = ${JSON.stringify(docIndexByLocale, null, 2)};
 `;
         return code;
       }
