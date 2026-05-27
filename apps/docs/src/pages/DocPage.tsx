@@ -1,20 +1,23 @@
 /**
- * DocPage component — displays a single documentation page.
+ * DocPage component — displays a single documentation page with i18n support.
  *
  * Responsibilities:
- * - Load doc content from `docIndex` based on route slug parameter
- * - Pass content to MarkdownRenderer
+ * - Load doc content via `resolveDoc(locale, slug)` with fallback to default locale
+ * - Pass content to MarkdownRenderer with `currentLocale` for link rewriting
  * - Display document title as H1 at top of content area
  * - Display last-modified date below title in DD/MM/YYYY format (if available)
  * - Set browser <title> to `{document title} — Lumibase Docs`
- * - If slug not found in docIndex, redirect to NotFoundPage
+ * - If slug not found in any locale, redirect to NotFoundPage
+ * - Expose `isFallback` for TranslationBanner (task 6.5)
  *
- * Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 5.2
+ * Requirements: 4.1, 4.3
  */
 import { useEffect, useMemo } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
-import { docIndex } from 'virtual:docs-registry';
+import { docIndexByLocale } from 'virtual:docs-registry';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
+import { useLocale } from '../hooks/useLocale';
+import { resolveDoc } from '../lib/resolveDoc';
 
 /**
  * Formats an ISO date string to DD/MM/YYYY format.
@@ -32,11 +35,23 @@ export function formatDate(isoDate: string | undefined): string | undefined {
 
 export function DocPage() {
   const { '*': slug } = useParams();
+  const { locale } = useLocale();
 
-  const entry = slug ? docIndex[slug] : undefined;
+  // Resolve document with locale fallback
+  const resolved = slug ? resolveDoc(locale, slug) : null;
+  const entry = resolved?.entry;
+  const isFallback = resolved?.isFallback ?? false;
 
-  // Build the set of known slugs for link rewriting
-  const knownSlugs = useMemo(() => new Set(Object.keys(docIndex)), []);
+  // Build the set of known slugs for link rewriting (union of all locales)
+  const knownSlugs = useMemo(() => {
+    const slugs = new Set<string>();
+    for (const localeIndex of Object.values(docIndexByLocale)) {
+      for (const s of Object.keys(localeIndex)) {
+        slugs.add(s);
+      }
+    }
+    return slugs;
+  }, []);
 
   // Set browser title
   useEffect(() => {
@@ -48,17 +63,17 @@ export function DocPage() {
     };
   }, [entry]);
 
-  // If slug not found, redirect to 404
-  if (!entry) {
+  // If slug not found in any locale, redirect to 404
+  if (!resolved) {
     return <Navigate to="/404" replace />;
   }
 
-  const formattedDate = formatDate(entry.lastModified);
+  const formattedDate = formatDate(entry!.lastModified);
 
   return (
     <article className="p-8 max-w-4xl mx-auto">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground">{entry.title}</h1>
+        <h1 className="text-3xl font-bold text-foreground">{entry!.title}</h1>
         {formattedDate && (
           <p className="mt-2 text-sm text-muted-foreground">
             Last modified: {formattedDate}
@@ -66,9 +81,10 @@ export function DocPage() {
         )}
       </header>
       <MarkdownRenderer
-        content={entry.content}
-        currentSlug={entry.slug}
+        content={entry!.content}
+        currentSlug={entry!.slug}
         knownSlugs={knownSlugs}
+        currentLocale={locale}
       />
     </article>
   );

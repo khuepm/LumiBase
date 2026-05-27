@@ -28,6 +28,8 @@ export interface MarkdownRendererProps {
   content: string;
   currentSlug: string;
   knownSlugs: Set<string>;
+  /** Current active locale — used for link rewriting (Requirements 8.1, 8.2) */
+  currentLocale?: string;
 }
 
 /**
@@ -236,6 +238,7 @@ export function MarkdownRenderer({
   content,
   currentSlug,
   knownSlugs,
+  currentLocale: _currentLocale,
 }: MarkdownRendererProps) {
   const [highlighter, setHighlighter] = useState<Highlighter | null>(null);
 
