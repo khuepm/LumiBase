@@ -23,6 +23,9 @@
     "landing:dev": "pnpm --filter @lumibase/landing dev",
     "landing:build": "pnpm --filter @lumibase/landing build",
     "landing:preview": "pnpm --filter @lumibase/landing preview",
+    "docs:dev": "pnpm --filter @lumibase/docs dev",
+    "docs:build": "pnpm --filter @lumibase/docs build",
+    "docs:preview": "pnpm --filter @lumibase/docs preview",
     "prepare": "husky"
   },
   "devDependencies": {
