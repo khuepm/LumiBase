@@ -28,6 +28,15 @@ export interface FooterColumn {
   items: FooterLinkItem[];
 }
 
+export interface I18nConfig {
+  /** The default locale used as fallback. Must be included in `locales`. */
+  defaultLocale: string;
+  /** List of supported locale codes. */
+  locales: string[];
+  /** Human-readable display names for each locale. */
+  localeNames: Record<string, string>;
+}
+
 export interface SiteConfig {
   title: string;
   tagline: string;
@@ -35,6 +44,7 @@ export interface SiteConfig {
   baseUrl: string;
   organizationName: string;
   projectName: string;
+  i18n: I18nConfig;
   navbar: {
     title: string;
     items: NavbarItem[];
@@ -46,4 +56,20 @@ export interface SiteConfig {
   };
 }
 
+/**
+ * Validates that the i18n configuration is consistent.
+ * Throws an error if `defaultLocale` is not included in `locales`.
+ */
+export function validateI18nConfig(config: SiteConfig): void {
+  const { i18n } = config;
+  if (!i18n.locales.includes(i18n.defaultLocale)) {
+    throw new Error(
+      `[docs.config.json] Invalid i18n config: defaultLocale "${i18n.defaultLocale}" is not included in locales [${i18n.locales.join(', ')}].`,
+    );
+  }
+}
+
 export const siteConfig = rawConfig as SiteConfig;
+
+// Validate at module load time (build-time for Vite bundled code)
+validateI18nConfig(siteConfig);

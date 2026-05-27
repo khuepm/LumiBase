@@ -8,7 +8,8 @@
   "projectName": "lumibase",
   "i18n": {
     "defaultLocale": "en",
-    "locales": ["en", "vi"]
+    "locales": ["en", "vi"],
+    "localeNames": { "en": "English", "vi": "Tiếng Việt" }
   },
   "navbar": {
     "title": "LumiBase",
