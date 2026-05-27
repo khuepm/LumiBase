@@ -13,6 +13,6 @@ export function pathFor(locale: string, slug: string): string {
  */
 export function parseUrl(path: string): { locale: string; slug: string } | null {
   const match = path.match(/^\/([^/]+)\/docs\/(.+)$/);
-  if (!match) return null;
+  if (!match || !match[1] || !match[2]) return null;
   return { locale: match[1], slug: match[2] };
 }
