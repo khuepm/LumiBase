@@ -19,6 +19,14 @@ export interface DocNode {
   children?: DocNode[];
 }
 
+export const locales: string[] = ['en', 'vi'];
+export const defaultLocale: string = 'en';
+export const localeNames: Record<string, string> = { en: 'English', vi: 'Tiếng Việt' };
+
 export const docTree: DocNode[] = [];
 export const docIndex: Record<string, DocEntry> = {};
 export const docList: DocEntry[] = [];
+export const docIndexByLocale: Record<string, Record<string, DocEntry>> = { en: {}, vi: {} };
+export const docTreeByLocale: Record<string, DocNode[]> = { en: [], vi: [] };
+export const docTreeUnion: DocNode[] = [];
+export const docSlugsByLocale: Record<string, string[]> = { en: [], vi: [] };

@@ -1,43 +1,11 @@
-import { createBrowserRouter, Navigate, useParams, useLocation } from 'react-router-dom';
-import { locales, defaultLocale } from 'virtual:docs-registry';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { defaultLocale } from 'virtual:docs-registry';
 import { Layout } from './components/Layout';
+import { LegacyRedirect } from './components/LegacyRedirect';
+import { LocaleGuard } from './components/LocaleGuard';
 import { DocPage } from './pages/DocPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { pathFor } from './lib/url';
-
-/**
- * LocaleGuard — validates that the :locale param is a known locale.
- * Renders children (Outlet via Layout) if valid, otherwise renders NotFoundPage.
- * Preserves URL so user can see the invalid path.
- *
- * Will be properly implemented in task 3.4.
- * Requirements: 2.4
- */
-function LocaleGuard({ children }: { children: React.ReactNode }) {
-  const { locale } = useParams<{ locale: string }>();
-
-  if (!locale || !locales.includes(locale)) {
-    return <NotFoundPage />;
-  }
-
-  return <>{children}</>;
-}
-
-/**
- * LegacyRedirect — redirects legacy prefix-less URLs (/docs/{slug})
- * to the locale-prefixed equivalent (/{defaultLocale}/docs/{slug}).
- *
- * Will be properly implemented in task 3.5.
- * Requirements: 2.3
- */
-function LegacyRedirect() {
-  const location = useLocation();
-
-  // Extract slug from /docs/* pattern
-  const slug = location.pathname.replace(/^\/docs\/?/, '') || 'README';
-
-  return <Navigate to={pathFor(defaultLocale, slug)} replace />;
-}
 
 /**
  * Application router using React Router v7 (library mode).
