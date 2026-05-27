@@ -16,6 +16,7 @@ import { useEffect, useMemo } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { docIndexByLocale } from 'virtual:docs-registry';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
+import { TranslationBanner } from '../components/TranslationBanner';
 import { useLocale } from '../hooks/useLocale';
 import { resolveDoc } from '../lib/resolveDoc';
 
@@ -80,6 +81,7 @@ export function DocPage() {
           </p>
         )}
       </header>
+      {isFallback && <TranslationBanner filePath={entry!.filePath} />}
       <MarkdownRenderer
         content={entry!.content}
         currentSlug={entry!.slug}
