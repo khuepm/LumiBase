@@ -19,6 +19,8 @@ export interface Bindings {
   LUMIBASE_ENV: string;
   /** Runtime mode: `'cloudflare'` or `'docker'`. Defaults to `'docker'`. */
   LUMIBASE_RUNTIME?: string;
+  /** Direct Postgres connection string (used in local development). */
+  DATABASE_URL?: string;
   /** Cloudflare Access Certificates URL (JWKS format) */
   CF_ACCESS_CERTS_URL?: string;
   /** Cloudflare Access Application Audience (AUD) */

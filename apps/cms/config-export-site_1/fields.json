@@ -1,0 +1,32 @@
+{
+  "data": [
+    {
+      "id": "field_title_1",
+      "siteId": "site_1",
+      "collectionId": "col_posts_1",
+      "name": "title",
+      "type": "string",
+      "interface": "text-input",
+      "display": "text",
+      "options": {},
+      "displayOptions": {},
+      "validation": {
+        "rules": []
+      },
+      "conditions": [],
+      "translations": {},
+      "required": false,
+      "readonly": false,
+      "hidden": false,
+      "encrypted": false,
+      "versioned": false,
+      "rawEnabled": true,
+      "width": "full",
+      "group": null,
+      "sortOrder": 0,
+      "createdAt": "2026-05-25T21:28:20.429Z",
+      "updatedAt": "2026-05-25T21:28:20.429Z",
+      "collection": "posts"
+    }
+  ]
+}

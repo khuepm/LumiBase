@@ -63,6 +63,9 @@ importers:
       nodemailer:
         specifier: 8.0.10
         version: 8.0.10
+      postgres:
+        specifier: ^3.4.5
+        version: 3.4.9
       prom-client:
         specifier: ^15.1.0
         version: 15.1.3
@@ -76,6 +79,9 @@ importers:
       '@types/nodemailer':
         specifier: 8.0.0
         version: 8.0.0
+      '@types/node':
+        specifier: ^22.7.4
+        version: 22.19.19
       esbuild:
         specifier: ^0.28.0
         version: 0.28.0
@@ -544,6 +550,7 @@ packages:
   '@aws-sdk/core@3.974.11':
     resolution: {integrity: sha512-QpnINq5FZH6EOaDEkmHdT7eUunbvD27pDNQypaWjFyYz7Zl1q3UCMQErBZxpmfGfI7MvI2TlK8KTkgNpv8b1ug==}
     engines: {node: '>=20.0.0'}
+    deprecated: Deprecated due to an error deserialization bug in JSON 1.0 protocol services, see https://github.com/aws/aws-sdk-js-v3/pull/8031. Newer version available.
 
   '@aws-sdk/crc64-nvme@3.972.8':
     resolution: {integrity: sha512-fVfUCL/Xh2zINYMPZvj+iBn6XWouQf0DAnjaWCI9MkmqXzL2Iy5FoQB8O7syFe6gN6AH1ecDDU58T51Ou0kFkA==}

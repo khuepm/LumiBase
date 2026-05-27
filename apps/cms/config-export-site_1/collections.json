@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "id": "col_posts_1",
+      "siteId": "site_1",
+      "name": "posts",
+      "singleton": false,
+      "icon": "document",
+      "color": "blue",
+      "note": null,
+      "displayTemplate": null,
+      "sortField": null,
+      "archiveField": null,
+      "archiveValue": null,
+      "accountability": "all",
+      "versioning": false,
+      "meta": {},
+      "createdAt": "2026-05-25T21:28:20.429Z",
+      "updatedAt": "2026-05-25T21:28:20.429Z"
+    }
+  ]
+}

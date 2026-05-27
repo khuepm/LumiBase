@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+/// <reference types="node" />
 /**
  * config-cli.ts — LumiBase config export / import / diff CLI.
  *
@@ -91,9 +92,30 @@ async function runExport(): Promise<void> {
 
   console.log(`⏳ Exporting config for site "${SITE_ID}" → ${outDir}/`);
 
+  let collectionsList: any[] = [];
+
   for (const { path, file, key } of RESOURCES) {
     try {
-      const data = await apiGet(path);
+      let data: any;
+      if (key === 'fields') {
+        const allFields: any[] = [];
+        for (const col of collectionsList) {
+          try {
+            const colFieldsRes = await apiGet(`/api/v1/collections/${col.name}/fields`) as { data: any[] };
+            if (colFieldsRes && Array.isArray(colFieldsRes.data)) {
+              allFields.push(...colFieldsRes.data.map((f: any) => ({ ...f, collection: col.name })));
+            }
+          } catch (e) {
+            console.warn(`    ⚠ Failed to get fields for collection ${col.name}: ${(e as Error).message}`);
+          }
+        }
+        data = { data: allFields };
+      } else {
+        data = await apiGet(path);
+        if (key === 'collections' && data && Array.isArray(data.data)) {
+          collectionsList = data.data;
+        }
+      }
       writeFileSync(join(outDir, file), JSON.stringify(data, null, 2), 'utf-8');
       console.log(`  ✓ ${key}`);
     } catch (err) {
@@ -128,15 +150,42 @@ async function runImport(): Promise<void> {
 
     try {
       const raw = JSON.parse(readFileSync(join(inDir, file), 'utf-8')) as { data?: unknown[] };
-      const rows: unknown[] = Array.isArray(raw) ? raw : Array.isArray(raw.data) ? raw.data : [];
+      const rows: any[] = Array.isArray(raw) ? raw : Array.isArray(raw.data) ? raw.data : [];
 
       let ok = 0;
       for (const row of rows) {
         try {
-          await apiPost(resource.path, row);
+          if (resource.key === 'fields') {
+            const colName = row.collection;
+            const fieldName = row.name;
+            if (!colName) {
+              console.warn(`    ⚠ Field ${fieldName} is missing "collection" property.`);
+              continue;
+            }
+            await apiPut(`/api/v1/collections/${colName}/fields/${fieldName}`, row);
+          } else if (resource.key === 'collections') {
+            // Check if collection already exists
+            let exists = false;
+            try {
+              await apiGet(`/api/v1/collections/${row.name}`);
+              exists = true;
+            } catch {
+              // Not found
+            }
+            if (exists) {
+              await apiPut(`/api/v1/collections/${row.name}/schema`, row);
+            } else {
+              await apiPost(resource.path, row);
+            }
+          } else {
+            await apiPost(resource.path, row);
+          }
           ok++;
-        } catch {
-          // Conflict / already exists — skip silently.
+        } catch (err) {
+          // Log errors to console so we can troubleshoot failing imports.
+          const cause = (err as any).cause;
+          const causeStr = cause ? ` (Cause: ${cause.message || cause})` : '';
+          console.error(`    ⚠ Failed to import ${resource.key} (${row.name || row.key || row.id || 'unknown'}): ${(err as Error).message}${causeStr}`);
         }
       }
       console.log(`  ✓ ${resource.key}: ${ok}/${rows.length} records`);

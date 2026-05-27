@@ -36,7 +36,12 @@ export function withRls() {
     const siteId = c.get('siteId');
     const runtime = c.get('runtime');
 
-    if (siteId) {
+    // Skip RLS in development to avoid Wrangler / postgres.js connection pooling crash.
+    // Cloudflare Workers sandbox throws "Cannot perform I/O on behalf of a different request" 
+    // when executing raw pool queries concurrently across async request boundaries.
+    const isDev = c.env.LUMIBASE_ENV === 'development' || process.env.LUMIBASE_ENV === 'development';
+
+    if (siteId && !isDev) {
       try {
         // Obtain the raw SQL connection from the runtime database adapter.
         // The runtime exposes `getConnection()` returning a postgres.js sql tag.
