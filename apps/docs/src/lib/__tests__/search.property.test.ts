@@ -74,6 +74,7 @@ const slug = fc.tuple(
 const docEntry = fc.tuple(slug, docTitle, docContent).map(
   ([s, title, content]): DocEntry => ({
     slug: s,
+    locale: 'en',
     title,
     filePath: `${s}.md`,
     content,

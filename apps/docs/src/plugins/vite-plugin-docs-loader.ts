@@ -23,7 +23,13 @@ export interface DocNode {
 
 export interface VitePluginDocsLoaderOptions {
   docsDir?: string; // absolute path to docs root directory (contains locale folders)
-  config?: { i18n: { locales: string[]; defaultLocale: string } };
+  config?: {
+    i18n: {
+      locales: string[];
+      defaultLocale: string;
+      localeNames?: Record<string, string>;
+    };
+  };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -132,12 +138,18 @@ export function discoverLocaleEntries(
  */
 export function buildRegistry(
   docsDir: string,
-  config?: { i18n: { locales: string[]; defaultLocale: string } },
+  config?: { i18n: { locales: string[]; defaultLocale: string; localeNames?: Record<string, string> } },
 ): {
+  locales: string[];
+  defaultLocale: string;
+  localeNames: Record<string, string>;
   docTree: DocNode[];
   docIndex: Record<string, DocEntry>;
   docList: DocEntry[];
   docIndexByLocale: Record<string, Record<string, DocEntry>>;
+  docTreeByLocale: Record<string, DocNode[]>;
+  docTreeUnion: DocNode[];
+  docSlugsByLocale: Record<string, string[]>;
 } {
   // If no i18n config provided, fall back to single-locale behavior (backward compat)
   if (!config) {
@@ -189,7 +201,18 @@ export function buildRegistry(
     }
 
     const docTree = buildDocTree(docList, docsDir);
-    return { docTree, docIndex, docList, docIndexByLocale: { '': docIndex } };
+    return {
+      locales: [''],
+      defaultLocale: '',
+      localeNames: {},
+      docTree,
+      docIndex,
+      docList,
+      docIndexByLocale: { '': docIndex },
+      docTreeByLocale: { '': docTree },
+      docTreeUnion: docTree,
+      docSlugsByLocale: { '': Object.keys(docIndex) },
+    };
   }
 
   const { locales, defaultLocale } = config.i18n;
@@ -221,11 +244,49 @@ export function buildRegistry(
   // Build docIndex as alias for default locale (backward compat)
   const docIndex = docIndexByLocale[defaultLocale] ?? {};
 
-  // Build tree from default locale entries (backward compat)
-  const defaultLocaleEntries = Object.values(docIndex);
-  const docTree = buildDocTree(defaultLocaleEntries, docsDir);
+  // Build docTreeByLocale — tree per locale using only that locale's entries
+  const docTreeByLocale: Record<string, DocNode[]> = {};
+  for (const locale of locales) {
+    const localeEntries = Object.values(docIndexByLocale[locale] ?? {});
+    docTreeByLocale[locale] = buildDocTreeBySlug(localeEntries);
+  }
 
-  return { docTree, docIndex, docList, docIndexByLocale };
+  // Build docSlugsByLocale — array of slugs per locale
+  const docSlugsByLocale: Record<string, string[]> = {};
+  for (const locale of locales) {
+    docSlugsByLocale[locale] = Object.keys(docIndexByLocale[locale] ?? {});
+  }
+
+  // Build docTreeUnion — tree from union of all entries across all locales
+  // Deduplicate by slug, preferring default locale entry
+  const unionMap: Record<string, DocEntry> = {};
+  for (const locale of locales) {
+    const localeIndex = docIndexByLocale[locale] ?? {};
+    for (const [slug, entry] of Object.entries(localeIndex)) {
+      // Prefer default locale entry if slug already exists
+      if (!unionMap[slug] || locale === defaultLocale) {
+        unionMap[slug] = entry;
+      }
+    }
+  }
+  const unionEntries = Object.values(unionMap);
+  const docTreeUnion = buildDocTreeBySlug(unionEntries);
+
+  // Backward-compat alias: docTree = docTreeUnion
+  const docTree = docTreeUnion;
+
+  return {
+    locales,
+    defaultLocale,
+    localeNames: config.i18n.localeNames ?? {},
+    docTree,
+    docIndex,
+    docList,
+    docIndexByLocale,
+    docTreeByLocale,
+    docTreeUnion,
+    docSlugsByLocale,
+  };
 }
 
 /**
@@ -243,6 +304,35 @@ function findMdFiles(dir: string): string[] {
     }
   }
   return results;
+}
+
+/**
+ * Build a DocTree from entries using their slug (locale-independent path).
+ * This produces a tree without the locale prefix in the hierarchy.
+ * Sorted: directories first (alphabetically), then files (alphabetically).
+ */
+export function buildDocTreeBySlug(entries: DocEntry[]): DocNode[] {
+  const root: Map<string, unknown> = new Map();
+
+  for (const entry of entries) {
+    const parts = entry.slug.split('/');
+    let current = root;
+
+    // Navigate/create directory nodes for all parts except the last
+    for (let i = 0; i < parts.length - 1; i++) {
+      const dirName = parts[i]!;
+      if (!current.has(dirName)) {
+        current.set(dirName, new Map());
+      }
+      current = current.get(dirName) as Map<string, unknown>;
+    }
+
+    // Set the file entry at the leaf
+    const fileName = parts[parts.length - 1]!;
+    current.set(fileName, entry);
+  }
+
+  return mapToDocNodes(root);
 }
 
 /**
@@ -333,16 +423,30 @@ export default function vitePluginDocsLoader(
 
     load(id: string) {
       if (id === RESOLVED_VIRTUAL_MODULE_ID) {
-        const { docTree, docIndex, docList, docIndexByLocale } = buildRegistry(
-          docsDir,
-          config,
-        );
+        const {
+          locales: registryLocales,
+          defaultLocale: registryDefaultLocale,
+          localeNames: registryLocaleNames,
+          docTree,
+          docIndex,
+          docList,
+          docIndexByLocale,
+          docTreeByLocale,
+          docTreeUnion,
+          docSlugsByLocale,
+        } = buildRegistry(docsDir, config);
 
         const code = `
+export const locales = ${JSON.stringify(registryLocales)};
+export const defaultLocale = ${JSON.stringify(registryDefaultLocale)};
+export const localeNames = ${JSON.stringify(registryLocaleNames)};
 export const docTree = ${JSON.stringify(docTree, null, 2)};
 export const docIndex = ${JSON.stringify(docIndex, null, 2)};
 export const docList = ${JSON.stringify(docList, null, 2)};
 export const docIndexByLocale = ${JSON.stringify(docIndexByLocale, null, 2)};
+export const docTreeByLocale = ${JSON.stringify(docTreeByLocale, null, 2)};
+export const docTreeUnion = ${JSON.stringify(docTreeUnion, null, 2)};
+export const docSlugsByLocale = ${JSON.stringify(docSlugsByLocale, null, 2)};
 `;
         return code;
       }

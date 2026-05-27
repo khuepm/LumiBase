@@ -3,7 +3,7 @@ import { createSearchIndex } from '../search';
 import type { DocEntry } from 'virtual:docs-registry';
 
 function makeDoc(slug: string, title: string, content: string): DocEntry {
-  return { slug, title, filePath: `${slug}.md`, content };
+  return { slug, locale: 'en', title, filePath: `${slug}.md`, content };
 }
 
 describe('search service', () => {
