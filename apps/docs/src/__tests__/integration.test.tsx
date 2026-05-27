@@ -13,6 +13,8 @@ import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vite
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { Layout } from '../components/Layout';
+import { LocaleGuard } from '../components/LocaleGuard';
+import { LegacyRedirect } from '../components/LegacyRedirect';
 import { DocPage } from '../pages/DocPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 
@@ -57,6 +59,7 @@ afterEach(() => {
 vi.mock('virtual:docs-registry', () => {
   const testDocIndex: Record<string, {
     slug: string;
+    locale: string;
     title: string;
     filePath: string;
     content: string;
@@ -64,22 +67,25 @@ vi.mock('virtual:docs-registry', () => {
   }> = {
     README: {
       slug: 'README',
+      locale: 'en',
       title: 'Lumibase Documentation',
-      filePath: 'README.md',
+      filePath: 'en/README.md',
       content: '# Welcome\n\nThis is the main documentation page.\n\n## Getting Started\n\nRead the [Collections Guide](./features/collections.md) to begin.\n\nVisit [External Site](https://example.com) for more info.',
       lastModified: '2024-06-15T10:00:00Z',
     },
     'features/collections': {
       slug: 'features/collections',
+      locale: 'en',
       title: 'Collections Builder',
-      filePath: 'features/collections.md',
+      filePath: 'en/features/collections.md',
       content: '# Collections Builder\n\n## Overview\n\nCreate and manage collections with the visual builder.\n\n## Configuration\n\nSee [Relations](./relations.md) for linking collections.\n\nSee [README](../README.md) for the main docs.',
       lastModified: '2024-07-01T14:30:00Z',
     },
     'features/relations': {
       slug: 'features/relations',
+      locale: 'en',
       title: 'Relations',
-      filePath: 'features/relations.md',
+      filePath: 'en/features/relations.md',
       content: '# Relations\n\n## Defining Relations\n\nDefine relationships between collections using foreign keys.\n\n## Examples\n\nLink to [nonexistent](./nonexistent.md) doc.',
     },
   };
@@ -99,9 +105,16 @@ vi.mock('virtual:docs-registry', () => {
   const testDocList = Object.values(testDocIndex);
 
   return {
+    locales: ['en', 'vi'],
+    defaultLocale: 'en',
+    localeNames: { en: 'English', vi: 'Tiếng Việt' },
     docTree: testDocTree,
+    docTreeUnion: testDocTree,
+    docTreeByLocale: { en: testDocTree, vi: [] },
     docIndex: testDocIndex,
+    docIndexByLocale: { en: testDocIndex, vi: {} },
     docList: testDocList,
+    docSlugsByLocale: { en: ['README', 'features/collections', 'features/relations'], vi: [] },
   };
 });
 
@@ -112,16 +125,21 @@ vi.mock('@shikijs/rehype', () => ({
 
 /**
  * Helper to render the app with a memory router at a given initial path.
- * Uses the same route structure as the real app.
+ * Uses the same route structure as the real app (locale-prefixed).
  */
 function renderApp(initialPath: string) {
   const router = createMemoryRouter(
     [
       {
-        element: <Layout />,
+        path: '/docs/*',
+        element: <LegacyRedirect />,
+      },
+      {
+        path: '/:locale',
+        element: <LocaleGuard><Layout /></LocaleGuard>,
         children: [
           {
-            path: '/docs/*',
+            path: 'docs/*',
             element: <DocPage />,
           },
           {
@@ -129,6 +147,10 @@ function renderApp(initialPath: string) {
             element: <NotFoundPage />,
           },
         ],
+      },
+      {
+        path: '*',
+        element: <NotFoundPage />,
       },
     ],
     { initialEntries: [initialPath] },
@@ -143,7 +165,7 @@ describe('Integration: Full app render', () => {
   });
 
   it('renders the layout with sidebar and content area', async () => {
-    renderApp('/docs/README');
+    renderApp('/en/docs/README');
 
     // Sidebar should show the doc tree
     await waitFor(() => {
@@ -157,7 +179,7 @@ describe('Integration: Full app render', () => {
   });
 
   it('renders the correct document content for a given slug', async () => {
-    renderApp('/docs/features/collections');
+    renderApp('/en/docs/features/collections');
 
     // The DocPage renders the title in a header section
     await waitFor(() => {
@@ -173,7 +195,7 @@ describe('Integration: Full app render', () => {
   });
 
   it('sets the browser title to "{title} — Lumibase Docs"', async () => {
-    renderApp('/docs/README');
+    renderApp('/en/docs/README');
 
     await waitFor(() => {
       expect(document.title).toBe('Lumibase Documentation — Lumibase Docs');
@@ -199,7 +221,7 @@ describe('Integration: Sidebar navigation', () => {
   });
 
   it('renders sidebar with all documents from the doc tree', async () => {
-    renderApp('/docs/README');
+    renderApp('/en/docs/README');
 
     const nav = await waitFor(() => screen.getByLabelText('Documentation navigation'));
 
@@ -218,7 +240,7 @@ describe('Integration: Sidebar navigation', () => {
   });
 
   it('navigates to a document when clicking a sidebar link', async () => {
-    renderApp('/docs/README');
+    renderApp('/en/docs/README');
 
     // Wait for initial render
     await waitFor(() => {
@@ -252,7 +274,7 @@ describe('Integration: Sidebar navigation', () => {
   });
 
   it('highlights the active document in the sidebar', async () => {
-    renderApp('/docs/README');
+    renderApp('/en/docs/README');
 
     await waitFor(() => {
       expect(screen.getByLabelText('Documentation navigation')).toBeInTheDocument();
@@ -265,7 +287,7 @@ describe('Integration: Sidebar navigation', () => {
   });
 
   it('toggles directory expanded/collapsed state', async () => {
-    renderApp('/docs/README');
+    renderApp('/en/docs/README');
 
     await waitFor(() => {
       expect(screen.getByText('features')).toBeInTheDocument();
@@ -297,7 +319,7 @@ describe('Integration: Search', () => {
   });
 
   it('opens search dialog and indexes documents', async () => {
-    renderApp('/docs/README');
+    renderApp('/en/docs/README');
 
     // Find and click the search button
     const searchButton = await waitFor(() =>
@@ -333,7 +355,7 @@ describe('Integration: Search', () => {
   });
 
   it('navigates to a document when selecting a search result', async () => {
-    renderApp('/docs/README');
+    renderApp('/en/docs/README');
 
     // Open search
     const searchButton = await waitFor(() =>
@@ -368,7 +390,7 @@ describe('Integration: Search', () => {
   });
 
   it('shows "no results" message for unmatched queries', async () => {
-    renderApp('/docs/README');
+    renderApp('/en/docs/README');
 
     const searchButton = await waitFor(() =>
       screen.getByLabelText(/search documentation/i),
@@ -394,7 +416,7 @@ describe('Integration: Internal link navigation', () => {
   });
 
   it('rewrites relative .md links to internal navigation links', async () => {
-    renderApp('/docs/README');
+    renderApp('/en/docs/README');
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Lumibase Documentation' })).toBeInTheDocument();
@@ -409,7 +431,7 @@ describe('Integration: Internal link navigation', () => {
   });
 
   it('navigates to target page when clicking an internal link', async () => {
-    renderApp('/docs/README');
+    renderApp('/en/docs/README');
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Lumibase Documentation' })).toBeInTheDocument();
@@ -434,7 +456,7 @@ describe('Integration: Internal link navigation', () => {
   });
 
   it('renders external links with target="_blank" and rel="noopener noreferrer"', async () => {
-    renderApp('/docs/README');
+    renderApp('/en/docs/README');
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Lumibase Documentation' })).toBeInTheDocument();
@@ -449,7 +471,7 @@ describe('Integration: Internal link navigation', () => {
   });
 
   it('renders broken links with strikethrough style and prevents navigation', async () => {
-    renderApp('/docs/features/relations');
+    renderApp('/en/docs/features/relations');
 
     await waitFor(() => {
       const headings = screen.getAllByRole('heading', { level: 1, name: 'Relations' });
@@ -465,7 +487,7 @@ describe('Integration: Internal link navigation', () => {
   });
 
   it('navigates between documents using internal links without page reload', async () => {
-    renderApp('/docs/features/collections');
+    renderApp('/en/docs/features/collections');
 
     // Wait for collections page
     await waitFor(() => {

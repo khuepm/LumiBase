@@ -9,7 +9,8 @@
 import rawConfig from '../../docs.config.json';
 
 export interface NavbarItem {
-  label: string;
+  /** Label can be a plain string or a locale-keyed object for i18n. */
+  label: string | Record<string, string>;
   /** Internal path (e.g. "/docs/README"). */
   to?: string;
   /** External URL. */
@@ -18,13 +19,15 @@ export interface NavbarItem {
 }
 
 export interface FooterLinkItem {
-  label: string;
+  /** Label can be a plain string or a locale-keyed object for i18n. */
+  label: string | Record<string, string>;
   to?: string;
   href?: string;
 }
 
 export interface FooterColumn {
-  title: string;
+  /** Title can be a plain string or a locale-keyed object for i18n. */
+  title: string | Record<string, string>;
   items: FooterLinkItem[];
 }
 
@@ -67,6 +70,26 @@ export function validateI18nConfig(config: SiteConfig): void {
       `[docs.config.json] Invalid i18n config: defaultLocale "${i18n.defaultLocale}" is not included in locales [${i18n.locales.join(', ')}].`,
     );
   }
+}
+
+/**
+ * Resolve a label that can be either a plain string or a locale-keyed object.
+ * - If `label` is a string, return it directly (backward-compat).
+ * - If `label` is an object `{ [locale]: string }`, return the value for the
+ *   given locale; fallback to defaultLocale; fallback to first available value.
+ *
+ * Requirements: 7.3, 7.4
+ */
+export function resolveLabel(
+  label: string | Record<string, string>,
+  locale: string,
+): string {
+  if (typeof label === 'string') return label;
+  if (label[locale]) return label[locale];
+  const dl = rawConfig.i18n?.defaultLocale ?? 'en';
+  if (label[dl]) return label[dl];
+  const values = Object.values(label);
+  return values[0] ?? '';
 }
 
 export const siteConfig = rawConfig as SiteConfig;

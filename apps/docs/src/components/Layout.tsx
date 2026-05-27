@@ -1,11 +1,16 @@
 import { useRef, useState } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
-import { docTree } from 'virtual:docs-registry';
+import { docTreeUnion } from 'virtual:docs-registry';
 import { Sidebar } from './Sidebar';
 import { SearchDialog } from './SearchDialog';
 import { TableOfContents } from './TableOfContents';
-import { siteConfig } from '../lib/site-config';
+import { LocaleSwitcher } from './LocaleSwitcher';
+import { siteConfig, resolveLabel } from '../lib/site-config';
+import { useLocale } from '../hooks/useLocale';
+import { useCurrentSlug } from '../hooks/useCurrentSlug';
+import { useT } from '../hooks/useT';
+import { pathFor } from '../lib/url';
 
 /**
  * App layout shell with three-column responsive structure.
@@ -19,17 +24,15 @@ import { siteConfig } from '../lib/site-config';
 export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const contentRef = useRef<HTMLElement>(null);
-  const location = useLocation();
   const navigate = useNavigate();
+  const { locale } = useLocale();
+  const t = useT();
 
-  // Extract the active slug from the current route path
-  // Route pattern is /docs/:slug* so we strip the /docs/ prefix
-  const activeSlug = location.pathname.startsWith('/docs/')
-    ? location.pathname.slice('/docs/'.length)
-    : '';
+  // Extract the active slug from the current route path using parseUrl
+  const activeSlug = useCurrentSlug();
 
   const handleNavigate = (slug: string) => {
-    navigate(`/docs/${slug}`);
+    navigate(pathFor(locale, slug));
     // Close sidebar on mobile after navigation
     setSidebarOpen(false);
   };
@@ -69,9 +72,10 @@ export function Layout() {
         {/* Sidebar navigation tree */}
         <div className="overflow-y-auto h-full">
           <Sidebar
-            tree={docTree}
+            tree={docTreeUnion}
             activeSlug={activeSlug}
             onNavigate={handleNavigate}
+            locale={locale}
           />
         </div>
       </aside>
@@ -93,43 +97,48 @@ export function Layout() {
           <nav aria-label="Primary" className="ml-6 hidden items-center gap-4 md:flex">
             {siteConfig.navbar.items
               .filter((item) => item.position !== 'right')
-              .map((item) =>
-                item.href ? (
+              .map((item) => {
+                const label = resolveLabel(item.label, locale);
+                return item.href ? (
                   <a
-                    key={item.label}
+                    key={label}
                     href={item.href}
                     className="text-sm text-muted-foreground hover:text-foreground"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    {item.label}
+                    {label}
                   </a>
                 ) : (
                   <a
-                    key={item.label}
+                    key={label}
                     href={item.to}
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
-                    {item.label}
+                    {label}
                   </a>
-                ),
-              )}
+                );
+              })}
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <SearchDialog />
+            <LocaleSwitcher />
             {siteConfig.navbar.items
               .filter((item) => item.position === 'right')
-              .map((item) => (
-                <a
-                  key={item.label}
-                  href={item.href ?? item.to}
-                  target={item.href ? '_blank' : undefined}
-                  rel={item.href ? 'noreferrer' : undefined}
-                  className="hidden text-sm text-muted-foreground hover:text-foreground md:inline"
-                >
-                  {item.label}
-                </a>
-              ))}
+              .map((item) => {
+                const label = resolveLabel(item.label, locale);
+                return (
+                  <a
+                    key={label}
+                    href={item.href ?? item.to}
+                    target={item.href ? '_blank' : undefined}
+                    rel={item.href ? 'noreferrer' : undefined}
+                    className="hidden text-sm text-muted-foreground hover:text-foreground md:inline"
+                  >
+                    {label}
+                  </a>
+                );
+              })}
           </div>
         </header>
 
@@ -150,34 +159,34 @@ export function Layout() {
 
         <footer
           className={`border-t px-6 py-6 text-xs ${siteConfig.footer.style === 'dark'
-              ? 'border-zinc-800 bg-zinc-900 text-zinc-400'
-              : 'bg-muted text-muted-foreground'
+            ? 'border-zinc-800 bg-zinc-900 text-zinc-400'
+            : 'bg-muted text-muted-foreground'
             }`}
         >
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {siteConfig.footer.links.map((col) => (
-              <div key={col.title}>
+            {siteConfig.footer.links.map((col, colIdx) => (
+              <div key={colIdx}>
                 <h3
                   className={`mb-2 text-sm font-semibold ${siteConfig.footer.style === 'dark'
-                      ? 'text-zinc-100'
-                      : 'text-foreground'
+                    ? 'text-zinc-100'
+                    : 'text-foreground'
                     }`}
                 >
-                  {col.title}
+                  {resolveLabel(col.title, locale)}
                 </h3>
                 <ul className="space-y-1">
-                  {col.items.map((item) => (
-                    <li key={item.label}>
+                  {col.items.map((item, itemIdx) => (
+                    <li key={itemIdx}>
                       <a
                         className={`hover:underline ${siteConfig.footer.style === 'dark'
-                            ? 'hover:text-zinc-100'
-                            : 'hover:text-foreground'
+                          ? 'hover:text-zinc-100'
+                          : 'hover:text-foreground'
                           }`}
                         href={item.href ?? item.to}
                         target={item.href ? '_blank' : undefined}
                         rel={item.href ? 'noreferrer' : undefined}
                       >
-                        {item.label}
+                        {resolveLabel(item.label, locale)}
                       </a>
                     </li>
                   ))}
