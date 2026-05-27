@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, FileText } from 'lucide-react';
 import { search, type SearchResult } from '../lib/search';
+import { useLocale } from '../hooks/useLocale';
 
 /**
  * SearchDialog — a modal search interface triggered by Cmd/Ctrl+K.
@@ -18,6 +19,7 @@ export function SearchDialog() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const { locale } = useLocale();
 
   // Global keyboard shortcut: Cmd/Ctrl+K to open
   useEffect(() => {
@@ -55,7 +57,7 @@ export function SearchDialog() {
       return;
     }
 
-    const searchResults = search(query);
+    const searchResults = search(locale, query);
     setResults(searchResults);
     setSelectedIndex(0);
   }, [query]);
@@ -69,7 +71,7 @@ export function SearchDialog() {
 
   const navigateToResult = useCallback(
     (result: SearchResult) => {
-      navigate(`/docs/${result.slug}`);
+      navigate(`/${locale}/docs/${result.slug}`);
       closeDialog();
     },
     [navigate, closeDialog]

@@ -1,5 +1,5 @@
 import MiniSearch from 'minisearch';
-import { docList } from 'virtual:docs-registry';
+import { docIndexByLocale } from 'virtual:docs-registry';
 import type { DocEntry } from 'virtual:docs-registry';
 
 export interface SearchResult {
@@ -9,19 +9,32 @@ export interface SearchResult {
   score: number;
 }
 
-const miniSearch = new MiniSearch<DocEntry>({
-  fields: ['title', 'content'],
-  storeFields: ['title', 'slug'],
-  searchOptions: {
-    prefix: true,
-    fuzzy: 0.1,
-    boost: { title: 2, content: 1 },
-  },
-  idField: 'slug',
-});
+/** Lazy cache: one MiniSearch index per locale, built on first access */
+const indexes: Map<string, MiniSearch<DocEntry>> = new Map();
 
-// Index all documents on module load (app startup)
-miniSearch.addAll(docList);
+/**
+ * Get or build the search index for a given locale.
+ * Only indexes documents from that locale — no fallback documents.
+ */
+export function getSearchIndex(locale: string): MiniSearch<DocEntry> {
+  if (indexes.has(locale)) return indexes.get(locale)!;
+
+  const docs = docIndexByLocale[locale] ?? {};
+  const idx = new MiniSearch<DocEntry>({
+    fields: ['title', 'content'],
+    storeFields: ['title', 'slug'],
+    searchOptions: {
+      prefix: true,
+      fuzzy: 0.1,
+      boost: { title: 2, content: 1 },
+    },
+    idField: 'slug',
+  });
+
+  idx.addAll(Object.values(docs));
+  indexes.set(locale, idx);
+  return idx;
+}
 
 /**
  * Extract a snippet from content around the first occurrence of any matched term.
@@ -77,22 +90,25 @@ function highlightTerms(text: string, terms: string[]): string {
 }
 
 /**
- * Search documents by query. Returns results ranked by relevance.
- * Only processes queries of at least 2 characters.
+ * Search documents by query within a specific locale.
+ * Returns results ranked by relevance. Only processes queries of at least 2 characters.
+ * Results only include documents from the specified locale — no fallback.
  */
-export function search(query: string): SearchResult[] {
+export function search(locale: string, query: string): SearchResult[] {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
-  const results = miniSearch.search(trimmed, {
+  const idx = getSearchIndex(locale);
+  const docs = docIndexByLocale[locale] ?? {};
+
+  const results = idx.search(trimmed, {
     prefix: true,
     fuzzy: 0.1,
     boost: { title: 2, content: 1 },
   });
 
   return results.map((result) => {
-    // Find the document content for snippet extraction
-    const doc = docList.find((d) => d.slug === result.id);
+    const doc = docs[result.id as string];
     const content = doc?.content ?? '';
     const terms = result.terms ?? [];
 
