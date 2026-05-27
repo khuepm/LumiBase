@@ -20,29 +20,31 @@
  * `c.env.SCIM_TOKEN`. For local dev, set `SCIM_TOKEN=dev-scim` in wrangler.toml.
  */
 
-import { teams, teamMembers, userSites, users } from '@lumibase/database';
-import { and, eq, ilike, or } from 'drizzle-orm';
-import { Hono } from 'hono';
-import type { AppEnv } from '../env';
+import { teams, teamMembers, userSites, users } from "@lumibase/database";
+import { and, eq, ilike, or } from "drizzle-orm";
+import { Hono } from "hono";
+import type { AppEnv } from "../env";
 
 export const scimRouter = new Hono<AppEnv>();
 
-const SCIM_USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
-const SCIM_GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
-const SCIM_LIST_RESPONSE = 'urn:ietf:params:scim:api:messages:2.0:ListResponse';
-const SCIM_ERROR = 'urn:ietf:params:scim:api:messages:2.0:Error';
+const SCIM_USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User";
+const SCIM_GROUP_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:Group";
+const SCIM_LIST_RESPONSE = "urn:ietf:params:scim:api:messages:2.0:ListResponse";
+const SCIM_ERROR = "urn:ietf:params:scim:api:messages:2.0:Error";
 
 // ── auth middleware ────────────────────────────────────────────────────────
 
-scimRouter.use('*', async (c, next) => {
-  const expected = (c.env as Record<string, string | undefined>)['SCIM_TOKEN'];
-  const auth = c.req.header('Authorization');
+scimRouter.use("*", async (c, next) => {
+  const expected = (c.env as unknown as Record<string, string | undefined>)[
+    "SCIM_TOKEN"
+  ];
+  const auth = c.req.header("Authorization");
   if (!expected || auth !== `Bearer ${expected}`) {
     return c.json(
       {
         schemas: [SCIM_ERROR],
-        status: '401',
-        detail: 'Unauthorized SCIM client',
+        status: "401",
+        detail: "Unauthorized SCIM client",
       },
       401,
     );
@@ -60,7 +62,7 @@ interface ScimUser {
   name: { givenName?: string | null; familyName?: string | null };
   emails: Array<{ value: string; primary: boolean }>;
   active: boolean;
-  meta: { resourceType: 'User'; created?: string; lastModified?: string };
+  meta: { resourceType: "User"; created?: string; lastModified?: string };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -72,9 +74,9 @@ function toScimUser(u: any): ScimUser {
     userName: u.email,
     name: { givenName: u.firstName, familyName: u.lastName },
     emails: [{ value: u.email, primary: true }],
-    active: u.status === 'active',
+    active: u.status === "active",
     meta: {
-      resourceType: 'User',
+      resourceType: "User",
       created: u.createdAt?.toISOString?.() ?? undefined,
       lastModified: u.updatedAt?.toISOString?.() ?? undefined,
     },
@@ -90,10 +92,10 @@ function parseFilter(filter: string): { field?: string; value?: string } {
 
 // ── service provider config ───────────────────────────────────────────────
 
-scimRouter.get('/ServiceProviderConfig', (c) =>
+scimRouter.get("/ServiceProviderConfig", (c) =>
   c.json({
-    schemas: ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'],
-    documentationUri: 'https://docs.lumibase.dev/scim',
+    schemas: ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
+    documentationUri: "https://docs.lumibase.dev/scim",
     patch: { supported: true },
     bulk: { supported: false, maxOperations: 0 },
     filter: { supported: true, maxResults: 200 },
@@ -101,12 +103,16 @@ scimRouter.get('/ServiceProviderConfig', (c) =>
     sort: { supported: false },
     etag: { supported: false },
     authenticationSchemes: [
-      { name: 'Bearer', description: 'OAuth Bearer Token', type: 'oauthbearertoken' },
+      {
+        name: "Bearer",
+        description: "OAuth Bearer Token",
+        type: "oauthbearertoken",
+      },
     ],
   }),
 );
 
-scimRouter.get('/Schemas', (c) =>
+scimRouter.get("/Schemas", (c) =>
   c.json({
     schemas: [SCIM_LIST_RESPONSE],
     totalResults: 2,
@@ -114,32 +120,48 @@ scimRouter.get('/Schemas', (c) =>
   }),
 );
 
-scimRouter.get('/ResourceTypes', (c) =>
+scimRouter.get("/ResourceTypes", (c) =>
   c.json({
     schemas: [SCIM_LIST_RESPONSE],
     totalResults: 2,
     Resources: [
-      { id: 'User', name: 'User', endpoint: '/Users', schema: SCIM_USER_SCHEMA },
-      { id: 'Group', name: 'Group', endpoint: '/Groups', schema: SCIM_GROUP_SCHEMA },
+      {
+        id: "User",
+        name: "User",
+        endpoint: "/Users",
+        schema: SCIM_USER_SCHEMA,
+      },
+      {
+        id: "Group",
+        name: "Group",
+        endpoint: "/Groups",
+        schema: SCIM_GROUP_SCHEMA,
+      },
     ],
   }),
 );
 
 // ── /Users ─────────────────────────────────────────────────────────────────
 
-scimRouter.get('/Users', async (c) => {
-  const db = c.get('db');
-  const filter = c.req.query('filter');
+scimRouter.get("/Users", async (c) => {
+  const db = c.get("db");
+  const filter = c.req.query("filter");
 
   let rows;
   if (filter) {
     const parsed = parseFilter(filter);
-    if (parsed.field === 'userName' && parsed.value) {
+    if (parsed.field === "userName" && parsed.value) {
       rows = await db.select().from(users).where(eq(users.email, parsed.value));
-    } else if (parsed.field === 'externalId' && parsed.value) {
-      rows = await db.select().from(users).where(eq(users.externalId, parsed.value));
+    } else if (parsed.field === "externalId" && parsed.value) {
+      rows = await db
+        .select()
+        .from(users)
+        .where(eq(users.externalId, parsed.value));
     } else {
-      rows = await db.select().from(users).where(or(ilike(users.email, `%${parsed.value ?? ''}%`)));
+      rows = await db
+        .select()
+        .from(users)
+        .where(or(ilike(users.email, `%${parsed.value ?? ""}%`)));
     }
   } else {
     rows = await db.select().from(users).limit(200);
@@ -154,26 +176,28 @@ scimRouter.get('/Users', async (c) => {
   });
 });
 
-scimRouter.get('/Users/:id', async (c) => {
-  const db = c.get('db');
-  const id = c.req.param('id');
+scimRouter.get("/Users/:id", async (c) => {
+  const db = c.get("db");
+  const id = c.req.param("id");
   const [row] = await db.select().from(users).where(eq(users.id, id));
   if (!row) {
     return c.json(
-      { schemas: [SCIM_ERROR], status: '404', detail: 'User not found' },
+      { schemas: [SCIM_ERROR], status: "404", detail: "User not found" },
       404,
     );
   }
   return c.json(toScimUser(row));
 });
 
-scimRouter.post('/Users', async (c) => {
-  const db = c.get('db');
-  const body = (await c.req.json()) as Partial<ScimUser> & { password?: string };
+scimRouter.post("/Users", async (c) => {
+  const db = c.get("db");
+  const body = (await c.req.json()) as Partial<ScimUser> & {
+    password?: string;
+  };
 
   if (!body.userName) {
     return c.json(
-      { schemas: [SCIM_ERROR], status: '400', detail: 'userName required' },
+      { schemas: [SCIM_ERROR], status: "400", detail: "userName required" },
       400,
     );
   }
@@ -185,16 +209,16 @@ scimRouter.post('/Users', async (c) => {
       email: body.userName,
       firstName: body.name?.givenName ?? null,
       lastName: body.name?.familyName ?? null,
-      status: body.active === false ? 'suspended' : 'active',
+      status: body.active === false ? "suspended" : "active",
     })
     .returning();
 
   return c.json(toScimUser(inserted[0]), 201);
 });
 
-scimRouter.put('/Users/:id', async (c) => {
-  const db = c.get('db');
-  const id = c.req.param('id');
+scimRouter.put("/Users/:id", async (c) => {
+  const db = c.get("db");
+  const id = c.req.param("id");
   const body = (await c.req.json()) as Partial<ScimUser>;
 
   const updated = await db
@@ -203,7 +227,7 @@ scimRouter.put('/Users/:id', async (c) => {
       email: body.userName ?? undefined,
       firstName: body.name?.givenName ?? null,
       lastName: body.name?.familyName ?? null,
-      status: body.active === false ? 'suspended' : 'active',
+      status: body.active === false ? "suspended" : "active",
       updatedAt: new Date(),
     })
     .where(eq(users.id, id))
@@ -211,49 +235,59 @@ scimRouter.put('/Users/:id', async (c) => {
 
   if (updated.length === 0) {
     return c.json(
-      { schemas: [SCIM_ERROR], status: '404', detail: 'User not found' },
+      { schemas: [SCIM_ERROR], status: "404", detail: "User not found" },
       404,
     );
   }
   return c.json(toScimUser(updated[0]));
 });
 
-scimRouter.patch('/Users/:id', async (c) => {
-  const db = c.get('db');
-  const id = c.req.param('id');
-  const body = (await c.req.json()) as { Operations?: Array<{ op: string; path?: string; value?: unknown }> };
+scimRouter.patch("/Users/:id", async (c) => {
+  const db = c.get("db");
+  const id = c.req.param("id");
+  const body = (await c.req.json()) as {
+    Operations?: Array<{ op: string; path?: string; value?: unknown }>;
+  };
 
   const set: Record<string, unknown> = { updatedAt: new Date() };
   for (const op of body.Operations ?? []) {
-    if (op.op.toLowerCase() === 'replace') {
-      if (op.path === 'active') set['status'] = op.value ? 'active' : 'suspended';
-      else if (op.path === 'name.givenName') set['firstName'] = op.value;
-      else if (op.path === 'name.familyName') set['lastName'] = op.value;
-      else if (op.path === 'userName') set['email'] = op.value;
+    if (op.op.toLowerCase() === "replace") {
+      if (op.path === "active")
+        set["status"] = op.value ? "active" : "suspended";
+      else if (op.path === "name.givenName") set["firstName"] = op.value;
+      else if (op.path === "name.familyName") set["lastName"] = op.value;
+      else if (op.path === "userName") set["email"] = op.value;
     }
   }
 
-  const updated = await db.update(users).set(set).where(eq(users.id, id)).returning();
+  const updated = await db
+    .update(users)
+    .set(set)
+    .where(eq(users.id, id))
+    .returning();
   if (updated.length === 0) {
     return c.json(
-      { schemas: [SCIM_ERROR], status: '404', detail: 'User not found' },
+      { schemas: [SCIM_ERROR], status: "404", detail: "User not found" },
       404,
     );
   }
   return c.json(toScimUser(updated[0]));
 });
 
-scimRouter.delete('/Users/:id', async (c) => {
-  const db = c.get('db');
-  const id = c.req.param('id');
-  await db.update(users).set({ status: 'suspended', updatedAt: new Date() }).where(eq(users.id, id));
+scimRouter.delete("/Users/:id", async (c) => {
+  const db = c.get("db");
+  const id = c.req.param("id");
+  await db
+    .update(users)
+    .set({ status: "suspended", updatedAt: new Date() })
+    .where(eq(users.id, id));
   return c.body(null, 204);
 });
 
 // ── /Groups (mapped to LumiBase teams) ────────────────────────────────────
 
-scimRouter.get('/Groups', async (c) => {
-  const db = c.get('db');
+scimRouter.get("/Groups", async (c) => {
+  const db = c.get("db");
   const rows = await db.select().from(teams).limit(200);
 
   return c.json({
@@ -265,22 +299,29 @@ scimRouter.get('/Groups', async (c) => {
       schemas: [SCIM_GROUP_SCHEMA],
       id: t.id,
       displayName: t.name,
-      meta: { resourceType: 'Group' },
+      meta: { resourceType: "Group" },
     })),
   });
 });
 
-scimRouter.post('/Groups', async (c) => {
-  const db = c.get('db');
-  const siteId = c.req.header('X-Lumi-Site');
+scimRouter.post("/Groups", async (c) => {
+  const db = c.get("db");
+  const siteId = c.req.header("X-Lumi-Site");
   if (!siteId) {
     return c.json(
-      { schemas: [SCIM_ERROR], status: '400', detail: 'X-Lumi-Site header required' },
+      {
+        schemas: [SCIM_ERROR],
+        status: "400",
+        detail: "X-Lumi-Site header required",
+      },
       400,
     );
   }
 
-  const body = (await c.req.json()) as { displayName: string; members?: Array<{ value: string }> };
+  const body = (await c.req.json()) as {
+    displayName: string;
+    members?: Array<{ value: string }>;
+  };
   const inserted = await db
     .insert(teams)
     .values({ siteId, name: body.displayName })
@@ -288,7 +329,10 @@ scimRouter.post('/Groups', async (c) => {
 
   if (body.members?.length) {
     for (const m of body.members) {
-      await db.insert(teamMembers).values({ teamId: inserted[0]!.id, userId: m.value }).onConflictDoNothing();
+      await db
+        .insert(teamMembers)
+        .values({ teamId: inserted[0]!.id, userId: m.value })
+        .onConflictDoNothing();
       await db
         .insert(userSites)
         .values({ userId: m.value, siteId })
@@ -301,7 +345,7 @@ scimRouter.post('/Groups', async (c) => {
       schemas: [SCIM_GROUP_SCHEMA],
       id: inserted[0]!.id,
       displayName: inserted[0]!.name,
-      meta: { resourceType: 'Group' },
+      meta: { resourceType: "Group" },
     },
     201,
   );

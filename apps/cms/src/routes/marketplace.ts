@@ -17,18 +17,20 @@
  *     using WebCrypto (`subtle.verify`).
  */
 
-import { extensions } from '@lumibase/database';
-import { and, eq, isNotNull } from 'drizzle-orm';
-import { Hono } from 'hono';
-import { z } from 'zod';
-import type { AppEnv } from '../env';
+import { extensions } from "@lumibase/database";
+import { and, eq, isNotNull } from "drizzle-orm";
+import { Hono } from "hono";
+import { z } from "zod";
+import type { AppEnv } from "../env";
 
 export const marketplaceRouter = new Hono<AppEnv>();
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-function loadPublicKeys(env: AppEnv['Bindings']): Record<string, string> {
-  const raw = (env as Record<string, string | undefined>)['MARKETPLACE_PUBLIC_KEYS'];
+function loadPublicKeys(env: AppEnv["Bindings"]): Record<string, string> {
+  const raw = (env as unknown as Record<string, string | undefined>)[
+    "MARKETPLACE_PUBLIC_KEYS"
+  ];
   if (!raw) return {};
   try {
     return JSON.parse(raw) as Record<string, string>;
@@ -38,10 +40,10 @@ function loadPublicKeys(env: AppEnv['Bindings']): Record<string, string> {
 }
 
 async function sha256(buf: ArrayBuffer): Promise<string> {
-  const hash = await crypto.subtle.digest('SHA-256', buf);
+  const hash = await crypto.subtle.digest("SHA-256", buf);
   return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 async function verifyEd25519Signature(
@@ -51,21 +53,26 @@ async function verifyEd25519Signature(
 ): Promise<boolean> {
   // Strip PEM headers + base64 decode.
   const body = publicKeyPem
-    .replace('-----BEGIN PUBLIC KEY-----', '')
-    .replace('-----END PUBLIC KEY-----', '')
-    .replace(/\s+/g, '');
+    .replace("-----BEGIN PUBLIC KEY-----", "")
+    .replace("-----END PUBLIC KEY-----", "")
+    .replace(/\s+/g, "");
   const der = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
   const sig = Uint8Array.from(atob(signatureB64), (c) => c.charCodeAt(0));
 
   try {
     const key = await crypto.subtle.importKey(
-      'spki',
+      "spki",
       der.buffer as ArrayBuffer,
-      { name: 'Ed25519' } as { name: 'Ed25519' },
+      { name: "Ed25519" } as { name: "Ed25519" },
       false,
-      ['verify'],
+      ["verify"],
     );
-    return await crypto.subtle.verify({ name: 'Ed25519' }, key, sig.buffer as ArrayBuffer, message);
+    return await crypto.subtle.verify(
+      { name: "Ed25519" },
+      key,
+      sig.buffer as ArrayBuffer,
+      message,
+    );
   } catch {
     return false;
   }
@@ -73,8 +80,8 @@ async function verifyEd25519Signature(
 
 // ── routes ─────────────────────────────────────────────────────────────────
 
-marketplaceRouter.get('/extensions', async (c) => {
-  const db = c.get('db');
+marketplaceRouter.get("/extensions", async (c) => {
+  const db = c.get("db");
   const rows = await db
     .select()
     .from(extensions)
@@ -92,14 +99,23 @@ marketplaceRouter.get('/extensions', async (c) => {
   });
 });
 
-marketplaceRouter.get('/extensions/:slug', async (c) => {
-  const db = c.get('db');
-  const slug = c.req.param('slug');
+marketplaceRouter.get("/extensions/:slug", async (c) => {
+  const db = c.get("db");
+  const slug = c.req.param("slug");
   const [row] = await db
     .select()
     .from(extensions)
-    .where(and(eq(extensions.marketplaceSlug, slug), isNotNull(extensions.publishedAt)));
-  if (!row) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Extension not found' }] }, 404);
+    .where(
+      and(
+        eq(extensions.marketplaceSlug, slug),
+        isNotNull(extensions.publishedAt),
+      ),
+    );
+  if (!row)
+    return c.json(
+      { errors: [{ code: "NOT_FOUND", message: "Extension not found" }] },
+      404,
+    );
 
   return c.json({
     data: {
@@ -120,23 +136,36 @@ marketplaceRouter.get('/extensions/:slug', async (c) => {
   });
 });
 
-marketplaceRouter.post('/extensions/:slug/install', async (c) => {
-  const siteId = c.get('siteId');
-  const db = c.get('db');
-  const slug = c.req.param('slug');
+marketplaceRouter.post("/extensions/:slug/install", async (c) => {
+  const siteId = c.get("siteId");
+  const db = c.get("db");
+  const slug = c.req.param("slug");
 
   const [source] = await db
     .select()
     .from(extensions)
-    .where(and(eq(extensions.marketplaceSlug, slug), isNotNull(extensions.publishedAt)));
-  if (!source) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Not found' }] }, 404);
+    .where(
+      and(
+        eq(extensions.marketplaceSlug, slug),
+        isNotNull(extensions.publishedAt),
+      ),
+    );
+  if (!source)
+    return c.json(
+      { errors: [{ code: "NOT_FOUND", message: "Not found" }] },
+      404,
+    );
 
   // Fetch bundle and verify signature.
   if (source.bundleSha256 && source.signature && source.publisherKeyId) {
     const res = await fetch(source.bundleUrl);
     if (!res.ok) {
       return c.json(
-        { errors: [{ code: 'BUNDLE_FETCH_FAILED', message: `Status ${res.status}` }] },
+        {
+          errors: [
+            { code: "BUNDLE_FETCH_FAILED", message: `Status ${res.status}` },
+          ],
+        },
         502,
       );
     }
@@ -144,7 +173,11 @@ marketplaceRouter.post('/extensions/:slug/install', async (c) => {
     const computed = await sha256(bundleBytes);
     if (computed !== source.bundleSha256) {
       return c.json(
-        { errors: [{ code: 'SIGNATURE_INVALID', message: 'Bundle hash mismatch' }] },
+        {
+          errors: [
+            { code: "SIGNATURE_INVALID", message: "Bundle hash mismatch" },
+          ],
+        },
         400,
       );
     }
@@ -153,14 +186,28 @@ marketplaceRouter.post('/extensions/:slug/install', async (c) => {
     const pem = keys[source.publisherKeyId];
     if (!pem) {
       return c.json(
-        { errors: [{ code: 'UNKNOWN_PUBLISHER', message: `Public key ${source.publisherKeyId} not registered` }] },
+        {
+          errors: [
+            {
+              code: "UNKNOWN_PUBLISHER",
+              message: `Public key ${source.publisherKeyId} not registered`,
+            },
+          ],
+        },
         400,
       );
     }
     const ok = await verifyEd25519Signature(pem, source.signature, bundleBytes);
     if (!ok) {
       return c.json(
-        { errors: [{ code: 'SIGNATURE_INVALID', message: 'Signature verification failed' }] },
+        {
+          errors: [
+            {
+              code: "SIGNATURE_INVALID",
+              message: "Signature verification failed",
+            },
+          ],
+        },
         400,
       );
     }
@@ -195,17 +242,22 @@ const publishSchema = z.object({
   marketplaceSlug: z.string().regex(/^[a-z0-9-]+$/),
   publisher: z.string().min(1),
   signature: z.string().min(1),
-  signatureAlg: z.enum(['ed25519', 'rsa-pss-sha256']).default('ed25519'),
+  signatureAlg: z.enum(["ed25519", "rsa-pss-sha256"]).default("ed25519"),
   publisherKeyId: z.string().min(1),
   bundleSha256: z.string().regex(/^[0-9a-f]{64}$/),
 });
 
-marketplaceRouter.post('/publish', async (c) => {
-  const db = c.get('db');
+marketplaceRouter.post("/publish", async (c) => {
+  const db = c.get("db");
   const parsed = publishSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json(
-      { errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) },
+      {
+        errors: parsed.error.issues.map((i) => ({
+          code: "VALIDATION",
+          message: i.message,
+        })),
+      },
       400,
     );
   }
@@ -225,7 +277,10 @@ marketplaceRouter.post('/publish', async (c) => {
     .returning();
 
   if (updated.length === 0)
-    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Extension not found' }] }, 404);
+    return c.json(
+      { errors: [{ code: "NOT_FOUND", message: "Extension not found" }] },
+      404,
+    );
 
   return c.json({ data: updated[0] });
 });

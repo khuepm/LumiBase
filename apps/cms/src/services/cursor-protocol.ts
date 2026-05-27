@@ -27,14 +27,27 @@
  */
 
 export type CursorMessage =
-  | { type: 'cursor.join'; itemId: string; fieldKey: string; color: string; name: string }
-  | { type: 'cursor.move'; itemId: string; fieldKey: string; anchor: number; head: number; selection?: { from: number; to: number } }
-  | { type: 'cursor.update'; itemId: string; fieldKey: string; ops: TextOp[] }
-  | { type: 'cursor.leave'; itemId: string; fieldKey: string };
+  | {
+      type: "cursor.join";
+      itemId: string;
+      fieldKey: string;
+      color: string;
+      name: string;
+    }
+  | {
+      type: "cursor.move";
+      itemId: string;
+      fieldKey: string;
+      anchor: number;
+      head: number;
+      selection?: { from: number; to: number };
+    }
+  | { type: "cursor.update"; itemId: string; fieldKey: string; ops: TextOp[] }
+  | { type: "cursor.leave"; itemId: string; fieldKey: string };
 
 export interface TextOp {
   /** Operation kind. */
-  kind: 'insert' | 'delete';
+  kind: "insert" | "delete";
   /** 0-indexed character offset before the operation is applied. */
   pos: number;
   /** Inserted text (kind = 'insert') or number of chars to delete. */
@@ -68,43 +81,72 @@ export class CursorRegistry {
   constructor(private idleMs = 60_000) {}
 
   /** Apply a client message and return outbound messages to broadcast. */
-  apply(userId: string, msg: CursorMessage, now = Date.now()): {
-    broadcast: Array<{ type: 'cursor.peer' | 'cursor.ops' | 'cursor.leave'; payload: Record<string, unknown> }>;
+  apply(
+    userId: string,
+    msg: CursorMessage,
+    now = Date.now(),
+  ): {
+    broadcast: Array<{
+      type: "cursor.peer" | "cursor.ops" | "cursor.leave";
+      payload: Record<string, unknown>;
+    }>;
   } {
-    const broadcast: Array<{ type: 'cursor.peer' | 'cursor.ops' | 'cursor.leave'; payload: Record<string, unknown> }> = [];
+    const broadcast: Array<{
+      type: "cursor.peer" | "cursor.ops" | "cursor.leave";
+      payload: Record<string, unknown>;
+    }> = [];
 
     switch (msg.type) {
-      case 'cursor.join':
-      case 'cursor.move': {
+      case "cursor.join":
+      case "cursor.move": {
         const key = `${userId}:${msg.itemId}:${msg.fieldKey}`;
         const existing = this.peers.get(key);
         const peer: PeerCursor = {
           userId,
           itemId: msg.itemId,
           fieldKey: msg.fieldKey,
-          anchor: msg.type === 'cursor.move' ? msg.anchor : existing?.anchor ?? 0,
-          head: msg.type === 'cursor.move' ? msg.head : existing?.head ?? 0,
-          color: msg.type === 'cursor.join' ? msg.color : existing?.color ?? '#888',
-          name: msg.type === 'cursor.join' ? msg.name : existing?.name ?? userId,
+          anchor:
+            msg.type === "cursor.move" ? msg.anchor : (existing?.anchor ?? 0),
+          head: msg.type === "cursor.move" ? msg.head : (existing?.head ?? 0),
+          color:
+            msg.type === "cursor.join"
+              ? msg.color
+              : (existing?.color ?? "#888"),
+          name:
+            msg.type === "cursor.join" ? msg.name : (existing?.name ?? userId),
           ts: now,
         };
         this.peers.set(key, peer);
-        broadcast.push({ type: 'cursor.peer', payload: peer });
-        break;
-      }
-      case 'cursor.update': {
         broadcast.push({
-          type: 'cursor.ops',
-          payload: { userId, itemId: msg.itemId, fieldKey: msg.fieldKey, ops: msg.ops, ts: now },
+          type: "cursor.peer",
+          payload: peer as unknown as Record<string, unknown>,
         });
         break;
       }
-      case 'cursor.leave': {
+      case "cursor.update": {
+        broadcast.push({
+          type: "cursor.ops",
+          payload: {
+            userId,
+            itemId: msg.itemId,
+            fieldKey: msg.fieldKey,
+            ops: msg.ops,
+            ts: now,
+          },
+        });
+        break;
+      }
+      case "cursor.leave": {
         const key = `${userId}:${msg.itemId}:${msg.fieldKey}`;
         this.peers.delete(key);
         broadcast.push({
-          type: 'cursor.leave',
-          payload: { userId, itemId: msg.itemId, fieldKey: msg.fieldKey, ts: now },
+          type: "cursor.leave",
+          payload: {
+            userId,
+            itemId: msg.itemId,
+            fieldKey: msg.fieldKey,
+            ts: now,
+          },
         });
         break;
       }
@@ -144,11 +186,12 @@ export function applyOps(initial: string, ops: TextOp[]): string {
 
   let out = initial;
   for (const op of sorted) {
-    if (op.kind === 'insert') {
+    if (op.kind === "insert") {
       const value = String(op.value);
       out = out.slice(0, op.pos) + value + out.slice(op.pos);
     } else {
-      const len = typeof op.value === 'number' ? op.value : String(op.value).length;
+      const len =
+        typeof op.value === "number" ? op.value : String(op.value).length;
       out = out.slice(0, op.pos) + out.slice(op.pos + len);
     }
   }
