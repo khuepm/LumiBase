@@ -150,21 +150,29 @@ export function Layout() {
 
         <footer
           className={`border-t px-6 py-6 text-xs ${siteConfig.footer.style === 'dark'
-              ? 'bg-zinc-900 text-zinc-400'
+              ? 'border-zinc-800 bg-zinc-900 text-zinc-400'
               : 'bg-muted text-muted-foreground'
             }`}
         >
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             {siteConfig.footer.links.map((col) => (
               <div key={col.title}>
-                <h3 className="mb-2 text-sm font-semibold text-foreground">
+                <h3
+                  className={`mb-2 text-sm font-semibold ${siteConfig.footer.style === 'dark'
+                      ? 'text-zinc-100'
+                      : 'text-foreground'
+                    }`}
+                >
                   {col.title}
                 </h3>
                 <ul className="space-y-1">
                   {col.items.map((item) => (
                     <li key={item.label}>
                       <a
-                        className="hover:underline"
+                        className={`hover:underline ${siteConfig.footer.style === 'dark'
+                            ? 'hover:text-zinc-100'
+                            : 'hover:text-foreground'
+                          }`}
                         href={item.href ?? item.to}
                         target={item.href ? '_blank' : undefined}
                         rel={item.href ? 'noreferrer' : undefined}
@@ -177,7 +185,10 @@ export function Layout() {
               </div>
             ))}
           </div>
-          <p className="mt-6 border-t pt-4 text-center">
+          <p
+            className={`mt-6 border-t pt-4 text-center ${siteConfig.footer.style === 'dark' ? 'border-zinc-800' : ''
+              }`}
+          >
             {siteConfig.footer.copyright}
           </p>
         </footer>

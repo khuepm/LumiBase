@@ -8,7 +8,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository | toLower }}
 
 jobs:
   build:
@@ -20,6 +19,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Set IMAGE_NAME to lowercase
+        run: |
+          echo "IMAGE_NAME=$(echo "$RAW_IMAGE_NAME" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+        env:
+          RAW_IMAGE_NAME: ${{ github.repository }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
