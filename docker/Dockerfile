@@ -6,14 +6,18 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ ./packages/
 COPY apps/cms/ ./apps/cms/
 RUN pnpm install --frozen-lockfile
+# Build Cloudflare Worker bundle (not used at runtime but keeps build parity)
 RUN pnpm --filter @lumibase/cms build
+# Build Node.js server entrypoint (serve.js) and migration runner (migrate.js)
+RUN pnpm --filter @lumibase/cms build:node
 
 # Stage 2: Runtime
 FROM node:20-slim AS runtime
 RUN addgroup --system lumibase && adduser --system --ingroup lumibase lumibase
 WORKDIR /app
 COPY --from=builder /app/apps/cms/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
+# Drizzle migration SQL files must be present at ./drizzle relative to CWD
+COPY --from=builder /app/packages/database/drizzle ./drizzle
 COPY docker/scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 USER lumibase
