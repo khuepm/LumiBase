@@ -20,8 +20,8 @@
  * `c.env.SCIM_TOKEN`. For local dev, set `SCIM_TOKEN=dev-scim` in wrangler.toml.
  */
 
-import { teams, teamMembers, userSites, users } from "@lumibase/database";
-import { and, eq, ilike, or } from "drizzle-orm";
+import { teams, teamMembers, userSites, users, scimTokens, activity } from "@lumibase/database";
+import { and, eq, ilike, or, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import type { AppEnv } from "../env";
 
@@ -34,12 +34,38 @@ const SCIM_ERROR = "urn:ietf:params:scim:api:messages:2.0:Error";
 
 // ── auth middleware ────────────────────────────────────────────────────────
 
+async function sha256(text: string): Promise<string> {
+  const msgBuffer = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 scimRouter.use("*", async (c, next) => {
-  const expected = (c.env as unknown as Record<string, string | undefined>)[
-    "SCIM_TOKEN"
-  ];
   const auth = c.req.header("Authorization");
-  if (!expected || auth !== `Bearer ${expected}`) {
+  if (!auth || !auth.startsWith("Bearer ")) {
+    return c.json(
+      {
+        schemas: [SCIM_ERROR],
+        status: "401",
+        detail: "Missing or invalid Authorization header",
+      },
+      401,
+    );
+  }
+
+  const bearer = auth.slice(7);
+  const tokenHash = await sha256(bearer);
+  const db = c.get("db");
+
+  // Query database for this token
+  const [token] = await db
+    .select()
+    .from(scimTokens)
+    .where(and(eq(scimTokens.tokenHash, tokenHash), isNull(scimTokens.revokedAt)))
+    .limit(1);
+
+  if (!token) {
     return c.json(
       {
         schemas: [SCIM_ERROR],
@@ -49,7 +75,77 @@ scimRouter.use("*", async (c, next) => {
       401,
     );
   }
+
+  // Check expiration
+  if (token.expiresAt && token.expiresAt < new Date()) {
+    return c.json(
+      {
+        schemas: [SCIM_ERROR],
+        status: "401",
+        detail: "SCIM token has expired",
+      },
+      401,
+    );
+  }
+
+  // Update lastUsedAt
+  try {
+    await db.update(scimTokens)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(scimTokens.id, token.id));
+  } catch (err) {
+    console.error("Failed to update SCIM lastUsedAt", err);
+  }
+
+  // Set siteId context to the token's siteId to enforce multi-tenant isolation
+  c.set("siteId", token.siteId);
+  c.set("scimToken" as any, token);
+
   await next();
+
+  // Log SCIM write actions if the request succeeded
+  if (c.res.status >= 200 && c.res.status < 300) {
+    const method = c.req.method.toUpperCase();
+    const path = c.req.path;
+    let action = "";
+
+    if (path.endsWith("/Users") && method === "POST") {
+      action = "scim.user.create";
+    } else if (path.includes("/Users/") && method === "PUT") {
+      action = "scim.user.update";
+    } else if (path.includes("/Users/") && method === "PATCH") {
+      action = "scim.user.patch";
+    } else if (path.includes("/Users/") && method === "DELETE") {
+      action = "scim.user.delete";
+    } else if (path.endsWith("/Groups") && method === "POST") {
+      action = "scim.group.create";
+    } else if (path.includes("/Groups/") && method === "PUT") {
+      action = "scim.group.update";
+    } else if (path.includes("/Groups/") && method === "PATCH") {
+      action = "scim.group.patch";
+    } else if (path.includes("/Groups/") && method === "DELETE") {
+      action = "scim.group.delete";
+    }
+
+    if (action) {
+      try {
+        await db.insert(activity).values({
+          siteId: token.siteId,
+          action,
+          userId: "scim",
+          collection: "scim",
+          itemId: path.split("/").pop() || null,
+          payload: {
+            method,
+            path,
+            tokenLabel: token.label,
+          },
+        });
+      } catch (err) {
+        console.error("Failed to log SCIM activity", err);
+      }
+    }
+  }
 });
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -306,17 +402,7 @@ scimRouter.get("/Groups", async (c) => {
 
 scimRouter.post("/Groups", async (c) => {
   const db = c.get("db");
-  const siteId = c.req.header("X-Lumi-Site");
-  if (!siteId) {
-    return c.json(
-      {
-        schemas: [SCIM_ERROR],
-        status: "400",
-        detail: "X-Lumi-Site header required",
-      },
-      400,
-    );
-  }
+  const siteId = c.get("siteId");
 
   const body = (await c.req.json()) as {
     displayName: string;

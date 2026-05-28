@@ -125,3 +125,23 @@ export const permissions = pgTable(
     siteCollectionIdx: index('permissions_site_collection_idx').on(t.siteId, t.collection),
   }),
 );
+
+export const scimTokens = pgTable(
+  'scim_tokens',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    label: text('label').notNull(),
+    createdBy: text('created_by'),
+    expiresAt: timestamp('expires_at'),
+    revokedAt: timestamp('revoked_at'),
+    lastUsedAt: timestamp('last_used_at'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    siteHashIdx: index('scim_tokens_site_hash_idx').on(t.siteId, t.tokenHash),
+  }),
+);

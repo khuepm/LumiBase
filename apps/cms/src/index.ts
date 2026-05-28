@@ -29,6 +29,7 @@ import { materializeRouter } from './routes/materialize';
 import { metricsRouter, withMetrics } from './routes/metrics';
 import { searchRouter } from './routes/search';
 import { scimRouter } from './routes/scim';
+import { scimAdminRouter } from './routes/scim-admin';
 import { settingsRouter } from './routes/settings';
 import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
@@ -101,6 +102,7 @@ api.route('/tm', tmRouter);
 api.route('/flows', flowsRouter);
 api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
+api.route('/scim-tokens', scimAdminRouter);
 api.route('/ai', aiRouter);
 
 app.route('/api/v1', api);
