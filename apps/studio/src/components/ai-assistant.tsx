@@ -4,7 +4,7 @@
  * Features:
  * - 48×48px floating button at bottom-right (24px offset)
  * - 320×480px chat panel with glassmorphism (backdrop-blur)
- * - State: open, messages[], input, loading
+ * - Conversation history with persistence (POST-GA Task #2)
  * - Calls POST /api/v1/ai/chat on send
  * - Shows loading indicator while processing
  * - Distinguishes 'user' and 'assistant' message roles
@@ -12,10 +12,12 @@
  * - Disables send button when input is empty/whitespace-only
  * - Limits message history to 50 messages
  * - Handles API errors by showing error message in chat
+ * - Conversation selector dropdown to switch between conversations
+ * - "New conversation" button
  */
 
-import { useCallback, useRef, useState } from 'react';
-import { MessageCircle, Send, X, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { MessageCircle, Send, X, Loader2, Plus, ChevronDown, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 interface ChatMessage {
@@ -25,23 +27,45 @@ interface ChatMessage {
   approvalId?: string;
 }
 
+interface ConversationSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
 interface ChatApiResponse {
   data?: {
     status: 'executed' | 'pending_approval' | 'denied';
     data?: unknown;
     approvalId?: string;
     message?: string;
+    conversationId?: string;
   };
   errors?: Array<{ code: string; message: string }>;
 }
 
 const MAX_MESSAGES = 50;
 
+function getApiHeaders(): Record<string, string> {
+  const token = localStorage.getItem('lumibase_dev_token') ?? '';
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+function getBaseUrl(): string {
+  return import.meta.env?.VITE_API_URL ?? 'http://localhost:8787';
+}
+
 export function AIAssistant() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [showConvDropdown, setShowConvDropdown] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const addMessage = useCallback((msg: ChatMessage) => {
@@ -54,6 +78,74 @@ export function AIAssistant() {
     }, 50);
   }, []);
 
+  // Load conversations list when panel opens
+  useEffect(() => {
+    if (!open) return;
+    void loadConversations();
+  }, [open]);
+
+  async function loadConversations() {
+    try {
+      const res = await fetch(`${getBaseUrl()}/api/v1/ai/conversations`, {
+        headers: getApiHeaders(),
+      });
+      if (res.ok) {
+        const body = (await res.json()) as { data: ConversationSummary[] };
+        setConversations(body.data);
+      }
+    } catch {
+      // silently fail
+    }
+  }
+
+  async function loadConversationMessages(convId: string) {
+    try {
+      const res = await fetch(
+        `${getBaseUrl()}/api/v1/ai/conversations/${convId}/messages`,
+        { headers: getApiHeaders() },
+      );
+      if (res.ok) {
+        const body = (await res.json()) as {
+          data: Array<{ role: string; content: string; metadata?: { status?: string; approvalId?: string } }>;
+        };
+        const loaded: ChatMessage[] = body.data
+          .filter((m) => m.role === 'user' || m.role === 'assistant')
+          .map((m) => ({
+            role: m.role as 'user' | 'assistant',
+            text: m.content,
+            status: m.metadata?.status,
+            approvalId: m.metadata?.approvalId,
+          }));
+        setMessages(loaded.slice(-MAX_MESSAGES));
+        setConversationId(convId);
+        scrollToBottom();
+      }
+    } catch {
+      // silently fail
+    }
+  }
+
+  function startNewConversation() {
+    setConversationId(null);
+    setMessages([]);
+    setShowConvDropdown(false);
+  }
+
+  async function deleteConversation(convId: string) {
+    try {
+      await fetch(`${getBaseUrl()}/api/v1/ai/conversations/${convId}`, {
+        method: 'DELETE',
+        headers: getApiHeaders(),
+      });
+      setConversations((prev) => prev.filter((c) => c.id !== convId));
+      if (conversationId === convId) {
+        startNewConversation();
+      }
+    } catch {
+      // silently fail
+    }
+  }
+
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed || loading) return;
@@ -65,16 +157,13 @@ export function AIAssistant() {
     scrollToBottom();
 
     try {
-      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8787';
-      const token = localStorage.getItem('lumibase_dev_token') ?? '';
-
-      const response = await fetch(`${baseUrl}/api/v1/ai/chat`, {
+      const response = await fetch(`${getBaseUrl()}/api/v1/ai/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ message: trimmed }),
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          message: trimmed,
+          ...(conversationId ? { conversationId } : {}),
+        }),
       });
 
       if (!response.ok) {
@@ -87,6 +176,11 @@ export function AIAssistant() {
         const result = body.data;
 
         if (result) {
+          // Save conversationId from server
+          if (result.conversationId && !conversationId) {
+            setConversationId(result.conversationId);
+          }
+
           const assistantText =
             result.message ?? (result.status === 'executed' ? 'Done.' : result.status);
           addMessage({
@@ -107,8 +201,10 @@ export function AIAssistant() {
     } finally {
       setLoading(false);
       scrollToBottom();
+      // Refresh conversations list
+      void loadConversations();
     }
-  }, [input, loading, addMessage, scrollToBottom]);
+  }, [input, loading, addMessage, scrollToBottom, conversationId]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -155,15 +251,87 @@ export function AIAssistant() {
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b px-4 py-3">
-            <span className="text-sm font-semibold">AI Assistant</span>
-            <button
-              type="button"
-              aria-label="Close AI assistant"
-              onClick={() => setOpen(false)}
-              className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <X className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold">AI Assistant</span>
+              {/* Conversation selector */}
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-label="Select conversation"
+                  onClick={() => setShowConvDropdown((v) => !v)}
+                  className="inline-flex h-6 items-center gap-0.5 rounded px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <ChevronDown className="h-3 w-3" aria-hidden="true" />
+                </button>
+                {showConvDropdown && (
+                  <div className="absolute left-0 top-7 z-50 w-56 rounded-md border bg-background shadow-lg">
+                    <button
+                      type="button"
+                      onClick={startNewConversation}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-muted"
+                    >
+                      <Plus className="h-3 w-3" /> New conversation
+                    </button>
+                    <div className="max-h-48 overflow-y-auto border-t">
+                      {conversations.map((conv) => (
+                        <div
+                          key={conv.id}
+                          className={cn(
+                            'flex items-center justify-between px-3 py-2 text-xs hover:bg-muted',
+                            conversationId === conv.id && 'bg-muted/50',
+                          )}
+                        >
+                          <button
+                            type="button"
+                            className="flex-1 truncate text-left"
+                            onClick={() => {
+                              void loadConversationMessages(conv.id);
+                              setShowConvDropdown(false);
+                            }}
+                          >
+                            {conv.title}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Delete conversation"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void deleteConversation(conv.id);
+                            }}
+                            className="ml-1 flex-shrink-0 text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                      {conversations.length === 0 && (
+                        <div className="px-3 py-2 text-xs text-muted-foreground">
+                          No conversations yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-label="New conversation"
+                onClick={startNewConversation}
+                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                aria-label="Close AI assistant"
+                onClick={() => setOpen(false)}
+                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
           </div>
 
           {/* Messages area */}

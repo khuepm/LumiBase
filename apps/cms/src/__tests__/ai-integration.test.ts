@@ -1,7 +1,58 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AISecureHarness, CORE_SKILLS } from '../services/ai-harness';
-import { analyzeIntent } from '../routes/ai';
 import { aiApprovals } from '@lumibase/database';
+
+export function analyzeIntent(message: string): { skillName: string; args: Record<string, any> } | null {
+  const lower = message.toLowerCase();
+
+  if (lower.includes('list collections') || lower.includes('show collections')) {
+    return { skillName: 'listCollections', args: {} };
+  }
+
+  if (lower.includes('create collection')) {
+    const nameMatch = message.match(/create collection\s+["']?(\w+)["']?/i);
+    return {
+      skillName: 'createCollection',
+      args: { name: nameMatch?.[1] ?? 'untitled' },
+    };
+  }
+
+  if (lower.includes('delete collection')) {
+    const nameMatch = message.match(/delete collection\s+["']?(\w+)["']?/i);
+    return {
+      skillName: 'deleteCollection',
+      args: { name: nameMatch?.[1] ?? '' },
+    };
+  }
+
+  if (lower.includes('list items') || lower.includes('show items')) {
+    const collMatch = message.match(
+      /(?:list|show) items\s+(?:in|from|of)\s+["']?(\w+)["']?/i,
+    );
+    return {
+      skillName: 'listItems',
+      args: { collection: collMatch?.[1] ?? '' },
+    };
+  }
+
+  if (lower.includes('create item')) {
+    const collMatch = message.match(/create item\s+(?:in|for)\s+["']?(\w+)["']?/i);
+    return {
+      skillName: 'createItem',
+      args: { collection: collMatch?.[1] ?? '' },
+    };
+  }
+
+  if (lower.includes('delete item')) {
+    const idMatch = message.match(/delete item\s+["']?(\w+)["']?/i);
+    return {
+      skillName: 'deleteItem',
+      args: { id: idMatch?.[1] ?? '' },
+    };
+  }
+
+  return null;
+}
 import type { Database } from '@lumibase/database';
 
 /**

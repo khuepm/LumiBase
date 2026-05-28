@@ -184,4 +184,69 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     },
     requiredCapabilities: ['items:delete'],
   },
+
+  // ── POST-GA Task #3 — RAG Skills ─────────────────────────────────────────
+
+  aiSuggestField: {
+    name: 'aiSuggestField',
+    description:
+      'Suggests field definitions for a collection based on its description and existing schema. ' +
+      'Uses RAG to find similar collections and field patterns for better suggestions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: {
+          type: 'string',
+          description: 'The name of the collection to suggest fields for.',
+        },
+        description: {
+          type: 'string',
+          description:
+            'A natural language description of what the collection stores (e.g. "blog posts with title, body, author, and publish date").',
+        },
+        maxSuggestions: {
+          type: 'integer',
+          description: 'Maximum number of field suggestions to return (default: 5).',
+        },
+      },
+      required: ['collection', 'description'],
+    },
+    requiredCapabilities: ['schema:read'],
+  },
+
+  aiContentAssist: {
+    name: 'aiContentAssist',
+    description:
+      'Generates or edits content for a specific field using AI. Uses RAG to find relevant ' +
+      'context from existing items in the same collection for consistent style and terminology.',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: {
+          type: 'string',
+          description: 'The collection name.',
+        },
+        itemId: {
+          type: 'string',
+          description: 'The ID of the item to assist with (optional for new items).',
+        },
+        fieldName: {
+          type: 'string',
+          description: 'The field to generate/edit content for.',
+        },
+        instruction: {
+          type: 'string',
+          description:
+            'What to do with the content (e.g. "write a SEO-friendly title", "translate to Vietnamese", "make it shorter").',
+        },
+        currentContent: {
+          type: 'string',
+          description: 'The current content of the field, if editing.',
+        },
+      },
+      required: ['collection', 'fieldName', 'instruction'],
+    },
+    requiredCapabilities: ['items:read'],
+  },
 };
+

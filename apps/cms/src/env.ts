@@ -29,6 +29,15 @@ export interface Bindings {
   LUMIBASE_DEV_AUTH?: string;
   /** Secret key for AES-GCM per-field encryption (base64 encoded). */
   ENCRYPTION_KEY?: string;
+  // ── LLM Provider (POST-GA Task #1) ──────────────────────────────────────
+  /** `'openai'` | `'anthropic'` | `'workers-ai'` | `'echo'` (default). */
+  LLM_PROVIDER?: string;
+  OPENAI_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
+  WORKERS_AI_ACCOUNT_ID?: string;
+  WORKERS_AI_API_TOKEN?: string;
+  /** Optional Workers AI gateway URL override. */
+  WORKERS_AI_GATEWAY?: string;
 }
 
 /**

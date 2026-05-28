@@ -1,11 +1,12 @@
-import { aiApprovals } from '@lumibase/database';
-import { and, desc, eq } from 'drizzle-orm';
+import { aiApprovals, aiConversations, aiMessages } from '@lumibase/database';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { AISecureHarness } from '../services/ai-harness';
 import { SchemaService } from '../services/schema-service';
 import { ItemService } from '../services/item-service';
+import { createLLMProvider, type LLMMessage } from '../services/llm-provider';
 
 // ---------------------------------------------------------------------------
 // Zod Schemas
@@ -17,6 +18,7 @@ export const chatSchema = z.object({
     .max(2000)
     .transform((s) => s.trim())
     .pipe(z.string().min(1, 'Message must not be empty after trimming')),
+  conversationId: z.string().optional(),
 });
 
 export const decideSchema = z.object({
@@ -24,59 +26,11 @@ export const decideSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Intent Analysis (Mock LLM)
+// Constants
 // ---------------------------------------------------------------------------
 
-interface IntentResult {
-  skillName: string;
-  args: Record<string, unknown>;
-}
-
-/**
- * Analyzes a user message to determine the intended skill and arguments.
- * This is a mock implementation that maps keywords to skill names.
- * In production, this would be replaced by an actual LLM call.
- */
-export function analyzeIntent(message: string): IntentResult | null {
-  const lower = message.toLowerCase();
-
-  if (lower.includes('list collections') || lower.includes('show collections')) {
-    return { skillName: 'listCollections', args: {} };
-  }
-
-  if (lower.includes('create collection')) {
-    // Extract collection name from message if possible
-    const nameMatch = message.match(/create collection\s+["']?(\w+)["']?/i);
-    const name = nameMatch?.[1] ?? 'untitled';
-    return { skillName: 'createCollection', args: { name } };
-  }
-
-  if (lower.includes('delete collection')) {
-    const nameMatch = message.match(/delete collection\s+["']?(\w+)["']?/i);
-    const name = nameMatch?.[1] ?? '';
-    return { skillName: 'deleteCollection', args: { name } };
-  }
-
-  if (lower.includes('list items') || lower.includes('show items')) {
-    const collMatch = message.match(/(?:list|show) items\s+(?:in|from|of)\s+["']?(\w+)["']?/i);
-    const collection = collMatch?.[1] ?? '';
-    return { skillName: 'listItems', args: { collection } };
-  }
-
-  if (lower.includes('create item')) {
-    const collMatch = message.match(/create item\s+(?:in|for)\s+["']?(\w+)["']?/i);
-    const collection = collMatch?.[1] ?? '';
-    return { skillName: 'createItem', args: { collection } };
-  }
-
-  if (lower.includes('delete item')) {
-    const idMatch = message.match(/delete item\s+["']?(\w+)["']?/i);
-    const id = idMatch?.[1] ?? '';
-    return { skillName: 'deleteItem', args: { id } };
-  }
-
-  return null;
-}
+/** Max messages to load from conversation history as LLM context. */
+const MAX_CONTEXT_MESSAGES = 20;
 
 // ---------------------------------------------------------------------------
 // Router
@@ -86,7 +40,9 @@ export const aiRouter = new Hono<AppEnv>();
 
 /**
  * POST /chat
- * Receives a natural language message, analyzes intent, and executes via AISecureHarness.
+ * Receives a natural language message, analyzes intent via LLM (or echo
+ * fallback), and executes via AISecureHarness.
+ * Supports conversation history via `conversationId`.
  */
 aiRouter.post('/chat', async (c) => {
   // Step 1: Parse and validate input
@@ -106,34 +62,106 @@ aiRouter.post('/chat', async (c) => {
     );
   }
 
-  const { message } = parsed.data;
+  const { message, conversationId: inputConversationId } = parsed.data;
 
-  // Step 2: Analyze intent (mock LLM)
-  const intent = analyzeIntent(message);
-
-  if (!intent) {
-    return c.json(
-      {
-        data: {
-          status: 'denied' as const,
-          message: 'Could not determine action from your message.',
-        },
-      },
-      200,
-    );
-  }
-
-  // Step 3: Execute via AISecureHarness
   try {
     const db = c.get('db');
     const siteId = c.get('siteId');
     const auth = c.get('auth');
     const runtime = c.get('runtime');
+    const userId = auth.userId ?? null;
 
-    // Derive capabilities from auth principal roles or default to empty
+    // Step 2: Resolve or create conversation
+    let conversationId = inputConversationId;
+
+    if (conversationId) {
+      // Verify conversation belongs to this site
+      const [conv] = await db
+        .select({ id: aiConversations.id })
+        .from(aiConversations)
+        .where(
+          and(
+            eq(aiConversations.id, conversationId),
+            eq(aiConversations.siteId, siteId),
+          ),
+        );
+      if (!conv) {
+        conversationId = undefined; // Will create new
+      }
+    }
+
+    if (!conversationId) {
+      // Create a new conversation
+      const title =
+        message.length > 60 ? `${message.substring(0, 57)}...` : message;
+      const [newConv] = await db
+        .insert(aiConversations)
+        .values({ siteId, userId, title })
+        .returning();
+      conversationId = newConv!.id;
+    }
+
+    // Step 3: Persist user message
+    await db.insert(aiMessages).values({
+      conversationId,
+      role: 'user',
+      content: message,
+    });
+
+    // Step 4: Load conversation history for LLM context
+    const historyRows = await db
+      .select({ role: aiMessages.role, content: aiMessages.content })
+      .from(aiMessages)
+      .where(eq(aiMessages.conversationId, conversationId))
+      .orderBy(asc(aiMessages.createdAt))
+      .limit(MAX_CONTEXT_MESSAGES);
+
+    const llmMessages: LLMMessage[] = historyRows.map((row) => ({
+      role: row.role as LLMMessage['role'],
+      content: row.content,
+    }));
+
+    // Step 5: Call LLM
+    const llmProvider = createLLMProvider(
+      c.env as unknown as Record<string, string | undefined>,
+    );
+    const llmResponse = await llmProvider.chat(llmMessages);
+
+    // Step 6: Handle response
+    if (llmResponse.toolCalls.length === 0) {
+      const responseText =
+        llmResponse.content ?? 'Could not determine action from your message.';
+
+      // Persist assistant response
+      await db.insert(aiMessages).values({
+        conversationId,
+        role: 'assistant',
+        content: responseText,
+        metadata: { status: 'denied' },
+      });
+
+      // Update conversation timestamp
+      await db
+        .update(aiConversations)
+        .set({ updatedAt: new Date() })
+        .where(eq(aiConversations.id, conversationId));
+
+      return c.json(
+        {
+          data: {
+            status: 'denied' as const,
+            message: responseText,
+            conversationId,
+          },
+        },
+        200,
+      );
+    }
+
+    // Execute the first tool call via AISecureHarness
+    const toolCall = llmResponse.toolCalls[0]!;
     const userCapabilities = auth.roles ?? [];
 
-    // Wire up real services for skill execution
     const schemaService = new SchemaService({
       db,
       siteId,
@@ -150,13 +178,48 @@ aiRouter.post('/chat', async (c) => {
 
     const harness = new AISecureHarness({ db, siteId, schemaService, itemService });
     const result = await harness.execute(
-      intent.skillName,
-      intent.args,
+      toolCall.name,
+      toolCall.arguments,
       userCapabilities,
       message,
     );
 
-    return c.json({ data: result }, 200);
+    const responseMessage =
+      result.message ??
+      (llmResponse.content
+        ? llmResponse.content
+        : result.status === 'executed'
+          ? 'Done.'
+          : result.status);
+
+    // Persist assistant response
+    await db.insert(aiMessages).values({
+      conversationId,
+      role: 'assistant',
+      content: responseMessage,
+      toolCalls: llmResponse.toolCalls,
+      metadata: {
+        status: result.status,
+        approvalId: result.approvalId,
+      },
+    });
+
+    // Update conversation timestamp
+    await db
+      .update(aiConversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(aiConversations.id, conversationId));
+
+    return c.json(
+      {
+        data: {
+          ...result,
+          message: responseMessage,
+          conversationId,
+        },
+      },
+      200,
+    );
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Internal server error';
     console.error('[ai/chat] execution error', err);
@@ -168,6 +231,96 @@ aiRouter.post('/chat', async (c) => {
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// Conversation management routes
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /conversations
+ * Lists conversations for the current user/site, most recent first.
+ */
+aiRouter.get('/conversations', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const auth = c.get('auth');
+
+  const rows = await db
+    .select()
+    .from(aiConversations)
+    .where(
+      and(
+        eq(aiConversations.siteId, siteId),
+        ...(auth.userId ? [eq(aiConversations.userId, auth.userId)] : []),
+      ),
+    )
+    .orderBy(desc(aiConversations.updatedAt))
+    .limit(50);
+
+  return c.json({ data: rows });
+});
+
+/**
+ * GET /conversations/:id/messages
+ * Returns all messages in a conversation, oldest first.
+ */
+aiRouter.get('/conversations/:id/messages', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const conversationId = c.req.param('id');
+
+  // Verify conversation belongs to this site
+  const [conv] = await db
+    .select({ id: aiConversations.id })
+    .from(aiConversations)
+    .where(
+      and(
+        eq(aiConversations.id, conversationId),
+        eq(aiConversations.siteId, siteId),
+      ),
+    );
+
+  if (!conv) {
+    return c.json(
+      { errors: [{ code: 'NOT_FOUND', message: 'Conversation not found' }] },
+      404,
+    );
+  }
+
+  const messages = await db
+    .select()
+    .from(aiMessages)
+    .where(eq(aiMessages.conversationId, conversationId))
+    .orderBy(asc(aiMessages.createdAt))
+    .limit(200);
+
+  return c.json({ data: messages });
+});
+
+/**
+ * DELETE /conversations/:id
+ * Deletes a conversation and all its messages.
+ */
+aiRouter.delete('/conversations/:id', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const conversationId = c.req.param('id');
+
+  await db
+    .delete(aiConversations)
+    .where(
+      and(
+        eq(aiConversations.id, conversationId),
+        eq(aiConversations.siteId, siteId),
+      ),
+    );
+
+  return c.body(null, 204);
+});
+
+// ---------------------------------------------------------------------------
+// Approval routes
+// ---------------------------------------------------------------------------
 
 /**
  * GET /approvals
@@ -255,7 +408,6 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
   }
 
   // decision === 'rejected'
-  // Verify the approval exists and belongs to the current site before rejecting
   const [existing] = await db
     .select({ id: aiApprovals.id, status: aiApprovals.status })
     .from(aiApprovals)

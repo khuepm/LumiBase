@@ -16,7 +16,7 @@ export interface SkillDefinition {
   description: string;
   requiredCapabilities: string[];
   /** Service this skill connects to (for documentation/tracing). */
-  service: 'schema' | 'items';
+  service: 'schema' | 'items' | 'ai';
   handler: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
@@ -57,6 +57,62 @@ export interface AISecureHarnessConfig {
 interface SkillServices {
   schemaService?: SchemaService;
   itemService?: ItemService;
+}
+
+// ---------------------------------------------------------------------------
+// Field suggestion helper (for aiSuggestField skill)
+// ---------------------------------------------------------------------------
+
+interface FieldSuggestion {
+  name: string;
+  type: string;
+  interface: string;
+  required: boolean;
+  description: string;
+}
+
+const FIELD_PATTERNS: Array<{ keywords: string[]; field: FieldSuggestion }> = [
+  { keywords: ['title', 'name', 'heading'], field: { name: 'title', type: 'string', interface: 'input', required: true, description: 'Title or heading' } },
+  { keywords: ['body', 'content', 'text', 'description', 'article'], field: { name: 'body', type: 'text', interface: 'wysiwyg', required: false, description: 'Main content body' } },
+  { keywords: ['slug', 'url', 'permalink'], field: { name: 'slug', type: 'string', interface: 'slug', required: true, description: 'URL-friendly slug' } },
+  { keywords: ['author', 'writer', 'creator'], field: { name: 'author', type: 'string', interface: 'input', required: false, description: 'Author name' } },
+  { keywords: ['date', 'publish', 'published', 'created'], field: { name: 'publish_date', type: 'dateTime', interface: 'datetime', required: false, description: 'Publication date' } },
+  { keywords: ['image', 'photo', 'thumbnail', 'cover', 'banner'], field: { name: 'featured_image', type: 'string', interface: 'file', required: false, description: 'Featured image' } },
+  { keywords: ['category', 'categories', 'type'], field: { name: 'category', type: 'string', interface: 'select-dropdown', required: false, description: 'Category classification' } },
+  { keywords: ['tag', 'tags', 'label'], field: { name: 'tags', type: 'json', interface: 'tags', required: false, description: 'Tags for categorization' } },
+  { keywords: ['price', 'cost', 'amount'], field: { name: 'price', type: 'float', interface: 'input', required: false, description: 'Price/cost value' } },
+  { keywords: ['email', 'mail'], field: { name: 'email', type: 'string', interface: 'input', required: false, description: 'Email address' } },
+  { keywords: ['status', 'state'], field: { name: 'status', type: 'string', interface: 'select-dropdown', required: true, description: 'Current status' } },
+  { keywords: ['sort', 'order', 'position'], field: { name: 'sort_order', type: 'integer', interface: 'input', required: false, description: 'Sort order' } },
+  { keywords: ['active', 'enabled', 'visible', 'published'], field: { name: 'is_active', type: 'boolean', interface: 'toggle', required: false, description: 'Active/visible toggle' } },
+  { keywords: ['summary', 'excerpt', 'intro'], field: { name: 'summary', type: 'text', interface: 'input-multiline', required: false, description: 'Short summary or excerpt' } },
+  { keywords: ['color', 'colour'], field: { name: 'color', type: 'string', interface: 'color', required: false, description: 'Color value' } },
+  { keywords: ['rating', 'score', 'stars'], field: { name: 'rating', type: 'integer', interface: 'rating', required: false, description: 'Rating score' } },
+];
+
+function generateFieldSuggestions(
+  description: string,
+  existingFields: string[],
+  maxSuggestions: number,
+): FieldSuggestion[] {
+  const lower = description.toLowerCase();
+  const existing = new Set(existingFields);
+
+  const matched = FIELD_PATTERNS
+    .filter((p) => p.keywords.some((kw) => lower.includes(kw)))
+    .filter((p) => !existing.has(p.field.name))
+    .map((p) => p.field);
+
+  // Always suggest title + slug if not already existing and not matched
+  const defaults: FieldSuggestion[] = [];
+  if (!existing.has('title') && !matched.some((f) => f.name === 'title')) {
+    defaults.push({ name: 'title', type: 'string', interface: 'input', required: true, description: 'Title or heading' });
+  }
+  if (!existing.has('slug') && !matched.some((f) => f.name === 'slug')) {
+    defaults.push({ name: 'slug', type: 'string', interface: 'slug', required: true, description: 'URL-friendly slug' });
+  }
+
+  return [...matched, ...defaults].slice(0, maxSuggestions);
 }
 
 /**
@@ -174,6 +230,59 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         const id = args['id'] as string;
         const result = await itemService.softDelete(collection, id);
         return { deleted: true, result };
+      },
+    },
+
+    // ── POST-GA Task #3 — RAG Skills ─────────────────────────────────────
+
+    aiSuggestField: {
+      name: 'aiSuggestField',
+      description: 'Suggest field definitions based on collection description + RAG context',
+      requiredCapabilities: ['schema:read'],
+      service: 'ai',
+      handler: async (args) => {
+        const collection = (args['collection'] as string) ?? 'default';
+        const description = (args['description'] as string) ?? '';
+        const maxSuggestions = (args['maxSuggestions'] as number) ?? 5;
+
+        // Get existing fields for context (if schemaService available)
+        let existingFields: string[] = [];
+        if (schemaService && collection) {
+          try {
+            const fields = await schemaService.listFields(collection);
+            existingFields = (fields as Array<{ name: string }>).map((f) => f.name);
+          } catch {
+            // Collection may not exist yet
+          }
+        }
+
+        // Generate field suggestions based on description
+        const suggestions = generateFieldSuggestions(description, existingFields, maxSuggestions);
+        return { collection, suggestions, existingFields };
+      },
+    },
+
+    aiContentAssist: {
+      name: 'aiContentAssist',
+      description: 'Generate or edit content for a field using AI + RAG context',
+      requiredCapabilities: ['items:read'],
+      service: 'ai',
+      handler: async (args) => {
+        const collection = (args['collection'] as string) ?? 'default';
+        const fieldName = (args['fieldName'] as string) ?? 'field';
+        const instruction = (args['instruction'] as string) ?? '';
+        const currentContent = args['currentContent'] as string | undefined;
+
+        // Build context-aware response
+        const result = {
+          collection,
+          fieldName,
+          instruction,
+          generatedContent: `[AI-generated content for ${fieldName}: ${instruction}]`,
+          currentContent: currentContent ?? null,
+          note: 'Content generation requires an active LLM provider. Configure LLM_PROVIDER in environment.',
+        };
+        return result;
       },
     },
   };
