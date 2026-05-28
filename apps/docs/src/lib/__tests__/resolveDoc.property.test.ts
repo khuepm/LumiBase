@@ -65,7 +65,7 @@ const registryArb = fc
   )
   .map(([locales, slugs]) => {
     // Pick the first locale as defaultLocale
-    const defaultLocale = locales[0];
+    const defaultLocale = locales[0]!;
 
     // Build docIndexByLocale: for each locale, randomly include some slugs
     const docIndexByLocale: Record<string, Record<string, DocEntry>> = {};
@@ -87,7 +87,7 @@ const registryArb = fc
       for (const locale of locales) {
         for (const slug of slugs) {
           if (bools[idx]) {
-            docIndexByLocale[locale][slug] = makeEntry(locale, slug);
+            docIndexByLocale[locale]![slug] = makeEntry(locale, slug);
           }
           idx++;
         }
