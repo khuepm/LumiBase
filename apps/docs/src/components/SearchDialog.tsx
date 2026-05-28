@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, FileText } from 'lucide-react';
 import { search, type SearchResult } from '../lib/search';
 import { useLocale } from '../hooks/useLocale';
+import { useT } from '../hooks/useT';
 
 /**
  * SearchDialog — a modal search interface triggered by Cmd/Ctrl+K.
@@ -20,6 +21,14 @@ export function SearchDialog() {
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { locale } = useLocale();
+  const t = useT();
+
+  // Reset query and results when locale changes
+  useEffect(() => {
+    setQuery('');
+    setResults([]);
+    setSelectedIndex(0);
+  }, [locale]);
 
   // Global keyboard shortcut: Cmd/Ctrl+K to open
   useEffect(() => {
@@ -60,7 +69,7 @@ export function SearchDialog() {
     const searchResults = search(locale, query);
     setResults(searchResults);
     setSelectedIndex(0);
-  }, [query]);
+  }, [query, locale]);
 
   const closeDialog = useCallback(() => {
     setOpen(false);
@@ -101,7 +110,7 @@ export function SearchDialog() {
         aria-label="Search documentation (Cmd+K)"
       >
         <Search className="h-4 w-4" />
-        <span className="hidden sm:inline">Search…</span>
+        <span className="hidden sm:inline">{t('search.placeholder')}</span>
         <kbd className="hidden rounded border bg-muted px-1.5 py-0.5 text-xs font-mono sm:inline-block">
           ⌘K
         </kbd>
@@ -134,7 +143,7 @@ export function SearchDialog() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleInputKeyDown}
-            placeholder="Search documentation…"
+            placeholder={t('search.placeholder')}
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             aria-label="Search query"
             aria-activedescendant={
@@ -186,14 +195,14 @@ export function SearchDialog() {
         {/* No results message */}
         {query.trim().length >= 2 && results.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No results found for &ldquo;{query}&rdquo;
+            {t('search.no-results', { q: query })}
           </div>
         )}
 
         {/* Empty state hint */}
         {query.trim().length < 2 && (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            Type at least 2 characters to search
+            {t('search.min-chars')}
           </div>
         )}
       </div>
