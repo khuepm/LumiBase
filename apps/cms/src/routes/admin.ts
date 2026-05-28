@@ -27,6 +27,7 @@ import {
   settings,
   translations,
   webhooks,
+  sites,
 } from '@lumibase/database';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -211,4 +212,24 @@ adminRouter.post('/restore', async (c) => {
   return c.json({
     data: { restored, siteId, restoredAt: new Date().toISOString() },
   });
+});
+
+// ---------------------------------------------------------------------------
+// site management for test runner / testing isolation
+// ---------------------------------------------------------------------------
+adminRouter.post('/sites', async (c) => {
+  const db = c.get('db');
+  const body = await c.req.json();
+  const [row] = await db
+    .insert(sites)
+    .values({ id: body.id, name: body.name })
+    .returning();
+  return c.json({ data: row }, 201);
+});
+
+adminRouter.delete('/sites/:id', async (c) => {
+  const db = c.get('db');
+  const id = c.req.param('id');
+  await db.delete(sites).where(eq(sites.id, id));
+  return c.json({ data: { success: true } });
 });
