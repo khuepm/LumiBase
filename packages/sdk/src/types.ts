@@ -311,3 +311,203 @@ export interface ExtensionResource {
   installedBy: string | null;
   installedAt: string;
 }
+
+/* ---------------- AI Copilot (POST-GA1) ---------------- */
+
+export type AIChatStatus = "executed" | "pending_approval" | "denied";
+
+export interface AIChatResponse {
+  status: AIChatStatus;
+  message: string;
+  conversationId: string;
+  pendingId: string | null;
+  result: Record<string, unknown> | null;
+}
+
+export interface AIConversation {
+  id: string;
+  siteId: string;
+  userId: string | null;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AIMessage {
+  id: string;
+  conversationId: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  toolCalls: Array<Record<string, unknown>> | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export type AIApprovalStatus = "pending" | "approved" | "rejected";
+
+export interface AIApproval {
+  id: string;
+  siteId: string;
+  userId: string | null;
+  conversationId: string | null;
+  toolName: string;
+  toolArgs: Record<string, unknown>;
+  status: AIApprovalStatus;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+}
+
+export interface AIFieldSuggestion {
+  type: string;
+  interface: string;
+  confidence: number;
+}
+
+export interface AIContentAssistResult {
+  content: string;
+  tokensUsed: number;
+}
+
+/* ---------------- Flows Automation (POST-GA2) ---------------- */
+
+export interface FlowNode {
+  id: string;
+  key: string;
+  options?: Record<string, unknown>;
+  next?: string | null;
+  onError?: string | null;
+}
+
+export interface FlowGraph {
+  entry?: string | null;
+  nodes: FlowNode[];
+}
+
+export type FlowStatus = "active" | "inactive" | "draft";
+export type FlowTriggerType = "webhook" | "event" | "schedule" | "manual";
+
+export interface FlowResource {
+  id: string;
+  siteId: string;
+  name: string;
+  description: string | null;
+  status: FlowStatus;
+  triggerType: FlowTriggerType;
+  triggerOptions: Record<string, unknown>;
+  graph: FlowGraph;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FlowRunStatus = "running" | "success" | "error";
+
+export interface FlowRun {
+  id: string;
+  flowId: string;
+  siteId: string;
+  status: FlowRunStatus;
+  input: Record<string, unknown>;
+  steps: Array<Record<string, unknown>>;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface FlowRunResult {
+  runId: string;
+  status: "success" | "error";
+  steps: Array<Record<string, unknown>>;
+  error: string | null;
+}
+
+/* ---------------- Marketplace (POST-GA3) ---------------- */
+
+export interface MarketplaceExtension {
+  id: string;
+  name: string;
+  slug: string;
+  version: string;
+  type: string;
+  bundleUrl: string;
+  /** Base64-encoded Ed25519 detached signature of SHA-256(bundle). */
+  signature: string;
+  keyId: string;
+  manifest: Record<string, unknown>;
+  capabilities: string[];
+  publishedAt: string;
+  verified: boolean;
+}
+
+export interface ListMarketplaceExtensionsParams {
+  type?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface MarketplaceListResponse {
+  data: MarketplaceExtension[];
+  meta: { total: number; limit: number; offset: number };
+}
+
+/* ---------------- Materialized Collections (POST-GA4) ---------------- */
+
+export type MaterializeRefreshStrategy = "auto" | "cron" | "manual";
+
+export interface MaterializeProjection {
+  fields: string[];
+  orderBy?: string | null;
+}
+
+export interface MaterializedCollection {
+  id: string;
+  siteId: string;
+  collection: string;
+  target: string;
+  refreshStrategy: MaterializeRefreshStrategy;
+  refreshCron: string | null;
+  projection: MaterializeProjection;
+  filter: Record<string, unknown>;
+  lastRefreshedAt: string | null;
+  rowCount: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MaterializeRefreshResult {
+  rowsInserted: number;
+  refreshedAt: string;
+}
+
+export interface MaterializeDataResponse {
+  data: Array<Record<string, unknown>>;
+  meta: { total: number; limit: number; offset: number };
+}
+
+/* ---------------- SCIM Token Management (POST-GA5) ---------------- */
+
+export interface SCIMTokenMeta {
+  id: string;
+  label: string;
+  createdBy: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface SCIMTokenCreated extends SCIMTokenMeta {
+  /** Raw bearer token — returned exactly once in plaintext. Store immediately. */
+  token: string;
+}
+
+export interface SCIMTokenRotated extends SCIMTokenCreated {
+  /** Old token continues to accept requests until this ISO-8601 timestamp (24h grace). */
+  oldTokenGraceExpiresAt: string;
+}
+
+export interface CreateSCIMTokenParams {
+  label: string;
+  /** Number of days until expiry. Default: 90. Max: 365. */
+  lifespanDays?: number;
+}

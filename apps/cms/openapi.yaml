@@ -186,6 +186,171 @@ components:
           items: { type: string }
         rule: { type: object, nullable: true, additionalProperties: true }
         presets: { type: object, additionalProperties: true }
+    # --- AI (POST-GA1) ---
+    AIChatResponse:
+      type: object
+      properties:
+        status: { type: string, enum: [executed, pending_approval, denied] }
+        message: { type: string }
+        conversationId: { type: string }
+        pendingId: { type: string, nullable: true }
+        result: { type: object, additionalProperties: true, nullable: true }
+    AIConversation:
+      type: object
+      properties:
+        id: { type: string }
+        siteId: { type: string }
+        userId: { type: string, nullable: true }
+        title: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AIMessage:
+      type: object
+      properties:
+        id: { type: string }
+        conversationId: { type: string }
+        role: { type: string, enum: [user, assistant, system] }
+        content: { type: string }
+        toolCalls:
+          type: array
+          nullable: true
+          items: { type: object, additionalProperties: true }
+        metadata: { type: object, additionalProperties: true, nullable: true }
+        createdAt: { type: string, format: date-time }
+    AIApproval:
+      type: object
+      properties:
+        id: { type: string }
+        siteId: { type: string }
+        userId: { type: string, nullable: true }
+        conversationId: { type: string, nullable: true }
+        toolName: { type: string }
+        toolArgs: { type: object, additionalProperties: true }
+        status: { type: string, enum: [pending, approved, rejected] }
+        decidedBy: { type: string, nullable: true }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    # --- Flows (POST-GA2) ---
+    FlowGraph:
+      type: object
+      properties:
+        entry: { type: string, nullable: true }
+        nodes:
+          type: array
+          items:
+            type: object
+            required: [id, key]
+            properties:
+              id: { type: string }
+              key: { type: string }
+              options: { type: object, additionalProperties: true }
+              next: { type: string, nullable: true }
+              onError: { type: string, nullable: true }
+    FlowResource:
+      type: object
+      required: [name, triggerType]
+      properties:
+        id: { type: string }
+        siteId: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        status: { type: string, enum: [active, inactive, draft], default: draft }
+        triggerType: { type: string, enum: [webhook, event, schedule, manual] }
+        triggerOptions: { type: object, additionalProperties: true }
+        graph: { $ref: '#/components/schemas/FlowGraph' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    FlowRun:
+      type: object
+      properties:
+        id: { type: string }
+        flowId: { type: string }
+        siteId: { type: string }
+        status: { type: string, enum: [running, success, error] }
+        input: { type: object, additionalProperties: true }
+        steps:
+          type: array
+          items: { type: object, additionalProperties: true }
+        error: { type: string, nullable: true }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+    FlowRunResult:
+      type: object
+      properties:
+        runId: { type: string }
+        status: { type: string, enum: [success, error] }
+        steps:
+          type: array
+          items: { type: object, additionalProperties: true }
+        error: { type: string, nullable: true }
+    # --- Marketplace (POST-GA3) ---
+    MarketplaceExtension:
+      type: object
+      required: [id, name, version, type, bundleUrl]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        version: { type: string }
+        type: { type: string }
+        bundleUrl: { type: string, format: uri }
+        signature: { type: string, description: 'Base64-encoded Ed25519 detached signature' }
+        keyId: { type: string }
+        manifest: { type: object, additionalProperties: true }
+        capabilities:
+          type: array
+          items: { type: string }
+        publishedAt: { type: string, format: date-time }
+        verified: { type: boolean }
+    # --- Materialized Collections (POST-GA4) ---
+    MaterializedCollection:
+      type: object
+      required: [id, siteId, collection, target]
+      properties:
+        id: { type: string }
+        siteId: { type: string }
+        collection: { type: string }
+        target: { type: string }
+        refreshStrategy: { type: string, enum: [auto, cron, manual] }
+        refreshCron: { type: string, nullable: true }
+        projection:
+          type: object
+          properties:
+            fields: { type: array, items: { type: string } }
+            orderBy: { type: string, nullable: true }
+        filter: { type: object, additionalProperties: true }
+        lastRefreshedAt: { type: string, format: date-time, nullable: true }
+        rowCount: { type: integer, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    # --- SCIM Tokens (POST-GA5) ---
+    SCIMTokenMeta:
+      type: object
+      properties:
+        id: { type: string }
+        label: { type: string }
+        createdBy: { type: string }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    SCIMTokenCreated:
+      allOf:
+        - $ref: '#/components/schemas/SCIMTokenMeta'
+        - type: object
+          properties:
+            token:
+              type: string
+              description: Raw SCIM token — shown exactly once, not stored in plaintext
+    SCIMTokenRotated:
+      allOf:
+        - $ref: '#/components/schemas/SCIMTokenCreated'
+        - type: object
+          properties:
+            oldTokenGraceExpiresAt:
+              type: string
+              format: date-time
+              description: Old token remains valid until this time (24h grace period)
+
 
 paths:
   /utils/health:
@@ -820,3 +985,597 @@ paths:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/PermissionCheckResult' }
+
+  # ---------------------------------------------------------------------------
+  # AI Copilot (POST-GA1)
+  # ---------------------------------------------------------------------------
+  /ai/chat:
+    post:
+      summary: Send a natural-language message to the AI copilot
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, maxLength: 2000 }
+                conversationId: { type: string, nullable: true }
+      responses:
+        '200':
+          description: AI response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AIChatResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/conversations:
+    get:
+      summary: List AI conversations for the active site
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AIConversation' }
+
+  /ai/conversations/{conversationId}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: conversationId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Get conversation history (messages)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AIMessage' }
+    delete:
+      summary: Delete a conversation and all messages
+      responses:
+        '204': { description: Deleted }
+
+  /ai/approvals:
+    get:
+      summary: List pending AI action approvals for the site
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AIApproval' }
+
+  /ai/approvals/{id}/decide:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Approve or reject a pending AI action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approved, rejected] }
+      responses:
+        '200':
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AIApproval' }
+
+  /ai/suggest-field:
+    post:
+      summary: Suggest field type and interface for a given field name + context
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fieldName]
+              properties:
+                fieldName: { type: string }
+                collectionName: { type: string }
+                existingFields: { type: array, items: { type: string } }
+      responses:
+        '200':
+          description: Suggestion
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      type: { type: string }
+                      interface: { type: string }
+                      confidence: { type: number, format: float }
+
+  /ai/content-assist:
+    post:
+      summary: Generate or rewrite content for a field value using RAG context
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt, collection, field]
+              properties:
+                prompt: { type: string, maxLength: 1000 }
+                collection: { type: string }
+                field: { type: string }
+                itemId: { type: string, nullable: true }
+                existingValue: { type: string, nullable: true }
+      responses:
+        '200':
+          description: AI-generated content
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      content: { type: string }
+                      tokensUsed: { type: integer }
+
+  # ---------------------------------------------------------------------------
+  # Flows Automation (POST-GA2)
+  # ---------------------------------------------------------------------------
+  /flows:
+    get:
+      summary: List flows in the active site
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/FlowResource' }
+    post:
+      summary: Create a flow
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FlowResource' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/FlowResource' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /flows/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Get flow detail (incl. graph)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/FlowResource' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    patch:
+      summary: Update flow (graph, status, metadata)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FlowResource' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/FlowResource' }
+    delete:
+      summary: Delete a flow
+      responses:
+        '204': { description: Deleted }
+
+  /flows/{id}/run:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Trigger a manual flow run
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Optional input data passed to the flow entry node
+              additionalProperties: true
+      responses:
+        '200':
+          description: Run result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/FlowRunResult' }
+
+  /flows/{id}/runs:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: List runs for a flow (latest 100)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/FlowRun' }
+
+  # ---------------------------------------------------------------------------
+  # Marketplace (POST-GA3)
+  # ---------------------------------------------------------------------------
+  /marketplace/extensions:
+    get:
+      summary: List published extensions in the marketplace
+      security: []
+      parameters:
+        - { name: type, in: query, schema: { type: string }, description: 'Filter by extension type' }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/MarketplaceExtension' }
+                  meta:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      limit: { type: integer }
+                      offset: { type: integer }
+
+  /marketplace/extensions/{slug}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Get marketplace extension detail (incl. signature)
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/MarketplaceExtension' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /marketplace/extensions/{slug}/install:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: slug, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Install a marketplace extension into the active site
+      responses:
+        '201':
+          description: Installed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ExtensionResource' }
+        '409':
+          description: Already installed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /marketplace/publish:
+    post:
+      summary: Publish an extension to the marketplace
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, version, type, bundleUrl, signature, keyId]
+              properties:
+                name: { type: string }
+                version: { type: string }
+                type: { type: string }
+                bundleUrl: { type: string, format: uri }
+                signature: { type: string, description: 'Base64-encoded Ed25519 signature of SHA-256(bundle)' }
+                keyId: { type: string }
+                manifest: { type: object, additionalProperties: true }
+                capabilities: { type: array, items: { type: string } }
+      responses:
+        '201':
+          description: Published
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/MarketplaceExtension' }
+
+  # ---------------------------------------------------------------------------
+  # Materialized Collections (POST-GA4)
+  # ---------------------------------------------------------------------------
+  /materialize:
+    get:
+      summary: List materialized collections for the active site
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/MaterializedCollection' }
+    post:
+      summary: Register a new materialized collection and create its physical table
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [collection, target]
+              properties:
+                collection: { type: string }
+                target: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+                refreshStrategy: { type: string, enum: [auto, cron, manual], default: manual }
+                refreshCron: { type: string, nullable: true }
+                projection:
+                  type: object
+                  properties:
+                    fields: { type: array, items: { type: string }, default: ['*'] }
+                    orderBy: { type: string, nullable: true }
+                filter: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/MaterializedCollection' }
+        '404':
+          description: Source collection not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /materialize/{id}/refresh:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Trigger a physical table refresh (TRUNCATE + re-INSERT)
+      responses:
+        '200':
+          description: Refresh result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      rowsInserted: { type: integer }
+                      refreshedAt: { type: string, format: date-time }
+
+  /materialize/{id}/data:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Query the physical materialized table directly
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+                  meta:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      limit: { type: integer }
+                      offset: { type: integer }
+
+  /materialize/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    delete:
+      summary: Drop the physical table and remove the materialized collection record
+      responses:
+        '204': { description: Dropped }
+
+  # ---------------------------------------------------------------------------
+  # SCIM Token Management (POST-GA5)
+  # ---------------------------------------------------------------------------
+  /scim/tokens:
+    get:
+      summary: List active SCIM tokens for the site (masked — no raw token returned)
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SCIMTokenMeta' }
+    post:
+      summary: Create a new SCIM token
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label]
+              properties:
+                label: { type: string, minLength: 1 }
+                lifespanDays: { type: integer, minimum: 1, maximum: 365, default: 90 }
+      responses:
+        '201':
+          description: Token created — raw token returned once only
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SCIMTokenCreated' }
+
+  /scim/tokens/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    delete:
+      summary: Revoke a SCIM token immediately
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      success: { type: boolean }
+        '404':
+          description: Token not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /scim/tokens/{id}/rotate:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Rotate a SCIM token (creates new token, old expires after 24h grace period)
+      responses:
+        '200':
+          description: New token created — raw token returned once only
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SCIMTokenRotated' }
+        '404':
+          description: Active token not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }

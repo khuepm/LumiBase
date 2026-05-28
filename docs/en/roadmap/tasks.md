@@ -284,8 +284,8 @@ Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
 
 - [x] Cập nhật `architecture.md` nếu thay đổi cấu trúc.
 - [x] Viết unit + integration test trước khi merge; với logic phức tạp dùng property-based testing (fast-check).
-- [ ] Cập nhật OpenAPI spec (`apps/cms/openapi.yaml`) cho mọi endpoint mới.
-- [ ] Cập nhật `packages/sdk` types tương ứng.
+- [x] Cập nhật OpenAPI spec (`apps/cms/openapi.yaml`) cho mọi endpoint mới.
+- [x] Cập nhật `packages/sdk` types tương ứng.
 - [x] Cập nhật docs trong `docs/features/` hoặc `apps/docs/content/`.
-- [ ] Tạo branch `feature/<phase>-<name>`, commit theo conventional commits, PR có checklist DoD.
+- [x] Tạo branch `feature/<phase>-<name>`, commit theo conventional commits, PR có checklist DoD.
 - [x] Đảm bảo route mới hoạt động trên CẢ hai runtime (Cloudflare + Docker) — nếu phụ thuộc API cụ thể, gate bằng feature flag và document trong `features/runtime-abstraction.md`.
