@@ -211,7 +211,7 @@ describe('Integration: Full app render', () => {
     });
 
     // Should have a link back to home
-    expect(screen.getByRole('link', { name: /back to documentation home/i })).toHaveAttribute('href', '/docs/README');
+    expect(screen.getByRole('link', { name: /back to home/i })).toHaveAttribute('href', '/en/docs/README');
   });
 });
 
