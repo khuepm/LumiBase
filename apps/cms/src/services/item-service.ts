@@ -5,8 +5,10 @@ import {
   items,
   revisions,
   scopeSite,
+  materializedCollections,
   type Database,
 } from '@lumibase/database';
+import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
 import { and, asc, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
 import { validateItem } from './validation';
@@ -393,6 +395,7 @@ export class ItemService {
     await this.publishRealtimeEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
+    await this.triggerMaterializeRefresh(collectionName);
     return row;
   }
 
@@ -449,6 +452,7 @@ export class ItemService {
     await this.publishRealtimeEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
+    await this.triggerMaterializeRefresh(collectionName);
     return row;
   }
 
@@ -501,6 +505,7 @@ export class ItemService {
     await this.publishRealtimeEvent(collectionName, 'delete', id, {});
     // After hook — fire-and-forget.
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
+    await this.triggerMaterializeRefresh(collectionName);
     return { ok: true } as const;
   }
 
@@ -680,6 +685,40 @@ export class ItemService {
       }
     }
     return out;
+  }
+
+  private async triggerMaterializeRefresh(collectionName: string): Promise<void> {
+    try {
+      const mcs = await this.deps.db
+        .select()
+        .from(materializedCollections)
+        .where(
+          and(
+            eq(materializedCollections.siteId, this.deps.siteId),
+            eq(materializedCollections.collection, collectionName)
+          )
+        );
+
+      for (const mc of mcs) {
+        const config: MaterializeConfig = {
+          id: mc.id,
+          siteId: this.deps.siteId,
+          collection: mc.collection,
+          target: mc.target,
+          refreshStrategy: mc.refreshStrategy,
+          projection: mc.projection as { fields: string[]; orderBy?: string },
+          filter: mc.filter as Record<string, unknown>,
+        };
+
+        if (this.deps.queue) {
+          await this.deps.queue.enqueue('materialize-refresh', 'refresh', { config });
+        } else {
+          await refreshPhysicalTable(this.deps.db, config);
+        }
+      }
+    } catch (err) {
+      console.error('[item-service] materialize trigger failed', { collectionName, err });
+    }
   }
 
   private async writeRevision(
