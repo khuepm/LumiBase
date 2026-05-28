@@ -11,7 +11,7 @@ else
   echo "[entrypoint] Running database migrations..."
 
   while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if node dist/migrate.js 2>&1; then
+    if node dist/migrate.cjs 2>&1; then
       echo "[entrypoint] Migrations completed successfully."
       break
     fi
@@ -30,4 +30,4 @@ else
 fi
 
 echo "[entrypoint] Starting server..."
-exec node dist/serve.js
+exec node dist/serve.cjs

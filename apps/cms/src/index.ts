@@ -125,6 +125,8 @@ app.onError((err, c) => {
 
 export default app;
 
-// Durable Object exports — required by Wrangler to register the classes.
-export { SiteRoom } from './realtime/site-room';
-
+// Durable Object exports are only relevant for the Cloudflare Workers build.
+// Wrangler resolves `SiteRoom` via class_name in wrangler.toml during `wrangler deploy`.
+// Do NOT import site-room.ts here — it imports `cloudflare:workers` which crashes
+// the Node.js / Docker build (serve.ts → dist/serve.js).
+// See: apps/cms/src/realtime/site-room.ts
