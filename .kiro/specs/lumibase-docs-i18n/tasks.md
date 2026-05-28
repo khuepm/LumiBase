@@ -117,7 +117,7 @@ Tasks ordered theo dependency: migration trước (build mới chạy được),
     - localStorage persistence
     - _Requirements: 3.3, 3.4, 3.6_
 
-- [ ] 5. Components
+- [x] 5. Components
   - [x] 5.1 Tạo `LocaleSwitcher` component
     - Dropdown render từ `useLocale().locales` với label từ `localeNames`
     - Active locale highlighted
@@ -228,7 +228,7 @@ Tasks ordered theo dependency: migration trước (build mới chạy được),
   - [x] 10.3 Tạo `docs/vi/deployment/overview.md` (placeholder hoặc dịch)
     - _Requirements: 1.1_
 
-- [-] 11. Final integration + verification
+- [x] 11. Final integration + verification
   - [x] 11.1 Verify build `pnpm --filter @lumibase/docs build` xanh
     - Output bundle có nội dung tất cả locale
     - _Requirements: 9.1_
