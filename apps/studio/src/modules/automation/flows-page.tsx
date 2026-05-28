@@ -1,14 +1,6 @@
-/**
- * Automation → Flows list page (POST-GA3).
- *
- * Minimal scaffolding: shows registered flows, status, trigger type and
- * a "Run" button for manual flows. Editor (graph designer) is left out
- * of this initial scaffold — the API surface and storage exist so a later
- * task can build on top.
- */
-
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Play, Workflow } from 'lucide-react';
+import { Activity, Play, Workflow, Plus, Edit } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 
 interface FlowRow {
@@ -58,13 +50,19 @@ export function FlowsListPage() {
             webhooks, schedules or manual runs.
           </p>
         </div>
+        <Link
+          to="/automation/flows/new"
+          className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+        >
+          <Plus className="h-4 w-4" /> Create Flow
+        </Link>
       </header>
 
       <div className="grid gap-3">
         {flowsQuery.isLoading && <div className="text-muted-foreground">Loading flows…</div>}
         {!flowsQuery.isLoading && flows.length === 0 && (
           <div className="rounded-xl border border-dashed p-12 text-center text-muted-foreground">
-            No flows yet. Create one with the API: POST /api/v1/flows.
+            No flows yet. Create one by clicking "Create Flow" above.
           </div>
         )}
         {flows.map((flow) => (
@@ -99,16 +97,25 @@ export function FlowsListPage() {
                 </div>
               </div>
             </div>
-            {flow.triggerType === 'manual' && flow.status === 'active' && (
-              <button
-                type="button"
-                disabled={runMutation.isPending}
-                onClick={() => runMutation.mutate(flow.id)}
-                className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
+            <div className="flex items-center gap-2">
+              <Link
+                to="/automation/flows/$id"
+                params={{ id: flow.id }}
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline px-3 py-1.5 border border-primary/20 rounded-md hover:bg-primary/5 transition"
               >
-                <Play className="h-4 w-4" /> Run
-              </button>
-            )}
+                <Edit className="h-3.5 w-3.5" /> Edit
+              </Link>
+              {flow.triggerType === 'manual' && flow.status === 'active' && (
+                <button
+                  type="button"
+                  disabled={runMutation.isPending}
+                  onClick={() => runMutation.mutate(flow.id)}
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                >
+                  <Play className="h-4 w-4" /> Run
+                </button>
+              )}
+            </div>
           </div>
         ))}
       </div>

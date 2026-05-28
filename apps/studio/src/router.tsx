@@ -30,9 +30,12 @@ const TranslationsPage     = lazy(() => import('./modules/translations').then((m
 const WebhooksPage         = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
 const ActivityPage         = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const ExtensionsPage       = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
+const MarketplacePage      = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
 const UsersLayout          = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
 const TeamsPage            = lazy(() => import('./modules/users/teams-page').then((m) => ({ default: m.TeamsPage })));
 const UsersPage            = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
+const FlowsListPage        = lazy(() => import('./modules/automation/flows-page').then((m) => ({ default: m.FlowsListPage })));
+const FlowEditor          = lazy(() => import('./modules/automation/flow-editor').then((m) => ({ default: m.FlowEditor })));
 
 // ---------------------------------------------------------------------------
 // Shared suspense boundary — shows a lightweight spinner while chunks load.
@@ -147,6 +150,30 @@ const extensionsRoute = createRoute({
   component: withSuspense(ExtensionsPage),
 });
 
+const marketplaceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/marketplace',
+  component: withSuspense(MarketplacePage),
+});
+
+const automationFlowsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/automation/flows',
+  component: withSuspense(FlowsListPage),
+});
+
+const automationFlowNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/automation/flows/new',
+  component: withSuspense(FlowEditor),
+});
+
+const automationFlowEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/automation/flows/$id',
+  component: withSuspense(FlowEditor),
+});
+
 const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/users',
@@ -234,6 +261,10 @@ const routeTree = rootRoute.addChildren([
   webhooksRoute,
   activityRoute,
   extensionsRoute,
+  marketplaceRoute,
+  automationFlowsRoute,
+  automationFlowNewRoute,
+  automationFlowEditRoute,
   usersRoute.addChildren([usersIndexRoute, usersTeamsRoute]),
   accessRoute.addChildren([
     accessIndexRoute,
