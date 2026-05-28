@@ -22,6 +22,7 @@
   "dependencies": {
     "@hono/node-server": "^1.12.0",
     "@lumibase/database": "workspace:*",
+    "@lumibase/ai-skills": "workspace:*",
     "@lumibase/runtime": "workspace:*",
     "@lumibase/sdk": "workspace:*",
     "@lumibase/shared": "workspace:*",
