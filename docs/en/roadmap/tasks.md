@@ -268,24 +268,24 @@ Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
 
 ## Phase POST-GA — Nâng cao (TODO / In progress)
 
-- [ ] `[AI]` Tích hợp LLM provider thật (OpenAI / Anthropic / Workers AI) thay cho mock intent parser trong `/ai/chat`.
-- [ ] `[AI]` Thêm context memory (lịch sử conversation) trong AI Copilot.
-- [ ] `[AI]` Skill `aiSuggestField` + `aiContentAssist` (RAG via embeddings).
-- [ ] `[BE]` Materialize collection write thực sự (không chỉ logical refresh) — bảng vật lý + trigger refresh.
-- [ ] `[BE]` Multi-region Durable Objects sharding.
-- [ ] `[FE]` Marketplace browser UI trong Studio (browse, install với 1 click).
-- [ ] `[FE]` Flows visual editor (drag-drop graph) — hiện chỉ có list page.
-- [ ] `[BE]` SCIM Token rotation + audit.
-- [ ] `[OPS]` Multi-tenant isolation testing tự động (k6 cross-site leak detection).
+- [x] `[AI]` Tích hợp LLM provider thật (OpenAI / Anthropic / Workers AI) thay cho mock intent parser trong `/ai/chat`.
+- [x] `[AI]` Thêm context memory (lịch sử conversation) trong AI Copilot.
+- [x] `[AI]` Skill `aiSuggestField` + `aiContentAssist` (RAG via embeddings).
+- [x] `[BE]` Materialize collection write thực sự (không chỉ logical refresh) — bảng vật lý + trigger refresh.
+- [x] `[BE]` Multi-region Durable Objects sharding.
+- [x] `[FE]` Marketplace browser UI trong Studio (browse, install với 1 click).
+- [x] `[FE]` Flows visual editor (drag-drop graph) — hiện chỉ có list page.
+- [x] `[BE]` SCIM Token rotation + audit.
+- [x] `[OPS]` Multi-tenant isolation testing tự động (k6 cross-site leak detection).
 
 ---
 
 ## Cross-cutting checklist (mỗi phase)
 
-- [ ] Cập nhật `architecture.md` nếu thay đổi cấu trúc.
-- [ ] Viết unit + integration test trước khi merge; với logic phức tạp dùng property-based testing (fast-check).
+- [x] Cập nhật `architecture.md` nếu thay đổi cấu trúc.
+- [x] Viết unit + integration test trước khi merge; với logic phức tạp dùng property-based testing (fast-check).
 - [ ] Cập nhật OpenAPI spec (`apps/cms/openapi.yaml`) cho mọi endpoint mới.
 - [ ] Cập nhật `packages/sdk` types tương ứng.
-- [ ] Cập nhật docs trong `docs/features/` hoặc `apps/docs/content/`.
+- [x] Cập nhật docs trong `docs/features/` hoặc `apps/docs/content/`.
 - [ ] Tạo branch `feature/<phase>-<name>`, commit theo conventional commits, PR có checklist DoD.
-- [ ] Đảm bảo route mới hoạt động trên CẢ hai runtime (Cloudflare + Docker) — nếu phụ thuộc API cụ thể, gate bằng feature flag và document trong `features/runtime-abstraction.md`.
+- [x] Đảm bảo route mới hoạt động trên CẢ hai runtime (Cloudflare + Docker) — nếu phụ thuộc API cụ thể, gate bằng feature flag và document trong `features/runtime-abstraction.md`.
