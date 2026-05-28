@@ -198,7 +198,23 @@ export function Layout() {
             className={`mt-6 border-t pt-4 text-center ${siteConfig.footer.style === 'dark' ? 'border-zinc-800' : ''
               }`}
           >
-            {siteConfig.footer.copyright}
+            {siteConfig.footer.copyright.split('LumiBase').map((part, i, arr) =>
+              i < arr.length - 1 ? (
+                <span key={i}>
+                  {part}
+                  <a
+                    href="https://lumibase.dev"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:underline"
+                  >
+                    LumiBase
+                  </a>
+                </span>
+              ) : (
+                <span key={i}>{part}</span>
+              ),
+            )}
           </p>
         </footer>
       </div>

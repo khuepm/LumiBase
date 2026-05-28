@@ -1,6 +1,6 @@
 # LumiBase Docs
 
-Public documentation site for [LumiBase](https://github.com/lumibase/lumibase) — an edge-native, multi-tenant headless CMS.
+Public documentation site for [LumiBase](https://github.com/khuepm/lumibase) — an edge-native, multi-tenant headless CMS.
 
 This is a **Vite + React + MDX** static docs viewer that consumes markdown from the project root `docs/` folder via a virtual module produced by `vite-plugin-docs-loader`.
 

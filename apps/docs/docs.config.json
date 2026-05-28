@@ -18,7 +18,7 @@
       { "label": "Docs", "to": "/docs/README", "position": "left" },
       { "label": "API", "to": "/docs/api", "position": "left" },
       { "label": "Roadmap", "to": "/docs/roadmap/tasks", "position": "left" },
-      { "label": "GitHub", "href": "https://github.com/lumibase/lumibase", "position": "right" }
+      { "label": "GitHub", "href": "https://github.com/khuepm/lumibase", "position": "right" }
     ]
   },
   "sidebar": {

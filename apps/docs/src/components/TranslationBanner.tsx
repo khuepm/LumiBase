@@ -11,7 +11,7 @@ import { useT } from '../hooks/useT';
  * Requirements: 4.2
  */
 
-const REPO_URL = 'https://github.com/lumibase/lumibase';
+const REPO_URL = 'https://github.com/khuepm/lumibase';
 
 export interface TranslationBannerProps {
   /** The file path relative to the docs root, e.g. "en/features/ai-copilot.md" */
