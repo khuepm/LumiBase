@@ -4,15 +4,19 @@
  * Forwards the incoming WebSocket upgrade request to the SiteRoom Durable Object
  * for the current site. The DO handles the actual WS handshake and session lifecycle.
  *
+ * POST-GA Task #5: Multi-region DO sharding. When running on Cloudflare,
+ * we use `locationHint` to route the DO to the nearest region based on the
+ * client's colo code. On Docker, this falls back to a single instance.
+ *
  * Auth: the client must supply a valid Bearer token in the `?token=<jwt>` query
  * parameter (since the WS handshake cannot carry Authorization headers in browsers).
- * In dev mode, `dev:<logtoId>` tokens are accepted when LUMIBASE_DEV_AUTH=true.
  *
  * URL: ws(s)://<host>/api/v1/realtime?token=<jwt>&userId=<userId>
  */
 
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
+import { getLocationHint, getShardKey } from '../realtime/shard-config';
 
 export const realtimeRouter = new Hono<AppEnv>();
 
@@ -47,9 +51,22 @@ realtimeRouter.get('/', async (c) => {
     );
   }
 
-  // Each site gets its own isolated DO instance, keyed by siteId.
-  const id = siteRoom.idFromName(siteId);
-  const stub = siteRoom.get(id);
+  // Determine region hint from Cloudflare colo (POST-GA Task #5)
+  const runtimeMode = (c.env as unknown as Record<string, string | undefined>)['LUMIBASE_RUNTIME'];
+  const cfColo = (c.req.raw as unknown as { cf?: { colo?: string } })?.cf?.colo;
+  const locationHint = getLocationHint(runtimeMode, cfColo);
+
+  // Each site gets its own isolated DO instance.
+  // With multi-region sharding, the shard key includes the region.
+  const doName = locationHint
+    ? getShardKey(siteId, locationHint)
+    : siteId;
+
+  const id = siteRoom.idFromName(doName);
+
+  const stub = locationHint
+    ? siteRoom.get(id, { locationHint: locationHint as any })
+    : siteRoom.get(id);
 
   // Pass userId from auth context so the DO can associate the session.
   const auth = c.get('auth');
@@ -59,6 +76,14 @@ realtimeRouter.get('/', async (c) => {
   const url = new URL(c.req.url);
   url.searchParams.set('userId', userId);
   url.searchParams.set('siteId', siteId);
+  if (locationHint) {
+    url.searchParams.set('region', locationHint);
+  }
 
   return stub.fetch(new Request(url.toString(), c.req.raw));
 });
+
+// Type helper — Cloudflare Workers DurableObjectGetOptions
+interface DOGetOptions {
+  locationHint?: string;
+}
