@@ -8,19 +8,81 @@ Chúng ta KHÔNG sao chép Directus — chúng ta lấy những gì Directus là
 
 ## 2. Bảng so sánh điểm sáng
 
-| Mảng | Directus hiện tại | LumiBase mục tiêu | Vũ khí khác biệt |
-|---|---|---|---|
-| Collection Builder | Form-based, tốt | **Drag-drop + JSON live-preview + AI gợi ý field** | Hai chiều: UI ↔ JSON schema realtime |
-| Cấu hình Field | Interface + Display + Conditions | + **Pipeline validator per-field (Zod/JSONata)**, **mã hoá per-field**, **toggle versioning per-field** | Field DSL chuẩn hoá |
-| Phân quyền | Role × Collection × Action + rules | **Role + Policy (gắn được) + Field-level + Row-level + Giới hạn thời gian + Giới hạn IP** | JSON Rule Engine (jsonata/cel) + **policy composition** |
-| Raw editor | Có cho một số field | **Raw mode bật được cho MỌI field** — kèm schema validate inline | "Toggle raw" là API hợp đồng cố định |
-| Quản lý người dùng | Cơ bản + Roles | + **Team/Group, Impersonate, Session manager, Danh sách thiết bị, Audit per user** | Tích hợp Logto OIDC, SCIM-ready |
-| Extension | Hooks/Endpoints/Modules/Interfaces/Displays/Layouts/Panels/Operations | + **Sandbox dựa trên Capability** (manifest khai báo quyền), **signed extensions**, **edge-safe runtime** | Permission gate trước hook execution |
-| Cấu hình | Settings table + env | **Layered config**: env → site → user, hot-reload qua KV, **diff/rollback** | Config-as-Code hai chiều |
-| Bookmarks/Presets | Preset per user/role/collection | + **Shared workspace presets**, **smart preset (saved query + alert)** | Preset có thể subscribe realtime |
-| Bản dịch | i18n cho field + UI strings | + **Glossary, MT plug-in (DeepL/OpenAI), workflow status per-locale** | Translation memory store |
-| Display Templates | `{{field}}` mustache + Display | + **Template dựa trên component** (CVA), **conditional slots**, **kế thừa template** | Template render edge-side |
-| WebSocket | Có (REST-mirror subscribe) | + **Presence**, **collaborative cursors**, **op-based patch (CRDT-lite)** | Cloudflare Durable Objects |
+### Collection Builder
+
+- **Directus**: Form-based, tốt
+- **LumiBase**: Drag-drop + JSON live-preview + AI gợi ý field
+- **Khác biệt**: Hai chiều — UI ↔ JSON schema realtime
+
+### Cấu hình Field
+
+- **Directus**: Interface + Display + Conditions
+- **LumiBase**: + Pipeline validator per-field (Zod/JSONata),
+  mã hoá per-field, toggle versioning per-field
+- **Khác biệt**: Field DSL chuẩn hoá
+
+### Phân quyền
+
+- **Directus**: Role × Collection × Action + rules
+- **LumiBase**: Role + Policy (gắn được) + Field-level +
+  Row-level + Giới hạn thời gian + Giới hạn IP
+- **Khác biệt**: JSON Rule Engine (jsonata/cel) + policy composition
+
+### Raw Editor
+
+- **Directus**: Có cho một số field
+- **LumiBase**: Raw mode bật được cho MỌI field — kèm schema validate inline
+- **Khác biệt**: "Toggle raw" là API hợp đồng cố định
+
+### Quản lý người dùng
+
+- **Directus**: Cơ bản + Roles
+- **LumiBase**: + Team/Group, Impersonate, Session manager,
+  Danh sách thiết bị, Audit per user
+- **Khác biệt**: Tích hợp Logto OIDC, SCIM-ready
+
+### Extension
+
+- **Directus**: Hooks / Endpoints / Modules / Interfaces /
+  Displays / Layouts / Panels / Operations
+- **LumiBase**: + Sandbox dựa trên Capability (manifest khai báo quyền),
+  signed extensions, edge-safe runtime
+- **Khác biệt**: Permission gate trước hook execution
+
+### Cấu hình
+
+- **Directus**: Settings table + env
+- **LumiBase**: Layered config — env → site → user,
+  hot-reload qua KV, diff/rollback
+- **Khác biệt**: Config-as-Code hai chiều
+
+### Bookmarks / Presets
+
+- **Directus**: Preset per user/role/collection
+- **LumiBase**: + Shared workspace presets,
+  smart preset (saved query + alert)
+- **Khác biệt**: Preset có thể subscribe realtime
+
+### Bản dịch
+
+- **Directus**: i18n cho field + UI strings
+- **LumiBase**: + Glossary, MT plug-in (DeepL/OpenAI),
+  workflow status per-locale
+- **Khác biệt**: Translation memory store
+
+### Display Templates
+
+- **Directus**: `{{field}}` mustache + Display
+- **LumiBase**: + Template dựa trên component (CVA),
+  conditional slots, kế thừa template
+- **Khác biệt**: Template render edge-side
+
+### WebSocket
+
+- **Directus**: Có (REST-mirror subscribe)
+- **LumiBase**: + Presence, collaborative cursors,
+  op-based patch (CRDT-lite)
+- **Khác biệt**: Cloudflare Durable Objects
 
 ## 3. Những gì KHÔNG làm (Non-goals)
 

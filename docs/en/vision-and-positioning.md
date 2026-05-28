@@ -8,19 +8,81 @@ Chúng ta KHÔNG sao chép Directus — chúng ta lấy những gì Directus là
 
 ## 2. Bảng so sánh điểm sáng
 
-| Mảng | Directus hiện tại | LumiBase mục tiêu | Vũ khí khác biệt |
-|---|---|---|---|
-| Collection Builder | Form-based, tốt | **Drag-drop + JSON live-preview + AI suggest field** | Bi-directional: UI ↔ JSON schema realtime |
-| Field config | Interface + Display + Conditions | + **Per-field validator pipeline (Zod/JSONata)**, **per-field encryption**, **per-field versioning toggle** | Field DSL chuẩn hoá |
-| Permissions | Role × Collection × Action + rules | **Role + Policy (attachable) + Field-level + Row-level + Time-bound + IP-bound** | JSON Rule Engine (jsonata/cel) + **policy composition** |
-| Raw editor | Có cho 1 số field | **Raw mode bật được cho MỌI field** — kèm schema validate inline | "Toggle raw" là API hợp đồng cố định |
-| User mgmt | Cơ bản + Roles | + **Team/Group, Impersonate, Session manager, Device list, Audit per user** | Tích hợp Logto OIDC, SCIM-ready |
-| Extension | Hooks/Endpoints/Modules/Interfaces/Displays/Layouts/Panels/Operations | + **Capability-based sandbox** (manifest khai báo quyền), **signed extensions**, **edge-safe runtime** | Permission gate trước hook execution |
-| Config | Settings table + env | **Layered config**: env → site → user, hot-reload qua KV, **diff/rollback** | Config-as-Code bidi |
-| Bookmarks/Presets | Preset per user/role/collection | + **Shared workspace presets**, **smart preset (saved query + alert)** | Preset có thể subscribe realtime |
-| Translations | i18n cho field + UI strings | + **Glossary, MT plug-in (DeepL/OpenAI), per-locale workflow status** | Translation memory store |
-| Display Templates | `{{field}}` mustache + Display | + **Component-based templates** (CVA), **conditional slots**, **template inheritance** | Template render edge-side |
-| WebSocket | Có (REST-mirror subscribe) | + **Presence**, **collaborative cursors**, **op-based patch (CRDT-lite)** | Cloudflare Durable Objects |
+### Collection Builder
+
+- **Directus**: Form-based, tốt
+- **LumiBase**: Drag-drop + JSON live-preview + AI suggest field
+- **Khác biệt**: Bi-directional — UI ↔ JSON schema realtime
+
+### Field Config
+
+- **Directus**: Interface + Display + Conditions
+- **LumiBase**: + Per-field validator pipeline (Zod/JSONata),
+  per-field encryption, per-field versioning toggle
+- **Khác biệt**: Field DSL chuẩn hoá
+
+### Permissions
+
+- **Directus**: Role × Collection × Action + rules
+- **LumiBase**: Role + Policy (attachable) + Field-level +
+  Row-level + Time-bound + IP-bound
+- **Khác biệt**: JSON Rule Engine (jsonata/cel) + policy composition
+
+### Raw Editor
+
+- **Directus**: Có cho 1 số field
+- **LumiBase**: Raw mode bật được cho MỌI field — kèm schema validate inline
+- **Khác biệt**: "Toggle raw" là API hợp đồng cố định
+
+### User Management
+
+- **Directus**: Cơ bản + Roles
+- **LumiBase**: + Team/Group, Impersonate, Session manager,
+  Device list, Audit per user
+- **Khác biệt**: Tích hợp Logto OIDC, SCIM-ready
+
+### Extension
+
+- **Directus**: Hooks / Endpoints / Modules / Interfaces /
+  Displays / Layouts / Panels / Operations
+- **LumiBase**: + Capability-based sandbox (manifest khai báo quyền),
+  signed extensions, edge-safe runtime
+- **Khác biệt**: Permission gate trước hook execution
+
+### Config
+
+- **Directus**: Settings table + env
+- **LumiBase**: Layered config — env → site → user,
+  hot-reload qua KV, diff/rollback
+- **Khác biệt**: Config-as-Code bidi
+
+### Bookmarks / Presets
+
+- **Directus**: Preset per user/role/collection
+- **LumiBase**: + Shared workspace presets,
+  smart preset (saved query + alert)
+- **Khác biệt**: Preset có thể subscribe realtime
+
+### Translations
+
+- **Directus**: i18n cho field + UI strings
+- **LumiBase**: + Glossary, MT plug-in (DeepL/OpenAI),
+  per-locale workflow status
+- **Khác biệt**: Translation memory store
+
+### Display Templates
+
+- **Directus**: `{{field}}` mustache + Display
+- **LumiBase**: + Component-based templates (CVA),
+  conditional slots, template inheritance
+- **Khác biệt**: Template render edge-side
+
+### WebSocket
+
+- **Directus**: Có (REST-mirror subscribe)
+- **LumiBase**: + Presence, collaborative cursors,
+  op-based patch (CRDT-lite)
+- **Khác biệt**: Cloudflare Durable Objects
 
 ## 3. Non-goals
 
