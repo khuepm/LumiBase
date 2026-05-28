@@ -22,17 +22,18 @@ Mount tại `/scim/v2/*` (ngoài `/api/v1`):
 
 Implementation: `apps/cms/src/routes/scim.ts`.
 
-## Auth
+## Auth & Security (Token Rotation)
 
-SCIM **không dùng** Logto JWT pipeline. Thay vào đó: bearer token riêng từ env var `SCIM_TOKEN`.
+SCIM **không dùng** Logto JWT pipeline để xác thực trực tiếp của người dùng. Thay vào đó, nó sử dụng Bearer tokens riêng:
+- **Lưu trữ bảo mật**: Token thực tế được băm bằng thuật toán **SHA-256** trước khi lưu vào bảng `scim_tokens`. Plaintext token chỉ hiển thị duy nhất **một lần** khi tạo mới.
+- **Rotation (Xoay vòng Token)**: Hỗ trợ tạo mới token và thu hồi (revoke) token cũ. Khi rotate, token cũ sẽ có một khoảng thời gian chờ (grace period) là **24 giờ** trước khi hết hạn hoàn toàn, đảm bảo dịch vụ không bị gián đoạn.
+- **Audit Logging**: Tất cả mọi hoạt động thay đổi cấu hình SCIM (tạo user, sửa group, xóa...) đều được tự động ghi nhận vào bảng nhật ký `activity` kèm nhãn (label) của token thực hiện.
 
-```
-Authorization: Bearer <SCIM_TOKEN>
-```
-
-Token sai hoặc thiếu → 401. Token đúng → cho qua.
-
-> Lý do: IdP gửi request trực tiếp, không có user session. Token này nên rotate định kỳ và lưu trong secret manager.
+### Các API quản lý SCIM Token (yêu cầu Logto JWT):
+- `POST /api/v1/scim-tokens`: Sinh token mới (trả về plaintext một lần duy nhất).
+- `GET /api/v1/scim-tokens`: Danh sách token đã phát hành (mã hóa một phần, chỉ trả metadata).
+- `DELETE /api/v1/scim-tokens/:id`: Thu hồi token ngay lập tức.
+- `POST /api/v1/scim-tokens/:id/rotate`: Rotate token (tạo token mới + set grace period 24h cho token cũ).
 
 ## Mapping
 
@@ -80,6 +81,8 @@ urn:ietf:params:scim:api:messages:2.0:Error
 - Secret token: `<SCIM_TOKEN>`
 - Mappings mặc định work với LumiBase user/group.
 
-## Multi-tenancy
+## Multi-tenancy & Isolation
 
-SCIM hiện tại scope theo header `X-Lumi-Site` hoặc subdomain — IdP cần cấu hình endpoint per-site nếu deploy multi-tenant. Roadmap có thể thêm site routing tự động qua claim `tenant_id`.
+SCIM được thiết kế hoàn toàn cô lập giữa các tenant (multi-tenancy):
+- **Token-based Site Extraction**: Middleware tự động trích xuất trực tiếp `siteId` được liên kết với token được tìm thấy từ database.
+- **Spoofing Prevention**: Hệ thống bỏ qua bất kỳ header `X-Lumi-Site` nào được gửi từ phía client để tránh việc giả mạo tenant (spoofing). Tất cả tài nguyên (Users, Groups) được tạo/sửa đổi đều bị cô lập chặt chẽ trong phạm vi site của token đó.

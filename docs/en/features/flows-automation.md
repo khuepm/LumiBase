@@ -71,9 +71,14 @@ GET    /api/v1/flows/:id/runs     Run history
 
 Service runner: `apps/cms/src/services/flow-service.ts` — `runFlow(graph, input, ctx)`.
 
-## Studio UI
+## Studio UI & Visual Flow Editor
 
-`apps/studio/src/modules/automation/flows-page.tsx` cung cấp list view các flows với status, trigger type, last run. Visual editor (drag-drop graph) còn nằm trong roadmap POST-GA.
+LumiBase Studio cung cấp giao diện trực quan hỗ trợ kéo thả và chỉnh sửa workflow bằng đồ thị (`@xyflow/react`):
+- **Giao diện danh sách**: Tại `/automation/flows`, hiển thị toàn bộ các flows đang có cùng thông tin trigger, trạng thái hoạt động (draft, active, inactive), và liên kết chỉnh sửa hoặc kích hoạt chạy thử (Test Run).
+- **Visual Canvas**: Hỗ trợ vẽ đồ thị bằng các liên kết Next (đường thẳng chỉ hướng màu chàm) và Error (đường đứt nét màu đỏ).
+- **Operation Palette**: Bảng chọn nhanh các khối chức năng ở cột trái, nhấp đúp hoặc nhấn nút `+` để thêm khối: Condition (If), Transform (JS), HTTP Request, Send Mail, Log, Sleep, Run Extension, Database CRUD.
+- **Node Config Panel**: Cột cấu hình chi tiết bên phải tự động hiển thị biểu mẫu khi nhấp chọn bất kỳ Node nào trong đồ thị (ví dụ chỉnh sửa script JS của Transform, chọn Method và URL cho HTTP, cấu hình To/Subject cho Mail, hay điền thời gian trễ của Sleep).
+- **Save & Test Run**: Nút lưu đồ thị trực tiếp lên API và chạy thử luồng ngay tại chỗ.
 
 ## Multi-tenancy
 

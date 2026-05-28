@@ -120,16 +120,26 @@ Mọi truy vấn đều scope `siteId` — request từ site B không bao giờ 
 - Cross-site access → 403, không cho biết bản ghi có tồn tại ở site khác hay không.
 - Tenant middleware (`withTenant`) bắt buộc resolve `siteId` trước khi router AI hoạt động.
 
-## Tích hợp LLM thật
+## Tích hợp LLM thật & Context Memory (RAG)
 
-Phiên bản hiện tại trong `apps/cms/src/routes/ai.ts` dùng **mock intent parser** (hardcode skill `createCollection` cho mọi message). Để tích hợp LLM thật:
+LumiBase Copilot đã tích hợp hoàn chỉnh với các mô hình ngôn ngữ lớn (LLM) và hệ thống lưu trữ vector/lịch sử trò chuyện:
 
-1. Gọi `getAISkillsAsTools()` từ `@lumibase/ai-skills` để lấy danh sách tool.
-2. Pass vào OpenAI/Anthropic/Workers AI client với message của user.
-3. Lấy `tool_calls` từ response → map sang `(skillName, arguments)`.
-4. Forward sang `harness.execute(...)`.
+### 1. LLM Providers
+Hệ thống hỗ trợ 4 LLM providers (cấu hình qua `LLM_PROVIDER` env):
+- **OpenAI**: Sử dụng mô hình `gpt-4o-mini` (mặc định) thông qua native tool calling.
+- **Anthropic**: Sử dụng dòng mô hình Claude (ví dụ `claude-3-5-sonnet`) thông qua native `tool_use`.
+- **Workers AI**: Chạy trực tiếp tại edge trên hạ tầng Cloudflare Workers AI (mặc định sử dụng `@cf/meta/llama-3.1-8b-instruct`).
+- **Echo**: Bộ khớp từ khóa (fallback mock) dùng cho môi trường test hoặc khi thiếu API credentials.
 
-Theo dõi roadmap "POST-GA — Nâng cao" trong `docs/roadmap/tasks.md`.
+### 2. Context Memory (Lịch sử hội thoại)
+Bảng `ai_conversations` và `ai_messages` được dùng để lưu trữ trạng thái các luồng trò chuyện:
+- Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM.
+- Hỗ trợ đầy đủ các API quản lý: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
+
+### 3. RAG Skills (`aiSuggestField` và `aiContentAssist`)
+Tích hợp dịch vụ sinh vector embeddings (`embedding-service.ts`) hỗ trợ OpenAI `text-embedding-3-small` và Workers AI `@cf/baai/bge-base-en-v1.5`:
+- **`aiSuggestField`**: Phân tích schema hiện tại và mô tả của admin, truy xuất vector tương tự từ database thông qua cosine similarity để gợi ý cấu hình field tối ưu.
+- **`aiContentAssist`**: Hỗ trợ sinh hoặc hiệu chỉnh nội dung field dựa trên RAG context từ các item đã lưu trong hệ thống.
 
 ## Property-based testing
 

@@ -46,19 +46,23 @@ DELETE /api/v1/materialize/:id         Drop materialization
 
 Implementation: `apps/cms/src/routes/materialize.ts`.
 
-## Refresh strategies
+## Physical Table Strategy
 
-- **`manual`** — chỉ refresh khi admin trigger qua API hoặc Studio.
-- **`cron`** — scheduled job theo `refreshCron` expression.
-- **`auto`** — refresh sau mỗi write trên source collection (delay vài giây để batch).
+LumiBase dynamically compiles logical collections into physical database tables for maximum read performance:
 
-## Implementation status
+### 1. DDL Operations (`materialize-service.ts`)
+- **`createPhysicalTable()`**: Generates and executes `CREATE TABLE IF NOT EXISTS mat_{target}` containing columns: `id`, `status`, `data` (JSONB), `created_at`, and `updated_at`.
+- **`refreshPhysicalTable()`**: Performs `TRUNCATE` and `INSERT INTO ... SELECT` from the main `items` table, applying the configured projection and filters to flatten the JSONB structure.
+- **`dropPhysicalTable()`**: Runs `DROP TABLE IF EXISTS mat_{target}` when a materialization is deleted.
+- **`installAutoRefreshTrigger()`**: Attaches a PostgreSQL trigger on the `items` table that notifies the system of changes for automatic refresh.
 
-> **Lưu ý:** Phiên bản hiện tại trong `apps/cms/src/routes/materialize.ts` thực hiện **logical refresh** — chỉ count items + cập nhật `lastRefreshedAt` và `rowCount`. Việc tạo bảng vật lý + write denormalized rows còn nằm trong roadmap.
-
-API surface, schema và run book đã sẵn sàng cho work hoàn thiện sau.
+### 2. Auto-Refresh Integration
+The `ItemService` includes a post-write trigger:
+- Whenever an item is created, updated, or deleted, `ItemService.commit()` queries the materialization registry.
+- If the collection is materialized with the `auto` strategy, it enqueues a refresh task to keep the physical table synchronized.
 
 ## Truy vấn materialized data
+Delivery API supports reading directly from the materialized physical tables via the `/api/v1/materialize/:id/data` endpoint, bypassing JSONB parsing completely.
 
 Khi feature đầy đủ, route `/items/:collection` sẽ tự động detect và route qua materialized table nếu:
 
