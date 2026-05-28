@@ -216,31 +216,31 @@ Tasks ordered theo dependency: migration trước (build mới chạy được),
     - Lấy locale từ URL nếu có, ngược lại default
     - _Requirements: 6.4_
 
-- [~] 10. Initial Vietnamese content (low-priority deliverable)
-  - [ ] 10.1 Tạo `docs/vi/README.md` (dịch từ `docs/en/README.md`)
+- [x] 10. Initial Vietnamese content (low-priority deliverable)
+  - [x] 10.1 Tạo `docs/vi/README.md` (dịch từ `docs/en/README.md`)
     - Bản dịch ngắn gọn — không bắt buộc full translation
     - Verify Sidebar / DocPage render đúng khi user truy cập `/vi/docs/README`
     - _Requirements: 1.1, 4.1_
 
-  - [ ] 10.2 Tạo `docs/vi/vision-and-positioning.md` (dịch)
+  - [x] 10.2 Tạo `docs/vi/vision-and-positioning.md` (dịch)
     - _Requirements: 1.1_
 
-  - [ ] 10.3 Tạo `docs/vi/deployment/overview.md` (placeholder hoặc dịch)
+  - [x] 10.3 Tạo `docs/vi/deployment/overview.md` (placeholder hoặc dịch)
     - _Requirements: 1.1_
 
-- [~] 11. Final integration + verification
-  - [ ] 11.1 Verify build `pnpm --filter @lumibase/docs build` xanh
+- [-] 11. Final integration + verification
+  - [x] 11.1 Verify build `pnpm --filter @lumibase/docs build` xanh
     - Output bundle có nội dung tất cả locale
     - _Requirements: 9.1_
 
-  - [ ] 11.2 Verify deep-link flow
+  - [x] 11.2 Verify deep-link flow
     - Truy cập `/en/docs/features/ai-copilot` từ external → đúng nội dung
     - Truy cập `/vi/docs/features/ai-copilot` (chưa dịch) → fallback en + banner
     - Truy cập `/docs/README` (legacy) → redirect `/en/docs/README`
     - Truy cập `/zz/docs/anything` (locale invalid) → 404
     - _Requirements: 2.3, 2.4, 4.1, 4.2, 9.3_
 
-  - [ ] 11.3 Run đầy đủ `pnpm -r typecheck && lint && test && build`
+  - [x] 11.3 Run đầy đủ `pnpm -r typecheck && lint && test && build`
     - _Requirements: 10.1-10.5_
 
 ## Notes
