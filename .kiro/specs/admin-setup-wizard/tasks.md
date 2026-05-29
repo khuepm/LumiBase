@@ -32,7 +32,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 3.4 Tạo Zustand store `apps/studio/src/modules/setup/setup-store.ts` với persist middleware sessionStorage key `lumibase.setup`, lưu `accountValid`, `pathValid`, `policyValid`, `confirmed`, `completed` flags (không lưu plaintext password) (design §5.3)
   - [x] 3.5 Tạo `step-account.tsx` với React Hook Form + Zod resolver, lazy-load zxcvbn cho password meter (chặn submit khi score <3), trim firstName/lastName, length bounds; emit `accountValid=true` vào store khi submit pass (Req 3.1-3.5, 3.7, 3.10; design §5.5)
   - [x] 3.6 Tạo `step-path.tsx` với input adminPath + nút "Generate Random" (wordlist `apps/studio/src/modules/setup/wordlist.ts` ≥256 từ + 6 hex chars, retry max 8 lần nếu trùng blacklist), preview banner cảnh báo, checkbox confirm gate; emit `pathValid=true` (Req 4.1, 4.2, 4.5; design §5.5)
-  - [~] 3.7 Tạo `step-done.tsx` hiển thị adminPath + reminder save bookmark + link tới `${adminPath}/login` (Req 4.5; design §5.4)
+  - [x] 3.7 Tạo `step-done.tsx` hiển thị adminPath + reminder save bookmark + link tới `${adminPath}/login` (Req 4.5; design §5.4)
   - [~] 3.8 Tạo `useCompleteSetup` mutation hook gọi `POST /api/v1/setup/complete`, on-success clear sessionStorage và navigate `/setup/done` (design §5.2)
   - [~] 3.9 Wiring routes mới `/setup`, `/setup/account`, `/setup/path`, `/setup/done` vào `publicLayoutRoute`; thêm guard logic redirect sang step thiếu nhất khi deep-link (Req 3.11; design §5.4, §11.2)
   - [~] 3.10 Tạo i18n keys `apps/studio/src/locales/{en,vi}/setup.json` cho toàn bộ field, error, button text (design §5.6)
