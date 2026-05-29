@@ -1,0 +1,291 @@
+# Roadmap & Task Breakdown
+
+> **Scope:** Roadmap này dành cho **LumiBase Studio** — admin panel để quản lý data, collections, permissions, v.v. — và **LumiBase CMS API** chạy được trên cả Cloudflare Workers và Docker.
+>
+> **Consumer app (frontend end-user)** ở `apps/consumer` (Next.js) là demo dùng SDK để gọi Delivery API — **không phải** CMS Studio.
+>
+> Ngôn ngữ task: ngắn, có thể chuyển thẳng vào issue tracker. Mỗi task có **scope rõ ràng**, **deliverable**, và link tài liệu liên quan.
+
+Quy ước:
+- `[BE]` apps/cms (Backend API - Hono)
+- `[FE]` apps/studio (Admin panel - React + Vite)
+- `[DB]` packages/database
+- `[RT]` packages/runtime (abstraction layer Cloudflare/Docker)
+- `[AI]` packages/ai-skills + AI Copilot
+- `[SDK]` packages/sdk (Type-safe client cho cả Studio và consumer apps)
+- `[DOC]` apps/docs hoặc tài liệu trong `docs/`
+- `[OPS]` infra/deploy/CI
+- Mỗi PR nên gắn 1 nhánh `feature/<phase>-<short-name>` theo Git hygiene rule.
+
+Trạng thái tổng quan: Phase 0 → Phase G (GA hardening) đã xong. POST-GA và Dual Deployment + AI Copilot đã hoàn thành. Hiện tại tập trung vào polish, dev experience và mở rộng marketplace.
+
+---
+
+## Phase 0 — Foundation (DONE)
+
+Mục tiêu: bộ khung monorepo chạy được, schema lõi, auth Logto, CI.
+
+- [x] `[OPS]` Tạo `apps/cms` (Hono + Cloudflare Workers template + wrangler config).
+- [x] `[OPS]` Tạo `apps/studio` (Vite + React + TS + Tailwind + shadcn init).
+- [x] `[OPS]` Tạo `packages/shared`, `packages/sdk`, `packages/ui`, `packages/extension-sdk` (boilerplate + tsconfig + lint).
+- [x] `[DB]` Bổ sung schema: `users`, `user_sites`, `teams`, `team_members`, `roles`, `policies`, `role_policies`, `user_policies`, `permissions` (xem `data-model.md`).
+- [x] `[DB]` Drizzle migration runner cho Hyperdrive (local + remote scripts).
+- [x] `[BE]` Middleware `withAuth` (Logto JWKS), `withTenant` (`site_id` từ subdomain/header), `withLogger`.
+- [x] `[BE]` `GET /auth/me` + `GET /utils/health`.
+- [x] `[FE]` App shell + module bar + routing skeleton + Logto login flow.
+- [x] `[FE]` API client trong `packages/sdk` (fetch wrapper, error format, site header).
+- [x] `[OPS]` Pipeline CI (lint, typecheck, test, build) + preview deploy.
+- [x] `[DOC]` Cập nhật `architecture.md` (root) khi cấu trúc thay đổi.
+
+---
+
+## Phase A — Schema engine (DONE)
+
+Mục tiêu: tạo/quản lý collection & field qua API + UI.
+
+- [x] `[DB]` Bảng `collections`, `fields`, `relations`.
+- [x] `[BE]` `SchemaService` (CRUD + compile cache).
+- [x] `[BE]` Endpoints `/collections`, `/fields`, `/relations`.
+- [x] `[BE]` Endpoint diff `/collections/diff` + `PUT /collections/:name/schema`.
+- [x] `[BE]` Validation tên collection/field, kiểm tra dependency khi xoá.
+- [x] `[SDK]` Type-safe client cho schema.
+- [x] `[BE]` Script CLI `apps/cms/scripts/typegen.ts` + alias `lumibase typegen`.
+- [x] `[FE]` Module *Settings → Data Model* (list collection).
+- [x] `[FE]` Collection wizard 3 bước.
+- [x] `[FE]` Collection detail tabs (Fields, Display, Archive, Raw JSON).
+- [x] `[FE]` Field inspector cơ bản (interfaces `input`, `input-multiline`, `toggle`, `select-dropdown`, `datetime`, `json-raw`).
+- [x] `[FE]` Live JSON pane (Monaco) cho schema collection, two-way sync.
+- [x] `[FE]` Drag-drop reorder field (dnd-kit).
+- [x] `[BE]` Endpoint `GET /typegen/schema` (manifest đã apply permission).
+- [x] `[SDK]` Generator core `packages/sdk/src/typegen/`.
+- [x] `[FE]` Trang *Settings → Developer → Types* (preview + download).
+
+---
+
+## Phase B — Items & Field system mở rộng (DONE)
+
+- [x] `[DB]` Bảng `items`, `revisions`, `activity` + indexes GIN.
+- [x] `[BE]` `ItemService` build query Drizzle động (fields, filter, sort, paginate, deep).
+- [x] `[BE]` Endpoints `/items/:collection` đầy đủ.
+- [x] `[BE]` Revision write + revert.
+- [x] `[BE]` Activity log middleware cho mutation.
+- [x] `[BE]` Validation pipeline (Zod + JSONata) chạy server-side.
+- [x] `[BE]` Conditions evaluator (server + helper xuất sang client).
+- [x] `[BE]` Per-field encryption service (AES-GCM, key Workers Secret/env).
+- [x] `[FE]` Content module list view (tabular layout) + filter builder + sort + paginate.
+- [x] `[FE]` Detail editor + tabs side panel (Revisions, Raw JSON).
+- [x] `[FE]` Interface registry hoàn chỉnh: text, number, choice, boolean, date, relation, file, json-raw, code, wysiwyg, markdown, slug, color, tags, rating, repeater, presentation.
+- [x] `[FE]` Display registry: formatted-value, raw, boolean-icon, datetime, image, labels, mustache-template.
+- [x] `[FE]` Raw toggle component (Monaco) cho mọi interface.
+- [x] `[FE]` Bulk raw editor cho toàn item.
+- [x] `[FE]` Revisions diff viewer.
+- [x] `[FE]` Mustache display template editor.
+- [x] `[BE]` `POST /utils/render-template` (mustache only Phase B).
+
+---
+
+## Phase C — Permissions & Access (DONE)
+
+- [x] `[BE]` `PermissionService` (compile rule, cache, field mask).
+- [x] `[BE]` Endpoints CRUD `/roles`, `/policies`, `/policies/:id/permissions`, attach/detach.
+- [x] `[BE]` `GET /permissions/me` + `POST /permissions/check` (trace).
+- [x] `[BE]` Tích hợp Permission vào ItemService (where injection + post-check).
+- [x] `[BE]` Magic vars `$CURRENT_USER`, `$CURRENT_SITE`, `$CURRENT_ROLE`, `$NOW`, `$IP`, `$HEADERS.*`.
+- [x] `[BE]` Time-bound + IP allow/deny ở policy level.
+- [x] `[BE]` Permission compose rules.
+- [x] `[FE]` Module Access Control: Roles, Policies (GUI + JSON Monaco), Permission matrix, Test sandbox.
+- [x] `[FE]` Field-level hide/disable trong form theo `/permissions/me`.
+- [x] `[FE]` List view hide column nếu không có quyền read field.
+- [x] `[FE]` Hide/disable bulk action theo permission.
+
+---
+
+## Phase C2 — Presets, Bookmarks, Translations cơ bản (DONE)
+
+- [x] `[DB]` Bảng `presets`, `translations`.
+- [x] `[BE]` CRUD `/presets`, scope resolution (user > role > site).
+- [x] `[BE]` CRUD `/translations` (namespace `ui`, `field`, `content`).
+- [x] `[BE]` Locale settings (`settings.locales.*`).
+- [x] `[FE]` Preset switcher + save/edit dialog ở list view.
+- [x] `[FE]` Module Translations (UI strings tab + content tab JSONB).
+- [x] `[FE]` Interface `translatable-text` (JSONB map locale).
+- [x] `[FE]` i18n cho Studio UI (react-i18next bind to translations API).
+
+---
+
+## Phase D — Users, Files, Settings (DONE)
+
+- [x] `[BE]` `/users`, `/users/invite`, `/users/:id/impersonate`, sessions.
+- [x] `[BE]` `/teams`, `/team_members`.
+- [x] `[BE]` Files: presigned R2/S3 upload, `/files`, `/assets/:id` transform, `/media` (StorageProvider abstraction).
+- [x] `[BE]` Settings storage + cache + `settings.changed` event.
+- [x] `[BE]` Webhooks CRUD + dispatcher (Queues / BullMQ).
+- [x] `[BE]` Activity log endpoint (filter, paginate).
+- [x] `[FE]` Module Users + Teams.
+- [x] `[FE]` Module Files (grid + folders + drag-drop upload).
+- [x] `[FE]` Module Settings (general, locales, security, files, webhooks, activity).
+- [x] `[FE]` Notifications inbox (qua realtime).
+
+---
+
+## Phase E — Realtime / WebSocket (DONE)
+
+- [x] `[OPS]` Tạo Durable Object class `SiteRoom` (Wrangler binding).
+- [x] `[BE]` Endpoint `/realtime` upgrade WS, route tới DO theo `siteId`.
+- [x] `[BE]` Protocol subscribe/unsubscribe/presence.
+- [x] `[BE]` Publish pipeline trong ItemService.commit().
+- [x] `[BE]` Permission re-check khi fan-out event.
+- [x] `[BE]` Rate limit + heartbeat.
+- [x] `[SDK]` Client realtime trong `packages/sdk`.
+- [x] `[FE]` Hook `useRealtimeSubscription`, `usePresence`.
+- [x] `[FE]` Presence chip topbar + detail editor.
+- [x] `[FE]` List view "Live mode" toggle.
+- [x] `[FE]` Smart preset subscribe.
+- [x] `[FE]` Notifications realtime.
+
+---
+
+## Phase F — Extensions & Display Templates nâng cao (DONE)
+
+- [x] `[DB]` Bảng `extensions`.
+- [x] `[BE]` Extension uploader (multipart → R2/S3) + manifest validator + capability registry.
+- [x] `[BE]` Sandbox loader (dynamic import + proxy ctx + capability gate).
+- [x] `[BE]` Hook dispatcher tích hợp ItemService (`before/after`).
+- [x] `[BE]` Endpoint mount `/extensions/:name/*` từ extension type `endpoint`.
+- [x] `[BE]` `/utils/render-template` hỗ trợ component DSL.
+- [x] `[FE]` Module Settings → Extensions (upload, review caps, enable/disable, version).
+- [x] `[FE]` Dynamic loader UI extensions (interface/display/layout/panel/module).
+- [x] `[FE]` Display template editor mode component (block builder).
+- [x] `[DOC]` Tutorial "Build your first extension" trong `docs/features/extensions-system.md`.
+
+---
+
+## Phase G — Hardening & GA (DONE)
+
+- [x] `[BE]` Postgres RLS policies bổ sung qua middleware `withRls()` (defence-in-depth).
+- [x] `[BE]` Tag-based invalidation hoàn thiện (revalidateTag webhook → Next.js consumer).
+- [x] `[BE]` Backups + restore qua endpoints `/api/v1/admin/backup` + `/api/v1/admin/restore` (NDJSON bundle).
+- [x] `[BE]` Config export/import CLI (`apps/cms/scripts/config-cli.ts`).
+- [x] `[FE]` Accessibility audit + fix.
+- [x] `[FE]` Bundle size audit, lazy module splitting (TanStack Router lazy-load).
+- [x] `[OPS]` Load test (k6) cho delivery API và realtime — `apps/cms/k6/`.
+- [x] `[OPS]` SLO dashboards (Workers Analytics Engine + Grafana cho Docker).
+- [x] `[DOC]` Public docs site (`apps/docs` — Vite + React + Markdown).
+
+---
+
+## Phase POST-GA1 — Translation Memory + MT (DONE)
+
+- [x] `[DB]` Bảng `translation_memory` + `glossary`.
+- [x] `[BE]` Service `translation-memory.ts` với providers: DeepL, OpenAI, Workers AI, echo fallback.
+- [x] `[BE]` Routes `/api/v1/tm` (list/upsert/lookup fuzzy/translate pipeline TM → glossary → MT).
+- [x] `[FE]` UI tích hợp TM trong module Translations.
+- [x] `[DOC]` `features/translation-memory.md`.
+
+## Phase POST-GA2 — Collaborative cursors (DONE)
+
+- [x] `[BE]` `cursor-protocol.ts` (CRDT-lite: last-write-wins position + Y-style update vector).
+- [x] `[BE]` Broadcast qua Durable Object SiteRoom (CF) hoặc in-process (Docker).
+- [x] `[FE]` Render cursors + selection trong WYSIWYG / text fields.
+
+## Phase POST-GA3 — Flows / Operations engine (DONE)
+
+- [x] `[DB]` Bảng `flows`, `flow_runs`, `operations`.
+- [x] `[BE]` Service `flow-service.ts` runner với operation types: `condition`, `transform`, `http`, `mail`, `log`, `sleep`, `run-extension`, `item.create|update|delete`, `notify`.
+- [x] `[BE]` Routes `/api/v1/flows` + manual `/run` + `/runs` history.
+- [x] `[BE]` Trigger types: `webhook`, `event` (item.*), `schedule` (cron), `manual`.
+- [x] `[FE]` Module Automation → Flows (list page).
+- [x] `[DOC]` `features/flows-automation.md`.
+
+## Phase POST-GA4 — SCIM 2.0 provisioning (DONE)
+
+- [x] `[BE]` `/scim/v2/Users` + `/Groups` + ServiceProviderConfig + Schemas + ResourceTypes (RFC 7644 subset).
+- [x] `[BE]` Bearer token auth riêng (`SCIM_TOKEN`), không dùng Logto JWT.
+- [x] `[BE]` Mapping: SCIM Group → LumiBase Team.
+- [x] `[DOC]` `features/scim-provisioning.md`.
+
+## Phase POST-GA5 — Marketplace extensions (DONE)
+
+- [x] `[DB]` Bổ sung cột `signature`, `signatureAlg`, `publisherKeyId`, `publisher`, `marketplaceSlug`, `publishedAt`, `bundleSha256` vào `extensions`.
+- [x] `[BE]` Routes `/api/v1/marketplace/extensions` (list, detail, install, publish).
+- [x] `[BE]` Signature verification: SHA-256 bundle + ed25519/RSA-PSS qua WebCrypto, public keys load từ env `MARKETPLACE_PUBLIC_KEYS`.
+- [x] `[DOC]` `features/marketplace.md`.
+
+## Phase POST-GA6 — Materialized collections (DONE)
+
+- [x] `[DB]` Bảng `materialized_collections`.
+- [x] `[BE]` Routes `/api/v1/materialize` (register, refresh, drop).
+- [x] `[BE]` Logical refresh strategy (count + lastRefreshedAt). Full denormalized write còn để mở.
+- [x] `[DOC]` `features/materialized-collections.md`.
+
+---
+
+## Phase Docker Dual-Deployment (DONE)
+
+Mục tiêu: chạy được toàn bộ stack trên Docker không cần Cloudflare account.
+
+- [x] `[RT]` Tạo package `@lumibase/runtime` với 6 interface: `CacheProvider`, `StorageProvider`, `DatabaseProvider`, `SearchProvider`, `QueueProvider`, `MediaProcessor`.
+- [x] `[RT]` Cloudflare adapters: KV, R2, Hyperdrive, MeiliSearch Cloud HTTP, CF Queues, CF Image Resizing.
+- [x] `[RT]` Docker adapters: Redis (ioredis), MinIO/S3 (`@aws-sdk/client-s3`), pg pool (`postgres`), MeiliSearch self-host, BullMQ on Redis, Imgproxy với signed URLs.
+- [x] `[RT]` Factory `createRuntime(env)` chọn theo `LUMIBASE_RUNTIME`.
+- [x] `[BE]` Refactor middleware/db.ts để dùng DatabaseProvider.
+- [x] `[BE]` Refactor routes dùng KV/R2 sang `c.get('runtime').<provider>`.
+- [x] `[BE]` Tạo `apps/cms/src/serve.ts` Node entrypoint với graceful shutdown (SIGTERM, 10s timeout).
+- [x] `[BE]` Endpoint `/health` test connectivity (db, cache, search, storage, queue).
+- [x] `[BE]` Endpoint `/metrics` Prometheus exposition format.
+- [x] `[BE]` Endpoint `/api/v1/search` qua SearchProvider.
+- [x] `[BE]` Auto-index/remove items qua QueueProvider khi item create/update/delete.
+- [x] `[BE]` Media processing hook: enqueue thumbnail generation (150/300/600) khi upload.
+- [x] `[OPS]` `docker/Dockerfile` multi-stage (Node 20 slim, non-root, HEALTHCHECK).
+- [x] `[OPS]` `docker/Dockerfile.dev` cho hot-reload.
+- [x] `[OPS]` `docker/scripts/entrypoint.sh` chạy migrations với retry exponential backoff.
+- [x] `[OPS]` `docker/docker-compose.yml`: Postgres 16, Redis 7, MinIO, MeiliSearch, Imgproxy, CMS, Bull Board.
+- [x] `[OPS]` `docker/docker-compose.monitoring.yml`: Prometheus + Grafana + Loki + pg-backup.
+- [x] `[OPS]` `docker/docker-compose.prod.yml` cho production-like local testing.
+- [x] `[OPS]` Pre-provisioned Grafana dashboard (request rate, latency p50/p95/p99, error rate, queue depth, cache hit ratio).
+- [x] `[OPS]` `docker/scripts/backup.sh` + `restore.sh` (pg_dump → S3, retention 7 daily / 4 weekly).
+- [x] `[OPS]` Workflow CI `.github/workflows/docker.yml` (build & push GHCR trên main, build-only PR, layer caching, health check verify).
+- [x] `[DOC]` `apps/docs/content/deployment/{overview,cloudflare,docker,local-development,environment-variables}.md`.
+- [x] `[DOC]` `apps/docs/content/guides/{tooling-recommendations,backup-recovery}.md`.
+- [x] `[DOC]` `features/runtime-abstraction.md` + `features/observability.md` + `features/search.md`.
+
+---
+
+## Phase AI-First Copilot (DONE)
+
+Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
+
+- [x] `[DB]` Bảng `ai_approvals` (id nanoid 21 + siteId + agentName + skillName + arguments jsonb + status + context + decidedAt + decidedBy).
+- [x] `[AI]` Package `@lumibase/ai-skills` với `CORE_SKILLS` (listCollections, createCollection, deleteCollection, createField, deleteField, listItems, createItem, updateItem, deleteItem) + OpenAI tool definitions.
+- [x] `[BE]` Service `ai-harness.ts` (validateSkill, checkCapabilities với wildcard `*`, evaluateRisk, execute, executeApproved, rejectApproval, runSkill timeout 30s).
+- [x] `[BE]` Routes `/api/v1/ai/chat`, `/api/v1/ai/approvals`, `/api/v1/ai/approvals/:id/decide`.
+- [x] `[BE]` Property tests fast-check (15 properties, 100+ iterations) + integration tests.
+- [x] `[FE]` `components/ai-assistant.tsx` floating panel 320×480 glassmorphism, max 50 messages.
+- [x] `[FE]` `modules/settings/ai-approvals.tsx` card list pending approvals với Approve/Reject.
+- [x] `[DOC]` `features/ai-copilot.md` + giữ `features/ai-first-specification.md` lịch sử.
+
+---
+
+## Phase POST-GA — Nâng cao (TODO / In progress)
+
+- [x] `[AI]` Tích hợp LLM provider thật (OpenAI / Anthropic / Workers AI) thay cho mock intent parser trong `/ai/chat`.
+- [x] `[AI]` Thêm context memory (lịch sử conversation) trong AI Copilot.
+- [x] `[AI]` Skill `aiSuggestField` + `aiContentAssist` (RAG via embeddings).
+- [x] `[BE]` Materialize collection write thực sự (không chỉ logical refresh) — bảng vật lý + trigger refresh.
+- [x] `[BE]` Multi-region Durable Objects sharding.
+- [x] `[FE]` Marketplace browser UI trong Studio (browse, install với 1 click).
+- [x] `[FE]` Flows visual editor (drag-drop graph) — hiện chỉ có list page.
+- [x] `[BE]` SCIM Token rotation + audit.
+- [x] `[OPS]` Multi-tenant isolation testing tự động (k6 cross-site leak detection).
+
+---
+
+## Cross-cutting checklist (mỗi phase)
+
+- [x] Cập nhật `architecture.md` nếu thay đổi cấu trúc.
+- [x] Viết unit + integration test trước khi merge; với logic phức tạp dùng property-based testing (fast-check).
+- [x] Cập nhật OpenAPI spec (`apps/cms/openapi.yaml`) cho mọi endpoint mới.
+- [x] Cập nhật `packages/sdk` types tương ứng.
+- [x] Cập nhật docs trong `docs/features/` hoặc `apps/docs/content/`.
+- [x] Tạo branch `feature/<phase>-<name>`, commit theo conventional commits, PR có checklist DoD.
+- [x] Đảm bảo route mới hoạt động trên CẢ hai runtime (Cloudflare + Docker) — nếu phụ thuộc API cụ thể, gate bằng feature flag và document trong `features/runtime-abstraction.md`.

@@ -83,7 +83,7 @@ export function SearchDialog() {
       navigate(`/${locale}/docs/${result.slug}`);
       closeDialog();
     },
-    [navigate, closeDialog]
+    [navigate, closeDialog, locale]
   );
 
   // Handle keyboard navigation within results
