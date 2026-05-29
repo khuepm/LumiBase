@@ -1,6 +1,8 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   primaryKey,
@@ -44,11 +46,28 @@ export const users = pgTable(
     /** TFA registration metadata (delegated to Logto). */
     tfa: jsonb('tfa').default({}).notNull(),
     lastSeenAt: timestamp('last_seen_at'),
+    /**
+     * Bootstrap admin marker. Set to `true` for the very first admin
+     * created by the Setup Wizard. Combined with the partial unique
+     * index `users_is_bootstrap_unique`, this enforces at most one
+     * bootstrap admin per instance.
+     */
+    isBootstrap: boolean('is_bootstrap').default(false).notNull(),
+    /** Account lockout deadline; null when not locked. */
+    lockedUntil: timestamp('locked_until'),
+    /** Failed login counter inside the current sliding window. */
+    failedCount: integer('failed_count').default(0).notNull(),
+    /** Sliding-window start for `failedCount`. */
+    failedCountWindowStart: timestamp('failed_count_window_start'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => ({
     externalIdUnique: uniqueIndex('users_external_id_unique').on(t.externalId),
+    /** Enforces at most one row with `is_bootstrap = true` per instance. */
+    bootstrapUnique: uniqueIndex('users_is_bootstrap_unique')
+      .on(t.isBootstrap)
+      .where(sql`${t.isBootstrap} = true`),
   }),
 );
 
