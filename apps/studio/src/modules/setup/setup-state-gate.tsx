@@ -54,7 +54,14 @@ async function fetchSetupState(): Promise<SetupStateResponse> {
   };
 }
 
-const SETUP_TOKEN_STORAGE_KEY = 'lumibase.setup.token';
+/**
+ * sessionStorage key under which `readSetupToken` caches the operator-
+ * supplied setup token between page navigations. Exported so other
+ * modules in the wizard (notably `useCompleteSetup`) can read the same
+ * key when assembling `POST /setup/complete` payloads and clear it on
+ * a successful completion.
+ */
+export const SETUP_TOKEN_STORAGE_KEY = 'lumibase.setup.token';
 
 /**
  * Read a setup token from `?token=` query param (preferred — matches the
