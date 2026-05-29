@@ -45,7 +45,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 4.3 Mount admin-path-guard sớm trong middleware chain `apps/cms/src/index.ts` (sau request-id, audit-context, trước routes); bypass khi `state='uninitialized'` để Setup_Wizard accessible tại `/setup` (Req 5.3, 5.4; design §6.2)
   - [x] 4.4 Tạo endpoint `GET /api/v1/me/admin-path` trong `apps/cms/src/routes/auth.ts` trả `{ adminPath }` cho user đã authenticate (auth middleware), để Studio fetch path post-login hiển thị bookmark (Req 4.7; design §7.3)
   - [x] 4.5 Audit-log helper masking: tạo `apps/cms/src/modules/audit/path-mask.ts` thay raw admin path bằng `<admin_path>` ở log level info/warn/error; raw path chỉ ghi khi `LOG_LEVEL=debug` (Req 5.5; design §10.1)
-  - [~] 4.6 Viết security test `apps/cms/src/__tests__/path-compare.timing.test.ts` 10,000 iteration đo timing variance giữa diff-at-pos-1 và diff-at-pos-63; assert std deviation chênh lệch <1ms (Req 5.7; design §13.3, Property 6)
+  - [x] 4.6 Viết security test `apps/cms/src/__tests__/path-compare.timing.test.ts` 10,000 iteration đo timing variance giữa diff-at-pos-1 và diff-at-pos-63; assert std deviation chênh lệch <1ms (Req 5.7; design §13.3, Property 6)
   - [~] 4.7 Viết integration test `apps/cms/src/__tests__/404-indistinguishable.test.ts` 500 req tới Default_Admin_Path không khớp vs random path; assert latency p95 delta ≤5ms, response body byte-equal, header set match (Req 5.1, 5.6; design §13.3, Property 7)
   - [~] 4.8 Cập nhật Vite config `apps/studio/vite.config.ts` thêm assertion fail build nếu phát hiện env var bắt đầu bằng `VITE_ADMIN_PATH` (Req 4.7; design §7.3)
 
