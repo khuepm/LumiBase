@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from './env';
+import { adminPathGuard } from './middleware/admin-path-guard';
 import { withAuth } from './middleware/auth';
 import { withDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
@@ -59,6 +60,24 @@ app.use(
     exposeHeaders: ['X-Request-Id'],
   }),
 );
+
+// Admin Path Guard (admin-setup-wizard Req 5.1, 5.2, 5.4, 5.6, 5.7;
+// design §6.2 + §7.2).
+//
+// Mounted *after* the global request-id/runtime stack so the guard
+// can resolve a per-request DB via `c.get('runtime')`, and *before*
+// any route mount so a probing bot hitting `/admin`, `/studio`, etc.
+// gets the indistinguishable 404 envelope without ever touching a
+// route handler. The guard internally bypasses `/api/*`, `/health`,
+// `/metrics`, `/scim/*`, `/setup`, `/.well-known/*` (so the wizard
+// surface, ops endpoints, and SCIM provisioning keep working) and
+// fails open while `system_state.state !== 'initialized'` so a fresh
+// instance can still reach the Setup Wizard at `/setup`.
+//
+// Audit-context middleware (task 11.2) will eventually slot in
+// between `withLogger` and this guard; ordering kept symmetric with
+// design §6.2 so that follow-up insert is mechanical.
+app.use('*', adminPathGuard());
 
 // Public utility endpoints (no tenant, no auth).
 app.route('/api/v1/utils', utilsRouter);
