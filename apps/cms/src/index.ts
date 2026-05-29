@@ -10,7 +10,7 @@ import { withRuntime } from './middleware/runtime';
 import { withTenant } from './middleware/tenant';
 import { activityRouter } from './routes/activity';
 import { adminRouter } from './routes/admin';
-import { authRouter } from './routes/auth';
+import { authRouter, meRouter } from './routes/auth';
 import { collectionsRouter } from './routes/collections';
 import { deliverRouter } from './routes/deliver';
 import { extensionsRouter } from './routes/extensions';
@@ -103,6 +103,11 @@ app.route('/scim/v2', scimRouter);
 const api = new Hono<AppEnv>();
 api.use('*', withTenant(), withAuth(), withDb(), withRls());
 api.route('/auth', authRouter);
+// `/me/*` — current-user endpoints kept outside `/auth` to honour the
+// URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).
+// Mounted on the authenticated `api` Hono so `withAuth` already enforces
+// that the caller has a valid session before the handler runs.
+api.route('/me', meRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/items', itemsRouter);
