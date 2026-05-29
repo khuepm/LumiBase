@@ -3,10 +3,18 @@ import {
   createRoute,
   createRouter,
   Outlet,
+  redirect,
+  useNavigate,
 } from '@tanstack/react-router';
 import { lazy, Suspense } from 'react';
 import { AppShell } from './components/app-shell';
 import { BareLayout } from './components/bare-layout';
+import { SetupLayout } from './modules/setup/setup-layout';
+import { SetupStateGate } from './modules/setup/setup-state-gate';
+import {
+  getEarliestUnsatisfiedStep,
+  useSetupStore,
+} from './modules/setup/setup-store';
 
 // ---------------------------------------------------------------------------
 // Lazy-loaded route components — each import() becomes a separate chunk.
@@ -37,6 +45,17 @@ const TeamsPage = lazy(() => import('./modules/users/teams-page').then((m) => ({
 const UsersPage = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
 const FlowsListPage = lazy(() => import('./modules/automation/flows-page').then((m) => ({ default: m.FlowsListPage })));
 const FlowEditor = lazy(() => import('./modules/automation/flow-editor').then((m) => ({ default: m.FlowEditor })));
+
+// ---------------------------------------------------------------------------
+// Setup Wizard step components — lazy-loaded so the bootstrap chunk stays
+// small for the (vastly more common) post-setup case where the operator
+// loads the AppShell instead. The wizard is single-shot per instance, so
+// shipping its bundle on the critical path would be wasted bytes for
+// every authenticated admin page load.
+// ---------------------------------------------------------------------------
+const StepAccount = lazy(() => import('./modules/setup/steps/step-account').then((m) => ({ default: m.StepAccount })));
+const StepPath = lazy(() => import('./modules/setup/steps/step-path').then((m) => ({ default: m.StepPath })));
+const StepDone = lazy(() => import('./modules/setup/steps/step-done').then((m) => ({ default: m.StepDone })));
 
 // ---------------------------------------------------------------------------
 // Shared suspense boundary — shows a lightweight spinner while chunks load.
@@ -97,6 +116,117 @@ const publicLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'public-layout',
   component: BareLayout,
+});
+
+// ---------------------------------------------------------------------------
+// Setup Wizard routes
+//
+// All four wizard routes live under a pathless parent (`setupShellRoute`)
+// whose component wraps children in
+//
+//   <SetupStateGate>            ← talks to GET /setup/state, renders 404 /
+//                                 retry / token prompt outside the chrome
+//     <SetupLayout>             ← progress indicator + centered card
+//       <Outlet />              ← active step
+//     </SetupLayout>
+//   </SetupStateGate>
+//
+// `SetupStateGate` is intentionally OUTSIDE `SetupLayout` so the gate's
+// failure screens (already-initialized 404, retry UI, token prompt) never
+// inherit the progress chrome — see design.md §5.1 / setup-state-gate.tsx.
+//
+// Deep-link guards live in each child's `beforeLoad`. They consult the
+// Zustand store synchronously via `useSetupStore.getState()` and throw a
+// `redirect(...)` to the earliest unsatisfied step — the helper
+// `getEarliestUnsatisfiedStep` keeps the redirect target consistent with
+// the state machine in design.md §5.4 / §11.2.
+//
+// Spec refs: Req 3.11; design.md §5.1, §5.4, §11.2.
+// ---------------------------------------------------------------------------
+
+const setupShellRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  id: 'setup-shell',
+  component: () => (
+    <SetupStateGate>
+      <SetupLayout>
+        <Outlet />
+      </SetupLayout>
+    </SetupStateGate>
+  ),
+});
+
+/**
+ * Index route for `/setup`. The wizard has no body of its own at this
+ * URL — it always forwards to the earliest unsatisfied step so a fresh
+ * visit lands on Account, a refresh mid-flow lands back on the right
+ * step, and a post-completion deep-link drops onto Done.
+ */
+const setupIndexRoute = createRoute({
+  getParentRoute: () => setupShellRoute,
+  path: '/setup',
+  beforeLoad: () => {
+    const state = useSetupStore.getState();
+    throw redirect({ to: getEarliestUnsatisfiedStep(state) });
+  },
+  // Component is unreachable because beforeLoad always redirects; kept
+  // as a safety net so a future router quirk that bypasses beforeLoad
+  // still renders a well-formed page.
+  component: withSuspense(StepAccount),
+});
+
+const setupAccountRoute = createRoute({
+  getParentRoute: () => setupShellRoute,
+  path: '/setup/account',
+  component: () => {
+    const navigate = useNavigate();
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <StepAccount onSubmitted={() => navigate({ to: '/setup/path' })} />
+      </Suspense>
+    );
+  },
+});
+
+const setupPathRoute = createRoute({
+  getParentRoute: () => setupShellRoute,
+  path: '/setup/path',
+  beforeLoad: () => {
+    // Operators must complete the Account step before they can pick
+    // an admin path; deep-linking past Account redirects back.
+    if (!useSetupStore.getState().accountValid) {
+      throw redirect({ to: '/setup/account' });
+    }
+  },
+  component: () => {
+    const navigate = useNavigate();
+    return (
+      <Suspense fallback={<PageLoader />}>
+        {/*
+          PLACEHOLDER: routing Path → Done directly until the Security
+          (task 6.5/6.6) and Recovery (task 10.3/10.8) steps land. Once
+          those routes register, this navigation chain becomes
+          Path → Security → Recovery → Done per design.md §5.4.
+        */}
+        <StepPath onSubmitted={() => navigate({ to: '/setup/done' })} />
+      </Suspense>
+    );
+  },
+});
+
+const setupDoneRoute = createRoute({
+  getParentRoute: () => setupShellRoute,
+  path: '/setup/done',
+  beforeLoad: () => {
+    // The Done step is the wizard's terminal state. If the operator
+    // hasn't actually completed the flow yet, send them to whatever
+    // step is still outstanding so the URL stays honest.
+    const state = useSetupStore.getState();
+    if (!state.completed) {
+      throw redirect({ to: getEarliestUnsatisfiedStep(state) });
+    }
+  },
+  component: withSuspense(StepDone),
 });
 
 const indexRoute = createRoute({
@@ -304,7 +434,14 @@ const routeTree = rootRoute.addChildren([
   ]),
   // Children of publicLayoutRoute (e.g. /setup, /recovery) are added in
   // subsequent tasks for the admin-setup-wizard spec.
-  publicLayoutRoute,
+  publicLayoutRoute.addChildren([
+    setupShellRoute.addChildren([
+      setupIndexRoute,
+      setupAccountRoute,
+      setupPathRoute,
+      setupDoneRoute,
+    ]),
+  ]),
 ]);
 
 export const router = createRouter({ routeTree });

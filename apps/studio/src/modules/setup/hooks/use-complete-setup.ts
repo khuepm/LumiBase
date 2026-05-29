@@ -424,11 +424,10 @@ export function useCompleteSetup(): UseMutationResult<
       // 3. Remove the cached setup token (it's invalid server-side now too).
       clearSetupToken();
 
-      // 4. Navigate to /setup/done. The route is wired in task 3.9; we
-      //    cast to `never` here so the typecheck passes today against the
-      //    not-yet-registered route table. TODO(task 3.9): drop the cast
-      //    once `/setup/done` is registered with the typed router.
-      navigate({ to: '/setup/done' as never });
+      // 4. Navigate to the Done step. The route is registered under
+      //    `publicLayoutRoute` in `router.tsx` (task 3.9), so the
+      //    typed router accepts the literal path directly.
+      navigate({ to: '/setup/done' });
     },
   });
 }
