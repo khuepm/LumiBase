@@ -39,7 +39,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
 
 ### Phase B — Custom Admin Path Guard
 
-- [ ] 4. Admin path guard middleware (post-setup)
+- [x] 4. Admin path guard middleware (post-setup)
   - [x] 4.1 Tạo helper `apps/cms/src/modules/setup/path-compare.ts` với `pathEqualsConstantTime(a, b)` pad cả hai về buffer 64 byte fixed, XOR loop toàn bộ 64 byte kèm length-XOR để tránh leak độ dài (Req 5.7; design §7.1, Property 6)
   - [x] 4.2 Tạo middleware `apps/cms/src/middleware/admin-path-guard.ts`: khi `state='initialized'`, request path nằm trong scope Studio (HTML/asset, không phải `/api/*`), so sánh với `system_state.admin_path` constant-time; mismatch trả 404 envelope chuẩn với SELECT 1 no-op để khớp latency profile, header set chỉ chứa Content-Type + Content-Length (Req 5.1, 5.2, 5.6, 5.7; design §6.2, §7.2)
   - [x] 4.3 Mount admin-path-guard sớm trong middleware chain `apps/cms/src/index.ts` (sau request-id, audit-context, trước routes); bypass khi `state='uninitialized'` để Setup_Wizard accessible tại `/setup` (Req 5.3, 5.4; design §6.2)
@@ -47,7 +47,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 4.5 Audit-log helper masking: tạo `apps/cms/src/modules/audit/path-mask.ts` thay raw admin path bằng `<admin_path>` ở log level info/warn/error; raw path chỉ ghi khi `LOG_LEVEL=debug` (Req 5.5; design §10.1)
   - [x] 4.6 Viết security test `apps/cms/src/__tests__/path-compare.timing.test.ts` 10,000 iteration đo timing variance giữa diff-at-pos-1 và diff-at-pos-63; assert std deviation chênh lệch <1ms (Req 5.7; design §13.3, Property 6)
   - [x] 4.7 Viết integration test `apps/cms/src/__tests__/404-indistinguishable.test.ts` 500 req tới Default_Admin_Path không khớp vs random path; assert latency p95 delta ≤5ms, response body byte-equal, header set match (Req 5.1, 5.6; design §13.3, Property 7)
-  - [~] 4.8 Cập nhật Vite config `apps/studio/vite.config.ts` thêm assertion fail build nếu phát hiện env var bắt đầu bằng `VITE_ADMIN_PATH` (Req 4.7; design §7.3)
+  - [x] 4.8 Cập nhật Vite config `apps/studio/vite.config.ts` thêm assertion fail build nếu phát hiện env var bắt đầu bằng `VITE_ADMIN_PATH` (Req 4.7; design §7.3)
 
 ### Phase C — Lockout Core (user lockout + IP rate limit)
 
