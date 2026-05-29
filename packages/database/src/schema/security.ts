@@ -1,14 +1,21 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   index,
   jsonb,
+  numeric,
   pgTable,
   text,
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
+
+import { users } from './core';
+
+const id = () => text('id').$defaultFn(() => nanoid()).primaryKey();
+const createdAt = () => timestamp('created_at').defaultNow().notNull();
 
 /**
  * Security-domain tables for the Admin Setup Wizard feature.
@@ -108,5 +115,69 @@ export const auditLog = pgTable(
     eventIdx: index('audit_log_event_idx').on(t.event, t.timestamp),
     /** Per-actor timelines for incident investigation. */
     actorIdx: index('audit_log_actor_idx').on(t.actorEmail, t.timestamp),
+  }),
+);
+
+/**
+ * Sliding-window source-of-truth for login activity.
+ *
+ * Every authentication attempt — success or failure — appends a row.
+ * `LoginGuard` uses the two `(emailLower, createdAt)` and
+ * `(ip, createdAt)` indexes to compute per-user and per-IP failure
+ * counts inside the configured rolling window (design §6.4); the
+ * `AnomalyDetector` reads `countryCode`, `geoLookupStatus`,
+ * `userAgent`, `anomalyScore`, `anomalyTriggered`, and
+ * `baselineWarmup` for post-login analysis (design §8).
+ *
+ * Rows are rotated by the same job that prunes `audit_log`
+ * (default >90 days, design §10.2).
+ *
+ * Contract: see design §3.4. `emailLower` MUST be normalized
+ * (lowercase + trim) before insert so window queries can match the
+ * index; `userId` is FK with `onDelete: 'set null'` to keep historic
+ * attempts queryable after a user is removed.
+ */
+export const loginAttempts = pgTable(
+  'login_attempts',
+  {
+    id: id(),
+    /** Lowercased + trimmed email used as the per-user counter key. */
+    emailLower: text('email_lower').notNull(),
+    /** Resolved user id when the email matched a row; null otherwise. */
+    userId: text('user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    /** Client IP per `extractClientIp` (CF → XFF → socket). */
+    ip: text('ip').notNull(),
+    userAgent: text('user_agent'),
+    /** ISO-3166 alpha-2 from GeoIP lookup; null when unavailable. */
+    countryCode: text('country_code'),
+    /** Outcome of the GeoIP lookup for this attempt. */
+    geoLookupStatus: text('geo_lookup_status', {
+      enum: ['ok', 'unavailable', 'timeout'],
+    }),
+    /** Final auth outcome surfaced to the response. */
+    result: text('result', { enum: ['success', 'fail'] }).notNull(),
+    /**
+     * Failure reason when `result='fail'`; one of
+     * `invalid_credentials | account_locked | ip_blocked | anomaly_lock | mfa_required`.
+     */
+    reason: text('reason'),
+    /** Aggregated anomaly score (0.00–1.00); null when detector skipped. */
+    anomalyScore: numeric('anomaly_score', { precision: 4, scale: 2 }),
+    /** True when the score crossed the configured threshold. */
+    anomalyTriggered: boolean('anomaly_triggered').default(false).notNull(),
+    /** True when the detector was in baseline-warmup mode for this user. */
+    baselineWarmup: boolean('baseline_warmup').default(false).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    /** Per-user sliding-window failure counts. */
+    emailWindowIdx: index('login_attempts_email_window_idx').on(
+      t.emailLower,
+      t.createdAt,
+    ),
+    /** Per-IP sliding-window failure counts. */
+    ipWindowIdx: index('login_attempts_ip_window_idx').on(t.ip, t.createdAt),
   }),
 );
