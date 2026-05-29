@@ -9,7 +9,7 @@ import { getApiClient } from '@/lib/api';
  * Wires to the Phase C `/api/v1/roles/:id` endpoints exposed in the SDK.
  */
 export function RoleDetailPage() {
-  const { id } = useParams({ from: '/access/roles/$id' });
+  const { id } = useParams({ from: '/admin-layout/access/roles/$id' });
   const client = getApiClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();

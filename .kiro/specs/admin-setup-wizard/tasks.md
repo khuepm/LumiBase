@@ -26,7 +26,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 2.8 Viết integration test `apps/cms/src/__tests__/setup-flow.integration.test.ts` cover happy path setup + verify Audit_Log entry + verify second `/setup/state` trả `initialized`; verify duplicate concurrent setup race trả 404 hoặc 409 với 5 promise đồng thời (Req 1.5, 1.7; design §13.2, Property 1, 3)
 
 - [ ] 3. Studio scaffold cho Setup Wizard (no AppShell)
-  - [~] 3.1 Refactor `apps/studio/src/router.tsx` tách `adminLayoutRoute` (component AppShell, chứa toàn bộ module hiện tại) khỏi `publicLayoutRoute` (component `BareLayout`, không AppShell); giữ nguyên route tree existing dưới adminLayout (Req 2.5; design §5.1)
+  - [x] 3.1 Refactor `apps/studio/src/router.tsx` tách `adminLayoutRoute` (component AppShell, chứa toàn bộ module hiện tại) khỏi `publicLayoutRoute` (component `BareLayout`, không AppShell); giữ nguyên route tree existing dưới adminLayout (Req 2.5; design §5.1)
   - [~] 3.2 Tạo `apps/studio/src/modules/setup/setup-layout.tsx` (BareLayout với progress indicator 5 bước) và `apps/studio/src/modules/setup/setup-state-gate.tsx` gọi `useQuery(['setup','state'])` + render 404 cứng khi `initialized`, retry UI khi network/5xx, SetupTokenPrompt khi yêu cầu token (Req 2.1, 2.2, 2.3, 2.8; design §5.1, §5.2)
   - [~] 3.3 Tạo Zod schemas `apps/studio/src/modules/setup/schemas/{account,admin-path,policy}.ts` khớp validation rules requirement (Req 3.1-3.5, 4.2-4.4, 6.3; design §5.5)
   - [~] 3.4 Tạo Zustand store `apps/studio/src/modules/setup/setup-store.ts` với persist middleware sessionStorage key `lumibase.setup`, lưu `accountValid`, `pathValid`, `policyValid`, `confirmed`, `completed` flags (không lưu plaintext password) (design §5.3)

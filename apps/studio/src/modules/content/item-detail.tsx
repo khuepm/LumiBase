@@ -20,7 +20,7 @@ type Tab = 'fields' | 'revisions' | 'raw';
  * around a basic field editor. The full Interface registry lands in slice 3+.
  */
 export function ItemDetailPage() {
-  const { collection, id } = useParams({ from: '/content/$collection/$id' });
+  const { collection, id } = useParams({ from: '/admin-layout/content/$collection/$id' });
   const client = getApiClient();
   const navigate = useNavigate();
   const queryClient = useQueryClient();

@@ -16,7 +16,7 @@ const ACTION_OPTIONS: PermissionAction[] = ['create', 'read', 'update', 'delete'
  * `permissions` (the row-level rule DSL), `validation`, and `presets`.
  */
 export function PolicyDetailPage() {
-  const { id } = useParams({ from: '/access/policies/$id' });
+  const { id } = useParams({ from: '/admin-layout/access/policies/$id' });
   const client = getApiClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();

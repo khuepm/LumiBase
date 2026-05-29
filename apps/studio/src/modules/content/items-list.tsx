@@ -24,7 +24,7 @@ interface SortState {
  * Phase B `/api/v1/items/:collection` endpoints via the typed SDK.
  */
 export function ItemsListPage() {
-  const { collection } = useParams({ from: '/content/$collection' });
+  const { collection } = useParams({ from: '/admin-layout/content/$collection' });
   const client = getApiClient();
   const perms = usePermissions();
 
@@ -116,10 +116,10 @@ export function ItemsListPage() {
         <div className="flex items-center gap-2">
           {/* Live Mode Toggle */}
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground mr-2 cursor-pointer">
-            <input 
-              type="checkbox" 
-              checked={liveMode} 
-              onChange={(e) => setLiveMode(e.target.checked)} 
+            <input
+              type="checkbox"
+              checked={liveMode}
+              onChange={(e) => setLiveMode(e.target.checked)}
               className="accent-primary"
             />
             Live Mode
@@ -136,8 +136,8 @@ export function ItemsListPage() {
                 if (preset) {
                   // Apply preset
                   if (preset.filter && Object.keys(preset.filter).length > 0) {
-                     // Hacky for now: we can't easily reverse-compile filter JSON to FilterBuilder UI state,
-                     // but in a real app we'd save the UI state in `layoutOptions` or similar.
+                    // Hacky for now: we can't easily reverse-compile filter JSON to FilterBuilder UI state,
+                    // but in a real app we'd save the UI state in `layoutOptions` or similar.
                   }
                 }
               }}
@@ -166,7 +166,7 @@ export function ItemsListPage() {
               <Bookmark className="h-3.5 w-3.5" />
             </button>
           </div>
-          
+
           <button
             type="button"
             onClick={() => setShowFilters((v) => !v)}

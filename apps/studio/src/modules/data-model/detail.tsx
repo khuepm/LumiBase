@@ -17,7 +17,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
 ];
 
 export function CollectionDetailPage() {
-  const { name } = useParams({ from: '/data-model/$name' });
+  const { name } = useParams({ from: '/admin-layout/data-model/$name' });
   const [tab, setTab] = useState<Tab>('fields');
   const client = getApiClient();
   const queryClient = useQueryClient();
@@ -85,8 +85,8 @@ export function CollectionDetailPage() {
             type="button"
             onClick={() => setTab(id)}
             className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === id
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
           >
             {label}
