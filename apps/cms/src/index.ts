@@ -40,6 +40,7 @@ import { utilsRouter } from './routes/utils';
 import { webhooksRouter } from './routes/webhooks';
 import { testAuthRouter } from './routes/test-auth';
 import { aiRouter } from './routes/ai';
+import { setupRouter } from './modules/setup/routes';
 
 const app = new Hono<AppEnv>();
 
@@ -67,6 +68,12 @@ app.route('/metrics', metricsRouter);
 app.route('/health', healthRouter);
 // Serves interactive auth testing page
 app.route('/test-auth', testAuthRouter);
+
+// Setup wizard surface (`/api/v1/setup/*`). Public — does not pass through
+// `withTenant`/`withAuth` because no user exists during first-time setup.
+// `withRuntime` already ran globally so the per-request `withDb()` inside
+// the router resolves the connection through the runtime's DatabaseProvider.
+app.route('/api/v1/setup', setupRouter);
 
 // SCIM 2.0 provisioning. Auth happens inside the router using SCIM_TOKEN.
 // Needs withDb() so it can write to the users/teams tables.
