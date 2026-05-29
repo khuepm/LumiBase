@@ -43,7 +43,7 @@ const EMAIL_REGEX =
 
 // ── Password (Req 3.3) ───────────────────────────────────────────────────
 
-const PASSWORD_MIN_LENGTH = 12;
+export const PASSWORD_MIN_LENGTH = 12;
 
 /**
  * Special characters explicitly allowed by Req 3.3. Listing them as a
@@ -63,6 +63,36 @@ function hasSpecialChar(value: string): boolean {
     if (PASSWORD_SPECIAL_CHARS.has(ch)) return true;
   }
   return false;
+}
+
+/**
+ * Identifier for each password rule from Req 3.3. The Account step
+ * renders a live ✓/✗ list keyed by these ids next to the password
+ * input — keep this in sync with the `params.rule` strings emitted by
+ * the schema so unit tests can correlate the two.
+ */
+export type PasswordRuleId =
+  | 'length'
+  | 'lowercase'
+  | 'uppercase'
+  | 'digit'
+  | 'special';
+
+/**
+ * Evaluate every Req 3.3 password rule against `value` and return a
+ * map of rule → satisfied. Used by `step-account.tsx` to render the
+ * inline rules list without duplicating the regex/length checks.
+ */
+export function evaluatePasswordRules(
+  value: string,
+): Record<PasswordRuleId, boolean> {
+  return {
+    length: value.length >= PASSWORD_MIN_LENGTH,
+    lowercase: HAS_LOWER.test(value),
+    uppercase: HAS_UPPER.test(value),
+    digit: HAS_DIGIT.test(value),
+    special: hasSpecialChar(value),
+  };
 }
 
 // ── First / Last name ────────────────────────────────────────────────────
