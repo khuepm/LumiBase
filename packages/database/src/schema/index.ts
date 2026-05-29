@@ -8,3 +8,4 @@ export * from './access';
 export * from './cms';
 export * from './platform';
 export * from './ai';
+export * from './security';
