@@ -8,15 +8,15 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
 
 ### Phase A — Foundation (system state, bootstrap admin, atomic setup transaction)
 
-- [ ] 1. Schema migrations và shared password helper
+- [x] 1. Schema migrations và shared password helper
   - [x] 1.1 Tạo migration mở rộng bảng `users` thêm cột `is_bootstrap` (boolean, default false), `locked_until` (timestamp), `failed_count` (integer, default 0), `failed_count_window_start` (timestamp); thêm partial unique index `users_is_bootstrap_unique` ở `packages/database/src/schema/core.ts` và migration tương ứng (Req 1.3, 3.1; design §3.1)
   - [x] 1.2 Thêm bảng `system_state` vào schema mới `packages/database/src/schema/security.ts` với các cột `id` (singleton check), `state` enum, `admin_path` (unique), `setup_token_hash`, `initialized_at`, `updated_at`; export từ `packages/database/src/schema/index.ts` (Req 1.1, 4.6; design §3.2)
   - [x] 1.3 Thêm bảng `audit_log` vào `packages/database/src/schema/security.ts` với các cột `id`, `timestamp`, `event`, `actor_email`, `target_email`, `ip`, `user_agent`, `country_code`, `metadata` (jsonb), `request_id`; index `(timestamp)`, `(event, timestamp)`, `(actor_email, timestamp)` (Req 15.1, 15.2; design §3.6)
-  - [-] 1.4 Sinh và commit migration SQL từ Drizzle Kit (`pnpm --filter @lumibase/database run generate`); kiểm tra migration apply sạch trên DB trống
-  - [~] 1.5 Refactor PBKDF2 helper từ `apps/cms/src/routes/auth.ts` thành `apps/cms/src/services/auth/password.ts` exporting `hashPassword(plaintext)` và `verifyPassword(plaintext, stored)`; cập nhật `auth.ts` import từ vị trí mới (Req 3.6, 14.2; design §6.5)
+  - [x] 1.4 Sinh và commit migration SQL từ Drizzle Kit (`pnpm --filter @lumibase/database run generate`); kiểm tra migration apply sạch trên DB trống
+  - [x] 1.5 Refactor PBKDF2 helper từ `apps/cms/src/routes/auth.ts` thành `apps/cms/src/services/auth/password.ts` exporting `hashPassword(plaintext)` và `verifyPassword(plaintext, stored)`; cập nhật `auth.ts` import từ vị trí mới (Req 3.6, 14.2; design §6.5)
 
-- [ ] 2. Setup service (state + capabilities + complete)
-  - [~] 2.1 Tạo `apps/cms/src/modules/setup/policy-codec.ts` với `serializeLockoutPolicy(policy)` (canonical JSON, key sorted) và `parseLockoutPolicy(json)` validate Zod schema khớp Req 6.3; default-fill cho missing optional field, ignore field thừa (Req 16.1, 16.2, 16.4, 16.5, 16.6; design §6.1)
+- [-] 2. Setup service (state + capabilities + complete)
+  - [x] 2.1 Tạo `apps/cms/src/modules/setup/policy-codec.ts` với `serializeLockoutPolicy(policy)` (canonical JSON, key sorted) và `parseLockoutPolicy(json)` validate Zod schema khớp Req 6.3; default-fill cho missing optional field, ignore field thừa (Req 16.1, 16.2, 16.4, 16.5, 16.6; design §6.1)
   - [~] 2.2 Tạo `apps/cms/src/modules/setup/path-validator.ts` với `normalizeAdminPath(input)` (lowercase, trim, single leading slash, no trailing) và `validateAdminPath(normalized)` kiểm regex `^/[a-z0-9][a-z0-9-]{2,62}[a-z0-9]$`, blacklist Default_Admin_Paths, reserved prefixes (`/api`, `/setup`, `/health`, `/metrics`, `/scim`, `/.well-known`, `/static`, `/assets`) (Req 4.2, 4.3, 4.4, 4.8; design §6.1)
   - [~] 2.3 Tạo `apps/cms/src/modules/setup/service.ts` với class `SetupService` triển khai `getState()` (query system_state + check is_bootstrap), `getCapabilities()` (probe GeoIP file + SMTP env), `complete(input, ctx)` (transaction với row lock, validate, hash password + 8 backup codes, insert users, upsert settings, update system_state, audit `setup_completed` post-commit) (Req 1.1, 1.2, 1.3, 1.5, 1.7, 3.6, 6.6, 6.7, 14.2; design §6.5)
   - [~] 2.4 Tạo `apps/cms/src/modules/setup/setup-token.ts` với `generateSetupToken()` (CSPRNG ≥24 ký tự, entropy ≥128 bit, hash sha256 lưu DB), `verifySetupToken(plain)` (constant-time compare), in stdout đúng một lần khi startup nếu `LUMIBASE_REQUIRE_SETUP_TOKEN=true` và `state='uninitialized'` (Req 2.6, 2.7; design §7.3)
