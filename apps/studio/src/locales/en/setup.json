@@ -1,0 +1,354 @@
+{
+  "setup": {
+    "title": "LumiBase Setup",
+    "subtitle": "Configure your instance for the first time.",
+
+    "progress": {
+      "ariaLabel": "Setup progress"
+    },
+
+    "steps": {
+      "account": {
+        "label": "Account",
+        "title": "Create the admin account",
+        "description": "Create the first administrator account.",
+        "longDescription": "This account becomes the bootstrap administrator for the instance. Pick a strong, unique password — it can't be reset without recovery codes.",
+        "fields": {
+          "email": {
+            "label": "Email",
+            "placeholder": "you@example.com"
+          },
+          "password": {
+            "label": "Password",
+            "showAria": "Show password",
+            "hideAria": "Hide password",
+            "rulesLabel": "Password requirements",
+            "rules": {
+              "length": "At least {{count}} characters",
+              "lowercase": "Includes a lowercase letter",
+              "uppercase": "Includes an uppercase letter",
+              "digit": "Includes a digit",
+              "special": "Includes a special character ({{chars}})"
+            },
+            "ruleMet": "Met: ",
+            "ruleNotMet": "Not met: "
+          },
+          "confirmPassword": {
+            "label": "Confirm password",
+            "showAria": "Show confirm password",
+            "hideAria": "Hide confirm password"
+          },
+          "firstName": {
+            "label": "First name"
+          },
+          "lastName": {
+            "label": "Last name"
+          }
+        },
+        "strength": {
+          "checking": "Checking password strength…",
+          "ariaNone": "Password strength: none",
+          "labels": {
+            "0": "Very weak",
+            "1": "Weak",
+            "2": "Fair",
+            "3": "Strong",
+            "4": "Very strong"
+          },
+          "insufficient": "Choose a password rated \"Strong\" or better to continue."
+        },
+        "submit": {
+          "checking": "Checking strength…",
+          "continue": "Continue"
+        }
+      },
+
+      "path": {
+        "label": "Path",
+        "title": "Choose a private admin path",
+        "description": "Pick a private URL for the Studio admin surface.",
+        "longDescription": "Pick a URL slug that bots won't guess. The Studio will only respond at this path; everything else returns 404.",
+        "fields": {
+          "adminPath": {
+            "label": "Admin path",
+            "placeholder": "/lumi-7f3a9c",
+            "help": "Use lowercase letters, digits, and hyphens. 4–64 characters after the leading slash."
+          }
+        },
+        "generate": "Generate random",
+        "generateError": "Couldn't generate a unique path. Try again or enter one manually.",
+        "preview": {
+          "label": "Preview:",
+          "invalid": "(invalid format)"
+        },
+        "warning": {
+          "title": "Save this path.",
+          "body": "Losing it means running the recovery flow with one of your backup codes. Bookmark the URL, store it in your password manager, or write it down somewhere safe before continuing."
+        },
+        "confirmCheckbox": "I have saved my admin path. I understand losing it requires the recovery flow.",
+        "submit": "Continue"
+      },
+
+      "security": {
+        "label": "Security",
+        "title": "Configure login security",
+        "description": "Configure login lockout and anomaly detection.",
+        "longDescription": "Set thresholds for failed login attempts and choose how aggressively to react to suspicious sign-ins.",
+        "preset": {
+          "label": "Preset",
+          "help": "Apply default values to every group below. You can fine-tune after picking a preset.",
+          "standard": "Standard",
+          "standardDescription": "Balanced defaults suitable for most teams.",
+          "strict": "Strict",
+          "strictDescription": "Lower thresholds and longer lockouts.",
+          "lenient": "Lenient",
+          "lenientDescription": "Higher thresholds for low-risk environments."
+        },
+        "groups": {
+          "failedAttempts": {
+            "title": "Failed Attempts",
+            "description": "How many failed sign-ins to tolerate before locking a user or blocking an IP.",
+            "fields": {
+              "userMaxFailedAttempts": {
+                "label": "Per-user max attempts",
+                "help": "Lock a user after this many failed attempts within the window. Range 3–20."
+              },
+              "userLockoutDurationSeconds": {
+                "label": "User lockout duration (seconds)",
+                "help": "How long to keep a user locked. Range 60–86400."
+              },
+              "ipMaxFailedAttempts": {
+                "label": "Per-IP max attempts",
+                "help": "Block an IP after this many failed attempts within the window. Range 5–100."
+              },
+              "ipLockoutDurationSeconds": {
+                "label": "IP lockout duration (seconds)",
+                "help": "How long to keep an IP blocked. Range 60–86400."
+              },
+              "lockoutWindowSeconds": {
+                "label": "Sliding window (seconds)",
+                "help": "Counter window for tallying failed attempts. Range 60–86400."
+              }
+            }
+          },
+          "geo": {
+            "title": "Geographic Anomaly",
+            "description": "Flag sign-ins from countries the user hasn't logged in from before.",
+            "fields": {
+              "geoAnomalyEnabled": {
+                "label": "Enable geographic anomaly detection"
+              }
+            },
+            "warningGeoipUnavailable": "GeoIP database is unavailable on this instance; geographic anomaly detection will stay off until you install it."
+          },
+          "time": {
+            "title": "Time Anomaly",
+            "description": "Flag sign-ins at hours the user rarely logs in.",
+            "fields": {
+              "timeAnomalyEnabled": {
+                "label": "Enable time-of-day anomaly detection"
+              }
+            }
+          },
+          "device": {
+            "title": "Device Anomaly",
+            "description": "Flag sign-ins from a User-Agent / device fingerprint the user hasn't used before.",
+            "fields": {
+              "deviceAnomalyEnabled": {
+                "label": "Enable device anomaly detection"
+              }
+            }
+          },
+          "anomalyAction": {
+            "title": "Anomaly Action",
+            "description": "What the system should do when a sign-in's anomaly score crosses the threshold.",
+            "fields": {
+              "anomalyScoreThreshold": {
+                "label": "Anomaly score threshold",
+                "help": "Range 0.00–1.00. Default 0.70."
+              },
+              "anomalyAction": {
+                "label": "Action",
+                "options": {
+                  "notify_only": "Notify only",
+                  "lock": "Lock the account",
+                  "require_mfa": "Require MFA"
+                },
+                "mfaDisabledHelp": "MFA module is not installed; this option is unavailable for now."
+              }
+            }
+          },
+          "notifications": {
+            "title": "Notifications",
+            "description": "Where to send security event notifications.",
+            "fields": {
+              "notifyChannels": {
+                "label": "Channels",
+                "options": {
+                  "email": "Email",
+                  "webhook": "Webhook"
+                }
+              },
+              "webhookUrl": {
+                "label": "Webhook URL",
+                "placeholder": "https://example.com/lumibase/security"
+              }
+            }
+          }
+        },
+        "submit": "Continue"
+      },
+
+      "recovery": {
+        "label": "Recovery",
+        "title": "Save your backup codes",
+        "description": "Save backup codes for emergency access.",
+        "longDescription": "Store these codes somewhere safe. Each code can be used once to recover the bootstrap admin if you lose your password or admin path.",
+        "codesLabel": "Backup codes",
+        "actions": {
+          "copy": "Copy codes",
+          "copied": "Copied",
+          "copyError": "Couldn't copy automatically. Select the codes above and copy them manually.",
+          "download": "Download .txt"
+        },
+        "confirmCheckbox": "I have saved these backup codes.",
+        "submit": "Finish setup",
+        "submitting": "Finishing…"
+      },
+
+      "done": {
+        "label": "Done",
+        "title": "Setup complete",
+        "description": "Setup complete — bookmark your admin URL.",
+        "longDescription": "Your LumiBase instance is initialised. Save the admin URL below before navigating away.",
+        "adminPathLabel": "Your admin path",
+        "copy": "Copy",
+        "copied": "Copied",
+        "copyAria": "Copy admin path",
+        "copyStatus": "Copied admin path to clipboard.",
+        "copyError": "Couldn't copy automatically. Select the path above and copy it manually.",
+        "savePathReminder": "Save this URL as a bookmark. Without it, you'll need to run the recovery flow with one of your backup codes.",
+        "goToLogin": "Go to admin login",
+        "resetWizard": "Reset wizard (dev)",
+        "noAdminPath": {
+          "title": "No setup in progress",
+          "body": "We couldn't find a completed setup in this browser session. Start the wizard from the beginning to configure your instance.",
+          "cta": "Return to setup"
+        }
+      }
+    },
+
+    "buttons": {
+      "back": "Back",
+      "next": "Next",
+      "continue": "Continue",
+      "finish": "Finish setup",
+      "cancel": "Cancel",
+      "retry": "Try again"
+    },
+
+    "gate": {
+      "loading": "Checking setup status",
+      "retry": {
+        "title": "Couldn't reach the server",
+        "body": "We couldn't check whether this instance has been set up yet. Make sure the LumiBase backend is running, then try again.",
+        "button": "Try again"
+      },
+      "notFound": {
+        "code": "404",
+        "title": "Page not found",
+        "body": "The page you're looking for doesn't exist."
+      },
+      "tokenPrompt": {
+        "title": "Setup token required",
+        "body": "This instance was started with LUMIBASE_REQUIRE_SETUP_TOKEN=true. Paste the one-time setup token printed in the CMS startup logs to continue.",
+        "label": "Setup token",
+        "submit": "Continue"
+      }
+    },
+
+    "errors": {
+      "validation": "Please correct the highlighted fields before continuing.",
+      "server": "The server returned an error. Try again or check the CMS logs.",
+      "network": "Couldn't reach the server. Check your connection and try again.",
+      "initialized": "This instance is already set up. The wizard is no longer available.",
+      "tokenRequired": "Paste the one-time setup token from the CMS startup logs.",
+      "tokenInvalid": "That setup token isn't valid. Check the CMS logs for the latest one.",
+      "alreadyInitialized": "Setup is already complete on this instance.",
+      "setupInProgress": "Another browser tab is already running setup. Finish it there or wait a few seconds.",
+      "fields": {
+        "email": {
+          "required": "Email is required.",
+          "format": "Enter a valid email address."
+        },
+        "password": {
+          "required": "Password is required.",
+          "tooShort": "Password must be at least {{count}} characters.",
+          "missingClasses": "Password must include lowercase, uppercase, digit, and a special character.",
+          "weak": "Choose a password rated \"Strong\" or better."
+        },
+        "confirmPassword": {
+          "required": "Confirm your password.",
+          "mismatch": "Passwords do not match."
+        },
+        "firstName": {
+          "required": "First name is required.",
+          "tooLong": "First name is too long."
+        },
+        "lastName": {
+          "required": "Last name is required.",
+          "tooLong": "Last name is too long."
+        },
+        "adminPath": {
+          "required": "Admin path is required.",
+          "invalidFormat": "Use lowercase letters, digits, and hyphens. 4–64 characters after the leading slash.",
+          "predictable": "This path is too predictable. Choose another.",
+          "reserved": "This path conflicts with a system route. Choose another.",
+          "normalizeFailed": "Invalid path format."
+        },
+        "policy": {
+          "outOfRange": "Value is out of range.",
+          "userMaxFailedAttempts": "Must be between 3 and 20.",
+          "ipMaxFailedAttempts": "Must be at least 3 and no more than 100.",
+          "duration": "Must be between 60 and 86400 seconds.",
+          "anomalyScoreThreshold": "Must be between 0.00 and 1.00."
+        }
+      }
+    }
+  },
+
+  "recovery": {
+    "shared": {
+      "rateLimited": "Too many requests. Try again in a few minutes.",
+      "genericError": "Something went wrong. Try again or contact your administrator."
+    },
+    "backupCode": {
+      "title": "Recover access with a backup code",
+      "subtitle": "Enter your bootstrap admin email and one of the 8 backup codes you saved during setup.",
+      "emailLabel": "Email",
+      "codeLabel": "Backup code",
+      "codePlaceholder": "XXXX-XXXX",
+      "submit": "Unlock account",
+      "submitting": "Verifying…",
+      "errors": {
+        "invalid": "That email or backup code didn't match.",
+        "alreadyUsed": "That backup code has already been used."
+      },
+      "success": {
+        "title": "Account unlocked",
+        "body": "Your account is unlocked. Use the URL below to sign in. Save it — you'll need it next time.",
+        "adminPathLabel": "Admin path",
+        "goToLogin": "Go to admin login"
+      }
+    },
+    "forgotPath": {
+      "title": "Forgot your admin path?",
+      "subtitle": "Enter the bootstrap admin email. If it matches and email is configured, we'll send a recovery link.",
+      "emailLabel": "Email",
+      "submit": "Send recovery link",
+      "submitting": "Sending…",
+      "sent": "If the email matches the bootstrap admin, a recovery link has been sent.",
+      "linkToBackupCode": "Have a backup code instead? Use it here."
+    }
+  }
+}

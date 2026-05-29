@@ -1,0 +1,354 @@
+{
+  "setup": {
+    "title": "Cài đặt LumiBase",
+    "subtitle": "Cấu hình instance lần đầu.",
+
+    "progress": {
+      "ariaLabel": "Tiến độ cài đặt"
+    },
+
+    "steps": {
+      "account": {
+        "label": "Tài khoản",
+        "title": "Tạo tài khoản admin",
+        "description": "Tạo tài khoản quản trị viên đầu tiên.",
+        "longDescription": "Tài khoản này trở thành bootstrap admin của instance. Hãy chọn mật khẩu mạnh và duy nhất — không thể đặt lại nếu thiếu mã khôi phục.",
+        "fields": {
+          "email": {
+            "label": "Email",
+            "placeholder": "ban@example.com"
+          },
+          "password": {
+            "label": "Mật khẩu",
+            "showAria": "Hiện mật khẩu",
+            "hideAria": "Ẩn mật khẩu",
+            "rulesLabel": "Yêu cầu mật khẩu",
+            "rules": {
+              "length": "Tối thiểu {{count}} ký tự",
+              "lowercase": "Có chữ thường",
+              "uppercase": "Có chữ hoa",
+              "digit": "Có chữ số",
+              "special": "Có ký tự đặc biệt ({{chars}})"
+            },
+            "ruleMet": "Đạt: ",
+            "ruleNotMet": "Chưa đạt: "
+          },
+          "confirmPassword": {
+            "label": "Xác nhận mật khẩu",
+            "showAria": "Hiện mật khẩu xác nhận",
+            "hideAria": "Ẩn mật khẩu xác nhận"
+          },
+          "firstName": {
+            "label": "Tên"
+          },
+          "lastName": {
+            "label": "Họ"
+          }
+        },
+        "strength": {
+          "checking": "Đang kiểm tra độ mạnh mật khẩu…",
+          "ariaNone": "Độ mạnh mật khẩu: chưa nhập",
+          "labels": {
+            "0": "Rất yếu",
+            "1": "Yếu",
+            "2": "Trung bình",
+            "3": "Mạnh",
+            "4": "Rất mạnh"
+          },
+          "insufficient": "Hãy chọn mật khẩu được đánh giá \"Mạnh\" hoặc cao hơn."
+        },
+        "submit": {
+          "checking": "Đang kiểm tra độ mạnh…",
+          "continue": "Tiếp tục"
+        }
+      },
+
+      "path": {
+        "label": "Đường dẫn",
+        "title": "Chọn đường dẫn admin riêng",
+        "description": "Chọn URL riêng cho khu vực quản trị Studio.",
+        "longDescription": "Chọn slug URL mà bot không thể đoán. Studio chỉ phản hồi tại đường dẫn này; mọi path khác trả 404.",
+        "fields": {
+          "adminPath": {
+            "label": "Đường dẫn admin",
+            "placeholder": "/lumi-7f3a9c",
+            "help": "Dùng chữ thường, chữ số và dấu gạch ngang. 4–64 ký tự sau dấu gạch chéo đầu."
+          }
+        },
+        "generate": "Sinh ngẫu nhiên",
+        "generateError": "Không sinh được đường dẫn duy nhất. Thử lại hoặc nhập tay.",
+        "preview": {
+          "label": "Xem trước:",
+          "invalid": "(định dạng không hợp lệ)"
+        },
+        "warning": {
+          "title": "Hãy lưu lại đường dẫn này.",
+          "body": "Nếu mất, bạn phải chạy luồng khôi phục bằng một trong các mã backup. Hãy bookmark, lưu vào trình quản lý mật khẩu, hoặc ghi ra nơi an toàn trước khi tiếp tục."
+        },
+        "confirmCheckbox": "Tôi đã lưu đường dẫn admin và hiểu rằng nếu mất thì cần luồng khôi phục.",
+        "submit": "Tiếp tục"
+      },
+
+      "security": {
+        "label": "Bảo mật",
+        "title": "Cấu hình bảo mật đăng nhập",
+        "description": "Cấu hình khoá đăng nhập và phát hiện bất thường.",
+        "longDescription": "Đặt ngưỡng cho số lần đăng nhập thất bại và mức phản ứng với các đăng nhập đáng nghi.",
+        "preset": {
+          "label": "Cấu hình mẫu",
+          "help": "Áp dụng giá trị mặc định cho mọi nhóm bên dưới. Bạn có thể tinh chỉnh sau khi chọn.",
+          "standard": "Tiêu chuẩn",
+          "standardDescription": "Mặc định cân bằng phù hợp với hầu hết đội ngũ.",
+          "strict": "Chặt",
+          "strictDescription": "Ngưỡng thấp hơn và thời gian khoá dài hơn.",
+          "lenient": "Lỏng",
+          "lenientDescription": "Ngưỡng cao hơn cho môi trường ít rủi ro."
+        },
+        "groups": {
+          "failedAttempts": {
+            "title": "Đăng nhập thất bại",
+            "description": "Số lần thất bại được phép trước khi khoá user hoặc chặn IP.",
+            "fields": {
+              "userMaxFailedAttempts": {
+                "label": "Số lần tối đa theo user",
+                "help": "Khoá user sau số lần thất bại này trong cửa sổ. Khoảng 3–20."
+              },
+              "userLockoutDurationSeconds": {
+                "label": "Thời gian khoá user (giây)",
+                "help": "Thời gian giữ user bị khoá. Khoảng 60–86400."
+              },
+              "ipMaxFailedAttempts": {
+                "label": "Số lần tối đa theo IP",
+                "help": "Chặn IP sau số lần thất bại này trong cửa sổ. Khoảng 5–100."
+              },
+              "ipLockoutDurationSeconds": {
+                "label": "Thời gian chặn IP (giây)",
+                "help": "Thời gian giữ IP bị chặn. Khoảng 60–86400."
+              },
+              "lockoutWindowSeconds": {
+                "label": "Cửa sổ trượt (giây)",
+                "help": "Cửa sổ đếm số lần thất bại. Khoảng 60–86400."
+              }
+            }
+          },
+          "geo": {
+            "title": "Bất thường địa lý",
+            "description": "Cảnh báo đăng nhập từ quốc gia user chưa từng đăng nhập.",
+            "fields": {
+              "geoAnomalyEnabled": {
+                "label": "Bật phát hiện bất thường địa lý"
+              }
+            },
+            "warningGeoipUnavailable": "GeoIP database chưa khả dụng trên instance này; phát hiện bất thường địa lý sẽ tạm tắt cho đến khi cài đặt."
+          },
+          "time": {
+            "title": "Bất thường thời gian",
+            "description": "Cảnh báo đăng nhập vào giờ user hiếm khi sử dụng.",
+            "fields": {
+              "timeAnomalyEnabled": {
+                "label": "Bật phát hiện bất thường theo giờ"
+              }
+            }
+          },
+          "device": {
+            "title": "Bất thường thiết bị",
+            "description": "Cảnh báo đăng nhập từ User-Agent / fingerprint thiết bị mới.",
+            "fields": {
+              "deviceAnomalyEnabled": {
+                "label": "Bật phát hiện bất thường thiết bị"
+              }
+            }
+          },
+          "anomalyAction": {
+            "title": "Hành động khi bất thường",
+            "description": "Hệ thống sẽ làm gì khi điểm bất thường vượt ngưỡng.",
+            "fields": {
+              "anomalyScoreThreshold": {
+                "label": "Ngưỡng điểm bất thường",
+                "help": "Khoảng 0.00–1.00. Mặc định 0.70."
+              },
+              "anomalyAction": {
+                "label": "Hành động",
+                "options": {
+                  "notify_only": "Chỉ thông báo",
+                  "lock": "Khoá tài khoản",
+                  "require_mfa": "Yêu cầu MFA"
+                },
+                "mfaDisabledHelp": "Module MFA chưa được cài đặt; tuỳ chọn này tạm thời không khả dụng."
+              }
+            }
+          },
+          "notifications": {
+            "title": "Thông báo",
+            "description": "Nơi gửi thông báo sự kiện bảo mật.",
+            "fields": {
+              "notifyChannels": {
+                "label": "Kênh",
+                "options": {
+                  "email": "Email",
+                  "webhook": "Webhook"
+                }
+              },
+              "webhookUrl": {
+                "label": "Webhook URL",
+                "placeholder": "https://example.com/lumibase/security"
+              }
+            }
+          }
+        },
+        "submit": "Tiếp tục"
+      },
+
+      "recovery": {
+        "label": "Khôi phục",
+        "title": "Lưu mã khôi phục",
+        "description": "Lưu mã backup cho trường hợp khẩn cấp.",
+        "longDescription": "Lưu các mã này ở nơi an toàn. Mỗi mã dùng một lần để khôi phục bootstrap admin nếu bạn mất mật khẩu hoặc đường dẫn admin.",
+        "codesLabel": "Mã backup",
+        "actions": {
+          "copy": "Sao chép mã",
+          "copied": "Đã sao chép",
+          "copyError": "Không thể sao chép tự động. Vui lòng chọn các mã ở trên và sao chép thủ công.",
+          "download": "Tải file .txt"
+        },
+        "confirmCheckbox": "Tôi đã lưu các mã backup này.",
+        "submit": "Hoàn tất cài đặt",
+        "submitting": "Đang hoàn tất…"
+      },
+
+      "done": {
+        "label": "Hoàn tất",
+        "title": "Cài đặt hoàn tất",
+        "description": "Cài đặt xong — hãy bookmark URL admin.",
+        "longDescription": "Instance LumiBase đã được khởi tạo. Hãy lưu URL admin bên dưới trước khi rời trang.",
+        "adminPathLabel": "Đường dẫn admin của bạn",
+        "copy": "Sao chép",
+        "copied": "Đã sao chép",
+        "copyAria": "Sao chép đường dẫn admin",
+        "copyStatus": "Đã sao chép đường dẫn admin vào clipboard.",
+        "copyError": "Không thể sao chép tự động. Vui lòng chọn đường dẫn ở trên và sao chép thủ công.",
+        "savePathReminder": "Hãy bookmark URL này. Nếu mất, bạn sẽ phải chạy luồng khôi phục bằng mã backup.",
+        "goToLogin": "Đến trang đăng nhập admin",
+        "resetWizard": "Đặt lại wizard (dev)",
+        "noAdminPath": {
+          "title": "Không có quá trình cài đặt",
+          "body": "Chúng tôi không tìm thấy quá trình cài đặt nào trong session trình duyệt này. Hãy chạy lại wizard từ đầu để cấu hình instance.",
+          "cta": "Quay lại cài đặt"
+        }
+      }
+    },
+
+    "buttons": {
+      "back": "Quay lại",
+      "next": "Tiếp theo",
+      "continue": "Tiếp tục",
+      "finish": "Hoàn tất cài đặt",
+      "cancel": "Huỷ",
+      "retry": "Thử lại"
+    },
+
+    "gate": {
+      "loading": "Đang kiểm tra trạng thái cài đặt",
+      "retry": {
+        "title": "Không thể kết nối đến máy chủ",
+        "body": "Không thể kiểm tra instance đã được cài đặt hay chưa. Hãy đảm bảo backend LumiBase đang chạy rồi thử lại.",
+        "button": "Thử lại"
+      },
+      "notFound": {
+        "code": "404",
+        "title": "Không tìm thấy trang",
+        "body": "Trang bạn đang tìm không tồn tại."
+      },
+      "tokenPrompt": {
+        "title": "Cần setup token",
+        "body": "Instance này được khởi động với LUMIBASE_REQUIRE_SETUP_TOKEN=true. Hãy dán setup token một lần được in trong log khởi động của CMS để tiếp tục.",
+        "label": "Setup token",
+        "submit": "Tiếp tục"
+      }
+    },
+
+    "errors": {
+      "validation": "Vui lòng sửa các trường được đánh dấu trước khi tiếp tục.",
+      "server": "Máy chủ trả về lỗi. Hãy thử lại hoặc kiểm tra log CMS.",
+      "network": "Không thể kết nối đến máy chủ. Hãy kiểm tra mạng và thử lại.",
+      "initialized": "Instance đã được cài đặt. Wizard không còn khả dụng.",
+      "tokenRequired": "Hãy dán setup token một lần từ log khởi động CMS.",
+      "tokenInvalid": "Setup token không hợp lệ. Hãy kiểm tra log CMS để lấy token mới nhất.",
+      "alreadyInitialized": "Instance này đã hoàn tất cài đặt.",
+      "setupInProgress": "Một tab khác đang chạy cài đặt. Hãy hoàn tất bên đó hoặc chờ vài giây.",
+      "fields": {
+        "email": {
+          "required": "Email là bắt buộc.",
+          "format": "Hãy nhập địa chỉ email hợp lệ."
+        },
+        "password": {
+          "required": "Mật khẩu là bắt buộc.",
+          "tooShort": "Mật khẩu phải có tối thiểu {{count}} ký tự.",
+          "missingClasses": "Mật khẩu phải có chữ thường, chữ hoa, chữ số và ký tự đặc biệt.",
+          "weak": "Hãy chọn mật khẩu được đánh giá \"Mạnh\" hoặc cao hơn."
+        },
+        "confirmPassword": {
+          "required": "Hãy xác nhận mật khẩu.",
+          "mismatch": "Mật khẩu không khớp."
+        },
+        "firstName": {
+          "required": "Tên là bắt buộc.",
+          "tooLong": "Tên quá dài."
+        },
+        "lastName": {
+          "required": "Họ là bắt buộc.",
+          "tooLong": "Họ quá dài."
+        },
+        "adminPath": {
+          "required": "Đường dẫn admin là bắt buộc.",
+          "invalidFormat": "Dùng chữ thường, chữ số và dấu gạch ngang. 4–64 ký tự sau dấu gạch chéo đầu.",
+          "predictable": "Đường dẫn này quá dễ đoán. Hãy chọn đường dẫn khác.",
+          "reserved": "Đường dẫn này xung đột với route hệ thống. Hãy chọn đường dẫn khác.",
+          "normalizeFailed": "Định dạng đường dẫn không hợp lệ."
+        },
+        "policy": {
+          "outOfRange": "Giá trị nằm ngoài khoảng cho phép.",
+          "userMaxFailedAttempts": "Phải nằm trong khoảng 3–20.",
+          "ipMaxFailedAttempts": "Phải tối thiểu 3 và tối đa 100.",
+          "duration": "Phải nằm trong khoảng 60–86400 giây.",
+          "anomalyScoreThreshold": "Phải nằm trong khoảng 0.00–1.00."
+        }
+      }
+    }
+  },
+
+  "recovery": {
+    "shared": {
+      "rateLimited": "Quá nhiều yêu cầu. Hãy thử lại sau vài phút.",
+      "genericError": "Đã có lỗi xảy ra. Hãy thử lại hoặc liên hệ quản trị viên."
+    },
+    "backupCode": {
+      "title": "Khôi phục bằng mã backup",
+      "subtitle": "Nhập email bootstrap admin và một trong 8 mã backup bạn đã lưu khi cài đặt.",
+      "emailLabel": "Email",
+      "codeLabel": "Mã backup",
+      "codePlaceholder": "XXXX-XXXX",
+      "submit": "Mở khoá tài khoản",
+      "submitting": "Đang xác minh…",
+      "errors": {
+        "invalid": "Email hoặc mã backup không khớp.",
+        "alreadyUsed": "Mã backup này đã được sử dụng."
+      },
+      "success": {
+        "title": "Tài khoản đã được mở khoá",
+        "body": "Tài khoản của bạn đã được mở khoá. Hãy dùng URL bên dưới để đăng nhập. Lưu lại — bạn sẽ cần lần sau.",
+        "adminPathLabel": "Đường dẫn admin",
+        "goToLogin": "Đến trang đăng nhập admin"
+      }
+    },
+    "forgotPath": {
+      "title": "Quên đường dẫn admin?",
+      "subtitle": "Nhập email bootstrap admin. Nếu khớp và email đã được cấu hình, chúng tôi sẽ gửi link khôi phục.",
+      "emailLabel": "Email",
+      "submit": "Gửi link khôi phục",
+      "submitting": "Đang gửi…",
+      "sent": "Nếu email khớp với bootstrap admin, link khôi phục đã được gửi đi.",
+      "linkToBackupCode": "Có mã backup? Sử dụng tại đây."
+    }
+  }
+}

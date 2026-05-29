@@ -25,7 +25,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 2.7 Viết unit test `apps/cms/src/modules/setup/__tests__/path-validator.test.ts` bảng input/expected cho regex hợp lệ, blacklist, reserved prefix, normalization edge case (whitespace, control chars, double slash); property test `normalize(normalize(x)) === normalize(x)` (Req 4.8; design §13.5, Property 11)
   - [x] 2.8 Viết integration test `apps/cms/src/__tests__/setup-flow.integration.test.ts` cover happy path setup + verify Audit_Log entry + verify second `/setup/state` trả `initialized`; verify duplicate concurrent setup race trả 404 hoặc 409 với 5 promise đồng thời (Req 1.5, 1.7; design §13.2, Property 1, 3)
 
-- [ ] 3. Studio scaffold cho Setup Wizard (no AppShell)
+- [x] 3. Studio scaffold cho Setup Wizard (no AppShell)
   - [x] 3.1 Refactor `apps/studio/src/router.tsx` tách `adminLayoutRoute` (component AppShell, chứa toàn bộ module hiện tại) khỏi `publicLayoutRoute` (component `BareLayout`, không AppShell); giữ nguyên route tree existing dưới adminLayout (Req 2.5; design §5.1)
   - [x] 3.2 Tạo `apps/studio/src/modules/setup/setup-layout.tsx` (BareLayout với progress indicator 5 bước) và `apps/studio/src/modules/setup/setup-state-gate.tsx` gọi `useQuery(['setup','state'])` + render 404 cứng khi `initialized`, retry UI khi network/5xx, SetupTokenPrompt khi yêu cầu token (Req 2.1, 2.2, 2.3, 2.8; design §5.1, §5.2)
   - [x] 3.3 Tạo Zod schemas `apps/studio/src/modules/setup/schemas/{account,admin-path,policy}.ts` khớp validation rules requirement (Req 3.1-3.5, 4.2-4.4, 6.3; design §5.5)
@@ -35,7 +35,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 3.7 Tạo `step-done.tsx` hiển thị adminPath + reminder save bookmark + link tới `${adminPath}/login` (Req 4.5; design §5.4)
   - [x] 3.8 Tạo `useCompleteSetup` mutation hook gọi `POST /api/v1/setup/complete`, on-success clear sessionStorage và navigate `/setup/done` (design §5.2)
   - [x] 3.9 Wiring routes mới `/setup`, `/setup/account`, `/setup/path`, `/setup/done` vào `publicLayoutRoute`; thêm guard logic redirect sang step thiếu nhất khi deep-link (Req 3.11; design §5.4, §11.2)
-  - [~] 3.10 Tạo i18n keys `apps/studio/src/locales/{en,vi}/setup.json` cho toàn bộ field, error, button text (design §5.6)
+  - [x] 3.10 Tạo i18n keys `apps/studio/src/locales/{en,vi}/setup.json` cho toàn bộ field, error, button text (design §5.6)
 
 ### Phase B — Custom Admin Path Guard
 
