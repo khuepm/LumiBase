@@ -68,6 +68,13 @@ export interface Variables {
   requestId: string;
   /** Runtime context providing cache, storage, database, search, queue, and media adapters. */
   runtime: RuntimeContext;
+  /**
+   * Internal response-type marker for observability/log enrichment.
+   * Currently used by `adminPathGuard` (admin-setup-wizard Req 5.2) to
+   * tag a request as serving the Studio HTML/asset bundle vs. a regular
+   * API response. Optional — most requests leave it unset.
+   */
+  responseType?: 'STUDIO_HTML';
 }
 
 export type AppEnv = {
