@@ -4,87 +4,9 @@ import { SignJWT } from 'jose';
 import { eq } from 'drizzle-orm';
 import { users, userSites } from '@lumibase/database';
 import type { AppEnv } from '../env';
+import { hashPassword, verifyPassword } from '../services/auth/password';
 
 export const authRouter = new Hono<AppEnv>();
-
-// Helper to hash password using PBKDF2 via Web Crypto API
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const passwordKey = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(password),
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits']
-  );
-  
-  const hashBuffer = await crypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt,
-      iterations: 100000,
-      hash: 'SHA-256'
-    },
-    passwordKey,
-    256 // 32 bytes
-  );
-
-  const hashArray = new Uint8Array(hashBuffer);
-  
-  const saltHex = Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join('');
-  const hashHex = Array.from(hashArray).map(b => b.toString(16).padStart(2, '0')).join('');
-  
-  return `pbkdf2$100000$${saltHex}$${hashHex}`;
-}
-
-// Helper to verify password
-async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
-  const parts = storedHash.split('$');
-  if (parts.length !== 4 || parts[0] !== 'pbkdf2') {
-    return false;
-  }
-  
-  const iterationsStr = parts[1];
-  const saltHex = parts[2];
-  const storedHashHex = parts[3];
-
-  if (!iterationsStr || !saltHex || !storedHashHex) {
-    return false;
-  }
-
-  const iterations = parseInt(iterationsStr, 10);
-  const encoder = new TextEncoder();
-  const saltMatches = saltHex.match(/.{1,2}/g);
-  if (!saltMatches) {
-    return false;
-  }
-  const salt = new Uint8Array(saltMatches.map(byte => parseInt(byte, 16)));
-  
-  const passwordKey = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(password),
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits']
-  );
-  
-  const hashBuffer = await crypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt,
-      iterations,
-      hash: 'SHA-256'
-    },
-    passwordKey,
-    256
-  );
-  
-  const hashArray = new Uint8Array(hashBuffer);
-  const hashHex = Array.from(hashArray).map(b => b.toString(16).padStart(2, '0')).join('');
-  
-  return hashHex === storedHashHex;
-}
 
 // Helper to sign Custom JWT (HS256)
 async function signCustomJwt(payload: any, secret: string): Promise<string> {
