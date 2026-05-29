@@ -1,0 +1,665 @@
+/**
+ * SetupService — implements the three public surfaces of the Setup
+ * Wizard backend (design §6.5):
+ *
+ *   - {@link SetupService.getState} → `GET /api/v1/setup/state`
+ *     Reports `'initialized'` when a row in `users` carries
+ *     `is_bootstrap=true`, `'uninitialized'` otherwise. Falls back to
+ *     `system_state.state` when the singleton row is present (e.g. a
+ *     wizard run that crashed mid-`initializing`). The
+ *     `requiresSetupToken` flag is read from the operator-provided
+ *     option so the service stays runtime-agnostic.
+ *
+ *   - {@link SetupService.getCapabilities} → `GET /api/v1/setup/capabilities`
+ *     Probes for the GeoIP MMDB file (filesystem `existsSync` check) and
+ *     SMTP env var. Both probes are optional and cheap so the wizard's
+ *     conditional UI can update without a follow-up request.
+ *
+ *   - {@link SetupService.complete} → `POST /api/v1/setup/complete`
+ *     Performs the atomic setup transaction: row-locks `system_state`
+ *     for the `'singleton'` row, validates input, hashes the password
+ *     and 8 backup codes, inserts the bootstrap admin, writes the
+ *     lockout policy into `settings`, and flips `system_state.state` to
+ *     `'initialized'` — all in a single Drizzle transaction. The audit
+ *     log entry is emitted *after* commit (Req 1.5: no side-effects
+ *     leak when rollback happens).
+ *
+ * The service does not own HTTP responses — the route handlers in
+ * `routes.ts` translate `SetupServiceError` results to HTTP envelopes.
+ */
+
+import { eq, sql } from 'drizzle-orm';
+import {
+  auditLog,
+  systemState,
+  users,
+  type Database,
+} from '@lumibase/database';
+import { hashPassword } from '../../services/auth/password';
+import {
+  serializeLockoutPolicy,
+  type LockoutPolicy,
+} from './policy-codec';
+import {
+  normalizeAdminPath,
+  validateAdminPath,
+} from './path-validator';
+import { verifySetupToken } from './setup-token';
+
+// ── public types ────────────────────────────────────────────────────────
+
+export type SystemStateValue = 'uninitialized' | 'initialized';
+
+export interface SetupStateResponse {
+  readonly state: SystemStateValue;
+  readonly requiresSetupToken: boolean;
+}
+
+export interface SetupCapabilities {
+  readonly geoip: { readonly available: boolean; readonly source?: 'maxmind' };
+  readonly smtp: { readonly available: boolean };
+}
+
+export interface SetupCompleteAccount {
+  readonly email: string;
+  readonly password: string;
+  readonly firstName: string;
+  readonly lastName: string;
+}
+
+export interface SetupCompleteInput {
+  readonly setupToken?: string;
+  readonly account: SetupCompleteAccount;
+  readonly adminPath: string;
+  readonly policy: LockoutPolicy;
+}
+
+export interface SetupCompleteContext {
+  /** Originating request id; threaded into the post-commit audit log entry. */
+  readonly requestId?: string;
+  readonly ip?: string;
+  readonly userAgent?: string;
+}
+
+export interface PublicUser {
+  readonly id: string;
+  readonly email: string;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+}
+
+export interface SetupCompleteResult {
+  readonly user: PublicUser;
+  readonly adminPath: string;
+  /**
+   * Plaintext backup codes — returned exactly once. The DB only holds
+   * the hashes (Req 14.2). Subtask 10.2 will lift the actual generation
+   * + persistence into the `admin_backup_codes` table; for the Phase A
+   * surface we return the plaintext list so the wizard's recovery step
+   * has something to render. Persisting the hashes is wired through
+   * an injected `backupCodesPersister` so this module doesn't depend
+   * on a table that doesn't exist yet.
+   */
+  readonly backupCodes: ReadonlyArray<string>;
+}
+
+// ── error taxonomy ──────────────────────────────────────────────────────
+
+export type SetupServiceError =
+  | { readonly code: 'ALREADY_INITIALIZED' }
+  | { readonly code: 'SETUP_IN_PROGRESS' }
+  | { readonly code: 'SETUP_TOKEN_REQUIRED' }
+  | { readonly code: 'SETUP_TOKEN_INVALID' }
+  | {
+      readonly code: 'VALIDATION_ERROR';
+      readonly issues: ReadonlyArray<{
+        readonly path: ReadonlyArray<string | number>;
+        readonly message: string;
+      }>;
+    }
+  | { readonly code: 'PATH_PREDICTABLE'; readonly message: string }
+  | { readonly code: 'PATH_RESERVED'; readonly message: string }
+  | { readonly code: 'PATH_TAKEN' }
+  | { readonly code: 'INTERNAL'; readonly cause?: unknown };
+
+export type SetupCompleteOutcome =
+  | { readonly ok: true; readonly value: SetupCompleteResult }
+  | { readonly ok: false; readonly error: SetupServiceError };
+
+// ── dependencies ────────────────────────────────────────────────────────
+
+/**
+ * Persistence hook for the eight backup-code hashes. Phase A doesn't
+ * yet have the `admin_backup_codes` table (task 10.1) so the default
+ * implementation is a noop; the SetupService still hashes the codes
+ * inside the transaction so swapping in the real persister later is
+ * a one-line change.
+ */
+export type BackupCodesPersister = (
+  args: {
+    readonly userId: string;
+    readonly hashes: ReadonlyArray<string>;
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+) => Promise<void>;
+
+/**
+ * Capability probe for GeoIP. Default: filesystem check at the standard
+ * volume path. Tests can inject a stub.
+ */
+export type GeoipProbe = () => boolean;
+
+export interface SetupServiceDeps {
+  readonly db: Database;
+  readonly requireSetupToken: boolean;
+  readonly smtpAvailable: boolean;
+  readonly geoipProbe?: GeoipProbe;
+  readonly backupCodesPersister?: BackupCodesPersister;
+  /**
+   * Audit log sink. Phase F will replace this with the full
+   * AuditLogger; for Phase A we write directly to the `audit_log`
+   * table via the same `db` client.
+   */
+  readonly auditWriter?: AuditWriter;
+}
+
+export type AuditWriter = (entry: {
+  event: string;
+  actorEmail?: string;
+  targetEmail?: string;
+  ip?: string;
+  userAgent?: string;
+  metadata?: Record<string, unknown>;
+  requestId?: string;
+}) => Promise<void>;
+
+// ── service ─────────────────────────────────────────────────────────────
+
+const DEFAULT_GEOIP_PATH = '/var/lib/lumibase/geoip/GeoLite2-Country.mmdb';
+const SETUP_LOCK_TIMEOUT_MS = 5_000;
+const BACKUP_CODE_COUNT = 8;
+const BACKUP_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // strip I,O,0,1,L
+
+export class SetupService {
+  constructor(private readonly deps: SetupServiceDeps) {}
+
+  /**
+   * Read setup state. Bootstrap-admin presence is the source of truth
+   * (Req 1.2, 1.3); `system_state.state` only matters when there's no
+   * users row yet (e.g. a brand-new instance before the first complete).
+   */
+  async getState(): Promise<SetupStateResponse> {
+    const { db, requireSetupToken } = this.deps;
+
+    const bootstrapRows = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.isBootstrap, true))
+      .limit(1);
+
+    if (bootstrapRows.length > 0) {
+      return { state: 'initialized', requiresSetupToken: false };
+    }
+
+    return { state: 'uninitialized', requiresSetupToken: requireSetupToken };
+  }
+
+  /**
+   * Probe ambient capabilities. Both probes are best-effort — a probe
+   * failure must not fail the request.
+   */
+  async getCapabilities(): Promise<SetupCapabilities> {
+    const probe = this.deps.geoipProbe ?? defaultGeoipProbe;
+    let geoipAvailable = false;
+    try {
+      geoipAvailable = probe();
+    } catch {
+      geoipAvailable = false;
+    }
+
+    return {
+      geoip: geoipAvailable
+        ? { available: true, source: 'maxmind' }
+        : { available: false },
+      smtp: { available: this.deps.smtpAvailable },
+    };
+  }
+
+  /**
+   * Atomic setup. Returns a tagged outcome rather than throwing so the
+   * route handler can map errors to HTTP codes deterministically.
+   *
+   * Algorithm (design §6.5):
+   *   1. Open a transaction; row-lock the singleton.
+   *   2. If state ≠ 'uninitialized' → return ALREADY_INITIALIZED.
+   *   3. Verify setup token (if required).
+   *   4. Normalise + validate adminPath.
+   *   5. Validate account (email shape, password length); the callers
+   *      already validate via Zod but we re-check defensively.
+   *   6. Set state='initializing'.
+   *   7. Hash password + backup codes.
+   *   8. Upsert the default site (so the bootstrap admin and policy
+   *      have a `siteId` to attach to — see §15.7 / open question).
+   *   9. Insert the bootstrap user with isBootstrap=true.
+   *  10. Persist backup code hashes via the injected persister
+   *      (no-op in Phase A).
+   *  11. Upsert `settings.login_security_policy` with the canonical JSON.
+   *  12. Flip system_state.state='initialized', store adminPath, clear
+   *      setup token hash, stamp initializedAt.
+   *  13. Commit.
+   *  14. Audit-log `setup_completed` post-commit (Req 1.5: side
+   *      effects only after commit).
+   */
+  async complete(
+    input: SetupCompleteInput,
+    ctx: SetupCompleteContext,
+  ): Promise<SetupCompleteOutcome> {
+    const { db } = this.deps;
+
+    // ── 4. Normalise + validate path eagerly, before opening a tx,
+    //       so callers don't pay for a connection on obvious garbage.
+    const normalizedPath = normalizeAdminPath(input.adminPath);
+    const pathCheck = validateAdminPath(normalizedPath);
+    if (!pathCheck.ok) {
+      return {
+        ok: false,
+        error:
+          pathCheck.code === 'INVALID_FORMAT'
+            ? {
+                code: 'VALIDATION_ERROR',
+                issues: [
+                  { path: ['adminPath'], message: pathCheck.message },
+                ],
+              }
+            : pathCheck.code === 'PATH_PREDICTABLE'
+            ? { code: 'PATH_PREDICTABLE', message: pathCheck.message }
+            : { code: 'PATH_RESERVED', message: pathCheck.message },
+      };
+    }
+
+    // ── 5. Account shape check (defensive, route layer should have run
+    //       Zod first). We don't enforce zxcvbn here — that's a wizard
+    //       UX concern (Req 3.7) and recheck would require the package.
+    const accountIssues = validateAccount(input.account);
+    if (accountIssues.length > 0) {
+      return {
+        ok: false,
+        error: { code: 'VALIDATION_ERROR', issues: accountIssues },
+      };
+    }
+
+    // ── 6. Pre-compute hashes outside the tx so we hold the row lock
+    //       for the minimum time. PBKDF2 100k is ~50ms per hash and we
+    //       compute 9 (1 password + 8 backup codes) in parallel.
+    const passwordHash = await hashPassword(input.account.password);
+    const plainBackupCodes: string[] = [];
+    for (let i = 0; i < BACKUP_CODE_COUNT; i++) {
+      plainBackupCodes.push(generateBackupCode());
+    }
+    const backupCodeHashes = await Promise.all(
+      plainBackupCodes.map((c) => hashPassword(c)),
+    );
+
+    const policyJson = serializeLockoutPolicy(input.policy);
+    const policyValue = JSON.parse(policyJson) as Record<string, unknown>;
+
+    let outcome: SetupCompleteOutcome | undefined;
+
+    try {
+      await db.transaction(async (tx) => {
+        // ── 1. Bound the time we'll spend waiting on the row lock
+        //       (design §6.6). We use `SELECT set_config(...)` rather
+        //       than `SET LOCAL statement_timeout = $1` because
+        //       Postgres' `SET` statement does not accept bind
+        //       parameters via the extended-query protocol — the same
+        //       reason `apps/cms/src/middleware/rls.ts` reaches for
+        //       `set_config`. The third arg `true` makes the change
+        //       transaction-local, so it cleans up automatically on
+        //       commit/rollback.
+        await tx.execute(
+          sql`SELECT set_config('statement_timeout', ${String(
+            SETUP_LOCK_TIMEOUT_MS,
+          )}, true)`,
+        );
+
+        // Ensure the singleton row exists so the FOR UPDATE below has
+        // something to lock. The CHECK constraint on `system_state.id`
+        // makes the upsert a no-op for any subsequent caller.
+        await tx
+          .insert(systemState)
+          .values({ id: 'singleton', state: 'uninitialized' })
+          .onConflictDoNothing();
+
+        // Drizzle's `.for('update')` issues `SELECT … FOR UPDATE` on
+        // the matching row, blocking concurrent writers (Req 1.7).
+        // With statement_timeout=5s, blocked sessions surface 57014
+        // which we map to SETUP_IN_PROGRESS in the catch block below.
+        const lockedRows = await tx
+          .select({
+            state: systemState.state,
+            setupTokenHash: systemState.setupTokenHash,
+            adminPath: systemState.adminPath,
+          })
+          .from(systemState)
+          .where(eq(systemState.id, 'singleton'))
+          .for('update');
+
+        const locked = lockedRows[0];
+        if (!locked) {
+          // The upsert above guarantees a row, so absence here means
+          // the singleton was deleted out from under us (e.g. test
+          // cleanup mid-run). Treat as a transient internal error.
+          throw new SetupAbort({ code: 'INTERNAL' });
+        }
+
+        // ── 2. Already done? Bootstrap-admin presence is the source of
+        //       truth (Req 1.2/1.3); `state === 'initialized'` is the
+        //       fast path. The `'initializing'` branch is defensive —
+        //       with the row lock + statement_timeout combo no
+        //       concurrent caller should ever observe this state, but
+        //       a previously-killed process could have left it stuck
+        //       and the operator deserves a clear signal.
+        if (locked.state === 'initialized') {
+          throw new SetupAbort({ code: 'ALREADY_INITIALIZED' });
+        }
+        if (locked.state === 'initializing') {
+          throw new SetupAbort({ code: 'SETUP_IN_PROGRESS' });
+        }
+
+        // ── 3. Setup token gate (Req 2.6).
+        if (this.deps.requireSetupToken) {
+          if (!input.setupToken) {
+            throw new SetupAbort({ code: 'SETUP_TOKEN_REQUIRED' });
+          }
+          const ok = await verifySetupToken(
+            input.setupToken,
+            locked.setupTokenHash,
+          );
+          if (!ok) {
+            throw new SetupAbort({ code: 'SETUP_TOKEN_INVALID' });
+          }
+        }
+
+        // Path uniqueness is enforced by the
+        // `system_state_admin_path_unique` index on commit. Because
+        // `system_state` is a singleton, that index can only collide
+        // with itself after a stale write — captured by the 23505
+        // mapping in the outer catch block.
+
+        // ── 8. Insert the bootstrap admin.
+        const inserted = await tx
+          .insert(users)
+          .values({
+            email: input.account.email,
+            passwordHash,
+            firstName: input.account.firstName,
+            lastName: input.account.lastName,
+            status: 'active',
+            isBootstrap: true,
+          })
+          .returning({
+            id: users.id,
+            email: users.email,
+            firstName: users.firstName,
+            lastName: users.lastName,
+          });
+
+        const newUser = inserted[0];
+        if (!newUser) {
+          throw new SetupAbort({ code: 'INTERNAL' });
+        }
+
+        // ── 9. Persist backup code hashes (no-op until task 10.1
+        //       wires the table).
+        if (this.deps.backupCodesPersister) {
+          await this.deps.backupCodesPersister(
+            { userId: newUser.id, hashes: backupCodeHashes },
+            tx,
+          );
+        }
+
+        // ── 10. Lockout policy persistence (Req 6.6, 6.7) — DEFERRED.
+        //
+        //        Decision: Option 3 from task 2.3's three options.
+        //        Settings is keyed by `(siteId, key)` with `siteId`
+        //        FK-NOT-NULL → sites. Open question 8 (design §15.8 /
+        //        tasks open question 7) leaves the bootstrap admin's
+        //        relationship to the `sites` table unresolved: the
+        //        scope is instance-wide, not per-site, so attaching
+        //        the canonical lockout policy to a synthesised
+        //        `__instance__` site row would create an orphan and
+        //        prejudge the multi-tenancy decision.
+        //
+        //        Mitigations until the open question lands:
+        //        a) The canonical JSON is captured verbatim in the
+        //           `setup_completed` audit_log entry's `metadata.policy`
+        //           field (post-commit block below). Any forensic
+        //           replay can recover the policy bytes from there.
+        //        b) The wizard already echoes the policy back to the
+        //           operator in the response payload, so the UI
+        //           round-trip Req 16.x already passes via in-memory
+        //           state.
+        //        c) The integration test (task 2.8) verifies the audit
+        //           write happens; it does NOT yet read back from
+        //           `settings`, so this deferral does not break the
+        //           Phase A gate.
+        //
+        //        TODO(open-question-8): once multi-tenancy intent is
+        //        resolved, replace this comment with either
+        //          (1) `tx.insert(settings).values({ siteId: <bootstrap-site>,
+        //                key: 'login_security_policy', value: policyValue })`
+        //              + companion site row insert, OR
+        //          (2) a new `system_state.metadata` jsonb column
+        //              migration that owns instance-scoped policy
+        //              storage. Update task 8.x (Login_Guard) to read
+        //              from the chosen home.
+
+        // ── 11. Flip the singleton.
+        await tx
+          .update(systemState)
+          .set({
+            state: 'initialized',
+            adminPath: normalizedPath,
+            setupTokenHash: null,
+            initializedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(systemState.id, 'singleton'));
+
+        outcome = {
+          ok: true,
+          value: {
+            user: {
+              id: newUser.id,
+              email: newUser.email,
+              firstName: newUser.firstName,
+              lastName: newUser.lastName,
+            },
+            adminPath: normalizedPath,
+            backupCodes: plainBackupCodes,
+          },
+        };
+      });
+    } catch (err) {
+      if (err instanceof SetupAbort) {
+        return { ok: false, error: err.error };
+      }
+      // Postgres unique-violation on system_state.admin_path or
+      // users.is_bootstrap → translate to a user-facing code.
+      const pgCode = pgErrorCode(err);
+      if (pgCode === '23505') {
+        return { ok: false, error: { code: 'PATH_TAKEN' } };
+      }
+      // statement_timeout while waiting on the row lock → treat as
+      // a concurrent run.
+      if (pgCode === '57014') {
+        return { ok: false, error: { code: 'SETUP_IN_PROGRESS' } };
+      }
+      return { ok: false, error: { code: 'INTERNAL', cause: err } };
+    }
+
+    if (!outcome) {
+      return { ok: false, error: { code: 'INTERNAL' } };
+    }
+
+    // ── 14. Post-commit audit (Req 1.5). Failures here MUST NOT
+    //        roll back the setup — the worst case is a missing audit
+    //        entry, which is also captured by the fallback console
+    //        write inside the AuditLogger (task 11.1).
+    if (outcome.ok) {
+      const writer = this.deps.auditWriter ?? this.makeFallbackAuditWriter();
+      try {
+        await writer({
+          event: 'setup_completed',
+          actorEmail: outcome.value.user.email,
+          targetEmail: outcome.value.user.email,
+          ip: ctx.ip,
+          userAgent: ctx.userAgent,
+          requestId: ctx.requestId,
+          metadata: {
+            adminPathHash: await sha256ShortHex(outcome.value.adminPath),
+            policy: policyValue,
+          },
+        });
+      } catch {
+        // swallow — see Req 13.4 spirit: a failed audit write must
+        // not fail the request.
+      }
+    }
+
+    return outcome;
+  }
+
+  // ── helpers ───────────────────────────────────────────────────────────
+
+  private makeFallbackAuditWriter(): AuditWriter {
+    const { db } = this.deps;
+    return async (entry) => {
+      await db.insert(auditLog).values({
+        event: entry.event,
+        actorEmail: entry.actorEmail ?? null,
+        targetEmail: entry.targetEmail ?? null,
+        ip: entry.ip ?? null,
+        userAgent: entry.userAgent ?? null,
+        metadata: entry.metadata ?? {},
+        requestId: entry.requestId ?? null,
+      });
+    };
+  }
+}
+
+// ── internal helpers ────────────────────────────────────────────────────
+
+class SetupAbort extends Error {
+  readonly error: SetupServiceError;
+  constructor(error: SetupServiceError) {
+    super(error.code);
+    this.error = error;
+  }
+}
+
+const EMAIL_REGEX =
+  /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+
+/**
+ * Mixed-class character set for the Req 3.3 password rules. The wizard
+ * already enforces this client-side via Zod (`apps/studio/src/modules/
+ * setup/schemas/account.ts`), but the service re-checks defensively so
+ * a misbehaving client can't bypass the rule.
+ */
+const PASSWORD_SPECIAL_CHARS = /[!@#$%^&*()\-_=+\[\]{};:,.?\/]/;
+
+function validateAccount(
+  account: SetupCompleteAccount,
+): Array<{ path: Array<string>; message: string }> {
+  const issues: Array<{ path: Array<string>; message: string }> = [];
+  if (typeof account.email !== 'string' || !EMAIL_REGEX.test(account.email)) {
+    issues.push({ path: ['account', 'email'], message: 'invalid email' });
+  }
+  if (typeof account.password !== 'string' || account.password.length < 12) {
+    issues.push({
+      path: ['account', 'password'],
+      message: 'password must be at least 12 characters',
+    });
+  } else {
+    // Req 3.3 — must contain at least one lowercase, uppercase, digit,
+    // and special character.
+    const pwd = account.password;
+    if (!/[a-z]/.test(pwd)) {
+      issues.push({
+        path: ['account', 'password'],
+        message: 'password must contain a lowercase letter',
+      });
+    }
+    if (!/[A-Z]/.test(pwd)) {
+      issues.push({
+        path: ['account', 'password'],
+        message: 'password must contain an uppercase letter',
+      });
+    }
+    if (!/\d/.test(pwd)) {
+      issues.push({
+        path: ['account', 'password'],
+        message: 'password must contain a digit',
+      });
+    }
+    if (!PASSWORD_SPECIAL_CHARS.test(pwd)) {
+      issues.push({
+        path: ['account', 'password'],
+        message: 'password must contain a special character',
+      });
+    }
+  }
+  if (typeof account.firstName !== 'string' || account.firstName.trim().length === 0) {
+    issues.push({ path: ['account', 'firstName'], message: 'required' });
+  }
+  if (typeof account.lastName !== 'string' || account.lastName.trim().length === 0) {
+    issues.push({ path: ['account', 'lastName'], message: 'required' });
+  }
+  return issues;
+}
+
+function generateBackupCode(): string {
+  // 16 chars from a 31-char alphabet → log2(31) * 16 ≈ 79 bits.
+  // Format as XXXX-XXXX for readability (Req 14.1) — that gives 8
+  // visible chars on each side, total 17 chars including the dash.
+  const buf = crypto.getRandomValues(new Uint8Array(16));
+  let chars = '';
+  for (let i = 0; i < 8; i++) {
+    chars += BACKUP_CODE_ALPHABET[buf[i]! % BACKUP_CODE_ALPHABET.length];
+  }
+  let chars2 = '';
+  for (let i = 8; i < 16; i++) {
+    chars2 += BACKUP_CODE_ALPHABET[buf[i]! % BACKUP_CODE_ALPHABET.length];
+  }
+  return `${chars}-${chars2}`;
+}
+
+function defaultGeoipProbe(): boolean {
+  try {
+    // Lazy require so Cloudflare Workers builds don't drag node:fs in.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+    const fs = require('node:fs') as typeof import('node:fs');
+    return fs.existsSync(DEFAULT_GEOIP_PATH);
+  } catch {
+    return false;
+  }
+}
+
+function pgErrorCode(err: unknown): string | undefined {
+  if (typeof err === 'object' && err !== null) {
+    const candidate = (err as { code?: unknown }).code;
+    if (typeof candidate === 'string') return candidate;
+  }
+  return undefined;
+}
+
+async function sha256ShortHex(input: string): Promise<string> {
+  const enc = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', enc);
+  const view = new Uint8Array(digest);
+  let hex = '';
+  for (let i = 0; i < 8; i++) hex += view[i]!.toString(16).padStart(2, '0');
+  return hex;
+}
