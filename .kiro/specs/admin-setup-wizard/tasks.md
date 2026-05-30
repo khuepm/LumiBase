@@ -115,12 +115,12 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 11.3 Tạo `apps/cms/src/modules/audit/rotator.ts` với `rotate()` xóa rows `audit_log` và `login_attempts` cũ hơn `LUMIBASE_AUDIT_RETENTION_DAYS` (default 90, range 1-3650); trigger qua cron 1h hoặc khi count >10,000 (throttle 1/h) (Req 15.5; design §10.2)
   - [x] 11.4 Cho self-hosted Node: thêm `node-cron` schedule trong `apps/cms/src/serve.ts` chạy `auditRotator.rotate()` mỗi giờ; cho Workers: dùng Cloudflare Cron Triggers route handler
 
-- [ ] 12. Audit log query và export API
+- [x] 12. Audit log query và export API
   - [x] 12.1 Tạo `apps/cms/src/modules/audit/routes.ts` với `GET /admin/security/audit-log` cursor-based pagination (cursor base64 `${ts}|${id}`), filter `event`, `email` (lowercase normalize), `from`, `to` (validate ≤366 ngày, from<to), limit 1-100 default 50; budget P95 ≤2s (Req 15.4; design §10.3)
   - [x] 12.2 Mở rộng routes với `GET /admin/security/audit-log/export` streaming NDJSON via Hono `c.body(new ReadableStream(...))` pull-based, batch 500 row; cap 100,000 rows / ≤366 ngày, vượt → 413 EXPORT_TOO_LARGE (Req 15.6; design §10.4)
   - [x] 12.3 Mount routes audit dưới `/api/v1/admin/security` qua auth middleware role admin
   - [x] 12.4 Mở rộng Studio module `apps/studio/src/modules/settings/activity-page.tsx` thêm tab "Security audit" gọi `/audit-log` với filter UI (event dropdown, email input, date range picker), nút "Export NDJSON" download blob (Req 15.4, 15.6; design §10.3)
-  - [~] 12.5 Viết integration test `apps/cms/src/__tests__/audit-log.integration.test.ts` cover write event → query trả entry; cover retention rotation xóa rows cũ; cover export streaming với 1000 row mock (Req 15.1, 15.4, 15.5, 15.6; design §13.2, Property 10)
+  - [x] 12.5 Viết integration test `apps/cms/src/__tests__/audit-log.integration.test.ts` cover write event → query trả entry; cover retention rotation xóa rows cũ; cover export streaming với 1000 row mock (Req 15.1, 15.4, 15.5, 15.6; design §13.2, Property 10)
 
 
 ## Task Dependency Graph
