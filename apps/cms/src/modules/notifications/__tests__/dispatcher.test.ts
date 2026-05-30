@@ -3,6 +3,7 @@ import {
   createNotificationDispatcher,
   defaultNotificationAuditWriter,
   InProcessNotificationDispatcher,
+  DRAIN_MAX_WALLCLOCK_MS,
   MAX_ATTEMPTS,
   RATE_LIMIT_TTL_MS,
   TICK_INTERVAL_MS,
@@ -137,6 +138,9 @@ describe('dispatcher tunables', () => {
     expect(TICK_INTERVAL_MS).toBe(250);
     expect(MAX_ATTEMPTS).toBe(3);
     expect(RATE_LIMIT_TTL_MS).toBe(60_000);
+    // Drain budget sits comfortably under the ~30s Worker ceiling.
+    expect(DRAIN_MAX_WALLCLOCK_MS).toBe(25_000);
+    expect(DRAIN_MAX_WALLCLOCK_MS).toBeLessThan(30_000);
   });
 });
 
@@ -510,7 +514,153 @@ describe('dispatch — rate-limit expiry + lazy eviction (design §9.5)', () => 
   });
 });
 
-// ── 7. 250ms tick mechanism (design §9.4) ─────────────────────────────
+// ── 7. drain — Workers waitUntil path (task 9.6, Req 13.4) ────────────
+
+describe('drain — bounded queue drain for Workers (task 9.6)', () => {
+  /**
+   * drain() walks the queue itself (no setInterval), honouring the
+   * 1s/2s backoff by *actually waiting* between ticks. We drive it
+   * with vi fake timers so the real `setTimeout`-backed sleep helper
+   * resolves deterministically, while the dispatcher clock is the
+   * faked system time so backoff scheduling and the sleep agree.
+   *
+   * **Validates: Requirements 13.4** (delivery best-effort; design §9.4)
+   */
+
+  it('drains a ready queue to completion without waiting', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const email = new FakeChannel('email', [OK]);
+    const webhook = new FakeChannel('webhook', [OK]);
+    const dispatcher = new InProcessNotificationDispatcher({
+      channels: [email, webhook],
+    });
+
+    await dispatcher.dispatch(
+      'anomaly_triggered',
+      ['email', 'webhook'],
+      basePayload,
+    );
+    expect(dispatcher.pendingCount).toBe(2);
+
+    // Both tasks are due immediately → drain ticks once and empties.
+    const done = dispatcher.drain();
+    await vi.runAllTimersAsync();
+    await done;
+
+    expect(email.callCount).toBe(1);
+    expect(webhook.callCount).toBe(1);
+    expect(dispatcher.pendingCount).toBe(0);
+  });
+
+  it('sleeps out the 1s/2s backoff then drains a flaky task to success', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    // Fails twice (retryable) then succeeds on the third attempt.
+    const webhook = new FakeChannel('webhook', [RETRYABLE, RETRYABLE, OK]);
+    const { entries, writer } = auditSink();
+    const dispatcher = new InProcessNotificationDispatcher({
+      channels: [webhook],
+      audit: writer,
+    });
+
+    await dispatcher.dispatch('user_locked', ['webhook'], basePayload);
+
+    const done = dispatcher.drain();
+    // Walk all scheduled sleeps (1s then 2s) to completion.
+    await vi.runAllTimersAsync();
+    await done;
+
+    // Three sends: t=0 (fail), t=1s (fail), t=3s (ok).
+    expect(webhook.callCount).toBe(3);
+    expect(dispatcher.pendingCount).toBe(0);
+    // Delivered before the cap → no failure audit.
+    expect(entries).toEqual([]);
+  });
+
+  it('drains a permanently-flaky task to the MAX_ATTEMPTS drop + audit', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const webhook = new FakeChannel('webhook', [RETRYABLE]);
+    const { entries, writer } = auditSink();
+    const dispatcher = new InProcessNotificationDispatcher({
+      channels: [webhook],
+      audit: writer,
+    });
+
+    await dispatcher.dispatch('ip_blocked', ['webhook'], basePayload);
+
+    const done = dispatcher.drain();
+    await vi.runAllTimersAsync();
+    await done;
+
+    expect(webhook.callCount).toBe(MAX_ATTEMPTS);
+    expect(dispatcher.pendingCount).toBe(0);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toEqual({
+      event: 'notification_delivery_failed',
+      securityEvent: 'ip_blocked',
+      email: 'admin@example.com',
+      channel: 'webhook',
+      error: 'webhook-503',
+    });
+  });
+
+  it('returns immediately when the queue is empty', async () => {
+    const clock = makeClock(0);
+    const dispatcher = createNotificationDispatcher({ now: clock.now });
+    // Nothing queued — must resolve without scheduling any timer.
+    await expect(dispatcher.drain()).resolves.toBeUndefined();
+  });
+
+  it('stops draining once the wall-clock budget is exhausted (leaves the rest queued)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    // Always retryable → without a budget this would loop ~3s per
+    // task; the tiny budget forces an early bail with work still
+    // queued (the accepted Workers limitation, design §9.4).
+    const webhook = new FakeChannel('webhook', [RETRYABLE]);
+    const dispatcher = new InProcessNotificationDispatcher({
+      channels: [webhook],
+    });
+
+    await dispatcher.dispatch('user_locked', ['webhook'], basePayload);
+
+    // Budget shorter than the first 1s backoff: one tick fires
+    // (t=0), the task reschedules to t=1s, then the drain sees the
+    // soonest attempt is past the deadline and bails.
+    const done = dispatcher.drain({ maxWallclockMs: 500 });
+    await vi.runAllTimersAsync();
+    await done;
+
+    // Sent once, then left queued — budget stopped further retries.
+    expect(webhook.callCount).toBe(1);
+    expect(dispatcher.pendingCount).toBe(1);
+  });
+
+  it('never throws even if the audit writer throws (detached in waitUntil)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const email = new FakeChannel('email', [PERMANENT]);
+    const dispatcher = new InProcessNotificationDispatcher({
+      channels: [email],
+      audit: () => {
+        throw new Error('audit-sink-down');
+      },
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await dispatcher.dispatch('anomaly_lock', ['email'], basePayload);
+
+    const done = dispatcher.drain();
+    await vi.runAllTimersAsync();
+    // A throwing audit sink must not reject the drain promise.
+    await expect(done).resolves.toBeUndefined();
+    expect(dispatcher.pendingCount).toBe(0);
+  });
+});
+
+// ── 8. 250ms tick mechanism (design §9.4) ─────────────────────────────
 
 describe('start/stop — 250ms background tick', () => {
   it('drains queued tasks on the timer cadence and stops cleanly', async () => {

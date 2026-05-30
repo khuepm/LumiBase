@@ -137,6 +137,26 @@ export const MAX_ATTEMPTS = 3;
  */
 export const RATE_LIMIT_TTL_MS = 60_000;
 
+/**
+ * Default wall-clock budget (ms) for a single {@link
+ * InProcessNotificationDispatcher.drain} call on the Cloudflare
+ * Workers runtime (task 9.6 / design §9.4).
+ *
+ * Workers tear a request's execution context down after roughly 30s,
+ * even when work is kept alive via `ctx.waitUntil(...)`. Because the
+ * retry/backoff schedule uses *real* 1s/2s waits between ticks, a
+ * drain that walks a task all the way to the {@link MAX_ATTEMPTS} cap
+ * spends ~3s of wall-clock per task before giving up. We cap the
+ * whole drain at 25s — comfortably under the ~30s ceiling so the
+ * promise resolves (or is bounded) before the runtime would kill it,
+ * with headroom for the final `processTick` to complete. Any task
+ * still queued when the budget is exhausted is simply left in the
+ * in-memory queue; on Workers that queue dies with the isolate, which
+ * is the accepted limitation the design flags ("chấp nhận giới hạn
+ * worker execution (30s)").
+ */
+export const DRAIN_MAX_WALLCLOCK_MS = 25_000;
+
 // ── Audit contract ─────────────────────────────────────────────────────
 
 /**
@@ -517,6 +537,104 @@ export class InProcessNotificationDispatcher
   }
 
   /**
+   * Drain the queue to completion, honouring the retry/backoff
+   * schedule, bounded by a wall-clock budget (Cloudflare Workers
+   * runtime — task 9.6 / Req 13.4; design §9.4).
+   *
+   * Where {@link start} hosts an open-ended `setInterval` for the
+   * long-running Node process, Workers have no background loop: the
+   * isolate is torn down once the response is returned unless work is
+   * explicitly kept alive via `ctx.waitUntil(...)`. This method is
+   * what that `waitUntil` runs — it walks the queue itself so the
+   * queued deliveries survive past the HTTP response, accepting the
+   * ~30s Worker execution ceiling the design flags.
+   *
+   * Behaviour:
+   *
+   *   - Repeatedly calls {@link processTick} until the queue is empty
+   *     ({@link pendingCount} === 0) **or** the `maxWallclockMs`
+   *     budget is exhausted. Whatever remains queued when the budget
+   *     runs out is left in place (on Workers it dies with the
+   *     isolate — the accepted limitation).
+   *   - Between ticks it **actually waits**. The retry backoff uses
+   *     real 1s/2s delays (`nextAttemptAt` is a real wall-clock), so
+   *     a busy-loop would burn CPU and the Worker budget without
+   *     letting any backoff elapse. Instead we sleep until the
+   *     soonest pending `nextAttemptAt` (clamped to the remaining
+   *     budget), so the 1s/2s schedule is honoured without spinning.
+   *   - If every pending task is already due (`nextAttemptAt <= now`)
+   *     the next tick runs immediately with no sleep.
+   *   - **Never throws.** It runs detached inside `waitUntil`, where
+   *     an unhandled rejection has no caller to catch it, so any
+   *     error is swallowed and logged via the established structured
+   *     `console.warn` pattern (design §10.1). A best-effort security
+   *     notification must never crash the runtime.
+   *
+   * @param options.now            Clock source; defaults to the
+   *   dispatcher's injected clock. Injected so tests can drive the
+   *   schedule deterministically with fake timers.
+   * @param options.maxWallclockMs Wall-clock cap; defaults to
+   *   {@link DRAIN_MAX_WALLCLOCK_MS} (25s).
+   */
+  async drain(options: {
+    now?: () => number;
+    maxWallclockMs?: number;
+  } = {}): Promise<void> {
+    const clock = options.now ?? this.now;
+    const budgetMs = options.maxWallclockMs ?? DRAIN_MAX_WALLCLOCK_MS;
+    const deadline = clock() + budgetMs;
+
+    try {
+      // Keep draining while there's work AND budget. The loop body
+      // either ticks (when something is due) or sleeps until the next
+      // task is due, so each iteration makes progress or waits.
+      while (this.pending.length > 0) {
+        const now = clock();
+        if (now >= deadline) break;
+
+        const soonest = this.earliestNextAttemptAt();
+        // `soonest` is non-null because pending.length > 0.
+        if (soonest !== null && soonest > now) {
+          // Nothing due yet — sleep until the soonest task is ready,
+          // but never past the budget deadline.
+          const sleepUntil = Math.min(soonest, deadline);
+          const delayMs = sleepUntil - now;
+          if (delayMs > 0) await sleep(delayMs);
+          // If we only slept up to the deadline (task still not due),
+          // the next loop check will see `now >= deadline` and break.
+          if (sleepUntil >= deadline && soonest > deadline) break;
+        }
+
+        // At least one task is (now) due — process a tick.
+        await this.processTick(clock());
+      }
+    } catch (err) {
+      // Detached in waitUntil — no caller to bubble to. Log + swallow.
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[notifications] drain aborted on unexpected error',
+        errorMessage(err),
+      );
+    }
+  }
+
+  /**
+   * Earliest `nextAttemptAt` across all pending tasks, or `null` when
+   * the queue is empty. Lets {@link drain} sleep exactly until the
+   * next task is due rather than busy-polling, so the 1s/2s backoff is
+   * honoured without spinning the CPU (or the Worker budget).
+   */
+  private earliestNextAttemptAt(): number | null {
+    let min: number | null = null;
+    for (const task of this.pending) {
+      if (min === null || task.nextAttemptAt < min) {
+        min = task.nextAttemptAt;
+      }
+    }
+    return min;
+  }
+
+  /**
    * Send a task, normalising an unexpected throw into a retryable
    * {@link DeliveryResult}. The {@link NotificationChannelAdapter}
    * contract says expected failures round-trip through the result and
@@ -588,4 +706,16 @@ function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message.slice(0, 256);
   if (typeof err === 'string') return err.slice(0, 256);
   return 'unknown-error';
+}
+
+/**
+ * Resolve after `ms` milliseconds. A thin promisified `setTimeout`
+ * used by {@link InProcessNotificationDispatcher.drain} to wait out a
+ * task's backoff between ticks without busy-looping. Leak-free: the
+ * timer resolves exactly once and holds no reference after firing.
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

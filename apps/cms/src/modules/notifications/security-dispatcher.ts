@@ -64,6 +64,7 @@
  * Validates: Requirements 13.1 — see also design §6.3, §9.4.
  */
 
+import type { Context } from 'hono';
 import type { AppEnv } from '../../env';
 import type { LockoutPolicy } from '../setup/policy-codec';
 import {
@@ -116,6 +117,110 @@ export function getSecurityNotificationDispatcher(
   if (webhook) singleton.registerChannel(webhook);
 
   return singleton;
+}
+
+/**
+ * On the Cloudflare Workers runtime, keep the dispatcher's queued
+ * deliveries alive past the HTTP response by handing the drain to
+ * `ctx.waitUntil(...)` (admin-setup-wizard task 9.6 / Req 13.4;
+ * design §9.4).
+ *
+ * ── Why this exists ────────────────────────────────────────────────────
+ *
+ * The `/login` hooks enqueue notifications fire-and-forget, but on
+ * Workers nothing drains that queue: there's no long-running process,
+ * so {@link getSecurityNotificationDispatcher} deliberately skips
+ * `start()` on `runtime='cloudflare'`. Without intervention the
+ * isolate is torn down the instant the response is returned and the
+ * queued `user_locked` / `ip_blocked` / `anomaly_*` notifications
+ * never go out.
+ *
+ * `ctx.waitUntil(promise)` is the Workers primitive for exactly this:
+ * it tells the runtime "don't kill me until this promise settles"
+ * **without** making the response wait for it. So the login response
+ * returns immediately (best-effort, non-blocking per Req 13.4) while
+ * the runtime keeps the isolate alive long enough for
+ * {@link InProcessNotificationDispatcher.drain} to walk the retry
+ * schedule — bounded by the ~30s Worker execution ceiling the design
+ * flags.
+ *
+ * ── Runtime gating ─────────────────────────────────────────────────────
+ *
+ *   - **Cloudflare only.** On Node the background `setInterval` tick
+ *     already drains the queue, so scheduling a `waitUntil` drain
+ *     there would double-drain (harmless) and, more importantly, isn't
+ *     needed — this is a no-op off Workers.
+ *   - **Only when there's work.** If `pendingCount === 0` there's
+ *     nothing to keep alive, so we skip the `waitUntil` call entirely
+ *     (no empty promise, no wasted budget).
+ *
+ * ── Defensive `c.executionCtx` access ──────────────────────────────────
+ *
+ * Hono's `c.executionCtx` getter **throws** when there is no execution
+ * context bound to the request — which is the case under Node's
+ * `@hono/node-server` and in most test harnesses. Reading it
+ * unguarded would turn a missing context into a 500 on the login path.
+ * We therefore probe it inside a `try/catch` and bail quietly if it's
+ * absent or doesn't expose `waitUntil`. Belt-and-brace: the
+ * `waitUntil(...)` call itself is also guarded so a runtime that
+ * surfaces a malformed context can never break the response.
+ *
+ * Call this once near the end of the `/login` handler, **before** each
+ * `return c.json(...)` — `waitUntil` must be invoked during the
+ * request (synchronously, before the response is finalised); the drain
+ * promise it receives then runs after the response is sent.
+ *
+ * @param c          The Hono request context.
+ * @param dispatcher The process dispatcher whose queue should drain.
+ * @param env        Hono `Bindings` — read for `LUMIBASE_RUNTIME`.
+ *
+ * Validates: Requirements 13.4 — see also design §9.4.
+ */
+export function scheduleWorkersDrain(
+  c: Context<AppEnv>,
+  dispatcher: InProcessNotificationDispatcher,
+  env: AppEnv['Bindings'],
+): void {
+  // Node drains via the background tick; this path is Workers-only.
+  if (resolveRuntime(env) !== 'cloudflare') return;
+
+  // Nothing queued → nothing to keep the isolate alive for.
+  if (dispatcher.pendingCount === 0) return;
+
+  // `c.executionCtx` throws when no execution context is bound (Node /
+  // tests). Probe defensively so a missing context never 500s login.
+  let executionCtx: ExecutionContextLike | null = null;
+  try {
+    const ctx = c.executionCtx as unknown as ExecutionContextLike | undefined;
+    if (ctx && typeof ctx.waitUntil === 'function') {
+      executionCtx = ctx;
+    }
+  } catch {
+    // No execution context available — best-effort no-op.
+    executionCtx = null;
+  }
+  if (!executionCtx) return;
+
+  // Hand the bounded drain to the runtime. `drain()` never throws (it
+  // logs + swallows internally), so the promise always settles and
+  // can't surface an unhandled rejection inside waitUntil.
+  try {
+    executionCtx.waitUntil(dispatcher.drain());
+  } catch {
+    // A runtime that rejects waitUntil (e.g. context already closed)
+    // must not break the response — swallow.
+  }
+}
+
+/**
+ * Minimal structural view of the Cloudflare Workers `ExecutionContext`
+ * — just the `waitUntil` method {@link scheduleWorkersDrain} needs.
+ * Declared locally so this module doesn't take a hard dependency on
+ * `@cloudflare/workers-types`, matching the loose typing the rest of
+ * the runtime-split code uses.
+ */
+interface ExecutionContextLike {
+  waitUntil(promise: Promise<unknown>): void;
 }
 
 /**

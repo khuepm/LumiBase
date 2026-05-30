@@ -27,7 +27,7 @@ import { createGeoSubscore } from '../modules/anomaly/geo';
 import { createTimeSubscore } from '../modules/anomaly/time';
 import { createDeviceSubscore } from '../modules/anomaly/device';
 import type { LoginAttemptDraft } from '../modules/anomaly/types';
-import { getSecurityNotificationDispatcher } from '../modules/notifications/security-dispatcher';
+import { getSecurityNotificationDispatcher, scheduleWorkersDrain } from '../modules/notifications/security-dispatcher';
 import type { NotificationDeps } from '../modules/login-guard/hooks';
 
 export const authRouter = new Hono<AppEnv>();
@@ -307,6 +307,10 @@ authRouter.post('/login', async (c) => {
       notify,
     );
 
+    // Workers runtime: keep any queued notifications alive past the
+    // response via ctx.waitUntil (task 9.6). No-op on Node / tests.
+    scheduleWorkersDrain(c, dispatcher, c.env);
+
     return c.json(
       { errors: [{ code: 'INVALID_CREDENTIALS', message: 'Invalid email or password.' }] },
       401
@@ -329,6 +333,9 @@ authRouter.post('/login', async (c) => {
       new Date(),
       notify,
     );
+
+    // Workers runtime: drain queued notifications after the response.
+    scheduleWorkersDrain(c, dispatcher, c.env);
 
     return c.json(
       { errors: [{ code: 'INVALID_CREDENTIALS', message: 'Invalid email or password.' }] },
@@ -400,6 +407,11 @@ authRouter.post('/login', async (c) => {
       action: 'lock',
     }, new Date(), notify);
     const retryAfterSeconds = Math.max(1, policy.userLockoutDurationSeconds);
+
+    // Workers runtime: drain the anomaly_lock notification after the
+    // response (task 9.6). No-op on Node / tests.
+    scheduleWorkersDrain(c, dispatcher, c.env);
+
     return c.json(
       {
         errors: [
@@ -473,6 +485,11 @@ authRouter.post('/login', async (c) => {
     },
     jwtSecret
   );
+
+  // Workers runtime: keep any queued notification (e.g. an
+  // anomaly_triggered from the notify_only path) alive past the
+  // response via ctx.waitUntil (task 9.6). No-op on Node / tests.
+  scheduleWorkersDrain(c, dispatcher, c.env);
 
   return c.json({
     data: {
