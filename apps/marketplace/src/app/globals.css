@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  --background: #0a0b14;
+  --foreground: #e5e7eb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0f1120;
+}
+::-webkit-scrollbar-thumb {
+  background: #262a47;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3b44c9;
+}
+
+/* Selection */
+::selection {
+  background-color: rgba(91, 110, 245, 0.3);
+  color: #e5e7eb;
+}
+
+/* Focus visible ring */
+:focus-visible {
+  outline: 2px solid #5b6ef5;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Hero grid background */
+.hero-grid {
+  background-image:
+    linear-gradient(rgba(91, 110, 245, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(91, 110, 245, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* Prose for readme */
+.prose-dark h1,
+.prose-dark h2,
+.prose-dark h3,
+.prose-dark h4 {
+  color: #e5e7eb;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+.prose-dark h1 { font-size: 1.5rem; }
+.prose-dark h2 { font-size: 1.25rem; }
+.prose-dark h3 { font-size: 1.1rem; }
+.prose-dark p {
+  color: #9ca3af;
+  line-height: 1.7;
+  margin-bottom: 1rem;
+}
+.prose-dark ul,
+.prose-dark ol {
+  color: #9ca3af;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+.prose-dark li {
+  margin-bottom: 0.25rem;
+  line-height: 1.6;
+}
+.prose-dark code {
+  background: #0f1120;
+  border: 1px solid #1e2138;
+  border-radius: 4px;
+  padding: 0.125rem 0.375rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8rem;
+  color: #7a8dff;
+}
+.prose-dark pre {
+  background: #0f1120;
+  border: 1px solid #1e2138;
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+.prose-dark pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+.prose-dark a {
+  color: #7a8dff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.prose-dark a:hover {
+  color: #9eb3ff;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+  }
+  .animate-slide-up {
+    animation: slideUp 0.4s ease-out;
+  }
+}
