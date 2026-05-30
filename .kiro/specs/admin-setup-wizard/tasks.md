@@ -71,13 +71,13 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
 
 ### Phase D — Anomaly Detection
 
-- [ ] 7. Login baselines table và detector modules
+- [x] 7. Login baselines table và detector modules
   - [x] 7.1 Thêm bảng `login_baselines` vào `packages/database/src/schema/security.ts` với cột `user_id` (PK FK users), `countries` (jsonb default []), `hour_histogram` (jsonb default 24-int array), `device_fingerprints` (jsonb default []), `successful_logins` (integer default 0), `updated_at`; sinh migration (Req 9.6, 10.5, 11.6; design §3.5)
   - [x] 7.2 Tạo `apps/cms/src/modules/anomaly/geo.ts` với `geoSubscore(userId, ip, attempt)`: integrate `maxmind` package đọc `data/geoip/GeoLite2-Country.mmdb` lazy ở startup; timeout 2s với Promise wrapper; skip cho RFC1918/loopback IP set `geoLookupStatus='unavailable'`; subscore 0/1 với baselineWarmup khi `successfulLogins<3` (Req 9.1-9.6; design §8.1)
   - [x] 7.3 Tạo `apps/cms/src/modules/anomaly/time.ts` với `timeSubscore(userId, now)` đọc `hour_histogram`, tính `totalLogins = Σ histogram[i]`, kiểm tỷ lệ `histogram[h]/totalLogins < 0.02`; baselineWarmup khi `successfulLogins<10`; emit anomaly alert event nếu subscore=1 (Req 10.1-10.5, 10.6, 10.7; design §8.2)
   - [x] 7.4 Tạo `apps/cms/src/modules/anomaly/device.ts` với `normalizeUA(ua)` (slice 1024, lowercase, strip version digits regex `/\b\d+(\.\d+)+\b/g`, collapse whitespace), `fingerprint(ua, acceptLanguage)` SHA-256 truncate 16 hex chars; LRU 20 entries; missing/empty UA → status `unavailable` không warmup (Req 11.1-11.6; design §8.3)
   - [x] 7.5 Tạo `apps/cms/src/modules/anomaly/baseline-store.ts` với `updateBaseline(userId, attempt)` atomic SQL `jsonb_set` cho histogram, append country (cap 50), LRU device fingerprint cap 20, increment `successful_logins` — chạy trong cùng transaction với `onSuccess` của LoginGuard (Req 9.6, 10.5, 11.5, 11.6; design §8.2, §8.3)
-  - [~] 7.6 Tạo `apps/cms/src/modules/anomaly/detector.ts` với `aggregate(g, t, d)` trả `{ score: max(...).toFixed(2), baselineWarmup }`; xử lý case detector tắt → subscore 0 (Req 12.1, 12.6; design §8.4, Property 9)
+  - [x] 7.6 Tạo `apps/cms/src/modules/anomaly/detector.ts` với `aggregate(g, t, d)` trả `{ score: max(...).toFixed(2), baselineWarmup }`; xử lý case detector tắt → subscore 0 (Req 12.1, 12.6; design §8.4, Property 9)
 
 - [ ] 8. Tích hợp anomaly vào LoginGuard và wizard
   - [~] 8.1 Mở rộng `LoginGuard.onSuccess` gọi detector tuần tự `geoSubscore`, `timeSubscore`, `deviceSubscore`, `aggregate`; nếu `score >= threshold && !baselineWarmup` áp `anomalyAction`: `notify_only` (cho phép login + anomaly_triggered=true), `lock` (423 ANOMALY_LOCK + set lockedUntil), `require_mfa` (401 MFA_REQUIRED, không issue JWT) (Req 12.2, 12.3, 12.4, 12.5; design §8.5)
