@@ -4,8 +4,11 @@ import { getTableName } from 'drizzle-orm';
 import {
   RecoveryService,
   InMemoryUnlockTokenStore,
+  InMemoryRecoveryTokenStore,
+  NoopRecoveryEmailSender,
   randomDelayMs,
   type UnlockTokenStore,
+  type RecoveryEmailSender,
 } from '../service';
 import { hashPassword } from '../../../services/auth/password';
 
@@ -377,5 +380,378 @@ describe('randomDelayMs (Req 14.4 anti-timing)', () => {
     // With 50k draws across 301 buckets the extremes are hit w.h.p.
     expect(min).toBeLessThanOrEqual(205);
     expect(max).toBeGreaterThanOrEqual(495);
+  });
+});
+
+// ── forgotPath: minting + sending + anti-enumeration ────────────────────
+
+/**
+ * Unit tests for `forgotPath`, `validateRecoveryToken`, and the
+ * separation of the unlock-token vs recovery-token stores
+ * (admin-setup-wizard task 10.5).
+ *
+ * Coverage:
+ *   - a known bootstrap admin → the injected sender is called with the
+ *     user's email + a plaintext token, and the recovery-token store
+ *     holds exactly one entry;
+ *   - an unknown email → sender NOT called, store empty, still returns
+ *     void (no throw);
+ *   - a non-bootstrap user → sender NOT called, store empty;
+ *   - a sender that throws is swallowed (resolves to void, doesn't
+ *     reject) and the token is still stored;
+ *   - the random anti-timing delay (sleep) is applied on EVERY path;
+ *   - `validateRecoveryToken` is single-use + 30-minute TTL (mirrors
+ *     the unlock-token tests);
+ *   - a recovery token is NOT redeemable via `validateUnlockToken`, and
+ *     an unlock token is NOT redeemable via `validateRecoveryToken`
+ *     (the two stores are separate).
+ *
+ * **Validates: Requirements 14.5, 14.6, 14.7**
+ */
+
+const BOOT_EMAIL = 'boot@example.com';
+
+/** Capturing {@link RecoveryEmailSender} for assertions. */
+class CapturingEmailSender implements RecoveryEmailSender {
+  readonly calls: Array<{
+    to: string;
+    recoveryToken: string;
+    recoveryUrl?: string;
+  }> = [];
+
+  async sendRecoveryEmail(args: {
+    to: string;
+    recoveryToken: string;
+    recoveryUrl?: string;
+  }): Promise<void> {
+    this.calls.push({ ...args });
+  }
+}
+
+/** A sender that always rejects — exercises the swallow path. */
+class ThrowingEmailSender implements RecoveryEmailSender {
+  async sendRecoveryEmail(): Promise<void> {
+    throw new Error('smtp exploded');
+  }
+}
+
+describe('RecoveryService.forgotPath — match path (Req 14.5, 14.6)', () => {
+  it('sends + stores a recovery token for a known bootstrap admin', async () => {
+    const { db } = makeFakeDb({
+      userRows: [
+        { id: 'usr_boot', email: BOOT_EMAIL, isBootstrap: true },
+      ],
+      stateRows: [{ adminPath: ADMIN_PATH }],
+    });
+    const recoveryStore = new InMemoryRecoveryTokenStore();
+    const sender = new CapturingEmailSender();
+    const sleep = vi.fn(instantSleep);
+    const svc = new RecoveryService({
+      db,
+      recoveryTokenStore: recoveryStore,
+      recoveryEmailSender: sender,
+      sleep,
+    });
+
+    // Mixed-case input must still match the lower-cased lookup.
+    await expect(
+      svc.forgotPath('Boot@Example.COM', IP),
+    ).resolves.toBeUndefined();
+
+    // Sender called once with the user's stored email + a plaintext token.
+    expect(sender.calls).toHaveLength(1);
+    expect(sender.calls[0]!.to).toBe(BOOT_EMAIL);
+    expect(typeof sender.calls[0]!.recoveryToken).toBe('string');
+    expect(sender.calls[0]!.recoveryToken.length).toBeGreaterThan(0);
+
+    // Exactly one recovery token persisted (only the hash is stored).
+    expect(recoveryStore.size).toBe(1);
+
+    // Anti-timing delay applied.
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it("returned token's sha256 hash is what validateRecoveryToken accepts", async () => {
+    const { db } = makeFakeDb({
+      userRows: [
+        { id: 'usr_boot', email: BOOT_EMAIL, isBootstrap: true },
+      ],
+      stateRows: [{ adminPath: ADMIN_PATH }],
+    });
+    const recoveryStore = new InMemoryRecoveryTokenStore();
+    const sender = new CapturingEmailSender();
+    const svc = new RecoveryService({
+      db,
+      recoveryTokenStore: recoveryStore,
+      recoveryEmailSender: sender,
+      sleep: instantSleep,
+    });
+
+    await svc.forgotPath(BOOT_EMAIL, IP);
+    const token = sender.calls[0]!.recoveryToken;
+
+    expect(await svc.validateRecoveryToken(token)).toEqual({
+      userId: 'usr_boot',
+    });
+  });
+});
+
+describe('RecoveryService.forgotPath — no-op branches (Req 14.5)', () => {
+  it('unknown email → does not send, store empty, returns void (no throw)', async () => {
+    const { db } = makeFakeDb({ userRows: [] });
+    const recoveryStore = new InMemoryRecoveryTokenStore();
+    const sender = new CapturingEmailSender();
+    const sleep = vi.fn(instantSleep);
+    const svc = new RecoveryService({
+      db,
+      recoveryTokenStore: recoveryStore,
+      recoveryEmailSender: sender,
+      sleep,
+    });
+
+    await expect(
+      svc.forgotPath('nobody@example.com', IP),
+    ).resolves.toBeUndefined();
+    expect(sender.calls).toHaveLength(0);
+    expect(recoveryStore.size).toBe(0);
+    // Delay still applied on the no-match path (anti-timing).
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('non-bootstrap user → does not send, store empty', async () => {
+    const { db } = makeFakeDb({
+      userRows: [
+        { id: 'usr_member', email: 'member@example.com', isBootstrap: false },
+      ],
+      stateRows: [{ adminPath: ADMIN_PATH }],
+    });
+    const recoveryStore = new InMemoryRecoveryTokenStore();
+    const sender = new CapturingEmailSender();
+    const svc = new RecoveryService({
+      db,
+      recoveryTokenStore: recoveryStore,
+      recoveryEmailSender: sender,
+      sleep: instantSleep,
+    });
+
+    await svc.forgotPath('member@example.com', IP);
+    expect(sender.calls).toHaveLength(0);
+    expect(recoveryStore.size).toBe(0);
+  });
+
+  it('empty email → no-op, no send', async () => {
+    const { db } = makeFakeDb({
+      userRows: [{ id: 'usr_boot', email: BOOT_EMAIL, isBootstrap: true }],
+    });
+    const sender = new CapturingEmailSender();
+    const svc = new RecoveryService({
+      db,
+      recoveryEmailSender: sender,
+      sleep: instantSleep,
+    });
+
+    await expect(svc.forgotPath('', IP)).resolves.toBeUndefined();
+    expect(sender.calls).toHaveLength(0);
+  });
+
+  it('missing adminPath (inconsistent state) → no-op, no send', async () => {
+    const { db } = makeFakeDb({
+      userRows: [{ id: 'usr_boot', email: BOOT_EMAIL, isBootstrap: true }],
+      stateRows: [{ adminPath: null }],
+    });
+    const recoveryStore = new InMemoryRecoveryTokenStore();
+    const sender = new CapturingEmailSender();
+    const svc = new RecoveryService({
+      db,
+      recoveryTokenStore: recoveryStore,
+      recoveryEmailSender: sender,
+      sleep: instantSleep,
+    });
+
+    await svc.forgotPath(BOOT_EMAIL, IP);
+    expect(sender.calls).toHaveLength(0);
+    expect(recoveryStore.size).toBe(0);
+  });
+});
+
+describe('RecoveryService.forgotPath — best-effort delivery (Req 14.5)', () => {
+  it('swallows a sender that throws → resolves to void, token still stored', async () => {
+    const { db } = makeFakeDb({
+      userRows: [{ id: 'usr_boot', email: BOOT_EMAIL, isBootstrap: true }],
+      stateRows: [{ adminPath: ADMIN_PATH }],
+    });
+    const recoveryStore = new InMemoryRecoveryTokenStore();
+    const svc = new RecoveryService({
+      db,
+      recoveryTokenStore: recoveryStore,
+      recoveryEmailSender: new ThrowingEmailSender(),
+      sleep: instantSleep,
+    });
+
+    // The throwing sender must NOT reject the call.
+    await expect(svc.forgotPath(BOOT_EMAIL, IP)).resolves.toBeUndefined();
+    // The token write happens before the (failing) send, so it persists.
+    expect(recoveryStore.size).toBe(1);
+  });
+
+  it('default (no sender injected) is a log-only no-op that still returns void + stores the token', async () => {
+    const { db } = makeFakeDb({
+      userRows: [{ id: 'usr_boot', email: BOOT_EMAIL, isBootstrap: true }],
+      stateRows: [{ adminPath: ADMIN_PATH }],
+    });
+    const recoveryStore = new InMemoryRecoveryTokenStore();
+    // No recoveryEmailSender → defaults to NoopRecoveryEmailSender.
+    const svc = new RecoveryService({
+      db,
+      recoveryTokenStore: recoveryStore,
+      sleep: instantSleep,
+    });
+
+    await expect(svc.forgotPath(BOOT_EMAIL, IP)).resolves.toBeUndefined();
+    expect(recoveryStore.size).toBe(1);
+  });
+});
+
+// ── validateRecoveryToken: single-use + TTL ─────────────────────────────
+
+describe('RecoveryService.validateRecoveryToken (Req 14.6, 14.7)', () => {
+  async function forgotToken(
+    store: InMemoryRecoveryTokenStore,
+    now: () => Date,
+    recoveryTokenTtlMs?: number,
+  ) {
+    const { db } = makeFakeDb({
+      userRows: [{ id: 'usr_boot', email: BOOT_EMAIL, isBootstrap: true }],
+      stateRows: [{ adminPath: ADMIN_PATH }],
+    });
+    const sender = new CapturingEmailSender();
+    const svc = new RecoveryService({
+      db,
+      recoveryTokenStore: store,
+      recoveryEmailSender: sender,
+      sleep: instantSleep,
+      now,
+      recoveryTokenTtlMs,
+    });
+    await svc.forgotPath(BOOT_EMAIL, IP);
+    return { svc, token: sender.calls[0]!.recoveryToken };
+  }
+
+  it('is single-use — the second consume of the same token returns null', async () => {
+    const store = new InMemoryRecoveryTokenStore();
+    const { svc, token } = await forgotToken(store, () => new Date());
+
+    expect(await svc.validateRecoveryToken(token)).toEqual({
+      userId: 'usr_boot',
+    });
+    expect(await svc.validateRecoveryToken(token)).toBeNull();
+  });
+
+  it('rejects an expired token (30-minute TTL)', async () => {
+    const base = new Date('2024-06-15T12:00:00.000Z');
+    let currentNow = base;
+    const store = new InMemoryRecoveryTokenStore();
+    const { svc, token } = await forgotToken(
+      store,
+      () => currentNow,
+      1000, // 1 second TTL for the test
+    );
+
+    // Advance past the TTL → validation rejects + evicts.
+    currentNow = new Date(base.getTime() + 2000);
+    expect(await svc.validateRecoveryToken(token)).toBeNull();
+    expect(store.size).toBe(0);
+  });
+
+  it('returns null for an unknown / empty token', async () => {
+    const { db } = makeFakeDb();
+    const svc = new RecoveryService({ db, sleep: instantSleep });
+    expect(await svc.validateRecoveryToken('not-a-real-token')).toBeNull();
+    expect(await svc.validateRecoveryToken('')).toBeNull();
+  });
+
+  it('defaults to a 30-minute TTL when recoveryTokenTtlMs is not supplied', async () => {
+    const base = new Date('2024-06-15T12:00:00.000Z');
+    let currentNow = base;
+    const store = new InMemoryRecoveryTokenStore();
+    // No recoveryTokenTtlMs → default 30 minutes.
+    const { svc, token } = await forgotToken(store, () => currentNow);
+
+    // Just before 30 minutes → still valid.
+    currentNow = new Date(base.getTime() + 30 * 60 * 1000 - 1);
+    expect(await svc.validateRecoveryToken(token)).toEqual({
+      userId: 'usr_boot',
+    });
+  });
+});
+
+// ── store separation: unlock vs recovery tokens never cross-redeem ──────
+
+describe('unlock-token and recovery-token stores are separate (design §6.3)', () => {
+  it('a recovery token is NOT redeemable via validateUnlockToken', async () => {
+    const { db } = makeFakeDb({
+      userRows: [{ id: 'usr_boot', email: BOOT_EMAIL, isBootstrap: true }],
+      stateRows: [{ adminPath: ADMIN_PATH }],
+    });
+    const unlockStore = new InMemoryUnlockTokenStore();
+    const recoveryStore = new InMemoryRecoveryTokenStore();
+    const sender = new CapturingEmailSender();
+    const svc = new RecoveryService({
+      db,
+      tokenStore: unlockStore,
+      recoveryTokenStore: recoveryStore,
+      recoveryEmailSender: sender,
+      sleep: instantSleep,
+    });
+
+    await svc.forgotPath(BOOT_EMAIL, IP);
+    const recoveryToken = sender.calls[0]!.recoveryToken;
+
+    // Wrong validator → null; the recovery token survives in its store.
+    expect(await svc.validateUnlockToken(recoveryToken)).toBeNull();
+    expect(recoveryStore.size).toBe(1);
+    // Correct validator still works.
+    expect(await svc.validateRecoveryToken(recoveryToken)).toEqual({
+      userId: 'usr_boot',
+    });
+  });
+
+  it('an unlock token is NOT redeemable via validateRecoveryToken', async () => {
+    const unlockStore = new InMemoryUnlockTokenStore();
+    const recoveryStore = new InMemoryRecoveryTokenStore();
+    const { db } = makeFakeDb({
+      userRows: [{ id: 'usr_boot', email: BOOT_EMAIL, isBootstrap: true }],
+      stateRows: [{ adminPath: ADMIN_PATH }],
+      codeRows: await bootstrapCodeRows(PLAINTEXT_CODE),
+    });
+    const svc = new RecoveryService({
+      db,
+      tokenStore: unlockStore,
+      recoveryTokenStore: recoveryStore,
+      sleep: instantSleep,
+    });
+
+    const result = await svc.recover(BOOT_EMAIL, PLAINTEXT_CODE, IP);
+    expect(result).not.toBeNull();
+    const unlockToken = result!.oneTimeUnlockToken;
+
+    // Wrong validator → null; the unlock token survives in its store.
+    expect(await svc.validateRecoveryToken(unlockToken)).toBeNull();
+    expect(unlockStore.size).toBe(1);
+    // Correct validator still works.
+    expect(await svc.validateUnlockToken(unlockToken)).toEqual({
+      userId: 'usr_boot',
+    });
+  });
+});
+
+// ── NoopRecoveryEmailSender ─────────────────────────────────────────────
+
+describe('NoopRecoveryEmailSender', () => {
+  it('resolves without throwing (models "email not configured")', async () => {
+    const sender = new NoopRecoveryEmailSender();
+    await expect(
+      sender.sendRecoveryEmail({ to: BOOT_EMAIL, recoveryToken: 'tok' }),
+    ).resolves.toBeUndefined();
   });
 });

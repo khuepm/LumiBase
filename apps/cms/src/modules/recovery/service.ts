@@ -3,12 +3,12 @@
  * Admin (admin-setup-wizard task 10.4; Req 14.4; design §6.3, §7.3,
  * Luồng C).
  *
- * This module implements the `recover()` and `validateUnlockToken()`
- * surfaces of the design's `RecoveryService` interface (design §6
- * line 458). `forgotPath()` is intentionally NOT implemented here — it
- * belongs to task 10.5. The HTTP wiring (rate-limit + routes) lands in
- * tasks 10.6 / 10.7; this file owns only the business logic so it can
- * be unit-tested without a Hono context or a live Postgres.
+ * This module implements the `recover()`, `forgotPath()`, and
+ * `validateUnlockToken()` / `validateRecoveryToken()` surfaces of the
+ * design's `RecoveryService` interface (design §6 line 458). The HTTP
+ * wiring (rate-limit + routes) lands in tasks 10.6 / 10.7; this file
+ * owns only the business logic so it can be unit-tested without a Hono
+ * context or a live Postgres.
  *
  * ── recover(email, backupCode, ip) ──────────────────────────────────────
  *
@@ -52,6 +52,65 @@
  *   - matched user is not the bootstrap admin,
  *   - the instance has no `adminPath` yet (inconsistent state),
  *   - no still-spendable code verifies against the supplied plaintext.
+ *
+ * ── forgotPath(email, ip) ────────────────────────────────────────────────
+ *
+ * The "I lost my Admin Path" flow (Req 14.5, 14.6, 14.7; design §6.3,
+ * §4.8). Unlike `recover`, which returns a token to its caller,
+ * `forgotPath` resolves to `void` and NEVER throws — its entire
+ * contract is "always behave like an HTTP 200 generic response" so a
+ * probe can't tell a known bootstrap email from an unknown one
+ * (anti-enumeration — Req 14.5).
+ *
+ * Match path (only when the email belongs to the bootstrap admin):
+ *   1. Look up the user by `lower(email)`.
+ *   2. Gate on `users.isBootstrap === true` — a non-bootstrap match is
+ *      treated as a no-match (do nothing, generic return). Same gate as
+ *      `recover`.
+ *   3. Mint a `Recovery_Token` (CSPRNG → base64url plaintext) with a
+ *      30-minute TTL. Store ONLY its `sha256` hash + `expiresAt` via
+ *      the injected {@link RecoveryTokenStore} — the plaintext never
+ *      touches storage (design §7.3 / Req 14.6).
+ *   4. Hand the plaintext token to the injected
+ *      {@link RecoveryEmailSender}; the route layer (task 10.7) supplies
+ *      a real sender backed by `EmailChannelFactory.fromEnv` + a
+ *      recovery-email template. Sender errors are swallowed (best-effort
+ *      — the response stays generic either way).
+ *
+ * No-op paths (unknown email, matched user isn't the bootstrap admin,
+ * inconsistent state, or no email channel configured): do nothing — no
+ * token is minted, nothing is stored, no email is sent — but the method
+ * still resolves to `void` after the same random delay (below).
+ *
+ * "Email server configured" (Req 14.5): the sender is injected, so a
+ * missing / no-op sender models "SMTP not configured" (design §12.3 /
+ * §error-table: "Forgot-path vẫn trả 200 generic"). The default sender
+ * is a log-only no-op, so an un-wired service still returns generically.
+ * The service does not branch its return on whether a send happened —
+ * the response is identical in every case.
+ *
+ * Token generation happens ONLY on the match path (don't burn entropy
+ * or a DB write on every probe), but the random delay applies to ALL
+ * paths (see anti-timing below). Because the match path does strictly
+ * more work (mint + hash + store + email) than a no-match no-op, a
+ * naive implementation would leak "this email matched" through wall
+ * time; the uniform random delay dominates and masks that spread, the
+ * same treatment `recover` applies.
+ *
+ * ── Recovery token vs unlock token (design §6.3, §7.3) ───────────────────
+ *
+ * The `oneTimeUnlockToken` (from `recover`) and the `Recovery_Token`
+ * (from `forgotPath`) are semantically DISTINCT: different TTLs (15 min
+ * vs 30 min) and different purposes (the unlock token re-enables a
+ * locked account; the recovery token lets the operator recover/reset a
+ * lost Admin_Path). They are kept in SEPARATE stores
+ * ({@link UnlockTokenStore} vs {@link RecoveryTokenStore}) so an unlock
+ * token can never be redeemed as a recovery token, or vice versa, even
+ * though both share the same hash+expiresAt / single-use+TTL shape.
+ * `validateRecoveryToken(token)` is the recovery-token counterpart of
+ * `validateUnlockToken` — symmetric, consuming from its own store — and
+ * the recovery route (task 10.7) uses it to exchange the emailed token
+ * for an Admin_Path reset.
  *
  * ── Anti-enumeration + anti-timing (Req 14.4; design §6.3) ───────────────
  *
@@ -99,7 +158,8 @@
  * token saved by `recover()` is visible to `validateUnlockToken()`
  * within the same process.
  *
- * Validates: Requirements 14.4 (design §6.3, §7.3).
+ * Validates: Requirements 14.4 (recover), 14.5, 14.6, 14.7 (forgotPath)
+ * — design §6.3, §7.3, §4.8.
  */
 
 import { and, eq, gte, isNull, sql } from 'drizzle-orm';
@@ -217,10 +277,176 @@ export class InMemoryUnlockTokenStore implements UnlockTokenStore {
  */
 const sharedUnlockTokenStore = new InMemoryUnlockTokenStore();
 
+// ── recovery-token store abstraction ────────────────────────────────────
+
+/**
+ * Persistence seam for the `Recovery_Token` minted by
+ * {@link RecoveryService.forgotPath}.
+ *
+ * Mirrors {@link UnlockTokenStore} exactly (store by `sha256` HASH —
+ * never the plaintext, design §7.3 — alongside an absolute `expiresAt`;
+ * single-use on {@link RecoveryTokenStore.consume}) but is a SEPARATE
+ * type/instance so the two token lifecycles never collide: a recovery
+ * token must not be redeemable as an unlock token, nor the reverse
+ * (design §6.3). The TTL differs too — 30 minutes here (Req 14.6) vs
+ * 15 minutes for the unlock token.
+ *
+ * The production implementation will be DB-backed (a dedicated
+ * recovery-token table); the default {@link InMemoryRecoveryTokenStore}
+ * is a correct single-process placeholder — see the module-level JSDoc
+ * for its limitations.
+ */
+export interface RecoveryTokenStore {
+  /**
+   * Persist a freshly minted recovery token. `tokenHash` is
+   * `sha256(plaintext)` (hex); `expiresAt` is the absolute expiry
+   * (mint time + 30-minute TTL).
+   */
+  save(args: {
+    readonly userId: string;
+    readonly tokenHash: string;
+    readonly expiresAt: Date;
+  }): Promise<void>;
+
+  /**
+   * Consume an unexpired, unused recovery token by its hash; returns
+   * the owning `userId` or `null`. Single-use: a successful consume
+   * removes the token so a second call with the same hash returns
+   * `null`. An expired token also returns `null` (and is lazily
+   * evicted).
+   */
+  consume(
+    tokenHash: string,
+    now: Date,
+  ): Promise<{ readonly userId: string } | null>;
+}
+
+/**
+ * Default {@link RecoveryTokenStore}: a `Map` from `tokenHash` to
+ * `{ userId, expiresAt }`. Byte-for-byte the same semantics as
+ * {@link InMemoryUnlockTokenStore} (single-use + TTL), but a distinct
+ * instance so unlock and recovery tokens live in separate keyspaces and
+ * can never be cross-redeemed (design §6.3 / Req 14.6).
+ *
+ * Limitations (flagged deliberately): this store lives in process
+ * memory. It does not survive a restart, and it is not shared across
+ * Cloudflare Workers isolates or multiple Node processes behind a load
+ * balancer. Production must provide a DB-backed store (follow-up wiring
+ * for task 10.7).
+ */
+export class InMemoryRecoveryTokenStore implements RecoveryTokenStore {
+  private readonly tokens = new Map<
+    string,
+    { readonly userId: string; readonly expiresAt: Date }
+  >();
+
+  async save(args: {
+    readonly userId: string;
+    readonly tokenHash: string;
+    readonly expiresAt: Date;
+  }): Promise<void> {
+    this.tokens.set(args.tokenHash, {
+      userId: args.userId,
+      expiresAt: args.expiresAt,
+    });
+  }
+
+  async consume(
+    tokenHash: string,
+    now: Date,
+  ): Promise<{ readonly userId: string } | null> {
+    const entry = this.tokens.get(tokenHash);
+    if (!entry) return null;
+    // TTL: reject + lazily evict once we're at/after the deadline.
+    if (now.getTime() >= entry.expiresAt.getTime()) {
+      this.tokens.delete(tokenHash);
+      return null;
+    }
+    // Single-use: remove on the way out so a replay returns null.
+    this.tokens.delete(tokenHash);
+    return { userId: entry.userId };
+  }
+
+  /** Test/diagnostic helper — current number of live (un-consumed) tokens. */
+  get size(): number {
+    return this.tokens.size;
+  }
+}
+
+/**
+ * Process-wide default recovery-token store so a token saved by
+ * {@link RecoveryService.forgotPath} is visible to {@link
+ * RecoveryService.validateRecoveryToken} within the same process. Swap
+ * this for a DB-backed store in production (see module JSDoc). Kept
+ * separate from {@link sharedUnlockTokenStore} so the two token kinds
+ * never collide.
+ */
+const sharedRecoveryTokenStore = new InMemoryRecoveryTokenStore();
+
+// ── recovery-email sender abstraction ───────────────────────────────────
+
+/**
+ * Injectable seam for delivering the `Recovery_Token` to the operator
+ * (design §6.3 / Req 14.5). Kept OUT of the `NotificationPayload`
+ * pipeline on purpose: that payload is shaped for security *events*
+ * (event/timestamp/ip/country/anomalyScore/...) and carries no place
+ * for a recovery link, so shoehorning the recovery mail into it would
+ * be a poor fit. Instead `forgotPath` depends on this tiny interface,
+ * matching the DI conventions used elsewhere (`SetupService`'s
+ * `backupCodesPersister` / `auditWriter`, the dispatcher's audit
+ * writer) and keeping the service unit-testable without SMTP.
+ *
+ * Production wiring (task 10.7 routes) supplies a real sender backed by
+ * `EmailChannelFactory.fromEnv(env)` plus a recovery-email template
+ * that turns `{ to, recoveryToken, recoveryUrl }` into a message. The
+ * service hands over the PLAINTEXT token exactly once (only its hash is
+ * stored); building the `recoveryUrl` is left to the route/sender.
+ */
+export interface RecoveryEmailSender {
+  /**
+   * Send the recovery link/token to the operator. Resolves on send;
+   * rejections/throws are swallowed by the service (best-effort,
+   * anti-enumeration — the response stays generic either way).
+   */
+  sendRecoveryEmail(args: {
+    readonly to: string;
+    readonly recoveryToken: string;
+    readonly recoveryUrl?: string;
+  }): Promise<void>;
+}
+
+/**
+ * Default {@link RecoveryEmailSender}: a log-only no-op modelling
+ * "email server not configured" (design §12.3 — "Forgot-path vẫn trả
+ * 200 generic"). With this default in place, an un-wired
+ * {@link RecoveryService} still satisfies `forgotPath`'s contract — it
+ * mints + stores the token and returns generically — without actually
+ * delivering anything. Production replaces it via the `recoveryEmailSender`
+ * constructor dep.
+ */
+export class NoopRecoveryEmailSender implements RecoveryEmailSender {
+  async sendRecoveryEmail(args: {
+    readonly to: string;
+    readonly recoveryToken: string;
+    readonly recoveryUrl?: string;
+  }): Promise<void> {
+    // Intentionally do not log the token (Req 15.3 — recovery tokens
+    // are never written to logs). Record only that delivery was skipped
+    // so operators can spot an un-configured email channel.
+    void args;
+    // eslint-disable-next-line no-console
+    console.info(
+      '[recovery] no recovery email sender configured; skipping delivery (forgot-path still returns generic 200)',
+    );
+  }
+}
+
 // ── timing / token helpers ──────────────────────────────────────────────
 
 const UNLOCK_TOKEN_BYTES = 32; // 32 * 8 = 256 bits of entropy.
+const RECOVERY_TOKEN_BYTES = 32; // 32 * 8 = 256 bits of entropy.
 const DEFAULT_TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes (design §7.3).
+const DEFAULT_RECOVERY_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes (Req 14.6).
 const DELAY_MIN_MS = 200;
 const DELAY_MAX_MS = 500;
 const DELAY_SPAN = DELAY_MAX_MS - DELAY_MIN_MS + 1; // inclusive [200, 500].
@@ -286,6 +512,22 @@ async function generateUnlockToken(): Promise<{
   return { plaintext, hash };
 }
 
+/**
+ * Mint a fresh `Recovery_Token`. Same construction as
+ * {@link generateUnlockToken} (CSPRNG → base64url → `sha256` hex) — a
+ * distinct helper so the two token kinds read clearly at their call
+ * sites even though the byte count currently matches.
+ */
+async function generateRecoveryToken(): Promise<{
+  readonly plaintext: string;
+  readonly hash: string;
+}> {
+  const bytes = crypto.getRandomValues(new Uint8Array(RECOVERY_TOKEN_BYTES));
+  const plaintext = toBase64Url(bytes);
+  const hash = await sha256Hex(plaintext);
+  return { plaintext, hash };
+}
+
 // ── public types ────────────────────────────────────────────────────────
 
 export interface RecoverResult {
@@ -303,6 +545,23 @@ export interface RecoveryServiceDeps {
    */
   readonly tokenStore?: UnlockTokenStore;
   /**
+   * Persistence for recovery-token hashes (the `Recovery_Token` minted
+   * by {@link RecoveryService.forgotPath}). Defaults to the process-wide
+   * {@link sharedRecoveryTokenStore} so `validateRecoveryToken` sees
+   * tokens `forgotPath` saved in the same process. Kept separate from
+   * `tokenStore` so unlock and recovery tokens never cross-redeem
+   * (design §6.3). Inject a DB-backed store in production (follow-up for
+   * task 10.7).
+   */
+  readonly recoveryTokenStore?: RecoveryTokenStore;
+  /**
+   * Delivers the `Recovery_Token` to the operator's email. Defaults to
+   * {@link NoopRecoveryEmailSender} (log-only), which models "email
+   * server not configured" — `forgotPath` still returns generically.
+   * Production supplies a real sender (task 10.7).
+   */
+  readonly recoveryEmailSender?: RecoveryEmailSender;
+  /**
    * Sleep used for the anti-timing delay. Defaults to a real
    * `setTimeout`-backed promise; tests inject an instant no-op.
    */
@@ -311,6 +570,8 @@ export interface RecoveryServiceDeps {
   readonly now?: () => Date;
   /** Unlock-token TTL in ms. Defaults to 15 minutes (design §7.3). */
   readonly tokenTtlMs?: number;
+  /** Recovery-token TTL in ms. Defaults to 30 minutes (Req 14.6). */
+  readonly recoveryTokenTtlMs?: number;
 }
 
 // ── service ─────────────────────────────────────────────────────────────
@@ -318,18 +579,27 @@ export interface RecoveryServiceDeps {
 export class RecoveryService {
   private readonly db: Database;
   private readonly tokenStore: UnlockTokenStore;
+  private readonly recoveryTokenStore: RecoveryTokenStore;
+  private readonly recoveryEmailSender: RecoveryEmailSender;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => Date;
   private readonly tokenTtlMs: number;
+  private readonly recoveryTokenTtlMs: number;
 
   constructor(deps: RecoveryServiceDeps) {
     this.db = deps.db;
     this.tokenStore = deps.tokenStore ?? sharedUnlockTokenStore;
+    this.recoveryTokenStore =
+      deps.recoveryTokenStore ?? sharedRecoveryTokenStore;
+    this.recoveryEmailSender =
+      deps.recoveryEmailSender ?? new NoopRecoveryEmailSender();
     this.sleep =
       deps.sleep ??
       ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     this.now = deps.now ?? (() => new Date());
     this.tokenTtlMs = deps.tokenTtlMs ?? DEFAULT_TOKEN_TTL_MS;
+    this.recoveryTokenTtlMs =
+      deps.recoveryTokenTtlMs ?? DEFAULT_RECOVERY_TOKEN_TTL_MS;
   }
 
   /**
@@ -364,6 +634,43 @@ export class RecoveryService {
   }
 
   /**
+   * Begin "I lost my Admin Path" recovery for the bootstrap admin.
+   *
+   * Resolves to `void` on EVERY path and NEVER throws (the route maps
+   * this to a generic HTTP 200 `{ sent: true }`). Anti-enumeration is
+   * the whole point: a probe must not be able to tell a known bootstrap
+   * email from an unknown one — not via the response, and not via wall
+   * time (Req 14.5).
+   *
+   * On the match path (the email belongs to the bootstrap admin and the
+   * instance is in a consistent state) it mints a `Recovery_Token`
+   * (30-minute TTL — Req 14.6), persists ONLY its `sha256` hash +
+   * `expiresAt` via the injected {@link RecoveryTokenStore}, and hands
+   * the plaintext to the injected {@link RecoveryEmailSender}. Every
+   * other path (unknown email, non-bootstrap match, inconsistent state,
+   * no email channel configured, or any internal error) is a silent
+   * no-op. All paths sleep for the same random `[200, 500]ms` interval
+   * before returning so the extra work the match path does (mint + hash
+   * + store + email) isn't distinguishable by timing.
+   */
+  async forgotPath(email: string, ip: string): Promise<void> {
+    try {
+      await this.attemptForgotPath(email, ip);
+    } catch (err) {
+      // Swallow ALL errors → generic void. A DB hiccup or a throwing
+      // email sender must not become an enumeration / timing oracle.
+      // Log for operators; never surface detail to the caller.
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[recovery] forgotPath() failed; returning generic void',
+        err,
+      );
+    }
+    // Anti-timing: uniform random delay on the match AND no-match paths.
+    await this.sleep(randomDelayMs());
+  }
+
+  /**
    * Validate (and consume) a one-time unlock token.
    *
    * Hashes the supplied plaintext and delegates to the injected
@@ -379,6 +686,29 @@ export class RecoveryService {
     if (typeof token !== 'string' || token.length === 0) return null;
     const tokenHash = await sha256Hex(token);
     return this.tokenStore.consume(tokenHash, this.now());
+  }
+
+  /**
+   * Validate (and consume) a `Recovery_Token` minted by
+   * {@link forgotPath}.
+   *
+   * The recovery-token counterpart of {@link validateUnlockToken}:
+   * hashes the supplied plaintext and delegates to the injected
+   * {@link RecoveryTokenStore.consume}, which enforces single-use +
+   * 30-minute TTL (Req 14.6). Returns `{ userId }` for a live token, or
+   * `null` for an unknown, expired, or already-consumed token. Because
+   * it reads from the recovery-token store — NOT the unlock-token store
+   * — an `oneTimeUnlockToken` is never accepted here, and a
+   * `Recovery_Token` is never accepted by `validateUnlockToken`
+   * (design §6.3). The recovery route (task 10.7) uses it to exchange
+   * the emailed token for an Admin_Path reset.
+   */
+  async validateRecoveryToken(
+    token: string,
+  ): Promise<{ readonly userId: string } | null> {
+    if (typeof token !== 'string' || token.length === 0) return null;
+    const tokenHash = await sha256Hex(token);
+    return this.recoveryTokenStore.consume(tokenHash, this.now());
   }
 
   // ── internals ─────────────────────────────────────────────────────────
@@ -538,6 +868,82 @@ export class RecoveryService {
     });
 
     return { adminPath, oneTimeUnlockToken: token.plaintext };
+  }
+
+  /**
+   * The un-delayed forgot-path logic. Returns `void` on every path;
+   * {@link forgotPath} adds the uniform anti-timing delay and the
+   * error-swallowing try/catch around this so the match and no-match
+   * branches are timing-indistinguishable and the method never throws.
+   *
+   * Only the match path (bootstrap admin, consistent state) mints a
+   * token, stores its hash, and emails the operator. Every other branch
+   * returns early as a silent no-op — no token is generated, nothing is
+   * stored, and no email is sent (Req 14.5).
+   */
+  private async attemptForgotPath(email: string, ip: string): Promise<void> {
+    void ip; // reserved for future audit context (recovery_initiated).
+    const emailLower = normalizeEmail(email);
+    if (emailLower.length === 0) return;
+
+    // 1. Look up the user by lower-cased email (same convention as
+    //    `recover`).
+    const [user] = await this.db
+      .select({
+        id: users.id,
+        email: users.email,
+        isBootstrap: users.isBootstrap,
+      })
+      .from(users)
+      .where(sql`lower(${users.email}) = ${emailLower}`)
+      .limit(1);
+
+    // 2. Unknown email OR non-bootstrap user → silent no-op. Don't mint
+    //    a token or send anything; the outer delay keeps this
+    //    indistinguishable from the match path by timing.
+    if (!user || user.isBootstrap !== true) return;
+
+    // 3. A bootstrap admin implies an initialized instance with a path
+    //    set. A missing path is an inconsistent state — there's nothing
+    //    coherent to recover, so treat it as a no-op (still generic).
+    const [stateRow] = await this.db
+      .select({ adminPath: systemState.adminPath })
+      .from(systemState)
+      .where(eq(systemState.id, 'singleton'))
+      .limit(1);
+    if (!stateRow?.adminPath) return;
+
+    // 4. Mint the Recovery_Token (CSPRNG + sha256) and persist ONLY its
+    //    hash + expiry (design §7.3). The plaintext is handed to the
+    //    sender exactly once and never stored.
+    const now = this.now();
+    const token = await generateRecoveryToken();
+    const expiresAt = new Date(now.getTime() + this.recoveryTokenTtlMs);
+
+    await this.recoveryTokenStore.save({
+      userId: user.id,
+      tokenHash: token.hash,
+      expiresAt,
+    });
+
+    // 5. Deliver to the operator's email. Best-effort: a throwing /
+    //    rejecting sender must not change the generic outcome, so we
+    //    isolate its failure here (the outer try/catch would also catch
+    //    it, but swallowing locally keeps the token-store write
+    //    committed and the contract obvious). We send to the user's
+    //    stored email (its canonical casing), not the raw input.
+    try {
+      await this.recoveryEmailSender.sendRecoveryEmail({
+        to: user.email,
+        recoveryToken: token.plaintext,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[recovery] recovery email delivery failed; forgot-path still returns generic 200',
+        err,
+      );
+    }
   }
 
   /**
