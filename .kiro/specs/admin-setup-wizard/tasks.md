@@ -65,7 +65,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 6.5 Mở rộng StepSecurity `apps/studio/src/modules/setup/steps/step-security.tsx` Phase C-only fields: preset chooser (Standard/Strict/Lenient), nhóm "Failed Attempts" với inline range validation, nhóm "Notifications" với danh sách Notification_Channel (Req 6.1, 6.2, 6.3 phần Failed Attempts + Notifications; design §5.5)
   - [x] 6.6 Wiring `/setup/security` route vào publicLayoutRoute với deep-link guard
   - [x] 6.7 Viết unit test `apps/cms/src/modules/login-guard/__tests__/counter.test.ts` sliding window correctness với time-mock; verify cửa sổ trượt cleanup sau windowSeconds (Req 7.1, 8.1; design §13.1, Property 12)
-  - [~] 6.8 Viết integration test `apps/cms/src/__tests__/lockout-flow.integration.test.ts` 5 fail attempts → 423 ACCOUNT_LOCKED; success login sau lockout duration → 200 + counter reset; verify IP block sau 10 fail từ một IP đa email (Req 7.2-7.5, 8.2, 8.3; design §13.2)
+  - [x] 6.8 Viết integration test `apps/cms/src/__tests__/lockout-flow.integration.test.ts` 5 fail attempts → 423 ACCOUNT_LOCKED; success login sau lockout duration → 200 + counter reset; verify IP block sau 10 fail từ một IP đa email (Req 7.2-7.5, 8.2, 8.3; design §13.2)
   - [~] 6.9 Viết security test `apps/cms/src/__tests__/user-enum.timing.test.ts` 500 fail login với email tồn tại vs random; assert response body byte-equal, latency p95 delta ≤50ms (Req 7.5; design §13.3, Property 8)
   - [~] 6.10 Viết k6 load test `apps/cms/k6/login-brute-force.js` 50 VU spam `/auth/login` với password sai; assert IP bị block đúng sau N attempts, throughput route khác không degrade (Req 8.2, 8.3; design §13.4)
 
