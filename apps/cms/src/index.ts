@@ -45,6 +45,7 @@ import { testAuthRouter } from './routes/test-auth';
 import { aiRouter } from './routes/ai';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
+import { auditRouter } from './modules/audit/routes';
 
 const app = new Hono<AppEnv>();
 
@@ -169,6 +170,22 @@ api.route('/admin', adminRouter);
 // being populated. Sibling to `/admin` rather than nested so future
 // recovery routes (task 10.7) can mount alongside without reshuffling.
 api.route('/admin/security', adminSecurityRouter);
+// Audit-log QUERY + EXPORT surface (admin-setup-wizard task 12.3; Req
+// 15.4, 15.6; design §4.9, §4.10, §10.3, §10.4). SIBLING mount alongside
+// `adminSecurityRouter` above, both under `withAuth`. The admin-role gate
+// is enforced INSIDE `auditRouter` via its own `requireAdmin(c)` check
+// (mirroring `adminSecurityRouter`), returning 403 FORBIDDEN when
+// `c.get('auth').roles` lacks `'admin'`.
+//
+// Safe + non-shadowing: Hono flattens `app.route(...)` sub-apps and
+// matches by METHOD + exact leaf path, and this router's leaf paths
+// (`/audit-log`, `/audit-log/export`) are DISJOINT from
+// adminSecurityRouter's (`/unlock-user`, `/unblock-ip`). So
+// `/api/v1/admin/security/audit-log` resolves to `auditRouter` while
+// `/unlock-user` still resolves to `adminSecurityRouter`, both behind
+// `withAuth`. Same disjoint-leaf-path coexistence the recovery router
+// relies on.
+api.route('/admin/security', auditRouter);
 api.route('/tm', tmRouter);
 api.route('/flows', flowsRouter);
 api.route('/marketplace', marketplaceRouter);
