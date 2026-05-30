@@ -59,6 +59,19 @@ const StepSecurity = lazy(() => import('./modules/setup/steps/step-security').th
 const StepDone = lazy(() => import('./modules/setup/steps/step-done').then((m) => ({ default: m.StepDone })));
 
 // ---------------------------------------------------------------------------
+// Recovery pages — public, pre-auth UIs that call the CMS recovery endpoints
+// (task 10.7). Lazy-loaded like the wizard steps so they stay off the
+// critical path for the (far more common) authenticated AppShell load.
+//
+// Mounted as DIRECT children of `publicLayoutRoute` (siblings of
+// `setupShellRoute`), NOT under the setup shell: recovery is for an
+// ALREADY-initialized instance, so it must get `<BareLayout>` but must NOT
+// run `SetupStateGate` (which 404s an initialized instance). See design §5.1.
+// ---------------------------------------------------------------------------
+const BackupCodePage = lazy(() => import('./modules/recovery/backup-code-page').then((m) => ({ default: m.BackupCodePage })));
+const ForgotPathPage = lazy(() => import('./modules/recovery/forgot-path-page').then((m) => ({ default: m.ForgotPathPage })));
+
+// ---------------------------------------------------------------------------
 // Shared suspense boundary — shows a lightweight spinner while chunks load.
 // ---------------------------------------------------------------------------
 function PageLoader() {
@@ -265,6 +278,37 @@ const setupDoneRoute = createRoute({
     }
   },
   component: withSuspense(StepDone),
+});
+
+// ---------------------------------------------------------------------------
+// Recovery routes
+//
+// `/recovery/backup-code` and `/recovery/forgot-path` are the public,
+// pre-auth recovery UIs (task 10.8; Req 14.4, 14.5). They mount as DIRECT
+// children of `publicLayoutRoute` — siblings of `setupShellRoute`, NOT
+// children of it — for two reasons (design §5.1):
+//
+//   1. They need `<BareLayout>` (no AppShell), which `publicLayoutRoute`
+//      provides.
+//   2. They must NOT run `SetupStateGate`. The gate renders a hard 404 on an
+//      `initialized` instance, but recovery is specifically FOR an already-
+//      initialized instance whose operator is locked out. Nesting under
+//      `setupShellRoute` would make recovery permanently unreachable.
+//
+// No `beforeLoad` guard: recovery is reachable at any time (the operator is
+// locked out, by definition) and the pages own their own state.
+// ---------------------------------------------------------------------------
+
+const recoveryBackupCodeRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: '/recovery/backup-code',
+  component: withSuspense(BackupCodePage),
+});
+
+const recoveryForgotPathRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: '/recovery/forgot-path',
+  component: withSuspense(ForgotPathPage),
 });
 
 const indexRoute = createRoute({
@@ -480,6 +524,8 @@ const routeTree = rootRoute.addChildren([
       setupSecurityRoute,
       setupDoneRoute,
     ]),
+    recoveryBackupCodeRoute,
+    recoveryForgotPathRoute,
   ]),
 ]);
 
