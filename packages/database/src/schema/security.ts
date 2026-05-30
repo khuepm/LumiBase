@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   index,
+  integer,
   jsonb,
   numeric,
   pgTable,
@@ -181,3 +182,42 @@ export const loginAttempts = pgTable(
     ipWindowIdx: index('login_attempts_ip_window_idx').on(t.ip, t.createdAt),
   }),
 );
+
+/**
+ * Per-user behavioural baselines consumed by the Anomaly Detector.
+ *
+ * One row per user (PK = `userId`) keeping cheap aggregates that the
+ * geo, time, and device subscores read on every successful login.
+ * Updates happen inside the same transaction as `LoginGuard.onSuccess`
+ * via `apps/cms/src/modules/anomaly/baseline-store.ts` (design §8.2,
+ * §8.3) so the baseline never diverges from the recorded
+ * `login_attempts` row.
+ *
+ * Defaults are chosen so a freshly inserted row is immediately usable
+ * by the detectors:
+ * - `countries` — empty list, capped at 50 entries (Req 9.6).
+ * - `hourHistogram` — 24 zeroed buckets, one per UTC hour (Req 10.5).
+ * - `deviceFingerprints` — empty LRU list capped at 20 entries (Req 11.6).
+ * - `successfulLogins` — gates baseline-warmup mode (geo <3, time <10).
+ *
+ * Contract: see design §3.5. `onDelete: 'cascade'` mirrors the policy
+ * for backup codes — when a user is removed, their baseline goes with
+ * them since it has no archival value.
+ */
+export const loginBaselines = pgTable('login_baselines', {
+  /** Owning user; one baseline row per user. */
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** ISO-3166 alpha-2 country codes the user has logged in from; cap 50. */
+  countries: jsonb('countries').default([]).notNull(),
+  /** Login count per UTC hour (length 24); used by the time subscore. */
+  hourHistogram: jsonb('hour_histogram')
+    .default(Array(24).fill(0) as number[])
+    .notNull(),
+  /** LRU of `{ fp, lastSeenAt }` device fingerprints; cap 20. */
+  deviceFingerprints: jsonb('device_fingerprints').default([]).notNull(),
+  /** Total successful logins; baseline-warmup gate for the detectors. */
+  successfulLogins: integer('successful_logins').default(0).notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
