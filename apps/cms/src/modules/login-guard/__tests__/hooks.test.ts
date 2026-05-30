@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { loginAttempts, users, type Database } from '@lumibase/database';
 
 import {
+  recordAnomalyBlock,
   recordLoginFailure,
   recordLoginSuccess,
 } from '../hooks';
@@ -46,7 +47,12 @@ function makeFakeDb(): {
   const inserts: InsertCall[] = [];
   const updates: UpdateCall[] = [];
 
-  const db = {
+  // Build a singleton query interface so the same recorder is used
+  // for both `db.method(...)` calls and `tx.method(...)` calls
+  // inside `db.transaction(cb)`. Drizzle's contract is that the `tx`
+  // handle has the same query API as the parent — mirroring it here
+  // keeps the tests honest without reaching into Drizzle internals.
+  const queryApi = {
     insert(table: unknown) {
       return {
         async values(values: Record<string, unknown>) {
@@ -95,9 +101,27 @@ function makeFakeDb(): {
       };
       return chain;
     },
+  } as Record<string, unknown>;
+
+  const db = {
+    ...queryApi,
+    /**
+     * Mirror Drizzle's `db.transaction(cb)` by handing the same query
+     * API to the callback. Atomicity isn't simulated — if a real
+     * production rollback is needed the integration test should
+     * cover it; here we just want the success path's `tx.insert(...)`
+     * / `tx.update(...)` calls to land in the same recorder arrays.
+     */
+    async transaction(cb: (tx: Database) => Promise<unknown>) {
+      return cb(queryApi as unknown as Database);
+    },
   } as unknown as Database;
 
-  return { db, inserts, updates };
+  return {
+    db,
+    inserts,
+    updates,
+  };
 }
 
 function makeCounter(opts: {
@@ -364,15 +388,20 @@ describe('recordLoginFailure — Req 7.1, 7.2, 8.1, 8.2, 8.6', () => {
 
 // ── recordLoginSuccess ─────────────────────────────────────────────────
 
-describe('recordLoginSuccess — Req 7.1, 7.4', () => {
+describe('recordLoginSuccess — Req 7.1, 7.4, 12.2', () => {
   it('inserts a success row into login_attempts (Req 7.1)', async () => {
     const { db, inserts } = makeFakeDb();
-    await recordLoginSuccess(db, {
-      userId: 'usr_123',
-      email: '  Foo@Example.COM  ',
-      ip: '203.0.113.7',
-      userAgent: 'Mozilla/5.0',
-    });
+    const updateBaseline = vi.fn().mockResolvedValue(undefined);
+    await recordLoginSuccess(
+      db,
+      {
+        userId: 'usr_123',
+        email: '  Foo@Example.COM  ',
+        ip: '203.0.113.7',
+        userAgent: 'Mozilla/5.0',
+      },
+      { updateBaseline },
+    );
     expect(inserts).toHaveLength(1);
     expect(inserts[0]!.table).toBe(loginAttempts);
     expect(inserts[0]!.values).toMatchObject({
@@ -382,16 +411,70 @@ describe('recordLoginSuccess — Req 7.1, 7.4', () => {
       userAgent: 'Mozilla/5.0',
       result: 'success',
       reason: null,
+      anomalyScore: null,
+      anomalyTriggered: false,
+      baselineWarmup: false,
     });
+  });
+
+  it('persists anomaly draft + score onto the success row (Req 9.5, 12.2)', async () => {
+    const { db, inserts } = makeFakeDb();
+    const updateBaseline = vi.fn().mockResolvedValue(undefined);
+    await recordLoginSuccess(
+      db,
+      {
+        userId: 'usr_123',
+        email: 'foo@example.com',
+        ip: '203.0.113.7',
+        attempt: {
+          countryCode: 'US',
+          geoLookupStatus: 'ok',
+          deviceFingerprint: '0123456789abcdef',
+          deviceLookupStatus: 'ok',
+        },
+        anomalyScore: 1,
+        anomalyTriggered: true,
+        baselineWarmup: false,
+      },
+      { updateBaseline },
+    );
+    expect(inserts[0]!.values).toMatchObject({
+      countryCode: 'US',
+      geoLookupStatus: 'ok',
+      anomalyScore: '1.00',
+      anomalyTriggered: true,
+      baselineWarmup: false,
+    });
+  });
+
+  it('formats anomalyScore as 2-decimal string (Property 9 / Req 12.1)', async () => {
+    const { db, inserts } = makeFakeDb();
+    const updateBaseline = vi.fn().mockResolvedValue(undefined);
+    await recordLoginSuccess(
+      db,
+      {
+        userId: 'usr_123',
+        email: 'foo@example.com',
+        ip: '203.0.113.7',
+        anomalyScore: 0,
+      },
+      { updateBaseline },
+    );
+    expect(inserts[0]!.values.anomalyScore).toBe('0.00');
   });
 
   it('resets failedCount, lockedUntil, and failedCountWindowStart (Req 7.4)', async () => {
     const { db, updates } = makeFakeDb();
-    await recordLoginSuccess(db, {
-      userId: 'usr_123',
-      email: 'foo@example.com',
-      ip: '203.0.113.7',
-    });
+    const updateBaseline = vi.fn().mockResolvedValue(undefined);
+    await recordLoginSuccess(
+      db,
+      {
+        userId: 'usr_123',
+        email: 'foo@example.com',
+        ip: '203.0.113.7',
+      },
+      { updateBaseline },
+    );
     expect(updates).toHaveLength(1);
     expect(updates[0]!.table).toBe(users);
     expect(updates[0]!.set).toEqual({
@@ -409,13 +492,74 @@ describe('recordLoginSuccess — Req 7.1, 7.4', () => {
     // its params behind a Param object that's awkward to introspect
     // through a stub).
     const { db, updates } = makeFakeDb();
-    await recordLoginSuccess(db, {
-      userId: 'usr_xyz',
-      email: 'foo@example.com',
-      ip: '203.0.113.7',
-    });
+    const updateBaseline = vi.fn().mockResolvedValue(undefined);
+    await recordLoginSuccess(
+      db,
+      {
+        userId: 'usr_xyz',
+        email: 'foo@example.com',
+        ip: '203.0.113.7',
+      },
+      { updateBaseline },
+    );
     expect(updates).toHaveLength(1);
     expect(updates[0]!.table).toBe(users);
+  });
+
+  it('calls updateBaseline with the same userId, draft, and clock (Req 9.6, 10.5, 11.6)', async () => {
+    const { db } = makeFakeDb();
+    const updateBaseline = vi.fn().mockResolvedValue(undefined);
+    const fixedNow = new Date('2024-06-15T12:00:00.000Z');
+    const draft = {
+      countryCode: 'VN',
+      geoLookupStatus: 'ok' as const,
+      deviceFingerprint: 'aabbccddeeff0011',
+      deviceLookupStatus: 'ok' as const,
+    };
+    await recordLoginSuccess(
+      db,
+      {
+        userId: 'usr_999',
+        email: 'foo@example.com',
+        ip: '203.0.113.7',
+        attempt: draft,
+      },
+      { updateBaseline, now: fixedNow },
+    );
+    expect(updateBaseline).toHaveBeenCalledTimes(1);
+    expect(updateBaseline).toHaveBeenCalledWith(
+      expect.anything(),
+      'usr_999',
+      draft,
+      fixedNow,
+    );
+  });
+
+  it('runs the attempt insert, user reset, and baseline update inside a transaction', async () => {
+    // Atomic-success contract: a downstream rollback (e.g. an audit
+    // write fails inside the same transaction) must revert both the
+    // attempt row and the baseline mutation. We verify the wiring
+    // by spying on `db.transaction` — the production hook MUST use
+    // `db.transaction(cb)` to get atomic rollback for free.
+    const { db, inserts, updates } = makeFakeDb();
+    const txSpy = vi.spyOn(
+      db as unknown as { transaction: (cb: unknown) => unknown },
+      'transaction',
+    );
+    const updateBaseline = vi.fn().mockResolvedValue(undefined);
+    await recordLoginSuccess(
+      db,
+      {
+        userId: 'usr_123',
+        email: 'foo@example.com',
+        ip: '203.0.113.7',
+      },
+      { updateBaseline },
+    );
+    expect(txSpy).toHaveBeenCalledTimes(1);
+    expect(inserts).toHaveLength(1);
+    expect(updates).toHaveLength(1);
+    expect(updateBaseline).toHaveBeenCalledTimes(1);
   });
 
   it('does NOT touch the IP counter or any IP-keyed row on success', async () => {
@@ -424,14 +568,131 @@ describe('recordLoginSuccess — Req 7.1, 7.4', () => {
     // resetting it on a single success would let credential-stuffing
     // bots launder one IP via a single legitimate login.
     const { db, inserts, updates } = makeFakeDb();
-    await recordLoginSuccess(db, {
-      userId: 'usr_123',
-      email: 'foo@example.com',
-      ip: '203.0.113.7',
-    });
+    const updateBaseline = vi.fn().mockResolvedValue(undefined);
+    await recordLoginSuccess(
+      db,
+      {
+        userId: 'usr_123',
+        email: 'foo@example.com',
+        ip: '203.0.113.7',
+      },
+      { updateBaseline },
+    );
     // One insert (loginAttempts) + one update (users), no other ops.
     expect(inserts).toHaveLength(1);
     expect(updates).toHaveLength(1);
+  });
+});
+
+// ── recordAnomalyBlock ─────────────────────────────────────────────────
+
+describe('recordAnomalyBlock — Req 12.3, 12.4 (design §8.5)', () => {
+  it('inserts a fail row with reason="anomaly_lock" for action="lock" (Req 12.3)', async () => {
+    const { db, inserts } = makeFakeDb();
+    await recordAnomalyBlock(
+      db,
+      freshPolicy({ userLockoutDurationSeconds: 900 }),
+      {
+        userId: 'usr_123',
+        email: 'foo@example.com',
+        ip: '203.0.113.7',
+        userAgent: 'Mozilla/5.0',
+        attempt: {
+          countryCode: 'CN',
+          geoLookupStatus: 'ok',
+          deviceFingerprint: '0011223344556677',
+          deviceLookupStatus: 'ok',
+        },
+        anomalyScore: 1,
+        baselineWarmup: false,
+        action: 'lock',
+      },
+      FIXED_NOW,
+    );
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.table).toBe(loginAttempts);
+    expect(inserts[0]!.values).toMatchObject({
+      emailLower: 'foo@example.com',
+      userId: 'usr_123',
+      ip: '203.0.113.7',
+      result: 'fail',
+      reason: 'anomaly_lock',
+      countryCode: 'CN',
+      geoLookupStatus: 'ok',
+      anomalyScore: '1.00',
+      anomalyTriggered: true,
+      baselineWarmup: false,
+    });
+  });
+
+  it('bumps users.lockedUntil to now + userLockoutDurationSeconds for action="lock" (Req 12.3)', async () => {
+    const { db, updates } = makeFakeDb();
+    const policy = freshPolicy({ userLockoutDurationSeconds: 900 });
+    await recordAnomalyBlock(
+      db,
+      policy,
+      {
+        userId: 'usr_123',
+        email: 'foo@example.com',
+        ip: '203.0.113.7',
+        anomalyScore: 1,
+        baselineWarmup: false,
+        action: 'lock',
+      },
+      FIXED_NOW,
+    );
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.table).toBe(users);
+    const lockedUntil = updates[0]!.set.lockedUntil as Date;
+    expect(lockedUntil).toBeInstanceOf(Date);
+    expect(lockedUntil.getTime()).toBe(FIXED_NOW.getTime() + 900 * 1000);
+    // Req 12.3 — failed_count is NOT touched on the anomaly-lock
+    // path (the credential check passed). The set body should only
+    // carry `lockedUntil`.
+    expect(updates[0]!.set).toEqual({ lockedUntil });
+  });
+
+  it('inserts a fail row with reason="mfa_required" for action="require_mfa" (Req 12.4)', async () => {
+    const { db, inserts, updates } = makeFakeDb();
+    await recordAnomalyBlock(
+      db,
+      freshPolicy(),
+      {
+        userId: 'usr_123',
+        email: 'foo@example.com',
+        ip: '203.0.113.7',
+        anomalyScore: 1,
+        baselineWarmup: false,
+        action: 'require_mfa',
+      },
+      FIXED_NOW,
+    );
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.values).toMatchObject({
+      result: 'fail',
+      reason: 'mfa_required',
+      anomalyTriggered: true,
+    });
+    // Req 12.4 — no lockout side effect for require_mfa.
+    expect(updates).toHaveLength(0);
+  });
+
+  it('formats anomalyScore as 2-decimal string', async () => {
+    const { db, inserts } = makeFakeDb();
+    await recordAnomalyBlock(
+      db,
+      freshPolicy(),
+      {
+        userId: 'usr_123',
+        email: 'foo@example.com',
+        ip: '203.0.113.7',
+        anomalyScore: 1,
+        baselineWarmup: false,
+        action: 'lock',
+      },
+      FIXED_NOW,
+    );
+    expect(inserts[0]!.values.anomalyScore).toBe('1.00');
   });
 });
 

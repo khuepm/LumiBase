@@ -18,7 +18,15 @@ import { STANDARD_LOCKOUT_POLICY } from '../modules/setup/policy-codec';
 import {
   recordLoginFailure,
   recordLoginSuccess,
+  recordAnomalyBlock,
 } from '../modules/login-guard/hooks';
+import {
+  runDetectors,
+} from '../modules/anomaly/detector';
+import { createGeoSubscore } from '../modules/anomaly/geo';
+import { createTimeSubscore } from '../modules/anomaly/time';
+import { createDeviceSubscore } from '../modules/anomaly/device';
+import type { LoginAttemptDraft } from '../modules/anomaly/types';
 
 export const authRouter = new Hono<AppEnv>();
 
@@ -306,15 +314,132 @@ authRouter.post('/login', async (c) => {
     );
   }
 
+  // ── Anomaly detection (task 8.1; Req 12.2-12.5; design §8.5) ───────
+  //
+  // The credentials are valid, but before we issue the JWT we need to
+  // check whether the request looks suspicious enough that the
+  // configured `anomalyAction` says we should reject it (or at least
+  // record it for audit). The detectors share the same
+  // `LoginAttemptDraft` so the geo/device modules can populate
+  // `countryCode`, `geoLookupStatus`, `deviceFingerprint`,
+  // `deviceLookupStatus` as a side effect of scoring — we then hand
+  // the draft to whichever hook persists the row, ensuring a single
+  // canonical `login_attempts` insert per attempt.
+  //
+  // `runDetectors` runs the three subscores under policy gating; an
+  // axis with `*AnomalyEnabled=false` short-circuits to
+  // `DISABLED_SUBSCORE` without invoking the detector function. If
+  // the aggregator throws (DB pool blip during baseline read, MMDB
+  // open failure mid-request), we fall back to "no anomaly": the
+  // detector contract is "must never block a successful login because
+  // of its own infrastructure" (design §8 final paragraph).
+  const acceptLanguage = c.req.header('accept-language') ?? '';
+  const attempt: LoginAttemptDraft = {};
+  const geoFn = createGeoSubscore(db);
+  const timeFn = createTimeSubscore(db);
+  const deviceFn = createDeviceSubscore(db);
+
+  let anomaly: { score: number; baselineWarmup: boolean };
+  try {
+    anomaly = await runDetectors({
+      policy,
+      geoSubscoreFn: () => geoFn(user.id, ip, attempt),
+      timeSubscoreFn: () => timeFn(user.id, new Date()),
+      deviceSubscoreFn: () =>
+        deviceFn(user.id, userAgent ?? '', acceptLanguage, attempt),
+    });
+  } catch (err) {
+    // Detector or baseline-loader failed unexpectedly. Fall through
+    // to the safe "no anomaly" branch so the login succeeds, but
+    // surface the failure on the warn channel so operators can
+    // investigate. Phase F (task 11.2) will replace this with a
+    // proper audit entry.
+    // eslint-disable-next-line no-console
+    console.warn('[anomaly] detector run failed; treating as no anomaly', err);
+    anomaly = { score: 0, baselineWarmup: false };
+  }
+
+  const triggered =
+    anomaly.score >= policy.anomalyScoreThreshold && !anomaly.baselineWarmup;
+
+  if (triggered && policy.anomalyAction === 'lock') {
+    // Req 12.3 — 423 ANOMALY_LOCK + bump users.lockedUntil so the
+    // next attempt for this email sees ACCOUNT_LOCKED via the
+    // LoginGuard middleware. No JWT is issued; the credentials may
+    // be valid but the verdict is "this is not the legitimate user".
+    await recordAnomalyBlock(db, policy, {
+      userId: user.id,
+      email: emailLower,
+      ip,
+      userAgent,
+      attempt,
+      anomalyScore: anomaly.score,
+      baselineWarmup: anomaly.baselineWarmup,
+      action: 'lock',
+    });
+    const retryAfterSeconds = Math.max(1, policy.userLockoutDurationSeconds);
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'ANOMALY_LOCK',
+            message:
+              'Login blocked due to a suspicious pattern. Check your email for a recovery link.',
+            retryAfterSeconds,
+          },
+        ],
+      },
+      423,
+    );
+  }
+
+  if (triggered && policy.anomalyAction === 'require_mfa') {
+    // Req 12.4 — 401 MFA_REQUIRED, no JWT issued, no lockout. MFA
+    // module isn't shipped yet (the wizard's StepSecurity disables
+    // this option per Req 6.3), but the route honours the policy
+    // decision if it ever gets set out-of-band so the security
+    // guarantee holds independently of the UI gating.
+    await recordAnomalyBlock(db, policy, {
+      userId: user.id,
+      email: emailLower,
+      ip,
+      userAgent,
+      attempt,
+      anomalyScore: anomaly.score,
+      baselineWarmup: anomaly.baselineWarmup,
+      action: 'require_mfa',
+    });
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'MFA_REQUIRED',
+            message: 'Multi-factor authentication is required to complete login.',
+          },
+        ],
+      },
+      401,
+    );
+  }
+
   // Generate JWT token. The success hook records the attempt and
   // resets the counter; we run it before issuing the JWT so the
-  // counter reset is durable even if the token sign happens to fail.
-  // (Phase D / task 8.1 will graft anomaly detection here.)
+  // counter reset + baseline update are durable even if the token
+  // sign happens to fail.
+  //
+  // `anomalyTriggered` is `true` for the `notify_only` action path
+  // (Req 12.2) — the login was allowed but the anomaly is recorded
+  // for audit + notification. Phase E (task 9.5) will graft the
+  // notification dispatcher onto this branch.
   await recordLoginSuccess(db, {
     userId: user.id,
     email: emailLower,
     ip,
     userAgent,
+    attempt,
+    anomalyScore: anomaly.score,
+    anomalyTriggered: triggered && policy.anomalyAction === 'notify_only',
+    baselineWarmup: anomaly.baselineWarmup,
   });
 
   const token = await signCustomJwt(
