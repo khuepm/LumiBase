@@ -41,6 +41,15 @@ class_name = "SiteRoom"
 tag = "v1"
 new_classes = ["SiteRoom"]
 
+# ─── Cron Triggers ────────────────────────────────────────────────────────────
+# Audit-log retention rotation (admin-setup-wizard task 11.4; Req 15.5;
+# design §10.2). Fires the Worker's `scheduled()` handler (see src/cloudflare.ts)
+# every hour to prune `audit_log` / `login_attempts` rows past
+# LUMIBASE_AUDIT_RETENTION_DAYS. Self-hosted Node drives the same rotation with
+# node-cron in src/serve.ts instead.
+[triggers]
+crons = ["0 * * * *"]
+
 # ─── Queues ───────────────────────────────────────────────────────────────────
 # Used by ItemService to publish mutation events to SiteRoom without blocking.
 # [[queues.producers]]

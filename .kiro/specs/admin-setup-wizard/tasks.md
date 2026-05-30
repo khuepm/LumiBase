@@ -109,11 +109,11 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
 
 ### Phase F — Audit Log + Export
 
-- [ ] 11. Audit logger và rotation
+- [x] 11. Audit logger và rotation
   - [x] 11.1 Tạo `apps/cms/src/modules/audit/logger.ts` với class `AuditLogger`: `write(entry)` synchronous insert ≤1s budget; helper `maskSensitive(metadata)` thay `passwordHash`/`setupToken`/`backupCode`/`recoveryToken` bằng sha256 hex 8 ký tự đầu hoặc null; fallback `console.error` JSON structured khi DB write fail (Req 15.1, 15.2, 15.3; design §10.1)
   - [x] 11.2 Wiring `AuditLogger.write` vào tất cả events từ Req 15.1: `setup_started`, `setup_completed`, `bootstrap_admin_created`, `admin_path_set`, `lockout_policy_updated`, `login_success`, `login_failed`, `user_locked`, `user_unlocked`, `ip_blocked`, `ip_unblocked`, `anomaly_triggered`, `recovery_initiated`, `recovery_completed`, `backup_code_used`; thêm middleware `audit-context` populate `requestId`, `ip`, `userAgent` vào ctx (Req 15.1, 15.2; design §6.2, §10.1)
   - [x] 11.3 Tạo `apps/cms/src/modules/audit/rotator.ts` với `rotate()` xóa rows `audit_log` và `login_attempts` cũ hơn `LUMIBASE_AUDIT_RETENTION_DAYS` (default 90, range 1-3650); trigger qua cron 1h hoặc khi count >10,000 (throttle 1/h) (Req 15.5; design §10.2)
-  - [~] 11.4 Cho self-hosted Node: thêm `node-cron` schedule trong `apps/cms/src/serve.ts` chạy `auditRotator.rotate()` mỗi giờ; cho Workers: dùng Cloudflare Cron Triggers route handler
+  - [x] 11.4 Cho self-hosted Node: thêm `node-cron` schedule trong `apps/cms/src/serve.ts` chạy `auditRotator.rotate()` mỗi giờ; cho Workers: dùng Cloudflare Cron Triggers route handler
 
 - [ ] 12. Audit log query và export API
   - [~] 12.1 Tạo `apps/cms/src/modules/audit/routes.ts` với `GET /admin/security/audit-log` cursor-based pagination (cursor base64 `${ts}|${id}`), filter `event`, `email` (lowercase normalize), `from`, `to` (validate ≤366 ngày, from<to), limit 1-100 default 50; budget P95 ≤2s (Req 15.4; design §10.3)
