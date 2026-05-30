@@ -43,6 +43,13 @@
       "when": 1780016367824,
       "tag": "0005_ambiguous_morbius",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780099398486,
+      "tag": "0006_chief_carnage",
+      "breakpoints": true
     }
   ]
 }
