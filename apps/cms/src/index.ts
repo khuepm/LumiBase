@@ -43,6 +43,7 @@ import { webhooksRouter } from './routes/webhooks';
 import { testAuthRouter } from './routes/test-auth';
 import { aiRouter } from './routes/ai';
 import { setupRouter } from './modules/setup/routes';
+import { recoveryRouter } from './modules/recovery/routes';
 
 const app = new Hono<AppEnv>();
 
@@ -94,6 +95,25 @@ app.route('/test-auth', testAuthRouter);
 // `withRuntime` already ran globally so the per-request `withDb()` inside
 // the router resolves the connection through the runtime's DatabaseProvider.
 app.route('/api/v1/setup', setupRouter);
+
+// Public recovery surface (admin-setup-wizard task 10.7; Req 14.4, 14.5,
+// 14.8; design §4.7, §4.8). PUBLIC / pre-auth on purpose: the operator
+// is locked out and CANNOT authenticate, so `/admin/security/recover`
+// and `/admin/security/forgot-path` must NOT pass through `withAuth` or
+// the `admin` role gate. The router applies only `withDb()` internally
+// (like `setupRouter`).
+//
+// Mounted at `/api/v1/admin/security` *before* `app.route('/api/v1', api)`
+// below — where the AUTHENTICATED `adminSecurityRouter` lives. Hono
+// flattens sub-apps and matches by METHOD + exact leaf path, and the
+// recovery router only registers `/recover` + `/forgot-path`. Those leaf
+// paths are DISJOINT from the authenticated `/unlock-user` + `/unblock-ip`,
+// so this public mount can NOT shadow them: a request to `/unlock-user`
+// never matches a handler here and falls through to the authenticated
+// `api` mount, still gated by `withAuth` + the admin check. Same
+// coexistence mechanism the public `setupRouter` already relies on. See
+// the header doc in `modules/recovery/routes.ts` for the full rationale.
+app.route('/api/v1/admin/security', recoveryRouter);
 
 // SCIM 2.0 provisioning. Auth happens inside the router using SCIM_TOKEN.
 // Needs withDb() so it can write to the users/teams tables.

@@ -77,6 +77,31 @@ export interface Variables {
    * API response. Optional — most requests leave it unset.
    */
   responseType?: 'STUDIO_HTML';
+  /**
+   * Test-only injection seam for the public recovery routes
+   * (admin-setup-wizard task 10.7; design §4.7, §4.8). When set via
+   * `c.set('recoveryServiceOverride', stub)` *before* the recovery
+   * router runs, `modules/recovery/routes.ts` uses the stub instead of
+   * constructing a real `RecoveryService` — so the route handlers can be
+   * exercised without a live Postgres or the in-memory token stores.
+   *
+   * Declared structurally (rather than importing `RecoveryService`) to
+   * keep `env.ts` free of route/service imports and avoid an import
+   * cycle. The real `RecoveryService` satisfies this shape, mirroring
+   * the `setupServiceOverride` convention referenced in
+   * `modules/setup/routes.ts`.
+   */
+  recoveryServiceOverride?: {
+    recover(
+      email: string,
+      backupCode: string,
+      ip: string,
+    ): Promise<{
+      readonly adminPath: string;
+      readonly oneTimeUnlockToken: string;
+    } | null>;
+    forgotPath(email: string, ip: string): Promise<void>;
+  };
 }
 
 export type AppEnv = {
