@@ -63,7 +63,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 6.3 Áp dụng email normalization (lowercase + trim) khi key counter và verify user (Req 7.1; design §6.5)
   - [x] 6.4 Tạo `apps/cms/src/routes/admin-security.ts` với `POST /admin/security/unlock-user` (auth admin role), `POST /admin/security/unblock-ip` (auth admin role); validate IPv4/IPv6, reset counter và xóa lockedUntil/ipBlockedUntil; audit `user_unlocked`/`ip_unblocked` (Req 7.6, 7.7, 8.7, 8.8, 8.9; design §4.5, §4.6)
   - [x] 6.5 Mở rộng StepSecurity `apps/studio/src/modules/setup/steps/step-security.tsx` Phase C-only fields: preset chooser (Standard/Strict/Lenient), nhóm "Failed Attempts" với inline range validation, nhóm "Notifications" với danh sách Notification_Channel (Req 6.1, 6.2, 6.3 phần Failed Attempts + Notifications; design §5.5)
-  - [~] 6.6 Wiring `/setup/security` route vào publicLayoutRoute với deep-link guard
+  - [x] 6.6 Wiring `/setup/security` route vào publicLayoutRoute với deep-link guard
   - [~] 6.7 Viết unit test `apps/cms/src/modules/login-guard/__tests__/counter.test.ts` sliding window correctness với time-mock; verify cửa sổ trượt cleanup sau windowSeconds (Req 7.1, 8.1; design §13.1, Property 12)
   - [~] 6.8 Viết integration test `apps/cms/src/__tests__/lockout-flow.integration.test.ts` 5 fail attempts → 423 ACCOUNT_LOCKED; success login sau lockout duration → 200 + counter reset; verify IP block sau 10 fail từ một IP đa email (Req 7.2-7.5, 8.2, 8.3; design §13.2)
   - [~] 6.9 Viết security test `apps/cms/src/__tests__/user-enum.timing.test.ts` 500 fail login với email tồn tại vs random; assert response body byte-equal, latency p95 delta ≤50ms (Req 7.5; design §13.3, Property 8)

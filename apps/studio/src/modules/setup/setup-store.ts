@@ -212,38 +212,44 @@ export const selectAdminPath = (s: SetupState): string | null => s.adminPath;
 // ── Deep-link guard helper ───────────────────────────────────────────────
 
 /**
- * Route paths for the four wizard steps registered under the public
- * layout route tree in `router.tsx` (task 3.9). The Security (task
- * 6.6) and Recovery (task 10.3) routes land later; until then the
- * helper below only surfaces these three.
+ * Route paths for the wizard steps registered under the public layout
+ * route tree in `router.tsx` (tasks 3.9, 6.6). The Recovery route
+ * (task 10.3) lands later; until then the helper below routes
+ * Account → Path → Security → Done with `/setup/recovery` collapsed
+ * into `/setup/done`.
  */
 export type SetupRoutePath =
   | '/setup/account'
   | '/setup/path'
+  | '/setup/security'
   | '/setup/done';
 
 /**
  * Pick the earliest step the operator has yet to satisfy, given the
  * current store flags. Used by the deep-link guard wired into the
  * router (design §5.4 / §11.2): the `/setup` index route, the path
- * step's pre-load, and the done step's pre-load all consult this
- * helper so a deep-link to a step the wizard isn't ready for falls
- * back to the right place.
+ * step's pre-load, the security step's pre-load (task 6.6), and the
+ * done step's pre-load all consult this helper so a deep-link to a
+ * step the wizard isn't ready for falls back to the right place.
  *
- * Behaviour today — only Account/Path/Done routes are registered:
+ * Behaviour today — Account/Path/Security/Done routes are registered:
  *   - `!accountValid` → `/setup/account`
  *   - `!pathValid`    → `/setup/path`
+ *   - `!policyValid`  → `/setup/security`
  *   - otherwise       → `/setup/done`
  *
- * When the Security (task 6.6) and Recovery (task 10.3) steps register
- * their routes, extend this helper to consult `policyValid` and
- * `confirmed` between path and done so the redirect chain stays
- * monotonic.
+ * When the Recovery (task 10.3) step registers its route, extend this
+ * helper to consult `confirmed` between security and done so the
+ * redirect chain stays monotonic.
  */
 export function getEarliestUnsatisfiedStep(
-  state: Pick<SetupState, 'accountValid' | 'pathValid' | 'completed'>,
+  state: Pick<
+    SetupState,
+    'accountValid' | 'pathValid' | 'policyValid' | 'completed'
+  >,
 ): SetupRoutePath {
   if (!state.accountValid) return '/setup/account';
   if (!state.pathValid) return '/setup/path';
+  if (!state.policyValid) return '/setup/security';
   return '/setup/done';
 }

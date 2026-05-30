@@ -3,9 +3,9 @@ import { getEarliestUnsatisfiedStep } from '../setup-store';
 
 /**
  * Unit tests for the pure deep-link guard helper used by the wizard's
- * router pre-loads (task 3.9). The helper mirrors the state machine in
- * design.md §5.4 / §11.2: pick the earliest step the operator has yet
- * to satisfy.
+ * router pre-loads (tasks 3.9, 6.6). The helper mirrors the state
+ * machine in design.md §5.4 / §11.2: pick the earliest step the
+ * operator has yet to satisfy.
  *
  * Spec refs: requirements §3.11; design.md §5.4, §11.2.
  */
@@ -16,6 +16,7 @@ describe('getEarliestUnsatisfiedStep', () => {
       getEarliestUnsatisfiedStep({
         accountValid: false,
         pathValid: false,
+        policyValid: false,
         completed: false,
       }),
     ).toBe('/setup/account');
@@ -30,6 +31,7 @@ describe('getEarliestUnsatisfiedStep', () => {
       getEarliestUnsatisfiedStep({
         accountValid: false,
         pathValid: true,
+        policyValid: true,
         completed: false,
       }),
     ).toBe('/setup/account');
@@ -40,18 +42,35 @@ describe('getEarliestUnsatisfiedStep', () => {
       getEarliestUnsatisfiedStep({
         accountValid: true,
         pathValid: false,
+        policyValid: false,
         completed: false,
       }),
     ).toBe('/setup/path');
   });
 
-  it('redirects to /setup/done when both prior steps are satisfied', () => {
+  it('redirects to /setup/security once path is valid but policy is not', () => {
+    // Deep-link guard for task 6.6: a visit to a later step (e.g.
+    // `/setup/recovery` once that route lands, or `/setup/done`
+    // today) while the policy still hasn't validated must bounce to
+    // `/setup/security`.
+    expect(
+      getEarliestUnsatisfiedStep({
+        accountValid: true,
+        pathValid: true,
+        policyValid: false,
+        completed: false,
+      }),
+    ).toBe('/setup/security');
+  });
+
+  it('redirects to /setup/done when every prior step is satisfied', () => {
     // The Done route's own beforeLoad re-checks `completed` and bounces
     // back if it's false; this helper just picks the terminal target.
     expect(
       getEarliestUnsatisfiedStep({
         accountValid: true,
         pathValid: true,
+        policyValid: true,
         completed: false,
       }),
     ).toBe('/setup/done');
@@ -62,6 +81,7 @@ describe('getEarliestUnsatisfiedStep', () => {
       getEarliestUnsatisfiedStep({
         accountValid: true,
         pathValid: true,
+        policyValid: true,
         completed: true,
       }),
     ).toBe('/setup/done');

@@ -55,6 +55,7 @@ const FlowEditor = lazy(() => import('./modules/automation/flow-editor').then((m
 // ---------------------------------------------------------------------------
 const StepAccount = lazy(() => import('./modules/setup/steps/step-account').then((m) => ({ default: m.StepAccount })));
 const StepPath = lazy(() => import('./modules/setup/steps/step-path').then((m) => ({ default: m.StepPath })));
+const StepSecurity = lazy(() => import('./modules/setup/steps/step-security').then((m) => ({ default: m.StepSecurity })));
 const StepDone = lazy(() => import('./modules/setup/steps/step-done').then((m) => ({ default: m.StepDone })));
 
 // ---------------------------------------------------------------------------
@@ -202,13 +203,50 @@ const setupPathRoute = createRoute({
     const navigate = useNavigate();
     return (
       <Suspense fallback={<PageLoader />}>
+        <StepPath onSubmitted={() => navigate({ to: '/setup/security' })} />
+      </Suspense>
+    );
+  },
+});
+
+/**
+ * Security step — Phase C surface (Failed Attempts + Notifications)
+ * lives in `step-security.tsx` (task 6.5). The route is wired here so
+ * the Path step can navigate to it after submit, and so a deep-link
+ * to `/setup/security` falls back to the earliest unsatisfied step
+ * when prior gates (`accountValid`, `pathValid`) aren't met.
+ *
+ * The Recovery step (task 10.3) is not wired yet, so on submit we
+ * forward straight to `/setup/done`. When the recovery route lands,
+ * change `onSubmitted` here to navigate to `/setup/recovery` per
+ * design.md §5.4.
+ *
+ * Spec refs: requirements §3.11; design.md §5.1, §5.4, §11.2.
+ */
+const setupSecurityRoute = createRoute({
+  getParentRoute: () => setupShellRoute,
+  path: '/setup/security',
+  beforeLoad: () => {
+    // Earliest-unsatisfied-step guard: a deep-link to Security while
+    // either Account or Path is still incomplete redirects back to
+    // whichever step is missing. The helper is the single source of
+    // truth for the redirect chain (design §5.4 / §11.2).
+    const state = useSetupStore.getState();
+    if (!state.accountValid || !state.pathValid) {
+      throw redirect({ to: getEarliestUnsatisfiedStep(state) });
+    }
+  },
+  component: () => {
+    const navigate = useNavigate();
+    return (
+      <Suspense fallback={<PageLoader />}>
         {/*
-          PLACEHOLDER: routing Path → Done directly until the Security
-          (task 6.5/6.6) and Recovery (task 10.3/10.8) steps land. Once
-          those routes register, this navigation chain becomes
-          Path → Security → Recovery → Done per design.md §5.4.
+          PLACEHOLDER: routing Security → Done directly until the
+          Recovery step (task 10.3) lands. Once that route registers,
+          this navigation chain becomes Security → Recovery → Done
+          per design.md §5.4.
         */}
-        <StepPath onSubmitted={() => navigate({ to: '/setup/done' })} />
+        <StepSecurity onSubmitted={() => navigate({ to: '/setup/done' })} />
       </Suspense>
     );
   },
@@ -439,6 +477,7 @@ const routeTree = rootRoute.addChildren([
       setupIndexRoute,
       setupAccountRoute,
       setupPathRoute,
+      setupSecurityRoute,
       setupDoneRoute,
     ]),
   ]),
