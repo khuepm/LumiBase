@@ -38,6 +38,21 @@
 export type GeoLookupStatus = 'ok' | 'unavailable' | 'timeout';
 
 /**
+ * Outcome of a device-fingerprint computation for a given login
+ * attempt. Mirrors {@link GeoLookupStatus} so the caller can persist
+ * a uniform `_lookup_status` column shape on `login_attempts` should
+ * the schema gain one in the future (design §8.3 leaves the column
+ * un-named; tests pin the values here so a downstream migration can
+ * adopt them as-is).
+ *
+ *   - `'ok'` — UA was non-empty; `LoginAttemptDraft.deviceFingerprint`
+ *     holds the 16-hex-char truncated SHA-256 (Req 11.1).
+ *   - `'unavailable'` — UA was missing/empty; the detector did not
+ *     warmup and emitted subscore = 0 (design §8.3 explicit rule).
+ */
+export type DeviceLookupStatus = 'ok' | 'unavailable';
+
+/**
  * Result of a single subscore (geo / time / device). The `value` is
  * intentionally bounded to `0 | 1` — Req 9.2 / 10.2 / 11.2 emit `1.0`
  * when the signal trips and `0.0` otherwise; the aggregator then
@@ -76,6 +91,19 @@ export interface LoginAttemptDraft {
   countryCode?: string | null;
   /** Outcome of the GeoIP lookup; populated by `geoSubscore` always. */
   geoLookupStatus?: GeoLookupStatus | null;
+  /**
+   * 16-hex-char truncated SHA-256 device fingerprint; populated by
+   * `deviceSubscore` when the UA is non-empty. Persisted onto the
+   * baseline LRU by the writer in task 7.5.
+   */
+  deviceFingerprint?: string | null;
+  /**
+   * Outcome of the device fingerprint computation; populated by
+   * `deviceSubscore` always. `'unavailable'` means the UA was
+   * missing/empty (design §8.3): the detector returns subscore 0
+   * with `baselineWarmup=false` and no fingerprint is recorded.
+   */
+  deviceLookupStatus?: DeviceLookupStatus | null;
 }
 
 /**
@@ -115,5 +143,40 @@ export interface TimeBaselineSnapshot {
    */
   readonly hourHistogram: readonly number[];
   /** Total successful logins; gates warmup mode at `< 10` (Req 10.4). */
+  readonly successfulLogins: number;
+}
+
+/**
+ * One entry in the per-user device-fingerprint LRU stored on
+ * `login_baselines.device_fingerprints`. The shape is fixed by the
+ * design §3.5 schema comment (`{fp:string, lastSeenAt:string}[]`):
+ * `lastSeenAt` is an ISO-8601 timestamp, used by the writer in task
+ * 7.5 to evict the oldest entry when the cap of 20 is reached
+ * (Req 11.5; design §8.3).
+ */
+export interface DeviceFingerprintEntry {
+  /** 16-hex-char truncated SHA-256 fingerprint (Req 11.1). */
+  readonly fp: string;
+  /** ISO-8601 timestamp of the most recent observation. */
+  readonly lastSeenAt: string;
+}
+
+/**
+ * Snapshot of the per-user behavioural baseline that the device
+ * subscore reads (`login_baselines` row from design §3.5, §8.3).
+ * Only the fields the device subscore actually consults are typed
+ * here so unit tests can stub the loader with a minimal fixture.
+ *
+ * `deviceFingerprints` is the LRU list maintained by
+ * {@link  /apps/cms/src/modules/anomaly/baseline-store.ts}
+ * (task 7.5), capped at 20 entries (Req 11.5). `null` from the
+ * baseline loader means "row not yet inserted" — the detector treats
+ * this identically to `successfulLogins=0` and an empty fingerprint
+ * list, which falls into the warmup branch (Req 11.4).
+ */
+export interface DeviceBaselineSnapshot {
+  /** Recently-seen device fingerprints (LRU, cap 20). */
+  readonly deviceFingerprints: readonly DeviceFingerprintEntry[];
+  /** Total successful logins; gates warmup mode at `< 3` (Req 11.4). */
   readonly successfulLogins: number;
 }
