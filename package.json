@@ -28,6 +28,10 @@
     "docs:preview": "pnpm --filter @lumibase/docs preview",
     "landing:deploy": "pnpm landing:build && wrangler pages deploy apps/landing/out --project-name lumibase-landing",
     "docs:deploy": "pnpm docs:build && wrangler pages deploy apps/docs/dist --project-name lumibase-docs",
+    "marketplace:dev": "pnpm --filter @lumibase/marketplace dev",
+    "marketplace:build": "pnpm --filter @lumibase/marketplace build",
+    "marketplace:preview": "pnpm --filter @lumibase/marketplace start",
+    "marketplace:deploy": "pnpm marketplace:build && wrangler pages deploy apps/marketplace/out --project-name lumibase-marketplace",
     "prepare": "husky"
   },
   "devDependencies": {
