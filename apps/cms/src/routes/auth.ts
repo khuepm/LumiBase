@@ -29,6 +29,7 @@ import { createDeviceSubscore } from '../modules/anomaly/device';
 import type { LoginAttemptDraft } from '../modules/anomaly/types';
 import { getSecurityNotificationDispatcher, scheduleWorkersDrain } from '../modules/notifications/security-dispatcher';
 import type { NotificationDeps } from '../modules/login-guard/hooks';
+import { AuditLogger } from '../modules/audit/logger';
 
 export const authRouter = new Hono<AppEnv>();
 
@@ -271,9 +272,21 @@ authRouter.post('/login', async (c) => {
   // singleton owns its own background drain on Node; the Workers drain
   // path (`ctx.waitUntil`) is task 9.6.
   const dispatcher = getSecurityNotificationDispatcher(c.env, policy);
+  // Audit wiring (task 11.2; Req 15.1, 15.2; design §10.1). Construct
+  // one AuditLogger per request bound to the per-request Drizzle client
+  // and thread it into the LoginGuard hooks via the same `notify`
+  // bundle that carries the dispatcher. `AuditLogger.write` is
+  // best-effort + never-throws, so the audit entries the hooks emit
+  // (`login_failed`, `login_success`, `user_locked`, `ip_blocked`,
+  // `anomaly_triggered`) can never break the login flow. `requestId` is
+  // resolved from the context (populated by the `audit-context`
+  // middleware) so each audit row carries its correlation id.
+  const audit = new AuditLogger({ db });
   const notify: NotificationDeps = {
     dispatcher,
     notifyChannels: policy.notifyChannels,
+    audit,
+    requestId: c.get('requestId'),
   };
 
   // Look the user up case-insensitively so a `Foo@Example.com` row
@@ -442,7 +455,7 @@ authRouter.post('/login', async (c) => {
       anomalyScore: anomaly.score,
       baselineWarmup: anomaly.baselineWarmup,
       action: 'require_mfa',
-    });
+    }, new Date(), notify);
     return c.json(
       {
         errors: [

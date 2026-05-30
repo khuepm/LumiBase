@@ -122,6 +122,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../../env';
 import { withDb } from '../../middleware/db';
 import { extractClientIp } from '../login-guard/ip-extract';
+import { AuditLogger } from '../audit/logger';
 import { RecoveryService } from './service';
 import {
   checkRecoveryRateLimit,
@@ -168,7 +169,15 @@ function buildService(
 ): NonNullable<AppEnv['Variables']['recoveryServiceOverride']> {
   const override = c.get('recoveryServiceOverride');
   if (override) return override;
-  return new RecoveryService({ db: c.get('db') });
+  // Wire the real AuditLogger (task 11.2; Req 15.1, 15.2) so the
+  // service can emit `recovery_initiated` (forgot-path match) and
+  // `recovery_completed` + `backup_code_used` (recover success). The
+  // logger is best-effort + never-throws, so it can never break the
+  // anti-enumeration / anti-timing contract of the recovery flow.
+  return new RecoveryService({
+    db: c.get('db'),
+    audit: new AuditLogger({ db: c.get('db') }),
+  });
 }
 
 // ── router ─────────────────────────────────────────────────────────────────

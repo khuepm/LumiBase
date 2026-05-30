@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from './env';
 import { adminPathGuard } from './middleware/admin-path-guard';
+import { withAuditContext } from './middleware/audit-context';
 import { withAuth } from './middleware/auth';
 import { withDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
@@ -63,6 +64,17 @@ app.use(
   }),
 );
 
+// Audit-context middleware (admin-setup-wizard task 11.2; Req 15.1,
+// 15.2; design §6.2). Slots in between `withLogger` (which sets
+// `requestId`) and `adminPathGuard`, matching design §6.2's ordering:
+// it resolves and stashes `ip` + `userAgent` onto the context so the
+// guard, every route below, and every `AuditLogger.write` caller read
+// the same audit dimensions uniformly. Placed after the
+// `withRuntime`/`cors` block (which §6.2 doesn't enumerate) and just
+// before the guard so the three audit dimensions are present for the
+// entire downstream chain.
+app.use('*', withAuditContext());
+
 // Admin Path Guard (admin-setup-wizard Req 5.1, 5.2, 5.4, 5.6, 5.7;
 // design §6.2 + §7.2).
 //
@@ -76,9 +88,10 @@ app.use(
 // fails open while `system_state.state !== 'initialized'` so a fresh
 // instance can still reach the Setup Wizard at `/setup`.
 //
-// Audit-context middleware (task 11.2) will eventually slot in
-// between `withLogger` and this guard; ordering kept symmetric with
-// design §6.2 so that follow-up insert is mechanical.
+// The `audit-context` middleware (task 11.2) now slots in just above
+// this guard (see `app.use('*', withAuditContext())` directly above),
+// so `ip` / `userAgent` / `requestId` are all populated before the
+// guard and every downstream handler run — matching design §6.2.
 app.use('*', adminPathGuard());
 
 // Public utility endpoints (no tenant, no auth).

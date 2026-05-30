@@ -31,12 +31,12 @@
 import { eq, sql } from 'drizzle-orm';
 import {
   adminBackupCodes,
-  auditLog,
   systemState,
   users,
   type Database,
 } from '@lumibase/database';
 import { hashPassword } from '../../services/auth/password';
+import { AuditLogger } from '../audit/logger';
 import {
   serializeLockoutPolicy,
   type LockoutPolicy,
@@ -163,22 +163,48 @@ export interface SetupServiceDeps {
   readonly geoipProbe?: GeoipProbe;
   readonly backupCodesPersister?: BackupCodesPersister;
   /**
-   * Audit log sink. Phase F will replace this with the full
-   * AuditLogger; for Phase A we write directly to the `audit_log`
-   * table via the same `db` client.
+   * Audit logger for the post-commit Req 15.1 setup events
+   * (admin-setup-wizard task 11.2): `setup_started`, `setup_completed`,
+   * `bootstrap_admin_created`, `admin_path_set`, `lockout_policy_updated`.
+   *
+   * OPTIONAL + injectable. When omitted, `complete()` constructs a
+   * default `new AuditLogger({ db })` bound to the same per-request
+   * client, so the production behaviour (writing the audit rows) is
+   * preserved exactly as the former `auditWriter ?? makeFallbackAuditWriter()`
+   * default did — only now through the real {@link AuditLogger} (secret
+   * masking + ≤1s budget + structured fallback, task 11.1). Tests can
+   * inject a spy `{ async write(e) { calls.push(e) } }` to assert the
+   * emitted entries without a live Postgres; the existing
+   * `backup-codes-persister.test.ts` / `setup-flow.integration.test.ts`
+   * suites pass no `audit` and rely on the default, which still writes
+   * the `setup_completed` row they assert on.
+   *
+   * `AuditLogger.write` is best-effort + never-throws (task 11.1), so a
+   * failed audit write can never roll back or fail the setup (Req 1.5).
    */
-  readonly auditWriter?: AuditWriter;
+  readonly audit?: AuditLoggerLike;
 }
 
-export type AuditWriter = (entry: {
-  event: string;
-  actorEmail?: string;
-  targetEmail?: string;
-  ip?: string;
-  userAgent?: string;
-  metadata?: Record<string, unknown>;
-  requestId?: string;
-}) => Promise<void>;
+/**
+ * Structural shape of {@link AuditLogger} that {@link SetupService}
+ * depends on — just the `write` method. Declared as a narrow interface
+ * (rather than the concrete class) so tests can inject a tiny spy
+ * without constructing a real logger, while the real `AuditLogger`
+ * satisfies it. Matches the `Omit<AuditLogEntry,'id'|'timestamp'>`
+ * input the logger accepts.
+ */
+export interface AuditLoggerLike {
+  write(entry: {
+    event: string;
+    actorEmail?: string | null;
+    targetEmail?: string | null;
+    ip?: string | null;
+    userAgent?: string | null;
+    countryCode?: string | null;
+    metadata?: Record<string, unknown>;
+    requestId?: string | null;
+  }): Promise<void>;
+}
 
 // ── service ─────────────────────────────────────────────────────────────
 
@@ -295,6 +321,24 @@ export class SetupService {
         error: { code: 'VALIDATION_ERROR', issues: accountIssues },
       };
     }
+
+    // ── 5b. `setup_started` audit entry (Req 15.1; task 11.2). Emitted
+    //        once the request has passed eager validation and we are
+    //        about to take the row lock — it records that a setup
+    //        ATTEMPT began (distinct from `setup_completed`, which only
+    //        fires post-commit). Best-effort + never-throws via the
+    //        AuditLogger; no secrets are in scope (only the actor email
+    //        + masked Admin_Path hash). This is the one setup event that
+    //        is NOT post-commit by design — a failed/aborted attempt
+    //        still legitimately "started".
+    await this.resolveAuditLogger().write({
+      event: 'setup_started',
+      actorEmail: input.account.email,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+      requestId: ctx.requestId ?? null,
+      metadata: { adminPathHash: await sha256ShortHex(normalizedPath) },
+    });
 
     // ── 6. Pre-compute hashes outside the tx so we hold the row lock
     //       for the minimum time. PBKDF2 100k is ~50ms per hash and we
@@ -515,29 +559,61 @@ export class SetupService {
       return { ok: false, error: { code: 'INTERNAL' } };
     }
 
-    // ── 14. Post-commit audit (Req 1.5). Failures here MUST NOT
-    //        roll back the setup — the worst case is a missing audit
-    //        entry, which is also captured by the fallback console
-    //        write inside the AuditLogger (task 11.1).
+    // ── 14. Post-commit audit (Req 1.5, 15.1; task 11.2). Failures
+    //        here MUST NOT roll back the setup — `AuditLogger.write` is
+    //        best-effort + never-throws (task 11.1), emitting the
+    //        structured `console.error` fallback if the DB write fails,
+    //        so the worst case is a (replayable) missing row. We emit
+    //        the companion events alongside the primary `setup_completed`
+    //        because they are all consequences of THIS successful setup:
+    //          - `bootstrap_admin_created` — the bootstrap admin row,
+    //          - `admin_path_set`          — the Admin_Path was chosen,
+    //          - `lockout_policy_updated`  — the policy was captured,
+    //          - `setup_completed`         — the wizard finished.
+    //        Metadata is minimal + masked: the Admin_Path is recorded
+    //        only as its 8-char SHA-256 prefix (`adminPathHash`), never
+    //        the raw path (it is a secret — design §7.3); the policy is
+    //        the canonical JSON. No password/hash/token is in scope.
     if (outcome.ok) {
-      const writer = this.deps.auditWriter ?? this.makeFallbackAuditWriter();
-      try {
-        await writer({
-          event: 'setup_completed',
-          actorEmail: outcome.value.user.email,
+      const audit = this.resolveAuditLogger();
+      const adminPathHash = await sha256ShortHex(outcome.value.adminPath);
+      const base = {
+        actorEmail: outcome.value.user.email,
+        ip: ctx.ip ?? null,
+        userAgent: ctx.userAgent ?? null,
+        requestId: ctx.requestId ?? null,
+      };
+
+      // The four events are independent + best-effort, so we fire them
+      // concurrently rather than serially — `AuditLogger.write` never
+      // throws, so `Promise.all` can't reject, and parallelism keeps the
+      // post-commit block off the request's critical path.
+      await Promise.all([
+        audit.write({
+          ...base,
+          event: 'bootstrap_admin_created',
           targetEmail: outcome.value.user.email,
-          ip: ctx.ip,
-          userAgent: ctx.userAgent,
-          requestId: ctx.requestId,
-          metadata: {
-            adminPathHash: await sha256ShortHex(outcome.value.adminPath),
-            policy: policyValue,
-          },
-        });
-      } catch {
-        // swallow — see Req 13.4 spirit: a failed audit write must
-        // not fail the request.
-      }
+          metadata: { userId: outcome.value.user.id },
+        }),
+        audit.write({
+          ...base,
+          event: 'admin_path_set',
+          targetEmail: outcome.value.user.email,
+          metadata: { adminPathHash },
+        }),
+        audit.write({
+          ...base,
+          event: 'lockout_policy_updated',
+          targetEmail: outcome.value.user.email,
+          metadata: { policy: policyValue },
+        }),
+        audit.write({
+          ...base,
+          event: 'setup_completed',
+          targetEmail: outcome.value.user.email,
+          metadata: { adminPathHash, policy: policyValue },
+        }),
+      ]);
     }
 
     return outcome;
@@ -545,19 +621,17 @@ export class SetupService {
 
   // ── helpers ───────────────────────────────────────────────────────────
 
-  private makeFallbackAuditWriter(): AuditWriter {
-    const { db } = this.deps;
-    return async (entry) => {
-      await db.insert(auditLog).values({
-        event: entry.event,
-        actorEmail: entry.actorEmail ?? null,
-        targetEmail: entry.targetEmail ?? null,
-        ip: entry.ip ?? null,
-        userAgent: entry.userAgent ?? null,
-        metadata: entry.metadata ?? {},
-        requestId: entry.requestId ?? null,
-      });
-    };
+  /**
+   * Resolve the {@link AuditLogger} to use for the post-commit setup
+   * events. Honours an injected `audit` dep (tests pass a spy); falls
+   * back to a real `new AuditLogger({ db })` bound to the same
+   * per-request client — preserving the production behaviour the former
+   * `auditWriter ?? makeFallbackAuditWriter()` default provided, now
+   * through the secret-masking, budget-bounded, never-throwing logger
+   * (task 11.1).
+   */
+  private resolveAuditLogger(): AuditLoggerLike {
+    return this.deps.audit ?? new AuditLogger({ db: this.deps.db });
   }
 }
 

@@ -175,6 +175,12 @@ import { verifyPassword } from '../../services/auth/password';
 import { normalizeEmail } from '../login-guard/email-normalize';
 import { loadLockoutPolicyFromSettings } from '../login-guard/middleware';
 import { STANDARD_LOCKOUT_POLICY } from '../setup/policy-codec';
+// Type-only import keeps the dependency direction one-way (the audit
+// module never imports back into recovery), mirroring how the LoginGuard
+// hooks reference the logger. The real `AuditLogger` instance is built in
+// the recovery routes (`routes.ts`) and injected via the constructor —
+// admin-setup-wizard task 11.2 / Req 15.1, 15.2.
+import type { AuditLogger, AuditLogWriteInput } from '../audit/logger';
 
 // ── unlock-token store abstraction ──────────────────────────────────────
 
@@ -572,6 +578,26 @@ export interface RecoveryServiceDeps {
   readonly tokenTtlMs?: number;
   /** Recovery-token TTL in ms. Defaults to 30 minutes (Req 14.6). */
   readonly recoveryTokenTtlMs?: number;
+  /**
+   * Audit logger for the Req 15.1 recovery events (admin-setup-wizard
+   * task 11.2): `recovery_initiated` (forgot-path match), and
+   * `recovery_completed` + `backup_code_used` (recover success).
+   *
+   * OPTIONAL + injectable, defaulting to `undefined` (no-op) so the
+   * large existing `service.test.ts` suite — which never passes an
+   * `audit` — keeps passing unchanged. When absent, {@link writeAudit}
+   * skips the write entirely; the recovery behaviour (token mint,
+   * lockout clear, anti-timing delay, generic responses) is identical
+   * with or without it. Production wires a `new AuditLogger({ db })`
+   * via the recovery routes' `buildService(c)`.
+   *
+   * Audit entries are emitted ONLY on the success / match paths — never
+   * on a failure branch — so the audit trail does not leak which emails
+   * exist (anti-enumeration, Req 14.4 / 14.5). `AuditLogger.write` is
+   * best-effort + never-throws (task 11.1), so a failed audit write can
+   * never break recovery.
+   */
+  readonly audit?: AuditLogger | null;
 }
 
 // ── service ─────────────────────────────────────────────────────────────
@@ -585,6 +611,7 @@ export class RecoveryService {
   private readonly now: () => Date;
   private readonly tokenTtlMs: number;
   private readonly recoveryTokenTtlMs: number;
+  private readonly audit: AuditLogger | null;
 
   constructor(deps: RecoveryServiceDeps) {
     this.db = deps.db;
@@ -600,6 +627,28 @@ export class RecoveryService {
     this.tokenTtlMs = deps.tokenTtlMs ?? DEFAULT_TOKEN_TTL_MS;
     this.recoveryTokenTtlMs =
       deps.recoveryTokenTtlMs ?? DEFAULT_RECOVERY_TOKEN_TTL_MS;
+    this.audit = deps.audit ?? null;
+  }
+
+  /**
+   * Write a recovery audit entry through the injected {@link
+   * AuditLogger}, no-oping when none is wired (admin-setup-wizard task
+   * 11.2). The AuditLogger's `write()` is itself best-effort +
+   * never-throws (task 11.1), but we still wrap in a try/catch as
+   * belt-and-brace so a throwing test spy can never break recovery —
+   * mirroring the `writeAudit` helper in the LoginGuard hooks.
+   *
+   * Called ONLY from the success / match paths so the audit trail never
+   * reveals which emails exist (anti-enumeration, Req 14.4 / 14.5).
+   */
+  private async writeAudit(entry: AuditLogWriteInput): Promise<void> {
+    if (!this.audit) return;
+    try {
+      await this.audit.write(entry);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[recovery] audit write failed; recovery unaffected', err);
+    }
   }
 
   /**
@@ -867,6 +916,31 @@ export class RecoveryService {
       });
     });
 
+    // Req 15.1 — `recovery_completed` + `backup_code_used` audit
+    // entries (task 11.2). Emitted post-commit (the recovery mutations
+    // are durable), success-path only — a failure branch returns `null`
+    // above WITHOUT writing any audit entry, so the trail never leaks
+    // which emails exist or have spendable codes (anti-enumeration,
+    // Req 14.4). Best-effort + never-throws via {@link writeAudit}. The
+    // backup code itself is NEVER recorded — only the fact that a code
+    // was redeemed (the code-row id, which is not a secret); the
+    // AuditLogger would additionally mask a `backupCode` key if present
+    // (Req 15.3).
+    await this.writeAudit({
+      event: 'backup_code_used',
+      actorEmail: emailLower,
+      targetEmail: emailLower,
+      ip,
+      metadata: { backupCodeId: matchedId },
+    });
+    await this.writeAudit({
+      event: 'recovery_completed',
+      actorEmail: emailLower,
+      targetEmail: emailLower,
+      ip,
+      metadata: { method: 'backup_code' },
+    });
+
     return { adminPath, oneTimeUnlockToken: token.plaintext };
   }
 
@@ -882,7 +956,6 @@ export class RecoveryService {
    * stored, and no email is sent (Req 14.5).
    */
   private async attemptForgotPath(email: string, ip: string): Promise<void> {
-    void ip; // reserved for future audit context (recovery_initiated).
     const emailLower = normalizeEmail(email);
     if (emailLower.length === 0) return;
 
@@ -924,6 +997,22 @@ export class RecoveryService {
       userId: user.id,
       tokenHash: token.hash,
       expiresAt,
+    });
+
+    // Req 15.1 — `recovery_initiated` audit entry (task 11.2). Emitted
+    // on the MATCH path only — right after the recovery token is minted
+    // + stored — never on a no-match / no-op branch, so the audit trail
+    // does not leak which emails belong to the bootstrap admin
+    // (anti-enumeration, Req 14.5). Best-effort + never-throws via
+    // {@link writeAudit}. The token plaintext is NEVER recorded; only
+    // that recovery was initiated (the AuditLogger would additionally
+    // mask a `recoveryToken` key if one were present — Req 15.3).
+    await this.writeAudit({
+      event: 'recovery_initiated',
+      actorEmail: emailLower,
+      targetEmail: user.email,
+      ip,
+      metadata: { method: 'forgot_path' },
     });
 
     // 5. Deliver to the operator's email. Best-effort: a throwing /

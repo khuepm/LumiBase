@@ -68,6 +68,26 @@ export interface Variables {
   auth: AuthPrincipal;
   /** Correlation id for log lines. */
   requestId: string;
+  /**
+   * Resolved client IP for the current request (admin-setup-wizard
+   * task 11.2; Req 15.1, 15.2; design §6.2). Populated by the
+   * `audit-context` middleware (`withAuditContext`) via
+   * {@link import('./modules/login-guard/ip-extract').extractClientIp}
+   * so every downstream handler — and the AuditLogger callers — read
+   * the SAME canonical IP form the LoginGuard writes into
+   * `login_attempts.ip`. Optional: the middleware sets it on the global
+   * chain, but a unit-test Hono app that doesn't mount the middleware
+   * leaves it unset.
+   */
+  ip?: string;
+  /**
+   * Raw `User-Agent` header for the current request (admin-setup-wizard
+   * task 11.2; Req 15.2). Populated by the `audit-context` middleware
+   * alongside {@link Variables.ip} so audit entries can carry the UA
+   * without each handler re-reading the header. `undefined` when the
+   * header is absent or the middleware isn't mounted.
+   */
+  userAgent?: string;
   /** Runtime context providing cache, storage, database, search, queue, and media adapters. */
   runtime: RuntimeContext;
   /**

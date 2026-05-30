@@ -76,6 +76,14 @@ import type {
   NotificationChannel,
   NotificationPayload,
 } from '../notifications/types';
+// Type-only import keeps the dependency direction one-way, exactly like
+// `NotificationDispatcher` above: the hooks learn the AuditLogger's
+// *shape* (its `write()` method) without importing the logger's runtime
+// code, so no import cycle forms and the existing hook unit tests can
+// inject a tiny spy. The real `AuditLogger` instance is constructed in
+// the route (`apps/cms/src/routes/auth.ts`) and threaded in. See task
+// 11.2 / Req 15.1, 15.2.
+import type { AuditLogger, AuditLogWriteInput } from '../audit/logger';
 import type { LockoutPolicy } from '../setup/policy-codec';
 import type { CounterStore } from './counter';
 import { normalizeEmail } from './email-normalize';
@@ -237,6 +245,82 @@ export interface NotificationDeps {
    * `recordLoginSuccess`, which has no policy in scope.
    */
   readonly notifyChannels?: readonly NotificationChannel[];
+  /**
+   * Audit logger for the Req 15.1 security events the hooks own
+   * (`login_failed`, `login_success`, `user_locked`, `ip_blocked`,
+   * `anomaly_triggered`) — admin-setup-wizard task 11.2.
+   *
+   * Folded into this same deps bundle (rather than a separate
+   * parameter) so the route threads ONE object into every hook, exactly
+   * as it does for the notification fields. Optional + injectable for
+   * the SAME two reasons the dispatcher is (see above):
+   *
+   *   1. **Testability** — the hook unit tests drive a fake DB and
+   *      assert on the rows that *would* be written; injecting a tiny
+   *      spy `{ async write(e) { calls.push(e) } }` lets them assert
+   *      the audit entries without standing up Postgres + the real
+   *      logger.
+   *   2. **Backward compatibility** — when omitted, {@link writeAudit}
+   *      collapses to a no-op, so the existing `hooks.test.ts` /
+   *      `hooks-notifications.test.ts` suites (which never pass an
+   *      `audit`) keep passing unchanged. The audit write is purely
+   *      additive.
+   *
+   * The route (`apps/cms/src/routes/auth.ts`) constructs a
+   * `new AuditLogger({ db })` once per `/login` request and supplies it
+   * here. `AuditLogger.write` is best-effort + never-throws (task
+   * 11.1), so a failed audit write can never break the login flow.
+   */
+  readonly audit?: AuditLogger | null;
+  /**
+   * Correlation id for the audit entries the hooks write (the
+   * `requestId` column — Req 15.2). The hooks have no Hono context, so
+   * the route resolves `c.get('requestId')` (populated by the
+   * `audit-context` middleware) and passes it through this bundle.
+   * Optional — a missing id simply records the audit row with a null
+   * `requestId`.
+   */
+  readonly requestId?: string;
+}
+
+/**
+ * Write an audit entry through the injected {@link AuditLogger},
+ * no-oping when none is wired. The AuditLogger's `write()` is itself
+ * best-effort + never-throws (task 11.1), but we still wrap in a
+ * try/catch as belt-and-brace so a throwing test spy (or a future
+ * logger that breaks the contract) can NEVER fail the login flow —
+ * exactly the guarantee {@link dispatchSecurityEvent} gives for
+ * notifications (Req 13.4 spirit).
+ *
+ * Mirrors the `dispatchSecurityEvent` shape: takes the deps bundle and
+ * the entry, skips entirely when no logger is present so the common
+ * "audit not wired" path costs nothing.
+ */
+async function writeAudit(
+  deps: NotificationDeps | undefined,
+  entry: AuditLogWriteInput,
+): Promise<void> {
+  const audit = deps?.audit;
+  if (!audit) return;
+  try {
+    await audit.write(entry);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[login-guard] audit write failed; login flow unaffected',
+      err,
+    );
+  }
+}
+
+/**
+ * The actor email for an audit entry derived from a login email:
+ * the normalised address when present, `null` when blank (a probe with
+ * an empty email has no meaningful actor — Req 15.2 allows a nullable
+ * `actorEmail`).
+ */
+function actorEmailOrNull(emailLower: string): string | null {
+  return emailLower.length > 0 ? emailLower : null;
 }
 
 /**
@@ -308,11 +392,11 @@ async function dispatchSecurityEvent(
  *      authority, but it's a useful denormalised mirror.
  *
  *   4. Recompute `ipFailedCount` and apply the Req 8.2 floor of 3.
- *      When the threshold is crossed we surface a `console.warn` so
- *      operators see the rate-limit kicking in — the actual block
- *      decision is made by the LoginGuard middleware on the *next*
- *      request, by reading the same counter (design §6.4). No new
- *      DB row is written for the block itself.
+ *      When the threshold is crossed we record an `ip_blocked` audit
+ *      entry (Req 15.1, task 11.2) and fan out the Req 13.1 notification
+ *      — the actual block decision is still made by the LoginGuard
+ *      middleware on the *next* request, by reading the same counter
+ *      (design §6.4). No new DB row is written for the block itself.
  *
  * @returns Counts and flags useful for caller-side audit/logging.
  *          The hook never throws on counter errors — a failed
@@ -341,6 +425,24 @@ export async function recordLoginFailure(
     userAgent: ctx.userAgent ?? null,
     result: 'fail',
     reason: ctx.reason,
+  });
+
+  // Req 15.1 — `login_failed` audit entry for EVERY failed attempt
+  // (task 11.2). Emitted right after the row is recorded so the audit
+  // trail mirrors `login_attempts`. Best-effort + never-throws via
+  // {@link writeAudit}. `actorEmail` carries the typed-in address (the
+  // would-be actor) — null when blank; `metadata.reason` distinguishes
+  // a credential failure from a downstream `account_locked` /
+  // `ip_blocked` rejection. No secrets are included (the password is
+  // never in scope here).
+  await writeAudit(notify, {
+    event: 'login_failed',
+    actorEmail: actorEmailOrNull(emailLower),
+    targetEmail: actorEmailOrNull(emailLower),
+    ip,
+    userAgent: ctx.userAgent ?? null,
+    requestId: notify?.requestId,
+    metadata: { reason: ctx.reason },
   });
 
   // 2 + 3. Per-user threshold. Skip when the request didn't carry an
@@ -390,6 +492,26 @@ export async function recordLoginFailure(
         anomalyScore: null,
         action: 'locked',
       });
+
+      // Req 15.1 — `user_locked` audit entry (task 11.2). Best-effort
+      // via {@link writeAudit}; the AuditLogger never throws so the
+      // lockout we just committed is safe. `targetEmail` is the locked
+      // user; `actorEmail` is null because a lockout is system-driven,
+      // not performed by an authenticated actor.
+      await writeAudit(notify, {
+        event: 'user_locked',
+        actorEmail: null,
+        targetEmail: actorEmailOrNull(emailLower),
+        ip,
+        userAgent: ctx.userAgent ?? null,
+        requestId: notify?.requestId,
+        metadata: {
+          reason: ctx.reason,
+          userFailedCount,
+          userMaxFailedAttempts: policy.userMaxFailedAttempts,
+          lockoutWindowSeconds: policy.lockoutWindowSeconds,
+        },
+      });
     }
   }
 
@@ -402,16 +524,26 @@ export async function recordLoginFailure(
   const ipThreshold = Math.max(3, policy.ipMaxFailedAttempts);
   const ipBlocked = ipFailedCount >= ipThreshold;
   if (ipBlocked) {
-    // Phase F (task 11.2) wires AuditLogger. For now, surface the
-    // event via the structured warn channel so operators tailing
-    // logs see it; the follow-on task will replace this with a
-    // proper audit entry without changing the caller contract.
-    // eslint-disable-next-line no-console
-    console.warn('[login-guard] IP rate-limit threshold reached', {
+    // Req 15.1 — `ip_blocked` audit entry (task 11.2). This REPLACES
+    // the former `console.warn` placeholder: the rate-limit crossing is
+    // now recorded as a first-class audit event. Best-effort +
+    // never-throws via {@link writeAudit}. `email` is folded into
+    // metadata as the *triggering* attempt's address (the block itself
+    // is keyed on the IP, not the user), and `actorEmail` is left null
+    // because an IP block is system-driven.
+    await writeAudit(notify, {
+      event: 'ip_blocked',
+      actorEmail: null,
+      targetEmail: null,
       ip,
-      ipFailedCount,
-      threshold: ipThreshold,
-      lockoutWindowSeconds: policy.lockoutWindowSeconds,
+      userAgent: ctx.userAgent ?? null,
+      requestId: notify?.requestId,
+      metadata: {
+        triggeringEmail: actorEmailOrNull(emailLower),
+        ipFailedCount,
+        threshold: ipThreshold,
+        lockoutWindowSeconds: policy.lockoutWindowSeconds,
+      },
     });
 
     // Req 13.1 — fan an `ip_blocked` notification out to the
@@ -564,6 +696,28 @@ export async function recordLoginSuccess(
     await writeBaseline(tx as Database, ctx.userId, draft, now);
   });
 
+  // Req 15.1 — `login_success` audit entry (task 11.2). Emitted
+  // post-commit, like the `anomaly_triggered` notification below: the
+  // login already succeeded and the row is durable, so a best-effort
+  // audit write has nothing to roll back and must not be able to fail
+  // the committed success. `actorEmail`/`targetEmail` both carry the
+  // authenticated user; `metadata` records the anomaly verdict (no
+  // secrets — the password never reaches this hook).
+  await writeAudit(options.notify, {
+    event: 'login_success',
+    actorEmail: actorEmailOrNull(emailLower),
+    targetEmail: actorEmailOrNull(emailLower),
+    ip,
+    userAgent: ctx.userAgent ?? null,
+    countryCode: draft.countryCode ?? null,
+    requestId: options.notify?.requestId,
+    metadata: {
+      anomalyScore: roundScore(ctx.anomalyScore),
+      anomalyTriggered: ctx.anomalyTriggered ?? false,
+      baselineWarmup: ctx.baselineWarmup ?? false,
+    },
+  });
+
   // Req 13.1 — `anomaly_triggered` notification (design §6.3).
   //
   // Dispatched *after* the transaction commits, not inside it: the
@@ -588,6 +742,26 @@ export async function recordLoginSuccess(
       userAgent: ctx.userAgent ?? null,
       anomalyScore: roundScore(ctx.anomalyScore),
       action: 'allowed',
+    });
+
+    // Req 15.1 — `anomaly_triggered` audit entry (task 11.2). Separate
+    // from and additional to the notification above: the notification
+    // alerts the operator out-of-band, while this entry persists the
+    // anomaly into the audit trail. Same `notify_only`-path gate.
+    // Best-effort + never-throws via {@link writeAudit}.
+    await writeAudit(options.notify, {
+      event: 'anomaly_triggered',
+      actorEmail: actorEmailOrNull(emailLower),
+      targetEmail: actorEmailOrNull(emailLower),
+      ip,
+      userAgent: ctx.userAgent ?? null,
+      countryCode: draft.countryCode ?? null,
+      requestId: options.notify?.requestId,
+      metadata: {
+        anomalyScore: roundScore(ctx.anomalyScore),
+        action: 'notify_only',
+        baselineWarmup: ctx.baselineWarmup ?? false,
+      },
     });
   }
 }
@@ -653,6 +827,29 @@ export async function recordAnomalyBlock(
     anomalyScore: ctx.anomalyScore.toFixed(2),
     anomalyTriggered: true,
     baselineWarmup: ctx.baselineWarmup,
+  });
+
+  // Req 15.1 — `anomaly_triggered` audit entry (task 11.2). The
+  // anomaly detector firing IS the audit event regardless of which
+  // action (`lock` / `require_mfa`) the policy chose — `anomaly_lock`
+  // and `mfa_required` are `login_attempts.reason` values, not audit
+  // codes (the audit vocabulary's anomaly code is `anomaly_triggered`).
+  // Emitted right after the attempt row so the trail mirrors it.
+  // Best-effort + never-throws via {@link writeAudit}.
+  await writeAudit(notify, {
+    event: 'anomaly_triggered',
+    actorEmail: actorEmailOrNull(emailLower),
+    targetEmail: actorEmailOrNull(emailLower),
+    ip,
+    userAgent: ctx.userAgent ?? null,
+    countryCode: draft.countryCode ?? null,
+    requestId: notify?.requestId,
+    metadata: {
+      anomalyScore: roundScore(ctx.anomalyScore),
+      action: ctx.action,
+      reason,
+      baselineWarmup: ctx.baselineWarmup,
+    },
   });
 
   if (ctx.action === 'lock') {

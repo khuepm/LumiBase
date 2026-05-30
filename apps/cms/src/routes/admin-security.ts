@@ -40,12 +40,14 @@
  *
  * Audit log (Req 8.8 / 7.6):
  *
- *   The real audit wiring lands in task 11.2 (AuditLogger). Until
- *   then we surface `user_unlocked` / `ip_unblocked` events via the
- *   structured-log channel using {@link maskAdminPath} so any
- *   accidentally-leaked Admin_Path is masked at the default log
- *   level — keeping the placeholder in shape with the audit codes
- *   from Req 15.1 means the swap to AuditLogger is mechanical.
+ *   The `user_unlocked` / `ip_unblocked` events are written to the
+ *   `audit_log` table through the real {@link AuditLogger} (task 11.2,
+ *   design §10.1). Metadata is masked with {@link maskAdminPath} before
+ *   the write so any accidentally-leaked Admin_Path is hidden at the
+ *   default log level (Req 5.5); the AuditLogger additionally masks the
+ *   four secret keys (Req 15.3). The write is best-effort +
+ *   never-throws, so a failed audit row can never break the
+ *   unlock/unblock action.
  *
  * Validates: Requirements 7.6, 7.7, 8.7, 8.8, 8.9 (design §4.5, §4.6).
  */
@@ -62,6 +64,7 @@ import { normalizeEmail } from '../modules/login-guard/email-normalize';
 import { loadLockoutPolicyFromSettings } from '../modules/login-guard/middleware';
 import { STANDARD_LOCKOUT_POLICY } from '../modules/setup/policy-codec';
 import { maskAdminPath } from '../modules/audit/path-mask';
+import { AuditLogger } from '../modules/audit/logger';
 
 export const adminSecurityRouter = new Hono<AppEnv>();
 
@@ -142,28 +145,41 @@ async function resolveLockoutWindowSeconds(
 }
 
 /**
- * Surface a security event via `console.info` while task 11.2's real
- * AuditLogger is being built. The shape mirrors design §10.1 so the
- * eventual swap is a one-line replacement.
+ * Write a `user_unlocked` / `ip_unblocked` audit entry through the real
+ * {@link AuditLogger} (admin-setup-wizard task 11.2; Req 8.8, 7.6;
+ * design §10.1). This REPLACES the former `console.info` placeholder.
+ *
+ * The actor is the authenticated admin performing the action
+ * (`c.get('auth').email`); `ip` / `userAgent` / `requestId` are read
+ * off the context (populated by the `audit-context` middleware, design
+ * §6.2). Metadata is first run through {@link maskAdminPath} so any
+ * accidentally-included Admin_Path is masked at the default log level
+ * (Req 5.5); the AuditLogger additionally masks the four secret keys
+ * (Req 15.3) — the two maskers compose. The write is best-effort +
+ * never-throws (task 11.1), so a failed audit row can never break the
+ * unlock/unblock the admin just performed; we still `await` it because
+ * it resolves fast and never rejects.
  */
-function emitAuditEvent(
+async function emitAuditEvent(
   c: Context<AppEnv>,
   event: 'user_unlocked' | 'ip_unblocked',
   metadata: Record<string, unknown>,
-): void {
+): Promise<void> {
   const auth = c.get('auth');
-  const requestId = c.get('requestId');
   // No Admin_Path is in scope here, but go through `maskAdminPath` so
   // any accidental future addition (e.g. metadata that includes a
   // request URL) is automatically masked at default log levels per
-  // Req 5.5.
+  // Req 5.5. The AuditLogger then masks secret keys (Req 15.3) on top.
   const safeMetadata = maskAdminPath(metadata, null);
-  // eslint-disable-next-line no-console
-  console.info('[admin-security]', {
+  const logger = new AuditLogger({ db: c.get('db') });
+  await logger.write({
     event,
     actorEmail: auth?.email ?? null,
-    actorUserId: auth?.userId ?? null,
-    requestId: requestId ?? null,
+    targetEmail:
+      typeof metadata.targetEmail === 'string' ? metadata.targetEmail : null,
+    ip: c.get('ip') ?? null,
+    userAgent: c.get('userAgent') ?? null,
+    requestId: c.get('requestId') ?? null,
     metadata: safeMetadata,
   });
 }
@@ -266,7 +282,7 @@ adminSecurityRouter.post('/unlock-user', async (c) => {
       ),
     );
 
-  emitAuditEvent(c, 'user_unlocked', {
+  await emitAuditEvent(c, 'user_unlocked', {
     targetUserId: existing.id,
     targetEmail: emailLower,
     windowSeconds,
@@ -353,7 +369,7 @@ adminSecurityRouter.post('/unblock-ip', async (c) => {
       ),
     );
 
-  emitAuditEvent(c, 'ip_unblocked', {
+  await emitAuditEvent(c, 'ip_unblocked', {
     targetIp: ipCanonical,
     windowSeconds,
   });
