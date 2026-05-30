@@ -64,7 +64,7 @@ Chỉ admin (capability `marketplace:publish`) được phép.
 
 ## Roadmap
 
-- [ ] Studio UI marketplace browser (browse + 1-click install).
+- [x] Studio UI marketplace browser (browse + 1-click install).
 - [ ] Versioning + auto-update notifications.
 - [ ] Public marketplace site (apps/marketplace).
 - [ ] Revenue sharing cho commercial extensions.

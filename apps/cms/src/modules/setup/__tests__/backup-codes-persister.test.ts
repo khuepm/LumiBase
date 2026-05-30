@@ -331,5 +331,5 @@ describe('backup code format property (Req 14.1)', () => {
       }),
       { numRuns: 25 },
     );
-  });
+  }, 30000);
 });

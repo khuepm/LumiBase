@@ -10,14 +10,14 @@
 ## Task Breakdown
 
 ### 1. Refactor `@lumibase/sdk`
-- [ ] Chuyển đổi kiến trúc sang Composable Client (`createLumiClient().with(...)`).
-- [ ] Tách Core Logic ra khỏi Rest Implementation (VD: `src/rest/readItems.ts`).
-- [ ] Thiết lập tsup builder, update `package.json` để export các endpoints chuẩn.
+- [x] Chuyển đổi kiến trúc sang Composable Client (`createLumiClient().with(...)`).
+- [x] Tách Core Logic ra khỏi Rest Implementation (VD: `src/rest/readItems.ts`).
+- [x] Thiết lập tsup builder, update `package.json` để export các endpoints chuẩn.
 
 ### 2. Update Studio CMS
-- [ ] Migrate toàn bộ usage của `createLumiClient` cũ sang syntax mới (trong `apps/studio`).
+- [x] Migrate toàn bộ usage của `createLumiClient` cũ sang syntax mới (trong `apps/studio`).
 
 ### 3. Khởi tạo Consumer App (`apps/consumer`)
-- [ ] Tạo Next.js App Router boilerplate.
-- [ ] Tích hợp `@lumibase/sdk`.
-- [ ] Demo tính năng fetch items từ một collection bất kỳ thông qua SDK và SSR/CSR.
+- [x] Tạo Next.js App Router boilerplate.
+- [x] Tích hợp `@lumibase/sdk`.
+- [x] Demo tính năng fetch items từ một collection bất kỳ thông qua SDK và SSR/CSR.
