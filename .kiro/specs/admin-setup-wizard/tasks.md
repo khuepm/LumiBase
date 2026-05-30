@@ -57,7 +57,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 5.3 Tạo `apps/cms/src/modules/login-guard/counter.ts` exporting `userFailedCount(email, windowSeconds)` và `ipFailedCount(ip, windowSeconds)` query SQL count trên `login_attempts`; interface `CounterStore` để cho phép thay Redis qua env `LUMIBASE_REDIS_URL` sau này (Req 7.1, 8.1; design §6.4, Property 12)
   - [x] 5.4 Tạo `apps/cms/src/modules/login-guard/ip-extract.ts` với `extractClientIp(c)` ưu tiên `CF-Connecting-IP` → `X-Forwarded-For` (chỉ nếu remote nằm trong `LUMIBASE_TRUSTED_PROXIES`) → remote socket; trả về `'127.0.0.1' | '::1'` cho loopback (Req 8.4; design §6.1)
 
-- [ ] 6. Login guard middleware và endpoints
+- [x] 6. Login guard middleware và endpoints
   - [x] 6.1 Tạo `apps/cms/src/modules/login-guard/middleware.ts` chạy trước `/auth/login` handler: kiểm `users.lockedUntil > now()` (trả 423 ACCOUNT_LOCKED + retryAfterSeconds), kiểm `ipBlockedUntil > now()` (trả 429 + Retry-After header); apply identical body + identical latency cho email tồn tại / không tồn tại (Req 7.3, 8.3; design §6.3, Property 8)
   - [x] 6.2 Mở rộng handler `apps/cms/src/routes/auth.ts` `/login` với hooks `onFailure(email, ip, reason)` (insert login_attempts, tăng counter, set lockedUntil khi đạt threshold; tăng ip counter, set ipBlockedUntil khi đạt) và `onSuccess(userId, email, ip, attempt)` (insert success attempt, reset failed_count + locked_until + ip counter) (Req 7.1, 7.2, 7.4, 8.1, 8.2, 8.6; design §6.3)
   - [x] 6.3 Áp dụng email normalization (lowercase + trim) khi key counter và verify user (Req 7.1; design §6.5)
@@ -67,7 +67,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 6.7 Viết unit test `apps/cms/src/modules/login-guard/__tests__/counter.test.ts` sliding window correctness với time-mock; verify cửa sổ trượt cleanup sau windowSeconds (Req 7.1, 8.1; design §13.1, Property 12)
   - [x] 6.8 Viết integration test `apps/cms/src/__tests__/lockout-flow.integration.test.ts` 5 fail attempts → 423 ACCOUNT_LOCKED; success login sau lockout duration → 200 + counter reset; verify IP block sau 10 fail từ một IP đa email (Req 7.2-7.5, 8.2, 8.3; design §13.2)
   - [x] 6.9 Viết security test `apps/cms/src/__tests__/user-enum.timing.test.ts` 500 fail login với email tồn tại vs random; assert response body byte-equal, latency p95 delta ≤50ms (Req 7.5; design §13.3, Property 8)
-  - [~] 6.10 Viết k6 load test `apps/cms/k6/login-brute-force.js` 50 VU spam `/auth/login` với password sai; assert IP bị block đúng sau N attempts, throughput route khác không degrade (Req 8.2, 8.3; design §13.4)
+  - [x] 6.10 Viết k6 load test `apps/cms/k6/login-brute-force.js` 50 VU spam `/auth/login` với password sai; assert IP bị block đúng sau N attempts, throughput route khác không degrade (Req 8.2, 8.3; design §13.4)
 
 ### Phase D — Anomaly Detection
 
