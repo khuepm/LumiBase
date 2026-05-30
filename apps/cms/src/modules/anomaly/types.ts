@@ -94,3 +94,26 @@ export interface GeoBaselineSnapshot {
   /** Total successful logins; gates warmup mode at `< 3` (Req 9.4). */
   readonly successfulLogins: number;
 }
+
+/**
+ * Snapshot of the per-user behavioural baseline that the time
+ * subscore reads (`login_baselines` row from design §3.5, §8.2).
+ * Only the fields the time subscore actually consults are typed
+ * here so unit tests can stub the loader with a minimal fixture.
+ *
+ * `hourHistogram` is the 24-bucket UTC distribution maintained by
+ * {@link  /apps/cms/src/modules/anomaly/baseline-store.ts}
+ * (task 7.5). `null` from the baseline loader means "row not yet
+ * inserted" — the detector treats this identically to
+ * `successfulLogins=0` and a zeroed histogram, which falls into the
+ * warmup branch (Req 10.4).
+ */
+export interface TimeBaselineSnapshot {
+  /**
+   * Per-UTC-hour login count, length 24. Index `h` is the count of
+   * prior successful logins where `now.getUTCHours() === h`.
+   */
+  readonly hourHistogram: readonly number[];
+  /** Total successful logins; gates warmup mode at `< 10` (Req 10.4). */
+  readonly successfulLogins: number;
+}
