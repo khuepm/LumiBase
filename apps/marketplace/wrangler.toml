@@ -1,0 +1,11 @@
+name = "lumibase-marketplace"
+compatibility_date = "2024-01-01"
+
+[vars]
+ENVIRONMENT = "production"
+
+[build]
+command = "npm run build"
+cwd = "."
+
+pages_build_output_dir = "out"
