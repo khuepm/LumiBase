@@ -66,7 +66,7 @@ Chỉ admin (capability `marketplace:publish`) được phép.
 
 - [x] Studio UI marketplace browser (browse + 1-click install).
 - [x] Versioning + auto-update notifications.
-- [ ] Public marketplace site (apps/marketplace).
+- [x] Public marketplace site (apps/marketplace).
 - [ ] Revenue sharing cho commercial extensions.
 
 ## Cấu trúc Phiên bản & Thông báo Cập nhật (Versioning & Auto-update)
