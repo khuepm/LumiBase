@@ -68,6 +68,7 @@ import {
   type CounterStore,
   type CounterStoreEnv,
 } from './counter';
+import { normalizeEmail } from './email-normalize';
 
 /** Settings key used to persist the canonical Lockout_Policy (Req 6.6). */
 const POLICY_SETTINGS_KEY = 'login_security_policy';
@@ -224,7 +225,7 @@ export async function precheckLogin(
   args: PrecheckArgs,
 ): Promise<PrecheckOutcome> {
   const { db, counter, policy, email, ip, now } = args;
-  const emailLower = normaliseEmail(email);
+  const emailLower = normalizeEmail(email);
 
   // ── 1. Account lockout check (Req 7.3) ──────────────────────────────
   //
@@ -383,11 +384,6 @@ function readEnvForCounter(c: Context<AppEnv>): CounterStoreEnv {
   if (!env) return {};
   const url = env.LUMIBASE_REDIS_URL;
   return typeof url === 'string' ? { LUMIBASE_REDIS_URL: url } : {};
-}
-
-function normaliseEmail(input: string): string {
-  if (typeof input !== 'string') return '';
-  return input.trim().toLowerCase();
 }
 
 /**

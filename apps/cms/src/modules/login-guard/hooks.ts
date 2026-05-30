@@ -40,6 +40,7 @@ import { loginAttempts, users, type Database } from '@lumibase/database';
 
 import type { LockoutPolicy } from '../setup/policy-codec';
 import type { CounterStore } from './counter';
+import { normalizeEmail } from './email-normalize';
 
 // ── Public types ───────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ export async function recordLoginFailure(
   ctx: LoginFailureContext,
   now: Date = new Date(),
 ): Promise<LoginFailureOutcome> {
-  const emailLower = normaliseEmail(ctx.email);
+  const emailLower = normalizeEmail(ctx.email);
   const ip = normaliseIp(ctx.ip);
 
   // 1. Insert the fail row. `userId` is `null` when the email didn't
@@ -232,7 +233,7 @@ export async function recordLoginSuccess(
   db: Database,
   ctx: LoginSuccessContext,
 ): Promise<void> {
-  const emailLower = normaliseEmail(ctx.email);
+  const emailLower = normalizeEmail(ctx.email);
   const ip = normaliseIp(ctx.ip);
 
   await db.insert(loginAttempts).values({
@@ -259,11 +260,6 @@ export async function recordLoginSuccess(
 }
 
 // ── Internal helpers ───────────────────────────────────────────────────
-
-function normaliseEmail(input: string | null | undefined): string {
-  if (typeof input !== 'string') return '';
-  return input.trim().toLowerCase();
-}
 
 function normaliseIp(input: string | null | undefined): string {
   if (typeof input !== 'string') return 'unknown';

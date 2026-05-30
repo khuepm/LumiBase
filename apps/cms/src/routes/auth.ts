@@ -13,6 +13,7 @@ import { extractClientIp } from '../modules/login-guard/ip-extract';
 import {
   createCounterStore,
 } from '../modules/login-guard/counter';
+import { normalizeEmail } from '../modules/login-guard/email-normalize';
 import { STANDARD_LOCKOUT_POLICY } from '../modules/setup/policy-codec';
 import {
   recordLoginFailure,
@@ -231,12 +232,12 @@ authRouter.post('/login', async (c) => {
   const input = loginSchema.parse(body);
 
   // Email normalisation (admin-setup-wizard Req 7.1, design §6.5):
-  // lower(email).trim() is the canonical key for the sliding-window
-  // counter (`loginAttempts.emailLower`) and for the no-enumeration
-  // SELECT. Task 6.3 will fold this normalisation into the wider
-  // wizard surface; we apply it locally here so the LoginGuard hooks
-  // see consistent values regardless of which task ships first.
-  const emailLower = input.email.trim().toLowerCase();
+  // delegate to the shared `normalizeEmail` helper so the
+  // sliding-window counter (`loginAttempts.emailLower`), the
+  // no-enumeration `users` SELECT, and the LoginGuard middleware all
+  // key on the exact same canonical form. Drift across these call
+  // sites would silently break lockout transitions.
+  const emailLower = normalizeEmail(input.email);
   const ip = extractClientIp(c);
   const userAgent = c.req.header('user-agent') ?? null;
 

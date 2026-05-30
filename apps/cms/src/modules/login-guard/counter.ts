@@ -22,6 +22,8 @@
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { loginAttempts, type Database } from '@lumibase/database';
 
+import { normalizeEmail } from './email-normalize';
+
 // ── Public surface ──────────────────────────────────────────────────────
 
 /**
@@ -93,7 +95,7 @@ export class PostgresCounterStore implements CounterStore {
   constructor(private readonly db: Database) {}
 
   async userFailedCount(email: string, windowSeconds: number): Promise<number> {
-    const emailLower = normaliseEmail(email);
+    const emailLower = normalizeEmail(email);
     if (emailLower.length === 0) return 0;
 
     const window = clampWindowSeconds(windowSeconds);
@@ -214,11 +216,6 @@ export function createCounterStore(
 let warnedAboutRedis = false;
 
 // ── Internal helpers ────────────────────────────────────────────────────
-
-function normaliseEmail(input: string): string {
-  if (typeof input !== 'string') return '';
-  return input.trim().toLowerCase();
-}
 
 /**
  * Clamp the window to a positive integer number of seconds.
