@@ -30,6 +30,7 @@
 
 import { eq, sql } from 'drizzle-orm';
 import {
+  adminBackupCodes,
   auditLog,
   systemState,
   users,
@@ -93,12 +94,12 @@ export interface SetupCompleteResult {
   readonly adminPath: string;
   /**
    * Plaintext backup codes — returned exactly once. The DB only holds
-   * the hashes (Req 14.2). Subtask 10.2 will lift the actual generation
-   * + persistence into the `admin_backup_codes` table; for the Phase A
-   * surface we return the plaintext list so the wizard's recovery step
-   * has something to render. Persisting the hashes is wired through
-   * an injected `backupCodesPersister` so this module doesn't depend
-   * on a table that doesn't exist yet.
+   * the PBKDF2 hashes (Req 14.2), persisted into `admin_backup_codes`
+   * inside the setup transaction via the injected
+   * {@link BackupCodesPersister} (default:
+   * {@link defaultBackupCodesPersister}). The plaintext never touches
+   * the database and is unrecoverable after this response, so the
+   * wizard's "Recovery Setup" step must surface it to the operator now.
    */
   readonly backupCodes: ReadonlyArray<string>;
 }
@@ -129,11 +130,16 @@ export type SetupCompleteOutcome =
 // ── dependencies ────────────────────────────────────────────────────────
 
 /**
- * Persistence hook for the eight backup-code hashes. Phase A doesn't
- * yet have the `admin_backup_codes` table (task 10.1) so the default
- * implementation is a noop; the SetupService still hashes the codes
- * inside the transaction so swapping in the real persister later is
- * a one-line change.
+ * Persistence hook for the eight backup-code hashes. The
+ * `admin_backup_codes` table (task 10.1) now exists, so the default
+ * implementation — {@link defaultBackupCodesPersister} — performs the
+ * real INSERT inside the setup transaction; one row per hash with
+ * `usedAt`/`usedFromIp` left NULL (a code is spendable until redeemed).
+ *
+ * The hook stays injectable so tests can stub/spy the persistence step
+ * without a live Postgres. Because the inserts run on the same `tx`
+ * handle as the rest of `complete()`, a rollback leaves zero backup-code
+ * rows behind (Req 1.5: no side effect leaks on failure).
  */
 export type BackupCodesPersister = (
   args: {
@@ -243,7 +249,8 @@ export class SetupService {
    *      have a `siteId` to attach to — see §15.7 / open question).
    *   9. Insert the bootstrap user with isBootstrap=true.
    *  10. Persist backup code hashes via the injected persister
-   *      (no-op in Phase A).
+   *      (defaults to `defaultBackupCodesPersister`, which writes the
+   *      `admin_backup_codes` rows on the same tx).
    *  11. Upsert `settings.login_security_policy` with the canonical JSON.
    *  12. Flip system_state.state='initialized', store adminPath, clear
    *      setup token hash, stamp initializedAt.
@@ -410,14 +417,19 @@ export class SetupService {
           throw new SetupAbort({ code: 'INTERNAL' });
         }
 
-        // ── 9. Persist backup code hashes (no-op until task 10.1
-        //       wires the table).
-        if (this.deps.backupCodesPersister) {
-          await this.deps.backupCodesPersister(
-            { userId: newUser.id, hashes: backupCodeHashes },
-            tx,
-          );
-        }
+        // ── 9. Persist backup code hashes into `admin_backup_codes`
+        //       (task 10.1 created the table). Runs on the same `tx`
+        //       handle so the rows commit atomically with the bootstrap
+        //       admin — a rollback leaves zero backup-code rows. The
+        //       persister is injectable (tests stub it); production
+        //       falls back to `defaultBackupCodesPersister`, mirroring
+        //       the `auditWriter ?? makeFallbackAuditWriter()` pattern.
+        const persistBackupCodes =
+          this.deps.backupCodesPersister ?? defaultBackupCodesPersister;
+        await persistBackupCodes(
+          { userId: newUser.id, hashes: backupCodeHashes },
+          tx,
+        );
 
         // ── 10. Lockout policy persistence (Req 6.6, 6.7) — DEFERRED.
         //
@@ -621,9 +633,13 @@ function validateAccount(
 }
 
 function generateBackupCode(): string {
-  // 16 chars from a 31-char alphabet → log2(31) * 16 ≈ 79 bits.
-  // Format as XXXX-XXXX for readability (Req 14.1) — that gives 8
-  // visible chars on each side, total 17 chars including the dash.
+  // Draw 16 bytes (128 bits) of CSPRNG entropy from `getRandomValues`
+  // — that is the "≥128 bit/code" randomness SOURCE the task calls for.
+  // Each byte maps to one alphabet char, yielding 16 visible chars from
+  // a 31-char alphabet → log2(31) * 16 ≈ 79 bits of *rendered* code
+  // space (the security-relevant figure, bounded by the human-typable
+  // `XXXX-XXXX` format Req 14.1 mandates). Format as two 8-char groups
+  // separated by a dash (8 visible chars per side, 17 chars total).
   const buf = crypto.getRandomValues(new Uint8Array(16));
   let chars = '';
   for (let i = 0; i < 8; i++) {
@@ -635,6 +651,27 @@ function generateBackupCode(): string {
   }
   return `${chars}-${chars2}`;
 }
+
+/**
+ * Default {@link BackupCodesPersister}: inserts one
+ * `admin_backup_codes` row per pre-hashed backup code, all on the
+ * supplied transaction handle so the writes are atomic with the rest
+ * of `SetupService.complete()`. `id`/`createdAt` use their schema
+ * defaults; `usedAt`/`usedFromIp` stay NULL (a freshly minted code is
+ * spendable until redeemed — Req 14.2). When the array is empty the
+ * insert is skipped so we never issue a zero-row `VALUES ()`.
+ *
+ * Exported so unit tests can exercise the row shape against a fake `tx`
+ * without standing up Postgres.
+ */
+export const defaultBackupCodesPersister: BackupCodesPersister = async (
+  { userId, hashes },
+  tx,
+) => {
+  if (hashes.length === 0) return;
+  const rows = hashes.map((codeHash) => ({ userId, codeHash }));
+  await tx.insert(adminBackupCodes).values(rows);
+};
 
 function defaultGeoipProbe(): boolean {
   try {

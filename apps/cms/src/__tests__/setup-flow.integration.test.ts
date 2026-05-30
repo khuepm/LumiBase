@@ -8,6 +8,7 @@ import {
 } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import {
+  adminBackupCodes,
   auditLog,
   createDb,
   systemState,
@@ -19,6 +20,7 @@ import {
   STANDARD_LOCKOUT_POLICY,
   type LockoutPolicy,
 } from '../modules/setup/policy-codec';
+import { verifyPassword } from '../services/auth/password';
 
 /**
  * Integration tests for the Setup Wizard atomic transaction
@@ -64,8 +66,10 @@ describe('Setup flow — integration', () => {
   beforeEach(async () => {
     if (!canConnect) return;
     // Reset every relevant table so each test starts on a clean slate.
+    // `admin_backup_codes` cascades from `users`, but list it explicitly
+    // so the intent is obvious and RESTART IDENTITY covers it too.
     await db.execute(
-      sql`TRUNCATE TABLE audit_log, system_state, users RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE TABLE admin_backup_codes, audit_log, system_state, users RESTART IDENTITY CASCADE`,
     );
   });
 
@@ -145,6 +149,75 @@ describe('Setup flow — integration', () => {
     expect(ssRow[0]!.adminPath).toBe('/lumi-7f3a9c');
     expect(ssRow[0]!.state).toBe('initialized');
     expect(ssRow[0]!.initializedAt).toBeInstanceOf(Date);
+
+    // Backup codes are persisted: exactly 8 rows for the new user,
+    // each with a PBKDF2 hash and an unused (NULL) `used_at`
+    // (Req 14.1, 14.2).
+    const codeRows = await db
+      .select()
+      .from(adminBackupCodes)
+      .where(eq(adminBackupCodes.userId, bootstrapUsers[0]!.id));
+    expect(codeRows).toHaveLength(8);
+    for (const row of codeRows) {
+      expect(row.codeHash).toMatch(/^pbkdf2\$100000\$[0-9a-f]+\$[0-9a-f]+$/);
+      expect(row.usedAt).toBeNull();
+      expect(row.usedFromIp).toBeNull();
+    }
+
+    // Each returned plaintext code verifies against exactly one stored
+    // hash — proving the response codes are the ones we persisted and
+    // that no plaintext ever hit the DB.
+    const storedHashes = codeRows.map((r) => r.codeHash);
+    for (const plain of outcome.value.backupCodes) {
+      const matches = await Promise.all(
+        storedHashes.map((h) => verifyPassword(plain, h)),
+      );
+      expect(matches.filter(Boolean)).toHaveLength(1);
+    }
+  });
+
+  it('rolls back backup-code rows when the setup transaction fails (Req 1.5 / 14.2)', async () => {
+    if (!canConnect) {
+      console.warn('Skipping: DATABASE_URL not set or database not reachable');
+      return;
+    }
+
+    // Inject a persister that throws *after* the bootstrap user insert
+    // but inside the transaction. The whole `complete()` tx must roll
+    // back, leaving zero backup-code rows and an uninitialized instance.
+    const boom = new Error('persist exploded');
+    const svc = new SetupService({
+      db,
+      requireSetupToken: false,
+      smtpAvailable: false,
+      backupCodesPersister: async () => {
+        throw boom;
+      },
+    });
+
+    const outcome = await svc.complete(makeInput(), { requestId: 'req-rollback' });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.error.code).toBe('INTERNAL');
+
+    // No backup-code rows survived the rollback.
+    const codeRows = await db.select().from(adminBackupCodes);
+    expect(codeRows).toHaveLength(0);
+
+    // No bootstrap admin, state stays uninitialized — no side effects.
+    const bootstrapUsers = await db
+      .select()
+      .from(users)
+      .where(eq(users.isBootstrap, true));
+    expect(bootstrapUsers).toHaveLength(0);
+    expect((await svc.getState()).state).toBe('uninitialized');
+
+    // No `setup_completed` audit entry (post-commit side effect never ran).
+    const auditRows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.event, 'setup_completed'));
+    expect(auditRows).toHaveLength(0);
   });
 
   it('refuses a second setup once initialized (Req 1.4 / Property 2)', async () => {
