@@ -54,7 +54,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
 - [ ] 5. Login attempts table và counter store
   - [x] 5.1 Thêm bảng `login_attempts` vào `packages/database/src/schema/security.ts` với cột `id`, `email_lower`, `user_id`, `ip`, `user_agent`, `country_code`, `geo_lookup_status`, `result`, `reason`, `anomaly_score`, `anomaly_triggered`, `baseline_warmup`, `created_at`; index `(email_lower, created_at)` và `(ip, created_at)` (Req 7.1, 8.1; design §3.4)
   - [x] 5.2 Sinh và apply migration cho `login_attempts`
-  - [~] 5.3 Tạo `apps/cms/src/modules/login-guard/counter.ts` exporting `userFailedCount(email, windowSeconds)` và `ipFailedCount(ip, windowSeconds)` query SQL count trên `login_attempts`; interface `CounterStore` để cho phép thay Redis qua env `LUMIBASE_REDIS_URL` sau này (Req 7.1, 8.1; design §6.4, Property 12)
+  - [x] 5.3 Tạo `apps/cms/src/modules/login-guard/counter.ts` exporting `userFailedCount(email, windowSeconds)` và `ipFailedCount(ip, windowSeconds)` query SQL count trên `login_attempts`; interface `CounterStore` để cho phép thay Redis qua env `LUMIBASE_REDIS_URL` sau này (Req 7.1, 8.1; design §6.4, Property 12)
   - [~] 5.4 Tạo `apps/cms/src/modules/login-guard/ip-extract.ts` với `extractClientIp(c)` ưu tiên `CF-Connecting-IP` → `X-Forwarded-For` (chỉ nếu remote nằm trong `LUMIBASE_TRUSTED_PROXIES`) → remote socket; trả về `'127.0.0.1' | '::1'` cho loopback (Req 8.4; design §6.1)
 
 - [ ] 6. Login guard middleware và endpoints

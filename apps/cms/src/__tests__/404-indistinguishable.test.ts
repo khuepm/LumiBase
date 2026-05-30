@@ -183,9 +183,11 @@ function quantile(samples: number[], p: number): number {
   const pos = (sorted.length - 1) * p;
   const lo = Math.floor(pos);
   const hi = Math.ceil(pos);
-  if (lo === hi) return sorted[lo];
+  const loVal = sorted[lo] ?? 0;
+  const hiVal = sorted[hi] ?? loVal;
+  if (lo === hi) return loVal;
   const w = pos - lo;
-  return sorted[lo] * (1 - w) + sorted[hi] * w;
+  return loVal * (1 - w) + hiVal * w;
 }
 
 // ── Snapshot helpers ────────────────────────────────────────────────────
