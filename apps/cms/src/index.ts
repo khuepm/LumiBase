@@ -11,6 +11,7 @@ import { withTenant } from './middleware/tenant';
 import { activityRouter } from './routes/activity';
 import { adminRouter } from './routes/admin';
 import { authRouter, meRouter } from './routes/auth';
+import { adminSecurityRouter } from './routes/admin-security';
 import { collectionsRouter } from './routes/collections';
 import { deliverRouter } from './routes/deliver';
 import { extensionsRouter } from './routes/extensions';
@@ -129,6 +130,12 @@ api.route('/activity', activityRouter);
 api.route('/realtime', realtimeRouter);
 api.route('/extensions', extensionsRouter);
 api.route('/admin', adminRouter);
+// Admin Security surface (admin-setup-wizard task 6.4; Req 7.6, 7.7,
+// 8.7, 8.8, 8.9; design §4.5, §4.6). Mounted *under* `withAuth` so the
+// admin-role gate inside the router can rely on `c.get('auth').roles`
+// being populated. Sibling to `/admin` rather than nested so future
+// recovery routes (task 10.7) can mount alongside without reshuffling.
+api.route('/admin/security', adminSecurityRouter);
 api.route('/tm', tmRouter);
 api.route('/flows', flowsRouter);
 api.route('/marketplace', marketplaceRouter);
