@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ANOMALY_ACTION_OPTIONS,
   buildDefaultValues,
   inferActivePreset,
 } from '../step-security';
@@ -190,5 +191,86 @@ describe('preset table sanity', () => {
     expect(LENIENT_PRESET.ipLockoutDurationSeconds).toBeLessThan(
       STANDARD_PRESET.ipLockoutDurationSeconds,
     );
+  });
+});
+
+describe('ANOMALY_ACTION_OPTIONS', () => {
+  // Phase D contract (task 8.3): the dropdown must always offer the
+  // three known anomaly actions and must always disable `require_mfa`
+  // until the MFA module ships (Req 12.4). The schema continues to
+  // accept the value so a JSON import predating the gate doesn't fail
+  // validation; the form layer is what enforces the disablement.
+
+  it('offers exactly the three known anomaly actions in order', () => {
+    expect(ANOMALY_ACTION_OPTIONS.map((o) => o.id)).toEqual([
+      'notify_only',
+      'lock',
+      'require_mfa',
+    ]);
+  });
+
+  it('disables only the require_mfa option', () => {
+    const disabledIds = ANOMALY_ACTION_OPTIONS.filter((o) => o.disabled).map(
+      (o) => o.id,
+    );
+    expect(disabledIds).toEqual(['require_mfa']);
+  });
+
+  it('keeps notify_only and lock enabled', () => {
+    const enabled = ANOMALY_ACTION_OPTIONS.filter((o) => !o.disabled).map(
+      (o) => o.id,
+    );
+    expect(enabled).toContain('notify_only');
+    expect(enabled).toContain('lock');
+  });
+});
+
+describe('Phase D field defaults', () => {
+  // The Phase D groups (Geographic / Time / Device anomaly + Anomaly
+  // Action) bind to fields that already exist on every preset. These
+  // tests pin that the defaults the operator sees on a fresh form
+  // mount match the requirement table (Req 6.3) — a regression where
+  // a future preset edit drifts these values would surface here
+  // before it lands in production.
+
+  it('Standard preset enables geo + device anomaly, disables time', () => {
+    const values = buildDefaultValues('standard', null);
+    expect(values.geoAnomalyEnabled).toBe(true);
+    expect(values.deviceAnomalyEnabled).toBe(true);
+    expect(values.timeAnomalyEnabled).toBe(false);
+  });
+
+  it('Standard preset uses notify_only as the default anomaly action', () => {
+    const values = buildDefaultValues('standard', null);
+    expect(values.anomalyAction).toBe('notify_only');
+  });
+
+  it('Standard preset uses 0.70 as the default anomaly threshold', () => {
+    const values = buildDefaultValues('standard', null);
+    expect(values.anomalyScoreThreshold).toBe(0.7);
+  });
+
+  it('every preset has a 2-decimal-place anomaly threshold within [0, 1]', () => {
+    const ids: PolicyPresetId[] = ['standard', 'strict', 'lenient'];
+    for (const id of ids) {
+      const t = POLICY_PRESETS[id].anomalyScoreThreshold;
+      expect(t).toBeGreaterThanOrEqual(0);
+      expect(t).toBeLessThanOrEqual(1);
+      // Round-trip through 2-decimal string to confirm the value
+      // doesn't carry float drift that would trip the schema's
+      // `multipleOf(0.01)` check.
+      expect(Number(t.toFixed(2))).toBe(t);
+    }
+  });
+
+  it('every preset never selects require_mfa', () => {
+    // Belt-and-braces: even though the dropdown disables the option,
+    // the preset table itself must not seed a value the form can't
+    // change. If a future preset edit ever lands `require_mfa` here
+    // the operator would be locked into a value they can't pick.
+    const ids: PolicyPresetId[] = ['standard', 'strict', 'lenient'];
+    for (const id of ids) {
+      expect(POLICY_PRESETS[id].anomalyAction).not.toBe('require_mfa');
+    }
   });
 });

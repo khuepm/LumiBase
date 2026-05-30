@@ -4,6 +4,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useState,
 } from 'react';
 import {
   useForm,
@@ -13,9 +14,14 @@ import {
 } from 'react-hook-form';
 import { cn } from '@/lib/cn';
 import {
+  getCapabilitiesWithFallback,
+  useSetupCapabilities,
+} from '../hooks/use-setup-capabilities';
+import {
   lockoutPolicySchema,
   POLICY_PRESETS,
   STANDARD_PRESET,
+  type AnomalyAction,
   type LockoutPolicyFormValues,
   type NotificationChannel,
   type PolicyPresetId,
@@ -23,12 +29,11 @@ import {
 import { useSetupStore } from '../setup-store';
 
 /**
- * "Login Security" step of the Setup Wizard — Phase C surface only.
+ * "Login Security" step of the Setup Wizard.
  *
- * Implements Req 6.1, 6.2, and the "Failed Attempts" + "Notifications"
- * portions of Req 6.3; design.md §5.5.
+ * Implements Req 6.1, 6.2, 6.3, 6.5, 12.4; design.md §5.5.
  *
- * Phase C scope (this task, 6.5):
+ * Phase C scope (task 6.5):
  *
  *   - Preset chooser ("Standard" / "Strict" / "Lenient") that pushes
  *     the preset's values into the entire form on selection. The
@@ -43,14 +48,24 @@ import { useSetupStore } from '../setup-store';
  *     `webhookSecret` pair that appears only when the `webhook`
  *     channel is ticked.
  *
- * Phase D scope (deferred to task 8.3): the "Geographic Anomaly",
- * "Time Anomaly", "Device Anomaly", and "Anomaly Action" groups, plus
- * the GeoIP capability warning. Until task 8.3 lands, those fields
- * stay invisible in the UI but are still part of the form's value
- * shape — the preset chooser populates them on every selection so
- * `lockoutPolicySchema` always sees a complete object on submit, the
- * `useCompleteSetup` mutation gets a full policy, and task 8.3 can
- * surface them without a schema change.
+ * Phase D scope (task 8.3):
+ *
+ *   - "Geographic Anomaly" group with `geoAnomalyEnabled`, plus a
+ *     dismissible warning banner shown when the operator enables
+ *     geographic anomaly detection but `GET /setup/capabilities`
+ *     reports `geoip.available=false` (Req 6.5). The warning never
+ *     blocks submit — operators can install the MMDB later, and the
+ *     CMS detector treats GeoIP-unavailable as a soft no-op
+ *     (design §8.1).
+ *   - "Time Anomaly" group with `timeAnomalyEnabled`.
+ *   - "Device Anomaly" group with `deviceAnomalyEnabled`.
+ *   - "Anomaly Action" group with `anomalyScoreThreshold` (number
+ *     0.00–1.00) and `anomalyAction` dropdown (`notify_only`,
+ *     `lock`, `require_mfa`). The `require_mfa` option is disabled
+ *     in the dropdown with helper text explaining the MFA module is
+ *     not yet installed (Req 12.4 — schema still accepts the value
+ *     so a JSON import predating the gate doesn't fail validation,
+ *     the form just never lets the operator pick it).
  *
  * On a passing submit, the values are mirrored into a session-only
  * in-memory draft (see `getPolicyDraft` below) and the wizard's
@@ -64,17 +79,16 @@ import { useSetupStore } from '../setup-store';
  *   - It does not navigate to `/setup/recovery` after submit. Routes
  *     are wired in task 6.6; the parent shell drives navigation via
  *     the `onSubmitted` callback.
- *   - It does not call any backend. The `/setup/complete` POST is
- *     orchestrated later by `useCompleteSetup` from the Recovery
- *     step (task 10.3 / 10.4). This step only collects + validates
- *     locally.
+ *   - It does not call `/setup/complete`. The `POST` is orchestrated
+ *     later by `useCompleteSetup` from the Recovery step (task 10.3
+ *     / 10.4). This step only collects + validates locally.
  *   - It does not localize copy. Strings stay inline; the matching
  *     i18n keys already live under `setup.steps.security.*` in the
  *     locale bundles (task 3.10) and a follow-up swap will reach
  *     them without changing the schema or form shape.
  *
- * Spec refs: requirements §6.1, §6.2, §6.3 (Failed Attempts +
- * Notifications); design.md §5.5.
+ * Spec refs: requirements §6.1, §6.2, §6.3, §6.5, §12.4; design.md
+ * §5.5.
  */
 
 // ────────────────────────────────────────────────────────────────────────
@@ -234,6 +248,22 @@ export interface StepSecurityProps {
 export function StepSecurity({ onSubmitted }: StepSecurityProps) {
   const setPolicyValid = useSetupStore((s) => s.setPolicyValid);
 
+  // ── Capabilities probe ────────────────────────────────────────────
+  // The "Geographic Anomaly" group surfaces a warning when the
+  // operator enables `geoAnomalyEnabled` AND the CMS reports
+  // `geoip.available=false`. The fallback helper folds loading and
+  // error states into the conservative "unavailable" reading so the
+  // warning errs on the side of visibility (Req 6.5).
+  const capsQuery = useSetupCapabilities();
+  const { capabilities } = getCapabilitiesWithFallback(capsQuery);
+  const geoipAvailable = capabilities.geoip.available;
+
+  // Operator-driven dismissal for the GeoIP warning. State stays in
+  // component memory (not the persisted store) so reopening the
+  // wizard re-shows the warning if it still applies — better to
+  // re-prompt than to silently leave it suppressed across sessions.
+  const [geoWarningDismissed, setGeoWarningDismissed] = useState(false);
+
   // ── Preset state ───────────────────────────────────────────────────
   // The chooser maintains its own UI state separate from the form
   // values: a draft might not match any preset exactly, in which case
@@ -267,6 +297,21 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
   const channels: NotificationChannel[] =
     (allValues.notifyChannels as NotificationChannel[] | undefined) ?? [];
   const webhookSelected = channels.includes('webhook');
+  const geoEnabled = Boolean(allValues.geoAnomalyEnabled);
+  const showGeoUnavailableWarning =
+    geoEnabled && !geoipAvailable && !geoWarningDismissed;
+
+  // Re-show the warning whenever the operator (a) toggles
+  // `geoAnomalyEnabled` off then back on, or (b) installs GeoIP and
+  // refetches. Tracking the previous values is cheaper than tracking
+  // the dismissal as a function of (geoEnabled, geoipAvailable).
+  useEffect(() => {
+    if (!geoEnabled || geoipAvailable) {
+      // The condition no longer applies — clear dismissal so a future
+      // toggle starts from "show warning" again.
+      if (geoWarningDismissed) setGeoWarningDismissed(false);
+    }
+  }, [geoEnabled, geoipAvailable, geoWarningDismissed]);
 
   // ── Preset card highlight ─────────────────────────────────────────
   // We compute this every render rather than memoising on every field
@@ -354,6 +399,22 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
 
       {/* ── Failed Attempts ───────────────────────────────────────── */}
       <FailedAttemptsGroup form={form} errors={errors} />
+
+      {/* ── Geographic Anomaly ────────────────────────────────────── */}
+      <GeoAnomalyGroup
+        form={form}
+        warningVisible={showGeoUnavailableWarning}
+        onDismissWarning={() => setGeoWarningDismissed(true)}
+      />
+
+      {/* ── Time Anomaly ──────────────────────────────────────────── */}
+      <TimeAnomalyGroup form={form} />
+
+      {/* ── Device Anomaly ────────────────────────────────────────── */}
+      <DeviceAnomalyGroup form={form} />
+
+      {/* ── Anomaly Action ────────────────────────────────────────── */}
+      <AnomalyActionGroup form={form} errors={errors} />
 
       {/* ── Notifications ─────────────────────────────────────────── */}
       <NotificationsGroup
@@ -560,6 +621,293 @@ function FailedAttemptsGroup({ form, errors }: FailedAttemptsGroupProps) {
             registerProps={register(field.name, { valueAsNumber: true })}
           />
         ))}
+      </div>
+    </fieldset>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Geographic / Time / Device anomaly groups
+// ────────────────────────────────────────────────────────────────────────
+
+interface SimpleAnomalyGroupProps {
+  form: UseFormReturn<SecurityFormValues>;
+}
+
+interface GeoAnomalyGroupProps extends SimpleAnomalyGroupProps {
+  /** True when both `geoAnomalyEnabled` is on and GeoIP is unavailable. */
+  warningVisible: boolean;
+  /** Called when the operator clicks "Dismiss" on the warning banner. */
+  onDismissWarning: () => void;
+}
+
+/**
+ * "Geographic Anomaly" group — single boolean toggle plus a
+ * dismissible warning banner shown when the operator enables the
+ * detector while the CMS reports `geoip.available=false` (Req 6.5).
+ *
+ * The warning is informational only: per design §8.1 the CMS detector
+ * already treats a missing MMDB as a soft no-op (`geoSubscore=0`,
+ * `geoLookupStatus='unavailable'`), so saving the policy with
+ * `geoAnomalyEnabled=true` against an unavailable GeoIP is safe — it
+ * just won't do anything until the operator installs the file. The
+ * banner exists to make that gap explicit.
+ */
+function GeoAnomalyGroup({
+  form,
+  warningVisible,
+  onDismissWarning,
+}: GeoAnomalyGroupProps) {
+  const { register } = form;
+  const inputId = useId();
+  return (
+    <fieldset className="space-y-4 rounded-md border border-border p-4">
+      <legend className="px-1 text-sm font-semibold text-foreground">
+        Geographic Anomaly
+      </legend>
+      <p className="-mt-2 text-xs text-muted-foreground">
+        Flag sign-ins from countries the user hasn't logged in from
+        before.
+      </p>
+
+      <label htmlFor={inputId} className="flex items-start gap-3 text-sm">
+        <input
+          id={inputId}
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
+          {...register('geoAnomalyEnabled')}
+        />
+        <span className="text-foreground">
+          Enable geographic anomaly detection
+        </span>
+      </label>
+
+      {warningVisible ? (
+        <div
+          role="alert"
+          aria-live="polite"
+          className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-100"
+          data-testid="geo-unavailable-warning"
+        >
+          <p className="flex-1">
+            GeoIP database is unavailable on this instance; geographic
+            anomaly detection will stay off until you install it.
+          </p>
+          <button
+            type="button"
+            onClick={onDismissWarning}
+            className="rounded-md border border-amber-300 px-2 py-1 text-xs font-medium text-amber-900 transition hover:bg-amber-100 dark:border-amber-700 dark:text-amber-100 dark:hover:bg-amber-900/50"
+            aria-label="Dismiss GeoIP availability warning"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
+    </fieldset>
+  );
+}
+
+function TimeAnomalyGroup({ form }: SimpleAnomalyGroupProps) {
+  const { register } = form;
+  const inputId = useId();
+  return (
+    <fieldset className="space-y-4 rounded-md border border-border p-4">
+      <legend className="px-1 text-sm font-semibold text-foreground">
+        Time Anomaly
+      </legend>
+      <p className="-mt-2 text-xs text-muted-foreground">
+        Flag sign-ins at hours the user rarely logs in.
+      </p>
+
+      <label htmlFor={inputId} className="flex items-start gap-3 text-sm">
+        <input
+          id={inputId}
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
+          {...register('timeAnomalyEnabled')}
+        />
+        <span className="text-foreground">
+          Enable time-of-day anomaly detection
+        </span>
+      </label>
+    </fieldset>
+  );
+}
+
+function DeviceAnomalyGroup({ form }: SimpleAnomalyGroupProps) {
+  const { register } = form;
+  const inputId = useId();
+  return (
+    <fieldset className="space-y-4 rounded-md border border-border p-4">
+      <legend className="px-1 text-sm font-semibold text-foreground">
+        Device Anomaly
+      </legend>
+      <p className="-mt-2 text-xs text-muted-foreground">
+        Flag sign-ins from a User-Agent or device fingerprint the user
+        hasn't used before.
+      </p>
+
+      <label htmlFor={inputId} className="flex items-start gap-3 text-sm">
+        <input
+          id={inputId}
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
+          {...register('deviceAnomalyEnabled')}
+        />
+        <span className="text-foreground">
+          Enable device anomaly detection
+        </span>
+      </label>
+    </fieldset>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Anomaly Action group
+// ────────────────────────────────────────────────────────────────────────
+
+interface AnomalyActionGroupProps {
+  form: UseFormReturn<SecurityFormValues>;
+  errors: UseFormReturn<SecurityFormValues>['formState']['errors'];
+}
+
+interface AnomalyActionOption {
+  id: AnomalyAction;
+  label: string;
+  /**
+   * `true` when the option must be disabled in the dropdown. Per Req
+   * 12.4, `require_mfa` stays disabled until the MFA module ships;
+   * the schema still accepts the value (so a JSON import predating
+   * the gate doesn't fail validation), the form just never lets the
+   * operator pick it.
+   */
+  disabled?: boolean;
+}
+
+/**
+ * Options table for the Anomaly Action dropdown. Order matters —
+ * `notify_only` is the safest default (and the Standard preset's
+ * value), so it sits at the top.
+ *
+ * Exported so unit tests can pin the contract that `require_mfa`
+ * stays disabled until the MFA module ships (Req 12.4).
+ */
+export const ANOMALY_ACTION_OPTIONS: ReadonlyArray<AnomalyActionOption> = [
+  { id: 'notify_only', label: 'Notify only' },
+  { id: 'lock', label: 'Lock the account' },
+  // require_mfa is disabled until the MFA module ships (Req 12.4).
+  { id: 'require_mfa', label: 'Require MFA', disabled: true },
+];
+
+function AnomalyActionGroup({ form, errors }: AnomalyActionGroupProps) {
+  const { register } = form;
+  const groupId = useId();
+  const thresholdId = `${groupId}-threshold`;
+  const thresholdHelpId = `${thresholdId}-help`;
+  const thresholdErrorId = `${thresholdId}-error`;
+  const actionId = `${groupId}-action`;
+  const actionHelpId = `${actionId}-help`;
+  const actionErrorId = `${actionId}-error`;
+
+  const thresholdError = (
+    errors.anomalyScoreThreshold as { message?: string } | undefined
+  )?.message;
+  const actionError = (
+    errors.anomalyAction as { message?: string } | undefined
+  )?.message;
+
+  return (
+    <fieldset className="space-y-4 rounded-md border border-border p-4">
+      <legend className="px-1 text-sm font-semibold text-foreground">
+        Anomaly Action
+      </legend>
+      <p className="-mt-2 text-xs text-muted-foreground">
+        What the system should do when a sign-in's anomaly score
+        crosses the threshold.
+      </p>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {/* ── Threshold ────────────────────────────────────────── */}
+        <div className="space-y-1">
+          <label
+            htmlFor={thresholdId}
+            className="block text-sm font-medium text-foreground"
+          >
+            Anomaly score threshold
+          </label>
+          <input
+            id={thresholdId}
+            type="number"
+            inputMode="decimal"
+            min={0}
+            max={1}
+            step={0.01}
+            aria-invalid={thresholdError ? 'true' : 'false'}
+            aria-describedby={[
+              thresholdHelpId,
+              thresholdError ? thresholdErrorId : null,
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            className={inputClass(Boolean(thresholdError))}
+            {...register('anomalyScoreThreshold', { valueAsNumber: true })}
+          />
+          <p id={thresholdHelpId} className="text-xs text-muted-foreground">
+            Range 0.00–1.00 with two decimal places. Default 0.70.
+          </p>
+          {thresholdError ? (
+            <p
+              id={thresholdErrorId}
+              role="alert"
+              className="text-xs text-red-600"
+            >
+              {thresholdError}
+            </p>
+          ) : null}
+        </div>
+
+        {/* ── Action dropdown ──────────────────────────────────── */}
+        <div className="space-y-1">
+          <label
+            htmlFor={actionId}
+            className="block text-sm font-medium text-foreground"
+          >
+            Action
+          </label>
+          <select
+            id={actionId}
+            aria-invalid={actionError ? 'true' : 'false'}
+            aria-describedby={[actionHelpId, actionError ? actionErrorId : null]
+              .filter(Boolean)
+              .join(' ')}
+            className={inputClass(Boolean(actionError))}
+            {...register('anomalyAction')}
+          >
+            {ANOMALY_ACTION_OPTIONS.map((option) => (
+              <option
+                key={option.id}
+                value={option.id}
+                disabled={option.disabled}
+              >
+                {option.label}
+                {option.disabled ? ' (unavailable)' : ''}
+              </option>
+            ))}
+          </select>
+          <p id={actionHelpId} className="text-xs text-muted-foreground">
+            MFA module is not installed; the "Require MFA" option is
+            unavailable for now.
+          </p>
+          {actionError ? (
+            <p
+              id={actionErrorId}
+              role="alert"
+              className="text-xs text-red-600"
+            >
+              {actionError}
+            </p>
+          ) : null}
+        </div>
       </div>
     </fieldset>
   );

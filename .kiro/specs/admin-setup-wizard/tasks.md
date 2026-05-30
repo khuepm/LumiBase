@@ -82,7 +82,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
 - [ ] 8. Tích hợp anomaly vào LoginGuard và wizard
   - [x] 8.1 Mở rộng `LoginGuard.onSuccess` gọi detector tuần tự `geoSubscore`, `timeSubscore`, `deviceSubscore`, `aggregate`; nếu `score >= threshold && !baselineWarmup` áp `anomalyAction`: `notify_only` (cho phép login + anomaly_triggered=true), `lock` (423 ANOMALY_LOCK + set lockedUntil), `require_mfa` (401 MFA_REQUIRED, không issue JWT) (Req 12.2, 12.3, 12.4, 12.5; design §8.5)
   - [x] 8.2 Ghi `login_attempts` đầy đủ với `anomaly_score`, `anomaly_triggered`, `baseline_warmup`, `country_code`, `geo_lookup_status` (Req 9.5, 12.2, 12.3; design §3.4)
-  - [~] 8.3 Mở rộng StepSecurity với 3 nhóm còn lại "Geographic Anomaly", "Time Anomaly", "Device Anomaly"; warning dismissible khi `geoAnomalyEnabled=true` mà capabilities trả `geoip.available=false`; disable lựa chọn `require_mfa` cho `anomalyAction` (Req 6.1, 6.5, 12.4; design §5.5)
+  - [x] 8.3 Mở rộng StepSecurity với 3 nhóm còn lại "Geographic Anomaly", "Time Anomaly", "Device Anomaly"; warning dismissible khi `geoAnomalyEnabled=true` mà capabilities trả `geoip.available=false`; disable lựa chọn `require_mfa` cho `anomalyAction` (Req 6.1, 6.5, 12.4; design §5.5)
   - [~] 8.4 Viết unit test `apps/cms/src/modules/anomaly/__tests__/geo.test.ts`, `time.test.ts`, `device.test.ts` với fixture user baseline biết trước; assert subscore boundary case (warmup, exact threshold, missing UA) (Req 9, 10, 11; design §13.1)
   - [~] 8.5 Viết integration test `apps/cms/src/__tests__/anomaly-flow.integration.test.ts` cover login từ country mới với `anomalyAction='lock'` → 423 + lockedUntil set; login warmup không trigger lock (Req 12.2, 12.3, 12.5; design §13.2)
 
