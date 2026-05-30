@@ -8,13 +8,70 @@
  *     → 200 { data: { items: AuditLogEntry[], nextCursor: string|null } }
  *     → 400 VALIDATION_ERROR | 400 INVALID_RANGE | 403 FORBIDDEN
  *
- * This file owns ONLY the query route plus its pure, independently
- * unit-testable helpers ({@link encodeCursor}, {@link decodeCursor},
- * {@link parseAuditLogQuery}, {@link queryAuditLog}). The NDJSON export
- * route (`GET /audit-log/export`, task 12.2), the mount under the
- * authenticated `api` Hono at `/api/v1/admin/security` (task 12.3), and
+ * This file owns the QUERY route (`GET /audit-log`, task 12.1) and the
+ * NDJSON EXPORT route (`GET /audit-log/export`, task 12.2) plus their
+ * pure, independently unit-testable helpers ({@link encodeCursor},
+ * {@link decodeCursor}, {@link parseAuditLogQuery}, {@link queryAuditLog},
+ * {@link parseAuditExportFilter}, {@link countAuditRows},
+ * {@link auditExportLines}, {@link ndjsonStream}). The mount under the
+ * authenticated `api` Hono at `/api/v1/admin/security` (task 12.3) and
  * the Studio "Security audit" tab (task 12.4) are DELIBERATELY out of
  * scope here.
+ *
+ *   GET /audit-log/export
+ *     ?event=&email=&from=&to=
+ *     → 200 application/x-ndjson  (streamed; one JSON object per line)
+ *     → 400 VALIDATION_ERROR | 400 INVALID_RANGE | 403 FORBIDDEN
+ *     → 413 EXPORT_TOO_LARGE  (would exceed the 100,000-row cap)
+ *
+ * ── NDJSON streaming export (task 12.2; Req 15.6; design §10.4) ───────────
+ *
+ * The export streams the FULL result set matching the same filters as
+ * the query route (minus pagination — an export does not paginate, it
+ * emits everything up to the cap) as newline-delimited JSON (NDJSON):
+ * one `JSON.stringify(row)` per line, terminated by `\n`. The body is
+ * built from a pull-based {@link ndjsonStream | ReadableStream} backed by
+ * the {@link auditExportLines} async generator, which queries the DB in
+ * keyset-paginated batches of {@link EXPORT_BATCH_SIZE} (500) rows rather
+ * than loading the whole table into memory. Streaming + batching keeps a
+ * multi-megabyte export flat on memory: at most one 500-row batch is
+ * resident at a time, and the HTTP layer back-pressures the generator
+ * via the stream's `pull` so we never out-run the client's read rate.
+ *
+ * Why keyset (`(timestamp, id) < (lastTs, lastId)`) and not `OFFSET`?
+ * An `OFFSET n` scan re-reads and discards `n` rows on every batch, so a
+ * full-table export degrades to O(n²); keyset pagination seeks directly
+ * past the last row of the previous batch using the same
+ * `(timestamp DESC, id DESC)` index the query route relies on, keeping
+ * each batch O(batch) regardless of how deep into the export we are. The
+ * cursor tuple is the SAME comparison {@link queryAuditLog} uses — the
+ * two share {@link auditFilterConditions}.
+ *
+ * ── The 100,000-row cap → 413 (Req 15.6; design §10.4) ────────────────────
+ *
+ * The design caps an export at {@link EXPORT_MAX_ROWS} (100,000) rows.
+ * We enforce it with a PRE-FLIGHT `SELECT count(*)` ({@link countAuditRows})
+ * over the SAME filters BEFORE opening the stream: if the count exceeds
+ * the cap we return `413 { errors: [{ code: 'EXPORT_TOO_LARGE' }] }`
+ * deterministically, without having streamed a single byte. A count
+ * probe is the clean way to reject up-front — once a `200` + body has
+ * begun streaming we can no longer change the status code, so the cap
+ * MUST be decided before the stream opens. The ≤366-day range cap is a
+ * separate gate already enforced by the shared filter validation
+ * (reversed / oversized window → 400 INVALID_RANGE); and even with NO
+ * `from`/`to`, the count probe still bounds the export. As a defensive
+ * belt-and-brace the streaming generator ALSO stops at the cap, so a row
+ * inserted between the probe and the stream can never push the body past
+ * {@link EXPORT_MAX_ROWS}.
+ *
+ * ── metadata is pre-masked at write time (Req 15.3) ──────────────────────
+ *
+ * The exported rows are emitted VERBATIM — no re-masking on read. This
+ * is safe because {@link ../audit/logger | AuditLogger.write} masks the
+ * four secret keys (`passwordHash`, `setupToken`, `backupCode`,
+ * `recoveryToken`) out of `metadata` BEFORE the insert (task 11.1), so
+ * the secrets never landed in the table in the first place. There is
+ * nothing to strip on the way out.
  *
  * ── Authenticated surface (contrast with the recovery router) ────────────
  *
@@ -110,7 +167,7 @@
 
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { and, desc, eq, gte, lt, lte, or, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import { auditLog, type Database } from '@lumibase/database';
 
 import type { AppEnv } from '../../env';
@@ -128,6 +185,23 @@ export const MAX_LIMIT = 100;
 /** Maximum `to - from` window when both bounds are present (design §10.3). */
 export const MAX_RANGE_DAYS = 366;
 const MAX_RANGE_MS = MAX_RANGE_DAYS * 24 * 60 * 60 * 1000;
+
+/**
+ * Number of rows fetched per keyset-paginated batch by
+ * {@link auditExportLines} (design §10.4). Bounds peak memory: at most
+ * one batch of rows is resident at a time. 500 balances round-trip
+ * overhead (fewer, larger queries) against memory footprint.
+ */
+export const EXPORT_BATCH_SIZE = 500;
+
+/**
+ * Hard cap on the number of rows a single NDJSON export may emit
+ * (Req 15.6; design §10.4). The route rejects an export whose pre-flight
+ * count exceeds this with 413 EXPORT_TOO_LARGE; the streaming generator
+ * also stops here defensively so a concurrent insert can never push the
+ * body past the cap.
+ */
+export const EXPORT_MAX_ROWS = 100_000;
 
 /** Known event codes, frozen as a Set for O(1) enum validation. */
 const KNOWN_EVENTS: ReadonlySet<string> = new Set(AUDIT_EVENTS);
@@ -381,17 +455,97 @@ export interface AuditLogPage {
 }
 
 /**
+ * Build the shared WHERE conditions for the non-pagination filters
+ * (`event`, `email`, `from`, `to`) common to BOTH the query route and
+ * the export route. Returns the array of drizzle conditions (empty when
+ * the filter is fully open); only present conditions are pushed so the
+ * caller can `and(...conditions)` directly.
+ *
+ *   - `event` → `eq(event, $)`
+ *   - `email` → `or(eq(actorEmail, $), eq(targetEmail, $))` (actor OR
+ *     target — see the module doc-block on the email filter)
+ *   - `from`  → `gte(timestamp, $)`
+ *   - `to`    → `lte(timestamp, $)`
+ *
+ * Factored out so the query's cursor scan and the export's keyset batch
+ * scan share EXACTLY the same filter semantics (DRY — a divergence here
+ * would mean an export silently covered a different row set than the
+ * paginated view of the same filters).
+ */
+function auditFilterConditions(filter: {
+  readonly event?: string;
+  readonly email?: string;
+  readonly from?: Date;
+  readonly to?: Date;
+}): SQL[] {
+  const conditions: SQL[] = [];
+  if (filter.event) {
+    conditions.push(eq(auditLog.event, filter.event));
+  }
+  if (filter.email) {
+    conditions.push(
+      or(
+        eq(auditLog.actorEmail, filter.email),
+        eq(auditLog.targetEmail, filter.email),
+      )!,
+    );
+  }
+  if (filter.from) {
+    conditions.push(gte(auditLog.timestamp, filter.from));
+  }
+  if (filter.to) {
+    conditions.push(lte(auditLog.timestamp, filter.to));
+  }
+  return conditions;
+}
+
+/**
+ * The strictly-after keyset predicate for the `timestamp DESC, id DESC`
+ * sort: a row is "after" the cursor (i.e. on a later page / later batch)
+ * when it is strictly older:
+ *
+ *     timestamp < cursorTs OR (timestamp = cursorTs AND id < cursorId)
+ *
+ * Shared by the query route's cursor and the export's batch seek so the
+ * two cannot drift apart.
+ */
+function keysetAfter(cursor: { timestamp: Date; id: string }): SQL {
+  return or(
+    lt(auditLog.timestamp, cursor.timestamp),
+    and(eq(auditLog.timestamp, cursor.timestamp), lt(auditLog.id, cursor.id)),
+  )!;
+}
+
+/**
+ * Map a raw `audit_log` row to the public {@link AuditLogEntry} shape
+ * the query route returns and the export serialises. Shared so both
+ * surfaces emit byte-identical row shapes.
+ */
+function toAuditLogEntry(row: Record<string, unknown>): AuditLogEntry {
+  return {
+    id: row.id as string,
+    timestamp: row.timestamp as Date,
+    event: row.event as string,
+    actorEmail: (row.actorEmail ?? null) as string | null,
+    targetEmail: (row.targetEmail ?? null) as string | null,
+    ip: (row.ip ?? null) as string | null,
+    userAgent: (row.userAgent ?? null) as string | null,
+    countryCode: (row.countryCode ?? null) as string | null,
+    metadata: (row.metadata ?? {}) as Record<string, unknown>,
+    requestId: (row.requestId ?? null) as string | null,
+  };
+}
+
+/**
  * Execute the audit-log query for a validated {@link AuditLogFilter},
  * returning a page of entries plus the next-page cursor — the concrete
  * implementation of the design's `query(filter): Promise<{ items,
  * nextCursor }>` interface (design §10.3).
  *
  * Strategy:
- *   - Build the WHERE from the optional filters with `and(...)`
- *     (drizzle drops `undefined` conditions). `event` → `eq`; `email`
- *     → `or(eq(actorEmail), eq(targetEmail))`; `from` → `gte`; `to` →
- *     `lte`; cursor → the `(timestamp, id) < (cursorTs, cursorId)`
- *     tuple comparison expanded to `lt` / `eq` for portability.
+ *   - Build the WHERE from the optional filters via
+ *     {@link auditFilterConditions} plus the cursor's
+ *     {@link keysetAfter} predicate.
  *   - ORDER BY `timestamp DESC, id DESC` (index-aligned — see the
  *     module doc-block).
  *   - `LIMIT limit + 1` to detect a next page WITHOUT a second COUNT:
@@ -403,37 +557,9 @@ export async function queryAuditLog(
   db: Database,
   filter: AuditLogFilter,
 ): Promise<AuditLogPage> {
-  const conditions: Array<SQL | undefined> = [];
-
-  if (filter.event) {
-    conditions.push(eq(auditLog.event, filter.event));
-  }
-  if (filter.email) {
-    conditions.push(
-      or(
-        eq(auditLog.actorEmail, filter.email),
-        eq(auditLog.targetEmail, filter.email),
-      ),
-    );
-  }
-  if (filter.from) {
-    conditions.push(gte(auditLog.timestamp, filter.from));
-  }
-  if (filter.to) {
-    conditions.push(lte(auditLog.timestamp, filter.to));
-  }
+  const conditions: SQL[] = auditFilterConditions(filter);
   if (filter.cursor) {
-    // Strictly-after under `timestamp DESC, id DESC`:
-    //   timestamp < cursorTs OR (timestamp = cursorTs AND id < cursorId)
-    conditions.push(
-      or(
-        lt(auditLog.timestamp, filter.cursor.timestamp),
-        and(
-          eq(auditLog.timestamp, filter.cursor.timestamp),
-          lt(auditLog.id, filter.cursor.id),
-        ),
-      ),
-    );
+    conditions.push(keysetAfter(filter.cursor));
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -449,18 +575,7 @@ export async function queryAuditLog(
   const hasMore = rows.length > filter.limit;
   const pageRows = hasMore ? rows.slice(0, filter.limit) : rows;
 
-  const items: AuditLogEntry[] = pageRows.map((row) => ({
-    id: row.id,
-    timestamp: row.timestamp,
-    event: row.event,
-    actorEmail: row.actorEmail,
-    targetEmail: row.targetEmail,
-    ip: row.ip,
-    userAgent: row.userAgent,
-    countryCode: row.countryCode,
-    metadata: (row.metadata ?? {}) as Record<string, unknown>,
-    requestId: row.requestId,
-  }));
+  const items: AuditLogEntry[] = pageRows.map((row) => toAuditLogEntry(row));
 
   let nextCursor: string | null = null;
   if (hasMore && items.length > 0) {
@@ -469,6 +584,217 @@ export async function queryAuditLog(
   }
 
   return { items, nextCursor };
+}
+
+// ── export filter parsing (pure, exported for unit tests) ────────────────
+
+/**
+ * Normalised, validated audit-log EXPORT filter — the input to
+ * {@link countAuditRows} and {@link auditExportLines}. Identical to the
+ * non-pagination subset of {@link AuditLogFilter}: an export streams the
+ * FULL matching set, so it has NO `limit` and NO `cursor` (those are the
+ * query route's pagination knobs).
+ */
+export interface AuditExportFilter {
+  readonly event?: string;
+  readonly email?: string;
+  readonly from?: Date;
+  readonly to?: Date;
+}
+
+/** Discriminated result of {@link parseAuditExportFilter}. */
+export type ParseAuditExportResult =
+  | { readonly ok: true; readonly filter: AuditExportFilter }
+  | {
+      readonly ok: false;
+      readonly code: 'VALIDATION_ERROR' | 'INVALID_RANGE';
+      readonly message: string;
+    };
+
+/**
+ * Parse + validate the raw query params of `GET /audit-log/export` into
+ * an {@link AuditExportFilter}. DRY: delegates to {@link
+ * parseAuditLogQuery} (which owns the event-enum / email-normalise /
+ * from-to-range validation matrix) and simply DROPS the `limit` and
+ * `cursor` it returns — the export does not paginate, so those knobs are
+ * meaningless here. Reusing the query parser guarantees the export's
+ * filter validation can never drift from the query route's (same event
+ * vocabulary, same email canonicalisation, same ≤366-day / reversed
+ * window → INVALID_RANGE rule).
+ *
+ * Note `limit`/`cursor` are not even read from `params`, so an export
+ * caller that erroneously passes them is silently tolerated rather than
+ * rejected — they have no effect on a full-set stream.
+ */
+export function parseAuditExportFilter(
+  params: Record<string, string | undefined>,
+): ParseAuditExportResult {
+  const parsed = parseAuditLogQuery({
+    event: params.event,
+    email: params.email,
+    from: params.from,
+    to: params.to,
+    // explicitly ignore pagination knobs for an export
+  });
+  if (!parsed.ok) {
+    return { ok: false, code: parsed.code, message: parsed.message };
+  }
+  const { event, email, from, to } = parsed.filter;
+  return { ok: true, filter: { event, email, from, to } };
+}
+
+// ── pre-flight count probe (the 100k cap → 413) ──────────────────────────
+
+/**
+ * `SELECT count(*)` over the export's filters — the deterministic
+ * pre-flight gate for the {@link EXPORT_MAX_ROWS} cap (Req 15.6; design
+ * §10.4). Run BEFORE the stream opens: once a `200` + body has begun
+ * streaming the status code is fixed, so the cap must be decided here.
+ *
+ * Uses the SAME {@link auditFilterConditions} as the stream so the count
+ * matches exactly the row set the stream would emit. Casts to `::int`
+ * inside the SQL (matching `PostgresCounterStore`) so the JS side gets a
+ * plain number, and falls back to `0` on an empty result set.
+ */
+export async function countAuditRows(
+  db: Database,
+  filter: AuditExportFilter,
+): Promise<number> {
+  const conditions = auditFilterConditions(filter);
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const rows = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(auditLog)
+    .where(where);
+
+  return rows[0]?.count ?? 0;
+}
+
+// ── NDJSON streaming generator (design §10.4) ────────────────────────────
+
+/** Tunable knobs for {@link auditExportLines}; defaulted from the constants. */
+export interface AuditExportOptions {
+  /** Rows per keyset batch. Defaults to {@link EXPORT_BATCH_SIZE} (500). */
+  readonly batchSize?: number;
+  /** Hard row cap. Defaults to {@link EXPORT_MAX_ROWS} (100,000). */
+  readonly cap?: number;
+}
+
+/**
+ * Async generator yielding one NDJSON line (`JSON.stringify(entry) +
+ * '\n'`) per matching `audit_log` row, in `timestamp DESC, id DESC`
+ * order, fetched in keyset-paginated batches of `batchSize` (design
+ * §10.4).
+ *
+ * Why a generator (and not a raw ReadableStream)? A generator yielding
+ * strings is trivially unit-testable — collect the yielded lines with a
+ * fake `db` and assert one line per row — whereas asserting on a
+ * ReadableStream requires a reader pump. The route adapts this generator
+ * into a ReadableStream via {@link ndjsonStream}.
+ *
+ * Batching + keyset (see the module doc-block): each batch fetches
+ * `batchSize` rows WHERE `(timestamp, id) < (lastTs, lastId)` of the
+ * previous batch, seeking directly past the prior page using the
+ * `(timestamp DESC, id DESC)` index — O(batch) per step, not O(offset).
+ * The loop stops when either:
+ *   - a batch returns fewer than `batchSize` rows (end of data), or
+ *   - the running total reaches `cap` (defensive — the route's
+ *     pre-flight count should already have rejected an over-cap export
+ *     with 413, but a row inserted between the probe and the stream must
+ *     never push the body past the cap).
+ *
+ * metadata is emitted verbatim — it was masked at write time (Req 15.3),
+ * so there are no secrets to strip on read (see the module doc-block).
+ *
+ * **Validates: Requirements 15.6**
+ */
+export async function* auditExportLines(
+  db: Database,
+  filter: AuditExportFilter,
+  opts: AuditExportOptions = {},
+): AsyncGenerator<string, void, unknown> {
+  const batchSize =
+    opts.batchSize && opts.batchSize > 0 ? opts.batchSize : EXPORT_BATCH_SIZE;
+  const cap = opts.cap && opts.cap > 0 ? opts.cap : EXPORT_MAX_ROWS;
+
+  const baseConditions = auditFilterConditions(filter);
+  let cursor: { timestamp: Date; id: string } | undefined;
+  let emitted = 0;
+
+  // Keyset scan: each iteration seeks past the previous batch's last row.
+  for (;;) {
+    const conditions = [...baseConditions];
+    if (cursor) {
+      conditions.push(keysetAfter(cursor));
+    }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(where)
+      .orderBy(desc(auditLog.timestamp), desc(auditLog.id))
+      .limit(batchSize);
+
+    if (rows.length === 0) break;
+
+    for (const row of rows) {
+      if (emitted >= cap) return; // defensive cap (see doc-block)
+      const entry = toAuditLogEntry(row);
+      yield `${JSON.stringify(entry)}\n`;
+      emitted += 1;
+    }
+
+    // Seed the next batch from the LAST row of this one.
+    const last = rows[rows.length - 1]! as Record<string, unknown>;
+    cursor = { timestamp: last.timestamp as Date, id: last.id as string };
+
+    // A short batch means we've reached the end of the data.
+    if (rows.length < batchSize) break;
+    if (emitted >= cap) return;
+  }
+}
+
+/**
+ * Adapt an async generator of strings into a pull-based byte
+ * {@link ReadableStream} suitable for `c.body(...)` (design §10.4). The
+ * stream's `pull` advances the generator one yield at a time and
+ * enqueues the UTF-8 bytes of each line, applying natural back-pressure:
+ * the platform only calls `pull` again when the consumer is ready, so a
+ * slow client throttles the DB scan rather than buffering the whole
+ * export in memory. The stream closes when the generator is exhausted.
+ *
+ * Runtime-portable: `ReadableStream` and `TextEncoder` are standard on
+ * Node 20+ and Cloudflare Workers (the same baseline the rest of the
+ * module relies on).
+ */
+export function ndjsonStream(
+  lines: AsyncGenerator<string, void, unknown>,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { value, done } = await lines.next();
+        if (done) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(encoder.encode(value));
+      } catch (err) {
+        // Surface a mid-stream DB failure to the consumer; the HTTP
+        // layer has already sent 200 + headers, so the body simply
+        // errors out (the client sees a truncated/aborted download).
+        controller.error(err);
+      }
+    },
+    async cancel() {
+      // Consumer aborted (closed the connection): let the generator run
+      // its `finally` so any DB resources are released.
+      await lines.return?.();
+    },
+  });
 }
 
 // ── admin gate ───────────────────────────────────────────────────────────
@@ -534,4 +860,59 @@ auditRouter.get('/audit-log', async (c) => {
   const page = await queryAuditLog(c.get('db'), parsed.filter);
 
   return c.json({ data: { items: page.items, nextCursor: page.nextCursor } });
+});
+
+// ── GET /audit-log/export (Req 15.6; design §4.10, §10.4) ────────────────
+
+auditRouter.get('/audit-log/export', async (c) => {
+  // 1. Admin gate first — withAuth ran upstream; this enforces the role.
+  const forbidden = requireAdmin(c);
+  if (forbidden) return forbidden;
+
+  // 2. Parse + validate the filters (shared with the query route, minus
+  //    pagination). Map a failure to the right 400 code.
+  const parsed = parseAuditExportFilter({
+    event: c.req.query('event'),
+    email: c.req.query('email'),
+    from: c.req.query('from'),
+    to: c.req.query('to'),
+  });
+  if (!parsed.ok) {
+    return c.json(
+      { errors: [{ code: parsed.code, message: parsed.message }] },
+      400,
+    );
+  }
+
+  const db = c.get('db');
+
+  // 3. PRE-FLIGHT CAP CHECK → 413. Decide the cap deterministically with
+  //    a count probe BEFORE opening the stream (a 200 + body can no
+  //    longer change its status code). Req 15.6; design §10.4.
+  const total = await countAuditRows(db, parsed.filter);
+  if (total > EXPORT_MAX_ROWS) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'EXPORT_TOO_LARGE',
+            message: `Export of ${total} rows exceeds the ${EXPORT_MAX_ROWS}-row cap. Narrow the filters or date range.`,
+          },
+        ],
+      },
+      413,
+    );
+  }
+
+  // 4. Stream the NDJSON body from the keyset-batched generator. Headers
+  //    MUST be set before `c.body(...)`: an attachment download of
+  //    newline-delimited JSON.
+  c.header('Content-Type', 'application/x-ndjson; charset=utf-8');
+  c.header(
+    'Content-Disposition',
+    'attachment; filename="audit-log-export.ndjson"',
+  );
+
+  const stream = ndjsonStream(auditExportLines(db, parsed.filter));
+  return c.body(stream);
 });
