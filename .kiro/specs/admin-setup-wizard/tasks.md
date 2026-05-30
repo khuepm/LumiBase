@@ -96,7 +96,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 9.5 Wiring dispatcher vào LoginGuard events `user_locked`, `ip_blocked`, `anomaly_triggered`, `anomaly_lock` (Req 13.1; design §6.3)
   - [x] 9.6 Cho Cloudflare Workers runtime: wrap dispatch trong `ctx.waitUntil()` để giữ task sau response
 
-- [ ] 10. Recovery flow (backup codes + forgot path)
+- [x] 10. Recovery flow (backup codes + forgot path)
   - [x] 10.1 Thêm bảng `admin_backup_codes` vào `packages/database/src/schema/security.ts` với cột `id`, `user_id`, `code_hash`, `created_at`, `used_at`, `used_from_ip`; partial index `(user_id) WHERE used_at IS NULL`; sinh migration (Req 14.2; design §3.3)
   - [x] 10.2 Mở rộng `SetupService.complete()` sinh 8 backup codes alphabet `[A-Z, 2-9]` (loại I, O, 0, 1, L), CSPRNG ≥128 bit/code, format `XXXX-XXXX`; hash PBKDF2 per-code salt 16 byte; lưu vào `admin_backup_codes`; trả plaintext list duy nhất một lần trong response (Req 14.1, 14.2; design §6.5)
   - [x] 10.3 Tạo StepRecovery `apps/studio/src/modules/setup/steps/step-recovery.tsx` hiển thị 8 backup codes dạng monospace, nút copy/download .txt, checkbox xác nhận "I have saved these backup codes" gating "Finish setup" (Req 14.1, 14.3; design §5.2)
@@ -105,7 +105,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 10.6 Tạo `apps/cms/src/modules/recovery/rate-limit.ts` rate-limit 3 req/IP/giờ cho `/recover` và `/forgot-path` chia sẻ counter; trả 429 + Retry-After header khi vượt (Req 14.8; design §4.7, §4.8)
   - [x] 10.7 Tạo `apps/cms/src/modules/recovery/routes.ts` exposing `POST /admin/security/recover` và `POST /admin/security/forgot-path`; mount vào `/api/v1/admin/security` không qua admin auth (Req 14.4, 14.5; design §4.7, §4.8)
   - [x] 10.8 Tạo Studio routes `apps/studio/src/modules/recovery/{backup-code-page,forgot-path-page}.tsx` form input + i18n; mount `/recovery/backup-code`, `/recovery/forgot-path` vào publicLayoutRoute (design §5.1)
-  - [~] 10.9 Viết integration test `apps/cms/src/__tests__/recovery-flow.integration.test.ts` cover lock user → recover backup code → unlock + adminPath returned; verify backup code single-use (lần thứ hai trả 401); verify rate-limit 3/IP/giờ (Req 14.4, 14.7, 14.8; design §13.2, Property 4)
+  - [x] 10.9 Viết integration test `apps/cms/src/__tests__/recovery-flow.integration.test.ts` cover lock user → recover backup code → unlock + adminPath returned; verify backup code single-use (lần thứ hai trả 401); verify rate-limit 3/IP/giờ (Req 14.4, 14.7, 14.8; design §13.2, Property 4)
 
 ### Phase F — Audit Log + Export
 
