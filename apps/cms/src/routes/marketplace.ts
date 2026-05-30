@@ -17,7 +17,7 @@
  *     using WebCrypto (`subtle.verify`).
  */
 
-import { extensions } from "@lumibase/database";
+import { extensions, userSites, notifications, roles } from "@lumibase/database";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -78,6 +78,18 @@ async function verifyEd25519Signature(
   }
 }
 
+export function compareSemver(a: string, b: string): number {
+  const pa = a.split(".").map((num) => parseInt(num, 10) || 0);
+  const pb = b.split(".").map((num) => parseInt(num, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    const na = pa[i] ?? 0;
+    const nb = pb[i] ?? 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}
+
 // ── routes ─────────────────────────────────────────────────────────────────
 
 marketplaceRouter.get("/extensions", async (c) => {
@@ -134,6 +146,58 @@ marketplaceRouter.get("/extensions/:slug", async (c) => {
       publishedAt: row.publishedAt,
     },
   });
+});
+
+marketplaceRouter.get("/updates", async (c) => {
+  const siteId = c.get("siteId");
+  const db = c.get("db");
+
+  const installedList = await db
+    .select()
+    .from(extensions)
+    .where(and(eq(extensions.siteId, siteId)));
+
+  const updates: Array<{
+    installedId: string;
+    name: string;
+    currentVersion: string;
+    latestVersion: string;
+    bundleUrl: string;
+    bundleSha256: string | null;
+  }> = [];
+
+  for (const installed of installedList) {
+    const query = installed.marketplaceSlug
+      ? eq(extensions.marketplaceSlug, installed.marketplaceSlug)
+      : eq(extensions.name, installed.name);
+
+    const globals = await db
+      .select()
+      .from(extensions)
+      .where(and(query, isNotNull(extensions.publishedAt)));
+
+    let latestGlobal = null;
+    for (const g of globals) {
+      if (compareSemver(g.version, installed.version) > 0) {
+        if (!latestGlobal || compareSemver(g.version, latestGlobal.version) > 0) {
+          latestGlobal = g;
+        }
+      }
+    }
+
+    if (latestGlobal) {
+      updates.push({
+        installedId: installed.id,
+        name: installed.name,
+        currentVersion: installed.version,
+        latestVersion: latestGlobal.version,
+        bundleUrl: latestGlobal.bundleUrl,
+        bundleSha256: latestGlobal.bundleSha256,
+      });
+    }
+  }
+
+  return c.json({ data: updates });
 });
 
 marketplaceRouter.post("/extensions/:slug/install", async (c) => {
@@ -282,5 +346,46 @@ marketplaceRouter.post("/publish", async (c) => {
       404,
     );
 
-  return c.json({ data: updated[0] });
+  const source = updated[0]!;
+
+  const query = source.marketplaceSlug
+    ? eq(extensions.marketplaceSlug, source.marketplaceSlug)
+    : eq(extensions.name, source.name);
+
+  const installedOutdated = await db
+    .select()
+    .from(extensions)
+    .where(and(query, isNotNull(extensions.siteId)));
+
+  for (const installed of installedOutdated) {
+    if (compareSemver(source.version, installed.version) > 0) {
+      // Notify only site administrators (roles with adminAccess = true).
+      // Members without a role assignment (roleId IS NULL) are excluded.
+      const admins = await db
+        .select({ userId: userSites.userId })
+        .from(userSites)
+        .innerJoin(
+          roles,
+          and(
+            eq(roles.id, userSites.roleId),
+            eq(roles.siteId, installed.siteId!),
+            eq(roles.adminAccess, true),
+          ),
+        )
+        .where(eq(userSites.siteId, installed.siteId!));
+
+      for (const admin of admins) {
+        await db.insert(notifications).values({
+          siteId: installed.siteId!,
+          recipient: admin.userId,
+          subject: "Extension Update Available",
+          message: `A new version ${source.version} of extension '${installed.name}' is available. You are currently running ${installed.version}.`,
+          status: "unread",
+          pushed: false,
+        });
+      }
+    }
+  }
+
+  return c.json({ data: source });
 });
