@@ -66,6 +66,16 @@ import { loginAttempts, users, type Database } from '@lumibase/database';
 
 import { updateBaseline as defaultUpdateBaseline } from '../anomaly/baseline-store';
 import type { LoginAttemptDraft } from '../anomaly/types';
+// Type-only imports keep the dependency direction one-way: `login-guard`
+// learns the dispatcher's *shape* without importing any of the
+// notifications module's runtime code, so no import cycle forms (the
+// notifications module never imports back into `login-guard`). See
+// task 9.5 / Req 13.1.
+import type { NotificationDispatcher } from '../notifications/dispatcher';
+import type {
+  NotificationChannel,
+  NotificationPayload,
+} from '../notifications/types';
 import type { LockoutPolicy } from '../setup/policy-codec';
 import type { CounterStore } from './counter';
 import { normalizeEmail } from './email-normalize';
@@ -177,6 +187,96 @@ export interface LoginFailureOutcome {
   readonly ipFailedCount: number;
 }
 
+// ── Notification wiring (task 9.5; Req 13.1; design §6.3) ───────────────
+
+/**
+ * Optional notification dependencies threaded into each hook so the
+ * LoginGuard can publish the four security events Req 13.1 enumerates
+ * (`user_locked`, `ip_blocked`, `anomaly_triggered`, `anomaly_lock`)
+ * to the operator's configured channels.
+ *
+ * The shape is a dependency-injection seam, **not** a singleton
+ * import, for two reasons:
+ *
+ *   1. **Testability** — the existing hook unit tests
+ *      (`__tests__/hooks.test.ts`) drive the hooks with a fake DB and
+ *      counter and assert on the rows that *would* be written. A
+ *      hard-wired dispatcher singleton would force those tests to
+ *      stand up the real queue + channels. Injecting a spy keeps the
+ *      hooks pure and the tests fast.
+ *
+ *   2. **Backward compatibility** — every field is optional. A call
+ *      site that doesn't pass a `dispatcher` (the legacy `/register`
+ *      flow, older tests, the setup transaction) sees dispatch
+ *      collapse to a no-op, so wiring this in does not change any
+ *      existing behaviour. Dispatch only happens when *both* a
+ *      `dispatcher` is supplied **and** the resolved channel list is
+ *      non-empty.
+ *
+ * The channel list is sourced from `Lockout_Policy.notifyChannels`.
+ * `recordLoginFailure` and `recordAnomalyBlock` already receive the
+ * `policy` so they read `policy.notifyChannels` directly;
+ * `recordLoginSuccess` does not receive the policy, so its options
+ * carry `notifyChannels` explicitly (the route resolves it from the
+ * same policy instance).
+ */
+export interface NotificationDeps {
+  /**
+   * The dispatcher to publish to. When omitted, every dispatch in the
+   * hook becomes a no-op — the hook still records the attempt and
+   * applies lockout side effects exactly as before (Req 13.1 wiring
+   * is additive).
+   */
+  readonly dispatcher?: NotificationDispatcher | null;
+  /**
+   * Channels to fan out to — `Lockout_Policy.notifyChannels`
+   * (Req 13.1). Defaults to an empty list, which (like a missing
+   * dispatcher) makes dispatch a no-op. `recordLoginFailure` /
+   * `recordAnomalyBlock` ignore this field and read
+   * `policy.notifyChannels` instead; it exists here primarily for
+   * `recordLoginSuccess`, which has no policy in scope.
+   */
+  readonly notifyChannels?: readonly NotificationChannel[];
+}
+
+/**
+ * Fire-and-forget a notification through the injected dispatcher,
+ * swallowing any synchronous throw or async rejection so a delivery
+ * problem can NEVER break (or even delay) the login flow.
+ *
+ * Per design §6.3 / Req 13.4 the dispatch is **best-effort and
+ * non-blocking**: even the serious `user_locked` / `anomaly_lock`
+ * events must not fail the request if the queue / channel hiccups.
+ * The dispatcher's own `dispatch()` only enqueues and resolves
+ * immediately, so awaiting it here does not block on actual delivery
+ * (which drains out-of-band on the worker tick — task 9.6 owns the
+ * Workers drain path). We still belt-and-brace with a `.catch()` in
+ * case a future dispatcher implementation throws synchronously while
+ * building the task.
+ *
+ * The call is skipped entirely when no dispatcher is wired or no
+ * channels are configured, so the common "notifications disabled"
+ * path costs nothing.
+ */
+async function dispatchSecurityEvent(
+  deps: NotificationDeps | undefined,
+  channels: readonly NotificationChannel[],
+  payload: NotificationPayload,
+): Promise<void> {
+  const dispatcher = deps?.dispatcher;
+  if (!dispatcher) return;
+  if (channels.length === 0) return;
+  try {
+    await dispatcher.dispatch(payload.event, channels, payload);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[login-guard] notification dispatch failed; login flow unaffected',
+      err,
+    );
+  }
+}
+
 // ── Hooks ──────────────────────────────────────────────────────────────
 
 /**
@@ -224,6 +324,7 @@ export async function recordLoginFailure(
   policy: LockoutPolicy,
   ctx: LoginFailureContext,
   now: Date = new Date(),
+  notify?: NotificationDeps,
 ): Promise<LoginFailureOutcome> {
   const emailLower = normalizeEmail(ctx.email);
   const ip = normaliseIp(ctx.ip);
@@ -270,6 +371,25 @@ export async function recordLoginFailure(
         })
         .where(sql`lower(${users.email}) = ${emailLower}`);
       userLocked = true;
+
+      // Req 13.1 — fan a `user_locked` notification out to the
+      // operator's configured channels. Best-effort: the helper
+      // swallows any error so a delivery hiccup can't undo the
+      // lockout we just committed. `country`/`anomalyScore` are
+      // `null` here because `recordLoginFailure` runs on a raw
+      // credential failure with no anomaly draft in scope (the geo
+      // detector only runs on the success path); `action='locked'`
+      // per the Req 13.1 mapping (design §9.1 NotificationAction).
+      await dispatchSecurityEvent(notify, policy.notifyChannels, {
+        event: 'user_locked',
+        timestamp: now.toISOString(),
+        email: emailLower,
+        ip,
+        country: null,
+        userAgent: ctx.userAgent ?? null,
+        anomalyScore: null,
+        action: 'locked',
+      });
     }
   }
 
@@ -282,17 +402,35 @@ export async function recordLoginFailure(
   const ipThreshold = Math.max(3, policy.ipMaxFailedAttempts);
   const ipBlocked = ipFailedCount >= ipThreshold;
   if (ipBlocked) {
-    // Phase E (task 9.5) wires NotificationDispatcher; Phase F
-    // (task 11.2) wires AuditLogger. For now, surface the event via
-    // the structured warn channel so operators tailing logs see it.
-    // The follow-on tasks will replace this with a proper audit
-    // entry without changing the caller contract.
+    // Phase F (task 11.2) wires AuditLogger. For now, surface the
+    // event via the structured warn channel so operators tailing
+    // logs see it; the follow-on task will replace this with a
+    // proper audit entry without changing the caller contract.
     // eslint-disable-next-line no-console
     console.warn('[login-guard] IP rate-limit threshold reached', {
       ip,
       ipFailedCount,
       threshold: ipThreshold,
       lockoutWindowSeconds: policy.lockoutWindowSeconds,
+    });
+
+    // Req 13.1 — fan an `ip_blocked` notification out to the
+    // operator's configured channels. Best-effort / non-blocking.
+    // `email` carries the *triggering* attempt's address so the
+    // receiver retains some signal (per the NotificationPayload doc
+    // in `notifications/types.ts`), even though the block is keyed on
+    // the IP, not the user. `country`/`anomalyScore` are `null` (no
+    // anomaly draft on the failure path); `action='blocked'` per the
+    // Req 13.1 mapping.
+    await dispatchSecurityEvent(notify, policy.notifyChannels, {
+      event: 'ip_blocked',
+      timestamp: now.toISOString(),
+      email: emailLower,
+      ip,
+      country: null,
+      userAgent: ctx.userAgent ?? null,
+      anomalyScore: null,
+      action: 'blocked',
     });
   }
 
@@ -355,6 +493,21 @@ export async function recordLoginSuccess(
      * `new Date()`. Tests pin this for determinism.
      */
     readonly now?: Date;
+    /**
+     * Notification dependencies (task 9.5; Req 13.1). When `ctx
+     * .anomalyTriggered === true` — i.e. the `notify_only` path where
+     * the login was *allowed* but the score crossed the threshold
+     * (Req 12.2) — the hook publishes an `anomaly_triggered` event to
+     * `notify.dispatcher` over `notify.notifyChannels`.
+     *
+     * Unlike `recordLoginFailure` / `recordAnomalyBlock`,
+     * `recordLoginSuccess` has no `LockoutPolicy` in scope, so the
+     * channel list is passed explicitly via `notify.notifyChannels`
+     * (the route resolves it from `policy.notifyChannels`). Omitting
+     * `notify` (or supplying no dispatcher / no channels) makes the
+     * dispatch a no-op, preserving backward compatibility.
+     */
+    readonly notify?: NotificationDeps;
   } = {},
 ): Promise<void> {
   const emailLower = normalizeEmail(ctx.email);
@@ -410,6 +563,33 @@ export async function recordLoginSuccess(
     // a transaction with the attempt insert above.
     await writeBaseline(tx as Database, ctx.userId, draft, now);
   });
+
+  // Req 13.1 — `anomaly_triggered` notification (design §6.3).
+  //
+  // Dispatched *after* the transaction commits, not inside it: the
+  // login already succeeded and the row is durable, so a dispatch
+  // (which only enqueues) has nothing to roll back and must not be
+  // able to abort the committed success. Fire only on the
+  // `notify_only` path — `ctx.anomalyTriggered === true` is set by
+  // the route exactly when the score crossed the threshold,
+  // `baselineWarmup === false`, and `anomalyAction === 'notify_only'`
+  // (Req 12.2): the login was allowed but the anomaly is the only
+  // out-of-band signal something looked off. `action='allowed'`
+  // because the request succeeded; the geo detector populated
+  // `draft.countryCode` on this path so we forward it, and we round
+  // the score to 2 decimals to match the NotificationPayload contract.
+  if (ctx.anomalyTriggered === true) {
+    await dispatchSecurityEvent(options.notify, options.notify?.notifyChannels ?? [], {
+      event: 'anomaly_triggered',
+      timestamp: now.toISOString(),
+      email: emailLower,
+      ip,
+      country: draft.countryCode ?? null,
+      userAgent: ctx.userAgent ?? null,
+      anomalyScore: roundScore(ctx.anomalyScore),
+      action: 'allowed',
+    });
+  }
 }
 
 /**
@@ -453,6 +633,7 @@ export async function recordAnomalyBlock(
   policy: LockoutPolicy,
   ctx: AnomalyBlockContext,
   now: Date = new Date(),
+  notify?: NotificationDeps,
 ): Promise<void> {
   const emailLower = normalizeEmail(ctx.email);
   const ip = normaliseIp(ctx.ip);
@@ -487,6 +668,24 @@ export async function recordAnomalyBlock(
       .update(users)
       .set({ lockedUntil })
       .where(sql`lower(${users.email}) = ${emailLower}`);
+
+    // Req 13.1 — `anomaly_lock` notification. Only the `'lock'`
+    // action maps to a Req 13.1 event; `'require_mfa'` deliberately
+    // does NOT notify (Req 13.1's set is exactly four events, and
+    // `mfa_required` is a placeholder action per Req 12.4 / the
+    // `SecurityEvent` union in `notifications/types.ts`). Best-effort
+    // / non-blocking; `action='locked'`, and we forward the
+    // detector's country + 2-decimal score.
+    await dispatchSecurityEvent(notify, policy.notifyChannels, {
+      event: 'anomaly_lock',
+      timestamp: now.toISOString(),
+      email: emailLower,
+      ip,
+      country: draft.countryCode ?? null,
+      userAgent: ctx.userAgent ?? null,
+      anomalyScore: roundScore(ctx.anomalyScore),
+      action: 'locked',
+    });
   }
 }
 
@@ -496,6 +695,21 @@ function normaliseIp(input: string | null | undefined): string {
   if (typeof input !== 'string') return 'unknown';
   const trimmed = input.trim();
   return trimmed.length > 0 ? trimmed : 'unknown';
+}
+
+/**
+ * Round an anomaly score to two decimal places for the
+ * {@link NotificationPayload.anomalyScore} wire field (Req 12.1 /
+ * design §9.1). Mirrors the `Math.round(score * 100) / 100`
+ * convention documented on the payload type so the number a webhook
+ * receiver thresholds on matches the value the success-row insert
+ * persisted. `null`/`undefined` pass straight through — those events
+ * (`user_locked`, `ip_blocked`) aren't anomaly-driven and carry a
+ * `null` score by design.
+ */
+function roundScore(score: number | null | undefined): number | null {
+  if (score == null) return null;
+  return Math.round(score * 100) / 100;
 }
 
 /**

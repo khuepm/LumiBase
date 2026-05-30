@@ -27,6 +27,8 @@ import { createGeoSubscore } from '../modules/anomaly/geo';
 import { createTimeSubscore } from '../modules/anomaly/time';
 import { createDeviceSubscore } from '../modules/anomaly/device';
 import type { LoginAttemptDraft } from '../modules/anomaly/types';
+import { getSecurityNotificationDispatcher } from '../modules/notifications/security-dispatcher';
+import type { NotificationDeps } from '../modules/login-guard/hooks';
 
 export const authRouter = new Hono<AppEnv>();
 
@@ -258,6 +260,22 @@ authRouter.post('/login', async (c) => {
   );
   const counter = createCounterStore(db, readCounterEnv(c.env));
 
+  // Notification wiring (task 9.5; Req 13.1; design §6.3). Resolve the
+  // process-level dispatcher and register the email + webhook channels
+  // from the current env + policy. The `notify` bundle is threaded
+  // into the LoginGuard hooks so the four security events
+  // (`user_locked`, `ip_blocked`, `anomaly_triggered`, `anomaly_lock`)
+  // reach `policy.notifyChannels`. Dispatch is best-effort and
+  // non-blocking — the hooks swallow any delivery error so a failed
+  // notification can never fail the login (Req 13.4). The dispatcher
+  // singleton owns its own background drain on Node; the Workers drain
+  // path (`ctx.waitUntil`) is task 9.6.
+  const dispatcher = getSecurityNotificationDispatcher(c.env, policy);
+  const notify: NotificationDeps = {
+    dispatcher,
+    notifyChannels: policy.notifyChannels,
+  };
+
   // Look the user up case-insensitively so a `Foo@Example.com` row
   // matches a `foo@example.com` request body. This matches the
   // future `users_email_lower_unique` index from design §3.1.
@@ -285,6 +303,8 @@ authRouter.post('/login', async (c) => {
         userAgent,
         userId: null,
       },
+      new Date(),
+      notify,
     );
 
     return c.json(
@@ -306,6 +326,8 @@ authRouter.post('/login', async (c) => {
         userAgent,
         userId: user.id,
       },
+      new Date(),
+      notify,
     );
 
     return c.json(
@@ -376,7 +398,7 @@ authRouter.post('/login', async (c) => {
       anomalyScore: anomaly.score,
       baselineWarmup: anomaly.baselineWarmup,
       action: 'lock',
-    });
+    }, new Date(), notify);
     const retryAfterSeconds = Math.max(1, policy.userLockoutDurationSeconds);
     return c.json(
       {
@@ -429,8 +451,9 @@ authRouter.post('/login', async (c) => {
   //
   // `anomalyTriggered` is `true` for the `notify_only` action path
   // (Req 12.2) — the login was allowed but the anomaly is recorded
-  // for audit + notification. Phase E (task 9.5) will graft the
-  // notification dispatcher onto this branch.
+  // for audit + notification. Task 9.5 threads the dispatcher in via
+  // `options.notify` so the `anomaly_triggered` event reaches the
+  // operator's channels when (and only when) `anomalyTriggered` is set.
   await recordLoginSuccess(db, {
     userId: user.id,
     email: emailLower,
@@ -440,7 +463,7 @@ authRouter.post('/login', async (c) => {
     anomalyScore: anomaly.score,
     anomalyTriggered: triggered && policy.anomalyAction === 'notify_only',
     baselineWarmup: anomaly.baselineWarmup,
-  });
+  }, { notify });
 
   const token = await signCustomJwt(
     {

@@ -93,7 +93,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 9.2 Tạo `apps/cms/src/modules/notifications/email-channel.ts` factory `EmailChannelFactory.fromEnv()` chọn `NodemailerChannel` cho self-hosted Node (add `nodemailer` dependency vào `apps/cms/package.json`) hoặc `MailchannelsChannel` cho Cloudflare Workers; subject `[LumiBase Security] <event_code>`, body template với substitution variables (Req 13.2; design §9.2)
   - [x] 9.3 Tạo `apps/cms/src/modules/notifications/webhook-channel.ts` với HMAC-SHA256 sign over `${timestamp}.${body}`, header `X-Lumibase-Signature: sha256=<hex>`, `X-Lumibase-Timestamp`; timeout 10s; status 2xx = success (Req 13.3; design §9.3, §7.4)
   - [x] 9.4 Tạo `apps/cms/src/modules/notifications/dispatcher.ts` với queue in-process: tick 250ms, exponential backoff 1s/2s/4s max 3 attempts, drop sau fail → audit `notification_delivery_failed`; rate-limit Map `(event, emailLower)` TTL 60s, drop khi hit → audit `notification_rate_limited` (Req 13.4, 13.5; design §9.4, §9.5)
-  - [~] 9.5 Wiring dispatcher vào LoginGuard events `user_locked`, `ip_blocked`, `anomaly_triggered`, `anomaly_lock` (Req 13.1; design §6.3)
+  - [x] 9.5 Wiring dispatcher vào LoginGuard events `user_locked`, `ip_blocked`, `anomaly_triggered`, `anomaly_lock` (Req 13.1; design §6.3)
   - [~] 9.6 Cho Cloudflare Workers runtime: wrap dispatch trong `ctx.waitUntil()` để giữ task sau response
 
 - [ ] 10. Recovery flow (backup codes + forgot path)
