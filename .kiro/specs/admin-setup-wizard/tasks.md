@@ -97,7 +97,7 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 9.6 Cho Cloudflare Workers runtime: wrap dispatch trong `ctx.waitUntil()` để giữ task sau response
 
 - [ ] 10. Recovery flow (backup codes + forgot path)
-  - [~] 10.1 Thêm bảng `admin_backup_codes` vào `packages/database/src/schema/security.ts` với cột `id`, `user_id`, `code_hash`, `created_at`, `used_at`, `used_from_ip`; partial index `(user_id) WHERE used_at IS NULL`; sinh migration (Req 14.2; design §3.3)
+  - [x] 10.1 Thêm bảng `admin_backup_codes` vào `packages/database/src/schema/security.ts` với cột `id`, `user_id`, `code_hash`, `created_at`, `used_at`, `used_from_ip`; partial index `(user_id) WHERE used_at IS NULL`; sinh migration (Req 14.2; design §3.3)
   - [~] 10.2 Mở rộng `SetupService.complete()` sinh 8 backup codes alphabet `[A-Z, 2-9]` (loại I, O, 0, 1, L), CSPRNG ≥128 bit/code, format `XXXX-XXXX`; hash PBKDF2 per-code salt 16 byte; lưu vào `admin_backup_codes`; trả plaintext list duy nhất một lần trong response (Req 14.1, 14.2; design §6.5)
   - [~] 10.3 Tạo StepRecovery `apps/studio/src/modules/setup/steps/step-recovery.tsx` hiển thị 8 backup codes dạng monospace, nút copy/download .txt, checkbox xác nhận "I have saved these backup codes" gating "Finish setup" (Req 14.1, 14.3; design §5.2)
   - [~] 10.4 Tạo `apps/cms/src/modules/recovery/service.ts` với `recover(email, backupCode, ip)`: lookup user theo email lower, verify hash khớp row có `used_at IS NULL`, set `used_at=now()`, clear lockedUntil + ipBlockedUntil cho `ip`, sinh `oneTimeUnlockToken` (CSPRNG, 15 phút TTL, hash lưu DB), trả `{ adminPath, oneTimeUnlockToken }`; mọi nhánh fail trả 401 generic sau random delay 200-500ms (Req 14.4; design §6.3)

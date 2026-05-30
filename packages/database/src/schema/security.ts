@@ -221,3 +221,56 @@ export const loginBaselines = pgTable('login_baselines', {
   successfulLogins: integer('successful_logins').default(0).notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+/**
+ * Single-use offline recovery codes for the Bootstrap Admin.
+ *
+ * Eight `XXXX-XXXX` codes are minted during the Setup Wizard's final
+ * "Recovery Setup" step (Req 14.1) and shown to the operator exactly
+ * once. This table stores ONLY the PBKDF2 hash of each code — never the
+ * plaintext (Req 14.2). `code_hash` uses the same scheme as the admin
+ * password: `pbkdf2$100000$<salt>$<hash>`, so recovery verification can
+ * reuse the existing PBKDF2 verifier.
+ *
+ * Redemption flow (design §3.3 / Luồng C, `POST .../security/recover`):
+ * the Recovery Service scans this user's still-valid codes with
+ * `WHERE used_at IS NULL` and, on a hash match, stamps `used_at=now()`.
+ * The partial `admin_backup_codes_user_unused_idx` index makes that
+ * unused-code scan cheap by indexing only the rows that are still
+ * spendable.
+ *
+ * `used_at` is monotonic: it transitions exactly once from NULL to a
+ * timestamp and never back, which enforces single-use per Property 4
+ * (Req 14.4, 14.7) — a consumed code can never satisfy the
+ * `used_at IS NULL` predicate again. `used_from_ip` records the client
+ * IP that redeemed the code for the security audit trail.
+ *
+ * `onDelete: 'cascade'` mirrors the policy for `login_baselines`: when
+ * the owning user is removed, their backup codes have no archival value
+ * and are removed with them.
+ *
+ * Contract: see design §3.3 and Req 14.2.
+ */
+export const adminBackupCodes = pgTable(
+  'admin_backup_codes',
+  {
+    id: id(),
+    /** Owning user; codes are cascade-deleted with the user. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** PBKDF2 hash of the backup code; format `pbkdf2$100000$<salt>$<hash>`. Never plaintext (Req 14.2). */
+    codeHash: text('code_hash').notNull(),
+    createdAt: createdAt(),
+    /** NULL while spendable; stamped once on redemption (single-use, Req 14.4/14.7). */
+    usedAt: timestamp('used_at'),
+    /** Client IP that consumed this code, for the audit trail. */
+    usedFromIp: text('used_from_ip'),
+  },
+  (t) => ({
+    /** Partial index over spendable codes; powers the recovery `WHERE used_at IS NULL` scan. */
+    userUnused: index('admin_backup_codes_user_unused_idx')
+      .on(t.userId)
+      .where(sql`${t.usedAt} IS NULL`),
+  }),
+);

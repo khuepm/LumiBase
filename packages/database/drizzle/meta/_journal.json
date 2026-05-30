@@ -57,6 +57,13 @@
       "when": 1780122078773,
       "tag": "0007_watery_owl",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780136985417,
+      "tag": "0008_hot_nomad",
+      "breakpoints": true
     }
   ]
 }
