@@ -11,15 +11,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { cdcPipelines, type Database } from '@lumibase/database';
 
+import { encryptSync } from '../encryption';
 import {
   PipelineRegistry,
   PipelineLimitExceededError,
   PipelineNameConflictError,
   ConnectivityCheckError,
   PipelineNotFoundError,
+  ReplicationSlotCleanupError,
   type PipelineCreateInput,
   type ConnectivityChecker,
+  type ConnectorResolver,
+  type CdcConnectorType,
 } from '../pipeline-registry';
+import type { CdcConnector } from '../../connectors/types';
 
 // ── Fake Database ────────────────────────────────────────────────────────
 
@@ -137,6 +142,78 @@ const failingConnectivityChecker: ConnectivityChecker = async (
 ) => {
   throw new Error('Connection timed out');
 };
+
+/**
+ * Build a fully-populated pipeline row (with encrypted connection fields) so
+ * `PipelineRegistry.get` can decrypt and map it to a PipelineRecord. Used by
+ * the delete tests, which must resolve the pipeline before connector teardown.
+ */
+function makePipelineRow(
+  overrides?: Partial<{
+    id: string;
+    siteId: string;
+    pipelineName: string;
+    connectorType: CdcConnectorType;
+  }>,
+): Record<string, unknown> {
+  const now = new Date();
+  return {
+    id: overrides?.id ?? 'pipeline-1',
+    siteId: overrides?.siteId ?? 'site-1',
+    pipelineName: overrides?.pipelineName ?? 'my-pipeline',
+    connectorType: overrides?.connectorType ?? 'debezium_kafka',
+    status: 'active',
+    statusMessage: null,
+    sourceConnection: encryptSync(
+      'postgresql://user:pass@localhost:5432/db',
+      TEST_ENCRYPTION_KEY,
+    ),
+    sinkConnection: encryptSync(
+      'clickhouse://user:pass@localhost:8123/db',
+      TEST_ENCRYPTION_KEY,
+    ),
+    intermediaryConnection: null,
+    replicationTables: ['users', 'orders'],
+    config: {},
+    lastSyncAt: null,
+    lastSyncRecordCount: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * A minimal fake CdcConnector that records destroy() invocations and can be
+ * configured to fail (simulating replication-slot cleanup failure). The
+ * `destroy` method is a vi.fn so call ordering can be asserted against the
+ * database delete.
+ */
+function makeFakeConnector(options?: {
+  type?: CdcConnectorType;
+  failDestroy?: boolean;
+}): CdcConnector & { destroy: ReturnType<typeof vi.fn> } {
+  const destroy = vi.fn(async (_pipelineId: string) => {
+    if (options?.failDestroy) {
+      throw new Error('pg_drop_replication_slot failed: slot in use');
+    }
+  });
+  const connector = {
+    type: options?.type ?? 'debezium_kafka',
+    destroy,
+    async provision() {
+      throw new Error('not implemented');
+    },
+    async start() {},
+    async stop() {},
+    async healthCheck() {
+      throw new Error('not implemented');
+    },
+    async getMetrics() {
+      throw new Error('not implemented');
+    },
+  } as unknown as CdcConnector & { destroy: ReturnType<typeof vi.fn> };
+  return connector;
+}
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
@@ -275,6 +352,126 @@ describe('PipelineRegistry', () => {
       await expect(
         registry.delete('site-1', 'nonexistent'),
       ).rejects.toThrow(PipelineNotFoundError);
+    });
+
+    it('should invoke connector.destroy BEFORE removing the registry record (Req 1.8)', async () => {
+      const row = makePipelineRow({
+        id: 'pipeline-1',
+        siteId: 'site-1',
+        connectorType: 'debezium_kafka',
+      });
+      const { db } = createFakeDb({ existingPipelines: [row] });
+
+      // Record the order of side effects: destroy() must run before delete().
+      const callOrder: string[] = [];
+      const connector = makeFakeConnector({ type: 'debezium_kafka' });
+      connector.destroy.mockImplementation(async () => {
+        callOrder.push('destroy');
+      });
+      const originalDelete = db.delete;
+      vi.spyOn(db, 'delete').mockImplementation((...args) => {
+        callOrder.push('delete');
+        return (originalDelete as typeof db.delete).apply(db, args);
+      });
+
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+        connectorResolver: () => connector,
+      });
+
+      await registry.delete('site-1', 'pipeline-1');
+
+      expect(connector.destroy).toHaveBeenCalledWith('pipeline-1');
+      expect(callOrder).toEqual(['destroy', 'delete']);
+    });
+
+    it('should resolve the connector by the pipeline connector type (Req 1.8)', async () => {
+      const row = makePipelineRow({
+        id: 'pipeline-1',
+        siteId: 'site-1',
+        connectorType: 'materialized_engine',
+      });
+      const { db } = createFakeDb({ existingPipelines: [row] });
+
+      const resolver = vi.fn<ConnectorResolver>(() =>
+        makeFakeConnector({ type: 'materialized_engine' }),
+      );
+
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+        connectorResolver: resolver,
+      });
+
+      await registry.delete('site-1', 'pipeline-1');
+
+      expect(resolver).toHaveBeenCalledWith('materialized_engine');
+    });
+
+    it('should keep the registry record when connector.destroy (slot cleanup) fails (Req 1.8)', async () => {
+      const row = makePipelineRow({
+        id: 'pipeline-1',
+        siteId: 'site-1',
+        connectorType: 'debezium_kafka',
+      });
+      const { db } = createFakeDb({ existingPipelines: [row] });
+      const deleteSpy = vi.spyOn(db, 'delete');
+
+      const connector = makeFakeConnector({
+        type: 'debezium_kafka',
+        failDestroy: true,
+      });
+
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+        connectorResolver: () => connector,
+      });
+
+      await expect(registry.delete('site-1', 'pipeline-1')).rejects.toThrow(
+        ReplicationSlotCleanupError,
+      );
+
+      // The record MUST NOT be removed while the slot still lingers.
+      expect(connector.destroy).toHaveBeenCalledWith('pipeline-1');
+      expect(deleteSpy).not.toHaveBeenCalled();
+    });
+
+    it('should remove the record without connector teardown when no resolver is provided', async () => {
+      const row = makePipelineRow({ id: 'pipeline-1', siteId: 'site-1' });
+      const { db } = createFakeDb({ existingPipelines: [row] });
+      const deleteSpy = vi.spyOn(db, 'delete');
+
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+      });
+
+      await registry.delete('site-1', 'pipeline-1');
+
+      expect(deleteSpy).toHaveBeenCalled();
+    });
+
+    it('should skip connector teardown when the resolver returns null', async () => {
+      const row = makePipelineRow({ id: 'pipeline-1', siteId: 'site-1' });
+      const { db } = createFakeDb({ existingPipelines: [row] });
+      const deleteSpy = vi.spyOn(db, 'delete');
+
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+        connectorResolver: () => null,
+      });
+
+      await registry.delete('site-1', 'pipeline-1');
+
+      expect(deleteSpy).toHaveBeenCalled();
     });
   });
 

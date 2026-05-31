@@ -16,6 +16,7 @@ import { and, eq, count } from 'drizzle-orm';
 import { cdcPipelines, type Database } from '@lumibase/database';
 import { nanoid } from 'nanoid';
 
+import type { CdcConnector } from '../connectors/types';
 import { encryptSync as encrypt, decryptSync as decrypt } from './encryption';
 
 // ── constants ────────────────────────────────────────────────────────────
@@ -106,6 +107,26 @@ export class PipelineNotFoundError extends Error {
   constructor(pipelineId: string) {
     super(`Pipeline "${pipelineId}" not found`);
     this.name = 'PipelineNotFoundError';
+  }
+}
+
+/**
+ * Raised when a pipeline's connector fails to release/drop its PostgreSQL
+ * replication slot(s) during {@link PipelineRegistry.delete}. The registry
+ * record is intentionally kept when this is thrown so the orphaned slot is
+ * not forgotten — the caller can retry the delete (Req 1.8; design Error
+ * Handling row "Replication slot cleanup fails on delete").
+ */
+export class ReplicationSlotCleanupError extends Error {
+  readonly code = 'REPLICATION_SLOT_CLEANUP_FAILED' as const;
+  readonly pipelineId: string;
+  constructor(pipelineId: string, reason?: string) {
+    super(
+      `Failed to clean up replication slot(s) for pipeline "${pipelineId}"` +
+        `${reason ? `: ${reason}` : ''}`,
+    );
+    this.name = 'ReplicationSlotCleanupError';
+    this.pipelineId = pipelineId;
   }
 }
 
@@ -216,6 +237,23 @@ function getDefaultPort(protocol: string): number {
   }
 }
 
+// ── connector resolver (Req 1.8) ─────────────────────────────────────────
+
+/**
+ * Resolves the {@link CdcConnector} implementation responsible for a given
+ * connector type. Injected into {@link PipelineRegistry} so {@link
+ * PipelineRegistry.delete} can invoke `connector.destroy(pipelineId)` — which
+ * for replication-slot-based approaches (Debezium+Kafka, Materialized Engine)
+ * releases and drops the PostgreSQL replication slot(s) on the
+ * Source_Database — before removing the registry record (Req 1.8).
+ *
+ * Implementations return `null`/`undefined` when no connector handles the
+ * given type, in which case the registry skips connector teardown.
+ */
+export type ConnectorResolver = (
+  connectorType: CdcConnectorType,
+) => CdcConnector | null | undefined;
+
 // ── service interface ────────────────────────────────────────────────────
 
 export interface PipelineRegistryService {
@@ -246,6 +284,16 @@ export interface PipelineRegistryDeps {
    * {@link defaultConnectivityChecker}.
    */
   readonly connectivityChecker?: ConnectivityChecker;
+  /**
+   * Injectable connector resolver used by {@link PipelineRegistry.delete} to
+   * tear down a pipeline's connector (including replication-slot cleanup for
+   * slot-based approaches) before the registry record is removed (Req 1.8).
+   *
+   * Optional: when omitted, delete falls back to a no-op resolver and simply
+   * removes the record. Production call sites SHOULD provide a resolver that
+   * returns the real connector instances so replication slots are dropped.
+   */
+  readonly connectorResolver?: ConnectorResolver;
 }
 
 // ── implementation ───────────────────────────────────────────────────────
@@ -254,12 +302,16 @@ export class PipelineRegistry implements PipelineRegistryService {
   private readonly db: Database;
   private readonly encryptionKey: string;
   private readonly checkConnectivity: ConnectivityChecker;
+  private readonly resolveConnector: ConnectorResolver;
 
   constructor(deps: PipelineRegistryDeps) {
     this.db = deps.db;
     this.encryptionKey = deps.encryptionKey;
     this.checkConnectivity =
       deps.connectivityChecker ?? defaultConnectivityChecker;
+    // Default to a no-op resolver so existing call sites/tests that do not
+    // wire a resolver keep working — they simply skip connector teardown.
+    this.resolveConnector = deps.connectorResolver ?? (() => null);
   }
 
   async create(
@@ -426,6 +478,33 @@ export class PipelineRegistry implements PipelineRegistryService {
   }
 
   async delete(siteId: string, pipelineId: string): Promise<void> {
+    // 1. Resolve the pipeline first so we know its connector type and can
+    //    confirm it belongs to the site before tearing anything down.
+    const existing = await this.get(siteId, pipelineId);
+    if (!existing) {
+      throw new PipelineNotFoundError(pipelineId);
+    }
+
+    // 2. Tear down the connector BEFORE removing the registry record. For
+    //    replication-slot-based approaches (Debezium+Kafka, Materialized
+    //    Engine) this releases and drops the PostgreSQL replication slot(s)
+    //    on the Source_Database via pg_drop_replication_slot, so no orphaned
+    //    slot remains and the Source_Database does not retain WAL files
+    //    indefinitely (Req 1.8). If destroy() fails (e.g. slot cleanup
+    //    fails after its internal retries), we surface the error and keep the
+    //    registry record so the orphaned slot is not forgotten.
+    const connector = this.resolveConnector(existing.connectorType);
+    if (connector) {
+      try {
+        await connector.destroy(pipelineId);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : 'unknown error';
+        throw new ReplicationSlotCleanupError(pipelineId, reason);
+      }
+    }
+
+    // 3. Only after destroy() (including slot cleanup) succeeds do we remove
+    //    the registry record.
     const result = await this.db
       .delete(cdcPipelines)
       .where(
