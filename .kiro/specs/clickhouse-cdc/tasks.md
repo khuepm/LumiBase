@@ -25,7 +25,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - **Property 9: Sync schedule interval validation** — values in [60, 86400] accepted, outside rejected
     - **Validates: Requirements 1.1, 1.3, 4.3, 4.7**
 
-- [ ] 2. Implement Pipeline Registry service
+- [x] 2. Implement Pipeline Registry service
   - [x] 2.1 Create `apps/cms/src/modules/cdc/registry/pipeline-registry.ts`
     - Implement `PipelineRegistryService` interface (create, get, list, update, delete, updateStatus)
     - Enforce tenant pipeline limit (max 50)
@@ -38,15 +38,15 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Ensure encrypted values never equal plaintext
     - _Requirements: 1.4_
 
-  - [ ] 2.3 Write property tests for registry logic (Properties 3, 4)
+  - [x] 2.3 Write property tests for registry logic (Properties 3, 4)
     - **Property 3: Connection parameter encryption round-trip** — encrypt then decrypt produces original, encrypted ≠ plaintext
     - **Property 4: Pipeline name uniqueness per site (site_id)** — duplicate names rejected per site
     - **Validates: Requirements 1.4, 1.6**
 
-- [ ] 3. Checkpoint - Ensure all tests pass
+- [~] 3. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Implement CDC Connector interface and Debezium+Kafka connector
+- [~] 4. Implement CDC Connector interface and Debezium+Kafka connector
   - [ ] 4.1 Create connector interface in `apps/cms/src/modules/cdc/connectors/types.ts`
     - Define `CdcConnector` interface with provision, start, stop, healthCheck, getMetrics, destroy
     - Define `CdcConnectorType`, `ConnectorConfig`, `ProvisionResult`, `HealthCheckResult`, `PipelineMetrics` types
@@ -67,7 +67,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - **Property 6: Event ordering preservation during outages** — buffered events delivered in original order
     - **Validates: Requirements 2.2, 2.4, 2.6**
 
-- [ ] 5. Implement Materialized Engine connector
+- [~] 5. Implement Materialized Engine connector
   - [ ] 5.1 Implement Materialized Engine connector in `apps/cms/src/modules/cdc/connectors/materialized-engine.ts`
     - Implement `MaterializedEngineConnector` class
     - Configure direct PostgreSQL replication slot connection
