@@ -46,13 +46,13 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
 - [x] 3. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [~] 4. Implement CDC Connector interface and Debezium+Kafka connector
-  - [ ] 4.1 Create connector interface in `apps/cms/src/modules/cdc/connectors/types.ts`
+- [x] 4. Implement CDC Connector interface and Debezium+Kafka connector
+  - [x] 4.1 Create connector interface in `apps/cms/src/modules/cdc/connectors/types.ts`
     - Define `CdcConnector` interface with provision, start, stop, healthCheck, getMetrics, destroy
     - Define `CdcConnectorType`, `ConnectorConfig`, `ProvisionResult`, `HealthCheckResult`, `PipelineMetrics` types
     - _Requirements: 1.2, 2.1, 3.1, 4.1_
 
-  - [ ] 4.2 Implement Debezium+Kafka connector in `apps/cms/src/modules/cdc/connectors/debezium-kafka.ts`
+  - [x] 4.2 Implement Debezium+Kafka connector in `apps/cms/src/modules/cdc/connectors/debezium-kafka.ts`
     - Implement `DebeziumKafkaConnector` class
     - Configure Debezium to read INSERT/UPDATE/DELETE from WAL
     - Publish events to Kafka topics partitioned by table name
@@ -62,7 +62,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Implement `destroy(pipelineId)` to remove the Debezium connector AND release/drop the corresponding PostgreSQL replication slot on the Source_Database (e.g. via `pg_drop_replication_slot`) so WAL files are not retained
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 1.8_
 
-  - [ ] 4.3 Write property tests for Debezium connector (Properties 5, 6)
+  - [x] 4.3 Write property tests for Debezium connector (Properties 5, 6)
     - **Property 5: Kafka topic routing by table name** — each table maps to a unique deterministic topic
     - **Property 6: Event ordering preservation during outages** — buffered events delivered in original order
     - **Validates: Requirements 2.2, 2.4, 2.6**
