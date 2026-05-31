@@ -25,7 +25,7 @@ export const PipelineCreateSchema = z.object({
 });
 
 export const SyncScheduleSchema = z.object({
-  interval_seconds: z.number().int().min(60).max(86400), // 1 min to 24 hours
+  interval_seconds: z.number().int().min(300).max(86400), // 5 min to 24 hours
   sync_mode: z.enum(['full_refresh', 'incremental_cdc']),
 });
 
