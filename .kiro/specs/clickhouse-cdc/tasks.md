@@ -67,7 +67,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - **Property 6: Event ordering preservation during outages** — buffered events delivered in original order
     - **Validates: Requirements 2.2, 2.4, 2.6**
 
-- [~] 5. Implement Materialized Engine connector
+- [x] 5. Implement Materialized Engine connector
   - [ ] 5.1 Implement Materialized Engine connector in `apps/cms/src/modules/cdc/connectors/materialized-engine.ts`
     - Implement `MaterializedEngineConnector` class
     - Configure direct PostgreSQL replication slot connection
