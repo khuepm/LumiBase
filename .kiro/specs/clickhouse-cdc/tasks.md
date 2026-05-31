@@ -43,7 +43,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - **Property 4: Pipeline name uniqueness per site (site_id)** — duplicate names rejected per site
     - **Validates: Requirements 1.4, 1.6**
 
-- [~] 3. Checkpoint - Ensure all tests pass
+- [x] 3. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [~] 4. Implement CDC Connector interface and Debezium+Kafka connector
