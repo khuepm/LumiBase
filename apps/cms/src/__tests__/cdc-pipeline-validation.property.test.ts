@@ -32,7 +32,7 @@ import {
  * Feature: clickhouse-cdc, Property 9: Sync schedule interval validation
  *
  * For any integer interval value, SyncScheduleSchema SHALL accept it if and
- * only if it falls within [60, 86400] seconds. Values outside this range
+ * only if it falls within [300, 86400] seconds. Values outside this range
  * SHALL be rejected with a validation error.
  *
  * **Validates: Requirements 4.3, 4.7**
@@ -199,10 +199,10 @@ describe('Feature: clickhouse-cdc, Property 2: Validation completeness for missi
 });
 
 describe('Feature: clickhouse-cdc, Property 9: Sync schedule interval validation', () => {
-  it('values in [60, 86400] are accepted by SyncScheduleSchema', () => {
+  it('values in [300, 86400] are accepted by SyncScheduleSchema', () => {
     fc.assert(
       fc.property(
-        fc.integer({ min: 60, max: 86400 }),
+        fc.integer({ min: 300, max: 86400 }),
         fc.constantFrom('full_refresh', 'incremental_cdc'),
         (interval, syncMode) => {
           const result = SyncScheduleSchema.safeParse({
@@ -221,10 +221,10 @@ describe('Feature: clickhouse-cdc, Property 9: Sync schedule interval validation
     );
   });
 
-  it('values below 60 are rejected by SyncScheduleSchema', () => {
+  it('values below 300 are rejected by SyncScheduleSchema', () => {
     fc.assert(
       fc.property(
-        fc.integer({ min: -1_000_000, max: 59 }),
+        fc.integer({ min: -1_000_000, max: 299 }),
         fc.constantFrom('full_refresh', 'incremental_cdc'),
         (interval, syncMode) => {
           const result = SyncScheduleSchema.safeParse({
@@ -260,7 +260,7 @@ describe('Feature: clickhouse-cdc, Property 9: Sync schedule interval validation
   it('non-integer values are rejected by SyncScheduleSchema', () => {
     fc.assert(
       fc.property(
-        fc.double({ min: 60.01, max: 86399.99, noNaN: true, noDefaultInfinity: true })
+        fc.double({ min: 300.01, max: 86399.99, noNaN: true, noDefaultInfinity: true })
           .filter((n) => !Number.isInteger(n)),
         fc.constantFrom('full_refresh', 'incremental_cdc'),
         (interval, syncMode) => {
@@ -276,9 +276,9 @@ describe('Feature: clickhouse-cdc, Property 9: Sync schedule interval validation
     );
   });
 
-  it('boundary values 60 and 86400 are accepted', () => {
+  it('boundary values 300 and 86400 are accepted', () => {
     const lower = SyncScheduleSchema.safeParse({
-      interval_seconds: 60,
+      interval_seconds: 300,
       sync_mode: 'full_refresh',
     });
     expect(lower.success).toBe(true);
@@ -290,9 +290,9 @@ describe('Feature: clickhouse-cdc, Property 9: Sync schedule interval validation
     expect(upper.success).toBe(true);
   });
 
-  it('boundary values 59 and 86401 are rejected', () => {
+  it('boundary values 299 and 86401 are rejected', () => {
     const belowLower = SyncScheduleSchema.safeParse({
-      interval_seconds: 59,
+      interval_seconds: 299,
       sync_mode: 'full_refresh',
     });
     expect(belowLower.success).toBe(false);
