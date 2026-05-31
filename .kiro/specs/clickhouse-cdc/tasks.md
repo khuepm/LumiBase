@@ -25,7 +25,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - **Property 9: Sync schedule interval validation** — values in [60, 86400] accepted, outside rejected
     - **Validates: Requirements 1.1, 1.3, 4.3, 4.7**
 
-- [ ] 2. Implement Pipeline Registry service
+- [-] 2. Implement Pipeline Registry service
   - [ ] 2.1 Create `apps/cms/src/modules/cdc/registry/pipeline-registry.ts`
     - Implement `PipelineRegistryService` interface (create, get, list, update, delete, updateStatus)
     - Enforce tenant pipeline limit (max 50)

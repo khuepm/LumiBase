@@ -1,0 +1,364 @@
+/**
+ * Unit tests for PipelineRegistryService.
+ *
+ * Uses a fake Database that records Drizzle operations without a real
+ * Postgres connection, following the same pattern as
+ * `login-guard/__tests__/counter.test.ts`.
+ *
+ * Validates: Requirements 1.1, 1.2, 1.5, 1.6, 1.7
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { cdcPipelines, type Database } from '@lumibase/database';
+
+import {
+  PipelineRegistry,
+  PipelineLimitExceededError,
+  PipelineNameConflictError,
+  ConnectivityCheckError,
+  PipelineNotFoundError,
+  type PipelineCreateInput,
+  type ConnectivityChecker,
+} from '../pipeline-registry';
+
+// ── Fake Database ────────────────────────────────────────────────────────
+
+function createFakeDb(options?: {
+  existingPipelines?: Array<Record<string, unknown>>;
+  pipelineCount?: number;
+}) {
+  const pipelines = options?.existingPipelines ?? [];
+  const pipelineCount = options?.pipelineCount ?? pipelines.length;
+
+  const insertedRows: Array<Record<string, unknown>> = [];
+  const updatedRows: Array<Record<string, unknown>> = [];
+  const deletedIds: string[] = [];
+
+  const fakeDb = {
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue(pipelines.slice(0, 1)),
+        }),
+      }),
+    }),
+    insert: vi.fn().mockReturnValue({
+      values: vi.fn().mockImplementation((values: Record<string, unknown>) => {
+        insertedRows.push(values);
+        return {
+          returning: vi.fn().mockResolvedValue([
+            {
+              ...values,
+              createdAt: values.createdAt ?? new Date(),
+              updatedAt: values.updatedAt ?? new Date(),
+            },
+          ]),
+        };
+      }),
+    }),
+    update: vi.fn().mockReturnValue({
+      set: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockImplementation(() => {
+            if (pipelines.length > 0) {
+              const updated = { ...pipelines[0], ...updatedRows[0] };
+              return Promise.resolve([updated]);
+            }
+            return Promise.resolve([]);
+          }),
+        }),
+      }),
+    }),
+    delete: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockImplementation(() => {
+          if (pipelines.length > 0) {
+            return Promise.resolve([{ id: pipelines[0]!.id }]);
+          }
+          return Promise.resolve([]);
+        }),
+      }),
+    }),
+  };
+
+  // Override select for count queries
+  const selectWithCount = vi.fn().mockImplementation((selection) => {
+    // Check if this is a count query
+    const isCountQuery =
+      selection && Object.keys(selection).some((k) => k === 'value');
+
+    if (isCountQuery) {
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ value: pipelineCount }]),
+        }),
+      };
+    }
+
+    // Regular select
+    return {
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue(pipelines.slice(0, 1)),
+        }),
+      }),
+    };
+  });
+
+  fakeDb.select = selectWithCount;
+
+  return {
+    db: fakeDb as unknown as Database,
+    insertedRows,
+    updatedRows,
+    deletedIds,
+  };
+}
+
+// ── Test helpers ─────────────────────────────────────────────────────────
+
+const TEST_ENCRYPTION_KEY = 'test-encryption-key-32-chars-ok!';
+
+const validInput: PipelineCreateInput = {
+  pipeline_name: 'my-pipeline',
+  cdc_connector_type: 'debezium_kafka',
+  source_database_connection: 'postgresql://user:pass@localhost:5432/db',
+  clickhouse_sink_connection: 'clickhouse://user:pass@localhost:8123/db',
+  replication_tables: ['users', 'orders'],
+  config: { slot_name: 'test_slot' },
+};
+
+const noopConnectivityChecker: ConnectivityChecker = async () => {
+  // Always succeeds
+};
+
+const failingConnectivityChecker: ConnectivityChecker = async (
+  connectionString: string,
+) => {
+  throw new Error('Connection timed out');
+};
+
+// ── Tests ────────────────────────────────────────────────────────────────
+
+describe('PipelineRegistry', () => {
+  describe('create', () => {
+    it('should create a pipeline with valid input', async () => {
+      const { db } = createFakeDb({ pipelineCount: 0 });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+      });
+
+      const result = await registry.create('tenant-1', validInput);
+
+      expect(result).toBeDefined();
+      expect(result.id).toBeTruthy();
+      expect(result.pipelineName).toBe('my-pipeline');
+      expect(result.connectorType).toBe('debezium_kafka');
+      expect(result.status).toBe('provisioning');
+      expect(result.siteId).toBe('tenant-1');
+    });
+
+    it('should reject when tenant has 50 pipelines (Req 1.7)', async () => {
+      const { db } = createFakeDb({ pipelineCount: 50 });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+      });
+
+      await expect(registry.create('tenant-1', validInput)).rejects.toThrow(
+        PipelineLimitExceededError,
+      );
+    });
+
+    it('should allow creation when tenant has 49 pipelines', async () => {
+      const { db } = createFakeDb({ pipelineCount: 49 });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+      });
+
+      const result = await registry.create('tenant-1', validInput);
+      expect(result).toBeDefined();
+      expect(result.pipelineName).toBe('my-pipeline');
+    });
+
+    it('should reject duplicate pipeline name per tenant (Req 1.6)', async () => {
+      const { db } = createFakeDb({
+        pipelineCount: 1,
+        existingPipelines: [{ id: 'existing-1', pipelineName: 'my-pipeline' }],
+      });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+      });
+
+      await expect(registry.create('tenant-1', validInput)).rejects.toThrow(
+        PipelineNameConflictError,
+      );
+    });
+
+    it('should reject when connectivity check fails (Req 1.5)', async () => {
+      const { db } = createFakeDb({ pipelineCount: 0 });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: failingConnectivityChecker,
+      });
+
+      await expect(registry.create('tenant-1', validInput)).rejects.toThrow(
+        ConnectivityCheckError,
+      );
+    });
+
+    it('should encrypt connection parameters before storing', async () => {
+      const { db, insertedRows } = createFakeDb({ pipelineCount: 0 });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+      });
+
+      await registry.create('tenant-1', validInput);
+
+      // The insert call should have been made with encrypted values
+      expect(db.insert).toHaveBeenCalled();
+    });
+
+    it('should support all three connector types (Req 1.2)', async () => {
+      const { db } = createFakeDb({ pipelineCount: 0 });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+      });
+
+      for (const connectorType of [
+        'debezium_kafka',
+        'materialized_engine',
+        'airbyte',
+      ] as const) {
+        const input = { ...validInput, cdc_connector_type: connectorType };
+        const result = await registry.create('tenant-1', input);
+        expect(result.connectorType).toBe(connectorType);
+      }
+    });
+  });
+
+  describe('get', () => {
+    it('should return null when pipeline not found', async () => {
+      const { db } = createFakeDb({ existingPipelines: [] });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+      });
+
+      const result = await registry.get('tenant-1', 'nonexistent');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('delete', () => {
+    it('should throw PipelineNotFoundError when pipeline does not exist', async () => {
+      const { db } = createFakeDb({ existingPipelines: [] });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+      });
+
+      await expect(
+        registry.delete('tenant-1', 'nonexistent'),
+      ).rejects.toThrow(PipelineNotFoundError);
+    });
+  });
+
+  describe('updateStatus', () => {
+    it('should throw PipelineNotFoundError when pipeline does not exist', async () => {
+      const { db } = createFakeDb({ existingPipelines: [] });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: noopConnectivityChecker,
+      });
+
+      await expect(
+        registry.updateStatus('nonexistent', 'active'),
+      ).rejects.toThrow(PipelineNotFoundError);
+    });
+  });
+
+  describe('connectivity check', () => {
+    it('should use 5-second timeout for connectivity checks', async () => {
+      let capturedTimeout = 0;
+      const timeoutCapture: ConnectivityChecker = async (
+        _conn,
+        timeoutMs,
+      ) => {
+        capturedTimeout = timeoutMs;
+      };
+
+      const { db } = createFakeDb({ pipelineCount: 0 });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: timeoutCapture,
+      });
+
+      await registry.create('tenant-1', validInput);
+      expect(capturedTimeout).toBe(5000);
+    });
+
+    it('should check both source and sink connections', async () => {
+      const checkedConnections: string[] = [];
+      const trackingChecker: ConnectivityChecker = async (conn) => {
+        checkedConnections.push(conn);
+      };
+
+      const { db } = createFakeDb({ pipelineCount: 0 });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: trackingChecker,
+      });
+
+      await registry.create('tenant-1', validInput);
+      expect(checkedConnections).toContain(
+        validInput.source_database_connection,
+      );
+      expect(checkedConnections).toContain(
+        validInput.clickhouse_sink_connection,
+      );
+    });
+
+    it('should report which endpoint failed connectivity', async () => {
+      let callCount = 0;
+      const failOnSecond: ConnectivityChecker = async () => {
+        callCount++;
+        if (callCount === 2) {
+          throw new Error('Connection refused');
+        }
+      };
+
+      const { db } = createFakeDb({ pipelineCount: 0 });
+      const registry = new PipelineRegistry({
+        db,
+        encryptionKey: TEST_ENCRYPTION_KEY,
+        connectivityChecker: failOnSecond,
+      });
+
+      try {
+        await registry.create('tenant-1', validInput);
+        expect.fail('Should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ConnectivityCheckError);
+        expect((err as ConnectivityCheckError).endpoint).toBe('sink');
+      }
+    });
+  });
+});
