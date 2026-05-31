@@ -41,7 +41,8 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
 - **API**
   - [api/hono-api-spec.md](./api/hono-api-spec.md) — REST/WS endpoints chuẩn hoá.
 - **UI Studio**
-  - [ui/studio-ui-spec.md](./ui/studio-ui-spec.md) — Cấu trúc trang, module, layout, component, state.
+  - [ui/README.md](../ui/README.md) — Spec for the redesigned Lumibase Studio and detailed screen specifications.
+  - [en/ui/studio-ui-spec.md](./ui/studio-ui-spec.md) — Original page structure, modules, layouts, components, and state.
 - **Triển khai** (xem thêm trong `apps/docs/content/deployment/`)
   - Cloudflare deployment, Docker deployment, Local development, Environment variables — được phục vụ qua [`apps/docs`](../apps/docs).
 - **Lộ trình**

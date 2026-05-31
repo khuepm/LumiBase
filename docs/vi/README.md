@@ -24,6 +24,8 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [websockets-realtime.md](./features/websockets-realtime.md) — Realtime subscribe/publish.
 - **API**
   - [api/hono-api-spec.md](./api/hono-api-spec.md) — REST/WS endpoints chuẩn hoá.
+- **UI Studio**
+  - [ui/README.md](../ui/README.md) — Bản thiết kế lại giao diện Lumibase Studio và đặc tả chi tiết các màn hình.
 - **Lộ trình**
   - [roadmap/tasks.md](./roadmap/tasks.md) — Task list chi tiết theo phase.
 

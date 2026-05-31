@@ -20,17 +20,19 @@ let dockerRuntime: RuntimeContext | null = null;
  */
 export const withRuntime = () =>
   createMiddleware<AppEnv>(async (c, next) => {
-    const mode = (c.env.LUMIBASE_RUNTIME as string | undefined) || 'docker';
+    const mode = (c.env.LUMIBASE_RUNTIME as string | undefined) || (process.env.LUMIBASE_RUNTIME as string | undefined) || 'docker';
 
     if (mode === 'docker') {
       // Singleton: reuse the runtime across requests since it holds connections.
       if (!dockerRuntime) {
-        dockerRuntime = createRuntime(c.env as unknown as Record<string, unknown>);
+        const envVars = { ...process.env, ...c.env };
+        dockerRuntime = createRuntime(envVars as unknown as Record<string, unknown>);
       }
       c.set('runtime', dockerRuntime);
     } else {
       // Cloudflare: create per-request because bindings are request-scoped.
-      const runtime = createRuntime(c.env as unknown as Record<string, unknown>);
+      const envVars = { ...process.env, ...c.env };
+      const runtime = createRuntime(envVars as unknown as Record<string, unknown>);
       c.set('runtime', runtime);
     }
 

@@ -50,7 +50,7 @@ healthRouter.get('/', async (c) => {
   // Check cache (Redis / KV) connectivity via set + get.
   try {
     const healthKey = '__lumibase_health_check__';
-    await runtime.cache.set(healthKey, 'ok', { ttl: 10 });
+    await runtime.cache.set(healthKey, JSON.stringify('ok'), { ttl: 10 });
     const val = await runtime.cache.get(healthKey);
     if (val !== null) {
       results.cache = 'healthy';
