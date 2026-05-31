@@ -26,14 +26,14 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - **Validates: Requirements 1.1, 1.3, 4.3, 4.7**
 
 - [-] 2. Implement Pipeline Registry service
-  - [ ] 2.1 Create `apps/cms/src/modules/cdc/registry/pipeline-registry.ts`
+  - [x] 2.1 Create `apps/cms/src/modules/cdc/registry/pipeline-registry.ts`
     - Implement `PipelineRegistryService` interface (create, get, list, update, delete, updateStatus)
     - Enforce tenant pipeline limit (max 50)
     - Enforce unique pipeline name per tenant
     - Implement connectivity check with 5-second timeout
     - _Requirements: 1.1, 1.2, 1.5, 1.6, 1.7_
 
-  - [ ] 2.2 Create encryption utilities in `apps/cms/src/modules/cdc/registry/encryption.ts`
+  - [x] 2.2 Create encryption utilities in `apps/cms/src/modules/cdc/registry/encryption.ts`
     - Implement encrypt/decrypt for connection parameters
     - Ensure encrypted values never equal plaintext
     - _Requirements: 1.4_
