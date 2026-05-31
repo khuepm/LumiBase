@@ -6,20 +6,20 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
 
 ## Tasks
 
-- [ ] 1. Set up database schema and shared validation
-  - [ ] 1.1 Create CDC Drizzle schema in `packages/database/src/schema/cdc.ts`
+- [x] 1. Set up database schema and shared validation
+  - [x] 1.1 Create CDC Drizzle schema in `packages/database/src/schema/cdc.ts`
     - Define `cdcPipelines`, `cdcPipelineHealth`, and `cdcDeployments` tables
     - Add unique index on `(siteId, pipelineName)` and status index
     - Export schema from `packages/database/src/schema/index.ts`
     - _Requirements: 1.1, 1.4, 1.6, 1.7, 4.5, 8.4_
 
-  - [ ] 1.2 Create Zod validation schemas in `packages/shared/src/schemas/cdc.ts`
+  - [x] 1.2 Create Zod validation schemas in `packages/shared/src/schemas/cdc.ts`
     - Define `PipelineCreateSchema` with all required fields and constraints (name max 128 chars)
     - Define `CdcConnectorTypeSchema`, `SyncScheduleSchema`, `MonitorConfigSchema`, `EnvVarSchema`
     - Export schemas from `packages/shared/src/schemas/index.ts`
     - _Requirements: 1.1, 1.2, 1.3, 1.7, 4.3, 4.7, 8.2_
 
-  - [ ]* 1.3 Write property tests for pipeline validation (Properties 1, 2, 9)
+  - [x] 1.3 Write property tests for pipeline validation (Properties 1, 2, 9)
     - **Property 1: Pipeline registration round-trip** — valid configs with all required fields produce a parseable result with UUID
     - **Property 2: Validation completeness for missing fields** — omitted subsets produce errors listing exactly those fields
     - **Property 9: Sync schedule interval validation** — values in [60, 86400] accepted, outside rejected
@@ -38,7 +38,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Ensure encrypted values never equal plaintext
     - _Requirements: 1.4_
 
-  - [ ]* 2.3 Write property tests for registry logic (Properties 3, 4)
+  - [ ] 2.3 Write property tests for registry logic (Properties 3, 4)
     - **Property 3: Connection parameter encryption round-trip** — encrypt then decrypt produces original, encrypted ≠ plaintext
     - **Property 4: Pipeline name uniqueness per tenant** — duplicate names rejected per tenant
     - **Validates: Requirements 1.4, 1.6**
@@ -61,7 +61,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Set status to error after 3 consecutive replication slot failures
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6_
 
-  - [ ]* 4.3 Write property tests for Debezium connector (Properties 5, 6)
+  - [ ] 4.3 Write property tests for Debezium connector (Properties 5, 6)
     - **Property 5: Kafka topic routing by table name** — each table maps to a unique deterministic topic
     - **Property 6: Event ordering preservation during outages** — buffered events delivered in original order
     - **Validates: Requirements 2.2, 2.4, 2.6**
@@ -76,7 +76,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Detect schema drift within 60 seconds and report affected table + change type
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
-  - [ ]* 5.2 Write property tests for Materialized Engine (Properties 7, 8)
+  - [ ] 5.2 Write property tests for Materialized Engine (Properties 7, 8)
     - **Property 7: PostgreSQL-to-ClickHouse schema mapping** — all column names preserved, types correctly mapped
     - **Property 8: Schema drift detection** — column add/remove/type change detected and reported
     - **Validates: Requirements 3.3, 3.6**
@@ -92,7 +92,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Release partial resources on provisioning failure/timeout
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
 
-  - [ ]* 6.2 Write property test for Airbyte sync metadata (Property 10)
+  - [ ] 6.2 Write property test for Airbyte sync metadata (Property 10)
     - **Property 10: Sync metadata update on completion** — completed sync with N records updates registry with correct timestamp and count
     - **Validates: Requirements 4.5**
 
@@ -112,7 +112,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Log each event with table name, record ID, and operation type
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8_
 
-  - [ ]* 8.2 Write property tests for Cache Invalidator (Properties 11, 12, 13, 14)
+  - [ ] 8.2 Write property tests for Cache Invalidator (Properties 11, 12, 13, 14)
     - **Property 11: Cache invalidation correctness by operation type** — INSERT→SET, UPDATE→SET, DELETE→DEL with correct key
     - **Property 12: Cache event deduplication within time window** — multiple events within 1s collapse to final state
     - **Property 13: Cache event queue ordering and replay** — queued events replayed in chronological order
@@ -131,7 +131,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Verify connectivity to all services with 10s timeout per service
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7_
 
-  - [ ]* 9.2 Write property tests for Health Monitor (Properties 20, 21)
+  - [ ] 9.2 Write property tests for Health Monitor (Properties 20, 21)
     - **Property 20: Replication lag threshold alerting** — warning emitted iff lag > threshold
     - **Property 21: Pipeline recovery notification on state transition** — exactly one recovery notification on error→active
     - **Validates: Requirements 8.2, 8.6**
@@ -163,7 +163,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Report failed step name, error type, and description
     - _Requirements: 7.6_
 
-  - [ ]* 11.5 Write property tests for AI Flow Engine (Properties 17, 18, 19)
+  - [ ] 11.5 Write property tests for AI Flow Engine (Properties 17, 18, 19)
     - **Property 17: Environment config generation completeness** — all required vars present for each approach+target
     - **Property 18: Environment variable schema validation** — invalid vars correctly identified with specific violated rule
     - **Property 19: Deployment rollback completeness** — steps 1..N-1 undone in reverse, no partial resources
@@ -188,7 +188,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Register routes in the Hono app
     - _Requirements: 1.1_
 
-  - [ ]* 12.3 Write unit tests for API route handlers
+  - [ ] 12.3 Write unit tests for API route handlers
     - Test validation error responses (400 with field list)
     - Test duplicate name rejection (409)
     - Test tenant pipeline limit (403)
@@ -201,7 +201,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Return recommended approach with rationale and alternatives
     - _Requirements: 6.3_
 
-  - [ ]* 13.2 Write property test for recommendation engine (Property 15)
+  - [ ] 13.2 Write property test for recommendation engine (Property 15)
     - **Property 15: Approach recommendation consistency** — deterministic result consistent with decision matrix
     - **Validates: Requirements 6.3**
 
@@ -216,7 +216,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Implement retry option when pipeline data unavailable
     - _Requirements: 6.1, 6.2, 6.4, 6.5, 6.6, 6.7, 6.8_
 
-  - [ ]* 13.4 Write property test for form validation (Property 16)
+  - [ ] 13.4 Write property test for form validation (Property 16)
     - **Property 16: Form validation preserves valid data** — mixed valid/invalid fields only errors on invalid, valid preserved
     - **Validates: Requirements 6.7**
 
