@@ -150,17 +150,17 @@ describe('PipelineRegistry', () => {
         connectivityChecker: noopConnectivityChecker,
       });
 
-      const result = await registry.create('tenant-1', validInput);
+      const result = await registry.create('site-1', validInput);
 
       expect(result).toBeDefined();
       expect(result.id).toBeTruthy();
       expect(result.pipelineName).toBe('my-pipeline');
       expect(result.connectorType).toBe('debezium_kafka');
       expect(result.status).toBe('provisioning');
-      expect(result.siteId).toBe('tenant-1');
+      expect(result.siteId).toBe('site-1');
     });
 
-    it('should reject when tenant has 50 pipelines (Req 1.7)', async () => {
+    it('should reject when site has 50 pipelines (Req 1.7)', async () => {
       const { db } = createFakeDb({ pipelineCount: 50 });
       const registry = new PipelineRegistry({
         db,
@@ -168,12 +168,12 @@ describe('PipelineRegistry', () => {
         connectivityChecker: noopConnectivityChecker,
       });
 
-      await expect(registry.create('tenant-1', validInput)).rejects.toThrow(
+      await expect(registry.create('site-1', validInput)).rejects.toThrow(
         PipelineLimitExceededError,
       );
     });
 
-    it('should allow creation when tenant has 49 pipelines', async () => {
+    it('should allow creation when site has 49 pipelines', async () => {
       const { db } = createFakeDb({ pipelineCount: 49 });
       const registry = new PipelineRegistry({
         db,
@@ -181,12 +181,12 @@ describe('PipelineRegistry', () => {
         connectivityChecker: noopConnectivityChecker,
       });
 
-      const result = await registry.create('tenant-1', validInput);
+      const result = await registry.create('site-1', validInput);
       expect(result).toBeDefined();
       expect(result.pipelineName).toBe('my-pipeline');
     });
 
-    it('should reject duplicate pipeline name per tenant (Req 1.6)', async () => {
+    it('should reject duplicate pipeline name per site (Req 1.6)', async () => {
       const { db } = createFakeDb({
         pipelineCount: 1,
         existingPipelines: [{ id: 'existing-1', pipelineName: 'my-pipeline' }],
@@ -197,7 +197,7 @@ describe('PipelineRegistry', () => {
         connectivityChecker: noopConnectivityChecker,
       });
 
-      await expect(registry.create('tenant-1', validInput)).rejects.toThrow(
+      await expect(registry.create('site-1', validInput)).rejects.toThrow(
         PipelineNameConflictError,
       );
     });
@@ -210,7 +210,7 @@ describe('PipelineRegistry', () => {
         connectivityChecker: failingConnectivityChecker,
       });
 
-      await expect(registry.create('tenant-1', validInput)).rejects.toThrow(
+      await expect(registry.create('site-1', validInput)).rejects.toThrow(
         ConnectivityCheckError,
       );
     });
@@ -223,7 +223,7 @@ describe('PipelineRegistry', () => {
         connectivityChecker: noopConnectivityChecker,
       });
 
-      await registry.create('tenant-1', validInput);
+      await registry.create('site-1', validInput);
 
       // The insert call should have been made with encrypted values
       expect(db.insert).toHaveBeenCalled();
@@ -243,7 +243,7 @@ describe('PipelineRegistry', () => {
         'airbyte',
       ] as const) {
         const input = { ...validInput, cdc_connector_type: connectorType };
-        const result = await registry.create('tenant-1', input);
+        const result = await registry.create('site-1', input);
         expect(result.connectorType).toBe(connectorType);
       }
     });
@@ -258,7 +258,7 @@ describe('PipelineRegistry', () => {
         connectivityChecker: noopConnectivityChecker,
       });
 
-      const result = await registry.get('tenant-1', 'nonexistent');
+      const result = await registry.get('site-1', 'nonexistent');
       expect(result).toBeNull();
     });
   });
@@ -273,7 +273,7 @@ describe('PipelineRegistry', () => {
       });
 
       await expect(
-        registry.delete('tenant-1', 'nonexistent'),
+        registry.delete('site-1', 'nonexistent'),
       ).rejects.toThrow(PipelineNotFoundError);
     });
   });
@@ -294,7 +294,7 @@ describe('PipelineRegistry', () => {
   });
 
   describe('connectivity check', () => {
-    it('should use 5-second timeout for connectivity checks', async () => {
+    it('should use 10-second timeout for connectivity checks', async () => {
       let capturedTimeout = 0;
       const timeoutCapture: ConnectivityChecker = async (
         _conn,
@@ -310,8 +310,8 @@ describe('PipelineRegistry', () => {
         connectivityChecker: timeoutCapture,
       });
 
-      await registry.create('tenant-1', validInput);
-      expect(capturedTimeout).toBe(5000);
+      await registry.create('site-1', validInput);
+      expect(capturedTimeout).toBe(10000);
     });
 
     it('should check both source and sink connections', async () => {
@@ -327,7 +327,7 @@ describe('PipelineRegistry', () => {
         connectivityChecker: trackingChecker,
       });
 
-      await registry.create('tenant-1', validInput);
+      await registry.create('site-1', validInput);
       expect(checkedConnections).toContain(
         validInput.source_database_connection,
       );
@@ -353,7 +353,7 @@ describe('PipelineRegistry', () => {
       });
 
       try {
-        await registry.create('tenant-1', validInput);
+        await registry.create('site-1', validInput);
         expect.fail('Should have thrown');
       } catch (err) {
         expect(err).toBeInstanceOf(ConnectivityCheckError);
