@@ -79,10 +79,10 @@ graph TB
 
 ### Deployment Topology
 
-The CDC system supports two deployment modes aligned with LumiBase's existing dual-runtime architecture:
+The CDC system supports two deployment targets that map to a scoped split of responsibilities, aligned with LumiBase's existing dual-runtime architecture:
 
-- **Docker mode**: All CDC services (Kafka, Debezium, ClickHouse) run as containers orchestrated via Docker Compose. The CMS connects to them over a shared Docker network.
-- **Cloudflare Workers mode**: The CMS API runs on Workers. CDC connectors run as external managed services (e.g., Confluent Cloud for Kafka, ClickHouse Cloud for the sink, Airbyte Cloud). The Workers runtime communicates via HTTPS endpoints.
+- **Docker Compose / managed-services target (`docker_compose`)**: Hosts the **full stateful CDC stack** — Kafka_Broker, Debezium_Connector, ClickHouse_Sink, Materialized_Engine, and Airbyte_Connector. These run either as containers orchestrated via Docker Compose on a shared network, or as external managed services (e.g., Confluent Cloud for Kafka, ClickHouse Cloud for the sink, Airbyte Cloud). All stateful connectors, the message bus, and replication engines live here because they require long-lived TCP connections, persistent local buffers, and replication-slot ownership.
+- **Cloudflare Workers target (`cloudflare_workers`)**: Hosts **only the lightweight edge components** — the CDC API/control-plane endpoints and the Cache_Invalidator (webhook/event-driven logic). The Workers runtime communicates with the stateful stack over HTTPS endpoints. Because of V8 isolate CPU/memory limits and the absence of long-lived TCP connections, Cloudflare Workers **CANNOT** host stateful CDC connectors, the Kafka message bus, or the PostgreSQL/ClickHouse replication engines; a `cloudflare_workers` deployment therefore always depends on a companion `docker_compose` (or managed-services) deployment for the stateful stack.
 
 ## Components and Interfaces
 
@@ -93,14 +93,16 @@ The registry is a Drizzle ORM schema extension that stores pipeline configuratio
 ```typescript
 // Core interface for pipeline CRUD operations
 interface PipelineRegistryService {
-  create(tenantId: string, config: PipelineCreateInput): Promise<PipelineRecord>;
-  get(tenantId: string, pipelineId: string): Promise<PipelineRecord | null>;
-  list(tenantId: string): Promise<PipelineRecord[]>;
-  update(tenantId: string, pipelineId: string, patch: PipelinePatchInput): Promise<PipelineRecord>;
-  delete(tenantId: string, pipelineId: string): Promise<void>;
+  create(siteId: string, config: PipelineCreateInput): Promise<PipelineRecord>;
+  get(siteId: string, pipelineId: string): Promise<PipelineRecord | null>;
+  list(siteId: string): Promise<PipelineRecord[]>;
+  update(siteId: string, pipelineId: string, patch: PipelinePatchInput): Promise<PipelineRecord>;
+  delete(siteId: string, pipelineId: string): Promise<void>;
   updateStatus(pipelineId: string, status: PipelineStatus, message?: string): Promise<void>;
 }
 ```
+
+**Delete flow**: `delete(siteId, pipelineId)` MUST resolve the pipeline's connector and invoke `connector.destroy(pipelineId)` before removing the registry record. For replication-slot-based approaches (Debezium+Kafka and Materialized Engine), `destroy()` releases and drops the corresponding PostgreSQL replication slot(s) on the Source_Database (e.g. via `pg_drop_replication_slot`) so that no orphaned slot remains and the Source_Database does not retain WAL files indefinitely. The registry record is deleted only after `destroy()` (including slot cleanup) completes successfully.
 
 ### 2. CDC Connector Interface (`apps/cms/src/modules/cdc/connectors/`)
 
@@ -121,9 +123,11 @@ type CdcConnectorType = 'debezium_kafka' | 'materialized_engine' | 'airbyte';
 ```
 
 Concrete implementations:
-- `DebeziumKafkaConnector` — Manages Debezium connector registration, Kafka topic creation, and ClickHouse Kafka table engine setup.
-- `MaterializedEngineConnector` — Manages ClickHouse `MaterializedPostgreSQL` database/table creation and replication slot lifecycle.
-- `AirbyteConnector` — Manages Airbyte source/destination/connection creation via the Airbyte API.
+- `DebeziumKafkaConnector` — Manages Debezium connector registration, Kafka topic creation, and ClickHouse Kafka table engine setup. Because this approach is replication-slot-based, its `destroy(pipelineId)` MUST release and drop the corresponding PostgreSQL replication slot on the Source_Database (e.g. via `pg_drop_replication_slot`) after removing the Debezium connector, so that the Source_Database does not retain WAL files indefinitely.
+- `MaterializedEngineConnector` — Manages ClickHouse `MaterializedPostgreSQL` database/table creation and replication slot lifecycle. Because this approach is replication-slot-based, its `destroy(pipelineId)` MUST detach the `MaterializedPostgreSQL` database and release/drop the corresponding PostgreSQL replication slot on the Source_Database (e.g. via `pg_drop_replication_slot`) so that WAL files are not retained.
+- `AirbyteConnector` — Manages Airbyte source/destination/connection creation via the Airbyte API. This approach is not replication-slot-based, so `destroy(pipelineId)` removes the Airbyte connection/source/destination without any PostgreSQL replication-slot cleanup.
+
+> **Replication slot cleanup**: For replication-slot-based connectors (`DebeziumKafkaConnector` and `MaterializedEngineConnector`), `destroy(pipelineId)` is responsible for releasing and dropping the PostgreSQL replication slot(s) it created. Failure to drop a slot causes the Source_Database to retain WAL files indefinitely, eventually exhausting disk. The destroy flow MUST treat slot removal as a required cleanup step (see Error Handling).
 
 ### 3. Cache Invalidator (`apps/cms/src/modules/cdc/cache-invalidator.ts`)
 
@@ -146,7 +150,7 @@ interface CdcChangeEvent {
 ```
 
 Key behaviors:
-- **Deduplication window**: Collapses multiple changes to the same key within 1 second.
+- **Deduplication window**: Collapses consecutive UPDATE events for the same cache key within a 1-second window into a single refresh. INSERT and DELETE events for that key are never deduplicated — they are processed immediately to preserve operation ordering and data integrity. An intervening INSERT or DELETE flushes any pending UPDATE for that key first.
 - **Bounded queue**: Holds up to 10,000 events during Redis outage; discards oldest on overflow.
 - **Key derivation**: Maps `(table, recordId)` → Redis cache key using the existing `CacheProvider` key namespace.
 
@@ -182,6 +186,10 @@ interface AiFlowEngine {
 }
 
 type DeploymentTarget = 'docker_compose' | 'cloudflare_workers';
+// 'docker_compose'   → full stateful stack (Kafka, Debezium, ClickHouse, Materialized Engine, Airbyte),
+//                      via Docker Compose or external managed services (Confluent/ClickHouse/Airbyte Cloud).
+// 'cloudflare_workers' → edge components ONLY (CDC API/control-plane endpoints + Cache_Invalidator);
+//                      cannot host stateful connectors, the message bus, or replication engines.
 
 interface EnvironmentConfig {
   approach: CdcConnectorType;
@@ -207,7 +215,7 @@ RESTful endpoints mounted under `/api/v1/cdc/`:
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/pipelines` | Create a new pipeline |
-| GET | `/pipelines` | List all pipelines for tenant |
+| GET | `/pipelines` | List all pipelines for site |
 | GET | `/pipelines/:id` | Get pipeline details |
 | PATCH | `/pipelines/:id` | Update pipeline config |
 | DELETE | `/pipelines/:id` | Delete pipeline |
@@ -229,7 +237,7 @@ RESTful endpoints mounted under `/api/v1/cdc/`:
 export const cdcPipelines = pgTable(
   'cdc_pipelines',
   {
-    id: text('id').$defaultFn(() => crypto.randomUUID()).primaryKey(),
+    id: text('id').$defaultFn(() => nanoid()).primaryKey(),
     siteId: text('site_id').notNull().references(() => sites.id, { onDelete: 'cascade' }),
     pipelineName: text('pipeline_name').notNull(),
     connectorType: text('connector_type').notNull(), // 'debezium_kafka' | 'materialized_engine' | 'airbyte'
@@ -269,7 +277,7 @@ export const cdcPipelineHealth = pgTable(
 export const cdcDeployments = pgTable(
   'cdc_deployments',
   {
-    id: text('id').$defaultFn(() => crypto.randomUUID()).primaryKey(),
+    id: text('id').$defaultFn(() => nanoid()).primaryKey(),
     pipelineId: text('pipeline_id').references(() => cdcPipelines.id, { onDelete: 'set null' }),
     siteId: text('site_id').notNull().references(() => sites.id, { onDelete: 'cascade' }),
     approach: text('approach').notNull(),
@@ -305,7 +313,7 @@ export const PipelineCreateSchema = z.object({
 });
 
 export const SyncScheduleSchema = z.object({
-  interval_seconds: z.number().int().min(60).max(86400), // 1 min to 24 hours
+  interval_seconds: z.number().int().min(300).max(86400), // 5 min to 24 hours
   sync_mode: z.enum(['full_refresh', 'incremental_cdc']),
 });
 
@@ -366,7 +374,7 @@ interface RecommendationOutput {
 
 ### Property 1: Pipeline registration round-trip
 
-*For any* valid pipeline configuration (with all required fields populated, name ≤ 128 characters, and a valid connector type), submitting it to the Pipeline Registry SHALL persist the configuration and return a retrievable record with a valid UUID v4 identifier that matches the submitted fields.
+*For any* valid pipeline configuration (with all required fields populated, name ≤ 128 characters, and a valid connector type), submitting it to the Pipeline Registry SHALL persist the configuration and return a retrievable record with a valid nanoid string identifier (length 11–21) that matches the submitted fields.
 
 **Validates: Requirements 1.1**
 
@@ -382,9 +390,9 @@ interface RecommendationOutput {
 
 **Validates: Requirements 1.4**
 
-### Property 4: Pipeline name uniqueness per tenant
+### Property 4: Pipeline name uniqueness per site
 
-*For any* pipeline name and tenant, if a pipeline with that name already exists for that tenant, a second registration attempt with the same name SHALL be rejected with a duplicate error.
+*For any* pipeline name and site (identified by site_id), if a pipeline with that name already exists for that site, a second registration attempt with the same name SHALL be rejected with a duplicate error.
 
 **Validates: Requirements 1.6**
 
@@ -414,7 +422,7 @@ interface RecommendationOutput {
 
 ### Property 9: Sync schedule interval validation
 
-*For any* integer interval value, the system SHALL accept it if and only if it falls within [60, 86400] seconds. Values outside this range SHALL be rejected with a validation error indicating the allowed range.
+*For any* integer interval value, the system SHALL accept it if and only if it falls within [300, 86400] seconds. Values outside this range SHALL be rejected with a validation error indicating the allowed range.
 
 **Validates: Requirements 4.3, 4.7**
 
@@ -432,7 +440,7 @@ interface RecommendationOutput {
 
 ### Property 12: Cache event deduplication within time window
 
-*For any* cache key that receives multiple change events within a 1-second window, the Cache Invalidator SHALL process only the final event's state, discarding intermediate states.
+*For any* cache key that receives multiple consecutive UPDATE events within a 1-second window, the Cache Invalidator SHALL collapse them and process only the final UPDATE state. IF an INSERT or DELETE event for that key occurs within the window, THEN the Cache Invalidator SHALL process it immediately (flushing any pending UPDATE first), so that no INSERT or DELETE is dropped and the relative ordering of INSERT/DELETE operations is never reordered.
 
 **Validates: Requirements 5.6**
 
@@ -490,6 +498,12 @@ interface RecommendationOutput {
 
 **Validates: Requirements 8.6**
 
+### Property 22: Replication slot cleanup on deletion
+
+*For any* replication-slot-based pipeline (Debezium+Kafka or Materialized Engine) that is deleted, no PostgreSQL replication slot associated with that pipeline SHALL remain on the Source_Database after the delete operation completes.
+
+**Validates: Requirements 1.8**
+
 ## Error Handling
 
 ### Pipeline Registration Errors
@@ -499,9 +513,9 @@ interface RecommendationOutput {
 | Missing required fields | 400 with field list | User corrects input |
 | Duplicate pipeline name | 409 Conflict | User chooses different name |
 | Name exceeds 128 chars | 400 validation error | User shortens name |
-| Tenant at 50 pipeline limit | 403 Forbidden | User deletes unused pipelines |
+| Site at 50 pipeline limit | 403 Forbidden | User deletes unused pipelines |
 | Connectivity check fails | 400 with unreachable endpoint | User fixes connection string |
-| Connectivity check timeout (5s) | 408 Timeout | User verifies network access |
+| Connectivity check timeout (10s) | 408 Timeout | User verifies network access |
 
 ### CDC Connector Errors
 
@@ -513,6 +527,7 @@ interface RecommendationOutput {
 | Schema drift detected | Status → error | Warning with table/change details |
 | Airbyte sync failure (3 retries) | Status → error | Critical notification |
 | Airbyte provisioning timeout (120s) | Status → error, release resources | Critical notification |
+| Replication slot cleanup fails on delete | Retry `pg_drop_replication_slot`; surface error, keep record until slot dropped | Warning with slot name + pipeline id |
 
 ### Cache Invalidator Errors
 
@@ -562,6 +577,7 @@ Target components for PBT:
 - Form validation (Property 16)
 - Env var validation (Property 18)
 - Threshold alerting logic (Property 20)
+- Replication slot cleanup on deletion (Property 22)
 
 ### Unit Tests (vitest)
 

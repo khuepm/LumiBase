@@ -29,13 +29,14 @@ This document specifies the requirements for a comprehensive ClickHouse CDC (Cha
 
 #### Acceptance Criteria
 
-1. WHEN a pipeline configuration is submitted containing all required fields (pipeline_name, cdc_connector_type, source_database_connection, clickhouse_sink_connection, and replication_tables list), THE Pipeline_Registry SHALL persist the configuration and return a unique pipeline identifier in UUID v4 format within 2 seconds
+1. WHEN a pipeline configuration is submitted containing all required fields (pipeline_name, cdc_connector_type, source_database_connection, clickhouse_sink_connection, and replication_tables list), THE Pipeline_Registry SHALL persist the configuration and return a unique pipeline identifier as a nanoid string (length 11–21 characters) within 2 seconds
 2. THE Pipeline_Registry SHALL support three CDC_Connector types: Debezium+Kafka, Materialized Engine, and Airbyte
 3. WHEN a pipeline configuration is submitted with one or more missing required fields, THE Pipeline_Registry SHALL reject the request and return a validation error listing each missing field by name
 4. THE Pipeline_Registry SHALL store connection parameters for Source_Database, ClickHouse_Sink, and intermediary services (Kafka_Broker or Airbyte_Connector) as encrypted values
-5. WHEN a pipeline configuration references a Source_Database or ClickHouse_Sink, THE Pipeline_Registry SHALL attempt a connectivity check with a timeout of 5 seconds, and IF the connectivity check fails or times out, THEN THE Pipeline_Registry SHALL reject the registration and return an error indicating which endpoint is unreachable
-6. IF a pipeline configuration is submitted with a pipeline_name that already exists within the same tenant, THEN THE Pipeline_Registry SHALL reject the request and return an error indicating the duplicate name
-7. THE Pipeline_Registry SHALL enforce a maximum pipeline_name length of 128 characters and a maximum of 50 pipelines per tenant
+5. WHEN a pipeline configuration references a Source_Database or ClickHouse_Sink, THE Pipeline_Registry SHALL attempt a connectivity check with a timeout of 10 seconds, and IF the connectivity check fails or times out, THEN THE Pipeline_Registry SHALL reject the registration and return an error indicating which endpoint is unreachable
+6. IF a pipeline configuration is submitted with a pipeline_name that already exists within the same site (identified by site_id), THEN THE Pipeline_Registry SHALL reject the request and return an error indicating the duplicate name
+7. THE Pipeline_Registry SHALL enforce a maximum pipeline_name length of 128 characters and a maximum of 50 pipelines per site (identified by site_id)
+8. WHEN a CDC_Pipeline is deleted or cancelled, THE Pipeline_Registry SHALL release and drop the corresponding PostgreSQL replication slot(s) on the Source_Database for CDC approaches that use replication slots (Debezium+Kafka and Materialized Engine), so that the Source_Database does not retain WAL files indefinitely
 
 ### Requirement 2: Debezium+Kafka CDC Approach
 
@@ -71,11 +72,11 @@ This document specifies the requirements for a comprehensive ClickHouse CDC (Cha
 
 1. WHEN the Airbyte approach is selected, THE CDC_Pipeline SHALL provision an Airbyte_Connector with the Source_Database as source and ClickHouse_Sink as destination within 120 seconds
 2. THE Airbyte_Connector SHALL support both full-refresh and incremental CDC sync modes
-3. WHEN a sync schedule is configured with an interval between 1 minute and 24 hours, THE Airbyte_Connector SHALL execute replication jobs at the specified intervals
+3. WHEN a sync schedule is configured with an interval between 5 minutes and 24 hours, THE Airbyte_Connector SHALL execute replication jobs at the specified intervals
 4. IF an Airbyte sync job fails, THEN THE CDC_Pipeline SHALL retry the sync up to 3 times with exponential backoff starting at 30 seconds before setting Pipeline_Status to error and recording the failure reason in the Pipeline_Registry
 5. WHEN the Airbyte_Connector completes a sync job, THE CDC_Pipeline SHALL update the last-sync timestamp and record count in the Pipeline_Registry
 6. IF provisioning of the Airbyte_Connector fails or exceeds the 120-second timeout, THEN THE CDC_Pipeline SHALL set Pipeline_Status to error, record the failure reason, and release any partially allocated resources
-7. IF a sync schedule is configured with an interval outside the range of 1 minute to 24 hours, THEN THE CDC_Pipeline SHALL reject the configuration with a validation error indicating the allowed range
+7. IF a sync schedule is configured with an interval outside the range of 5 minutes to 24 hours, THEN THE CDC_Pipeline SHALL reject the configuration with a validation error indicating the allowed range
 
 ### Requirement 5: Redis Cache Auto-Refresh
 
@@ -88,7 +89,7 @@ This document specifies the requirements for a comprehensive ClickHouse CDC (Cha
 3. WHEN a configuration record is inserted into the Source_Database, THE Cache_Invalidator SHALL pre-warm the Redis cache with the new record data within 5 seconds of the change being committed
 4. IF the Redis connection is unavailable, THEN THE Cache_Invalidator SHALL queue invalidation events up to a maximum of 10,000 events and replay them in order when connectivity is restored
 5. IF the invalidation event queue reaches its maximum capacity while Redis remains unavailable, THEN THE Cache_Invalidator SHALL discard the oldest queued events and log a warning indicating the number of discarded events
-6. WHILE the Cache_Invalidator is processing events, THE Cache_Invalidator SHALL deduplicate rapid successive changes to the same cache key within a 1-second window
+6. WHILE the Cache_Invalidator is processing events, THE Cache_Invalidator SHALL deduplicate consecutive UPDATE events for the same cache key within a 1-second window, and IF an INSERT or DELETE event occurs for that cache key, THEN THE Cache_Invalidator SHALL process the event immediately without deduplication to preserve operation ordering and data integrity
 7. IF a cache invalidation or pre-warm operation fails for a specific key after 3 retry attempts, THEN THE Cache_Invalidator SHALL log the failure with the affected table name, record identifier, operation type, and error reason, and skip to the next event
 8. THE Cache_Invalidator SHALL log each invalidation event with the affected table name, record identifier, and operation type
 
@@ -102,7 +103,7 @@ This document specifies the requirements for a comprehensive ClickHouse CDC (Cha
 2. WHEN a user creates a new pipeline through the Studio_CDC_Panel, THE Studio_CDC_Panel SHALL present a guided wizard with approach-specific configuration fields for the selected CDC_Connector type (Debezium+Kafka, Materialized Engine, or Airbyte)
 3. WHEN a user provides estimated data volume and latency requirements during pipeline creation, THE Studio_CDC_Panel SHALL display a recommendation indicating which CDC approach is most suitable, along with a brief rationale referencing the provided parameters
 4. WHEN a pipeline has Pipeline_Status of error, THE Studio_CDC_Panel SHALL display the error timestamp, error source component, error description, and at least one actionable remediation step
-5. WHEN a user requests pipeline deletion through the Studio_CDC_Panel, THE Studio_CDC_Panel SHALL present a confirmation dialog listing the resources to be removed and SHALL NOT proceed with deletion until the user explicitly confirms
+5. WHEN a user requests pipeline deletion through the Studio_CDC_Panel, THE Studio_CDC_Panel SHALL present a confirmation dialog listing the resources to be removed (including any PostgreSQL replication slot(s) on the Source_Database for replication-slot-based approaches) and SHALL NOT proceed with deletion until the user explicitly confirms
 6. WHILE a CDC_Pipeline has Pipeline_Status of active, THE Studio_CDC_Panel SHALL refresh and display replication lag, events per second, and error rate metrics at intervals no greater than 10 seconds
 7. IF the pipeline creation wizard is submitted with invalid or incomplete configuration, THEN THE Studio_CDC_Panel SHALL display field-level validation errors indicating which fields failed validation and the reason for each failure, without discarding the user-entered data
 8. IF the Studio_CDC_Panel cannot retrieve pipeline data from the Pipeline_Registry, THEN THE Studio_CDC_Panel SHALL display an error indication stating that pipeline data is unavailable and provide a manual retry option
@@ -114,7 +115,7 @@ This document specifies the requirements for a comprehensive ClickHouse CDC (Cha
 #### Acceptance Criteria
 
 1. WHEN an AI deployment flow is triggered, THE AI_Flow_Engine SHALL generate the required Environment_Config based on the selected CDC approach and target infrastructure within 30 seconds
-2. THE AI_Flow_Engine SHALL support deploying CDC services to both Docker Compose and Cloudflare Workers environments
+2. THE AI_Flow_Engine SHALL deploy the full stateful CDC service stack (Kafka_Broker, Debezium_Connector, Materialized_Engine, ClickHouse_Sink, and Airbyte_Connector) using Docker Compose or external managed services (such as Confluent Cloud, ClickHouse Cloud, or Airbyte Cloud), and SHALL limit Cloudflare Workers deployment to the lightweight edge components only (the CDC API/control-plane endpoints and the Cache_Invalidator webhook/event-driven logic), excluding stateful CDC connectors, the message bus, and replication engines
 3. WHEN deploying a Debezium+Kafka pipeline, THE AI_Flow_Engine SHALL provision Kafka_Broker, Debezium_Connector, and ClickHouse_Sink containers on a shared network with all required inter-service ports accessible within 120 seconds
 4. WHEN environment variables need updating, THE AI_Flow_Engine SHALL validate the new values against the Environment_Config schema for the selected CDC approach before applying changes
 5. IF environment variable validation fails, THEN THE AI_Flow_Engine SHALL reject the update and return the list of invalid fields with the violated constraint for each
@@ -144,5 +145,5 @@ This document specifies the requirements for a comprehensive ClickHouse CDC (Cha
 1. THE CDC_Pipeline SHALL provide documentation covering architecture overview, setup guides for each of the three CDC approaches (Debezium+Kafka, Materialized Engine, and Airbyte), and troubleshooting procedures addressing at minimum the error scenarios defined in Requirements 2–4 (replication slot errors, connectivity failures, sync job failures, and schema drift)
 2. THE documentation SHALL include a decision-criteria comparison table for selecting between the three CDC approaches, comparing each approach across data volume threshold (rows per second), replication latency range, infrastructure dependencies, and number of manual configuration steps
 3. THE documentation SHALL include environment variable reference with descriptions, default values, and validation rules for each CDC approach, accompanied by a complete working configuration example per approach
-4. THE documentation SHALL include step-by-step deployment guides for both Docker Compose and Cloudflare Workers environments, where each guide includes prerequisites, configuration steps, a verification command to confirm successful deployment, and expected output
+4. THE documentation SHALL include a step-by-step deployment guide for the full stateful CDC service stack using Docker Compose (or external managed services such as Confluent Cloud, ClickHouse Cloud, or Airbyte Cloud), and a separate step-by-step deployment guide for the Cloudflare Workers edge components only (the CDC API/control-plane endpoints and the Cache_Invalidator), where the Cloudflare Workers guide points to the Docker Compose / managed-services guide for the stateful stack, and where each guide includes prerequisites, configuration steps, a verification command to confirm successful deployment, and expected output
 5. WHEN a new CDC approach or configuration option is added, THE documentation SHALL be updated to cover the new approach or option with the same structure (architecture section, setup guide, environment variables, and deployment steps) before the feature is merged into the main branch

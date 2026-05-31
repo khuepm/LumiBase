@@ -25,7 +25,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - **Property 9: Sync schedule interval validation** — values in [60, 86400] accepted, outside rejected
     - **Validates: Requirements 1.1, 1.3, 4.3, 4.7**
 
-- [-] 2. Implement Pipeline Registry service
+- [ ] 2. Implement Pipeline Registry service
   - [x] 2.1 Create `apps/cms/src/modules/cdc/registry/pipeline-registry.ts`
     - Implement `PipelineRegistryService` interface (create, get, list, update, delete, updateStatus)
     - Enforce tenant pipeline limit (max 50)
@@ -40,7 +40,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
 
   - [ ] 2.3 Write property tests for registry logic (Properties 3, 4)
     - **Property 3: Connection parameter encryption round-trip** — encrypt then decrypt produces original, encrypted ≠ plaintext
-    - **Property 4: Pipeline name uniqueness per tenant** — duplicate names rejected per tenant
+    - **Property 4: Pipeline name uniqueness per site (site_id)** — duplicate names rejected per site
     - **Validates: Requirements 1.4, 1.6**
 
 - [ ] 3. Checkpoint - Ensure all tests pass
@@ -59,7 +59,8 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Implement local buffering (1 hour / 500MB cap) for Kafka outages
     - Implement ordered delivery on recovery
     - Set status to error after 3 consecutive replication slot failures
-    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6_
+    - Implement `destroy(pipelineId)` to remove the Debezium connector AND release/drop the corresponding PostgreSQL replication slot on the Source_Database (e.g. via `pg_drop_replication_slot`) so WAL files are not retained
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 1.8_
 
   - [ ] 4.3 Write property tests for Debezium connector (Properties 5, 6)
     - **Property 5: Kafka topic routing by table name** — each table maps to a unique deterministic topic
@@ -74,7 +75,8 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Implement exponential backoff reconnection (1s start, max 5 retries)
     - Resume from last confirmed LSN on reconnection
     - Detect schema drift within 60 seconds and report affected table + change type
-    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
+    - Implement `destroy(pipelineId)` to detach the `MaterializedPostgreSQL` database AND release/drop the corresponding PostgreSQL replication slot on the Source_Database (e.g. via `pg_drop_replication_slot`) so WAL files are not retained
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 1.8_
 
   - [ ] 5.2 Write property tests for Materialized Engine (Properties 7, 8)
     - **Property 7: PostgreSQL-to-ClickHouse schema mapping** — all column names preserved, types correctly mapped
@@ -104,7 +106,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Implement `CacheInvalidator` class with handleEvent, flush, getQueueDepth
     - Map CDC operations to Redis operations: INSERT→SET (pre-warm), UPDATE→SET (refresh), DELETE→DEL
     - Derive cache keys from (table, recordId) using existing CacheProvider namespace
-    - Implement 1-second deduplication window for same-key events
+    - Implement 1-second deduplication window that applies ONLY to consecutive UPDATE events for the same key; INSERT and DELETE events are processed immediately (no dedup), flushing any pending UPDATE for that key first, to preserve operation ordering and data integrity
     - Implement bounded queue (max 10,000 events) during Redis outage
     - Discard oldest events on queue overflow with warning log
     - Replay queued events in order on Redis reconnection
@@ -114,7 +116,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
 
   - [ ] 8.2 Write property tests for Cache Invalidator (Properties 11, 12, 13, 14)
     - **Property 11: Cache invalidation correctness by operation type** — INSERT→SET, UPDATE→SET, DELETE→DEL with correct key
-    - **Property 12: Cache event deduplication within time window** — multiple events within 1s collapse to final state
+    - **Property 12: Cache event deduplication within time window** — only consecutive UPDATEs for the same key collapse; an intervening INSERT/DELETE forces immediate processing (no dropped INSERT/DELETE, no reordering)
     - **Property 13: Cache event queue ordering and replay** — queued events replayed in chronological order
     - **Property 14: Cache invalidation log completeness** — every event log contains table, recordId, operation
     - **Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.6, 5.8**
@@ -143,6 +145,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
   - [ ] 11.1 Create config generator in `apps/cms/src/modules/cdc/ai-flow/config-generator.ts`
     - Generate `EnvironmentConfig` for each approach + target combination
     - Include all required environment variables with descriptions, defaults, and validation rules
+    - Scope services by target: `docker_compose`/managed services host the full stateful stack (Kafka, Debezium, ClickHouse, Materialized Engine, Airbyte); `cloudflare_workers` config includes ONLY the edge components (CDC API/control-plane endpoints + Cache_Invalidator) and excludes stateful connectors, the message bus, and replication engines
     - _Requirements: 7.1, 7.2_
 
   - [ ] 11.2 Create environment variable validator in `apps/cms/src/modules/cdc/ai-flow/env-validator.ts`
@@ -153,7 +156,8 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
   - [ ] 11.3 Create deployment orchestrator in `apps/cms/src/modules/cdc/ai-flow/deployment-orchestrator.ts`
     - Implement `deploy` method with step-by-step provisioning
     - Support Docker Compose and Cloudflare Workers targets
-    - Provision Kafka, Debezium, ClickHouse containers on shared network for Debezium approach
+    - For `docker_compose`/managed services, provision the full stateful stack (Kafka, Debezium, ClickHouse, Materialized Engine, Airbyte) — e.g. Kafka, Debezium, ClickHouse containers on a shared network for the Debezium approach
+    - For `cloudflare_workers`, deploy ONLY the edge components (CDC API/control-plane endpoints + Cache_Invalidator); MUST NOT attempt to deploy stateful connectors, the message bus, or replication engines (these depend on a companion `docker_compose`/managed-services deployment)
     - Run post-deployment health check (verify each service reachable within 30s)
     - _Requirements: 7.2, 7.3, 7.7_
 
@@ -231,11 +235,40 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Include decision-criteria comparison table (volume, latency, dependencies, manual steps)
     - Include environment variable reference with descriptions, defaults, and validation rules per approach
     - Include complete working configuration example per approach
-    - Write deployment guides for Docker Compose and Cloudflare Workers (prerequisites, steps, verification command, expected output)
+    - Write two scoped deployment guides: (1) a Docker Compose / managed-services guide for the full stateful stack (Kafka, Debezium, ClickHouse, Materialized Engine, Airbyte), and (2) a Cloudflare Workers edge-components-only guide (CDC API/control-plane endpoints + Cache_Invalidator) that points to guide (1) for the stateful stack — each with prerequisites, steps, verification command, and expected output
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5_
 
 - [ ] 16. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
+
+- [ ] 17. Spec Revision Corrections
+  - Corrective tasks for already-completed foundational work (Tasks 1.1, 1.2, 1.3, 2.1) affected by the requirements/design revisions, plus new replication-slot cleanup work from Requirement 1.8. All boxes are unchecked because the underlying code must be revised.
+
+  - [ ] 17.1 Correct CDC schema primary keys to use `nanoid()` (corrects Task 1.1)
+    - In `packages/database/src/schema/cdc.ts`, change `cdcPipelines.id` and `cdcDeployments.id` from `crypto.randomUUID()` to `nanoid()` per `.cursorrules` (all primary keys must use nanoid); `cdcPipelineHealth.id` already uses `nanoid()`
+    - _Requirements: 1.1_
+
+  - [ ] 17.2 Correct sync interval minimum to 300s (corrects Task 1.2)
+    - In `packages/shared/src/schemas/cdc.ts`, change `SyncScheduleSchema.interval_seconds` from `.min(60)` to `.min(300)` to enforce the 5-minute Airbyte minimum
+    - _Requirements: 4.3, 4.7_
+
+  - [ ] 17.3 Update Property 9 test bounds (corrects Task 1.3)
+    - In `apps/cms/src/__tests__/cdc-pipeline-validation.property.test.ts`, update the Property 9 accepted range from [60, 86400] to [300, 86400]
+    - **Property 9: Sync schedule interval validation** — values in [300, 86400] accepted, outside rejected
+    - **Validates: Requirements 4.3, 4.7**
+
+  - [ ] 17.4 Correct Pipeline Registry to site-scoping and 10s timeout (corrects Task 2.1)
+    - In `apps/cms/src/modules/cdc/registry/pipeline-registry.ts`: (a) change the connectivity-check timeout from 5 seconds to 10 seconds; (b) replace the `tenantId` parameter and "per tenant" limit-and-uniqueness logic with `siteId` / "per site" (max 50 pipelines per site, unique pipeline name per site)
+    - _Requirements: 1.5, 1.6, 1.7_
+
+  - [ ] 17.5 Implement replication slot cleanup in Pipeline Registry delete flow (new — Requirement 1.8)
+    - In `apps/cms/src/modules/cdc/registry/pipeline-registry.ts`, update `delete(siteId, pipelineId)` to resolve the pipeline's connector and invoke `connector.destroy(pipelineId)` BEFORE removing the registry record, so replication-slot-based connectors (Debezium+Kafka, Materialized Engine) release and drop the PostgreSQL replication slot(s) on the Source_Database (e.g. via `pg_drop_replication_slot`); delete the record only after `destroy()` (including slot cleanup) succeeds
+    - On slot cleanup failure, retry `pg_drop_replication_slot`, surface the error, and keep the registry record until the slot is dropped
+    - _Requirements: 1.8_
+
+  - [ ] 17.6 Write property test for replication slot cleanup on deletion (Property 22)
+    - **Property 22: Replication slot cleanup on deletion** — for any replication-slot-based pipeline (Debezium+Kafka or Materialized Engine) that is deleted, no PostgreSQL replication slot associated with it remains on the Source_Database
+    - **Validates: Requirements 1.8**
 
 ## Notes
 
@@ -244,7 +277,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
 - Property-based tests use `fast-check` (already in devDependencies) with minimum 100 iterations
 - Checkpoints ensure incremental validation at logical boundaries
 - The project uses TypeScript throughout with Hono framework, Drizzle ORM, and Vitest
-- All 21 correctness properties from the design are covered by property test sub-tasks
+- All 22 correctness properties from the design are covered by property test sub-tasks
 - All 9 requirements are covered by implementation tasks
 
 ## Task Dependency Graph
@@ -253,10 +286,10 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
 {
   "waves": [
     { "id": 0, "tasks": ["1.1", "1.2"] },
-    { "id": 1, "tasks": ["1.3", "2.1", "2.2", "4.1"] },
-    { "id": 2, "tasks": ["2.3", "4.2", "5.1", "6.1"] },
-    { "id": 3, "tasks": ["4.3", "5.2", "6.2", "8.1"] },
-    { "id": 4, "tasks": ["8.2", "9.1", "13.1"] },
+    { "id": 1, "tasks": ["1.3", "2.1", "2.2", "4.1", "17.1", "17.2"] },
+    { "id": 2, "tasks": ["2.3", "4.2", "5.1", "6.1", "17.3", "17.4"] },
+    { "id": 3, "tasks": ["4.3", "5.2", "6.2", "8.1", "17.5"] },
+    { "id": 4, "tasks": ["8.2", "9.1", "13.1", "17.6"] },
     { "id": 5, "tasks": ["9.2", "11.1", "11.2", "13.2"] },
     { "id": 6, "tasks": ["11.3", "11.4"] },
     { "id": 7, "tasks": ["11.5", "12.1"] },
