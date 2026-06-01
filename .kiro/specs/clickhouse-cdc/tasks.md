@@ -238,7 +238,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Write two scoped deployment guides: (1) a Docker Compose / managed-services guide for the full stateful stack (Kafka, Debezium, ClickHouse, Materialized Engine, Airbyte), and (2) a Cloudflare Workers edge-components-only guide (CDC API/control-plane endpoints + Cache_Invalidator) that points to guide (1) for the stateful stack — each with prerequisites, steps, verification command, and expected output
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5_
 
-- [ ] 16. Final checkpoint - Ensure all tests pass
+- [x] 16. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 17. Spec Revision Corrections

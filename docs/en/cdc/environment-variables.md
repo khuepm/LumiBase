@@ -200,7 +200,7 @@ CACHE_INVALIDATOR_DEDUP_WINDOW_MS=1000
 
 ## Validation behavior
 
-When you submit env values (via `/deploy` or `/deploy/validate-env`), each value is checked against the rule above. Invalid values return `400 ENV_VALIDATION_ERROR` with the list of invalid fields and the specific violated constraint for each (Requirements 7.4, 7.5):
+When you submit env values (via `/deploy` or `/deploy/validate-env`), each value is checked against the rule above. Invalid values return `400 ENV_VALIDATION_ERROR` with the list of invalid fields and the specific violated constraint for each (Requirements 7.4, 7.5). Each entry in `invalidFields` carries the offending `key`, a short stable `rule` identifier (one of `required`, `key_format`, `unknown_key`, `type`, `min_length`, `max_length`, `pattern`, `min`, `max`, `enum`, `url`, `protocol`), and a human-readable `reason`:
 
 ```json
 {
@@ -209,7 +209,7 @@ When you submit env values (via `/deploy` or `/deploy/validate-env`), each value
       "code": "ENV_VALIDATION_ERROR",
       "message": "Environment variable validation failed.",
       "invalidFields": [
-        { "key": "AIRBYTE_SYNC_INTERVAL_SECONDS", "rule": "Must be an integer between 300 and 86400 (inclusive)" }
+        { "key": "AIRBYTE_SYNC_INTERVAL_SECONDS", "rule": "max", "reason": "value must be <= 86400" }
       ]
     }
   ]
