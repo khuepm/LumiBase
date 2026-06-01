@@ -117,13 +117,13 @@ Expected output:
 ```json
 {
   "data": {
-    "pipelineId": "V1StGXR8_Z5",
     "healthy": true,
     "services": [
       { "service": "source_database", "reachable": true },
-      { "service": "airbyte_connector", "reachable": true },
-      { "service": "clickhouse_sink", "reachable": true }
-    ]
+      { "service": "clickhouse_sink", "reachable": true },
+      { "service": "airbyte_platform", "reachable": true }
+    ],
+    "checkedAt": "2025-01-15T10:30:00.000Z"
   }
 }
 ```
