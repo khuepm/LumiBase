@@ -16,6 +16,7 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "db:generate": "pnpm --filter @lumibase/database generate",
     "db:migrate": "pnpm --filter @lumibase/database migrate",
+    "db:seed-dev": "pnpm --filter @lumibase/database seed:dev",
     "db:studio": "pnpm --filter @lumibase/database studio",
     "auth:reset-all": "pnpm --filter @lumibase/auth dev:reset-all",
     "auth:create-user": "pnpm --filter @lumibase/auth dev:create-user",

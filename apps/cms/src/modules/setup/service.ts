@@ -31,6 +31,7 @@
 import { eq, sql } from 'drizzle-orm';
 import {
   adminBackupCodes,
+  sites,
   systemState,
   users,
   type Database,
@@ -438,7 +439,21 @@ export class SetupService {
         // with itself after a stale write — captured by the 23505
         // mapping in the outer catch block.
 
-        // ── 8. Insert the bootstrap admin.
+        // ── 8. Upsert the default site so the bootstrap admin and all
+        //       subsequent schema objects (collections, fields, settings)
+        //       have a valid `siteId` FK to reference (design §6.5 step 8,
+        //       see also open-question-8 in the deferred lockout policy block).
+        //       We use a fixed id `'__default__'` so a re-entrant wizard
+        //       run (e.g. after a crash mid-initializing) is idempotent.
+        //       The operator can rename/reconfigure the site via the Studio
+        //       after first-run.
+        const DEFAULT_SITE_ID = '__default__';
+        await tx
+          .insert(sites)
+          .values({ id: DEFAULT_SITE_ID, name: 'Default Site' })
+          .onConflictDoNothing();
+
+        // ── 9. Insert the bootstrap admin.
         const inserted = await tx
           .insert(users)
           .values({

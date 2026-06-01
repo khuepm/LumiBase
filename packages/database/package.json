@@ -17,6 +17,7 @@
     "migrate:kit": "drizzle-kit migrate",
     "push": "drizzle-kit push",
     "studio": "drizzle-kit studio",
+    "seed:dev": "tsx scripts/seed-dev.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
     "clean": "rm -rf .turbo drizzle dist"

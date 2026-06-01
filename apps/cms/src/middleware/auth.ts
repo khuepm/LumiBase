@@ -42,7 +42,11 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const [scheme, token] = authHeader.split(' ');
 
   // 1. Dev Mode Auth (Only check if enabled in env)
-  if (c.env.LUMIBASE_DEV_AUTH === 'true') {
+  // Fall back to process.env so the Node.js / Docker serve path works
+  // (c.env is only populated in Cloudflare Workers mode).
+  const devAuthEnabled =
+    c.env.LUMIBASE_DEV_AUTH === 'true' || process.env.LUMIBASE_DEV_AUTH === 'true';
+  if (devAuthEnabled) {
     const devToken = token || authHeader;
     if (devToken && devToken.startsWith('dev:')) {
       const parts = devToken.slice(4).split(':'); // dev:<email>:<role>
@@ -96,7 +100,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
   // 3. Custom JWT Auth (Frontend Users flow)
   if (scheme?.toLowerCase() === 'bearer' && token) {
-    const jwtSecret = c.env.JWT_SECRET;
+    // Fall back to process.env for Node.js / Docker serve mode.
+    const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
     if (!jwtSecret) {
       return c.json(
         { errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET configuration missing.' }] },
