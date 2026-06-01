@@ -68,7 +68,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - **Validates: Requirements 2.2, 2.4, 2.6**
 
 - [x] 5. Implement Materialized Engine connector
-  - [ ] 5.1 Implement Materialized Engine connector in `apps/cms/src/modules/cdc/connectors/materialized-engine.ts`
+  - [x] 5.1 Implement Materialized Engine connector in `apps/cms/src/modules/cdc/connectors/materialized-engine.ts`
     - Implement `MaterializedEngineConnector` class
     - Configure direct PostgreSQL replication slot connection
     - Implement automatic ClickHouse table schema creation from PostgreSQL schema
@@ -78,13 +78,13 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Implement `destroy(pipelineId)` to detach the `MaterializedPostgreSQL` database AND release/drop the corresponding PostgreSQL replication slot on the Source_Database (e.g. via `pg_drop_replication_slot`) so WAL files are not retained
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 1.8_
 
-  - [ ] 5.2 Write property tests for Materialized Engine (Properties 7, 8)
+  - [x] 5.2 Write property tests for Materialized Engine (Properties 7, 8)
     - **Property 7: PostgreSQL-to-ClickHouse schema mapping** — all column names preserved, types correctly mapped
     - **Property 8: Schema drift detection** — column add/remove/type change detected and reported
     - **Validates: Requirements 3.3, 3.6**
 
-- [ ] 6. Implement Airbyte connector
-  - [ ] 6.1 Implement Airbyte connector in `apps/cms/src/modules/cdc/connectors/airbyte.ts`
+- [x] 6. Implement Airbyte connector
+  - [x] 6.1 Implement Airbyte connector in `apps/cms/src/modules/cdc/connectors/airbyte.ts`
     - Implement `AirbyteConnector` class
     - Provision source + destination + connection via Airbyte API within 120s timeout
     - Support full-refresh and incremental CDC sync modes
@@ -94,15 +94,15 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Release partial resources on provisioning failure/timeout
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
 
-  - [ ] 6.2 Write property test for Airbyte sync metadata (Property 10)
+  - [x] 6.2 Write property test for Airbyte sync metadata (Property 10)
     - **Property 10: Sync metadata update on completion** — completed sync with N records updates registry with correct timestamp and count
     - **Validates: Requirements 4.5**
 
-- [ ] 7. Checkpoint - Ensure all tests pass
+- [x] 7. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Implement Cache Invalidator
-  - [ ] 8.1 Create Cache Invalidator in `apps/cms/src/modules/cdc/cache-invalidator.ts`
+- [x] 8. Implement Cache Invalidator
+  - [x] 8.1 Create Cache Invalidator in `apps/cms/src/modules/cdc/cache-invalidator.ts`
     - Implement `CacheInvalidator` class with handleEvent, flush, getQueueDepth
     - Map CDC operations to Redis operations: INSERT→SET (pre-warm), UPDATE→SET (refresh), DELETE→DEL
     - Derive cache keys from (table, recordId) using existing CacheProvider namespace
@@ -114,15 +114,15 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Log each event with table name, record ID, and operation type
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8_
 
-  - [ ] 8.2 Write property tests for Cache Invalidator (Properties 11, 12, 13, 14)
+  - [x] 8.2 Write property tests for Cache Invalidator (Properties 11, 12, 13, 14)
     - **Property 11: Cache invalidation correctness by operation type** — INSERT→SET, UPDATE→SET, DELETE→DEL with correct key
     - **Property 12: Cache event deduplication within time window** — only consecutive UPDATEs for the same key collapse; an intervening INSERT/DELETE forces immediate processing (no dropped INSERT/DELETE, no reordering)
     - **Property 13: Cache event queue ordering and replay** — queued events replayed in chronological order
     - **Property 14: Cache invalidation log completeness** — every event log contains table, recordId, operation
     - **Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.6, 5.8**
 
-- [ ] 9. Implement Health Monitor
-  - [ ] 9.1 Create Health Monitor in `apps/cms/src/modules/cdc/health-monitor.ts`
+- [x] 9. Implement Health Monitor
+  - [x] 9.1 Create Health Monitor in `apps/cms/src/modules/cdc/health-monitor.ts`
     - Implement `HealthMonitor` class with start, stop, checkHealth, getHistory
     - Emit metrics (replication lag, events/sec, error count) at 30-second intervals
     - Emit warning when lag exceeds configurable threshold (default 60s, range [10s, 3600s])
@@ -133,27 +133,27 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Verify connectivity to all services with 10s timeout per service
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7_
 
-  - [ ] 9.2 Write property tests for Health Monitor (Properties 20, 21)
+  - [x] 9.2 Write property tests for Health Monitor (Properties 20, 21)
     - **Property 20: Replication lag threshold alerting** — warning emitted iff lag > threshold
     - **Property 21: Pipeline recovery notification on state transition** — exactly one recovery notification on error→active
     - **Validates: Requirements 8.2, 8.6**
 
-- [ ] 10. Checkpoint - Ensure all tests pass
+- [~] 10. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 11. Implement AI Flow Engine
-  - [ ] 11.1 Create config generator in `apps/cms/src/modules/cdc/ai-flow/config-generator.ts`
+- [x] 11. Implement AI Flow Engine
+  - [x] 11.1 Create config generator in `apps/cms/src/modules/cdc/ai-flow/config-generator.ts`
     - Generate `EnvironmentConfig` for each approach + target combination
     - Include all required environment variables with descriptions, defaults, and validation rules
     - Scope services by target: `docker_compose`/managed services host the full stateful stack (Kafka, Debezium, ClickHouse, Materialized Engine, Airbyte); `cloudflare_workers` config includes ONLY the edge components (CDC API/control-plane endpoints + Cache_Invalidator) and excludes stateful connectors, the message bus, and replication engines
     - _Requirements: 7.1, 7.2_
 
-  - [ ] 11.2 Create environment variable validator in `apps/cms/src/modules/cdc/ai-flow/env-validator.ts`
+  - [x] 11.2 Create environment variable validator in `apps/cms/src/modules/cdc/ai-flow/env-validator.ts`
     - Validate env vars against approach-specific schema
     - Return list of invalid fields with violated constraints
     - _Requirements: 7.4, 7.5_
 
-  - [ ] 11.3 Create deployment orchestrator in `apps/cms/src/modules/cdc/ai-flow/deployment-orchestrator.ts`
+  - [x] 11.3 Create deployment orchestrator in `apps/cms/src/modules/cdc/ai-flow/deployment-orchestrator.ts`
     - Implement `deploy` method with step-by-step provisioning
     - Support Docker Compose and Cloudflare Workers targets
     - For `docker_compose`/managed services, provision the full stateful stack (Kafka, Debezium, ClickHouse, Materialized Engine, Airbyte) — e.g. Kafka, Debezium, ClickHouse containers on a shared network for the Debezium approach
@@ -161,20 +161,20 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Run post-deployment health check (verify each service reachable within 30s)
     - _Requirements: 7.2, 7.3, 7.7_
 
-  - [ ] 11.4 Create rollback manager in `apps/cms/src/modules/cdc/ai-flow/rollback-manager.ts`
+  - [x] 11.4 Create rollback manager in `apps/cms/src/modules/cdc/ai-flow/rollback-manager.ts`
     - Implement rollback of completed steps in reverse order within 60s
     - Ensure no partially-provisioned resources remain
     - Report failed step name, error type, and description
     - _Requirements: 7.6_
 
-  - [ ] 11.5 Write property tests for AI Flow Engine (Properties 17, 18, 19)
+  - [x] 11.5 Write property tests for AI Flow Engine (Properties 17, 18, 19)
     - **Property 17: Environment config generation completeness** — all required vars present for each approach+target
     - **Property 18: Environment variable schema validation** — invalid vars correctly identified with specific violated rule
     - **Property 19: Deployment rollback completeness** — steps 1..N-1 undone in reverse, no partial resources
     - **Validates: Requirements 7.1, 7.4, 7.5, 7.6**
 
-- [ ] 12. Implement CDC API Routes
-  - [ ] 12.1 Create CDC API routes in `apps/cms/src/modules/cdc/routes.ts`
+- [x] 12. Implement CDC API Routes
+  - [x] 12.1 Create CDC API routes in `apps/cms/src/modules/cdc/routes.ts`
     - Mount routes under `/api/v1/cdc/`
     - Implement POST `/pipelines` — create pipeline with validation
     - Implement GET `/pipelines` — list pipelines for tenant
@@ -187,29 +187,29 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Implement POST `/deploy`, POST `/deploy/validate-env`, POST `/deploy/:id/rollback`
     - _Requirements: 1.1, 1.2, 1.3, 1.5, 1.6, 1.7, 7.4, 7.5, 7.6, 8.5_
 
-  - [ ] 12.2 Wire CDC module into main app in `apps/cms/src/modules/cdc/index.ts`
+  - [x] 12.2 Wire CDC module into main app in `apps/cms/src/modules/cdc/index.ts`
     - Create module barrel export
     - Register routes in the Hono app
     - _Requirements: 1.1_
 
-  - [ ] 12.3 Write unit tests for API route handlers
+  - [x] 12.3 Write unit tests for API route handlers
     - Test validation error responses (400 with field list)
     - Test duplicate name rejection (409)
     - Test tenant pipeline limit (403)
     - Test connectivity timeout (408)
     - _Requirements: 1.3, 1.5, 1.6, 1.7_
 
-- [ ] 13. Implement Studio CDC Management Panel
-  - [ ] 13.1 Create approach recommendation engine in `apps/cms/src/modules/cdc/recommender.ts`
+- [~] 13. Implement Studio CDC Management Panel
+  - [x] 13.1 Create approach recommendation engine in `apps/cms/src/modules/cdc/recommender.ts`
     - Implement decision logic: high volume → Debezium, low volume + no Kafka → Materialized, managed → Airbyte
     - Return recommended approach with rationale and alternatives
     - _Requirements: 6.3_
 
-  - [ ] 13.2 Write property test for recommendation engine (Property 15)
+  - [x] 13.2 Write property test for recommendation engine (Property 15)
     - **Property 15: Approach recommendation consistency** — deterministic result consistent with decision matrix
     - **Validates: Requirements 6.3**
 
-  - [ ] 13.3 Create Studio CDC Panel components (placeholder structure)
+  - [x] 13.3 Create Studio CDC Panel components (placeholder structure)
     - Create `CdcPipelineList` — table view with status, connector type, last-sync
     - Create `CdcPipelineWizard` — multi-step form with approach-specific fields
     - Create `CdcPipelineDetail` — metrics dashboard placeholder
@@ -241,32 +241,32 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
 - [ ] 16. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 17. Spec Revision Corrections
+- [x] 17. Spec Revision Corrections
   - Corrective tasks for already-completed foundational work (Tasks 1.1, 1.2, 1.3, 2.1) affected by the requirements/design revisions, plus new replication-slot cleanup work from Requirement 1.8. All boxes are unchecked because the underlying code must be revised.
 
-  - [ ] 17.1 Correct CDC schema primary keys to use `nanoid()` (corrects Task 1.1)
+  - [x] 17.1 Correct CDC schema primary keys to use `nanoid()` (corrects Task 1.1)
     - In `packages/database/src/schema/cdc.ts`, change `cdcPipelines.id` and `cdcDeployments.id` from `crypto.randomUUID()` to `nanoid()` per `.cursorrules` (all primary keys must use nanoid); `cdcPipelineHealth.id` already uses `nanoid()`
     - _Requirements: 1.1_
 
-  - [ ] 17.2 Correct sync interval minimum to 300s (corrects Task 1.2)
+  - [x] 17.2 Correct sync interval minimum to 300s (corrects Task 1.2)
     - In `packages/shared/src/schemas/cdc.ts`, change `SyncScheduleSchema.interval_seconds` from `.min(60)` to `.min(300)` to enforce the 5-minute Airbyte minimum
     - _Requirements: 4.3, 4.7_
 
-  - [ ] 17.3 Update Property 9 test bounds (corrects Task 1.3)
+  - [x] 17.3 Update Property 9 test bounds (corrects Task 1.3)
     - In `apps/cms/src/__tests__/cdc-pipeline-validation.property.test.ts`, update the Property 9 accepted range from [60, 86400] to [300, 86400]
     - **Property 9: Sync schedule interval validation** — values in [300, 86400] accepted, outside rejected
     - **Validates: Requirements 4.3, 4.7**
 
-  - [ ] 17.4 Correct Pipeline Registry to site-scoping and 10s timeout (corrects Task 2.1)
+  - [x] 17.4 Correct Pipeline Registry to site-scoping and 10s timeout (corrects Task 2.1)
     - In `apps/cms/src/modules/cdc/registry/pipeline-registry.ts`: (a) change the connectivity-check timeout from 5 seconds to 10 seconds; (b) replace the `tenantId` parameter and "per tenant" limit-and-uniqueness logic with `siteId` / "per site" (max 50 pipelines per site, unique pipeline name per site)
     - _Requirements: 1.5, 1.6, 1.7_
 
-  - [ ] 17.5 Implement replication slot cleanup in Pipeline Registry delete flow (new — Requirement 1.8)
+  - [x] 17.5 Implement replication slot cleanup in Pipeline Registry delete flow (new — Requirement 1.8)
     - In `apps/cms/src/modules/cdc/registry/pipeline-registry.ts`, update `delete(siteId, pipelineId)` to resolve the pipeline's connector and invoke `connector.destroy(pipelineId)` BEFORE removing the registry record, so replication-slot-based connectors (Debezium+Kafka, Materialized Engine) release and drop the PostgreSQL replication slot(s) on the Source_Database (e.g. via `pg_drop_replication_slot`); delete the record only after `destroy()` (including slot cleanup) succeeds
     - On slot cleanup failure, retry `pg_drop_replication_slot`, surface the error, and keep the registry record until the slot is dropped
     - _Requirements: 1.8_
 
-  - [ ] 17.6 Write property test for replication slot cleanup on deletion (Property 22)
+  - [x] 17.6 Write property test for replication slot cleanup on deletion (Property 22)
     - **Property 22: Replication slot cleanup on deletion** — for any replication-slot-based pipeline (Debezium+Kafka or Materialized Engine) that is deleted, no PostgreSQL replication slot associated with it remains on the Source_Database
     - **Validates: Requirements 1.8**
 
