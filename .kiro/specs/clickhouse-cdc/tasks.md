@@ -224,10 +224,10 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - **Property 16: Form validation preserves valid data** — mixed valid/invalid fields only errors on invalid, valid preserved
     - **Validates: Requirements 6.7**
 
-- [ ] 14. Checkpoint - Ensure all tests pass
+- [x] 14. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 15. Create CDC Documentation
+- [~] 15. Create CDC Documentation
   - [ ] 15.1 Create architecture and setup documentation
     - Write architecture overview with system diagram
     - Write setup guides for Debezium+Kafka, Materialized Engine, and Airbyte approaches
