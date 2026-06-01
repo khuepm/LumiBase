@@ -493,7 +493,9 @@ export class RollbackManager {
     // 2. Undo the completed steps in reverse completion order.
     const rolledBackSteps: RollbackStepOutcome[] = [];
     for (let i = input.completedSteps.length - 1; i >= 0; i--) {
-      rolledBackSteps.push(await undoOne(input.completedSteps[i]));
+      const step = input.completedSteps[i];
+      if (!step) continue;
+      rolledBackSteps.push(await undoOne(step));
     }
 
     const durationMs = this.clock() - startedAt;

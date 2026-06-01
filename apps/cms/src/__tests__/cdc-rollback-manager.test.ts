@@ -90,7 +90,9 @@ describe('RollbackManager.rollback', () => {
       name: 'c',
       error: new Error('fail'),
       resources: [{ type: 'resource', id: 'c-partial' }],
-      undo: () => order.push('c'),
+      undo: () => {
+        order.push('c');
+      },
     };
 
     const result = await manager.rollback({ completedSteps, failedStep });

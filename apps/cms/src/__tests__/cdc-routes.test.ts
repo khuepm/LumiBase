@@ -127,7 +127,7 @@ function buildApp(
 }
 
 /** POST /cdc/pipelines with a JSON body. */
-function postPipelines(
+async function postPipelines(
   app: Hono<AppEnv>,
   body: unknown,
 ): Promise<Response> {
@@ -138,14 +138,16 @@ function postPipelines(
   });
 }
 
+type ErrorEntry = {
+  code: string;
+  message?: string;
+  fields?: string[];
+  endpoint?: string;
+  [k: string]: unknown;
+};
+
 type ErrorEnvelope = {
-  errors: Array<{
-    code: string;
-    message?: string;
-    fields?: string[];
-    endpoint?: string;
-    [k: string]: unknown;
-  }>;
+  errors: [ErrorEntry, ...ErrorEntry[]];
 };
 
 // ── 1. Validation errors → 400 with field list (Req 1.3) ─────────────────

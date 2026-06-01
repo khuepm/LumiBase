@@ -147,9 +147,11 @@ describe('Feature: clickhouse-cdc, Property 20: Replication lag threshold alerti
           expect(warnings.length).toBe(expectedWarning ? 1 : 0);
 
           if (expectedWarning) {
-            expect(warnings[0].pipelineId).toBe(PIPELINE_ID);
-            expect(warnings[0].lagMs).toBe(lagMs);
-            expect(warnings[0].thresholdMs).toBe(thresholdMs);
+            const warning = warnings[0];
+            expect(warning).toBeDefined();
+            expect(warning?.pipelineId).toBe(PIPELINE_ID);
+            expect(warning?.lagMs).toBe(lagMs);
+            expect(warning?.thresholdMs).toBe(thresholdMs);
           }
         },
       ),

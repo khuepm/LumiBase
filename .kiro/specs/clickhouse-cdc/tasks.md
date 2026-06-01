@@ -138,7 +138,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - **Property 21: Pipeline recovery notification on state transition** — exactly one recovery notification on error→active
     - **Validates: Requirements 8.2, 8.6**
 
-- [~] 10. Checkpoint - Ensure all tests pass
+- [x] 10. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 11. Implement AI Flow Engine

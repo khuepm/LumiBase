@@ -863,6 +863,9 @@ async function transition(
 ): Promise<Response> {
   const siteId = c.get('siteId');
   const id = c.req.param('id');
+  if (!id) {
+    return c.json(errorBody('PIPELINE_NOT_FOUND', 'Pipeline id is required'), 404);
+  }
 
   const pipeline = await services.registry.get(siteId, id);
   if (!pipeline) {
