@@ -199,7 +199,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Test connectivity timeout (408)
     - _Requirements: 1.3, 1.5, 1.6, 1.7_
 
-- [~] 13. Implement Studio CDC Management Panel
+- [x] 13. Implement Studio CDC Management Panel
   - [x] 13.1 Create approach recommendation engine in `apps/cms/src/modules/cdc/recommender.ts`
     - Implement decision logic: high volume → Debezium, low volume + no Kafka → Materialized, managed → Airbyte
     - Return recommended approach with rationale and alternatives
@@ -220,7 +220,7 @@ This plan implements the ClickHouse CDC system for LumiBase, providing real-time
     - Implement retry option when pipeline data unavailable
     - _Requirements: 6.1, 6.2, 6.4, 6.5, 6.6, 6.7, 6.8_
 
-  - [ ] 13.4 Write property test for form validation (Property 16)
+  - [x] 13.4 Write property test for form validation (Property 16)
     - **Property 16: Form validation preserves valid data** — mixed valid/invalid fields only errors on invalid, valid preserved
     - **Validates: Requirements 6.7**
 
