@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -8,7 +6,7 @@ services:
       POSTGRES_USER: lumibase
       POSTGRES_PASSWORD: lumibase_dev
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +18,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -34,8 +32,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - miniodata:/data
     healthcheck:
@@ -50,11 +48,11 @@ services:
       MEILI_MASTER_KEY: lumibase_dev_key
       MEILI_ENV: development
     ports:
-      - "7700:7700"
+      - "${MEILISEARCH_PORT:-7700}:7700"
     volumes:
       - meilidata:/meili_data
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:7700/health"]
+      test: ["CMD", "wget", "--no-verbose", "--spider", "http://127.0.0.1:7700/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -69,7 +67,7 @@ services:
       AWS_SECRET_ACCESS_KEY: minioadmin
       IMGPROXY_S3_ENDPOINT: http://minio:9000
     ports:
-      - "8080:8080"
+      - "${IMGPROXY_PORT:-8080}:8080"
     depends_on:
       minio:
         condition: service_healthy
@@ -93,7 +91,7 @@ services:
       IMGPROXY_SALT: "736563726574"
       PORT: "3000"
     ports:
-      - "3000:3000"
+      - "${CMS_PORT:-3000}:3000"
     volumes:
       - ../apps/cms/src:/app/apps/cms/src
       - ../packages:/app/packages
@@ -113,7 +111,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
     ports:
-      - "3001:3000"
+      - "${BULL_BOARD_PORT:-3001}:3000"
     depends_on:
       redis:
         condition: service_healthy
