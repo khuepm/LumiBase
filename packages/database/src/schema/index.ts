@@ -9,3 +9,4 @@ export * from './cms';
 export * from './platform';
 export * from './ai';
 export * from './security';
+export * from './cdc';

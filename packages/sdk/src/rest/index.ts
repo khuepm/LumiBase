@@ -1,5 +1,21 @@
 import { LumiClient } from "../client";
-import { DefaultSchema, ListItemsParams, ItemRow, ListItemsResponse } from "../types";
+import {
+  DefaultSchema,
+  ListItemsParams,
+  ItemRow,
+  ListItemsResponse,
+  CdcDeployInput,
+  CdcDeploymentResult,
+  CdcEnvValidationResult,
+  CdcHealthCheckResult,
+  CdcHealthMetricEntry,
+  CdcPipelineCreateInput,
+  CdcPipelineMetrics,
+  CdcPipelinePatchInput,
+  CdcPipelineResource,
+  CdcRollbackResult,
+  CdcValidateEnvInput,
+} from "../types";
 
 export * from "./legacy";
 
@@ -37,5 +53,120 @@ export function readItem<
       `/api/v1/items/${collection}/${id}${fields?.length ? `?fields=${fields.join(",")}` : ""}`
     );
     return res as unknown as Row;
+  };
+}
+
+export function createCdcPipeline(input: CdcPipelineCreateInput) {
+  return async (client: LumiClient): Promise<CdcPipelineResource> => {
+    const res = await client.rawRequest<CdcPipelineResource>("/api/v1/cdc/pipelines", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    return res.data;
+  };
+}
+
+export function listCdcPipelines() {
+  return async (client: LumiClient): Promise<CdcPipelineResource[]> => {
+    const res = await client.rawRequest<{ pipelines: CdcPipelineResource[] }>("/api/v1/cdc/pipelines");
+    return res.data.pipelines;
+  };
+}
+
+export function readCdcPipeline(id: string) {
+  return async (client: LumiClient): Promise<CdcPipelineResource> => {
+    const res = await client.rawRequest<CdcPipelineResource>(`/api/v1/cdc/pipelines/${id}`);
+    return res.data;
+  };
+}
+
+export function updateCdcPipeline(id: string, input: CdcPipelinePatchInput) {
+  return async (client: LumiClient): Promise<CdcPipelineResource> => {
+    const res = await client.rawRequest<CdcPipelineResource>(`/api/v1/cdc/pipelines/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+    return res.data;
+  };
+}
+
+export function deleteCdcPipeline(id: string) {
+  return async (client: LumiClient): Promise<{ deleted: boolean; id: string }> => {
+    const res = await client.rawRequest<{ deleted: boolean; id: string }>(`/api/v1/cdc/pipelines/${id}`, {
+      method: "DELETE",
+    });
+    return res.data;
+  };
+}
+
+export function startCdcPipeline(id: string) {
+  return async (client: LumiClient): Promise<CdcPipelineResource> => {
+    const res = await client.rawRequest<CdcPipelineResource>(`/api/v1/cdc/pipelines/${id}/start`, {
+      method: "POST",
+    });
+    return res.data;
+  };
+}
+
+export function stopCdcPipeline(id: string) {
+  return async (client: LumiClient): Promise<CdcPipelineResource> => {
+    const res = await client.rawRequest<CdcPipelineResource>(`/api/v1/cdc/pipelines/${id}/stop`, {
+      method: "POST",
+    });
+    return res.data;
+  };
+}
+
+export function checkCdcPipelineHealth(id: string) {
+  return async (client: LumiClient): Promise<CdcHealthCheckResult> => {
+    const res = await client.rawRequest<CdcHealthCheckResult>(`/api/v1/cdc/pipelines/${id}/health`);
+    return res.data;
+  };
+}
+
+export function readCdcPipelineMetrics(id: string) {
+  return async (client: LumiClient): Promise<CdcPipelineMetrics> => {
+    const res = await client.rawRequest<CdcPipelineMetrics>(`/api/v1/cdc/pipelines/${id}/metrics`);
+    return res.data;
+  };
+}
+
+export function readCdcPipelineMetricHistory(id: string, since?: string | Date) {
+  return async (client: LumiClient): Promise<{ history: CdcHealthMetricEntry[]; since: string }> => {
+    const value = since instanceof Date ? since.toISOString() : since;
+    const query = value ? `?since=${encodeURIComponent(value)}` : "";
+    const res = await client.rawRequest<{ history: CdcHealthMetricEntry[]; since: string }>(
+      `/api/v1/cdc/pipelines/${id}/metrics/history${query}`,
+    );
+    return res.data;
+  };
+}
+
+export function deployCdc(input: CdcDeployInput) {
+  return async (client: LumiClient): Promise<CdcDeploymentResult> => {
+    const res = await client.rawRequest<CdcDeploymentResult>("/api/v1/cdc/deploy", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    return res.data;
+  };
+}
+
+export function validateCdcDeploymentEnv(input: CdcValidateEnvInput) {
+  return async (client: LumiClient): Promise<CdcEnvValidationResult> => {
+    const res = await client.rawRequest<CdcEnvValidationResult>("/api/v1/cdc/deploy/validate-env", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    return res.data;
+  };
+}
+
+export function rollbackCdcDeployment(id: string) {
+  return async (client: LumiClient): Promise<CdcRollbackResult> => {
+    const res = await client.rawRequest<CdcRollbackResult>(`/api/v1/cdc/deploy/${id}/rollback`, {
+      method: "POST",
+    });
+    return res.data;
   };
 }

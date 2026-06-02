@@ -220,6 +220,137 @@ export interface SettingResource {
   updatedAt: string;
 }
 
+/* ---------------- CDC ---------------- */
+
+export type CdcConnectorType =
+  | "debezium_kafka"
+  | "materialized_engine"
+  | "airbyte";
+
+export type CdcPipelineStatus =
+  | "active"
+  | "paused"
+  | "error"
+  | "provisioning";
+
+export type CdcDeploymentTarget = "docker_compose" | "cloudflare_workers";
+
+export type CdcDeploymentStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "rolled_back";
+
+export interface CdcPipelineResource {
+  id: string;
+  siteId: string;
+  pipelineName: string;
+  connectorType: CdcConnectorType;
+  status: CdcPipelineStatus;
+  statusMessage: string | null;
+  replicationTables: string[];
+  config: Record<string, unknown>;
+  lastSyncAt: string | null;
+  lastSyncRecordCount: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CdcPipelineCreateInput {
+  pipeline_name: string;
+  cdc_connector_type: CdcConnectorType;
+  source_database_connection: string;
+  clickhouse_sink_connection: string;
+  replication_tables: string[];
+  intermediary_connection?: string;
+  config?: Record<string, unknown>;
+}
+
+export interface CdcPipelinePatchInput {
+  pipeline_name?: string;
+  source_database_connection?: string;
+  clickhouse_sink_connection?: string;
+  intermediary_connection?: string | null;
+  replication_tables?: string[];
+  config?: Record<string, unknown>;
+}
+
+export interface CdcHealthCheckResult {
+  healthy: boolean;
+  latencyMs?: number;
+  error?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface CdcPipelineMetrics {
+  pipelineId?: string;
+  replicationLagMs: number;
+  eventsPerSecond: number;
+  errorCount: number;
+  lastEventAt?: string | null;
+  status?: string;
+}
+
+export interface CdcHealthMetricEntry {
+  pipelineId: string;
+  replicationLagMs: number;
+  eventsPerSecond: number;
+  errorCount: number;
+  recordedAt: string;
+}
+
+export interface CdcDeploymentStep {
+  id?: string;
+  name: string;
+  status: string;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string | Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface CdcDeploymentResult {
+  deploymentId: string;
+  status: CdcDeploymentStatus;
+  steps: CdcDeploymentStep[];
+  completedAt: string;
+  error?: {
+    code?: string;
+    description?: string;
+    [key: string]: unknown;
+  };
+}
+
+export interface CdcDeployInput {
+  approach: CdcConnectorType;
+  target: CdcDeploymentTarget;
+  pipeline_id?: string;
+  env?: Record<string, string>;
+}
+
+export interface CdcValidateEnvInput {
+  approach: CdcConnectorType;
+  target: CdcDeploymentTarget;
+  env: Record<string, string>;
+}
+
+export interface CdcEnvValidationResult {
+  valid: boolean;
+  invalidFields: Array<{
+    key: string;
+    reason: string;
+  }>;
+}
+
+export interface CdcRollbackResult {
+  deploymentId: string;
+  status: CdcDeploymentStatus;
+  steps: CdcDeploymentStep[];
+  rolledBackAt?: string;
+  error?: string | Record<string, unknown>;
+}
+
 export interface UserResource {
   id: string;
   email: string;

@@ -45,6 +45,9 @@ const TeamsPage = lazy(() => import('./modules/users/teams-page').then((m) => ({
 const UsersPage = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
 const FlowsListPage = lazy(() => import('./modules/automation/flows-page').then((m) => ({ default: m.FlowsListPage })));
 const FlowEditor = lazy(() => import('./modules/automation/flow-editor').then((m) => ({ default: m.FlowEditor })));
+const CdcPipelineListPage = lazy(() => import('./modules/cdc/pipeline-list').then((m) => ({ default: m.CdcPipelineListPage })));
+const CdcPipelineWizardPage = lazy(() => import('./modules/cdc/pipeline-wizard').then((m) => ({ default: m.CdcPipelineWizardPage })));
+const CdcPipelineDetailPage = lazy(() => import('./modules/cdc/pipeline-detail').then((m) => ({ default: m.CdcPipelineDetailPage })));
 
 // ---------------------------------------------------------------------------
 // Setup Wizard step components — lazy-loaded so the bootstrap chunk stays
@@ -411,6 +414,27 @@ const automationFlowEditRoute = createRoute({
   component: withSuspense(FlowEditor),
 });
 
+const cdcRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/cdc',
+  component: withSuspense(CdcPipelineListPage),
+});
+
+const cdcNewRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/cdc/new',
+  component: withSuspense(CdcPipelineWizardPage),
+});
+
+const cdcDetailRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/cdc/$id',
+  component: withSuspense(() => {
+    const { id } = cdcDetailRoute.useParams();
+    return <CdcPipelineDetailPage pipelineId={id} />;
+  }),
+});
+
 const usersRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/users',
@@ -503,6 +527,9 @@ const routeTree = rootRoute.addChildren([
     automationFlowsRoute,
     automationFlowNewRoute,
     automationFlowEditRoute,
+    cdcRoute,
+    cdcNewRoute,
+    cdcDetailRoute,
     usersRoute.addChildren([usersIndexRoute, usersTeamsRoute]),
     accessRoute.addChildren([
       accessIndexRoute,

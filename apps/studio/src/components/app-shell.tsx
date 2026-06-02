@@ -8,6 +8,7 @@ import {
   Users,
   Puzzle,
   Workflow,
+  GitBranch,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
@@ -27,6 +28,7 @@ const MODULES: ModuleDef[] = [
   { id: 'access', label: 'Access', icon: ShieldCheck, to: '/access' },
   { id: 'data-model', label: 'Data model', icon: Database, to: '/data-model' },
   { id: 'automation', label: 'Automation', icon: Workflow, to: '/automation/flows' },
+  { id: 'cdc', label: 'CDC', icon: GitBranch, to: '/cdc' },
   { id: 'marketplace', label: 'Marketplace', icon: Puzzle, to: '/settings/marketplace' },
   { id: 'settings', label: 'Settings', icon: Settings, to: '/settings/translations' },
 ];
@@ -53,17 +55,19 @@ export function AppShell({ children }: AppShellProps) {
     ? 'data-model'
     : location.pathname.startsWith('/automation')
       ? 'automation'
-      : location.pathname.startsWith('/settings/marketplace')
-        ? 'marketplace'
-        : location.pathname.startsWith('/settings')
-          ? 'settings'
-          : location.pathname.startsWith('/access')
-            ? 'access'
-            : location.pathname.startsWith('/users')
-              ? 'users'
-              : location.pathname.startsWith('/files')
-                ? 'files'
-                : 'content';
+      : location.pathname.startsWith('/cdc')
+        ? 'cdc'
+        : location.pathname.startsWith('/settings/marketplace')
+          ? 'marketplace'
+          : location.pathname.startsWith('/settings')
+            ? 'settings'
+            : location.pathname.startsWith('/access')
+              ? 'access'
+              : location.pathname.startsWith('/users')
+                ? 'users'
+                : location.pathname.startsWith('/files')
+                  ? 'files'
+                  : 'content';
 
   return (
     <div className="flex h-screen w-screen">

@@ -46,6 +46,7 @@ import { aiRouter } from './routes/ai';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
+import { cdcRouter } from './modules/cdc';
 
 const app = new Hono<AppEnv>();
 
@@ -192,6 +193,17 @@ api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
 api.route('/scim-tokens', scimAdminRouter);
 api.route('/ai', aiRouter);
+
+// ClickHouse CDC control-plane surface (`/api/v1/cdc/*`) — clickhouse-cdc
+// task 12.2; Req 1.1; design "CDC API Routes" §7. Mounted on the
+// AUTHENTICATED `api` Hono (NOT the public top-level `app`) so the upstream
+// `withTenant` + `withAuth` + `withDb` + `withRls` chain runs before any CDC
+// handler: a missing principal is already a 401, and `siteId` / `db` are
+// populated before the router's own admin-role + site-context gate runs (see
+// the SECURITY note in `modules/cdc/routes.ts`). Because `api` is mounted at
+// `/api/v1` below, mounting `cdcRouter` at `/cdc` yields the intended
+// `/api/v1/cdc/*` prefix — matching how every sibling module above is wired.
+api.route('/cdc', cdcRouter);
 
 app.route('/api/v1', api);
 

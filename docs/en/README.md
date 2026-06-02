@@ -38,6 +38,13 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [materialized-collections.md](./features/materialized-collections.md) — Materialized read tables cho hot path.
   - [observability.md](./features/observability.md) — Metrics, logs, dashboards (Prometheus/Grafana/Loki).
   - [ai-first-specification.md](./features/ai-first-specification.md) — Đặc tả gốc cho AI agent triển khai (lịch sử).
+- **ClickHouse CDC** (`cdc/`)
+  - [cdc/README.md](./cdc/README.md) — Tổng quan CDC + bảng tiêu chí chọn approach (Debezium+Kafka / Materialized Engine / Airbyte).
+  - [cdc/architecture.md](./cdc/architecture.md) — Kiến trúc, sơ đồ hệ thống, deployment topology.
+  - [cdc/environment-variables.md](./cdc/environment-variables.md) — Tham chiếu biến môi trường theo từng approach.
+  - [cdc/troubleshooting.md](./cdc/troubleshooting.md) — Xử lý lỗi replication slot, kết nối, sync, schema drift.
+  - Setup: [Debezium+Kafka](./cdc/setup-debezium-kafka.md) · [Materialized Engine](./cdc/setup-materialized-engine.md) · [Airbyte](./cdc/setup-airbyte.md).
+  - Deployment: [Docker Compose / managed services](./cdc/deployment-docker-compose.md) · [Cloudflare Workers (edge only)](./cdc/deployment-cloudflare-workers.md).
 - **API**
   - [api/hono-api-spec.md](./api/hono-api-spec.md) — REST/WS endpoints chuẩn hoá.
 - **UI Studio**

@@ -69,6 +69,21 @@
       },
       {
         "type": "category",
+        "label": "ClickHouse CDC",
+        "items": [
+          "cdc/README",
+          "cdc/architecture",
+          "cdc/setup-debezium-kafka",
+          "cdc/setup-materialized-engine",
+          "cdc/setup-airbyte",
+          "cdc/environment-variables",
+          "cdc/troubleshooting",
+          "cdc/deployment-docker-compose",
+          "cdc/deployment-cloudflare-workers"
+        ]
+      },
+      {
+        "type": "category",
         "label": "Guides",
         "items": ["guides/backup-recovery", "guides/tooling-recommendations"]
       },

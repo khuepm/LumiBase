@@ -65,7 +65,8 @@ jobs:
           context: .
           file: docker/Dockerfile
           push: false
-          tags: ${{ steps.meta.outputs.tags }}
+          # Load a local tag for PR health-checks (no GHCR push/pull on PRs).
+          tags: lumibase-health-check:pr
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -85,7 +86,7 @@ jobs:
       - name: Run container health check
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${GITHUB_SHA::7}"
+            IMAGE_TAG="lumibase-health-check:pr"
           else
             IMAGE_TAG="lumibase-health-check:local"
           fi

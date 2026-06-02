@@ -350,6 +350,122 @@ components:
               type: string
               format: date-time
               description: Old token remains valid until this time (24h grace period)
+    # --- CDC (ClickHouse CDC) ---
+    CdcConnectorType:
+      type: string
+      enum: [debezium_kafka, materialized_engine, airbyte]
+    CdcDeploymentTarget:
+      type: string
+      enum: [docker_compose, cloudflare_workers]
+    CdcPipeline:
+      type: object
+      required: [id, siteId, pipelineName, connectorType, status, replicationTables, config, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        siteId: { type: string }
+        pipelineName: { type: string }
+        connectorType: { $ref: '#/components/schemas/CdcConnectorType' }
+        status: { type: string, enum: [active, paused, error, provisioning] }
+        statusMessage: { type: string, nullable: true }
+        replicationTables:
+          type: array
+          items: { type: string }
+        config: { type: object, additionalProperties: true }
+        lastSyncAt: { type: string, format: date-time, nullable: true }
+        lastSyncRecordCount: { type: integer, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      description: Connection strings are write-only and are never returned.
+    CdcPipelineCreate:
+      type: object
+      required: [pipeline_name, cdc_connector_type, source_database_connection, clickhouse_sink_connection, replication_tables]
+      properties:
+        pipeline_name: { type: string, minLength: 1, maxLength: 128 }
+        cdc_connector_type: { $ref: '#/components/schemas/CdcConnectorType' }
+        source_database_connection: { type: string, minLength: 1, writeOnly: true }
+        clickhouse_sink_connection: { type: string, minLength: 1, writeOnly: true }
+        intermediary_connection: { type: string, minLength: 1, writeOnly: true }
+        replication_tables:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1 }
+        config: { type: object, additionalProperties: true }
+    CdcPipelinePatch:
+      type: object
+      properties:
+        pipeline_name: { type: string, minLength: 1, maxLength: 128 }
+        source_database_connection: { type: string, minLength: 1, writeOnly: true }
+        clickhouse_sink_connection: { type: string, minLength: 1, writeOnly: true }
+        intermediary_connection: { type: string, minLength: 1, nullable: true, writeOnly: true }
+        replication_tables:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1 }
+        config: { type: object, additionalProperties: true }
+    CdcHealthCheck:
+      type: object
+      properties:
+        healthy: { type: boolean }
+        latencyMs: { type: number }
+        error: { type: string }
+        details: { type: object, additionalProperties: true }
+    CdcPipelineMetrics:
+      type: object
+      properties:
+        pipelineId: { type: string }
+        replicationLagMs: { type: integer }
+        eventsPerSecond: { type: integer }
+        errorCount: { type: integer }
+        lastEventAt: { type: string, format: date-time, nullable: true }
+        status: { type: string }
+    CdcHealthMetricEntry:
+      type: object
+      properties:
+        pipelineId: { type: string }
+        replicationLagMs: { type: integer }
+        eventsPerSecond: { type: integer }
+        errorCount: { type: integer }
+        recordedAt: { type: string, format: date-time }
+    CdcDeployRequest:
+      type: object
+      required: [approach, target]
+      properties:
+        approach: { $ref: '#/components/schemas/CdcConnectorType' }
+        target: { $ref: '#/components/schemas/CdcDeploymentTarget' }
+        pipeline_id: { type: string }
+        env:
+          type: object
+          additionalProperties: { type: string }
+    CdcValidateEnvRequest:
+      type: object
+      required: [approach, target, env]
+      properties:
+        approach: { $ref: '#/components/schemas/CdcConnectorType' }
+        target: { $ref: '#/components/schemas/CdcDeploymentTarget' }
+        env:
+          type: object
+          additionalProperties: { type: string }
+    CdcEnvValidationResult:
+      type: object
+      properties:
+        valid: { type: boolean }
+        invalidFields:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              reason: { type: string }
+    CdcDeploymentResult:
+      type: object
+      properties:
+        deploymentId: { type: string }
+        status: { type: string, enum: [pending, running, completed, failed, rolled_back] }
+        steps:
+          type: array
+          items: { type: object, additionalProperties: true }
+        completedAt: { type: string, format: date-time }
+        error: { type: object, additionalProperties: true, nullable: true }
 
 
 paths:
@@ -654,6 +770,337 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '400':
           description: Missing tenant header
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/pipelines:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: List CDC pipelines for the active site
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      pipelines:
+                        type: array
+                        items: { $ref: '#/components/schemas/CdcPipeline' }
+        '403':
+          description: Admin role required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      summary: Create a CDC pipeline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CdcPipelineCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CdcPipeline' }
+        '400':
+          description: Validation or connectivity failure
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Admin role required or pipeline limit exceeded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Pipeline name already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/pipelines/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Get CDC pipeline details
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CdcPipeline' }
+        '404':
+          description: Pipeline not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    patch:
+      summary: Update CDC pipeline configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CdcPipelinePatch' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CdcPipeline' }
+        '400':
+          description: Validation or connectivity failure
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Pipeline not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Pipeline name conflict
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      summary: Delete a CDC pipeline and release replication resources
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      deleted: { type: boolean }
+                      id: { type: string }
+        '404':
+          description: Pipeline not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Replication slot cleanup failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/pipelines/{id}/start:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Start CDC replication for a pipeline
+      responses:
+        '200':
+          description: Started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CdcPipeline' }
+        '404':
+          description: Pipeline not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Connector unavailable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/pipelines/{id}/stop:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Stop CDC replication for a pipeline
+      responses:
+        '200':
+          description: Stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CdcPipeline' }
+        '404':
+          description: Pipeline not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Connector unavailable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/pipelines/{id}/health:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Run a CDC pipeline connectivity health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CdcHealthCheck' }
+        '404':
+          description: Pipeline not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '502':
+          description: Connector error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/pipelines/{id}/metrics:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Get current CDC pipeline metrics
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CdcPipelineMetrics' }
+        '404':
+          description: Pipeline not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '502':
+          description: Connector error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/pipelines/{id}/metrics/history:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: since, in: query, schema: { type: string, format: date-time } }
+    get:
+      summary: Get CDC pipeline metric history
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      history:
+                        type: array
+                        items: { $ref: '#/components/schemas/CdcHealthMetricEntry' }
+                      since: { type: string, format: date-time }
+        '400':
+          description: Invalid since query parameter
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Pipeline not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/deploy:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    post:
+      summary: Trigger a CDC deployment flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CdcDeployRequest' }
+      responses:
+        '201':
+          description: Deployment created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CdcDeploymentResult' }
+        '400':
+          description: Validation failure
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/deploy/validate-env:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    post:
+      summary: Validate CDC deployment environment variables
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CdcValidateEnvRequest' }
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CdcEnvValidationResult' }
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/deploy/{id}/rollback:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Roll back a CDC deployment
+      responses:
+        '200':
+          description: Rollback result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CdcDeploymentResult' }
+        '404':
+          description: Deployment not found
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
