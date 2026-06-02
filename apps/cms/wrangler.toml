@@ -37,7 +37,7 @@ JWT_SECRET = "dev_secret_key"
 name = "SITE_ROOM"
 class_name = "SiteRoom"
 
-[durable_objects.migrations]
+[[migrations]]
 tag = "v1"
 new_classes = ["SiteRoom"]
 

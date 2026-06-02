@@ -124,6 +124,25 @@ interface EqConstraint {
 }
 
 /** Recursively collect `column = value` equality constraints from a SQL condition. */
+function isColumn(val: unknown): val is Column {
+  return !!(
+    val &&
+    typeof val === 'object' &&
+    'name' in val &&
+    'table' in val &&
+    typeof (val as { name: unknown }).name === 'string'
+  );
+}
+
+function isParam(val: unknown): boolean {
+  return !!(
+    val &&
+    typeof val === 'object' &&
+    ('encoder' in val || val.constructor?.name === 'Param')
+  );
+}
+
+/** Recursively collect `column = value` equality constraints from a SQL condition. */
 function extractEqConstraints(condition: SQL | undefined): EqConstraint[] {
   const out: EqConstraint[] = [];
   if (!condition) return out;
@@ -134,13 +153,13 @@ function extractEqConstraints(condition: SQL | undefined): EqConstraint[] {
       for (const ch of (node as { queryChunks: unknown[] }).queryChunks) visit(ch);
       return;
     }
-    if (node instanceof Column) {
+    if (isColumn(node)) {
       pendingCol = node;
       return;
     }
-    if (node && typeof node === 'object' && node.constructor?.name === 'Param') {
+    if (isParam(node)) {
       if (pendingCol) {
-        out.push({ dbName: (pendingCol as Column).name, value: (node as { value: unknown }).value });
+        out.push({ dbName: pendingCol.name, value: (node as { value: unknown }).value });
         pendingCol = null;
       }
       return;
@@ -230,7 +249,7 @@ class FakeDatabase {
 
   private isCountProjection(projection: Record<string, unknown>): boolean {
     // count() is an SQL aggregate (not a Column instance).
-    return Object.values(projection).some((v) => !(v instanceof Column));
+    return Object.values(projection).some((v) => !isColumn(v));
   }
 
   private projectCount(projection: Record<string, unknown>, matched: Row[]): Row {
@@ -249,7 +268,7 @@ class FakeDatabase {
     const map = this.dbToJs(table);
     const out: Row = {};
     for (const [key, val] of Object.entries(projection)) {
-      if (val instanceof Column) {
+      if (isColumn(val)) {
         const jsKey = map[val.name] ?? val.name;
         out[key] = row[jsKey];
       }

@@ -2,7 +2,7 @@
 
 Public documentation site for [LumiBase](https://github.com/khuepm/lumibase) — an edge-native, multi-tenant headless CMS.
 
-This is a **Vite + React + MDX** static docs viewer that consumes markdown from the project root `docs/` folder via a virtual module produced by `vite-plugin-docs-loader`.
+This is a **Vite + React** static docs viewer that consumes markdown from the project root `docs/` folder via a virtual module produced by `vite-plugin-docs-loader`.
 
 ## Stack
 
@@ -47,9 +47,15 @@ title: My great doc
 
 ## Deploying
 
-The build output (`dist/`) is a fully static site — drop it on Cloudflare Pages, Netlify, Vercel static, S3, or any HTTP server.
+The build output (`dist/`) is a fully static site. The repository deploy script publishes it to Cloudflare Pages project `lumibase-docs`.
 
 ```bash
 pnpm --filter @lumibase/docs build
-# upload apps/docs/dist/ to your CDN
+pnpm docs:deploy
+```
+
+Equivalent Wrangler command:
+
+```bash
+wrangler pages deploy apps/docs/dist --project-name lumibase-docs
 ```

@@ -8,7 +8,7 @@
 <!-- [![GitHub Sponsors](https://img.shields.io/github/sponsors/khuepm)](https://github.com/sponsors/khuepm) -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/khuepm/lumibase/blob/main/LICENSE)
 
-[ Documentation](https://docs.lumibase.dev) • [💬 Community](https://github.com/khuepm/lumibase/discussions)
+[Documentation](https://docs.lumibase.dev) • [Community](https://github.com/khuepm/lumibase/discussions)
 
 </div>
 
@@ -34,7 +34,10 @@ lumibase/
 ├── apps/
 │   ├── cms/                # Hono.js backend (Cloudflare Workers)
 │   ├── studio/             # No-code admin SPA (React + Vite)
-│   └── web/                # Next.js SSR delivery demo (planned)
+│   ├── docs/               # Vite docs viewer (Cloudflare Pages)
+│   ├── landing/            # Next.js marketing site
+│   ├── marketplace/        # Next.js marketplace site
+│   └── consumer/           # Next.js delivery API demo
 ├── packages/
 │   ├── database/           # Drizzle ORM schema + migrations
 │   ├── shared/             # Types, zod schemas, policy DSL, field DSL
@@ -55,7 +58,7 @@ pnpm --filter @lumibase/cms dev      # Hono API on :8787
 pnpm --filter @lumibase/studio dev   # Studio SPA on :5173
 ```
 
-The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire-up. Full documentation lives in [`docs/`](./docs/README.md); the task roadmap is in [`docs/roadmap/tasks.md`](./docs/roadmap/tasks.md).
+The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire-up. Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is in [`docs/en/roadmap/tasks.md`](./docs/en/roadmap/tasks.md).
 
 ---
 
