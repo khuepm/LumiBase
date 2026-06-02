@@ -5,7 +5,7 @@ import { createTestSite, deleteTestSite, createCollection, createScimToken } fro
 
 // Setup phase: run once before the test starts
 export function setup() {
-  const BASE_URL = __ENV.BASE_URL || 'http://localhost:8787';
+  const BASE_URL = __ENV.BASE_URL || 'http://localhost:1989';
   const ADMIN_TOKEN = __ENV.ADMIN_TOKEN || 'dev:admin@lumibase.dev:admin';
 
   const siteA = 'site_leak_test_a';

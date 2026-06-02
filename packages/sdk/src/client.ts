@@ -6,7 +6,7 @@
 import { DefaultSchema } from "./types";
 
 export interface LumiClientOptions {
-  /** Base URL of the API, e.g. `http://127.0.0.1:8787` or `https://api.lumibase.dev`. */
+  /** Base URL of the API, e.g. `http://127.0.0.1:1989` or `https://api.lumibase.dev`. */
   url: string;
   /** Bearer token (Logto access token, or `dev:<logtoId>` in dev mode). */
   token: string;
@@ -40,6 +40,39 @@ export class LumiError extends Error {
   }
 }
 
+function parseResponseBody(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function toErrorBody(status: number, body: unknown): LumiErrorBody {
+  if (
+    body &&
+    typeof body === "object" &&
+    Array.isArray((body as { errors?: unknown }).errors)
+  ) {
+    return body as LumiErrorBody;
+  }
+
+  const message =
+    typeof body === "string" && body.trim()
+      ? body.trim()
+      : `LumiBase ${status}`;
+
+  return {
+    errors: [
+      {
+        code: "HTTP_ERROR",
+        message,
+      },
+    ],
+  };
+}
+
 export interface LumiClient<TSchema extends DefaultSchema = DefaultSchema> {
   url: string;
   token: string;
@@ -69,9 +102,9 @@ export function createLumiClient<TSchema extends DefaultSchema = DefaultSchema>(
 
     const res = await fetcher(`${base}${path}`, { ...init, headers });
     const text = await res.text();
-    const body = text ? JSON.parse(text) : null;
+    const body = parseResponseBody(text);
 
-    if (!res.ok) throw new LumiError(res.status, body);
+    if (!res.ok) throw new LumiError(res.status, toErrorBody(res.status, body));
     return body as LumiResponse<T>;
   }
 

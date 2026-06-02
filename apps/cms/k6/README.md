@@ -28,7 +28,7 @@ docker pull grafana/k6
 
 | Variable | Default | Description |
 |---|---|---|
-| `BASE_URL` | `http://localhost:8787` | CMS base URL (use `ws://` for realtime) |
+| `BASE_URL` | `http://localhost:1989` | CMS base URL (use `ws://` for realtime) |
 | `SITE_ID` | `site_test` | Site ID for `X-Lumi-Site` header |
 | `TOKEN` | `dev:user123` | Bearer token |
 | `COLLECTION` | `articles` | Collection name for items/realtime tests |
@@ -48,20 +48,20 @@ docker pull grafana/k6
 
 ```bash
 # Smoke test (quick sanity check)
-k6 run --env BASE_URL=http://localhost:8787 \
+k6 run --env BASE_URL=http://localhost:1989 \
        --env SITE_ID=my-site \
        --env TOKEN=dev:myuser \
        apps/cms/k6/smoke.js
 
 # Item load test
-k6 run --env BASE_URL=http://localhost:8787 \
+k6 run --env BASE_URL=http://localhost:1989 \
        --env SITE_ID=my-site \
        --env TOKEN=dev:myuser \
        --env COLLECTION=articles \
        apps/cms/k6/load-items.js
 
 # Realtime WebSocket test
-k6 run --env BASE_URL=ws://localhost:8787 \
+k6 run --env BASE_URL=ws://localhost:1989 \
        --env SITE_ID=my-site \
        --env TOKEN=dev:myuser \
        apps/cms/k6/load-realtime.js
@@ -69,7 +69,7 @@ k6 run --env BASE_URL=ws://localhost:8787 \
 # Login brute-force defence (Req 8.2, 8.3 — IP block under 50 VU spam)
 # Assumes a running CMS instance with system_state='initialized'.
 # Test is on-demand, not part of CI.
-k6 run --env BASE_URL=http://localhost:8787 \
+k6 run --env BASE_URL=http://localhost:1989 \
        --env LOGIN_EMAIL=bruteforce-target@example.test \
        apps/cms/k6/login-brute-force.js
 ```

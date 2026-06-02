@@ -14,8 +14,8 @@ filter builder) into the public site.
 
 ```bash
 pnpm install
-pnpm --filter @lumibase/cms dev      # API on :8787
-pnpm --filter @lumibase/studio dev   # SPA on :5173 (proxies /api → :8787)
+pnpm --filter @lumibase/cms dev      # API on :1989
+pnpm --filter @lumibase/studio dev   # SPA on :5173 (proxies /api → :1989)
 ```
 
 Open <http://127.0.0.1:5173>. The placeholder dashboard pings `/api/v1/utils/health` to confirm the wire-up.

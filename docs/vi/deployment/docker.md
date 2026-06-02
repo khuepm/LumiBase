@@ -24,7 +24,7 @@ docker compose -f docker/docker-compose.prod.yml --env-file docker/.env up -d
 Kiểm tra API:
 
 ```bash
-curl -fsS http://localhost:3000/health
+curl -fsS http://localhost:1989/health
 ```
 
 Docker mode phù hợp cho self-hosting hoặc rehearsal production local. Cloudflare Workers vẫn là đường deploy edge mặc định.

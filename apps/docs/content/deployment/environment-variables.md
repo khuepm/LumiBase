@@ -7,7 +7,7 @@ Complete reference for all Lumibase CMS environment variables across both runtim
 | Variable | Type | Required | Default | Description |
 |----------|------|----------|---------|-------------|
 | `LUMIBASE_RUNTIME` | `string` | No | `docker` | Runtime mode. Values: `cloudflare` or `docker`. Determines which adapter set is loaded. |
-| `PORT` | `number` | No | `3000` | HTTP server listen port (Docker mode only). |
+| `PORT` | `number` | No | `1989` | HTTP server listen port (Docker mode only). |
 | `LUMIBASE_ENV` | `string` | No | `development` | Environment name. Values: `development`, `preview`, `production`. Affects logging verbosity and dev features. |
 
 ## Database
@@ -172,7 +172,7 @@ MEILISEARCH_API_KEY=lumibase_dev_key
 IMGPROXY_URL=http://imgproxy:8080
 IMGPROXY_KEY=736563726574
 IMGPROXY_SALT=736563726574
-PORT=3000
+PORT=1989
 ```
 
 > **Note:** These defaults use Docker Compose service names (e.g., `postgres`, `redis`) as hostnames. When running the CMS outside Docker, replace them with `localhost`.

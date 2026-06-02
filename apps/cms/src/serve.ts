@@ -6,7 +6,7 @@ import cron from 'node-cron';
 import app from './index';
 import { runScheduledRotation } from './modules/audit/scheduled';
 
-const port = parseInt(process.env.PORT || '3000', 10);
+const port = parseInt(process.env.PORT || '1989', 10);
 const runtime = createRuntime(process.env as unknown as Record<string, unknown>);
 
 // Inject runtime into Hono context for all requests.

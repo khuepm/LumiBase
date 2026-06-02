@@ -63,7 +63,7 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceResult
   useEffect(() => {
     const siteId = localStorage.getItem('lumibase_site_id') ?? '';
     const token = localStorage.getItem('lumibase_dev_token') ?? '';
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8787';
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:1989';
     const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/api/v1/realtime?token=${encodeURIComponent(token)}&userId=${encodeURIComponent(userId)}&siteId=${encodeURIComponent(siteId)}`;
 
     let ws: WebSocket;

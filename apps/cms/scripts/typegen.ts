@@ -7,7 +7,7 @@
  *   pnpm lumibase typegen \
  *     --site <siteId> \
  *     --out ./apps/web/src/lumibase-types.ts \
- *     --url http://localhost:8787 \
+ *     --url http://localhost:1989 \
  *     --auth $LUMI_TOKEN \
  *     [--include posts,tags] [--exclude users] [--format single|per-collection]
  */
@@ -41,7 +41,7 @@ function parseArgs(argv: string[]): CliArgs {
 
   const site = args.site || process.env.LUMI_SITE || '';
   const out = args.out || './lumibase-types.ts';
-  const url = args.url || process.env.LUMI_URL || 'http://localhost:8787';
+  const url = args.url || process.env.LUMI_URL || 'http://localhost:1989';
   const auth = args.auth || process.env.LUMI_TOKEN;
 
   if (!site) {

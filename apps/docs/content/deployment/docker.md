@@ -66,7 +66,7 @@ This starts:
 - **MinIO** on ports 9000 (API) / 9001 (console)
 - **MeiliSearch** on port 7700
 - **Imgproxy** on port 8080
-- **Lumibase CMS** on port 3000
+- **Lumibase CMS** on port 1989
 - **Bull Board** on port 3001
 
 ### With Monitoring Stack
@@ -88,7 +88,7 @@ If you already have external PostgreSQL, Redis, and S3:
 ```bash
 docker run -d \
   --name lumibase-cms \
-  -p 3000:3000 \
+  -p 1989:1989 \
   -e LUMIBASE_RUNTIME=docker \
   -e DATABASE_URL="postgresql://user:pass@db-host:5432/lumibase" \
   -e REDIS_URL="redis://redis-host:6379" \
@@ -109,7 +109,7 @@ docker run -d \
 ### Health Check
 
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:1989/health
 ```
 
 Expected response:
@@ -147,7 +147,7 @@ docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/lumibase-cms:latest
    - Container image: your ECR image URI
    - Port mapping: 3000
    - Environment variables from AWS Secrets Manager or Parameter Store
-   - Health check: `CMD-SHELL, wget -qO- http://localhost:3000/health || exit 1`
+   - Health check: `CMD-SHELL, wget -qO- http://localhost:1989/health || exit 1`
    - Memory: 512MB minimum, 1GB recommended
    - CPU: 256 units minimum (0.25 vCPU)
 
@@ -165,7 +165,7 @@ gcloud builds submit --tag gcr.io/YOUR_PROJECT/lumibase-cms
 # Deploy to Cloud Run
 gcloud run deploy lumibase-cms \
   --image gcr.io/YOUR_PROJECT/lumibase-cms \
-  --port 3000 \
+  --port 1989 \
   --memory 512Mi \
   --cpu 1 \
   --min-instances 0 \
@@ -236,7 +236,7 @@ primary_region = "iad"
   dockerfile = "docker/Dockerfile"
 
 [http_service]
-  internal_port = 3000
+  internal_port = 1989
   force_https = true
   auto_stop_machines = true
   auto_start_machines = true
@@ -244,7 +244,7 @@ primary_region = "iad"
 
 [[services]]
   protocol = "tcp"
-  internal_port = 3000
+  internal_port = 1989
 
   [[services.ports]]
     port = 443
@@ -283,7 +283,7 @@ primary_region = "iad"
 
 - Place the CMS container in the same VPC/network as PostgreSQL and Redis
 - Use internal DNS names for service-to-service communication
-- Expose only port 3000 (or your configured PORT) externally
+- Expose only port 1989 (or your configured PORT) externally
 - Use a reverse proxy (nginx, Caddy, Traefik) or cloud load balancer for TLS
 
 ### Logging

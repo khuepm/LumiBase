@@ -7,7 +7,7 @@
  *   pnpm --filter @lumibase/cms backup import --site <siteId> --file backup.ndjson
  *
  * Environment:
- *   LUMIBASE_API_URL   Base URL of the CMS API  (default: http://localhost:8787)
+ *   LUMIBASE_API_URL   Base URL of the CMS API  (default: http://localhost:1989)
  *   LUMIBASE_TOKEN     Bearer token for authentication
  *
  * The script calls the /api/v1/admin/backup and /api/v1/admin/restore endpoints
@@ -28,7 +28,7 @@ function getArg(flag: string): string | undefined {
   return idx >= 0 ? args[idx + 1] : undefined;
 }
 
-const API_URL = process.env['LUMIBASE_API_URL'] ?? 'http://localhost:8787';
+const API_URL = process.env['LUMIBASE_API_URL'] ?? 'http://localhost:1989';
 const TOKEN = process.env['LUMIBASE_TOKEN'] ?? '';
 const SITE_ID = getArg('--site') ?? getArg('-s') ?? '';
 
@@ -123,7 +123,7 @@ Options:
   --file, -f   Input NDJSON file for import
 
 Environment:
-  LUMIBASE_API_URL   CMS base URL (default: http://localhost:8787)
+  LUMIBASE_API_URL   CMS base URL (default: http://localhost:1989)
   LUMIBASE_TOKEN     Bearer token
 `);
     process.exit(0);

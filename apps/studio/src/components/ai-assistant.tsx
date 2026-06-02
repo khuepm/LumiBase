@@ -55,7 +55,7 @@ function getApiHeaders(): Record<string, string> {
 }
 
 function getBaseUrl(): string {
-  return import.meta.env?.VITE_API_URL ?? 'http://localhost:8787';
+  return import.meta.env?.VITE_API_URL ?? 'http://localhost:1989';
 }
 
 export function AIAssistant() {

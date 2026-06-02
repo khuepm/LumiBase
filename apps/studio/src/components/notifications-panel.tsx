@@ -69,7 +69,7 @@ export function NotificationsPanel() {
   useEffect(() => {
     const token = localStorage.getItem('lumibase_dev_token') ?? '';
     const siteId = localStorage.getItem('lumibase_site_id') ?? '';
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8787';
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:1989';
     const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/api/v1/realtime?token=${encodeURIComponent(token)}&siteId=${encodeURIComponent(siteId)}&userId=notifications-panel`;
 
     let ws: WebSocket;

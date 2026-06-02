@@ -41,7 +41,7 @@
  * Environment variables:
  *
  *   - BASE_URL                  CMS base URL (default
- *                               http://localhost:8787).
+ *                               http://localhost:1989).
  *   - LOGIN_EMAIL               Email used in the wrong-password POST
  *                               (default `bruteforce-target@example.test`).
  *                               The email does not need to exist —
@@ -69,7 +69,7 @@
  * Run:
  *
  *   k6 run \
- *     --env BASE_URL=http://localhost:8787 \
+ *     --env BASE_URL=http://localhost:1989 \
  *     --env LOGIN_EMAIL=bruteforce@example.test \
  *     apps/cms/k6/login-brute-force.js
  *
@@ -82,7 +82,7 @@ import { Counter, Trend, Rate } from 'k6/metrics';
 
 // ── env / configuration ─────────────────────────────────────────────────
 
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8787';
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:1989';
 const LOGIN_EMAIL = __ENV.LOGIN_EMAIL || 'bruteforce-target@example.test';
 const WRONG_PASSWORD = __ENV.WRONG_PASSWORD || 'definitely-not-the-password';
 

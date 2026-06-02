@@ -10,7 +10,7 @@ info:
 servers:
   - url: https://api.lumibase.dev/api/v1
     description: Production
-  - url: http://127.0.0.1:8787/api/v1
+  - url: http://127.0.0.1:1989/api/v1
     description: Local wrangler dev
 
 security:

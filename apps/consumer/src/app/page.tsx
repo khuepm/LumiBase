@@ -1,8 +1,8 @@
 import { createLumiClient, readItems, type ItemRow } from "@lumibase/sdk";
 
-// Khởi tạo client tới CMS (chạy local mặc định port 8787 của Cloudflare worker, hoặc mock)
+// Khởi tạo client tới CMS (chạy local mặc định port 1989 của Cloudflare worker, hoặc mock)
 const client = createLumiClient({
-  url: process.env.LUMIBASE_URL || "http://127.0.0.1:8787",
+  url: process.env.LUMIBASE_URL || "http://127.0.0.1:1989",
   siteId: "site_demo",
   token: process.env.LUMIBASE_TOKEN || "dev:studio",
 });
@@ -47,7 +47,7 @@ export default async function Home() {
           ) : posts.length === 0 ? (
             <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300">
               <p className="text-slate-500 font-medium">Không tìm thấy bài viết nào hoặc backend chưa chạy.</p>
-              <p className="text-sm text-slate-400 mt-2">Đảm bảo bạn đã khởi động `apps/cms` ở cổng 8787.</p>
+              <p className="text-sm text-slate-400 mt-2">Đảm bảo bạn đã khởi động `apps/cms` ở cổng 1989.</p>
             </div>
           ) : (
             <ul className="grid gap-4">

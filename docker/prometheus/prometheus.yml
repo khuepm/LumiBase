@@ -6,6 +6,6 @@ scrape_configs:
   - job_name: 'lumibase-cms'
     metrics_path: /metrics
     static_configs:
-      - targets: ['cms:3000']
+      - targets: ['cms:1989']
         labels:
           service: 'lumibase-cms'

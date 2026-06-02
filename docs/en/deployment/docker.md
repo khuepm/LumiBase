@@ -38,7 +38,7 @@ docker compose -f docker/docker-compose.prod.yml --env-file docker/.env up -d
 Verify the API:
 
 ```bash
-curl -fsS http://localhost:3000/health
+curl -fsS http://localhost:1989/health
 ```
 
 Docker mode is useful for local production rehearsals and self-hosted installations. Cloudflare Workers remains the default edge deployment path.

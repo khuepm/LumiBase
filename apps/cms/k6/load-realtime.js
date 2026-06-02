@@ -9,7 +9,7 @@
  *   - Measures: connection time, message delivery latency, error rate.
  *
  * Run:
- *   k6 run --env BASE_URL=ws://localhost:8787 \
+ *   k6 run --env BASE_URL=ws://localhost:1989 \
  *          --env SITE_ID=site_test \
  *          --env TOKEN=dev:user123 \
  *          --env COLLECTION=articles \
@@ -40,7 +40,7 @@ export const options = {
   },
 };
 
-const BASE_URL   = __ENV.BASE_URL   || 'ws://localhost:8787';
+const BASE_URL   = __ENV.BASE_URL   || 'ws://localhost:1989';
 const SITE_ID    = __ENV.SITE_ID    || 'site_test';
 const TOKEN      = __ENV.TOKEN      || 'dev:user123';
 const COLLECTION = __ENV.COLLECTION || 'articles';

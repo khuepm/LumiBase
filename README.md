@@ -54,11 +54,15 @@ lumibase/
 
 ```bash
 pnpm install
-pnpm --filter @lumibase/cms dev      # Hono API on :8787
+pnpm --filter @lumibase/cms dev      # Hono API on :1989
 pnpm --filter @lumibase/studio dev   # Studio SPA on :5173
 ```
 
 The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire-up. Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is in [`docs/en/roadmap/tasks.md`](./docs/en/roadmap/tasks.md).
+
+### Why port 1989?
+
+LumiBase uses `1989` as its default CMS API port as a small tribute to the Web's origin story: in March 1989, Tim Berners-Lee wrote the proposal that became the World Wide Web. The same year also evokes walls coming down, which fits a headless CMS built to separate backend content infrastructure from frontend presentation.
 
 ---
 

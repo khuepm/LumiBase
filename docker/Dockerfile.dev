@@ -30,9 +30,9 @@ RUN pnpm install --frozen-lockfile
 # Default environment
 ENV LUMIBASE_RUNTIME=docker
 ENV NODE_ENV=development
-ENV PORT=3000
+ENV PORT=1989
 
-EXPOSE 3000
+EXPOSE 1989
 
 # Use tsx watch for hot-reload of TypeScript source files
 CMD ["pnpm", "--filter", "@lumibase/cms", "exec", "tsx", "watch", "src/serve.ts"]

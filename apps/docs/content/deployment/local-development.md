@@ -83,7 +83,7 @@ This starts all services in the background. First run will pull images (~2-3 min
 docker compose ps
 
 # Test the CMS API
-curl http://localhost:3000/health
+curl http://localhost:1989/health
 ```
 
 Expected output:
@@ -105,7 +105,7 @@ Expected output:
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| CMS API | http://localhost:3000 | — |
+| CMS API | http://localhost:1989 | — |
 | MinIO Console | http://localhost:9001 | minioadmin / minioadmin |
 | MeiliSearch | http://localhost:7700 | Key: `lumibase_dev_key` |
 | Bull Board | http://localhost:3001 | — |

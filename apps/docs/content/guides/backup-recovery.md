@@ -268,7 +268,7 @@ docker compose stop cms
 docker compose start cms
 
 # Re-index search
-curl -X POST http://localhost:3000/api/search/reindex
+curl -X POST http://localhost:1989/api/search/reindex
 ```
 
 ### Scenario 2: Database Corruption
@@ -333,7 +333,7 @@ mc mirror remote/lumibase-media local/lumibase-media
 docker compose up -d cms
 
 # Verify
-curl http://localhost:3000/health
+curl http://localhost:1989/health
 ```
 
 ### Scenario 4: Ransomware / Security Breach

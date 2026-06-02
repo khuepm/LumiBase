@@ -22,7 +22,7 @@ export default defineConfig({
     proxy: {
       // Proxy API calls to local wrangler so the SPA can use same-origin cookies.
       '/api': {
-        target: 'http://127.0.0.1:8787',
+        target: 'http://127.0.0.1:1989',
         changeOrigin: true,
       },
     },

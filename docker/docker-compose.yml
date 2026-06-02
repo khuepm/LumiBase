@@ -89,9 +89,9 @@ services:
       IMGPROXY_URL: http://imgproxy:8080
       IMGPROXY_KEY: "736563726574"
       IMGPROXY_SALT: "736563726574"
-      PORT: "3000"
+      PORT: "1989"
     ports:
-      - "${CMS_PORT:-3000}:3000"
+      - "${CMS_PORT:-1989}:1989"
     volumes:
       - ../apps/cms/src:/app/apps/cms/src
       - ../packages:/app/packages

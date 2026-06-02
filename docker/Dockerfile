@@ -21,6 +21,6 @@ COPY --from=builder /app/packages/database/drizzle ./drizzle
 COPY docker/scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 USER lumibase
-EXPOSE 3000
-HEALTHCHECK --interval=10s --timeout=3s CMD wget -qO- http://localhost:3000/health || exit 1
+EXPOSE 1989
+HEALTHCHECK --interval=10s --timeout=3s CMD wget -qO- http://localhost:1989/health || exit 1
 ENTRYPOINT ["/entrypoint.sh"]

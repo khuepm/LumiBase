@@ -14,7 +14,7 @@
  *   pnpm --filter @lumibase/cms config diff   --a ./config-a/ --b ./config-b/
  *
  * Environment:
- *   LUMIBASE_API_URL   CMS base URL      (default: http://localhost:8787)
+ *   LUMIBASE_API_URL   CMS base URL      (default: http://localhost:1989)
  *   LUMIBASE_TOKEN     Bearer auth token
  */
 
@@ -31,7 +31,7 @@ function getArg(flag: string): string | undefined {
   return idx >= 0 ? args[idx + 1] : undefined;
 }
 
-const API_URL = process.env['LUMIBASE_API_URL'] ?? 'http://localhost:8787';
+const API_URL = process.env['LUMIBASE_API_URL'] ?? 'http://localhost:1989';
 const TOKEN   = process.env['LUMIBASE_TOKEN'] ?? '';
 const SITE_ID = getArg('--site') ?? getArg('-s') ?? '';
 
@@ -278,7 +278,7 @@ Sub-commands:
   diff    --a <dir>   --b <dir>
 
 Env vars:
-  LUMIBASE_API_URL   CMS base URL (default: http://localhost:8787)
+  LUMIBASE_API_URL   CMS base URL (default: http://localhost:1989)
   LUMIBASE_TOKEN     Bearer auth token
 `;
 
