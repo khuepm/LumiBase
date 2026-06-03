@@ -218,6 +218,74 @@ Mục tiêu: tạo/quản lý collection & field qua API + UI.
 - [x] `[BE]` Logical refresh strategy (count + lastRefreshedAt). Full denormalized write còn để mở.
 - [x] `[DOC]` `features/materialized-collections.md`.
 
+## Phase POST-GA7 — Advanced Permission Builder & RBAC (TODO)
+
+Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / Permission tương đương Directus nhưng fail-closed hơn, có conflict detection, policy flags, API keys theo role, import/export JSON và seed system permissions. Tham chiếu: `docs/vi/features/permission-builder-directus-investigation.md`.
+
+### Chuẩn bị bắt buộc
+
+- [ ] `[BE]` Audit `PermissionService` hiện tại: ghi rõ hành vi compose hiện có (`OR` rules, union fields, merge presets/validation) và các case có thể mở rộng quyền im lặng.
+- [ ] `[DB]` Thiết kế migration backward-compatible cho `roles.admin_access/app_access` → policy-level `admin_access/app_access/enforce_tfa/ip_allow/ip_deny/valid_from/valid_until`.
+- [ ] `[DB]` Thêm stable `key`/`system_key` cho roles/policies để phục vụ import/export idempotent.
+- [ ] `[DOC]` Chốt danh sách system collections được đưa vào Permission Builder và nhóm sensitive/admin-only trước khi seed.
+- [ ] `[BE]` Định nghĩa JSON schema version `lumibase.access@v1` cho export/import roles, policies, permission rows, bindings và API key metadata.
+
+### Schema & evaluator hardening
+
+- [ ] `[DB]` Thêm unique constraint `(policy_id, collection, action)` cho `permissions`; migration phải detect/report duplicate hiện có trước khi apply.
+- [ ] `[DB]` Thêm bảng `user_roles` để hỗ trợ nhiều role/user/site; giữ `user_sites.role_id` làm primary/display role trong giai đoạn chuyển đổi.
+- [ ] `[DB]` Thêm policy flags explicit vào `policies`; giữ `policies.rules` cho custom/future guardrails.
+- [ ] `[BE]` Mở rộng IP guard hỗ trợ IPv4, IPv6, CIDR và precedence `ipDeny` thắng `ipAllow`.
+- [ ] `[BE]` Enforce app access từ effective active policies khi vào Studio; API key luôn bị chặn khỏi Studio.
+- [ ] `[BE]` Enforce `enforceTfa=true`: user phải enroll và pass TFA; API key attach policy có TFA phải bị conflict/warning.
+- [ ] `[BE]` Mở rộng magic vars: `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$CURRENT_API_KEY`, nested `$CURRENT_USER.*`, `$NOW(+/- duration)`.
+- [ ] `[BE]` Fail closed cho unknown operator/magic var; thêm test cho `_null`, `_nnull`, `_empty`, `_nempty`, `_regex`, case-insensitive string ops.
+
+### Conflict detection
+
+- [ ] `[BE]` Tạo `AccessConflictService` phân loại `compatible`, `warning`, `blocking` cho overlap cùng `collection + action`.
+- [ ] `[BE]` Block conflict unconditional-vs-restricted rule, `["*"]` vs whitelist fields, validation/preset cùng field khác value, admin bypass + granular policy.
+- [ ] `[BE]` Endpoint `POST /api/v1/access/conflicts/check` nhận target role/user/api_key + add/remove policies và trả diff có source policy.
+- [ ] `[BE]` Tích hợp conflict check vào attach role-policy, user-policy, API-key-policy; cho phép override warning có audit.
+- [ ] `[FE]` Role Detail gọi conflict check trước khi attach policy; blocking conflict không cho lưu.
+- [ ] `[FE]` Permission Matrix thêm Effective View hiển thị quyền cuối cùng và source policies.
+- [ ] `[TEST]` Property tests cho conflict classifier với các tổ hợp field/rule/preset/validation.
+
+### API Keys theo Roles/Policies
+
+- [ ] `[DB]` Thêm `api_keys`, `api_key_roles`, `api_key_policies` với token hash, prefix, expire/revoke/last_used metadata.
+- [ ] `[BE]` Bearer auth lookup API key bằng hash; principal type `api_key` compile quyền giống user.
+- [ ] `[BE]` Rotate/revoke API key; plaintext chỉ trả một lần khi tạo/rotate.
+- [ ] `[BE]` Audit create/rotate/revoke/use-denied cho API key, không log plaintext token.
+- [ ] `[SDK]` Thêm client methods cho API key CRUD, attach roles/policies, conflict preview.
+- [ ] `[FE]` Studio API Keys page: create, rotate, revoke, attach roles/policies, preview effective permissions.
+- [ ] `[TEST]` API key không truy cập Studio; revoked/expired key bị 401; key chỉ thấy fields/rows theo policy.
+
+### Import / Export Permission Builder
+
+- [ ] `[BE]` `GET /api/v1/access/export` xuất roles, policies, permissions, bindings, API key metadata bằng stable keys, không chứa secrets.
+- [ ] `[BE]` `POST /api/v1/access/import?dryRun=true` parse/validate/diff/conflict-check nhưng không ghi DB.
+- [ ] `[BE]` Import modes: `merge`, `replace-managed`, `replace-all`; apply trong transaction và audit diff summary.
+- [ ] `[BE]` Idempotency tests: import cùng manifest nhiều lần không tạo duplicate.
+- [ ] `[SDK]` Thêm access export/import client types.
+- [ ] `[FE]` Import dialog hiển thị diff, warnings, blocking conflicts và kết quả dry-run.
+- [ ] `[OPS]` CLI `lumibase access export/import` cho CI/CD giữa dev/staging/prod.
+
+### System permissions & seeding
+
+- [ ] `[DB]` Cập nhật `seed-dev.ts` seed `policy_admin`, `role_administrator`, `policy_studio_self`, `policy_public`.
+- [ ] `[DB]` Seed explicit permissions cho nhóm schema/access manager: `collections`, `fields`, `relations`, `roles`, `policies`, `permissions`.
+- [ ] `[DB]` Đảm bảo sensitive collections (`system_state`, `audit_log`, `login_attempts`, `admin_backup_codes`, `scim_tokens`, `api_keys`) admin/security-only.
+- [ ] `[FE]` Permission Builder phân nhóm system collections và ẩn sensitive collections khỏi non-admin.
+- [ ] `[TEST]` Public policy mặc định không đọc được content/system collections nếu chưa explicit grant.
+
+### Share action
+
+- [ ] `[DB]` Thêm bảng `shares` với role share chuyên dụng, password hash, validity window, max uses, revoke.
+- [ ] `[BE]` Implement `share` action: chỉ user có quyền share mới tạo share link; read payload vẫn đi qua role share permission.
+- [ ] `[FE]` Share dialog chỉ cho chọn role có `appAccess=false`, `adminAccess=false`, read permissions tối thiểu.
+- [ ] `[TEST]` Share link chỉ đọc fields/rows role share được phép, hết hạn/max uses/revoked đều bị deny.
+
 ---
 
 ## Phase Docker Dual-Deployment (DONE)
