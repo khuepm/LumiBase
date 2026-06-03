@@ -186,6 +186,46 @@ components:
           items: { type: string }
         rule: { type: object, nullable: true, additionalProperties: true }
         presets: { type: object, additionalProperties: true }
+    # --- Access Conflict Check ---
+    AccessConflictCheckRequest:
+      type: object
+      required: [target]
+      properties:
+        target:
+          type: object
+          required: [type, id]
+          properties:
+            type: { type: string, enum: [role, user, api_key] }
+            id: { type: string, minLength: 1 }
+        addPolicies:
+          type: array
+          items: { type: string }
+          default: []
+        removePolicies:
+          type: array
+          items: { type: string }
+          default: []
+    AccessConflict:
+      type: object
+      required: [severity, collection, action, existingPolicy, incomingPolicy, reason]
+      properties:
+        severity: { type: string, enum: [warning, blocking] }
+        collection: { type: string }
+        action: { type: string }
+        existingPolicy: { type: string }
+        incomingPolicy: { type: string }
+        reason: { type: string }
+    AccessConflictReport:
+      type: object
+      required: [ok, conflicts, warnings]
+      properties:
+        ok: { type: boolean }
+        conflicts:
+          type: array
+          items: { $ref: '#/components/schemas/AccessConflict' }
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/AccessConflict' }
     # --- AI (POST-GA1) ---
     AIChatResponse:
       type: object
@@ -1395,6 +1435,34 @@ paths:
     delete:
       summary: Detach policy from a user
       responses: { '204': { description: Detached } }
+  /access/conflicts/check:
+    parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+    post:
+      summary: Check for access conflicts before attaching/removing policies
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccessConflictCheckRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AccessConflictReport' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '501':
+          description: Not implemented (e.g., api_key checks)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /permissions/me:
     parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
     get:
