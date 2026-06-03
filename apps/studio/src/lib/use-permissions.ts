@@ -58,6 +58,7 @@ export function usePermissions(): PermissionHelpers {
         fields: ALL,
         presets: {},
         validation: {},
+        sources: [{ policyId: 'admin', policyName: 'Admin bypass' }],
       };
     }
     return bundle.byKey[`${collection}::${action}`] ?? null;

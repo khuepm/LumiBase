@@ -1,6 +1,7 @@
+import type { AccessConflict, AccessConflictReport } from '@lumibase/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { ArrowLeft, Plus, Trash2, UserPlus, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Plus, Trash2, UserPlus, X } from 'lucide-react';
 import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
 
@@ -13,6 +14,7 @@ export function RoleDetailPage() {
   const client = getApiClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [conflictReport, setConflictReport] = useState<AccessConflictReport | null>(null);
 
   const roleQuery = useQuery({
     queryKey: ['access', 'role', id],
@@ -39,8 +41,30 @@ export function RoleDetailPage() {
   });
 
   const attachPolicy = useMutation({
-    mutationFn: (policyId: string) => client.roles.attachPolicy(id, { policyId }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['access', 'role', id] }),
+    mutationFn: async (policyId: string) => {
+      const report = (await client.access.checkConflicts({
+        target: { type: 'role', id },
+        addPolicies: [policyId],
+      })).data;
+
+      setConflictReport(report);
+      if (report.conflicts.length > 0) {
+        throw new Error('Policy conflicts must be resolved before attaching.');
+      }
+      const overrideWarnings = report.warnings.length > 0;
+      if (
+        overrideWarnings &&
+        !confirm(`Attach policy with ${report.warnings.length} permission warning(s)?`)
+      ) {
+        throw new Error('Attach cancelled.');
+      }
+
+      return client.roles.attachPolicy(id, { policyId, overrideWarnings });
+    },
+    onSuccess: () => {
+      setConflictReport(null);
+      queryClient.invalidateQueries({ queryKey: ['access', 'role', id] });
+    },
   });
 
   const detachPolicy = useMutation({
@@ -198,6 +222,17 @@ export function RoleDetailPage() {
             </Link>
           </div>
         )}
+        {conflictReport && (
+          <ConflictReportPanel
+            conflicts={conflictReport.conflicts}
+            warnings={conflictReport.warnings}
+          />
+        )}
+        {attachPolicy.error && (
+          <p role="alert" className="mt-2 text-xs text-destructive">
+            {(attachPolicy.error as Error).message}
+          </p>
+        )}
       </section>
 
       <section className="rounded-lg border p-4">
@@ -260,6 +295,68 @@ function FlagToggle({
         <p className="text-xs text-muted-foreground">{hint}</p>
       </div>
     </label>
+  );
+}
+
+function ConflictReportPanel({
+  conflicts,
+  warnings,
+}: {
+  conflicts: AccessConflict[];
+  warnings: AccessConflict[];
+}) {
+  if (conflicts.length === 0 && warnings.length === 0) {
+    return (
+      <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700">
+        No permission conflicts detected.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
+      <div className="flex items-center gap-2 font-medium text-amber-800">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        Permission conflict preview
+      </div>
+      {conflicts.length > 0 && (
+        <ConflictList
+          title="Blocking"
+          items={conflicts}
+          className="border-destructive/30 bg-destructive/10 text-destructive"
+        />
+      )}
+      {warnings.length > 0 && (
+        <ConflictList
+          title="Warnings"
+          items={warnings}
+          className="border-amber-500/30 bg-background/60 text-foreground"
+        />
+      )}
+    </div>
+  );
+}
+
+function ConflictList({
+  title,
+  items,
+  className,
+}: {
+  title: string;
+  items: AccessConflict[];
+  className: string;
+}) {
+  return (
+    <div className={`rounded-md border px-2 py-1.5 ${className}`}>
+      <p className="mb-1 font-medium">{title}</p>
+      <ul className="space-y-1">
+        {items.map((item, index) => (
+          <li key={`${item.collection}:${item.action}:${index}`}>
+            <span className="font-mono">{item.collection}</span> / {item.action}: {item.reason}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

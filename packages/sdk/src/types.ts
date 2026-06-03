@@ -115,9 +115,12 @@ export type PermissionAction =
 export interface RoleResource {
   id: string;
   siteId: string;
+  key: string | null;
+  systemKey: string | null;
   name: string;
   description: string | null;
   icon: string | null;
+  parentId: string | null;
   adminAccess: boolean;
   appAccess: boolean;
   createdAt?: string;
@@ -131,8 +134,17 @@ export interface RoleDetail extends RoleResource {
 export interface PolicyResource {
   id: string;
   siteId: string;
+  key: string | null;
   name: string;
+  icon: string | null;
   description: string | null;
+  adminAccess: boolean;
+  appAccess: boolean;
+  enforceTfa: boolean;
+  ipAllow: string[];
+  ipDeny: string[];
+  validFrom: string | null;
+  validUntil: string | null;
   /** Top-level guardrails: time window, IP allow/deny. */
   rules: Record<string, unknown>;
   createdAt?: string;
@@ -161,10 +173,13 @@ export interface CompiledPermission {
   fields: string[];
   presets: Record<string, unknown>;
   validation: Record<string, unknown>;
+  sources?: Array<{ policyId: string; policyName: string }>;
 }
 
 export interface PermissionBundle {
   admin: boolean;
+  appAccess: boolean;
+  tfaRequired: boolean;
   byKey: Record<string, CompiledPermission>;
   roles: Array<{
     id: string;
@@ -180,6 +195,27 @@ export interface PermissionCheckResult {
   fields: string[];
   rule?: Record<string, unknown> | null;
   presets?: Record<string, unknown>;
+}
+
+export interface AccessConflict {
+  severity: "warning" | "blocking";
+  collection: string;
+  action: PermissionAction;
+  existingPolicy: string;
+  incomingPolicy: string;
+  reason: string;
+}
+
+export interface AccessConflictReport {
+  ok: boolean;
+  conflicts: AccessConflict[];
+  warnings: AccessConflict[];
+}
+
+export interface AccessConflictCheckInput {
+  target: { type: "role" | "user" | "api_key"; id: string };
+  addPolicies?: string[];
+  removePolicies?: string[];
 }
 
 export interface PresetResource {

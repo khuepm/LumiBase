@@ -8,6 +8,8 @@ import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { AuditLogger } from '../modules/audit/logger';
+import { buildAccessConflictReport } from '../services/access-conflict-report';
 
 /**
  * /policies — reusable policies + their permission rows.
@@ -28,8 +30,17 @@ import type { AppEnv } from '../env';
 export const policiesRouter = new Hono<AppEnv>();
 
 const policyCreate = z.object({
+  key: z.string().min(1).max(96).optional(),
   name: z.string().min(1).max(64),
+  icon: z.string().max(64).optional(),
   description: z.string().max(512).optional(),
+  adminAccess: z.boolean().optional(),
+  appAccess: z.boolean().optional(),
+  enforceTfa: z.boolean().optional(),
+  ipAllow: z.array(z.string()).optional(),
+  ipDeny: z.array(z.string()).optional(),
+  validFrom: z.coerce.date().nullable().optional(),
+  validUntil: z.coerce.date().nullable().optional(),
   rules: z.record(z.unknown()).optional(),
 });
 
@@ -49,6 +60,7 @@ const permissionPatch = permissionUpsert.partial();
 const attachUser = z.object({
   userId: z.string(),
   priority: z.number().int().optional(),
+  overrideWarnings: z.boolean().optional(),
 });
 
 policiesRouter.get('/', async (c) => {
@@ -184,12 +196,46 @@ policiesRouter.post('/:id/users', async (c) => {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
   const db = c.get('db');
+  const policyId = c.req.param('id');
+  const report = await buildAccessConflictReport({
+    db,
+    siteId: c.get('siteId'),
+    target: { type: 'user', id: parsed.data.userId },
+    addPolicies: [policyId],
+  });
+  if (report.conflicts.length > 0) {
+    return c.json({
+      errors: [{ code: 'ACCESS_POLICY_CONFLICT', message: 'Policy conflicts must be resolved before attaching.' }],
+      data: report,
+    }, 409);
+  }
+  if (report.warnings.length > 0 && !parsed.data.overrideWarnings) {
+    return c.json({
+      errors: [{ code: 'ACCESS_POLICY_WARNING', message: 'Policy warnings require explicit override.' }],
+      data: report,
+    }, 409);
+  }
+  if (report.warnings.length > 0) {
+    await new AuditLogger({ db }).write({
+      event: 'access_policy_warning_overridden',
+      actorEmail: c.get('auth')?.email ?? null,
+      ip: c.get('ip') ?? null,
+      userAgent: c.get('userAgent') ?? null,
+      requestId: c.get('requestId') ?? null,
+      metadata: {
+        targetType: 'user',
+        targetId: parsed.data.userId,
+        policyId,
+        warnings: report.warnings,
+      },
+    });
+  }
   const [row] = await db
     .insert(userPolicies)
     .values({
       userId: parsed.data.userId,
       siteId: c.get('siteId'),
-      policyId: c.req.param('id'),
+      policyId,
       priority: parsed.data.priority ?? 100,
     })
     .returning();

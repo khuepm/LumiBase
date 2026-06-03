@@ -254,12 +254,13 @@ describe('SetupService.complete() backup-code persistence (Req 14.1, 14.2)', () 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
 
+    const plainCodes = outcome.value.backupCodes;
     const storedHashes = captured.backupRows.map((r) => r.codeHash as string);
-    for (const plain of outcome.value.backupCodes) {
-      const matches = await Promise.all(
-        storedHashes.map((h) => verifyPassword(plain, h)),
-      );
-      expect(matches.filter(Boolean)).toHaveLength(1);
+    expect(new Set(plainCodes).size).toBe(plainCodes.length);
+    expect(new Set(storedHashes).size).toBe(storedHashes.length);
+
+    for (let i = 0; i < plainCodes.length; i++) {
+      expect(await verifyPassword(plainCodes[i]!, storedHashes[i]!)).toBe(true);
     }
   });
 

@@ -17,6 +17,7 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [collections-builder.md](./features/collections-builder.md) — No-code Collection Builder.
   - [field-types-and-config.md](./features/field-types-and-config.md) — Hệ thống field types & interface/display config.
   - [permissions-rbac.md](./features/permissions-rbac.md) — Roles, Policies, Permissions tới field.
+  - [permission-builder-directus-investigation.md](./features/permission-builder-directus-investigation.md) — Điều tra Directus DB và blueprint Permission Builder nâng cao.
   - [raw-data-editing.md](./features/raw-data-editing.md) — Raw editor cho mọi field.
   - [user-management.md](./features/user-management.md) — Quản lý user, invitation, SSO.
   - [extensions-system.md](./features/extensions-system.md) — SDK extension + sandbox.

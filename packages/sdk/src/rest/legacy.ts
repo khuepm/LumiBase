@@ -17,6 +17,8 @@ import {
   PermissionAction,
   PermissionBundle,
   PermissionCheckResult,
+  AccessConflictCheckInput,
+  AccessConflictReport,
   PresetResource,
   TranslationResource,
   SettingResource,
@@ -217,7 +219,7 @@ export function legacyRest() {
         client.rawRequest<null>(`/api/v1/roles/${id}`, { method: "DELETE" }),
       attachPolicy: (
         id: string,
-        input: { policyId: string; priority?: number },
+        input: { policyId: string; priority?: number; overrideWarnings?: boolean },
       ) =>
         client.rawRequest<{
           roleId: string;
@@ -484,11 +486,20 @@ export function legacyRest() {
       delete: (id: string) => client.rawRequest<null>(`/api/v1/extensions/${id}`, { method: "DELETE" }),
     };
 
+    const access = {
+      checkConflicts: (input: AccessConflictCheckInput) =>
+        client.rawRequest<AccessConflictReport>("/api/v1/access/conflicts/check", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+    };
+
     return {
       schema,
       items,
       roles,
       policies,
+      access,
       permissions,
       presets,
       translations,
