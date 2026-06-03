@@ -31,6 +31,9 @@ const buildContext = (c: Context<AppEnv>): MagicContext => {
 };
 
 permissionsRouter.get('/me', async (c) => {
+  const resolved = c.get('access');
+  if (resolved) return c.json({ data: resolved });
+
   const service = new PermissionService({
     db: c.get('db'),
     cache: c.get('runtime').cache,

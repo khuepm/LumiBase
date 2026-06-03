@@ -78,8 +78,10 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
 ## 5.1. App access, admin access, enforce TFA
 
 - `adminAccess=true` là bypass toàn bộ permission checks; policy admin không cần seed permission rows.
-- `appAccess=true` cho phép principal dùng Studio. API key không bao giờ được dùng Studio dù policy có app access.
-- `enforceTfa=true` bắt buộc user đã enroll và pass 2FA trước khi policy được dùng.
+- `appAccess=true` cho phép principal dùng Studio, không đồng nghĩa với quyền API. API-only user vẫn có thể gọi API nếu có permission rows nhưng bị chặn khỏi Studio.
+- Studio client phải gửi `X-Lumi-Client: studio`; backend dùng effective `appAccess` để gate các request này.
+- API key không bao giờ được dùng Studio dù policy có app access.
+- `enforceTfa=true` bắt buộc user đã enroll và session đã pass 2FA trước khi Studio request được dùng.
 - Không đặt các flag này trên user; user chỉ giữ identity/status/TFA enrollment.
 
 ## 6. Composition & precedence

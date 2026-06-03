@@ -239,8 +239,8 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 - [x] `[BE]` Enforce `update`/`delete` in `ItemService` with action permission and row-level WHERE.
 - [x] `[BE]` Enforce field whitelist for `create`/`update`, including structural fields `status`/`sort`.
 - [x] `[BE]` Enforce permission-level `validation` in write paths.
-- [ ] `[BE]` Enforce app access từ effective active policies khi vào Studio; API key luôn bị chặn khỏi Studio.
-- [ ] `[BE]` Enforce `enforceTfa=true`: user phải enroll và pass TFA; API key attach policy có TFA phải bị conflict/warning.
+- [x] `[BE]` Enforce app access from effective active policies for Studio; API keys are always blocked from Studio.
+- [x] `[BE]` Enforce `enforceTfa=true`: user must enroll and pass TFA; API key attach already conflicts/warns for TFA policies.
 - [ ] `[BE]` Mở rộng magic vars: `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$CURRENT_API_KEY`, nested `$CURRENT_USER.*`, `$NOW(+/- duration)`.
 - [ ] `[BE]` Fail closed cho unknown operator/magic var; thêm test cho `_null`, `_nnull`, `_empty`, `_nempty`, `_regex`, case-insensitive string ops.
 

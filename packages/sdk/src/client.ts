@@ -14,6 +14,8 @@ export interface LumiClientOptions {
   siteId: string;
   /** Override fetch (Node/Workers polyfills). Defaults to `globalThis.fetch`. */
   fetcher?: typeof fetch;
+  /** Additional headers sent with every request. */
+  headers?: Record<string, string>;
 }
 
 export interface LumiResponse<T> {
@@ -94,6 +96,9 @@ export function createLumiClient<TSchema extends DefaultSchema = DefaultSchema>(
     init: RequestInit = {},
   ): Promise<LumiResponse<T>> {
     const headers = new Headers(init.headers);
+    for (const [key, value] of Object.entries(opts.headers ?? {})) {
+      headers.set(key, value);
+    }
     headers.set("authorization", `Bearer ${opts.token}`);
     headers.set("x-lumi-site", opts.siteId);
     if (!headers.has("content-type") && init.body) {
