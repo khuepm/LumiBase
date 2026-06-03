@@ -119,6 +119,12 @@ export interface SetupCompleteResult {
    * wizard's "Recovery Setup" step must surface it to the operator now.
    */
   readonly backupCodes: ReadonlyArray<string>;
+  /**
+   * The setup token is invalidated during the setup transaction. Returning
+   * `null` keeps the HTTP response aligned with the wizard contract and lets
+   * clients assert that no reusable token survived completion.
+   */
+  readonly setupToken: null;
 }
 
 // ── error taxonomy ──────────────────────────────────────────────────────
@@ -598,6 +604,7 @@ export class SetupService {
             },
             adminPath: normalizedPath,
             backupCodes: plainBackupCodes,
+            setupToken: null,
           },
         };
       });
