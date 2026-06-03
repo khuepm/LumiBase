@@ -287,6 +287,7 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
     handleSubmit,
     watch,
     reset,
+    trigger,
     formState: { errors, isSubmitting, isValid },
   } = form;
 
@@ -346,9 +347,16 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
         },
         { keepErrors: false, keepDirty: false, keepTouched: false },
       );
+      window.setTimeout(() => {
+        void trigger();
+      }, 0);
     },
-    [reset, allValues.webhookUrl, allValues.webhookSecret],
+    [reset, allValues.webhookUrl, allValues.webhookSecret, trigger],
   );
+
+  useEffect(() => {
+    void trigger();
+  }, [trigger]);
 
   // Whenever the form drops out of "valid" flip the wizard's
   // `policyValid` flag back to false so the deep-link guard on the
