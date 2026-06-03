@@ -124,6 +124,21 @@ export function AdminLoginPage({ adminPath }: AdminLoginPageProps) {
             {status === 'submitting' ? 'Signing in' : 'Sign in'}
           </button>
         </form>
+
+        <div className="space-y-2 border-t border-border pt-4 text-sm">
+          <a
+            href="/recovery/backup-code"
+            className="block font-medium text-primary underline-offset-2 hover:underline"
+          >
+            Use a recovery code
+          </a>
+          <a
+            href="/recovery/forgot-path"
+            className="block text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Forgot admin path?
+          </a>
+        </div>
       </section>
     </main>
   );
