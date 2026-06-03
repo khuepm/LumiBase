@@ -139,6 +139,7 @@ export class PermissionService {
         fields: ['*'],
         presets: {},
         validation: {},
+        sources: [{ policyId: 'admin', policyName: 'Admin bypass' }],
       };
     }
     return bundle.byKey[`${collection}::${action}`] ?? null;
@@ -358,7 +359,7 @@ function stringArray(value: unknown): string[] | undefined {
 }
 
 export function isIpAllowedByGuard(
-  ip: string | undefined,
+  ip: string | null | undefined,
   allow?: string[],
   deny?: string[],
 ): boolean {

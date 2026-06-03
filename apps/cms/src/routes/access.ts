@@ -37,10 +37,15 @@ accessRouter.post('/conflicts/check', async (c) => {
     );
   }
 
+  const target: { type: 'role' | 'user'; id: string } = {
+    type: parsed.data.target.type,
+    id: parsed.data.target.id,
+  };
+
   const report = await buildAccessConflictReport({
     db: c.get('db'),
     siteId: c.get('siteId'),
-    target: parsed.data.target,
+    target,
     addPolicies: parsed.data.addPolicies,
     removePolicies: parsed.data.removePolicies,
   });
