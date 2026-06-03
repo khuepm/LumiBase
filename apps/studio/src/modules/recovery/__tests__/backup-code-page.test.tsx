@@ -121,9 +121,14 @@ describe('BackupCodePage — successful recovery (200)', () => {
       screen.getByRole('link', { name: 'Go to admin login' }),
     ).toHaveAttribute('href', '/lumi-7f3a9c/login');
     expect(screen.queryByText('unlock-token-abc123')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('New password')).toBeInTheDocument();
+    const newPassword = screen.getByLabelText('New password');
+    expect(newPassword).toHaveAttribute('type', 'password');
+    fireEvent.click(screen.getByRole('button', { name: 'Show new password' }));
+    expect(newPassword).toHaveAttribute('type', 'text');
+    fireEvent.click(screen.getByRole('button', { name: 'Hide new password' }));
+    expect(newPassword).toHaveAttribute('type', 'password');
 
-    fireEvent.input(screen.getByLabelText('New password'), {
+    fireEvent.input(newPassword, {
       target: { value: 'NewStrongPass!42' },
     });
     fireEvent.input(screen.getByLabelText('Confirm new password'), {

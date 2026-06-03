@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
-import { KeyRound, ShieldCheck } from 'lucide-react';
-import { useId } from 'react';
+import { ArrowLeft, Eye, EyeOff, KeyRound, ShieldCheck } from 'lucide-react';
+import { useId, useState } from 'react';
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { z } from 'zod';
 import { joinAdminPathLogin } from '../setup/steps/step-done';
@@ -43,10 +43,8 @@ import {
  *                           to `${adminPath}/login` so they can navigate
  *                           back in.
  *   - `oneTimeUnlockToken`— a 15-minute single-use credential that lets
- *                           them through the active lockout. How it's
- *                           consumed end-to-end is a later concern; we
- *                           display it (with a note on its nature) so the
- *                           flow is usable today.
+ *                           them set a new password without exposing the
+ *                           raw token in the UI.
  *
  * The login link is a PLAIN `<a href>` (NOT a TanStack `<Link>`) — same
  * rationale as `step-done.tsx`: we want a full document load so the admin
@@ -424,6 +422,8 @@ export function BackupCodePage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4 py-12">
       <div className="w-full max-w-md rounded-xl border bg-background p-8 shadow-sm">
         <form noValidate className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
+          <BackButton />
+
           <header className="space-y-2">
             <div className="flex items-center gap-2">
               <KeyRound className="h-5 w-5 text-primary" aria-hidden="true" />
@@ -565,6 +565,8 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
   const loginHref = joinAdminPathLogin(result.adminPath);
   const passwordId = useId();
   const confirmId = useId();
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const form = useForm<ResetPasswordFormValues>({
     resolver: zodResolver(resetPasswordSchema),
@@ -600,6 +602,8 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4 py-12">
         <div className="w-full max-w-md space-y-6 rounded-xl border bg-background p-8 shadow-sm">
+          <BackButton />
+
           <header className="space-y-2">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-emerald-600" aria-hidden="true" />
@@ -628,6 +632,8 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4 py-12">
       <div className="w-full max-w-md space-y-6 rounded-xl border bg-background p-8 shadow-sm">
+        <BackButton />
+
         <header className="space-y-2">
           <div className="flex items-center gap-2">
             <ShieldCheck
@@ -667,14 +673,21 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
           ) : null}
 
           <Field id={passwordId} label="New password" error={errors.password?.message}>
-            <input
-              id={passwordId}
-              type="password"
-              autoComplete="new-password"
-              aria-invalid={errors.password ? 'true' : 'false'}
-              className={inputClass(Boolean(errors.password))}
-              {...register('password')}
-            />
+            <div className="relative">
+              <input
+                id={passwordId}
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                aria-invalid={errors.password ? 'true' : 'false'}
+                className={`${inputClass(Boolean(errors.password))} pr-10`}
+                {...register('password')}
+              />
+              <PasswordVisibilityButton
+                pressed={showPassword}
+                onClick={() => setShowPassword((value) => !value)}
+                label={showPassword ? 'Hide new password' : 'Show new password'}
+              />
+            </div>
           </Field>
 
           <PasswordRules rules={passwordRules} />
@@ -684,14 +697,25 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
             label="Confirm new password"
             error={errors.confirmPassword?.message}
           >
-            <input
-              id={confirmId}
-              type="password"
-              autoComplete="new-password"
-              aria-invalid={errors.confirmPassword ? 'true' : 'false'}
-              className={inputClass(Boolean(errors.confirmPassword))}
-              {...register('confirmPassword')}
-            />
+            <div className="relative">
+              <input
+                id={confirmId}
+                type={showConfirmPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                aria-invalid={errors.confirmPassword ? 'true' : 'false'}
+                className={`${inputClass(Boolean(errors.confirmPassword))} pr-10`}
+                {...register('confirmPassword')}
+              />
+              <PasswordVisibilityButton
+                pressed={showConfirmPassword}
+                onClick={() => setShowConfirmPassword((value) => !value)}
+                label={
+                  showConfirmPassword
+                    ? 'Hide confirmation password'
+                    : 'Show confirmation password'
+                }
+              />
+            </div>
           </Field>
 
           <button
@@ -754,6 +778,42 @@ function PasswordRules({ rules }: { rules: Record<PasswordRuleId, boolean> }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function BackButton() {
+  return (
+    <button
+      type="button"
+      onClick={() => window.history.back()}
+      className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      Back
+    </button>
+  );
+}
+
+function PasswordVisibilityButton({
+  pressed,
+  onClick,
+  label,
+}: {
+  pressed: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  const Icon = pressed ? EyeOff : Eye;
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={pressed}
+      onClick={onClick}
+      className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+    >
+      <Icon className="h-4 w-4" aria-hidden="true" />
+    </button>
   );
 }
 

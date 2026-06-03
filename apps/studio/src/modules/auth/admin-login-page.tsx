@@ -131,13 +131,7 @@ export function AdminLoginPage({ adminPath }: AdminLoginPageProps) {
             href={`${recoveryBasePath}/backup-code`}
             className="block font-medium text-primary underline-offset-2 hover:underline"
           >
-            Use a recovery code
-          </a>
-          <a
-            href={`${recoveryBasePath}/forgot-path`}
-            className="block text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          >
-            Forgot admin path?
+            Forgot password?
           </a>
         </div>
       </section>
