@@ -247,6 +247,7 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 - [x] `[BE]` Block conflict unconditional-vs-restricted rule, `["*"]` vs whitelist fields, validation/preset cùng field khác value, admin bypass + granular policy.
 - [x] `[BE]` Endpoint `POST /api/v1/access/conflicts/check` nhận target role/user/api_key + add/remove policies và trả diff có source policy.
 - [ ] `[BE]` Tích hợp conflict check vào attach role-policy, user-policy, API-key-policy; cho phép override warning có audit.
+- [x] `[BE]` Tích hợp conflict check vào attach role-policy và user-policy; warning override ghi audit.
 - [x] `[FE]` Role Detail gọi conflict check trước khi attach policy; blocking conflict không cho lưu.
 - [ ] `[FE]` Permission Matrix thêm Effective View hiển thị quyền cuối cùng và source policies.
 - [ ] `[TEST]` Property tests cho conflict classifier với các tổ hợp field/rule/preset/validation.

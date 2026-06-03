@@ -219,7 +219,7 @@ export function legacyRest() {
         client.rawRequest<null>(`/api/v1/roles/${id}`, { method: "DELETE" }),
       attachPolicy: (
         id: string,
-        input: { policyId: string; priority?: number },
+        input: { policyId: string; priority?: number; overrideWarnings?: boolean },
       ) =>
         client.rawRequest<{
           roleId: string;

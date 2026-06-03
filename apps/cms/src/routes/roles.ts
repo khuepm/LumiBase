@@ -8,6 +8,8 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { AuditLogger } from '../modules/audit/logger';
+import { buildAccessConflictReport } from '../services/access-conflict-report';
 
 /**
  * /roles — manage RBAC role definitions and their bound users/policies.
@@ -42,6 +44,7 @@ const rolePatch = roleCreate.partial();
 const attachPolicy = z.object({
   policyId: z.string(),
   priority: z.number().int().optional(),
+  overrideWarnings: z.boolean().optional(),
 });
 
 const assignUser = z.object({ userId: z.string() });
@@ -124,10 +127,44 @@ rolesRouter.post('/:id/policies', async (c) => {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
   const db = c.get('db');
+  const roleId = c.req.param('id');
+  const report = await buildAccessConflictReport({
+    db,
+    siteId: c.get('siteId'),
+    target: { type: 'role', id: roleId },
+    addPolicies: [parsed.data.policyId],
+  });
+  if (report.conflicts.length > 0) {
+    return c.json({
+      errors: [{ code: 'ACCESS_POLICY_CONFLICT', message: 'Policy conflicts must be resolved before attaching.' }],
+      data: report,
+    }, 409);
+  }
+  if (report.warnings.length > 0 && !parsed.data.overrideWarnings) {
+    return c.json({
+      errors: [{ code: 'ACCESS_POLICY_WARNING', message: 'Policy warnings require explicit override.' }],
+      data: report,
+    }, 409);
+  }
+  if (report.warnings.length > 0) {
+    await new AuditLogger({ db }).write({
+      event: 'access_policy_warning_overridden',
+      actorEmail: c.get('auth')?.email ?? null,
+      ip: c.get('ip') ?? null,
+      userAgent: c.get('userAgent') ?? null,
+      requestId: c.get('requestId') ?? null,
+      metadata: {
+        targetType: 'role',
+        targetId: roleId,
+        policyId: parsed.data.policyId,
+        warnings: report.warnings,
+      },
+    });
+  }
   const [row] = await db
     .insert(rolePolicies)
     .values({
-      roleId: c.req.param('id'),
+      roleId,
       policyId: parsed.data.policyId,
       priority: parsed.data.priority ?? 100,
     })

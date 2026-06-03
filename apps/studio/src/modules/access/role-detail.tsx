@@ -51,14 +51,15 @@ export function RoleDetailPage() {
       if (report.conflicts.length > 0) {
         throw new Error('Policy conflicts must be resolved before attaching.');
       }
+      const overrideWarnings = report.warnings.length > 0;
       if (
-        report.warnings.length > 0 &&
+        overrideWarnings &&
         !confirm(`Attach policy with ${report.warnings.length} permission warning(s)?`)
       ) {
         throw new Error('Attach cancelled.');
       }
 
-      return client.roles.attachPolicy(id, { policyId });
+      return client.roles.attachPolicy(id, { policyId, overrideWarnings });
     },
     onSuccess: () => {
       setConflictReport(null);
