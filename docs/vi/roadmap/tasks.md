@@ -235,7 +235,7 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 - [x] `[DB]` Thêm unique constraint `(policy_id, collection, action)` cho `permissions`; migration phải detect/report duplicate hiện có trước khi apply.
 - [x] `[DB]` Thêm bảng `user_roles` để hỗ trợ nhiều role/user/site; giữ `user_sites.role_id` làm primary/display role trong giai đoạn chuyển đổi.
 - [x] `[DB]` Thêm policy flags explicit vào `policies`; giữ `policies.rules` cho custom/future guardrails.
-- [ ] `[BE]` Mở rộng IP guard hỗ trợ IPv4, IPv6, CIDR và precedence `ipDeny` thắng `ipAllow`.
+- [x] `[BE]` Mở rộng IP guard hỗ trợ IPv4, IPv6, CIDR và precedence `ipDeny` thắng `ipAllow`.
 - [ ] `[BE]` Enforce app access từ effective active policies khi vào Studio; API key luôn bị chặn khỏi Studio.
 - [ ] `[BE]` Enforce `enforceTfa=true`: user phải enroll và pass TFA; API key attach policy có TFA phải bị conflict/warning.
 - [ ] `[BE]` Mở rộng magic vars: `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$CURRENT_API_KEY`, nested `$CURRENT_USER.*`, `$NOW(+/- duration)`.

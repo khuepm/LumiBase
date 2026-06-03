@@ -13,6 +13,7 @@ import {
 import type { PolicyRule } from '@lumibase/shared';
 import type { CacheProvider } from '@lumibase/runtime';
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { isIP } from 'node:net';
 import {
   applyFieldMask,
   compileWhere,
@@ -341,16 +342,114 @@ function isPolicyActive(policy: PolicyGuardRow, ctx: MagicContext): boolean {
   const now = ctx.now ?? new Date();
   if (validFrom && new Date(validFrom) > now) return false;
   if (validUntil && new Date(validUntil) < now) return false;
-  if (ipDeny?.length && ctx.ip && ipDeny.includes(ctx.ip)) return false;
-  if (ipAllow?.length) {
-    if (!ctx.ip || !ipAllow.includes(ctx.ip)) return false;
-  }
-  return true;
+  return isIpAllowedByGuard(ctx.ip, ipAllow, ipDeny);
 }
 
 function stringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return value.filter((v): v is string => typeof v === 'string');
+}
+
+export function isIpAllowedByGuard(
+  ip: string | undefined,
+  allow?: string[],
+  deny?: string[],
+): boolean {
+  if (ip && deny?.some((entry) => ipMatchesGuard(ip, entry))) return false;
+  if (allow?.length) {
+    if (!ip) return false;
+    return allow.some((entry) => ipMatchesGuard(ip, entry));
+  }
+  return true;
+}
+
+function ipMatchesGuard(ip: string, guard: string): boolean {
+  const normalizedGuard = guard.trim();
+  if (!normalizedGuard) return false;
+  if (!normalizedGuard.includes('/')) return normalizeIp(ip) === normalizeIp(normalizedGuard);
+  return ipMatchesCidr(ip, normalizedGuard);
+}
+
+function ipMatchesCidr(ip: string, cidr: string): boolean {
+  const [networkRaw, prefixRaw] = cidr.split('/');
+  if (!networkRaw || !prefixRaw) return false;
+  const network = parseIp(networkRaw);
+  const subject = parseIp(ip);
+  if (!network || !subject || network.version !== subject.version) return false;
+
+  const prefix = Number(prefixRaw);
+  const maxPrefix = network.version === 4 ? 32 : 128;
+  if (!Number.isInteger(prefix) || prefix < 0 || prefix > maxPrefix) return false;
+
+  if (prefix === 0) return true;
+  const hostBits = BigInt(maxPrefix - prefix);
+  const mask = ((1n << BigInt(maxPrefix)) - 1n) << hostBits & ((1n << BigInt(maxPrefix)) - 1n);
+  return (network.value & mask) === (subject.value & mask);
+}
+
+function normalizeIp(ip: string): string | null {
+  const parsed = parseIp(ip);
+  return parsed ? `${parsed.version}:${parsed.value.toString(16)}` : null;
+}
+
+function parseIp(ip: string): { version: 4 | 6; value: bigint } | null {
+  const version = isIP(ip);
+  if (version === 4) return parseIpv4(ip);
+  if (version === 6) return parseIpv6(ip);
+  return null;
+}
+
+function parseIpv4(ip: string): { version: 4; value: bigint } | null {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  let value = 0n;
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) return null;
+    const octet = Number(part);
+    if (octet < 0 || octet > 255) return null;
+    value = (value << 8n) + BigInt(octet);
+  }
+  return { version: 4, value };
+}
+
+function parseIpv6(ip: string): { version: 6; value: bigint } | null {
+  const normalized = ip.includes('.') ? expandIpv4Tail(ip) : ip;
+  const halves = normalized.split('::');
+  if (halves.length > 2) return null;
+
+  const left = splitIpv6Half(halves[0] ?? '');
+  const right = splitIpv6Half(halves[1] ?? '');
+  if (!left || !right) return null;
+
+  const missing = halves.length === 2 ? 8 - left.length - right.length : 0;
+  if (missing < 0) return null;
+  const groups = halves.length === 2
+    ? [...left, ...Array(missing).fill('0'), ...right]
+    : left;
+  if (groups.length !== 8) return null;
+
+  let value = 0n;
+  for (const group of groups) {
+    if (!/^[0-9a-fA-F]{1,4}$/.test(group)) return null;
+    value = (value << 16n) + BigInt(parseInt(group, 16));
+  }
+  return { version: 6, value };
+}
+
+function splitIpv6Half(value: string): string[] | null {
+  if (!value) return [];
+  const groups = value.split(':');
+  return groups.some((group) => group.length === 0) ? null : groups;
+}
+
+function expandIpv4Tail(ip: string): string {
+  const lastColon = ip.lastIndexOf(':');
+  if (lastColon === -1) return ip;
+  const tail = parseIpv4(ip.slice(lastColon + 1));
+  if (!tail) return ip;
+  const high = Number((tail.value >> 16n) & 0xffffn).toString(16);
+  const low = Number(tail.value & 0xffffn).toString(16);
+  return `${ip.slice(0, lastColon)}:${high}:${low}`;
 }
 
 function uniqueRoles<T extends { id: string }>(rows: T[]): T[] {
