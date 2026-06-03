@@ -38,18 +38,19 @@ Read/list/detail is the strongest path today:
 - Field masks are applied after query.
 - Encrypted fields require `read_decrypted`.
 
-Create is partially enforced:
+Create is now enforced for the previously audited hardening gaps:
 
 - `create` permission is required.
 - Presets are applied.
 - The final payload is checked against the create rule.
-- Current gaps: create field whitelist and permission-level validation are not enforced.
+- User-submitted data is checked against the field whitelist, including structural `status`/`sort`.
+- Permission-level validation is evaluated before insert.
 
-Update/replace is not currently permission-gated in `ItemService.patch()`.
+Update/replace now requires `update` permission in `ItemService.patch()`. The row rule is injected into both the pre-update read and final update WHERE, user-submitted fields are checked against the whitelist, and permission-level validation is evaluated on the final snapshot.
 
-Delete is not currently permission-gated in `ItemService.softDelete()`.
+Delete now requires `delete` permission in `ItemService.softDelete()`. The row rule is injected before hooks run and again into the soft-delete update.
 
-Revision list/revert has no dedicated permission gate; revert goes through replace, which inherits the update gap.
+Revision list still has no dedicated permission gate. Revert goes through replace and now inherits the update gate.
 
 ## Silent Widening Risks
 
@@ -60,15 +61,13 @@ Revision list/revert has no dedicated permission gate; revert goes through repla
 - Direct DB writes or future imports can bypass the attach conflict checker.
 - Permission cache can remain stale for up to 60 seconds.
 - Legacy role `adminAccess/appAccess` still acts as compatibility fallback.
-- Update/delete currently miss permission gates.
+- Revision list still needs a dedicated permission decision.
 
 ## Recommended Hardening Order
 
-1. Enforce update/delete permission checks in `ItemService`.
-2. Enforce create/update field whitelists.
-3. Enforce permission-level validation in write paths.
-4. Preserve field exclusions when merging with `"*"`.
-5. Make permission row merge order deterministic by binding priority.
-6. Make unknown magic vars fail closed explicitly.
-7. Extend DSL operators according to the roadmap.
-8. Require import/dry-run to run the same conflict checker as attach endpoints.
+1. Preserve field exclusions when merging with `"*"`.
+2. Make permission row merge order deterministic by binding priority.
+3. Add a dedicated permission gate for revision list.
+4. Make unknown magic vars fail closed explicitly.
+5. Extend DSL operators according to the roadmap.
+6. Require import/dry-run to run the same conflict checker as attach endpoints.

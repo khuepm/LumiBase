@@ -98,12 +98,11 @@ Validation merge cũng bằng object spread:
 { ...a.validation, ...b.validation }
 ```
 
-Tuy nhiên `ItemService` hiện chỉ gọi `runValidation()` theo schema fields, chưa áp dụng `perm.validation` trong create/update. Vì vậy validation trong permission rows được compile và trả về bundle nhưng chưa enforce vào write path.
+Cập nhật hardening 2026-06-03: `ItemService` hiện đã áp dụng `perm.validation` trong create/update. Validation trong permission rows vẫn được merge bằng object spread, nên conflict checker/import dry-run vẫn cần chặn case cùng field khác value trước khi runtime nhận cấu hình đó.
 
 Rủi ro:
 
-- Admin thấy policy validation trong Permission Builder nhưng runtime chưa chặn theo validation đó.
-- Cùng field validation khác value có thể bị override im lặng nếu sau này runtime bắt đầu enforce object spread hiện tại.
+- Cùng field validation khác value có thể bị override im lặng nếu ghi trực tiếp DB/import mà không qua conflict checker.
 
 ### 2.5. Sources
 
@@ -171,40 +170,34 @@ Chưa hỗ trợ trong permission DSL:
 
 `create()` gọi permission action `create`.
 
+- Enforce field whitelist trên user-submitted `data`, `status`, `sort`.
 - `applyPresets()` apply server presets vào payload.
-- `matches()` kiểm tra payload sau presets có thỏa create rule.
-- Sau đó chạy schema validation, hooks, encrypt và insert.
+- `matches()` kiểm tra snapshot sau presets có thỏa create rule.
+- Sau đó chạy hooks, schema validation, permission validation, encrypt và insert.
 
-Gap:
-
-- Field whitelist của create permission chưa được enforce với payload.
-- Permission `validation` chưa được enforce.
+Hook mutation vẫn chạy trước schema/permission validation, nên dữ liệu hook cũng bị chặn trước khi insert nếu vi phạm.
 
 ### 5.3. Update/replace
 
-`patch()` / `replace()` hiện không gọi `this.perm(collectionName, 'update')`.
+`patch()` / `replace()` hiện gọi `this.perm(collectionName, 'update')`.
 
-Gap nghiêm trọng:
-
-- Nếu route gọi `ItemService.patch()` với `permissionCtx`, update vẫn không kiểm tra action `update`.
-- Row-level update rule không được đưa vào WHERE.
-- Field whitelist update không được enforce.
-- Permission validation update không được enforce.
-
-Đây là item hardening nên làm trước khi Permission Builder được dùng cho production.
+- Load raw row theo `siteId + collectionId + id + deletedAt is null + row-level permission WHERE`.
+- Enforce field whitelist trên user-submitted `data`, `status`, `sort`.
+- Chạy schema validation partial cho user patch và hook patch.
+- Chạy permission validation trên final snapshot.
+- Update bằng `siteId + collectionId + id + deletedAt is null + row-level permission WHERE`.
 
 ### 5.4. Delete
 
-`softDelete()` hiện không gọi `this.perm(collectionName, 'delete')`.
+`softDelete()` hiện gọi `this.perm(collectionName, 'delete')`.
 
-Gap nghiêm trọng:
-
-- Delete không kiểm tra action `delete`.
-- Row-level delete rule không được đưa vào WHERE.
+- Row-level delete rule được đưa vào query kiểm tra trước hook.
+- Hook chỉ chạy sau khi row qua delete permission.
+- Soft-delete update cũng dùng cùng site/collection/id/deletedAt/permission WHERE.
 
 ### 5.5. Revisions
 
-`listRevisions()` và `revertRevision()` không gọi permission gate riêng. `revertRevision()` đi qua `replace()`, nhưng do update gate chưa tồn tại nên chưa đủ an toàn.
+`listRevisions()` chưa gọi permission gate riêng. `revertRevision()` đi qua `replace()` nên đã thừa hưởng update gate.
 
 ## 6. Các case có thể mở rộng quyền im lặng
 
@@ -231,16 +224,14 @@ Gap nghiêm trọng:
 7. **Role legacy admin/app access vẫn bypass/allow**
    - Dù đã thêm policy flags, role-level `adminAccess/appAccess` vẫn được dùng làm compatibility fallback.
 
-8. **Update/delete chưa permission-gated**
-   - Đây là gap runtime lớn nhất trong audit hiện tại.
+8. **Revision list chưa có permission gate riêng**
+   - Revert đã đi qua replace/update gate; list revisions vẫn cần quyết định quyền riêng.
 
 ## 7. Khuyến nghị thứ tự hardening
 
-1. Enforce `update` và `delete` trong `ItemService` với row-level WHERE.
-2. Enforce field whitelist cho `create` và `update`.
-3. Enforce `permission.validation` trong write path.
-4. Sửa `mergeFieldLists()` để giữ exclusion khi có `*`.
-5. Làm permission row query deterministic theo policy binding priority.
-6. Chuyển unknown magic vars sang fail-closed rõ ràng, có lỗi preview trong builder.
-7. Mở rộng DSL operators theo roadmap.
-8. Bắt buộc import/dry-run chạy conflict checker giống attach endpoint.
+1. Sửa `mergeFieldLists()` để giữ exclusion khi có `*`.
+2. Làm permission row query deterministic theo policy binding priority.
+3. Thêm permission gate riêng cho revision list.
+4. Chuyển unknown magic vars sang fail-closed rõ ràng, có lỗi preview trong builder.
+5. Mở rộng DSL operators theo roadmap.
+6. Bắt buộc import/dry-run chạy conflict checker giống attach endpoint.

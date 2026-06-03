@@ -13,8 +13,9 @@ import { and, asc, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
 import { validateItem } from './validation';
 import type { CacheProvider, SearchProvider, QueueProvider } from '@lumibase/runtime';
-import { PermissionService, type PermissionAction } from './permission-service';
-import type { MagicContext } from './permission-dsl';
+import { PermissionService, type CompiledPermission, type PermissionAction } from './permission-service';
+import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
+import type { PolicyRule } from '@lumibase/shared';
 import { CryptoService } from './crypto-service';
 import { ExtensionSandbox } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
@@ -118,6 +119,8 @@ const STRUCTURAL_FIELDS = new Set([
   'created_at',
   'updated_at',
 ]);
+
+const WRITABLE_STRUCTURAL_FIELDS = ['status', 'sort'] as const;
 
 /** Reserved data keys that map to structural columns rather than JSONB. */
 function fieldExpression(name: string): SQL {
@@ -358,8 +361,22 @@ export class ItemService {
   async create(collectionName: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) {
     const coll = await this.resolveCollection(collectionName);
     const perm = await this.perm(collectionName, 'create');
+    const knownFields = await this.getKnownWritableFields(collectionName);
+    assertWritablePermissionFields(perm, knownFields, payload.data ?? {}, {
+      status: payload.status,
+      sort: payload.sort,
+    });
     const withPresets = this.permissions?.applyPresets(perm, payload.data ?? {}) ?? payload.data ?? {};
-    if (perm && this.permissions && !this.permissions.matches(perm, withPresets)) {
+    const status = payload.status ?? 'draft';
+    const sort = payload.sort ?? 0;
+    const createSnapshot = buildPermissionSnapshot({
+      data: withPresets,
+      status,
+      sort,
+      userCreated: this.deps.userId ?? null,
+      userUpdated: this.deps.userId ?? null,
+    });
+    if (perm && this.permissions && !this.permissions.matches(perm, createSnapshot)) {
       throw new ItemServiceError('FORBIDDEN', 'Item violates create rule.', 403);
     }
 
@@ -374,6 +391,17 @@ export class ItemService {
     const hookedData = (hookCtx.item as Record<string, unknown>) ?? withPresets;
 
     const data = await this.runValidation(collectionName, hookedData, false);
+    const finalCreateSnapshot = buildPermissionSnapshot({
+      data,
+      status,
+      sort,
+      userCreated: this.deps.userId ?? null,
+      userUpdated: this.deps.userId ?? null,
+    });
+    if (perm && this.permissions && !this.permissions.matches(perm, finalCreateSnapshot)) {
+      throw new ItemServiceError('FORBIDDEN', 'Item violates create rule.', 403);
+    }
+    this.assertPermissionValidation(perm, finalCreateSnapshot);
     const encryptedData = await this.processCrypto(collectionName, data, 'encrypt', true);
     const [row] = await this.deps.db
       .insert(items)
@@ -381,8 +409,8 @@ export class ItemService {
         siteId: this.deps.siteId,
         collectionId: coll.id,
         data: encryptedData,
-        status: payload.status ?? 'draft',
-        sort: payload.sort ?? 0,
+        status,
+        sort,
         userCreated: this.deps.userId ?? null,
         userUpdated: this.deps.userId ?? null,
       })
@@ -401,8 +429,27 @@ export class ItemService {
 
   async patch(collectionName: string, id: string, patch: Partial<{ data: Record<string, unknown>; status: string; sort: number }>) {
     const coll = await this.resolveCollection(collectionName);
+    const perm = await this.perm(collectionName, 'update');
+    const permClause = this.permissions?.whereFor(perm) ?? undefined;
+    const knownFields = await this.getKnownWritableFields(collectionName);
+    assertWritablePermissionFields(perm, knownFields, patch.data ?? {}, {
+      status: patch.status,
+      sort: patch.sort,
+    });
     
-    const [rawRow] = await this.deps.db.select().from(items).where(and(eq(items.id, id), eq(items.collectionId, coll.id))).limit(1);
+    const [rawRow] = await this.deps.db
+      .select()
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          eq(items.id, id),
+          isNull(items.deletedAt),
+          permClause,
+        ),
+      )
+      .limit(1);
     if (!rawRow) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
 
     const currentData = await this.processCrypto(collectionName, rawRow.data as Record<string, unknown>, 'decrypt', true);
@@ -415,8 +462,6 @@ export class ItemService {
       await this.runValidation(collectionName, patch.data, true);
     }
 
-    const encryptedMerged = await this.processCrypto(collectionName, merged, 'encrypt', true);
-
     // Before hook — extensions can mutate patch data before update.
     const hooks = await this.getHookDispatcher();
     const hookCtx = await hooks?.dispatch('items.update.before', {
@@ -426,25 +471,48 @@ export class ItemService {
       userId: this.deps.userId ?? null,
       siteId: this.deps.siteId,
     }) ?? { collection: collectionName };
-    const hookedMerged = hookCtx.patch
-      ? await this.processCrypto(collectionName, { ...merged, ...hookCtx.patch }, 'encrypt', true)
-      : encryptedMerged;
+    const hookPatch = hookCtx.patch as Record<string, unknown> | undefined;
+    if (hookPatch) {
+      await this.runValidation(collectionName, hookPatch, true);
+    }
+    const finalData = hookPatch ? { ...merged, ...hookPatch } : merged;
+    const finalStatus = patch.status ?? rawRow.status;
+    const finalSort = patch.sort ?? rawRow.sort;
+    this.assertPermissionValidation(perm, buildPermissionSnapshot({
+      id: rawRow.id,
+      data: finalData,
+      status: finalStatus,
+      sort: finalSort,
+      userCreated: rawRow.userCreated,
+      userUpdated: this.deps.userId ?? null,
+      createdAt: rawRow.createdAt,
+      updatedAt: new Date(),
+    }));
+    const encryptedFinal = await this.processCrypto(collectionName, finalData, 'encrypt', true);
 
     const [row] = await this.deps.db
       .update(items)
       .set({
-        data: hookedMerged,
-        status: patch.status ?? rawRow.status,
-        sort: patch.sort ?? rawRow.sort,
+        data: encryptedFinal,
+        status: finalStatus,
+        sort: finalSort,
         userUpdated: this.deps.userId ?? null,
         updatedAt: new Date(),
       })
-      .where(eq(items.id, id))
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          eq(items.id, id),
+          isNull(items.deletedAt),
+          permClause,
+        ),
+      )
       .returning();
 
     if (!row) throw new ItemServiceError('UPDATE_FAILED', 'Failed to update item.');
 
-    await this.writeRevision(coll.id, id, encryptedMerged, rawRow.data as Record<string, unknown>);
+    await this.writeRevision(coll.id, id, encryptedFinal, rawRow.data as Record<string, unknown>);
     await this.writeActivity('update', coll.name, id, { patch });
     
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', false);
@@ -480,6 +548,23 @@ export class ItemService {
 
   async softDelete(collectionName: string, id: string) {
     const coll = await this.resolveCollection(collectionName);
+    const perm = await this.perm(collectionName, 'delete');
+    const permClause = this.permissions?.whereFor(perm) ?? undefined;
+
+    const [rawRow] = await this.deps.db
+      .select({ id: items.id })
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          eq(items.id, id),
+          isNull(items.deletedAt),
+          permClause,
+        ),
+      )
+      .limit(1);
+    if (!rawRow) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
 
     // Before hook — extension can cancel by throwing.
     const hooks = await this.getHookDispatcher();
@@ -490,7 +575,7 @@ export class ItemService {
       siteId: this.deps.siteId,
     });
 
-    await this.deps.db
+    const [row] = await this.deps.db
       .update(items)
       .set({ deletedAt: new Date(), userUpdated: this.deps.userId ?? null })
       .where(
@@ -498,8 +583,12 @@ export class ItemService {
           scopeSite(items.siteId, this.deps.siteId),
           eq(items.collectionId, coll.id),
           eq(items.id, id),
+          isNull(items.deletedAt),
+          permClause,
         ),
-      );
+      )
+      .returning({ id: items.id });
+    if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
     await this.writeActivity('delete', coll.name, id, {});
     await this.deindexItem(collectionName, id);
     await this.publishRealtimeEvent(collectionName, 'delete', id, {});
@@ -563,6 +652,21 @@ export class ItemService {
   }
 
   // ---------- internals ----------
+
+  private async getKnownWritableFields(collectionName: string): Promise<string[]> {
+    const compiled = await this.schemaService.getCompiled(collectionName);
+    const dataFields = compiled?.fields.map((f) => f.name) ?? [];
+    return [...dataFields, ...WRITABLE_STRUCTURAL_FIELDS];
+  }
+
+  private assertPermissionValidation(
+    perm: CompiledPermission | null,
+    snapshot: Record<string, unknown>,
+  ): void {
+    if (!perm || !Object.keys(perm.validation).length) return;
+    if (evaluate(perm.validation as PolicyRule, snapshot, this.deps.permissionCtx ?? defaultMagicContext(this.deps.siteId))) return;
+    throw new ItemServiceError('FORBIDDEN', 'Item violates permission validation rule.', 403);
+  }
 
   /**
    * Index an item in the search engine after create/update.
@@ -751,6 +855,64 @@ export class ItemService {
       payload,
     });
   }
+}
+
+export function assertWritablePermissionFields(
+  perm: CompiledPermission | null,
+  knownFields: string[],
+  data: Record<string, unknown>,
+  structural: Partial<Record<(typeof WRITABLE_STRUCTURAL_FIELDS)[number], unknown>> = {},
+): void {
+  if (!perm || (perm.fields.length === 1 && perm.fields[0] === '*')) return;
+
+  const allowed = new Set(applyFieldMask(knownFields, perm.fields));
+  const attempted = [
+    ...Object.keys(data),
+    ...Object.entries(structural)
+      .filter(([, value]) => value !== undefined)
+      .map(([key]) => key),
+  ];
+  const denied = attempted.filter((field) => !allowed.has(field));
+  if (denied.length) {
+    throw new ItemServiceError(
+      'FORBIDDEN',
+      `Permission does not allow writing field(s): ${denied.join(', ')}.`,
+      403,
+    );
+  }
+}
+
+export function buildPermissionSnapshot(input: {
+  id?: string;
+  data: Record<string, unknown>;
+  status: string;
+  sort: number;
+  userCreated?: string | null;
+  userUpdated?: string | null;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+}): Record<string, unknown> {
+  return {
+    ...input.data,
+    data: input.data,
+    id: input.id,
+    status: input.status,
+    sort: input.sort,
+    user_created: input.userCreated ?? null,
+    user_updated: input.userUpdated ?? null,
+    created_at: input.createdAt ?? null,
+    updated_at: input.updatedAt ?? null,
+  };
+}
+
+function defaultMagicContext(siteId: string): MagicContext {
+  return {
+    userId: null,
+    siteId,
+    roleId: null,
+    ip: null,
+    headers: {},
+  };
 }
 
 function projectFields(row: ItemRow, fields: string[]): Record<string, unknown> {
