@@ -56,6 +56,8 @@ export interface SetupState {
   pathValid: boolean;
   /** `true` once the Security/policy step validates. */
   policyValid: boolean;
+  /** `true` once the Project Configuration step validates. */
+  projectValid: boolean;
   /**
    * `true` once the operator ticks the "I have saved these backup
    * codes" checkbox on the Recovery step (Req 14.3).
@@ -81,6 +83,7 @@ export interface SetupState {
   setAccountValid: (value: boolean) => void;
   setPathValid: (value: boolean) => void;
   setPolicyValid: (value: boolean) => void;
+  setProjectValid: (value: boolean) => void;
   setConfirmed: (value: boolean) => void;
   setCompleted: (value: boolean) => void;
   setAdminPath: (path: string | null) => void;
@@ -112,6 +115,7 @@ type PersistedSetupState = Pick<
   | 'accountValid'
   | 'pathValid'
   | 'policyValid'
+  | 'projectValid'
   | 'confirmed'
   | 'completed'
   | 'adminPath'
@@ -121,6 +125,7 @@ const DEFAULT_PERSISTED_STATE: PersistedSetupState = {
   accountValid: false,
   pathValid: false,
   policyValid: false,
+  projectValid: false,
   confirmed: false,
   completed: false,
   adminPath: null,
@@ -154,6 +159,7 @@ export const useSetupStore = create<SetupState>()(
       setAccountValid: (value) => set({ accountValid: value }),
       setPathValid: (value) => set({ pathValid: value }),
       setPolicyValid: (value) => set({ policyValid: value }),
+      setProjectValid: (value) => set({ projectValid: value }),
       setConfirmed: (value) => set({ confirmed: value }),
       setCompleted: (value) => set({ completed: value }),
       setAdminPath: (path) => set({ adminPath: path }),
@@ -186,6 +192,7 @@ export const useSetupStore = create<SetupState>()(
         accountValid: state.accountValid,
         pathValid: state.pathValid,
         policyValid: state.policyValid,
+        projectValid: state.projectValid,
         confirmed: state.confirmed,
         completed: state.completed,
         adminPath: state.adminPath,
@@ -205,6 +212,7 @@ export const useSetupStore = create<SetupState>()(
 export const selectAccountValid = (s: SetupState): boolean => s.accountValid;
 export const selectPathValid = (s: SetupState): boolean => s.pathValid;
 export const selectPolicyValid = (s: SetupState): boolean => s.policyValid;
+export const selectProjectValid = (s: SetupState): boolean => s.projectValid;
 export const selectConfirmed = (s: SetupState): boolean => s.confirmed;
 export const selectCompleted = (s: SetupState): boolean => s.completed;
 export const selectAdminPath = (s: SetupState): string | null => s.adminPath;
@@ -213,15 +221,14 @@ export const selectAdminPath = (s: SetupState): string | null => s.adminPath;
 
 /**
  * Route paths for the wizard steps registered under the public layout
- * route tree in `router.tsx` (tasks 3.9, 6.6). The Recovery route
- * (task 10.3) lands later; until then the helper below routes
- * Account → Path → Security → Done with `/setup/recovery` collapsed
- * into `/setup/done`.
+ * route tree in `router.tsx` (tasks 3.9, 6.6, 10.3).
  */
 export type SetupRoutePath =
   | '/setup/account'
   | '/setup/path'
   | '/setup/security'
+  | '/setup/project'
+  | '/setup/recovery'
   | '/setup/done';
 
 /**
@@ -232,24 +239,30 @@ export type SetupRoutePath =
  * done step's pre-load all consult this helper so a deep-link to a
  * step the wizard isn't ready for falls back to the right place.
  *
- * Behaviour today — Account/Path/Security/Done routes are registered:
+ * Behaviour:
  *   - `!accountValid` → `/setup/account`
  *   - `!pathValid`    → `/setup/path`
  *   - `!policyValid`  → `/setup/security`
+ *   - `!projectValid` → `/setup/project`
+ *   - `!completed`    → `/setup/security`
+ *   - `!confirmed`    → `/setup/recovery`
  *   - otherwise       → `/setup/done`
- *
- * When the Recovery (task 10.3) step registers its route, extend this
- * helper to consult `confirmed` between security and done so the
- * redirect chain stays monotonic.
  */
 export function getEarliestUnsatisfiedStep(
   state: Pick<
     SetupState,
-    'accountValid' | 'pathValid' | 'policyValid' | 'completed'
-  >,
+    | 'accountValid'
+    | 'pathValid'
+    | 'policyValid'
+    | 'projectValid'
+    | 'completed'
+  > & { confirmed?: boolean },
 ): SetupRoutePath {
   if (!state.accountValid) return '/setup/account';
   if (!state.pathValid) return '/setup/path';
   if (!state.policyValid) return '/setup/security';
+  if (!state.projectValid) return '/setup/project';
+  if (!state.completed) return '/setup/project';
+  if (state.confirmed !== true) return '/setup/recovery';
   return '/setup/done';
 }

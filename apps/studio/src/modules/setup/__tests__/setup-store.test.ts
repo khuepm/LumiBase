@@ -3,7 +3,7 @@ import { getEarliestUnsatisfiedStep } from '../setup-store';
 
 /**
  * Unit tests for the pure deep-link guard helper used by the wizard's
- * router pre-loads (tasks 3.9, 6.6). The helper mirrors the state
+ * router pre-loads (tasks 3.9, 6.6, 10.3). The helper mirrors the state
  * machine in design.md §5.4 / §11.2: pick the earliest step the
  * operator has yet to satisfy.
  *
@@ -17,6 +17,7 @@ describe('getEarliestUnsatisfiedStep', () => {
         accountValid: false,
         pathValid: false,
         policyValid: false,
+        projectValid: false,
         completed: false,
       }),
     ).toBe('/setup/account');
@@ -32,6 +33,7 @@ describe('getEarliestUnsatisfiedStep', () => {
         accountValid: false,
         pathValid: true,
         policyValid: true,
+        projectValid: true,
         completed: false,
       }),
     ).toBe('/setup/account');
@@ -43,6 +45,7 @@ describe('getEarliestUnsatisfiedStep', () => {
         accountValid: true,
         pathValid: false,
         policyValid: false,
+        projectValid: false,
         completed: false,
       }),
     ).toBe('/setup/path');
@@ -58,22 +61,47 @@ describe('getEarliestUnsatisfiedStep', () => {
         accountValid: true,
         pathValid: true,
         policyValid: false,
+        projectValid: false,
         completed: false,
       }),
     ).toBe('/setup/security');
   });
 
-  it('redirects to /setup/done when every prior step is satisfied', () => {
-    // The Done route's own beforeLoad re-checks `completed` and bounces
-    // back if it's false; this helper just picks the terminal target.
+  it('redirects to /setup/project when policy is valid but project is not', () => {
     expect(
       getEarliestUnsatisfiedStep({
         accountValid: true,
         pathValid: true,
         policyValid: true,
+        projectValid: false,
         completed: false,
       }),
-    ).toBe('/setup/done');
+    ).toBe('/setup/project');
+  });
+
+  it('redirects to /setup/project when project is valid but setup is not completed', () => {
+    expect(
+      getEarliestUnsatisfiedStep({
+        accountValid: true,
+        pathValid: true,
+        policyValid: true,
+        projectValid: true,
+        completed: false,
+      }),
+    ).toBe('/setup/project');
+  });
+
+  it('redirects to /setup/recovery when setup completed but codes are not confirmed', () => {
+    expect(
+      getEarliestUnsatisfiedStep({
+        accountValid: true,
+        pathValid: true,
+        policyValid: true,
+        projectValid: true,
+        completed: true,
+        confirmed: false,
+      }),
+    ).toBe('/setup/recovery');
   });
 
   it('redirects to /setup/done when the wizard is fully completed', () => {
@@ -82,7 +110,9 @@ describe('getEarliestUnsatisfiedStep', () => {
         accountValid: true,
         pathValid: true,
         policyValid: true,
+        projectValid: true,
         completed: true,
+        confirmed: true,
       }),
     ).toBe('/setup/done');
   });

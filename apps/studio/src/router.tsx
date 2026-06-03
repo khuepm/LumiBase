@@ -6,11 +6,13 @@ import {
   redirect,
   useNavigate,
 } from '@tanstack/react-router';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { AppShell } from './components/app-shell';
 import { BareLayout } from './components/bare-layout';
+import { AdminReadyGate } from './modules/setup/admin-ready-gate';
 import { SetupLayout } from './modules/setup/setup-layout';
 import { SetupStateGate } from './modules/setup/setup-state-gate';
+import { useCompleteSetup } from './modules/setup/hooks/use-complete-setup';
 import {
   getEarliestUnsatisfiedStep,
   useSetupStore,
@@ -59,7 +61,12 @@ const CdcPipelineDetailPage = lazy(() => import('./modules/cdc/pipeline-detail')
 const StepAccount = lazy(() => import('./modules/setup/steps/step-account').then((m) => ({ default: m.StepAccount })));
 const StepPath = lazy(() => import('./modules/setup/steps/step-path').then((m) => ({ default: m.StepPath })));
 const StepSecurity = lazy(() => import('./modules/setup/steps/step-security').then((m) => ({ default: m.StepSecurity })));
+const StepProject = lazy(() => import('./modules/setup/steps/step-project').then((m) => ({ default: m.StepProject })));
+const StepRecovery = lazy(() => import('./modules/setup/steps/step-recovery').then((m) => ({ default: m.StepRecovery })));
 const StepDone = lazy(() => import('./modules/setup/steps/step-done').then((m) => ({ default: m.StepDone })));
+const AdminLoginPage = lazy(() => import('./modules/auth/admin-login-page').then((m) => ({ default: m.AdminLoginPage })));
+
+let setupBackupCodes: readonly string[] = [];
 
 // ---------------------------------------------------------------------------
 // Recovery pages — public, pre-auth UIs that call the CMS recovery endpoints
@@ -99,6 +106,62 @@ function withSuspense(Component: React.ComponentType) {
   };
 }
 
+function SetupProjectWithComplete() {
+  const navigate = useNavigate();
+  const completeSetup = useCompleteSetup();
+
+  return (
+    <StepProject
+      onSubmitted={() => {
+        completeSetup.mutate(
+          {},
+          {
+            onSuccess: (data) => {
+              setupBackupCodes = data.backupCodes;
+              navigate({ to: '/setup/recovery' });
+            },
+          },
+        );
+      }}
+    />
+  );
+}
+
+function AdminRootRedirect() {
+  const navigate = useNavigate();
+  const adminPath = useSetupStore((s) => s.adminPath);
+
+  useEffect(() => {
+    if (adminPath) {
+      navigate({ to: adminPath });
+    }
+  }, [adminPath, navigate]);
+
+  if (adminPath) {
+    return <PageLoader />;
+  }
+
+  return (
+    <div className="flex min-h-full items-center justify-center p-6">
+      <div role="alert" className="w-full max-w-md rounded-md border bg-background p-6 shadow-sm">
+        <h1 className="text-lg font-semibold">Not found</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Use the admin URL saved at the end of setup.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function AdminLoginRouteComponent() {
+  const { adminPath } = adminLoginRoute.useParams();
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <AdminLoginPage adminPath={adminPath} />
+    </Suspense>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Route tree
 //
@@ -123,9 +186,11 @@ const adminLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'admin-layout',
   component: () => (
-    <AppShell>
-      <Outlet />
-    </AppShell>
+    <AdminReadyGate>
+      <AppShell>
+        <Outlet />
+      </AppShell>
+    </AdminReadyGate>
   ),
 });
 
@@ -232,11 +297,6 @@ const setupPathRoute = createRoute({
  * to `/setup/security` falls back to the earliest unsatisfied step
  * when prior gates (`accountValid`, `pathValid`) aren't met.
  *
- * The Recovery step (task 10.3) is not wired yet, so on submit we
- * forward straight to `/setup/done`. When the recovery route lands,
- * change `onSubmitted` here to navigate to `/setup/recovery` per
- * design.md §5.4.
- *
  * Spec refs: requirements §3.11; design.md §5.1, §5.4, §11.2.
  */
 const setupSecurityRoute = createRoute({
@@ -256,13 +316,53 @@ const setupSecurityRoute = createRoute({
     const navigate = useNavigate();
     return (
       <Suspense fallback={<PageLoader />}>
-        {/*
-          PLACEHOLDER: routing Security → Done directly until the
-          Recovery step (task 10.3) lands. Once that route registers,
-          this navigation chain becomes Security → Recovery → Done
-          per design.md §5.4.
-        */}
-        <StepSecurity onSubmitted={() => navigate({ to: '/setup/done' })} />
+        <StepSecurity onSubmitted={() => navigate({ to: '/setup/project' })} />
+      </Suspense>
+    );
+  },
+});
+
+const setupProjectRoute = createRoute({
+  getParentRoute: () => setupShellRoute,
+  path: '/setup/project',
+  beforeLoad: () => {
+    const state = useSetupStore.getState();
+    if (!state.accountValid || !state.pathValid || !state.policyValid) {
+      throw redirect({ to: getEarliestUnsatisfiedStep(state) });
+    }
+  },
+  component: () => {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <SetupProjectWithComplete />
+      </Suspense>
+    );
+  },
+});
+
+const setupRecoveryRoute = createRoute({
+  getParentRoute: () => setupShellRoute,
+  path: '/setup/recovery',
+  beforeLoad: () => {
+    const state = useSetupStore.getState();
+    if (
+      !state.accountValid ||
+      !state.pathValid ||
+      !state.policyValid ||
+      !state.projectValid ||
+      !state.completed
+    ) {
+      throw redirect({ to: getEarliestUnsatisfiedStep(state) });
+    }
+  },
+  component: () => {
+    const navigate = useNavigate();
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <StepRecovery
+          backupCodes={setupBackupCodes}
+          onFinish={() => navigate({ to: '/setup/done' })}
+        />
       </Suspense>
     );
   },
@@ -276,7 +376,7 @@ const setupDoneRoute = createRoute({
     // hasn't actually completed the flow yet, send them to whatever
     // step is still outstanding so the URL stays honest.
     const state = useSetupStore.getState();
-    if (!state.completed) {
+    if (!state.completed || !state.confirmed) {
       throw redirect({ to: getEarliestUnsatisfiedStep(state) });
     }
   },
@@ -314,9 +414,33 @@ const recoveryForgotPathRoute = createRoute({
   component: withSuspense(ForgotPathPage),
 });
 
+const adminPathRecoveryBackupCodeRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: '/$adminPath/recovery/backup-code',
+  component: withSuspense(BackupCodePage),
+});
+
+const adminPathRecoveryForgotPathRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: '/$adminPath/recovery/forgot-path',
+  component: withSuspense(ForgotPathPage),
+});
+
+const adminLoginRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: '/$adminPath/login',
+  component: AdminLoginRouteComponent,
+});
+
 const indexRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/',
+  component: AdminRootRedirect,
+});
+
+const adminPathIndexRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath',
   component: withSuspense(ContentIndexPage),
 });
 
@@ -329,6 +453,18 @@ const contentCollectionRoute = createRoute({
 const contentItemRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/content/$collection/$id',
+  component: withSuspense(ItemDetailPage),
+});
+
+const adminPathContentCollectionRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/content/$collection',
+  component: withSuspense(ItemsListPage),
+});
+
+const adminPathContentItemRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/content/$collection/$id',
   component: withSuspense(ItemDetailPage),
 });
 
@@ -350,9 +486,37 @@ const dataModelDetailRoute = createRoute({
   component: withSuspense(CollectionDetailPage),
 });
 
+const adminPathDataModelRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/data-model',
+  component: withSuspense(CollectionsListPage),
+});
+
+const adminPathDataModelNewRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/data-model/new',
+  component: withSuspense(CollectionWizardPage),
+});
+
+const adminPathDataModelDetailRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/data-model/$name',
+  component: withSuspense(CollectionDetailPage),
+});
+
 const filesRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/files',
+  component: withSuspense(() => (
+    <div className="p-6">
+      <FilesPage />
+    </div>
+  )),
+});
+
+const adminPathFilesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/files',
   component: withSuspense(() => (
     <div className="p-6">
       <FilesPage />
@@ -396,6 +560,42 @@ const marketplaceRoute = createRoute({
   component: withSuspense(MarketplacePage),
 });
 
+const adminPathSettingsTypesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/settings/developer/types',
+  component: withSuspense(DeveloperTypesPage),
+});
+
+const adminPathTranslationsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/settings/translations',
+  component: withSuspense(TranslationsPage),
+});
+
+const adminPathWebhooksRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/settings/webhooks',
+  component: withSuspense(WebhooksPage),
+});
+
+const adminPathActivityRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/settings/activity',
+  component: withSuspense(ActivityPage),
+});
+
+const adminPathExtensionsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/settings/extensions',
+  component: withSuspense(ExtensionsPage),
+});
+
+const adminPathMarketplaceRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/settings/marketplace',
+  component: withSuspense(MarketplacePage),
+});
+
 const automationFlowsRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/automation/flows',
@@ -411,6 +611,24 @@ const automationFlowNewRoute = createRoute({
 const automationFlowEditRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/automation/flows/$id',
+  component: withSuspense(FlowEditor),
+});
+
+const adminPathAutomationFlowsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/automation/flows',
+  component: withSuspense(FlowsListPage),
+});
+
+const adminPathAutomationFlowNewRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/automation/flows/new',
+  component: withSuspense(FlowEditor),
+});
+
+const adminPathAutomationFlowEditRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/automation/flows/$id',
   component: withSuspense(FlowEditor),
 });
 
@@ -435,6 +653,27 @@ const cdcDetailRoute = createRoute({
   }),
 });
 
+const adminPathCdcRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/cdc',
+  component: withSuspense(CdcPipelineListPage),
+});
+
+const adminPathCdcNewRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/cdc/new',
+  component: withSuspense(CdcPipelineWizardPage),
+});
+
+const adminPathCdcDetailRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/cdc/$id',
+  component: withSuspense(() => {
+    const { id } = adminPathCdcDetailRoute.useParams();
+    return <CdcPipelineDetailPage pipelineId={id} />;
+  }),
+});
+
 const usersRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/users',
@@ -453,6 +692,28 @@ const usersIndexRoute = createRoute({
 
 const usersTeamsRoute = createRoute({
   getParentRoute: () => usersRoute,
+  path: '/teams',
+  component: withSuspense(TeamsPage),
+});
+
+const adminPathUsersRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/users',
+  component: withSuspense(() => (
+    <UsersLayout>
+      <Outlet />
+    </UsersLayout>
+  )),
+});
+
+const adminPathUsersIndexRoute = createRoute({
+  getParentRoute: () => adminPathUsersRoute,
+  path: '/',
+  component: withSuspense(UsersPage),
+});
+
+const adminPathUsersTeamsRoute = createRoute({
+  getParentRoute: () => adminPathUsersRoute,
   path: '/teams',
   component: withSuspense(TeamsPage),
 });
@@ -509,6 +770,58 @@ const accessSandboxRoute = createRoute({
   component: withSuspense(TestSandboxPage),
 });
 
+const adminPathAccessRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/access',
+  component: withSuspense(() => (
+    <AccessLayout>
+      <Outlet />
+    </AccessLayout>
+  )),
+});
+
+const adminPathAccessIndexRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: '/',
+  component: withSuspense(RolesListPage),
+});
+
+const adminPathAccessRolesRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'roles',
+  component: withSuspense(RolesListPage),
+});
+
+const adminPathAccessRoleDetailRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'roles/$id',
+  component: withSuspense(RoleDetailPage),
+});
+
+const adminPathAccessPoliciesRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'policies',
+  component: withSuspense(PoliciesListPage),
+});
+
+const adminPathAccessPolicyDetailRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'policies/$id',
+  component: withSuspense(PolicyDetailPage),
+});
+
+const adminPathAccessMatrixRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'matrix',
+  component: withSuspense(PermissionMatrixPage),
+});
+
+const adminPathAccessSandboxRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'sandbox',
+  component: withSuspense(TestSandboxPage),
+});
+
 const routeTree = rootRoute.addChildren([
   adminLayoutRoute.addChildren([
     indexRoute,
@@ -540,6 +853,35 @@ const routeTree = rootRoute.addChildren([
       accessMatrixRoute,
       accessSandboxRoute,
     ]),
+    adminPathIndexRoute,
+    adminPathContentCollectionRoute,
+    adminPathContentItemRoute,
+    adminPathDataModelRoute,
+    adminPathDataModelNewRoute,
+    adminPathDataModelDetailRoute,
+    adminPathFilesRoute,
+    adminPathSettingsTypesRoute,
+    adminPathTranslationsRoute,
+    adminPathWebhooksRoute,
+    adminPathActivityRoute,
+    adminPathExtensionsRoute,
+    adminPathMarketplaceRoute,
+    adminPathAutomationFlowsRoute,
+    adminPathAutomationFlowNewRoute,
+    adminPathAutomationFlowEditRoute,
+    adminPathCdcRoute,
+    adminPathCdcNewRoute,
+    adminPathCdcDetailRoute,
+    adminPathUsersRoute.addChildren([adminPathUsersIndexRoute, adminPathUsersTeamsRoute]),
+    adminPathAccessRoute.addChildren([
+      adminPathAccessIndexRoute,
+      adminPathAccessRolesRoute,
+      adminPathAccessRoleDetailRoute,
+      adminPathAccessPoliciesRoute,
+      adminPathAccessPolicyDetailRoute,
+      adminPathAccessMatrixRoute,
+      adminPathAccessSandboxRoute,
+    ]),
   ]),
   // Children of publicLayoutRoute (e.g. /setup, /recovery) are added in
   // subsequent tasks for the admin-setup-wizard spec.
@@ -549,10 +891,15 @@ const routeTree = rootRoute.addChildren([
       setupAccountRoute,
       setupPathRoute,
       setupSecurityRoute,
+      setupProjectRoute,
+      setupRecoveryRoute,
       setupDoneRoute,
     ]),
     recoveryBackupCodeRoute,
     recoveryForgotPathRoute,
+    adminPathRecoveryBackupCodeRoute,
+    adminPathRecoveryForgotPathRoute,
+    adminLoginRoute,
   ]),
 ]);
 

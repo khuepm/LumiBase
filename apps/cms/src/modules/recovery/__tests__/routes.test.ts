@@ -50,6 +50,7 @@ interface StubBehaviour {
     readonly adminPath: string;
     readonly oneTimeUnlockToken: string;
   } | null;
+  validateUnlockResult?: { readonly userId: string } | null;
 }
 
 function makeStubService(behaviour: StubBehaviour = {}): {
@@ -72,6 +73,9 @@ function makeStubService(behaviour: StubBehaviour = {}): {
     async forgotPath(email, ip) {
       forgotCalls.push({ email, ip });
     },
+    async validateUnlockToken() {
+      return behaviour.validateUnlockResult ?? null;
+    },
   };
 
   return { service, recoverCalls, forgotCalls };
@@ -84,12 +88,12 @@ function makeStubService(behaviour: StubBehaviour = {}): {
  * tiny app, with a middleware that injects a dummy `db` and the stub
  * service override *before* the router runs.
  */
-function buildApp(service?: RecoveryOverride): Hono<AppEnv> {
+function buildApp(service?: RecoveryOverride, db: unknown = {}): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
     // `withDb()` inside the router needs `db` resolvable; the override
     // short-circuits the real service so this is never actually queried.
-    c.set('db', {} as never);
+    c.set('db', db as never);
     c.set('requestId', 'req_test');
     if (service) c.set('recoveryServiceOverride', service);
     await next();
@@ -255,6 +259,74 @@ describe('POST /admin/security/forgot-path — Req 14.5, design §4.8', () => {
     expect(known.status).toBe(200);
     expect(unknown.status).toBe(200);
     expect(await known.json()).toEqual(await unknown.json());
+  });
+});
+
+// ── /reset-password ───────────────────────────────────────────────────────
+
+describe('POST /admin/security/reset-password', () => {
+  it('consumes a valid unlock token and updates the password hash', async () => {
+    const { service } = makeStubService({
+      validateUnlockResult: { userId: 'usr_boot' },
+    });
+    const updates: unknown[] = [];
+    const db = {
+      update() {
+        return {
+          set(value: unknown) {
+            updates.push(value);
+            return {
+              where() {
+                return Promise.resolve();
+              },
+            };
+          },
+        };
+      },
+    };
+    const app = buildApp(service, db);
+
+    const res = await postJson(
+      app,
+      '/api/v1/admin/security/reset-password',
+      {
+        unlockToken: 'unlock-token-abc',
+        password: 'NewStrongPass!42',
+      },
+      freshIpHeaders(),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ data: { reset: true } });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      lockedUntil: null,
+      failedCount: 0,
+      failedCountWindowStart: null,
+    });
+    expect((updates[0] as { passwordHash?: string }).passwordHash).toMatch(
+      /^pbkdf2\$/,
+    );
+  });
+
+  it('returns 401 when the unlock token is invalid or expired', async () => {
+    const { service } = makeStubService({ validateUnlockResult: null });
+    const app = buildApp(service);
+
+    const res = await postJson(
+      app,
+      '/api/v1/admin/security/reset-password',
+      {
+        unlockToken: 'spent-token',
+        password: 'NewStrongPass!42',
+      },
+      freshIpHeaders(),
+    );
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      errors: [{ code: 'INVALID_RECOVERY_TOKEN' }],
+    });
   });
 });
 

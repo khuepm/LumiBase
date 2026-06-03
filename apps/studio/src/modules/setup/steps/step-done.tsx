@@ -1,6 +1,7 @@
 import { Check, Copy } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useSetupStore, selectAdminPath } from '../setup-store';
+import { ADMIN_PATH_REGEX } from '../schemas/admin-path';
 
 /**
  * "Done" step of the Setup Wizard.
@@ -91,9 +92,9 @@ import { useSetupStore, selectAdminPath } from '../setup-store';
  *     whitespace (the caller guards on `null` separately so an empty
  *     string here is a malformed input we still render usefully).
  */
-export function joinAdminPathLogin(adminPath: string): string {
+export function joinAdminPathLogin(adminPath: string): string | null {
   const trimmed = adminPath.trim();
-  if (trimmed.length === 0) return '/login';
+  if (trimmed.length === 0) return null;
 
   // Collapse any run of leading slashes to a single one. Without this
   // a stored value of `'//lumi-7f3a9c'` would render as
@@ -105,9 +106,15 @@ export function joinAdminPathLogin(adminPath: string): string {
   // `/foo//login`.
   const noTrailing = noLeading.replace(/\/+$/, '');
 
-  // Re-attach the canonical single leading slash. If `noTrailing`
-  // ended up empty (input was just slashes) we fall back to `/login`.
-  return noTrailing.length === 0 ? '/login' : `/${noTrailing}/login`;
+  const normalized = noTrailing.length === 0 ? '' : `/${noTrailing}`;
+  if (!ADMIN_PATH_REGEX.test(normalized)) return null;
+  return `${normalized}/login`;
+}
+
+export function buildAdminLoginUrl(adminPath: string, origin: string): string | null {
+  const loginPath = joinAdminPathLogin(adminPath);
+  if (loginPath === null) return null;
+  return `${origin.replace(/\/+$/, '')}${loginPath}`;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -142,6 +149,10 @@ function DoneWithAdminPath({ adminPath }: DoneWithAdminPathProps) {
   // Compute the CTA href once per `adminPath` change. Cheap; not
   // memoised because re-evaluation is a few regex calls.
   const loginHref = joinAdminPathLogin(adminPath);
+  const loginUrl =
+    typeof window === 'undefined'
+      ? loginHref
+      : buildAdminLoginUrl(adminPath, window.location.origin);
 
   // ── Copy-to-clipboard state ────────────────────────────────────────
   // Two visible states drive UI:
@@ -194,7 +205,8 @@ function DoneWithAdminPath({ adminPath }: DoneWithAdminPathProps) {
     }
 
     try {
-      await clipboard.writeText(adminPath);
+      if (!loginUrl) throw new Error('invalid-admin-path');
+      await clipboard.writeText(loginUrl);
       setCopyState('copied');
     } catch {
       setCopyState('error');
@@ -204,7 +216,7 @@ function DoneWithAdminPath({ adminPath }: DoneWithAdminPathProps) {
         copyTimerRef.current = null;
       }, COPY_CONFIRMATION_MS);
     }
-  }, [adminPath]);
+  }, [loginUrl]);
 
   // ── Reset wizard (dev convenience) ────────────────────────────────
   const handleResetWizard = useCallback(() => {
@@ -240,19 +252,19 @@ function DoneWithAdminPath({ adminPath }: DoneWithAdminPathProps) {
           id={`${adminPathBoxId}-label`}
           className="text-sm font-medium text-foreground"
         >
-          Your admin path
+          Your admin URL
         </p>
         <div className="flex items-stretch gap-2">
           <code
             id={adminPathBoxId}
             className="flex-1 rounded-md border border-border bg-muted/40 px-3 py-2 font-mono text-sm break-all"
           >
-            {adminPath}
+            {loginUrl ?? 'Invalid admin path'}
           </code>
           <button
             type="button"
             onClick={handleCopy}
-            aria-label="Copy admin path"
+            aria-label="Copy admin URL"
             aria-describedby={copyStatusId}
             className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -284,7 +296,7 @@ function DoneWithAdminPath({ adminPath }: DoneWithAdminPathProps) {
             aria-live="polite"
             className="text-xs text-emerald-700"
           >
-            Copied admin path to clipboard.
+            Copied admin URL to clipboard.
           </p>
         ) : copyState === 'error' ? (
           <p
@@ -325,12 +337,18 @@ function DoneWithAdminPath({ adminPath }: DoneWithAdminPathProps) {
           client-side navigation here would land us on a route the
           public layout doesn't know about and bypass the guard.
         */}
-        <a
-          href={loginHref}
-          className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
-        >
-          Go to admin login
-        </a>
+        {loginHref ? (
+          <a
+            href={loginHref}
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+          >
+            Go to admin login
+          </a>
+        ) : (
+          <p role="alert" className="text-sm text-red-600">
+            The saved admin path is invalid. Run setup again before using this instance.
+          </p>
+        )}
 
         {/*
           Secondary "Reset wizard" link. Useful for developers

@@ -74,7 +74,7 @@ describe('ForgotPathPage — rendering', () => {
     renderWithClient(<ForgotPathPage />);
     expect(
       screen.getByRole('link', { name: 'Recover with a backup code' }),
-    ).toHaveAttribute('href', '/recovery/backup-code');
+    ).toHaveAttribute('href', 'backup-code');
   });
 });
 

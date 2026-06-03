@@ -1,58 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-
-/**
- * Shape returned by `GET /api/v1/setup/state`. Mirrors design §4.1.
- *
- * Intentionally minimal: the endpoint must not leak version/hostname info
- * (Req 1.6), so the type narrows to exactly the two flags the gate needs.
- */
-export interface SetupStateResponse {
-  state: 'uninitialized' | 'initialized';
-  requiresSetupToken: boolean;
-}
-
-/**
- * Error subtype thrown by `fetchSetupState` so the React Query error path can
- * distinguish a real network/5xx failure from a 4xx "I'm initialized" reply.
- * 4xx that the gate cares about (e.g. 404 ALREADY_INITIALIZED) is currently
- * folded into the `state='initialized'` branch by the backend, so callers
- * here only need a single error class.
- */
-class SetupStateFetchError extends Error {
-  readonly status?: number;
-  constructor(message: string, status?: number) {
-    super(message);
-    this.name = 'SetupStateFetchError';
-    this.status = status;
-  }
-}
-
-async function fetchSetupState(): Promise<SetupStateResponse> {
-  let res: Response;
-  try {
-    res = await fetch('/api/v1/setup/state', {
-      method: 'GET',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-    });
-  } catch (cause) {
-    throw new SetupStateFetchError('network');
-  }
-
-  if (!res.ok) {
-    throw new SetupStateFetchError(`http ${res.status}`, res.status);
-  }
-
-  const body = (await res.json()) as Partial<SetupStateResponse>;
-  if (body.state !== 'uninitialized' && body.state !== 'initialized') {
-    throw new SetupStateFetchError('malformed');
-  }
-  return {
-    state: body.state,
-    requiresSetupToken: Boolean(body.requiresSetupToken),
-  };
-}
+import {
+  fetchSetupState,
+  type SetupStateFetchError,
+  type SetupStateResponse,
+} from './setup-state';
 
 /**
  * sessionStorage key under which `readSetupToken` caches the operator-

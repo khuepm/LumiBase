@@ -118,9 +118,12 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { eq } from 'drizzle-orm';
+import { users } from '@lumibase/database';
 
 import type { AppEnv } from '../../env';
 import { withDb } from '../../middleware/db';
+import { hashPassword } from '../../services/auth/password';
 import { extractClientIp } from '../login-guard/ip-extract';
 import { AuditLogger } from '../audit/logger';
 import { RecoveryService } from './service';
@@ -147,6 +150,22 @@ const recoverBodySchema = z.object({
 /** `/forgot-path` body — just the email, same cap as `/recover`. */
 const forgotPathBodySchema = z.object({
   email: z.string().email().max(254),
+});
+
+const PASSWORD_SPECIAL_CHARS = '!@#$%^&*()-_=+[]{};:,.?/';
+const resetPasswordBodySchema = z.object({
+  unlockToken: z.string().min(1).max(256),
+  password: z
+    .string()
+    .min(12)
+    .max(256)
+    .refine((value) => /[a-z]/.test(value), 'missing lowercase letter')
+    .refine((value) => /[A-Z]/.test(value), 'missing uppercase letter')
+    .refine((value) => /[0-9]/.test(value), 'missing digit')
+    .refine(
+      (value) => [...value].some((ch) => PASSWORD_SPECIAL_CHARS.includes(ch)),
+      'missing special character',
+    ),
 });
 
 // ── service factory ───────────────────────────────────────────────────────
@@ -312,4 +331,67 @@ recoveryRouter.post('/forgot-path', async (c) => {
   await svc.forgotPath(parsed.data.email, ip);
 
   return c.json({ data: { sent: true } }, 200);
+});
+
+// ── POST /reset-password ─────────────────────────────────────────────────
+
+recoveryRouter.post('/reset-password', async (c) => {
+  const ip = extractClientIp(c);
+  const limit = checkRecoveryRateLimit(ip);
+  if (!limit.allowed) {
+    return c.json(
+      { errors: [{ code: RECOVERY_RATE_LIMIT_CODE }] },
+      429,
+      recoveryRateLimitHeaders(limit.retryAfterSeconds ?? 0),
+    );
+  }
+
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    return c.json(
+      { errors: [{ code: 'VALIDATION_ERROR', message: 'invalid JSON' }] },
+      400,
+    );
+  }
+
+  const parsed = resetPasswordBodySchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'VALIDATION_ERROR',
+            details: parsed.error.issues.map((i) => ({
+              path: i.path,
+              message: i.message,
+            })),
+          },
+        ],
+      },
+      400,
+    );
+  }
+
+  const svc = buildService(c);
+  const consumed = await svc.validateUnlockToken(parsed.data.unlockToken);
+  if (!consumed) {
+    return c.json({ errors: [{ code: 'INVALID_RECOVERY_TOKEN' }] }, 401);
+  }
+
+  const passwordHash = await hashPassword(parsed.data.password);
+  await c
+    .get('db')
+    .update(users)
+    .set({
+      passwordHash,
+      lockedUntil: null,
+      failedCount: 0,
+      failedCountWindowStart: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, consumed.userId));
+
+  return c.json({ data: { reset: true } }, 200);
 });

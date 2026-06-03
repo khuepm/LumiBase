@@ -17,6 +17,11 @@ import type { AppEnv } from '../env';
  * 3. Fallback: use the Hyperdrive binding directly.
  */
 export const withDb = (): MiddlewareHandler<AppEnv> => async (c, next) => {
+  if (c.get('db')) {
+    await next();
+    return;
+  }
+
   const isDev = c.env.LUMIBASE_ENV === 'development' || process.env.LUMIBASE_ENV === 'development';
 
   if (isDev) {

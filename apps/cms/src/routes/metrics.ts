@@ -13,14 +13,30 @@ import type { AppEnv } from '../env';
 // ---------------------------------------------------------------------------
 
 export const register = new Registry();
-try {
-  if (typeof process !== 'undefined' && typeof process.cpuUsage === 'function') {
-    collectDefaultMetrics({ register });
-  } else {
-    console.warn('[metrics] process.cpuUsage is not available. Skipping default metrics collection.');
+
+function canCollectDefaultMetrics(): boolean {
+  try {
+    if (typeof process === 'undefined' || typeof process.cpuUsage !== 'function') {
+      return false;
+    }
+
+    // Wrangler's Workers runtime exposes an unenv stub for cpuUsage() that
+    // throws when called. Preflight it so local dev does not spam stack traces.
+    process.cpuUsage();
+    return true;
+  } catch {
+    return false;
   }
-} catch (err) {
-  console.warn('[metrics] Failed to collect default metrics:', err);
+}
+
+if (canCollectDefaultMetrics()) {
+  try {
+    collectDefaultMetrics({ register });
+  } catch {
+    console.warn('[metrics] Failed to collect default metrics. Skipping.');
+  }
+} else {
+  console.warn('[metrics] Default process metrics are not available. Skipping.');
 }
 
 // ---------------------------------------------------------------------------

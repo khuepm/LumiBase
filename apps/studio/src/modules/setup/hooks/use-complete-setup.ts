@@ -2,17 +2,17 @@ import {
   useMutation,
   type UseMutationResult,
 } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
 import { clearAccountDraft, getAccountDraft } from '../steps/step-account';
 import { clearPathDraft, getPathDraft } from '../steps/step-path';
-import type { LockoutPolicyFormValues } from '../schemas/policy';
+import { clearPolicyDraft, getPolicyDraft } from '../steps/step-security';
+import { clearProjectDraft, getProjectDraft } from '../steps/step-project';
 import { SETUP_TOKEN_STORAGE_KEY } from '../setup-state-gate';
 import { useSetupStore } from '../setup-store';
 
 /**
  * Mutation hook that finalizes the Admin Setup Wizard by calling
  * `POST /api/v1/setup/complete` (design §4.3) with the in-memory
- * Account + Path drafts plus the Security step's policy values.
+ * Account, Path, Security, and Project drafts.
  *
  * Lifecycle on success (Req 1.5, 3.6, 4.6, 14.1):
  *
@@ -20,16 +20,17 @@ import { useSetupStore } from '../setup-store';
  *      surface it for the operator to bookmark.
  *   2. Flip the wizard's `completed` flag to true.
  *   3. Drop the in-memory account/path drafts so the plaintext
- *      password and chosen path don't outlive their single
+ *      password and one-shot setup state don't outlive their single
  *      legitimate use.
  *   4. Remove the cached setup token from `sessionStorage` so future
  *      visitors of the same tab can't resubmit the wizard.
- *   5. Navigate to `/setup/done`.
+ *   5. Return the one-time backup codes to the caller, which can then
+ *      render `/setup/recovery` before finishing on `/setup/done`.
  *
  * On failure: the mutation surfaces a `SetupCompleteError` carrying a
  * normalized `code` (see `SetupCompleteErrorCode`). The hook does NOT
- * navigate away — consumers (the Security step's submit handler) read
- * `mutation.error` and render an inline banner. We deliberately do
+ * navigate away — consumers read `mutation.error` and render an inline
+ * banner. We deliberately do
  * not auto-retry: a 4xx classification represents a deterministic
  * client error, and a transient 5xx may have already mutated state on
  * the server (the wizard is single-shot per row-lock, see design §6.6).
@@ -48,14 +49,11 @@ import { useSetupStore } from '../setup-store';
 // ── Public types ─────────────────────────────────────────────────────────
 
 /**
- * Caller-supplied payload. Account and admin path come from the
- * module-scoped drafts in `step-account.tsx` / `step-path.tsx` to keep
- * the plaintext password out of any persistent storage; the operator
- * provides only the policy values from the Security step.
+ * Caller-supplied payload. Setup values come from module-scoped drafts
+ * so plaintext password and one-shot setup state stay out of persistent
+ * storage.
  */
-export interface SetupCompletePayload {
-  policy: LockoutPolicyFormValues;
-}
+export interface SetupCompletePayload {}
 
 /**
  * Shape of the 201 Created response from `POST /setup/complete`. Mirrors
@@ -272,8 +270,10 @@ async function completeSetup(
 ): Promise<SetupCompleteResponse> {
   const account = getAccountDraft();
   const path = getPathDraft();
+  const policy = getPolicyDraft();
+  const project = getProjectDraft();
 
-  if (account === null || path === null) {
+  if (account === null || path === null || policy === null || project === null) {
     // Defensive: the wizard's deep-link guard (task 3.9) should
     // already have routed the operator back to the missing step
     // before they could trigger this mutation. Surfacing as an error
@@ -295,7 +295,8 @@ async function completeSetup(
       lastName: string;
     };
     adminPath: string;
-    policy: LockoutPolicyFormValues;
+    policy: NonNullable<ReturnType<typeof getPolicyDraft>>;
+    project: NonNullable<ReturnType<typeof getProjectDraft>>;
     setupToken?: string;
   } = {
     account: {
@@ -305,7 +306,8 @@ async function completeSetup(
       lastName: account.lastName,
     },
     adminPath: path.adminPath,
-    policy: payload.policy,
+    policy,
+    project,
   };
 
   if (token !== null) {
@@ -391,18 +393,16 @@ function isSetupCompleteResponse(value: unknown): value is SetupCompleteResponse
  * React Query mutation that finalizes the wizard. See module-level
  * doc above for the full success/error lifecycle.
  *
- * Usage from the Security step (task 6.5 / 8.3) will look like:
+ * Usage from the Project step bridge:
  *
  *   const complete = useCompleteSetup();
- *   complete.mutate({ policy: form.getValues() });
+ *   complete.mutate({});
  */
 export function useCompleteSetup(): UseMutationResult<
   SetupCompleteResponse,
   SetupCompleteError,
   SetupCompletePayload
 > {
-  const navigate = useNavigate();
-
   return useMutation<
     SetupCompleteResponse,
     SetupCompleteError,
@@ -417,17 +417,14 @@ export function useCompleteSetup(): UseMutationResult<
       store.setAdminPath(data.adminPath);
       store.setCompleted(true);
 
-      // 2. Drop in-memory plaintext drafts.
+      // 2. Drop in-memory setup drafts.
       clearAccountDraft();
       clearPathDraft();
+      clearPolicyDraft();
+      clearProjectDraft();
 
       // 3. Remove the cached setup token (it's invalid server-side now too).
       clearSetupToken();
-
-      // 4. Navigate to the Done step. The route is registered under
-      //    `publicLayoutRoute` in `router.tsx` (task 3.9), so the
-      //    typed router accepts the literal path directly.
-      navigate({ to: '/setup/done' });
     },
   });
 }

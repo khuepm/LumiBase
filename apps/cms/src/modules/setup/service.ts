@@ -31,6 +31,7 @@
 import { eq, sql } from 'drizzle-orm';
 import {
   adminBackupCodes,
+  settings,
   sites,
   systemState,
   users,
@@ -74,6 +75,21 @@ export interface SetupCompleteInput {
   readonly account: SetupCompleteAccount;
   readonly adminPath: string;
   readonly policy: LockoutPolicy;
+  readonly project?: SetupCompleteProject;
+}
+
+export interface SetupCompleteProject {
+  readonly defaultLanguage: string;
+  readonly siteUrl: string;
+  readonly displayTitle: string;
+  readonly theme?: null;
+}
+
+interface NormalizedProjectConfiguration {
+  readonly defaultLanguage: string;
+  readonly siteUrl: string;
+  readonly displayTitle: string;
+  readonly theme: null;
 }
 
 export interface SetupCompleteContext {
@@ -103,6 +119,12 @@ export interface SetupCompleteResult {
    * wizard's "Recovery Setup" step must surface it to the operator now.
    */
   readonly backupCodes: ReadonlyArray<string>;
+  /**
+   * The setup token is invalidated during the setup transaction. Returning
+   * `null` keeps the HTTP response aligned with the wizard contract and lets
+   * clients assert that no reusable token survived completion.
+   */
+  readonly setupToken: null;
 }
 
 // ── error taxonomy ──────────────────────────────────────────────────────
@@ -213,6 +235,7 @@ const DEFAULT_GEOIP_PATH = '/var/lib/lumibase/geoip/GeoLite2-Country.mmdb';
 const SETUP_LOCK_TIMEOUT_MS = 5_000;
 const BACKUP_CODE_COUNT = 8;
 const BACKUP_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // strip I,O,0,1,L
+const PROJECT_SETTINGS_KEY = 'project_configuration';
 
 export class SetupService {
   constructor(private readonly deps: SetupServiceDeps) {}
@@ -355,6 +378,14 @@ export class SetupService {
 
     const policyJson = serializeLockoutPolicy(input.policy);
     const policyValue = JSON.parse(policyJson) as Record<string, unknown>;
+    const projectCheck = validateProject(input.project);
+    if (!projectCheck.ok) {
+      return {
+        ok: false,
+        error: { code: 'VALIDATION_ERROR', issues: projectCheck.issues },
+      };
+    }
+    const projectValue = projectCheck.value;
 
     let outcome: SetupCompleteOutcome | undefined;
 
@@ -450,7 +481,7 @@ export class SetupService {
         const DEFAULT_SITE_ID = '__default__';
         await tx
           .insert(sites)
-          .values({ id: DEFAULT_SITE_ID, name: 'Default Site' })
+          .values({ id: DEFAULT_SITE_ID, name: projectValue.displayTitle })
           .onConflictDoNothing();
 
         // ── 9. Insert the bootstrap admin.
@@ -526,6 +557,30 @@ export class SetupService {
         //              storage. Update task 8.x (Login_Guard) to read
         //              from the chosen home.
 
+        const projectSettingsInsert = tx
+          .insert(settings)
+          .values({
+            siteId: DEFAULT_SITE_ID,
+            key: PROJECT_SETTINGS_KEY,
+            value: projectValue,
+            scope: 'site',
+          });
+
+        if (
+          typeof projectSettingsInsert.onConflictDoUpdate === 'function'
+        ) {
+          await projectSettingsInsert.onConflictDoUpdate({
+            target: [settings.siteId, settings.key],
+            set: {
+              value: projectValue,
+              scope: 'site',
+              updatedAt: new Date(),
+            },
+          });
+        } else {
+          await projectSettingsInsert;
+        }
+
         // ── 11. Flip the singleton.
         await tx
           .update(systemState)
@@ -549,6 +604,7 @@ export class SetupService {
             },
             adminPath: normalizedPath,
             backupCodes: plainBackupCodes,
+            setupToken: null,
           },
         };
       });
@@ -719,6 +775,78 @@ function validateAccount(
     issues.push({ path: ['account', 'lastName'], message: 'required' });
   }
   return issues;
+}
+
+function validateProject(project: SetupCompleteProject | undefined):
+  | { ok: true; value: NormalizedProjectConfiguration }
+  | {
+      ok: false;
+      issues: Array<{ path: Array<string>; message: string }>;
+    } {
+  if (!project) {
+    return {
+      ok: true,
+      value: {
+        defaultLanguage: 'en',
+        siteUrl: 'http://localhost:5173',
+        displayTitle: 'Lumibase',
+        theme: null,
+      },
+    };
+  }
+
+  const issues: Array<{ path: Array<string>; message: string }> = [];
+  const defaultLanguage = project.defaultLanguage.trim();
+  if (!/^[a-z]{2,3}(-[A-Z]{2})?$/.test(defaultLanguage)) {
+    issues.push({
+      path: ['project', 'defaultLanguage'],
+      message: 'invalid language tag',
+    });
+  }
+
+  let siteUrl = '';
+  try {
+    const url = new URL(project.siteUrl.trim());
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      issues.push({
+        path: ['project', 'siteUrl'],
+        message: 'site URL must use http or https',
+      });
+    }
+    url.hash = '';
+    if (url.pathname === '/') {
+      url.pathname = '';
+    } else {
+      url.pathname = url.pathname.replace(/\/+$/, '');
+    }
+    siteUrl = url.toString().replace(/\/$/, '');
+  } catch {
+    issues.push({ path: ['project', 'siteUrl'], message: 'invalid URL' });
+  }
+
+  const displayTitle = project.displayTitle
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .trim();
+  if (displayTitle.length < 2 || displayTitle.length > 80) {
+    issues.push({
+      path: ['project', 'displayTitle'],
+      message: 'display title must be 2-80 characters',
+    });
+  }
+
+  if (issues.length > 0) {
+    return { ok: false, issues };
+  }
+
+  return {
+    ok: true,
+    value: {
+      defaultLanguage,
+      siteUrl,
+      displayTitle,
+      theme: null,
+    },
+  };
 }
 
 function generateBackupCode(): string {

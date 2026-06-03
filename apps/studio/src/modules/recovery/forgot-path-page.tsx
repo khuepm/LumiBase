@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
-import { MailQuestion, MailCheck } from 'lucide-react';
+import { ArrowLeft, MailQuestion, MailCheck } from 'lucide-react';
 import { useId } from 'react';
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { z } from 'zod';
@@ -168,6 +168,8 @@ export function ForgotPathPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4 py-12">
       <div className="w-full max-w-md rounded-xl border bg-background p-8 shadow-sm">
         <form noValidate className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
+          <BackButton />
+
           <header className="space-y-2">
             <div className="flex items-center gap-2">
               <MailQuestion
@@ -227,7 +229,7 @@ export function ForgotPathPage() {
           <p className="text-center text-sm text-muted-foreground">
             Have a backup code?{' '}
             <a
-              href="/recovery/backup-code"
+              href="backup-code"
               className="font-medium text-primary underline-offset-2 hover:underline"
             >
               Recover with a backup code
@@ -253,6 +255,8 @@ function ForgotPathSentPanel() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4 py-12">
       <div className="w-full max-w-md space-y-6 rounded-xl border bg-background p-8 shadow-sm">
+        <BackButton />
+
         <header className="space-y-2">
           <div className="flex items-center gap-2">
             <MailCheck className="h-5 w-5 text-emerald-600" aria-hidden="true" />
@@ -268,16 +272,29 @@ function ForgotPathSentPanel() {
 
         <p className="text-center text-sm text-muted-foreground">
           Have a backup code instead?{' '}
-          <a
-            href="/recovery/backup-code"
-            className="font-medium text-primary underline-offset-2 hover:underline"
-          >
+            <a
+              href="backup-code"
+              className="font-medium text-primary underline-offset-2 hover:underline"
+            >
             Recover with a backup code
           </a>
           .
         </p>
       </div>
     </div>
+  );
+}
+
+function BackButton() {
+  return (
+    <button
+      type="button"
+      onClick={() => window.history.back()}
+      className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      Back
+    </button>
   );
 }
 

@@ -116,6 +116,7 @@ describe('Setup flow — integration', () => {
     expect(outcome.value.adminPath).toBe('/lumi-7f3a9c');
     expect(outcome.value.user.email).toBe('admin@example.com');
     expect(outcome.value.backupCodes).toHaveLength(8);
+    expect(outcome.value.setupToken).toBeNull();
     // Backup codes have format XXXX-XXXX with 8+8 alphanum chars.
     for (const code of outcome.value.backupCodes) {
       expect(code).toMatch(/^[A-Z2-9]{8}-[A-Z2-9]{8}$/);
