@@ -414,6 +414,18 @@ const recoveryForgotPathRoute = createRoute({
   component: withSuspense(ForgotPathPage),
 });
 
+const adminPathRecoveryBackupCodeRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: '/$adminPath/recovery/backup-code',
+  component: withSuspense(BackupCodePage),
+});
+
+const adminPathRecoveryForgotPathRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: '/$adminPath/recovery/forgot-path',
+  component: withSuspense(ForgotPathPage),
+});
+
 const adminLoginRoute = createRoute({
   getParentRoute: () => publicLayoutRoute,
   path: '/$adminPath/login',
@@ -885,6 +897,8 @@ const routeTree = rootRoute.addChildren([
     ]),
     recoveryBackupCodeRoute,
     recoveryForgotPathRoute,
+    adminPathRecoveryBackupCodeRoute,
+    adminPathRecoveryForgotPathRoute,
     adminLoginRoute,
   ]),
 ]);

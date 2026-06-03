@@ -121,6 +121,7 @@ export interface Variables {
       readonly oneTimeUnlockToken: string;
     } | null>;
     forgotPath(email: string, ip: string): Promise<void>;
+    validateUnlockToken(token: string): Promise<{ readonly userId: string } | null>;
   };
 }
 

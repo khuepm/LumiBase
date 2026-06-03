@@ -227,7 +227,7 @@ export function ForgotPathPage() {
           <p className="text-center text-sm text-muted-foreground">
             Have a backup code?{' '}
             <a
-              href="/recovery/backup-code"
+              href="backup-code"
               className="font-medium text-primary underline-offset-2 hover:underline"
             >
               Recover with a backup code
@@ -268,10 +268,10 @@ function ForgotPathSentPanel() {
 
         <p className="text-center text-sm text-muted-foreground">
           Have a backup code instead?{' '}
-          <a
-            href="/recovery/backup-code"
-            className="font-medium text-primary underline-offset-2 hover:underline"
-          >
+            <a
+              href="backup-code"
+              className="font-medium text-primary underline-offset-2 hover:underline"
+            >
             Recover with a backup code
           </a>
           .

@@ -5,6 +5,12 @@ import { useId } from 'react';
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { z } from 'zod';
 import { joinAdminPathLogin } from '../setup/steps/step-done';
+import {
+  evaluatePasswordRules,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_SPECIAL_CHARS,
+  type PasswordRuleId,
+} from '../setup/schemas/account';
 
 /**
  * "Backup code recovery" page — PUBLIC, pre-auth recovery UI.
@@ -90,6 +96,34 @@ const backupCodeSchema = z.object({
 
 type BackupCodeFormValues = z.infer<typeof backupCodeSchema>;
 
+const resetPasswordSchema = z
+  .object({
+    password: z.string(),
+    confirmPassword: z.string(),
+  })
+  .superRefine((value, ctx) => {
+    const rules = evaluatePasswordRules(value.password);
+    for (const [rule, ok] of Object.entries(rules) as Array<[PasswordRuleId, boolean]>) {
+      if (!ok) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: passwordRuleLabel(rule),
+          path: ['password'],
+          params: { rule },
+        });
+      }
+    }
+    if (value.password !== value.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Passwords do not match.',
+        path: ['confirmPassword'],
+      });
+    }
+  });
+
+type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
+
 // ────────────────────────────────────────────────────────────────────────
 // Recovery request + result types
 // ────────────────────────────────────────────────────────────────────────
@@ -130,6 +164,22 @@ export class RecoverError extends Error {
     this.name = 'RecoverError';
     this.code = code;
     this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+class ResetPasswordError extends Error {
+  readonly code: 'INVALID_RECOVERY_TOKEN' | 'RATE_LIMITED' | 'VALIDATION_ERROR' | 'UNKNOWN';
+  readonly retryAfterSeconds: number | undefined;
+
+  constructor(
+    code: ResetPasswordError['code'],
+    message: string,
+    retryAfterSeconds?: number,
+  ) {
+    super(message);
+    this.name = 'ResetPasswordError';
+    this.code = code;
     this.retryAfterSeconds = retryAfterSeconds;
   }
 }
@@ -281,6 +331,55 @@ async function postRecover(
   );
 }
 
+async function postResetPassword(args: {
+  unlockToken: string;
+  password: string;
+}): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch('/api/v1/admin/security/reset-password', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(args),
+    });
+  } catch {
+    throw new ResetPasswordError('UNKNOWN', 'Network error while resetting password.');
+  }
+
+  if (response.status === 200) return;
+
+  if (response.status === 401) {
+    throw new ResetPasswordError(
+      'INVALID_RECOVERY_TOKEN',
+      'This recovery session expired or was already used.',
+    );
+  }
+
+  if (response.status === 429) {
+    throw new ResetPasswordError(
+      'RATE_LIMITED',
+      'Too many recovery attempts.',
+      parseRetryAfterSeconds(response.headers.get('Retry-After')),
+    );
+  }
+
+  if (response.status === 400) {
+    throw new ResetPasswordError(
+      'VALIDATION_ERROR',
+      'Choose a stronger password.',
+    );
+  }
+
+  throw new ResetPasswordError(
+    'UNKNOWN',
+    `Password reset failed with an unexpected response (HTTP ${response.status}).`,
+  );
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Component
 // ────────────────────────────────────────────────────────────────────────
@@ -388,7 +487,7 @@ export function BackupCodePage() {
           <p className="text-center text-sm text-muted-foreground">
             Lost your admin path?{' '}
             <a
-              href="/recovery/forgot-path"
+              href="forgot-path"
               className="font-medium text-primary underline-offset-2 hover:underline"
             >
               Recover it by email
@@ -464,6 +563,67 @@ interface RecoverySuccessPanelProps {
  */
 function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
   const loginHref = joinAdminPathLogin(result.adminPath);
+  const passwordId = useId();
+  const confirmId = useId();
+
+  const form = useForm<ResetPasswordFormValues>({
+    resolver: zodResolver(resetPasswordSchema),
+    mode: 'onBlur',
+    reValidateMode: 'onChange',
+    defaultValues: { password: '', confirmPassword: '' },
+  });
+
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors, isSubmitting },
+  } = form;
+
+  const resetMutation = useMutation<void, ResetPasswordError, ResetPasswordFormValues>({
+    mutationKey: ['recovery', 'reset-password'],
+    mutationFn: (values) =>
+      postResetPassword({
+        unlockToken: result.oneTimeUnlockToken,
+        password: values.password,
+      }),
+    retry: false,
+  });
+
+  const passwordRules = evaluatePasswordRules(watch('password') ?? '');
+
+  const onResetSubmit: SubmitHandler<ResetPasswordFormValues> = (values) => {
+    resetMutation.mutate(values);
+  };
+
+  if (resetMutation.isSuccess) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4 py-12">
+        <div className="w-full max-w-md space-y-6 rounded-xl border bg-background p-8 shadow-sm">
+          <header className="space-y-2">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-emerald-600" aria-hidden="true" />
+              <h1 className="text-lg font-semibold tracking-tight">
+                Password reset
+              </h1>
+            </div>
+            <p className="text-sm text-muted-foreground" aria-live="polite">
+              Your password was updated. Sign in with the new password.
+            </p>
+          </header>
+
+          {loginHref ? (
+            <a
+              href={loginHref}
+              className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+            >
+              Go to admin login
+            </a>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4 py-12">
@@ -479,8 +639,7 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
             </h1>
           </div>
           <p className="text-sm text-muted-foreground" aria-live="polite">
-            The lockout has been cleared. Save your admin path below, then
-            sign in.
+            The backup code was accepted. Set a new password, then sign in.
           </p>
         </header>
 
@@ -492,19 +651,57 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
           </code>
         </section>
 
-        {/* ── One-time unlock token ──────────────────────────────────── */}
-        <section className="space-y-2">
-          <p className="text-sm font-medium text-foreground">
-            One-time unlock token
-          </p>
-          <code className="block break-all rounded-md border border-border bg-muted/40 px-3 py-2 font-mono text-xs">
-            {result.oneTimeUnlockToken}
-          </code>
-          <p className="text-xs text-muted-foreground">
-            This token is single-use and expires in about 15 minutes. Keep it
-            handy while you sign back in.
-          </p>
-        </section>
+        <form noValidate className="space-y-4" onSubmit={handleSubmit(onResetSubmit)}>
+          {resetMutation.isError ? (
+            <div
+              role="alert"
+              className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800"
+            >
+              {resetMutation.error.code === 'RATE_LIMITED' &&
+              resetMutation.error.retryAfterSeconds !== undefined
+                ? `Too many recovery attempts. Try again in about ${formatWait(
+                  resetMutation.error.retryAfterSeconds,
+                )}.`
+                : resetMutation.error.message}
+            </div>
+          ) : null}
+
+          <Field id={passwordId} label="New password" error={errors.password?.message}>
+            <input
+              id={passwordId}
+              type="password"
+              autoComplete="new-password"
+              aria-invalid={errors.password ? 'true' : 'false'}
+              className={inputClass(Boolean(errors.password))}
+              {...register('password')}
+            />
+          </Field>
+
+          <PasswordRules rules={passwordRules} />
+
+          <Field
+            id={confirmId}
+            label="Confirm new password"
+            error={errors.confirmPassword?.message}
+          >
+            <input
+              id={confirmId}
+              type="password"
+              autoComplete="new-password"
+              aria-invalid={errors.confirmPassword ? 'true' : 'false'}
+              className={inputClass(Boolean(errors.confirmPassword))}
+              {...register('confirmPassword')}
+            />
+          </Field>
+
+          <button
+            type="submit"
+            disabled={isSubmitting || resetMutation.isPending}
+            className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {resetMutation.isPending ? 'Updating…' : 'Set new password'}
+          </button>
+        </form>
 
         {/*
           Plain anchor — NOT a TanStack <Link>. A full document load lets
@@ -526,6 +723,37 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
         )}
       </div>
     </div>
+  );
+}
+
+function passwordRuleLabel(rule: PasswordRuleId): string {
+  switch (rule) {
+    case 'length':
+      return `At least ${PASSWORD_MIN_LENGTH} characters.`;
+    case 'lowercase':
+      return 'Includes a lowercase letter.';
+    case 'uppercase':
+      return 'Includes an uppercase letter.';
+    case 'digit':
+      return 'Includes a digit.';
+    case 'special':
+      return `Includes a special character (${[...PASSWORD_SPECIAL_CHARS].join(' ')}).`;
+  }
+}
+
+function PasswordRules({ rules }: { rules: Record<PasswordRuleId, boolean> }) {
+  return (
+    <ul className="space-y-1 text-xs text-muted-foreground">
+      {(Object.keys(rules) as PasswordRuleId[]).map((rule) => (
+        <li
+          key={rule}
+          className={rules[rule] ? 'text-emerald-700' : 'text-muted-foreground'}
+        >
+          {rules[rule] ? 'Met: ' : 'Not met: '}
+          {passwordRuleLabel(rule)}
+        </li>
+      ))}
+    </ul>
   );
 }
 

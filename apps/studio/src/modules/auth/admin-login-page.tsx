@@ -13,6 +13,7 @@ type LoginStatus = 'idle' | 'submitting' | 'error';
 export function AdminLoginPage({ adminPath }: AdminLoginPageProps) {
   const navigate = useNavigate();
   const normalizedAdminPath = useMemo(() => normalizeRouteAdminPath(adminPath), [adminPath]);
+  const recoveryBasePath = normalizedAdminPath ? `${normalizedAdminPath}/recovery` : '/recovery';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState<LoginStatus>('idle');
@@ -127,13 +128,13 @@ export function AdminLoginPage({ adminPath }: AdminLoginPageProps) {
 
         <div className="space-y-2 border-t border-border pt-4 text-sm">
           <a
-            href="/recovery/backup-code"
+            href={`${recoveryBasePath}/backup-code`}
             className="block font-medium text-primary underline-offset-2 hover:underline"
           >
             Use a recovery code
           </a>
           <a
-            href="/recovery/forgot-path"
+            href={`${recoveryBasePath}/forgot-path`}
             className="block text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           >
             Forgot admin path?

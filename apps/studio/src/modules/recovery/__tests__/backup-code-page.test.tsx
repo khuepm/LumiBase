@@ -84,20 +84,23 @@ describe('BackupCodePage — rendering', () => {
     renderWithClient(<BackupCodePage />);
     expect(
       screen.getByRole('link', { name: 'Recover it by email' }),
-    ).toHaveAttribute('href', '/recovery/forgot-path');
+    ).toHaveAttribute('href', 'forgot-path');
   });
 });
 
 describe('BackupCodePage — successful recovery (200)', () => {
-  it('shows the success panel with the returned adminPath + login link', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse(200, {
-        data: {
-          adminPath: '/lumi-7f3a9c',
-          oneTimeUnlockToken: 'unlock-token-abc123',
-        },
-      }),
-    );
+  it('accepts the unlock token in memory and resets the password', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          data: {
+            adminPath: '/lumi-7f3a9c',
+            oneTimeUnlockToken: 'unlock-token-abc123',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(200, { data: { reset: true } }));
     vi.stubGlobal('fetch', fetchMock);
 
     renderWithClient(<BackupCodePage />);
@@ -117,18 +120,35 @@ describe('BackupCodePage — successful recovery (200)', () => {
     expect(
       screen.getByRole('link', { name: 'Go to admin login' }),
     ).toHaveAttribute('href', '/lumi-7f3a9c/login');
-    // The one-time unlock token is surfaced too.
-    expect(screen.getByText('unlock-token-abc123')).toBeInTheDocument();
+    expect(screen.queryByText('unlock-token-abc123')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('New password')).toBeInTheDocument();
 
-    // Posted to the documented endpoint with the right body.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const call = fetchMock.mock.calls[0]!;
-    const url = call[0];
-    const init = call[1] as RequestInit;
-    expect(url).toBe('/api/v1/admin/security/recover');
-    expect(JSON.parse(init.body as string)).toEqual({
+    fireEvent.input(screen.getByLabelText('New password'), {
+      target: { value: 'NewStrongPass!42' },
+    });
+    fireEvent.input(screen.getByLabelText('Confirm new password'), {
+      target: { value: 'NewStrongPass!42' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Set new password' }));
+
+    expect(await screen.findByText('Password reset')).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Go to admin login' }),
+    ).toHaveAttribute('href', '/lumi-7f3a9c/login');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const recoverCall = fetchMock.mock.calls[0]!;
+    expect(recoverCall[0]).toBe('/api/v1/admin/security/recover');
+    expect(JSON.parse((recoverCall[1] as RequestInit).body as string)).toEqual({
       email: 'admin@example.com',
       backupCode: 'A2BC-D3EF',
+    });
+
+    const resetCall = fetchMock.mock.calls[1]!;
+    expect(resetCall[0]).toBe('/api/v1/admin/security/reset-password');
+    expect(JSON.parse((resetCall[1] as RequestInit).body as string)).toEqual({
+      unlockToken: 'unlock-token-abc123',
+      password: 'NewStrongPass!42',
     });
   });
 });
