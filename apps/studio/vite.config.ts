@@ -10,6 +10,8 @@ import { assertNoAdminPathEnv } from './src/lib/build-assertions';
 // design.md §7.3 — Secret handling).
 assertNoAdminPathEnv();
 
+const cmsProxyTarget = process.env.LUMIBASE_CMS_PROXY_TARGET ?? 'http://127.0.0.1:1989';
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -22,7 +24,7 @@ export default defineConfig({
     proxy: {
       // Proxy API calls to local wrangler so the SPA can use same-origin cookies.
       '/api': {
-        target: 'http://127.0.0.1:1989',
+        target: cmsProxyTarget,
         changeOrigin: true,
       },
     },
