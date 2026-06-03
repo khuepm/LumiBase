@@ -778,7 +778,147 @@ lumibase access import access.json --mode replace-managed
 - Dùng stable key dạng slug: `posts_editor`, `policy_public_read_posts`.
 - Mọi import phải tạo audit log với diff summary.
 
-## 12. Implementation plan
+## 12. Extension access control
+
+### 12.1. Directus xử lý extension qua nhiều lớp
+
+Directus không có một policy first-class kiểu "role/user X được truy cập extension Y" cho mọi extension. Cách họ xử lý là nhiều lớp khác nhau:
+
+1. **Extension installation/loading layer**
+   - App extensions và sandboxed API extensions có thể cài qua Marketplace.
+   - API extensions không sandboxed là mức tin cậy cao hơn và self-host có thể phải bật trust hoặc cài thủ công.
+   - Extension enabled/disabled ở Settings là scope toàn project, không phải per-user.
+
+2. **Sandbox capability layer cho API extensions**
+   - Sandboxed API Extensions chạy trong môi trường isolate và phải khai báo `requestedScopes`.
+   - Scope ví dụ: `log`, `sleep`, `request` với method/url allowlist.
+   - Đây là quyền của extension đối với host environment, không phải quyền của user đối với extension.
+
+3. **Accountability/user-permission layer khi extension gọi Directus services**
+   - API extension có thể dùng internal services như `ItemsService`, `CollectionsService`, `FilesService`.
+   - Khi service được khởi tạo với `accountability: req.accountability`, quyền dữ liệu được kiểm theo user hiện tại.
+   - Nếu extension truyền `accountability: null` hoặc bỏ qua accountability, service chạy với quyền admin. Đây là lớp mạnh nhưng cũng là rủi ro nếu extension không cẩn thận.
+
+4. **App extension/module UI layer**
+   - App modules không có access control riêng như collections.
+   - Module có thể tự dùng permission store để kiểm tra quyền collection/admin rồi ẩn hoặc chặn UI.
+   - Đây là convention ở extension code, không phải policy binding bắt buộc ở platform level.
+
+Kết luận: Directus có extension enable/sandbox/service accountability, nhưng chưa có permission builder first-class để cấu hình user/role/policy được thấy/chạy extension nào.
+
+Nguồn tham khảo chính thức:
+
+- Directus Sandbox: sandboxed API extensions chạy isolate và phải khai báo requested scopes.
+- Directus Services: internal services nhận `accountability`; `null`/omit có thể dùng administrator permissions.
+- Directus Including Extensions: Marketplace mặc định cho app/sandboxed API extensions; API extensions không sandboxed phụ thuộc trust/self-host install.
+- Directus Modules: module xuất hiện khi extension enabled và module enabled trong Module Bar; module không có access control như collection, extension có thể dùng permission store để tự chặn.
+
+### 12.2. Thiết kế đề xuất cho LumiBase
+
+LumiBase nên tách 3 loại quyền extension:
+
+| Lớp | Mục tiêu | Ai cấu hình | Enforce ở đâu |
+|---|---|---|---|
+| Extension capability grant | Extension được dùng host API nào | Site admin/security admin | Sandbox runtime |
+| Extension access policy | User/role/API key nào được thấy/gọi extension nào | Access manager | PermissionService + Studio/router |
+| Effective data permission | Extension thao tác data theo quyền user hay service account | Extension author + admin grant | ItemService/PermissionService |
+
+Capability không thay thế RBAC. Ví dụ extension `shopify-sync` có capability `items:update:products`, nhưng chỉ role `commerce_manager` mới được mở module và chạy sync.
+
+### 12.3. Collection/action mới cho Permission Builder
+
+Thêm system collection virtual hoặc thật:
+
+- `extensions`
+- `extension_modules`
+- `extension_endpoints`
+- `extension_operations`
+
+Action đề xuất:
+
+| Action | Ý nghĩa |
+|---|---|
+| `read` | Thấy extension trong Settings/Marketplace/Module Bar |
+| `execute` | Gọi endpoint/operation/module action của extension |
+| `configure` | Sửa config của extension |
+| `install` | Cài extension mới |
+| `enable` | Enable/disable extension |
+| `grant_capability` | Duyệt sandbox capabilities |
+| `delete` | Uninstall extension |
+
+Permission row có thể dùng collection/action chuẩn:
+
+```json
+{
+  "collection": "extensions",
+  "action": "execute",
+  "permissions": {
+    "extension_key": { "_in": ["shopify_sync", "stripe_refunds"] }
+  },
+  "fields": ["*"]
+}
+```
+
+Hoặc model chuyên biệt hơn:
+
+```json
+{
+  "collection": "extension_modules",
+  "action": "read",
+  "permissions": {
+    "extension_key": { "_eq": "commerce_dashboard" }
+  }
+}
+```
+
+### 12.4. Runtime enforcement cho LumiBase
+
+1. **Studio extension loader**
+   - `/extensions` list chỉ trả extension UI mà principal có `extensions:read` hoặc `extension_modules:read`.
+   - Module Bar chỉ hiện module extension nếu effective policy cho phép.
+   - Settings > Extensions yêu cầu `extensions:configure/install/enable/delete`.
+
+2. **Extension endpoint router**
+   - Trước khi route tới `/api/v1/extensions/:name/*`, backend kiểm tra:
+     - extension enabled;
+     - principal có `extensions:execute` với `extension_key=name`;
+     - nếu API key principal thì extension phải khai báo `apiKeyCallable=true` hoặc policy cho phép rõ.
+
+3. **Hook/operation execution**
+   - Hook chạy do mutation của user nên phải có `actor` trong context.
+   - Extension thao tác data mặc định dùng actor permission.
+   - Nếu cần service-account mode, phải khai báo trong manifest và được grant capability riêng, có audit.
+
+4. **Sandbox capability**
+   - Tiếp tục giữ capability allowlist hiện có (`items:*`, `http:fetch`, `secrets:read`, `log:write`, ...).
+   - Capability grant là upper bound; user permission là lower bound. Extension chỉ được làm khi cả hai lớp đều cho phép.
+
+### 12.5. DB/API đề xuất
+
+Schema options:
+
+- Thêm cột vào `extensions`:
+  - `key` stable unique per site.
+  - `accessMode`: `inherit` | `restricted` | `public_studio`.
+  - `serviceAccountPolicyId` nullable.
+  - `apiKeyCallable` boolean.
+- Hoặc thêm bảng:
+  - `extension_access_policies(extension_id, policy_id, access_scope, priority)`.
+
+Khuyến nghị: dùng Permission Builder là nguồn chính, không tạo hệ RBAC thứ hai. `extension_access_policies` chỉ cần nếu muốn shortcut UI. Import/export phải đưa extension access config vào manifest.
+
+### 12.6. Conflict và audit
+
+- Conflict checker phải hiểu `extensions/extension_modules/extension_endpoints` như system collections.
+- Block nếu policy cho user thường `grant_capability` hoặc `install` extension mà không có `appAccess`.
+- Audit bắt buộc cho:
+  - install/uninstall;
+  - enable/disable;
+  - grant/revoke capability;
+  - execute endpoint/operation bị deny;
+  - service-account execution.
+
+## 13. Implementation plan
 
 ### Phase 1: Hardening schema hiện có
 
@@ -810,14 +950,21 @@ lumibase access import access.json --mode replace-managed
 - Apply transaction + audit.
 - CLI wrapper.
 
-### Phase 5: Share
+### Phase 5: Extension access
+
+- Thêm extension access system collections/actions.
+- Enforce extension list/module/endpoint theo effective permissions.
+- Thêm UI policy builder cho extension access.
+- Audit capability grant và endpoint/operation deny.
+
+### Phase 6: Share
 
 - Thêm `shares`.
 - Implement `share` action.
 - Share role builder chuyên dụng.
 - Public share endpoint dùng role permission để mask fields/read item.
 
-## 13. Test matrix
+## 14. Test matrix
 
 Backend tests:
 
@@ -830,6 +977,9 @@ Backend tests:
 - Conflict checker block unconditional-vs-restricted.
 - Conflict checker block `*` fields vs whitelist.
 - API key compile roles/policies y hệt user.
+- User không có `extensions:execute` không gọi được endpoint extension.
+- User không có `extension_modules:read` không thấy module extension trong Studio.
+- Extension capability có nhưng actor permission thiếu thì vẫn deny data mutation.
 - Import dry-run không ghi DB.
 - Import apply idempotent.
 
@@ -840,16 +990,18 @@ Frontend tests:
 - Policy detail có app/admin/TFA/IP controls.
 - API key detail attach roles/policies và preview effective permissions.
 - Import dialog hiển thị diff/conflict.
+- Extension settings chỉ hiện install/enable/grant capability khi principal có quyền tương ứng.
 
 Security tests:
 
 - Public role không đọc được collection chưa explicit permission.
 - API key revoked không authenticate.
 - API key không được dùng Studio route dù policy có app access.
+- API key không gọi được extension endpoint trừ khi extension cho phép API-key callable và policy có `extensions:execute`.
 - Share link chỉ đọc fields role share được phép.
 - System collections sensitive không xuất hiện cho non-admin.
 
-## 14. Quyết định khuyến nghị
+## 15. Quyết định khuyến nghị
 
 1. Nên làm giống Directus v11 ở chỗ access flags thuộc policy, không thuộc user.
 2. Không nên giữ `adminAccess/appAccess` trên role dài hạn; role chỉ nên là grouping.
@@ -857,3 +1009,4 @@ Security tests:
 4. Nên chặn conflict ở UI/backend thay vì âm thầm OR/union mọi thứ.
 5. Nên seed system access policies ngay từ đầu, đặc biệt `admin`, `studio self`, `schema manager`, `access manager`, `public`.
 6. Nên coi import/export access config là production-critical: có schema version, dry-run, stable keys, audit, và không bao giờ export plaintext secrets.
+7. Nên bổ sung extension access control first-class; đây là điểm LumiBase có thể tốt hơn Directus vì Directus chủ yếu dựa vào sandbox/accountability và module tự check permission.
