@@ -40,6 +40,14 @@ const completeBodySchema = z.object({
   }),
   adminPath: z.string().min(1).max(128),
   policy: lockoutPolicySchema,
+  project: z
+    .object({
+      defaultLanguage: z.string().min(2).max(16),
+      siteUrl: z.string().url().max(2048),
+      displayTitle: z.string().min(2).max(80),
+      theme: z.null().optional(),
+    })
+    .optional(),
 });
 
 // ── rate limit (in-memory sliding window) ──────────────────────────────

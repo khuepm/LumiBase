@@ -60,6 +60,7 @@ const CdcPipelineDetailPage = lazy(() => import('./modules/cdc/pipeline-detail')
 const StepAccount = lazy(() => import('./modules/setup/steps/step-account').then((m) => ({ default: m.StepAccount })));
 const StepPath = lazy(() => import('./modules/setup/steps/step-path').then((m) => ({ default: m.StepPath })));
 const StepSecurity = lazy(() => import('./modules/setup/steps/step-security').then((m) => ({ default: m.StepSecurity })));
+const StepProject = lazy(() => import('./modules/setup/steps/step-project').then((m) => ({ default: m.StepProject })));
 const StepRecovery = lazy(() => import('./modules/setup/steps/step-recovery').then((m) => ({ default: m.StepRecovery })));
 const StepDone = lazy(() => import('./modules/setup/steps/step-done').then((m) => ({ default: m.StepDone })));
 
@@ -103,15 +104,15 @@ function withSuspense(Component: React.ComponentType) {
   };
 }
 
-function SetupSecurityWithComplete() {
+function SetupProjectWithComplete() {
   const navigate = useNavigate();
   const completeSetup = useCompleteSetup();
 
   return (
-    <StepSecurity
-      onSubmitted={(policy) => {
+    <StepProject
+      onSubmitted={() => {
         completeSetup.mutate(
-          { policy },
+          {},
           {
             onSuccess: (data) => {
               setupBackupCodes = data.backupCodes;
@@ -257,11 +258,6 @@ const setupPathRoute = createRoute({
  * to `/setup/security` falls back to the earliest unsatisfied step
  * when prior gates (`accountValid`, `pathValid`) aren't met.
  *
- * The Recovery step (task 10.3) is not wired yet, so on submit we
- * forward straight to `/setup/done`. When the recovery route lands,
- * change `onSubmitted` here to navigate to `/setup/recovery` per
- * design.md §5.4.
- *
  * Spec refs: requirements §3.11; design.md §5.1, §5.4, §11.2.
  */
 const setupSecurityRoute = createRoute({
@@ -278,9 +274,28 @@ const setupSecurityRoute = createRoute({
     }
   },
   component: () => {
+    const navigate = useNavigate();
     return (
       <Suspense fallback={<PageLoader />}>
-        <SetupSecurityWithComplete />
+        <StepSecurity onSubmitted={() => navigate({ to: '/setup/project' })} />
+      </Suspense>
+    );
+  },
+});
+
+const setupProjectRoute = createRoute({
+  getParentRoute: () => setupShellRoute,
+  path: '/setup/project',
+  beforeLoad: () => {
+    const state = useSetupStore.getState();
+    if (!state.accountValid || !state.pathValid || !state.policyValid) {
+      throw redirect({ to: getEarliestUnsatisfiedStep(state) });
+    }
+  },
+  component: () => {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <SetupProjectWithComplete />
       </Suspense>
     );
   },
@@ -295,6 +310,7 @@ const setupRecoveryRoute = createRoute({
       !state.accountValid ||
       !state.pathValid ||
       !state.policyValid ||
+      !state.projectValid ||
       !state.completed
     ) {
       throw redirect({ to: getEarliestUnsatisfiedStep(state) });
@@ -594,6 +610,7 @@ const routeTree = rootRoute.addChildren([
       setupAccountRoute,
       setupPathRoute,
       setupSecurityRoute,
+      setupProjectRoute,
       setupRecoveryRoute,
       setupDoneRoute,
     ]),

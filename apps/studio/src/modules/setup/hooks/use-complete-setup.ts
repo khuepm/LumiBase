@@ -4,14 +4,15 @@ import {
 } from '@tanstack/react-query';
 import { clearAccountDraft, getAccountDraft } from '../steps/step-account';
 import { clearPathDraft, getPathDraft } from '../steps/step-path';
-import type { LockoutPolicyFormValues } from '../schemas/policy';
+import { clearPolicyDraft, getPolicyDraft } from '../steps/step-security';
+import { clearProjectDraft, getProjectDraft } from '../steps/step-project';
 import { SETUP_TOKEN_STORAGE_KEY } from '../setup-state-gate';
 import { useSetupStore } from '../setup-store';
 
 /**
  * Mutation hook that finalizes the Admin Setup Wizard by calling
  * `POST /api/v1/setup/complete` (design §4.3) with the in-memory
- * Account + Path drafts plus the Security step's policy values.
+ * Account, Path, Security, and Project drafts.
  *
  * Lifecycle on success (Req 1.5, 3.6, 4.6, 14.1):
  *
@@ -19,7 +20,7 @@ import { useSetupStore } from '../setup-store';
  *      surface it for the operator to bookmark.
  *   2. Flip the wizard's `completed` flag to true.
  *   3. Drop the in-memory account/path drafts so the plaintext
- *      password and chosen path don't outlive their single
+ *      password and one-shot setup state don't outlive their single
  *      legitimate use.
  *   4. Remove the cached setup token from `sessionStorage` so future
  *      visitors of the same tab can't resubmit the wizard.
@@ -48,14 +49,11 @@ import { useSetupStore } from '../setup-store';
 // ── Public types ─────────────────────────────────────────────────────────
 
 /**
- * Caller-supplied payload. Account and admin path come from the
- * module-scoped drafts in `step-account.tsx` / `step-path.tsx` to keep
- * the plaintext password out of any persistent storage; the operator
- * provides only the policy values from the Security step.
+ * Caller-supplied payload. Setup values come from module-scoped drafts
+ * so plaintext password and one-shot setup state stay out of persistent
+ * storage.
  */
-export interface SetupCompletePayload {
-  policy: LockoutPolicyFormValues;
-}
+export interface SetupCompletePayload {}
 
 /**
  * Shape of the 201 Created response from `POST /setup/complete`. Mirrors
@@ -272,8 +270,10 @@ async function completeSetup(
 ): Promise<SetupCompleteResponse> {
   const account = getAccountDraft();
   const path = getPathDraft();
+  const policy = getPolicyDraft();
+  const project = getProjectDraft();
 
-  if (account === null || path === null) {
+  if (account === null || path === null || policy === null || project === null) {
     // Defensive: the wizard's deep-link guard (task 3.9) should
     // already have routed the operator back to the missing step
     // before they could trigger this mutation. Surfacing as an error
@@ -295,7 +295,8 @@ async function completeSetup(
       lastName: string;
     };
     adminPath: string;
-    policy: LockoutPolicyFormValues;
+    policy: NonNullable<ReturnType<typeof getPolicyDraft>>;
+    project: NonNullable<ReturnType<typeof getProjectDraft>>;
     setupToken?: string;
   } = {
     account: {
@@ -305,7 +306,8 @@ async function completeSetup(
       lastName: account.lastName,
     },
     adminPath: path.adminPath,
-    policy: payload.policy,
+    policy,
+    project,
   };
 
   if (token !== null) {
@@ -391,10 +393,10 @@ function isSetupCompleteResponse(value: unknown): value is SetupCompleteResponse
  * React Query mutation that finalizes the wizard. See module-level
  * doc above for the full success/error lifecycle.
  *
- * Usage from the Security step bridge:
+ * Usage from the Project step bridge:
  *
  *   const complete = useCompleteSetup();
- *   complete.mutate({ policy: form.getValues() });
+ *   complete.mutate({});
  */
 export function useCompleteSetup(): UseMutationResult<
   SetupCompleteResponse,
@@ -415,9 +417,11 @@ export function useCompleteSetup(): UseMutationResult<
       store.setAdminPath(data.adminPath);
       store.setCompleted(true);
 
-      // 2. Drop in-memory plaintext drafts.
+      // 2. Drop in-memory setup drafts.
       clearAccountDraft();
       clearPathDraft();
+      clearPolicyDraft();
+      clearProjectDraft();
 
       // 3. Remove the cached setup token (it's invalid server-side now too).
       clearSetupToken();

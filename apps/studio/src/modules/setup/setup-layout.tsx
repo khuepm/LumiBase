@@ -7,7 +7,7 @@ import { cn } from '@/lib/cn';
  * The five linear stages of the Admin Setup Wizard, in order. The state
  * machine is described in design.md §5.4 and the route layout in §5.1.
  */
-export const SETUP_STEPS = ['account', 'path', 'security', 'recovery', 'done'] as const;
+export const SETUP_STEPS = ['account', 'path', 'security', 'project', 'recovery', 'done'] as const;
 
 export type SetupStep = (typeof SETUP_STEPS)[number];
 
@@ -39,6 +39,12 @@ const STEP_TABLE: ReadonlyArray<StepDescriptor> = [
     path: '/setup/security',
     label: 'Security',
     description: 'Configure login lockout and anomaly detection.',
+  },
+  {
+    id: 'project',
+    path: '/setup/project',
+    label: 'Project',
+    description: 'Set language, site URL, title, and theme direction.',
   },
   {
     id: 'recovery',

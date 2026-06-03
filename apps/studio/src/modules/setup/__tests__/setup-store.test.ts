@@ -17,6 +17,7 @@ describe('getEarliestUnsatisfiedStep', () => {
         accountValid: false,
         pathValid: false,
         policyValid: false,
+        projectValid: false,
         completed: false,
       }),
     ).toBe('/setup/account');
@@ -32,6 +33,7 @@ describe('getEarliestUnsatisfiedStep', () => {
         accountValid: false,
         pathValid: true,
         policyValid: true,
+        projectValid: true,
         completed: false,
       }),
     ).toBe('/setup/account');
@@ -43,6 +45,7 @@ describe('getEarliestUnsatisfiedStep', () => {
         accountValid: true,
         pathValid: false,
         policyValid: false,
+        projectValid: false,
         completed: false,
       }),
     ).toBe('/setup/path');
@@ -58,20 +61,34 @@ describe('getEarliestUnsatisfiedStep', () => {
         accountValid: true,
         pathValid: true,
         policyValid: false,
+        projectValid: false,
         completed: false,
       }),
     ).toBe('/setup/security');
   });
 
-  it('redirects to /setup/security when policy is valid but setup is not completed', () => {
+  it('redirects to /setup/project when policy is valid but project is not', () => {
     expect(
       getEarliestUnsatisfiedStep({
         accountValid: true,
         pathValid: true,
         policyValid: true,
+        projectValid: false,
         completed: false,
       }),
-    ).toBe('/setup/security');
+    ).toBe('/setup/project');
+  });
+
+  it('redirects to /setup/project when project is valid but setup is not completed', () => {
+    expect(
+      getEarliestUnsatisfiedStep({
+        accountValid: true,
+        pathValid: true,
+        policyValid: true,
+        projectValid: true,
+        completed: false,
+      }),
+    ).toBe('/setup/project');
   });
 
   it('redirects to /setup/recovery when setup completed but codes are not confirmed', () => {
@@ -80,6 +97,7 @@ describe('getEarliestUnsatisfiedStep', () => {
         accountValid: true,
         pathValid: true,
         policyValid: true,
+        projectValid: true,
         completed: true,
         confirmed: false,
       }),
@@ -92,6 +110,7 @@ describe('getEarliestUnsatisfiedStep', () => {
         accountValid: true,
         pathValid: true,
         policyValid: true,
+        projectValid: true,
         completed: true,
         confirmed: true,
       }),
