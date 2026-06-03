@@ -27,9 +27,12 @@ import type { AppEnv } from '../env';
 export const rolesRouter = new Hono<AppEnv>();
 
 const roleCreate = z.object({
+  key: z.string().min(1).max(96).optional(),
+  systemKey: z.string().min(1).max(96).optional(),
   name: z.string().min(1).max(64),
   description: z.string().max(512).optional(),
   icon: z.string().max(64).optional(),
+  parentId: z.string().nullable().optional(),
   adminAccess: z.boolean().optional(),
   appAccess: z.boolean().optional(),
 });

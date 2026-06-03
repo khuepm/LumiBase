@@ -5,6 +5,7 @@ import {
   roles,
   scopeSite,
   userPolicies,
+  userRoles,
   userSites,
   users,
   type Database,
@@ -55,6 +56,10 @@ export interface CompiledPermission {
 export interface PermissionBundle {
   /** True if the principal has admin-bypass (any role with `admin_access`). */
   admin: boolean;
+  /** True if the principal can sign in to Studio via at least one active policy. */
+  appAccess: boolean;
+  /** True if at least one active policy requires a TFA-verified session. */
+  tfaRequired: boolean;
   /** Quick lookup keyed `${collection}::${action}`. */
   byKey: Record<string, CompiledPermission>;
   /** Roles assigned to the user for this site. */
@@ -182,7 +187,7 @@ export class PermissionService {
       ? (await db.select().from(users).where(eq(users.id, ctx.userId)).limit(1))[0]
       : undefined;
 
-    const roleRows = ctx.userId
+    const primaryRoleRows = ctx.userId
       ? await db
           .select({
             id: roles.id,
@@ -200,11 +205,26 @@ export class PermissionService {
             ),
           )
       : [];
+    const secondaryRoleRows = ctx.userId
+      ? await db
+          .select({
+            id: roles.id,
+            name: roles.name,
+            adminAccess: roles.adminAccess,
+            appAccess: roles.appAccess,
+          })
+          .from(userRoles)
+          .innerJoin(roles, eq(roles.id, userRoles.roleId))
+          .where(
+            and(
+              scopeSite(roles.siteId, ctx.siteId),
+              eq(userRoles.userId, ctx.userId),
+              eq(userRoles.siteId, ctx.siteId),
+            ),
+          )
+      : [];
 
-    const admin = roleRows.some((r) => r.adminAccess);
-    if (admin) {
-      return { admin: true, byKey: {}, roles: roleRows };
-    }
+    const roleRows = uniqueRoles([...primaryRoleRows, ...secondaryRoleRows]);
 
     // Collect policy ids from role bindings + direct user_policies.
     const roleIds = roleRows.map((r) => r.id);
@@ -232,7 +252,13 @@ export class PermissionService {
     const policyIds = Array.from(new Set(policyOrder.map((p) => p.policyId)));
 
     if (!policyIds.length) {
-      return { admin: false, byKey: {}, roles: roleRows };
+      return {
+        admin: roleRows.some((r) => r.adminAccess),
+        appAccess: roleRows.some((r) => r.appAccess),
+        tfaRequired: false,
+        byKey: {},
+        roles: roleRows,
+      };
     }
 
     // Filter out time-bound / IP-locked policies that don't match the request.
@@ -240,12 +266,23 @@ export class PermissionService {
       .select()
       .from(policies)
       .where(and(scopeSite(policies.siteId, ctx.siteId), inArray(policies.id, policyIds)));
-    const allowedPolicyIds = policyMeta
-      .filter((p) => isPolicyActive(p.rules as PolicyGuard, ctx))
-      .map((p) => p.id);
+    const activePolicies = policyMeta.filter((p) => isPolicyActive(p, ctx));
+    const allowedPolicyIds = activePolicies.map((p) => p.id);
+
+    const admin =
+      roleRows.some((r) => r.adminAccess) ||
+      activePolicies.some((p) => p.adminAccess);
+    const appAccess =
+      roleRows.some((r) => r.appAccess) ||
+      activePolicies.some((p) => p.appAccess);
+    const tfaRequired = activePolicies.some((p) => p.enforceTfa);
+
+    if (admin) {
+      return { admin: true, appAccess, tfaRequired, byKey: {}, roles: roleRows };
+    }
 
     if (!allowedPolicyIds.length) {
-      return { admin: false, byKey: {}, roles: roleRows };
+      return { admin: false, appAccess, tfaRequired, byKey: {}, roles: roleRows };
     }
 
     const permRows = await db
@@ -274,7 +311,7 @@ export class PermissionService {
       byKey[key] = existing ? mergePermission(existing, incoming) : incoming;
     }
 
-    return { admin: false, byKey, roles: roleRows };
+    return { admin: false, appAccess, tfaRequired, byKey, roles: roleRows };
   }
 }
 
@@ -285,16 +322,46 @@ interface PolicyGuard {
   ipDeny?: string[];
 }
 
-function isPolicyActive(rules: PolicyGuard | null | undefined, ctx: MagicContext): boolean {
+interface PolicyGuardRow {
+  validFrom?: Date | string | null;
+  validUntil?: Date | string | null;
+  ipAllow?: unknown;
+  ipDeny?: unknown;
+  rules?: unknown;
+}
+
+function isPolicyActive(policy: PolicyGuardRow, ctx: MagicContext): boolean {
+  const rules = (policy.rules as PolicyGuard | null | undefined) ?? {};
+  const validFrom = policy.validFrom ?? rules.validFrom;
+  const validUntil = policy.validUntil ?? rules.validUntil;
+  const ipAllow = stringArray(policy.ipAllow) ?? rules.ipAllow;
+  const ipDeny = stringArray(policy.ipDeny) ?? rules.ipDeny;
+
   if (!rules) return true;
   const now = ctx.now ?? new Date();
-  if (rules.validFrom && new Date(rules.validFrom) > now) return false;
-  if (rules.validUntil && new Date(rules.validUntil) < now) return false;
-  if (rules.ipDeny?.length && ctx.ip && rules.ipDeny.includes(ctx.ip)) return false;
-  if (rules.ipAllow?.length) {
-    if (!ctx.ip || !rules.ipAllow.includes(ctx.ip)) return false;
+  if (validFrom && new Date(validFrom) > now) return false;
+  if (validUntil && new Date(validUntil) < now) return false;
+  if (ipDeny?.length && ctx.ip && ipDeny.includes(ctx.ip)) return false;
+  if (ipAllow?.length) {
+    if (!ctx.ip || !ipAllow.includes(ctx.ip)) return false;
   }
   return true;
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((v): v is string => typeof v === 'string');
+}
+
+function uniqueRoles<T extends { id: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const row of rows) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push(row);
+  }
+  return out;
 }
 
 /** OR-merge two permissions on the same (collection, action). */

@@ -71,6 +71,13 @@
       "when": 1780357798374,
       "tag": "0009_abnormal_joshua_kane",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1780485146644,
+      "tag": "0010_loud_the_renegades",
+      "breakpoints": true
     }
   ]
 }

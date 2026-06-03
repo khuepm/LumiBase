@@ -115,9 +115,12 @@ export type PermissionAction =
 export interface RoleResource {
   id: string;
   siteId: string;
+  key: string | null;
+  systemKey: string | null;
   name: string;
   description: string | null;
   icon: string | null;
+  parentId: string | null;
   adminAccess: boolean;
   appAccess: boolean;
   createdAt?: string;
@@ -131,8 +134,17 @@ export interface RoleDetail extends RoleResource {
 export interface PolicyResource {
   id: string;
   siteId: string;
+  key: string | null;
   name: string;
+  icon: string | null;
   description: string | null;
+  adminAccess: boolean;
+  appAccess: boolean;
+  enforceTfa: boolean;
+  ipAllow: string[];
+  ipDeny: string[];
+  validFrom: string | null;
+  validUntil: string | null;
   /** Top-level guardrails: time window, IP allow/deny. */
   rules: Record<string, unknown>;
   createdAt?: string;
@@ -165,6 +177,8 @@ export interface CompiledPermission {
 
 export interface PermissionBundle {
   admin: boolean;
+  appAccess: boolean;
+  tfaRequired: boolean;
   byKey: Record<string, CompiledPermission>;
   roles: Array<{
     id: string;

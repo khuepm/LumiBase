@@ -226,15 +226,15 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 
 - [ ] `[BE]` Audit `PermissionService` hiện tại: ghi rõ hành vi compose hiện có (`OR` rules, union fields, merge presets/validation) và các case có thể mở rộng quyền im lặng.
 - [ ] `[DB]` Thiết kế migration backward-compatible cho `roles.admin_access/app_access` → policy-level `admin_access/app_access/enforce_tfa/ip_allow/ip_deny/valid_from/valid_until`.
-- [ ] `[DB]` Thêm stable `key`/`system_key` cho roles/policies để phục vụ import/export idempotent.
+- [x] `[DB]` Thêm stable `key`/`system_key` cho roles/policies để phục vụ import/export idempotent.
 - [ ] `[DOC]` Chốt danh sách system collections được đưa vào Permission Builder và nhóm sensitive/admin-only trước khi seed.
 - [ ] `[BE]` Định nghĩa JSON schema version `lumibase.access@v1` cho export/import roles, policies, permission rows, bindings và API key metadata.
 
 ### Schema & evaluator hardening
 
-- [ ] `[DB]` Thêm unique constraint `(policy_id, collection, action)` cho `permissions`; migration phải detect/report duplicate hiện có trước khi apply.
-- [ ] `[DB]` Thêm bảng `user_roles` để hỗ trợ nhiều role/user/site; giữ `user_sites.role_id` làm primary/display role trong giai đoạn chuyển đổi.
-- [ ] `[DB]` Thêm policy flags explicit vào `policies`; giữ `policies.rules` cho custom/future guardrails.
+- [x] `[DB]` Thêm unique constraint `(policy_id, collection, action)` cho `permissions`; migration phải detect/report duplicate hiện có trước khi apply.
+- [x] `[DB]` Thêm bảng `user_roles` để hỗ trợ nhiều role/user/site; giữ `user_sites.role_id` làm primary/display role trong giai đoạn chuyển đổi.
+- [x] `[DB]` Thêm policy flags explicit vào `policies`; giữ `policies.rules` cho custom/future guardrails.
 - [ ] `[BE]` Mở rộng IP guard hỗ trợ IPv4, IPv6, CIDR và precedence `ipDeny` thắng `ipAllow`.
 - [ ] `[BE]` Enforce app access từ effective active policies khi vào Studio; API key luôn bị chặn khỏi Studio.
 - [ ] `[BE]` Enforce `enforceTfa=true`: user phải enroll và pass TFA; API key attach policy có TFA phải bị conflict/warning.

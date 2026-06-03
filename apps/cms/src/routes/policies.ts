@@ -28,8 +28,17 @@ import type { AppEnv } from '../env';
 export const policiesRouter = new Hono<AppEnv>();
 
 const policyCreate = z.object({
+  key: z.string().min(1).max(96).optional(),
   name: z.string().min(1).max(64),
+  icon: z.string().max(64).optional(),
   description: z.string().max(512).optional(),
+  adminAccess: z.boolean().optional(),
+  appAccess: z.boolean().optional(),
+  enforceTfa: z.boolean().optional(),
+  ipAllow: z.array(z.string()).optional(),
+  ipDeny: z.array(z.string()).optional(),
+  validFrom: z.coerce.date().nullable().optional(),
+  validUntil: z.coerce.date().nullable().optional(),
   rules: z.record(z.unknown()).optional(),
 });
 
