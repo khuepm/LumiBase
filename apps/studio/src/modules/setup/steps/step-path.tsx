@@ -143,6 +143,7 @@ export function StepPath({ onSubmitted }: StepPathProps) {
   } = form;
 
   const rawValue = watch('adminPath') ?? '';
+  const hasAdminPathError = Boolean(errors.adminPath);
 
   // Normalised preview — recomputed every keystroke. We deliberately
   // call `normalizeAdminPath` directly (rather than reading the
@@ -195,6 +196,19 @@ export function StepPath({ onSubmitted }: StepPathProps) {
     if (rawValue.length === 0) return;
     setGenerateError((prev) => (prev !== null ? null : prev));
   }, [rawValue]);
+
+  // Re-check the path while the operator is still focused in the field.
+  // This keeps server-shaped errors like "too predictable" from lingering
+  // until blur after the user has typed a better slug.
+  useEffect(() => {
+    if (rawValue.length === 0) return;
+
+    const timeout = window.setTimeout(() => {
+      void trigger('adminPath');
+    }, hasAdminPathError ? 150 : 350);
+
+    return () => window.clearTimeout(timeout);
+  }, [hasAdminPathError, rawValue, trigger]);
 
   // Gate the submit button. We require:
   //   - the form to be valid per the resolver,
@@ -266,16 +280,16 @@ export function StepPath({ onSubmitted }: StepPathProps) {
             autoComplete="off"
             spellCheck={false}
             placeholder="/lumi-7f3a9c"
-            aria-invalid={errors.adminPath ? 'true' : 'false'}
+            aria-invalid={hasAdminPathError ? 'true' : 'false'}
             aria-describedby={[
-              errors.adminPath ? `${inputId}-error` : null,
+              hasAdminPathError ? `${inputId}-error` : null,
               `${inputId}-help`,
               preview ? previewId : null,
               generateError ? generateErrorId : null,
             ]
               .filter(Boolean)
               .join(' ') || undefined}
-            className={inputClass(Boolean(errors.adminPath))}
+            className={inputClass(hasAdminPathError)}
             {...register('adminPath')}
           />
           <button
