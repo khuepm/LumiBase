@@ -125,9 +125,11 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`.
 
 ### `roles`
 - `id`, `siteId`, `name`, `description`, `icon`, `adminAccess` boolean, `appAccess` boolean.
+- Note: `adminAccess/appAccess` are legacy compatibility flags. New RBAC work migrates these flags to policies so roles remain grouping units. See [Role Flag to Policy Flag Migration](./features/role-policy-flag-migration.md).
 
 ### `policies`
 - `id`, `siteId`, `name`, `description`, `rules jsonb`. Policy độc lập có thể attach vào nhiều roles/users.
+- Explicit flags: `adminAccess`, `appAccess`, `enforceTfa`, `ipAllow`, `ipDeny`, `validFrom`, `validUntil`. These are the new source of truth for admin/app/TFA/IP/time guards.
 
 ### `role_policies` / `user_policies`
 - Many-to-many với `priority`. `user_policies` cho phép gán policy trực tiếp user (override role).

@@ -5,6 +5,8 @@
 > Xem thêm bản điều tra/blueprint chi tiết: [permission-builder-directus-investigation.md](./permission-builder-directus-investigation.md).
 >
 > Audit implementation hiện tại: [permission-service-compose-audit.md](./permission-service-compose-audit.md).
+>
+> Migration role flags sang policy flags: [role-policy-flag-migration.md](./role-policy-flag-migration.md).
 
 ## 1. Mô hình
 
@@ -18,7 +20,7 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
 - **Policy**: đơn vị có thể tái sử dụng, gắn vào nhiều role/user, có thứ tự ưu tiên (`priority` thấp = chạy trước, sau cao override).
 - **Permission**: rule cụ thể `(collection, action)` với `permissions`, `validation`, `presets`, `fields`.
 
-> Ghi chú thiết kế 2026-06-03: Directus v11 đã chuyển `admin_access`, `app_access`, `enforce_tfa`, `ip_access` khỏi role và đặt trên policy. LumiBase hiện còn `roles.adminAccess/appAccess`; nên coi đây là compatibility layer và migrate về policy flags để role chỉ còn là grouping.
+> Ghi chú thiết kế 2026-06-03: Directus v11 đã chuyển `admin_access`, `app_access`, `enforce_tfa`, `ip_access` khỏi role và đặt trên policy. LumiBase hiện còn `roles.adminAccess/appAccess`; nên coi đây là compatibility layer và migrate về policy flags để role chỉ còn là grouping. Strategy chi tiết xem [Migration role flags sang policy flags](./role-policy-flag-migration.md).
 
 ## 2. Permission record (JSON DSL)
 

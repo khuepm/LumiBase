@@ -225,7 +225,7 @@ Hiện LumiBase đang có `roles.adminAccess` và `roles.appAccess`. Nên migrat
 
 1. Thêm flags explicit vào `policies`: `adminAccess`, `appAccess`, `enforceTfa`, `ipAllow`, `ipDeny`, `validFrom`, `validUntil`.
 2. Giữ `roles.adminAccess/appAccess` tạm thời để tương thích API cũ, nhưng coi là deprecated.
-3. Khi compile quyền, effective access lấy từ active policies trước; role flags chỉ là fallback trong một migration window.
+3. Khi compile quyền, effective access lấy từ active policies trước; role flags chỉ là fallback trong một migration window. Strategy chi tiết: [Migration role flags sang policy flags](./role-policy-flag-migration.md).
 4. Studio Role Detail không nên sửa trực tiếp `adminAccess/appAccess` trên role nữa; thay vào đó tạo/attach policy tương ứng.
 
 ### 5.2. Admin access là bypass, không phải tập permission rows

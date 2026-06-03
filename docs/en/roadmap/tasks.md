@@ -225,7 +225,7 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 ### Chuẩn bị bắt buộc
 
 - [x] `[BE]` Audit `PermissionService` hiện tại: ghi rõ hành vi compose hiện có (`OR` rules, union fields, merge presets/validation) và các case có thể mở rộng quyền im lặng.
-- [ ] `[DB]` Thiết kế migration backward-compatible cho `roles.admin_access/app_access` → policy-level `admin_access/app_access/enforce_tfa/ip_allow/ip_deny/valid_from/valid_until`.
+- [x] `[DB]` Thiết kế migration backward-compatible cho `roles.admin_access/app_access` → policy-level `admin_access/app_access/enforce_tfa/ip_allow/ip_deny/valid_from/valid_until`.
 - [x] `[DB]` Thêm stable `key`/`system_key` cho roles/policies để phục vụ import/export idempotent.
 - [x] `[DOC]` Chốt danh sách system collections được đưa vào Permission Builder và nhóm sensitive/admin-only trước khi seed.
 - [x] `[BE]` Định nghĩa JSON schema version `lumibase.access@v1` cho export/import roles, policies, permission rows, bindings và API key metadata.

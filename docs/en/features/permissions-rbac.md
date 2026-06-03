@@ -3,6 +3,8 @@
 > Mục tiêu: hệ phân quyền **mạnh nhất** trong nhóm OSS headless CMS. Hỗ trợ field-level, row-level, time-bound, IP-bound, attribute-based và composable policies.
 >
 > Current implementation audit: [permission-service-compose-audit.md](./permission-service-compose-audit.md).
+>
+> Role flag migration strategy: [role-policy-flag-migration.md](./role-policy-flag-migration.md).
 
 ## 1. Mô hình
 
@@ -15,6 +17,8 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
 - **Role**: tập hợp cố định gán cho user (per site).
 - **Policy**: đơn vị có thể tái sử dụng, gắn vào nhiều role/user, có thứ tự ưu tiên (`priority` thấp = chạy trước, sau cao override).
 - **Permission**: rule cụ thể `(collection, action)` với `permissions`, `validation`, `presets`, `fields`.
+
+> Design note 2026-06-03: LumiBase still has `roles.adminAccess/appAccess` for compatibility. Treat these as legacy fallback and migrate to policy flags; see [Role Flag to Policy Flag Migration](./role-policy-flag-migration.md).
 
 ## 2. Permission record (JSON DSL)
 
