@@ -50,6 +50,7 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
       userId: auth.userId,
       siteId: c.get('siteId'),
       roleId: null,
+      user: { id: auth.userId, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) },
       ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
       headers: collectHeaders(c.req.raw.headers),
       apiKey: auth.apiKey ?? null,

@@ -64,6 +64,7 @@ const buildService = (c: Context<AppEnv>) => {
       userId: auth?.userId ?? null,
       siteId: c.get('siteId'),
       roleId: null,
+      user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
       ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
       headers,
       apiKey: auth?.apiKey ?? null,
