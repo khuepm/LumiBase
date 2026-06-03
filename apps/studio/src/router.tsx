@@ -9,6 +9,7 @@ import {
 import { lazy, Suspense } from 'react';
 import { AppShell } from './components/app-shell';
 import { BareLayout } from './components/bare-layout';
+import { AdminReadyGate } from './modules/setup/admin-ready-gate';
 import { SetupLayout } from './modules/setup/setup-layout';
 import { SetupStateGate } from './modules/setup/setup-state-gate';
 import { useCompleteSetup } from './modules/setup/hooks/use-complete-setup';
@@ -149,9 +150,11 @@ const adminLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'admin-layout',
   component: () => (
-    <AppShell>
-      <Outlet />
-    </AppShell>
+    <AdminReadyGate>
+      <AppShell>
+        <Outlet />
+      </AppShell>
+    </AdminReadyGate>
   ),
 });
 
