@@ -125,15 +125,22 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`.
 
 ### `roles`
 - `id`, `siteId`, `name`, `description`, `icon`, `adminAccess` boolean, `appAccess` boolean.
+- Ghi chú: `adminAccess/appAccess` đang tồn tại để tương thích implementation hiện tại. Blueprint RBAC mới khuyến nghị migrate các flag này sang `policies` để giống Directus v11 và để policy trở thành đơn vị import/export.
 
 ### `policies`
 - `id`, `siteId`, `name`, `description`, `rules jsonb`. Policy độc lập có thể attach vào nhiều roles/users.
+- Nên bổ sung explicit flags: `adminAccess`, `appAccess`, `enforceTfa`, `ipAllow`, `ipDeny`, `validFrom`, `validUntil`. Trong giai đoạn trước migration, các giá trị này có thể sống trong `rules jsonb`.
 
 ### `role_policies` / `user_policies`
 - Many-to-many với `priority`. `user_policies` cho phép gán policy trực tiếp user (override role).
 
 ### `permissions`
-- `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (row-level rule DSL), `validation jsonb`, `presets jsonb`, `fields text[]` (field-level allow list, `*` = all).
+- `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (row-level rule DSL), `validation jsonb`, `presets jsonb`, `fields jsonb` (field-level allow list, `*` = all).
+- Nên có unique `(policyId, collection, action)` để tránh duplicate permission rows trong cùng policy.
+
+### System collections cần seed permissions
+
+Khi seed local/staging/prod, cần seed quyền cho các collection hệ thống, không chỉ collection nội dung. Nhóm nhạy cảm như `system_state`, `audit_log`, `login_attempts`, `login_baselines`, `admin_backup_codes`, `scim_tokens`, và các bảng API key tương lai chỉ nên dành cho admin/security policies. Chi tiết xem [Permission Builder blueprint](./features/permission-builder-directus-investigation.md#9-system-collections-và-seeding).
 
 ## 4. Files & Assets (`platform.ts`)
 

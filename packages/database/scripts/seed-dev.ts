@@ -6,6 +6,11 @@
  *   - `sites` row with id='site_demo'  (matches DEFAULT_DEV_SITE in studio/src/lib/api.ts)
  *   - `system_state` singleton row     (prevents adminPathGuard from blocking all routes)
  *
+ * TODO(access-seed): when the advanced Permission Builder lands, also seed
+ * baseline admin/studio-self/public policies and explicit permissions for
+ * system collections. See:
+ * docs/vi/features/permission-builder-directus-investigation.md
+ *
  * Safe to re-run: all inserts use ON CONFLICT DO NOTHING.
  *
  * Usage:
