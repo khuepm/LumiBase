@@ -10,6 +10,7 @@ import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { withTenant } from './middleware/tenant';
 import { activityRouter } from './routes/activity';
+import { accessRouter } from './routes/access';
 import { adminRouter } from './routes/admin';
 import { authRouter, meRouter } from './routes/auth';
 import { adminSecurityRouter } from './routes/admin-security';
@@ -151,6 +152,7 @@ api.route('/typegen', typegenRouter);
 api.route('/roles', rolesRouter);
 api.route('/policies', policiesRouter);
 api.route('/permissions', permissionsRouter);
+api.route('/access', accessRouter);
 api.route('/search', searchRouter);
 api.route('/media', mediaRouter);
 // Future routers: presets, translations, ...
