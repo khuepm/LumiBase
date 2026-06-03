@@ -3,6 +3,10 @@
 > Mục tiêu: hệ phân quyền **mạnh nhất** trong nhóm OSS headless CMS. Hỗ trợ field-level, row-level, time-bound, IP-bound, attribute-based và composable policies.
 >
 > Xem thêm bản điều tra/blueprint chi tiết: [permission-builder-directus-investigation.md](./permission-builder-directus-investigation.md).
+>
+> Audit implementation hiện tại: [permission-service-compose-audit.md](./permission-service-compose-audit.md).
+>
+> Migration role flags sang policy flags: [role-policy-flag-migration.md](./role-policy-flag-migration.md).
 
 ## 1. Mô hình
 
@@ -16,7 +20,7 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
 - **Policy**: đơn vị có thể tái sử dụng, gắn vào nhiều role/user, có thứ tự ưu tiên (`priority` thấp = chạy trước, sau cao override).
 - **Permission**: rule cụ thể `(collection, action)` với `permissions`, `validation`, `presets`, `fields`.
 
-> Ghi chú thiết kế 2026-06-03: Directus v11 đã chuyển `admin_access`, `app_access`, `enforce_tfa`, `ip_access` khỏi role và đặt trên policy. LumiBase hiện còn `roles.adminAccess/appAccess`; nên coi đây là compatibility layer và migrate về policy flags để role chỉ còn là grouping.
+> Ghi chú thiết kế 2026-06-03: Directus v11 đã chuyển `admin_access`, `app_access`, `enforce_tfa`, `ip_access` khỏi role và đặt trên policy. LumiBase hiện còn `roles.adminAccess/appAccess`; nên coi đây là compatibility layer và migrate về policy flags để role chỉ còn là grouping. Strategy chi tiết xem [Migration role flags sang policy flags](./role-policy-flag-migration.md).
 
 ## 2. Permission record (JSON DSL)
 
@@ -74,8 +78,10 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
 ## 5.1. App access, admin access, enforce TFA
 
 - `adminAccess=true` là bypass toàn bộ permission checks; policy admin không cần seed permission rows.
-- `appAccess=true` cho phép principal dùng Studio. API key không bao giờ được dùng Studio dù policy có app access.
-- `enforceTfa=true` bắt buộc user đã enroll và pass 2FA trước khi policy được dùng.
+- `appAccess=true` cho phép principal dùng Studio, không đồng nghĩa với quyền API. API-only user vẫn có thể gọi API nếu có permission rows nhưng bị chặn khỏi Studio.
+- Studio client phải gửi `X-Lumi-Client: studio`; backend dùng effective `appAccess` để gate các request này.
+- API key không bao giờ được dùng Studio dù policy có app access.
+- `enforceTfa=true` bắt buộc user đã enroll và session đã pass 2FA trước khi Studio request được dùng.
 - Không đặt các flag này trên user; user chỉ giữ identity/status/TFA enrollment.
 
 ## 6. Composition & precedence

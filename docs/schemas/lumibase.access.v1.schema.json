@@ -1,0 +1,429 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lumibase.dev/schemas/lumibase.access.v1.schema.json",
+  "title": "LumiBase Access Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "kind", "siteKey", "roles", "policies", "bindings"],
+  "properties": {
+    "schema": {
+      "const": "lumibase.access@v1"
+    },
+    "version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "lumibase.access"
+    },
+    "siteKey": {
+      "$ref": "#/$defs/stableKey"
+    },
+    "exportedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "managedBy": {
+      "type": "string",
+      "default": "access-import"
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/role"
+      },
+      "default": []
+    },
+    "policies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/policy"
+      },
+      "default": []
+    },
+    "bindings": {
+      "$ref": "#/$defs/bindings"
+    },
+    "apiKeys": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/apiKeyMetadata"
+      },
+      "default": []
+    },
+    "extensions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/extensionAccessMetadata"
+      },
+      "default": []
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "default": {}
+    }
+  },
+  "$defs": {
+    "stableKey": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_:-]{1,127}$"
+    },
+    "nullableString": {
+      "type": ["string", "null"]
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name"],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/stableKey"
+        },
+        "systemKey": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z][a-z0-9_:-]{1,127}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "icon": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "parentKeys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/stableKey"
+          },
+          "default": []
+        },
+        "adminAccess": {
+          "type": "boolean",
+          "default": false,
+          "deprecated": true
+        },
+        "appAccess": {
+          "type": "boolean",
+          "default": false,
+          "deprecated": true
+        },
+        "meta": {
+          "$ref": "#/$defs/jsonObject"
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name", "permissions"],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/stableKey"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "icon": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "adminAccess": {
+          "type": "boolean",
+          "default": false
+        },
+        "appAccess": {
+          "type": "boolean",
+          "default": false
+        },
+        "enforceTfa": {
+          "type": "boolean",
+          "default": false
+        },
+        "ipAllow": {
+          "$ref": "#/$defs/ipList"
+        },
+        "ipDeny": {
+          "$ref": "#/$defs/ipList"
+        },
+        "validFrom": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "validUntil": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "rules": {
+          "$ref": "#/$defs/jsonObject"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/permission"
+          },
+          "default": []
+        },
+        "meta": {
+          "$ref": "#/$defs/jsonObject"
+        }
+      }
+    },
+    "permission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["collection", "action"],
+      "properties": {
+        "collection": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "action": {
+          "$ref": "#/$defs/action"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": ["*"]
+        },
+        "permissions": {
+          "$ref": "#/$defs/jsonObject"
+        },
+        "validation": {
+          "$ref": "#/$defs/jsonObject"
+        },
+        "presets": {
+          "$ref": "#/$defs/jsonObject"
+        },
+        "meta": {
+          "$ref": "#/$defs/jsonObject"
+        }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rolePolicies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rolePolicyBinding"
+          },
+          "default": []
+        },
+        "userRoles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/userRoleBinding"
+          },
+          "default": []
+        },
+        "userPolicies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/userPolicyBinding"
+          },
+          "default": []
+        },
+        "apiKeyRoles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/apiKeyRoleBinding"
+          },
+          "default": []
+        },
+        "apiKeyPolicies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/apiKeyPolicyBinding"
+          },
+          "default": []
+        }
+      },
+      "default": {}
+    },
+    "rolePolicyBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["roleKey", "policyKey"],
+      "properties": {
+        "roleKey": {
+          "$ref": "#/$defs/stableKey"
+        },
+        "policyKey": {
+          "$ref": "#/$defs/stableKey"
+        },
+        "priority": {
+          "type": "integer",
+          "default": 100
+        }
+      }
+    },
+    "userRoleBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userRef", "roleKey"],
+      "properties": {
+        "userRef": {
+          "$ref": "#/$defs/userRef"
+        },
+        "roleKey": {
+          "$ref": "#/$defs/stableKey"
+        }
+      }
+    },
+    "userPolicyBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userRef", "policyKey"],
+      "properties": {
+        "userRef": {
+          "$ref": "#/$defs/userRef"
+        },
+        "policyKey": {
+          "$ref": "#/$defs/stableKey"
+        },
+        "priority": {
+          "type": "integer",
+          "default": 100
+        }
+      }
+    },
+    "apiKeyMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name"],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/stableKey"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prefix": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "expiresAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "revoked": {
+          "type": "boolean",
+          "default": false
+        },
+        "meta": {
+          "$ref": "#/$defs/jsonObject"
+        }
+      }
+    },
+    "apiKeyRoleBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiKey", "roleKey"],
+      "properties": {
+        "apiKey": {
+          "$ref": "#/$defs/stableKey"
+        },
+        "roleKey": {
+          "$ref": "#/$defs/stableKey"
+        }
+      }
+    },
+    "apiKeyPolicyBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiKey", "policyKey"],
+      "properties": {
+        "apiKey": {
+          "$ref": "#/$defs/stableKey"
+        },
+        "policyKey": {
+          "$ref": "#/$defs/stableKey"
+        },
+        "priority": {
+          "type": "integer",
+          "default": 100
+        }
+      }
+    },
+    "extensionAccessMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key"],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/stableKey"
+        },
+        "accessMode": {
+          "enum": ["inherit", "restricted", "public_studio"],
+          "default": "inherit"
+        },
+        "apiKeyCallable": {
+          "type": "boolean",
+          "default": false
+        },
+        "serviceAccountPolicyKey": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z][a-z0-9_:-]{1,127}$"
+        },
+        "meta": {
+          "$ref": "#/$defs/jsonObject"
+        }
+      }
+    },
+    "userRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "externalId": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        }
+      }
+    },
+    "ipList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "action": {
+      "enum": [
+        "create",
+        "read",
+        "update",
+        "delete",
+        "share",
+        "read_decrypted",
+        "execute",
+        "configure",
+        "install",
+        "enable",
+        "grant_capability"
+      ]
+    }
+  }
+}

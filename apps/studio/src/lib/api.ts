@@ -40,7 +40,12 @@ export function hasActiveToken(): boolean {
 }
 
 function createApiClient(token: string, site: string) {
-  return createLumiClient({ url: '', token, siteId: site }).with(legacyRest());
+  return createLumiClient({
+    url: '',
+    token,
+    siteId: site,
+    headers: { 'X-Lumi-Client': 'studio' },
+  }).with(legacyRest());
 }
 
 export type StudioApiClient = ReturnType<typeof createApiClient>;

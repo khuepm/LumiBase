@@ -224,11 +224,11 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 
 ### Chuẩn bị bắt buộc
 
-- [ ] `[BE]` Audit `PermissionService` hiện tại: ghi rõ hành vi compose hiện có (`OR` rules, union fields, merge presets/validation) và các case có thể mở rộng quyền im lặng.
-- [ ] `[DB]` Thiết kế migration backward-compatible cho `roles.admin_access/app_access` → policy-level `admin_access/app_access/enforce_tfa/ip_allow/ip_deny/valid_from/valid_until`.
+- [x] `[BE]` Audit `PermissionService` hiện tại: ghi rõ hành vi compose hiện có (`OR` rules, union fields, merge presets/validation) và các case có thể mở rộng quyền im lặng.
+- [x] `[DB]` Thiết kế migration backward-compatible cho `roles.admin_access/app_access` → policy-level `admin_access/app_access/enforce_tfa/ip_allow/ip_deny/valid_from/valid_until`.
 - [x] `[DB]` Thêm stable `key`/`system_key` cho roles/policies để phục vụ import/export idempotent.
-- [ ] `[DOC]` Chốt danh sách system collections được đưa vào Permission Builder và nhóm sensitive/admin-only trước khi seed.
-- [ ] `[BE]` Định nghĩa JSON schema version `lumibase.access@v1` cho export/import roles, policies, permission rows, bindings và API key metadata.
+- [x] `[DOC]` Chốt danh sách system collections được đưa vào Permission Builder và nhóm sensitive/admin-only trước khi seed.
+- [x] `[BE]` Định nghĩa JSON schema version `lumibase.access@v1` cho export/import roles, policies, permission rows, bindings và API key metadata.
 
 ### Schema & evaluator hardening
 
@@ -236,8 +236,11 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 - [x] `[DB]` Thêm bảng `user_roles` để hỗ trợ nhiều role/user/site; giữ `user_sites.role_id` làm primary/display role trong giai đoạn chuyển đổi.
 - [x] `[DB]` Thêm policy flags explicit vào `policies`; giữ `policies.rules` cho custom/future guardrails.
 - [x] `[BE]` Mở rộng IP guard hỗ trợ IPv4, IPv6, CIDR và precedence `ipDeny` thắng `ipAllow`.
-- [ ] `[BE]` Enforce app access từ effective active policies khi vào Studio; API key luôn bị chặn khỏi Studio.
-- [ ] `[BE]` Enforce `enforceTfa=true`: user phải enroll và pass TFA; API key attach policy có TFA phải bị conflict/warning.
+- [x] `[BE]` Enforce `update`/`delete` trong `ItemService` bằng action permission và row-level WHERE.
+- [x] `[BE]` Enforce field whitelist cho `create`/`update`, bao gồm structural fields `status`/`sort`.
+- [x] `[BE]` Enforce permission-level `validation` trong write path.
+- [x] `[BE]` Enforce app access từ effective active policies khi vào Studio; API key luôn bị chặn khỏi Studio.
+- [x] `[BE]` Enforce `enforceTfa=true`: user phải enroll và pass TFA; API key attach policy có TFA phải bị conflict/warning.
 - [ ] `[BE]` Mở rộng magic vars: `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$CURRENT_API_KEY`, nested `$CURRENT_USER.*`, `$NOW(+/- duration)`.
 - [ ] `[BE]` Fail closed cho unknown operator/magic var; thêm test cho `_null`, `_nnull`, `_empty`, `_nempty`, `_regex`, case-insensitive string ops.
 
@@ -279,6 +282,17 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 - [ ] `[DB]` Đảm bảo sensitive collections (`system_state`, `audit_log`, `login_attempts`, `admin_backup_codes`, `scim_tokens`, `api_keys`) admin/security-only.
 - [ ] `[FE]` Permission Builder phân nhóm system collections và ẩn sensitive collections khỏi non-admin.
 - [ ] `[TEST]` Public policy mặc định không đọc được content/system collections nếu chưa explicit grant.
+
+### Extension access control
+
+- [x] `[DOC]` Ghi rõ Directus extension permission layers: install/enable, sandbox scopes, accountability services, app module self-check.
+- [ ] `[DB]` Thêm stable `extensions.key` và system access targets `extensions`, `extension_modules`, `extension_endpoints`, `extension_operations`.
+- [ ] `[BE]` Enforce `extensions:read/configure/install/enable/delete/grant_capability` trên extension management routes.
+- [ ] `[BE]` Enforce `extensions:execute` trước khi dispatch `/api/v1/extensions/:name/*`.
+- [ ] `[BE]` Extension data access mặc định dùng actor permissions; service-account mode cần policy/capability riêng và audit.
+- [ ] `[FE]` Studio extension loader/module bar chỉ hiển thị extension principal được phép đọc.
+- [ ] `[FE]` Permission Builder thêm nhóm Extension Access để gán user/role truy cập extension.
+- [ ] `[TEST]` User thiếu `extensions:execute` không gọi được endpoint extension dù extension enabled.
 
 ### Share action
 

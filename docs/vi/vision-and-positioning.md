@@ -6,6 +6,17 @@ LumiBase = **Directus DX + Edge-native runtime + Multi-tenant gốc**.
 
 Chúng ta KHÔNG sao chép Directus — chúng ta lấy những gì Directus làm tốt nhất (No-code builder, Permissions chi tiết, Extension SDK, Presets, Translations, Display Templates, Realtime) rồi nâng cấp ở 6 mảng "điểm sáng" mà cộng đồng OSS chưa giải quyết tốt.
 
+## 1.1. Comparison Ledger cho marketing
+
+Mỗi khi thiết kế hoặc implement một tính năng mà Directus chưa có first-class, phải cập nhật bảng so sánh tương ứng trong tài liệu feature. Với Permission Builder/RBAC, ledger chính nằm ở [permission-builder-directus-investigation.md](./features/permission-builder-directus-investigation.md#11-bảng-so-sánh-lumibase-vs-directus).
+
+Quy tắc cập nhật:
+
+- Nếu tính năng là parity với Directus, ghi `Parity`.
+- Nếu cùng use case nhưng LumiBase làm an toàn hơn hoặc vận hành tốt hơn, ghi `Improve`.
+- Nếu Directus chưa có first-class, ghi `New` và mô tả thành marketing claim có thể dùng lại.
+- Không ghi claim nếu chưa có bằng chứng từ docs chính thức, DB mẫu, hoặc implementation trong repo.
+
 ## 2. Bảng so sánh điểm sáng
 
 ### Collection Builder

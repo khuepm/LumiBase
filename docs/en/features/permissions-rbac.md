@@ -1,6 +1,10 @@
 # Permissions, Roles & Policies
 
 > Mục tiêu: hệ phân quyền **mạnh nhất** trong nhóm OSS headless CMS. Hỗ trợ field-level, row-level, time-bound, IP-bound, attribute-based và composable policies.
+>
+> Current implementation audit: [permission-service-compose-audit.md](./permission-service-compose-audit.md).
+>
+> Role flag migration strategy: [role-policy-flag-migration.md](./role-policy-flag-migration.md).
 
 ## 1. Mô hình
 
@@ -13,6 +17,8 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
 - **Role**: tập hợp cố định gán cho user (per site).
 - **Policy**: đơn vị có thể tái sử dụng, gắn vào nhiều role/user, có thứ tự ưu tiên (`priority` thấp = chạy trước, sau cao override).
 - **Permission**: rule cụ thể `(collection, action)` với `permissions`, `validation`, `presets`, `fields`.
+
+> Design note 2026-06-03: LumiBase still has `roles.adminAccess/appAccess` for compatibility. Treat these as legacy fallback and migrate to policy flags; see [Role Flag to Policy Flag Migration](./role-policy-flag-migration.md).
 
 ## 2. Permission record (JSON DSL)
 
@@ -64,6 +70,15 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
 { "activeWindow": { "from": "2025-01-01T00:00:00Z", "to": "2025-12-31T23:59:59Z" }, "allowIps": ["10.0.0.0/8"], "denyIps": [] }
 ```
 - Đánh giá trước rules; reject sớm nếu ngoài cửa sổ.
+
+## 5.1. App access, admin access, enforce TFA
+
+- `adminAccess=true` is full permission bypass for App and API; admin policies do not need permission rows.
+- `appAccess=true` allows the principal to use Studio. It is not an API permission.
+- Studio clients send `X-Lumi-Client: studio`; the backend gates those requests with effective `appAccess`.
+- API keys must never enter Studio, even if an attached policy has app access.
+- `enforceTfa=true` requires a user with enrolled TFA and a TFA-verified session before Studio requests can proceed.
+- Do not place these flags on users; users hold identity/status/TFA enrollment metadata only.
 
 ## 6. Composition & precedence
 

@@ -125,15 +125,21 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`.
 
 ### `roles`
 - `id`, `siteId`, `name`, `description`, `icon`, `adminAccess` boolean, `appAccess` boolean.
+- Note: `adminAccess/appAccess` are legacy compatibility flags. New RBAC work migrates these flags to policies so roles remain grouping units. See [Role Flag to Policy Flag Migration](./features/role-policy-flag-migration.md).
 
 ### `policies`
 - `id`, `siteId`, `name`, `description`, `rules jsonb`. Policy độc lập có thể attach vào nhiều roles/users.
+- Explicit flags: `adminAccess`, `appAccess`, `enforceTfa`, `ipAllow`, `ipDeny`, `validFrom`, `validUntil`. These are the new source of truth for admin/app/TFA/IP/time guards.
 
 ### `role_policies` / `user_policies`
 - Many-to-many với `priority`. `user_policies` cho phép gán policy trực tiếp user (override role).
 
 ### `permissions`
 - `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (row-level rule DSL), `validation jsonb`, `presets jsonb`, `fields text[]` (field-level allow list, `*` = all).
+
+### System collections seed permissions
+
+When seeding local/staging/prod, seed system collection permissions explicitly. Sensitive collections such as `system_state`, `audit_log`, `login_attempts`, `login_baselines`, `admin_backup_codes`, `scim_tokens`, and future API key tables are admin/security-only. See [System Collections & Sensitive Access](./features/system-collections-access.md).
 
 ## 4. Files & Assets (`platform.ts`)
 
