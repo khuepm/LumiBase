@@ -17,6 +17,8 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [collections-builder.md](./features/collections-builder.md) — No-code Collection Builder.
   - [field-types-and-config.md](./features/field-types-and-config.md) — Hệ thống field types & interface/display config.
   - [permissions-rbac.md](./features/permissions-rbac.md) — Roles, Policies, Permissions tới field (JSON rule engine).
+  - [access-manifest-v1.md](./features/access-manifest-v1.md) — JSON schema contract `lumibase.access@v1` for access import/export.
+  - [system-collections-access.md](./features/system-collections-access.md) — System/sensitive collection grouping for seeding and Permission Builder.
   - [raw-data-editing.md](./features/raw-data-editing.md) — Raw editor cho mọi field.
   - [user-management.md](./features/user-management.md) — Quản lý user, invitation, SSO/Logto.
   - [extensions-system.md](./features/extensions-system.md) — SDK extension + phân quyền sandbox.

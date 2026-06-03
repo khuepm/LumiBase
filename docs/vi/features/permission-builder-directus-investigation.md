@@ -692,6 +692,8 @@ Middleware:
 
 Đây nên là tính năng "Permission Builder Config-as-Code".
 
+Contract versioned đã chốt ở [access-manifest-v1.md](./access-manifest-v1.md) và schema JSON ở [`docs/schemas/lumibase.access.v1.schema.json`](../../schemas/lumibase.access.v1.schema.json).
+
 ### 11.1. Nguyên tắc
 
 - Dùng stable key, không phụ thuộc DB id.
@@ -707,6 +709,7 @@ Middleware:
 
 ```json
 {
+  "schema": "lumibase.access@v1",
   "version": 1,
   "kind": "lumibase.access",
   "siteKey": "default",
