@@ -1,70 +1,190 @@
 # Realtime / WebSocket
 
-> Dùng **Cloudflare Durable Objects** làm coordination cho realtime per `site_id` (hoặc per "hot" collection).
+Realtime lets clients receive item changes and presence updates over WebSocket. LumiBase uses Cloudflare Durable Objects as a per-site hub, while enablement is split into several layers so operators can control it safely.
 
-## 1. Mục tiêu
+## Should realtime be enabled by env or DB setting?
 
-- Subscribe thay đổi item: create/update/delete.
-- Presence: ai đang xem/edit item nào.
-- Collaborative cursors (Phase 2): patch op nhỏ trên field text/wysiwyg.
-- Server push: notifications, permission changed, settings changed.
+Use both, with different responsibilities:
 
-## 2. Protocol
+| Layer | Purpose | Changed by | Recommendation |
+| --- | --- | --- | --- |
+| Env/binding | Infrastructure capability and deployment-level kill switch | Operator/DevOps | Use to block realtime globally or in unsupported environments |
+| `settings` table | Site-level realtime toggle and limits | Site admin | Use for Studio settings |
+| `collections.meta` | Collection-level realtime opt-in | Data model admin | Use to choose which collections can be subscribed to |
 
-- Endpoint `wss://api.../realtime?site=<id>&token=<jwt>`.
-- Frame JSON:
+Default decision:
 
-### Client → Server
-```json
-{ "type": "subscribe", "id": "s1", "collection": "posts", "query": { "filter": {...}, "fields": ["id","title","status"] } }
-{ "type": "unsubscribe", "id": "s1" }
-{ "type": "presence", "scope": "items/posts/abc123" }
-{ "type": "ping" }
+- `SITE_ROOM` binding is the required infrastructure capability on Cloudflare Workers.
+- `LUMIBASE_REALTIME_ENABLED=false` is a deployment-level kill switch. When unset or `true`, the server continues to read the site setting.
+- Setting `realtime.enabled` decides whether a site can use realtime.
+- A collection can only be subscribed to when `collections.meta.realtime.enabled === true`.
+
+This prevents new collections from accidentally broadcasting data in realtime.
+
+## Site configuration
+
+Create or update this setting:
+
+```http
+POST /api/v1/settings
+Content-Type: application/json
+
+{
+  "key": "realtime.enabled",
+  "value": {
+    "enabled": true,
+    "maxConnectionsPerUser": 5,
+    "maxSubscriptionsPerConnection": 50
+  }
+}
 ```
 
-### Server → Client
+Recommended defaults:
+
+| Key | Default | Notes |
+| --- | --- | --- |
+| `enabled` | `false` | Sites must explicitly enable realtime |
+| `maxConnectionsPerUser` | `5` | Resource guard per user |
+| `maxSubscriptionsPerConnection` | `50` | Prevents runaway subscriptions |
+| `heartbeatSeconds` | `30` | Matches the current Durable Object heartbeat |
+| `idleTimeoutSeconds` | `90` | Closes silent connections |
+
+## Enable realtime for a collection
+
+Collections use the existing JSONB `meta` field for opt-in configuration:
+
+```http
+PATCH /api/v1/collections/posts
+Content-Type: application/json
+
+{
+  "meta": {
+    "realtime": {
+      "enabled": true,
+      "events": ["create", "update", "delete"],
+      "presence": true
+    }
+  }
+}
+```
+
+If a collection does not have `meta.realtime.enabled: true`, the server must reject `subscribe` with `COLLECTION_REALTIME_DISABLED`, and `ItemService` must not publish events for that collection.
+
+## Endpoint
+
+```text
+wss://<cms-host>/api/v1/realtime?token=<jwt>
+```
+
+Browser WebSocket connections cannot reliably send an `Authorization` header, so the token is passed as a query parameter. The endpoint should derive `siteId` from tenant middleware and should not trust a client-supplied `siteId`.
+
+When the request is not a WebSocket upgrade, the endpoint returns a lightweight health response:
+
 ```json
-{ "type": "subscribed", "id": "s1" }
-{ "type": "event", "id": "s1", "action": "create" | "update" | "delete", "key": "posts/abc123", "data": {...} | null }
-{ "type": "presence", "scope": "items/posts/abc123", "users": [{ "id":"u1", "name":"Khue" }] }
-{ "type": "error", "id": "s1", "code": "FORBIDDEN" }
+{
+  "status": "realtime_ready",
+  "supportedProtocols": ["lumibase-sync-v1"]
+}
+```
+
+## Protocol
+
+Client messages:
+
+```json
+{ "type": "subscribe", "collection": "posts" }
+```
+
+```json
+{ "type": "unsubscribe", "collection": "posts" }
+```
+
+```json
+{ "type": "presence", "collection": "posts", "itemId": "item_123", "meta": { "cursor": "title" } }
+```
+
+```json
 { "type": "pong" }
 ```
 
-## 3. Permission
+Server messages:
 
-- Khi subscribe: server đánh giá permission `read` của user cho collection → trả `FORBIDDEN` nếu không có.
-- Trước khi push event tới client: re-evaluate row-level rule + field mask; nếu data thay đổi khiến mất quyền → push `delete` virtual.
-
-## 4. Durable Object design
-
-- `class SiteRoom`: 1 instance per `site_id`.
-  - Maintain: `connections: Map<wsId, ConnectionState>`, `subscriptions: Map<topic, Set<wsId>>`, `presence: Map<scope, Set<userId>>`.
-  - Receive event qua `fetch(/publish)` từ ItemService sau commit DB.
-  - Fan-out tới connection match topic + permission.
-- Hot collection có thể tách Durable Object riêng nếu lưu lượng lớn (Phase 2 — sharding).
-
-## 5. Backpressure & limits
-
-- Per connection: max 50 subscriptions, max 30 msg/s.
-- Heartbeat 30s; idle 120s → close.
-- `settings.realtime.maxConnectionsPerUser` default 5.
-
-## 6. Integration với mutation pipeline
-
-- Mỗi mutation thành công trong `ItemService.commit()`:
-  1. Ghi `activity`.
-  2. Invalidate KV cache + Next.js `revalidateTag`.
-  3. POST tới Durable Object `/publish` payload `{ collection, action, item, before, after, siteId }`.
-
-## 7. SDK client (`packages/sdk`)
-
-```ts
-const client = createLumiClient({ url, token, siteId });
-const sub = client.realtime.subscribe('posts', { filter: { status: { _eq: 'published' } } });
-sub.on('event', e => store.apply(e));
-sub.on('error', e => ...);
-sub.unsubscribe();
+```json
+{ "type": "welcome", "sessionId": "abc123" }
 ```
 
-## 8. Tasks: Phase MVP-E.
+```json
+{ "type": "ping" }
+```
+
+```json
+{
+  "type": "event",
+  "collection": "posts",
+  "action": "update",
+  "itemId": "item_123",
+  "payload": { "title": "Published" }
+}
+```
+
+```json
+{
+  "type": "presence",
+  "users": [
+    {
+      "sessionId": "abc123",
+      "userId": "user_1",
+      "collection": "posts",
+      "itemId": "item_123",
+      "lastSeen": "2026-06-02T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+```json
+{ "type": "error", "code": "FORBIDDEN", "message": "Read access required." }
+```
+
+## SDK
+
+```ts
+import { RealtimeClient } from '@lumibase/sdk/realtime';
+
+const realtime = new RealtimeClient({
+  baseUrl: 'https://cms.example.com',
+  token,
+  siteId,
+});
+
+const unsubscribe = realtime.subscribe('posts', (event) => {
+  console.log(event.action, event.itemId, event.payload);
+});
+
+realtime.onPresence((users) => {
+  console.log(users);
+});
+
+realtime.connect();
+
+// Later
+unsubscribe();
+realtime.disconnect();
+```
+
+## Permissions
+
+The server must check permissions at two points:
+
+1. On subscribe: the user needs `read` access to the collection.
+2. On publish: payloads must be masked according to field permissions before delivery.
+
+If a row-level rule means the user can no longer see an item after an update, the server should send a virtual `delete` event to that subscriber so the client removes the item from its local cache.
+
+## Current limits
+
+- Durable Object `SiteRoom` is only available on Cloudflare Workers.
+- Docker runtime needs a separate WebSocket adapter before realtime can run self-hosted.
+- The first phase only supports collection events and basic presence. Filtered subscriptions and collaborative editing are later phases.
+
+See the detailed implementation plan in [Realtime WebSocket Implementation](../architecture/realtime-websocket-implementation.md).

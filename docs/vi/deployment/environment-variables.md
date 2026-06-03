@@ -10,6 +10,7 @@
 | `JWT_SECRET` | Có | Secret cho JWT ứng dụng. Lưu bằng secret store. |
 | `CF_ACCESS_CERTS_URL` | Production admin auth | JWKS URL của Cloudflare Access. |
 | `CF_ACCESS_AUDIENCE` | Production admin auth | Audience của Cloudflare Access application. |
+| `LUMIBASE_REALTIME_ENABLED` | Tuỳ chọn | Kill switch realtime cấp deploy. Đặt `false` để tắt WebSocket dù site setting đang bật. |
 
 ## Binding Cloudflare
 

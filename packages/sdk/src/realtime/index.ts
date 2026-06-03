@@ -150,6 +150,9 @@ export class RealtimeClient {
     const wsBase = baseUrl.replace(/^http/, 'ws');
     const url = new URL(`${wsBase}/api/v1/realtime`);
     url.searchParams.set('token', token);
+    // Local/dev tenant middleware accepts `?site=` because browser WebSocket
+    // clients cannot set `X-Lumi-Site` headers during the handshake.
+    url.searchParams.set('site', siteId);
     url.searchParams.set('siteId', siteId);
     if (userId) url.searchParams.set('userId', userId);
 

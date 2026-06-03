@@ -40,6 +40,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
   const authHeader = c.req.header('authorization') ?? '';
   const [scheme, token] = authHeader.split(' ');
+  const realtimeQueryToken = path === '/api/v1/realtime' ? c.req.query('token') : undefined;
 
   // 1. Dev Mode Auth (Only check if enabled in env)
   // Fall back to process.env so the Node.js / Docker serve path works
@@ -47,7 +48,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const devAuthEnabled =
     c.env.LUMIBASE_DEV_AUTH === 'true' || process.env.LUMIBASE_DEV_AUTH === 'true';
   if (devAuthEnabled) {
-    const devToken = token || authHeader;
+    const devToken = token || realtimeQueryToken || authHeader;
     if (devToken && devToken.startsWith('dev:')) {
       const parts = devToken.slice(4).split(':'); // dev:<email>:<role>
       const email = parts[0] || 'dev@lumibase.dev';
@@ -99,7 +100,10 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   }
 
   // 3. Custom JWT Auth (Frontend Users flow)
-  if (scheme?.toLowerCase() === 'bearer' && token) {
+  const bearerToken =
+    scheme?.toLowerCase() === 'bearer' && token ? token : realtimeQueryToken;
+
+  if (bearerToken) {
     // Fall back to process.env for Node.js / Docker serve mode.
     const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
     if (!jwtSecret) {
@@ -110,7 +114,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     }
 
     try {
-      const payload = await verifyCustomJwt(token, jwtSecret);
+      const payload = await verifyCustomJwt(bearerToken, jwtSecret);
       const principal: AuthPrincipal = {
         userId: String(payload.userId),
         email: typeof payload.email === 'string' ? payload.email : undefined,

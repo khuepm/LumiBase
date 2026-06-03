@@ -12,6 +12,7 @@ This page lists the deployment variables most operators need when running LumiBa
 | `JWT_SECRET` | Yes | Secret used for application JWT verification/signing. Store as a secret. |
 | `CF_ACCESS_CERTS_URL` | Production admin auth | Cloudflare Access JWKS URL. |
 | `CF_ACCESS_AUDIENCE` | Production admin auth | Cloudflare Access application audience. |
+| `LUMIBASE_REALTIME_ENABLED` | Optional | Deployment-level realtime kill switch. Set to `false` to disable WebSocket even when the site setting is enabled. |
 
 ## Cloudflare Bindings
 

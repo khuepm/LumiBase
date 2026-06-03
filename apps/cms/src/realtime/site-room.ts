@@ -122,11 +122,32 @@ export class SiteRoom extends DurableObject<any> {
 
     this.send(server, { type: 'welcome', sessionId });
 
+    // These listeners are useful in non-hibernating runtimes. Cloudflare's
+    // Durable Object WebSocket hibernation path dispatches to the
+    // webSocketMessage/webSocketClose/webSocketError methods below.
     server.addEventListener('message', (event) => this.onMessage(sessionId, event));
     server.addEventListener('close', () => this.onClose(sessionId));
     server.addEventListener('error', () => this.onClose(sessionId));
 
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
+    const sessionId = this.sessionIdForSocket(ws);
+    if (!sessionId) return;
+    this.onMessage(sessionId, { data: message } as MessageEvent);
+  }
+
+  webSocketClose(ws: WebSocket): void {
+    const sessionId = this.sessionIdForSocket(ws);
+    if (!sessionId) return;
+    this.onClose(sessionId);
+  }
+
+  webSocketError(ws: WebSocket): void {
+    const sessionId = this.sessionIdForSocket(ws);
+    if (!sessionId) return;
+    this.onClose(sessionId);
   }
 
   // ─── Heartbeat alarm ──────────────────────────────────────────────────────
@@ -244,6 +265,13 @@ export class SiteRoom extends DurableObject<any> {
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
+
+  private sessionIdForSocket(ws: WebSocket): string | null {
+    for (const [sessionId, session] of this.sessions) {
+      if (session.ws === ws) return sessionId;
+    }
+    return null;
+  }
 
   private broadcastPresence(): void {
     const now = new Date().toISOString();
