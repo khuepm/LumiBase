@@ -1,5 +1,5 @@
 # Development image with hot-reload via volume mounting
-FROM node:20-slim
+FROM node:22-slim
 
 # Native optional dependencies can fall back to local compilation on arm64.
 RUN apt-get update \

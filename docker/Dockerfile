@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
@@ -12,7 +12,7 @@ RUN pnpm --filter @lumibase/cms build
 RUN pnpm --filter @lumibase/cms build:node
 
 # Stage 2: Runtime
-FROM node:20-slim AS runtime
+FROM node:22-slim AS runtime
 RUN addgroup --system lumibase && adduser --system --ingroup lumibase lumibase
 WORKDIR /app
 COPY --from=builder /app/apps/cms/dist ./dist
@@ -22,5 +22,5 @@ COPY docker/scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 USER lumibase
 EXPOSE 1989
-HEALTHCHECK --interval=10s --timeout=3s CMD wget -qO- http://localhost:1989/health || exit 1
+HEALTHCHECK --interval=10s --timeout=3s CMD node -e "fetch('http://localhost:1989/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 ENTRYPOINT ["/entrypoint.sh"]

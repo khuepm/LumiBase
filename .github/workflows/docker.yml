@@ -92,8 +92,9 @@ jobs:
           fi
 
           docker run -d --name lumibase-health \
-            -p 3000:3000 \
+            -p 1989:1989 \
             -e LUMIBASE_RUNTIME=docker \
+            -e PORT=1989 \
             -e DATABASE_URL=postgresql://localhost:5432/lumibase \
             -e REDIS_URL=redis://localhost:6379 \
             -e S3_ENDPOINT=http://localhost:9000 \
@@ -113,7 +114,7 @@ jobs:
 
           MAX_RETRIES=6
           RETRY_COUNT=0
-          until curl -sf http://localhost:3000/health > /dev/null 2>&1; do
+          until curl -sf http://localhost:1989/health > /dev/null 2>&1; do
             RETRY_COUNT=$((RETRY_COUNT + 1))
             if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
               echo "Health check failed after $MAX_RETRIES attempts"
