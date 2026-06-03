@@ -173,6 +173,7 @@ export interface CompiledPermission {
   fields: string[];
   presets: Record<string, unknown>;
   validation: Record<string, unknown>;
+  sources?: Array<{ policyId: string; policyName: string }>;
 }
 
 export interface PermissionBundle {

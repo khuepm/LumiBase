@@ -249,7 +249,7 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 - [ ] `[BE]` Tích hợp conflict check vào attach role-policy, user-policy, API-key-policy; cho phép override warning có audit.
 - [x] `[BE]` Tích hợp conflict check vào attach role-policy và user-policy; warning override ghi audit.
 - [x] `[FE]` Role Detail gọi conflict check trước khi attach policy; blocking conflict không cho lưu.
-- [ ] `[FE]` Permission Matrix thêm Effective View hiển thị quyền cuối cùng và source policies.
+- [x] `[FE]` Permission Matrix thêm Effective View hiển thị quyền cuối cùng và source policies.
 - [ ] `[TEST]` Property tests cho conflict classifier với các tổ hợp field/rule/preset/validation.
 
 ### API Keys theo Roles/Policies

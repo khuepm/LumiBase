@@ -150,6 +150,7 @@ function lookup(
       fields: ['*'],
       presets: {},
       validation: {},
+      sources: [{ policyId: 'admin', policyName: 'Admin bypass' }],
     };
   }
   return bundle.byKey[`${collection}::${action}`] ?? null;
@@ -206,7 +207,29 @@ function CellInspector({
       </header>
 
       {perm && (
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-4">
+          <Block label="Source policies">
+            {perm.sources?.length ? (
+              <ul className="space-y-1">
+                {perm.sources.map((source) => (
+                  <li key={source.policyId}>
+                    {source.policyId === 'admin' ? (
+                      <span>{source.policyName}</span>
+                    ) : (
+                      <a
+                        href={`/access/policies/${source.policyId}`}
+                        className="text-primary hover:underline"
+                      >
+                        {source.policyName}
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <span className="text-muted-foreground">unknown</span>
+            )}
+          </Block>
           <Block label="Fields">
             {perm.fields.length === 0 ? (
               <span className="text-muted-foreground">none</span>

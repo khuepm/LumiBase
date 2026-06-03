@@ -52,6 +52,8 @@ export interface CompiledPermission {
   presets: Record<string, unknown>;
   /** Per-action validation overrides. */
   validation: Record<string, unknown>;
+  /** Policies that contributed to this compiled permission. */
+  sources: Array<{ policyId: string; policyName: string }>;
 }
 
 export interface PermissionBundle {
@@ -269,6 +271,7 @@ export class PermissionService {
       .where(and(scopeSite(policies.siteId, ctx.siteId), inArray(policies.id, policyIds)));
     const activePolicies = policyMeta.filter((p) => isPolicyActive(p, ctx));
     const allowedPolicyIds = activePolicies.map((p) => p.id);
+    const activePolicyNames = new Map(activePolicies.map((p) => [p.id, p.name]));
 
     const admin =
       roleRows.some((r) => r.adminAccess) ||
@@ -307,6 +310,10 @@ export class PermissionService {
         fields: (row.fields as string[]) ?? ['*'],
         presets: (row.presets as Record<string, unknown>) ?? {},
         validation: (row.validation as Record<string, unknown>) ?? {},
+        sources: [{
+          policyId: row.policyId,
+          policyName: activePolicyNames.get(row.policyId) ?? row.policyId,
+        }],
       };
       const existing = byKey[key];
       byKey[key] = existing ? mergePermission(existing, incoming) : incoming;
@@ -479,6 +486,7 @@ function mergePermission(a: CompiledPermission, b: CompiledPermission): Compiled
     fields,
     presets: { ...a.presets, ...b.presets },
     validation: { ...a.validation, ...b.validation },
+    sources: mergePermissionSources(a.sources, b.sources),
   };
 }
 
@@ -487,4 +495,18 @@ function mergeFieldLists(a: string[], b: string[]): string[] {
   const set = new Set(a);
   for (const x of b) set.add(x);
   return Array.from(set);
+}
+
+function mergePermissionSources(
+  a: CompiledPermission['sources'],
+  b: CompiledPermission['sources'],
+): CompiledPermission['sources'] {
+  const seen = new Set<string>();
+  const out: CompiledPermission['sources'] = [];
+  for (const source of [...a, ...b]) {
+    if (seen.has(source.policyId)) continue;
+    seen.add(source.policyId);
+    out.push(source);
+  }
+  return out;
 }
