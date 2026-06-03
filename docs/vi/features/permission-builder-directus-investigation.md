@@ -25,6 +25,8 @@ Nguồn tham khảo chính:
 
 ## 1.1. Bảng so sánh LumiBase vs Directus
 
+Đây là **comparison ledger** cho Permission Builder/RBAC. Khi thêm bất kỳ capability mới nào mà Directus chưa có first-class, phải thêm hoặc cập nhật một dòng trong bảng này để phục vụ tài liệu sản phẩm/marketing sau này.
+
 Legend:
 
 - **Parity**: LumiBase nên hỗ trợ tương đương Directus.
