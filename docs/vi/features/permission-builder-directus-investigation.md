@@ -576,6 +576,8 @@ Fail-closed rules:
 
 Directus cho non-admin cấu hình quyền trên system collections qua mục "System Collections". LumiBase cần seed policy cho các bảng hệ thống tương tự, nếu không Studio sẽ hoặc quá mở hoặc không dùng được.
 
+Contract chốt cho seed/UI/import-export nằm ở [system-collections-access.md](./system-collections-access.md). Section này giữ bối cảnh điều tra Directus và blueprint ban đầu.
+
 Danh sách system collections LumiBase hiện có theo schema Drizzle:
 
 ```txt

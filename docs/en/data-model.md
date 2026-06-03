@@ -135,6 +135,10 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`.
 ### `permissions`
 - `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (row-level rule DSL), `validation jsonb`, `presets jsonb`, `fields text[]` (field-level allow list, `*` = all).
 
+### System collections seed permissions
+
+When seeding local/staging/prod, seed system collection permissions explicitly. Sensitive collections such as `system_state`, `audit_log`, `login_attempts`, `login_baselines`, `admin_backup_codes`, `scim_tokens`, and future API key tables are admin/security-only. See [System Collections & Sensitive Access](./features/system-collections-access.md).
+
 ## 4. Files & Assets (`platform.ts`)
 
 ### `files`

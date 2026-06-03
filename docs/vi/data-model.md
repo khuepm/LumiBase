@@ -140,7 +140,7 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`.
 
 ### System collections cần seed permissions
 
-Khi seed local/staging/prod, cần seed quyền cho các collection hệ thống, không chỉ collection nội dung. Nhóm nhạy cảm như `system_state`, `audit_log`, `login_attempts`, `login_baselines`, `admin_backup_codes`, `scim_tokens`, và các bảng API key tương lai chỉ nên dành cho admin/security policies. Chi tiết xem [Permission Builder blueprint](./features/permission-builder-directus-investigation.md#9-system-collections-và-seeding).
+Khi seed local/staging/prod, cần seed quyền cho các collection hệ thống, không chỉ collection nội dung. Nhóm nhạy cảm như `system_state`, `audit_log`, `login_attempts`, `login_baselines`, `admin_backup_codes`, `scim_tokens`, và các bảng API key tương lai chỉ nên dành cho admin/security policies. Contract chốt xem [System Collections & Sensitive Access](./features/system-collections-access.md); blueprint tổng thể xem [Permission Builder blueprint](./features/permission-builder-directus-investigation.md#9-system-collections-và-seeding).
 
 ## 4. Files & Assets (`platform.ts`)
 
