@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { joinAdminPathLogin } from '../step-done';
+import { buildAdminLoginUrl, joinAdminPathLogin } from '../step-done';
 
 /**
  * Unit tests for the pure `joinAdminPathLogin` helper used by the Done
@@ -22,27 +22,27 @@ describe('joinAdminPathLogin', () => {
     expect(joinAdminPathLogin('/lumi-7f3a9c/')).toBe('/lumi-7f3a9c/login');
   });
 
-  it('collapses multiple leading slashes to a single one', () => {
+  it('rejects a malformed path after collapsing multiple leading slashes', () => {
     // Without normalisation the browser would treat `//host/login` as a
     // protocol-relative URL pointing at `host` — a real hijack risk if
     // a future store migration ever stored a malformed path.
-    expect(joinAdminPathLogin('//evil.example')).toBe('/evil.example/login');
+    expect(joinAdminPathLogin('//evil.example')).toBeNull();
   });
 
   it('trims surrounding whitespace before processing', () => {
     expect(joinAdminPathLogin('  /lumi-7f3a9c  ')).toBe('/lumi-7f3a9c/login');
   });
 
-  it('falls back to /login for an empty input', () => {
-    expect(joinAdminPathLogin('')).toBe('/login');
+  it('rejects an empty input', () => {
+    expect(joinAdminPathLogin('')).toBeNull();
   });
 
-  it('falls back to /login for a whitespace-only input', () => {
-    expect(joinAdminPathLogin('   ')).toBe('/login');
+  it('rejects a whitespace-only input', () => {
+    expect(joinAdminPathLogin('   ')).toBeNull();
   });
 
-  it('falls back to /login for an input that is only slashes', () => {
-    expect(joinAdminPathLogin('//')).toBe('/login');
+  it('rejects an input that is only slashes', () => {
+    expect(joinAdminPathLogin('//')).toBeNull();
   });
 
   it('handles a path without a leading slash', () => {
@@ -54,5 +54,11 @@ describe('joinAdminPathLogin', () => {
 
   it('preserves valid hyphens and digits in the slug', () => {
     expect(joinAdminPathLogin('/admin-panel-42')).toBe('/admin-panel-42/login');
+  });
+
+  it('builds the full absolute login URL from origin and admin path', () => {
+    expect(buildAdminLoginUrl('/lumi-7f3a9c', 'http://127.0.0.1:5174')).toBe(
+      'http://127.0.0.1:5174/lumi-7f3a9c/login',
+    );
   });
 });

@@ -9,10 +9,13 @@ import {
   Puzzle,
   Workflow,
   GitBranch,
+  LogOut,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { NotificationsPanel } from '@/components/notifications-panel';
+import { clearActiveToken } from '@/lib/api';
+import { ADMIN_PATH_REGEX } from '@/modules/setup/schemas/admin-path';
 
 interface ModuleDef {
   id: string;
@@ -33,6 +36,13 @@ const MODULES: ModuleDef[] = [
   { id: 'settings', label: 'Settings', icon: Settings, to: '/settings/translations' },
 ];
 
+function getAdminBase(pathname: string): string {
+  const first = pathname.split('/').filter(Boolean)[0];
+  if (!first) return '';
+  const candidate = `/${first}`;
+  return ADMIN_PATH_REGEX.test(candidate) ? candidate : '';
+}
+
 interface AppShellProps {
   children: ReactNode;
 }
@@ -51,23 +61,32 @@ interface AppShellProps {
  */
 export function AppShell({ children }: AppShellProps) {
   const { location } = useRouterState();
-  const activeModule = location.pathname.startsWith('/data-model')
+  const adminBase = getAdminBase(location.pathname);
+  const appPath = adminBase && location.pathname.startsWith(adminBase)
+    ? location.pathname.slice(adminBase.length) || '/'
+    : location.pathname;
+  const activeModule = appPath.startsWith('/data-model')
     ? 'data-model'
-    : location.pathname.startsWith('/automation')
+    : appPath.startsWith('/automation')
       ? 'automation'
-      : location.pathname.startsWith('/cdc')
+      : appPath.startsWith('/cdc')
         ? 'cdc'
-        : location.pathname.startsWith('/settings/marketplace')
+        : appPath.startsWith('/settings/marketplace')
           ? 'marketplace'
-          : location.pathname.startsWith('/settings')
+          : appPath.startsWith('/settings')
             ? 'settings'
-            : location.pathname.startsWith('/access')
+            : appPath.startsWith('/access')
               ? 'access'
-              : location.pathname.startsWith('/users')
+              : appPath.startsWith('/users')
                 ? 'users'
-                : location.pathname.startsWith('/files')
+                : appPath.startsWith('/files')
                   ? 'files'
                   : 'content';
+
+  const handleLogout = () => {
+    clearActiveToken();
+    window.location.assign(adminBase ? `${adminBase}/login` : '/');
+  };
 
   return (
     <div className="flex h-screen w-screen">
@@ -93,7 +112,7 @@ export function AppShell({ children }: AppShellProps) {
           return (
             <Link
               key={id}
-              to={to}
+              to={`${adminBase}${to === '/' ? '' : to}` || '/'}
               aria-label={label}
               aria-current={isActive ? 'page' : undefined}
               title={label}
@@ -128,6 +147,15 @@ export function AppShell({ children }: AppShellProps) {
           {/* Right-side topbar actions */}
           <div className="flex items-center gap-2">
             <NotificationsPanel />
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Log out"
+              aria-label="Log out"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground shadow-sm transition hover:bg-muted hover:text-foreground"
+            >
+              <LogOut className="h-4 w-4" aria-hidden="true" />
+            </button>
           </div>
         </header>
 

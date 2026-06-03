@@ -494,7 +494,7 @@ authRouter.post('/login', async (c) => {
     {
       userId: user.id,
       email: user.email,
-      roles: ['member'],
+      roles: user.isBootstrap ? ['admin'] : ['member'],
     },
     jwtSecret
   );

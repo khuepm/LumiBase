@@ -512,12 +512,18 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
           route tree pick the request up fresh; an in-memory SPA swap
           would land on a route the public layout can't serve.
         */}
-        <a
-          href={loginHref}
-          className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
-        >
-          Go to admin login
-        </a>
+        {loginHref ? (
+          <a
+            href={loginHref}
+            className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+          >
+            Go to admin login
+          </a>
+        ) : (
+          <p role="alert" className="text-sm text-red-600">
+            The recovered admin path is invalid. Contact an operator before signing in.
+          </p>
+        )}
       </div>
     </div>
   );
