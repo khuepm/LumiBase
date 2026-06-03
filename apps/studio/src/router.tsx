@@ -11,6 +11,7 @@ import { AppShell } from './components/app-shell';
 import { BareLayout } from './components/bare-layout';
 import { SetupLayout } from './modules/setup/setup-layout';
 import { SetupStateGate } from './modules/setup/setup-state-gate';
+import { useCompleteSetup } from './modules/setup/hooks/use-complete-setup';
 import {
   getEarliestUnsatisfiedStep,
   useSetupStore,
@@ -59,7 +60,10 @@ const CdcPipelineDetailPage = lazy(() => import('./modules/cdc/pipeline-detail')
 const StepAccount = lazy(() => import('./modules/setup/steps/step-account').then((m) => ({ default: m.StepAccount })));
 const StepPath = lazy(() => import('./modules/setup/steps/step-path').then((m) => ({ default: m.StepPath })));
 const StepSecurity = lazy(() => import('./modules/setup/steps/step-security').then((m) => ({ default: m.StepSecurity })));
+const StepRecovery = lazy(() => import('./modules/setup/steps/step-recovery').then((m) => ({ default: m.StepRecovery })));
 const StepDone = lazy(() => import('./modules/setup/steps/step-done').then((m) => ({ default: m.StepDone })));
+
+let setupBackupCodes: readonly string[] = [];
 
 // ---------------------------------------------------------------------------
 // Recovery pages — public, pre-auth UIs that call the CMS recovery endpoints
@@ -97,6 +101,27 @@ function withSuspense(Component: React.ComponentType) {
       </Suspense>
     );
   };
+}
+
+function SetupSecurityWithComplete() {
+  const navigate = useNavigate();
+  const completeSetup = useCompleteSetup();
+
+  return (
+    <StepSecurity
+      onSubmitted={(policy) => {
+        completeSetup.mutate(
+          { policy },
+          {
+            onSuccess: (data) => {
+              setupBackupCodes = data.backupCodes;
+              navigate({ to: '/setup/recovery' });
+            },
+          },
+        );
+      }}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -253,16 +278,36 @@ const setupSecurityRoute = createRoute({
     }
   },
   component: () => {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <SetupSecurityWithComplete />
+      </Suspense>
+    );
+  },
+});
+
+const setupRecoveryRoute = createRoute({
+  getParentRoute: () => setupShellRoute,
+  path: '/setup/recovery',
+  beforeLoad: () => {
+    const state = useSetupStore.getState();
+    if (
+      !state.accountValid ||
+      !state.pathValid ||
+      !state.policyValid ||
+      !state.completed
+    ) {
+      throw redirect({ to: getEarliestUnsatisfiedStep(state) });
+    }
+  },
+  component: () => {
     const navigate = useNavigate();
     return (
       <Suspense fallback={<PageLoader />}>
-        {/*
-          PLACEHOLDER: routing Security → Done directly until the
-          Recovery step (task 10.3) lands. Once that route registers,
-          this navigation chain becomes Security → Recovery → Done
-          per design.md §5.4.
-        */}
-        <StepSecurity onSubmitted={() => navigate({ to: '/setup/done' })} />
+        <StepRecovery
+          backupCodes={setupBackupCodes}
+          onFinish={() => navigate({ to: '/setup/done' })}
+        />
       </Suspense>
     );
   },
@@ -276,7 +321,7 @@ const setupDoneRoute = createRoute({
     // hasn't actually completed the flow yet, send them to whatever
     // step is still outstanding so the URL stays honest.
     const state = useSetupStore.getState();
-    if (!state.completed) {
+    if (!state.completed || !state.confirmed) {
       throw redirect({ to: getEarliestUnsatisfiedStep(state) });
     }
   },
@@ -549,6 +594,7 @@ const routeTree = rootRoute.addChildren([
       setupAccountRoute,
       setupPathRoute,
       setupSecurityRoute,
+      setupRecoveryRoute,
       setupDoneRoute,
     ]),
     recoveryBackupCodeRoute,

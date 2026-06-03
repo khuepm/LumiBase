@@ -2,7 +2,6 @@ import {
   useMutation,
   type UseMutationResult,
 } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
 import { clearAccountDraft, getAccountDraft } from '../steps/step-account';
 import { clearPathDraft, getPathDraft } from '../steps/step-path';
 import type { LockoutPolicyFormValues } from '../schemas/policy';
@@ -24,12 +23,13 @@ import { useSetupStore } from '../setup-store';
  *      legitimate use.
  *   4. Remove the cached setup token from `sessionStorage` so future
  *      visitors of the same tab can't resubmit the wizard.
- *   5. Navigate to `/setup/done`.
+ *   5. Return the one-time backup codes to the caller, which can then
+ *      render `/setup/recovery` before finishing on `/setup/done`.
  *
  * On failure: the mutation surfaces a `SetupCompleteError` carrying a
  * normalized `code` (see `SetupCompleteErrorCode`). The hook does NOT
- * navigate away — consumers (the Security step's submit handler) read
- * `mutation.error` and render an inline banner. We deliberately do
+ * navigate away — consumers read `mutation.error` and render an inline
+ * banner. We deliberately do
  * not auto-retry: a 4xx classification represents a deterministic
  * client error, and a transient 5xx may have already mutated state on
  * the server (the wizard is single-shot per row-lock, see design §6.6).
@@ -391,7 +391,7 @@ function isSetupCompleteResponse(value: unknown): value is SetupCompleteResponse
  * React Query mutation that finalizes the wizard. See module-level
  * doc above for the full success/error lifecycle.
  *
- * Usage from the Security step (task 6.5 / 8.3) will look like:
+ * Usage from the Security step bridge:
  *
  *   const complete = useCompleteSetup();
  *   complete.mutate({ policy: form.getValues() });
@@ -401,8 +401,6 @@ export function useCompleteSetup(): UseMutationResult<
   SetupCompleteError,
   SetupCompletePayload
 > {
-  const navigate = useNavigate();
-
   return useMutation<
     SetupCompleteResponse,
     SetupCompleteError,
@@ -423,11 +421,6 @@ export function useCompleteSetup(): UseMutationResult<
 
       // 3. Remove the cached setup token (it's invalid server-side now too).
       clearSetupToken();
-
-      // 4. Navigate to the Done step. The route is registered under
-      //    `publicLayoutRoute` in `router.tsx` (task 3.9), so the
-      //    typed router accepts the literal path directly.
-      navigate({ to: '/setup/done' });
     },
   });
 }
