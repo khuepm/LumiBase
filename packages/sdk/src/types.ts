@@ -196,6 +196,27 @@ export interface PermissionCheckResult {
   presets?: Record<string, unknown>;
 }
 
+export interface AccessConflict {
+  severity: "warning" | "blocking";
+  collection: string;
+  action: PermissionAction;
+  existingPolicy: string;
+  incomingPolicy: string;
+  reason: string;
+}
+
+export interface AccessConflictReport {
+  ok: boolean;
+  conflicts: AccessConflict[];
+  warnings: AccessConflict[];
+}
+
+export interface AccessConflictCheckInput {
+  target: { type: "role" | "user" | "api_key"; id: string };
+  addPolicies?: string[];
+  removePolicies?: string[];
+}
+
 export interface PresetResource {
   id: string;
   siteId: string;
