@@ -33,11 +33,22 @@ export function createDockerRuntime(env: Record<string, unknown>): RuntimeContex
   const imgproxyKey = (env.IMGPROXY_KEY as string) || '';
   const imgproxySalt = (env.IMGPROXY_SALT as string) || '';
 
-  // Shared Redis connection for cache and queue
-  const redis = new Redis(redisUrl);
+  // Shared Redis connection for cache and queue.
+  // maxRetriesPerRequest:0 + enableOfflineQueue:false ensures that when Redis
+  // is unreachable (e.g. Wrangler sandbox blocks TCP connections to localhost),
+  // operations fail immediately instead of hanging for ~10 s across 20 retries.
+  const redis = new Redis(redisUrl, {
+    maxRetriesPerRequest: 0,
+    enableOfflineQueue: false,
+    lazyConnect: true,
+  });
+  // Prevent unhandled 'error' events from crashing the process/worker when
+  // Redis is temporarily unavailable; errors are handled per-operation in
+  // RedisCacheProvider and BullMQProvider.
+  redis.on('error', () => {/* intentionally silent — handled per-operation */});
 
   return {
-    cache: new RedisCacheProvider(redisUrl),
+    cache: new RedisCacheProvider(redis),
     storage: new S3StorageProvider({
       endpoint: s3Endpoint,
       accessKeyId: s3AccessKey,

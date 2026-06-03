@@ -10,6 +10,8 @@
 
 Resolver: `getSetting(key, { siteId, userId })` → trả về giá trị merge theo precedence.
 
+Realtime có thêm một lớp opt-in ở collection: env/binding xác định deploy có hỗ trợ WebSocket, `settings.realtime.enabled` bật/tắt theo site, và `collections.meta.realtime.enabled` chọn collection cụ thể được phép subscribe.
+
 ## 2. Settings categories
 
 | Category | Ví dụ key |

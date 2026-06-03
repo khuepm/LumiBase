@@ -10,6 +10,8 @@
 
 Resolver: `getSetting(key, { siteId, userId })` → trả về giá trị merge theo precedence.
 
+Realtime adds one collection-level opt-in layer: env/bindings decide whether the deployment supports WebSocket, `settings.realtime.enabled` enables it for the site, and `collections.meta.realtime.enabled` selects the collections users may subscribe to.
+
 ## 2. Settings categories
 
 | Category | Ví dụ key |
