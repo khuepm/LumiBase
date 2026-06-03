@@ -3,6 +3,8 @@
 > Mục tiêu: hệ phân quyền **mạnh nhất** trong nhóm OSS headless CMS. Hỗ trợ field-level, row-level, time-bound, IP-bound, attribute-based và composable policies.
 >
 > Xem thêm bản điều tra/blueprint chi tiết: [permission-builder-directus-investigation.md](./permission-builder-directus-investigation.md).
+>
+> Audit implementation hiện tại: [permission-service-compose-audit.md](./permission-service-compose-audit.md).
 
 ## 1. Mô hình
 

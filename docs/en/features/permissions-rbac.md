@@ -1,6 +1,8 @@
 # Permissions, Roles & Policies
 
 > Mục tiêu: hệ phân quyền **mạnh nhất** trong nhóm OSS headless CMS. Hỗ trợ field-level, row-level, time-bound, IP-bound, attribute-based và composable policies.
+>
+> Current implementation audit: [permission-service-compose-audit.md](./permission-service-compose-audit.md).
 
 ## 1. Mô hình
 
