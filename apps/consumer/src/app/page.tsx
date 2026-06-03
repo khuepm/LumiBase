@@ -1,13 +1,40 @@
 import { createLumiClient, readItems, type ItemRow } from "@lumibase/sdk";
+import { RealtimeTester } from "./realtime-tester";
 
 // Khởi tạo client tới CMS (chạy local mặc định port 1989 của Cloudflare worker, hoặc mock)
+const cmsUrl =
+  process.env.NEXT_PUBLIC_LUMIBASE_URL ||
+  process.env.LUMIBASE_URL ||
+  "http://127.0.0.1:1989";
+const siteId =
+  process.env.NEXT_PUBLIC_LUMIBASE_SITE_ID ||
+  process.env.LUMIBASE_SITE_ID ||
+  "site_demo";
+const token =
+  process.env.NEXT_PUBLIC_LUMIBASE_TOKEN ||
+  process.env.LUMIBASE_TOKEN ||
+  "dev:studio";
+
 const client = createLumiClient({
-  url: process.env.LUMIBASE_URL || "http://127.0.0.1:1989",
-  siteId: "site_demo",
-  token: process.env.LUMIBASE_TOKEN || "dev:studio",
+  url: cmsUrl,
+  siteId,
+  token,
 });
 
 export const dynamic = "force-dynamic";
+
+const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T> => {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timer = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+  });
+
+  try {
+    return await Promise.race([promise, timer]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+};
 
 export default async function Home() {
   let posts: ItemRow[] = [];
@@ -15,7 +42,7 @@ export default async function Home() {
 
   try {
     // Gọi API thông qua composable command readItems
-    const res = await client.request(readItems("posts", { limit: 5 }));
+    const res = await withTimeout(client.request(readItems("posts", { limit: 5 })), 1500);
     posts = (res as { data: ItemRow[] }).data || [];
   } catch (err: unknown) {
     const e = err as Error;
@@ -66,6 +93,8 @@ export default async function Home() {
             </ul>
           )}
         </section>
+
+        <RealtimeTester baseUrl={cmsUrl} siteId={siteId} token={token} />
       </div>
     </main>
   );
