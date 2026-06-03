@@ -23,6 +23,38 @@ Nguồn tham khảo chính:
 - [Directus Filter Rules / Dynamic Variables](https://docs.directus.io/reference/filter-rules)
 - [Directus Authentication API](https://directus.io/docs/api/authentication)
 
+## 1.1. Bảng so sánh LumiBase vs Directus
+
+Legend:
+
+- **Parity**: LumiBase nên hỗ trợ tương đương Directus.
+- **Improve**: LumiBase hỗ trợ cùng use case nhưng fail-closed hơn hoặc vận hành tốt hơn.
+- **New**: năng lực Directus chưa có first-class; LumiBase nên đưa vào như lợi thế cạnh tranh.
+
+| Nhóm | Directus | LumiBase mục tiêu | Trạng thái thiết kế |
+|---|---|---|---|
+| Role | User có một role chính; role có thể có parent/nested role. | User có primary role và nhiều role phụ qua `user_roles`; role chỉ là grouping dài hạn. | Parity + Improve |
+| Policy | Policy gắn vào role hoặc user qua `directus_access`. | Policy gắn vào role, user, và API key; policy là đơn vị import/export chính. | Improve |
+| Access flags | `admin_access`, `app_access`, `enforce_tfa`, `ip_access` nằm trên policy. | Giữ compatibility role flags ngắn hạn nhưng migrate về policy flags: `adminAccess`, `appAccess`, `enforceTfa`, `ipAllow`, `ipDeny`, `validFrom`, `validUntil`. | Parity + Improve |
+| Permission granularity | Theo `collection + action`, có row rules, field list, validation, presets. | Tương tự, thêm source trace trong effective permission và conflict preview trước khi attach. | Improve |
+| Action `share` | Có action/share link gắn role đọc dữ liệu. | Share role chuyên dụng, validity window, password hash, max uses, revoke, field/row mask qua role share. | Parity + Improve |
+| Field rules | `fields` có thể whitelist hoặc `*`. | Whitelist/blacklist rõ ràng; conflict checker block `*` vs whitelist và cần hardening để giữ exclusion khi merge. | Improve |
+| Dynamic variables | Hỗ trợ `$CURRENT_USER`, `$CURRENT_ROLE`, `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$NOW`, v.v. | Hỗ trợ các biến tương tự, thêm `$CURRENT_API_KEY`, nested `$CURRENT_USER.*`, `$NOW(+/- duration)` và fail-closed unknown magic var. | Parity + Improve |
+| Multiple policies same collection/action | Additive merge; user đã ghi nhận có case chồng policy gây quyền sai/mở rộng. | Conflict checker backend/UI: blocking cho unconditional-vs-restricted, `*` vs whitelist, preset/validation conflict; warning cần override và audit. | Improve |
+| Unique permission row trong một policy | DB mẫu Directus có duplicate permission rows cùng `policy + collection + action`. | Unique `(policy_id, collection, action)`; migration detect duplicate trước khi apply. | Improve |
+| IP access | Directus dùng `ip_access` trên policy. | JSON array `ipAllow/ipDeny`, hỗ trợ IPv4/IPv6/CIDR, `ipDeny` thắng `ipAllow`, policy không pass bị loại khỏi chain. | Improve |
+| App access | Policy có `app_access`; kiểm soát vào Directus App. | Enforce app access theo effective active policies; API key luôn bị chặn khỏi Studio. | Parity + Improve |
+| TFA enforcement | Policy có `enforce_tfa`. | User attach role/policy TFA phải enroll/pass TFA; API key attach TFA policy bị conflict/warning. | Parity + Improve |
+| Static token/API key | Directus static token nằm trên user; token kế thừa user/role. | API key là principal riêng, có thể gắn role/policy trực tiếp, token hash/prefix, rotate/revoke/expire/last_used, không export plaintext. | **New / Improve** |
+| Import/export access config | Không có permission builder manifest first-class để sync roles/policies/API key metadata giữa env theo stable keys. | `lumibase.access@v1`, export/import/dry-run/diff/conflict-check, modes `merge`, `replace-managed`, `replace-all`, CLI cho CI/CD. | **New** |
+| Conflict dry-run | Không có endpoint first-class cho attach policy diff/conflict. | `POST /access/conflicts/check` dùng cho UI, API, import dry-run. | **New** |
+| Effective permission trace | Directus App hiển thị quyền nhưng không tập trung vào source trace cho mỗi effective cell. | `/permissions/me` trả source policies; Permission Matrix hiển thị quyền cuối cùng và nguồn. | **New / Improve** |
+| System collections | Directus có system collections và permissions tương ứng. | Seed system permissions explicit, nhóm sensitive/admin-only và ẩn khỏi non-admin trong builder. | Parity + Improve |
+| Extension sandbox | Directus sandboxed API extensions có requested scopes; non-sandboxed extensions là trust boundary khác. | Capability grant là upper bound trong sandbox runtime, có audit grant/revoke. | Parity + Improve |
+| Extension access per user/role | Directus chưa có first-class policy để "role/user X được thấy/gọi extension Y"; app module thường tự check hoặc dựa vào admin/permissions store. | Extension Access Control first-class: `extensions:read/execute/configure/install/enable/grant_capability/delete`, áp vào Studio loader, module bar, endpoint dispatch, operations. | **New** |
+| Extension data permission | Directus services dùng `accountability`; bỏ/null accountability có thể chạy admin. | Extension mặc định thao tác data theo actor permission; service-account mode phải khai báo capability/policy riêng và audit. | Improve |
+| Audit | Directus có activity/audit nền. | Audit bắt buộc cho access import, conflict override, API key lifecycle, extension capability grant, service-account execution, deny quan trọng. | Improve |
+
 ## 2. Directus lưu gì trong DB
 
 Instance Directus mẫu có 26 bảng `directus_*`:
