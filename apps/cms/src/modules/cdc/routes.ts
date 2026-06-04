@@ -35,8 +35,10 @@
  *      tenant data between data stores, so the surface is admin-only.
  *   2. **Site context** — `c.get('siteId')` must be present (set by
  *      `withTenant`), else `400 { errors: [{ code: 'TENANT_REQUIRED' }] }`.
- *      Every registry call is scoped by this `siteId` (Strict Rule #2), so a
- *      pipeline can only be read/mutated within its owning site.
+ *   3. **Site-bound admin access** — because `siteId` may be selected by an
+ *      `X-Lumi-Site` header, the guard resolves the principal's permission
+ *      bundle for that exact site and requires `adminAccess` before any
+ *      registry call receives the site id.
  *
  * NOTE FOR TASK 12.2: this router MUST be mounted on the AUTHENTICATED `api`
  * Hono (e.g. `api.route('/cdc', cdcRouter)`), NOT on the public top-level
@@ -85,10 +87,11 @@ import { Hono } from 'hono';
 import type { Context, MiddlewareHandler } from 'hono';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { cdcDeployments } from '@lumibase/database';
+import { cdcDeployments, users } from '@lumibase/database';
 import { PipelineCreateSchema, CdcConnectorTypeSchema } from '@lumibase/shared';
 
 import type { AppEnv } from '../../env';
+import { PermissionService } from '../../services/permission-service';
 import type {
   CdcConnector,
   CdcConnectorType,
@@ -237,6 +240,8 @@ export interface CdcRouteServices {
   readonly registry: PipelineRegistryService;
   /** Resolves the connector implementation for a connector type. */
   readonly resolveConnector: ConnectorResolver;
+  /** Verify the authenticated principal has admin access for this request's site. */
+  authorizeSiteAdmin(siteId: string): Promise<boolean>;
   /** Run a connectivity health check for a pipeline (Req 8.5). */
   checkHealth(pipeline: PipelineRecord): Promise<HealthCheckResult>;
   /** Fetch current operational metrics for a pipeline (Req 8.1). */
@@ -286,6 +291,7 @@ export function defaultCdcServicesFactory(
   return {
     registry,
     resolveConnector: defaultConnectorResolver,
+    authorizeSiteAdmin: () => authorizeCurrentPrincipalForSite(c),
     async checkHealth(pipeline) {
       const connector = defaultConnectorResolver(pipeline.connectorType);
       if (!connector) throw new ConnectorUnavailableError(pipeline.connectorType);
@@ -354,6 +360,66 @@ function serializePipeline(p: PipelineRecord) {
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
+}
+
+/**
+ * Resolve whether the authenticated principal is an admin for the selected
+ * site. The tenant id may originate from a request header, so CDC control-plane
+ * access must be tied back to site membership before handlers use it.
+ */
+async function authorizeCurrentPrincipalForSite(
+  c: Context<AppEnv>,
+): Promise<boolean> {
+  const auth = c.get('auth');
+  const roles = Array.isArray(auth?.roles) ? auth.roles : [];
+  const devAuthEnabled =
+    c.env.LUMIBASE_DEV_AUTH === 'true' || process.env.LUMIBASE_DEV_AUTH === 'true';
+  if (devAuthEnabled && auth?.raw?.dev === true && roles.includes('admin')) {
+    return true;
+  }
+
+  const siteId = c.get('siteId');
+  const userId = await resolveAuthUserId(c);
+  if (!siteId || !userId) return false;
+
+  const headers = collectRequestHeaders(c);
+  const bundle = await new PermissionService({
+    db: c.get('db'),
+    cache: c.get('runtime')?.cache,
+    ctx: {
+      userId,
+      siteId,
+      roleId: null,
+      ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+      headers,
+      apiKey: auth?.apiKey ?? null,
+    },
+  }).bundle();
+
+  return bundle.admin;
+}
+
+/** Resolve a DB user id for JWT or Cloudflare Access principals. */
+async function resolveAuthUserId(c: Context<AppEnv>): Promise<string | null> {
+  const auth = c.get('auth');
+  if (auth?.userId) return auth.userId;
+  if (!auth?.externalId) return null;
+
+  const [row] = await c
+    .get('db')
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.externalId, auth.externalId))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+function collectRequestHeaders(c: Context<AppEnv>): Record<string, string> {
+  const headers: Record<string, string> = {};
+  c.req.raw.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value;
+  });
+  return headers;
 }
 
 /** Whether a connectivity error was a timeout (→ 408) vs. unreachable (→ 400). */
@@ -516,6 +582,13 @@ export function createCdcRouter(
       return c.json(
         errorBody('TENANT_REQUIRED', 'X-Lumi-Site header is required.'),
         400,
+      );
+    }
+    const services = resolveServices(c);
+    if (!(await services.authorizeSiteAdmin(siteId))) {
+      return c.json(
+        errorBody('FORBIDDEN', 'Admin access for the requested site is required.'),
+        403,
       );
     }
     return next();
