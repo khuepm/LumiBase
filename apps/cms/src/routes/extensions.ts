@@ -8,6 +8,7 @@ import { ExtensionSandbox } from '../extensions/sandbox';
 export const extensionsRouter = new Hono<AppEnv>();
 
 const extensionSchema = z.object({
+  key: z.string().regex(/^[a-z0-9_:-]+$/).optional(),
   name: z.string(),
   version: z.string(),
   type: z.string(),
@@ -16,6 +17,13 @@ const extensionSchema = z.object({
   manifest: z.record(z.string()).default({}),
   capabilities: z.array(z.string()).default([]),
 });
+
+function extensionKey(input: { key?: string | null; name: string }): string {
+  return (
+    input.key?.trim() ||
+    input.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  );
+}
 
 extensionsRouter.get('/', async (c) => {
   const siteId = c.get('siteId');
@@ -35,6 +43,7 @@ extensionsRouter.post('/', async (c) => {
     .insert(extensions)
     .values({
       ...input,
+      key: extensionKey(input),
       siteId,
       installedBy: auth?.userId,
     })

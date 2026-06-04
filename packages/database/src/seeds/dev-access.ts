@@ -9,6 +9,7 @@ export const DEV_ACCESS_POLICY_IDS = {
   accessManager: 'policy_access_manager',
   schemaManager: 'policy_schema_manager',
   securityManager: 'policy_security_manager',
+  extensionManager: 'policy_extension_manager',
   studioSelf: 'policy_studio_self',
   public: 'policy_public',
 } as const;
@@ -37,12 +38,26 @@ export const DEV_SENSITIVE_COLLECTIONS = [
   'api_key_policies',
 ] as const;
 
+export const DEV_EXTENSION_ACCESS_TARGETS = [
+  'extensions',
+  'extension_modules',
+  'extension_endpoints',
+  'extension_operations',
+] as const;
+
 export const DEV_SYSTEM_PERMISSION_ACTIONS = [
   'create',
   'read',
   'update',
   'delete',
 ] as const;
+
+export const DEV_EXTENSION_PERMISSION_ACTIONS = {
+  extensions: ['read', 'configure', 'install', 'enable', 'delete', 'grant_capability'],
+  extension_modules: ['read'],
+  extension_endpoints: ['execute'],
+  extension_operations: ['execute'],
+} as const satisfies Record<(typeof DEV_EXTENSION_ACCESS_TARGETS)[number], readonly string[]>;
 
 export type DevAccessRoleSeed = {
   id: string;
@@ -181,6 +196,20 @@ export const DEV_ACCESS_SEED = {
       rules: {},
     },
     {
+      id: DEV_ACCESS_POLICY_IDS.extensionManager,
+      siteId: DEV_SITE_ID,
+      key: 'policy_extension_manager',
+      name: 'Extension manager',
+      description: 'Install, configure, enable, and grant capabilities for extensions.',
+      icon: 'puzzle',
+      adminAccess: false,
+      appAccess: true,
+      enforceTfa: true,
+      ipAllow: [],
+      ipDeny: [],
+      rules: {},
+    },
+    {
       id: DEV_ACCESS_POLICY_IDS.studioSelf,
       siteId: DEV_SITE_ID,
       key: 'policy_studio_self',
@@ -220,6 +249,9 @@ export const DEV_ACCESS_SEED = {
     ...systemPermissions(DEV_ACCESS_POLICY_IDS.schemaManager, DEV_SCHEMA_MANAGER_COLLECTIONS),
     ...systemPermissions(DEV_ACCESS_POLICY_IDS.accessManager, DEV_ACCESS_MANAGER_COLLECTIONS),
     ...systemPermissions(DEV_ACCESS_POLICY_IDS.securityManager, DEV_SENSITIVE_COLLECTIONS, ['read']),
+    ...DEV_EXTENSION_ACCESS_TARGETS.flatMap((target) =>
+      systemPermissions(DEV_ACCESS_POLICY_IDS.extensionManager, [target], DEV_EXTENSION_PERMISSION_ACTIONS[target]),
+    ),
   ],
 } satisfies {
   roles: DevAccessRoleSeed[];

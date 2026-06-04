@@ -18,6 +18,14 @@ describe('access system collection grouping', () => {
     expect(byId.get('access')?.options.map((option) => option.name)).toEqual(
       expect.arrayContaining(['roles', 'policies', 'permissions']),
     );
+    expect(byId.get('extension')?.options.map((option) => option.name)).toEqual(
+      expect.arrayContaining([
+        'extensions',
+        'extension_modules',
+        'extension_endpoints',
+        'extension_operations',
+      ]),
+    );
   });
 
   it('hides sensitive system collections from non-admin principals', () => {
