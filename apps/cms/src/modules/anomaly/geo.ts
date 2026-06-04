@@ -27,8 +27,9 @@
  *          (`geoLookupStatus='unavailable'`), not a crash on import.
  *      The dynamic import lets the same module behave correctly in
  *      every deploy: when `maxmind` and the MMDB file are both
- *      present, the lookup runs; otherwise `available()` returns
- *      `false` and the subscore quietly degrades.
+ *      present, the lookup runs; otherwise the first lookup records
+ *      `geoLookupStatus='unavailable'` and future availability checks
+ *      quietly degrade.
  *
  *   2. **2 s timeout via Promise wrapper (Req 9.1).** Even though
  *      MMDB lookups are sub-millisecond when the file is loaded, the
@@ -248,8 +249,9 @@ async function geoSubscoreImpl(
     return { value: 0, baselineWarmup: isWarmup };
   }
 
-  // The MMDB reader / external service is unreachable — same outcome
-  // as a private IP on this axis.
+  // The MMDB reader / external service is known to be unreachable —
+  // same outcome as a private IP on this axis. Lazy lookups should
+  // report available until their first lookup has tried to load.
   if (!deps.lookup.available()) {
     return { value: 0, baselineWarmup: isWarmup };
   }
@@ -395,8 +397,9 @@ const readerCache = new Map<string, Promise<MaxmindReader | null>>();
 
 /**
  * Build a {@link GeoLookup} backed by `maxmind` + the GeoLite2
- * MMDB file. The lookup loads lazily on first use; until then,
- * `available()` returns `false` and the subscore degrades.
+ * MMDB file. The lookup loads lazily on first use; until the first
+ * load attempt completes, `available()` returns `true` so callers do
+ * not skip the lookup that initializes the reader.
  *
  * Path resolution honours these knobs (in order):
  *
@@ -438,7 +441,7 @@ export function createMmdbLookup(mmdbPath?: string): GeoLookup {
 
   return {
     available() {
-      return loaded && cached !== null;
+      return !loaded || cached !== null;
     },
     async lookupCountry(ip) {
       const reader = await ensure();
