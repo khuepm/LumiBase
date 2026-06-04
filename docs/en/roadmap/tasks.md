@@ -263,7 +263,7 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 - [x] `[BE]` Audit create/rotate/revoke/use-denied cho API key, không log plaintext token.
 - [x] `[SDK]` Thêm client methods cho API key CRUD, attach roles/policies, conflict preview.
 - [x] `[FE]` Studio API Keys page: create, rotate, revoke, attach roles/policies, preview effective permissions.
-- [ ] `[TEST]` API key không truy cập Studio; revoked/expired key bị 401; key chỉ thấy fields/rows theo policy.
+- [x] `[TEST]` API key không truy cập Studio; revoked/expired key bị 401; key chỉ thấy fields/rows theo policy.
 
 ### Import / Export Permission Builder
 
