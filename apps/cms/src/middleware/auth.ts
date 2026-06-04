@@ -48,7 +48,7 @@ async function auditApiKeyUseDenied(
   row: typeof apiKeys.$inferSelect,
   reason: 'site_mismatch' | 'revoked' | 'expired',
 ): Promise<void> {
-  await new AuditLogger({ db: c.get('db') }).write({
+  await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
     event: 'api_key_use_denied',
     actorEmail: null,
     ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,

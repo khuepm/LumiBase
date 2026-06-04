@@ -13,7 +13,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 
-import { users } from './core';
+import { sites, users } from './core';
 
 const id = () => text('id').$defaultFn(() => nanoid()).primaryKey();
 const createdAt = () => timestamp('created_at').defaultNow().notNull();
@@ -94,6 +94,8 @@ export const auditLog = pgTable(
       .$defaultFn(() => nanoid())
       .primaryKey(),
     timestamp: timestamp('timestamp').defaultNow().notNull(),
+    /** Tenant/site boundary for isolating audit queries and exports. */
+    siteId: text('site_id').references(() => sites.id, { onDelete: 'cascade' }),
     /** One of the 15 event codes from Req 15.1; stored as text. */
     event: text('event').notNull(),
     /** Email of the user performing the action; null for unauthenticated events. */
@@ -110,6 +112,8 @@ export const auditLog = pgTable(
     requestId: text('request_id'),
   },
   (t) => ({
+    /** Per-site recent-activity scans and tenant-scoped retention views. */
+    siteTsIdx: index('audit_log_site_ts_idx').on(t.siteId, t.timestamp),
     /** Recent-activity scans and retention rotation. */
     tsIdx: index('audit_log_ts_idx').on(t.timestamp),
     /** Per-event timelines (e.g. all `login_failed` over a window). */

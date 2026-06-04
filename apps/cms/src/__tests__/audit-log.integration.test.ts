@@ -11,6 +11,7 @@ import {
   auditLog,
   createDb,
   loginAttempts,
+  sites,
   type Database,
 } from '@lumibase/database';
 
@@ -117,6 +118,7 @@ describe('Audit log — integration', () => {
     await db.execute(
       sql`TRUNCATE TABLE audit_log, login_attempts, system_state, settings, user_sites, sites, users RESTART IDENTITY CASCADE`,
     );
+    await db.insert(sites).values({ id: 'site_test', name: 'Test site' });
   });
 
   /**
@@ -133,6 +135,7 @@ describe('Audit log — integration', () => {
     app.use('*', async (c, next) => {
       c.set('db', db);
       c.set('auth', { roles, raw: {} });
+      c.set('siteId', 'site_test');
       c.set('requestId', `req_test_${Math.random().toString(36).slice(2)}`);
       await next();
     });
@@ -157,7 +160,7 @@ describe('Audit log — integration', () => {
     // Write through the production logger — masks `setupToken` before
     // the INSERT (Req 15.3) and leaves the non-secret `adminPathHash`
     // untouched (Req 15.2).
-    await new AuditLogger({ db }).write({
+    await new AuditLogger({ db, siteId: 'site_test' }).write({
       event: 'setup_completed',
       actorEmail: 'admin@example.com',
       ip: '203.0.113.7',
@@ -203,6 +206,7 @@ describe('Audit log — integration', () => {
     // The same masking holds when reading via the pure query helper
     // directly (detailed metadata check, no HTTP layer in between).
     const page = await queryAuditLog(db, {
+      siteId: 'site_test',
       event: 'setup_completed',
       limit: 50,
     });
@@ -320,6 +324,7 @@ describe('Audit log — integration', () => {
     // run reproducible. ids are assigned by the table's nanoid default.
     const base = new Date('2024-06-15T12:00:00.000Z').getTime();
     const rows = Array.from({ length: TOTAL }, (_v, i) => ({
+      siteId: 'site_test',
       event: 'login_success' as const,
       actorEmail: `user${i}@example.com`,
       timestamp: new Date(base - i * 1000),
@@ -333,7 +338,7 @@ describe('Audit log — integration', () => {
     }
 
     // Pre-flight probe (the route's 413 gate input) sees all 1000 rows.
-    expect(await countAuditRows(db, {})).toBe(TOTAL);
+    expect(await countAuditRows(db, { siteId: 'site_test' })).toBe(TOTAL);
 
     // Drive the REAL export route as an admin and read the streamed body.
     const adminApp = buildApp(['admin']);
@@ -368,7 +373,7 @@ describe('Audit log — integration', () => {
     // The generator-level surface yields the same 1000 distinct ids
     // (verifies the batched scan independently of the HTTP layer).
     const genIds = new Set<string>();
-    for await (const line of auditExportLines(db, {})) {
+    for await (const line of auditExportLines(db, { siteId: 'site_test' })) {
       const obj = JSON.parse(line) as { id: string };
       genIds.add(obj.id);
     }
