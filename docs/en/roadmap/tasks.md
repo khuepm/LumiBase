@@ -267,7 +267,7 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 
 ### Import / Export Permission Builder
 
-- [ ] `[BE]` `GET /api/v1/access/export` xuất roles, policies, permissions, bindings, API key metadata bằng stable keys, không chứa secrets.
+- [x] `[BE]` `GET /api/v1/access/export` xuất roles, policies, permissions, bindings, API key metadata bằng stable keys, không chứa secrets.
 - [ ] `[BE]` `POST /api/v1/access/import?dryRun=true` parse/validate/diff/conflict-check nhưng không ghi DB.
 - [ ] `[BE]` Import modes: `merge`, `replace-managed`, `replace-all`; apply trong transaction và audit diff summary.
 - [ ] `[BE]` Idempotency tests: import cùng manifest nhiều lần không tạo duplicate.
