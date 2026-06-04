@@ -14,6 +14,9 @@ const ctx: MagicContext = {
   roleId: 'role-1',
   ip: '127.0.0.1',
   headers: {},
+  roles: ['role-1'],
+  policies: ['policy_editor'],
+  user: { id: 'user-1', email: 'user@example.com' },
   now: new Date('2026-06-03T00:00:00.000Z'),
 };
 

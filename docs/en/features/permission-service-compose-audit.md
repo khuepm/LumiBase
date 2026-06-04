@@ -68,6 +68,4 @@ Revision list still has no dedicated permission gate. Revert goes through replac
 1. Preserve field exclusions when merging with `"*"`.
 2. Make permission row merge order deterministic by binding priority.
 3. Add a dedicated permission gate for revision list.
-4. Make unknown magic vars fail closed explicitly.
-5. Extend DSL operators according to the roadmap.
-6. Require import/dry-run to run the same conflict checker as attach endpoints.
+4. Require import/dry-run to run the same conflict checker as attach endpoints.

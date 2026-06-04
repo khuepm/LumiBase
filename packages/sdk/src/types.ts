@@ -187,6 +187,11 @@ export interface PermissionBundle {
     adminAccess: boolean;
     appAccess: boolean;
   }>;
+  policies: Array<{
+    id: string;
+    name: string;
+    key: string | null;
+  }>;
 }
 
 export interface PermissionCheckResult {

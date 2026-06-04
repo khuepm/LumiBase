@@ -49,6 +49,8 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
 - So sánh: `_eq`, `_neq`, `_lt`, `_lte`, `_gt`, `_gte`, `_in`, `_nin`, `_contains`, `_starts_with`, `_ends_with`, `_between`.
 - Date: `_dynamic` ví dụ `$NOW(-7 days)`.
 - Magic: `$CURRENT_USER`, `$CURRENT_ROLE`, `$CURRENT_SITE`, `$NOW`, `$IP`, `$HEADERS.x-foo`.
+- Extended magic: `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$CURRENT_API_KEY`, `$CURRENT_USER.email`, `$CURRENT_USER.preferences.locale`, `$NOW(+2 hours)`, `$NOW(-7 days)`.
+- Unknown magic variables fail closed; rules using unsupported variables do not match.
 
 ## 3. Field-level
 

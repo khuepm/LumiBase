@@ -67,6 +67,8 @@ export interface PermissionBundle {
   byKey: Record<string, CompiledPermission>;
   /** Roles assigned to the user for this site. */
   roles: Array<{ id: string; name: string; adminAccess: boolean; appAccess: boolean }>;
+  /** Active policy ids after IP/time guard filtering. */
+  policies: Array<{ id: string; name: string; key: string | null }>;
 }
 
 export interface PermissionServiceDeps {
@@ -100,6 +102,7 @@ export class PermissionService {
       );
       if (cached) {
         this.compiled = cached;
+        await this.hydrateMagicContext(cached);
         return this.compiled;
       }
     }
@@ -131,6 +134,7 @@ export class PermissionService {
   /** Per-action lookup. Returns null when access is not granted. */
   async canAccess(collection: string, action: PermissionAction): Promise<CompiledPermission | null> {
     const bundle = await this.bundle();
+    await this.hydrateMagicContext(bundle);
     if (bundle.admin) {
       return {
         collection,
@@ -190,6 +194,7 @@ export class PermissionService {
     const userRow = ctx.userId
       ? (await db.select().from(users).where(eq(users.id, ctx.userId)).limit(1))[0]
       : undefined;
+    ctx.user = userRow ? userMagicSnapshot(userRow) : null;
 
     const primaryRoleRows = ctx.userId
       ? await db
@@ -256,12 +261,15 @@ export class PermissionService {
     const policyIds = Array.from(new Set(policyOrder.map((p) => p.policyId)));
 
     if (!policyIds.length) {
+      ctx.roles = roleRows.map((r) => r.id);
+      ctx.policies = [];
       return {
         admin: roleRows.some((r) => r.adminAccess),
         appAccess: roleRows.some((r) => r.appAccess),
         tfaRequired: false,
         byKey: {},
         roles: roleRows,
+        policies: [],
       };
     }
 
@@ -273,6 +281,9 @@ export class PermissionService {
     const activePolicies = policyMeta.filter((p) => isPolicyActive(p, ctx));
     const allowedPolicyIds = activePolicies.map((p) => p.id);
     const activePolicyNames = new Map(activePolicies.map((p) => [p.id, p.name]));
+    const activePolicyBundle = activePolicies.map((p) => ({ id: p.id, name: p.name, key: p.key }));
+    ctx.roles = roleRows.map((r) => r.id);
+    ctx.policies = allowedPolicyIds;
 
     const admin =
       roleRows.some((r) => r.adminAccess) ||
@@ -283,11 +294,11 @@ export class PermissionService {
     const tfaRequired = activePolicies.some((p) => p.enforceTfa);
 
     if (admin) {
-      return { admin: true, appAccess, tfaRequired, byKey: {}, roles: roleRows };
+      return { admin: true, appAccess, tfaRequired, byKey: {}, roles: roleRows, policies: activePolicyBundle };
     }
 
     if (!allowedPolicyIds.length) {
-      return { admin: false, appAccess, tfaRequired, byKey: {}, roles: roleRows };
+      return { admin: false, appAccess, tfaRequired, byKey: {}, roles: roleRows, policies: [] };
     }
 
     const permRows = await db
@@ -320,8 +331,37 @@ export class PermissionService {
       byKey[key] = existing ? mergePermission(existing, incoming) : incoming;
     }
 
-    return { admin: false, appAccess, tfaRequired, byKey, roles: roleRows };
+    return { admin: false, appAccess, tfaRequired, byKey, roles: roleRows, policies: activePolicyBundle };
   }
+
+  private async hydrateMagicContext(bundle: PermissionBundle): Promise<void> {
+    this.deps.ctx.roles = bundle.roles.map((r) => r.id);
+    this.deps.ctx.policies = (bundle.policies ?? []).map((p) => p.id);
+    if (this.deps.ctx.user || !this.deps.ctx.userId) return;
+    const [userRow] = await this.deps.db
+      .select()
+      .from(users)
+      .where(eq(users.id, this.deps.ctx.userId))
+      .limit(1);
+    this.deps.ctx.user = userRow ? userMagicSnapshot(userRow) : null;
+  }
+}
+
+function userMagicSnapshot(row: typeof users.$inferSelect): Record<string, unknown> {
+  return {
+    id: row.id,
+    externalId: row.externalId,
+    email: row.email,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    status: row.status,
+    preferences: row.preferences,
+    tfa: row.tfa,
+    isBootstrap: row.isBootstrap,
+    lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
+    createdAt: row.createdAt?.toISOString() ?? null,
+    updatedAt: row.updatedAt?.toISOString() ?? null,
+  };
 }
 
 interface PolicyGuard {

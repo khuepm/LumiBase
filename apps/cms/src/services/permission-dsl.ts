@@ -23,9 +23,19 @@ export interface MagicContext {
   roleId: string | null;
   ip: string | null;
   headers: Record<string, string>;
+  /** Current user attributes made available to `$CURRENT_USER.*`. */
+  user?: Record<string, unknown> | null;
+  /** Role ids assigned to the current principal for this site. */
+  roles?: string[];
+  /** Active policy ids for the current principal after IP/time filtering. */
+  policies?: string[];
+  /** API key metadata for future API-key principals. */
+  apiKey?: Record<string, unknown> | null;
   /** Override for `$NOW`; defaults to `new Date()`. Useful for tests. */
   now?: Date;
 }
+
+export const UNKNOWN_MAGIC = Symbol('UNKNOWN_MAGIC');
 
 const STRUCTURAL_FIELDS: Record<string, string> = {
   id: 'id',
@@ -43,16 +53,27 @@ export function resolveMagic(value: unknown, ctx: MagicContext): unknown {
   if (!value.startsWith('$')) return value;
 
   if (value === '$CURRENT_USER') return ctx.userId;
+  if (value.startsWith('$CURRENT_USER.')) {
+    return getPath(ctx.user ?? {}, value.slice('$CURRENT_USER.'.length));
+  }
   if (value === '$CURRENT_SITE') return ctx.siteId;
   if (value === '$CURRENT_ROLE') return ctx.roleId;
+  if (value === '$CURRENT_ROLES') return ctx.roles ?? [];
+  if (value === '$CURRENT_POLICIES') return ctx.policies ?? [];
+  if (value === '$CURRENT_API_KEY') return ctx.apiKey?.id ?? null;
+  if (value.startsWith('$CURRENT_API_KEY.')) {
+    return getPath(ctx.apiKey ?? {}, value.slice('$CURRENT_API_KEY.'.length));
+  }
   if (value === '$IP') return ctx.ip;
   if (value === '$NOW') return (ctx.now ?? new Date()).toISOString();
+  if (value.startsWith('$NOW(') && value.endsWith(')')) {
+    const shifted = shiftNow(ctx.now ?? new Date(), value.slice('$NOW('.length, -1));
+    return shifted ? shifted.toISOString() : UNKNOWN_MAGIC;
+  }
   if (value.startsWith('$HEADERS.')) {
     return ctx.headers[value.slice('$HEADERS.'.length).toLowerCase()] ?? null;
   }
-  // Unknown — leave as literal so SQL comparisons still produce a defined
-  // result (Postgres simply never matches the placeholder).
-  return value;
+  return UNKNOWN_MAGIC;
 }
 
 /** ---------- SQL compilation ---------- */
@@ -109,6 +130,10 @@ export function compileWhere(rule: PolicyRule | null | undefined, ctx: MagicCont
     const expr = fieldExpr(field);
     for (const [opKey, raw] of Object.entries(op)) {
       const v = Array.isArray(raw) ? raw.map((x) => resolveMagic(x, ctx)) : resolveMagic(raw, ctx);
+      if (containsUnknownMagic(v)) {
+        clauses.push(sql`false`);
+        continue;
+      }
       switch (opKey) {
         case '_eq':
           clauses.push(sql`${expr} = ${v}`);
@@ -143,11 +168,35 @@ export function compileWhere(rule: PolicyRule | null | undefined, ctx: MagicCont
         case '_ends_with':
           clauses.push(sql`${expr} ilike ${'%' + String(v)}`);
           break;
+        case '_icontains':
+          clauses.push(sql`lower(${expr}) like ${'%' + String(v).toLowerCase() + '%'}`);
+          break;
+        case '_istarts_with':
+          clauses.push(sql`lower(${expr}) like ${String(v).toLowerCase() + '%'}`);
+          break;
+        case '_iends_with':
+          clauses.push(sql`lower(${expr}) like ${'%' + String(v).toLowerCase()}`);
+          break;
         case '_between': {
           const [lo, hi] = v as [unknown, unknown];
           clauses.push(sql`${expr} between ${lo} and ${hi}`);
           break;
         }
+        case '_null':
+          clauses.push(v ? sql`${expr} is null` : sql`${expr} is not null`);
+          break;
+        case '_nnull':
+          clauses.push(v ? sql`${expr} is not null` : sql`${expr} is null`);
+          break;
+        case '_empty':
+          clauses.push(v ? sql`(${expr} is null or ${expr} = '')` : sql`(${expr} is not null and ${expr} <> '')`);
+          break;
+        case '_nempty':
+          clauses.push(v ? sql`(${expr} is not null and ${expr} <> '')` : sql`(${expr} is null or ${expr} = '')`);
+          break;
+        case '_regex':
+          clauses.push(sql`${expr} ~ ${String(v)}`);
+          break;
         default:
           // Unknown operators are treated as `false` to fail closed.
           clauses.push(sql`false`);
@@ -185,6 +234,7 @@ export function evaluate(
     const lhs = getValue(item, field);
     for (const [opKey, raw] of Object.entries(op)) {
       const v = Array.isArray(raw) ? raw.map((x) => resolveMagic(x, ctx)) : resolveMagic(raw, ctx);
+      if (containsUnknownMagic(v)) return false;
       if (!matchOp(opKey, lhs, v)) return false;
     }
   }
@@ -215,13 +265,78 @@ function matchOp(op: string, lhs: unknown, rhs: unknown): boolean {
       return typeof lhs === 'string' && typeof rhs === 'string' && lhs.toLowerCase().startsWith(rhs.toLowerCase());
     case '_ends_with':
       return typeof lhs === 'string' && typeof rhs === 'string' && lhs.toLowerCase().endsWith(rhs.toLowerCase());
+    case '_icontains':
+      return typeof lhs === 'string' && typeof rhs === 'string' && lhs.toLowerCase().includes(rhs.toLowerCase());
+    case '_istarts_with':
+      return typeof lhs === 'string' && typeof rhs === 'string' && lhs.toLowerCase().startsWith(rhs.toLowerCase());
+    case '_iends_with':
+      return typeof lhs === 'string' && typeof rhs === 'string' && lhs.toLowerCase().endsWith(rhs.toLowerCase());
     case '_between': {
       if (!Array.isArray(rhs) || rhs.length !== 2) return false;
       const [lo, hi] = rhs as [number, number];
       return typeof lhs === 'number' && lhs >= lo && lhs <= hi;
     }
+    case '_null':
+      return rhs ? lhs === null || lhs === undefined : lhs !== null && lhs !== undefined;
+    case '_nnull':
+      return rhs ? lhs !== null && lhs !== undefined : lhs === null || lhs === undefined;
+    case '_empty':
+      return rhs ? isEmptyValue(lhs) : !isEmptyValue(lhs);
+    case '_nempty':
+      return rhs ? !isEmptyValue(lhs) : isEmptyValue(lhs);
+    case '_regex':
+      return typeof lhs === 'string' && typeof rhs === 'string' && safeRegexTest(rhs, lhs);
     default:
       return false;
+  }
+}
+
+function containsUnknownMagic(value: unknown): boolean {
+  return Array.isArray(value) ? value.some(containsUnknownMagic) : value === UNKNOWN_MAGIC;
+}
+
+function getPath(source: Record<string, unknown>, path: string): unknown {
+  if (!path) return UNKNOWN_MAGIC;
+  let current: unknown = source;
+  for (const part of path.split('.')) {
+    if (!part || !current || typeof current !== 'object' || !(part in current)) {
+      return UNKNOWN_MAGIC;
+    }
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+function shiftNow(now: Date, expression: string): Date | null {
+  const match = expression.trim().match(/^([+-])\s*(\d+)\s*(ms|millisecond|milliseconds|s|sec|second|seconds|m|min|minute|minutes|h|hour|hours|d|day|days|w|week|weeks)$/i);
+  if (!match) return null;
+  const sign = match[1] === '-' ? -1 : 1;
+  const amount = Number(match[2]);
+  const unit = match[3]!.toLowerCase();
+  const multiplier =
+    unit === 'ms' || unit.startsWith('millisecond') ? 1 :
+    unit === 's' || unit === 'sec' || unit.startsWith('second') ? 1_000 :
+    unit === 'm' || unit === 'min' || unit.startsWith('minute') ? 60_000 :
+    unit === 'h' || unit.startsWith('hour') ? 3_600_000 :
+    unit === 'd' || unit.startsWith('day') ? 86_400_000 :
+    unit === 'w' || unit.startsWith('week') ? 604_800_000 :
+    0;
+  if (!multiplier) return null;
+  return new Date(now.getTime() + sign * amount * multiplier);
+}
+
+function isEmptyValue(value: unknown): boolean {
+  return value === null ||
+    value === undefined ||
+    value === '' ||
+    (Array.isArray(value) && value.length === 0);
+}
+
+function safeRegexTest(pattern: string, value: string): boolean {
+  try {
+    return new RegExp(pattern).test(value);
+  } catch {
+    return false;
   }
 }
 

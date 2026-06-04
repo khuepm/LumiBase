@@ -131,15 +131,9 @@ Magic vars đang hỗ trợ:
 - `$NOW`
 - `$HEADERS.<name>`
 
-Chưa hỗ trợ:
+Cập nhật hardening 2026-06-04: magic vars đã hỗ trợ `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$CURRENT_API_KEY`, nested `$CURRENT_USER.*`, nested `$CURRENT_API_KEY.*`, và `$NOW(+/- duration)`.
 
-- `$CURRENT_ROLES`
-- `$CURRENT_POLICIES`
-- `$CURRENT_API_KEY`
-- Nested `$CURRENT_USER.*`
-- `$NOW(+/- duration)`
-
-Unknown magic var hiện được giữ nguyên dạng string literal. Trong SQL comparison thường sẽ không match, nhưng đây không phải fail-closed rõ ràng. Với một số operator hoặc dữ liệu literal trùng placeholder, hành vi có thể gây hiểu nhầm.
+Unknown magic var hiện trả sentinel fail-closed. Trong SQL compile, rule chứa biến không hỗ trợ được compile thành `false`; trong evaluator in-memory, rule không match.
 
 Operators hiện hỗ trợ trong permission DSL:
 
@@ -148,10 +142,7 @@ Operators hiện hỗ trợ trong permission DSL:
 
 Unknown operator trong `compileWhere()` được compile thành `false`; trong `evaluate()` trả `false`. Đây là fail-closed cho operator chưa biết.
 
-Chưa hỗ trợ trong permission DSL:
-
-- `_null`, `_nnull`, `_empty`, `_nempty`, `_regex`
-- Case-insensitive variants rõ ràng ngoài các string operators đang dùng lowercase/ILIKE.
+Permission DSL hiện đã hỗ trợ thêm `_null`, `_nnull`, `_empty`, `_nempty`, `_regex`, `_icontains`, `_istarts_with`, `_iends_with`.
 
 ## 5. Cách quyền được áp vào ItemService
 
@@ -232,6 +223,4 @@ Hook mutation vẫn chạy trước schema/permission validation, nên dữ li�
 1. Sửa `mergeFieldLists()` để giữ exclusion khi có `*`.
 2. Làm permission row query deterministic theo policy binding priority.
 3. Thêm permission gate riêng cho revision list.
-4. Chuyển unknown magic vars sang fail-closed rõ ràng, có lỗi preview trong builder.
-5. Mở rộng DSL operators theo roadmap.
-6. Bắt buộc import/dry-run chạy conflict checker giống attach endpoint.
+4. Bắt buộc import/dry-run chạy conflict checker giống attach endpoint.

@@ -23,7 +23,15 @@ export type PolicyOperator =
   | { _contains: string }
   | { _starts_with: string }
   | { _ends_with: string }
+  | { _icontains: string }
+  | { _istarts_with: string }
+  | { _iends_with: string }
   | { _between: [PolicyValue, PolicyValue] }
+  | { _null: boolean }
+  | { _nnull: boolean }
+  | { _empty: boolean }
+  | { _nempty: boolean }
+  | { _regex: string }
   | { _dynamic: string }; // e.g. "$NOW(-7 days)"
 
 export type PolicyValue =

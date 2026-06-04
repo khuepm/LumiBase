@@ -241,8 +241,8 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 - [x] `[BE]` Enforce permission-level `validation` trong write path.
 - [x] `[BE]` Enforce app access từ effective active policies khi vào Studio; API key luôn bị chặn khỏi Studio.
 - [x] `[BE]` Enforce `enforceTfa=true`: user phải enroll và pass TFA; API key attach policy có TFA phải bị conflict/warning.
-- [ ] `[BE]` Mở rộng magic vars: `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$CURRENT_API_KEY`, nested `$CURRENT_USER.*`, `$NOW(+/- duration)`.
-- [ ] `[BE]` Fail closed cho unknown operator/magic var; thêm test cho `_null`, `_nnull`, `_empty`, `_nempty`, `_regex`, case-insensitive string ops.
+- [x] `[BE]` Mở rộng magic vars: `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$CURRENT_API_KEY`, nested `$CURRENT_USER.*`, `$NOW(+/- duration)`.
+- [x] `[BE]` Fail closed cho unknown operator/magic var; thêm test cho `_null`, `_nnull`, `_empty`, `_nempty`, `_regex`, case-insensitive string ops.
 
 ### Conflict detection
 
