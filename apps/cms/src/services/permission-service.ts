@@ -42,7 +42,18 @@ import {
  * The compiled bundle is also returned by `GET /permissions/me`.
  */
 
-export type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'share' | 'read_decrypted';
+export type PermissionAction =
+  | 'create'
+  | 'read'
+  | 'update'
+  | 'delete'
+  | 'share'
+  | 'read_decrypted'
+  | 'configure'
+  | 'install'
+  | 'enable'
+  | 'grant_capability'
+  | 'execute';
 
 export interface CompiledPermission {
   collection: string;
