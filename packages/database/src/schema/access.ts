@@ -142,6 +142,81 @@ export const userRoles = pgTable(
   }),
 );
 
+export const apiKeys = pgTable(
+  'api_keys',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    /** Stable token prefix shown in UI and audit logs; never enough to authenticate. */
+    prefix: text('prefix').notNull(),
+    /** Hash of the full bearer token. Plaintext is returned only on create/rotate. */
+    tokenHash: text('token_hash').notNull(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    rotatedAt: timestamp('rotated_at'),
+    rotatedBy: text('rotated_by').references(() => users.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at'),
+    revokedAt: timestamp('revoked_at'),
+    revokedBy: text('revoked_by').references(() => users.id, { onDelete: 'set null' }),
+    lastUsedAt: timestamp('last_used_at'),
+    lastUsedIp: text('last_used_ip'),
+    lastUsedUserAgent: text('last_used_user_agent'),
+    metadata: jsonb('metadata').default({}).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    tokenHashUnique: uniqueIndex('api_keys_token_hash_unique').on(t.tokenHash),
+    sitePrefixIdx: index('api_keys_site_prefix_idx').on(t.siteId, t.prefix),
+    siteActiveIdx: index('api_keys_site_active_idx').on(t.siteId, t.revokedAt, t.expiresAt),
+    createdByIdx: index('api_keys_created_by_idx').on(t.createdBy),
+  }),
+);
+
+export const apiKeyRoles = pgTable(
+  'api_key_roles',
+  {
+    apiKeyId: text('api_key_id')
+      .notNull()
+      .references(() => apiKeys.id, { onDelete: 'cascade' }),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    roleId: text('role_id')
+      .notNull()
+      .references(() => roles.id, { onDelete: 'cascade' }),
+    priority: integer('priority').default(100).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.apiKeyId, t.roleId] }),
+    siteRoleIdx: index('api_key_roles_site_role_idx').on(t.siteId, t.roleId),
+  }),
+);
+
+export const apiKeyPolicies = pgTable(
+  'api_key_policies',
+  {
+    apiKeyId: text('api_key_id')
+      .notNull()
+      .references(() => apiKeys.id, { onDelete: 'cascade' }),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    policyId: text('policy_id')
+      .notNull()
+      .references(() => policies.id, { onDelete: 'cascade' }),
+    priority: integer('priority').default(100).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.apiKeyId, t.policyId] }),
+    sitePolicyIdx: index('api_key_policies_site_policy_idx').on(t.siteId, t.policyId),
+  }),
+);
+
 export const permissions = pgTable(
   'permissions',
   {

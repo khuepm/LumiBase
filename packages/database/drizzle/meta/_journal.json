@@ -78,6 +78,13 @@
       "when": 1780485146644,
       "tag": "0010_loud_the_renegades",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1780570093313,
+      "tag": "0011_outstanding_jack_power",
+      "breakpoints": true
     }
   ]
 }

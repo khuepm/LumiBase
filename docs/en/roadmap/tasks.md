@@ -257,7 +257,7 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 
 ### API Keys theo Roles/Policies
 
-- [ ] `[DB]` Thêm `api_keys`, `api_key_roles`, `api_key_policies` với token hash, prefix, expire/revoke/last_used metadata.
+- [x] `[DB]` Thêm `api_keys`, `api_key_roles`, `api_key_policies` với token hash, prefix, expire/revoke/last_used metadata.
 - [ ] `[BE]` Bearer auth lookup API key bằng hash; principal type `api_key` compile quyền giống user.
 - [ ] `[BE]` Rotate/revoke API key; plaintext chỉ trả một lần khi tạo/rotate.
 - [ ] `[BE]` Audit create/rotate/revoke/use-denied cho API key, không log plaintext token.
