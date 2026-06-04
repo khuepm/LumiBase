@@ -24,6 +24,7 @@ import {
 // ---------------------------------------------------------------------------
 const AccessLayout = lazy(() => import('./modules/access/layout').then((m) => ({ default: m.AccessLayout })));
 const ApiKeysPage = lazy(() => import('./modules/access/api-keys-page').then((m) => ({ default: m.ApiKeysPage })));
+const AccessImportExportPage = lazy(() => import('./modules/access/import-export-page').then((m) => ({ default: m.AccessImportExportPage })));
 const PermissionMatrixPage = lazy(() => import('./modules/access/permission-matrix').then((m) => ({ default: m.PermissionMatrixPage })));
 const PoliciesListPage = lazy(() => import('./modules/access/policies-page').then((m) => ({ default: m.PoliciesListPage })));
 const PolicyDetailPage = lazy(() => import('./modules/access/policy-detail').then((m) => ({ default: m.PolicyDetailPage })));
@@ -765,6 +766,12 @@ const accessApiKeysRoute = createRoute({
   component: withSuspense(ApiKeysPage),
 });
 
+const accessImportExportRoute = createRoute({
+  getParentRoute: () => accessRoute,
+  path: 'import-export',
+  component: withSuspense(AccessImportExportPage),
+});
+
 const accessMatrixRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: 'matrix',
@@ -823,6 +830,12 @@ const adminPathAccessApiKeysRoute = createRoute({
   component: withSuspense(ApiKeysPage),
 });
 
+const adminPathAccessImportExportRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'import-export',
+  component: withSuspense(AccessImportExportPage),
+});
+
 const adminPathAccessMatrixRoute = createRoute({
   getParentRoute: () => adminPathAccessRoute,
   path: 'matrix',
@@ -864,6 +877,7 @@ const routeTree = rootRoute.addChildren([
       accessPoliciesRoute,
       accessPolicyDetailRoute,
       accessApiKeysRoute,
+      accessImportExportRoute,
       accessMatrixRoute,
       accessSandboxRoute,
     ]),
@@ -894,6 +908,7 @@ const routeTree = rootRoute.addChildren([
       adminPathAccessPoliciesRoute,
       adminPathAccessPolicyDetailRoute,
       adminPathAccessApiKeysRoute,
+      adminPathAccessImportExportRoute,
       adminPathAccessMatrixRoute,
       adminPathAccessSandboxRoute,
     ]),
