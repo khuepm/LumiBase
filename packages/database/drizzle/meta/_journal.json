@@ -99,6 +99,13 @@
       "when": 1780736400000,
       "tag": "0013_extension_access_targets",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1780822800000,
+      "tag": "0014_shares",
+      "breakpoints": true
     }
   ]
 }

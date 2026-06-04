@@ -105,6 +105,7 @@ export class PermissionService {
   private get principalKey(): string {
     const apiKeyId = this.deps.ctx.apiKey?.id;
     if (typeof apiKeyId === 'string' && apiKeyId.length > 0) return `api_key:${apiKeyId}`;
+    if (this.deps.ctx.roleId) return `role:${this.deps.ctx.roleId}`;
     return this.deps.ctx.userId ?? 'anon';
   }
 
@@ -276,8 +277,19 @@ export class PermissionService {
             ),
           )
       : [];
+    const directRoleRows = ctx.roleId
+      ? await db
+          .select({
+            id: roles.id,
+            name: roles.name,
+            adminAccess: roles.adminAccess,
+            appAccess: roles.appAccess,
+          })
+          .from(roles)
+          .where(and(scopeSite(roles.siteId, ctx.siteId), eq(roles.id, ctx.roleId)))
+      : [];
 
-    const roleRows = uniqueRoles([...primaryRoleRows, ...secondaryRoleRows, ...apiKeyRoleRows]);
+    const roleRows = uniqueRoles([...primaryRoleRows, ...secondaryRoleRows, ...apiKeyRoleRows, ...directRoleRows]);
 
     // Collect policy ids from role bindings + direct user/API-key policies.
     const roleIds = roleRows.map((r) => r.id);

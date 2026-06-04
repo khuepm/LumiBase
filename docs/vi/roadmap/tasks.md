@@ -296,10 +296,10 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 
 ### Share action
 
-- [ ] `[DB]` Thêm bảng `shares` với role share chuyên dụng, password hash, validity window, max uses, revoke.
-- [ ] `[BE]` Implement `share` action: chỉ user có quyền share mới tạo share link; read payload vẫn đi qua role share permission.
-- [ ] `[FE]` Share dialog chỉ cho chọn role có `appAccess=false`, `adminAccess=false`, read permissions tối thiểu.
-- [ ] `[TEST]` Share link chỉ đọc fields/rows role share được phép, hết hạn/max uses/revoked đều bị deny.
+- [x] `[DB]` Thêm bảng `shares` với role share chuyên dụng, password hash, validity window, max uses, revoke.
+- [x] `[BE]` Implement `share` action: chỉ user có quyền share mới tạo share link; read payload vẫn đi qua role share permission.
+- [x] `[FE]` Share dialog chỉ cho chọn role có `appAccess=false`, `adminAccess=false`, read permissions tối thiểu.
+- [x] `[TEST]` Share link chỉ đọc fields/rows role share được phép, hết hạn/max uses/revoked đều bị deny.
 
 ---
 

@@ -29,6 +29,9 @@ import {
   ApiKeyRoleAttachment,
   ApiKeyRotateInput,
   ApiKeySecretResult,
+  ShareCreateInput,
+  ShareResource,
+  ShareSecretResult,
   PresetResource,
   TranslationResource,
   SettingResource,
@@ -569,6 +572,18 @@ export function legacyRest() {
         }),
     };
 
+    const shares = {
+      create: (input: ShareCreateInput) =>
+        client.rawRequest<ShareSecretResult>("/api/v1/shares", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      revoke: (id: string) =>
+        client.rawRequest<ShareResource>(`/api/v1/shares/${id}/revoke`, {
+          method: "POST",
+        }),
+    };
+
     return {
       schema,
       items,
@@ -576,6 +591,7 @@ export function legacyRest() {
       policies,
       access,
       apiKeys,
+      shares,
       permissions,
       presets,
       translations,
