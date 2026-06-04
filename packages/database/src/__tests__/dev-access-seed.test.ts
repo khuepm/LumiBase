@@ -114,6 +114,18 @@ describe('dev access seed', () => {
     }
   });
 
+  it('keeps the default public policy empty until explicit content or system grants are added', () => {
+    const publicPermissions = DEV_ACCESS_SEED.permissions.filter(
+      (permission) => permission.policyId === DEV_ACCESS_POLICY_IDS.public,
+    );
+
+    expect(publicPermissions).toEqual([]);
+    expect(DEV_ACCESS_SEED.policies.find((policy) => policy.id === DEV_ACCESS_POLICY_IDS.public)).toMatchObject({
+      adminAccess: false,
+      appAccess: false,
+    });
+  });
+
   it('uses unique stable ids and unique policy/collection/action permission keys', () => {
     const allIds = [
       ...DEV_ACCESS_SEED.roles.map((row) => row.id),
