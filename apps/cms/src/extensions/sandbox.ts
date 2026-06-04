@@ -31,6 +31,7 @@ import type { Database } from '@lumibase/database';
 export type ExtensionCapability =
   | 'db:read'
   | 'db:write'
+  | 'service-account'
   | 'http:fetch'
   | 'kv:read'
   | 'kv:write'
@@ -47,6 +48,20 @@ export interface ExtensionHookContext {
 }
 
 export type HookFn = (ctx: ExtensionHookContext) => Promise<void | Record<string, unknown>>;
+
+export interface ExtensionActorDataAccess {
+  list: (collection: string, params?: Record<string, unknown>) => Promise<unknown>;
+  detail: (collection: string, id: string, fields?: string[]) => Promise<unknown>;
+  create: (collection: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) => Promise<unknown>;
+  patch: (collection: string, id: string, patch: { data?: Record<string, unknown>; status?: string; sort?: number }) => Promise<unknown>;
+  delete: (collection: string, id: string) => Promise<unknown>;
+}
+
+export type ExtensionServiceAccountAudit = (event: {
+  extensionName: string;
+  operation: 'query' | 'execute';
+  statement: string;
+}) => Promise<void>;
 
 export interface ExtensionModule {
   /** Lifecycle hooks for item mutations. */
@@ -107,6 +122,8 @@ export class ExtensionSandbox {
   constructor(
     private readonly env: SandboxEnv,
     private readonly db?: Database,
+    private readonly actorDataAccess?: ExtensionActorDataAccess,
+    private readonly serviceAccountAudit?: ExtensionServiceAccountAudit,
   ) {}
 
   /**
@@ -156,23 +173,55 @@ export class ExtensionSandbox {
     };
 
     return {
+      /**
+       * Actor-scoped item access. This is the default extension data path:
+       * calls are routed through the host ItemService, so row/field/action
+       * permissions are evaluated for the request principal.
+       */
+      items: {
+        list: (collection: string, params?: Record<string, unknown>) => {
+          if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
+          return this.actorDataAccess.list(collection, params);
+        },
+        detail: (collection: string, id: string, fields?: string[]) => {
+          if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
+          return this.actorDataAccess.detail(collection, id, fields);
+        },
+        create: (collection: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) => {
+          if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
+          return this.actorDataAccess.create(collection, payload);
+        },
+        patch: (collection: string, id: string, patch: { data?: Record<string, unknown>; status?: string; sort?: number }) => {
+          if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
+          return this.actorDataAccess.patch(collection, id, patch);
+        },
+        delete: (collection: string, id: string) => {
+          if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
+          return this.actorDataAccess.delete(collection, id);
+        },
+      },
+
       /** Read-only DB helper — SELECT only. */
       db: {
         query: async (sqlStr: string, _params?: unknown[]) => {
           gate('db:read');
+          gate('service-account');
           if (!this.db) throw new Error('DB not available in this environment.');
           // Safety: allow only SELECT statements.
           const trimmed = sqlStr.trim().toUpperCase();
           if (!trimmed.startsWith('SELECT')) {
             throw new CapabilityError('db:read (non-SELECT query blocked)');
           }
+          await this.serviceAccountAudit?.({ extensionName: name, operation: 'query', statement: sqlStr });
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           return (this.db as any).execute(sqlStr);
         },
         /** Write access — INSERT / UPDATE / DELETE. */
         execute: async (sqlStr: string, _params?: unknown[]) => {
           gate('db:write');
+          gate('service-account');
           if (!this.db) throw new Error('DB not available in this environment.');
+          await this.serviceAccountAudit?.({ extensionName: name, operation: 'execute', statement: sqlStr });
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           return (this.db as any).execute(sqlStr);
         },
