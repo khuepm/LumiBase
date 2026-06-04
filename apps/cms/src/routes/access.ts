@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { buildAccessConflictReport } from '../services/access-conflict-report';
+import { AccessExportService } from '../services/access-export';
 
 export const accessRouter = new Hono<AppEnv>();
 
@@ -12,6 +13,14 @@ const conflictCheckSchema = z.object({
   }),
   addPolicies: z.array(z.string()).default([]),
   removePolicies: z.array(z.string()).default([]),
+});
+
+accessRouter.get('/export', async (c) => {
+  const manifest = await new AccessExportService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+  }).export();
+  return c.json({ data: manifest });
 });
 
 accessRouter.post('/conflicts/check', async (c) => {
