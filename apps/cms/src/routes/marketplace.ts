@@ -19,9 +19,10 @@
 
 import { extensions, userSites, notifications, roles } from "@lumibase/database";
 import { and, eq, isNotNull } from "drizzle-orm";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../env";
+import { PermissionService } from "../services/permission-service";
 
 export const marketplaceRouter = new Hono<AppEnv>();
 
@@ -44,6 +45,37 @@ async function sha256(buf: ArrayBuffer): Promise<string> {
   return Array.from(new Uint8Array(hash))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function permissionCtx(c: Context<AppEnv>) {
+  const auth = c.get("auth");
+  const headers: Record<string, string> = {};
+  c.req.raw.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value;
+  });
+  return {
+    userId: auth?.userId ?? null,
+    siteId: c.get("siteId"),
+    roleId: null,
+    user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
+    ip: c.get("ip") ?? c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? null,
+    headers,
+    apiKey: auth?.apiKey ?? null,
+  };
+}
+
+async function requireInstallPermission(c: Context<AppEnv>): Promise<Response | null> {
+  const perm = await new PermissionService({
+    db: c.get("db"),
+    cache: c.get("runtime").cache,
+    ctx: permissionCtx(c),
+  }).canAccess("extensions", "install");
+
+  if (perm) return null;
+  return c.json(
+    { errors: [{ code: "FORBIDDEN", message: 'Action "extensions:install" is not allowed.' }] },
+    403,
+  );
 }
 
 function extensionKey(input: { key?: string | null; marketplaceSlug?: string | null; name: string }): string {
@@ -209,6 +241,9 @@ marketplaceRouter.get("/updates", async (c) => {
 });
 
 marketplaceRouter.post("/extensions/:slug/install", async (c) => {
+  const denied = await requireInstallPermission(c);
+  if (denied) return denied;
+
   const siteId = c.get("siteId");
   const db = c.get("db");
   const slug = c.req.param("slug");
