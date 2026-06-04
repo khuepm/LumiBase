@@ -46,6 +46,14 @@ async function sha256(buf: ArrayBuffer): Promise<string> {
     .join("");
 }
 
+function extensionKey(input: { key?: string | null; marketplaceSlug?: string | null; name: string }): string {
+  return (input.key ?? input.marketplaceSlug ?? input.name)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 async function verifyEd25519Signature(
   publicKeyPem: string,
   signatureB64: string,
@@ -282,6 +290,7 @@ marketplaceRouter.post("/extensions/:slug/install", async (c) => {
     .insert(extensions)
     .values({
       siteId,
+      key: extensionKey(source),
       name: source.name,
       version: source.version,
       type: source.type,
@@ -329,6 +338,7 @@ marketplaceRouter.post("/publish", async (c) => {
   const updated = await db
     .update(extensions)
     .set({
+      key: parsed.data.marketplaceSlug,
       marketplaceSlug: parsed.data.marketplaceSlug,
       publisher: parsed.data.publisher,
       signature: parsed.data.signature,

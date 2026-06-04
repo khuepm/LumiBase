@@ -1,4 +1,4 @@
-export type AccessCollectionGroupId = 'content' | 'schema' | 'access' | 'sensitive';
+export type AccessCollectionGroupId = 'content' | 'schema' | 'access' | 'extension' | 'sensitive';
 
 export type AccessCollectionOption = {
   name: string;
@@ -35,15 +35,23 @@ const SENSITIVE_COLLECTIONS = [
   'api_key_roles',
   'api_key_policies',
 ] as const;
+const EXTENSION_ACCESS_TARGETS = [
+  'extensions',
+  'extension_modules',
+  'extension_endpoints',
+  'extension_operations',
+] as const;
 
 const SYSTEM_CONTRACT_COLLECTIONS = [
   ...SCHEMA_COLLECTIONS,
   ...ACCESS_COLLECTIONS,
+  ...EXTENSION_ACCESS_TARGETS,
   ...SENSITIVE_COLLECTIONS,
 ] as const;
 
 const SCHEMA_SET = new Set<string>(SCHEMA_COLLECTIONS);
 const ACCESS_SET = new Set<string>(ACCESS_COLLECTIONS);
+const EXTENSION_SET = new Set<string>(EXTENSION_ACCESS_TARGETS);
 const SENSITIVE_SET = new Set<string>(SENSITIVE_COLLECTIONS);
 const SYSTEM_CONTRACT_SET = new Set<string>(SYSTEM_CONTRACT_COLLECTIONS);
 
@@ -62,6 +70,11 @@ export const ACCESS_COLLECTION_GROUPS: Record<AccessCollectionGroupId, Omit<Acce
     id: 'access',
     label: 'Access control',
     hint: 'Roles, policies, bindings, and permission rows.',
+  },
+  extension: {
+    id: 'extension',
+    label: 'Extension access',
+    hint: 'Extension install/configure grants, module visibility, endpoints, and operations.',
   },
   sensitive: {
     id: 'sensitive',
@@ -83,6 +96,7 @@ export function buildAccessCollectionGroups(
     content: [],
     schema: [],
     access: [],
+    extension: [],
     sensitive: [],
   };
 
@@ -100,7 +114,7 @@ export function buildAccessCollectionGroups(
     });
   }
 
-  return (['content', 'schema', 'access', 'sensitive'] as const)
+  return (['content', 'schema', 'access', 'extension', 'sensitive'] as const)
     .map((id) => ({ ...ACCESS_COLLECTION_GROUPS[id], options: grouped[id] }))
     .filter((group) => group.options.length > 0);
 }
@@ -111,6 +125,7 @@ export function firstCollectionOption(groups: AccessCollectionGroup[]): string {
 
 function collectionGroupFor(name: string): AccessCollectionGroupId {
   if (SENSITIVE_SET.has(name)) return 'sensitive';
+  if (EXTENSION_SET.has(name)) return 'extension';
   if (ACCESS_SET.has(name)) return 'access';
   if (SCHEMA_SET.has(name)) return 'schema';
   return 'content';

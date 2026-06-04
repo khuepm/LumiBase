@@ -19,6 +19,7 @@ describe('AddPermissionDialog', () => {
     expect(screen.getByRole('group', { name: 'Content collections' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Schema builder' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Access control' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Extension access' })).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Sensitive system' })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'api_keys' })).not.toBeInTheDocument();
   });

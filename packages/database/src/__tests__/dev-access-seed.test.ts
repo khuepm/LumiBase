@@ -4,6 +4,8 @@ import {
   DEV_ACCESS_POLICY_IDS,
   DEV_ACCESS_ROLE_IDS,
   DEV_ACCESS_SEED,
+  DEV_EXTENSION_ACCESS_TARGETS,
+  DEV_EXTENSION_PERMISSION_ACTIONS,
   DEV_SCHEMA_MANAGER_COLLECTIONS,
   DEV_SENSITIVE_COLLECTIONS,
   DEV_SYSTEM_PERMISSION_ACTIONS,
@@ -124,6 +126,23 @@ describe('dev access seed', () => {
       adminAccess: false,
       appAccess: false,
     });
+  });
+
+  it('seeds extension access targets for the extension manager policy', () => {
+    expect(ids(DEV_ACCESS_SEED.policies)).toContain(DEV_ACCESS_POLICY_IDS.extensionManager);
+
+    for (const target of DEV_EXTENSION_ACCESS_TARGETS) {
+      expect(permissionsFor(DEV_ACCESS_POLICY_IDS.extensionManager, target)).toEqual(
+        DEV_EXTENSION_PERMISSION_ACTIONS[target].map((action) =>
+          expect.objectContaining({
+            collection: target,
+            action,
+            fields: ['*'],
+            permissions: {},
+          }),
+        ),
+      );
+    }
   });
 
   it('uses unique stable ids and unique policy/collection/action permission keys', () => {

@@ -661,6 +661,7 @@ export interface ActivityResource {
 export interface ExtensionResource {
   id: string;
   siteId: string | null;
+  key: string | null;
   name: string;
   version: string;
   type: string;
