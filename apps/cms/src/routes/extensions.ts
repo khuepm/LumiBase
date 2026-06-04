@@ -75,6 +75,14 @@ function patchActions(input: Partial<z.infer<typeof extensionSchema>>): Permissi
   return [...actions];
 }
 
+function optionalExecutionCtx(c: Context<AppEnv>): ExecutionContext | undefined {
+  try {
+    return c.executionCtx;
+  } catch {
+    return undefined;
+  }
+}
+
 extensionsRouter.get('/', async (c) => {
   const denied = await requireExtensionPermission(c, 'read');
   if (denied) return denied;
@@ -155,6 +163,9 @@ extensionsRouter.delete('/:id', async (c) => {
  * If the extension does not exist, is not enabled, or has no handler, 404 is returned.
  */
 extensionsRouter.all('/:name/*', async (c) => {
+  const denied = await requireExtensionPermission(c, 'execute');
+  if (denied) return denied;
+
   const name = c.req.param('name');
   const siteId = c.get('siteId');
   const db = c.get('db');
@@ -198,5 +209,5 @@ extensionsRouter.all('/:name/*', async (c) => {
   const subPath = originalPath.startsWith(prefix) ? originalPath.slice(prefix.length) || '/' : '/';
   const subUrl = new URL(subPath + new URL(c.req.url).search, c.req.url);
 
-  return subApp.fetch(new Request(subUrl.toString(), c.req.raw), c.env, c.executionCtx);
+  return subApp.fetch(new Request(subUrl.toString(), c.req.raw), c.env, optionalExecutionCtx(c));
 });

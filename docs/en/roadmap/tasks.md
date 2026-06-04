@@ -288,11 +288,11 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 - [x] `[DOC]` Ghi rõ Directus extension permission layers: install/enable, sandbox scopes, accountability services, app module self-check.
 - [x] `[DB]` Thêm stable `extensions.key` và system access targets `extensions`, `extension_modules`, `extension_endpoints`, `extension_operations`.
 - [x] `[BE]` Enforce `extensions:read/configure/install/enable/delete/grant_capability` trên extension management routes.
-- [ ] `[BE]` Enforce `extensions:execute` trước khi dispatch `/api/v1/extensions/:name/*`.
+- [x] `[BE]` Enforce `extensions:execute` trước khi dispatch `/api/v1/extensions/:name/*`.
 - [ ] `[BE]` Extension data access mặc định dùng actor permissions; service-account mode cần policy/capability riêng và audit.
 - [ ] `[FE]` Studio extension loader/module bar chỉ hiển thị extension principal được phép đọc.
 - [x] `[FE]` Permission Builder thêm nhóm Extension Access để gán user/role truy cập extension.
-- [ ] `[TEST]` User thiếu `extensions:execute` không gọi được endpoint extension dù extension enabled.
+- [x] `[TEST]` User thiếu `extensions:execute` không gọi được endpoint extension dù extension enabled.
 
 ### Share action
 

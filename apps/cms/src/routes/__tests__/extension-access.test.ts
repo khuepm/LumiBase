@@ -2,6 +2,7 @@ import type { Database } from '@lumibase/database';
 import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
 import type { AppEnv } from '../../env';
+import { ExtensionSandbox } from '../../extensions/sandbox';
 import { extensionsRouter } from '../extensions';
 import { marketplaceRouter } from '../marketplace';
 
@@ -226,5 +227,48 @@ describe('extension management access', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ data: null });
     expect(state.deletes).toBe(1);
+  });
+
+  it('returns 403 before dispatching enabled endpoint extensions without extensions:execute', async () => {
+    const loadSpy = vi.spyOn(ExtensionSandbox.prototype, 'load');
+    const { db } = makeDb([...permissionRows([])]);
+
+    const res = await buildApp(db).request('/api/v1/extensions/search/ping');
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      errors: [{ code: 'FORBIDDEN', message: 'Action "extensions:execute" is not allowed.' }],
+    });
+    expect(loadSpy).not.toHaveBeenCalled();
+    loadSpy.mockRestore();
+  });
+
+  it('dispatches enabled endpoint extensions with extensions:execute', async () => {
+    const loadSpy = vi.spyOn(ExtensionSandbox.prototype, 'load').mockResolvedValue({
+      handler: (app: unknown) => {
+        (app as Hono).get('/', (c) => c.json({ ok: true }));
+      },
+    });
+    const endpointRow = {
+      id: 'ext_1',
+      siteId: SITE_ID,
+      name: 'search',
+      type: 'endpoint',
+      enabled: true,
+      bundleUrl: 'https://cdn.example/search.js',
+      capabilities: [],
+    };
+    const { db } = makeDb([...permissionRows(['execute']), [endpointRow]]);
+
+    const res = await buildApp(db).request('/api/v1/extensions/search/ping');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(loadSpy).toHaveBeenCalledWith({
+      name: 'search',
+      bundleUrl: 'https://cdn.example/search.js',
+      capabilities: [],
+    });
+    loadSpy.mockRestore();
   });
 });
