@@ -17,8 +17,9 @@ import { PermissionService, type CompiledPermission, type PermissionAction } fro
 import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
 import type { PolicyRule } from '@lumibase/shared';
 import { CryptoService } from './crypto-service';
-import { ExtensionSandbox } from '../extensions/sandbox';
+import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
+import { AuditLogger } from '../modules/audit/logger';
 
 /**
  * ItemService — generic CRUD over the `items` JSONB store, driven by the
@@ -108,6 +109,8 @@ export interface ItemServiceDeps {
    * When omitted, extension hooks are skipped.
    */
   extensionEnv?: Record<string, unknown>;
+  /** Internal guard for actor-scoped extension item access to avoid recursive hooks. */
+  suppressExtensionHooks?: boolean;
 }
 
 const STRUCTURAL_FIELDS = new Set([
@@ -260,6 +263,7 @@ export class ItemService {
    * Cached after first call; re-loaded if extensions change (evict from sandbox).
    */
   private async getHookDispatcher(): Promise<HookDispatcher | null> {
+    if (this.deps.suppressExtensionHooks) return null;
     if (!this.deps.extensionEnv) return null;
     if (this.hookDispatcher) return this.hookDispatcher;
     try {
@@ -267,12 +271,52 @@ export class ItemService {
         .select()
         .from(extensionsTable)
         .where(and(eq(extensionsTable.siteId, this.deps.siteId), eq(extensionsTable.enabled, true)));
-      const sandbox = new ExtensionSandbox(this.deps.extensionEnv as never, this.deps.db);
+      const sandbox = new ExtensionSandbox(
+        this.deps.extensionEnv as never,
+        this.deps.db,
+        this.actorDataAccess(),
+        async (event) => {
+          const actorEmail =
+            typeof this.deps.permissionCtx?.user?.email === 'string'
+              ? this.deps.permissionCtx.user.email
+              : null;
+          await new AuditLogger({ db: this.deps.db, siteId: this.deps.siteId }).write({
+            event: 'extension_service_account_used',
+            actorEmail,
+            ip: this.deps.permissionCtx?.ip ?? null,
+            userAgent: this.deps.permissionCtx?.headers?.['user-agent'] ?? null,
+            requestId: null,
+            metadata: {
+              extensionName: event.extensionName,
+              operation: event.operation,
+              statement: redactSql(event.statement),
+              siteId: this.deps.siteId,
+              userId: this.deps.userId ?? null,
+              principalType: this.deps.permissionCtx?.apiKey ? 'api_key' : 'user',
+            },
+          });
+        },
+      );
       this.hookDispatcher = new HookDispatcher(sandbox, rows);
     } catch {
       /* non-critical — return null if extensions can't be loaded */
     }
     return this.hookDispatcher;
+  }
+
+  private actorDataAccess(): ExtensionActorDataAccess {
+    const buildService = () =>
+      new ItemService({
+        ...this.deps,
+        suppressExtensionHooks: true,
+      });
+    return {
+      list: (collection, params) => buildService().list(collection, params as ListItemsParams | undefined),
+      detail: (collection, id, fields) => buildService().detail(collection, id, fields),
+      create: (collection, payload) => buildService().create(collection, payload),
+      patch: (collection, id, patch) => buildService().patch(collection, id, patch),
+      delete: (collection, id) => buildService().softDelete(collection, id),
+    };
   }
 
   private async resolveCollection(name: string) {
@@ -913,6 +957,13 @@ function defaultMagicContext(siteId: string): MagicContext {
     ip: null,
     headers: {},
   };
+}
+
+function redactSql(statement: string): string {
+  return statement
+    .replace(/'[^']*'/g, "'?'")
+    .replace(/\b\d+(\.\d+)?\b/g, '?')
+    .slice(0, 500);
 }
 
 function projectFields(row: ItemRow, fields: string[]): Record<string, unknown> {
