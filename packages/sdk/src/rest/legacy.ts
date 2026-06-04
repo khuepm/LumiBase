@@ -19,6 +19,10 @@ import {
   PermissionCheckResult,
   AccessConflictCheckInput,
   AccessConflictReport,
+  AccessExportManifest,
+  AccessImportApplyResult,
+  AccessImportDryRunResult,
+  AccessImportOptions,
   ApiKeyCreateInput,
   ApiKeyPolicyAttachment,
   ApiKeyResource,
@@ -498,6 +502,23 @@ export function legacyRest() {
           method: "POST",
           body: JSON.stringify(input),
         }),
+      exportManifest: () =>
+        client.rawRequest<AccessExportManifest>("/api/v1/access/export"),
+      dryRunImport: (manifest: AccessExportManifest) =>
+        client.rawRequest<AccessImportDryRunResult>("/api/v1/access/import?dryRun=true", {
+          method: "POST",
+          body: JSON.stringify(manifest),
+        }),
+      importManifest: (
+        manifest: AccessExportManifest,
+        options: AccessImportOptions = {},
+      ) => {
+        const query = options.mode ? `?mode=${encodeURIComponent(options.mode)}` : "";
+        return client.rawRequest<AccessImportApplyResult>(`/api/v1/access/import${query}`, {
+          method: "POST",
+          body: JSON.stringify(manifest),
+        });
+      },
     };
 
     const apiKeys = {
