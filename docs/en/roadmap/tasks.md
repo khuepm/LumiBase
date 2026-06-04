@@ -269,7 +269,7 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 
 - [x] `[BE]` `GET /api/v1/access/export` xuất roles, policies, permissions, bindings, API key metadata bằng stable keys, không chứa secrets.
 - [x] `[BE]` `POST /api/v1/access/import?dryRun=true` parse/validate/diff/conflict-check nhưng không ghi DB.
-- [ ] `[BE]` Import modes: `merge`, `replace-managed`, `replace-all`; apply trong transaction và audit diff summary.
+- [x] `[BE]` Import modes: `merge`, `replace-managed`, `replace-all`; apply trong transaction và audit diff summary.
 - [ ] `[BE]` Idempotency tests: import cùng manifest nhiều lần không tạo duplicate.
 - [ ] `[SDK]` Thêm access export/import client types.
 - [ ] `[FE]` Import dialog hiển thị diff, warnings, blocking conflicts và kết quả dry-run.

@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { AuditLogger } from '../modules/audit/logger';
 import { buildAccessConflictReport } from '../services/access-conflict-report';
 import { AccessExportService } from '../services/access-export';
-import { AccessImportService } from '../services/access-import';
+import { AccessImportService, type AccessImportMode } from '../services/access-import';
 
 export const accessRouter = new Hono<AppEnv>();
 
@@ -26,17 +27,31 @@ accessRouter.get('/export', async (c) => {
 
 accessRouter.post('/import', async (c) => {
   const dryRun = new URL(c.req.url).searchParams.get('dryRun') === 'true';
-  if (!dryRun) {
-    return c.json(
-      { errors: [{ code: 'DRY_RUN_REQUIRED', message: 'Only dry-run access imports are supported.' }] },
-      400,
-    );
-  }
-
-  const result = await new AccessImportService({
+  const mode = parseImportMode(new URL(c.req.url).searchParams.get('mode'));
+  const service = new AccessImportService({
     db: c.get('db'),
     siteId: c.get('siteId'),
-  }).dryRun(await c.req.json());
+  });
+  const body = await c.req.json();
+
+  if (dryRun) {
+    const result = await service.dryRun(body);
+    return c.json({ data: result }, result.valid ? 200 : 400);
+  }
+
+  const result = await service.apply(body, mode);
+  if (!result.valid) {
+    return c.json({ data: result }, 400);
+  }
+
+  await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
+    event: result.audit.event,
+    actorEmail: c.get('auth')?.email ?? null,
+    ip: c.get('ip') ?? null,
+    userAgent: c.get('userAgent') ?? null,
+    requestId: c.get('requestId') ?? null,
+    metadata: result.audit.summary as unknown as Record<string, unknown>,
+  });
 
   return c.json({ data: result }, result.valid ? 200 : 400);
 });
@@ -60,3 +75,8 @@ accessRouter.post('/conflicts/check', async (c) => {
 
   return c.json({ data: report });
 });
+
+function parseImportMode(value: string | null): AccessImportMode {
+  if (value === 'replace-managed' || value === 'replace-all') return value;
+  return 'merge';
+}

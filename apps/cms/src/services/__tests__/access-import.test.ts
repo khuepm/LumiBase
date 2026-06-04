@@ -18,6 +18,16 @@ function emptyDb(): Database {
   return makeDb([[], [], [], [], [], [], [], [], [], []]);
 }
 
+function transactionalEmptyDb(state: { transactions: number }): Database {
+  return {
+    ...emptyDb(),
+    transaction: async (cb: (tx: Database) => Promise<unknown>) => {
+      state.transactions += 1;
+      return cb(emptyDb());
+    },
+  } as unknown as Database;
+}
+
 function baseManifest(): AccessExportManifest {
   return {
     schema: ACCESS_EXPORT_SCHEMA,
@@ -73,6 +83,23 @@ function baseManifest(): AccessExportManifest {
   };
 }
 
+function emptyManifest(): AccessExportManifest {
+  return {
+    schema: ACCESS_EXPORT_SCHEMA,
+    exportedAt: '2026-06-04T00:00:00.000Z',
+    roles: [],
+    policies: [],
+    bindings: {
+      rolePolicies: [],
+      userRoles: [],
+      userPolicies: [],
+      apiKeyRoles: [],
+      apiKeyPolicies: [],
+    },
+    apiKeys: [],
+  };
+}
+
 describe('AccessImportService', () => {
   it('validates and diffs a dry-run manifest without writing DB rows', async () => {
     const result = await new AccessImportService({
@@ -98,6 +125,32 @@ describe('AccessImportService', () => {
     expect(result.valid).toBe(false);
     expect(result.errors.some((issue) => issue.code === 'VALIDATION')).toBe(true);
     expect(result.diff.roles.entries).toEqual([]);
+  });
+
+  it('applies valid manifests inside a transaction with the selected mode', async () => {
+    const state = { transactions: 0 };
+    const result = await new AccessImportService({
+      db: transactionalEmptyDb(state),
+      siteId: 'site_1',
+    }).apply(emptyManifest(), 'replace-managed');
+
+    expect(result.valid).toBe(true);
+    expect(result.applied).toBe(true);
+    expect(result.mode).toBe('replace-managed');
+    expect(result.audit.summary.mode).toBe('replace-managed');
+    expect(state.transactions).toBe(1);
+  });
+
+  it('does not apply invalid manifests', async () => {
+    const state = { transactions: 0 };
+    const result = await new AccessImportService({
+      db: transactionalEmptyDb(state),
+      siteId: 'site_1',
+    }).apply({ schema: 'wrong' }, 'merge');
+
+    expect(result.valid).toBe(false);
+    expect(result.applied).toBe(false);
+    expect(state.transactions).toBe(0);
   });
 
   it('reports blocking reference and conflict issues in dry-run', async () => {
