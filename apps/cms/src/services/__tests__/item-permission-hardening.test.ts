@@ -14,9 +14,14 @@ const ctx: MagicContext = {
   roleId: 'role-1',
   ip: '127.0.0.1',
   headers: {},
-  roles: ['role-1'],
-  policies: ['policy_editor'],
-  user: { id: 'user-1', email: 'user@example.com' },
+  roles: ['role-1', 'role-editor'],
+  policies: ['policy-editor'],
+  apiKey: { id: 'key-1' },
+  user: {
+    id: 'user-1',
+    email: 'editor@example.com',
+    profile: { locale: 'vi' },
+  },
   now: new Date('2026-06-03T00:00:00.000Z'),
 };
 
@@ -82,5 +87,64 @@ describe('ItemService permission hardening helpers', () => {
     } as PolicyRule;
 
     expect(evaluate(validation, snapshot, ctx)).toBe(true);
+  });
+
+  it('resolves expanded magic vars inside permission rules', () => {
+    const rule = {
+      _and: [
+        { role_id: { _in: '$CURRENT_ROLES' } },
+        { policy_id: { _in: '$CURRENT_POLICIES' } },
+        { api_key_id: { _eq: '$CURRENT_API_KEY' } },
+        { owner_email: { _eq: '$CURRENT_USER.email' } },
+        { locale: { _eq: '$CURRENT_USER.profile.locale' } },
+        { publish_at: { _lte: '$NOW(+1 day)' } },
+      ],
+    } as unknown as PolicyRule;
+
+    expect(
+      evaluate(
+        rule,
+        {
+          role_id: 'role-editor',
+          policy_id: 'policy-editor',
+          api_key_id: 'key-1',
+          owner_email: 'editor@example.com',
+          locale: 'vi',
+          publish_at: '2026-06-04T00:00:00.000Z',
+        },
+        ctx,
+      ),
+    ).toBe(true);
+  });
+
+  it('fails closed for unknown operators and unknown magic vars', () => {
+    expect(
+      evaluate({ owner: { _unknown: 'user-1' } } as unknown as PolicyRule, { owner: 'user-1' }, ctx),
+    ).toBe(false);
+
+    expect(
+      evaluate({ owner: { _eq: '$NOT_A_MAGIC_VAR' } } as unknown as PolicyRule, { owner: '$NOT_A_MAGIC_VAR' }, ctx),
+    ).toBe(false);
+
+    expect(
+      evaluate({ _not: { owner: { _eq: '$NOT_A_MAGIC_VAR' } } } as unknown as PolicyRule, { owner: 'user-1' }, ctx),
+    ).toBe(false);
+  });
+
+  it('supports null, empty, regex, and case-insensitive string operators', () => {
+    const item = {
+      title: 'LumiBase Launch',
+      subtitle: '',
+      deleted_at: null,
+      summary: 'Composable content platform',
+    };
+
+    expect(evaluate({ deleted_at: { _null: true } } as unknown as PolicyRule, item, ctx)).toBe(true);
+    expect(evaluate({ title: { _nempty: true } } as unknown as PolicyRule, item, ctx)).toBe(true);
+    expect(evaluate({ subtitle: { _empty: true } } as unknown as PolicyRule, item, ctx)).toBe(true);
+    expect(evaluate({ title: { _regex: '^LumiBase' } } as unknown as PolicyRule, item, ctx)).toBe(true);
+    expect(evaluate({ summary: { _icontains: 'CONTENT' } } as unknown as PolicyRule, item, ctx)).toBe(true);
+    expect(evaluate({ title: { _istarts_with: 'lumi' } } as unknown as PolicyRule, item, ctx)).toBe(true);
+    expect(evaluate({ title: { _iends_with: 'LAUNCH' } } as unknown as PolicyRule, item, ctx)).toBe(true);
   });
 });
