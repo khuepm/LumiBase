@@ -5,6 +5,7 @@ import { cn } from '@/lib/cn';
 const TABS: Array<{ id: string; label: string; to: string }> = [
   { id: 'roles', label: 'Roles', to: '/access/roles' },
   { id: 'policies', label: 'Policies', to: '/access/policies' },
+  { id: 'api-keys', label: 'API keys', to: '/access/api-keys' },
   { id: 'matrix', label: 'Permission matrix', to: '/access/matrix' },
   { id: 'sandbox', label: 'Test sandbox', to: '/access/sandbox' },
 ];

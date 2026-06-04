@@ -23,6 +23,7 @@ import {
 // Heavy dependencies (Monaco, WYSIWYG, etc.) are pulled in only when needed.
 // ---------------------------------------------------------------------------
 const AccessLayout = lazy(() => import('./modules/access/layout').then((m) => ({ default: m.AccessLayout })));
+const ApiKeysPage = lazy(() => import('./modules/access/api-keys-page').then((m) => ({ default: m.ApiKeysPage })));
 const PermissionMatrixPage = lazy(() => import('./modules/access/permission-matrix').then((m) => ({ default: m.PermissionMatrixPage })));
 const PoliciesListPage = lazy(() => import('./modules/access/policies-page').then((m) => ({ default: m.PoliciesListPage })));
 const PolicyDetailPage = lazy(() => import('./modules/access/policy-detail').then((m) => ({ default: m.PolicyDetailPage })));
@@ -758,6 +759,12 @@ const accessPolicyDetailRoute = createRoute({
   component: withSuspense(PolicyDetailPage),
 });
 
+const accessApiKeysRoute = createRoute({
+  getParentRoute: () => accessRoute,
+  path: 'api-keys',
+  component: withSuspense(ApiKeysPage),
+});
+
 const accessMatrixRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: 'matrix',
@@ -810,6 +817,12 @@ const adminPathAccessPolicyDetailRoute = createRoute({
   component: withSuspense(PolicyDetailPage),
 });
 
+const adminPathAccessApiKeysRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'api-keys',
+  component: withSuspense(ApiKeysPage),
+});
+
 const adminPathAccessMatrixRoute = createRoute({
   getParentRoute: () => adminPathAccessRoute,
   path: 'matrix',
@@ -850,6 +863,7 @@ const routeTree = rootRoute.addChildren([
       accessRoleDetailRoute,
       accessPoliciesRoute,
       accessPolicyDetailRoute,
+      accessApiKeysRoute,
       accessMatrixRoute,
       accessSandboxRoute,
     ]),
@@ -879,6 +893,7 @@ const routeTree = rootRoute.addChildren([
       adminPathAccessRoleDetailRoute,
       adminPathAccessPoliciesRoute,
       adminPathAccessPolicyDetailRoute,
+      adminPathAccessApiKeysRoute,
       adminPathAccessMatrixRoute,
       adminPathAccessSandboxRoute,
     ]),

@@ -31,7 +31,30 @@ const attachPolicy = z.object({
   overrideWarnings: z.boolean().optional(),
 });
 
-function publicApiKey(row: typeof apiKeys.$inferSelect): Record<string, unknown> {
+async function apiKeyAttachments(c: Context<AppEnv>, apiKeyId: string): Promise<{
+  roles: Array<{ roleId: string; priority: number }>;
+  policies: Array<{ policyId: string; priority: number }>;
+}> {
+  const [roleRows, policyRows] = await Promise.all([
+    c
+      .get('db')
+      .select({ roleId: apiKeyRoles.roleId, priority: apiKeyRoles.priority })
+      .from(apiKeyRoles)
+      .where(and(eq(apiKeyRoles.siteId, c.get('siteId')), eq(apiKeyRoles.apiKeyId, apiKeyId))),
+    c
+      .get('db')
+      .select({ policyId: apiKeyPolicies.policyId, priority: apiKeyPolicies.priority })
+      .from(apiKeyPolicies)
+      .where(and(eq(apiKeyPolicies.siteId, c.get('siteId')), eq(apiKeyPolicies.apiKeyId, apiKeyId))),
+  ]);
+  return {
+    roles: roleRows,
+    policies: policyRows,
+  };
+}
+
+async function publicApiKey(c: Context<AppEnv>, row: typeof apiKeys.$inferSelect): Promise<Record<string, unknown>> {
+  const attachments = await apiKeyAttachments(c, row.id);
   return {
     id: row.id,
     siteId: row.siteId,
@@ -49,6 +72,8 @@ function publicApiKey(row: typeof apiKeys.$inferSelect): Record<string, unknown>
     lastUsedUserAgent: row.lastUsedUserAgent,
     metadata: row.metadata,
     createdAt: row.createdAt,
+    roles: attachments.roles,
+    policies: attachments.policies,
   };
 }
 
@@ -168,7 +193,8 @@ apiKeysRouter.get('/', async (c) => {
     .select()
     .from(apiKeys)
     .where(scopeSite(apiKeys.siteId, c.get('siteId')));
-  return c.json({ data: rows.map(publicApiKey) });
+  const data = await Promise.all(rows.map((row) => publicApiKey(c, row)));
+  return c.json({ data });
 });
 
 apiKeysRouter.post('/', async (c) => {
@@ -203,7 +229,7 @@ apiKeysRouter.post('/', async (c) => {
 
   if (!row) return c.json({ errors: [{ code: 'CREATE_FAILED', message: 'Failed to create API key.' }] }, 500);
   await writeApiKeyAudit(c, 'api_key_created', auth, row);
-  return c.json({ data: { ...publicApiKey(row), token: token.token } }, 201);
+  return c.json({ data: { ...(await publicApiKey(c, row)), token: token.token } }, 201);
 });
 
 apiKeysRouter.get('/:id', async (c) => {
@@ -214,7 +240,7 @@ apiKeysRouter.get('/:id', async (c) => {
     .where(and(scopeSite(apiKeys.siteId, c.get('siteId')), eq(apiKeys.id, c.req.param('id'))))
     .limit(1);
   if (!row) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'API key not found.' }] }, 404);
-  return c.json({ data: publicApiKey(row) });
+  return c.json({ data: await publicApiKey(c, row) });
 });
 
 apiKeysRouter.post('/:id/rotate', async (c) => {
@@ -263,7 +289,7 @@ apiKeysRouter.post('/:id/rotate', async (c) => {
     previousPrefix: before.prefix,
     newPrefix: row.prefix,
   });
-  return c.json({ data: { ...publicApiKey(row), token: token.token } });
+  return c.json({ data: { ...(await publicApiKey(c, row)), token: token.token } });
 });
 
 apiKeysRouter.post('/:id/revoke', async (c) => {
@@ -287,7 +313,7 @@ apiKeysRouter.post('/:id/revoke', async (c) => {
 
   if (!row) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'API key not found.' }] }, 404);
   await writeApiKeyAudit(c, 'api_key_revoked', auth, row);
-  return c.json({ data: publicApiKey(row) });
+  return c.json({ data: await publicApiKey(c, row) });
 });
 
 apiKeysRouter.post('/:id/roles', async (c) => {
