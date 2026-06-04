@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv, AuthPrincipal } from '../env';
+import { AuditLogger } from '../modules/audit/logger';
 
 export const apiKeysRouter = new Hono<AppEnv>();
 
@@ -69,6 +70,30 @@ async function sha256Hex(input: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+async function writeApiKeyAudit(
+  c: Context<AppEnv>,
+  event: 'api_key_created' | 'api_key_rotated' | 'api_key_revoked',
+  auth: AuthPrincipal & { userId: string },
+  row: typeof apiKeys.$inferSelect,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  await new AuditLogger({ db: c.get('db') }).write({
+    event,
+    actorEmail: auth.email ?? null,
+    ip: c.get('ip') ?? null,
+    userAgent: c.get('userAgent') ?? null,
+    requestId: c.get('requestId') ?? null,
+    metadata: {
+      apiKeyId: row.id,
+      apiKeyName: row.name,
+      prefix: row.prefix,
+      siteId: row.siteId,
+      expiresAt: row.expiresAt?.toISOString() ?? null,
+      ...extra,
+    },
+  });
+}
+
 apiKeysRouter.use('*', async (c, next) => {
   if (!requireUserPrincipal(c)) {
     return c.json(
@@ -119,6 +144,7 @@ apiKeysRouter.post('/', async (c) => {
     .returning();
 
   if (!row) return c.json({ errors: [{ code: 'CREATE_FAILED', message: 'Failed to create API key.' }] }, 500);
+  await writeApiKeyAudit(c, 'api_key_created', auth, row);
   return c.json({ data: { ...publicApiKey(row), token: token.token } }, 201);
 });
 
@@ -148,6 +174,14 @@ apiKeysRouter.post('/:id/rotate', async (c) => {
   }
 
   const token = await createPlaintextToken();
+  const [before] = await c
+    .get('db')
+    .select()
+    .from(apiKeys)
+    .where(and(scopeSite(apiKeys.siteId, c.get('siteId')), eq(apiKeys.id, c.req.param('id'))))
+    .limit(1);
+  if (!before) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'API key not found.' }] }, 404);
+
   const nextExpiresAt = Object.prototype.hasOwnProperty.call(parsed.data, 'expiresAt')
     ? parsed.data.expiresAt ?? null
     : undefined;
@@ -167,6 +201,10 @@ apiKeysRouter.post('/:id/rotate', async (c) => {
     .returning();
 
   if (!row) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'API key not found.' }] }, 404);
+  await writeApiKeyAudit(c, 'api_key_rotated', auth, row, {
+    previousPrefix: before.prefix,
+    newPrefix: row.prefix,
+  });
   return c.json({ data: { ...publicApiKey(row), token: token.token } });
 });
 
@@ -190,5 +228,6 @@ apiKeysRouter.post('/:id/revoke', async (c) => {
     .returning();
 
   if (!row) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'API key not found.' }] }, 404);
+  await writeApiKeyAudit(c, 'api_key_revoked', auth, row);
   return c.json({ data: publicApiKey(row) });
 });

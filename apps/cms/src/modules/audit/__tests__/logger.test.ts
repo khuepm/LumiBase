@@ -112,6 +112,17 @@ describe('maskSensitive (Req 15.3)', () => {
     expect(out.recoveryToken).toBe(await sha256Prefix8(recoveryToken));
   });
 
+  it('masks API key plaintext and drops API key token hashes', async () => {
+    const apiKeyToken = 'lbk_plaintext-secret';
+    const out = await maskSensitive({
+      apiKeyToken,
+      apiKeyTokenHash: 'sha256-hex-value-that-should-not-land-in-audit',
+    });
+
+    expect(out.apiKeyToken).toBe(await sha256Prefix8(apiKeyToken));
+    expect(out.apiKeyTokenHash).toBeNull();
+  });
+
   it('walks nested objects and arrays', async () => {
     const setupToken = 'nested-token';
     const backupCode = 'WXYZ-9876';

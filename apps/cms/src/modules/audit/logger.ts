@@ -73,8 +73,8 @@
  * well-known set of secret keys BEFORE the insert *and* before the
  * fallback:
  *
- *   - `passwordHash`                       → `null`
- *   - `setupToken` / `backupCode` / `recoveryToken`
+ *   - `passwordHash` / `apiKeyTokenHash`   → `null`
+ *   - `setupToken` / `backupCode` / `recoveryToken` / `apiKeyToken`
  *                                          → `sha256(value).slice(0, 8)`
  *                                            (first 8 hex chars) when the
  *                                            value is a non-empty string;
@@ -229,7 +229,7 @@ export interface AuditFallbackRecord {
  * hash has no correlation value in an audit trail and must never be
  * stored (Req 3.7, 15.3), so we drop it entirely rather than hashing it.
  */
-const SENSITIVE_NULL_KEYS = new Set<string>(['passwordHash']);
+const SENSITIVE_NULL_KEYS = new Set<string>(['passwordHash', 'apiKeyTokenHash']);
 
 /**
  * Keys whose string value is replaced with the first 8 hex chars of its
@@ -241,6 +241,7 @@ const SENSITIVE_HASH_KEYS = new Set<string>([
   'setupToken',
   'backupCode',
   'recoveryToken',
+  'apiKeyToken',
 ]);
 
 const textEncoder = new TextEncoder();
@@ -340,13 +341,13 @@ async function maskObject(
 }
 
 /**
- * Deep-mask the four secret keys (`passwordHash`, `setupToken`,
- * `backupCode`, `recoveryToken`) out of an audit-metadata object
+ * Deep-mask secret keys (`passwordHash`, `apiKeyTokenHash`, `setupToken`,
+ * `backupCode`, `recoveryToken`, `apiKeyToken`) out of an audit-metadata object
  * (Req 15.3). See the module doc-block for the full key-set rationale.
  *
  * Behaviour:
- *   - `passwordHash` → `null` (dropped — no correlation value).
- *   - `setupToken` / `backupCode` / `recoveryToken` → first 8 hex chars
+ *   - `passwordHash` / `apiKeyTokenHash` → `null` (dropped — no correlation value).
+ *   - `setupToken` / `backupCode` / `recoveryToken` / `apiKeyToken` → first 8 hex chars
  *     of `sha256(String(value))` when the value is a non-empty string;
  *     `null` otherwise (defensive).
  *   - all other keys are left untouched, recursing into nested objects

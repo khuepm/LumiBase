@@ -3,6 +3,7 @@ import { apiKeys } from '@lumibase/database';
 import { eq } from 'drizzle-orm';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
+import { AuditLogger } from '../modules/audit/logger';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -40,6 +41,28 @@ function apiKeySnapshot(row: typeof apiKeys.$inferSelect): Record<string, unknow
     lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
     metadata: row.metadata,
   };
+}
+
+async function auditApiKeyUseDenied(
+  c: Parameters<MiddlewareHandler<AppEnv>>[0],
+  row: typeof apiKeys.$inferSelect,
+  reason: 'site_mismatch' | 'revoked' | 'expired',
+): Promise<void> {
+  await new AuditLogger({ db: c.get('db') }).write({
+    event: 'api_key_use_denied',
+    actorEmail: null,
+    ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+    userAgent: c.get('userAgent') ?? c.req.header('user-agent') ?? null,
+    requestId: c.get('requestId') ?? null,
+    metadata: {
+      apiKeyId: row.id,
+      apiKeyName: row.name,
+      prefix: row.prefix,
+      siteId: row.siteId,
+      requestedSiteId: c.get('siteId'),
+      reason,
+    },
+  });
 }
 
 /**
@@ -136,12 +159,21 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     if (apiKey) {
       const now = new Date();
       if (apiKey.siteId !== c.get('siteId')) {
+        await auditApiKeyUseDenied(c, apiKey, 'site_mismatch');
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
           401,
         );
       }
-      if (apiKey.revokedAt || (apiKey.expiresAt && apiKey.expiresAt <= now)) {
+      if (apiKey.revokedAt) {
+        await auditApiKeyUseDenied(c, apiKey, 'revoked');
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'API key is expired or revoked.' }] },
+          401,
+        );
+      }
+      if (apiKey.expiresAt && apiKey.expiresAt <= now) {
+        await auditApiKeyUseDenied(c, apiKey, 'expired');
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'API key is expired or revoked.' }] },
           401,
