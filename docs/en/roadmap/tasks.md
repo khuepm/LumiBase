@@ -277,9 +277,9 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 
 ### System permissions & seeding
 
-- [ ] `[DB]` Cập nhật `seed-dev.ts` seed `policy_admin`, `role_administrator`, `policy_studio_self`, `policy_public`.
-- [ ] `[DB]` Seed explicit permissions cho nhóm schema/access manager: `collections`, `fields`, `relations`, `roles`, `policies`, `permissions`.
-- [ ] `[DB]` Đảm bảo sensitive collections (`system_state`, `audit_log`, `login_attempts`, `admin_backup_codes`, `scim_tokens`, `api_keys`) admin/security-only.
+- [x] `[DB]` Cập nhật `seed-dev.ts` seed `policy_admin`, `role_administrator`, `policy_studio_self`, `policy_public`.
+- [x] `[DB]` Seed explicit permissions cho nhóm schema/access manager: `collections`, `fields`, `relations`, `roles`, `policies`, `permissions`.
+- [x] `[DB]` Đảm bảo sensitive collections (`system_state`, `audit_log`, `login_attempts`, `admin_backup_codes`, `scim_tokens`, `api_keys`) admin/security-only.
 - [ ] `[FE]` Permission Builder phân nhóm system collections và ẩn sensitive collections khỏi non-admin.
 - [ ] `[TEST]` Public policy mặc định không đọc được content/system collections nếu chưa explicit grant.
 
