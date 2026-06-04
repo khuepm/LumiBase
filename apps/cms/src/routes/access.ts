@@ -23,29 +23,10 @@ accessRouter.post('/conflicts/check', async (c) => {
     );
   }
 
-  if (parsed.data.target.type === 'api_key') {
-    return c.json(
-      {
-        errors: [
-          {
-            code: 'NOT_IMPLEMENTED',
-            message: 'API key conflict checks require the api_keys schema task.',
-          },
-        ],
-      },
-      501,
-    );
-  }
-
-  const target: { type: 'role' | 'user'; id: string } = {
-    type: parsed.data.target.type,
-    id: parsed.data.target.id,
-  };
-
   const report = await buildAccessConflictReport({
     db: c.get('db'),
     siteId: c.get('siteId'),
-    target,
+    target: parsed.data.target,
     addPolicies: parsed.data.addPolicies,
     removePolicies: parsed.data.removePolicies,
   });

@@ -1,4 +1,6 @@
 import {
+  apiKeyPolicies,
+  apiKeyRoles,
   permissions as permissionsTable,
   policies,
   rolePolicies,
@@ -17,7 +19,8 @@ import type { PermissionAction } from './permission-service';
 
 export type AccessConflictTarget =
   | { type: 'role'; id: string }
-  | { type: 'user'; id: string };
+  | { type: 'user'; id: string }
+  | { type: 'api_key'; id: string };
 
 export interface BuildAccessConflictReportInput {
   db: Database;
@@ -102,9 +105,28 @@ async function loadTargetPolicyIds(
     return rows.map((r) => r.policyId);
   }
 
-  const rows = await db
-    .select({ policyId: userPolicies.policyId })
-    .from(userPolicies)
-    .where(and(eq(userPolicies.siteId, siteId), eq(userPolicies.userId, target.id)));
-  return rows.map((r) => r.policyId);
+  if (target.type === 'user') {
+    const rows = await db
+      .select({ policyId: userPolicies.policyId })
+      .from(userPolicies)
+      .where(and(eq(userPolicies.siteId, siteId), eq(userPolicies.userId, target.id)));
+    return rows.map((r) => r.policyId);
+  }
+
+  const directRows = await db
+    .select({ policyId: apiKeyPolicies.policyId })
+    .from(apiKeyPolicies)
+    .where(and(eq(apiKeyPolicies.siteId, siteId), eq(apiKeyPolicies.apiKeyId, target.id)));
+  const roleRows = await db
+    .select({ roleId: apiKeyRoles.roleId })
+    .from(apiKeyRoles)
+    .where(and(eq(apiKeyRoles.siteId, siteId), eq(apiKeyRoles.apiKeyId, target.id)));
+  const roleIds = roleRows.map((r) => r.roleId);
+  const rolePolicyRows = roleIds.length
+    ? await db
+        .select({ policyId: rolePolicies.policyId })
+        .from(rolePolicies)
+        .where(inArray(rolePolicies.roleId, roleIds))
+    : [];
+  return Array.from(new Set([...directRows.map((r) => r.policyId), ...rolePolicyRows.map((r) => r.policyId)]));
 }
