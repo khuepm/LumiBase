@@ -411,6 +411,38 @@ export interface ApiKeyPolicyAttachment {
   createdAt?: string;
 }
 
+export interface ShareResource {
+  id: string;
+  siteId: string;
+  collection: string;
+  itemId: string;
+  roleId: string;
+  validFrom: string | null;
+  validUntil: string | null;
+  maxUses: number | null;
+  usedCount: number;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  createdBy: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface ShareCreateInput {
+  collection: string;
+  itemId: string;
+  roleId: string;
+  password?: string;
+  validFrom?: string | Date | null;
+  validUntil?: string | Date | null;
+  maxUses?: number | null;
+}
+
+export interface ShareSecretResult extends ShareResource {
+  token: string;
+  url: string;
+}
+
 export interface PresetResource {
   id: string;
   siteId: string;
