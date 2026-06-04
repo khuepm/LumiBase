@@ -1,4 +1,16 @@
-import type { Database } from '@lumibase/database';
+import {
+  apiKeyPolicies,
+  apiKeyRoles,
+  apiKeys,
+  permissions,
+  policies,
+  rolePolicies,
+  roles,
+  userPolicies,
+  userRoles,
+  userSites,
+  type Database,
+} from '@lumibase/database';
 import { describe, expect, it } from 'vitest';
 import { ACCESS_EXPORT_SCHEMA, type AccessExportManifest } from '../access-export';
 import { AccessImportService } from '../access-import';
@@ -26,6 +38,213 @@ function transactionalEmptyDb(state: { transactions: number }): Database {
       return cb(emptyDb());
     },
   } as unknown as Database;
+}
+
+interface ImportDbState {
+  transactions: number;
+  roles: Array<Record<string, unknown>>;
+  policies: Array<Record<string, unknown>>;
+  permissions: Array<Record<string, unknown>>;
+  rolePolicies: Array<Record<string, unknown>>;
+  userSites: Array<Record<string, unknown>>;
+  userRoles: Array<Record<string, unknown>>;
+  userPolicies: Array<Record<string, unknown>>;
+  apiKeys: Array<Record<string, unknown>>;
+  apiKeyRoles: Array<Record<string, unknown>>;
+  apiKeyPolicies: Array<Record<string, unknown>>;
+}
+
+function makeImportDbState(): ImportDbState {
+  return {
+    transactions: 0,
+    roles: [],
+    policies: [],
+    permissions: [],
+    rolePolicies: [],
+    userSites: [],
+    userRoles: [],
+    userPolicies: [],
+    apiKeys: [],
+    apiKeyRoles: [],
+    apiKeyPolicies: [],
+  };
+}
+
+function makeStatefulImportDb(state: ImportDbState): Database {
+  const db = {
+    select: () => ({
+      from: (table: unknown) => queryBuilder(selectRows(state, table)),
+    }),
+    insert: (table: unknown) => insertBuilder(state, table),
+    update: (table: unknown) => updateBuilder(state, table),
+    delete: (table: unknown) => deleteBuilder(state, table),
+    transaction: async (cb: (tx: Database) => Promise<unknown>) => {
+      state.transactions += 1;
+      return cb(makeStatefulImportDb(state));
+    },
+  };
+  return db as unknown as Database;
+}
+
+function queryBuilder(rows: Array<Record<string, unknown>>) {
+  const builder = {
+    where: () => builder,
+    limit: () => Promise.resolve(rows),
+    then: (resolve: (value: unknown) => void, reject: (reason?: unknown) => void) =>
+      Promise.resolve(rows).then(resolve, reject),
+  };
+  return builder;
+}
+
+function selectRows(state: ImportDbState, table: unknown): Array<Record<string, unknown>> {
+  if (table === roles) return state.roles;
+  if (table === policies) return state.policies;
+  if (table === permissions) return state.permissions;
+  if (table === rolePolicies) return state.rolePolicies;
+  if (table === userSites) return state.userSites;
+  if (table === userRoles) return state.userRoles;
+  if (table === userPolicies) return state.userPolicies;
+  if (table === apiKeys) return state.apiKeys;
+  if (table === apiKeyRoles) return state.apiKeyRoles;
+  if (table === apiKeyPolicies) return state.apiKeyPolicies;
+  return [];
+}
+
+function insertBuilder(state: ImportDbState, table: unknown) {
+  let values: Record<string, unknown>[] = [];
+  let updateSet: Record<string, unknown> | null = null;
+  let doNothing = false;
+  let applied: Record<string, unknown>[] | null = null;
+
+  const apply = () => {
+    if (applied) return applied;
+    applied = values.flatMap((value) => insertOne(state, table, value, updateSet, doNothing));
+    return applied;
+  };
+
+  const builder = {
+    values: (input: Record<string, unknown> | Array<Record<string, unknown>>) => {
+      values = Array.isArray(input) ? input : [input];
+      return builder;
+    },
+    onConflictDoUpdate: ({ set }: { set: Record<string, unknown> }) => {
+      updateSet = set;
+      return builder;
+    },
+    onConflictDoNothing: () => {
+      doNothing = true;
+      return builder;
+    },
+    returning: () => Promise.resolve(apply()),
+    then: (resolve: (value: unknown) => void, reject: (reason?: unknown) => void) =>
+      Promise.resolve(apply()).then(resolve, reject),
+  };
+  return builder;
+}
+
+function updateBuilder(state: ImportDbState, table: unknown) {
+  let set: Record<string, unknown> = {};
+  const apply = () => {
+    for (const row of selectRows(state, table)) Object.assign(row, set);
+    return selectRows(state, table);
+  };
+  const builder = {
+    set: (input: Record<string, unknown>) => {
+      set = input;
+      return builder;
+    },
+    where: () => builder,
+    returning: () => Promise.resolve(apply()),
+    then: (resolve: (value: unknown) => void, reject: (reason?: unknown) => void) =>
+      Promise.resolve(apply()).then(resolve, reject),
+  };
+  return builder;
+}
+
+function deleteBuilder(state: ImportDbState, table: unknown) {
+  const apply = () => {
+    if (table === permissions) state.permissions = [];
+    return [];
+  };
+  const builder = {
+    where: () => builder,
+    then: (resolve: (value: unknown) => void, reject: (reason?: unknown) => void) =>
+      Promise.resolve(apply()).then(resolve, reject),
+  };
+  return builder;
+}
+
+function insertOne(
+  state: ImportDbState,
+  table: unknown,
+  value: Record<string, unknown>,
+  updateSet: Record<string, unknown> | null,
+  doNothing: boolean,
+): Record<string, unknown>[] {
+  if (table === roles) {
+    return upsertBy(state.roles, value, (row) => row.key === value.key && row.siteId === value.siteId, updateSet, 'role');
+  }
+  if (table === policies) {
+    return upsertBy(state.policies, value, (row) => row.key === value.key && row.siteId === value.siteId, updateSet, 'policy');
+  }
+  if (table === permissions) {
+    state.permissions.push({ id: `perm_${state.permissions.length + 1}`, ...value });
+    return [state.permissions[state.permissions.length - 1]!];
+  }
+  if (table === rolePolicies) {
+    return upsertBy(
+      state.rolePolicies,
+      value,
+      (row) => row.roleId === value.roleId && row.policyId === value.policyId,
+      updateSet,
+      'role_policy',
+    );
+  }
+  if (table === userSites) {
+    return upsertBy(
+      state.userSites,
+      value,
+      (row) => row.userId === value.userId && row.siteId === value.siteId,
+      updateSet,
+      'user_site',
+    );
+  }
+  if (table === userRoles) {
+    return upsertBy(
+      state.userRoles,
+      value,
+      (row) => row.userId === value.userId && row.siteId === value.siteId && row.roleId === value.roleId,
+      doNothing ? {} : updateSet,
+      'user_role',
+    );
+  }
+  if (table === userPolicies) {
+    return upsertBy(
+      state.userPolicies,
+      value,
+      (row) => row.userId === value.userId && row.siteId === value.siteId && row.policyId === value.policyId,
+      updateSet,
+      'user_policy',
+    );
+  }
+  return [];
+}
+
+function upsertBy(
+  rows: Array<Record<string, unknown>>,
+  value: Record<string, unknown>,
+  matches: (row: Record<string, unknown>) => boolean,
+  updateSet: Record<string, unknown> | null,
+  idPrefix: string,
+): Record<string, unknown>[] {
+  const existing = rows.find(matches);
+  if (existing) {
+    if (updateSet) Object.assign(existing, updateSet);
+    return [existing];
+  }
+  const row = { id: value.id ?? `${idPrefix}_${rows.length + 1}`, ...value };
+  rows.push(row);
+  return [row];
 }
 
 function baseManifest(): AccessExportManifest {
@@ -139,6 +358,28 @@ describe('AccessImportService', () => {
     expect(result.mode).toBe('replace-managed');
     expect(result.audit.summary.mode).toBe('replace-managed');
     expect(state.transactions).toBe(1);
+  });
+
+  it('does not create duplicate rows when importing the same manifest repeatedly', async () => {
+    const state = makeImportDbState();
+    const service = new AccessImportService({
+      db: makeStatefulImportDb(state),
+      siteId: 'site_1',
+    });
+
+    const first = await service.apply(baseManifest(), 'merge');
+    const second = await service.apply(baseManifest(), 'merge');
+
+    expect(first.applied).toBe(true);
+    expect(second.applied).toBe(true);
+    expect(second.diff.roles.unchanged).toBe(1);
+    expect(second.diff.policies.unchanged).toBe(1);
+    expect(second.diff.bindings.rolePolicies.unchanged).toBe(1);
+    expect(state.roles).toHaveLength(1);
+    expect(state.policies).toHaveLength(1);
+    expect(state.permissions).toHaveLength(1);
+    expect(state.rolePolicies).toHaveLength(1);
+    expect(state.transactions).toBe(2);
   });
 
   it('does not apply invalid manifests', async () => {
