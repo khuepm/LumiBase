@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { buildAccessConflictReport } from '../services/access-conflict-report';
 import { AccessExportService } from '../services/access-export';
+import { AccessImportService } from '../services/access-import';
 
 export const accessRouter = new Hono<AppEnv>();
 
@@ -21,6 +22,23 @@ accessRouter.get('/export', async (c) => {
     siteId: c.get('siteId'),
   }).export();
   return c.json({ data: manifest });
+});
+
+accessRouter.post('/import', async (c) => {
+  const dryRun = new URL(c.req.url).searchParams.get('dryRun') === 'true';
+  if (!dryRun) {
+    return c.json(
+      { errors: [{ code: 'DRY_RUN_REQUIRED', message: 'Only dry-run access imports are supported.' }] },
+      400,
+    );
+  }
+
+  const result = await new AccessImportService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+  }).dryRun(await c.req.json());
+
+  return c.json({ data: result }, result.valid ? 200 : 400);
 });
 
 accessRouter.post('/conflicts/check', async (c) => {
