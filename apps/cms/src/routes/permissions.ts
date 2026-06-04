@@ -27,6 +27,7 @@ const buildContext = (c: Context<AppEnv>): MagicContext => {
     roleId: null,
     ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
     headers,
+    apiKey: auth?.apiKey ?? null,
   };
 };
 

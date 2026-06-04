@@ -1,4 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
+import { apiKeys } from '@lumibase/database';
+import { eq } from 'drizzle-orm';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
 
@@ -19,6 +21,25 @@ async function verifyCustomJwt(token: string, secret: string): Promise<any> {
   const secretKey = encoder.encode(secret);
   const { payload } = await jwtVerify(token, secretKey);
   return payload;
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function apiKeySnapshot(row: typeof apiKeys.$inferSelect): Record<string, unknown> {
+  return {
+    id: row.id,
+    siteId: row.siteId,
+    name: row.name,
+    prefix: row.prefix,
+    description: row.description,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
+    rotatedAt: row.rotatedAt?.toISOString() ?? null,
+    lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+    metadata: row.metadata,
+  };
 }
 
 /**
@@ -104,6 +125,51 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     scheme?.toLowerCase() === 'bearer' && token ? token : realtimeQueryToken;
 
   if (bearerToken) {
+    const tokenHash = await sha256Hex(bearerToken);
+    const [apiKey] = await c
+      .get('db')
+      .select()
+      .from(apiKeys)
+      .where(eq(apiKeys.tokenHash, tokenHash))
+      .limit(1);
+
+    if (apiKey) {
+      const now = new Date();
+      if (apiKey.siteId !== c.get('siteId')) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
+          401,
+        );
+      }
+      if (apiKey.revokedAt || (apiKey.expiresAt && apiKey.expiresAt <= now)) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'API key is expired or revoked.' }] },
+          401,
+        );
+      }
+
+      await c
+        .get('db')
+        .update(apiKeys)
+        .set({
+          lastUsedAt: now,
+          lastUsedIp: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+          lastUsedUserAgent: c.get('userAgent') ?? c.req.header('user-agent') ?? null,
+        })
+        .where(eq(apiKeys.id, apiKey.id));
+
+      const snapshot = apiKeySnapshot({ ...apiKey, lastUsedAt: now });
+      const principal: AuthPrincipal = {
+        type: 'api_key',
+        apiKeyId: apiKey.id,
+        apiKey: snapshot,
+        roles: [],
+        raw: { apiKey: snapshot },
+      };
+      c.set('auth', principal);
+      return next();
+    }
+
     // Fall back to process.env for Node.js / Docker serve mode.
     const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
     if (!jwtSecret) {

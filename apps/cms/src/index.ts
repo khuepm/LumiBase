@@ -140,7 +140,7 @@ app.route('/scim/v2', scimRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withAuth(), withDb(), requireSetupComplete(), withStudioAccess(), withRls());
+api.use('*', withTenant(), withDb(), withAuth(), requireSetupComplete(), withStudioAccess(), withRls());
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).

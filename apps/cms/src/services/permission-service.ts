@@ -1,4 +1,7 @@
 import {
+  apiKeyPolicies,
+  apiKeyRoles,
+  apiKeys,
   permissions as permissionsTable,
   policies,
   rolePolicies,
@@ -65,7 +68,7 @@ export interface PermissionBundle {
   tfaRequired: boolean;
   /** Quick lookup keyed `${collection}::${action}`. */
   byKey: Record<string, CompiledPermission>;
-  /** Roles assigned to the user for this site. */
+  /** Roles assigned to the active principal for this site. */
   roles: Array<{ id: string; name: string; adminAccess: boolean; appAccess: boolean }>;
   /** Active policy ids after IP/time guard filtering. */
   policies: Array<{ id: string; name: string; key: string | null }>;
@@ -89,6 +92,8 @@ export class PermissionService {
 
   /** Stable principal id used for cache keys ("anon" when no user yet). */
   private get principalKey(): string {
+    const apiKeyId = this.deps.ctx.apiKey?.id;
+    if (typeof apiKeyId === 'string' && apiKeyId.length > 0) return `api_key:${apiKeyId}`;
     return this.deps.ctx.userId ?? 'anon';
   }
 
@@ -196,6 +201,16 @@ export class PermissionService {
       : undefined;
     ctx.user = userRow ? userMagicSnapshot(userRow) : null;
 
+    const ctxApiKeyId = typeof ctx.apiKey?.id === 'string' ? ctx.apiKey.id : null;
+    const apiKeyRow = ctxApiKeyId
+      ? (await db
+          .select()
+          .from(apiKeys)
+          .where(and(eq(apiKeys.id, ctxApiKeyId), eq(apiKeys.siteId, ctx.siteId)))
+          .limit(1))[0]
+      : undefined;
+    ctx.apiKey = apiKeyRow ? apiKeyMagicSnapshot(apiKeyRow) : ctx.apiKey ?? null;
+
     const primaryRoleRows = ctx.userId
       ? await db
           .select({
@@ -232,10 +247,28 @@ export class PermissionService {
             ),
           )
       : [];
+    const apiKeyRoleRows = ctxApiKeyId
+      ? await db
+          .select({
+            id: roles.id,
+            name: roles.name,
+            adminAccess: roles.adminAccess,
+            appAccess: roles.appAccess,
+          })
+          .from(apiKeyRoles)
+          .innerJoin(roles, eq(roles.id, apiKeyRoles.roleId))
+          .where(
+            and(
+              scopeSite(roles.siteId, ctx.siteId),
+              eq(apiKeyRoles.apiKeyId, ctxApiKeyId),
+              eq(apiKeyRoles.siteId, ctx.siteId),
+            ),
+          )
+      : [];
 
-    const roleRows = uniqueRoles([...primaryRoleRows, ...secondaryRoleRows]);
+    const roleRows = uniqueRoles([...primaryRoleRows, ...secondaryRoleRows, ...apiKeyRoleRows]);
 
-    // Collect policy ids from role bindings + direct user_policies.
+    // Collect policy ids from role bindings + direct user/API-key policies.
     const roleIds = roleRows.map((r) => r.id);
     const rolePolicyRows = roleIds.length
       ? await db
@@ -254,8 +287,19 @@ export class PermissionService {
             ),
           )
       : [];
+    const apiKeyPolicyRows = ctxApiKeyId
+      ? await db
+          .select({ policyId: apiKeyPolicies.policyId, priority: apiKeyPolicies.priority })
+          .from(apiKeyPolicies)
+          .where(
+            and(
+              eq(apiKeyPolicies.apiKeyId, ctxApiKeyId),
+              eq(apiKeyPolicies.siteId, ctx.siteId),
+            ),
+          )
+      : [];
 
-    const policyOrder = [...rolePolicyRows, ...userPolicyRows].sort(
+    const policyOrder = [...rolePolicyRows, ...userPolicyRows, ...apiKeyPolicyRows].sort(
       (a, b) => a.priority - b.priority,
     );
     const policyIds = Array.from(new Set(policyOrder.map((p) => p.policyId)));
@@ -337,6 +381,7 @@ export class PermissionService {
   private async hydrateMagicContext(bundle: PermissionBundle): Promise<void> {
     this.deps.ctx.roles = bundle.roles.map((r) => r.id);
     this.deps.ctx.policies = (bundle.policies ?? []).map((p) => p.id);
+    if (!this.deps.ctx.apiKey) this.deps.ctx.apiKey = null;
     if (this.deps.ctx.user || !this.deps.ctx.userId) return;
     const [userRow] = await this.deps.db
       .select()
@@ -361,6 +406,22 @@ function userMagicSnapshot(row: typeof users.$inferSelect): Record<string, unkno
     lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
     createdAt: row.createdAt?.toISOString() ?? null,
     updatedAt: row.updatedAt?.toISOString() ?? null,
+  };
+}
+
+function apiKeyMagicSnapshot(row: typeof apiKeys.$inferSelect): Record<string, unknown> {
+  return {
+    id: row.id,
+    siteId: row.siteId,
+    name: row.name,
+    prefix: row.prefix,
+    description: row.description,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
+    revokedAt: row.revokedAt?.toISOString() ?? null,
+    rotatedAt: row.rotatedAt?.toISOString() ?? null,
+    lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+    metadata: row.metadata,
+    createdAt: row.createdAt?.toISOString() ?? null,
   };
 }
 

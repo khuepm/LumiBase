@@ -46,10 +46,16 @@ export interface Bindings {
  * Authenticated principal resolved by `withAuth`.
  */
 export interface AuthPrincipal {
+  /** Principal kind. Defaults to `user` when omitted for legacy callers. */
+  type?: 'user' | 'api_key';
   /** Users.external_id (resolved from CF Access or OAuth). */
   externalId?: string;
   /** Internal users.id in PostgreSQL database. */
   userId?: string;
+  /** Internal api_keys.id for API-key principals. */
+  apiKeyId?: string;
+  /** Audit-safe API key metadata; never contains plaintext token or token hash. */
+  apiKey?: Record<string, unknown>;
   email?: string;
   roles?: string[];
   /** Flag to identify if this principal is a frontend end-user (authenticated via Custom JWT) */

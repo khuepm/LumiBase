@@ -52,6 +52,7 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
       roleId: null,
       ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
       headers: collectHeaders(c.req.raw.headers),
+      apiKey: auth.apiKey ?? null,
     },
   }).bundle();
 

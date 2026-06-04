@@ -29,7 +29,7 @@ export interface MagicContext {
   roles?: string[];
   /** Active policy ids for the current principal after IP/time filtering. */
   policies?: string[];
-  /** API key metadata for future API-key principals. */
+  /** API key metadata for API-key principals. Never includes plaintext/hash. */
   apiKey?: Record<string, unknown> | null;
   /** Override for `$NOW`; defaults to `new Date()`. Useful for tests. */
   now?: Date;

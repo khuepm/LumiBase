@@ -66,6 +66,7 @@ const buildService = (c: Context<AppEnv>) => {
       roleId: null,
       ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
       headers,
+      apiKey: auth?.apiKey ?? null,
     },
     encryptionKey: c.env.ENCRYPTION_KEY,
   });
