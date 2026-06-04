@@ -240,6 +240,8 @@ export interface ApiKeyResource {
   lastUsedUserAgent: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
+  roles: Array<{ roleId: string; priority: number }>;
+  policies: Array<{ policyId: string; priority: number }>;
 }
 
 export interface ApiKeyCreateInput {
