@@ -4,6 +4,7 @@
  *
  * Usage:
  *   lumibase typegen --site <siteId> --out ./types.ts
+ *   lumibase access export --site <siteId> --out access.json
  */
 
 export {};
@@ -15,6 +16,7 @@ if (!subcommand) {
   console.error('Subcommands:');
   console.error('  typegen  Generate TypeScript types from a CMS site schema');
   console.error('  config   Import / export / diff site configuration');
+  console.error('  access   Import / export access manifests');
   process.exit(1);
 }
 
@@ -27,6 +29,11 @@ switch (subcommand) {
   case 'config': {
     process.argv = [process.argv[0], process.argv[1], ...rest];
     await import('./config-cli.js');
+    break;
+  }
+  case 'access': {
+    const accessCli = await import('./access-cli.js');
+    process.exit(await accessCli.runAccessCli(accessCli.parseAccessArgs(rest)));
     break;
   }
   default:
