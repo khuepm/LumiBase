@@ -223,6 +223,57 @@ export interface AccessConflictCheckInput {
   removePolicies?: string[];
 }
 
+export interface ApiKeyResource {
+  id: string;
+  siteId: string;
+  name: string;
+  description: string | null;
+  prefix: string;
+  createdBy: string | null;
+  rotatedAt: string | null;
+  rotatedBy: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  lastUsedAt: string | null;
+  lastUsedIp: string | null;
+  lastUsedUserAgent: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ApiKeyCreateInput {
+  name: string;
+  description?: string;
+  expiresAt?: string | Date | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ApiKeyRotateInput {
+  expiresAt?: string | Date | null;
+}
+
+export interface ApiKeySecretResult extends ApiKeyResource {
+  /** Plaintext token. Returned only by create/rotate responses. */
+  token: string;
+}
+
+export interface ApiKeyRoleAttachment {
+  apiKeyId: string;
+  siteId: string;
+  roleId: string;
+  priority: number;
+  createdAt?: string;
+}
+
+export interface ApiKeyPolicyAttachment {
+  apiKeyId: string;
+  siteId: string;
+  policyId: string;
+  priority: number;
+  createdAt?: string;
+}
+
 export interface PresetResource {
   id: string;
   siteId: string;

@@ -19,6 +19,12 @@ import {
   PermissionCheckResult,
   AccessConflictCheckInput,
   AccessConflictReport,
+  ApiKeyCreateInput,
+  ApiKeyPolicyAttachment,
+  ApiKeyResource,
+  ApiKeyRoleAttachment,
+  ApiKeyRotateInput,
+  ApiKeySecretResult,
   PresetResource,
   TranslationResource,
   SettingResource,
@@ -494,12 +500,61 @@ export function legacyRest() {
         }),
     };
 
+    const apiKeys = {
+      list: () => client.rawRequest<ApiKeyResource[]>("/api/v1/api-keys"),
+      get: (id: string) => client.rawRequest<ApiKeyResource>(`/api/v1/api-keys/${id}`),
+      create: (input: ApiKeyCreateInput) =>
+        client.rawRequest<ApiKeySecretResult>("/api/v1/api-keys", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      rotate: (id: string, input: ApiKeyRotateInput = {}) =>
+        client.rawRequest<ApiKeySecretResult>(`/api/v1/api-keys/${id}/rotate`, {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      revoke: (id: string) =>
+        client.rawRequest<ApiKeyResource>(`/api/v1/api-keys/${id}/revoke`, {
+          method: "POST",
+        }),
+      attachRole: (
+        id: string,
+        input: { roleId: string; priority?: number; overrideWarnings?: boolean },
+      ) =>
+        client.rawRequest<ApiKeyRoleAttachment>(`/api/v1/api-keys/${id}/roles`, {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      detachRole: (id: string, roleId: string) =>
+        client.rawRequest<null>(`/api/v1/api-keys/${id}/roles/${roleId}`, {
+          method: "DELETE",
+        }),
+      attachPolicy: (
+        id: string,
+        input: { policyId: string; priority?: number; overrideWarnings?: boolean },
+      ) =>
+        client.rawRequest<ApiKeyPolicyAttachment>(`/api/v1/api-keys/${id}/policies`, {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      detachPolicy: (id: string, policyId: string) =>
+        client.rawRequest<null>(`/api/v1/api-keys/${id}/policies/${policyId}`, {
+          method: "DELETE",
+        }),
+      previewConflicts: (id: string, input: Omit<AccessConflictCheckInput, "target">) =>
+        access.checkConflicts({
+          ...input,
+          target: { type: "api_key", id },
+        }),
+    };
+
     return {
       schema,
       items,
       roles,
       policies,
       access,
+      apiKeys,
       permissions,
       presets,
       translations,
