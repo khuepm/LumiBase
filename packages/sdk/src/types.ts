@@ -110,7 +110,8 @@ export type PermissionAction =
   | "read"
   | "update"
   | "delete"
-  | "share";
+  | "share"
+  | "read_decrypted";
 
 export interface RoleResource {
   id: string;
@@ -221,6 +222,140 @@ export interface AccessConflictCheckInput {
   target: { type: "role" | "user" | "api_key"; id: string };
   addPolicies?: string[];
   removePolicies?: string[];
+}
+
+/* ---------------- Access Export / Import ---------------- */
+
+export const ACCESS_EXPORT_SCHEMA = "lumibase.access@v1";
+
+export type AccessImportMode = "merge" | "replace-managed" | "replace-all";
+
+export interface AccessExportManifest {
+  schema: typeof ACCESS_EXPORT_SCHEMA;
+  exportedAt: string;
+  roles: AccessExportRole[];
+  policies: AccessExportPolicy[];
+  bindings: AccessExportBindings;
+  apiKeys: AccessExportApiKey[];
+}
+
+export interface AccessExportRole {
+  ref: string;
+  key: string | null;
+  systemKey: string | null;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  parent: string | null;
+  adminAccess: boolean;
+  appAccess: boolean;
+}
+
+export interface AccessExportPolicy {
+  ref: string;
+  key: string | null;
+  name: string;
+  icon: string | null;
+  description: string | null;
+  adminAccess: boolean;
+  appAccess: boolean;
+  enforceTfa: boolean;
+  ipAllow: string[];
+  ipDeny: string[];
+  validFrom: string | null;
+  validUntil: string | null;
+  rules: Record<string, unknown>;
+  permissions: AccessExportPermission[];
+}
+
+export interface AccessExportPermission {
+  collection: string;
+  action: PermissionAction;
+  permissions: Record<string, unknown>;
+  validation: Record<string, unknown>;
+  presets: Record<string, unknown>;
+  fields: string[];
+}
+
+export interface AccessExportBindings {
+  rolePolicies: Array<{ role: string; policy: string; priority: number }>;
+  userRoles: Array<{ userId: string; role: string; primary: boolean }>;
+  userPolicies: Array<{ userId: string; policy: string; priority: number }>;
+  apiKeyRoles: Array<{ apiKey: string; role: string; priority: number }>;
+  apiKeyPolicies: Array<{ apiKey: string; policy: string; priority: number }>;
+}
+
+export interface AccessExportApiKey {
+  ref: string;
+  name: string;
+  description: string | null;
+  prefix: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface AccessImportIssue {
+  code: string;
+  message: string;
+  path?: string;
+}
+
+export interface AccessImportDiffEntry {
+  ref: string;
+  status: "create" | "update" | "unchanged" | "delete";
+}
+
+export interface AccessImportDiffSection {
+  create: number;
+  update: number;
+  unchanged: number;
+  delete: number;
+  entries: AccessImportDiffEntry[];
+}
+
+export interface AccessImportDiff {
+  roles: AccessImportDiffSection;
+  policies: AccessImportDiffSection;
+  apiKeys: AccessImportDiffSection;
+  bindings: {
+    rolePolicies: AccessImportDiffSection;
+    userRoles: AccessImportDiffSection;
+    userPolicies: AccessImportDiffSection;
+    apiKeyRoles: AccessImportDiffSection;
+    apiKeyPolicies: AccessImportDiffSection;
+  };
+}
+
+export interface AccessImportDryRunResult {
+  dryRun: true;
+  valid: boolean;
+  errors: AccessImportIssue[];
+  diff: AccessImportDiff;
+  conflicts: AccessConflictReport;
+}
+
+export interface AccessImportSummary {
+  mode: AccessImportMode;
+  roles: AccessImportDiffSection;
+  policies: AccessImportDiffSection;
+  apiKeys: AccessImportDiffSection;
+  bindings: AccessImportDiff["bindings"];
+}
+
+export interface AccessImportApplyResult
+  extends Omit<AccessImportDryRunResult, "dryRun"> {
+  dryRun: false;
+  mode: AccessImportMode;
+  applied: boolean;
+  audit: {
+    event: "access_import_applied";
+    summary: AccessImportSummary;
+  };
+}
+
+export interface AccessImportOptions {
+  mode?: AccessImportMode;
 }
 
 export interface ApiKeyResource {
