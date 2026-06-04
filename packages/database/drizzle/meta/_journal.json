@@ -85,6 +85,13 @@
       "when": 1780570093313,
       "tag": "0011_outstanding_jack_power",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1780650000000,
+      "tag": "0012_tenant_audit_log",
+      "breakpoints": true
     }
   ]
 }

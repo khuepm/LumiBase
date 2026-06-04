@@ -281,7 +281,7 @@ authRouter.post('/login', async (c) => {
   // `anomaly_triggered`) can never break the login flow. `requestId` is
   // resolved from the context (populated by the `audit-context`
   // middleware) so each audit row carries its correlation id.
-  const audit = new AuditLogger({ db });
+  const audit = new AuditLogger({ db, siteId: c.get('siteId') });
   const notify: NotificationDeps = {
     dispatcher,
     notifyChannels: policy.notifyChannels,

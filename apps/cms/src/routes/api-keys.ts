@@ -90,7 +90,7 @@ async function writeApiKeyAudit(
   row: typeof apiKeys.$inferSelect,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
-  await new AuditLogger({ db: c.get('db') }).write({
+  await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
     event,
     actorEmail: auth.email ?? null,
     ip: c.get('ip') ?? null,
@@ -142,7 +142,7 @@ async function auditWarningOverride(
   auth: AuthPrincipal & { userId: string },
   metadata: Record<string, unknown>,
 ): Promise<void> {
-  await new AuditLogger({ db: c.get('db') }).write({
+  await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
     event: 'access_policy_warning_overridden',
     actorEmail: auth.email ?? null,
     ip: c.get('ip') ?? null,
