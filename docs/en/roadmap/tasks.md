@@ -273,7 +273,7 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 - [x] `[BE]` Idempotency tests: import cùng manifest nhiều lần không tạo duplicate.
 - [x] `[SDK]` Thêm access export/import client types.
 - [x] `[FE]` Import dialog hiển thị diff, warnings, blocking conflicts và kết quả dry-run.
-- [ ] `[OPS]` CLI `lumibase access export/import` cho CI/CD giữa dev/staging/prod.
+- [x] `[OPS]` CLI `lumibase access export/import` cho CI/CD giữa dev/staging/prod.
 
 ### System permissions & seeding
 
