@@ -88,11 +88,13 @@ describe('FieldsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'status' }));
 
     expect(screen.getByLabelText(/machine name/i)).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /^layout$/i }));
     fireEvent.click(screen.getByLabelText(/hidden/i));
     fireEvent.click(screen.getByLabelText(/readonly/i));
     fireEvent.change(screen.getByLabelText(/width/i), {
       target: { value: 'full' },
     });
+    fireEvent.click(screen.getByRole('button', { name: /^translations$/i }));
     fireEvent.change(screen.getByLabelText(/translations json/i), {
       target: { value: '{ "vi": { "label": "Trang thai" } }' },
     });

@@ -388,7 +388,7 @@ Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Di
 - [x] `[BE]` Extend compiled schema with `systemFields` (`id`, `status`, `sort`, `user_created`, `user_updated`, `created_at`, `updated_at`, `deleted_at`).
 - [x] `[FE]` Fields tab renders system fields in a locked group; allow display/hidden/readonly/translations/width config but not deletion.
 - [x] `[DB]` Add field metadata: `label`, `note`, `defaultValue`, `nullable`, `unique`, `indexed`, `searchable`, `length`, `precision`, `scale`, `special`.
-- [ ] `[FE]` FieldInspector advanced tabs: Basics, Options, Display, Validation, Conditions, Layout, Storage, Translations.
+- [x] `[FE]` FieldInspector advanced tabs: Basics, Options, Display, Validation, Conditions, Layout, Storage, Translations.
 - [ ] `[BE]` Split create/update/rename/delete/migration field paths; reject type/name changes when data exists unless a migration plan exists.
 - [ ] `[TEST]` FieldInspector preserves unknown `options/displayOptions/validation/conditions`; risky changes return `409` or require confirmation.
 
