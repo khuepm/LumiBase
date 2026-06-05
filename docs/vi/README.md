@@ -32,6 +32,7 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [ui/README.md](../ui/README.md) — Bản thiết kế lại giao diện Lumibase Studio và đặc tả chi tiết các màn hình.
 - **Lộ trình**
   - [roadmap/tasks.md](./roadmap/tasks.md) — Task list chi tiết theo phase.
+  - [roadmap/agent-harness-implementation.md](./roadmap/agent-harness-implementation.md) — Checklist triển khai Agent Harness: lifecycle, tool registry, approvals, artifacts, evaluations, memory, app generation.
 
 ## Apps & packages chính
 

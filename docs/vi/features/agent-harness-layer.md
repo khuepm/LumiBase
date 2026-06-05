@@ -118,12 +118,15 @@ Artifact được commit ngược về LumiBase để con người review, versi
 
 ## 7. Roadmap ứng dụng vào LumiBase
 
-1. **MVP hiện tại** — giữ `AISecureHarness`, `ai_approvals`, conversations, messages, embeddings; chuẩn hoá docs/API để xem đây là seed của Agent Harness.
-2. **Agent Goals/Runs** — thêm `agent_goals`, `agent_runs`, `agent_tool_calls` để mọi hành động agent có lifecycle rõ ràng.
-3. **Tool Registry** — nâng `CORE_SKILLS` thành registry có input schema, capabilities, rate limits, risk policy và owner.
-4. **Artifact Store** — thêm `agent_artifacts` để output không chỉ là text chat mà là page/component/dataset/config/migration/API spec.
-5. **Evaluations** — thêm eval gate trước khi commit artifact: schema validation, permission diff, generated app smoke test, policy lint.
-6. **App Generation** — kết nối schema/content → generator → artifact → approval → publish/rollback.
+Roadmap chi tiết theo checklist nằm ở [Roadmap triển khai Agent Harness Layer](../roadmap/agent-harness-implementation.md). Tóm tắt các chặng chính:
+
+1. **Lifecycle DB + service** — thêm `agent_goals`, `agent_runs`, `agent_plans`, `agent_tool_calls` và `AgentRunService` để mọi hành động agent có trạng thái, audit và retry.
+2. **Tool Registry** — nâng `CORE_SKILLS` thành registry có input/output schema, capabilities, rate limits, risk policy và owner.
+3. **Approval tổng quát** — mở rộng HITL từ skill nguy hiểm sang plan/tool/artifact approval, có diff/eval summary trước khi duyệt.
+4. **Artifact Store** — thêm `agent_artifacts` để output không chỉ là text chat mà là page/component/dataset/config/migration/API spec versioned.
+5. **Evaluation Gate** — thêm eval trước khi commit artifact: schema validation, permission diff, migration dry-run, generated app smoke test, policy lint.
+6. **Memory có kiểm soát** — xây RAG/memory theo scope, provenance, expiry, field mask và redaction.
+7. **App Generation MVP** — kết nối schema/content/policy → generator → artifact → eval → approval → publish/rollback cho demo e-commerce đầu tiên.
 
 ## 8. Success metrics
 

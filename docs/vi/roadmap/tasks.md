@@ -363,6 +363,55 @@ Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
 - [x] `[BE]` SCIM Token rotation + audit.
 - [x] `[OPS]` Multi-tenant isolation testing tự động (k6 cross-site leak detection).
 
+
+---
+
+## Phase Agent Harness Layer (TODO)
+
+Mục tiêu: biến LumiBase thành control plane nơi humans, agents, data, workflows và applications cùng tiến hoá có kiểm soát. Checklist chi tiết nằm ở [`agent-harness-implementation.md`](./agent-harness-implementation.md).
+
+### A. Lifecycle nền tảng
+
+- [ ] `[DB]` Thêm `agent_goals`, `agent_runs`, `agent_plans`, `agent_tool_calls` với `siteId`, lifecycle status, policy snapshot, budget, audit metadata và indexes theo `siteId/runId/goalId`.
+- [ ] `[BE]` Tạo `AgentRunService` để open/append/close/fail/retry run; refactor `AISecureHarness` để mọi execute đều gắn `goalId/runId`.
+- [ ] `[TEST]` Property tests cho multi-tenant isolation, run failed vẫn giữ audit trail, retry không duplicate tool calls/artifacts.
+
+### B. Tool Registry + capability policy
+
+- [ ] `[DB]` Thêm `agent_tools` và `agent_permissions` để khai báo input/output schema, required capabilities, risk policy, rate limit và validity window.
+- [ ] `[BE]` Implement `ToolRegistryService` load core skills + extension tools + DB overrides; enforce disabled tool, capability, risk policy và rate limit.
+- [ ] `[FE]` Studio page “Agent Tools” để admin bật/tắt tool, xem schema/capability/risk và lịch sử gọi.
+- [ ] `[SDK]` Thêm types/client methods cho tools, capabilities và risk policies.
+
+### C. Approval tổng quát
+
+- [ ] `[DB]` Thêm `agent_approvals` cho `plan` / `tool_call` / `artifact` / `schema_diff`; bridge backward-compatible với `ai_approvals`.
+- [ ] `[BE]` Approval policy engine: `before_execute`, `before_commit`, `two_person_rule`, `owner_only`, `security_admin_only`.
+- [ ] `[FE]` Nâng Approvals Dashboard thành queue có subject type, diff preview, eval summary, approve/reject/request changes.
+- [ ] `[TEST]` Dangerous plan không execute trước approval; rejected/expired approval không commit được.
+
+### D. Artifact Store + Evaluation Gate
+
+- [ ] `[DB]` Thêm `agent_artifacts` và `agent_evaluations` với content hash, version, status, eval kind/status/score/details.
+- [ ] `[BE]` Artifact writers đầu tiên: `schema_diff`, `page_spec`, `component_spec`, `seed_data`, `api_spec`, `prompt`, `migration`.
+- [ ] `[BE]` Eval runners đầu tiên: JSON schema validation, permission diff lint, migration dry-run, generated API spec validation, prompt safety check.
+- [ ] `[FE]` Artifact review UI: diff/raw view, linked collections/items, eval summary, approve/publish/rollback.
+- [ ] `[TEST]` Artifact fail eval không publish được; artifact hash ổn định; publish/rollback idempotent.
+
+### E. Memory + App Generation MVP
+
+- [ ] `[DB]` Thêm `agent_memory` với scope, provenance, confidence, expiry và optional embedding.
+- [ ] `[BE]` RAG context builder tôn trọng permission field mask, redaction, expiry và provenance.
+- [ ] `[AI]` Skills `generateAppSpec`, `generateApiDocs`, `generateSeedData` sinh artifacts thay vì ghi thẳng vào content/schema.
+- [ ] `[FE]` Wizard “Generate app from schema” chọn collections, target app, constraints, budget và approval policy.
+- [ ] `[TEST]` E2E demo: generate storefront từ `products/orders/customers` → plan → artifacts → eval → approval → publish.
+
+### F. Operations
+
+- [ ] `[BE]` Metrics cho run success/fail, approval latency, tool latency, eval fail rate, token/cost estimate và budget stop reason.
+- [ ] `[OPS]` Grafana dashboard “Agent Harness” và dead-letter queue cho run/tool call fail nhiều lần.
+- [ ] `[DOC]` Cập nhật `data-model.md`, `architecture/overview.md`, OpenAPI, SDK docs và runtime limitations cho từng phase.
+
 ---
 
 ## Phase POST-GA8 — Directus Data Model Parity (DONE)
