@@ -51,7 +51,7 @@ Access Control roadmap: Role / Policy / Permission hardening, API keys theo role
 - [x] Viết unit test cho logic mới — access import/export, access conflicts, share service, API key security, extension access.
 - [x] Viết integration test cho các endpoint / service — access import route, extension access routes, API key middleware/security gates.
 - [x] Với logic phức tạp / boundary conditions: có property-based test (fast-check) — access conflict classifier property tests, import idempotency/security invariants.
-- [ ] Test thủ công trên Docker runtime (`docker compose up`) — stack build/start OK, CMS lắng nghe `11989 -> 1989`, `/health` trả `200 OK`; payload hiện `degraded` vì cache/storage unhealthy trong smoke compose.
+- [x] Test thủ công trên Docker runtime (`docker compose up`) — stack build/start OK, CMS lắng nghe `11989 -> 1989`, `/health` trả `200 OK` với `status: "healthy"` và tất cả services healthy.
 
 ### Runtime Compatibility
 
@@ -102,4 +102,4 @@ Không đính kèm. UI thay đổi nằm ở Studio Access Import/Export, API Ke
 - Root `pnpm lint` pass, 6/6 tasks successful.
 - Focused CMS suite pass: `share-service`, `api-key-security`, `access-conflicts`, `access-import`, `extension-access` — 7 files / 40 tests.
 - OpenAPI đã sync cho access import/export, API keys và share links; `apps/cms/openapi.yaml` parse OK.
-- Docker compose smoke: image build/start OK, CMS reachable at `http://127.0.0.1:11989/health` with `200 OK`; response is currently `degraded` because cache/storage probes fail in the smoke stack while database/search/queue are healthy.
+- Docker compose smoke: image build/start OK, CMS reachable at `http://127.0.0.1:11989/health` with `200 OK`; repeated checks returned `status: "healthy"` for database/cache/search/storage/queue.
