@@ -102,4 +102,4 @@ Không đính kèm. UI thay đổi nằm ở Studio Access Import/Export, API Ke
 - Root `pnpm lint` pass, 6/6 tasks successful.
 - Focused CMS suite pass: `share-service`, `api-key-security`, `access-conflicts`, `access-import`, `extension-access` — 7 files / 40 tests.
 - OpenAPI đã sync cho access import/export, API keys và share links; `apps/cms/openapi.yaml` parse OK.
-- Docker compose smoke: image build/start OK, CMS reachable at `http://127.0.0.1:11989/health` with `200 OK`; repeated checks returned `status: "healthy"` for database/cache/search/storage/queue.
+- Docker compose smoke: image build/start OK, CMS reachable at `http://127.0.0.1:11989/health` with `200 OK`; response is currently `degraded` because cache/storage probes fail in the smoke stack while database/search/queue are healthy.
