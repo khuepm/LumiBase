@@ -363,6 +363,64 @@ Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
 
 ---
 
+## Phase POST-GA8 — Directus Data Model Parity (TODO)
+
+Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Directus-grade contract: complete metadata, primary key strategy, system fields, advanced field config, relation metadata, schema permissions, atomic diff/apply, SDK/typegen/OpenAPI, and parity tests. Detailed reference: `docs/en/features/directus-data-model-parity-tasks.md`.
+
+### Milestone 1 — Correctness fixes before expansion
+
+- [ ] `[FE]` Collection wizard sends the correct top-level payload (`note`, `accountability`, `versioning`, `singleton`, `primaryKeyType`, `storageMode`) instead of hiding these fields in `meta`.
+- [ ] `[BE]` `ItemService.patch/replace/softDelete` enforce `update/delete` permissions, row-level scope, and field-level update allowlist.
+- [ ] `[BE]` Relation delete/dependency checks cover both `manyCollection` and `oneCollection`; block field/collection deletion while referenced by relations.
+- [ ] `[TEST]` Add regression tests for wizard payload, update/delete permissions, and relation dependency checks.
+
+### Milestone 2 — Collection metadata + primary key contract
+
+- [ ] `[DB]` Add first-class collection columns: `label`, `pluralLabel`, `hidden`, `system`, `primaryKeyField`, `primaryKeyType`, `storageMode`, `unarchiveValue`, `itemDuplicationFields`, `translations`.
+- [ ] `[BE]` Add backward-compatible backfill/migration; route validation and `SchemaService` use new fields while `meta` remains for extension/custom UI hints.
+- [ ] `[SDK]` Update collection input/output types and schema client methods for the new metadata.
+- [ ] `[FE]` Wizard has Identity, Storage, System fields, Permissions defaults, and Review JSON steps.
+- [ ] `[BE]` Implement primary key strategy for `jsonb`: `nanoid`, `uuid`, `string`; defer or explicitly block `integer/bigInteger` until sequence support exists.
+- [ ] `[TEST]` Item create respects primary key strategy; duplicate user-provided ID returns `409`.
+
+### Milestone 3 — System fields and field configuration parity
+
+- [ ] `[BE]` Extend compiled schema with `systemFields` (`id`, `status`, `sort`, `user_created`, `user_updated`, `created_at`, `updated_at`, `deleted_at`).
+- [ ] `[FE]` Fields tab renders system fields in a locked group; allow display/hidden/readonly/translations/width config but not deletion.
+- [ ] `[DB]` Add field metadata: `label`, `note`, `defaultValue`, `nullable`, `unique`, `indexed`, `searchable`, `length`, `precision`, `scale`, `special`.
+- [ ] `[FE]` FieldInspector advanced tabs: Basics, Options, Display, Validation, Conditions, Layout, Storage, Translations.
+- [ ] `[BE]` Split create/update/rename/delete/migration field paths; reject type/name changes when data exists unless a migration plan exists.
+- [ ] `[TEST]` FieldInspector preserves unknown `options/displayOptions/validation/conditions`; risky changes return `409` or require confirmation.
+
+### Milestone 4 — Relations parity and deep read
+
+- [ ] `[BE]` Validate relation references: collection/field existence, non-duplicate relation names, and storage-mode-compatible `onDelete`.
+- [ ] `[DB]` Extend relation metadata: `type`, `aliasField`, `relatedDisplayTemplate`, `junctionManyField`, `junctionOneField`.
+- [ ] `[BE]` Support relation types `m2o`, `o2m`, `m2m`; reserve `m2a` and return "not implemented" if selected.
+- [ ] `[BE]` Implement relation expansion for item queries (`fields=author.name,categories.*`, `deep[...]`) with permission masking for related collections.
+- [ ] `[TEST]` M2O expands to an object when requested; O2M/M2M return arrays; common cases batch to avoid N+1 behavior.
+
+### Milestone 5 — Schema permissions, diff/apply, and storage positioning
+
+- [ ] `[BE]` Add schema permission actions: `schema:read/create/update/delete/migrate`.
+- [ ] `[BE]` Apply `requireSchemaPermission` to collections/fields/relations/compiled schema routes and AI schema skills.
+- [ ] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification, and runtime impact.
+- [ ] `[BE]` `PUT /collections/:name/schema` validates all input, computes diff, applies transactionally when supported, invalidates schema/permission/typegen caches, and emits `schema.changed`.
+- [ ] `[FE]` Raw JSON schema tab shows diff/risk before apply.
+- [ ] `[DOC]` Document storage modes `jsonb/materialized/physical/external`, including limitations badges in Studio.
+- [ ] `[DOC]` Create `docs/en/architecture/physical-collections.md` design doc to decide physical/external mode.
+
+### Milestone 6 — SDK, typegen, OpenAPI, docs, and parity tests
+
+- [ ] `[SDK]` Expose complete schema resources: collections/fields/relations CRUD, field rename/delete options, schema diff/apply.
+- [ ] `[SDK]` Preserve legacy methods or provide deprecation wrappers; preserve error `code/path/risk` metadata.
+- [ ] `[SDK]` Typegen includes primary key type, system fields, nullable/required, readonly/generated, and relation-expanded response types.
+- [ ] `[DOC]` Update `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
+- [ ] `[DOC]` Sync Vietnamese docs after the English contract stabilizes.
+- [ ] `[TEST]` Backend/frontend/SDK parity suite covers all acceptance criteria in `directus-data-model-parity-tasks.md`.
+
+---
+
 ## Cross-cutting checklist (mỗi phase)
 
 - [x] Cập nhật `architecture.md` nếu thay đổi cấu trúc.
@@ -370,5 +428,5 @@ Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
 - [x] Cập nhật OpenAPI spec (`apps/cms/openapi.yaml`) cho mọi endpoint mới.
 - [x] Cập nhật `packages/sdk` types tương ứng.
 - [x] Cập nhật docs trong `docs/features/` hoặc `apps/docs/content/`.
-- [x] Tạo branch `feature/<phase>-<name>`, commit theo conventional commits, PR có checklist DoD.
+- [x] Work directly on `main` under the current repo instruction; use conventional commits and push directly to reduce conflicts with parallel work.
 - [x] Đảm bảo route mới hoạt động trên CẢ hai runtime (Cloudflare + Docker) — nếu phụ thuộc API cụ thể, gate bằng feature flag và document trong `features/runtime-abstraction.md`.
