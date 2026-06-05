@@ -45,6 +45,7 @@ export interface CompiledCollection {
   accountability: 'all' | 'activity' | 'none';
   versioning: boolean;
   meta: Record<string, unknown>;
+  systemFields: CompiledSystemField[];
   fields: CompiledField[];
 }
 
@@ -80,6 +81,13 @@ export interface CompiledField {
   sortOrder: number;
 }
 
+export interface CompiledSystemField extends CompiledField {
+  system: true;
+  locked: true;
+  generated: boolean;
+  column: 'id' | 'status' | 'sort' | 'user_created' | 'user_updated' | 'created_at' | 'updated_at' | 'deleted_at';
+}
+
 export interface CollectionInput {
   name: string;
   label?: string | null;
@@ -108,6 +116,7 @@ export interface CollectionInput {
 export type PrimaryKeyType = 'nanoid' | 'uuid' | 'integer' | 'bigInteger' | 'string';
 export type StorageMode = 'jsonb' | 'materialized' | 'physical' | 'external';
 type FieldRow = typeof fields.$inferSelect;
+type CollectionRow = typeof collections.$inferSelect;
 
 export interface FieldInput {
   name: string;
@@ -505,6 +514,7 @@ export class SchemaService {
       accountability: collection.accountability as 'all' | 'activity' | 'none',
       versioning: collection.versioning,
       meta: (collection.meta as Record<string, unknown>) ?? {},
+      systemFields: compileSystemFields(collection),
       fields: fieldRows.map(compileField),
     };
     if (this.deps.cache) {
@@ -532,6 +542,193 @@ export class SchemaService {
 
   // Re-export bare schema so callers can build custom queries when needed.
   static readonly schema = schema;
+}
+
+export function compileSystemFields(collection: CollectionRow): CompiledSystemField[] {
+  const systemMeta = readSystemFieldMeta(collection.meta);
+  const auditVisible = systemMeta.audit !== false;
+  const statusVisible = systemMeta.status !== false || collection.archiveField === 'status';
+  const sortVisible = systemMeta.sort !== false || collection.sortField === 'sort';
+
+  return [
+    systemField({
+      name: 'id',
+      type: 'string',
+      interface: 'input',
+      label: 'ID',
+      note: 'Primary item identifier.',
+      nullable: false,
+      unique: true,
+      indexed: true,
+      readonly: true,
+      generated: true,
+      hidden: false,
+      special: ['primary-key'],
+      sortOrder: -800,
+    }),
+    systemField({
+      name: 'status',
+      type: 'string',
+      interface: 'select-dropdown',
+      display: 'labels',
+      label: 'Status',
+      note: 'Workflow status for draft, published, and archived records.',
+      defaultValue: 'draft',
+      nullable: false,
+      indexed: true,
+      readonly: false,
+      generated: false,
+      hidden: !statusVisible,
+      special: ['status'],
+      sortOrder: -700,
+    }),
+    systemField({
+      name: 'sort',
+      type: 'integer',
+      interface: 'input',
+      label: 'Sort',
+      note: 'Manual ordering value.',
+      defaultValue: 0,
+      nullable: false,
+      indexed: true,
+      readonly: false,
+      generated: false,
+      hidden: !sortVisible,
+      special: ['sort'],
+      sortOrder: -600,
+    }),
+    systemField({
+      name: 'user_created',
+      type: 'string',
+      interface: 'user',
+      label: 'User Created',
+      note: 'User who created this item.',
+      nullable: true,
+      readonly: true,
+      generated: true,
+      hidden: !auditVisible,
+      special: ['user-created'],
+      sortOrder: -500,
+    }),
+    systemField({
+      name: 'user_updated',
+      type: 'string',
+      interface: 'user',
+      label: 'User Updated',
+      note: 'User who last updated this item.',
+      nullable: true,
+      readonly: true,
+      generated: true,
+      hidden: !auditVisible,
+      special: ['user-updated'],
+      sortOrder: -400,
+    }),
+    systemField({
+      name: 'created_at',
+      type: 'datetime',
+      interface: 'datetime',
+      label: 'Created At',
+      note: 'Timestamp when this item was created.',
+      defaultValue: 'now',
+      nullable: false,
+      indexed: true,
+      readonly: true,
+      generated: true,
+      hidden: !auditVisible,
+      special: ['date-created'],
+      sortOrder: -300,
+    }),
+    systemField({
+      name: 'updated_at',
+      type: 'datetime',
+      interface: 'datetime',
+      label: 'Updated At',
+      note: 'Timestamp when this item was last updated.',
+      defaultValue: 'now',
+      nullable: false,
+      indexed: true,
+      readonly: true,
+      generated: true,
+      hidden: !auditVisible,
+      special: ['date-updated'],
+      sortOrder: -200,
+    }),
+    systemField({
+      name: 'deleted_at',
+      type: 'datetime',
+      interface: 'datetime',
+      label: 'Deleted At',
+      note: 'Soft-delete timestamp.',
+      nullable: true,
+      indexed: true,
+      readonly: true,
+      generated: true,
+      hidden: true,
+      special: ['date-deleted'],
+      sortOrder: -100,
+    }),
+  ];
+}
+
+function readSystemFieldMeta(meta: unknown): { status?: boolean; sort?: boolean; audit?: boolean } {
+  if (!meta || typeof meta !== 'object' || !('systemFields' in meta)) return {};
+  const systemFields = (meta as { systemFields?: unknown }).systemFields;
+  if (!systemFields || typeof systemFields !== 'object') return {};
+  return systemFields as { status?: boolean; sort?: boolean; audit?: boolean };
+}
+
+function systemField(input: {
+  name: CompiledSystemField['column'];
+  type: string;
+  interface: string;
+  display?: string | null;
+  label: string;
+  note: string;
+  defaultValue?: unknown;
+  nullable: boolean;
+  unique?: boolean;
+  indexed?: boolean;
+  readonly: boolean;
+  generated: boolean;
+  hidden: boolean;
+  special: string[];
+  sortOrder: number;
+}): CompiledSystemField {
+  return {
+    id: `system:${input.name}`,
+    name: input.name,
+    column: input.name,
+    type: input.type,
+    interface: input.interface,
+    display: input.display ?? null,
+    label: input.label,
+    note: input.note,
+    defaultValue: input.defaultValue ?? null,
+    nullable: input.nullable,
+    unique: input.unique ?? false,
+    indexed: input.indexed ?? false,
+    searchable: false,
+    length: null,
+    precision: null,
+    scale: null,
+    special: input.special,
+    options: {},
+    displayOptions: {},
+    validation: { rules: [] },
+    conditions: [],
+    required: !input.nullable,
+    readonly: input.readonly,
+    hidden: input.hidden,
+    encrypted: false,
+    versioned: false,
+    rawEnabled: false,
+    width: 'half',
+    group: 'system',
+    sortOrder: input.sortOrder,
+    system: true,
+    locked: true,
+    generated: input.generated,
+  };
 }
 
 export function compileField(f: FieldRow): CompiledField {

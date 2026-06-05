@@ -106,6 +106,9 @@ components:
         accountability: { type: string, enum: [all, activity, none] }
         versioning: { type: boolean }
         meta: { type: object, additionalProperties: true }
+        systemFields:
+          type: array
+          items: { $ref: '#/components/schemas/Field' }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     Field:
@@ -146,6 +149,10 @@ components:
         width: { type: string, enum: [half, full, fill] }
         group: { type: string, nullable: true }
         sortOrder: { type: integer }
+        system: { type: boolean }
+        locked: { type: boolean }
+        generated: { type: boolean }
+        column: { type: string }
     Role:
       type: object
       required: [id, siteId, name]

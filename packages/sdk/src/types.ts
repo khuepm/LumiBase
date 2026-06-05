@@ -25,6 +25,7 @@ export interface CollectionResource {
   primaryKeyType?: "nanoid" | "uuid" | "integer" | "bigInteger" | "string";
   storageMode?: "jsonb" | "materialized" | "physical" | "external";
   meta: Record<string, unknown>;
+  systemFields?: FieldResource[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -60,6 +61,10 @@ export interface FieldResource {
   width?: "half" | "full" | "fill";
   group?: string | null;
   sortOrder: number;
+  system?: boolean;
+  locked?: boolean;
+  generated?: boolean;
+  column?: string;
   [key: string]: unknown;
 }
 
