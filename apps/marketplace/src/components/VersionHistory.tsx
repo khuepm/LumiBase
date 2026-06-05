@@ -5,7 +5,8 @@ interface VersionHistoryProps {
   versions: ExtensionVersion[];
 }
 
-function formatDate(iso: string) {
+function formatDate(iso: string | null) {
+  if (!iso) return "Unknown";
   return new Date(iso).toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
@@ -50,14 +51,16 @@ export default function VersionHistory({ versions }: VersionHistoryProps) {
                 {v.changelog}
               </p>
             )}
-            <div className="mt-2 flex items-center gap-1.5">
-              <span className="text-[10px] text-gray-600 font-mono">
-                SHA256:
-              </span>
-              <code className="rounded bg-surface-950 px-1.5 py-0.5 font-mono text-[10px] text-gray-500">
-                {v.sha256.slice(0, 8)}…
-              </code>
-            </div>
+            {v.sha256 && (
+              <div className="mt-2 flex items-center gap-1.5">
+                <span className="text-[10px] text-gray-600 font-mono">
+                  SHA256:
+                </span>
+                <code className="rounded bg-surface-950 px-1.5 py-0.5 font-mono text-[10px] text-gray-500">
+                  {v.sha256.slice(0, 8)}…
+                </code>
+              </div>
+            )}
           </div>
         ))}
       </div>

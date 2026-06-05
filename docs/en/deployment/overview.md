@@ -6,6 +6,7 @@ LumiBase supports two deployment modes from the same CMS codebase:
 - **Docker self-hosting** for teams that want to operate the full stack in containers.
 
 The public documentation site is a static Vite app deployed separately to **Cloudflare Pages**.
+The public Marketplace site is also deployed to **Cloudflare Pages** and reads the CMS marketplace catalog at build/runtime revalidation.
 
 ## Cloudflare Targets
 
@@ -20,8 +21,11 @@ Run the build or dry-run command before deploying:
 
 ```bash
 pnpm --filter @lumibase/docs build
+NEXT_PUBLIC_USE_REAL_API=true NEXT_PUBLIC_CMS_API_URL=https://<cms-production-host> pnpm marketplace:build
 pnpm --filter @lumibase/cms build
 ```
+
+Marketplace smoke URLs after deploy: `/`, `/extensions/`, `/categories/seo/`, and `/extensions/<slug>/`.
 
 ## Required Cloudflare Services
 

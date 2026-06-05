@@ -130,31 +130,201 @@ export function compareSemver(a: string, b: string): number {
   return 0;
 }
 
+type MarketplaceManifest = Record<string, unknown> & {
+  name?: string;
+  description?: string;
+  readme?: string;
+  category?: string;
+  tags?: unknown;
+  publisher?: string;
+  marketplace?: Record<string, unknown>;
+  repositoryUrl?: string;
+  documentationUrl?: string;
+  license?: string;
+  licenseType?: string;
+};
+
+type ExtensionRow = typeof extensions.$inferSelect;
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_PER_PAGE = 12;
+const MAX_PER_PAGE = 50;
+
+function asManifest(input: unknown): MarketplaceManifest {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    return input as MarketplaceManifest;
+  }
+  return {};
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function asTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((tag): tag is string => typeof tag === "string")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+function catalogValue(manifest: MarketplaceManifest, key: string): unknown {
+  return manifest.marketplace?.[key] ?? manifest[key];
+}
+
+function latestPublishedRows(rows: ExtensionRow[]): ExtensionRow[] {
+  const bySlug = new Map<string, ExtensionRow>();
+
+  for (const row of rows) {
+    const slug = row.marketplaceSlug ?? row.key ?? row.name;
+    const current = bySlug.get(slug);
+    if (!current || compareSemver(row.version, current.version) > 0) {
+      bySlug.set(slug, row);
+    }
+  }
+
+  return [...bySlug.values()];
+}
+
+function toCatalogExtension(row: ExtensionRow) {
+  const manifest = asManifest(row.manifest);
+  const slug = row.marketplaceSlug ?? row.key ?? extensionKey(row);
+  const category = asString(catalogValue(manifest, "category")) ?? row.type;
+  const tags = asTags(catalogValue(manifest, "tags"));
+  const publisherName =
+    asString(catalogValue(manifest, "publisherName")) ??
+    asString(manifest.publisher) ??
+    row.publisher ??
+    "Unknown publisher";
+  const description =
+    asString(catalogValue(manifest, "description")) ??
+    `${row.name} extension for LumiBase.`;
+
+  return {
+    id: row.id,
+    slug,
+    marketplaceSlug: slug,
+    name: asString(catalogValue(manifest, "name")) ?? row.name,
+    description,
+    readme: asString(catalogValue(manifest, "readme")) ?? description,
+    category,
+    tags,
+    publisherName,
+    publisher: publisherName,
+    latestVersion: row.version,
+    version: row.version,
+    type: row.type,
+    totalDownloads: 0,
+    rating: null,
+    ratingCount: null,
+    versions: [
+      {
+        id: row.id,
+        version: row.version,
+        publishedAt: row.publishedAt?.toISOString() ?? null,
+        sha256: row.bundleSha256,
+      },
+    ],
+    publishedAt: row.publishedAt?.toISOString() ?? null,
+    updatedAt: row.publishedAt?.toISOString() ?? null,
+    repositoryUrl: asString(catalogValue(manifest, "repositoryUrl")),
+    documentationUrl: asString(catalogValue(manifest, "documentationUrl")),
+    licenseType:
+      asString(catalogValue(manifest, "licenseType")) ??
+      asString(catalogValue(manifest, "license")),
+    manifest: row.manifest,
+    bundleUrl: row.bundleUrl,
+    bundleSha256: row.bundleSha256,
+    signature: row.signature,
+    signatureAlg: row.signatureAlg,
+    publisherKeyId: row.publisherKeyId,
+  };
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number, max?: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  const integer = Math.floor(parsed);
+  return max ? Math.min(integer, max) : integer;
+}
+
 // ── routes ─────────────────────────────────────────────────────────────────
 
 marketplaceRouter.get("/extensions", async (c) => {
   const db = c.get("db");
+  const q = c.req.query("q")?.trim().toLowerCase() ?? "";
+  const category = c.req.query("category")?.trim().toLowerCase() ?? "";
+  const tagQuery = c.req.query("tags") ?? "";
+  const tags = tagQuery
+    .split(",")
+    .map((tag) => tag.trim().toLowerCase())
+    .filter(Boolean);
+  const sort = c.req.query("sort") ?? "latest";
+  const page = parsePositiveInt(c.req.query("page"), DEFAULT_PAGE);
+  const perPage = parsePositiveInt(c.req.query("perPage"), DEFAULT_PER_PAGE, MAX_PER_PAGE);
+
   const rows = await db
     .select()
     .from(extensions)
     .where(isNotNull(extensions.publishedAt));
+
+  let catalog = latestPublishedRows(rows).map(toCatalogExtension);
+
+  if (q) {
+    catalog = catalog.filter((ext) => {
+      const haystack = [
+        ext.name,
+        ext.description,
+        ext.publisherName,
+        ext.slug,
+        ext.category,
+        ...ext.tags,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }
+
+  if (category) {
+    catalog = catalog.filter((ext) => ext.category.toLowerCase() === category);
+  }
+
+  if (tags.length > 0) {
+    catalog = catalog.filter((ext) =>
+      tags.some((tag) => ext.tags.map((t) => t.toLowerCase()).includes(tag)),
+    );
+  }
+
+  if (sort === "name") {
+    catalog.sort((a, b) => a.name.localeCompare(b.name));
+  } else {
+    // `popular` falls back to latest until download metrics exist.
+    catalog.sort((a, b) => {
+      const bTime = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+      const aTime = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+      return bTime - aTime;
+    });
+  }
+
+  const total = catalog.length;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const start = (page - 1) * perPage;
+
   return c.json({
-    data: rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      version: r.version,
-      type: r.type,
-      publisher: r.publisher,
-      marketplaceSlug: r.marketplaceSlug,
-      publishedAt: r.publishedAt,
-    })),
+    data: catalog.slice(start, start + perPage),
+    total,
+    page,
+    perPage,
+    totalPages,
   });
 });
 
 marketplaceRouter.get("/extensions/:slug", async (c) => {
   const db = c.get("db");
   const slug = c.req.param("slug");
-  const [row] = await db
+  const rows = await db
     .select()
     .from(extensions)
     .where(
@@ -163,6 +333,7 @@ marketplaceRouter.get("/extensions/:slug", async (c) => {
         isNotNull(extensions.publishedAt),
       ),
     );
+  const [row] = latestPublishedRows(rows);
   if (!row)
     return c.json(
       { errors: [{ code: "NOT_FOUND", message: "Extension not found" }] },
@@ -170,21 +341,7 @@ marketplaceRouter.get("/extensions/:slug", async (c) => {
     );
 
   return c.json({
-    data: {
-      id: row.id,
-      name: row.name,
-      version: row.version,
-      type: row.type,
-      publisher: row.publisher,
-      marketplaceSlug: row.marketplaceSlug,
-      manifest: row.manifest,
-      bundleUrl: row.bundleUrl,
-      bundleSha256: row.bundleSha256,
-      signature: row.signature,
-      signatureAlg: row.signatureAlg,
-      publisherKeyId: row.publisherKeyId,
-      publishedAt: row.publishedAt,
-    },
+    data: toCatalogExtension(row),
   });
 });
 

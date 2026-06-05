@@ -209,6 +209,8 @@ Mục tiêu: tạo/quản lý collection & field qua API + UI.
 - [x] `[DB]` Bổ sung cột `signature`, `signatureAlg`, `publisherKeyId`, `publisher`, `marketplaceSlug`, `publishedAt`, `bundleSha256` vào `extensions`.
 - [x] `[BE]` Routes `/api/v1/marketplace/extensions` (list, detail, install, publish).
 - [x] `[BE]` Signature verification: SHA-256 bundle + ed25519/RSA-PSS qua WebCrypto, public keys load từ env `MARKETPLACE_PUBLIC_KEYS`.
+- [x] `[FE]` Public Marketplace site dùng catalog API thật, SEO/static export/deploy checklist.
+- [x] `[DOC]` Revenue sharing chốt hướng Free-first; commercial checkout/payout tách backlog pha sau.
 - [x] `[DOC]` `features/marketplace.md`.
 
 ## Phase POST-GA6 — Materialized collections (DONE)
