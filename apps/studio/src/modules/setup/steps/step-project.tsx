@@ -48,7 +48,7 @@ export function StepProject({ onSubmitted }: StepProjectProps) {
     shouldUnregister: false,
     defaultValues: projectDraft ?? {
       defaultLanguage: 'en',
-      siteUrl: 'http://localhost:5173',
+      siteUrl: 'http://localhost:2026',
       displayTitle: 'Lumibase',
       theme: null,
     },
