@@ -226,6 +226,164 @@ components:
         warnings:
           type: array
           items: { $ref: '#/components/schemas/AccessConflict' }
+    AccessExportManifest:
+      type: object
+      required: [schema, exportedAt, roles, policies, bindings, apiKeys]
+      properties:
+        schema: { type: string, const: lumibase.access@v1 }
+        exportedAt: { type: string, format: date-time }
+        roles:
+          type: array
+          items: { type: object, additionalProperties: true }
+        policies:
+          type: array
+          items: { type: object, additionalProperties: true }
+        bindings:
+          type: object
+          additionalProperties: true
+        apiKeys:
+          type: array
+          items: { type: object, additionalProperties: true }
+    AccessImportResult:
+      type: object
+      required: [dryRun, valid, errors, diff, conflicts]
+      properties:
+        dryRun: { type: boolean }
+        valid: { type: boolean }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              message: { type: string }
+              path: { type: string, nullable: true }
+        diff: { type: object, additionalProperties: true }
+        conflicts: { $ref: '#/components/schemas/AccessConflictReport' }
+        mode: { type: string, enum: [merge, replace-managed, replace-all], nullable: true }
+        applied: { type: boolean, nullable: true }
+        audit:
+          type: object
+          nullable: true
+          additionalProperties: true
+    ApiKeyResource:
+      type: object
+      required: [id, siteId, name, prefix, revokedAt, roles, policies]
+      properties:
+        id: { type: string }
+        siteId: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        prefix: { type: string }
+        createdBy: { type: string, nullable: true }
+        rotatedAt: { type: string, format: date-time, nullable: true }
+        rotatedBy: { type: string, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        revokedBy: { type: string, nullable: true }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+        lastUsedIp: { type: string, nullable: true }
+        lastUsedUserAgent: { type: string, nullable: true }
+        metadata: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/ApiKeyRoleAttachment' }
+        policies:
+          type: array
+          items: { $ref: '#/components/schemas/ApiKeyPolicyAttachment' }
+    ApiKeySecretResult:
+      allOf:
+        - $ref: '#/components/schemas/ApiKeyResource'
+        - type: object
+          required: [token]
+          properties:
+            token:
+              type: string
+              description: Plaintext token returned only on create/rotate.
+    ApiKeyCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 96 }
+        description: { type: string, maxLength: 512 }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        metadata: { type: object, additionalProperties: true }
+    ApiKeyRotateRequest:
+      type: object
+      properties:
+        expiresAt: { type: string, format: date-time, nullable: true }
+    ApiKeyRoleAttachment:
+      type: object
+      required: [apiKeyId, siteId, roleId, priority]
+      properties:
+        apiKeyId: { type: string }
+        siteId: { type: string }
+        roleId: { type: string }
+        priority: { type: integer }
+        createdAt: { type: string, format: date-time }
+    ApiKeyPolicyAttachment:
+      type: object
+      required: [apiKeyId, siteId, policyId, priority]
+      properties:
+        apiKeyId: { type: string }
+        siteId: { type: string }
+        policyId: { type: string }
+        priority: { type: integer }
+        createdAt: { type: string, format: date-time }
+    ApiKeyAttachRoleRequest:
+      type: object
+      required: [roleId]
+      properties:
+        roleId: { type: string, minLength: 1 }
+        priority: { type: integer }
+        overrideWarnings: { type: boolean }
+    ApiKeyAttachPolicyRequest:
+      type: object
+      required: [policyId]
+      properties:
+        policyId: { type: string, minLength: 1 }
+        priority: { type: integer }
+        overrideWarnings: { type: boolean }
+    ShareResource:
+      type: object
+      required: [id, siteId, collection, itemId, roleId, usedCount]
+      properties:
+        id: { type: string }
+        siteId: { type: string }
+        collection: { type: string }
+        itemId: { type: string }
+        roleId: { type: string }
+        validFrom: { type: string, format: date-time, nullable: true }
+        validUntil: { type: string, format: date-time, nullable: true }
+        maxUses: { type: integer, nullable: true }
+        usedCount: { type: integer }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        revokedBy: { type: string, nullable: true }
+        createdBy: { type: string, nullable: true }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    ShareSecretResult:
+      allOf:
+        - $ref: '#/components/schemas/ShareResource'
+        - type: object
+          required: [token, url]
+          properties:
+            token:
+              type: string
+              description: Plaintext share token returned only on create.
+            url: { type: string }
+    ShareCreateRequest:
+      type: object
+      required: [collection, itemId, roleId]
+      properties:
+        collection: { type: string, minLength: 1 }
+        itemId: { type: string, minLength: 1 }
+        roleId: { type: string, minLength: 1 }
+        password: { type: string, minLength: 1 }
+        validFrom: { type: string, format: date-time, nullable: true }
+        validUntil: { type: string, format: date-time, nullable: true }
+        maxUses: { type: integer, minimum: 1, nullable: true }
     # --- AI (POST-GA1) ---
     AIChatResponse:
       type: object
@@ -1463,6 +1621,280 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /access/export:
+    parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+    get:
+      summary: Export access manifest without secrets
+      responses:
+        '200':
+          description: Access manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AccessExportManifest' }
+  /access/import:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - name: dryRun
+        in: query
+        required: false
+        schema: { type: boolean }
+      - name: mode
+        in: query
+        required: false
+        schema: { type: string, enum: [merge, replace-managed, replace-all] }
+    post:
+      summary: Import or dry-run an access manifest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccessExportManifest' }
+      responses:
+        '200':
+          description: Import result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AccessImportResult' }
+        '400':
+          description: Invalid manifest or failed import validation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AccessImportResult' }
+  /api-keys:
+    parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+    get:
+      summary: List API keys for the active site
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ApiKeyResource' }
+    post:
+      summary: Create an API key and return the plaintext token once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiKeyCreateRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ApiKeySecretResult' }
+        '403':
+          description: API keys can only be managed by user principals
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api-keys/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Get API key metadata and attachments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ApiKeyResource' }
+        '404':
+          description: API key not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api-keys/{id}/rotate:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Rotate an API key and return the new plaintext token once
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiKeyRotateRequest' }
+      responses:
+        '200':
+          description: Rotated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ApiKeySecretResult' }
+  /api-keys/{id}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Revoke an API key
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ApiKeyResource' }
+  /api-keys/{id}/roles:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Attach a role to an API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiKeyAttachRoleRequest' }
+      responses:
+        '201':
+          description: Attached
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ApiKeyRoleAttachment' }
+        '409':
+          description: Access policy conflict or warning
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api-keys/{id}/roles/{roleId}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: roleId, in: path, required: true, schema: { type: string } }
+    delete:
+      summary: Detach a role from an API key
+      responses: { '204': { description: Detached } }
+  /api-keys/{id}/policies:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Attach a policy to an API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiKeyAttachPolicyRequest' }
+      responses:
+        '201':
+          description: Attached
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ApiKeyPolicyAttachment' }
+        '409':
+          description: Access policy conflict or warning
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api-keys/{id}/policies/{policyId}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: policyId, in: path, required: true, schema: { type: string } }
+    delete:
+      summary: Detach a policy from an API key
+      responses: { '204': { description: Detached } }
+  /shares:
+    parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+    post:
+      summary: Create a public share link for an item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ShareCreateRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ShareSecretResult' }
+  /shares/{token}:
+    get:
+      summary: Read a shared item through the share role permission
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+        - name: X-Lumi-Share-Password
+          in: header
+          required: false
+          schema: { type: string }
+        - name: password
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Shared item payload, field-masked by the share role
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '401':
+          description: Password required or share expired
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Share revoked, not yet valid, max uses reached, or role denied
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /shares/{id}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Revoke a share link
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ShareResource' }
   /permissions/me:
     parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
     get:

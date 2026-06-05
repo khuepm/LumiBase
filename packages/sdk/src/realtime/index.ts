@@ -166,7 +166,7 @@ export class RealtimeClient {
 
     this.ws = ws;
 
-    ws.onopen = () => {
+    ws.addEventListener('open', () => {
       // Reset backoff on successful connection.
       this.backoffMs = this.opts.initialBackoffMs ?? 1000;
       // Re-subscribe to all active collections.
@@ -177,25 +177,25 @@ export class RealtimeClient {
       if (Object.keys(this.currentPresence).length > 0) {
         this._sendRaw({ type: 'presence', ...this.currentPresence });
       }
-    };
+    });
 
-    ws.onmessage = (event) => {
+    ws.addEventListener('message', (event) => {
       try {
         const msg = JSON.parse(event.data as string) as Record<string, unknown>;
         this._handleMessage(msg);
       } catch {
         /* ignore malformed */
       }
-    };
+    });
 
-    ws.onclose = () => {
+    ws.addEventListener('close', () => {
       this.ws = null;
       if (!this.stopped) this._scheduleReconnect();
-    };
+    });
 
-    ws.onerror = () => {
+    ws.addEventListener('error', () => {
       /* onclose fires after onerror — reconnect handled there */
-    };
+    });
   }
 
   private _handleMessage(msg: Record<string, unknown>): void {

@@ -249,7 +249,7 @@ export class ShareService {
       cache: this.deps.cache,
     }).getCompiled(share.collection);
     const knownFields = compiled?.fields.map((f) => f.name) ?? [];
-    const masked = permissionService.maskItem(readPerm, row, knownFields);
+    const masked = permissionService.maskItem(readPerm, row as typeof row & { data: Record<string, unknown> }, knownFields);
 
     await this.deps.db
       .update(shares)
