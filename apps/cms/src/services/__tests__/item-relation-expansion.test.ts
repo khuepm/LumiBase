@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  parseDeepQueryParams,
   parseRelationFieldSelections,
   projectFields,
   projectRelatedRow,
@@ -37,9 +38,31 @@ describe('ItemService relation expansion helpers', () => {
     ]);
   });
 
+  it('merges deep query options into relation selections', () => {
+    const params = new URLSearchParams();
+    params.set('deep[author][fields]', 'id,name');
+    params.set('deep[categories][limit]', '2');
+
+    expect(parseDeepQueryParams(params)).toEqual({
+      author: { fields: ['id', 'name'] },
+      categories: { limit: 2 },
+    });
+
+    expect(parseRelationFieldSelections(['title', 'author.email'], parseDeepQueryParams(params))).toEqual([
+      { alias: 'author', fields: ['email', 'id', 'name'] },
+      { alias: 'categories', fields: ['*'], limit: 2 },
+    ]);
+  });
+
   it('derives directus-style relation aliases from metadata', () => {
     expect(relationAlias({ manyField: 'author_id', oneCollection: 'authors' })).toBe('author');
     expect(relationAlias({ manyField: 'owner', oneCollection: 'users' })).toBe('users');
+    expect(
+      relationAlias({ type: 'o2m', manyField: 'post_id', manyCollection: 'comments', oneCollection: 'posts' }),
+    ).toBe('comments');
+    expect(
+      relationAlias({ type: 'm2m', manyField: 'post_id', manyCollection: 'posts', oneCollection: 'categories' }),
+    ).toBe('categories');
     expect(
       relationAlias({ aliasField: 'created_by', manyField: 'user_id', oneCollection: 'directus_users' }),
     ).toBe('created_by');

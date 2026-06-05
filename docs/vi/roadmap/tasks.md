@@ -397,7 +397,7 @@ Mục tiêu: nâng cấp Data Model / Collections Builder để một collection
 - [x] `[BE]` Validate relation references: collection/field tồn tại, relation name không duplicate, `onDelete` hợp lệ theo storage mode.
 - [x] `[DB]` Mở rộng relation metadata: `type`, `aliasField`, `relatedDisplayTemplate`, `junctionManyField`, `junctionOneField`.
 - [x] `[BE]` Hỗ trợ relation types `m2o`, `o2m`, `m2m`; reserve `m2a` và trả "not implemented" nếu chọn.
-- [ ] `[BE]` Implement relation expansion cho item query (`fields=author.name,categories.*`, `deep[...]`) với permission masking cho related collections.
+- [x] `[BE]` Implement relation expansion cho item query (`fields=author.name,categories.*`, `deep[...]`) với permission masking cho related collections.
 - [ ] `[TEST]` M2O trả object khi request expand; O2M/M2M trả array; batching tránh N+1 ở case phổ biến.
 
 ### Milestone 5 — Schema permissions, diff/apply và storage positioning

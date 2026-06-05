@@ -32,6 +32,7 @@ import type { PrimaryKeyType, StorageMode } from './schema-service';
 
 export interface ListItemsParams {
   fields?: string[];
+  deep?: DeepQuery;
   filter?: ItemFilter;
   sort?: string[];
   limit?: number;
@@ -78,6 +79,13 @@ export interface ItemRow {
   updatedAt: Date;
   deletedAt: Date | null;
 }
+
+export interface DeepRelationOptions {
+  fields?: string[];
+  limit?: number;
+}
+
+export type DeepQuery = Record<string, DeepRelationOptions>;
 
 export class ItemServiceError extends Error {
   constructor(public code: string, message: string, public status = 400) {
@@ -139,6 +147,8 @@ const STRUCTURAL_FIELDS = new Set([
 ]);
 
 const WRITABLE_STRUCTURAL_FIELDS = ['status', 'sort'] as const;
+
+type RelationMetadata = typeof relations.$inferSelect;
 
 /** Reserved data keys that map to structural columns rather than JSONB. */
 function fieldExpression(name: string): SQL {
@@ -386,8 +396,8 @@ export class ItemService {
       r.data = await this.processCrypto(collectionName, r.data as Record<string, unknown>, 'decrypt', false);
       decrypted.push(r as ItemRow);
     }
-    const expanded = params.fields
-      ? await this.expandRelationFields(collectionName, decrypted, params.fields)
+    const expanded = params.fields || params.deep
+      ? await this.expandRelationFields(collectionName, decrypted, params.fields ?? [], params.deep)
       : decrypted;
     const data = expanded.map((r) => (params.fields ? projectFields(r, params.fields) : r));
 
@@ -397,7 +407,7 @@ export class ItemService {
     };
   }
 
-  async detail(collectionName: string, id: string, fields?: string[]) {
+  async detail(collectionName: string, id: string, fields?: string[], deep?: DeepQuery) {
     const perm = await this.perm(collectionName, 'read');
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
     const coll = await this.resolveCollection(collectionName);
@@ -418,9 +428,9 @@ export class ItemService {
     const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
     const masked = perm && this.permissions ? this.permissions.maskItem(perm, row as ItemRow, knownFields) : row;
     masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', false);
-    if (!fields) return masked;
-    const [expanded] = await this.expandRelationFields(collectionName, [masked as ItemRow], fields);
-    return projectFields(expanded ?? masked as ItemRow, fields);
+    if (!fields && !deep) return masked;
+    const [expanded] = await this.expandRelationFields(collectionName, [masked as ItemRow], fields ?? [], deep);
+    return fields ? projectFields(expanded ?? masked as ItemRow, fields) : expanded ?? masked;
   }
 
   async create(collectionName: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) {
@@ -737,8 +747,9 @@ export class ItemService {
     collectionName: string,
     rows: ItemRow[],
     fields: string[],
+    deep?: DeepQuery,
   ): Promise<ItemRow[]> {
-    const selections = parseRelationFieldSelections(fields);
+    const selections = parseRelationFieldSelections(fields, deep);
     if (rows.length === 0 || selections.length === 0) return rows;
     const relationRows = await this.deps.db
       .select()
@@ -746,8 +757,7 @@ export class ItemService {
       .where(
         and(
           scopeSite(relations.siteId, this.deps.siteId),
-          eq(relations.manyCollection, collectionName),
-          eq(relations.type, 'm2o'),
+          sql`(${relations.manyCollection} = ${collectionName} or ${relations.oneCollection} = ${collectionName})`,
         ),
       );
 
@@ -755,54 +765,170 @@ export class ItemService {
       const alias = relationAlias(rel);
       const selected = selections.find((selection) => selection.alias === alias);
       if (!selected) continue;
-      const foreignIds = [
-        ...new Set(
-          rows
-            .map((row) => row.data?.[rel.manyField])
-            .filter((value): value is string => typeof value === 'string' && value.length > 0),
-        ),
-      ];
-      if (foreignIds.length === 0) {
-        for (const row of rows) {
-          row.data = { ...(row.data ?? {}), [alias]: null };
-        }
+      if (rel.type === 'm2o' && rel.manyCollection === collectionName) {
+        await this.expandManyToOne(rows, rel, selected);
         continue;
       }
-
-      const relatedCollection = await this.resolveCollection(rel.oneCollection);
-      const relatedPerm = await this.perm(rel.oneCollection, 'read');
-      const relatedPermClause = this.permissions?.whereFor(relatedPerm) ?? undefined;
-      const relatedRows = await this.deps.db
-        .select()
-        .from(items)
-        .where(
-          and(
-            scopeSite(items.siteId, this.deps.siteId),
-            eq(items.collectionId, relatedCollection.id),
-            inArray(items.id, foreignIds),
-            isNull(items.deletedAt),
-            relatedPermClause,
-          ),
-        );
-      const knownRelatedFields =
-        (await this.schemaService.getCompiled(rel.oneCollection))?.fields.map((f) => f.name) ?? [];
-      const byId = new Map<string, Record<string, unknown>>();
-      for (const related of relatedRows) {
-        const masked = relatedPerm && this.permissions
-          ? this.permissions.maskItem(relatedPerm, related as ItemRow, knownRelatedFields)
-          : related;
-        masked.data = await this.processCrypto(rel.oneCollection, masked.data as Record<string, unknown>, 'decrypt', false);
-        byId.set(related.id, projectRelatedRow(masked as ItemRow, selected.fields));
+      if (rel.type === 'o2m' && rel.oneCollection === collectionName) {
+        await this.expandOneToMany(rows, rel, selected);
+        continue;
       }
-      for (const row of rows) {
-        const foreignId = row.data?.[rel.manyField];
-        row.data = {
-          ...(row.data ?? {}),
-          [alias]: typeof foreignId === 'string' ? byId.get(foreignId) ?? null : null,
-        };
+      if (rel.type === 'm2m' && rel.manyCollection === collectionName) {
+        await this.expandManyToMany(rows, rel, selected);
       }
     }
     return rows;
+  }
+
+  private async expandManyToOne(
+    rows: ItemRow[],
+    rel: RelationMetadata,
+    selected: RelationFieldSelection,
+  ): Promise<void> {
+    const alias = relationAlias(rel);
+    const foreignIds = uniqueStrings(rows.map((row) => row.data?.[rel.manyField]));
+    if (foreignIds.length === 0) {
+      assignRelation(rows, alias, () => null);
+      return;
+    }
+    const byId = await this.loadRelatedByIds(rel.oneCollection, foreignIds, selected.fields);
+    assignRelation(rows, alias, (row) => {
+      const foreignId = row.data?.[rel.manyField];
+      return typeof foreignId === 'string' ? byId.get(foreignId) ?? null : null;
+    });
+  }
+
+  private async expandOneToMany(
+    rows: ItemRow[],
+    rel: RelationMetadata,
+    selected: RelationFieldSelection,
+  ): Promise<void> {
+    const alias = relationAlias(rel);
+    const parentIds = uniqueStrings(rows.map((row) => row.id));
+    if (parentIds.length === 0) {
+      assignRelation(rows, alias, () => []);
+      return;
+    }
+    const relatedCollection = await this.resolveCollection(rel.manyCollection);
+    const relatedPerm = await this.perm(rel.manyCollection, 'read');
+    const relatedRows = await this.loadRowsByJsonField(
+      relatedCollection.id,
+      rel.manyField,
+      parentIds,
+      this.permissions?.whereFor(relatedPerm) ?? undefined,
+    );
+    const projected = await this.projectRelatedRows(rel.manyCollection, relatedRows, relatedPerm, selected.fields);
+    const byParent = new Map<string, Record<string, unknown>[]>();
+    for (const related of relatedRows) {
+      const parentId = related.data?.[rel.manyField];
+      if (typeof parentId !== 'string') continue;
+      const list = byParent.get(parentId) ?? [];
+      const projection = projected.get(related.id);
+      if (projection) list.push(projection);
+      byParent.set(parentId, list);
+    }
+    assignRelation(rows, alias, (row) => limitArray(byParent.get(row.id) ?? [], selected.limit));
+  }
+
+  private async expandManyToMany(
+    rows: ItemRow[],
+    rel: RelationMetadata,
+    selected: RelationFieldSelection,
+  ): Promise<void> {
+    const alias = relationAlias(rel);
+    if (!rel.junctionCollection || !rel.junctionManyField || !rel.junctionOneField) {
+      assignRelation(rows, alias, () => []);
+      return;
+    }
+    const sourceIds = uniqueStrings(rows.map((row) => row.id));
+    if (sourceIds.length === 0) {
+      assignRelation(rows, alias, () => []);
+      return;
+    }
+    const junctionCollection = await this.resolveCollection(rel.junctionCollection);
+    const junctionRows = await this.loadRowsByJsonField(
+      junctionCollection.id,
+      rel.junctionManyField,
+      sourceIds,
+    );
+    const targetIds = uniqueStrings(junctionRows.map((row) => row.data?.[rel.junctionOneField!]));
+    const targetById = targetIds.length > 0
+      ? await this.loadRelatedByIds(rel.oneCollection, targetIds, selected.fields)
+      : new Map<string, Record<string, unknown>>();
+    const bySource = new Map<string, Record<string, unknown>[]>();
+    for (const junction of junctionRows) {
+      const sourceId = junction.data?.[rel.junctionManyField];
+      const targetId = junction.data?.[rel.junctionOneField];
+      if (typeof sourceId !== 'string' || typeof targetId !== 'string') continue;
+      const target = targetById.get(targetId);
+      if (!target) continue;
+      const list = bySource.get(sourceId) ?? [];
+      list.push(target);
+      bySource.set(sourceId, list);
+    }
+    assignRelation(rows, alias, (row) => limitArray(bySource.get(row.id) ?? [], selected.limit));
+  }
+
+  private async loadRowsByJsonField(
+    collectionId: string,
+    field: string,
+    values: string[],
+    permissionClause?: SQL,
+  ): Promise<ItemRow[]> {
+    if (values.length === 0) return [];
+    return (await this.deps.db
+      .select()
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, collectionId),
+          inArray(sql`${items.data}->>${field}`, values),
+          isNull(items.deletedAt),
+          permissionClause,
+        ),
+      )) as ItemRow[];
+  }
+
+  private async loadRelatedByIds(
+    collectionName: string,
+    ids: string[],
+    fields: string[],
+  ): Promise<Map<string, Record<string, unknown>>> {
+    const relatedCollection = await this.resolveCollection(collectionName);
+    const relatedPerm = await this.perm(collectionName, 'read');
+    const relatedPermClause = this.permissions?.whereFor(relatedPerm) ?? undefined;
+    const relatedRows = await this.deps.db
+      .select()
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, relatedCollection.id),
+          inArray(items.id, ids),
+          isNull(items.deletedAt),
+          relatedPermClause,
+        ),
+      );
+    return this.projectRelatedRows(collectionName, relatedRows as ItemRow[], relatedPerm, fields);
+  }
+
+  private async projectRelatedRows(
+    collectionName: string,
+    rows: ItemRow[],
+    perm: CompiledPermission | null,
+    fields: string[],
+  ): Promise<Map<string, Record<string, unknown>>> {
+    const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
+    const byId = new Map<string, Record<string, unknown>>();
+    for (const row of rows) {
+      const masked = perm && this.permissions
+        ? this.permissions.maskItem(perm, row, knownFields)
+        : row;
+      masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', false);
+      byId.set(masked.id, projectRelatedRow(masked, fields));
+    }
+    return byId;
   }
 
   private async assertItemIdAvailable(collectionId: string, id: string): Promise<void> {
@@ -1163,10 +1289,12 @@ function redactSql(statement: string): string {
 export interface RelationFieldSelection {
   alias: string;
   fields: string[];
+  limit?: number;
 }
 
-export function parseRelationFieldSelections(fields: string[]): RelationFieldSelection[] {
+export function parseRelationFieldSelections(fields: string[], deep: DeepQuery = {}): RelationFieldSelection[] {
   const byAlias = new Map<string, Set<string>>();
+  const limits = new Map<string, number>();
   for (const token of fields) {
     const [alias, ...path] = token.split('.');
     if (!alias || path.length === 0) continue;
@@ -1176,19 +1304,53 @@ export function parseRelationFieldSelections(fields: string[]): RelationFieldSel
     selected.add(field);
     byAlias.set(alias, selected);
   }
+  for (const [alias, options] of Object.entries(deep)) {
+    if (!alias) continue;
+    const selected = byAlias.get(alias) ?? new Set<string>();
+    const deepFields = options.fields?.length ? options.fields : ['*'];
+    for (const field of deepFields) {
+      if (field) selected.add(field);
+    }
+    byAlias.set(alias, selected);
+    if (typeof options.limit === 'number') limits.set(alias, options.limit);
+  }
   return [...byAlias.entries()].map(([alias, selected]) => ({
     alias,
     fields: [...selected],
+    ...(limits.has(alias) ? { limit: limits.get(alias) } : {}),
   }));
 }
 
 export function relationAlias(rel: {
   aliasField?: string | null;
   manyField: string;
+  manyCollection?: string;
   oneCollection: string;
+  type?: string | null;
 }): string {
   if (rel.aliasField) return rel.aliasField;
+  if (rel.type === 'o2m') return rel.manyCollection ?? rel.manyField;
+  if (rel.type === 'm2m') return rel.oneCollection;
   return rel.manyField.endsWith('_id') ? rel.manyField.slice(0, -3) : rel.oneCollection;
+}
+
+export function parseDeepQueryParams(searchParams: URLSearchParams): DeepQuery | undefined {
+  const deep: DeepQuery = {};
+  for (const [key, value] of searchParams.entries()) {
+    const match = /^deep\[([^\]]+)\]\[([^\]]+)\]$/.exec(key);
+    if (!match) continue;
+    const [, alias, option] = match;
+    if (!alias || !option) continue;
+    const current = deep[alias] ?? {};
+    if (option === 'fields') {
+      current.fields = value.split(',').map((field) => field.trim()).filter(Boolean);
+    } else if (option === 'limit') {
+      const limit = Number.parseInt(value, 10);
+      if (Number.isFinite(limit) && limit >= 0) current.limit = limit;
+    }
+    deep[alias] = current;
+  }
+  return Object.keys(deep).length > 0 ? deep : undefined;
 }
 
 export function projectRelatedRow(row: ItemRow, fields: string[]): Record<string, unknown> {
@@ -1268,4 +1430,27 @@ function pickNestedValue(value: unknown, path: string): unknown {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function uniqueStrings(values: unknown[]): string[] {
+  return [
+    ...new Set(values.filter((value): value is string => typeof value === 'string' && value.length > 0)),
+  ];
+}
+
+function assignRelation(
+  rows: ItemRow[],
+  alias: string,
+  resolve: (row: ItemRow) => unknown,
+): void {
+  for (const row of rows) {
+    row.data = {
+      ...(row.data ?? {}),
+      [alias]: resolve(row),
+    };
+  }
+}
+
+function limitArray<T>(values: T[], limit: number | undefined): T[] {
+  return typeof limit === 'number' ? values.slice(0, limit) : values;
 }
