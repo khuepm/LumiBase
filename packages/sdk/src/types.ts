@@ -25,6 +25,7 @@ export interface CollectionResource {
   primaryKeyType?: "nanoid" | "uuid" | "integer" | "bigInteger" | "string";
   storageMode?: "jsonb" | "materialized" | "physical" | "external";
   meta: Record<string, unknown>;
+  fields?: FieldResource[];
   systemFields?: FieldResource[];
   createdAt?: string;
   updatedAt?: string;
@@ -48,6 +49,7 @@ export interface FieldResource {
   precision?: number | null;
   scale?: number | null;
   special?: unknown[];
+  translations?: Record<string, unknown>;
   options?: Record<string, unknown>;
   displayOptions?: Record<string, unknown>;
   validation?: Record<string, unknown>;

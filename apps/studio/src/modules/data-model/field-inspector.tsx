@@ -58,9 +58,15 @@ export interface FieldFormState {
   type: string;
   interface: string;
   required: boolean;
+  readonly?: boolean;
+  hidden?: boolean;
+  width?: 'half' | 'full' | 'fill';
   sortOrder: number;
   display?: string | null;
   displayOptions?: Record<string, unknown>;
+  translations?: Record<string, unknown>;
+  system?: boolean;
+  locked?: boolean;
 }
 
 interface FieldInspectorProps {
@@ -80,7 +86,19 @@ export function FieldInspector({
   isSubmitting,
 }: FieldInspectorProps) {
   const [form, setForm] = useState<FieldFormState>(state);
+  const [translationsDraft, setTranslationsDraft] = useState(() =>
+    JSON.stringify(state.translations ?? {}, null, 2),
+  );
   const valid = NAME_PATTERN.test(form.name);
+  const translationsValid = useMemo(() => {
+    try {
+      const parsed = JSON.parse(translationsDraft);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed);
+    } catch {
+      return false;
+    }
+  }, [translationsDraft]);
+  const canEditStorage = !form.locked;
 
   const sample = useMemo(() => {
     // Synthetic sample row so the live preview shows something even before
@@ -120,6 +138,7 @@ export function FieldInspector({
               onChange={(e) =>
                 setForm({ ...form, name: e.target.value.toLowerCase() })
               }
+              disabled={!canEditStorage}
               className="w-full rounded-md border bg-background px-3 py-2 text-sm"
               autoFocus
             />
@@ -132,6 +151,7 @@ export function FieldInspector({
             <span className="mb-1 block text-sm font-medium">Interface</span>
             <select
               value={form.interface}
+              disabled={!canEditStorage}
               onChange={(e) => {
                 const iface = INTERFACES.find((i) => i.id === e.target.value);
                 setForm({
@@ -201,9 +221,57 @@ export function FieldInspector({
             <input
               type="checkbox"
               checked={form.required}
+              disabled={!canEditStorage}
               onChange={(e) => setForm({ ...form, required: e.target.checked })}
             />
             <span className="text-sm">Required</span>
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={form.hidden ?? false}
+                onChange={(e) => setForm({ ...form, hidden: e.target.checked })}
+              />
+              <span className="text-sm">Hidden</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={form.readonly ?? false}
+                onChange={(e) => setForm({ ...form, readonly: e.target.checked })}
+              />
+              <span className="text-sm">Readonly</span>
+            </label>
+          </div>
+
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Width</span>
+            <select
+              value={form.width ?? 'full'}
+              onChange={(e) =>
+                setForm({ ...form, width: e.target.value as FieldFormState['width'] })
+              }
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            >
+              <option value="half">Half</option>
+              <option value="full">Full</option>
+              <option value="fill">Fill</option>
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Translations JSON</span>
+            <textarea
+              value={translationsDraft}
+              onChange={(e) => setTranslationsDraft(e.target.value)}
+              rows={5}
+              className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
+            />
+            {!translationsValid && (
+              <p className="mt-1 text-xs text-destructive">Translations must be a JSON object.</p>
+            )}
           </label>
         </div>
 
@@ -217,8 +285,13 @@ export function FieldInspector({
           </button>
           <button
             type="button"
-            disabled={!valid || isSubmitting}
-            onClick={() => onSubmit(form)}
+            disabled={!valid || !translationsValid || isSubmitting}
+            onClick={() =>
+              onSubmit({
+                ...form,
+                translations: JSON.parse(translationsDraft) as Record<string, unknown>,
+              })
+            }
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
           >
             {isSubmitting ? 'Saving…' : 'Save'}

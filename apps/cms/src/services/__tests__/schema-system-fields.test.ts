@@ -72,4 +72,30 @@ describe('SchemaService system fields', () => {
     expect(systemFields.find((field) => field.name === 'sort')).toMatchObject({ hidden: true });
     expect(systemFields.find((field) => field.name === 'user_created')).toMatchObject({ hidden: true });
   });
+
+  it('applies configurable system field presentation overrides from collection meta', () => {
+    const systemFields = compileSystemFields({
+      ...baseCollection,
+      meta: {
+        systemFields: { status: true, sort: true, audit: true },
+        systemFieldOverrides: {
+          status: {
+            display: 'labels',
+            hidden: true,
+            readonly: true,
+            width: 'full',
+            translations: { vi: { label: 'Trang thai' } },
+          },
+        },
+      },
+    });
+
+    expect(systemFields.find((field) => field.name === 'status')).toMatchObject({
+      display: 'labels',
+      hidden: true,
+      readonly: true,
+      width: 'full',
+      translations: { vi: { label: 'Trang thai' } },
+    });
+  });
 });

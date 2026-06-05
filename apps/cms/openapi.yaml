@@ -134,6 +134,7 @@ components:
         special:
           type: array
           items: { type: string }
+        translations: { type: object, additionalProperties: true }
         options: { type: object, additionalProperties: true }
         displayOptions: { type: object, additionalProperties: true }
         validation: { type: object, additionalProperties: true }

@@ -66,6 +66,7 @@ export interface CompiledField {
   precision: number | null;
   scale: number | null;
   special: unknown[];
+  translations: Record<string, unknown>;
   options: Record<string, unknown>;
   displayOptions: Record<string, unknown>;
   validation: Record<string, unknown>;
@@ -546,11 +547,12 @@ export class SchemaService {
 
 export function compileSystemFields(collection: CollectionRow): CompiledSystemField[] {
   const systemMeta = readSystemFieldMeta(collection.meta);
+  const overrides = readSystemFieldOverrides(collection.meta);
   const auditVisible = systemMeta.audit !== false;
   const statusVisible = systemMeta.status !== false || collection.archiveField === 'status';
   const sortVisible = systemMeta.sort !== false || collection.sortField === 'sort';
 
-  return [
+  const systemFields = [
     systemField({
       name: 'id',
       type: 'string',
@@ -668,6 +670,7 @@ export function compileSystemFields(collection: CollectionRow): CompiledSystemFi
       sortOrder: -100,
     }),
   ];
+  return systemFields.map((field) => applySystemFieldOverride(field, overrides[field.name]));
 }
 
 function readSystemFieldMeta(meta: unknown): { status?: boolean; sort?: boolean; audit?: boolean } {
@@ -675,6 +678,38 @@ function readSystemFieldMeta(meta: unknown): { status?: boolean; sort?: boolean;
   const systemFields = (meta as { systemFields?: unknown }).systemFields;
   if (!systemFields || typeof systemFields !== 'object') return {};
   return systemFields as { status?: boolean; sort?: boolean; audit?: boolean };
+}
+
+type SystemFieldOverride = Partial<Pick<CompiledSystemField, 'display' | 'hidden' | 'readonly' | 'width' | 'translations'>>;
+
+function readSystemFieldOverrides(meta: unknown): Record<string, SystemFieldOverride> {
+  if (!meta || typeof meta !== 'object' || !('systemFieldOverrides' in meta)) return {};
+  const value = (meta as { systemFieldOverrides?: unknown }).systemFieldOverrides;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, SystemFieldOverride>;
+}
+
+function applySystemFieldOverride(
+  field: CompiledSystemField,
+  override: SystemFieldOverride | undefined,
+): CompiledSystemField {
+  if (!override) return field;
+  return {
+    ...field,
+    display: typeof override.display === 'string' || override.display === null
+      ? override.display
+      : field.display,
+    hidden: typeof override.hidden === 'boolean' ? override.hidden : field.hidden,
+    readonly: typeof override.readonly === 'boolean' ? override.readonly : field.readonly,
+    width: override.width === 'half' || override.width === 'full' || override.width === 'fill'
+      ? override.width
+      : field.width,
+    translations: isRecord(override.translations) ? override.translations : field.translations,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function systemField(input: {
@@ -712,6 +747,7 @@ function systemField(input: {
     precision: null,
     scale: null,
     special: input.special,
+    translations: {},
     options: {},
     displayOptions: {},
     validation: { rules: [] },
@@ -749,6 +785,7 @@ export function compileField(f: FieldRow): CompiledField {
     precision: f.precision,
     scale: f.scale,
     special: (f.special as unknown[]) ?? [],
+    translations: (f.translations as Record<string, unknown>) ?? {},
     options: (f.options as Record<string, unknown>) ?? {},
     displayOptions: (f.displayOptions as Record<string, unknown>) ?? {},
     validation: (f.validation as Record<string, unknown>) ?? { rules: [] },

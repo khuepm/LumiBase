@@ -52,6 +52,8 @@ export function legacyRest() {
         client.rawRequest<CollectionResource[]>("/api/v1/collections"),
       getCollection: (name: string) =>
         client.rawRequest<CollectionResource>(`/api/v1/collections/${name}`),
+      getCompiled: (name: string) =>
+        client.rawRequest<CollectionResource>(`/api/v1/collections/${name}/compiled`),
       createCollection: (
         input: Partial<CollectionResource> & { name: string },
       ) =>
