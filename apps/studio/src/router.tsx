@@ -243,13 +243,13 @@ const setupShellRoute = createRoute({
 /**
  * Index route for `/setup`. New operators land on the 3-step quick
  * setup by default. The full six-step flow remains available through
- * `/setup/account` for advanced security/project tuning.
+ * `/setup/advance` for advanced security/project tuning.
  */
 const setupIndexRoute = createRoute({
   getParentRoute: () => setupShellRoute,
   path: '/setup',
   beforeLoad: () => {
-    throw redirect({ to: '/setup/simple' });
+    throw redirect({ to: '/setup/account' });
   },
   // Component is unreachable because beforeLoad always redirects; kept
   // as a safety net so a future router quirk that bypasses beforeLoad
@@ -259,7 +259,7 @@ const setupIndexRoute = createRoute({
 
 const setupSimpleRoute = createRoute({
   getParentRoute: () => publicLayoutRoute,
-  path: '/setup/simple',
+  path: '/setup/account',
   component: () => (
     <SetupStateGate>
       <Suspense fallback={<PageLoader />}>
@@ -271,7 +271,7 @@ const setupSimpleRoute = createRoute({
 
 const setupAccountRoute = createRoute({
   getParentRoute: () => setupShellRoute,
-  path: '/setup/account',
+  path: '/setup/advance',
   component: () => {
     const navigate = useNavigate();
     return (
@@ -289,7 +289,7 @@ const setupPathRoute = createRoute({
     // Operators must complete the Account step before they can pick
     // an admin path; deep-linking past Account redirects back.
     if (!useSetupStore.getState().accountValid) {
-      throw redirect({ to: '/setup/account' });
+      throw redirect({ to: '/setup/advance' });
     }
   },
   component: () => {

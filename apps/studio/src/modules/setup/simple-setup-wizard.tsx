@@ -194,7 +194,7 @@ export function SimpleSetupWizard() {
       (value) => value.trim().length > 0,
     );
     if (!hasAccountInput) {
-      navigate({ to: '/setup/account' });
+      navigate({ to: '/setup/advance' });
       return;
     }
     const validDraft = validateEssentials();

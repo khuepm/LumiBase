@@ -14,7 +14,7 @@ export type SetupStep = (typeof SETUP_STEPS)[number];
 interface StepDescriptor {
   id: SetupStep;
   /** URL path for this step under the public layout. */
-  path: `/setup/${SetupStep}`;
+  path: `/setup/${string}`;
   /** Short label rendered in the progress indicator. */
   label: string;
   /** Long description for the active step (rendered as subtitle). */
@@ -24,7 +24,7 @@ interface StepDescriptor {
 const STEP_TABLE: ReadonlyArray<StepDescriptor> = [
   {
     id: 'account',
-    path: '/setup/account',
+    path: '/setup/advance',
     label: 'Account',
     description: 'Create the first administrator account.',
   },
@@ -124,7 +124,7 @@ export function SetupLayout({ children, activeStep }: SetupLayoutProps) {
               </p>
             </div>
             <a
-              href="/setup/simple"
+              href="/setup/account"
               className="inline-flex items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted"
             >
               Quick setup
