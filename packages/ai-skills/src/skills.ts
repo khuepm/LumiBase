@@ -29,7 +29,7 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
       },
       required: ['name'],
     },
-    requiredCapabilities: ['schema:write'],
+    requiredCapabilities: ['schema:create'],
   },
 
   deleteCollection: {
@@ -45,7 +45,7 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
       },
       required: ['name'],
     },
-    requiredCapabilities: ['schema:write'],
+    requiredCapabilities: ['schema:delete'],
   },
 
   createField: {
@@ -74,7 +74,7 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
       },
       required: ['collection', 'name', 'type'],
     },
-    requiredCapabilities: ['schema:write'],
+    requiredCapabilities: ['schema:update'],
   },
 
   deleteField: {
@@ -94,7 +94,7 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
       },
       required: ['collection', 'name'],
     },
-    requiredCapabilities: ['schema:write'],
+    requiredCapabilities: ['schema:delete'],
   },
 
   listItems: {
@@ -249,4 +249,3 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     requiredCapabilities: ['items:read'],
   },
 };
-

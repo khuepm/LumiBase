@@ -30,7 +30,7 @@ describe('AISecureHarness - evaluateRisk', () => {
     siteId: 'test-site',
   });
 
-  it('should classify skill as dangerous when it requires schema:write', () => {
+  it('should classify skill as dangerous when it requires a mutating schema capability', () => {
     const skill = CORE_SKILLS['createCollection']!;
     expect(harness.evaluateRisk(skill, 'createCollection')).toBe(true);
   });
@@ -40,7 +40,7 @@ describe('AISecureHarness - evaluateRisk', () => {
     expect(harness.evaluateRisk(skill, 'deleteItem')).toBe(true);
   });
 
-  it('should classify skill as safe when no schema:write and name does not start with delete', () => {
+  it('should classify skill as safe when no mutating schema capability and name does not start with delete', () => {
     const skill = CORE_SKILLS['listCollections']!;
     expect(harness.evaluateRisk(skill, 'listCollections')).toBe(false);
   });
@@ -50,7 +50,7 @@ describe('AISecureHarness - evaluateRisk', () => {
     expect(harness.evaluateRisk(skill, 'listItems')).toBe(false);
   });
 
-  it('should classify createItem as safe (items:write, not schema:write)', () => {
+  it('should classify createItem as safe (items:write, not mutating schema capability)', () => {
     const skill = CORE_SKILLS['createItem']!;
     expect(harness.evaluateRisk(skill, 'createItem')).toBe(false);
   });
@@ -84,7 +84,7 @@ describe('AISecureHarness - execute', () => {
     const result = await harness.execute(
       'createCollection',
       { name: 'posts' },
-      ['schema:write'],
+      ['schema:create'],
       'User wants to create a collection',
     );
     expect(result.status).toBe('pending_approval');
@@ -100,7 +100,7 @@ describe('AISecureHarness - execute', () => {
 
   it('should return executed for safe skill with wildcard capability', async () => {
     const result = await harness.execute('listItems', {}, ['*']);
-    // listItems is safe (items:read, not schema:write, not delete*)
+    // listItems is safe (items:read, not mutating schema capability, not delete*)
     // But wait — with wildcard, capabilities pass. listItems is safe → executed
     expect(result.status).toBe('executed');
     expect(result.data).toEqual({ items: [] });

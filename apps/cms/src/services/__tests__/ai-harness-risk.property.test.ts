@@ -7,7 +7,7 @@ import type { Database } from '@lumibase/database';
  * Feature: ai-first-cms-engine, Property 3: Risk classification và execution flow
  *
  * With any valid skill where the user has sufficient capabilities:
- * - If the skill requires capability 'schema:write' OR its name starts with 'delete',
+ * - If the skill requires a mutating `schema:*` capability OR its name starts with 'delete',
  *   the result must have status === 'pending_approval' with a valid approvalId.
  * - Otherwise, the result must have status === 'executed' with data.
  *
@@ -31,7 +31,7 @@ const argsArb = fc.dictionary(
 function isDangerousSkill(skillName: string): boolean {
   const skill = CORE_SKILLS[skillName];
   if (!skill) return false;
-  if (skill.requiredCapabilities.includes('schema:write')) return true;
+  if (skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read')) return true;
   if (skillName.startsWith('delete')) return true;
   return false;
 }
@@ -46,7 +46,7 @@ function createMockDb(): Database {
 }
 
 describe('Feature: ai-first-cms-engine, Property 3: Risk classification và execution flow', () => {
-  it('dangerous skills (schema:write or delete*) should return pending_approval with approvalId', async () => {
+  it('dangerous skills (mutating schema capability or delete*) should return pending_approval with approvalId', async () => {
     await fc.assert(
       fc.asyncProperty(
         validSkillNameArb.filter((name) => isDangerousSkill(name)),
@@ -72,7 +72,7 @@ describe('Feature: ai-first-cms-engine, Property 3: Risk classification và exec
     );
   });
 
-  it('safe skills (no schema:write, name does not start with delete) should return executed with data', async () => {
+  it('safe skills (no mutating schema capability, name does not start with delete) should return executed with data', async () => {
     await fc.assert(
       fc.asyncProperty(
         validSkillNameArb.filter((name) => !isDangerousSkill(name)),

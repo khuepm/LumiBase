@@ -402,8 +402,8 @@ Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Di
 
 ### Milestone 5 — Schema permissions, diff/apply, and storage positioning
 
-- [ ] `[BE]` Add schema permission actions: `schema:read/create/update/delete/migrate`.
-- [ ] `[BE]` Apply `requireSchemaPermission` to collections/fields/relations/compiled schema routes and AI schema skills.
+- [x] `[BE]` Add schema permission actions: `schema:read/create/update/delete/migrate`.
+- [x] `[BE]` Apply `requireSchemaPermission` to collections/fields/relations/compiled schema routes and AI schema skills.
 - [ ] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification, and runtime impact.
 - [ ] `[BE]` `PUT /collections/:name/schema` validates all input, computes diff, applies transactionally when supported, invalidates schema/permission/typegen caches, and emits `schema.changed`.
 - [ ] `[FE]` Raw JSON schema tab shows diff/risk before apply.

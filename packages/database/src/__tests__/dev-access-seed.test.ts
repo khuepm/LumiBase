@@ -6,6 +6,7 @@ import {
   DEV_ACCESS_SEED,
   DEV_EXTENSION_ACCESS_TARGETS,
   DEV_EXTENSION_PERMISSION_ACTIONS,
+  DEV_SCHEMA_PERMISSION_ACTIONS,
   DEV_SCHEMA_MANAGER_COLLECTIONS,
   DEV_SENSITIVE_COLLECTIONS,
   DEV_SYSTEM_PERMISSION_ACTIONS,
@@ -62,6 +63,17 @@ describe('dev access seed', () => {
   });
 
   it('seeds explicit CRUD permissions for schema and access manager collections', () => {
+    expect(permissionsFor(DEV_ACCESS_POLICY_IDS.schemaManager, 'schema')).toEqual(
+      DEV_SCHEMA_PERMISSION_ACTIONS.map((action) =>
+        expect.objectContaining({
+          collection: 'schema',
+          action,
+          fields: ['*'],
+          permissions: {},
+        }),
+      ),
+    );
+
     for (const collection of DEV_SCHEMA_MANAGER_COLLECTIONS) {
       expect(permissionsFor(DEV_ACCESS_POLICY_IDS.schemaManager, collection)).toEqual(
         DEV_SYSTEM_PERMISSION_ACTIONS.map((action) =>

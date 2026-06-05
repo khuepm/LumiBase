@@ -2,13 +2,13 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { SchemaService, SchemaServiceError } from '../services/schema-service';
+import { requireSchemaPermission } from './schema-permissions';
 
 /**
  * /collections, /fields, /relations — Phase A schema admin surface.
  *
- * Permission enforcement is intentionally a stub: any authenticated user
- * can manage schema until Phase C wires PermissionService. The endpoints
- * already use site-scoped queries so multi-tenancy holds.
+ * Schema management routes require explicit `schema:*` actions in addition
+ * to site scoping.
  */
 
 const collectionInputSchema = z.object({
@@ -112,6 +112,8 @@ const toError = (err: unknown) => {
 export const collectionsRouter = new Hono<AppEnv>();
 
 collectionsRouter.get('/', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:read');
+  if (denied) return denied;
   try {
     const data = await buildService(c).listCollections();
     return c.json({ data });
@@ -122,6 +124,8 @@ collectionsRouter.get('/', async (c) => {
 });
 
 collectionsRouter.post('/', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:create');
+  if (denied) return denied;
   const parsed = collectionInputSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json(
@@ -139,6 +143,8 @@ collectionsRouter.post('/', async (c) => {
 });
 
 collectionsRouter.get('/:name', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:read');
+  if (denied) return denied;
   const data = await buildService(c).getCollection(c.req.param('name'));
   if (!data) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Collection not found.' }] }, 404);
@@ -147,6 +153,8 @@ collectionsRouter.get('/:name', async (c) => {
 });
 
 collectionsRouter.patch('/:name', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:update');
+  if (denied) return denied;
   const parsed = collectionPatchSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json(
@@ -164,6 +172,8 @@ collectionsRouter.patch('/:name', async (c) => {
 });
 
 collectionsRouter.delete('/:name', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:delete');
+  if (denied) return denied;
   try {
     await buildService(c).deleteCollection(c.req.param('name'));
     return c.body(null, 204);
@@ -176,6 +186,8 @@ collectionsRouter.delete('/:name', async (c) => {
 // ---------- Fields nested under collection ----------
 
 collectionsRouter.get('/:name/fields', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:read');
+  if (denied) return denied;
   try {
     const data = await buildService(c).listFields(c.req.param('name'));
     return c.json({ data });
@@ -186,6 +198,8 @@ collectionsRouter.get('/:name/fields', async (c) => {
 });
 
 collectionsRouter.put('/:name/fields/:field', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:update');
+  if (denied) return denied;
   const parsed = fieldInputSchema.safeParse({ ...(await c.req.json()), name: c.req.param('field') });
   if (!parsed.success) {
     return c.json(
@@ -203,6 +217,8 @@ collectionsRouter.put('/:name/fields/:field', async (c) => {
 });
 
 collectionsRouter.delete('/:name/fields/:field', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:delete');
+  if (denied) return denied;
   try {
     await buildService(c).deleteField(c.req.param('name'), c.req.param('field'));
     return c.body(null, 204);
@@ -215,6 +231,8 @@ collectionsRouter.delete('/:name/fields/:field', async (c) => {
 // ---------- Compiled (read-only convenience) ----------
 
 collectionsRouter.get('/:name/compiled', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:read');
+  if (denied) return denied;
   const data = await buildService(c).getCompiled(c.req.param('name'));
   if (!data) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Collection not found.' }] }, 404);
@@ -225,6 +243,8 @@ collectionsRouter.get('/:name/compiled', async (c) => {
 // ---------- Diff and atomic schema update ----------
 
 collectionsRouter.post('/diff', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:read');
+  if (denied) return denied;
   const body = await c.req.json();
   const { name } = body;
   if (!name) {
@@ -247,6 +267,8 @@ collectionsRouter.post('/diff', async (c) => {
 });
 
 collectionsRouter.put('/:name/schema', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:migrate');
+  if (denied) return denied;
   const parsed = schemaInputSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json(

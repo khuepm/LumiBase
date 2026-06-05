@@ -52,6 +52,14 @@ export const DEV_SYSTEM_PERMISSION_ACTIONS = [
   'delete',
 ] as const;
 
+export const DEV_SCHEMA_PERMISSION_ACTIONS = [
+  'schema:read',
+  'schema:create',
+  'schema:update',
+  'schema:delete',
+  'schema:migrate',
+] as const;
+
 export const DEV_EXTENSION_PERMISSION_ACTIONS = {
   extensions: ['read', 'configure', 'install', 'enable', 'delete', 'grant_capability'],
   extension_modules: ['read'],
@@ -246,6 +254,7 @@ export const DEV_ACCESS_SEED = {
     },
   ],
   permissions: [
+    ...systemPermissions(DEV_ACCESS_POLICY_IDS.schemaManager, ['schema'], DEV_SCHEMA_PERMISSION_ACTIONS),
     ...systemPermissions(DEV_ACCESS_POLICY_IDS.schemaManager, DEV_SCHEMA_MANAGER_COLLECTIONS),
     ...systemPermissions(DEV_ACCESS_POLICY_IDS.accessManager, DEV_ACCESS_MANAGER_COLLECTIONS),
     ...systemPermissions(DEV_ACCESS_POLICY_IDS.securityManager, DEV_SENSITIVE_COLLECTIONS, ['read']),

@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { SchemaService, SchemaServiceError } from '../services/schema-service';
+import { requireSchemaPermission } from './schema-permissions';
 
 const relationInputSchema = z.object({
   manyCollection: z.string().min(1),
@@ -40,6 +41,8 @@ const toError = (err: unknown) => {
 export const relationsRouter = new Hono<AppEnv>();
 
 relationsRouter.get('/', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:read');
+  if (denied) return denied;
   try {
     const data = await buildService(c).listRelations();
     return c.json({ data });
@@ -50,6 +53,8 @@ relationsRouter.get('/', async (c) => {
 });
 
 relationsRouter.post('/', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:create');
+  if (denied) return denied;
   const parsed = relationInputSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json(
@@ -67,6 +72,8 @@ relationsRouter.post('/', async (c) => {
 });
 
 relationsRouter.delete('/:id', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:delete');
+  if (denied) return denied;
   try {
     await buildService(c).deleteRelation(c.req.param('id'));
     return c.body(null, 204);

@@ -402,8 +402,8 @@ Mục tiêu: nâng cấp Data Model / Collections Builder để một collection
 
 ### Milestone 5 — Schema permissions, diff/apply và storage positioning
 
-- [ ] `[BE]` Thêm schema permission actions: `schema:read/create/update/delete/migrate`.
-- [ ] `[BE]` Áp dụng `requireSchemaPermission` cho collections/fields/relations/compiled schema routes và AI schema skills.
+- [x] `[BE]` Thêm schema permission actions: `schema:read/create/update/delete/migrate`.
+- [x] `[BE]` Áp dụng `requireSchemaPermission` cho collections/fields/relations/compiled schema routes và AI schema skills.
 - [ ] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification và runtime impact.
 - [ ] `[BE]` `PUT /collections/:name/schema` validate toàn bộ, compute diff, apply transactionally khi runtime hỗ trợ, invalidate schema/permission/typegen cache và emit `schema.changed`.
 - [ ] `[FE]` Raw JSON schema tab hiển thị diff/risk trước khi apply.
