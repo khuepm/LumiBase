@@ -380,7 +380,7 @@ Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Di
 - [x] `[BE]` Add backward-compatible backfill/migration; route validation and `SchemaService` use new fields while `meta` remains for extension/custom UI hints.
 - [x] `[SDK]` Update collection input/output types and schema client methods for the new metadata.
 - [ ] `[FE]` Wizard has Identity, Storage, System fields, Permissions defaults, and Review JSON steps.
-- [ ] `[BE]` Implement primary key strategy for `jsonb`: `nanoid`, `uuid`, `string`; defer or explicitly block `integer/bigInteger` until sequence support exists.
+- [x] `[BE]` Implement primary key strategy for `jsonb`: `nanoid`, `uuid`, `string`; defer or explicitly block `integer/bigInteger` until sequence support exists.
 - [ ] `[TEST]` Item create respects primary key strategy; duplicate user-provided ID returns `409`.
 
 ### Milestone 3 — System fields and field configuration parity

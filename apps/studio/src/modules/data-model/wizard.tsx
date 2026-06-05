@@ -28,6 +28,10 @@ export function CollectionWizardPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const client = getApiClient();
+  const storageWarning =
+    storageMode === 'jsonb' && (primaryKeyType === 'integer' || primaryKeyType === 'bigInteger')
+      ? 'Integer primary keys require materialized or physical storage mode.'
+      : null;
 
   const create = useMutation({
     mutationFn: async () => {
@@ -49,7 +53,7 @@ export function CollectionWizardPage() {
   });
 
   const nameValid = NAME_PATTERN.test(name);
-  const canNext = step === 1 ? nameValid : true;
+  const canNext = step === 1 ? nameValid : step === 2 ? !storageWarning : true;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -156,6 +160,11 @@ export function CollectionWizardPage() {
               <option value="external">External table</option>
             </select>
           </label>
+          {storageWarning && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {storageWarning}
+            </p>
+          )}
 
           <label className="flex items-center gap-2">
             <input
@@ -199,6 +208,11 @@ export function CollectionWizardPage() {
               <span className="text-muted-foreground">Note:</span> {note}
             </div>
           )}
+          {storageWarning && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive">
+              {storageWarning}
+            </p>
+          )}
           {create.error && (
             <p className="text-destructive">
               {(create.error as Error).message}
@@ -227,7 +241,7 @@ export function CollectionWizardPage() {
         ) : (
           <button
             type="button"
-            disabled={create.isPending}
+            disabled={create.isPending || Boolean(storageWarning)}
             onClick={() => create.mutate()}
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
           >

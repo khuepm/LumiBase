@@ -20,6 +20,7 @@ import { CryptoService } from './crypto-service';
 import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
 import { AuditLogger } from '../modules/audit/logger';
+import type { PrimaryKeyType, StorageMode } from './schema-service';
 
 /**
  * ItemService — generic CRUD over the `items` JSONB store, driven by the
@@ -82,6 +83,19 @@ export class ItemServiceError extends Error {
     super(message);
     this.name = 'ItemServiceError';
   }
+}
+
+interface PrimaryKeyStrategyInput {
+  field?: string | null;
+  type?: string | null;
+  storageMode?: string | null;
+}
+
+export interface PrimaryKeyResolution {
+  field: string;
+  type: PrimaryKeyType;
+  storageMode: StorageMode;
+  id: string | undefined;
 }
 
 export interface ItemServiceDeps {
@@ -404,6 +418,11 @@ export class ItemService {
 
   async create(collectionName: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) {
     const coll = await this.resolveCollection(collectionName);
+    const primaryKey = resolvePrimaryKey({
+      field: coll.primaryKeyField,
+      type: coll.primaryKeyType,
+      storageMode: coll.storageMode,
+    }, payload.data ?? {});
     const perm = await this.perm(collectionName, 'create');
     const knownFields = await this.getKnownWritableFields(collectionName);
     assertWritablePermissionFields(perm, knownFields, payload.data ?? {}, {
@@ -447,9 +466,13 @@ export class ItemService {
     }
     this.assertPermissionValidation(perm, finalCreateSnapshot);
     const encryptedData = await this.processCrypto(collectionName, data, 'encrypt', true);
+    if (primaryKey.id) {
+      await this.assertItemIdAvailable(coll.id, primaryKey.id);
+    }
     const [row] = await this.deps.db
       .insert(items)
       .values({
+        ...(primaryKey.id ? { id: primaryKey.id } : {}),
         siteId: this.deps.siteId,
         collectionId: coll.id,
         data: encryptedData,
@@ -703,6 +726,23 @@ export class ItemService {
     return [...dataFields, ...WRITABLE_STRUCTURAL_FIELDS];
   }
 
+  private async assertItemIdAvailable(collectionId: string, id: string): Promise<void> {
+    const [existing] = await this.deps.db
+      .select({ id: items.id })
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, collectionId),
+          eq(items.id, id),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      throw new ItemServiceError('ITEM_ID_EXISTS', `Item "${id}" already exists.`, 409);
+    }
+  }
+
   private assertPermissionValidation(
     perm: CompiledPermission | null,
     snapshot: Record<string, unknown>,
@@ -924,6 +964,76 @@ export function assertWritablePermissionFields(
       403,
     );
   }
+}
+
+export function resolvePrimaryKey(
+  strategy: PrimaryKeyStrategyInput,
+  input: Record<string, unknown>,
+): PrimaryKeyResolution {
+  const field = strategy.field || 'id';
+  const type = normalizePrimaryKeyType(strategy.type);
+  const storageMode = normalizeStorageMode(strategy.storageMode);
+
+  if (storageMode === 'jsonb' && (type === 'integer' || type === 'bigInteger')) {
+    throw new ItemServiceError(
+      'UNSUPPORTED_PRIMARY_KEY',
+      `${type} primary keys require materialized or physical storage mode.`,
+      400,
+    );
+  }
+
+  if (type === 'uuid') {
+    return { field, type, storageMode, id: generateUuid() };
+  }
+
+  if (type === 'string') {
+    const candidate = input[field] ?? input.id;
+    if (typeof candidate !== 'string' || candidate.trim().length === 0) {
+      throw new ItemServiceError(
+        'PRIMARY_KEY_REQUIRED',
+        `String primary key requires "${field}" in the item data.`,
+        400,
+      );
+    }
+    return { field, type, storageMode, id: candidate };
+  }
+
+  return { field, type, storageMode, id: undefined };
+}
+
+function normalizePrimaryKeyType(value: string | null | undefined): PrimaryKeyType {
+  switch (value) {
+    case 'uuid':
+    case 'integer':
+    case 'bigInteger':
+    case 'string':
+    case 'nanoid':
+      return value;
+    default:
+      return 'nanoid';
+  }
+}
+
+function normalizeStorageMode(value: string | null | undefined): StorageMode {
+  switch (value) {
+    case 'materialized':
+    case 'physical':
+    case 'external':
+    case 'jsonb':
+      return value;
+    default:
+      return 'jsonb';
+  }
+}
+
+function generateUuid(): string {
+  const runtimeCrypto = (globalThis as {
+    crypto?: { randomUUID?: () => `${string}-${string}-${string}-${string}-${string}` };
+  }).crypto;
+  if (!runtimeCrypto?.randomUUID) {
+    throw new ItemServiceError('UNSUPPORTED_PRIMARY_KEY', 'UUID generation requires Web Crypto randomUUID support.', 500);
+  }
+  return runtimeCrypto.randomUUID();
 }
 
 export function buildPermissionSnapshot(input: {

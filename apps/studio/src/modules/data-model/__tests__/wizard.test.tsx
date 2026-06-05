@@ -86,4 +86,22 @@ describe('CollectionWizardPage', () => {
       });
     });
   });
+
+  it('blocks unsupported primary key and storage mode combinations before submit', async () => {
+    renderWithClient(<CollectionWizardPage />);
+
+    fireEvent.change(screen.getByLabelText(/machine name/i), {
+      target: { value: 'posts' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    fireEvent.change(screen.getByLabelText(/primary key/i), {
+      target: { value: 'integer' },
+    });
+
+    expect(
+      screen.getByText(/integer primary keys require materialized or physical storage mode/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /next/i })).toBeDisabled();
+    expect(createCollection).not.toHaveBeenCalled();
+  });
 });
