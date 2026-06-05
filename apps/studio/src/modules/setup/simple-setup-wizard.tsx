@@ -3,9 +3,12 @@ import {
   Check,
   Copy,
   Download,
+  Eye,
+  EyeOff,
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
 import {
   useCallback,
   useId,
@@ -38,6 +41,23 @@ import {
 } from './schemas/project';
 import { SETUP_TOKEN_STORAGE_KEY } from './setup-state-gate';
 import { useSetupStore } from './setup-store';
+import {
+  getAccountDraft,
+  setAccountDraft,
+} from './steps/step-account';
+import {
+  getPathDraft,
+  setPathDraft,
+} from './steps/step-path';
+import {
+  getPolicyDraft,
+  inferActivePreset,
+  setPolicyDraft,
+} from './steps/step-security';
+import {
+  getProjectDraft,
+  setProjectDraft,
+} from './steps/step-project';
 import { wordlistGenerateUnique } from './wordlist';
 
 type SimpleStep = 'essentials' | 'review' | 'recovery';
@@ -67,9 +87,6 @@ interface FieldErrors {
   firstName?: string;
   lastName?: string;
   adminPath?: string;
-  defaultLanguage?: string;
-  siteUrl?: string;
-  displayTitle?: string;
 }
 
 const PASSWORD_RULE_LABELS = {
@@ -102,11 +119,16 @@ const DEFAULT_PROJECT = {
 };
 
 export function SimpleSetupWizard() {
+  const navigate = useNavigate();
   const [step, setStep] = useState<SimpleStep>('essentials');
-  const [account, setAccount] = useState(DEFAULT_ACCOUNT);
-  const [adminPath, setAdminPath] = useState(() => wordlistGenerateUnique() ?? '');
-  const [project, setProject] = useState(DEFAULT_PROJECT);
-  const [securityPreset, setSecurityPreset] = useState<PolicyPresetId>('standard');
+  const [account, setAccount] = useState(() => getAccountDraft() ?? DEFAULT_ACCOUNT);
+  const [adminPath, setAdminPath] = useState(
+    () => getPathDraft()?.adminPath ?? wordlistGenerateUnique() ?? '',
+  );
+  const [securityPreset, setSecurityPreset] = useState<PolicyPresetId>(() => {
+    const policyDraft = getPolicyDraft();
+    return policyDraft ? inferActivePreset(policyDraft) ?? 'standard' : 'standard';
+  });
   const [draft, setDraft] = useState<SimpleSetupDraft | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -128,7 +150,9 @@ export function SimpleSetupWizard() {
       nextErrors.adminPath = firstIssueMessage(pathResult.error);
     }
 
-    const projectResult = projectConfigurationSchema.safeParse(project);
+    const projectResult = projectConfigurationSchema.safeParse(
+      getProjectDraft() ?? DEFAULT_PROJECT,
+    );
     if (!projectResult.success) {
       mergeZodIssues(nextErrors, projectResult.error);
     }
@@ -143,9 +167,10 @@ export function SimpleSetupWizard() {
       path: pathResult.data,
       project: projectResult.data,
     };
+    persistEssentialsDraft(nextDraft);
     setDraft(nextDraft);
     return nextDraft;
-  }, [account, adminPath, project]);
+  }, [account, adminPath]);
 
   const handleContinue = useCallback(() => {
     const validDraft = validateEssentials();
@@ -154,6 +179,28 @@ export function SimpleSetupWizard() {
     setStep('review');
     setSubmitError(null);
   }, [validateEssentials]);
+
+  const clearError = useCallback((field: keyof FieldErrors) => {
+    setErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  }, []);
+
+  const handleAdvancedSetup = useCallback(() => {
+    const hasAccountInput = Object.values(account).some(
+      (value) => value.trim().length > 0,
+    );
+    if (!hasAccountInput) {
+      navigate({ to: '/setup/account' });
+      return;
+    }
+    const validDraft = validateEssentials();
+    if (validDraft === null) return;
+    navigate({ to: '/setup/security' });
+  }, [account, navigate, validateEssentials]);
 
   const handleComplete = useCallback(async () => {
     const validDraft = draft ?? validateEssentials();
@@ -220,12 +267,13 @@ export function SimpleSetupWizard() {
                 default that will be applied.
               </p>
             </div>
-            <a
-              href="/setup/account"
+            <button
+              type="button"
+              onClick={handleAdvancedSetup}
               className="inline-flex items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted"
             >
               Advanced setup
-            </a>
+            </button>
           </div>
           <SimpleProgress activeIndex={activeIndex} />
         </header>
@@ -236,11 +284,11 @@ export function SimpleSetupWizard() {
               account={account}
               adminPath={adminPath}
               errors={errors}
-              project={project}
               onAccountChange={setAccount}
               onAdminPathChange={setAdminPath}
-              onProjectChange={setProject}
+              onClearError={clearError}
               onContinue={handleContinue}
+              onAdvancedSetup={handleAdvancedSetup}
             />
           ) : null}
 
@@ -253,6 +301,10 @@ export function SimpleSetupWizard() {
               onBack={() => setStep('essentials')}
               onPresetChange={setSecurityPreset}
               onComplete={handleComplete}
+              onAdvancedSetup={() => {
+                persistPolicyPreset(securityPreset);
+                navigate({ to: '/setup/security' });
+              }}
             />
           ) : null}
 
@@ -269,22 +321,22 @@ interface EssentialsStepProps {
   account: typeof DEFAULT_ACCOUNT;
   adminPath: string;
   errors: FieldErrors;
-  project: typeof DEFAULT_PROJECT;
   onAccountChange: (value: typeof DEFAULT_ACCOUNT) => void;
   onAdminPathChange: (value: string) => void;
-  onProjectChange: (value: typeof DEFAULT_PROJECT) => void;
+  onClearError: (field: keyof FieldErrors) => void;
   onContinue: () => void;
+  onAdvancedSetup: () => void;
 }
 
 function EssentialsStep({
   account,
   adminPath,
   errors,
-  project,
   onAccountChange,
   onAdminPathChange,
-  onProjectChange,
+  onClearError,
   onContinue,
+  onAdvancedSetup,
 }: EssentialsStepProps) {
   const emailId = useId();
   const firstNameId = useId();
@@ -292,9 +344,8 @@ function EssentialsStep({
   const passwordId = useId();
   const confirmPasswordId = useId();
   const pathId = useId();
-  const languageId = useId();
-  const titleId = useId();
-  const siteUrlId = useId();
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const passwordRules = useMemo(
     () => evaluatePasswordRules(account.password),
@@ -304,8 +355,21 @@ function EssentialsStep({
 
   const handleGeneratePath = useCallback(() => {
     const next = wordlistGenerateUnique();
-    if (next !== null) onAdminPathChange(next);
-  }, [onAdminPathChange]);
+    if (next !== null) {
+      onAdminPathChange(next);
+      onClearError('adminPath');
+    }
+  }, [onAdminPathChange, onClearError]);
+
+  const updateAccount = useCallback(
+    <K extends keyof typeof DEFAULT_ACCOUNT>(key: K) =>
+      (event: ChangeEvent<HTMLInputElement>) => {
+        onAccountChange({ ...account, [key]: event.target.value });
+        onClearError(key);
+        if (key === 'password') onClearError('confirmPassword');
+      },
+    [account, onAccountChange, onClearError],
+  );
 
   return (
     <div className="space-y-6">
@@ -314,8 +378,9 @@ function EssentialsStep({
           Account, admin URL, and project identity
         </h2>
         <p className="text-sm text-muted-foreground">
-          These are the setup values that cannot be inferred safely. Security
-          policy details are reviewed in the next step before submission.
+          These are the setup values that cannot be inferred safely. Project
+          identity uses Lumibase defaults in quick setup and can be tuned in
+          Advanced setup.
         </p>
       </header>
 
@@ -325,7 +390,7 @@ function EssentialsStep({
             id={emailId}
             type="email"
             value={account.email}
-            onChange={updateText(account, onAccountChange, 'email')}
+            onChange={updateAccount('email')}
             className={inputClass(Boolean(errors.email))}
             autoComplete="email"
           />
@@ -335,7 +400,7 @@ function EssentialsStep({
             <input
               id={firstNameId}
               value={account.firstName}
-              onChange={updateText(account, onAccountChange, 'firstName')}
+              onChange={updateAccount('firstName')}
               className={inputClass(Boolean(errors.firstName))}
               autoComplete="given-name"
             />
@@ -344,7 +409,7 @@ function EssentialsStep({
             <input
               id={lastNameId}
               value={account.lastName}
-              onChange={updateText(account, onAccountChange, 'lastName')}
+              onChange={updateAccount('lastName')}
               className={inputClass(Boolean(errors.lastName))}
               autoComplete="family-name"
             />
@@ -354,14 +419,28 @@ function EssentialsStep({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field id={passwordId} label="Password" error={errors.password}>
-          <input
-            id={passwordId}
-            type="password"
-            value={account.password}
-            onChange={updateText(account, onAccountChange, 'password')}
-            className={inputClass(Boolean(errors.password))}
-            autoComplete="new-password"
-          />
+          <div className="relative">
+            <input
+              id={passwordId}
+              type={showPassword ? 'text' : 'password'}
+              value={account.password}
+              onChange={updateAccount('password')}
+              className={inputClass(Boolean(errors.password), 'pr-10')}
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="absolute inset-y-0 right-0 inline-flex w-10 items-center justify-center text-muted-foreground transition hover:text-foreground"
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Eye className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+          </div>
           <ul className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
             {Object.entries(PASSWORD_RULE_LABELS).map(([key, label]) => {
               const passed = passwordRules[key as keyof typeof passwordRules];
@@ -382,14 +461,28 @@ function EssentialsStep({
           label="Confirm password"
           error={errors.confirmPassword}
         >
-          <input
-            id={confirmPasswordId}
-            type="password"
-            value={account.confirmPassword}
-            onChange={updateText(account, onAccountChange, 'confirmPassword')}
-            className={inputClass(Boolean(errors.confirmPassword))}
-            autoComplete="new-password"
-          />
+          <div className="relative">
+            <input
+              id={confirmPasswordId}
+              type={showConfirmPassword ? 'text' : 'password'}
+              value={account.confirmPassword}
+              onChange={updateAccount('confirmPassword')}
+              className={inputClass(Boolean(errors.confirmPassword), 'pr-10')}
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword((value) => !value)}
+              aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+              className="absolute inset-y-0 right-0 inline-flex w-10 items-center justify-center text-muted-foreground transition hover:text-foreground"
+            >
+              {showConfirmPassword ? (
+                <EyeOff className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Eye className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+          </div>
         </Field>
       </div>
 
@@ -403,7 +496,10 @@ function EssentialsStep({
           <input
             id={pathId}
             value={adminPath}
-            onChange={(event) => onAdminPathChange(event.target.value)}
+            onChange={(event) => {
+              onAdminPathChange(event.target.value);
+              onClearError('adminPath');
+            }}
             className={inputClass(Boolean(errors.adminPath), 'font-mono')}
             autoComplete="off"
             spellCheck={false}
@@ -425,45 +521,14 @@ function EssentialsStep({
         ) : null}
       </Field>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Field
-          id={languageId}
-          label="Default language"
-          error={errors.defaultLanguage}
+      <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+        <button
+          type="button"
+          onClick={onAdvancedSetup}
+          className="text-left text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
-          <select
-            id={languageId}
-            value={project.defaultLanguage}
-            onChange={updateText(project, onProjectChange, 'defaultLanguage')}
-            className={inputClass(Boolean(errors.defaultLanguage))}
-          >
-            <option value="en">English (en)</option>
-            <option value="vi">Vietnamese (vi)</option>
-            <option value="ja">Japanese (ja)</option>
-            <option value="fr">French (fr)</option>
-            <option value="en-US">English, US (en-US)</option>
-          </select>
-        </Field>
-        <Field id={titleId} label="Display title" error={errors.displayTitle}>
-          <input
-            id={titleId}
-            value={project.displayTitle}
-            onChange={updateText(project, onProjectChange, 'displayTitle')}
-            className={inputClass(Boolean(errors.displayTitle))}
-          />
-        </Field>
-        <Field id={siteUrlId} label="Site URL" error={errors.siteUrl}>
-          <input
-            id={siteUrlId}
-            type="url"
-            value={project.siteUrl}
-            onChange={updateText(project, onProjectChange, 'siteUrl')}
-            className={inputClass(Boolean(errors.siteUrl))}
-          />
-        </Field>
-      </div>
-
-      <div className="flex justify-end pt-2">
+          Continue in advanced setup
+        </button>
         <button type="button" onClick={onContinue} className={primaryButtonClass}>
           Review security defaults
         </button>
@@ -480,6 +545,7 @@ interface ReviewStepProps {
   onBack: () => void;
   onPresetChange: (preset: PolicyPresetId) => void;
   onComplete: () => void;
+  onAdvancedSetup: () => void;
 }
 
 function ReviewStep({
@@ -490,6 +556,7 @@ function ReviewStep({
   onBack,
   onPresetChange,
   onComplete,
+  onAdvancedSetup,
 }: ReviewStepProps) {
   const preset = POLICY_PRESETS[securityPreset];
   return (
@@ -534,8 +601,6 @@ function ReviewStep({
         <ReviewGroup title="Essentials">
           <ReviewItem label="Admin email" value={draft.account.email} />
           <ReviewItem label="Admin path" value={draft.path.adminPath} />
-          <ReviewItem label="Project title" value={draft.project.displayTitle} />
-          <ReviewItem label="Site URL" value={draft.project.siteUrl} />
         </ReviewGroup>
 
         <ReviewGroup title="Security defaults">
@@ -583,12 +648,13 @@ function ReviewStep({
       ) : null}
 
       <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-        <a
-          href="/setup/account"
+        <button
+          type="button"
+          onClick={onAdvancedSetup}
           className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
           Open advanced setup instead
-        </a>
+        </button>
         <div className="flex justify-end gap-3">
           <button type="button" onClick={onBack} className={secondaryButtonClass}>
             Back
@@ -803,16 +869,6 @@ function Field({
   );
 }
 
-function updateText<T extends Record<string, unknown>, K extends keyof T>(
-  value: T,
-  setter: (value: T) => void,
-  key: K,
-) {
-  return (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setter({ ...value, [key]: event.target.value });
-  };
-}
-
 function mergeZodIssues(target: FieldErrors, error: z.ZodError): void {
   for (const issue of error.issues) {
     const key = issue.path[0];
@@ -820,6 +876,26 @@ function mergeZodIssues(target: FieldErrors, error: z.ZodError): void {
     if (key in target && target[key as keyof FieldErrors]) continue;
     target[key as keyof FieldErrors] = issue.message;
   }
+}
+
+function persistEssentialsDraft(draft: SimpleSetupDraft): void {
+  setAccountDraft(draft.account);
+  setPathDraft(draft.path);
+  setProjectDraft(draft.project);
+
+  const store = useSetupStore.getState();
+  store.setAccountValid(true);
+  store.setPathValid(true);
+  store.setProjectValid(true);
+  store.setAdminPath(draft.path.adminPath);
+}
+
+function persistPolicyPreset(preset: PolicyPresetId): void {
+  const parsed = lockoutPolicySchema.parse({
+    ...POLICY_PRESETS[preset],
+  });
+  setPolicyDraft(parsed);
+  useSetupStore.getState().setPolicyValid(true);
 }
 
 function firstIssueMessage(error: z.ZodError): string {
