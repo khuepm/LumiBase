@@ -54,6 +54,17 @@ export interface CompiledField {
   type: string;
   interface: string;
   display: string | null;
+  label: string | null;
+  note: string | null;
+  defaultValue: unknown;
+  nullable: boolean;
+  unique: boolean;
+  indexed: boolean;
+  searchable: boolean;
+  length: number | null;
+  precision: number | null;
+  scale: number | null;
+  special: unknown[];
   options: Record<string, unknown>;
   displayOptions: Record<string, unknown>;
   validation: Record<string, unknown>;
@@ -96,12 +107,24 @@ export interface CollectionInput {
 
 export type PrimaryKeyType = 'nanoid' | 'uuid' | 'integer' | 'bigInteger' | 'string';
 export type StorageMode = 'jsonb' | 'materialized' | 'physical' | 'external';
+type FieldRow = typeof fields.$inferSelect;
 
 export interface FieldInput {
   name: string;
   type: string;
   interface: string;
   display?: string | null;
+  label?: string | null;
+  note?: string | null;
+  defaultValue?: unknown;
+  nullable?: boolean;
+  unique?: boolean;
+  indexed?: boolean;
+  searchable?: boolean;
+  length?: number | null;
+  precision?: number | null;
+  scale?: number | null;
+  special?: unknown[];
   options?: Record<string, unknown>;
   displayOptions?: Record<string, unknown>;
   validation?: Record<string, unknown>;
@@ -482,26 +505,7 @@ export class SchemaService {
       accountability: collection.accountability as 'all' | 'activity' | 'none',
       versioning: collection.versioning,
       meta: (collection.meta as Record<string, unknown>) ?? {},
-      fields: fieldRows.map((f) => ({
-        id: f.id,
-        name: f.name,
-        type: f.type,
-        interface: f.interface,
-        display: f.display,
-        options: (f.options as Record<string, unknown>) ?? {},
-        displayOptions: (f.displayOptions as Record<string, unknown>) ?? {},
-        validation: (f.validation as Record<string, unknown>) ?? { rules: [] },
-        conditions: (f.conditions as unknown[]) ?? [],
-        required: f.required,
-        readonly: f.readonly,
-        hidden: f.hidden,
-        encrypted: f.encrypted,
-        versioned: f.versioned,
-        rawEnabled: f.rawEnabled,
-        width: f.width as 'half' | 'full' | 'fill',
-        group: f.group,
-        sortOrder: f.sortOrder,
-      })),
+      fields: fieldRows.map(compileField),
     };
     if (this.deps.cache) {
       await this.deps.cache.set(cacheKey(this.deps.siteId, collectionName), JSON.stringify(compiled), {
@@ -528,6 +532,40 @@ export class SchemaService {
 
   // Re-export bare schema so callers can build custom queries when needed.
   static readonly schema = schema;
+}
+
+export function compileField(f: FieldRow): CompiledField {
+  return {
+    id: f.id,
+    name: f.name,
+    type: f.type,
+    interface: f.interface,
+    display: f.display,
+    label: f.label,
+    note: f.note,
+    defaultValue: f.defaultValue,
+    nullable: f.nullable,
+    unique: f.unique,
+    indexed: f.indexed,
+    searchable: f.searchable,
+    length: f.length,
+    precision: f.precision,
+    scale: f.scale,
+    special: (f.special as unknown[]) ?? [],
+    options: (f.options as Record<string, unknown>) ?? {},
+    displayOptions: (f.displayOptions as Record<string, unknown>) ?? {},
+    validation: (f.validation as Record<string, unknown>) ?? { rules: [] },
+    conditions: (f.conditions as unknown[]) ?? [],
+    required: f.required,
+    readonly: f.readonly,
+    hidden: f.hidden,
+    encrypted: f.encrypted,
+    versioned: f.versioned,
+    rawEnabled: f.rawEnabled,
+    width: f.width as 'half' | 'full' | 'fill',
+    group: f.group,
+    sortOrder: f.sortOrder,
+  };
 }
 
 export function relationReferencesCollection(

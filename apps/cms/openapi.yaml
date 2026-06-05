@@ -118,6 +118,19 @@ components:
         type: { type: string }
         interface: { type: string }
         display: { type: string, nullable: true }
+        label: { type: string, nullable: true }
+        note: { type: string, nullable: true }
+        defaultValue: {}
+        nullable: { type: boolean }
+        unique: { type: boolean }
+        indexed: { type: boolean }
+        searchable: { type: boolean }
+        length: { type: integer, nullable: true }
+        precision: { type: integer, nullable: true }
+        scale: { type: integer, nullable: true }
+        special:
+          type: array
+          items: { type: string }
         options: { type: object, additionalProperties: true }
         displayOptions: { type: object, additionalProperties: true }
         validation: { type: object, additionalProperties: true }
