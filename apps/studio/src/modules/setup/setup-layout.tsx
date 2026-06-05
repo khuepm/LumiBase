@@ -106,11 +106,31 @@ export function SetupLayout({ children, activeStep }: SetupLayoutProps) {
   const currentDescriptor = STEP_TABLE.find((s) => s.id === current) ?? STEP_TABLE[0]!;
 
   return (
-    <div className="min-h-screen bg-muted/30 px-4 py-10 sm:py-16">
-      <div className="mx-auto w-full max-w-2xl">
-        <header className="mb-8 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">LumiBase Setup</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+    <div className="min-h-screen bg-muted/30 px-4 py-8 sm:py-12">
+      <div className="mx-auto w-full max-w-4xl space-y-6">
+        <header className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase text-primary">
+                Advanced setup
+              </p>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Set up Lumibase with full controls
+              </h1>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                Use the full wizard when you want to tune admin path,
+                security policy, project identity, and recovery settings one
+                screen at a time.
+              </p>
+            </div>
+            <a
+              href="/setup/simple"
+              className="inline-flex items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted"
+            >
+              Quick setup
+            </a>
+          </div>
+          <p className="text-sm text-muted-foreground">
             {currentDescriptor.description}
           </p>
         </header>
@@ -118,7 +138,7 @@ export function SetupLayout({ children, activeStep }: SetupLayoutProps) {
         <ProgressIndicator current={current} />
 
         <main
-          className="mt-8 rounded-xl border bg-background p-6 shadow-sm sm:p-8"
+          className="rounded-md border bg-background p-5 shadow-sm sm:p-6"
           role="main"
           aria-labelledby="setup-step-heading"
         >

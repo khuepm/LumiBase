@@ -375,7 +375,7 @@ function EssentialsStep({
     <div className="space-y-6">
       <header className="space-y-1">
         <h2 className="text-lg font-semibold tracking-tight">
-          Account, admin URL, and project identity
+          Account and admin URL
         </h2>
         <p className="text-sm text-muted-foreground">
           These are the setup values that cannot be inferred safely. Project
