@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ItemService,
   parseDeepQueryParams,
   parseRelationFieldSelections,
   projectFields,
@@ -129,3 +130,151 @@ describe('ItemService relation expansion helpers', () => {
     });
   });
 });
+
+describe('ItemService relation expansion batching', () => {
+  it('expands M2O relations to objects with one batched related query', async () => {
+    const db = makeQueuedDb([
+      [
+        {
+          siteId: 'site-1',
+          manyCollection: 'posts',
+          manyField: 'author_id',
+          oneCollection: 'authors',
+          type: 'm2o',
+          aliasField: null,
+        },
+      ],
+      [
+        itemRow('author-1', 'authors', { name: 'Ada', email: 'ada@example.test' }),
+        itemRow('author-2', 'authors', { name: 'Grace', email: 'grace@example.test' }),
+      ],
+    ]);
+    const service = makeExpansionService(db);
+    const rows = [
+      itemRow('post-1', 'posts', { author_id: 'author-1' }),
+      itemRow('post-2', 'posts', { author_id: 'author-2' }),
+    ];
+
+    await service.expandRelationFields('posts', rows, ['author.name']);
+
+    expect(rows.map((row) => row.data.author)).toEqual([
+      { name: 'Ada' },
+      { name: 'Grace' },
+    ]);
+    expect(db.calls).toHaveLength(2);
+  });
+
+  it('expands O2M relations to arrays with one batched child query', async () => {
+    const db = makeQueuedDb([
+      [
+        {
+          siteId: 'site-1',
+          manyCollection: 'comments',
+          manyField: 'post_id',
+          oneCollection: 'posts',
+          type: 'o2m',
+          aliasField: 'comments',
+        },
+      ],
+      [
+        itemRow('comment-1', 'comments', { post_id: 'post-1', body: 'First' }),
+        itemRow('comment-2', 'comments', { post_id: 'post-1', body: 'Second' }),
+        itemRow('comment-3', 'comments', { post_id: 'post-2', body: 'Third' }),
+      ],
+    ]);
+    const service = makeExpansionService(db);
+    const rows = [itemRow('post-1', 'posts', {}), itemRow('post-2', 'posts', {})];
+
+    await service.expandRelationFields('posts', rows, ['comments.body']);
+
+    expect(rows.map((row) => row.data.comments)).toEqual([
+      [{ body: 'First' }, { body: 'Second' }],
+      [{ body: 'Third' }],
+    ]);
+    expect(db.calls).toHaveLength(2);
+  });
+
+  it('expands M2M relations to arrays with batched junction and target queries', async () => {
+    const db = makeQueuedDb([
+      [
+        {
+          siteId: 'site-1',
+          manyCollection: 'posts',
+          manyField: 'id',
+          oneCollection: 'categories',
+          type: 'm2m',
+          aliasField: null,
+          junctionCollection: 'posts_categories',
+          junctionManyField: 'post_id',
+          junctionOneField: 'category_id',
+        },
+      ],
+      [
+        itemRow('junction-1', 'posts_categories', { post_id: 'post-1', category_id: 'category-1' }),
+        itemRow('junction-2', 'posts_categories', { post_id: 'post-1', category_id: 'category-2' }),
+        itemRow('junction-3', 'posts_categories', { post_id: 'post-2', category_id: 'category-2' }),
+      ],
+      [
+        itemRow('category-1', 'categories', { name: 'News' }),
+        itemRow('category-2', 'categories', { name: 'Ops' }),
+      ],
+    ]);
+    const service = makeExpansionService(db);
+    const rows = [itemRow('post-1', 'posts', {}), itemRow('post-2', 'posts', {})];
+
+    await service.expandRelationFields('posts', rows, ['categories.name']);
+
+    expect(rows.map((row) => row.data.categories)).toEqual([
+      [{ name: 'News' }, { name: 'Ops' }],
+      [{ name: 'Ops' }],
+    ]);
+    expect(db.calls).toHaveLength(3);
+  });
+});
+
+function itemRow(id: string, collectionName: string, data: Record<string, unknown>): ItemRow {
+  return {
+    ...baseRow,
+    id,
+    collectionId: `collection-${collectionName}`,
+    data,
+  };
+}
+
+function makeExpansionService(db: ReturnType<typeof makeQueuedDb>) {
+  const service = new ItemService({
+    db: db as never,
+    siteId: 'site-1',
+  }) as unknown as {
+    expandRelationFields: (
+      collectionName: string,
+      rows: ItemRow[],
+      fields: string[],
+    ) => Promise<ItemRow[]>;
+    resolveCollection: (name: string) => Promise<{ id: string; name: string }>;
+    schemaService: { getCompiled: () => Promise<{ fields: Array<{ name: string }> }> };
+  };
+  service.resolveCollection = async (name: string) => ({ id: `collection-${name}`, name });
+  service.schemaService = {
+    getCompiled: async () => ({ fields: [{ name: 'name' }, { name: 'body' }, { name: 'email' }] }),
+  };
+  return service;
+}
+
+function makeQueuedDb(results: unknown[][]) {
+  const calls: Array<{ op: 'select' }> = [];
+  return {
+    calls,
+    select() {
+      calls.push({ op: 'select' });
+      return {
+        from() {
+          return this;
+        },
+        where() {
+          return Promise.resolve(results.shift() ?? []);
+        },
+      };
+    },
+  };
+}
