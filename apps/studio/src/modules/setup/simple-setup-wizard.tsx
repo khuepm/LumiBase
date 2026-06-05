@@ -275,7 +275,12 @@ export function SimpleSetupWizard() {
               Advanced setup
             </button>
           </div>
-          <SimpleProgress activeIndex={activeIndex} />
+          <SimpleProgress
+            activeIndex={activeIndex}
+            onStepSelect={(selectedStep) => {
+              if (selectedStep === 'essentials') setStep('essentials');
+            }}
+          />
         </header>
 
         <section className="rounded-md border bg-background p-5 shadow-sm sm:p-6">
@@ -782,12 +787,43 @@ function RecoveryStep({ completion }: { completion: SetupCompleteResponse }) {
   );
 }
 
-function SimpleProgress({ activeIndex }: { activeIndex: number }) {
+function SimpleProgress({
+  activeIndex,
+  onStepSelect,
+}: {
+  activeIndex: number;
+  onStepSelect: (step: SimpleStep) => void;
+}) {
   return (
     <ol className="grid gap-2 sm:grid-cols-3">
       {SIMPLE_STEPS.map((item, index) => {
         const done = index < activeIndex;
         const active = index === activeIndex;
+        const canNavigateBack = done && activeIndex < SIMPLE_STEPS.length - 1;
+        const marker = (
+          <span className="flex items-center gap-2">
+            <span
+              className={
+                done
+                  ? 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground'
+                  : active
+                    ? 'inline-flex h-6 w-6 items-center justify-center rounded-full border border-primary text-xs font-semibold text-primary'
+                    : 'inline-flex h-6 w-6 items-center justify-center rounded-full border border-border text-xs font-semibold text-muted-foreground'
+              }
+            >
+              {done ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : index + 1}
+            </span>
+            <span
+              className={
+                active || canNavigateBack
+                  ? 'font-medium text-foreground'
+                  : 'text-muted-foreground'
+              }
+            >
+              {item.title}
+            </span>
+          </span>
+        );
         return (
           <li
             key={item.id}
@@ -797,22 +833,18 @@ function SimpleProgress({ activeIndex }: { activeIndex: number }) {
                 : 'rounded-md border border-border bg-background p-3 text-sm'
             }
           >
-            <span className="flex items-center gap-2">
-              <span
-                className={
-                  done
-                    ? 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground'
-                    : active
-                      ? 'inline-flex h-6 w-6 items-center justify-center rounded-full border border-primary text-xs font-semibold text-primary'
-                      : 'inline-flex h-6 w-6 items-center justify-center rounded-full border border-border text-xs font-semibold text-muted-foreground'
-                }
+            {canNavigateBack ? (
+              <button
+                type="button"
+                onClick={() => onStepSelect(item.id)}
+                className="rounded-md outline-none transition hover:opacity-85 focus-visible:ring-2 focus-visible:ring-primary/30"
+                aria-label={`Edit ${item.title}`}
               >
-                {done ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : index + 1}
-              </span>
-              <span className={active ? 'font-medium text-foreground' : 'text-muted-foreground'}>
-                {item.title}
-              </span>
-            </span>
+                {marker}
+              </button>
+            ) : (
+              marker
+            )}
           </li>
         );
       })}
