@@ -66,6 +66,7 @@ const StepSecurity = lazy(() => import('./modules/setup/steps/step-security').th
 const StepProject = lazy(() => import('./modules/setup/steps/step-project').then((m) => ({ default: m.StepProject })));
 const StepRecovery = lazy(() => import('./modules/setup/steps/step-recovery').then((m) => ({ default: m.StepRecovery })));
 const StepDone = lazy(() => import('./modules/setup/steps/step-done').then((m) => ({ default: m.StepDone })));
+const SimpleSetupWizard = lazy(() => import('./modules/setup/simple-setup-wizard').then((m) => ({ default: m.SimpleSetupWizard })));
 const AdminLoginPage = lazy(() => import('./modules/auth/admin-login-page').then((m) => ({ default: m.AdminLoginPage })));
 
 let setupBackupCodes: readonly string[] = [];
@@ -241,17 +242,15 @@ const setupShellRoute = createRoute({
 });
 
 /**
- * Index route for `/setup`. The wizard has no body of its own at this
- * URL — it always forwards to the earliest unsatisfied step so a fresh
- * visit lands on Account, a refresh mid-flow lands back on the right
- * step, and a post-completion deep-link drops onto Done.
+ * Index route for `/setup`. New operators land on the 3-step quick
+ * setup by default. The full six-step flow remains available through
+ * `/setup/advance` for advanced security/project tuning.
  */
 const setupIndexRoute = createRoute({
   getParentRoute: () => setupShellRoute,
   path: '/setup',
   beforeLoad: () => {
-    const state = useSetupStore.getState();
-    throw redirect({ to: getEarliestUnsatisfiedStep(state) });
+    throw redirect({ to: '/setup/account' });
   },
   // Component is unreachable because beforeLoad always redirects; kept
   // as a safety net so a future router quirk that bypasses beforeLoad
@@ -259,9 +258,21 @@ const setupIndexRoute = createRoute({
   component: withSuspense(StepAccount),
 });
 
+const setupSimpleRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: '/setup/account',
+  component: () => (
+    <SetupStateGate>
+      <Suspense fallback={<PageLoader />}>
+        <SimpleSetupWizard />
+      </Suspense>
+    </SetupStateGate>
+  ),
+});
+
 const setupAccountRoute = createRoute({
   getParentRoute: () => setupShellRoute,
-  path: '/setup/account',
+  path: '/setup/advance',
   component: () => {
     const navigate = useNavigate();
     return (
@@ -279,7 +290,7 @@ const setupPathRoute = createRoute({
     // Operators must complete the Account step before they can pick
     // an admin path; deep-linking past Account redirects back.
     if (!useSetupStore.getState().accountValid) {
-      throw redirect({ to: '/setup/account' });
+      throw redirect({ to: '/setup/advance' });
     }
   },
   component: () => {
@@ -916,6 +927,7 @@ const routeTree = rootRoute.addChildren([
   // Children of publicLayoutRoute (e.g. /setup, /recovery) are added in
   // subsequent tasks for the admin-setup-wizard spec.
   publicLayoutRoute.addChildren([
+    setupSimpleRoute,
     setupShellRoute.addChildren([
       setupIndexRoute,
       setupAccountRoute,

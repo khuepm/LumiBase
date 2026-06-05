@@ -93,10 +93,11 @@ export function clearAccountDraft(): void {
 }
 
 /**
- * Internal setter — only the step-account component should reach it.
- * Exported via `getAccountDraft`/`clearAccountDraft` only.
+ * Write the in-memory account draft. The account step owns normal form
+ * submission, while alternate setup surfaces use this for same-tab
+ * handoff before opening the full wizard.
  */
-function setAccountDraft(value: AccountFormValues): void {
+export function setAccountDraft(value: AccountFormValues): void {
   accountDraft = value;
 }
 

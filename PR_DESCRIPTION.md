@@ -51,7 +51,7 @@ Access Control roadmap: Role / Policy / Permission hardening, API keys theo role
 - [x] Viết unit test cho logic mới — access import/export, access conflicts, share service, API key security, extension access.
 - [x] Viết integration test cho các endpoint / service — access import route, extension access routes, API key middleware/security gates.
 - [x] Với logic phức tạp / boundary conditions: có property-based test (fast-check) — access conflict classifier property tests, import idempotency/security invariants.
-- [ ] Test thủ công trên Docker runtime (`docker compose up`) — stack build/start OK, CMS lắng nghe `11989 -> 1989`, `/health` trả `200 OK`; payload hiện `degraded` vì cache/storage unhealthy trong smoke compose.
+- [x] Test thủ công trên Docker runtime (`docker compose up`) — stack build/start OK, CMS lắng nghe `11989 -> 1989`, `/health` trả `200 OK` với `status: "healthy"` và tất cả services healthy.
 
 ### Runtime Compatibility
 

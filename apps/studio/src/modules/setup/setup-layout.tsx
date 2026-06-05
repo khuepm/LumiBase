@@ -1,4 +1,4 @@
-import { useRouterState } from '@tanstack/react-router';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -14,17 +14,25 @@ export type SetupStep = (typeof SETUP_STEPS)[number];
 interface StepDescriptor {
   id: SetupStep;
   /** URL path for this step under the public layout. */
-  path: `/setup/${SetupStep}`;
+  path: SetupStepPath;
   /** Short label rendered in the progress indicator. */
   label: string;
   /** Long description for the active step (rendered as subtitle). */
   description: string;
 }
 
+type SetupStepPath =
+  | '/setup/advance'
+  | '/setup/path'
+  | '/setup/security'
+  | '/setup/project'
+  | '/setup/recovery'
+  | '/setup/done';
+
 const STEP_TABLE: ReadonlyArray<StepDescriptor> = [
   {
     id: 'account',
-    path: '/setup/account',
+    path: '/setup/advance',
     label: 'Account',
     description: 'Create the first administrator account.',
   },
@@ -102,15 +110,37 @@ interface SetupLayoutProps {
  */
 export function SetupLayout({ children, activeStep }: SetupLayoutProps) {
   const { location } = useRouterState();
+  const navigate = useNavigate();
   const current = activeStep ?? resolveSetupStep(location.pathname);
   const currentDescriptor = STEP_TABLE.find((s) => s.id === current) ?? STEP_TABLE[0]!;
 
   return (
-    <div className="min-h-screen bg-muted/30 px-4 py-10 sm:py-16">
-      <div className="mx-auto w-full max-w-2xl">
-        <header className="mb-8 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">LumiBase Setup</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+    <div className="min-h-screen bg-muted/30 px-4 py-8 sm:py-12">
+      <div className="mx-auto w-full max-w-4xl space-y-6">
+        <header className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase text-primary">
+                Advanced setup
+              </p>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Set up Lumibase with full controls
+              </h1>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                Use the full wizard when you want to tune admin path,
+                security policy, project identity, and recovery settings one
+                screen at a time.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate({ to: '/setup/account' })}
+              className="inline-flex items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted"
+            >
+              Quick setup
+            </button>
+          </div>
+          <p className="text-sm text-muted-foreground">
             {currentDescriptor.description}
           </p>
         </header>
@@ -118,7 +148,7 @@ export function SetupLayout({ children, activeStep }: SetupLayoutProps) {
         <ProgressIndicator current={current} />
 
         <main
-          className="mt-8 rounded-xl border bg-background p-6 shadow-sm sm:p-8"
+          className="rounded-md border bg-background p-5 shadow-sm sm:p-6"
           role="main"
           aria-labelledby="setup-step-heading"
         >
@@ -140,7 +170,10 @@ interface ProgressIndicatorProps {
  * users can read progress at a glance.
  */
 function ProgressIndicator({ current }: ProgressIndicatorProps) {
+  const navigate = useNavigate();
   const currentIndex = STEP_TABLE.findIndex((s) => s.id === current);
+  const recoveryIndex = STEP_TABLE.findIndex((s) => s.id === 'recovery');
+  const allowBackNavigation = currentIndex >= 0 && currentIndex < recoveryIndex;
 
   return (
     <ol
@@ -152,6 +185,31 @@ function ProgressIndicator({ current }: ProgressIndicatorProps) {
         const isCompleted = index < currentIndex;
         const isActive = index === currentIndex;
         const isLast = index === STEP_TABLE.length - 1;
+        const canNavigateBack = allowBackNavigation && isCompleted;
+        const stepMarker = (
+          <>
+            <span
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium',
+                isCompleted && 'border-primary bg-primary text-primary-foreground',
+                isActive && 'border-primary bg-background text-primary ring-2 ring-primary/20',
+                !isCompleted && !isActive && 'border-border bg-background text-muted-foreground',
+              )}
+              aria-hidden="true"
+            >
+              {isCompleted ? <Check className="h-4 w-4" /> : index + 1}
+            </span>
+            <span
+              className={cn(
+                'mt-2 text-xs',
+                isActive ? 'font-medium text-foreground' : 'text-muted-foreground',
+                canNavigateBack && 'text-foreground',
+              )}
+            >
+              {step.label}
+            </span>
+          </>
+        );
 
         return (
           <li
@@ -159,27 +217,18 @@ function ProgressIndicator({ current }: ProgressIndicatorProps) {
             className={cn('flex items-center', isLast ? 'flex-none' : 'flex-1')}
             aria-current={isActive ? 'step' : undefined}
           >
-            <div className="flex flex-col items-center">
-              <span
-                className={cn(
-                  'flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium',
-                  isCompleted && 'border-primary bg-primary text-primary-foreground',
-                  isActive && 'border-primary bg-background text-primary ring-2 ring-primary/20',
-                  !isCompleted && !isActive && 'border-border bg-background text-muted-foreground',
-                )}
-                aria-hidden="true"
+            {canNavigateBack ? (
+              <button
+                type="button"
+                onClick={() => navigate({ to: step.path })}
+                className="flex flex-col items-center rounded-md outline-none transition hover:opacity-85 focus-visible:ring-2 focus-visible:ring-primary/30"
+                aria-label={`Edit ${step.label}`}
               >
-                {isCompleted ? <Check className="h-4 w-4" /> : index + 1}
-              </span>
-              <span
-                className={cn(
-                  'mt-2 text-xs',
-                  isActive ? 'font-medium text-foreground' : 'text-muted-foreground',
-                )}
-              >
-                {step.label}
-              </span>
-            </div>
+                {stepMarker}
+              </button>
+            ) : (
+              <div className="flex flex-col items-center">{stepMarker}</div>
+            )}
 
             {!isLast && (
               <span
