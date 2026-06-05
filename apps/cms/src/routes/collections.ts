@@ -80,6 +80,9 @@ const fieldInputSchema = z.object({
   width: z.enum(['half', 'full', 'fill']).optional(),
   group: z.string().nullable().optional(),
   sortOrder: z.number().int().optional(),
+  renameFrom: z.string().min(1).max(63).regex(/^[a-z][a-z0-9_]{0,62}$/).optional(),
+  migrationPlan: z.record(z.unknown()).optional(),
+  confirmRiskyChange: z.boolean().optional(),
 });
 
 const schemaInputSchema = collectionInputSchema

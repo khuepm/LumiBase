@@ -389,8 +389,8 @@ Mục tiêu: nâng cấp Data Model / Collections Builder để một collection
 - [x] `[FE]` Fields tab hiển thị system fields trong locked group; cho cấu hình display/hidden/readonly/translations/width nhưng không cho xoá.
 - [x] `[DB]` Thêm field metadata: `label`, `note`, `defaultValue`, `nullable`, `unique`, `indexed`, `searchable`, `length`, `precision`, `scale`, `special`.
 - [x] `[FE]` FieldInspector advanced tabs: Basics, Options, Display, Validation, Conditions, Layout, Storage, Translations.
-- [ ] `[BE]` Tách create/update/rename/delete/migration field path; reject đổi type/name khi đã có data nếu chưa có migration plan.
-- [ ] `[TEST]` FieldInspector không làm mất unknown `options/displayOptions/validation/conditions`; risky changes trả `409` hoặc cần confirm.
+- [x] `[BE]` Tách create/update/rename/delete/migration field path; reject đổi type/name khi đã có data nếu chưa có migration plan.
+- [x] `[TEST]` FieldInspector không làm mất unknown `options/displayOptions/validation/conditions`; risky changes trả `409` hoặc cần confirm.
 
 ### Milestone 4 — Relations parity và deep read
 

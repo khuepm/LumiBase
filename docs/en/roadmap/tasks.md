@@ -389,8 +389,8 @@ Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Di
 - [x] `[FE]` Fields tab renders system fields in a locked group; allow display/hidden/readonly/translations/width config but not deletion.
 - [x] `[DB]` Add field metadata: `label`, `note`, `defaultValue`, `nullable`, `unique`, `indexed`, `searchable`, `length`, `precision`, `scale`, `special`.
 - [x] `[FE]` FieldInspector advanced tabs: Basics, Options, Display, Validation, Conditions, Layout, Storage, Translations.
-- [ ] `[BE]` Split create/update/rename/delete/migration field paths; reject type/name changes when data exists unless a migration plan exists.
-- [ ] `[TEST]` FieldInspector preserves unknown `options/displayOptions/validation/conditions`; risky changes return `409` or require confirmation.
+- [x] `[BE]` Split create/update/rename/delete/migration field paths; reject type/name changes when data exists unless a migration plan exists.
+- [x] `[TEST]` FieldInspector preserves unknown `options/displayOptions/validation/conditions`; risky changes return `409` or require confirmation.
 
 ### Milestone 4 — Relations parity and deep read
 

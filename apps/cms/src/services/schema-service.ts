@@ -1,12 +1,13 @@
 import {
   collections,
   fields,
+  items,
   relations,
   scopeSite,
   schema,
   type Database,
 } from '@lumibase/database';
-import { and, asc, eq, or } from 'drizzle-orm';
+import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import type { CacheProvider } from '@lumibase/runtime';
 
 /**
@@ -148,6 +149,17 @@ export interface FieldInput {
   width?: 'half' | 'full' | 'fill';
   group?: string | null;
   sortOrder?: number;
+  renameFrom?: string;
+  migrationPlan?: Record<string, unknown>;
+  confirmRiskyChange?: boolean;
+}
+
+type FieldDbInput = Omit<FieldInput, 'renameFrom' | 'migrationPlan' | 'confirmRiskyChange'>;
+
+export interface FieldMutationRisk {
+  risky: boolean;
+  changes: Array<'rename' | 'type'>;
+  requiresMigrationPlan: boolean;
 }
 
 export interface RelationInput {
@@ -314,6 +326,9 @@ export class SchemaService {
     if (!collection) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
     }
+    if (input.renameFrom && input.renameFrom !== input.name) {
+      return this.renameField(collectionName, input.renameFrom, input);
+    }
     const [existing] = await this.deps.db
       .select()
       .from(fields)
@@ -321,18 +336,86 @@ export class SchemaService {
       .limit(1);
 
     if (existing) {
-      const [row] = await this.deps.db
-        .update(fields)
-        .set({ ...input, updatedAt: new Date() })
-        .where(eq(fields.id, existing.id))
-        .returning();
-      await this.invalidate(collection.name);
-      return row;
+      return this.updateField(collectionName, input.name, input);
     }
 
+    return this.createField(collectionName, input);
+  }
+
+  async createField(collectionName: string, input: FieldInput) {
+    ensureName(input.name, 'field');
+    const collection = await this.getCollection(collectionName);
+    if (!collection) {
+      throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
+    }
     const [row] = await this.deps.db
       .insert(fields)
-      .values({ ...input, collectionId: collection.id, siteId: this.deps.siteId })
+      .values({ ...toFieldDbInput(input), collectionId: collection.id, siteId: this.deps.siteId })
+      .returning();
+    await this.invalidate(collection.name);
+    return row;
+  }
+
+  async updateField(collectionName: string, fieldName: string, input: Partial<FieldInput> & { name?: string }) {
+    const collection = await this.getCollection(collectionName);
+    if (!collection) {
+      throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
+    }
+    const [existing] = await this.deps.db
+      .select()
+      .from(fields)
+      .where(and(eq(fields.collectionId, collection.id), eq(fields.name, fieldName)))
+      .limit(1);
+    if (!existing) {
+      throw new SchemaServiceError('NOT_FOUND', `Field "${fieldName}" not found.`, 404);
+    }
+    const nextName = input.name ?? fieldName;
+    if (nextName !== fieldName) {
+      return this.renameField(collectionName, fieldName, { ...input, name: nextName } as FieldInput);
+    }
+    const populatedRows = await this.countFieldDataRows(collection.id, fieldName);
+    assertFieldMutationAllowed(
+      existing,
+      { ...input, name: fieldName },
+      populatedRows,
+      {
+        migrationPlan: input.migrationPlan,
+        confirmRiskyChange: input.confirmRiskyChange,
+      },
+    );
+    const [row] = await this.deps.db
+      .update(fields)
+      .set({ ...toFieldDbInput({ ...input, name: fieldName }), updatedAt: new Date() })
+      .where(eq(fields.id, existing.id))
+      .returning();
+    await this.invalidate(collection.name);
+    return row;
+  }
+
+  async renameField(collectionName: string, fieldName: string, input: FieldInput) {
+    ensureName(fieldName, 'field');
+    ensureName(input.name, 'field');
+    const collection = await this.getCollection(collectionName);
+    if (!collection) {
+      throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
+    }
+    const [existing] = await this.deps.db
+      .select()
+      .from(fields)
+      .where(and(eq(fields.collectionId, collection.id), eq(fields.name, fieldName)))
+      .limit(1);
+    if (!existing) {
+      throw new SchemaServiceError('NOT_FOUND', `Field "${fieldName}" not found.`, 404);
+    }
+    const populatedRows = await this.countFieldDataRows(collection.id, fieldName);
+    assertFieldMutationAllowed(existing, input, populatedRows, {
+      migrationPlan: input.migrationPlan,
+      confirmRiskyChange: input.confirmRiskyChange,
+    });
+    const [row] = await this.deps.db
+      .update(fields)
+      .set({ ...toFieldDbInput(input), updatedAt: new Date() })
+      .where(eq(fields.id, existing.id))
       .returning();
     await this.invalidate(collection.name);
     return row;
@@ -372,6 +455,21 @@ export class SchemaService {
     }
     await this.invalidate(collection.name);
     return { ok: true } as const;
+  }
+
+  private async countFieldDataRows(collectionId: string, fieldName: string): Promise<number> {
+    const [row] = await this.deps.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, collectionId),
+          isNull(items.deletedAt),
+          sql`${items.data} ? ${fieldName}`,
+        ),
+      );
+    return row?.count ?? 0;
   }
 
   // ---------- Relations ----------
@@ -800,6 +898,47 @@ export function compileField(f: FieldRow): CompiledField {
     group: f.group,
     sortOrder: f.sortOrder,
   };
+}
+
+export function assessFieldMutationRisk(
+  existing: Pick<FieldRow, 'name' | 'type'>,
+  next: Pick<FieldInput, 'name'> & Partial<Pick<FieldInput, 'type'>>,
+  populatedRows: number,
+): FieldMutationRisk {
+  const changes: FieldMutationRisk['changes'] = [];
+  if (next.name !== existing.name) changes.push('rename');
+  if (next.type && next.type !== existing.type) changes.push('type');
+  return {
+    risky: populatedRows > 0 && changes.length > 0,
+    changes,
+    requiresMigrationPlan: populatedRows > 0 && changes.length > 0,
+  };
+}
+
+export function assertFieldMutationAllowed(
+  existing: Pick<FieldRow, 'name' | 'type'>,
+  next: Pick<FieldInput, 'name'> & Partial<Pick<FieldInput, 'type'>>,
+  populatedRows: number,
+  options: Pick<FieldInput, 'migrationPlan' | 'confirmRiskyChange'> = {},
+) {
+  const risk = assessFieldMutationRisk(existing, next, populatedRows);
+  if (!risk.risky) return risk;
+  if (options.migrationPlan || options.confirmRiskyChange) return risk;
+  throw new SchemaServiceError(
+    'FIELD_MIGRATION_REQUIRED',
+    `Changing ${risk.changes.join('/')} for populated field "${existing.name}" requires a migration plan or explicit confirmation.`,
+    409,
+  );
+}
+
+function toFieldDbInput(input: FieldInput): FieldDbInput;
+function toFieldDbInput(input: Partial<FieldInput>): Partial<FieldDbInput>;
+function toFieldDbInput(input: FieldInput | Partial<FieldInput>): FieldDbInput | Partial<FieldDbInput> {
+  const { renameFrom, migrationPlan, confirmRiskyChange, ...dbInput } = input;
+  void renameFrom;
+  void migrationPlan;
+  void confirmRiskyChange;
+  return dbInput;
 }
 
 export function relationReferencesCollection(

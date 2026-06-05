@@ -67,6 +67,9 @@ export interface FieldResource {
   locked?: boolean;
   generated?: boolean;
   column?: string;
+  renameFrom?: string;
+  migrationPlan?: Record<string, unknown>;
+  confirmRiskyChange?: boolean;
   [key: string]: unknown;
 }
 
