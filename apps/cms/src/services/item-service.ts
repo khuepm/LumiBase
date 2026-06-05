@@ -3,13 +3,14 @@ import {
   collections,
   extensions as extensionsTable,
   items,
+  relations,
   revisions,
   scopeSite,
   materializedCollections,
   type Database,
 } from '@lumibase/database';
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
-import { and, asc, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
 import { validateItem } from './validation';
 import type { CacheProvider, SearchProvider, QueueProvider } from '@lumibase/runtime';
@@ -380,11 +381,15 @@ export class ItemService {
       ? rows.map((r) => this.permissions!.maskItem(perm, r as ItemRow, knownFields))
       : rows;
 
-    const data = [];
+    const decrypted: ItemRow[] = [];
     for (const r of masked) {
       r.data = await this.processCrypto(collectionName, r.data as Record<string, unknown>, 'decrypt', false);
-      data.push(params.fields ? projectFields(r as ItemRow, params.fields) : r);
+      decrypted.push(r as ItemRow);
     }
+    const expanded = params.fields
+      ? await this.expandRelationFields(collectionName, decrypted, params.fields)
+      : decrypted;
+    const data = expanded.map((r) => (params.fields ? projectFields(r, params.fields) : r));
 
     return {
       data,
@@ -413,7 +418,9 @@ export class ItemService {
     const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
     const masked = perm && this.permissions ? this.permissions.maskItem(perm, row as ItemRow, knownFields) : row;
     masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', false);
-    return fields ? projectFields(masked as ItemRow, fields) : masked;
+    if (!fields) return masked;
+    const [expanded] = await this.expandRelationFields(collectionName, [masked as ItemRow], fields);
+    return projectFields(expanded ?? masked as ItemRow, fields);
   }
 
   async create(collectionName: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) {
@@ -724,6 +731,78 @@ export class ItemService {
     const compiled = await this.schemaService.getCompiled(collectionName);
     const dataFields = compiled?.fields.map((f) => f.name) ?? [];
     return [...dataFields, ...WRITABLE_STRUCTURAL_FIELDS];
+  }
+
+  private async expandRelationFields(
+    collectionName: string,
+    rows: ItemRow[],
+    fields: string[],
+  ): Promise<ItemRow[]> {
+    const selections = parseRelationFieldSelections(fields);
+    if (rows.length === 0 || selections.length === 0) return rows;
+    const relationRows = await this.deps.db
+      .select()
+      .from(relations)
+      .where(
+        and(
+          scopeSite(relations.siteId, this.deps.siteId),
+          eq(relations.manyCollection, collectionName),
+          eq(relations.type, 'm2o'),
+        ),
+      );
+
+    for (const rel of relationRows) {
+      const alias = relationAlias(rel);
+      const selected = selections.find((selection) => selection.alias === alias);
+      if (!selected) continue;
+      const foreignIds = [
+        ...new Set(
+          rows
+            .map((row) => row.data?.[rel.manyField])
+            .filter((value): value is string => typeof value === 'string' && value.length > 0),
+        ),
+      ];
+      if (foreignIds.length === 0) {
+        for (const row of rows) {
+          row.data = { ...(row.data ?? {}), [alias]: null };
+        }
+        continue;
+      }
+
+      const relatedCollection = await this.resolveCollection(rel.oneCollection);
+      const relatedPerm = await this.perm(rel.oneCollection, 'read');
+      const relatedPermClause = this.permissions?.whereFor(relatedPerm) ?? undefined;
+      const relatedRows = await this.deps.db
+        .select()
+        .from(items)
+        .where(
+          and(
+            scopeSite(items.siteId, this.deps.siteId),
+            eq(items.collectionId, relatedCollection.id),
+            inArray(items.id, foreignIds),
+            isNull(items.deletedAt),
+            relatedPermClause,
+          ),
+        );
+      const knownRelatedFields =
+        (await this.schemaService.getCompiled(rel.oneCollection))?.fields.map((f) => f.name) ?? [];
+      const byId = new Map<string, Record<string, unknown>>();
+      for (const related of relatedRows) {
+        const masked = relatedPerm && this.permissions
+          ? this.permissions.maskItem(relatedPerm, related as ItemRow, knownRelatedFields)
+          : related;
+        masked.data = await this.processCrypto(rel.oneCollection, masked.data as Record<string, unknown>, 'decrypt', false);
+        byId.set(related.id, projectRelatedRow(masked as ItemRow, selected.fields));
+      }
+      for (const row of rows) {
+        const foreignId = row.data?.[rel.manyField];
+        row.data = {
+          ...(row.data ?? {}),
+          [alias]: typeof foreignId === 'string' ? byId.get(foreignId) ?? null : null,
+        };
+      }
+    }
+    return rows;
   }
 
   private async assertItemIdAvailable(collectionId: string, id: string): Promise<void> {
@@ -1081,10 +1160,59 @@ function redactSql(statement: string): string {
     .slice(0, 500);
 }
 
-function projectFields(row: ItemRow, fields: string[]): Record<string, unknown> {
+export interface RelationFieldSelection {
+  alias: string;
+  fields: string[];
+}
+
+export function parseRelationFieldSelections(fields: string[]): RelationFieldSelection[] {
+  const byAlias = new Map<string, Set<string>>();
+  for (const token of fields) {
+    const [alias, ...path] = token.split('.');
+    if (!alias || path.length === 0) continue;
+    const field = path.join('.');
+    if (!field) continue;
+    const selected = byAlias.get(alias) ?? new Set<string>();
+    selected.add(field);
+    byAlias.set(alias, selected);
+  }
+  return [...byAlias.entries()].map(([alias, selected]) => ({
+    alias,
+    fields: [...selected],
+  }));
+}
+
+export function relationAlias(rel: {
+  aliasField?: string | null;
+  manyField: string;
+  oneCollection: string;
+}): string {
+  if (rel.aliasField) return rel.aliasField;
+  return rel.manyField.endsWith('_id') ? rel.manyField.slice(0, -3) : rel.oneCollection;
+}
+
+export function projectRelatedRow(row: ItemRow, fields: string[]): Record<string, unknown> {
+  if (fields.includes('*')) {
+    return {
+      id: row.id,
+      status: row.status,
+      sort: row.sort,
+      user_created: row.userCreated,
+      user_updated: row.userUpdated,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt,
+      ...(row.data ?? {}),
+    };
+  }
+  return projectFields(row, fields);
+}
+
+export function projectFields(row: ItemRow, fields: string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const f of fields) {
-    if (STRUCTURAL_FIELDS.has(f)) {
+    if (f.includes('.')) {
+      assignNestedProjection(out, row.data ?? {}, f);
+    } else if (STRUCTURAL_FIELDS.has(f)) {
       const map: Record<string, unknown> = {
         id: row.id,
         status: row.status,
@@ -1100,4 +1228,44 @@ function projectFields(row: ItemRow, fields: string[]): Record<string, unknown> 
     }
   }
   return out;
+}
+
+function assignNestedProjection(out: Record<string, unknown>, source: Record<string, unknown>, token: string): void {
+  const [alias, ...pathParts] = token.split('.');
+  if (!alias || pathParts.length === 0) return;
+  const value = source[alias];
+  const path = pathParts.join('.');
+  if (path === '*') {
+    out[alias] = value;
+    return;
+  }
+  if (Array.isArray(value)) {
+    const previous = Array.isArray(out[alias]) ? out[alias] as unknown[] : [];
+    out[alias] = value.map((item, index) => ({
+      ...(isPlainRecord(previous[index]) ? previous[index] : {}),
+      ...(isPlainRecord(item) ? pickNestedValue(item, path) as Record<string, unknown> : {}),
+    }));
+    return;
+  }
+  if (!isPlainRecord(value)) {
+    out[alias] = value == null ? value : {};
+    return;
+  }
+  out[alias] = {
+    ...(isPlainRecord(out[alias]) ? out[alias] : {}),
+    ...(pickNestedValue(value, path) as Record<string, unknown>),
+  };
+}
+
+function pickNestedValue(value: unknown, path: string): unknown {
+  if (!isPlainRecord(value)) return value;
+  const [head, ...tail] = path.split('.');
+  if (!head) return {};
+  if (tail.length === 0) return { [head]: value[head] };
+  const nested = pickNestedValue(value[head], tail.join('.'));
+  return { [head]: nested };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
