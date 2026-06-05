@@ -150,6 +150,12 @@ export const relations = pgTable(
     oneCollection: text('one_collection').notNull(),
     oneField: text('one_field'),
     junctionCollection: text('junction_collection'),
+    /** `m2o` | `o2m` | `m2m` | reserved `m2a` */
+    type: text('type').default('m2o').notNull(),
+    aliasField: text('alias_field'),
+    relatedDisplayTemplate: text('related_display_template'),
+    junctionManyField: text('junction_many_field'),
+    junctionOneField: text('junction_one_field'),
     sortField: text('sort_field'),
     /** `restrict` | `cascade` | `set null` | `no action` */
     onDelete: text('on_delete').default('no action').notNull(),

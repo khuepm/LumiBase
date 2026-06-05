@@ -81,6 +81,14 @@ export interface RelationResource {
   oneCollection: string;
   oneField: string | null;
   junctionCollection: string | null;
+  type?: "m2o" | "o2m" | "m2m" | "m2a";
+  aliasField?: string | null;
+  relatedDisplayTemplate?: string | null;
+  junctionManyField?: string | null;
+  junctionOneField?: string | null;
+  sortField?: string | null;
+  onDelete?: "restrict" | "cascade" | "set null" | "no action";
+  meta?: Record<string, unknown>;
 }
 
 export type ItemFilterOp =

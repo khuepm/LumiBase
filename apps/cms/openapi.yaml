@@ -157,6 +157,25 @@ components:
         renameFrom: { type: string }
         migrationPlan: { type: object, additionalProperties: true }
         confirmRiskyChange: { type: boolean }
+    Relation:
+      type: object
+      required: [id, siteId, manyCollection, manyField, oneCollection]
+      properties:
+        id: { type: string }
+        siteId: { type: string }
+        manyCollection: { type: string }
+        manyField: { type: string }
+        oneCollection: { type: string }
+        oneField: { type: string, nullable: true }
+        junctionCollection: { type: string, nullable: true }
+        type: { type: string, enum: [m2o, o2m, m2m, m2a] }
+        aliasField: { type: string, nullable: true }
+        relatedDisplayTemplate: { type: string, nullable: true }
+        junctionManyField: { type: string, nullable: true }
+        junctionOneField: { type: string, nullable: true }
+        sortField: { type: string, nullable: true }
+        onDelete: { type: string, enum: [restrict, cascade, set null, no action] }
+        meta: { type: object, additionalProperties: true }
     Role:
       type: object
       required: [id, siteId, name]

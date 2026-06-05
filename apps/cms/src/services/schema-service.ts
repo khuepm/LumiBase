@@ -21,6 +21,16 @@ import type { CacheProvider } from '@lumibase/runtime';
  */
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
+const SYSTEM_FIELD_NAMES = new Set([
+  'id',
+  'status',
+  'sort',
+  'user_created',
+  'user_updated',
+  'created_at',
+  'updated_at',
+  'deleted_at',
+]);
 
 export interface CompiledCollection {
   id: string;
@@ -168,10 +178,17 @@ export interface RelationInput {
   oneCollection: string;
   oneField?: string | null;
   junctionCollection?: string | null;
+  type?: RelationType;
+  aliasField?: string | null;
+  relatedDisplayTemplate?: string | null;
+  junctionManyField?: string | null;
+  junctionOneField?: string | null;
   sortField?: string | null;
   onDelete?: 'restrict' | 'cascade' | 'set null' | 'no action';
   meta?: Record<string, unknown>;
 }
+
+export type RelationType = 'm2o' | 'o2m' | 'm2m' | 'm2a';
 
 type RelationReference = {
   manyCollection: string;
@@ -485,14 +502,16 @@ export class SchemaService {
 
   async createRelation(input: RelationInput) {
     const { db, siteId } = this.deps;
+    const normalized = normalizeRelationInput(input);
+    await this.validateRelationInput(normalized);
     const [row] = await db
       .insert(relations)
-      .values({ ...input, siteId })
+      .values({ ...normalized, siteId })
       .returning();
     // Invalidate both sides of the relation.
-    await this.invalidate(input.manyCollection);
-    if (input.oneCollection) await this.invalidate(input.oneCollection);
-    if (input.junctionCollection) await this.invalidate(input.junctionCollection);
+    await this.invalidate(normalized.manyCollection);
+    if (normalized.oneCollection) await this.invalidate(normalized.oneCollection);
+    if (normalized.junctionCollection) await this.invalidate(normalized.junctionCollection);
     return row;
   }
 
@@ -511,6 +530,66 @@ export class SchemaService {
     if (existing.oneCollection) await this.invalidate(existing.oneCollection);
     if (existing.junctionCollection) await this.invalidate(existing.junctionCollection);
     return { ok: true } as const;
+  }
+
+  private async validateRelationInput(input: Required<Pick<RelationInput, 'type'>> & RelationInput) {
+    assertRelationTypeSupported(input.type);
+    const manyCollection = await this.getCollection(input.manyCollection);
+    if (!manyCollection) {
+      throw new SchemaServiceError('RELATION_COLLECTION_NOT_FOUND', `Collection "${input.manyCollection}" not found.`, 404);
+    }
+    const oneCollection = await this.getCollection(input.oneCollection);
+    if (!oneCollection) {
+      throw new SchemaServiceError('RELATION_COLLECTION_NOT_FOUND', `Collection "${input.oneCollection}" not found.`, 404);
+    }
+    assertRelationOnDeleteCompatible(input.onDelete ?? 'no action', manyCollection.storageMode as StorageMode);
+
+    if (!(await this.fieldExists(manyCollection, input.manyField))) {
+      throw new SchemaServiceError('RELATION_FIELD_NOT_FOUND', `Field "${input.manyCollection}.${input.manyField}" not found.`, 404);
+    }
+    if (input.oneField && !(await this.fieldExists(oneCollection, input.oneField))) {
+      throw new SchemaServiceError('RELATION_FIELD_NOT_FOUND', `Field "${input.oneCollection}.${input.oneField}" not found.`, 404);
+    }
+
+    if (input.type === 'm2m') {
+      if (!input.junctionCollection || !input.junctionManyField || !input.junctionOneField) {
+        throw new SchemaServiceError('RELATION_JUNCTION_REQUIRED', 'M2M relations require junctionCollection, junctionManyField, and junctionOneField.', 400);
+      }
+      const junctionCollection = await this.getCollection(input.junctionCollection);
+      if (!junctionCollection) {
+        throw new SchemaServiceError('RELATION_COLLECTION_NOT_FOUND', `Collection "${input.junctionCollection}" not found.`, 404);
+      }
+      if (!(await this.fieldExists(junctionCollection, input.junctionManyField))) {
+        throw new SchemaServiceError('RELATION_FIELD_NOT_FOUND', `Field "${input.junctionCollection}.${input.junctionManyField}" not found.`, 404);
+      }
+      if (!(await this.fieldExists(junctionCollection, input.junctionOneField))) {
+        throw new SchemaServiceError('RELATION_FIELD_NOT_FOUND', `Field "${input.junctionCollection}.${input.junctionOneField}" not found.`, 404);
+      }
+    }
+
+    const duplicate = await this.deps.db
+      .select({ id: relations.id })
+      .from(relations)
+      .where(
+        and(
+          scopeSite(relations.siteId, this.deps.siteId),
+          eq(relations.manyCollection, input.manyCollection),
+          eq(relations.manyField, input.manyField),
+          eq(relations.type, input.type),
+        ),
+      )
+      .limit(1);
+    assertRelationNotDuplicate(input, duplicate.length);
+  }
+
+  private async fieldExists(collection: CollectionRow, fieldName: string): Promise<boolean> {
+    if (isSystemFieldName(fieldName) || fieldName === collection.primaryKeyField) return true;
+    const [field] = await this.deps.db
+      .select({ id: fields.id })
+      .from(fields)
+      .where(and(eq(fields.collectionId, collection.id), eq(fields.name, fieldName)))
+      .limit(1);
+    return Boolean(field);
   }
 
   async updateSchema(name: string, input: CollectionInput & { fields?: FieldInput[] }) {
@@ -939,6 +1018,50 @@ function toFieldDbInput(input: FieldInput | Partial<FieldInput>): FieldDbInput |
   void migrationPlan;
   void confirmRiskyChange;
   return dbInput;
+}
+
+export function normalizeRelationInput(input: RelationInput): Required<Pick<RelationInput, 'type'>> & RelationInput {
+  return {
+    ...input,
+    type: input.type ?? (input.junctionCollection ? 'm2m' : 'm2o'),
+  };
+}
+
+export function assertRelationOnDeleteCompatible(onDelete: RelationInput['onDelete'], storageMode: StorageMode) {
+  if (storageMode === 'external' && (onDelete === 'cascade' || onDelete === 'set null')) {
+    throw new SchemaServiceError(
+      'RELATION_ON_DELETE_UNSUPPORTED',
+      `onDelete="${onDelete}" is not supported for external storage relations.`,
+      400,
+    );
+  }
+}
+
+export function assertRelationTypeSupported(type: RelationType) {
+  if (type === 'm2a') {
+    throw new SchemaServiceError(
+      'RELATION_TYPE_NOT_IMPLEMENTED',
+      'Many-to-any relations are reserved but not implemented yet.',
+      501,
+    );
+  }
+}
+
+export function assertRelationNotDuplicate(
+  input: Pick<RelationInput, 'manyCollection' | 'manyField'>,
+  duplicateCount: number,
+) {
+  if (duplicateCount > 0) {
+    throw new SchemaServiceError(
+      'RELATION_EXISTS',
+      `Relation "${input.manyCollection}.${input.manyField}" already exists.`,
+      409,
+    );
+  }
+}
+
+export function isSystemFieldName(fieldName: string): boolean {
+  return SYSTEM_FIELD_NAMES.has(fieldName);
 }
 
 export function relationReferencesCollection(

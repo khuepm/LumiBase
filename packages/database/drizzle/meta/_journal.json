@@ -120,6 +120,13 @@
       "when": 1780995600000,
       "tag": "0016_directus_field_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1781082000000,
+      "tag": "0017_directus_relation_metadata",
+      "breakpoints": true
     }
   ]
 }

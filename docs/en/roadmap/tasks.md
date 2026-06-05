@@ -394,9 +394,9 @@ Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Di
 
 ### Milestone 4 — Relations parity and deep read
 
-- [ ] `[BE]` Validate relation references: collection/field existence, non-duplicate relation names, and storage-mode-compatible `onDelete`.
-- [ ] `[DB]` Extend relation metadata: `type`, `aliasField`, `relatedDisplayTemplate`, `junctionManyField`, `junctionOneField`.
-- [ ] `[BE]` Support relation types `m2o`, `o2m`, `m2m`; reserve `m2a` and return "not implemented" if selected.
+- [x] `[BE]` Validate relation references: collection/field existence, non-duplicate relation names, and storage-mode-compatible `onDelete`.
+- [x] `[DB]` Extend relation metadata: `type`, `aliasField`, `relatedDisplayTemplate`, `junctionManyField`, `junctionOneField`.
+- [x] `[BE]` Support relation types `m2o`, `o2m`, `m2m`; reserve `m2a` and return "not implemented" if selected.
 - [ ] `[BE]` Implement relation expansion for item queries (`fields=author.name,categories.*`, `deep[...]`) with permission masking for related collections.
 - [ ] `[TEST]` M2O expands to an object when requested; O2M/M2M return arrays; common cases batch to avoid N+1 behavior.
 
