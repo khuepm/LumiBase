@@ -6,7 +6,7 @@ import {
   schema,
   type Database,
 } from '@lumibase/database';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, or } from 'drizzle-orm';
 import type { CacheProvider } from '@lumibase/runtime';
 
 /**
@@ -99,6 +99,14 @@ export interface RelationInput {
   onDelete?: 'restrict' | 'cascade' | 'set null' | 'no action';
   meta?: Record<string, unknown>;
 }
+
+type RelationReference = {
+  manyCollection: string;
+  manyField: string;
+  oneCollection: string;
+  oneField?: string | null;
+  junctionCollection?: string | null;
+};
 
 export interface SchemaDiff {
   collection: {
@@ -198,14 +206,18 @@ export class SchemaService {
     if (!current) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
     }
-    // Block deletion when relations still reference this collection.
+    // Block deletion when relations still reference this collection from any side.
     const referencing = await this.deps.db
       .select()
       .from(relations)
       .where(
         and(
           scopeSite(relations.siteId, this.deps.siteId),
-          eq(relations.oneCollection, name),
+          or(
+            eq(relations.manyCollection, name),
+            eq(relations.oneCollection, name),
+            eq(relations.junctionCollection, name),
+          ),
         ),
       )
       .limit(1);
@@ -269,6 +281,26 @@ export class SchemaService {
     const collection = await this.getCollection(collectionName);
     if (!collection) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
+    }
+    const referencing = await this.deps.db
+      .select()
+      .from(relations)
+      .where(
+        and(
+          scopeSite(relations.siteId, this.deps.siteId),
+          or(
+            and(eq(relations.manyCollection, collectionName), eq(relations.manyField, fieldName)),
+            and(eq(relations.oneCollection, collectionName), eq(relations.oneField, fieldName)),
+          ),
+        ),
+      )
+      .limit(1);
+    if (referencing.length > 0) {
+      throw new SchemaServiceError(
+        'FIELD_IN_USE',
+        `Field "${collectionName}.${fieldName}" is referenced by relations; remove them first.`,
+        409,
+      );
     }
     const result = await this.deps.db
       .delete(fields)
@@ -453,4 +485,26 @@ export class SchemaService {
 
   // Re-export bare schema so callers can build custom queries when needed.
   static readonly schema = schema;
+}
+
+export function relationReferencesCollection(
+  relation: RelationReference,
+  collectionName: string,
+): boolean {
+  return (
+    relation.manyCollection === collectionName ||
+    relation.oneCollection === collectionName ||
+    relation.junctionCollection === collectionName
+  );
+}
+
+export function relationReferencesField(
+  relation: RelationReference,
+  collectionName: string,
+  fieldName: string,
+): boolean {
+  return (
+    (relation.manyCollection === collectionName && relation.manyField === fieldName) ||
+    (relation.oneCollection === collectionName && relation.oneField === fieldName)
+  );
 }

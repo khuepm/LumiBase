@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
 
 type Step = 1 | 2 | 3;
+type PrimaryKeyType = 'nanoid' | 'uuid' | 'string' | 'integer' | 'bigInteger';
+type StorageMode = 'jsonb' | 'materialized' | 'physical' | 'external';
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
 
@@ -20,6 +22,8 @@ export function CollectionWizardPage() {
   const [note, setNote] = useState('');
   const [versioning, setVersioning] = useState(false);
   const [accountability, setAccountability] = useState<'all' | 'activity' | 'none'>('all');
+  const [primaryKeyType, setPrimaryKeyType] = useState<PrimaryKeyType>('nanoid');
+  const [storageMode, setStorageMode] = useState<StorageMode>('jsonb');
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -30,7 +34,11 @@ export function CollectionWizardPage() {
       const res = await client.schema.createCollection({
         name,
         singleton,
-        meta: { note: note || null, versioning, accountability },
+        note: note || null,
+        accountability,
+        versioning,
+        primaryKeyType,
+        storageMode,
       });
       return res.data;
     },
@@ -120,6 +128,35 @@ export function CollectionWizardPage() {
             </select>
           </label>
 
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Primary key</span>
+            <select
+              value={primaryKeyType}
+              onChange={(e) => setPrimaryKeyType(e.target.value as PrimaryKeyType)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            >
+              <option value="nanoid">Nano ID</option>
+              <option value="uuid">UUID</option>
+              <option value="string">String provided by API</option>
+              <option value="integer">Integer sequence</option>
+              <option value="bigInteger">Big integer sequence</option>
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Storage mode</span>
+            <select
+              value={storageMode}
+              onChange={(e) => setStorageMode(e.target.value as StorageMode)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            >
+              <option value="jsonb">JSONB document store</option>
+              <option value="materialized">Materialized projection</option>
+              <option value="physical">Physical table</option>
+              <option value="external">External table</option>
+            </select>
+          </label>
+
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -148,6 +185,14 @@ export function CollectionWizardPage() {
           <div>
             <span className="text-muted-foreground">Accountability:</span>{' '}
             {accountability}
+          </div>
+          <div>
+            <span className="text-muted-foreground">Primary key:</span>{' '}
+            {primaryKeyType}
+          </div>
+          <div>
+            <span className="text-muted-foreground">Storage mode:</span>{' '}
+            {storageMode}
           </div>
           {note && (
             <div>

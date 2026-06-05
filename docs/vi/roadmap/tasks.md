@@ -367,12 +367,12 @@ Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
 
 Mục tiêu: nâng cấp Data Model / Collections Builder để một collection trong LumiBase có contract rõ như Directus: metadata đầy đủ, primary key strategy, system fields, field config nâng cao, relation metadata, schema permission, diff/apply atomic, SDK/typegen/OpenAPI và test parity. Tham chiếu chi tiết: `docs/en/features/directus-data-model-parity-tasks.md`.
 
-### Milestone 1 — Correctness fixes trước khi mở rộng
+### Milestone 1 — Correctness fixes trước khi mở rộng (DONE)
 
-- [ ] `[FE]` Collection wizard gửi đúng top-level payload (`note`, `accountability`, `versioning`, `singleton`, `primaryKeyType`, `storageMode`) thay vì nhét vào `meta`.
-- [ ] `[BE]` `ItemService.patch/replace/softDelete` enforce permission `update/delete`, row-level scope và field-level update allowlist.
-- [ ] `[BE]` Relation delete/dependency check đủ cả hai chiều `manyCollection` và `oneCollection`; block xoá field/collection khi còn relation trỏ tới.
-- [ ] `[TEST]` Thêm regression tests cho wizard payload, update/delete permission và relation dependency checks.
+- [x] `[FE]` Collection wizard gửi đúng top-level payload (`note`, `accountability`, `versioning`, `singleton`, `primaryKeyType`, `storageMode`) thay vì nhét vào `meta`.
+- [x] `[BE]` `ItemService.patch/replace/softDelete` enforce permission `update/delete`, row-level scope và field-level update allowlist.
+- [x] `[BE]` Relation delete/dependency check đủ cả hai chiều `manyCollection` và `oneCollection`; block xoá field/collection khi còn relation trỏ tới.
+- [x] `[TEST]` Thêm regression tests cho wizard payload, update/delete permission và relation dependency checks.
 
 ### Milestone 2 — Collection metadata + primary key contract
 

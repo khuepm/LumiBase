@@ -5,10 +5,17 @@ export interface CollectionResource {
   siteId: string;
   name: string;
   singleton: boolean;
+  icon?: string | null;
+  color?: string | null;
+  note?: string | null;
   displayTemplate: string | null;
   sortField: string | null;
   archiveField: string | null;
   archiveValue: string | null;
+  accountability?: "all" | "activity" | "none";
+  versioning?: boolean;
+  primaryKeyType?: "nanoid" | "uuid" | "integer" | "bigInteger" | "string";
+  storageMode?: "jsonb" | "materialized" | "physical" | "external";
   meta: Record<string, unknown>;
   createdAt?: string;
   updatedAt?: string;
