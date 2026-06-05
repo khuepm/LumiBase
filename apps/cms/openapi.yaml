@@ -83,14 +83,26 @@ components:
         id: { type: string }
         siteId: { type: string }
         name: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+        label: { type: string, nullable: true }
+        pluralLabel: { type: string, nullable: true }
+        hidden: { type: boolean }
+        system: { type: boolean }
         singleton: { type: boolean }
         icon: { type: string, nullable: true }
         color: { type: string, nullable: true }
         note: { type: string, nullable: true }
+        primaryKeyField: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+        primaryKeyType: { type: string, enum: [nanoid, uuid, integer, bigInteger, string] }
+        storageMode: { type: string, enum: [jsonb, materialized, physical, external] }
         displayTemplate: { type: string, nullable: true }
         sortField: { type: string, nullable: true }
         archiveField: { type: string, nullable: true }
         archiveValue: { type: string, nullable: true }
+        unarchiveValue: { type: string, nullable: true }
+        itemDuplicationFields:
+          type: array
+          items: { type: string }
+        translations: { type: object, additionalProperties: true }
         accountability: { type: string, enum: [all, activity, none] }
         versioning: { type: boolean }
         meta: { type: object, additionalProperties: true }

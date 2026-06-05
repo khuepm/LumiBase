@@ -24,11 +24,26 @@ const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
 export interface CompiledCollection {
   id: string;
   name: string;
+  label: string | null;
+  pluralLabel: string | null;
+  hidden: boolean;
+  system: boolean;
   singleton: boolean;
+  icon: string | null;
+  color: string | null;
+  note: string | null;
+  primaryKeyField: string;
+  primaryKeyType: PrimaryKeyType;
+  storageMode: StorageMode;
   displayTemplate: string | null;
   sortField: string | null;
   archiveField: string | null;
   archiveValue: string | null;
+  unarchiveValue: string | null;
+  itemDuplicationFields: unknown[];
+  translations: Record<string, unknown>;
+  accountability: 'all' | 'activity' | 'none';
+  versioning: boolean;
   meta: Record<string, unknown>;
   fields: CompiledField[];
 }
@@ -56,18 +71,31 @@ export interface CompiledField {
 
 export interface CollectionInput {
   name: string;
+  label?: string | null;
+  pluralLabel?: string | null;
+  hidden?: boolean;
+  system?: boolean;
   singleton?: boolean;
   icon?: string | null;
   color?: string | null;
   note?: string | null;
+  primaryKeyField?: string;
+  primaryKeyType?: PrimaryKeyType;
+  storageMode?: StorageMode;
   displayTemplate?: string | null;
   sortField?: string | null;
   archiveField?: string | null;
   archiveValue?: string | null;
+  unarchiveValue?: string | null;
+  itemDuplicationFields?: unknown[];
+  translations?: Record<string, unknown>;
   accountability?: 'all' | 'activity' | 'none';
   versioning?: boolean;
   meta?: Record<string, unknown>;
 }
+
+export type PrimaryKeyType = 'nanoid' | 'uuid' | 'integer' | 'bigInteger' | 'string';
+export type StorageMode = 'jsonb' | 'materialized' | 'physical' | 'external';
 
 export interface FieldInput {
   name: string;
@@ -433,11 +461,26 @@ export class SchemaService {
     const compiled: CompiledCollection = {
       id: collection.id,
       name: collection.name,
+      label: collection.label,
+      pluralLabel: collection.pluralLabel,
+      hidden: collection.hidden,
+      system: collection.system,
       singleton: collection.singleton,
+      icon: collection.icon,
+      color: collection.color,
+      note: collection.note,
+      primaryKeyField: collection.primaryKeyField,
+      primaryKeyType: collection.primaryKeyType as PrimaryKeyType,
+      storageMode: collection.storageMode as StorageMode,
       displayTemplate: collection.displayTemplate,
       sortField: collection.sortField,
       archiveField: collection.archiveField,
       archiveValue: collection.archiveValue,
+      unarchiveValue: collection.unarchiveValue,
+      itemDuplicationFields: collection.itemDuplicationFields as unknown[],
+      translations: collection.translations as Record<string, unknown>,
+      accountability: collection.accountability as 'all' | 'activity' | 'none',
+      versioning: collection.versioning,
       meta: (collection.meta as Record<string, unknown>) ?? {},
       fields: fieldRows.map((f) => ({
         id: f.id,

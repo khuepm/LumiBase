@@ -376,9 +376,9 @@ Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Di
 
 ### Milestone 2 — Collection metadata + primary key contract
 
-- [ ] `[DB]` Add first-class collection columns: `label`, `pluralLabel`, `hidden`, `system`, `primaryKeyField`, `primaryKeyType`, `storageMode`, `unarchiveValue`, `itemDuplicationFields`, `translations`.
-- [ ] `[BE]` Add backward-compatible backfill/migration; route validation and `SchemaService` use new fields while `meta` remains for extension/custom UI hints.
-- [ ] `[SDK]` Update collection input/output types and schema client methods for the new metadata.
+- [x] `[DB]` Add first-class collection columns: `label`, `pluralLabel`, `hidden`, `system`, `primaryKeyField`, `primaryKeyType`, `storageMode`, `unarchiveValue`, `itemDuplicationFields`, `translations`.
+- [x] `[BE]` Add backward-compatible backfill/migration; route validation and `SchemaService` use new fields while `meta` remains for extension/custom UI hints.
+- [x] `[SDK]` Update collection input/output types and schema client methods for the new metadata.
 - [ ] `[FE]` Wizard has Identity, Storage, System fields, Permissions defaults, and Review JSON steps.
 - [ ] `[BE]` Implement primary key strategy for `jsonb`: `nanoid`, `uuid`, `string`; defer or explicitly block `integer/bigInteger` until sequence support exists.
 - [ ] `[TEST]` Item create respects primary key strategy; duplicate user-provided ID returns `409`.

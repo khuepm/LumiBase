@@ -17,14 +17,29 @@ const collectionInputSchema = z.object({
     .min(1)
     .max(63)
     .regex(/^[a-z][a-z0-9_]{0,62}$/),
+  label: z.string().nullable().optional(),
+  pluralLabel: z.string().nullable().optional(),
+  hidden: z.boolean().optional(),
+  system: z.boolean().optional(),
   singleton: z.boolean().optional(),
   icon: z.string().nullable().optional(),
   color: z.string().nullable().optional(),
   note: z.string().nullable().optional(),
+  primaryKeyField: z
+    .string()
+    .min(1)
+    .max(63)
+    .regex(/^[a-z][a-z0-9_]{0,62}$/)
+    .optional(),
+  primaryKeyType: z.enum(['nanoid', 'uuid', 'integer', 'bigInteger', 'string']).optional(),
+  storageMode: z.enum(['jsonb', 'materialized', 'physical', 'external']).optional(),
   displayTemplate: z.string().nullable().optional(),
   sortField: z.string().nullable().optional(),
   archiveField: z.string().nullable().optional(),
   archiveValue: z.string().nullable().optional(),
+  unarchiveValue: z.string().nullable().optional(),
+  itemDuplicationFields: z.array(z.string()).optional(),
+  translations: z.record(z.unknown()).optional(),
   accountability: z.enum(['all', 'activity', 'none']).optional(),
   versioning: z.boolean().optional(),
   meta: z.record(z.unknown()).optional(),

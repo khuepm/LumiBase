@@ -376,9 +376,9 @@ Mục tiêu: nâng cấp Data Model / Collections Builder để một collection
 
 ### Milestone 2 — Collection metadata + primary key contract
 
-- [ ] `[DB]` Thêm first-class collection columns: `label`, `pluralLabel`, `hidden`, `system`, `primaryKeyField`, `primaryKeyType`, `storageMode`, `unarchiveValue`, `itemDuplicationFields`, `translations`.
-- [ ] `[BE]` Backfill/migration backward-compatible; route validation và `SchemaService` dùng field mới, giữ `meta` cho extension/custom UI hints.
-- [ ] `[SDK]` Cập nhật collection input/output types và schema client methods cho metadata mới.
+- [x] `[DB]` Thêm first-class collection columns: `label`, `pluralLabel`, `hidden`, `system`, `primaryKeyField`, `primaryKeyType`, `storageMode`, `unarchiveValue`, `itemDuplicationFields`, `translations`.
+- [x] `[BE]` Backfill/migration backward-compatible; route validation và `SchemaService` dùng field mới, giữ `meta` cho extension/custom UI hints.
+- [x] `[SDK]` Cập nhật collection input/output types và schema client methods cho metadata mới.
 - [ ] `[FE]` Wizard có các bước Identity, Storage, System fields, Permissions defaults, Review JSON.
 - [ ] `[BE]` Implement primary key strategy cho `jsonb`: `nanoid`, `uuid`, `string`; defer hoặc block rõ `integer/bigInteger` nếu chưa có sequence.
 - [ ] `[TEST]` Create item respect primary key strategy; duplicate user-provided ID trả `409`.
