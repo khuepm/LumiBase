@@ -312,20 +312,12 @@ export function StepAccount({ onSubmitted }: StepAccountProps) {
       aria-labelledby="setup-step-heading"
     >
       <header className="space-y-1">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <h2
-            id="setup-step-heading"
-            className="text-lg font-semibold tracking-tight"
-          >
-            Create the admin account
-          </h2>
-          <a
-            href="/setup/simple"
-            className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          >
-            Use 3-step quick setup
-          </a>
-        </div>
+        <h2
+          id="setup-step-heading"
+          className="text-lg font-semibold tracking-tight"
+        >
+          Create the admin account
+        </h2>
         <p className="text-sm text-muted-foreground">
           This account becomes the bootstrap administrator for the
           instance. Pick a strong, unique password — it can&rsquo;t be
