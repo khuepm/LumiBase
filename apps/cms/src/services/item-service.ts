@@ -739,7 +739,7 @@ export class ItemService {
       )
       .limit(1);
     if (existing) {
-      throw new ItemServiceError('ITEM_ID_EXISTS', `Item "${id}" already exists.`, 409);
+      assertPrimaryKeyAvailable(id, true);
     }
   }
 
@@ -999,6 +999,11 @@ export function resolvePrimaryKey(
   }
 
   return { field, type, storageMode, id: undefined };
+}
+
+export function assertPrimaryKeyAvailable(id: string, exists: boolean): void {
+  if (!exists) return;
+  throw new ItemServiceError('ITEM_ID_EXISTS', `Item "${id}" already exists.`, 409);
 }
 
 function normalizePrimaryKeyType(value: string | null | undefined): PrimaryKeyType {

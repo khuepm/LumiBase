@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CompiledPermission } from '../permission-service';
 import {
   ItemServiceError,
+  assertPrimaryKeyAvailable,
   assertWritablePermissionFields,
   buildPermissionSnapshot,
   resolvePrimaryKey,
@@ -193,5 +194,16 @@ describe('ItemService primary key strategy helpers', () => {
         {},
       ),
     ).toThrowError(/materialized or physical/);
+  });
+
+  it('returns a 409 error for duplicate user-provided IDs', () => {
+    try {
+      assertPrimaryKeyAvailable('post-custom-id', true);
+      throw new Error('Expected duplicate primary key to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ItemServiceError);
+      expect((err as ItemServiceError).code).toBe('ITEM_ID_EXISTS');
+      expect((err as ItemServiceError).status).toBe(409);
+    }
   });
 });

@@ -55,9 +55,35 @@ describe('CollectionWizardPage', () => {
     fireEvent.change(screen.getByLabelText(/machine name/i), {
       target: { value: 'posts' },
     });
-    fireEvent.click(screen.getByLabelText(/singleton/i));
+    fireEvent.change(screen.getByLabelText(/^label$/i), {
+      target: { value: 'Post' },
+    });
+    fireEvent.change(screen.getByLabelText(/plural label/i), {
+      target: { value: 'Posts' },
+    });
+    fireEvent.change(screen.getByLabelText(/icon/i), {
+      target: { value: 'newspaper' },
+    });
+    fireEvent.change(screen.getByLabelText(/color/i), {
+      target: { value: '#2563eb' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /next/i }));
 
+    fireEvent.change(screen.getByLabelText(/primary key/i), {
+      target: { value: 'uuid' },
+    });
+    fireEvent.change(screen.getByLabelText(/storage mode/i), {
+      target: { value: 'materialized' },
+    });
+    fireEvent.click(screen.getByLabelText(/^singleton$/i));
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+
+    fireEvent.click(screen.getByLabelText(/archive behavior/i));
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+
+    fireEvent.change(screen.getByLabelText(/permission defaults/i), {
+      target: { value: 'private' },
+    });
     fireEvent.change(screen.getByLabelText(/description/i), {
       target: { value: 'Editorial posts' },
     });
@@ -65,24 +91,39 @@ describe('CollectionWizardPage', () => {
       target: { value: 'activity' },
     });
     fireEvent.click(screen.getByLabelText(/enable content versioning/i));
-    fireEvent.change(screen.getByLabelText(/primary key/i), {
-      target: { value: 'uuid' },
-    });
-    fireEvent.change(screen.getByLabelText(/storage mode/i), {
-      target: { value: 'materialized' },
-    });
     fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    expect(screen.getByLabelText(/review json/i)).toHaveTextContent('"permissionDefault": "private"');
+
     fireEvent.click(screen.getByRole('button', { name: /create collection/i }));
 
     await waitFor(() => {
       expect(createCollection).toHaveBeenCalledWith({
         name: 'posts',
+        label: 'Post',
+        pluralLabel: 'Posts',
+        hidden: false,
         singleton: true,
+        icon: 'newspaper',
+        color: '#2563eb',
         note: 'Editorial posts',
         accountability: 'activity',
         versioning: true,
         primaryKeyType: 'uuid',
         storageMode: 'materialized',
+        primaryKeyField: 'id',
+        sortField: 'sort',
+        archiveField: 'status',
+        archiveValue: 'archived',
+        unarchiveValue: 'draft',
+        meta: {
+          systemFields: {
+            status: true,
+            sort: true,
+            archive: true,
+            audit: true,
+          },
+          permissionDefault: 'private',
+        },
       });
     });
   });

@@ -374,14 +374,14 @@ Mục tiêu: nâng cấp Data Model / Collections Builder để một collection
 - [x] `[BE]` Relation delete/dependency check đủ cả hai chiều `manyCollection` và `oneCollection`; block xoá field/collection khi còn relation trỏ tới.
 - [x] `[TEST]` Thêm regression tests cho wizard payload, update/delete permission và relation dependency checks.
 
-### Milestone 2 — Collection metadata + primary key contract
+### Milestone 2 — Collection metadata + primary key contract (DONE)
 
 - [x] `[DB]` Thêm first-class collection columns: `label`, `pluralLabel`, `hidden`, `system`, `primaryKeyField`, `primaryKeyType`, `storageMode`, `unarchiveValue`, `itemDuplicationFields`, `translations`.
 - [x] `[BE]` Backfill/migration backward-compatible; route validation và `SchemaService` dùng field mới, giữ `meta` cho extension/custom UI hints.
 - [x] `[SDK]` Cập nhật collection input/output types và schema client methods cho metadata mới.
-- [ ] `[FE]` Wizard có các bước Identity, Storage, System fields, Permissions defaults, Review JSON.
+- [x] `[FE]` Wizard có các bước Identity, Storage, System fields, Permissions defaults, Review JSON.
 - [x] `[BE]` Implement primary key strategy cho `jsonb`: `nanoid`, `uuid`, `string`; defer hoặc block rõ `integer/bigInteger` nếu chưa có sequence.
-- [ ] `[TEST]` Create item respect primary key strategy; duplicate user-provided ID trả `409`.
+- [x] `[TEST]` Create item respect primary key strategy; duplicate user-provided ID trả `409`.
 
 ### Milestone 3 — System fields và field configuration parity
 
