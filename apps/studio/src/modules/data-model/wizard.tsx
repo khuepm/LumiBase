@@ -18,6 +18,25 @@ const STEPS: Array<{ id: Step; label: string }> = [
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
 
+const STORAGE_MODE_INFO: Record<StorageMode, { badge: string; text: string }> = {
+  jsonb: {
+    badge: 'Current',
+    text: 'Fast schema changes with no runtime DDL. SQL-native indexes and uniqueness are advisory until projected.',
+  },
+  materialized: {
+    badge: 'Optimized',
+    text: 'Keeps JSONB as source of truth and adds a managed physical read projection for hot paths.',
+  },
+  physical: {
+    badge: 'Future',
+    text: 'Reserved for Directus-like managed tables. Schema apply flags storage runtime changes before migration.',
+  },
+  external: {
+    badge: 'Future',
+    text: 'Reserved for introspected external tables. Destructive relation actions and DDL are intentionally limited.',
+  },
+};
+
 export function CollectionWizardPage() {
   const [step, setStep] = useState<Step>(1);
   const [name, setName] = useState('');
@@ -45,6 +64,7 @@ export function CollectionWizardPage() {
     storageMode === 'jsonb' && (primaryKeyType === 'integer' || primaryKeyType === 'bigInteger')
       ? 'Integer primary keys require materialized or physical storage mode.'
       : null;
+  const storageInfo = STORAGE_MODE_INFO[storageMode];
 
   const createPayload = useMemo(
     () => ({
@@ -231,6 +251,15 @@ export function CollectionWizardPage() {
               <option value="external">External table</option>
             </select>
           </label>
+          <div className="rounded-md border bg-muted/40 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span className="rounded-md border bg-background px-2 py-0.5 text-[11px] font-medium">
+                {storageInfo.badge}
+              </span>
+              <span className="text-xs font-medium">{storageMode}</span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{storageInfo.text}</p>
+          </div>
           {storageWarning && (
             <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {storageWarning}

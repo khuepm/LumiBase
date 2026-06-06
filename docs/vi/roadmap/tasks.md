@@ -407,8 +407,8 @@ Mục tiêu: nâng cấp Data Model / Collections Builder để một collection
 - [x] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification và runtime impact.
 - [x] `[BE]` `PUT /collections/:name/schema` validate toàn bộ, compute diff, apply transactionally khi runtime hỗ trợ, invalidate schema/permission/typegen cache và emit `schema.changed`.
 - [x] `[FE]` Raw JSON schema tab hiển thị diff/risk trước khi apply.
-- [ ] `[DOC]` Ghi rõ storage modes `jsonb/materialized/physical/external`, kèm limitations badge trong Studio.
-- [ ] `[DOC]` Tạo design doc `docs/en/architecture/physical-collections.md` để quyết định physical/external mode.
+- [x] `[DOC]` Ghi rõ storage modes `jsonb/materialized/physical/external`, kèm limitations badge trong Studio.
+- [x] `[DOC]` Tạo design doc `docs/en/architecture/physical-collections.md` để quyết định physical/external mode.
 
 ### Milestone 6 — SDK, typegen, OpenAPI, docs và parity tests
 

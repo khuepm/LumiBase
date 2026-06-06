@@ -407,8 +407,8 @@ Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Di
 - [x] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification, and runtime impact.
 - [x] `[BE]` `PUT /collections/:name/schema` validates all input, computes diff, applies transactionally when supported, invalidates schema/permission/typegen caches, and emits `schema.changed`.
 - [x] `[FE]` Raw JSON schema tab shows diff/risk before apply.
-- [ ] `[DOC]` Document storage modes `jsonb/materialized/physical/external`, including limitations badges in Studio.
-- [ ] `[DOC]` Create `docs/en/architecture/physical-collections.md` design doc to decide physical/external mode.
+- [x] `[DOC]` Document storage modes `jsonb/materialized/physical/external`, including limitations badges in Studio.
+- [x] `[DOC]` Create `docs/en/architecture/physical-collections.md` design doc to decide physical/external mode.
 
 ### Milestone 6 — SDK, typegen, OpenAPI, docs, and parity tests
 

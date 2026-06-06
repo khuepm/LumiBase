@@ -53,14 +53,27 @@ Migrations đầy đủ trong `packages/database/migrations/` và `packages/data
 | `id` | text PK |
 | `siteId` | text FK |
 | `name` | text | machine name, unique per site |
+| `label`, `pluralLabel` | text | nhãn hiển thị cho author |
+| `hidden`, `system` | boolean |
 | `singleton` | boolean |
 | `icon`, `color`, `note` | text |
+| `primaryKeyField` | text | field định danh item logic, mặc định `id` |
+| `primaryKeyType` | text | `nanoid`, `uuid`, `string`; `integer`/`bigInteger` cần sequence ngoài JSONB |
+| `storageMode` | text | `jsonb`, `materialized`, `physical`, `external` |
 | `displayTemplate` | text | mustache template default |
-| `sortField`, `archiveField`, `archiveValue` | text |
+| `sortField`, `archiveField`, `archiveValue`, `unarchiveValue` | text |
+| `itemDuplicationFields`, `translations` | jsonb |
 | `accountability` | text | `all` / `activity` / `none` |
 | `versioning` | boolean |
 | `meta` | jsonb | extra UI hints |
 | `createdAt`, `updatedAt` |
+
+Storage modes được ghi rõ để tránh nhầm `jsonb` với bảng vật lý kiểu Directus:
+
+- `jsonb`: collection logic mặc định, backed bởi `items.data`; đổi schema nhanh, không chạy runtime DDL, index/unique theo SQL-native chỉ là advisory.
+- `materialized`: JSONB là source of truth, thêm physical read projection được quản lý cho hot path.
+- `physical`: mode tương lai cho bảng do LumiBase sở hữu kiểu Directus; schema diff đánh dấu storage runtime change.
+- `external`: mode tương lai cho bảng ngoài được introspect; DDL/relation action phá huỷ bị giới hạn vì LumiBase không sở hữu table.
 
 ### `fields`
 | Column | Type | Note |

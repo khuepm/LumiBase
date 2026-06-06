@@ -145,4 +145,29 @@ describe('CollectionWizardPage', () => {
     expect(screen.getByRole('button', { name: /next/i })).toBeDisabled();
     expect(createCollection).not.toHaveBeenCalled();
   });
+
+  it('shows storage mode limitation badges in the storage step', async () => {
+    renderWithClient(<CollectionWizardPage />);
+
+    fireEvent.change(screen.getByLabelText(/machine name/i), {
+      target: { value: 'posts' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+
+    expect(screen.getByText('Current')).toBeInTheDocument();
+    expect(screen.getByText(/SQL-native indexes and uniqueness are advisory/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/storage mode/i), {
+      target: { value: 'physical' },
+    });
+
+    expect(screen.getByText('Future')).toBeInTheDocument();
+    expect(screen.getByText(/Directus-like managed tables/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/storage mode/i), {
+      target: { value: 'external' },
+    });
+
+    expect(screen.getByText(/introspected external tables/i)).toBeInTheDocument();
+  });
 });

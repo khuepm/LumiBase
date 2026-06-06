@@ -53,14 +53,27 @@ Migrations đầy đủ trong `packages/database/migrations/` và `packages/data
 | `id` | text PK |
 | `siteId` | text FK |
 | `name` | text | machine name, unique per site |
+| `label`, `pluralLabel` | text | author-facing labels |
+| `hidden`, `system` | boolean |
 | `singleton` | boolean |
 | `icon`, `color`, `note` | text |
+| `primaryKeyField` | text | logical item identifier field, defaults to `id` |
+| `primaryKeyType` | text | `nanoid`, `uuid`, `string`; `integer`/`bigInteger` require non-JSONB sequence support |
+| `storageMode` | text | `jsonb`, `materialized`, `physical`, `external` |
 | `displayTemplate` | text | mustache template default |
-| `sortField`, `archiveField`, `archiveValue` | text |
+| `sortField`, `archiveField`, `archiveValue`, `unarchiveValue` | text |
+| `itemDuplicationFields`, `translations` | jsonb |
 | `accountability` | text | `all` / `activity` / `none` |
 | `versioning` | boolean |
 | `meta` | jsonb | extra UI hints |
 | `createdAt`, `updatedAt` |
+
+Storage modes are intentionally explicit:
+
+- `jsonb`: default logical collection backed by `items.data`; fastest schema evolution, no runtime DDL, advisory SQL-native indexes/unique constraints.
+- `materialized`: JSONB source of truth plus managed physical read projection for hot paths.
+- `physical`: future Directus-like owned table mode; schema diffs mark this as a storage runtime change.
+- `external`: future introspected table mode; destructive DDL/relation actions are limited because LumiBase does not own the table.
 
 ### `fields`
 | Column | Type | Note |
