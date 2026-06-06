@@ -119,21 +119,37 @@ wrangler secret put MEILISEARCH_HOST --env production
 wrangler secret put MEILISEARCH_API_KEY --env production
 ```
 
-Set only non-sensitive variables in `wrangler.toml`. Keep local/dev defaults in top-level `[vars]`, and keep staging/production values under named environments:
+Set only non-sensitive variables and binding IDs in `wrangler.toml`. Keep local/dev defaults in top-level `[vars]`, and keep staging/production values under named environments:
 
 ```toml
 [vars]
 LUMIBASE_ENV = "development"
 LUMIBASE_DEV_AUTH = "true"
-JWT_SECRET = "dev_secret_key"
+
+# Put local-only auth values in apps/cms/.dev.vars instead:
+# JWT_SECRET=dev_secret_key
+
+[env.staging]
+name = "lumibase-cms-staging"
 
 [env.staging.vars]
 LUMIBASE_ENV = "staging"
 LUMIBASE_DEV_AUTH = "false"
 
+[[env.staging.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
+
+[env.production]
+name = "lumibase-cms"
+
 [env.production.vars]
 LUMIBASE_ENV = "production"
 LUMIBASE_DEV_AUTH = "false"
+
+[[env.production.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
 ```
 
 ## Step 7: Deploy
@@ -202,14 +218,28 @@ binding = "MEDIA"
 bucket_name = "lumibase-media"
 
 # Staging environment overrides
+[env.staging]
+name = "lumibase-cms-staging"
+
 [env.staging.vars]
 LUMIBASE_ENV = "staging"
 LUMIBASE_DEV_AUTH = "false"
 
+[[env.staging.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
+
 # Production environment overrides
+[env.production]
+name = "lumibase-cms"
+
 [env.production.vars]
 LUMIBASE_ENV = "production"
 LUMIBASE_DEV_AUTH = "false"
+
+[[env.production.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
 
 # Production secrets are set with Wrangler, not hardcoded:
 # wrangler secret put JWT_SECRET --env production

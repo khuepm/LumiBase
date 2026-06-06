@@ -29,7 +29,7 @@ pnpm exec wrangler kv namespace create CONFIG_CACHE
 pnpm exec wrangler r2 bucket create lumibase-media
 ```
 
-Cập nhật ID trả về vào `wrangler.toml`. Giữ default local/dev trong top-level `[vars]`, còn giá trị không nhạy cảm cho staging/production nằm trong `[env.staging.vars]` và `[env.production.vars]`. Không hardcode production secret trong `wrangler.toml`; hãy lưu bằng Cloudflare secrets:
+Cập nhật ID trả về vào `wrangler.toml`. Giữ default local/dev trong top-level `[vars]`, còn giá trị không nhạy cảm và binding cho staging/production nằm trong các profile `[env.staging]` và `[env.production]`. Không hardcode production secret trong `wrangler.toml`; hãy lưu bằng Cloudflare secrets:
 
 ```bash
 cd apps/cms
@@ -47,7 +47,7 @@ pnpm release:check
 Build dry-run và deploy:
 
 ```bash
-pnpm --filter @lumibase/cms build
+pnpm --filter @lumibase/cms build:production
 pnpm --filter @lumibase/cms deploy:production
 ```
 

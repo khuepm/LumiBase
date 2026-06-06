@@ -29,7 +29,7 @@ pnpm exec wrangler kv namespace create CONFIG_CACHE
 pnpm exec wrangler r2 bucket create lumibase-media
 ```
 
-Update `apps/cms/wrangler.toml` with the returned IDs. Keep local defaults in the top-level `[vars]` block, and keep staging/production non-sensitive values in `[env.staging.vars]` and `[env.production.vars]`. Do not place production secret values in `wrangler.toml`; store them as Cloudflare secrets:
+Update `apps/cms/wrangler.toml` with the returned IDs. Keep local defaults in the top-level `[vars]` block, and keep staging/production non-sensitive values and bindings in the named `[env.staging]` and `[env.production]` profiles. Do not place production secret values in `wrangler.toml`; store them as Cloudflare secrets:
 
 ```bash
 cd apps/cms
@@ -47,7 +47,7 @@ pnpm release:check
 Build and deploy:
 
 ```bash
-pnpm --filter @lumibase/cms build
+pnpm --filter @lumibase/cms build:production
 pnpm --filter @lumibase/cms deploy:production
 ```
 

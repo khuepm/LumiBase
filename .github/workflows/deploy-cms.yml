@@ -34,7 +34,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Build CMS Worker
-        run: pnpm --filter @lumibase/cms build
+        run: pnpm --filter @lumibase/cms build:production
 
       - name: Deploy CMS Worker
         run: pnpm --filter @lumibase/cms deploy:production
