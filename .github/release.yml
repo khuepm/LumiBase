@@ -1,0 +1,39 @@
+# GitHub automatically generated release notes configuration.
+#
+# Before publishing any `vX.Y.Z` GitHub Release, use
+# `.github/RELEASE_TEMPLATE.md` and make sure the final notes include:
+# - `ghcr.io/.../lumibase-cms:X.Y.Z`
+# - Compatibility DB/schema
+# - Backup required: Yes/No
+# - whether a backup is required
+
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+      - skip-changelog
+    authors:
+      - dependabot
+  categories:
+    - title: Breaking changes
+      labels:
+        - breaking-change
+        - breaking
+    - title: Highlights
+      labels:
+        - feature
+        - enhancement
+    - title: Fixes
+      labels:
+        - bug
+        - fix
+    - title: Documentation
+      labels:
+        - documentation
+        - docs
+    - title: Dependencies
+      labels:
+        - dependencies
+    - title: Other changes
+      labels:
+        - "*"
