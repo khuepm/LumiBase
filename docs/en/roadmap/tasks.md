@@ -412,8 +412,8 @@ Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Di
 
 ### Milestone 6 — SDK, typegen, OpenAPI, docs, and parity tests
 
-- [ ] `[SDK]` Expose complete schema resources: collections/fields/relations CRUD, field rename/delete options, schema diff/apply.
-- [ ] `[SDK]` Preserve legacy methods or provide deprecation wrappers; preserve error `code/path/risk` metadata.
+- [x] `[SDK]` Expose complete schema resources: collections/fields/relations CRUD, field rename/delete options, schema diff/apply.
+- [x] `[SDK]` Preserve legacy methods or provide deprecation wrappers; preserve error `code/path/risk` metadata.
 - [ ] `[SDK]` Typegen includes primary key type, system fields, nullable/required, readonly/generated, and relation-expanded response types.
 - [ ] `[DOC]` Update `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
 - [ ] `[DOC]` Sync Vietnamese docs after the English contract stabilizes.

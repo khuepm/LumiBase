@@ -2,8 +2,19 @@ import { LumiClient } from "../client";
 import { RealtimeClient } from "../realtime";
 import {
   CollectionResource,
+  CollectionInput,
   FieldResource,
+  FieldInput,
+  FieldDeleteOptions,
+  FieldMutationOptions,
+  FieldRenameInput,
   RelationResource,
+  RelationInput,
+  SchemaApplyInput,
+  SchemaApplyResult,
+  SchemaDiff,
+  SchemaDiffInput,
+  TypegenSchemaFilters,
   ListItemsParams,
   ItemRow,
   ListItemsResponse,
@@ -45,39 +56,50 @@ import {
   ExtensionResource,
 } from "../types";
 
+function withQuery(path: string, params: Record<string, unknown> = {}) {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined) continue;
+    qs.set(key, typeof value === "string" ? value : JSON.stringify(value));
+  }
+  const query = qs.toString();
+  return query ? `${path}?${query}` : path;
+}
+
 export function legacyRest() {
   return function <TSchema extends DefaultSchema>(client: LumiClient<TSchema>) {
-    const schema = {
-      listCollections: () =>
+    const collections = {
+      list: () =>
         client.rawRequest<CollectionResource[]>("/api/v1/collections"),
-      getCollection: (name: string) =>
+      get: (name: string) =>
         client.rawRequest<CollectionResource>(`/api/v1/collections/${name}`),
-      getCompiled: (name: string) =>
+      compiled: (name: string) =>
         client.rawRequest<CollectionResource>(`/api/v1/collections/${name}/compiled`),
-      createCollection: (
-        input: Partial<CollectionResource> & { name: string },
-      ) =>
+      create: (input: CollectionInput) =>
         client.rawRequest<CollectionResource>("/api/v1/collections", {
           method: "POST",
           body: JSON.stringify(input),
         }),
-      updateCollection: (name: string, patch: Partial<CollectionResource>) =>
+      update: (name: string, patch: Partial<CollectionInput>) =>
         client.rawRequest<CollectionResource>(`/api/v1/collections/${name}`, {
           method: "PATCH",
           body: JSON.stringify(patch),
         }),
-      deleteCollection: (name: string) =>
+      delete: (name: string) =>
         client.rawRequest<null>(`/api/v1/collections/${name}`, {
           method: "DELETE",
         }),
-      listFields: (collectionName: string) =>
+    };
+
+    const fields = {
+      list: (collectionName: string) =>
         client.rawRequest<FieldResource[]>(
           `/api/v1/collections/${collectionName}/fields`,
         ),
-      upsertField: (
+      upsert: (
         collectionName: string,
         fieldName: string,
-        input: Partial<FieldResource> & { type: string; interface: string },
+        input: FieldInput,
       ) =>
         client.rawRequest<FieldResource>(
           `/api/v1/collections/${collectionName}/fields/${fieldName}`,
@@ -86,36 +108,79 @@ export function legacyRest() {
             body: JSON.stringify(input),
           },
         ),
-      deleteField: (collectionName: string, fieldName: string) =>
+      create: (collectionName: string, input: FieldInput) =>
+        fields.upsert(collectionName, input.name, input),
+      update: (
+        collectionName: string,
+        fieldName: string,
+        input: FieldInput,
+      ) => fields.upsert(collectionName, fieldName, input),
+      rename: (
+        collectionName: string,
+        fromFieldName: string,
+        toFieldName: string,
+        input: FieldRenameInput,
+      ) =>
+        fields.upsert(
+          collectionName,
+          toFieldName,
+          {
+            ...input,
+            name: toFieldName,
+            renameFrom: fromFieldName,
+          } as FieldInput,
+        ),
+      delete: (
+        collectionName: string,
+        fieldName: string,
+        options: FieldDeleteOptions = {},
+      ) =>
         client.rawRequest<null>(
-          `/api/v1/collections/${collectionName}/fields/${fieldName}`,
+          withQuery(
+            `/api/v1/collections/${collectionName}/fields/${fieldName}`,
+            options as Record<string, unknown>,
+          ),
           { method: "DELETE" },
         ),
-      listRelations: () =>
+    };
+
+    const relations = {
+      list: () =>
         client.rawRequest<RelationResource[]>("/api/v1/relations"),
-      createRelation: (input: Omit<RelationResource, "id" | "siteId">) =>
+      create: (input: RelationInput) =>
         client.rawRequest<RelationResource>("/api/v1/relations", {
           method: "POST",
           body: JSON.stringify(input),
         }),
-      deleteRelation: (id: string) =>
+      delete: (id: string) =>
         client.rawRequest<null>(`/api/v1/relations/${id}`, {
           method: "DELETE",
         }),
-      diff: (name: string, proposed: Record<string, unknown>) =>
-        client.rawRequest<unknown>("/api/v1/collections/diff", {
+    };
+
+    const schema = {
+      collections,
+      fields,
+      relations,
+      diff: (name: string, proposed: SchemaApplyInput) =>
+        client.rawRequest<SchemaDiff>("/api/v1/collections/diff", {
           method: "POST",
           body: JSON.stringify({ name, ...proposed }),
         }),
-      apply: (name: string, proposed: Record<string, unknown>) =>
-        client.rawRequest<CollectionResource>(
+      diffInput: (input: SchemaDiffInput) =>
+        client.rawRequest<SchemaDiff>("/api/v1/collections/diff", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      apply: (name: string, proposed: SchemaApplyInput) =>
+        client.rawRequest<SchemaApplyResult>(
           `/api/v1/collections/${name}/schema`,
           {
             method: "PUT",
             body: JSON.stringify(proposed),
           },
         ),
-      typegen: (filters?: { include?: string[]; exclude?: string[] }) => {
+      typegen: (filters?: TypegenSchemaFilters) => {
         const params = new URLSearchParams();
         if (filters?.include?.length)
           params.set("include", filters.include.join(","));
@@ -126,6 +191,18 @@ export function legacyRest() {
           `/api/v1/typegen/schema${qs ? `?${qs}` : ""}`,
         );
       },
+      listCollections: collections.list,
+      getCollection: collections.get,
+      getCompiled: collections.compiled,
+      createCollection: collections.create,
+      updateCollection: collections.update,
+      deleteCollection: collections.delete,
+      listFields: fields.list,
+      upsertField: fields.upsert,
+      deleteField: fields.delete,
+      listRelations: relations.list,
+      createRelation: relations.create,
+      deleteRelation: relations.delete,
     };
 
     function items<TName extends keyof TSchema & string>(name: TName) {

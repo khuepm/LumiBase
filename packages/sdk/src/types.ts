@@ -1,5 +1,14 @@
 export type DefaultSchema = Record<string, Record<string, unknown>>;
 
+export type PrimaryKeyType =
+  | "nanoid"
+  | "uuid"
+  | "integer"
+  | "bigInteger"
+  | "string";
+
+export type StorageMode = "jsonb" | "materialized" | "physical" | "external";
+
 export interface CollectionResource {
   id: string;
   siteId: string;
@@ -22,14 +31,21 @@ export interface CollectionResource {
   translations?: Record<string, unknown>;
   accountability?: "all" | "activity" | "none";
   versioning?: boolean;
-  primaryKeyType?: "nanoid" | "uuid" | "integer" | "bigInteger" | "string";
-  storageMode?: "jsonb" | "materialized" | "physical" | "external";
+  primaryKeyType?: PrimaryKeyType;
+  storageMode?: StorageMode;
   meta: Record<string, unknown>;
   fields?: FieldResource[];
   systemFields?: FieldResource[];
   createdAt?: string;
   updatedAt?: string;
 }
+
+export type CollectionInput = Omit<
+  Partial<CollectionResource>,
+  "id" | "siteId" | "fields" | "systemFields" | "createdAt" | "updatedAt"
+> & {
+  name: string;
+};
 
 export interface FieldResource {
   id: string;
@@ -73,6 +89,56 @@ export interface FieldResource {
   [key: string]: unknown;
 }
 
+export type FieldInput = Omit<
+  Partial<FieldResource>,
+  "id" | "collectionId"
+> & {
+  name: string;
+  type: string;
+  interface: string;
+};
+
+export interface FieldMutationOptions {
+  migrationPlan?: Record<string, unknown>;
+  confirmRiskyChange?: boolean;
+}
+
+export interface FieldRenameInput extends FieldMutationOptions {
+  type: string;
+  interface: string;
+  display?: string | null;
+  label?: string | null;
+  note?: string | null;
+  defaultValue?: unknown;
+  nullable?: boolean;
+  unique?: boolean;
+  indexed?: boolean;
+  searchable?: boolean;
+  length?: number | null;
+  precision?: number | null;
+  scale?: number | null;
+  special?: unknown[];
+  options?: Record<string, unknown>;
+  displayOptions?: Record<string, unknown>;
+  validation?: Record<string, unknown>;
+  conditions?: unknown[];
+  required?: boolean;
+  readonly?: boolean;
+  hidden?: boolean;
+  encrypted?: boolean;
+  versioned?: boolean;
+  rawEnabled?: boolean;
+  width?: "half" | "full" | "fill";
+  group?: string | null;
+  sortOrder?: number;
+  [key: string]: unknown;
+}
+
+export interface FieldDeleteOptions extends FieldMutationOptions {
+  force?: boolean;
+  backupToRevisions?: boolean;
+}
+
 export interface RelationResource {
   id: string;
   siteId: string;
@@ -81,7 +147,7 @@ export interface RelationResource {
   oneCollection: string;
   oneField: string | null;
   junctionCollection: string | null;
-  type?: "m2o" | "o2m" | "m2m" | "m2a";
+  type?: RelationType;
   aliasField?: string | null;
   relatedDisplayTemplate?: string | null;
   junctionManyField?: string | null;
@@ -89,6 +155,87 @@ export interface RelationResource {
   sortField?: string | null;
   onDelete?: "restrict" | "cascade" | "set null" | "no action";
   meta?: Record<string, unknown>;
+}
+
+export type RelationType = "m2o" | "o2m" | "m2m" | "m2a";
+
+export type RelationInput = Omit<
+  Partial<RelationResource>,
+  "id" | "siteId"
+> & {
+  manyCollection: string;
+  manyField: string;
+  oneCollection: string;
+  type?: RelationType;
+};
+
+export type SchemaDiffRisk = "low" | "medium" | "high";
+
+export type SchemaRuntimeImpact =
+  | "cache_invalidation"
+  | "permission_recompile"
+  | "typegen_rebuild"
+  | "data_migration_required"
+  | "relation_reindex"
+  | "storage_runtime_change";
+
+export interface SchemaDiffEntry {
+  name?: string;
+  field?: string;
+  identity?: string;
+  type?: string;
+  changes?: string[];
+  risk: SchemaDiffRisk;
+  runtimeImpact: SchemaRuntimeImpact[];
+}
+
+export interface SchemaDiff {
+  risk: SchemaDiffRisk;
+  runtimeImpact: SchemaRuntimeImpact[];
+  collection: {
+    added: string[];
+    removed: string[];
+    changed: SchemaDiffEntry[];
+  };
+  fields: {
+    added: SchemaDiffEntry[];
+    removed: SchemaDiffEntry[];
+    changed: SchemaDiffEntry[];
+  };
+  relations: {
+    added: SchemaDiffEntry[];
+    removed: SchemaDiffEntry[];
+    changed: SchemaDiffEntry[];
+  };
+}
+
+export interface SchemaChangedEvent {
+  type: "schema.changed";
+  siteId: string;
+  collection: string;
+  affectedCollections: string[];
+  diff: SchemaDiff;
+}
+
+export interface SchemaApplyResult {
+  collection: CollectionResource;
+  diff: SchemaDiff;
+  affectedCollections: string[];
+  event: SchemaChangedEvent;
+}
+
+export type SchemaApplyInput = Partial<CollectionInput> & {
+  fields?: FieldInput[];
+  relations?: RelationInput[];
+};
+
+export type SchemaDiffInput = SchemaApplyInput & {
+  name: string;
+};
+
+export interface TypegenSchemaFilters {
+  include?: string[];
+  exclude?: string[];
 }
 
 export type ItemFilterOp =
