@@ -40,6 +40,7 @@ const viteBuildMetadata = {
   VITE_LUMIBASE_VERSION: process.env.VITE_LUMIBASE_VERSION || process.env.LUMIBASE_VERSION || readRootVersion(),
   VITE_LUMIBASE_GIT_SHA: process.env.VITE_LUMIBASE_GIT_SHA || process.env.LUMIBASE_GIT_SHA || readGitSha(),
   VITE_LUMIBASE_BUILD_TIME: process.env.VITE_LUMIBASE_BUILD_TIME || process.env.LUMIBASE_BUILD_TIME || new Date().toISOString(),
+  VITE_LUMIBASE_RELEASE_CHANNEL: process.env.VITE_LUMIBASE_RELEASE_CHANNEL || process.env.LUMIBASE_RELEASE_CHANNEL || process.env.NODE_ENV || 'development',
 };
 
 Object.assign(process.env, viteBuildMetadata);
@@ -50,6 +51,7 @@ export default defineConfig({
     'import.meta.env.VITE_LUMIBASE_VERSION': JSON.stringify(viteBuildMetadata.VITE_LUMIBASE_VERSION),
     'import.meta.env.VITE_LUMIBASE_GIT_SHA': JSON.stringify(viteBuildMetadata.VITE_LUMIBASE_GIT_SHA),
     'import.meta.env.VITE_LUMIBASE_BUILD_TIME': JSON.stringify(viteBuildMetadata.VITE_LUMIBASE_BUILD_TIME),
+    'import.meta.env.VITE_LUMIBASE_RELEASE_CHANNEL': JSON.stringify(viteBuildMetadata.VITE_LUMIBASE_RELEASE_CHANNEL),
   },
   resolve: {
     alias: {
