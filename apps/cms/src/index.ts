@@ -11,7 +11,9 @@ import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
 import { withStudioAccess } from './middleware/studio-access';
-import { withCoreRbacGuard, withSecurityHeaders, withUploadGuard } from './middleware/traditional-defense';
+import { withControlPlaneAccessGuard } from './middleware/control-plane-access-guard';
+import { withFileUploadPolicy } from './middleware/file-upload-policy';
+import { withSecurityHeaders } from './middleware/security-headers';
 import { withTenant } from './middleware/tenant';
 import { activityRouter } from './routes/activity';
 import { accessRouter } from './routes/access';
@@ -145,7 +147,7 @@ app.route('/scim/v2', scimRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withDb(), withAuth(), requireSetupComplete(), withStudioAccess(), withCoreRbacGuard(), withUploadGuard(), withRls());
+api.use('*', withTenant(), withDb(), withAuth(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).
