@@ -2,7 +2,7 @@
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
 #
 # Differences from dev:
-# - Uses the production multi-stage Dockerfile (no hot-reload)
+# - Uses the published CMS image by default (no hot-reload)
 # - No source code volume mounts
 # - NODE_ENV=production
 # - Keeps stateful services on the private Compose network
@@ -31,9 +31,8 @@ services:
     ports: !reset []
 
   cms:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    build: !reset null
+    image: ${LUMIBASE_CMS_IMAGE:-ghcr.io/khuepm/lumibase-cms:${LUMIBASE_VERSION:-latest}}
     environment:
       NODE_ENV: production
       LUMIBASE_ENV: production
