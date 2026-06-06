@@ -7,7 +7,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Website: [lumibase.dev](https://lumibase.dev)
 
+
+## Required release notes format
+
+Every `vX.Y.Z` release must include the following sections in both this
+changelog and the published GitHub Release notes:
+
+### Version
+
+- `vX.Y.Z`
+
+### Date
+
+- `YYYY-MM-DD`
+
+### Highlights
+
+- Summarize the most important user-facing changes.
+- Include notable fixes, performance improvements, and security updates.
+
+### Breaking changes
+
+- List incompatible API, configuration, runtime, or behavior changes.
+- Use `None` when the release has no breaking changes.
+
+### Migrations
+
+- State whether database or schema migrations are included.
+- Document the compatible DB/schema version or migration range.
+- Call out long-running, destructive, or manual migration steps.
+
+### Upgrade steps
+
+1. Review the breaking changes and migrations above.
+2. Confirm the target Docker image tag exists:
+   `ghcr.io/.../lumibase-cms:X.Y.Z`.
+3. Take a backup when the backup guidance below says it is required.
+4. Deploy the image tag listed in Docker image tags.
+5. Run the required database/schema migrations, if any.
+6. Verify health checks and critical CMS workflows.
+
+### Rollback notes
+
+- State whether rollback to the previous release is safe without restoring data.
+- Document the previous image tag to redeploy.
+- Explain when a database/schema restore is required.
+
+### Docker image tags
+
+- CMS: `ghcr.io/.../lumibase-cms:X.Y.Z`
+- Optional immutable digest: `ghcr.io/.../lumibase-cms@sha256:<digest>`
+
+### Compatibility DB/schema
+
+- Compatible DB/schema: `<schema-version-or-migration-range>`
+- Minimum supported database engine/version: `<database-version>`
+
+### Backup guidance
+
+- Backup required: `<Yes|No>`
+- Backup scope: `<database|object storage|search index|configuration|none>`
+- Reason: `<why backup is or is not required>`
+
 ## [0.4.2] - 2026-06-07
+
+### Version
+
+- `v0.4.2`
+
+### Date
+
+- `2026-06-07`
+
+### Highlights
+
+- Added backup and disaster recovery validation runbooks, restore drill
+  automation, scheduler guidance, and Cloudflare Pages deployment configuration.
+
+### Breaking changes
+
+- None.
+
+### Migrations
+
+- No application database/schema migration is introduced by this documentation
+  and deployment-process release.
+- Compatible DB/schema: existing `v0.4.2` schema state.
+
+### Upgrade steps
+
+1. Confirm the target Docker image tag exists:
+   `ghcr.io/.../lumibase-cms:0.4.2`.
+2. Review the compatibility and backup guidance in these notes.
+3. Deploy the `v0.4.2` image when available for the target environment.
+4. Verify restore drill automation, `/health`, and critical CMS workflows after
+   deployment.
+
+### Rollback notes
+
+- Roll back by redeploying the previously known-good CMS image tag.
+- No database/schema restore is required for this documentation and
+  deployment-process release.
+
+### Docker image tags
+
+- CMS: `ghcr.io/.../lumibase-cms:0.4.2`
+
+### Compatibility DB/schema
+
+- Compatible DB/schema: existing `v0.4.2` schema state.
+- Minimum supported database engine/version: use the version supported by the
+  target deployment environment.
+
+### Backup guidance
+
+- Backup required: No.
+- Backup scope: none.
+- Reason: this release-process update does not modify runtime data or schema
+  state.
 
 ### Added
 
