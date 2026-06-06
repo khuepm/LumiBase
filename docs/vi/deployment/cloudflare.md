@@ -29,20 +29,26 @@ pnpm exec wrangler kv namespace create CONFIG_CACHE
 pnpm exec wrangler r2 bucket create lumibase-media
 ```
 
-Cập nhật ID trả về vào `wrangler.toml`, rồi set secret:
+Cập nhật ID trả về vào `wrangler.toml`. Giữ default local/dev trong top-level `[vars]`, còn giá trị không nhạy cảm cho staging/production nằm trong `[env.staging.vars]` và `[env.production.vars]`. Không hardcode production secret trong `wrangler.toml`; hãy lưu bằng Cloudflare secrets:
 
 ```bash
 cd apps/cms
-pnpm exec wrangler secret put JWT_SECRET
-pnpm exec wrangler secret put CF_ACCESS_CERTS_URL
-pnpm exec wrangler secret put CF_ACCESS_AUDIENCE
+pnpm exec wrangler secret put JWT_SECRET --env production
+pnpm exec wrangler secret put CF_ACCESS_CERTS_URL --env production
+pnpm exec wrangler secret put CF_ACCESS_AUDIENCE --env production
+```
+
+Chạy guard release trước khi deploy. Script kiểm tra production không bật dev auth, không dùng JWT secret mặc định và các required secret đã tồn tại qua CI environment variables hoặc Cloudflare secrets:
+
+```bash
+pnpm release:check
 ```
 
 Build dry-run và deploy:
 
 ```bash
 pnpm --filter @lumibase/cms build
-pnpm --filter @lumibase/cms deploy
+pnpm --filter @lumibase/cms deploy:production
 ```
 
 ## Site tài liệu
@@ -56,6 +62,6 @@ pnpm docs:deploy
 
 ## Lưu ý production
 
-- Không deploy production với `LUMIBASE_DEV_AUTH="true"` hoặc `JWT_SECRET` mặc định.
+- Không deploy production với `LUMIBASE_DEV_AUTH="true"` hoặc `JWT_SECRET` mặc định; `pnpm release:check` sẽ chặn trước bước `wrangler deploy`.
 - Durable Object migration phải nằm ở top-level `[[migrations]]` trong `wrangler.toml`.
 - Nếu code phụ thuộc schema mới, chạy database migration trước khi mở traffic production.

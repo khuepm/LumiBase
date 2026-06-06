@@ -59,3 +59,26 @@ crons = ["0 * * * *"]
 # [[queues.producers]]
 # binding = "REALTIME_QUEUE"
 # queue = "lumibase-realtime"
+
+# ─── Environment Profiles ────────────────────────────────────────────────────
+# Top-level [vars] is intentionally local/development only. Wrangler does not
+# inherit vars into named environments, so staging and production repeat every
+# non-sensitive value they need here. Secrets such as JWT_SECRET,
+# CF_ACCESS_CERTS_URL and CF_ACCESS_AUDIENCE must be set with
+# `wrangler secret put --env <environment>`.
+
+[env.staging.vars]
+LUMIBASE_ENV = "staging"
+LUMIBASE_VERSION = "unknown"
+LUMIBASE_GIT_SHA = "unknown"
+LUMIBASE_BUILD_TIME = "unknown"
+LUMIBASE_RELEASE_CHANNEL = "staging"
+LUMIBASE_DEV_AUTH = "false"
+
+[env.production.vars]
+LUMIBASE_ENV = "production"
+LUMIBASE_VERSION = "unknown"
+LUMIBASE_GIT_SHA = "unknown"
+LUMIBASE_BUILD_TIME = "unknown"
+LUMIBASE_RELEASE_CHANNEL = "production"
+LUMIBASE_DEV_AUTH = "false"

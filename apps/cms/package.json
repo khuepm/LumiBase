@@ -12,13 +12,15 @@
     "dev": "wrangler dev --port 1989",
     "build": "node ../../scripts/with-build-metadata.mjs wrangler deploy --dry-run --outdir=dist",
     "build:node": "node ../../scripts/with-build-metadata.mjs esbuild src/serve.ts --bundle --platform=node --format=cjs --outfile=dist/serve.cjs --external:pg-native --external:cloudflare:workers && node ../../scripts/with-build-metadata.mjs esbuild ../../packages/database/scripts/migrate.ts --bundle --platform=node --format=cjs --outfile=dist/migrate.cjs --external:pg-native",
-    "deploy": "wrangler deploy",
+    "deploy": "node ../../scripts/check-release-env.mjs --env production --config apps/cms/wrangler.toml && wrangler deploy --env production",
     "typecheck": "tsc --noEmit",
     "typegen": "tsx scripts/typegen.ts",
     "lint": "echo \"(lint not configured)\" && exit 0",
     "test": "vitest --run",
     "k6:login-brute": "k6 run k6/login-brute-force.js",
-    "clean": "rm -rf .turbo .wrangler dist"
+    "clean": "rm -rf .turbo .wrangler dist",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "node ../../scripts/check-release-env.mjs --env production --config apps/cms/wrangler.toml && wrangler deploy --env production"
   },
   "dependencies": {
     "@hono/node-server": "^1.12.0",
