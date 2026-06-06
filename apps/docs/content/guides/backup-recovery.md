@@ -610,6 +610,38 @@ root-readable env file. Never point `RESTORE_DATABASE_URL` at production; the
 script refuses to run when it matches `DATABASE_URL` unless
 `ALLOW_PRODUCTION_RESTORE_DRILL=true` is explicitly set.
 
+For a production Linux host, install the included systemd timer:
+
+```bash
+sudo useradd --system --home /opt/lumibase --shell /usr/sbin/nologin lumibase
+sudo install -d -o lumibase -g lumibase -m 0750 /opt/lumibase
+sudo install -d -o lumibase -g lumibase -m 0750 /var/lib/lumibase/restore-drill-reports
+sudo install -d -o root -g lumibase -m 0750 /etc/lumibase
+
+# Copy the repository to /opt/lumibase, then install scheduler files
+sudo install -o root -g root -m 0644 \
+  docker/systemd/lumibase-restore-drill.service \
+  /etc/systemd/system/lumibase-restore-drill.service
+sudo install -o root -g root -m 0644 \
+  docker/systemd/lumibase-restore-drill.timer \
+  /etc/systemd/system/lumibase-restore-drill.timer
+sudo install -o root -g lumibase -m 0640 \
+  docker/restore-drill.env.example \
+  /etc/lumibase/restore-drill.env
+
+sudoedit /etc/lumibase/restore-drill.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now lumibase-restore-drill.timer
+sudo systemctl list-timers 'lumibase-restore-drill*'
+```
+
+Run one drill immediately after configuring secrets:
+
+```bash
+sudo systemctl start lumibase-restore-drill.service
+sudo journalctl -u lumibase-restore-drill.service -n 100 --no-pager
+```
+
 ### Manual Verification Checklist
 
 - [ ] Restore backup to a test database
