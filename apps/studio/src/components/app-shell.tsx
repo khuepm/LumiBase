@@ -14,6 +14,7 @@ import {
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { NotificationsPanel } from '@/components/notifications-panel';
+import { ReleaseUpdateNotice } from '@/components/release-update-notice';
 import { clearActiveToken } from '@/lib/api';
 import { studioBuildMetadata } from '@/lib/build-metadata';
 import { ADMIN_PATH_REGEX } from '@/modules/setup/schemas/admin-path';
@@ -129,13 +130,14 @@ export function AppShell({ children }: AppShellProps) {
             </Link>
           );
         })}
-        <div
-          className="mt-auto [writing-mode:vertical-rl] rotate-180 px-1 py-2 text-[10px] font-medium text-muted-foreground"
+        <a
+          href={`${adminBase}/settings/updates`}
+          className="mt-auto [writing-mode:vertical-rl] rotate-180 rounded px-1 py-2 text-[10px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           title={`Git ${studioBuildMetadata.gitSha} • Built ${studioBuildMetadata.buildTime}`}
-          aria-label={`LumiBase version ${studioBuildMetadata.version}`}
+          aria-label={`LumiBase version ${studioBuildMetadata.version}; open update settings`}
         >
           v{studioBuildMetadata.version}
-        </div>
+        </a>
       </nav>
 
       <div className="flex flex-1 flex-col">
@@ -154,6 +156,7 @@ export function AppShell({ children }: AppShellProps) {
           </div>
           {/* Right-side topbar actions */}
           <div className="flex items-center gap-2">
+            <ReleaseUpdateNotice compact />
             <NotificationsPanel />
             <button
               type="button"
