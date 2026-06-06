@@ -598,17 +598,19 @@ CLOUDFLARE_ENV=restore-drill \
 ./docker/scripts/restore-drill.sh
 ```
 
-Schedule it from cron, systemd timers, GitHub Actions, or your Cloudflare
-operations scheduler. For a weekly host cron:
-
-```cron
-0 3 * * 0 cd /opt/lumibase && /usr/bin/env bash docker/scripts/restore-drill.sh >> /var/log/lumibase-restore-drill.log 2>&1
-```
-
 Store the required environment variables in the scheduler's secret store or in a
 root-readable env file. Never point `RESTORE_DATABASE_URL` at production; the
 script refuses to run when it matches `DATABASE_URL` unless
 `ALLOW_PRODUCTION_RESTORE_DRILL=true` is explicitly set.
+
+#### Scheduler Setup by OS
+
+All schedulers need these commands available on `PATH`: `bash`, `psql`, `curl`,
+`node`, and `aws` when backups are fetched from S3. Use absolute paths or set
+`PATH` in wrapper scripts because OS schedulers do not load your interactive
+shell profile.
+
+##### Linux: systemd timer
 
 For a production Linux host, install the included systemd timer:
 
@@ -640,6 +642,159 @@ Run one drill immediately after configuring secrets:
 ```bash
 sudo systemctl start lumibase-restore-drill.service
 sudo journalctl -u lumibase-restore-drill.service -n 100 --no-pager
+```
+
+For simpler Linux hosts without systemd, use cron:
+
+```cron
+0 3 * * 0 cd /opt/lumibase && /usr/bin/env bash docker/scripts/restore-drill.sh >> /var/log/lumibase-restore-drill.log 2>&1
+```
+
+##### macOS: launchd LaunchAgent
+
+On macOS, use `launchd`. Keep secrets in a user-readable env file, then run the
+drill through a wrapper that sets `PATH` explicitly:
+
+```bash
+mkdir -p "$HOME/.config/lumibase" "$HOME/.local/bin"
+mkdir -p "$HOME/Library/Logs/lumibase"
+mkdir -p "$HOME/Library/Application Support/Lumibase/restore-drill-reports"
+
+cp docker/restore-drill.env.example "$HOME/.config/lumibase/restore-drill.env"
+chmod 600 "$HOME/.config/lumibase/restore-drill.env"
+```
+
+Set `DRILL_REPORT_DIR` in that env file to a macOS path such as:
+
+```bash
+DRILL_REPORT_DIR=/Users/khuepm/Library/Application Support/Lumibase/restore-drill-reports
+```
+
+Create the wrapper:
+
+```bash
+cat > "$HOME/.local/bin/lumibase-restore-drill" <<'EOF'
+#!/usr/bin/env zsh
+set -euo pipefail
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+cd /Users/khuepm/workplace/Lumibase
+
+set -a
+source "$HOME/.config/lumibase/restore-drill.env"
+set +a
+
+exec ./docker/scripts/restore-drill.sh
+EOF
+
+chmod +x "$HOME/.local/bin/lumibase-restore-drill"
+```
+
+Install a weekly Sunday 03:00 LaunchAgent:
+
+```bash
+cat > "$HOME/Library/LaunchAgents/com.lumibase.restore-drill.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.lumibase.restore-drill</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/Users/khuepm/.local/bin/lumibase-restore-drill</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Weekday</key>
+      <integer>0</integer>
+      <key>Hour</key>
+      <integer>3</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/khuepm/Library/Logs/lumibase/restore-drill.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/khuepm/Library/Logs/lumibase/restore-drill.err.log</string>
+  </dict>
+</plist>
+EOF
+```
+
+Load and test it:
+
+```bash
+launchctl unload "$HOME/Library/LaunchAgents/com.lumibase.restore-drill.plist" 2>/dev/null || true
+launchctl load "$HOME/Library/LaunchAgents/com.lumibase.restore-drill.plist"
+launchctl start com.lumibase.restore-drill
+tail -f "$HOME/Library/Logs/lumibase/restore-drill.out.log"
+```
+
+##### Windows: Task Scheduler
+
+On Windows, run the Bash script from PowerShell through Git Bash or WSL. Git
+Bash is usually the lightest option for an operator workstation; WSL is better
+for a server-like restore environment.
+
+Create a secret env file outside the repo:
+
+```powershell
+New-Item -ItemType Directory -Force C:\ProgramData\Lumibase | Out-Null
+Copy-Item .\docker\restore-drill.env.example C:\ProgramData\Lumibase\restore-drill.env
+notepad C:\ProgramData\Lumibase\restore-drill.env
+```
+
+Create a PowerShell wrapper:
+
+```powershell
+@'
+$ErrorActionPreference = "Stop"
+
+$Repo = "C:\Lumibase"
+$EnvFile = "C:\ProgramData\Lumibase\restore-drill.env"
+$GitBash = "C:\Program Files\Git\bin\bash.exe"
+
+Get-Content $EnvFile | ForEach-Object {
+  if ($_ -match '^\s*$' -or $_ -match '^\s*#') { return }
+  $name, $value = $_ -split '=', 2
+  [Environment]::SetEnvironmentVariable($name.Trim(), $value.Trim(), "Process")
+}
+
+Set-Location $Repo
+& $GitBash -lc "./docker/scripts/restore-drill.sh"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+'@ | Set-Content C:\ProgramData\Lumibase\restore-drill.ps1 -Encoding UTF8
+```
+
+Register a weekly Sunday 03:00 task:
+
+```powershell
+$Action = New-ScheduledTaskAction `
+  -Execute "PowerShell.exe" `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\Lumibase\restore-drill.ps1"
+
+$Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3:00am
+$Principal = New-ScheduledTaskPrincipal -UserId "$env:USERNAME" -LogonType Interactive -RunLevel Highest
+
+Register-ScheduledTask `
+  -TaskName "Lumibase Restore Drill" `
+  -Action $Action `
+  -Trigger $Trigger `
+  -Principal $Principal `
+  -Description "Runs the Lumibase restore drill weekly."
+```
+
+Run it immediately and inspect the result:
+
+```powershell
+Start-ScheduledTask -TaskName "Lumibase Restore Drill"
+Get-ScheduledTaskInfo -TaskName "Lumibase Restore Drill"
 ```
 
 ### Manual Verification Checklist
