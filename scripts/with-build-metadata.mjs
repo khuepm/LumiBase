@@ -49,6 +49,9 @@ if (!command) {
 }
 
 const args = [...rawArgs];
+if (args[0] === '--') {
+  args.shift();
+}
 if (command === 'wrangler' && args[0] === 'deploy') {
   for (const [key, value] of Object.entries(metadata)) {
     args.push('--var', `${key}:${value}`);
