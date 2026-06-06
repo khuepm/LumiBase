@@ -128,6 +128,7 @@ changelog and the published GitHub Release notes:
 
 ### Added
 
+- Added tag-driven npm publishing for the public package allowlist, with OIDC trusted publishing, provenance, and release-note package/version reporting.
 - Added a backup and disaster recovery validation runbook covering restore
   drills, row-count verification, app health checks, media/search rebuilds,
   RTO/RPO evidence, and Cloudflare-specific recovery checks.
