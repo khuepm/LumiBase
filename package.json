@@ -29,6 +29,8 @@
     "docs:preview": "pnpm --filter @lumibase/docs preview",
     "studio:dev": "pnpm --filter @lumibase/studio dev",
     "cms:dev": "pnpm --filter @lumibase/cms dev",
+    "release:check": "node scripts/check-release-env.mjs --env production --config apps/cms/wrangler.toml",
+    "cms:deploy": "pnpm release:check && pnpm --filter @lumibase/cms build:production && pnpm --filter @lumibase/cms deploy:production",
     "lumibase": "turbo run dev --filter=@lumibase/studio --filter=@lumibase/cms",
     "landing:deploy": "pnpm landing:build && wrangler pages deploy apps/landing/out --project-name lumibase-landing",
     "docs:deploy": "pnpm docs:build && wrangler pages deploy dist --project-name lumibase-docs --branch main --cwd apps/docs",
