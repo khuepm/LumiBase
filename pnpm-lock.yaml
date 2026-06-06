@@ -478,11 +478,10 @@ importers:
         version: 2.1.9(@types/node@22.19.19)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/extension-sdk:
-    dependencies:
-      '@lumibase/shared':
-        specifier: workspace:*
-        version: link:../shared
     devDependencies:
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.14)(tsx@4.22.0)(typescript@5.9.3)
       typescript:
         specifier: ^5.6.2
         version: 5.9.3
@@ -522,10 +521,6 @@ importers:
         version: 2.1.9(@types/node@22.19.19)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/sdk:
-    dependencies:
-      '@lumibase/shared':
-        specifier: workspace:*
-        version: link:../shared
     devDependencies:
       tsup:
         specifier: ^8.5.1

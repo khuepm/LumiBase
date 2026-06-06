@@ -14,6 +14,7 @@ import {
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { NotificationsPanel } from '@/components/notifications-panel';
+import { ReleaseUpdateNotice } from '@/components/release-update-notice';
 import { clearActiveToken } from '@/lib/api';
 import { VersionInfoFooter } from '@/components/version-info-footer';
 import { ADMIN_PATH_REGEX } from '@/modules/setup/schemas/admin-path';
@@ -148,6 +149,7 @@ export function AppShell({ children }: AppShellProps) {
           </div>
           {/* Right-side topbar actions */}
           <div className="flex items-center gap-2">
+            <ReleaseUpdateNotice compact />
             <NotificationsPanel />
             <button
               type="button"

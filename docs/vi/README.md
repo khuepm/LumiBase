@@ -29,6 +29,8 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [api/hono-api-spec.md](./api/hono-api-spec.md) — REST/WS endpoints chuẩn hoá.
 - **UI Studio**
   - [ui/README.md](../ui/README.md) — Bản thiết kế lại giao diện Lumibase Studio và đặc tả chi tiết các màn hình.
+- **Vận hành** (`operations/`)
+  - [operations/upgrades.md](./operations/upgrades.md) — Chính sách fixed-version, luồng nâng cấp Cloudflare/Docker, backup, migration và giới hạn rollback.
 - **Lộ trình**
   - [roadmap/tasks.md](./roadmap/tasks.md) — Task list chi tiết theo phase.
 

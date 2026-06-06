@@ -98,8 +98,14 @@ LLM_PROVIDER=echo              # Use echo mock — no API key needed
 # Generate a new migration after schema changes
 pnpm -F @lumibase/database db:generate
 
+# Check connectivity, current version, and pending migrations without applying DDL
+pnpm db:migrate:preflight
+
 # Apply pending migrations
-pnpm -F @lumibase/database db:migrate
+pnpm db:migrate
+
+# Print the current migration version
+pnpm db:migrate:version
 
 # Reset database (drops all tables and re-runs migrations)
 pnpm -F @lumibase/database db:reset
