@@ -1,6 +1,6 @@
-import { scimTokens } from '@lumibase/database';
-import { and, eq, isNull } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { scimTokens, users, userSites } from '@lumibase/database';
+import { and, eq, isNull, or } from 'drizzle-orm';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 
@@ -22,6 +22,58 @@ async function sha256(text: string): Promise<string> {
 const createTokenSchema = z.object({
   label: z.string().min(1),
   lifespanDays: z.number().int().min(1).max(365).optional().default(90),
+});
+
+function forbidden(message: string) {
+  return {
+    errors: [
+      {
+        code: 'FORBIDDEN',
+        message,
+      },
+    ],
+  };
+}
+
+async function requireScimTokenAdmin(c: Context<AppEnv>): Promise<Response | null> {
+  const auth = c.get('auth');
+  const roles = Array.isArray(auth?.roles) ? (auth.roles as string[]) : [];
+
+  if (!roles.includes('admin')) {
+    return c.json(forbidden('Admin role required.'), 403);
+  }
+
+  const siteId = c.get('siteId');
+  const userId = auth?.userId;
+  const externalId = auth?.externalId;
+
+  if (!userId && !externalId) {
+    return c.json(forbidden('Site membership required.'), 403);
+  }
+
+  const predicates = [];
+  if (userId) predicates.push(eq(users.id, userId));
+  if (externalId) predicates.push(eq(users.externalId, externalId));
+
+  const [membership] = await c
+    .get('db')
+    .select({ userId: userSites.userId })
+    .from(userSites)
+    .innerJoin(users, eq(users.id, userSites.userId))
+    .where(and(eq(userSites.siteId, siteId), predicates.length === 1 ? predicates[0] : or(...predicates)))
+    .limit(1);
+
+  if (!membership) {
+    return c.json(forbidden('Site membership required.'), 403);
+  }
+
+  return null;
+}
+
+scimAdminRouter.use('*', async (c, next) => {
+  const forbidden = await requireScimTokenAdmin(c);
+  if (forbidden) return forbidden;
+  return next();
 });
 
 // Create token (generate new)
