@@ -1,5 +1,11 @@
 export type DefaultSchema = Record<string, Record<string, unknown>>;
 
+export type ID = string;
+export type Locale = string;
+export type Brand<TBrand extends string, TValue> = TValue & {
+  readonly __brand: TBrand;
+};
+
 export type PrimaryKeyType =
   | "nanoid"
   | "uuid"

@@ -1084,6 +1084,8 @@ paths:
                           properties:
                             name: { type: string }
                             primaryKey: { type: string }
+                            primaryKeyField: { type: string }
+                            primaryKeyType: { type: string, enum: [nanoid, uuid, integer, bigInteger, string] }
                             fields:
                               type: array
                               items:
@@ -1093,10 +1095,28 @@ paths:
                                   type: { type: string }
                                   required: { type: boolean }
                                   nullable: { type: boolean }
+                                  readonly: { type: boolean }
+                                  generated: { type: boolean }
+                                  system: { type: boolean }
+                                  encrypted: { type: boolean }
+                                  primaryKey: { type: boolean }
                                   branded: { type: string }
                                   kind: { type: string, enum: [m2o, o2m, m2m, m2a] }
                                   target: { type: string }
                                   enum: { type: array, items: { type: string } }
+                            relations:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  field: { type: string }
+                                  kind: { type: string, enum: [m2o, o2m, m2m, m2a] }
+                                  target: { type: string }
+                                  manyCollection: { type: string }
+                                  manyField: { type: string }
+                                  oneCollection: { type: string }
+                                  oneField: { type: string, nullable: true }
+                                  junctionCollection: { type: string, nullable: true }
   /auth/me:
     get:
       summary: Current authenticated principal for active site
