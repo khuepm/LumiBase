@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Website: [lumibase.dev](https://lumibase.dev)
 
+## [0.4.1] - 2026-06-06
+
+### Added
+
+- Added public marketplace catalog and launch documentation refinements.
+
+### Changed
+
+- Hardened Docker production deployment with startup validation for required
+  production secrets, database TLS settings, CORS allowlists, and AES
+  encryption key format.
+- Added Docker secret-file support via `*_FILE` variables before migrations and
+  server startup.
+- Updated production Docker Compose to keep stateful services on the private
+  Compose network while only publishing the CMS ingress port.
+- Updated deployment docs and roadmap task tracking for Docker production
+  hardening.
+
+### Fixed
+
+- Added timeout protection for dependency health probes.
+
 ## [0.4.0] - 2026-06-06
 
 ### Added
@@ -254,6 +276,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 Initial tagged release.
 
+[0.4.1]: https://github.com/khuepm/lumibase/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/khuepm/lumibase/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/khuepm/lumibase/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/khuepm/lumibase/compare/v0.2.0...v0.2.1
