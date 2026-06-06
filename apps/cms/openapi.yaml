@@ -655,22 +655,46 @@ components:
     # --- Marketplace (POST-GA3) ---
     MarketplaceExtension:
       type: object
-      required: [id, name, version, type, bundleUrl]
+      required: [id, slug, marketplaceSlug, name, version, latestVersion, type]
       properties:
         id: { type: string }
-        name: { type: string }
         slug: { type: string }
-        version: { type: string }
-        type: { type: string }
-        bundleUrl: { type: string, format: uri }
-        signature: { type: string, description: 'Base64-encoded Ed25519 detached signature' }
-        keyId: { type: string }
-        manifest: { type: object, additionalProperties: true }
-        capabilities:
+        marketplaceSlug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        readme: { type: string }
+        category: { type: string }
+        tags:
           type: array
           items: { type: string }
-        publishedAt: { type: string, format: date-time }
-        verified: { type: boolean }
+        publisherName: { type: string }
+        publisher: { type: string }
+        latestVersion: { type: string }
+        version: { type: string }
+        type: { type: string }
+        totalDownloads: { type: integer, default: 0 }
+        rating: { type: number, nullable: true }
+        ratingCount: { type: integer, nullable: true }
+        versions:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              version: { type: string }
+              publishedAt: { type: string, format: date-time, nullable: true }
+              sha256: { type: string, nullable: true }
+        bundleUrl: { type: string, format: uri }
+        bundleSha256: { type: string, nullable: true }
+        signature: { type: string, nullable: true, description: 'Base64-encoded detached signature' }
+        signatureAlg: { type: string, nullable: true, enum: [ed25519, rsa-pss-sha256] }
+        publisherKeyId: { type: string, nullable: true }
+        manifest: { type: object, additionalProperties: true }
+        publishedAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time, nullable: true }
+        repositoryUrl: { type: string, format: uri, nullable: true }
+        documentationUrl: { type: string, format: uri, nullable: true }
+        licenseType: { type: string, nullable: true }
     # --- Materialized Collections (POST-GA4) ---
     MaterializedCollection:
       type: object
@@ -2404,10 +2428,12 @@ paths:
       summary: List published extensions in the marketplace
       security: []
       parameters:
-        - { name: type, in: query, schema: { type: string }, description: 'Filter by extension type' }
-        - { name: search, in: query, schema: { type: string } }
-        - { name: limit, in: query, schema: { type: integer, default: 20 } }
-        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: q, in: query, schema: { type: string }, description: 'Search by name, description, publisher, slug, category, or tag' }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: tags, in: query, schema: { type: string }, description: 'Comma-separated tag filter' }
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1 } }
+        - { name: perPage, in: query, schema: { type: integer, default: 12, minimum: 1, maximum: 50 } }
+        - { name: sort, in: query, schema: { type: string, enum: [popular, latest, name], default: latest } }
       responses:
         '200':
           description: OK
@@ -2419,12 +2445,10 @@ paths:
                   data:
                     type: array
                     items: { $ref: '#/components/schemas/MarketplaceExtension' }
-                  meta:
-                    type: object
-                    properties:
-                      total: { type: integer }
-                      limit: { type: integer }
-                      offset: { type: integer }
+                  total: { type: integer }
+                  page: { type: integer }
+                  perPage: { type: integer }
+                  totalPages: { type: integer }
 
   /marketplace/extensions/{slug}:
     parameters:
