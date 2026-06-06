@@ -89,6 +89,21 @@ const schemaInputSchema = collectionInputSchema
   .partial()
   .extend({
     fields: z.array(fieldInputSchema).optional(),
+    relations: z.array(z.object({
+      manyCollection: z.string().min(1),
+      manyField: z.string().min(1),
+      oneCollection: z.string().min(1),
+      oneField: z.string().nullable().optional(),
+      junctionCollection: z.string().nullable().optional(),
+      type: z.enum(['m2o', 'o2m', 'm2m', 'm2a']).optional(),
+      aliasField: z.string().nullable().optional(),
+      relatedDisplayTemplate: z.string().nullable().optional(),
+      junctionManyField: z.string().nullable().optional(),
+      junctionOneField: z.string().nullable().optional(),
+      sortField: z.string().nullable().optional(),
+      onDelete: z.enum(['restrict', 'cascade', 'set null', 'no action']).optional(),
+      meta: z.record(z.unknown()).optional(),
+    })).optional(),
   });
 
 const buildService = (c: Context<AppEnv>) =>

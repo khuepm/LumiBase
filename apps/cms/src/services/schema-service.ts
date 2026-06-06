@@ -129,6 +129,7 @@ export type PrimaryKeyType = 'nanoid' | 'uuid' | 'integer' | 'bigInteger' | 'str
 export type StorageMode = 'jsonb' | 'materialized' | 'physical' | 'external';
 type FieldRow = typeof fields.$inferSelect;
 type CollectionRow = typeof collections.$inferSelect;
+type RelationRow = typeof relations.$inferSelect;
 
 export interface FieldInput {
   name: string;
@@ -189,6 +190,14 @@ export interface RelationInput {
 }
 
 export type RelationType = 'm2o' | 'o2m' | 'm2m' | 'm2a';
+export type SchemaDiffRisk = 'low' | 'medium' | 'high';
+export type SchemaRuntimeImpact =
+  | 'cache_invalidation'
+  | 'permission_recompile'
+  | 'typegen_rebuild'
+  | 'data_migration_required'
+  | 'relation_reindex'
+  | 'storage_runtime_change';
 
 type RelationReference = {
   manyCollection: string;
@@ -199,15 +208,22 @@ type RelationReference = {
 };
 
 export interface SchemaDiff {
+  risk: SchemaDiffRisk;
+  runtimeImpact: SchemaRuntimeImpact[];
   collection: {
     added: string[];
     removed: string[];
-    changed: Array<{ field: string; changes: string[] }>;
+    changed: Array<{ field: string; changes: string[]; risk: SchemaDiffRisk; runtimeImpact: SchemaRuntimeImpact[] }>;
   };
   fields: {
-    added: Array<{ name: string; type: string }>;
-    removed: string[];
-    changed: Array<{ name: string; changes: string[] }>;
+    added: Array<{ name: string; type: string; risk: SchemaDiffRisk; runtimeImpact: SchemaRuntimeImpact[] }>;
+    removed: Array<{ name: string; risk: SchemaDiffRisk; runtimeImpact: SchemaRuntimeImpact[] }>;
+    changed: Array<{ name: string; changes: string[]; risk: SchemaDiffRisk; runtimeImpact: SchemaRuntimeImpact[] }>;
+  };
+  relations: {
+    added: Array<{ identity: string; type: RelationType; risk: SchemaDiffRisk; runtimeImpact: SchemaRuntimeImpact[] }>;
+    removed: Array<{ identity: string; type: RelationType; risk: SchemaDiffRisk; runtimeImpact: SchemaRuntimeImpact[] }>;
+    changed: Array<{ identity: string; changes: string[]; risk: SchemaDiffRisk; runtimeImpact: SchemaRuntimeImpact[] }>;
   };
 }
 
@@ -592,12 +608,12 @@ export class SchemaService {
     return Boolean(field);
   }
 
-  async updateSchema(name: string, input: CollectionInput & { fields?: FieldInput[] }) {
+  async updateSchema(name: string, input: CollectionInput & { fields?: FieldInput[]; relations?: RelationInput[] }) {
     const current = await this.getCollection(name);
     if (!current) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
     }
-    const { fields: fieldInputs, ...collectionPatch } = input;
+    const { fields: fieldInputs, relations: relationInputs, ...collectionPatch } = input;
     const [updated] = await this.deps.db
       .update(collections)
       .set({ ...collectionPatch, updatedAt: new Date() })
@@ -608,57 +624,44 @@ export class SchemaService {
         await this.upsertField(name, f);
       }
     }
+    if (relationInputs) {
+      for (const relation of relationInputs) {
+        await this.createRelation(relation);
+      }
+    }
     await this.invalidate(name);
     return updated;
   }
 
-  async diffSchema(name: string, proposed: CollectionInput & { fields?: FieldInput[] }): Promise<SchemaDiff> {
+  async diffSchema(name: string, proposed: CollectionInput & { fields?: FieldInput[]; relations?: RelationInput[] }): Promise<SchemaDiff> {
     const current = await this.getCollection(name);
     if (!current) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
     }
     const currentFields = await this.listFields(name);
-
-    const collectionChanges: string[] = [];
-    if (proposed.singleton !== current.singleton) collectionChanges.push('singleton');
-    if (proposed.displayTemplate !== current.displayTemplate) collectionChanges.push('displayTemplate');
-    if (proposed.sortField !== current.sortField) collectionChanges.push('sortField');
-    if (proposed.archiveField !== current.archiveField) collectionChanges.push('archiveField');
-    if (proposed.archiveValue !== current.archiveValue) collectionChanges.push('archiveValue');
-
-    const currentFieldNames = new Set(currentFields.map((f) => f.name));
-    const proposedFieldNames = new Set((proposed.fields ?? []).map((f) => f.name));
-
-    const addedFields = (proposed.fields ?? [])
-      .filter((f) => !currentFieldNames.has(f.name))
-      .map((f) => ({ name: f.name, type: f.type }));
-
-    const removedFields = currentFields.filter((f) => !proposedFieldNames.has(f.name)).map((f) => f.name);
-
-    const changedFields: Array<{ name: string; changes: string[] }> = [];
-    const currentFieldsMap = new Map(currentFields.map((f) => [f.name, f]));
-    for (const f of proposed.fields ?? []) {
-      const existing = currentFieldsMap.get(f.name);
-      if (!existing) continue;
-      const changes: string[] = [];
-      if (f.type !== existing.type) changes.push('type');
-      if (f.interface !== existing.interface) changes.push('interface');
-      if (f.required !== existing.required) changes.push('required');
-      if (changes.length > 0) changedFields.push({ name: f.name, changes });
+    const currentRelations = await this.listRelationsForCollection(name);
+    const populatedRowsByField = new Map<string, number>();
+    for (const field of currentFields) {
+      populatedRowsByField.set(field.name, await this.countFieldDataRows(current.id, field.name));
     }
+    return buildSchemaDiff(current, currentFields, currentRelations, proposed, populatedRowsByField);
+  }
 
-    return {
-      collection: {
-        added: [],
-        removed: [],
-        changed: collectionChanges.length > 0 ? [{ field: name, changes: collectionChanges }] : [],
-      },
-      fields: {
-        added: addedFields,
-        removed: removedFields,
-        changed: changedFields,
-      },
-    };
+  private async listRelationsForCollection(collectionName: string): Promise<RelationRow[]> {
+    return this.deps.db
+      .select()
+      .from(relations)
+      .where(
+        and(
+          scopeSite(relations.siteId, this.deps.siteId),
+          or(
+            eq(relations.manyCollection, collectionName),
+            eq(relations.oneCollection, collectionName),
+            eq(relations.junctionCollection, collectionName),
+          ),
+        ),
+      )
+      .orderBy(asc(relations.manyCollection), asc(relations.manyField));
   }
 
   // ---------- Cache ----------
@@ -1010,6 +1013,167 @@ export function assertFieldMutationAllowed(
   );
 }
 
+export function buildSchemaDiff(
+  current: CollectionRow,
+  currentFields: FieldRow[],
+  currentRelations: RelationRow[],
+  proposed: Partial<CollectionInput> & { fields?: FieldInput[]; relations?: RelationInput[] },
+  populatedRowsByField: Map<string, number> = new Map(),
+): SchemaDiff {
+  const collectionChanges = diffObject(
+    current,
+    proposed,
+    [
+      'label',
+      'pluralLabel',
+      'hidden',
+      'system',
+      'singleton',
+      'icon',
+      'color',
+      'note',
+      'primaryKeyField',
+      'primaryKeyType',
+      'storageMode',
+      'displayTemplate',
+      'sortField',
+      'archiveField',
+      'archiveValue',
+      'unarchiveValue',
+      'itemDuplicationFields',
+      'translations',
+      'accountability',
+      'versioning',
+      'meta',
+    ],
+  );
+  const collectionRisk = riskForCollectionChanges(collectionChanges);
+  const collectionImpact = impactForCollectionChanges(collectionChanges);
+
+  const currentFieldsMap = new Map(currentFields.map((field) => [field.name, field]));
+  const proposedFieldsMap = new Map((proposed.fields ?? []).map((field) => [field.name, field]));
+  const addedFields = proposed.fields
+    ? proposed.fields
+        .filter((field) => !currentFieldsMap.has(field.name))
+        .map((field) => ({
+          name: field.name,
+          type: field.type,
+          risk: 'low' as SchemaDiffRisk,
+          runtimeImpact: uniqueImpacts(['cache_invalidation', 'typegen_rebuild']),
+        }))
+    : [];
+  const removedFields = proposed.fields
+    ? currentFields
+        .filter((field) => !proposedFieldsMap.has(field.name))
+        .map((field) => {
+          const populatedRows = populatedRowsByField.get(field.name) ?? 0;
+          return {
+            name: field.name,
+            risk: populatedRows > 0 ? 'high' as SchemaDiffRisk : 'medium' as SchemaDiffRisk,
+            runtimeImpact: uniqueImpacts([
+              'cache_invalidation',
+              'typegen_rebuild',
+              ...(populatedRows > 0 ? ['data_migration_required' as const] : []),
+            ]),
+          };
+        })
+    : [];
+  const changedFields = proposed.fields
+    ? proposed.fields.flatMap((field) => {
+        const existing = currentFieldsMap.get(field.name);
+        if (!existing) return [];
+        const changes = diffObject(existing, field, FIELD_DIFF_KEYS);
+        if (changes.length === 0) return [];
+        const populatedRows = populatedRowsByField.get(field.name) ?? 0;
+        return [{
+          name: field.name,
+          changes,
+          risk: riskForFieldChanges(changes, populatedRows),
+          runtimeImpact: impactForFieldChanges(changes, populatedRows),
+        }];
+      })
+    : [];
+
+  const currentRelationsMap = new Map(currentRelations.map((relation) => [relationIdentity(relation), relation]));
+  const proposedRelations = (proposed.relations ?? []).map(normalizeRelationInput);
+  const proposedRelationsMap = new Map(proposedRelations.map((relation) => [relationIdentity(relation), relation]));
+  const addedRelations = proposed.relations
+    ? proposedRelations
+        .filter((relation) => !currentRelationsMap.has(relationIdentity(relation)))
+        .map((relation) => ({
+          identity: relationIdentity(relation),
+          type: relation.type,
+          risk: 'medium' as SchemaDiffRisk,
+          runtimeImpact: uniqueImpacts(['cache_invalidation', 'typegen_rebuild', 'relation_reindex']),
+        }))
+    : [];
+  const removedRelations = proposed.relations
+    ? currentRelations
+        .filter((relation) => !proposedRelationsMap.has(relationIdentity(relation)))
+        .map((relation) => ({
+          identity: relationIdentity(relation),
+          type: relation.type as RelationType,
+          risk: 'high' as SchemaDiffRisk,
+          runtimeImpact: uniqueImpacts(['cache_invalidation', 'typegen_rebuild', 'relation_reindex']),
+        }))
+    : [];
+  const changedRelations = proposed.relations
+    ? proposedRelations.flatMap((relation) => {
+        const existing = currentRelationsMap.get(relationIdentity(relation));
+        if (!existing) return [];
+        const changes = diffObject(existing, relation, RELATION_DIFF_KEYS);
+        if (changes.length === 0) return [];
+        return [{
+          identity: relationIdentity(relation),
+          changes,
+          risk: riskForRelationChanges(changes),
+          runtimeImpact: impactForRelationChanges(changes),
+        }];
+      })
+    : [];
+
+  const allRisks = [
+    collectionChanges.length > 0 ? collectionRisk : null,
+    ...addedFields.map((entry) => entry.risk),
+    ...removedFields.map((entry) => entry.risk),
+    ...changedFields.map((entry) => entry.risk),
+    ...addedRelations.map((entry) => entry.risk),
+    ...removedRelations.map((entry) => entry.risk),
+    ...changedRelations.map((entry) => entry.risk),
+  ].filter((risk): risk is SchemaDiffRisk => risk !== null);
+  const runtimeImpact = uniqueImpacts([
+    ...collectionImpact,
+    ...addedFields.flatMap((entry) => entry.runtimeImpact),
+    ...removedFields.flatMap((entry) => entry.runtimeImpact),
+    ...changedFields.flatMap((entry) => entry.runtimeImpact),
+    ...addedRelations.flatMap((entry) => entry.runtimeImpact),
+    ...removedRelations.flatMap((entry) => entry.runtimeImpact),
+    ...changedRelations.flatMap((entry) => entry.runtimeImpact),
+  ]);
+
+  return {
+    risk: highestRisk(allRisks),
+    runtimeImpact,
+    collection: {
+      added: [],
+      removed: [],
+      changed: collectionChanges.length > 0
+        ? [{ field: current.name, changes: collectionChanges, risk: collectionRisk, runtimeImpact: collectionImpact }]
+        : [],
+    },
+    fields: {
+      added: addedFields,
+      removed: removedFields,
+      changed: changedFields,
+    },
+    relations: {
+      added: addedRelations,
+      removed: removedRelations,
+      changed: changedRelations,
+    },
+  };
+}
+
 function toFieldDbInput(input: FieldInput): FieldDbInput;
 function toFieldDbInput(input: Partial<FieldInput>): Partial<FieldDbInput>;
 function toFieldDbInput(input: FieldInput | Partial<FieldInput>): FieldDbInput | Partial<FieldDbInput> {
@@ -1018,6 +1182,134 @@ function toFieldDbInput(input: FieldInput | Partial<FieldInput>): FieldDbInput |
   void migrationPlan;
   void confirmRiskyChange;
   return dbInput;
+}
+
+const FIELD_DIFF_KEYS = [
+  'type',
+  'interface',
+  'display',
+  'label',
+  'note',
+  'defaultValue',
+  'nullable',
+  'unique',
+  'indexed',
+  'searchable',
+  'length',
+  'precision',
+  'scale',
+  'special',
+  'options',
+  'displayOptions',
+  'validation',
+  'conditions',
+  'required',
+  'readonly',
+  'hidden',
+  'encrypted',
+  'versioned',
+  'rawEnabled',
+  'width',
+  'group',
+  'sortOrder',
+] as const;
+
+const RELATION_DIFF_KEYS = [
+  'oneField',
+  'junctionCollection',
+  'aliasField',
+  'relatedDisplayTemplate',
+  'junctionManyField',
+  'junctionOneField',
+  'sortField',
+  'onDelete',
+  'meta',
+] as const;
+
+function diffObject<T extends object, U extends object>(
+  current: T,
+  proposed: U,
+  keys: readonly string[],
+): string[] {
+  const changes: string[] = [];
+  const currentRecord = current as Record<string, unknown>;
+  const proposedRecord = proposed as Record<string, unknown>;
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(proposedRecord, key)) continue;
+    if (!sameValue(currentRecord[key], proposedRecord[key])) changes.push(key);
+  }
+  return changes;
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a instanceof Date || b instanceof Date) return String(a) === String(b);
+  return stableStringify(a) === stableStringify(b);
+}
+
+function stableStringify(value: unknown): string {
+  if (value === undefined) return '__undefined__';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const obj = value as Record<string, unknown>;
+  return `{${Object.keys(obj).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(obj[key])}`).join(',')}}`;
+}
+
+function riskForCollectionChanges(changes: string[]): SchemaDiffRisk {
+  if (changes.some((change) => ['primaryKeyField', 'primaryKeyType', 'storageMode'].includes(change))) return 'high';
+  if (changes.some((change) => ['singleton', 'accountability', 'versioning'].includes(change))) return 'medium';
+  return 'low';
+}
+
+function impactForCollectionChanges(changes: string[]): SchemaRuntimeImpact[] {
+  return uniqueImpacts([
+    'cache_invalidation',
+    'typegen_rebuild',
+    'permission_recompile',
+    ...(changes.includes('storageMode') ? ['storage_runtime_change' as const] : []),
+    ...(changes.some((change) => ['primaryKeyField', 'primaryKeyType'].includes(change)) ? ['data_migration_required' as const] : []),
+  ]);
+}
+
+function riskForFieldChanges(changes: string[], populatedRows: number): SchemaDiffRisk {
+  const structural = changes.some((change) =>
+    ['type', 'nullable', 'required', 'unique', 'length', 'precision', 'scale'].includes(change),
+  );
+  if (structural && populatedRows > 0) return 'high';
+  if (structural || changes.some((change) => ['indexed', 'encrypted', 'versioned'].includes(change))) return 'medium';
+  return 'low';
+}
+
+function impactForFieldChanges(changes: string[], populatedRows: number): SchemaRuntimeImpact[] {
+  return uniqueImpacts([
+    'cache_invalidation',
+    'typegen_rebuild',
+    ...(changes.some((change) => ['type', 'nullable', 'required', 'unique', 'length', 'precision', 'scale'].includes(change)) && populatedRows > 0
+      ? ['data_migration_required' as const]
+      : []),
+  ]);
+}
+
+function riskForRelationChanges(changes: string[]): SchemaDiffRisk {
+  if (changes.some((change) => ['junctionCollection', 'junctionManyField', 'junctionOneField', 'onDelete'].includes(change))) return 'high';
+  return 'medium';
+}
+
+function impactForRelationChanges(_changes: string[]): SchemaRuntimeImpact[] {
+  return uniqueImpacts(['cache_invalidation', 'typegen_rebuild', 'relation_reindex']);
+}
+
+function relationIdentity(relation: Pick<RelationInput, 'manyCollection' | 'manyField' | 'oneCollection'> & { type?: string | null }): string {
+  return `${relation.type ?? 'm2o'}:${relation.manyCollection}.${relation.manyField}->${relation.oneCollection}`;
+}
+
+function highestRisk(risks: SchemaDiffRisk[]): SchemaDiffRisk {
+  if (risks.includes('high')) return 'high';
+  if (risks.includes('medium')) return 'medium';
+  return 'low';
+}
+
+function uniqueImpacts(impacts: SchemaRuntimeImpact[]): SchemaRuntimeImpact[] {
+  return [...new Set(impacts)];
 }
 
 export function normalizeRelationInput(input: RelationInput): Required<Pick<RelationInput, 'type'>> & RelationInput {
