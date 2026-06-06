@@ -384,7 +384,15 @@ docker rm lumibase-cms
 docker run -d --name lumibase-cms ... lumibase-cms:latest
 ```
 
-Migrations run automatically on container startup. For major version upgrades, check the changelog for breaking changes.
+Migrations run automatically on container startup. Before upgrading to any release whose changelog includes a `Migrations` section with pending database changes, create and verify a database backup or storage snapshot first.
+
+Run a read-only migration preflight against the new image before replacing the running CMS container:
+
+```bash
+docker compose run --rm -e MIGRATION_MODE=preflight cms
+```
+
+The preflight verifies database connectivity, prints the current Drizzle schema version, and lists pending migrations without applying DDL. The normal startup path runs the same preflight by default before applying migrations; set `RUN_MIGRATION_PREFLIGHT=false` only for emergency recovery where connectivity was already verified. For major version upgrades, check the changelog for breaking changes and the required `Migrations` release-note section.
 
 ## Next Steps
 

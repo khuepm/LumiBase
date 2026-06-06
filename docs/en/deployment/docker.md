@@ -42,3 +42,15 @@ curl -fsS http://localhost:1989/health
 ```
 
 Docker mode is useful for local production rehearsals and self-hosted installations. Cloudflare Workers remains the default edge deployment path.
+
+## Updating
+
+Before upgrading to any release whose changelog `Migrations` section lists database changes, create and verify a PostgreSQL backup or storage snapshot. Keep the snapshot until the new CMS version is healthy and the migration version matches the expected release notes.
+
+Run a read-only preflight against the new image before replacing the running CMS container:
+
+```bash
+docker compose -f docker/docker-compose.prod.yml --env-file docker/.env run --rm -e MIGRATION_MODE=preflight cms
+```
+
+The preflight checks `DATABASE_URL` connectivity, prints the current Drizzle schema version, and lists pending migrations without applying DDL. Normal container startup runs this preflight before applying migrations unless `RUN_MIGRATION_PREFLIGHT=false` is set.
