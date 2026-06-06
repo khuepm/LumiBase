@@ -47,7 +47,9 @@ title: My great doc
 
 ## Deploying
 
-The build output (`dist/`) is a fully static site. The repository deploy script publishes it to Cloudflare Pages project `lumibase-docs`.
+The build output (`dist/`) is a fully static site. The repository deploy script publishes it to Cloudflare Pages project `lumibase-docs`, which is intended to serve `docs.lumibase.dev`.
+
+Cloudflare Pages uses [`public/_redirects`](./public/_redirects) to route all direct page loads back to `index.html`, so React Router deep links such as `/en/docs/README` work after refresh.
 
 ```bash
 pnpm --filter @lumibase/docs build
@@ -57,5 +59,5 @@ pnpm docs:deploy
 Equivalent Wrangler command:
 
 ```bash
-wrangler pages deploy apps/docs/dist --project-name lumibase-docs
+wrangler pages deploy apps/docs/dist --project-name lumibase-docs --branch main
 ```
