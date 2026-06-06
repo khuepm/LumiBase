@@ -8,12 +8,13 @@ describe('getStudioBuildMetadata', () => {
         VITE_LUMIBASE_VERSION: '1.2.3',
         VITE_LUMIBASE_GIT_SHA: 'abc123def456',
         VITE_LUMIBASE_BUILD_TIME: '2026-06-06T00:00:00.000Z',
+        VITE_LUMIBASE_RELEASE_CHANNEL: 'production',
       }),
     ).toEqual({
       version: '1.2.3',
       gitSha: 'abc123def456',
       buildTime: '2026-06-06T00:00:00.000Z',
-      releaseChannel: 'studio',
+      releaseChannel: 'production',
     });
   });
 
@@ -28,7 +29,7 @@ describe('getStudioBuildMetadata', () => {
       version: 'unknown',
       gitSha: 'unknown',
       buildTime: 'unknown',
-      releaseChannel: 'studio',
+      releaseChannel: 'unknown',
     });
   });
 });

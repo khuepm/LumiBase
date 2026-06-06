@@ -14,8 +14,9 @@ import {
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { NotificationsPanel } from '@/components/notifications-panel';
+import { ReleaseUpdateNotice } from '@/components/release-update-notice';
 import { clearActiveToken } from '@/lib/api';
-import { studioBuildMetadata } from '@/lib/build-metadata';
+import { VersionInfoFooter } from '@/components/version-info-footer';
 import { ADMIN_PATH_REGEX } from '@/modules/setup/schemas/admin-path';
 
 interface ModuleDef {
@@ -129,13 +130,7 @@ export function AppShell({ children }: AppShellProps) {
             </Link>
           );
         })}
-        <div
-          className="mt-auto [writing-mode:vertical-rl] rotate-180 px-1 py-2 text-[10px] font-medium text-muted-foreground"
-          title={`Git ${studioBuildMetadata.gitSha} • Built ${studioBuildMetadata.buildTime}`}
-          aria-label={`LumiBase version ${studioBuildMetadata.version}`}
-        >
-          v{studioBuildMetadata.version}
-        </div>
+        <div className="mt-auto" aria-hidden="true" />
       </nav>
 
       <div className="flex flex-1 flex-col">
@@ -154,6 +149,7 @@ export function AppShell({ children }: AppShellProps) {
           </div>
           {/* Right-side topbar actions */}
           <div className="flex items-center gap-2">
+            <ReleaseUpdateNotice compact />
             <NotificationsPanel />
             <button
               type="button"
@@ -170,6 +166,7 @@ export function AppShell({ children }: AppShellProps) {
         <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto p-6">
           {children}
         </main>
+        <VersionInfoFooter />
       </div>
     </div>
   );

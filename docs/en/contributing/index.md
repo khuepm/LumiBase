@@ -106,6 +106,8 @@ Before opening a PR, verify:
 - [ ] `pnpm test` passes (or new tests added for changed behavior)
 - [ ] `pnpm lint` passes
 - [ ] Docs updated if the change affects public APIs, configuration, or behavior
+- [ ] Release notes include a `Migrations` section for every release, even if it says `None`
+- [ ] Database migrations are backward-compatible for at least one release window: add nullable/defaults first, backfill separately, and defer destructive drops to a later cleanup release
 - [ ] PR title follows Conventional Commits format
 - [ ] `docs/en/data-model.md` updated if schema changed
 - [ ] ADR added if a significant architectural decision was made

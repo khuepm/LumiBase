@@ -82,8 +82,9 @@ LUMIBASE_DEV_AUTH = "false"
 name = "SITE_ROOM"
 class_name = "SiteRoom"
 
-[env.staging.triggers]
-crons = ["0 * * * *"]
+[[env.staging.migrations]]
+tag = "v1"
+new_classes = ["SiteRoom"]
 
 # [[env.staging.hyperdrive]]
 # binding = "HYPERDRIVE"
@@ -97,8 +98,11 @@ crons = ["0 * * * *"]
 # binding = "MEDIA"
 # bucket_name = "lumibase-media-staging"
 
+[env.staging.triggers]
+crons = ["0 * * * *"]
+
 [env.production]
-name = "lumibase-cms"
+name = "lumibase-cms-production"
 
 [env.production.vars]
 LUMIBASE_ENV = "production"
@@ -112,8 +116,9 @@ LUMIBASE_DEV_AUTH = "false"
 name = "SITE_ROOM"
 class_name = "SiteRoom"
 
-[env.production.triggers]
-crons = ["0 * * * *"]
+[[env.production.migrations]]
+tag = "v1"
+new_classes = ["SiteRoom"]
 
 # [[env.production.hyperdrive]]
 # binding = "HYPERDRIVE"
@@ -126,3 +131,6 @@ crons = ["0 * * * *"]
 # [[env.production.r2_buckets]]
 # binding = "MEDIA"
 # bucket_name = "lumibase-media"
+
+[env.production.triggers]
+crons = ["0 * * * *"]
