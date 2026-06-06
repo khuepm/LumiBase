@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Website: [lumibase.dev](https://lumibase.dev)
 
+## [0.4.2] - 2026-06-07
+
+### Added
+
+- Added a backup and disaster recovery validation runbook covering restore
+  drills, row-count verification, app health checks, media/search rebuilds,
+  RTO/RPO evidence, and Cloudflare-specific recovery checks.
+- Added restore drill automation for database restore validation, row-count
+  checks, app health checks, media checks, reindex triggers, and search result
+  verification.
+- Added Linux, macOS, and Windows scheduler setup guidance for recurring
+  restore drills.
+- Added Cloudflare Pages deployment configuration for the docs app, including
+  SPA deep-link fallback support for `docs.lumibase.dev`.
+
+### Changed
+
+- Updated restore drill scheduling docs and examples to cover systemd timers,
+  cron, launchd, and Windows Task Scheduler.
+- Updated docs deployment commands to run Wrangler from the docs app directory
+  and to pass the Cloudflare account through `CLOUDFLARE_ACCOUNT_ID` instead of
+  unsupported Pages config fields.
+- Updated the repository remote/deploy documentation for the new GitHub
+  repository location.
+
+### Fixed
+
+- Hardened restore drill reruns by resetting the Drizzle schema during restore
+  cleanup and by supporting authenticated app, media, reindex, and search
+  checks.
+- Fixed Cloudflare Pages deploy configuration after Wrangler validation rejected
+  `account_id` in a Pages `wrangler.toml`.
+
 ## [0.4.1] - 2026-06-06
 
 ### Added

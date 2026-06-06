@@ -81,6 +81,30 @@ This adds:
 - **Grafana** on port 3002 (admin/admin)
 - **Loki** on port 3100
 
+### With TLS Termination
+
+For production Docker hosts, use the TLS overlay to run Caddy as the only public
+ingress. Caddy listens on ports 80/443, obtains and renews certificates through
+ACME, and forwards traffic to the private `cms:1989` service.
+
+```bash
+cd docker/
+
+PUBLIC_DOMAIN=api.example.com ACME_EMAIL=ops@example.com \
+  docker compose \
+    -f docker-compose.yml \
+    -f docker-compose.prod.yml \
+    -f docker-compose.tls.yml \
+    up -d
+```
+
+Requirements:
+
+- `PUBLIC_DOMAIN` must resolve to the Docker host
+- Ports 80 and 443 must be reachable from the public internet
+- `CORS_ALLOWED_ORIGINS` must include your production Studio/app origins
+- Stateful services remain private because `docker-compose.prod.yml` removes their host port mappings
+
 ## Running a Standalone Container
 
 If you already have external PostgreSQL, Redis, and S3:
@@ -278,7 +302,7 @@ primary_region = "iad"
 - [x] Require `ENCRYPTION_KEY` in production for sensitive data at rest
 - [x] Configure CORS with `CORS_ALLOWED_ORIGINS` in production
 - [x] Require database TLS via `sslmode=require`, `sslmode=verify-ca`, or `sslmode=verify-full` unless `DATABASE_SSL_MODE=disable` is explicitly set for a private test stack
-- [ ] Use TLS termination at load balancer / reverse proxy
+- [x] Use TLS termination at load balancer / reverse proxy via `docker-compose.tls.yml`
 
 Production startup validation is active when `NODE_ENV=production` or
 `LUMIBASE_ENV=production`. It rejects missing `DATABASE_URL`, `REDIS_URL`,
@@ -307,35 +331,25 @@ ENCRYPTION_KEY_FILE=/run/secrets/encryption_key
 services. Keep only the CMS/reverse-proxy ingress reachable from untrusted
 networks.
 
-### TLS Termination Example
+### TLS Termination
 
 Lumibase terminates HTTP inside the container. Terminate HTTPS at a cloud load
 balancer or reverse proxy and forward traffic to `cms:1989`.
 
-Example Caddy service:
+The repository includes a production Caddy overlay:
 
-```yaml
-services:
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddydata:/data
-    depends_on:
-      - cms
-
-volumes:
-  caddydata:
+```bash
+PUBLIC_DOMAIN=api.example.com ACME_EMAIL=ops@example.com \
+  docker compose \
+    -f docker-compose.yml \
+    -f docker-compose.prod.yml \
+    -f docker-compose.tls.yml \
+    up -d caddy
 ```
 
-```caddyfile
-api.example.com {
-  reverse_proxy cms:1989
-}
-```
+For managed platforms, terminate TLS at the platform load balancer instead:
+AWS ALB on port 443, Cloud Run managed HTTPS, Fly.io `force_https`, or an
+equivalent reverse proxy. In every case, only the HTTPS ingress should be public.
 
 ### Logging
 
