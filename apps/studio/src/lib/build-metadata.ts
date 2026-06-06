@@ -7,6 +7,7 @@ type StudioEnv = Pick<
   | 'VITE_LUMIBASE_VERSION'
   | 'VITE_LUMIBASE_GIT_SHA'
   | 'VITE_LUMIBASE_BUILD_TIME'
+  | 'VITE_LUMIBASE_RELEASE_CHANNEL'
 >;
 
 function valueOrUnknown(value: string | undefined): string {
@@ -19,7 +20,7 @@ export function getStudioBuildMetadata(env: StudioEnv = import.meta.env): BuildM
     version: valueOrUnknown(env.VITE_LUMIBASE_VERSION),
     gitSha: valueOrUnknown(env.VITE_LUMIBASE_GIT_SHA),
     buildTime: valueOrUnknown(env.VITE_LUMIBASE_BUILD_TIME),
-    releaseChannel: 'studio',
+    releaseChannel: valueOrUnknown(env.VITE_LUMIBASE_RELEASE_CHANNEL),
   };
 }
 
