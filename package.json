@@ -37,7 +37,8 @@
     "marketplace:preview": "pnpm --filter @lumibase/marketplace start",
     "marketplace:deploy": "pnpm marketplace:build && wrangler pages deploy apps/marketplace/out --project-name lumibase-marketplace",
     "prepare": "husky",
-    "version:check": "node scripts/version-check.mjs"
+    "version:sync": "node scripts/sync-version.mjs",
+    "version:check": "node scripts/sync-version.mjs --check"
   },
   "devDependencies": {
     "husky": "^9.1.7",

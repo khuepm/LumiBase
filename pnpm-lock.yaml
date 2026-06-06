@@ -338,6 +338,9 @@ importers:
       '@lumibase/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      '@lumibase/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@lumibase/ui':
         specifier: workspace:*
         version: link:../../packages/ui

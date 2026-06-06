@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/ui",
-  "version": "0.1.0",
+  "version": "0.4.2",
   "private": true,
   "description": "Shared shadcn/ui components + CVA design tokens for LumiBase Studio.",
   "type": "module",

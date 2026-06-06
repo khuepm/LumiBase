@@ -1,3 +1,4 @@
+export type { BuildMetadata } from './version';
 export * from './policy/index';
 export * from './field/index';
 export * from './schemas/index';
