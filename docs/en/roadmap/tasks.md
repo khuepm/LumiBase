@@ -406,7 +406,7 @@ Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Di
 - [x] `[BE]` Apply `requireSchemaPermission` to collections/fields/relations/compiled schema routes and AI schema skills.
 - [x] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification, and runtime impact.
 - [x] `[BE]` `PUT /collections/:name/schema` validates all input, computes diff, applies transactionally when supported, invalidates schema/permission/typegen caches, and emits `schema.changed`.
-- [ ] `[FE]` Raw JSON schema tab shows diff/risk before apply.
+- [x] `[FE]` Raw JSON schema tab shows diff/risk before apply.
 - [ ] `[DOC]` Document storage modes `jsonb/materialized/physical/external`, including limitations badges in Studio.
 - [ ] `[DOC]` Create `docs/en/architecture/physical-collections.md` design doc to decide physical/external mode.
 

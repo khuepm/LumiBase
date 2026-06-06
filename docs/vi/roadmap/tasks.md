@@ -406,7 +406,7 @@ Mục tiêu: nâng cấp Data Model / Collections Builder để một collection
 - [x] `[BE]` Áp dụng `requireSchemaPermission` cho collections/fields/relations/compiled schema routes và AI schema skills.
 - [x] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification và runtime impact.
 - [x] `[BE]` `PUT /collections/:name/schema` validate toàn bộ, compute diff, apply transactionally khi runtime hỗ trợ, invalidate schema/permission/typegen cache và emit `schema.changed`.
-- [ ] `[FE]` Raw JSON schema tab hiển thị diff/risk trước khi apply.
+- [x] `[FE]` Raw JSON schema tab hiển thị diff/risk trước khi apply.
 - [ ] `[DOC]` Ghi rõ storage modes `jsonb/materialized/physical/external`, kèm limitations badge trong Studio.
 - [ ] `[DOC]` Tạo design doc `docs/en/architecture/physical-collections.md` để quyết định physical/external mode.
 
