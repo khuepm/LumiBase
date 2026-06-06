@@ -33,6 +33,10 @@ export interface Bindings {
   ENCRYPTION_KEY?: string;
   /** Comma-separated frontend origins allowed by CORS. */
   CORS_ALLOWED_ORIGINS?: string;
+  /** Maximum bytes accepted by the traditional upload guard. Defaults to 10 MiB. */
+  TRADITIONAL_UPLOAD_MAX_BYTES?: string;
+  /** Comma-separated MIME allowlist accepted by the traditional upload guard. */
+  TRADITIONAL_UPLOAD_ALLOWED_MIME?: string;
   // ── LLM Provider (POST-GA Task #1) ──────────────────────────────────────
   /** `'openai'` | `'anthropic'` | `'workers-ai'` | `'echo'` (default). */
   LLM_PROVIDER?: string;
