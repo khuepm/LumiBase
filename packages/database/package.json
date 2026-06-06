@@ -20,7 +20,10 @@
     "seed:dev": "tsx scripts/seed-dev.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
-    "clean": "rm -rf .turbo drizzle dist"
+    "clean": "rm -rf .turbo drizzle dist",
+    "migrate:preflight": "tsx scripts/migrate.ts preflight",
+    "migrate:dry-run": "tsx scripts/migrate.ts dry-run",
+    "migrate:version": "tsx scripts/migrate.ts version"
   },
   "dependencies": {
     "drizzle-orm": "^0.36.4",

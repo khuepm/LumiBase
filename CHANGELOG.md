@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Website: [lumibase.dev](https://lumibase.dev)
 
+## [Unreleased]
+
+### Added
+
+- Added database migration preflight/dry-run and version commands for operators and Docker startup checks.
+
+### Migrations
+
+- No new schema migration is included in this change. The migration runner now reports the current Drizzle schema version, verifies database connectivity, and lists pending migrations before applying DDL.
+- Migration policy now requires backward-compatible migrations for at least one release window: add nullable/defaulted fields first, backfill separately when needed, and defer destructive drops to a later cleanup release.
 
 ## Required release notes format
 
