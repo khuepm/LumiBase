@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AppEnv } from '../../env';
 import {
   isAdminPrincipal,
@@ -50,10 +50,15 @@ describe('traditional defense middleware', () => {
     expect(res.headers.get('x-frame-options')).toBe('DENY');
   });
 
-  it('fails closed on non-admin access to system routes', async () => {
+  it('audits and fails closed on non-admin access to system routes', async () => {
     const app = new Hono<AppEnv>();
+    const values = vi.fn().mockResolvedValue(undefined);
+    const db = { insert: vi.fn().mockReturnValue({ values }) };
     app.use('*', async (c, next) => {
-      c.set('auth', { roles: ['member'], raw: {} });
+      c.set('auth', { email: 'member@example.com', roles: ['member'], raw: {} });
+      c.set('db', db as never);
+      c.set('siteId', 'site_1');
+      c.set('requestId', 'req_1');
       await next();
     });
     app.use('*', withCoreRbacGuard());
@@ -63,6 +68,13 @@ describe('traditional defense middleware', () => {
 
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ errors: [{ code: 'CORE_RBAC_FORBIDDEN' }] });
+    expect(values).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'traditional_defense_denied',
+      actorEmail: 'member@example.com',
+      siteId: 'site_1',
+      requestId: 'req_1',
+      metadata: expect.objectContaining({ guard: 'core_rbac', reason: 'non_admin_system_route' }),
+    }));
   });
 
   it('allows admins through the core RBAC guard', async () => {

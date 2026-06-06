@@ -32,8 +32,10 @@ Triển khai lớp phòng thủ nền tảng trước khi AI Harness được ph
 - [x] Thêm SSRF guard utility độc lập để harness hoặc route import có thể tái sử dụng.
 - [x] Thêm biến môi trường cấu hình upload guard trong `Bindings`.
 - [x] Thêm unit tests cho RBAC guard, security headers, upload guard và SSRF guard.
-- [ ] Ở phase harness tiếp theo: bắt buộc mọi tool/fetch/import do AI gọi phải đi qua `validateOutboundUrl` hoặc `guardedFetch`.
-- [ ] Ở phase hardening tiếp theo: bổ sung audit event cho mọi lần guard từ chối thao tác và ánh xạ permission granular nếu cần cho non-admin operator.
+- [x] Tích hợp `guardedFetch`/`validateOutboundUrl` vào các call site outbound hiện có: revalidation target và extension `http:fetch`/bundle import.
+- [x] Bổ sung audit event `traditional_defense_denied` cho các lần core RBAC/upload guard từ chối thao tác.
+- [ ] Ở phase harness tiếp theo: bắt buộc mọi tool/fetch/import mới do AI tạo phải đi qua `validateOutboundUrl` hoặc `guardedFetch`.
+- [ ] Ở phase hardening tiếp theo: ánh xạ permission granular nếu cần cho non-admin operator thay vì chỉ admin-level control-plane guard.
 
 ## Tiêu chí hoàn tất
 
@@ -42,3 +44,5 @@ Triển khai lớp phòng thủ nền tảng trước khi AI Harness được ph
 - Upload quá kích thước hoặc MIME ngoài allowlist bị từ chối trước khi ghi storage.
 - Mọi response có CSP và các security headers nền tảng.
 - SSRF guard có test cho localhost, private IP, link-local metadata IP và protocol nguy hiểm.
+- Revalidation và extension outbound fetch/import không được gọi mạng nội bộ khi URL bị SSRF guard từ chối.
+- Mọi lần từ chối bởi core RBAC/upload guard phát audit event `traditional_defense_denied` khi request có DB context.

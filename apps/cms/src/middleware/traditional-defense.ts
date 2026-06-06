@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import type { AppEnv, AuthPrincipal } from '../env';
+import { AuditLogger } from '../modules/audit/logger';
 
 const DEFAULT_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const DEFAULT_UPLOAD_MIME_ALLOWLIST = [
@@ -68,6 +69,14 @@ export const withCoreRbacGuard = (): MiddlewareHandler<AppEnv> => async (c, next
   const auth = c.get('auth');
   if (isAdminPrincipal(auth)) return next();
 
+  await auditTraditionalDefenseDenied(c, 'core_rbac', {
+    path: c.req.path,
+    method: c.req.method,
+    reason: 'non_admin_system_route',
+    roles: auth?.roles ?? [],
+    principalType: auth?.type ?? 'user',
+  });
+
   return c.json(
     {
       errors: [
@@ -96,6 +105,13 @@ export const withUploadGuard = (): MiddlewareHandler<AppEnv> => async (c, next) 
 
   const auth = safeGetAuth(c);
   if (isMetadataCreate && isPublicPrincipal(auth)) {
+    await auditTraditionalDefenseDenied(c, 'upload', {
+      path,
+      method,
+      reason: 'public_metadata_create',
+      roles: auth?.roles ?? [],
+      principalType: auth?.type ?? 'user',
+    });
     return c.json(
       { errors: [{ code: 'PUBLIC_UPLOAD_FORBIDDEN', message: 'Public role is not allowed to upload files.' }] },
       403,
@@ -106,6 +122,13 @@ export const withUploadGuard = (): MiddlewareHandler<AppEnv> => async (c, next) 
   const env = c.env as Partial<AppEnv['Bindings']> | undefined;
   const maxBytes = resolveUploadMaxBytes(env?.TRADITIONAL_UPLOAD_MAX_BYTES ?? process.env.TRADITIONAL_UPLOAD_MAX_BYTES);
   if (contentLength !== null && contentLength > maxBytes) {
+    await auditTraditionalDefenseDenied(c, 'upload', {
+      path,
+      method,
+      reason: 'content_length_exceeded',
+      contentLength,
+      maxBytes,
+    });
     return c.json(
       {
         errors: [
@@ -124,6 +147,13 @@ export const withUploadGuard = (): MiddlewareHandler<AppEnv> => async (c, next) 
     ? await peekMetadataMime(c.req.raw.clone())
     : c.req.header('content-type') ?? 'application/octet-stream';
   if (!isMimeAllowed(mime, allowedMimes)) {
+    await auditTraditionalDefenseDenied(c, 'upload', {
+      path,
+      method,
+      reason: 'mime_forbidden',
+      mime,
+      allowedMimes,
+    });
     return c.json(
       { errors: [{ code: 'UPLOAD_MIME_FORBIDDEN', message: `MIME type "${mime}" is not allowed.` }] },
       415,
@@ -203,5 +233,48 @@ async function peekMetadataMime(request: Request): Promise<string> {
     return typeof body.mime === 'string' ? body.mime : 'application/octet-stream';
   } catch {
     return 'application/octet-stream';
+  }
+}
+
+
+async function auditTraditionalDefenseDenied(
+  c: Parameters<MiddlewareHandler<AppEnv>>[0],
+  guard: 'core_rbac' | 'upload',
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  const db = safeGetDb(c);
+  if (!db) return;
+
+  await new AuditLogger({ db, siteId: safeGetSiteId(c) }).write({
+    event: 'traditional_defense_denied',
+    actorEmail: safeGetAuth(c)?.email ?? null,
+    ip: safeGetStringVar(c, 'ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+    userAgent: safeGetStringVar(c, 'userAgent') ?? c.req.header('user-agent') ?? null,
+    requestId: safeGetStringVar(c, 'requestId') ?? null,
+    metadata: { guard, ...metadata },
+  });
+}
+
+function safeGetDb(c: Parameters<MiddlewareHandler<AppEnv>>[0]): AppEnv['Variables']['db'] | undefined {
+  try {
+    return c.get('db');
+  } catch {
+    return undefined;
+  }
+}
+
+function safeGetSiteId(c: Parameters<MiddlewareHandler<AppEnv>>[0]): string | null {
+  try {
+    return c.get('siteId') ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function safeGetStringVar(c: Parameters<MiddlewareHandler<AppEnv>>[0], key: 'ip' | 'userAgent' | 'requestId'): string | null {
+  try {
+    return c.get(key) ?? null;
+  } catch {
+    return null;
   }
 }
