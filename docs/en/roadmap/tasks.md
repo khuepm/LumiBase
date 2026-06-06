@@ -21,7 +21,7 @@ Trạng thái tổng quan: Phase 0 → Phase G (GA hardening) đã xong. POST-GA
 
 ## Active Ops Hardening Tasks
 
-Nguồn: `apps/docs/content/deployment/docker.md`.
+Nguồn: `apps/docs/content/deployment/docker.md`, `apps/docs/content/guides/backup-recovery.md`.
 
 - [x] `[OPS]` Docker image chạy non-root user.
 - [x] `[BE]` Validate production config khi `NODE_ENV=production` hoặc `LUMIBASE_ENV=production`.
@@ -31,7 +31,10 @@ Nguồn: `apps/docs/content/deployment/docker.md`.
 - [x] `[BE]` Require DB TLS `sslmode=require|verify-ca|verify-full` production, trừ khi explicit `DATABASE_SSL_MODE=disable`.
 - [x] `[OPS]` `docker-compose.prod.yml` không publish port cho stateful internal services.
 - [x] `[DOC]` Cập nhật Docker deployment docs và environment reference.
+- [x] `[DOC]` Bổ sung restore drill, row-count verification, app health check sau restore, media/search rebuild, RTO/RPO documentation.
+- [x] `[DOC]` Bổ sung Cloudflare DR validation cho Workers, Hyperdrive, R2, KV, Queues, MeiliSearch Cloud, DNS/WAF/Access.
 - [ ] `[OPS]` Cấu hình TLS termination thực tế tại load balancer/reverse proxy của môi trường deploy.
+- [ ] `[OPS]` Tự động hóa restore drill định kỳ cho Docker và Cloudflare restore environment.
 
 ---
 

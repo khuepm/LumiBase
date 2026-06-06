@@ -19,6 +19,23 @@ Quy ước:
 
 Trạng thái tổng quan: Phase 0 → Phase G (GA hardening) đã xong. POST-GA và Dual Deployment + AI Copilot đã hoàn thành. Hiện tại tập trung vào polish, dev experience và mở rộng marketplace.
 
+## Active Ops Hardening Tasks
+
+Nguồn: `apps/docs/content/deployment/docker.md`, `apps/docs/content/guides/backup-recovery.md`.
+
+- [x] `[OPS]` Docker image chạy non-root user.
+- [x] `[BE]` Validate production config khi `NODE_ENV=production` hoặc `LUMIBASE_ENV=production`.
+- [x] `[BE]` Hỗ trợ Docker secret files qua `*_FILE` trước migration/server startup.
+- [x] `[BE]` CORS allowlist qua `CORS_ALLOWED_ORIGINS`; reject wildcard production.
+- [x] `[BE]` Require `ENCRYPTION_KEY` production và validate AES key format.
+- [x] `[BE]` Require DB TLS `sslmode=require|verify-ca|verify-full` production, trừ khi explicit `DATABASE_SSL_MODE=disable`.
+- [x] `[OPS]` `docker-compose.prod.yml` không publish port cho stateful internal services.
+- [x] `[DOC]` Cập nhật Docker deployment docs và environment reference.
+- [x] `[DOC]` Bổ sung restore drill, row-count verification, app health check sau restore, media/search rebuild, RTO/RPO documentation.
+- [x] `[DOC]` Bổ sung Cloudflare DR validation cho Workers, Hyperdrive, R2, KV, Queues, MeiliSearch Cloud, DNS/WAF/Access.
+- [ ] `[OPS]` Cấu hình TLS termination thực tế tại load balancer/reverse proxy của môi trường deploy.
+- [ ] `[OPS]` Tự động hóa restore drill định kỳ cho Docker và Cloudflare restore environment.
+
 ---
 
 ## Phase 0 — Foundation (DONE)

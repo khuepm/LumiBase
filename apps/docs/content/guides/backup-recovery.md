@@ -259,7 +259,7 @@ PostgreSQL will replay WAL segments up to the specified timestamp.
 3. Perform PITR to the timestamp just before the deletion
 4. Verify recovered data
 5. Restart the CMS
-6. Re-index search (content may be stale in MeiliSearch)
+6. Rebuild the search index (content may be stale in MeiliSearch)
 
 ```bash
 # Quick recovery using latest daily backup + WAL replay
@@ -267,8 +267,9 @@ docker compose stop cms
 ./docker/scripts/restore.sh --pitr "2024-01-15 14:25:00 UTC"
 docker compose start cms
 
-# Re-index search
-curl -X POST http://localhost:1989/api/search/reindex
+# Rebuild search with your deployment's reindex job or admin operation.
+# If your deployment exposes a reindex endpoint:
+curl -fsS -X POST http://localhost:1989/api/search/reindex
 ```
 
 ### Scenario 2: Database Corruption
@@ -349,6 +350,197 @@ curl http://localhost:1989/health
 5. **Patch** — Address the vulnerability that allowed the breach
 6. **Monitor** — Increase monitoring and alerting thresholds
 
+## Backup / DR Validation
+
+Run a restore drill at least monthly, and after any change to database schema,
+storage provider, search provider, backup schedule, retention, or infrastructure
+topology. A drill is only complete when the restored application is usable, not
+just when `pg_restore` exits successfully.
+
+### Restore Drill Runbook
+
+Use an isolated environment that cannot send production webhooks or email.
+Record the start time before restoring so the measured recovery time can be
+compared with the RTO target.
+
+```bash
+# 1. Capture the drill start time
+date -u +"%Y-%m-%dT%H:%M:%SZ" | tee restore-drill-start.txt
+
+# 2. Start the dependencies in the isolated environment
+docker compose up -d postgres redis minio meilisearch imgproxy
+
+# 3. Restore the selected backup
+./docker/scripts/restore.sh s3://lumibase-backups/daily/backup_20240115_020000.dump
+
+# 4. Start the CMS against the restored database
+docker compose up -d cms
+```
+
+Restore drills must use a named backup artifact, not `latest`, unless the drill
+is specifically testing the `latest` pointer. Keep the backup object key, WAL
+target timestamp, Git SHA, and environment name in the drill notes.
+
+### Row-Count Verification
+
+Before the drill, capture production row counts for business-critical tables and
+store them with the backup metadata. After restore, compare the restored counts
+against that baseline.
+
+```bash
+# Capture exact row counts for every public table in the restored database
+docker compose exec -T postgres psql -U lumibase -d lumibase -Atc "
+  SELECT format(
+    'SELECT %L AS table_name, count(*) AS rows FROM %I.%I;',
+    schemaname || '.' || tablename,
+    schemaname,
+    tablename
+  )
+  FROM pg_tables
+  WHERE schemaname = 'public';
+" | docker compose exec -T postgres psql -U lumibase -d lumibase -At \
+  | sort > restored-row-counts.txt
+
+# Compare with the production baseline captured at backup time
+diff -u expected-row-counts.txt restored-row-counts.txt
+```
+
+For tables with active writes, compare against the backup timestamp, not the
+current production state. If PITR is used, validate that rows created after the
+recovery target are absent and rows created before the target are present.
+
+### Application Health Check After Restore
+
+The restored app must pass the public health endpoint and at least one
+authenticated smoke test before the drill is accepted.
+
+```bash
+# Service-level health
+curl -fsS http://localhost:1989/health
+
+# Confirm backing services report healthy, or document intentional degraded services
+curl -fsS http://localhost:1989/health | jq '.status, .services'
+```
+
+Also verify the most important user journeys for the deployment:
+
+- [ ] Admin can log in
+- [ ] Collections and items load
+- [ ] A restored item can be read through the API
+- [ ] A non-production write can be created and rolled back
+- [ ] Background queues do not contain production-only jobs
+
+### Cloudflare Restore Drill
+
+Cloudflare deployments use the same PostgreSQL restore process, but the
+validation surface is wider than Docker. Hyperdrive only connects the Worker to
+PostgreSQL; it is not the backup source. Restore and row-count verification must
+run against the origin PostgreSQL provider, then validate each Cloudflare service
+that fronts or derives state from that database.
+
+Use a separate Cloudflare environment for drills whenever possible:
+
+```bash
+# Deploy the Worker against restore-drill bindings, not production bindings
+wrangler deploy --env restore-drill
+
+# Confirm the deployed Worker is using the expected account and environment
+wrangler whoami
+
+# Watch Worker errors while the restored app starts
+wrangler tail --env restore-drill
+```
+
+Validate the Cloudflare service layer after the database restore:
+
+| Service | What to validate | Example check |
+|---------|------------------|---------------|
+| Workers | The restored API route is deployed and healthy. | `curl -fsS https://restore-api.example.com/health` |
+| Hyperdrive | The Worker can reach the restored PostgreSQL database and is not pointing at production by mistake. | Health response reports `database: healthy`; row counts match the restored database. |
+| R2 | Media objects exist in the restore bucket and are readable through the API or media custom domain. | `curl -fsS https://restore-api.example.com/api/media?prefix= \| jq '.data \| length'` |
+| KV | Config and permission cache are either empty for the drill or repopulated from restored database reads. | Log in and load collections after clearing stale restore-environment cache keys. |
+| Queues | No production-only jobs are replayed; restore-environment queues and dead-letter queues are empty before smoke tests. | Check Cloudflare Queues metrics/dashboards for backlog and failures. |
+| MeiliSearch Cloud | Search is rebuilt from restored database content, not copied from production indexes. | Query restored collections after the reindex job completes. |
+| DNS / WAF / Access | Custom domains, Cloudflare Access, and WAF rules allow health, auth, media, and API smoke tests. | Run health and authenticated smoke tests through the real restore domain, not only the workers.dev URL. |
+
+For Cloudflare, include these extra fields in the drill record:
+
+| Field | Example |
+|-------|---------|
+| Cloudflare account | `acme-prod` |
+| Worker environment | `restore-drill` |
+| Worker deployment ID | `from wrangler deploy output` |
+| Hyperdrive binding | `lumibase-hyperdrive-restore` |
+| Origin database | `restore-postgres-us-east-1` |
+| R2 bucket | `lumibase-media-restore` |
+| KV namespace | `CONFIG_CACHE restore namespace` |
+| Queue names | `content-indexing-restore`, `media-processing-restore` |
+| Custom domain tested | `https://restore-api.example.com` |
+
+Do not count KV, R2, search indexes, or queue state as covered by the PostgreSQL
+backup. KV and search are derived state and should be rebuilt or repopulated.
+R2 media needs its own replication or backup policy. Queues should be drained,
+discarded, or replayed intentionally according to the incident type.
+
+### Media and Search Rebuild
+
+Database restore does not prove that object storage and derived indexes are
+consistent. Validate media separately, then rebuild derived search state from
+the restored database.
+
+```bash
+# Verify the storage adapter can list restored media keys
+curl -fsS http://localhost:1989/api/media?prefix= | jq '.data | length'
+
+# Verify a known restored media object can be fetched
+curl -fsS -o /tmp/lumibase-media-check.bin \
+  http://localhost:1989/api/media/path/to/known-object.jpg
+
+# If media is restored from a replicated bucket, compare object counts
+mc ls --recursive remote/lumibase-media | wc -l
+mc ls --recursive local/lumibase-media | wc -l
+```
+
+Rebuild MeiliSearch or the configured search backend after every restore because
+the index is derived state. Use the deployment's reindex job or administrative
+operation. If your deployment exposes a reindex endpoint, run:
+
+```bash
+curl -fsS -X POST http://localhost:1989/api/search/reindex
+```
+
+After rebuild, run representative search queries against restored collections
+and compare the result count with expected fixtures.
+
+```bash
+curl -fsS "http://localhost:1989/api/search?q=release&collection=articles&limit=5" \
+  | jq '.meta.totalHits'
+```
+
+### RTO / RPO Documentation
+
+Every drill must produce a short record that can be audited later:
+
+| Field | Example |
+|-------|---------|
+| Drill date | `2024-01-15` |
+| Environment | `restore-drill-us-east-1` |
+| Backup artifact | `s3://lumibase-backups/daily/backup_20240115_020000.dump` |
+| WAL target | `2024-01-15 14:25:00 UTC` |
+| Restore start | `2024-01-15T15:00:00Z` |
+| App healthy | `2024-01-15T15:18:00Z` |
+| Measured RTO | `18 minutes` |
+| Backup timestamp | `2024-01-15T14:00:00Z` |
+| Last recovered transaction | `2024-01-15T14:24:52Z` |
+| Measured RPO | `8 seconds` |
+| Row-count diff | `0 unexpected diffs` |
+| Media check | `passed: listed bucket and fetched known object` |
+| Search rebuild | `passed: articles query returned expected hits` |
+| Exceptions | `none` |
+
+If measured RTO or RPO exceeds the target, open an incident follow-up and update
+the recovery plan before considering the drill passed.
+
 ## Backup Verification
 
 ### Automated Verification
@@ -389,6 +581,7 @@ docker compose --profile verify run --rm backup-verify
 - [ ] Verify media files are accessible
 - [ ] Check that search index can be rebuilt from restored data
 - [ ] Document recovery time (RTO) and data loss window (RPO)
+- [ ] Attach the completed restore drill record to the operations log
 
 ## Backup Failure Notifications
 
