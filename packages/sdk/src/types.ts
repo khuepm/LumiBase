@@ -1,18 +1,57 @@
 export type DefaultSchema = Record<string, Record<string, unknown>>;
 
+export type ID = string;
+export type Locale = string;
+export type Brand<TBrand extends string, TValue> = TValue & {
+  readonly __brand: TBrand;
+};
+
+export type PrimaryKeyType =
+  | "nanoid"
+  | "uuid"
+  | "integer"
+  | "bigInteger"
+  | "string";
+
+export type StorageMode = "jsonb" | "materialized" | "physical" | "external";
+
 export interface CollectionResource {
   id: string;
   siteId: string;
   name: string;
+  label?: string | null;
+  pluralLabel?: string | null;
+  hidden?: boolean;
+  system?: boolean;
   singleton: boolean;
+  icon?: string | null;
+  color?: string | null;
+  note?: string | null;
+  primaryKeyField?: string;
   displayTemplate: string | null;
   sortField: string | null;
   archiveField: string | null;
   archiveValue: string | null;
+  unarchiveValue?: string | null;
+  itemDuplicationFields?: string[];
+  translations?: Record<string, unknown>;
+  accountability?: "all" | "activity" | "none";
+  versioning?: boolean;
+  primaryKeyType?: PrimaryKeyType;
+  storageMode?: StorageMode;
   meta: Record<string, unknown>;
+  fields?: FieldResource[];
+  systemFields?: FieldResource[];
   createdAt?: string;
   updatedAt?: string;
 }
+
+export type CollectionInput = Omit<
+  Partial<CollectionResource>,
+  "id" | "siteId" | "fields" | "systemFields" | "createdAt" | "updatedAt"
+> & {
+  name: string;
+};
 
 export interface FieldResource {
   id: string;
@@ -20,10 +59,90 @@ export interface FieldResource {
   name: string;
   type: string;
   interface: string;
+  display?: string | null;
+  label?: string | null;
+  note?: string | null;
+  defaultValue?: unknown;
+  nullable?: boolean;
+  unique?: boolean;
+  indexed?: boolean;
+  searchable?: boolean;
+  length?: number | null;
+  precision?: number | null;
+  scale?: number | null;
+  special?: unknown[];
+  translations?: Record<string, unknown>;
+  options?: Record<string, unknown>;
+  displayOptions?: Record<string, unknown>;
+  validation?: Record<string, unknown>;
+  conditions?: unknown[];
   required: boolean;
+  readonly?: boolean;
   hidden: boolean;
+  encrypted?: boolean;
+  versioned?: boolean;
+  rawEnabled?: boolean;
+  width?: "half" | "full" | "fill";
+  group?: string | null;
   sortOrder: number;
+  system?: boolean;
+  locked?: boolean;
+  generated?: boolean;
+  column?: string;
+  renameFrom?: string;
+  migrationPlan?: Record<string, unknown>;
+  confirmRiskyChange?: boolean;
   [key: string]: unknown;
+}
+
+export type FieldInput = Omit<
+  Partial<FieldResource>,
+  "id" | "collectionId"
+> & {
+  name: string;
+  type: string;
+  interface: string;
+};
+
+export interface FieldMutationOptions {
+  migrationPlan?: Record<string, unknown>;
+  confirmRiskyChange?: boolean;
+}
+
+export interface FieldRenameInput extends FieldMutationOptions {
+  type: string;
+  interface: string;
+  display?: string | null;
+  label?: string | null;
+  note?: string | null;
+  defaultValue?: unknown;
+  nullable?: boolean;
+  unique?: boolean;
+  indexed?: boolean;
+  searchable?: boolean;
+  length?: number | null;
+  precision?: number | null;
+  scale?: number | null;
+  special?: unknown[];
+  options?: Record<string, unknown>;
+  displayOptions?: Record<string, unknown>;
+  validation?: Record<string, unknown>;
+  conditions?: unknown[];
+  required?: boolean;
+  readonly?: boolean;
+  hidden?: boolean;
+  encrypted?: boolean;
+  versioned?: boolean;
+  rawEnabled?: boolean;
+  width?: "half" | "full" | "fill";
+  group?: string | null;
+  sortOrder?: number;
+  [key: string]: unknown;
+}
+
+export interface FieldDeleteOptions extends FieldMutationOptions {
+  force?: boolean;
+  backupToRevisions?: boolean;
 }
 
 export interface RelationResource {
@@ -34,6 +153,95 @@ export interface RelationResource {
   oneCollection: string;
   oneField: string | null;
   junctionCollection: string | null;
+  type?: RelationType;
+  aliasField?: string | null;
+  relatedDisplayTemplate?: string | null;
+  junctionManyField?: string | null;
+  junctionOneField?: string | null;
+  sortField?: string | null;
+  onDelete?: "restrict" | "cascade" | "set null" | "no action";
+  meta?: Record<string, unknown>;
+}
+
+export type RelationType = "m2o" | "o2m" | "m2m" | "m2a";
+
+export type RelationInput = Omit<
+  Partial<RelationResource>,
+  "id" | "siteId"
+> & {
+  manyCollection: string;
+  manyField: string;
+  oneCollection: string;
+  type?: RelationType;
+};
+
+export type SchemaDiffRisk = "low" | "medium" | "high";
+
+export type SchemaRuntimeImpact =
+  | "cache_invalidation"
+  | "permission_recompile"
+  | "typegen_rebuild"
+  | "data_migration_required"
+  | "relation_reindex"
+  | "storage_runtime_change";
+
+export interface SchemaDiffEntry {
+  name?: string;
+  field?: string;
+  identity?: string;
+  type?: string;
+  changes?: string[];
+  risk: SchemaDiffRisk;
+  runtimeImpact: SchemaRuntimeImpact[];
+}
+
+export interface SchemaDiff {
+  risk: SchemaDiffRisk;
+  runtimeImpact: SchemaRuntimeImpact[];
+  collection: {
+    added: string[];
+    removed: string[];
+    changed: SchemaDiffEntry[];
+  };
+  fields: {
+    added: SchemaDiffEntry[];
+    removed: SchemaDiffEntry[];
+    changed: SchemaDiffEntry[];
+  };
+  relations: {
+    added: SchemaDiffEntry[];
+    removed: SchemaDiffEntry[];
+    changed: SchemaDiffEntry[];
+  };
+}
+
+export interface SchemaChangedEvent {
+  type: "schema.changed";
+  siteId: string;
+  collection: string;
+  affectedCollections: string[];
+  diff: SchemaDiff;
+}
+
+export interface SchemaApplyResult {
+  collection: CollectionResource;
+  diff: SchemaDiff;
+  affectedCollections: string[];
+  event: SchemaChangedEvent;
+}
+
+export type SchemaApplyInput = Partial<CollectionInput> & {
+  fields?: FieldInput[];
+  relations?: RelationInput[];
+};
+
+export type SchemaDiffInput = SchemaApplyInput & {
+  name: string;
+};
+
+export interface TypegenSchemaFilters {
+  include?: string[];
+  exclude?: string[];
 }
 
 export type ItemFilterOp =
@@ -110,7 +318,8 @@ export type PermissionAction =
   | "read"
   | "update"
   | "delete"
-  | "share";
+  | "share"
+  | "read_decrypted";
 
 export interface RoleResource {
   id: string;
@@ -223,6 +432,140 @@ export interface AccessConflictCheckInput {
   removePolicies?: string[];
 }
 
+/* ---------------- Access Export / Import ---------------- */
+
+export const ACCESS_EXPORT_SCHEMA = "lumibase.access@v1";
+
+export type AccessImportMode = "merge" | "replace-managed" | "replace-all";
+
+export interface AccessExportManifest {
+  schema: typeof ACCESS_EXPORT_SCHEMA;
+  exportedAt: string;
+  roles: AccessExportRole[];
+  policies: AccessExportPolicy[];
+  bindings: AccessExportBindings;
+  apiKeys: AccessExportApiKey[];
+}
+
+export interface AccessExportRole {
+  ref: string;
+  key: string | null;
+  systemKey: string | null;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  parent: string | null;
+  adminAccess: boolean;
+  appAccess: boolean;
+}
+
+export interface AccessExportPolicy {
+  ref: string;
+  key: string | null;
+  name: string;
+  icon: string | null;
+  description: string | null;
+  adminAccess: boolean;
+  appAccess: boolean;
+  enforceTfa: boolean;
+  ipAllow: string[];
+  ipDeny: string[];
+  validFrom: string | null;
+  validUntil: string | null;
+  rules: Record<string, unknown>;
+  permissions: AccessExportPermission[];
+}
+
+export interface AccessExportPermission {
+  collection: string;
+  action: PermissionAction;
+  permissions: Record<string, unknown>;
+  validation: Record<string, unknown>;
+  presets: Record<string, unknown>;
+  fields: string[];
+}
+
+export interface AccessExportBindings {
+  rolePolicies: Array<{ role: string; policy: string; priority: number }>;
+  userRoles: Array<{ userId: string; role: string; primary: boolean }>;
+  userPolicies: Array<{ userId: string; policy: string; priority: number }>;
+  apiKeyRoles: Array<{ apiKey: string; role: string; priority: number }>;
+  apiKeyPolicies: Array<{ apiKey: string; policy: string; priority: number }>;
+}
+
+export interface AccessExportApiKey {
+  ref: string;
+  name: string;
+  description: string | null;
+  prefix: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface AccessImportIssue {
+  code: string;
+  message: string;
+  path?: string;
+}
+
+export interface AccessImportDiffEntry {
+  ref: string;
+  status: "create" | "update" | "unchanged" | "delete";
+}
+
+export interface AccessImportDiffSection {
+  create: number;
+  update: number;
+  unchanged: number;
+  delete: number;
+  entries: AccessImportDiffEntry[];
+}
+
+export interface AccessImportDiff {
+  roles: AccessImportDiffSection;
+  policies: AccessImportDiffSection;
+  apiKeys: AccessImportDiffSection;
+  bindings: {
+    rolePolicies: AccessImportDiffSection;
+    userRoles: AccessImportDiffSection;
+    userPolicies: AccessImportDiffSection;
+    apiKeyRoles: AccessImportDiffSection;
+    apiKeyPolicies: AccessImportDiffSection;
+  };
+}
+
+export interface AccessImportDryRunResult {
+  dryRun: true;
+  valid: boolean;
+  errors: AccessImportIssue[];
+  diff: AccessImportDiff;
+  conflicts: AccessConflictReport;
+}
+
+export interface AccessImportSummary {
+  mode: AccessImportMode;
+  roles: AccessImportDiffSection;
+  policies: AccessImportDiffSection;
+  apiKeys: AccessImportDiffSection;
+  bindings: AccessImportDiff["bindings"];
+}
+
+export interface AccessImportApplyResult
+  extends Omit<AccessImportDryRunResult, "dryRun"> {
+  dryRun: false;
+  mode: AccessImportMode;
+  applied: boolean;
+  audit: {
+    event: "access_import_applied";
+    summary: AccessImportSummary;
+  };
+}
+
+export interface AccessImportOptions {
+  mode?: AccessImportMode;
+}
+
 export interface ApiKeyResource {
   id: string;
   siteId: string;
@@ -274,6 +617,38 @@ export interface ApiKeyPolicyAttachment {
   policyId: string;
   priority: number;
   createdAt?: string;
+}
+
+export interface ShareResource {
+  id: string;
+  siteId: string;
+  collection: string;
+  itemId: string;
+  roleId: string;
+  validFrom: string | null;
+  validUntil: string | null;
+  maxUses: number | null;
+  usedCount: number;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  createdBy: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface ShareCreateInput {
+  collection: string;
+  itemId: string;
+  roleId: string;
+  password?: string;
+  validFrom?: string | Date | null;
+  validUntil?: string | Date | null;
+  maxUses?: number | null;
+}
+
+export interface ShareSecretResult extends ShareResource {
+  token: string;
+  url: string;
 }
 
 export interface PresetResource {
@@ -526,6 +901,7 @@ export interface ActivityResource {
 export interface ExtensionResource {
   id: string;
   siteId: string | null;
+  key: string | null;
   name: string;
   version: string;
   type: string;

@@ -3,13 +3,14 @@ import {
   collections,
   extensions as extensionsTable,
   items,
+  relations,
   revisions,
   scopeSite,
   materializedCollections,
   type Database,
 } from '@lumibase/database';
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
-import { and, asc, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
 import { validateItem } from './validation';
 import type { CacheProvider, SearchProvider, QueueProvider } from '@lumibase/runtime';
@@ -17,8 +18,10 @@ import { PermissionService, type CompiledPermission, type PermissionAction } fro
 import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
 import type { PolicyRule } from '@lumibase/shared';
 import { CryptoService } from './crypto-service';
-import { ExtensionSandbox } from '../extensions/sandbox';
+import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
+import { AuditLogger } from '../modules/audit/logger';
+import type { PrimaryKeyType, StorageMode } from './schema-service';
 
 /**
  * ItemService — generic CRUD over the `items` JSONB store, driven by the
@@ -29,6 +32,7 @@ import { HookDispatcher } from '../extensions/hook-dispatcher';
 
 export interface ListItemsParams {
   fields?: string[];
+  deep?: DeepQuery;
   filter?: ItemFilter;
   sort?: string[];
   limit?: number;
@@ -76,11 +80,31 @@ export interface ItemRow {
   deletedAt: Date | null;
 }
 
+export interface DeepRelationOptions {
+  fields?: string[];
+  limit?: number;
+}
+
+export type DeepQuery = Record<string, DeepRelationOptions>;
+
 export class ItemServiceError extends Error {
   constructor(public code: string, message: string, public status = 400) {
     super(message);
     this.name = 'ItemServiceError';
   }
+}
+
+interface PrimaryKeyStrategyInput {
+  field?: string | null;
+  type?: string | null;
+  storageMode?: string | null;
+}
+
+export interface PrimaryKeyResolution {
+  field: string;
+  type: PrimaryKeyType;
+  storageMode: StorageMode;
+  id: string | undefined;
 }
 
 export interface ItemServiceDeps {
@@ -108,6 +132,8 @@ export interface ItemServiceDeps {
    * When omitted, extension hooks are skipped.
    */
   extensionEnv?: Record<string, unknown>;
+  /** Internal guard for actor-scoped extension item access to avoid recursive hooks. */
+  suppressExtensionHooks?: boolean;
 }
 
 const STRUCTURAL_FIELDS = new Set([
@@ -121,6 +147,8 @@ const STRUCTURAL_FIELDS = new Set([
 ]);
 
 const WRITABLE_STRUCTURAL_FIELDS = ['status', 'sort'] as const;
+
+type RelationMetadata = typeof relations.$inferSelect;
 
 /** Reserved data keys that map to structural columns rather than JSONB. */
 function fieldExpression(name: string): SQL {
@@ -260,6 +288,7 @@ export class ItemService {
    * Cached after first call; re-loaded if extensions change (evict from sandbox).
    */
   private async getHookDispatcher(): Promise<HookDispatcher | null> {
+    if (this.deps.suppressExtensionHooks) return null;
     if (!this.deps.extensionEnv) return null;
     if (this.hookDispatcher) return this.hookDispatcher;
     try {
@@ -267,12 +296,52 @@ export class ItemService {
         .select()
         .from(extensionsTable)
         .where(and(eq(extensionsTable.siteId, this.deps.siteId), eq(extensionsTable.enabled, true)));
-      const sandbox = new ExtensionSandbox(this.deps.extensionEnv as never, this.deps.db);
+      const sandbox = new ExtensionSandbox(
+        this.deps.extensionEnv as never,
+        this.deps.db,
+        this.actorDataAccess(),
+        async (event) => {
+          const actorEmail =
+            typeof this.deps.permissionCtx?.user?.email === 'string'
+              ? this.deps.permissionCtx.user.email
+              : null;
+          await new AuditLogger({ db: this.deps.db, siteId: this.deps.siteId }).write({
+            event: 'extension_service_account_used',
+            actorEmail,
+            ip: this.deps.permissionCtx?.ip ?? null,
+            userAgent: this.deps.permissionCtx?.headers?.['user-agent'] ?? null,
+            requestId: null,
+            metadata: {
+              extensionName: event.extensionName,
+              operation: event.operation,
+              statement: redactSql(event.statement),
+              siteId: this.deps.siteId,
+              userId: this.deps.userId ?? null,
+              principalType: this.deps.permissionCtx?.apiKey ? 'api_key' : 'user',
+            },
+          });
+        },
+      );
       this.hookDispatcher = new HookDispatcher(sandbox, rows);
     } catch {
       /* non-critical — return null if extensions can't be loaded */
     }
     return this.hookDispatcher;
+  }
+
+  private actorDataAccess(): ExtensionActorDataAccess {
+    const buildService = () =>
+      new ItemService({
+        ...this.deps,
+        suppressExtensionHooks: true,
+      });
+    return {
+      list: (collection, params) => buildService().list(collection, params as ListItemsParams | undefined),
+      detail: (collection, id, fields) => buildService().detail(collection, id, fields),
+      create: (collection, payload) => buildService().create(collection, payload),
+      patch: (collection, id, patch) => buildService().patch(collection, id, patch),
+      delete: (collection, id) => buildService().softDelete(collection, id),
+    };
   }
 
   private async resolveCollection(name: string) {
@@ -322,11 +391,15 @@ export class ItemService {
       ? rows.map((r) => this.permissions!.maskItem(perm, r as ItemRow, knownFields))
       : rows;
 
-    const data = [];
+    const decrypted: ItemRow[] = [];
     for (const r of masked) {
       r.data = await this.processCrypto(collectionName, r.data as Record<string, unknown>, 'decrypt', false);
-      data.push(params.fields ? projectFields(r as ItemRow, params.fields) : r);
+      decrypted.push(r as ItemRow);
     }
+    const expanded = params.fields || params.deep
+      ? await this.expandRelationFields(collectionName, decrypted, params.fields ?? [], params.deep)
+      : decrypted;
+    const data = expanded.map((r) => (params.fields ? projectFields(r, params.fields) : r));
 
     return {
       data,
@@ -334,7 +407,7 @@ export class ItemService {
     };
   }
 
-  async detail(collectionName: string, id: string, fields?: string[]) {
+  async detail(collectionName: string, id: string, fields?: string[], deep?: DeepQuery) {
     const perm = await this.perm(collectionName, 'read');
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
     const coll = await this.resolveCollection(collectionName);
@@ -355,11 +428,18 @@ export class ItemService {
     const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
     const masked = perm && this.permissions ? this.permissions.maskItem(perm, row as ItemRow, knownFields) : row;
     masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', false);
-    return fields ? projectFields(masked as ItemRow, fields) : masked;
+    if (!fields && !deep) return masked;
+    const [expanded] = await this.expandRelationFields(collectionName, [masked as ItemRow], fields ?? [], deep);
+    return fields ? projectFields(expanded ?? masked as ItemRow, fields) : expanded ?? masked;
   }
 
   async create(collectionName: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) {
     const coll = await this.resolveCollection(collectionName);
+    const primaryKey = resolvePrimaryKey({
+      field: coll.primaryKeyField,
+      type: coll.primaryKeyType,
+      storageMode: coll.storageMode,
+    }, payload.data ?? {});
     const perm = await this.perm(collectionName, 'create');
     const knownFields = await this.getKnownWritableFields(collectionName);
     assertWritablePermissionFields(perm, knownFields, payload.data ?? {}, {
@@ -403,9 +483,13 @@ export class ItemService {
     }
     this.assertPermissionValidation(perm, finalCreateSnapshot);
     const encryptedData = await this.processCrypto(collectionName, data, 'encrypt', true);
+    if (primaryKey.id) {
+      await this.assertItemIdAvailable(coll.id, primaryKey.id);
+    }
     const [row] = await this.deps.db
       .insert(items)
       .values({
+        ...(primaryKey.id ? { id: primaryKey.id } : {}),
         siteId: this.deps.siteId,
         collectionId: coll.id,
         data: encryptedData,
@@ -659,6 +743,211 @@ export class ItemService {
     return [...dataFields, ...WRITABLE_STRUCTURAL_FIELDS];
   }
 
+  private async expandRelationFields(
+    collectionName: string,
+    rows: ItemRow[],
+    fields: string[],
+    deep?: DeepQuery,
+  ): Promise<ItemRow[]> {
+    const selections = parseRelationFieldSelections(fields, deep);
+    if (rows.length === 0 || selections.length === 0) return rows;
+    const relationRows = await this.deps.db
+      .select()
+      .from(relations)
+      .where(
+        and(
+          scopeSite(relations.siteId, this.deps.siteId),
+          sql`(${relations.manyCollection} = ${collectionName} or ${relations.oneCollection} = ${collectionName})`,
+        ),
+      );
+
+    for (const rel of relationRows) {
+      const alias = relationAlias(rel);
+      const selected = selections.find((selection) => selection.alias === alias);
+      if (!selected) continue;
+      if (rel.type === 'm2o' && rel.manyCollection === collectionName) {
+        await this.expandManyToOne(rows, rel, selected);
+        continue;
+      }
+      if (rel.type === 'o2m' && rel.oneCollection === collectionName) {
+        await this.expandOneToMany(rows, rel, selected);
+        continue;
+      }
+      if (rel.type === 'm2m' && rel.manyCollection === collectionName) {
+        await this.expandManyToMany(rows, rel, selected);
+      }
+    }
+    return rows;
+  }
+
+  private async expandManyToOne(
+    rows: ItemRow[],
+    rel: RelationMetadata,
+    selected: RelationFieldSelection,
+  ): Promise<void> {
+    const alias = relationAlias(rel);
+    const foreignIds = uniqueStrings(rows.map((row) => row.data?.[rel.manyField]));
+    if (foreignIds.length === 0) {
+      assignRelation(rows, alias, () => null);
+      return;
+    }
+    const byId = await this.loadRelatedByIds(rel.oneCollection, foreignIds, selected.fields);
+    assignRelation(rows, alias, (row) => {
+      const foreignId = row.data?.[rel.manyField];
+      return typeof foreignId === 'string' ? byId.get(foreignId) ?? null : null;
+    });
+  }
+
+  private async expandOneToMany(
+    rows: ItemRow[],
+    rel: RelationMetadata,
+    selected: RelationFieldSelection,
+  ): Promise<void> {
+    const alias = relationAlias(rel);
+    const parentIds = uniqueStrings(rows.map((row) => row.id));
+    if (parentIds.length === 0) {
+      assignRelation(rows, alias, () => []);
+      return;
+    }
+    const relatedCollection = await this.resolveCollection(rel.manyCollection);
+    const relatedPerm = await this.perm(rel.manyCollection, 'read');
+    const relatedRows = await this.loadRowsByJsonField(
+      relatedCollection.id,
+      rel.manyField,
+      parentIds,
+      this.permissions?.whereFor(relatedPerm) ?? undefined,
+    );
+    const projected = await this.projectRelatedRows(rel.manyCollection, relatedRows, relatedPerm, selected.fields);
+    const byParent = new Map<string, Record<string, unknown>[]>();
+    for (const related of relatedRows) {
+      const parentId = related.data?.[rel.manyField];
+      if (typeof parentId !== 'string') continue;
+      const list = byParent.get(parentId) ?? [];
+      const projection = projected.get(related.id);
+      if (projection) list.push(projection);
+      byParent.set(parentId, list);
+    }
+    assignRelation(rows, alias, (row) => limitArray(byParent.get(row.id) ?? [], selected.limit));
+  }
+
+  private async expandManyToMany(
+    rows: ItemRow[],
+    rel: RelationMetadata,
+    selected: RelationFieldSelection,
+  ): Promise<void> {
+    const alias = relationAlias(rel);
+    if (!rel.junctionCollection || !rel.junctionManyField || !rel.junctionOneField) {
+      assignRelation(rows, alias, () => []);
+      return;
+    }
+    const sourceIds = uniqueStrings(rows.map((row) => row.id));
+    if (sourceIds.length === 0) {
+      assignRelation(rows, alias, () => []);
+      return;
+    }
+    const junctionCollection = await this.resolveCollection(rel.junctionCollection);
+    const junctionRows = await this.loadRowsByJsonField(
+      junctionCollection.id,
+      rel.junctionManyField,
+      sourceIds,
+    );
+    const targetIds = uniqueStrings(junctionRows.map((row) => row.data?.[rel.junctionOneField!]));
+    const targetById = targetIds.length > 0
+      ? await this.loadRelatedByIds(rel.oneCollection, targetIds, selected.fields)
+      : new Map<string, Record<string, unknown>>();
+    const bySource = new Map<string, Record<string, unknown>[]>();
+    for (const junction of junctionRows) {
+      const sourceId = junction.data?.[rel.junctionManyField];
+      const targetId = junction.data?.[rel.junctionOneField];
+      if (typeof sourceId !== 'string' || typeof targetId !== 'string') continue;
+      const target = targetById.get(targetId);
+      if (!target) continue;
+      const list = bySource.get(sourceId) ?? [];
+      list.push(target);
+      bySource.set(sourceId, list);
+    }
+    assignRelation(rows, alias, (row) => limitArray(bySource.get(row.id) ?? [], selected.limit));
+  }
+
+  private async loadRowsByJsonField(
+    collectionId: string,
+    field: string,
+    values: string[],
+    permissionClause?: SQL,
+  ): Promise<ItemRow[]> {
+    if (values.length === 0) return [];
+    return (await this.deps.db
+      .select()
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, collectionId),
+          inArray(sql`${items.data}->>${field}`, values),
+          isNull(items.deletedAt),
+          permissionClause,
+        ),
+      )) as ItemRow[];
+  }
+
+  private async loadRelatedByIds(
+    collectionName: string,
+    ids: string[],
+    fields: string[],
+  ): Promise<Map<string, Record<string, unknown>>> {
+    const relatedCollection = await this.resolveCollection(collectionName);
+    const relatedPerm = await this.perm(collectionName, 'read');
+    const relatedPermClause = this.permissions?.whereFor(relatedPerm) ?? undefined;
+    const relatedRows = await this.deps.db
+      .select()
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, relatedCollection.id),
+          inArray(items.id, ids),
+          isNull(items.deletedAt),
+          relatedPermClause,
+        ),
+      );
+    return this.projectRelatedRows(collectionName, relatedRows as ItemRow[], relatedPerm, fields);
+  }
+
+  private async projectRelatedRows(
+    collectionName: string,
+    rows: ItemRow[],
+    perm: CompiledPermission | null,
+    fields: string[],
+  ): Promise<Map<string, Record<string, unknown>>> {
+    const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
+    const byId = new Map<string, Record<string, unknown>>();
+    for (const row of rows) {
+      const masked = perm && this.permissions
+        ? this.permissions.maskItem(perm, row, knownFields)
+        : row;
+      masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', false);
+      byId.set(masked.id, projectRelatedRow(masked, fields));
+    }
+    return byId;
+  }
+
+  private async assertItemIdAvailable(collectionId: string, id: string): Promise<void> {
+    const [existing] = await this.deps.db
+      .select({ id: items.id })
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, collectionId),
+          eq(items.id, id),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      assertPrimaryKeyAvailable(id, true);
+    }
+  }
+
   private assertPermissionValidation(
     perm: CompiledPermission | null,
     snapshot: Record<string, unknown>,
@@ -882,6 +1171,81 @@ export function assertWritablePermissionFields(
   }
 }
 
+export function resolvePrimaryKey(
+  strategy: PrimaryKeyStrategyInput,
+  input: Record<string, unknown>,
+): PrimaryKeyResolution {
+  const field = strategy.field || 'id';
+  const type = normalizePrimaryKeyType(strategy.type);
+  const storageMode = normalizeStorageMode(strategy.storageMode);
+
+  if (storageMode === 'jsonb' && (type === 'integer' || type === 'bigInteger')) {
+    throw new ItemServiceError(
+      'UNSUPPORTED_PRIMARY_KEY',
+      `${type} primary keys require materialized or physical storage mode.`,
+      400,
+    );
+  }
+
+  if (type === 'uuid') {
+    return { field, type, storageMode, id: generateUuid() };
+  }
+
+  if (type === 'string') {
+    const candidate = input[field] ?? input.id;
+    if (typeof candidate !== 'string' || candidate.trim().length === 0) {
+      throw new ItemServiceError(
+        'PRIMARY_KEY_REQUIRED',
+        `String primary key requires "${field}" in the item data.`,
+        400,
+      );
+    }
+    return { field, type, storageMode, id: candidate };
+  }
+
+  return { field, type, storageMode, id: undefined };
+}
+
+export function assertPrimaryKeyAvailable(id: string, exists: boolean): void {
+  if (!exists) return;
+  throw new ItemServiceError('ITEM_ID_EXISTS', `Item "${id}" already exists.`, 409);
+}
+
+function normalizePrimaryKeyType(value: string | null | undefined): PrimaryKeyType {
+  switch (value) {
+    case 'uuid':
+    case 'integer':
+    case 'bigInteger':
+    case 'string':
+    case 'nanoid':
+      return value;
+    default:
+      return 'nanoid';
+  }
+}
+
+function normalizeStorageMode(value: string | null | undefined): StorageMode {
+  switch (value) {
+    case 'materialized':
+    case 'physical':
+    case 'external':
+    case 'jsonb':
+      return value;
+    default:
+      return 'jsonb';
+  }
+}
+
+function generateUuid(): string {
+  const runtimeCrypto = (globalThis as {
+    crypto?: { randomUUID?: () => `${string}-${string}-${string}-${string}-${string}` };
+  }).crypto;
+  if (!runtimeCrypto?.randomUUID) {
+    throw new ItemServiceError('UNSUPPORTED_PRIMARY_KEY', 'UUID generation requires Web Crypto randomUUID support.', 500);
+  }
+  return runtimeCrypto.randomUUID();
+}
+
 export function buildPermissionSnapshot(input: {
   id?: string;
   data: Record<string, unknown>;
@@ -915,10 +1279,102 @@ function defaultMagicContext(siteId: string): MagicContext {
   };
 }
 
-function projectFields(row: ItemRow, fields: string[]): Record<string, unknown> {
+function redactSql(statement: string): string {
+  return statement
+    .replace(/'[^']*'/g, "'?'")
+    .replace(/\b\d+(\.\d+)?\b/g, '?')
+    .slice(0, 500);
+}
+
+export interface RelationFieldSelection {
+  alias: string;
+  fields: string[];
+  limit?: number;
+}
+
+export function parseRelationFieldSelections(fields: string[], deep: DeepQuery = {}): RelationFieldSelection[] {
+  const byAlias = new Map<string, Set<string>>();
+  const limits = new Map<string, number>();
+  for (const token of fields) {
+    const [alias, ...path] = token.split('.');
+    if (!alias || path.length === 0) continue;
+    const field = path.join('.');
+    if (!field) continue;
+    const selected = byAlias.get(alias) ?? new Set<string>();
+    selected.add(field);
+    byAlias.set(alias, selected);
+  }
+  for (const [alias, options] of Object.entries(deep)) {
+    if (!alias) continue;
+    const selected = byAlias.get(alias) ?? new Set<string>();
+    const deepFields = options.fields?.length ? options.fields : ['*'];
+    for (const field of deepFields) {
+      if (field) selected.add(field);
+    }
+    byAlias.set(alias, selected);
+    if (typeof options.limit === 'number') limits.set(alias, options.limit);
+  }
+  return [...byAlias.entries()].map(([alias, selected]) => ({
+    alias,
+    fields: [...selected],
+    ...(limits.has(alias) ? { limit: limits.get(alias) } : {}),
+  }));
+}
+
+export function relationAlias(rel: {
+  aliasField?: string | null;
+  manyField: string;
+  manyCollection?: string;
+  oneCollection: string;
+  type?: string | null;
+}): string {
+  if (rel.aliasField) return rel.aliasField;
+  if (rel.type === 'o2m') return rel.manyCollection ?? rel.manyField;
+  if (rel.type === 'm2m') return rel.oneCollection;
+  return rel.manyField.endsWith('_id') ? rel.manyField.slice(0, -3) : rel.oneCollection;
+}
+
+export function parseDeepQueryParams(searchParams: URLSearchParams): DeepQuery | undefined {
+  const deep: DeepQuery = {};
+  for (const [key, value] of searchParams.entries()) {
+    const match = /^deep\[([^\]]+)\]\[([^\]]+)\]$/.exec(key);
+    if (!match) continue;
+    const [, alias, option] = match;
+    if (!alias || !option) continue;
+    const current = deep[alias] ?? {};
+    if (option === 'fields') {
+      current.fields = value.split(',').map((field) => field.trim()).filter(Boolean);
+    } else if (option === 'limit') {
+      const limit = Number.parseInt(value, 10);
+      if (Number.isFinite(limit) && limit >= 0) current.limit = limit;
+    }
+    deep[alias] = current;
+  }
+  return Object.keys(deep).length > 0 ? deep : undefined;
+}
+
+export function projectRelatedRow(row: ItemRow, fields: string[]): Record<string, unknown> {
+  if (fields.includes('*')) {
+    return {
+      id: row.id,
+      status: row.status,
+      sort: row.sort,
+      user_created: row.userCreated,
+      user_updated: row.userUpdated,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt,
+      ...(row.data ?? {}),
+    };
+  }
+  return projectFields(row, fields);
+}
+
+export function projectFields(row: ItemRow, fields: string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const f of fields) {
-    if (STRUCTURAL_FIELDS.has(f)) {
+    if (f.includes('.')) {
+      assignNestedProjection(out, row.data ?? {}, f);
+    } else if (STRUCTURAL_FIELDS.has(f)) {
       const map: Record<string, unknown> = {
         id: row.id,
         status: row.status,
@@ -934,4 +1390,67 @@ function projectFields(row: ItemRow, fields: string[]): Record<string, unknown> 
     }
   }
   return out;
+}
+
+function assignNestedProjection(out: Record<string, unknown>, source: Record<string, unknown>, token: string): void {
+  const [alias, ...pathParts] = token.split('.');
+  if (!alias || pathParts.length === 0) return;
+  const value = source[alias];
+  const path = pathParts.join('.');
+  if (path === '*') {
+    out[alias] = value;
+    return;
+  }
+  if (Array.isArray(value)) {
+    const previous = Array.isArray(out[alias]) ? out[alias] as unknown[] : [];
+    out[alias] = value.map((item, index) => ({
+      ...(isPlainRecord(previous[index]) ? previous[index] : {}),
+      ...(isPlainRecord(item) ? pickNestedValue(item, path) as Record<string, unknown> : {}),
+    }));
+    return;
+  }
+  if (!isPlainRecord(value)) {
+    out[alias] = value == null ? value : {};
+    return;
+  }
+  out[alias] = {
+    ...(isPlainRecord(out[alias]) ? out[alias] : {}),
+    ...(pickNestedValue(value, path) as Record<string, unknown>),
+  };
+}
+
+function pickNestedValue(value: unknown, path: string): unknown {
+  if (!isPlainRecord(value)) return value;
+  const [head, ...tail] = path.split('.');
+  if (!head) return {};
+  if (tail.length === 0) return { [head]: value[head] };
+  const nested = pickNestedValue(value[head], tail.join('.'));
+  return { [head]: nested };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function uniqueStrings(values: unknown[]): string[] {
+  return [
+    ...new Set(values.filter((value): value is string => typeof value === 'string' && value.length > 0)),
+  ];
+}
+
+function assignRelation(
+  rows: ItemRow[],
+  alias: string,
+  resolve: (row: ItemRow) => unknown,
+): void {
+  for (const row of rows) {
+    row.data = {
+      ...(row.data ?? {}),
+      [alias]: resolve(row),
+    };
+  }
+}
+
+function limitArray<T>(values: T[], limit: number | undefined): T[] {
+  return typeof limit === 'number' ? values.slice(0, limit) : values;
 }

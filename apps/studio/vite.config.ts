@@ -20,7 +20,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 2026,
     proxy: {
       // Proxy API calls to local wrangler so the SPA can use same-origin cookies.
       '/api': {

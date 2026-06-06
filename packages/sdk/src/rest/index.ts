@@ -15,6 +15,10 @@ import {
   CdcPipelineResource,
   CdcRollbackResult,
   CdcValidateEnvInput,
+  AccessExportManifest,
+  AccessImportApplyResult,
+  AccessImportDryRunResult,
+  AccessImportOptions,
 } from "../types";
 
 export * from "./legacy";
@@ -53,6 +57,37 @@ export function readItem<
       `/api/v1/items/${collection}/${id}${fields?.length ? `?fields=${fields.join(",")}` : ""}`
     );
     return res as unknown as Row;
+  };
+}
+
+export function exportAccessManifest() {
+  return async (client: LumiClient): Promise<AccessExportManifest> => {
+    const res = await client.rawRequest<AccessExportManifest>("/api/v1/access/export");
+    return res.data;
+  };
+}
+
+export function dryRunAccessImport(manifest: AccessExportManifest) {
+  return async (client: LumiClient): Promise<AccessImportDryRunResult> => {
+    const res = await client.rawRequest<AccessImportDryRunResult>("/api/v1/access/import?dryRun=true", {
+      method: "POST",
+      body: JSON.stringify(manifest),
+    });
+    return res.data;
+  };
+}
+
+export function importAccessManifest(
+  manifest: AccessExportManifest,
+  options: AccessImportOptions = {},
+) {
+  return async (client: LumiClient): Promise<AccessImportApplyResult> => {
+    const query = options.mode ? `?mode=${encodeURIComponent(options.mode)}` : "";
+    const res = await client.rawRequest<AccessImportApplyResult>(`/api/v1/access/import${query}`, {
+      method: "POST",
+      body: JSON.stringify(manifest),
+    });
+    return res.data;
   };
 }
 

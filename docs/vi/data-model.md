@@ -1,6 +1,8 @@
 # Data Model (Drizzle / Postgres)
 
-Tài liệu mô tả các bảng đã được khai báo trong `packages/database/src/schema/`. Tất cả PK là `nanoid` text. Domain table luôn có `site_id`.
+Tài liệu mô tả các bảng đã được khai báo trong `packages/database/src/schema/`. Row nội bộ mặc định dùng text ID. No-code content collections còn có chiến lược logical item primary key riêng qua `collections.primaryKeyField` và `collections.primaryKeyType`.
+
+Mọi bảng domain theo tenant đều có `site_id`.
 
 Schema được tách theo domain:
 
@@ -10,7 +12,7 @@ Schema được tách theo domain:
 | `access.ts` | `roles`, `policies`, `role_policies`, `user_policies`, `permissions` |
 | `cms.ts` | `pages`, `collections`, `fields`, `relations`, `items`, `revisions`, `activity`, `flows`, `flow_runs`, `operations`, `materialized_collections` |
 | `platform.ts` | `folders`, `files`, `presets`, `translations`, `settings`, `webhooks`, `extensions`, `translation_memory`, `glossary` |
-| `ai.ts` | `ai_approvals` |
+| `ai.ts` | `ai_approvals`, `ai_conversations`, `ai_messages`, `ai_embeddings` |
 
 Migrations đầy đủ trong `packages/database/migrations/` và `packages/database/drizzle/`.
 
@@ -53,14 +55,34 @@ Migrations đầy đủ trong `packages/database/migrations/` và `packages/data
 | `id` | text PK |
 | `siteId` | text FK |
 | `name` | text | machine name, unique per site |
+| `label`, `pluralLabel` | text | nhãn hiển thị cho author |
+| `hidden`, `system` | boolean |
 | `singleton` | boolean |
 | `icon`, `color`, `note` | text |
+| `primaryKeyField` | text | field định danh item logic, mặc định `id` |
+| `primaryKeyType` | text | `nanoid`, `uuid`, `integer`, `bigInteger`, `string` |
+| `storageMode` | text | `jsonb`, `materialized`, `physical`, `external` |
 | `displayTemplate` | text | mustache template default |
-| `sortField`, `archiveField`, `archiveValue` | text |
+| `sortField`, `archiveField`, `archiveValue`, `unarchiveValue` | text |
+| `itemDuplicationFields`, `translations` | jsonb |
 | `accountability` | text | `all` / `activity` / `none` |
 | `versioning` | boolean |
-| `meta` | jsonb | extra UI hints |
+| `meta` | jsonb | extra UI hints, gồm override presentation an toàn cho system fields |
 | `createdAt`, `updatedAt` |
+
+Chiến lược primary key:
+
+- `nanoid`: logical string identifier mặc định do LumiBase sinh.
+- `uuid`: UUID string do service sinh.
+- `string`: string identifier do caller cung cấp.
+- `integer` / `bigInteger`: chiến lược sequence-backed dành cho materialized/physical storage; JSONB collection chặn các tổ hợp này.
+
+Storage modes được ghi rõ để tránh nhầm `jsonb` với bảng vật lý kiểu Directus:
+
+- `jsonb`: collection logic mặc định, backed bởi `items.data`; đổi schema nhanh, không chạy runtime DDL, index/unique theo SQL-native chỉ là advisory.
+- `materialized`: JSONB là source of truth, thêm physical read projection được quản lý cho hot path.
+- `physical`: mode tương lai cho bảng do LumiBase sở hữu kiểu Directus; schema diff đánh dấu storage runtime change.
+- `external`: mode tương lai cho bảng ngoài được introspect; DDL/relation action phá huỷ bị giới hạn vì LumiBase không sở hữu table.
 
 ### `fields`
 | Column | Type | Note |
@@ -71,13 +93,28 @@ Migrations đầy đủ trong `packages/database/migrations/` và `packages/data
 | `type` | text | `string`,`text`,`integer`,`decimal`,`boolean`,`json`,`uuid`,`date`,`datetime`,`time`,`csv`,`hash`,`geometry`,`alias` |
 | `interface` | text | UI editor key |
 | `display` | text | display formatter key |
-| `options`, `displayOptions`, `validation`, `conditions`, `permissionsHint`, `translations` | jsonb |
+| `options`, `displayOptions`, `validation`, `conditions`, `translations` | jsonb |
 | `required`, `readonly`, `hidden`, `encrypted`, `versioned`, `rawEnabled` | boolean |
 | `sortOrder` | integer |
 | `width`, `group` | text |
 
+Compiled schema expose generated system fields bên cạnh user-defined rows:
+
+| Field | Type | Ghi chú |
+|---|---|---|
+| `id` | `string` | Primary item identifier, readonly/generated. |
+| `status` | `string` | Workflow status; hiển thị khi bật status/archive behavior. |
+| `sort` | `integer` | Giá trị sắp xếp thủ công. |
+| `user_created` | `string` | User tạo item, readonly/generated. |
+| `user_updated` | `string` | User cập nhật cuối, readonly/generated. |
+| `created_at` | `datetime` | Thời điểm tạo, readonly/generated. |
+| `updated_at` | `datetime` | Thời điểm cập nhật cuối, readonly/generated. |
+| `deleted_at` | `datetime` | Thời điểm soft-delete, readonly/generated và hidden. |
+
 ### `relations`
-- `id`, `siteId`, `manyCollection`, `manyField`, `oneCollection`, `oneField`, `junctionCollection?`, `sortField?`, `onDelete`, `meta jsonb`.
+- `id`, `siteId`, `manyCollection`, `manyField`, `oneCollection`, `oneField`, `junctionCollection?`, `type`, `aliasField?`, `relatedDisplayTemplate?`, `junctionManyField?`, `junctionOneField?`, `sortField?`, `onDelete`, `meta jsonb`.
+- Relation types là `m2o`, `o2m`, `m2m`, còn `m2a` reserved.
+- Schema service validate collection/field được tham chiếu và chặn xóa collection khi relation vẫn tham chiếu một trong hai phía.
 
 ### `items`
 | Column | Type |
@@ -120,6 +157,27 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`.
 ### `materialized_collections` (POST-GA6)
 - Định nghĩa "denormalized read tables" cho hot path.
 - `target`, `refreshStrategy` (`auto`/`cron`/`manual`), `refreshCron`, `projection jsonb`, `filter jsonb`, `lastRefreshedAt`, `rowCount`, `status`, `error`.
+
+### Runtime contract cho schema diff/apply
+
+Schema service expose lifecycle parity với Directus:
+
+- `POST /api/v1/collections/diff` so sánh collection metadata, fields và relations được đề xuất với schema hiện tại.
+- `PUT /api/v1/collections/{name}/schema` validate và apply thay đổi metadata, field, relation transactionally khi runtime database hỗ trợ transaction.
+- Apply invalidate compiled schema, permission và typegen cache keys, đồng thời emit event `schema.changed`.
+
+Diff output gồm root `risk`, `runtimeImpact`, và entries theo collection/field/relation. Runtime impact values gồm `cache_invalidation`, `permission_recompile`, `typegen_rebuild`, `data_migration_required`, `relation_reindex`, `storage_runtime_change`.
+
+### Typegen manifest v2
+
+`GET /api/v1/typegen/schema` trả versioned manifest với:
+
+- collection `primaryKey`, `primaryKeyField`, `primaryKeyType`;
+- user fields cộng compiled system fields;
+- flags `required`, `nullable`, `readonly`, `generated`, `system`, `encrypted`, `primaryKey`;
+- relation descriptors cho expanded response types.
+
+SDK generation dùng manifest này để emit base collection interfaces và relation response types dạng `CollectionExpanded`.
 
 ## 3. Permissions (`access.ts`)
 
@@ -199,7 +257,9 @@ Indexes: `(siteId, name)`, `(publisher, publishedAt)`, `marketplaceSlug`.
 
 > Realtime cursor data (CRDT-lite) **không** persist trong Postgres — chỉ broadcast qua Durable Object/host process. Xem `apps/cms/src/services/cursor-protocol.ts`.
 
-## 10. AI Copilot — HITL (`ai.ts`)
+## 10. AI Copilot seed (`ai.ts`)
+
+Các bảng hiện có là bước đầu của **Agent Harness Layer**: chat/copilot, HITL approval và RAG context. Blueprint mở rộng nằm ở [Agent Harness Layer](./features/agent-harness-layer.md).
 
 ### `ai_approvals`
 | Column | Type | Note |
@@ -218,7 +278,38 @@ Index: `(siteId, status)`.
 
 Hành vi: Skill nguy hiểm (`schema:write` hoặc tên bắt đầu bằng `delete`) bắt buộc tạo `ai_approvals` row chờ duyệt thay vì execute trực tiếp. Xem `docs/features/ai-copilot.md`.
 
-## 11. Indexing & RLS
+### `ai_conversations`
+- Thread hội thoại theo `siteId`, `userId`, `title`, `createdAt`, `updatedAt`.
+- Index: `(siteId, userId)`.
+
+### `ai_messages`
+- Message trong conversation: `conversationId`, `role` (`user`/`assistant`/`system`), `content`, `toolCalls jsonb`, `metadata jsonb`, `createdAt`.
+- Index: `(conversationId, createdAt)`.
+
+### `ai_embeddings`
+- RAG chunks theo `siteId`, `collection`, `itemId`, `fieldName`, `chunkText`, `embedding jsonb`, `model`, `createdAt`.
+- Index: `(siteId, collection)`, `(itemId)`. Khi production có pgvector, migrate `embedding` từ JSONB sang `vector(1536)` hoặc dimension theo model.
+
+## 11. Agent Harness Layer — system collections đề xuất
+
+Các collection sau chưa bắt buộc ở MVP nhưng là đích thiết kế để LumiBase trở thành CMS cho AI Agent:
+
+| Collection | Mục đích | Quan hệ chính |
+|---|---|---|
+| `agent_goals` | Mục tiêu business người dùng/workflow giao cho agent | `siteId`, `createdBy`, `priority`, `deadline`, `status` |
+| `agent_runs` | Một lần thực thi goal/task | `goalId`, `agentName`, `model`, `provider`, `budget`, `status`, `startedAt`, `finishedAt` |
+| `agent_plans` | Plan/steps trước khi execute | `runId`, `steps jsonb`, `risk`, `approvalPolicy`, `status` |
+| `agent_tools` | Registry tool/API/extension agent được gọi | `name`, `inputSchema`, `requiredCapabilities`, `riskPolicy`, `rateLimit`, `owner` |
+| `agent_tool_calls` | Audit từng tool call | `runId`, `toolId`, `input`, `output`, `error`, `latencyMs`, `cost`, `createdAt` |
+| `agent_memory` | Memory dài hạn ngoài conversation | `scope`, `source`, `content`, `confidence`, `expiresAt` |
+| `agent_artifacts` | Output versioned: page/component/dataset/config/prompt/migration/API spec | `runId`, `type`, `target`, `contentRef`, `hash`, `status` |
+| `agent_evaluations` | Validation/eval trước khi commit | `runId`, `artifactId`, `kind`, `result`, `score`, `details` |
+| `agent_approvals` | Approval tổng quát cho plan/tool/artifact | `runId`, `subjectType`, `subjectId`, `status`, `decidedBy`, `reason` |
+| `agent_permissions` | Mapping agent/role/policy/capability | `agentName`, `policyId`, `capabilities`, `validFrom`, `validUntil` |
+
+Thiết kế bắt buộc: mọi bảng domain có `siteId`, index `(siteId, ...)`, audit metadata, và không cho prompt tự nâng quyền ngoài `agent_permissions`/policy snapshot.
+
+## 12. Indexing & RLS
 
 - Bắt buộc index `(siteId, …)` ở mọi bảng domain.
 - Áp dụng Drizzle helper `scopeSite(siteId)` ở tầng repo.

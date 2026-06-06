@@ -38,6 +38,7 @@ import { searchRouter } from './routes/search';
 import { scimRouter } from './routes/scim';
 import { scimAdminRouter } from './routes/scim-admin';
 import { settingsRouter } from './routes/settings';
+import { shareAdminRouter, sharePublicRouter } from './routes/shares';
 import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
 import { tmRouter } from './routes/translation-memory';
@@ -65,7 +66,7 @@ app.use(
   cors({
     origin: (origin) => origin ?? '*',
     credentials: true,
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password'],
     exposeHeaders: ['X-Request-Id'],
   }),
 );
@@ -163,6 +164,7 @@ api.route('/media', mediaRouter);
 api.route('/presets', presetsRouter);
 api.route('/translations', translationsRouter);
 api.route('/settings', settingsRouter);
+api.route('/shares', shareAdminRouter);
 api.route('/users', usersRouter);
 api.route('/teams', teamsRouter);
 api.route('/files', filesRouter);
@@ -210,6 +212,10 @@ api.route('/ai', aiRouter);
 // `/api/v1` below, mounting `cdcRouter` at `/cdc` yields the intended
 // `/api/v1/cdc/*` prefix — matching how every sibling module above is wired.
 api.route('/cdc', cdcRouter);
+
+// Share links are public. The opaque token resolves the site and share role.
+app.use('/api/v1/shares/*', withDb());
+app.route('/api/v1/shares', sharePublicRouter);
 
 app.route('/api/v1', api);
 

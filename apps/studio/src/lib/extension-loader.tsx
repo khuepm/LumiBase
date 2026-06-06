@@ -45,6 +45,12 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
 
   try {
     const client = getApiClient();
+    const readCheck = await client.permissions.check({ collection: 'extensions', action: 'read' });
+    if (!readCheck.data.allowed) {
+      loaded = true;
+      return [];
+    }
+
     const resp = await client.extensions.list();
     const exts = (resp.data ?? []) as Array<{
       name: string;

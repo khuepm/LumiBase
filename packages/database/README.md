@@ -24,20 +24,18 @@ Copy `.env.example` to `.env` and set `DATABASE_URL` for local development.
 
 ## Seeding access control
 
-`scripts/seed-dev.ts` currently seeds only the default dev site and `system_state`.
-When the advanced Permission Builder lands, seed data must also create the
+`scripts/seed-dev.ts` seeds the default dev site, `system_state`, and the
 baseline access-control graph:
 
 - admin policy with `adminAccess=true`, `appAccess=true`, and TFA required;
 - administrator role attached to the admin policy;
-- studio self-service policy for reading/updating the current user's profile,
-  notifications, and presets;
+- studio self-service policy with Studio access but no default system grants;
 - public policy with no Studio access and no broad content grants;
-- explicit system-collection permissions for schema/access managers.
+- explicit system-collection permissions for schema/access managers;
+- read-only sensitive collection permissions for the security manager policy.
 
 Do not seed plaintext API keys or broad public read permissions. Sensitive
 system collections such as `system_state`, `audit_log`, `login_attempts`,
-`admin_backup_codes`, `scim_tokens`, and future `api_keys` tables must be
-admin/security-only. See
-`docs/vi/features/permission-builder-directus-investigation.md` for the full
-RBAC import/export and seeding blueprint.
+`admin_backup_codes`, `scim_tokens`, and `api_keys` tables are
+admin/security-only. See `docs/en/features/system-collections-access.md` for
+the system collection access contract.

@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { ItemService, ItemServiceError } from '../services/item-service';
+import { ItemService, ItemServiceError, parseDeepQueryParams } from '../services/item-service';
 
 /**
  * /items/:collection — generic CRUD over the items store.
@@ -87,16 +87,19 @@ const toError = (err: unknown) => {
 export const itemsRouter = new Hono<AppEnv>();
 
 itemsRouter.get('/:collection', async (c) => {
-  const parsed = listQuerySchema.safeParse(Object.fromEntries(new URL(c.req.url).searchParams));
+  const searchParams = new URL(c.req.url).searchParams;
+  const parsed = listQuerySchema.safeParse(Object.fromEntries(searchParams));
   if (!parsed.success) {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
   try {
     const filter = parsed.data.filter ? (JSON.parse(parsed.data.filter) as never) : undefined;
     const fields = parsed.data.fields ? parsed.data.fields.split(',') : undefined;
+    const deep = parseDeepQueryParams(searchParams);
     const sort = parsed.data.sort ? parsed.data.sort.split(',') : undefined;
     const result = await buildService(c).list(c.req.param('collection'), {
       fields,
+      deep,
       filter,
       sort,
       limit: parsed.data.limit,
@@ -140,9 +143,11 @@ itemsRouter.post('/:collection/bulk', async (c) => {
 });
 
 itemsRouter.get('/:collection/:id', async (c) => {
+  const searchParams = new URL(c.req.url).searchParams;
   const fields = c.req.query('fields')?.split(',');
+  const deep = parseDeepQueryParams(searchParams);
   try {
-    const data = await buildService(c).detail(c.req.param('collection'), c.req.param('id'), fields);
+    const data = await buildService(c).detail(c.req.param('collection'), c.req.param('id'), fields, deep);
     return c.json({ data });
   } catch (err) {
     const { status, body } = toError(err);

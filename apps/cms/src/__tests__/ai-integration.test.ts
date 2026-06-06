@@ -169,14 +169,14 @@ describe('AI Integration: Full end-to-end flow (Chat → Harness → DB → Appr
     expect(intent!.skillName).toBe('createCollection');
     expect(intent!.args).toEqual({ name: 'products' });
 
-    // Step 2: Harness evaluates the skill — createCollection requires schema:write → dangerous
+    // Step 2: Harness evaluates the skill — createCollection requires schema:create → dangerous
     const { db, store, updateCalls } = createFullFlowMockDb(SITE_ID);
     const harness = new AISecureHarness({ db, siteId: SITE_ID });
 
     const executeResult = await harness.execute(
       intent!.skillName,
       intent!.args,
-      ['schema:write', 'schema:read'], // User has sufficient capabilities
+      ['schema:create', 'schema:read'], // User has sufficient capabilities
       message,
     );
 
@@ -242,7 +242,7 @@ describe('AI Integration: Full end-to-end flow (Chat → Harness → DB → Appr
     expect(intent!.skillName).toBe('deleteCollection');
     expect(intent!.args).toEqual({ name: 'posts' });
 
-    // Step 2: Harness evaluates — deleteCollection requires schema:write AND starts with 'delete' → dangerous
+    // Step 2: Harness evaluates — deleteCollection requires schema:delete AND starts with 'delete' → dangerous
     const { db, store, updateCalls } = createFullFlowMockDb(SITE_ID);
     const harness = new AISecureHarness({ db, siteId: SITE_ID });
 
@@ -279,7 +279,7 @@ describe('AI Integration: Full end-to-end flow (Chat → Harness → DB → Appr
     const { db, store } = createFullFlowMockDb(SITE_ID);
     const harness = new AISecureHarness({ db, siteId: SITE_ID });
 
-    // User only has items:read, not schema:write
+    // User only has items:read, not schema:create
     const result = await harness.execute(
       intent!.skillName,
       intent!.args,
@@ -534,7 +534,7 @@ describe('AI Integration: Multi-tenancy isolation in end-to-end flow', () => {
     const createResult = await harnessA.execute(
       'createCollection',
       { name: 'posts' },
-      ['schema:write'],
+      ['schema:create'],
       'Create posts collection',
     );
 

@@ -209,6 +209,8 @@ Mục tiêu: tạo/quản lý collection & field qua API + UI.
 - [x] `[DB]` Bổ sung cột `signature`, `signatureAlg`, `publisherKeyId`, `publisher`, `marketplaceSlug`, `publishedAt`, `bundleSha256` vào `extensions`.
 - [x] `[BE]` Routes `/api/v1/marketplace/extensions` (list, detail, install, publish).
 - [x] `[BE]` Signature verification: SHA-256 bundle + ed25519/RSA-PSS qua WebCrypto, public keys load từ env `MARKETPLACE_PUBLIC_KEYS`.
+- [x] `[FE]` Public Marketplace site dùng catalog API thật, SEO/static export/deploy checklist.
+- [x] `[DOC]` Revenue sharing chốt hướng Free-first; commercial checkout/payout tách backlog pha sau.
 - [x] `[DOC]` `features/marketplace.md`.
 
 ## Phase POST-GA6 — Materialized collections (DONE)
@@ -263,43 +265,43 @@ Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / P
 - [x] `[BE]` Audit create/rotate/revoke/use-denied cho API key, không log plaintext token.
 - [x] `[SDK]` Thêm client methods cho API key CRUD, attach roles/policies, conflict preview.
 - [x] `[FE]` Studio API Keys page: create, rotate, revoke, attach roles/policies, preview effective permissions.
-- [ ] `[TEST]` API key không truy cập Studio; revoked/expired key bị 401; key chỉ thấy fields/rows theo policy.
+- [x] `[TEST]` API key không truy cập Studio; revoked/expired key bị 401; key chỉ thấy fields/rows theo policy.
 
 ### Import / Export Permission Builder
 
-- [ ] `[BE]` `GET /api/v1/access/export` xuất roles, policies, permissions, bindings, API key metadata bằng stable keys, không chứa secrets.
-- [ ] `[BE]` `POST /api/v1/access/import?dryRun=true` parse/validate/diff/conflict-check nhưng không ghi DB.
-- [ ] `[BE]` Import modes: `merge`, `replace-managed`, `replace-all`; apply trong transaction và audit diff summary.
-- [ ] `[BE]` Idempotency tests: import cùng manifest nhiều lần không tạo duplicate.
-- [ ] `[SDK]` Thêm access export/import client types.
-- [ ] `[FE]` Import dialog hiển thị diff, warnings, blocking conflicts và kết quả dry-run.
-- [ ] `[OPS]` CLI `lumibase access export/import` cho CI/CD giữa dev/staging/prod.
+- [x] `[BE]` `GET /api/v1/access/export` xuất roles, policies, permissions, bindings, API key metadata bằng stable keys, không chứa secrets.
+- [x] `[BE]` `POST /api/v1/access/import?dryRun=true` parse/validate/diff/conflict-check nhưng không ghi DB.
+- [x] `[BE]` Import modes: `merge`, `replace-managed`, `replace-all`; apply trong transaction và audit diff summary.
+- [x] `[BE]` Idempotency tests: import cùng manifest nhiều lần không tạo duplicate.
+- [x] `[SDK]` Thêm access export/import client types.
+- [x] `[FE]` Import dialog hiển thị diff, warnings, blocking conflicts và kết quả dry-run.
+- [x] `[OPS]` CLI `lumibase access export/import` cho CI/CD giữa dev/staging/prod.
 
 ### System permissions & seeding
 
-- [ ] `[DB]` Cập nhật `seed-dev.ts` seed `policy_admin`, `role_administrator`, `policy_studio_self`, `policy_public`.
-- [ ] `[DB]` Seed explicit permissions cho nhóm schema/access manager: `collections`, `fields`, `relations`, `roles`, `policies`, `permissions`.
-- [ ] `[DB]` Đảm bảo sensitive collections (`system_state`, `audit_log`, `login_attempts`, `admin_backup_codes`, `scim_tokens`, `api_keys`) admin/security-only.
-- [ ] `[FE]` Permission Builder phân nhóm system collections và ẩn sensitive collections khỏi non-admin.
-- [ ] `[TEST]` Public policy mặc định không đọc được content/system collections nếu chưa explicit grant.
+- [x] `[DB]` Cập nhật `seed-dev.ts` seed `policy_admin`, `role_administrator`, `policy_studio_self`, `policy_public`.
+- [x] `[DB]` Seed explicit permissions cho nhóm schema/access manager: `collections`, `fields`, `relations`, `roles`, `policies`, `permissions`.
+- [x] `[DB]` Đảm bảo sensitive collections (`system_state`, `audit_log`, `login_attempts`, `admin_backup_codes`, `scim_tokens`, `api_keys`) admin/security-only.
+- [x] `[FE]` Permission Builder phân nhóm system collections và ẩn sensitive collections khỏi non-admin.
+- [x] `[TEST]` Public policy mặc định không đọc được content/system collections nếu chưa explicit grant.
 
 ### Extension access control
 
 - [x] `[DOC]` Ghi rõ Directus extension permission layers: install/enable, sandbox scopes, accountability services, app module self-check.
-- [ ] `[DB]` Thêm stable `extensions.key` và system access targets `extensions`, `extension_modules`, `extension_endpoints`, `extension_operations`.
-- [ ] `[BE]` Enforce `extensions:read/configure/install/enable/delete/grant_capability` trên extension management routes.
-- [ ] `[BE]` Enforce `extensions:execute` trước khi dispatch `/api/v1/extensions/:name/*`.
-- [ ] `[BE]` Extension data access mặc định dùng actor permissions; service-account mode cần policy/capability riêng và audit.
-- [ ] `[FE]` Studio extension loader/module bar chỉ hiển thị extension principal được phép đọc.
-- [ ] `[FE]` Permission Builder thêm nhóm Extension Access để gán user/role truy cập extension.
-- [ ] `[TEST]` User thiếu `extensions:execute` không gọi được endpoint extension dù extension enabled.
+- [x] `[DB]` Thêm stable `extensions.key` và system access targets `extensions`, `extension_modules`, `extension_endpoints`, `extension_operations`.
+- [x] `[BE]` Enforce `extensions:read/configure/install/enable/delete/grant_capability` trên extension management routes.
+- [x] `[BE]` Enforce `extensions:execute` trước khi dispatch `/api/v1/extensions/:name/*`.
+- [x] `[BE]` Extension data access mặc định dùng actor permissions; service-account mode cần policy/capability riêng và audit.
+- [x] `[FE]` Studio extension loader/module bar chỉ hiển thị extension principal được phép đọc.
+- [x] `[FE]` Permission Builder thêm nhóm Extension Access để gán user/role truy cập extension.
+- [x] `[TEST]` User thiếu `extensions:execute` không gọi được endpoint extension dù extension enabled.
 
 ### Share action
 
-- [ ] `[DB]` Thêm bảng `shares` với role share chuyên dụng, password hash, validity window, max uses, revoke.
-- [ ] `[BE]` Implement `share` action: chỉ user có quyền share mới tạo share link; read payload vẫn đi qua role share permission.
-- [ ] `[FE]` Share dialog chỉ cho chọn role có `appAccess=false`, `adminAccess=false`, read permissions tối thiểu.
-- [ ] `[TEST]` Share link chỉ đọc fields/rows role share được phép, hết hạn/max uses/revoked đều bị deny.
+- [x] `[DB]` Thêm bảng `shares` với role share chuyên dụng, password hash, validity window, max uses, revoke.
+- [x] `[BE]` Implement `share` action: chỉ user có quyền share mới tạo share link; read payload vẫn đi qua role share permission.
+- [x] `[FE]` Share dialog chỉ cho chọn role có `appAccess=false`, `adminAccess=false`, read permissions tối thiểu.
+- [x] `[TEST]` Share link chỉ đọc fields/rows role share được phép, hết hạn/max uses/revoked đều bị deny.
 
 ---
 
@@ -361,6 +363,113 @@ Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
 - [x] `[BE]` SCIM Token rotation + audit.
 - [x] `[OPS]` Multi-tenant isolation testing tự động (k6 cross-site leak detection).
 
+
+---
+
+## Phase Agent Harness Layer (TODO)
+
+Mục tiêu: biến LumiBase thành control plane nơi humans, agents, data, workflows và applications cùng tiến hoá có kiểm soát. Checklist chi tiết nằm ở [`agent-harness-implementation.md`](./agent-harness-implementation.md).
+
+### A. Lifecycle nền tảng
+
+- [ ] `[DB]` Thêm `agent_goals`, `agent_runs`, `agent_plans`, `agent_tool_calls` với `siteId`, lifecycle status, policy snapshot, budget, audit metadata và indexes theo `siteId/runId/goalId`.
+- [ ] `[BE]` Tạo `AgentRunService` để open/append/close/fail/retry run; refactor `AISecureHarness` để mọi execute đều gắn `goalId/runId`.
+- [ ] `[TEST]` Property tests cho multi-tenant isolation, run failed vẫn giữ audit trail, retry không duplicate tool calls/artifacts.
+
+### B. Tool Registry + capability policy
+
+- [ ] `[DB]` Thêm `agent_tools` và `agent_permissions` để khai báo input/output schema, required capabilities, risk policy, rate limit và validity window.
+- [ ] `[BE]` Implement `ToolRegistryService` load core skills + extension tools + DB overrides; enforce disabled tool, capability, risk policy và rate limit.
+- [ ] `[FE]` Studio page “Agent Tools” để admin bật/tắt tool, xem schema/capability/risk và lịch sử gọi.
+- [ ] `[SDK]` Thêm types/client methods cho tools, capabilities và risk policies.
+
+### C. Approval tổng quát
+
+- [ ] `[DB]` Thêm `agent_approvals` cho `plan` / `tool_call` / `artifact` / `schema_diff`; bridge backward-compatible với `ai_approvals`.
+- [ ] `[BE]` Approval policy engine: `before_execute`, `before_commit`, `two_person_rule`, `owner_only`, `security_admin_only`.
+- [ ] `[FE]` Nâng Approvals Dashboard thành queue có subject type, diff preview, eval summary, approve/reject/request changes.
+- [ ] `[TEST]` Dangerous plan không execute trước approval; rejected/expired approval không commit được.
+
+### D. Artifact Store + Evaluation Gate
+
+- [ ] `[DB]` Thêm `agent_artifacts` và `agent_evaluations` với content hash, version, status, eval kind/status/score/details.
+- [ ] `[BE]` Artifact writers đầu tiên: `schema_diff`, `page_spec`, `component_spec`, `seed_data`, `api_spec`, `prompt`, `migration`.
+- [ ] `[BE]` Eval runners đầu tiên: JSON schema validation, permission diff lint, migration dry-run, generated API spec validation, prompt safety check.
+- [ ] `[FE]` Artifact review UI: diff/raw view, linked collections/items, eval summary, approve/publish/rollback.
+- [ ] `[TEST]` Artifact fail eval không publish được; artifact hash ổn định; publish/rollback idempotent.
+
+### E. Memory + App Generation MVP
+
+- [ ] `[DB]` Thêm `agent_memory` với scope, provenance, confidence, expiry và optional embedding.
+- [ ] `[BE]` RAG context builder tôn trọng permission field mask, redaction, expiry và provenance.
+- [ ] `[AI]` Skills `generateAppSpec`, `generateApiDocs`, `generateSeedData` sinh artifacts thay vì ghi thẳng vào content/schema.
+- [ ] `[FE]` Wizard “Generate app from schema” chọn collections, target app, constraints, budget và approval policy.
+- [ ] `[TEST]` E2E demo: generate storefront từ `products/orders/customers` → plan → artifacts → eval → approval → publish.
+
+### F. Operations
+
+- [ ] `[BE]` Metrics cho run success/fail, approval latency, tool latency, eval fail rate, token/cost estimate và budget stop reason.
+- [ ] `[OPS]` Grafana dashboard “Agent Harness” và dead-letter queue cho run/tool call fail nhiều lần.
+- [ ] `[DOC]` Cập nhật `data-model.md`, `architecture/overview.md`, OpenAPI, SDK docs và runtime limitations cho từng phase.
+
+---
+
+## Phase POST-GA8 — Directus Data Model Parity (DONE)
+
+Mục tiêu: nâng cấp Data Model / Collections Builder để một collection trong LumiBase có contract rõ như Directus: metadata đầy đủ, primary key strategy, system fields, field config nâng cao, relation metadata, schema permission, diff/apply atomic, SDK/typegen/OpenAPI và test parity. Tham chiếu chi tiết: `docs/en/features/directus-data-model-parity-tasks.md`.
+
+### Milestone 1 — Correctness fixes trước khi mở rộng (DONE)
+
+- [x] `[FE]` Collection wizard gửi đúng top-level payload (`note`, `accountability`, `versioning`, `singleton`, `primaryKeyType`, `storageMode`) thay vì nhét vào `meta`.
+- [x] `[BE]` `ItemService.patch/replace/softDelete` enforce permission `update/delete`, row-level scope và field-level update allowlist.
+- [x] `[BE]` Relation delete/dependency check đủ cả hai chiều `manyCollection` và `oneCollection`; block xoá field/collection khi còn relation trỏ tới.
+- [x] `[TEST]` Thêm regression tests cho wizard payload, update/delete permission và relation dependency checks.
+
+### Milestone 2 — Collection metadata + primary key contract (DONE)
+
+- [x] `[DB]` Thêm first-class collection columns: `label`, `pluralLabel`, `hidden`, `system`, `primaryKeyField`, `primaryKeyType`, `storageMode`, `unarchiveValue`, `itemDuplicationFields`, `translations`.
+- [x] `[BE]` Backfill/migration backward-compatible; route validation và `SchemaService` dùng field mới, giữ `meta` cho extension/custom UI hints.
+- [x] `[SDK]` Cập nhật collection input/output types và schema client methods cho metadata mới.
+- [x] `[FE]` Wizard có các bước Identity, Storage, System fields, Permissions defaults, Review JSON.
+- [x] `[BE]` Implement primary key strategy cho `jsonb`: `nanoid`, `uuid`, `string`; defer hoặc block rõ `integer/bigInteger` nếu chưa có sequence.
+- [x] `[TEST]` Create item respect primary key strategy; duplicate user-provided ID trả `409`.
+
+### Milestone 3 — System fields và field configuration parity
+
+- [x] `[BE]` Extend compiled schema với `systemFields` (`id`, `status`, `sort`, `user_created`, `user_updated`, `created_at`, `updated_at`, `deleted_at`).
+- [x] `[FE]` Fields tab hiển thị system fields trong locked group; cho cấu hình display/hidden/readonly/translations/width nhưng không cho xoá.
+- [x] `[DB]` Thêm field metadata: `label`, `note`, `defaultValue`, `nullable`, `unique`, `indexed`, `searchable`, `length`, `precision`, `scale`, `special`.
+- [x] `[FE]` FieldInspector advanced tabs: Basics, Options, Display, Validation, Conditions, Layout, Storage, Translations.
+- [x] `[BE]` Tách create/update/rename/delete/migration field path; reject đổi type/name khi đã có data nếu chưa có migration plan.
+- [x] `[TEST]` FieldInspector không làm mất unknown `options/displayOptions/validation/conditions`; risky changes trả `409` hoặc cần confirm.
+
+### Milestone 4 — Relations parity và deep read
+
+- [x] `[BE]` Validate relation references: collection/field tồn tại, relation name không duplicate, `onDelete` hợp lệ theo storage mode.
+- [x] `[DB]` Mở rộng relation metadata: `type`, `aliasField`, `relatedDisplayTemplate`, `junctionManyField`, `junctionOneField`.
+- [x] `[BE]` Hỗ trợ relation types `m2o`, `o2m`, `m2m`; reserve `m2a` và trả "not implemented" nếu chọn.
+- [x] `[BE]` Implement relation expansion cho item query (`fields=author.name,categories.*`, `deep[...]`) với permission masking cho related collections.
+- [x] `[TEST]` M2O trả object khi request expand; O2M/M2M trả array; batching tránh N+1 ở case phổ biến.
+
+### Milestone 5 — Schema permissions, diff/apply và storage positioning
+
+- [x] `[BE]` Thêm schema permission actions: `schema:read/create/update/delete/migrate`.
+- [x] `[BE]` Áp dụng `requireSchemaPermission` cho collections/fields/relations/compiled schema routes và AI schema skills.
+- [x] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification và runtime impact.
+- [x] `[BE]` `PUT /collections/:name/schema` validate toàn bộ, compute diff, apply transactionally khi runtime hỗ trợ, invalidate schema/permission/typegen cache và emit `schema.changed`.
+- [x] `[FE]` Raw JSON schema tab hiển thị diff/risk trước khi apply.
+- [x] `[DOC]` Ghi rõ storage modes `jsonb/materialized/physical/external`, kèm limitations badge trong Studio.
+- [x] `[DOC]` Tạo design doc `docs/en/architecture/physical-collections.md` để quyết định physical/external mode.
+
+### Milestone 6 — SDK, typegen, OpenAPI, docs và parity tests
+
+- [x] `[SDK]` Mở schema resources đầy đủ: collections/fields/relations CRUD, field rename/delete options, schema diff/apply.
+- [x] `[SDK]` Giữ legacy methods hoặc deprecation wrapper; preserve error `code/path/risk` metadata.
+- [x] `[SDK]` Typegen include primary key type, system fields, nullable/required, readonly/generated và relation-expanded response types.
+- [x] `[DOC]` Cập nhật `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
+- [x] `[DOC]` Sync bản tiếng Việt sau khi English contract ổn định.
+- [x] `[TEST]` Backend/frontend/SDK parity suite đủ các acceptance criteria trong `directus-data-model-parity-tasks.md`.
+
 ---
 
 ## Cross-cutting checklist (mỗi phase)
@@ -370,5 +479,5 @@ Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
 - [x] Cập nhật OpenAPI spec (`apps/cms/openapi.yaml`) cho mọi endpoint mới.
 - [x] Cập nhật `packages/sdk` types tương ứng.
 - [x] Cập nhật docs trong `docs/features/` hoặc `apps/docs/content/`.
-- [x] Tạo branch `feature/<phase>-<name>`, commit theo conventional commits, PR có checklist DoD.
+- [x] Làm trực tiếp trên `main` theo chỉ dẫn repo hiện tại; commit theo conventional commits và push thẳng để giảm conflict với các luồng song song.
 - [x] Đảm bảo route mới hoạt động trên CẢ hai runtime (Cloudflare + Docker) — nếu phụ thuộc API cụ thể, gate bằng feature flag và document trong `features/runtime-abstraction.md`.

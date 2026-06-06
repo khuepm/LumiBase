@@ -6,7 +6,13 @@ import { useMemo, useState } from 'react';
 import type { PermissionAction } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { usePermissions } from '@/lib/use-permissions';
 import { PermissionRowEditor } from './permission-row-editor';
+import {
+  buildAccessCollectionGroups,
+  firstCollectionOption,
+  type AccessCollectionGroup,
+} from './system-collections';
 
 const ACTION_OPTIONS: PermissionAction[] = ['create', 'read', 'update', 'delete', 'share'];
 
@@ -21,6 +27,7 @@ export function PolicyDetailPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
+  const perms = usePermissions();
 
   const policyQuery = useQuery({
     queryKey: ['access', 'policy', id],
@@ -149,7 +156,10 @@ export function PolicyDetailPage() {
 
       {adding && (
         <AddPermissionDialog
-          collections={(collectionsQuery.data ?? []).map((c) => c.name)}
+          collectionGroups={buildAccessCollectionGroups(
+            (collectionsQuery.data ?? []).map((c) => c.name),
+            perms.isAdmin,
+          )}
           onClose={() => setAdding(false)}
           onSubmit={(collection, action) => addPermission.mutate({ collection, action })}
           submitting={addPermission.isPending}
@@ -308,21 +318,22 @@ function splitCsv(value: string): string[] {
     .filter(Boolean);
 }
 
-function AddPermissionDialog({
-  collections,
+export function AddPermissionDialog({
+  collectionGroups,
   onClose,
   onSubmit,
   submitting,
   error,
 }: {
-  collections: string[];
+  collectionGroups: AccessCollectionGroup[];
   onClose: () => void;
   onSubmit: (collection: string, action: PermissionAction) => void;
   submitting: boolean;
   error: Error | null;
 }) {
-  const [collection, setCollection] = useState(collections[0] ?? '');
+  const [collection, setCollection] = useState(firstCollectionOption(collectionGroups));
   const [action, setAction] = useState<PermissionAction>('read');
+  const sensitiveCount = collectionGroups.find((group) => group.id === 'sensitive')?.options.length ?? 0;
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
@@ -331,7 +342,7 @@ function AddPermissionDialog({
         <div className="space-y-3 text-sm">
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-muted-foreground">Collection</span>
-            {collections.length === 0 ? (
+            {collectionGroups.length === 0 ? (
               <input
                 value={collection}
                 onChange={(e) => setCollection(e.target.value)}
@@ -344,14 +355,31 @@ function AddPermissionDialog({
                 onChange={(e) => setCollection(e.target.value)}
                 className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
               >
-                {collections.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
+                {collectionGroups.map((group) => (
+                  <optgroup key={group.id} label={group.label}>
+                    {group.options.map((option) => (
+                      <option key={option.name} value={option.name}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             )}
           </label>
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            {collectionGroups.map((group) => (
+              <p key={group.id}>
+                <span className="font-medium text-foreground">{group.label}:</span>{' '}
+                {group.hint}
+              </p>
+            ))}
+            {sensitiveCount === 0 && (
+              <p className="mt-1">
+                Sensitive system collections are hidden unless your current principal has admin bypass.
+              </p>
+            )}
+          </div>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-muted-foreground">Action</span>
             <select

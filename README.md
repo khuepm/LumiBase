@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**⚡ Edge-Native Headless CMS for Modern Web Development**
+**⚡ Edge-Native, AI-Native Headless CMS for Agentic Business Software**
 
 [![GitHub Stars](https://img.shields.io/github/stars/khuepm/lumibase?style=social)](https://github.com/khuepm/lumibase)
 <!-- [![GitHub Sponsors](https://img.shields.io/github/sponsors/khuepm)](https://github.com/sponsors/khuepm) -->
@@ -16,7 +16,7 @@
 
 ## 🎯 What is LumiBase?
 
-LumiBase is an Edge-native Headless CMS built for high-performance multi-website deployments, resolving the scalability and CI/CD bottlenecks of traditional monolithic CMS platforms. Inspired by Directus but designed for the edge computing era.
+LumiBase is an Edge-native, AI-native Headless CMS built for high-performance multi-website deployments and agent-assisted business software generation. Inspired by Directus but designed for the edge computing era, LumiBase adds an Agent Harness Layer so AI agents receive goals, context, tools, permissions, approvals, evaluations, and artifact storage through a governed control plane.
 
 ### ✨ Key Features
 
@@ -26,6 +26,7 @@ LumiBase is an Edge-native Headless CMS built for high-performance multi-website
 - **GitOps Ready:** Export/import configurations for roles and schemas
 - **Privacy-First:** Per-field encryption with AES-GCM for sensitive data
 - **Developer Experience:** Type-safe SDKs, comprehensive documentation, and modern tooling
+- **Agent Harness Layer:** Goals, runs, tool registry, memory, HITL approvals, evaluations, and versioned artifacts for AI agents
 
 ## Folder Structure (Turborepo)
 
@@ -114,6 +115,7 @@ Includes everything in Hobby tier plus:
 2. **True Multi-Tenancy:** Hard-coded `site_id` isolation.
 3. **Page Hydration API:** Delivers layout and data in a single payload.
 4. **GitOps Ready:** `cms config:export` for roles and schemas.
+5. **Agent Harness:** Govern AI agents with goals, context, capabilities, approvals, evaluations, and artifact commits.
 
 ---
 

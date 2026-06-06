@@ -217,6 +217,39 @@ export const apiKeyPolicies = pgTable(
   }),
 );
 
+export const shares = pgTable(
+  'shares',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    collection: text('collection').notNull(),
+    itemId: text('item_id').notNull(),
+    roleId: text('role_id')
+      .notNull()
+      .references(() => roles.id, { onDelete: 'restrict' }),
+    /** Hash of the public share token. Plaintext is returned only on create. */
+    tokenHash: text('token_hash').notNull(),
+    passwordHash: text('password_hash'),
+    validFrom: timestamp('valid_from'),
+    validUntil: timestamp('valid_until'),
+    maxUses: integer('max_uses'),
+    usedCount: integer('used_count').default(0).notNull(),
+    revokedAt: timestamp('revoked_at'),
+    revokedBy: text('revoked_by').references(() => users.id, { onDelete: 'set null' }),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    lastUsedAt: timestamp('last_used_at'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    tokenHashUnique: uniqueIndex('shares_token_hash_unique').on(t.tokenHash),
+    siteCollectionItemIdx: index('shares_site_collection_item_idx').on(t.siteId, t.collection, t.itemId),
+    siteRoleIdx: index('shares_site_role_idx').on(t.siteId, t.roleId),
+    siteRevokedIdx: index('shares_site_revoked_idx').on(t.siteId, t.revokedAt),
+  }),
+);
+
 export const permissions = pgTable(
   'permissions',
   {

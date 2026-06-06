@@ -148,7 +148,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     createCollection: {
       name: 'createCollection',
       description: 'Create a new collection with the given name and options',
-      requiredCapabilities: ['schema:write'],
+      requiredCapabilities: ['schema:create'],
       service: 'schema',
       handler: async (args) => {
         // Connects to: SchemaService.createCollection(input)
@@ -167,7 +167,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     deleteCollection: {
       name: 'deleteCollection',
       description: 'Delete an existing collection by name',
-      requiredCapabilities: ['schema:write'],
+      requiredCapabilities: ['schema:delete'],
       service: 'schema',
       handler: async (args) => {
         // Connects to: SchemaService.deleteCollection(name)
@@ -379,13 +379,13 @@ export class AISecureHarness {
   /**
    * Evaluates whether a skill is dangerous and requires HITL approval.
    * A skill is considered dangerous if:
-   * - It requires the 'schema:write' capability, OR
+   * - It requires a mutating `schema:*` capability, OR
    * - Its name starts with 'delete'
    *
    * @returns true if the skill is classified as dangerous, false otherwise.
    */
   evaluateRisk(skill: SkillDefinition, skillName: string): boolean {
-    if (skill.requiredCapabilities.includes('schema:write')) {
+    if (skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read')) {
       return true;
     }
     if (skillName.startsWith('delete')) {
