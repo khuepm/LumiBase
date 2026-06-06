@@ -1,63 +1,84 @@
 # LumiBase English Docs Index
 
 > Token-efficient index for AI agents. Fetch any file listed below for full content.
+> **Quick start for agents:** `Read docs/en/agent-setup/prompt.md`
 > For the complete docs directory, see [../llms.txt](../llms.txt).
 
 ## Agent Setup (Start Here)
-- [index.md](./agent-setup/index.md) — agent setup overview + quick setup command
-- [prompt.md](./agent-setup/prompt.md) — machine-readable instructions (fetch and execute directly)
-- [claude-code.md](./agent-setup/claude-code.md) — Claude Code guide
-- [cursor.md](./agent-setup/cursor.md) — Cursor IDE guide
-- [github-copilot.md](./agent-setup/github-copilot.md) — GitHub Copilot guide
-- [codex.md](./agent-setup/codex.md) — OpenAI Codex guide
-- [windsurf.md](./agent-setup/windsurf.md) — Windsurf guide
+- [index.md](./agent-setup/index.md) — overview + quick-setup one-liner
+- [prompt.md](./agent-setup/prompt.md) — **machine-readable instructions (fetch and execute directly)**
+- [claude-code.md](./agent-setup/claude-code.md) — Claude Code: CLAUDE.md, MCP, example prompts
+- [cursor.md](./agent-setup/cursor.md) — Cursor: .cursorrules, Composer, MCP
+- [github-copilot.md](./agent-setup/github-copilot.md) — Copilot: workspace instructions, agent mode
+- [codex.md](./agent-setup/codex.md) — Codex: AGENTS.md, MCP, example sessions
+- [windsurf.md](./agent-setup/windsurf.md) — Windsurf: MCP, Cascade Flows
 
 ## Core References (read first)
 - [README.md](./README.md) — full docs map, monorepo structure, principles
-- [data-model.md](./data-model.md) — complete DB schema (sites, collections, fields, flows, ai_approvals, …)
-- [ai-skills.md](./ai-skills.md) — AI skill definitions, system prompts, usage patterns
+- [data-model.md](./data-model.md) — complete DB schema reference
+- [ai-skills.md](./ai-skills.md) — AI skill definitions, system prompts
 - [vision-and-positioning.md](./vision-and-positioning.md) — product goals, Directus comparison
 
 ## API
-- [api/hono-api-spec.md](./api/hono-api-spec.md) — REST + WebSocket endpoints, auth, response shapes
+- [api/hono-api-spec.md](./api/hono-api-spec.md) — full REST + WebSocket endpoints with request/response examples
+
+## SDK
+- [sdk/index.md](./sdk/index.md) — SDK overview
+- [sdk/javascript.md](./sdk/javascript.md) — JS/TS SDK: auth, items, files, realtime, AI, flows
+- [sdk/typegen.md](./sdk/typegen.md) — TypeScript type generation
 
 ## Architecture
-- [architecture/overview.md](./architecture/overview.md) — tech stack, layers, runtime abstraction
+- [architecture/overview.md](./architecture/overview.md) — tech stack, middleware chain, runtime abstraction
 - [architecture/realtime-websocket-implementation.md](./architecture/realtime-websocket-implementation.md) — WebSocket internals
+- [architecture/decisions/index.md](./architecture/decisions/index.md) — ADR index
+- [architecture/decisions/adr-001-nanoid-over-uuid.md](./architecture/decisions/adr-001-nanoid-over-uuid.md)
+- [architecture/decisions/adr-002-runtime-abstraction.md](./architecture/decisions/adr-002-runtime-abstraction.md)
+- [architecture/decisions/adr-003-hitl-for-dangerous-ai-skills.md](./architecture/decisions/adr-003-hitl-for-dangerous-ai-skills.md)
+- [architecture/decisions/adr-004-tag-based-cache-invalidation.md](./architecture/decisions/adr-004-tag-based-cache-invalidation.md)
+- [architecture/decisions/adr-005-hono-over-express.md](./architecture/decisions/adr-005-hono-over-express.md)
+- [architecture/decisions/adr-006-drizzle-over-prisma.md](./architecture/decisions/adr-006-drizzle-over-prisma.md)
+- [architecture/decisions/adr-007-logto-for-auth.md](./architecture/decisions/adr-007-logto-for-auth.md)
+- [architecture/decisions/adr-008-policy-dsl-json.md](./architecture/decisions/adr-008-policy-dsl-json.md)
 
 ## Features
 - [features/ai-copilot.md](./features/ai-copilot.md) — AI Copilot, HITL, skill system, LLM providers, RAG
-- [features/flows-automation.md](./features/flows-automation.md) — Flows engine, operations, graph format, triggers
-- [features/permissions-rbac.md](./features/permissions-rbac.md) — roles, policies, field-level permissions, capabilities
+- [features/flows-automation.md](./features/flows-automation.md) — Flows engine, operations, graph format
+- [features/permissions-rbac.md](./features/permissions-rbac.md) — roles, policies, field-level permissions
 - [features/collections-builder.md](./features/collections-builder.md) — no-code collection builder
-- [features/field-types-and-config.md](./features/field-types-and-config.md) — field types, interfaces, display config
-- [features/websockets-realtime.md](./features/websockets-realtime.md) — realtime subscribe/publish, presence, cursors
-- [features/extensions-system.md](./features/extensions-system.md) — extension SDK, sandbox, marketplace
+- [features/field-types-and-config.md](./features/field-types-and-config.md) — field types, interfaces
+- [features/websockets-realtime.md](./features/websockets-realtime.md) — realtime subscribe/publish, presence
+- [features/extensions-system.md](./features/extensions-system.md) — extension SDK, sandbox
 - [features/runtime-abstraction.md](./features/runtime-abstraction.md) — @lumibase/runtime dual-runtime layer
-- [features/user-management.md](./features/user-management.md) — users, invitations, SSO/Logto
-- [features/translations-i18n.md](./features/translations-i18n.md) — multilingual fields, UI, content
-- [features/translation-memory.md](./features/translation-memory.md) — translation memory + MT providers
-- [features/typegen.md](./features/typegen.md) — TypeScript type generation from schema
-- [features/search.md](./features/search.md) — full-text search (MeiliSearch / CF managed)
+- [features/user-management.md](./features/user-management.md) — users, invitations, SSO
+- [features/translations-i18n.md](./features/translations-i18n.md) — multilingual content
+- [features/translation-memory.md](./features/translation-memory.md) — TM + MT providers
+- [features/typegen.md](./features/typegen.md) — TypeScript codegen from schema
+- [features/search.md](./features/search.md) — full-text search
 - [features/observability.md](./features/observability.md) — metrics, logs, dashboards
 - [features/marketplace.md](./features/marketplace.md) — signed extension marketplace
-- [features/scim-provisioning.md](./features/scim-provisioning.md) — SCIM 2.0 user/group provisioning
+- [features/scim-provisioning.md](./features/scim-provisioning.md) — SCIM 2.0 provisioning
 - [features/materialized-collections.md](./features/materialized-collections.md) — materialized read tables
-- [features/cloudflare-auth.md](./features/cloudflare-auth.md) — Logto/Cloudflare auth integration
-- [features/display-templates.md](./features/display-templates.md) — display templates (listing + detail)
-- [features/raw-data-editing.md](./features/raw-data-editing.md) — raw editor for any field
-- [features/system-config.md](./features/system-config.md) — settings, env, theming, modules
-- [features/bookmarks-presets.md](./features/bookmarks-presets.md) — list view bookmarks/presets
+- [features/cloudflare-auth.md](./features/cloudflare-auth.md) — Logto/Cloudflare auth
+- [features/display-templates.md](./features/display-templates.md) — display templates
+- [features/raw-data-editing.md](./features/raw-data-editing.md) — raw field editor
+- [features/system-config.md](./features/system-config.md) — settings, theming
+- [features/bookmarks-presets.md](./features/bookmarks-presets.md) — list view bookmarks
 
 ## Deployment
-- [deployment/overview.md](./deployment/overview.md) — Cloudflare Workers, Pages, Docker targets
+- [deployment/overview.md](./deployment/overview.md) — Cloudflare Workers, Pages, Docker
+- [deployment/environment-variables.md](./deployment/environment-variables.md) — **all env vars + CF bindings**
+- [deployment/local-development.md](./deployment/local-development.md) — quick start + troubleshooting
 - [deployment/cloudflare.md](./deployment/cloudflare.md) — Wrangler deploy steps
-- [deployment/docker.md](./deployment/docker.md) — Docker / self-hosted
-- [deployment/environment-variables.md](./deployment/environment-variables.md) — all env vars + bindings
-- [deployment/local-development.md](./deployment/local-development.md) — local dev workflow
+- [deployment/docker.md](./deployment/docker.md) — Docker self-hosted
+
+## Contributing
+- [contributing/index.md](./contributing/index.md) — setup, conventions, PR checklist
+- [contributing/code-style.md](./contributing/code-style.md) — TypeScript, naming, patterns
+- [contributing/testing.md](./contributing/testing.md) — Vitest, property tests, coverage
+- [contributing/extension-dev.md](./contributing/extension-dev.md) — build custom extensions
 
 ## ClickHouse CDC
-- [cdc/README.md](./cdc/README.md) — CDC overview + approach comparison
+- [cdc/README.md](./cdc/README.md) — CDC overview
 - [cdc/architecture.md](./cdc/architecture.md) — CDC system architecture
 
 ## Roadmap

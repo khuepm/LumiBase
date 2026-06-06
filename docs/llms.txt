@@ -2,21 +2,47 @@
 
 LumiBase is an Edge-native Headless CMS built on Hono.js + PostgreSQL + Cloudflare Workers / Docker.
 
-## Agent Setup
-- [Agent Setup Overview](./en/agent-setup/index.md) — how to connect AI agents to LumiBase
-- [Agent Setup Prompt](./en/agent-setup/prompt.md) — machine-readable instructions for agents
-- [Claude Code](./en/agent-setup/claude-code.md)
-- [Cursor](./en/agent-setup/cursor.md)
-- [GitHub Copilot](./en/agent-setup/github-copilot.md)
-- [Codex](./en/agent-setup/codex.md)
-- [Windsurf](./en/agent-setup/windsurf.md)
+> **For AI agents:** Fetch `docs/en/agent-setup/prompt.md` for machine-readable setup instructions.
+> Quick context load: `Read docs/en/README.md and docs/en/data-model.md`
+
+---
+
+## Agent Setup (Start Here for AI Agents)
+- [Agent Setup Overview](./en/agent-setup/index.md) — quick setup, agent picker, agent-friendly docs
+- [Agent Setup Prompt](./en/agent-setup/prompt.md) — **machine-readable instructions (fetch & execute)**
+- [Claude Code](./en/agent-setup/claude-code.md) — CLAUDE.md, MCP config, example prompts
+- [Cursor](./en/agent-setup/cursor.md) — .cursorrules, Composer usage, MCP config
+- [GitHub Copilot](./en/agent-setup/github-copilot.md) — copilot-instructions.md, agent mode
+- [Codex](./en/agent-setup/codex.md) — AGENTS.md, MCP setup, example sessions
+- [Windsurf](./en/agent-setup/windsurf.md) — MCP config, Cascade Flows examples
+- [Agent Setup llms.txt](./en/agent-setup/llms.txt) — agent-setup page index for LLMs
 
 ## Getting Started
-- [Documentation Overview](./en/README.md)
+- [Documentation Overview](./en/README.md) — full docs map and monorepo structure
 - [Vision & Positioning](./en/vision-and-positioning.md)
 
 ## Data Model
-- [Data Model](./en/data-model.md) — full DB schema reference
+- [Data Model](./en/data-model.md) — complete DB schema reference
+
+## API
+- [REST / WebSocket API Spec](./en/api/hono-api-spec.md) — full endpoint reference with examples
+
+## SDK
+- [SDK Overview](./en/sdk/index.md)
+- [JavaScript SDK](./en/sdk/javascript.md) — items, auth, files, realtime, AI, flows
+- [TypeGen](./en/sdk/typegen.md) — TypeScript type generation from live schema
+
+## Architecture
+- [Architecture Overview](./en/architecture/overview.md) — tech stack, layers, runtime abstraction
+- [Architecture Decision Records](./en/architecture/decisions/index.md)
+  - [ADR-001: NanoID over auto-increment](./en/architecture/decisions/adr-001-nanoid-over-uuid.md)
+  - [ADR-002: Runtime Abstraction Layer](./en/architecture/decisions/adr-002-runtime-abstraction.md)
+  - [ADR-003: HITL for dangerous AI skills](./en/architecture/decisions/adr-003-hitl-for-dangerous-ai-skills.md)
+  - [ADR-004: Tag-based cache invalidation](./en/architecture/decisions/adr-004-tag-based-cache-invalidation.md)
+  - [ADR-005: Hono.js over Express](./en/architecture/decisions/adr-005-hono-over-express.md)
+  - [ADR-006: Drizzle ORM over Prisma](./en/architecture/decisions/adr-006-drizzle-over-prisma.md)
+  - [ADR-007: Logto for authentication](./en/architecture/decisions/adr-007-logto-for-auth.md)
+  - [ADR-008: JSON Policy DSL](./en/architecture/decisions/adr-008-policy-dsl-json.md)
 
 ## Core Features
 - [Collections Builder](./en/features/collections-builder.md)
@@ -45,18 +71,18 @@ LumiBase is an Edge-native Headless CMS built on Hono.js + PostgreSQL + Cloudfla
 - [Materialized Collections](./en/features/materialized-collections.md)
 - [Observability](./en/features/observability.md)
 
-## API
-- [Hono API Spec](./en/api/hono-api-spec.md)
-
-## Architecture
-- [Architecture Overview](./en/architecture/overview.md)
-
 ## Deployment
 - [Deployment Overview](./en/deployment/overview.md)
+- [Environment Variables](./en/deployment/environment-variables.md) — all vars + CF bindings
+- [Local Development](./en/deployment/local-development.md) — quick start + troubleshooting
 - [Cloudflare Workers](./en/deployment/cloudflare.md)
 - [Docker / Self-hosted](./en/deployment/docker.md)
-- [Environment Variables](./en/deployment/environment-variables.md)
-- [Local Development](./en/deployment/local-development.md)
+
+## Contributing
+- [Contributing Guide](./en/contributing/index.md) — setup, branch conventions, PR checklist
+- [Code Style](./en/contributing/code-style.md) — TypeScript, naming, patterns
+- [Testing Guide](./en/contributing/testing.md) — Vitest, property tests, coverage
+- [Extension Development](./en/contributing/extension-dev.md) — build custom extensions
 
 ## ClickHouse CDC
 - [CDC Overview](./en/cdc/README.md)
