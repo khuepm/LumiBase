@@ -490,11 +490,11 @@ the restored database.
 
 ```bash
 # Verify the storage adapter can list restored media keys
-curl -fsS http://localhost:1989/api/media?prefix= | jq '.data | length'
+curl -fsS http://localhost:1989/api/v1/media?prefix= | jq '.data | length'
 
 # Verify a known restored media object can be fetched
 curl -fsS -o /tmp/lumibase-media-check.bin \
-  http://localhost:1989/api/media/path/to/known-object.jpg
+  http://localhost:1989/api/v1/media/path/to/known-object.jpg
 
 # If media is restored from a replicated bucket, compare object counts
 mc ls --recursive remote/lumibase-media | wc -l
@@ -513,7 +513,7 @@ After rebuild, run representative search queries against restored collections
 and compare the result count with expected fixtures.
 
 ```bash
-curl -fsS "http://localhost:1989/api/search?q=release&collection=articles&limit=5" \
+curl -fsS "http://localhost:1989/api/v1/search?q=release&collection=articles&limit=5" \
   | jq '.meta.totalHits'
 ```
 
@@ -585,6 +585,9 @@ database URL and an app URL rather than assuming a specific runtime.
 BACKUP_FILE=lumibase_20240115_020000.sql.gz \
 RESTORE_DATABASE_URL=postgresql://lumibase:password@restore-db:5432/lumibase_restore \
 RESTORE_APP_URL=https://restore-api.example.com \
+RESTORE_AUTH_HEADER="Authorization: Bearer dev:admin@lumibase.dev:admin" \
+RESTORE_SITE_HEADER="X-Lumi-Site: site_demo" \
+SEARCH_EXPECT_MIN_HITS=1 \
 EXPECTED_ROW_COUNTS_FILE=expected-row-counts.txt \
 S3_ENDPOINT=https://s3.example.com \
 S3_BUCKET=lumibase-backups \

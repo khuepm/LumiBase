@@ -18,6 +18,9 @@ set -euo pipefail
 #   REINDEX_URL               - POST endpoint or job trigger URL for search rebuild
 #   MEDIA_CHECK_KEY           - Media object key to fetch through /api/media
 #   SEARCH_CHECK_URL          - Full URL for a representative search query
+#   SEARCH_EXPECT_MIN_HITS    - Optional minimum .meta.totalHits for search check
+#   RESTORE_AUTH_HEADER       - Optional auth header for restored app checks
+#   RESTORE_SITE_HEADER       - Optional tenant header for restored app checks
 #   DRILL_REPORT_DIR          - Directory for drill outputs (default: ./restore-drill-reports)
 #   DRILL_ENV                 - docker, cloudflare, or a deployment-specific label
 #   CLOUDFLARE_ENV           - Cloudflare Worker environment label for reporting
@@ -41,6 +44,17 @@ require_cmd curl
 
 require_env RESTORE_DATABASE_URL
 require_env BACKUP_FILE
+
+curl_with_optional_auth() {
+  local args=()
+  if [ -n "${RESTORE_AUTH_HEADER:-}" ]; then
+    args+=("-H" "${RESTORE_AUTH_HEADER}")
+  fi
+  if [ -n "${RESTORE_SITE_HEADER:-}" ]; then
+    args+=("-H" "${RESTORE_SITE_HEADER}")
+  fi
+  curl "${args[@]}" "$@"
+}
 
 if [ "${ALLOW_PRODUCTION_RESTORE_DRILL:-false}" != "true" ] &&
   [ -n "${DATABASE_URL:-}" ] &&
@@ -100,6 +114,7 @@ if [ "${RESTORE_RESET_SCHEMA}" = "true" ]; then
   echo "[restore-drill] resetting public schema in restore database"
   psql "${RESTORE_DATABASE_URL}" -v ON_ERROR_STOP=1 --quiet <<'SQL'
 DROP SCHEMA IF EXISTS public CASCADE;
+DROP SCHEMA IF EXISTS drizzle CASCADE;
 CREATE SCHEMA public;
 SQL
 fi
@@ -143,29 +158,43 @@ fi
 HEALTH_RESULT="skipped"
 if [ -n "${RESTORE_APP_URL:-}" ]; then
   echo "[restore-drill] checking app health"
-  curl -fsS "${RESTORE_APP_URL%/}/health" > "${RUN_DIR}/health.json"
+  curl_with_optional_auth -fsS "${RESTORE_APP_URL%/}/health" > "${RUN_DIR}/health.json"
   HEALTH_RESULT="passed"
 fi
 
 MEDIA_RESULT="skipped"
 if [ -n "${RESTORE_APP_URL:-}" ] && [ -n "${MEDIA_CHECK_KEY:-}" ]; then
   echo "[restore-drill] checking media object"
-  curl -fsS -o "${RUN_DIR}/media-check.bin" \
-    "${RESTORE_APP_URL%/}/api/media/${MEDIA_CHECK_KEY}"
+  curl_with_optional_auth -fsS -o "${RUN_DIR}/media-check.bin" \
+    "${RESTORE_APP_URL%/}/api/v1/media/${MEDIA_CHECK_KEY}"
   MEDIA_RESULT="passed"
 fi
 
 REINDEX_RESULT="skipped"
 if [ -n "${REINDEX_URL:-}" ]; then
   echo "[restore-drill] triggering search rebuild"
-  curl -fsS -X POST "${REINDEX_URL}" > "${RUN_DIR}/reindex.json"
+  curl_with_optional_auth -fsS -X POST "${REINDEX_URL}" > "${RUN_DIR}/reindex.json"
   REINDEX_RESULT="triggered"
 fi
 
 SEARCH_RESULT="skipped"
 if [ -n "${SEARCH_CHECK_URL:-}" ]; then
   echo "[restore-drill] checking search query"
-  curl -fsS "${SEARCH_CHECK_URL}" > "${RUN_DIR}/search.json"
+  curl_with_optional_auth -fsS "${SEARCH_CHECK_URL}" > "${RUN_DIR}/search.json"
+  if [ -n "${SEARCH_EXPECT_MIN_HITS:-}" ]; then
+    require_cmd node
+    node -e '
+      const fs = require("node:fs");
+      const file = process.argv[1];
+      const minHits = Number(process.argv[2]);
+      const payload = JSON.parse(fs.readFileSync(file, "utf8"));
+      const totalHits = Number(payload?.meta?.totalHits ?? 0);
+      if (!Number.isFinite(minHits) || totalHits < minHits) {
+        console.error(`[restore-drill] expected at least ${minHits} search hit(s), got ${totalHits}`);
+        process.exit(1);
+      }
+    ' "${RUN_DIR}/search.json" "${SEARCH_EXPECT_MIN_HITS}"
+  fi
   SEARCH_RESULT="passed"
 fi
 
