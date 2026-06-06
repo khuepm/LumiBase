@@ -22,6 +22,10 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 LUMIBASE_ENV = "development"
+LUMIBASE_VERSION = "unknown"
+LUMIBASE_GIT_SHA = "unknown"
+LUMIBASE_BUILD_TIME = "unknown"
+LUMIBASE_RELEASE_CHANNEL = "development"
 # Set to "true" only in local dev. Accepts `Bearer dev:<email>` tokens
 # and `?site=<id>` query for tenant resolution.
 LUMIBASE_DEV_AUTH = "true"

@@ -17,6 +17,14 @@ export interface Bindings {
   /** SiteRoom Durable Object namespace — one DO instance per siteId. */
   SITE_ROOM?: DurableObjectNamespace;
   LUMIBASE_ENV: string;
+  /** Semver package/application version for the deployed Lumibase build. */
+  LUMIBASE_VERSION?: string;
+  /** Source-control revision used for this build. */
+  LUMIBASE_GIT_SHA?: string;
+  /** ISO-8601 timestamp for when this build artifact was produced. */
+  LUMIBASE_BUILD_TIME?: string;
+  /** Release track for the artifact, e.g. development, staging, production. */
+  LUMIBASE_RELEASE_CHANNEL?: string;
   /** Runtime mode: `'cloudflare'` or `'docker'`. Defaults to `'docker'`. */
   LUMIBASE_RUNTIME?: string;
   /** Direct Postgres connection string (used in local development). */

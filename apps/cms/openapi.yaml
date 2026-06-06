@@ -76,6 +76,14 @@ components:
         version: { type: string }
         apiVersion: { type: integer }
         env: { type: string }
+    BuildMetadata:
+      type: object
+      required: [version, gitSha, buildTime, releaseChannel]
+      properties:
+        version: { type: string }
+        gitSha: { type: string }
+        buildTime: { type: string }
+        releaseChannel: { type: string }
     Collection:
       type: object
       required: [id, siteId, name]
@@ -882,6 +890,16 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Version' }
+  /system/version:
+    get:
+      summary: Build and release metadata
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BuildMetadata' }
   /collections:
     get:
       summary: List collections in the active site

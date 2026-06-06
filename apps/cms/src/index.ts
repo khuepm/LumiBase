@@ -42,6 +42,7 @@ import { searchRouter } from './routes/search';
 import { scimRouter } from './routes/scim';
 import { scimAdminRouter } from './routes/scim-admin';
 import { settingsRouter } from './routes/settings';
+import { systemRouter } from './routes/system';
 import { shareAdminRouter, sharePublicRouter } from './routes/shares';
 import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
@@ -108,6 +109,7 @@ app.use('*', adminPathGuard());
 
 // Public utility endpoints (no tenant, no auth).
 app.route('/api/v1/utils', utilsRouter);
+app.route('/api/v1/system', systemRouter);
 // Prometheus metrics endpoint (public, no auth).
 app.route('/metrics', metricsRouter);
 // Comprehensive health check — tests DB, cache, search, storage, queue connectivity.
