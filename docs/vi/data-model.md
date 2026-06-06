@@ -1,6 +1,8 @@
 # Data Model (Drizzle / Postgres)
 
-Tài liệu mô tả các bảng đã được khai báo trong `packages/database/src/schema/`. Tất cả PK là `nanoid` text. Domain table luôn có `site_id`.
+Tài liệu mô tả các bảng đã được khai báo trong `packages/database/src/schema/`. Row nội bộ mặc định dùng text ID. No-code content collections còn có chiến lược logical item primary key riêng qua `collections.primaryKeyField` và `collections.primaryKeyType`.
+
+Mọi bảng domain theo tenant đều có `site_id`.
 
 Schema được tách theo domain:
 
@@ -58,15 +60,22 @@ Migrations đầy đủ trong `packages/database/migrations/` và `packages/data
 | `singleton` | boolean |
 | `icon`, `color`, `note` | text |
 | `primaryKeyField` | text | field định danh item logic, mặc định `id` |
-| `primaryKeyType` | text | `nanoid`, `uuid`, `string`; `integer`/`bigInteger` cần sequence ngoài JSONB |
+| `primaryKeyType` | text | `nanoid`, `uuid`, `integer`, `bigInteger`, `string` |
 | `storageMode` | text | `jsonb`, `materialized`, `physical`, `external` |
 | `displayTemplate` | text | mustache template default |
 | `sortField`, `archiveField`, `archiveValue`, `unarchiveValue` | text |
 | `itemDuplicationFields`, `translations` | jsonb |
 | `accountability` | text | `all` / `activity` / `none` |
 | `versioning` | boolean |
-| `meta` | jsonb | extra UI hints |
+| `meta` | jsonb | extra UI hints, gồm override presentation an toàn cho system fields |
 | `createdAt`, `updatedAt` |
+
+Chiến lược primary key:
+
+- `nanoid`: logical string identifier mặc định do LumiBase sinh.
+- `uuid`: UUID string do service sinh.
+- `string`: string identifier do caller cung cấp.
+- `integer` / `bigInteger`: chiến lược sequence-backed dành cho materialized/physical storage; JSONB collection chặn các tổ hợp này.
 
 Storage modes được ghi rõ để tránh nhầm `jsonb` với bảng vật lý kiểu Directus:
 
@@ -84,13 +93,28 @@ Storage modes được ghi rõ để tránh nhầm `jsonb` với bảng vật l�
 | `type` | text | `string`,`text`,`integer`,`decimal`,`boolean`,`json`,`uuid`,`date`,`datetime`,`time`,`csv`,`hash`,`geometry`,`alias` |
 | `interface` | text | UI editor key |
 | `display` | text | display formatter key |
-| `options`, `displayOptions`, `validation`, `conditions`, `permissionsHint`, `translations` | jsonb |
+| `options`, `displayOptions`, `validation`, `conditions`, `translations` | jsonb |
 | `required`, `readonly`, `hidden`, `encrypted`, `versioned`, `rawEnabled` | boolean |
 | `sortOrder` | integer |
 | `width`, `group` | text |
 
+Compiled schema expose generated system fields bên cạnh user-defined rows:
+
+| Field | Type | Ghi chú |
+|---|---|---|
+| `id` | `string` | Primary item identifier, readonly/generated. |
+| `status` | `string` | Workflow status; hiển thị khi bật status/archive behavior. |
+| `sort` | `integer` | Giá trị sắp xếp thủ công. |
+| `user_created` | `string` | User tạo item, readonly/generated. |
+| `user_updated` | `string` | User cập nhật cuối, readonly/generated. |
+| `created_at` | `datetime` | Thời điểm tạo, readonly/generated. |
+| `updated_at` | `datetime` | Thời điểm cập nhật cuối, readonly/generated. |
+| `deleted_at` | `datetime` | Thời điểm soft-delete, readonly/generated và hidden. |
+
 ### `relations`
-- `id`, `siteId`, `manyCollection`, `manyField`, `oneCollection`, `oneField`, `junctionCollection?`, `sortField?`, `onDelete`, `meta jsonb`.
+- `id`, `siteId`, `manyCollection`, `manyField`, `oneCollection`, `oneField`, `junctionCollection?`, `type`, `aliasField?`, `relatedDisplayTemplate?`, `junctionManyField?`, `junctionOneField?`, `sortField?`, `onDelete`, `meta jsonb`.
+- Relation types là `m2o`, `o2m`, `m2m`, còn `m2a` reserved.
+- Schema service validate collection/field được tham chiếu và chặn xóa collection khi relation vẫn tham chiếu một trong hai phía.
 
 ### `items`
 | Column | Type |
@@ -133,6 +157,27 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`.
 ### `materialized_collections` (POST-GA6)
 - Định nghĩa "denormalized read tables" cho hot path.
 - `target`, `refreshStrategy` (`auto`/`cron`/`manual`), `refreshCron`, `projection jsonb`, `filter jsonb`, `lastRefreshedAt`, `rowCount`, `status`, `error`.
+
+### Runtime contract cho schema diff/apply
+
+Schema service expose lifecycle parity với Directus:
+
+- `POST /api/v1/collections/diff` so sánh collection metadata, fields và relations được đề xuất với schema hiện tại.
+- `PUT /api/v1/collections/{name}/schema` validate và apply thay đổi metadata, field, relation transactionally khi runtime database hỗ trợ transaction.
+- Apply invalidate compiled schema, permission và typegen cache keys, đồng thời emit event `schema.changed`.
+
+Diff output gồm root `risk`, `runtimeImpact`, và entries theo collection/field/relation. Runtime impact values gồm `cache_invalidation`, `permission_recompile`, `typegen_rebuild`, `data_migration_required`, `relation_reindex`, `storage_runtime_change`.
+
+### Typegen manifest v2
+
+`GET /api/v1/typegen/schema` trả versioned manifest với:
+
+- collection `primaryKey`, `primaryKeyField`, `primaryKeyType`;
+- user fields cộng compiled system fields;
+- flags `required`, `nullable`, `readonly`, `generated`, `system`, `encrypted`, `primaryKey`;
+- relation descriptors cho expanded response types.
+
+SDK generation dùng manifest này để emit base collection interfaces và relation response types dạng `CollectionExpanded`.
 
 ## 3. Permissions (`access.ts`)
 

@@ -415,8 +415,8 @@ Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Di
 - [x] `[SDK]` Expose complete schema resources: collections/fields/relations CRUD, field rename/delete options, schema diff/apply.
 - [x] `[SDK]` Preserve legacy methods or provide deprecation wrappers; preserve error `code/path/risk` metadata.
 - [x] `[SDK]` Typegen includes primary key type, system fields, nullable/required, readonly/generated, and relation-expanded response types.
-- [ ] `[DOC]` Update `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
-- [ ] `[DOC]` Sync Vietnamese docs after the English contract stabilizes.
+- [x] `[DOC]` Update `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
+- [x] `[DOC]` Sync Vietnamese docs after the English contract stabilizes.
 - [ ] `[TEST]` Backend/frontend/SDK parity suite covers all acceptance criteria in `directus-data-model-parity-tasks.md`.
 
 ---

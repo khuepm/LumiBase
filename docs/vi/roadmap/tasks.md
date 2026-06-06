@@ -415,8 +415,8 @@ Mục tiêu: nâng cấp Data Model / Collections Builder để một collection
 - [x] `[SDK]` Mở schema resources đầy đủ: collections/fields/relations CRUD, field rename/delete options, schema diff/apply.
 - [x] `[SDK]` Giữ legacy methods hoặc deprecation wrapper; preserve error `code/path/risk` metadata.
 - [x] `[SDK]` Typegen include primary key type, system fields, nullable/required, readonly/generated và relation-expanded response types.
-- [ ] `[DOC]` Cập nhật `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
-- [ ] `[DOC]` Sync bản tiếng Việt sau khi English contract ổn định.
+- [x] `[DOC]` Cập nhật `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
+- [x] `[DOC]` Sync bản tiếng Việt sau khi English contract ổn định.
 - [ ] `[TEST]` Backend/frontend/SDK parity suite đủ các acceptance criteria trong `directus-data-model-parity-tasks.md`.
 
 ---

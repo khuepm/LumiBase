@@ -1,82 +1,153 @@
 ---
-title: Trình tạo Collection (No-code)
+title: Trình tạo Collection
 ---
 
-# Trình tạo Collection (No-code)
+# Trình tạo Collection
 
-> Mục tiêu: builder dễ dùng hơn Directus, hỗ trợ **kéo-thả sắp xếp lại**, **xem trước JSON trực tiếp**, **diff trước khi lưu**, **AI gợi ý field**.
+Collections Builder là bề mặt no-code để định nghĩa content model trong LumiBase. Contract parity với Directus được khai báo rõ: metadata collection, chiến lược primary key, storage mode, fields, relations, schema diff/apply, SDK typegen và các giới hạn runtime đều là dữ liệu schema first-class.
 
-## 1. Luồng người dùng
+## 1. Vòng đời collection
 
-1. **Tạo collection**
-   - Wizard 3 bước: *Metadata* (tên, singleton, icon, màu) → *Gợi ý Fields* (template: bài viết blog, sản phẩm, …) → *Phân quyền mặc định*.
-   - Cho phép bỏ qua wizard và chọn "Bắt đầu trống".
-2. **Sửa collection**
-   - Tab: *Fields & Layout*, *Phân quyền*, *Display Template*, *Lưu trữ & Sắp xếp*, *Versioning*, *Realtime*, *Raw JSON*.
-3. **Xoá / lưu trữ collection**: soft delete + cảnh báo nếu có quan hệ (relation).
+Tác giả tạo collection bằng Studio wizard hoặc apply Raw JSON. Payload tạo collection lưu metadata ở top-level, không giấu trong `meta`:
 
-## 2. Trình chỉnh sửa Fields & Layout
+- `name`, `label`, `pluralLabel`, `note`
+- `hidden`, `system`, `singleton`
+- `icon`, `color`
+- `primaryKeyField`, `primaryKeyType`
+- `storageMode`
+- `displayTemplate`
+- `sortField`, `archiveField`, `archiveValue`, `unarchiveValue`
+- `itemDuplicationFields`, `translations`
+- `accountability`, `versioning`
+- `meta`
 
-- Layout grid 12 cột, mỗi field có `width: half|full|fill`.
-- Kéo-thả sắp xếp nhóm (group) và thứ tự field.
-- Chỉnh sửa inline `label`, `name`, `required`, `readonly`.
-- Panel bên cấu hình chi tiết (xem `field-types-and-config.md`).
-- "Chèn từ template" — chèn nhóm field mẫu (SEO, Kiểm toán, Timestamps).
-- **Khung JSON trực tiếp** (toggle): hiển thị schema collection ↔ form, chỉnh JSON cũng cập nhật UI.
+Tên collection là duy nhất theo site, dùng snake_case, bắt đầu bằng chữ thường và nằm trong giới hạn machine-name 1-63 ký tự.
 
-## 3. Raw JSON & Nhập/Xuất
+## 2. Primary key
 
-- Endpoint `GET/PUT /collections/:id/schema` trả/nhận JSON chuẩn:
+Mỗi collection có logical primary key field và type.
+
+| `primaryKeyType` | Hành vi hiện tại |
+|---|---|
+| `nanoid` | Mặc định, string identifier do LumiBase sinh. |
+| `uuid` | UUID string do service sinh. |
+| `string` | Identifier string do caller cung cấp. |
+| `integer` | Dành cho storage materialized/physical có sequence; bị chặn với JSONB collection. |
+| `bigInteger` | Dành cho storage materialized/physical có sequence; bị chặn với JSONB collection. |
+
+Studio chặn tổ hợp primary key/storage mode không hỗ trợ trước khi submit. Backend cũng validate để Raw JSON và SDK nhận lỗi rõ ràng.
+
+## 3. System fields
+
+Compiled schema expose system fields tách khỏi user fields. Studio render chúng trong nhóm bị khóa và chỉ cho override presentation an toàn như `display`, `hidden`, `readonly`, `width`, `translations`.
+
+| Field | Type | Mục đích |
+|---|---|---|
+| `id` | `string` | Primary item identifier. |
+| `status` | `string` | Workflow status cho draft/published/archive. |
+| `sort` | `integer` | Giá trị sắp xếp thủ công. |
+| `user_created` | `string` | User tạo item. |
+| `user_updated` | `string` | User cập nhật cuối. |
+| `created_at` | `datetime` | Thời điểm tạo. |
+| `updated_at` | `datetime` | Thời điểm cập nhật cuối. |
+| `deleted_at` | `datetime` | Thời điểm soft-delete. |
+
+Raw schema output giữ user fields trong `fields` và compiled system fields trong `systemFields` để tooling phân biệt schema do tác giả khai báo với field runtime sinh ra.
+
+## 4. Fields và layout
+
+Fields tab hỗ trợ metadata kiểu Directus cho từng field:
+
+- Basics: `name`, `label`, `note`, `type`, `interface`, `display`.
+- Behavior: `required`, `nullable`, `readonly`, `hidden`, `encrypted`, `versioned`, `rawEnabled`.
+- Storage hints: `unique`, `indexed`, `searchable`, `length`, `precision`, `scale`, `special`.
+- UI và validation: `options`, `displayOptions`, `validation`, `conditions`, `translations`, `width`, `group`, `sortOrder`.
+
+Studio inspector giữ lại unknown JSON config để option mới không bị mất khi build Studio cũ edit field.
+
+## 5. Relations
+
+Relations là schema resource first-class. Mỗi relation lưu:
+
+- `manyCollection`, `manyField`
+- `oneCollection`, `oneField`
+- `junctionCollection`
+- `type`: `m2o`, `o2m`, `m2m`, hoặc reserved `m2a`
+- `aliasField`, `relatedDisplayTemplate`, `junctionManyField`, `junctionOneField`
+- `sortField`, `onDelete`, `meta`
+
+Backend validate collection/field được tham chiếu, chặn xóa collection khi vẫn có relation phụ thuộc ở một trong hai phía, và đưa relation changes vào schema diff/apply.
+
+## 6. Raw JSON, diff và apply
+
+Raw JSON dùng cùng contract với SDK:
+
 ```json
 {
   "name": "posts",
+  "label": "Posts",
+  "primaryKeyField": "id",
+  "primaryKeyType": "nanoid",
+  "storageMode": "jsonb",
   "displayTemplate": "{{title}} — {{status}}",
   "fields": [
-    { "name": "title", "type": "string", "interface": "input", "required": true, "width": "full" },
-    { "name": "body", "type": "text", "interface": "wysiwyg", "options": { "toolbar": ["bold","link","image"] } }
+    {
+      "name": "title",
+      "type": "string",
+      "interface": "input",
+      "required": true,
+      "nullable": false,
+      "width": "full"
+    }
   ],
   "relations": []
 }
 ```
-- `Xuất lựa chọn`: nhiều collection thành một bundle JSON/YAML để commit vào Git (Config-as-Code).
-- `Diff & Áp dụng`: so sánh schema hiện tại với file import, hiển thị thay đổi (thêm/xoá/sửa), yêu cầu xác nhận trước khi migrate.
 
-## 4. Storage modes và limitation badge
+Dùng `POST /api/v1/collections/diff` để preview thay đổi schema. Dùng `PUT /api/v1/collections/{name}/schema` để apply. Apply compute cùng diff, validate fields/relations, chạy transactionally khi runtime DB hỗ trợ, invalidate schema/permission/typegen cache và emit event `schema.changed`.
 
-Mỗi collection có `storageMode`. Studio hiển thị mode dưới dạng badge trong wizard tạo collection và giữ tradeoff hiển thị trước khi tác giả tạo hoặc migrate model.
+Diff entries có:
+
+- `risk`: `low`, `medium`, `high`
+- `runtimeImpact`: `cache_invalidation`, `permission_recompile`, `typegen_rebuild`, `data_migration_required`, `relation_reindex`, `storage_runtime_change`
+- thay đổi collection metadata, fields và relations
+
+Raw JSON tab trong Studio khóa Apply cho đến khi preview đã chạy, sau đó hiển thị risk, runtime impact và raw diff.
+
+## 7. Storage modes
+
+Mỗi collection có `storageMode`. Studio hiển thị mode dưới dạng badge trong wizard và giữ tradeoff hiển thị trước khi tác giả tạo hoặc migrate model.
 
 | Mode | Badge trong Studio | Hành vi hiện tại | Giới hạn |
 |---|---|---|---|
-| `jsonb` | Current | Collection ảo mặc định. Item nằm trong document JSONB `items.data`, nên đổi schema không chạy DDL. | Unique/index theo SQL-native chỉ là advisory nếu chưa có materialized hoặc physical projection. Integer primary key bị chặn ở mode này. |
-| `materialized` | Optimized | JSONB vẫn là source of truth, kèm physical projection được quản lý cho hot read path. | Cần quản lý độ mới của projection, refresh strategy và indexes; write vẫn đi qua logical collection. |
-| `physical` | Future | Dành cho bảng vật lý kiểu Directus. Schema diff đánh dấu đây là storage runtime change. | Chưa có DDL migration engine tổng quát. Cần tenant-safe table naming, rollback, relation/index DDL và kế hoạch online migration. |
-| `external` | Future | Dành cho bảng ngoài được introspect. | Chưa hỗ trợ write. DDL và relation action phá huỷ phải bị giới hạn vì LumiBase không sở hữu table. |
+| `jsonb` | Current | Collection logic mặc định. Item nằm trong document JSONB `items.data`, nên đổi schema không chạy DDL. | Unique/index SQL-native chỉ là advisory nếu chưa có materialized/physical projection. Integer primary key bị chặn. |
+| `materialized` | Optimized | JSONB vẫn là source of truth, kèm managed physical projection cho hot read path. | Cần quản lý freshness, refresh strategy và indexes; writes vẫn đi qua logical collection. |
+| `physical` | Future | Dành cho bảng vật lý kiểu Directus do LumiBase sở hữu. Schema diff đánh dấu storage runtime change. | Chưa có DDL migration engine tổng quát. Cần tenant-safe table naming, rollback, relation/index DDL và online migration plan. |
+| `external` | Future | Dành cho bảng ngoài được introspect. | Chưa hỗ trợ writes. DDL/relation action phá hủy bị giới hạn vì LumiBase không sở hữu table. |
 
-Không trình bày `jsonb` như tương đương bảng vật lý của Directus. Định vị sản phẩm hiện tại là đổi schema nhanh trước, dùng materialized projection cho hiệu năng, còn quyết định physical/external được theo dõi trong `docs/en/architecture/physical-collections.md`.
+Không trình bày `jsonb` như tương đương bảng vật lý của Directus. Promise hiện tại là đổi schema nhanh trước, dùng materialized projection cho performance và theo dõi quyết định physical/external trong `docs/en/architecture/physical-collections.md`.
 
-## 5. Gợi ý AI (tuỳ chọn, Phase 2)
+## 8. SDK và typegen
 
-- Nút "AI gợi ý fields" → gọi Workers AI với prompt `"Tạo fields cho: <mô tả>"`, trả về JSON đề xuất, người dùng chấp nhận từng field.
+SDK expose schema resources dưới `client.schema`:
 
-## 6. Kiểm tra hợp lệ khi lưu
+```ts
+client.schema.collections.list();
+client.schema.fields.rename("posts", "headline", "title", {
+  type: "string",
+  interface: "input",
+  confirmRiskyChange: true,
+});
+client.schema.relations.create({
+  manyCollection: "posts",
+  manyField: "author_id",
+  oneCollection: "authors",
+  type: "m2o",
+});
+client.schema.diff("posts", proposedSchema);
+client.schema.apply("posts", proposedSchema);
+```
 
-- Tên collection: snake_case, 1-63 ký tự, không được trùng (theo site).
-- Tên field phải duy nhất trong collection.
-- Không xoá field còn dữ liệu trừ khi chọn "bắt buộc + sao lưu vào revisions".
-- Thay đổi `type` gây breaking → yêu cầu chiến lược migrate (ép kiểu / xoá / giữ nguyên raw).
+Legacy flat methods như `schema.listCollections()` và `schema.upsertField()` vẫn tồn tại. SDK errors giữ metadata backend `code`, `path`, `risk` qua `LumiError.body`.
 
-## 7. Các thành phần UI (Studio)
-
-- `CollectionListPage` — bảng collections + tìm kiếm/lọc, icon, số lượng items.
-- `CollectionDetailPage` — các tab nêu trên, layout 2 cột (canvas + inspector).
-- `FieldInspector` — drawer phải, render form tùy chọn theo interface.
-- `JsonDiffDialog` — hiển thị diff trước khi áp dụng.
-- `WizardModal` — hướng dẫn khởi tạo.
-
-## 8. Trường hợp biên (Edge cases)
-
-- Singleton: ẩn chế độ xem danh sách, mở thẳng item duy nhất.
-- Collection có >200 fields: ảo hoá danh sách (virtualize).
-- Khi đổi `archiveField`, kiểm tra dữ liệu hiện hữu.
-
-## 9. Công việc (xem `roadmap/tasks.md` phase MVP-B)
+Typegen manifest version `2` gồm primary key metadata, system fields, nullable/required, readonly/generated flags, encrypted field read behavior và relation descriptors. Generated output có base collection interfaces và relation-expanded response types như `PostsExpanded`.
