@@ -21,7 +21,9 @@
     "lint": "echo \"(lint not configured)\" && exit 0",
     "test": "vitest --run",
     "k6:login-brute": "k6 run k6/login-brute-force.js",
-    "clean": "rm -rf .turbo .wrangler dist"
+    "clean": "rm -rf .turbo .wrangler dist",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "node ../../scripts/check-release-env.mjs --env production --config apps/cms/wrangler.toml && wrangler deploy --env production"
   },
   "dependencies": {
     "@hono/node-server": "^1.12.0",
