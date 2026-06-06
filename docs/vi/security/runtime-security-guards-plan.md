@@ -31,8 +31,9 @@ Chuẩn bị nền bảo mật runtime rõ ràng trước khi AI Harness đượ
 - [x] Gắn `control-plane-access-guard` và `file-upload-policy` vào authenticated tenant-scoped API chain.
 - [x] Thêm biến môi trường cấu hình upload policy trong `Bindings`.
 - [x] Thêm unit tests riêng cho từng guard để tên test phản ánh đúng trách nhiệm.
+- [x] Bổ sung audit event cụ thể cho các lần guard từ chối thao tác: `control_plane_access_denied` và `file_upload_policy_denied`.
 - [ ] Ở phase Harness tiếp theo: bắt buộc mọi tool/fetch/import do AI gọi phải đi qua `validateOutboundUrl` hoặc `guardedFetch`.
-- [ ] Ở phase hardening tiếp theo: bổ sung audit event cho mọi lần guard từ chối thao tác và ánh xạ permission granular nếu cần cho non-admin operator.
+- [ ] Ở phase hardening tiếp theo: ánh xạ permission granular nếu cần cho non-admin operator.
 
 ## Tiêu chí hoàn tất
 
@@ -41,3 +42,4 @@ Chuẩn bị nền bảo mật runtime rõ ràng trước khi AI Harness đượ
 - Upload quá kích thước hoặc MIME ngoài allowlist bị từ chối trước khi ghi storage.
 - Mọi response có CSP và các security headers nền tảng.
 - Outbound URL guard có test cho localhost, private IP, link-local metadata IP và protocol nguy hiểm.
+- Control-plane guard và file upload policy ghi audit event riêng khi request có DB context.

@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import type { AppEnv, AuthPrincipal } from '../env';
+import { auditSecurityGuardDenied } from './security-audit';
 
 const CONTROL_PLANE_PATHS = [
   '/api/v1/access',
@@ -24,6 +25,14 @@ export const withControlPlaneAccessGuard = (): MiddlewareHandler<AppEnv> => asyn
 
   const auth = c.get('auth');
   if (isAdminPrincipal(auth)) return next();
+
+  await auditSecurityGuardDenied(c, 'control_plane_access_denied', {
+    path: c.req.path,
+    method: c.req.method,
+    reason: 'non_admin_control_plane_route',
+    roles: auth?.roles ?? [],
+    principalType: auth?.type ?? 'user',
+  });
 
   return c.json(
     {

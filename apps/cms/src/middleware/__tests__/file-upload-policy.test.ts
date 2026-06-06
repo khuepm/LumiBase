@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AppEnv } from '../../env';
 import {
   isFileUploadMimeAllowed,
@@ -28,10 +28,15 @@ describe('file upload policy helpers', () => {
 });
 
 describe('file upload policy middleware', () => {
-  it('blocks public-role file metadata uploads', async () => {
+  it('audits and blocks public-role file metadata uploads', async () => {
     const app = new Hono<AppEnv>();
+    const values = vi.fn().mockResolvedValue(undefined);
+    const db = { insert: vi.fn().mockReturnValue({ values }) };
     app.use('*', async (c, next) => {
-      c.set('auth', { roles: ['public'], raw: {} });
+      c.set('auth', { email: 'public@example.com', roles: ['public'], raw: {} });
+      c.set('db', db as never);
+      c.set('siteId', 'site_1');
+      c.set('requestId', 'req_1');
       await next();
     });
     app.use('*', withFileUploadPolicy());
@@ -45,6 +50,13 @@ describe('file upload policy middleware', () => {
 
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ errors: [{ code: 'PUBLIC_UPLOAD_FORBIDDEN' }] });
+    expect(values).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'file_upload_policy_denied',
+      actorEmail: 'public@example.com',
+      siteId: 'site_1',
+      requestId: 'req_1',
+      metadata: expect.objectContaining({ reason: 'public_metadata_create' }),
+    }));
   });
 
   it('rejects oversized signed upload bodies before storage writes', async () => {

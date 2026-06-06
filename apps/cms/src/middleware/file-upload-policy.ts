@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import type { AppEnv, AuthPrincipal } from '../env';
+import { auditSecurityGuardDenied } from './security-audit';
 
 const DEFAULT_FILE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const DEFAULT_FILE_UPLOAD_MIME_ALLOWLIST = [
@@ -29,6 +30,13 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
 
   const auth = safeGetAuth(c);
   if (isMetadataCreate && isPublicUploadPrincipal(auth)) {
+    await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
+      path,
+      method,
+      reason: 'public_metadata_create',
+      roles: auth?.roles ?? [],
+      principalType: auth?.type ?? 'user',
+    });
     return c.json(
       { errors: [{ code: 'PUBLIC_UPLOAD_FORBIDDEN', message: 'Public role is not allowed to upload files.' }] },
       403,
@@ -39,6 +47,13 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
   const env = c.env as Partial<AppEnv['Bindings']> | undefined;
   const maxBytes = resolveFileUploadMaxBytes(env?.FILE_UPLOAD_MAX_BYTES ?? process.env.FILE_UPLOAD_MAX_BYTES);
   if (contentLength !== null && contentLength > maxBytes) {
+    await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
+      path,
+      method,
+      reason: 'content_length_exceeded',
+      contentLength,
+      maxBytes,
+    });
     return c.json(
       {
         errors: [
@@ -59,6 +74,13 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
     ? await peekMetadataMime(c.req.raw.clone())
     : c.req.header('content-type') ?? 'application/octet-stream';
   if (!isFileUploadMimeAllowed(mime, allowedMimes)) {
+    await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
+      path,
+      method,
+      reason: 'mime_forbidden',
+      mime,
+      allowedMimes,
+    });
     return c.json(
       { errors: [{ code: 'UPLOAD_MIME_FORBIDDEN', message: `MIME type "${mime}" is not allowed.` }] },
       415,
