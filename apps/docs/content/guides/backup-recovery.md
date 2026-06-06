@@ -573,6 +573,40 @@ Run verification:
 docker compose --profile verify run --rm backup-verify
 ```
 
+### Automated Restore Drills
+
+Use `docker/scripts/restore-drill.sh` to restore a named backup into a dedicated
+restore database, capture exact row counts, check the restored app health
+endpoint, validate media, and trigger/search-check derived indexes. The same
+script works for Docker and Cloudflare restore environments because it targets a
+database URL and an app URL rather than assuming a specific runtime.
+
+```bash
+BACKUP_FILE=lumibase_20240115_020000.sql.gz \
+RESTORE_DATABASE_URL=postgresql://lumibase:password@restore-db:5432/lumibase_restore \
+RESTORE_APP_URL=https://restore-api.example.com \
+EXPECTED_ROW_COUNTS_FILE=expected-row-counts.txt \
+S3_ENDPOINT=https://s3.example.com \
+S3_BUCKET=lumibase-backups \
+S3_ACCESS_KEY=restore-readonly \
+S3_SECRET_KEY=restore-secret \
+DRILL_ENV=cloudflare \
+CLOUDFLARE_ENV=restore-drill \
+./docker/scripts/restore-drill.sh
+```
+
+Schedule it from cron, systemd timers, GitHub Actions, or your Cloudflare
+operations scheduler. For a weekly host cron:
+
+```cron
+0 3 * * 0 cd /opt/lumibase && /usr/bin/env bash docker/scripts/restore-drill.sh >> /var/log/lumibase-restore-drill.log 2>&1
+```
+
+Store the required environment variables in the scheduler's secret store or in a
+root-readable env file. Never point `RESTORE_DATABASE_URL` at production; the
+script refuses to run when it matches `DATABASE_URL` unless
+`ALLOW_PRODUCTION_RESTORE_DRILL=true` is explicitly set.
+
 ### Manual Verification Checklist
 
 - [ ] Restore backup to a test database

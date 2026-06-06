@@ -33,8 +33,8 @@ Nguồn: `apps/docs/content/deployment/docker.md`, `apps/docs/content/guides/bac
 - [x] `[DOC]` Cập nhật Docker deployment docs và environment reference.
 - [x] `[DOC]` Bổ sung restore drill, row-count verification, app health check sau restore, media/search rebuild, RTO/RPO documentation.
 - [x] `[DOC]` Bổ sung Cloudflare DR validation cho Workers, Hyperdrive, R2, KV, Queues, MeiliSearch Cloud, DNS/WAF/Access.
-- [ ] `[OPS]` Cấu hình TLS termination thực tế tại load balancer/reverse proxy của môi trường deploy.
-- [ ] `[OPS]` Tự động hóa restore drill định kỳ cho Docker và Cloudflare restore environment.
+- [x] `[OPS]` Cấu hình TLS termination thực tế tại load balancer/reverse proxy của môi trường deploy.
+- [x] `[OPS]` Tự động hóa restore drill định kỳ cho Docker và Cloudflare restore environment.
 
 ---
 
