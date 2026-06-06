@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Website: [lumibase.dev](https://lumibase.dev)
 
+## [0.4.0] - 2026-06-06
+
+### Added
+
+#### Directus Data Model Parity
+
+- Added first-class collection metadata contract for labels, hidden/system
+  flags, primary key strategy, storage mode, archive behavior, duplication
+  fields, translations, and top-level Studio wizard payloads.
+- Added JSONB primary key strategy handling for `nanoid`, `uuid`, and
+  user-provided string IDs, with unsupported integer strategies blocked until
+  materialized or physical storage support exists.
+- Added schema-visible system fields in compiled schemas, Studio locked-field
+  rendering, and typegen coverage for primary keys, system metadata,
+  nullable/required fields, readonly/generated fields, and expanded relation
+  response types.
+- Added Directus-style field metadata for labels, notes, defaults, nullable,
+  unique/index/search hints, numeric precision, special flags, translations,
+  and advanced FieldInspector tabs.
+- Added relation parity metadata for relation type, alias fields, related
+  display templates, junction fields, and relation validation.
+- Added M2O/O2M/M2M item relation expansion with batching and related-item
+  permission masking.
+- Added schema diff/apply support for collection, field, and relation changes,
+  risk classification, runtime impact reporting, transactional apply,
+  cache/typegen invalidation, and `schema.changed` events.
+- Added complete SDK schema resources for collections, fields, relations,
+  field rename/delete options, schema diff/apply, and legacy wrappers.
+
+### Changed
+
+- Studio collection creation now uses a multi-step Directus parity flow with
+  identity, storage, system field, permission-default, and JSON review steps.
+- Studio Raw JSON schema editing now previews diff risk/runtime impact before
+  apply and requires confirmation for high-risk schema changes.
+- Storage mode docs now explicitly position `jsonb`, `materialized`,
+  `physical`, and `external` modes and describe current limitations.
+
+### Fixed
+
+- Fixed schema correctness checks for relation dependencies, field deletion
+  dependencies, invalid relation references, schema permission enforcement, and
+  destructive field mutation handling.
+- Fixed populated-field deletion so destructive deletes require
+  `force=true` plus `backupToRevisions=true`, preserving removed field values
+  in revisions before deleting field metadata.
+- Fixed Docker CI health checks by reducing Docker context noise, increasing
+  Docker job timeout, adding a bounded health-check step, and always collecting
+  container logs on failure.
+
+### Documentation
+
+- Added the Directus Data Model Parity task plan and marked the Phase POST-GA8
+  roadmap complete in English and Vietnamese.
+- Updated collection builder, field type/config, data model, physical
+  collection architecture, OpenAPI, SDK/typegen, and Vietnamese mirror docs for
+  the finalized parity contract.
+
 ## [0.3.0] - 2026-06-05
 
 ### Added
@@ -196,6 +254,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 Initial tagged release.
 
+[0.4.0]: https://github.com/khuepm/lumibase/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/khuepm/lumibase/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/khuepm/lumibase/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/khuepm/lumibase/compare/v0.1.0...v0.2.0
