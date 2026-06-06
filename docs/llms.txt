@@ -1,0 +1,65 @@
+# LumiBase Documentation Index
+
+LumiBase is an Edge-native Headless CMS built on Hono.js + PostgreSQL + Cloudflare Workers / Docker.
+
+## Agent Setup
+- [Agent Setup Overview](./en/agent-setup/index.md) — how to connect AI agents to LumiBase
+- [Agent Setup Prompt](./en/agent-setup/prompt.md) — machine-readable instructions for agents
+- [Claude Code](./en/agent-setup/claude-code.md)
+- [Cursor](./en/agent-setup/cursor.md)
+- [GitHub Copilot](./en/agent-setup/github-copilot.md)
+- [Codex](./en/agent-setup/codex.md)
+- [Windsurf](./en/agent-setup/windsurf.md)
+
+## Getting Started
+- [Documentation Overview](./en/README.md)
+- [Vision & Positioning](./en/vision-and-positioning.md)
+
+## Data Model
+- [Data Model](./en/data-model.md) — full DB schema reference
+
+## Core Features
+- [Collections Builder](./en/features/collections-builder.md)
+- [Field Types & Config](./en/features/field-types-and-config.md)
+- [Permissions / RBAC](./en/features/permissions-rbac.md)
+- [User Management](./en/features/user-management.md)
+- [Raw Data Editing](./en/features/raw-data-editing.md)
+- [Extensions System](./en/features/extensions-system.md)
+- [System Config](./en/features/system-config.md)
+- [Display Templates](./en/features/display-templates.md)
+- [Bookmarks & Presets](./en/features/bookmarks-presets.md)
+- [Translations / i18n](./en/features/translations-i18n.md)
+- [TypeGen](./en/features/typegen.md)
+- [WebSockets / Realtime](./en/features/websockets-realtime.md)
+- [Cloudflare Auth](./en/features/cloudflare-auth.md)
+
+## Advanced Features
+- [AI Copilot (HITL)](./en/features/ai-copilot.md)
+- [AI Skills](./en/ai-skills.md)
+- [Runtime Abstraction](./en/features/runtime-abstraction.md)
+- [Flows / Automation](./en/features/flows-automation.md)
+- [Marketplace](./en/features/marketplace.md)
+- [SCIM Provisioning](./en/features/scim-provisioning.md)
+- [Search](./en/features/search.md)
+- [Translation Memory](./en/features/translation-memory.md)
+- [Materialized Collections](./en/features/materialized-collections.md)
+- [Observability](./en/features/observability.md)
+
+## API
+- [Hono API Spec](./en/api/hono-api-spec.md)
+
+## Architecture
+- [Architecture Overview](./en/architecture/overview.md)
+
+## Deployment
+- [Deployment Overview](./en/deployment/overview.md)
+- [Cloudflare Workers](./en/deployment/cloudflare.md)
+- [Docker / Self-hosted](./en/deployment/docker.md)
+- [Environment Variables](./en/deployment/environment-variables.md)
+- [Local Development](./en/deployment/local-development.md)
+
+## ClickHouse CDC
+- [CDC Overview](./en/cdc/README.md)
+
+## Roadmap
+- [Task List](./en/roadmap/tasks.md)
