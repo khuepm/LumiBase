@@ -1,4 +1,5 @@
 name = "lumibase-docs"
+account_id = "792c8e28da56d9568474df5fcf00cfc7"
 compatibility_date = "2026-06-01"
 pages_build_output_dir = "dist"
 

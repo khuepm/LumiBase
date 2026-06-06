@@ -59,5 +59,5 @@ pnpm docs:deploy
 Equivalent Wrangler command:
 
 ```bash
-wrangler pages deploy apps/docs/dist --project-name lumibase-docs --branch main
+wrangler pages deploy dist --project-name lumibase-docs --branch main --cwd apps/docs
 ```
