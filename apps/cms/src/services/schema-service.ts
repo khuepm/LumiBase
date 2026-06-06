@@ -227,6 +227,21 @@ export interface SchemaDiff {
   };
 }
 
+export interface SchemaChangedEvent {
+  type: 'schema.changed';
+  siteId: string;
+  collection: string;
+  affectedCollections: string[];
+  diff: SchemaDiff;
+}
+
+export interface SchemaApplyResult {
+  collection: CollectionRow;
+  diff: SchemaDiff;
+  affectedCollections: string[];
+  event: SchemaChangedEvent;
+}
+
 export class SchemaServiceError extends Error {
   constructor(public code: string, message: string, public status = 400) {
     super(message);
@@ -249,6 +264,9 @@ export interface SchemaServiceDeps {
   db: Database;
   siteId: string;
   cache?: CacheProvider;
+  events?: {
+    emit(event: SchemaChangedEvent): Promise<void>;
+  };
 }
 
 export class SchemaService {
@@ -548,7 +566,30 @@ export class SchemaService {
     return { ok: true } as const;
   }
 
-  private async validateRelationInput(input: Required<Pick<RelationInput, 'type'>> & RelationInput) {
+  private async updateRelation(existing: RelationRow, input: Required<Pick<RelationInput, 'type'>> & RelationInput) {
+    await this.validateRelationInput(input, existing.id);
+    const [row] = await this.deps.db
+      .update(relations)
+      .set(input)
+      .where(eq(relations.id, existing.id))
+      .returning();
+    await this.invalidate(existing.manyCollection);
+    await this.invalidate(input.manyCollection);
+    if (existing.oneCollection) await this.invalidate(existing.oneCollection);
+    if (input.oneCollection) await this.invalidate(input.oneCollection);
+    if (existing.junctionCollection) await this.invalidate(existing.junctionCollection);
+    if (input.junctionCollection) await this.invalidate(input.junctionCollection);
+    return row;
+  }
+
+  private async deleteRelationRow(existing: RelationRow) {
+    await this.deps.db.delete(relations).where(eq(relations.id, existing.id));
+    await this.invalidate(existing.manyCollection);
+    if (existing.oneCollection) await this.invalidate(existing.oneCollection);
+    if (existing.junctionCollection) await this.invalidate(existing.junctionCollection);
+  }
+
+  private async validateRelationInput(input: Required<Pick<RelationInput, 'type'>> & RelationInput, existingId?: string) {
     assertRelationTypeSupported(input.type);
     const manyCollection = await this.getCollection(input.manyCollection);
     if (!manyCollection) {
@@ -595,7 +636,7 @@ export class SchemaService {
         ),
       )
       .limit(1);
-    assertRelationNotDuplicate(input, duplicate.length);
+    assertRelationNotDuplicate(input, duplicate.filter((row) => row.id !== existingId).length);
   }
 
   private async fieldExists(collection: CollectionRow, fieldName: string): Promise<boolean> {
@@ -608,29 +649,102 @@ export class SchemaService {
     return Boolean(field);
   }
 
-  async updateSchema(name: string, input: CollectionInput & { fields?: FieldInput[]; relations?: RelationInput[] }) {
+  async updateSchema(name: string, input: Partial<CollectionInput> & { fields?: FieldInput[]; relations?: RelationInput[] }): Promise<SchemaApplyResult> {
+    const dbWithTransaction = this.deps.db as Database & {
+      transaction?: <T>(callback: (tx: Database) => Promise<T>) => Promise<T>;
+    };
+    const run = async (db: Database) => {
+      const service = db === this.deps.db
+        ? this
+        : new SchemaService({ ...this.deps, db, cache: undefined, events: undefined });
+      return service.applySchemaUpdate(name, input);
+    };
+
+    const result = typeof dbWithTransaction.transaction === 'function'
+      ? await dbWithTransaction.transaction(run)
+      : await run(this.deps.db);
+
+    await this.invalidateSchemaApply(result);
+    await this.deps.events?.emit(result.event);
+    return result;
+  }
+
+  private async applySchemaUpdate(name: string, input: Partial<CollectionInput> & { fields?: FieldInput[]; relations?: RelationInput[] }): Promise<SchemaApplyResult> {
+    if (input.name && input.name !== name) {
+      throw new SchemaServiceError('COLLECTION_RENAME_UNSUPPORTED', 'Schema apply cannot rename collections through this endpoint yet.', 400);
+    }
     const current = await this.getCollection(name);
     if (!current) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
     }
     const { fields: fieldInputs, relations: relationInputs, ...collectionPatch } = input;
+    const currentFields = await this.listFields(name);
+    const currentRelations = await this.listRelationsForCollection(name);
+    this.assertUniqueSchemaInputs(fieldInputs, relationInputs);
+    if (relationInputs) {
+      const currentRelationsMap = new Map(currentRelations.map((relation) => [relationIdentity(relation), relation]));
+      for (const relation of relationInputs.map(normalizeRelationInput)) {
+        await this.validateRelationInput(relation, currentRelationsMap.get(relationIdentity(relation))?.id);
+      }
+    }
+    const populatedRowsByField = new Map<string, number>();
+    for (const field of currentFields) {
+      populatedRowsByField.set(field.name, await this.countFieldDataRows(current.id, field.name));
+    }
+    const diff = buildSchemaDiff(current, currentFields, currentRelations, input, populatedRowsByField);
+
     const [updated] = await this.deps.db
       .update(collections)
       .set({ ...collectionPatch, updatedAt: new Date() })
       .where(eq(collections.id, current.id))
       .returning();
+    if (!updated) {
+      throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
+    }
+
+    if (relationInputs) {
+      const proposedRelations = relationInputs.map(normalizeRelationInput);
+      const proposedRelationsMap = new Map(proposedRelations.map((relation) => [relationIdentity(relation), relation]));
+      for (const existing of currentRelations) {
+        if (!proposedRelationsMap.has(relationIdentity(existing))) {
+          await this.deleteRelationRow(existing);
+        }
+      }
+    }
+
     if (fieldInputs) {
+      const proposedFieldNames = new Set(fieldInputs.map((field) => field.name));
+      for (const existing of currentFields) {
+        if (!proposedFieldNames.has(existing.name)) {
+          await this.deleteField(name, existing.name);
+        }
+      }
       for (const f of fieldInputs) {
         await this.upsertField(name, f);
       }
     }
+
     if (relationInputs) {
+      const currentRelationsMap = new Map(currentRelations.map((relation) => [relationIdentity(relation), relation]));
       for (const relation of relationInputs) {
-        await this.createRelation(relation);
+        const normalized = normalizeRelationInput(relation);
+        const existing = currentRelationsMap.get(relationIdentity(normalized));
+        if (existing) {
+          await this.updateRelation(existing, normalized);
+        } else {
+          await this.createRelation(normalized);
+        }
       }
     }
-    await this.invalidate(name);
-    return updated;
+    const affectedCollections = affectedCollectionsForSchemaChange(name, currentRelations, relationInputs);
+    const event: SchemaChangedEvent = {
+      type: 'schema.changed',
+      siteId: this.deps.siteId,
+      collection: name,
+      affectedCollections,
+      diff,
+    };
+    return { collection: updated, diff, affectedCollections, event };
   }
 
   async diffSchema(name: string, proposed: CollectionInput & { fields?: FieldInput[]; relations?: RelationInput[] }): Promise<SchemaDiff> {
@@ -718,6 +832,39 @@ export class SchemaService {
   async invalidate(collectionName: string) {
     if (this.deps.cache) {
       await this.deps.cache.delete(cacheKey(this.deps.siteId, collectionName));
+    }
+  }
+
+  private async invalidateSchemaApply(result: Pick<SchemaApplyResult, 'affectedCollections'>) {
+    if (!this.deps.cache) return;
+    for (const collectionName of result.affectedCollections) {
+      await this.invalidate(collectionName);
+    }
+    await this.deps.cache.delete(`typegen:${this.deps.siteId}`);
+    await this.deps.cache.delete(`typegen:${this.deps.siteId}:schema`);
+    await this.deps.cache.delete(`perm:${this.deps.siteId}:schema`);
+  }
+
+  private assertUniqueSchemaInputs(fieldInputs?: FieldInput[], relationInputs?: RelationInput[]) {
+    if (fieldInputs) {
+      const names = new Set<string>();
+      for (const field of fieldInputs) {
+        ensureName(field.name, 'field');
+        if (names.has(field.name)) {
+          throw new SchemaServiceError('DUPLICATE_FIELD', `Field "${field.name}" appears more than once in schema apply input.`, 400);
+        }
+        names.add(field.name);
+      }
+    }
+    if (relationInputs) {
+      const identities = new Set<string>();
+      for (const relation of relationInputs.map(normalizeRelationInput)) {
+        const identity = relationIdentity(relation);
+        if (identities.has(identity)) {
+          throw new SchemaServiceError('DUPLICATE_RELATION', `Relation "${identity}" appears more than once in schema apply input.`, 400);
+        }
+        identities.add(identity);
+      }
     }
   }
 
@@ -1310,6 +1457,22 @@ function highestRisk(risks: SchemaDiffRisk[]): SchemaDiffRisk {
 
 function uniqueImpacts(impacts: SchemaRuntimeImpact[]): SchemaRuntimeImpact[] {
   return [...new Set(impacts)];
+}
+
+function affectedCollectionsForSchemaChange(
+  collectionName: string,
+  currentRelations: RelationRow[],
+  proposedRelations?: RelationInput[],
+): string[] {
+  const names = new Set<string>([collectionName]);
+  const addRelationCollections = (relation: Pick<RelationInput, 'manyCollection' | 'oneCollection' | 'junctionCollection'>) => {
+    names.add(relation.manyCollection);
+    names.add(relation.oneCollection);
+    if (relation.junctionCollection) names.add(relation.junctionCollection);
+  };
+  for (const relation of currentRelations) addRelationCollections(relation);
+  for (const relation of proposedRelations ?? []) addRelationCollections(relation);
+  return [...names].sort();
 }
 
 export function normalizeRelationInput(input: RelationInput): Required<Pick<RelationInput, 'type'>> & RelationInput {

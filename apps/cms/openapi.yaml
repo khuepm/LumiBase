@@ -168,7 +168,7 @@ components:
         oneCollection: { type: string }
         oneField: { type: string, nullable: true }
         junctionCollection: { type: string, nullable: true }
-        type: { type: string, enum: [m2o, o2m, m2m, m2a] }
+        type: { type: string }
         aliasField: { type: string, nullable: true }
         relatedDisplayTemplate: { type: string, nullable: true }
         junctionManyField: { type: string, nullable: true }
@@ -176,6 +176,122 @@ components:
         sortField: { type: string, nullable: true }
         onDelete: { type: string, enum: [restrict, cascade, set null, no action] }
         meta: { type: object, additionalProperties: true }
+    SchemaApplyInput:
+      type: object
+      properties:
+        name: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+        label: { type: string, nullable: true }
+        pluralLabel: { type: string, nullable: true }
+        hidden: { type: boolean }
+        system: { type: boolean }
+        singleton: { type: boolean }
+        icon: { type: string, nullable: true }
+        color: { type: string, nullable: true }
+        note: { type: string, nullable: true }
+        primaryKeyField: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+        primaryKeyType: { type: string, enum: [nanoid, uuid, integer, bigInteger, string] }
+        storageMode: { type: string, enum: [jsonb, materialized, physical, external] }
+        displayTemplate: { type: string, nullable: true }
+        sortField: { type: string, nullable: true }
+        archiveField: { type: string, nullable: true }
+        archiveValue: { type: string, nullable: true }
+        unarchiveValue: { type: string, nullable: true }
+        itemDuplicationFields:
+          type: array
+          items: { type: string }
+        translations: { type: object, additionalProperties: true }
+        accountability: { type: string, enum: [all, activity, none] }
+        versioning: { type: boolean }
+        meta: { type: object, additionalProperties: true }
+        fields:
+          type: array
+          items: { $ref: '#/components/schemas/Field' }
+        relations:
+          type: array
+          items: { $ref: '#/components/schemas/Relation' }
+    SchemaDiffRisk:
+      type: string
+      enum: [low, medium, high]
+    SchemaRuntimeImpact:
+      type: string
+      enum:
+        - cache_invalidation
+        - permission_recompile
+        - typegen_rebuild
+        - data_migration_required
+        - relation_reindex
+        - storage_runtime_change
+    SchemaDiffEntry:
+      type: object
+      properties:
+        name: { type: string }
+        field: { type: string }
+        identity: { type: string }
+        type: { type: string, enum: [m2o, o2m, m2m, m2a] }
+        changes:
+          type: array
+          items: { type: string }
+        risk: { $ref: '#/components/schemas/SchemaDiffRisk' }
+        runtimeImpact:
+          type: array
+          items: { $ref: '#/components/schemas/SchemaRuntimeImpact' }
+    SchemaDiff:
+      type: object
+      properties:
+        risk: { $ref: '#/components/schemas/SchemaDiffRisk' }
+        runtimeImpact:
+          type: array
+          items: { $ref: '#/components/schemas/SchemaRuntimeImpact' }
+        collection:
+          type: object
+          properties:
+            added: { type: array, items: { type: string } }
+            removed: { type: array, items: { type: string } }
+            changed:
+              type: array
+              items: { $ref: '#/components/schemas/SchemaDiffEntry' }
+        fields:
+          type: object
+          properties:
+            added:
+              type: array
+              items: { $ref: '#/components/schemas/SchemaDiffEntry' }
+            removed:
+              type: array
+              items: { $ref: '#/components/schemas/SchemaDiffEntry' }
+            changed:
+              type: array
+              items: { $ref: '#/components/schemas/SchemaDiffEntry' }
+        relations:
+          type: object
+          properties:
+            added:
+              type: array
+              items: { $ref: '#/components/schemas/SchemaDiffEntry' }
+            removed:
+              type: array
+              items: { $ref: '#/components/schemas/SchemaDiffEntry' }
+            changed:
+              type: array
+              items: { $ref: '#/components/schemas/SchemaDiffEntry' }
+    SchemaApplyResult:
+      type: object
+      properties:
+        collection: { $ref: '#/components/schemas/Collection' }
+        diff: { $ref: '#/components/schemas/SchemaDiff' }
+        affectedCollections:
+          type: array
+          items: { type: string }
+        event:
+          type: object
+          properties:
+            type: { type: string, enum: [schema.changed] }
+            siteId: { type: string }
+            collection: { type: string }
+            affectedCollections:
+              type: array
+              items: { type: string }
+            diff: { $ref: '#/components/schemas/SchemaDiff' }
     Role:
       type: object
       required: [id, siteId, name]
@@ -859,14 +975,10 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [name]
-              properties:
-                name: { type: string }
-                $ref: '#/components/schemas/Collection'
-                fields:
-                  type: array
-                  items: { $ref: '#/components/schemas/Field' }
+              allOf:
+                - $ref: '#/components/schemas/SchemaApplyInput'
+                - type: object
+                  required: [name]
       responses:
         '200':
           description: OK
@@ -875,38 +987,18 @@ paths:
               schema:
                 type: object
                 properties:
-                  data:
-                    type: object
-                    properties:
-                      collection:
-                        type: object
-                        properties:
-                          added: { type: array, items: { type: string } }
-                          removed: { type: array, items: { type: string } }
-                          changed: { type: array, items: { type: object } }
-                      fields:
-                        type: object
-                        properties:
-                          added: { type: array, items: { type: object } }
-                          removed: { type: array, items: { type: string } }
-                          changed: { type: array, items: { type: object } }
+                  data: { $ref: '#/components/schemas/SchemaDiff' }
   /collections/{name}/schema:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'
       - { name: name, in: path, required: true, schema: { type: string } }
     put:
-      summary: Atomically update collection and its fields
+      summary: Apply a schema update to collection fields and relations
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                $ref: '#/components/schemas/Collection'
-                fields:
-                  type: array
-                  items: { $ref: '#/components/schemas/Field' }
+            schema: { $ref: '#/components/schemas/SchemaApplyInput' }
       responses:
         '200':
           description: OK
@@ -915,7 +1007,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: { $ref: '#/components/schemas/Collection' }
+                  data: { $ref: '#/components/schemas/SchemaApplyResult' }
   /collections/{name}/compiled:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'
