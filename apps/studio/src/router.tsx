@@ -44,6 +44,7 @@ const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then(
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
+const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
 const TeamsPage = lazy(() => import('./modules/users/teams-page').then((m) => ({ default: m.TeamsPage })));
 const UsersPage = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
@@ -573,6 +574,12 @@ const marketplaceRoute = createRoute({
   component: withSuspense(MarketplacePage),
 });
 
+const updatesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/settings/updates',
+  component: withSuspense(UpdatesPage),
+});
+
 const adminPathSettingsTypesRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/settings/developer/types',
@@ -607,6 +614,12 @@ const adminPathMarketplaceRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/settings/marketplace',
   component: withSuspense(MarketplacePage),
+});
+
+const adminPathUpdatesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/settings/updates',
+  component: withSuspense(UpdatesPage),
 });
 
 const automationFlowsRoute = createRoute({
@@ -874,6 +887,7 @@ const routeTree = rootRoute.addChildren([
     activityRoute,
     extensionsRoute,
     marketplaceRoute,
+    updatesRoute,
     automationFlowsRoute,
     automationFlowNewRoute,
     automationFlowEditRoute,
@@ -905,6 +919,7 @@ const routeTree = rootRoute.addChildren([
     adminPathActivityRoute,
     adminPathExtensionsRoute,
     adminPathMarketplaceRoute,
+    adminPathUpdatesRoute,
     adminPathAutomationFlowsRoute,
     adminPathAutomationFlowNewRoute,
     adminPathAutomationFlowEditRoute,

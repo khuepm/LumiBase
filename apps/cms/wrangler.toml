@@ -59,3 +59,54 @@ crons = ["0 * * * *"]
 # [[queues.producers]]
 # binding = "REALTIME_QUEUE"
 # queue = "lumibase-realtime"
+
+[env.staging]
+name = "lumibase-cms-staging"
+
+[env.staging.vars]
+LUMIBASE_ENV = "staging"
+LUMIBASE_VERSION = "unknown"
+LUMIBASE_GIT_SHA = "unknown"
+LUMIBASE_BUILD_TIME = "unknown"
+LUMIBASE_RELEASE_CHANNEL = "staging"
+LUMIBASE_DEV_AUTH = "false"
+CF_ACCESS_CERTS_URL = ""
+CF_ACCESS_AUDIENCE = ""
+JWT_SECRET = "dev_secret_key"
+
+[[env.staging.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
+
+[[env.staging.migrations]]
+tag = "v1"
+new_classes = ["SiteRoom"]
+
+[env.staging.triggers]
+crons = ["0 * * * *"]
+
+[env.production]
+name = "lumibase-cms-production"
+
+[env.production.vars]
+LUMIBASE_ENV = "production"
+LUMIBASE_VERSION = "unknown"
+LUMIBASE_GIT_SHA = "unknown"
+LUMIBASE_BUILD_TIME = "unknown"
+LUMIBASE_RELEASE_CHANNEL = "production"
+LUMIBASE_DEV_AUTH = "false"
+CF_ACCESS_CERTS_URL = ""
+CF_ACCESS_AUDIENCE = ""
+JWT_SECRET = "dev_secret_key"
+
+[[env.production.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
+
+[[env.production.migrations]]
+tag = "v1"
+new_classes = ["SiteRoom"]
+
+[env.production.triggers]
+crons = ["0 * * * *"]
+

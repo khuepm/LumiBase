@@ -41,7 +41,10 @@
     "version:check": "node scripts/sync-version.mjs --check",
     "db:migrate:preflight": "pnpm --filter @lumibase/database migrate:preflight",
     "db:migrate:dry-run": "pnpm --filter @lumibase/database migrate:dry-run",
-    "db:migrate:version": "pnpm --filter @lumibase/database migrate:version"
+    "db:migrate:version": "pnpm --filter @lumibase/database migrate:version",
+    "npm:publish": "node scripts/publish-npm.mjs",
+    "npm:publish:plan": "node scripts/publish-npm.mjs --plan",
+    "npm:release-notes": "node scripts/publish-npm.mjs --notes"
   },
   "devDependencies": {
     "husky": "^9.1.7",

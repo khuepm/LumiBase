@@ -70,6 +70,8 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [deployment/docker.md](./deployment/docker.md) — Chạy CMS API ở Docker/self-hosted mode.
   - [deployment/environment-variables.md](./deployment/environment-variables.md) — Biến môi trường và bindings.
   - [deployment/local-development.md](./deployment/local-development.md) — Quy trình local dev và kiểm tra trước deploy.
+- **Operations** (`operations/`)
+  - [operations/upgrades.md](./operations/upgrades.md) — Fixed-version upgrade policy, Cloudflare/Docker flows, backup, migrations, and rollback limits.
 - **Đóng góp** (`contributing/`)
   - [contributing/index.md](./contributing/index.md) — Setup, branching, commit conventions, PR checklist.
   - [contributing/code-style.md](./contributing/code-style.md) — TypeScript, naming, service patterns.
