@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  SchemaService,
   SchemaServiceError,
   assertFieldMutationAllowed,
   assessFieldMutationRisk,
@@ -49,5 +50,94 @@ describe('SchemaService field migration risk', () => {
         confirmRiskyChange: true,
       }),
     ).not.toThrow();
+  });
+});
+
+describe('SchemaService field deletion risk', () => {
+  const collection = {
+    id: 'collection-posts',
+    siteId: 'site-1',
+    name: 'posts',
+  };
+
+  function createDeleteDb(deleted: string[]) {
+    return {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [],
+          }),
+        }),
+      }),
+      delete: () => ({
+        where: () => ({
+          returning: async () => {
+            deleted.push('field-title');
+            return [{ id: 'field-title' }];
+          },
+        }),
+      }),
+    };
+  }
+
+  it('requires force when deleting a populated field', async () => {
+    const deleted: string[] = [];
+    const service = new SchemaService({
+      db: createDeleteDb(deleted) as never,
+      siteId: 'site-1',
+    });
+    vi.spyOn(service, 'getCollection').mockResolvedValue(collection as never);
+    vi.spyOn(service as never, 'countFieldDataRows').mockResolvedValue(3);
+
+    await expect(service.deleteField('posts', 'title')).rejects.toMatchObject({
+      code: 'FIELD_DELETE_REQUIRES_FORCE',
+      status: 409,
+    });
+    expect(deleted).toEqual([]);
+  });
+
+  it('deletes a populated field when force is explicit', async () => {
+    const deleted: string[] = [];
+    const deletedCacheKeys: string[] = [];
+    const backups: Array<{ collectionId: string; fieldName: string }> = [];
+    const service = new SchemaService({
+      db: createDeleteDb(deleted) as never,
+      siteId: 'site-1',
+      cache: {
+        get: vi.fn(),
+        set: vi.fn(),
+        delete: async (key: string) => {
+          deletedCacheKeys.push(key);
+        },
+      },
+    });
+    vi.spyOn(service, 'getCollection').mockResolvedValue(collection as never);
+    vi.spyOn(service as never, 'countFieldDataRows').mockResolvedValue(3);
+    vi.spyOn(service as never, 'backupFieldDataToRevisions').mockImplementation(async (collectionId: unknown, fieldName: unknown) => {
+      backups.push({ collectionId: collectionId as string, fieldName: fieldName as string });
+    });
+
+    await expect(service.deleteField('posts', 'title', { force: true, backupToRevisions: true })).resolves.toEqual({ ok: true });
+    expect(deleted).toEqual(['field-title']);
+    expect(backups).toEqual([{ collectionId: 'collection-posts', fieldName: 'title' }]);
+    expect(deletedCacheKeys).toContain('schema:site-1:posts');
+  });
+
+  it('requires a revision backup when force-deleting a populated field', async () => {
+    const deleted: string[] = [];
+    const service = new SchemaService({
+      db: createDeleteDb(deleted) as never,
+      siteId: 'site-1',
+    });
+    vi.spyOn(service, 'getCollection').mockResolvedValue(collection as never);
+    vi.spyOn(service as never, 'countFieldDataRows').mockResolvedValue(3);
+    const backup = vi.spyOn(service as never, 'backupFieldDataToRevisions');
+
+    await expect(service.deleteField('posts', 'title', { force: true })).rejects.toMatchObject({
+      code: 'FIELD_DELETE_REQUIRES_BACKUP',
+      status: 409,
+    });
+    expect(backup).not.toHaveBeenCalled();
+    expect(deleted).toEqual([]);
   });
 });

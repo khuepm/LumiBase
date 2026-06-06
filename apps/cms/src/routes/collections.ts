@@ -240,7 +240,11 @@ collectionsRouter.delete('/:name/fields/:field', async (c) => {
   const denied = await requireSchemaPermission(c, 'schema:delete');
   if (denied) return denied;
   try {
-    await buildService(c).deleteField(c.req.param('name'), c.req.param('field'));
+    await buildService(c).deleteField(c.req.param('name'), c.req.param('field'), {
+      force: c.req.query('force') === 'true',
+      backupToRevisions: c.req.query('backupToRevisions') === 'true',
+      confirmRiskyChange: c.req.query('confirmRiskyChange') === 'true',
+    });
     return c.body(null, 204);
   } catch (err) {
     const { status, body } = toError(err);

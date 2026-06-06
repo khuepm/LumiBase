@@ -3,6 +3,7 @@ import {
   fields,
   items,
   relations,
+  revisions,
   scopeSite,
   schema,
   type Database,
@@ -173,6 +174,13 @@ export interface FieldMutationRisk {
   requiresMigrationPlan: boolean;
 }
 
+export interface FieldDeleteOptions {
+  force?: boolean;
+  backupToRevisions?: boolean;
+  confirmRiskyChange?: boolean;
+  migrationPlan?: Record<string, unknown>;
+}
+
 export interface RelationInput {
   manyCollection: string;
   manyField: string;
@@ -295,6 +303,10 @@ export class SchemaService {
 
   async createCollection(input: CollectionInput) {
     ensureName(input.name, 'collection');
+    assertPrimaryKeyStorageCompatible(
+      input.primaryKeyType ?? 'nanoid',
+      input.storageMode ?? 'jsonb',
+    );
     const existing = await this.getCollection(input.name);
     if (existing) {
       throw new SchemaServiceError(
@@ -316,6 +328,10 @@ export class SchemaService {
     if (!current) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
     }
+    assertPrimaryKeyStorageCompatible(
+      (patch.primaryKeyType ?? current.primaryKeyType) as PrimaryKeyType,
+      (patch.storageMode ?? current.storageMode) as StorageMode,
+    );
     const [row] = await this.deps.db
       .update(collections)
       .set({ ...patch, updatedAt: new Date() })
@@ -472,7 +488,7 @@ export class SchemaService {
     return row;
   }
 
-  async deleteField(collectionName: string, fieldName: string) {
+  async deleteField(collectionName: string, fieldName: string, options: FieldDeleteOptions = {}) {
     const collection = await this.getCollection(collectionName);
     if (!collection) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
@@ -496,6 +512,24 @@ export class SchemaService {
         `Field "${collectionName}.${fieldName}" is referenced by relations; remove them first.`,
         409,
       );
+    }
+    const populatedRows = await this.countFieldDataRows(collection.id, fieldName);
+    if (populatedRows > 0 && !options.force) {
+      throw new SchemaServiceError(
+        'FIELD_DELETE_REQUIRES_FORCE',
+        `Field "${collectionName}.${fieldName}" has data in ${populatedRows} item(s); pass force=true and backupToRevisions=true to delete it.`,
+        409,
+      );
+    }
+    if (populatedRows > 0 && !options.backupToRevisions) {
+      throw new SchemaServiceError(
+        'FIELD_DELETE_REQUIRES_BACKUP',
+        `Field "${collectionName}.${fieldName}" has data in ${populatedRows} item(s); pass backupToRevisions=true to preserve item values before deletion.`,
+        409,
+      );
+    }
+    if (populatedRows > 0) {
+      await this.backupFieldDataToRevisions(collection.id, fieldName);
     }
     const result = await this.deps.db
       .delete(fields)
@@ -521,6 +555,40 @@ export class SchemaService {
         ),
       );
     return row?.count ?? 0;
+  }
+
+  private async backupFieldDataToRevisions(collectionId: string, fieldName: string) {
+    const rows = await this.deps.db
+      .select({ id: items.id, data: items.data })
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, collectionId),
+          isNull(items.deletedAt),
+          sql`${items.data} ? ${fieldName}`,
+        ),
+      );
+    if (rows.length === 0) return;
+    await this.deps.db.insert(revisions).values(
+      rows.map((row) => {
+        const before = row.data as Record<string, unknown>;
+        const { [fieldName]: removedValue, ...after } = before;
+        return {
+          siteId: this.deps.siteId,
+          collectionId,
+          itemId: row.id,
+          delta: {
+            reason: 'schema.field.delete',
+            field: fieldName,
+            before,
+            after,
+            backup: removedValue,
+          },
+          userId: null,
+        };
+      }),
+    );
   }
 
   // ---------- Relations ----------
@@ -678,6 +746,10 @@ export class SchemaService {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
     }
     const { fields: fieldInputs, relations: relationInputs, ...collectionPatch } = input;
+    assertPrimaryKeyStorageCompatible(
+      (collectionPatch.primaryKeyType ?? current.primaryKeyType) as PrimaryKeyType,
+      (collectionPatch.storageMode ?? current.storageMode) as StorageMode,
+    );
     const currentFields = await this.listFields(name);
     const currentRelations = await this.listRelationsForCollection(name);
     this.assertUniqueSchemaInputs(fieldInputs, relationInputs);
@@ -1511,6 +1583,16 @@ export function assertRelationNotDuplicate(
       'RELATION_EXISTS',
       `Relation "${input.manyCollection}.${input.manyField}" already exists.`,
       409,
+    );
+  }
+}
+
+export function assertPrimaryKeyStorageCompatible(primaryKeyType: PrimaryKeyType, storageMode: StorageMode) {
+  if (storageMode === 'jsonb' && (primaryKeyType === 'integer' || primaryKeyType === 'bigInteger')) {
+    throw new SchemaServiceError(
+      'PRIMARY_KEY_STRATEGY_UNSUPPORTED',
+      `primaryKeyType="${primaryKeyType}" requires materialized or physical storage mode.`,
+      400,
     );
   }
 }

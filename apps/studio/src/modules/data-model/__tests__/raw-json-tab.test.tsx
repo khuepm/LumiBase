@@ -40,6 +40,7 @@ afterEach(() => {
 
 describe('RawJsonTab', () => {
   it('shows schema diff risk and runtime impact before apply', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     request.mockResolvedValueOnce({
       data: {
         name: 'posts',
@@ -98,7 +99,48 @@ describe('RawJsonTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /apply changes/i }));
 
     await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledWith('Apply high-risk schema changes?');
       expect(apply).toHaveBeenCalledWith('posts', expect.objectContaining({ name: 'posts' }));
     });
+  });
+
+  it('does not apply high-risk schema changes when confirmation is cancelled', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    request.mockResolvedValueOnce({
+      data: {
+        name: 'posts',
+        fields: [{ name: 'title', type: 'string', interface: 'input' }],
+      },
+    });
+    diff.mockResolvedValueOnce({
+      data: {
+        risk: 'high',
+        runtimeImpact: ['data_migration_required'],
+        collection: { added: [], removed: [], changed: [] },
+        fields: {
+          added: [],
+          removed: [],
+          changed: [{ name: 'title', changes: ['type'], risk: 'high', runtimeImpact: ['data_migration_required'] }],
+        },
+        relations: { added: [], removed: [], changed: [] },
+      },
+    });
+
+    renderWithClient(<RawJsonTab collectionName="posts" />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText(/schema json/i) as HTMLTextAreaElement).value).toContain('"posts"');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /preview diff/i }));
+    expect(await screen.findByText(/HIGH risk/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /apply changes/i }));
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledWith('Apply high-risk schema changes?');
+      expect(screen.getByText(/schema apply cancelled/i)).toBeInTheDocument();
+    });
+    expect(apply).not.toHaveBeenCalled();
   });
 });

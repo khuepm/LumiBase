@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createLumiClient } from "../../client";
+import { createLumiClient, LumiError } from "../../client";
 import { legacyRest } from "../legacy";
 
 function createSdk(fetcher: typeof fetch) {
@@ -56,6 +56,7 @@ describe("schema resources", () => {
     await sdk.schema.fields.delete("posts", "subtitle", {
       confirmRiskyChange: true,
       backupToRevisions: true,
+      force: true,
     });
 
     expect(calls[0]?.url).toBe(
@@ -72,7 +73,7 @@ describe("schema resources", () => {
       }),
     );
     expect(calls[1]?.url).toBe(
-      "https://api.example.test/api/v1/collections/posts/fields/subtitle?confirmRiskyChange=true&backupToRevisions=true",
+      "https://api.example.test/api/v1/collections/posts/fields/subtitle?confirmRiskyChange=true&backupToRevisions=true&force=true",
     );
     expect(calls[1]?.init?.method).toBe("DELETE");
   });
@@ -141,5 +142,46 @@ describe("schema resources", () => {
       "https://api.example.test/api/v1/collections/diff",
       "https://api.example.test/api/v1/collections/posts/schema",
     ]);
+  });
+
+  it("preserves schema error code, path, and risk metadata", async () => {
+    const sdk = createSdk(async () =>
+      new Response(
+        JSON.stringify({
+          errors: [
+            {
+              code: "FIELD_DELETE_REQUIRES_FORCE",
+              message: "Field has data.",
+              path: ["fields", "title"],
+              risk: "high",
+            },
+          ],
+        }),
+        {
+          status: 409,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(sdk.schema.fields.delete("posts", "title")).rejects.toMatchObject({
+      status: 409,
+      body: {
+        errors: [
+          {
+            code: "FIELD_DELETE_REQUIRES_FORCE",
+            path: ["fields", "title"],
+            risk: "high",
+          },
+        ],
+      },
+    });
+
+    try {
+      await sdk.schema.fields.delete("posts", "title");
+    } catch (err) {
+      expect(err).toBeInstanceOf(LumiError);
+      expect((err as LumiError).body.errors[0]?.message).toBe("Field has data.");
+    }
   });
 });

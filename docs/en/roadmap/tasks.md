@@ -363,7 +363,7 @@ Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
 
 ---
 
-## Phase POST-GA8 — Directus Data Model Parity (TODO)
+## Phase POST-GA8 — Directus Data Model Parity (DONE)
 
 Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Directus-grade contract: complete metadata, primary key strategy, system fields, advanced field config, relation metadata, schema permissions, atomic diff/apply, SDK/typegen/OpenAPI, and parity tests. Detailed reference: `docs/en/features/directus-data-model-parity-tasks.md`.
 
@@ -417,7 +417,7 @@ Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Di
 - [x] `[SDK]` Typegen includes primary key type, system fields, nullable/required, readonly/generated, and relation-expanded response types.
 - [x] `[DOC]` Update `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
 - [x] `[DOC]` Sync Vietnamese docs after the English contract stabilizes.
-- [ ] `[TEST]` Backend/frontend/SDK parity suite covers all acceptance criteria in `directus-data-model-parity-tasks.md`.
+- [x] `[TEST]` Backend/frontend/SDK parity suite covers all acceptance criteria in `directus-data-model-parity-tasks.md`.
 
 ---
 

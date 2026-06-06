@@ -85,6 +85,9 @@ export function RawJsonTab({ collectionName }: RawJsonTabProps) {
 
   const applyMutation = useMutation({
     mutationFn: async () => {
+      if (diff?.risk === 'high' && !confirm('Apply high-risk schema changes?')) {
+        throw new Error('Schema apply cancelled.');
+      }
       const parsed = JSON.parse(draft);
       const res = await client.schema.apply(collectionName, parsed);
       return res.data;
