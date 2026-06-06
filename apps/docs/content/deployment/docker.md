@@ -271,13 +271,30 @@ primary_region = "iad"
 
 ### Security Checklist
 
-- [ ] Run as non-root user (handled by Dockerfile)
+- [x] Run as non-root user (handled by `docker/Dockerfile`)
+- [x] Validate production secrets and fail startup when required values are missing
+- [x] Support Docker secret files with `*_FILE` variables such as `DATABASE_URL_FILE`
+- [x] Restrict database, Redis, MinIO, MeiliSearch, imgproxy, and Bull Board host port publishing in `docker-compose.prod.yml`
+- [x] Require `ENCRYPTION_KEY` in production for sensitive data at rest
+- [x] Configure CORS with `CORS_ALLOWED_ORIGINS` in production
+- [x] Require database TLS via `sslmode=require`, `sslmode=verify-ca`, or `sslmode=verify-full` unless `DATABASE_SSL_MODE=disable` is explicitly set for a private test stack
 - [ ] Use TLS termination at load balancer / reverse proxy
-- [ ] Store secrets in a secrets manager, not environment files
-- [ ] Restrict network access to database and Redis
-- [ ] Enable database SSL (`?sslmode=require` in DATABASE_URL)
-- [ ] Set `ENCRYPTION_KEY` for sensitive data at rest
-- [ ] Configure CORS appropriately for your frontend domains
+
+Production startup validation is active when `NODE_ENV=production` or
+`LUMIBASE_ENV=production`. It rejects missing `DATABASE_URL`, `REDIS_URL`,
+`JWT_SECRET`, `ENCRYPTION_KEY`, or `CORS_ALLOWED_ORIGINS`; development auth;
+known development/default secrets; wildcard production CORS; and database URLs
+without a required `sslmode`.
+
+For Docker secrets, set the direct variable or its file variant. File variants
+are resolved by the container entrypoint before migrations run:
+
+```bash
+DATABASE_URL_FILE=/run/secrets/database_url
+REDIS_URL_FILE=/run/secrets/redis_url
+JWT_SECRET_FILE=/run/secrets/jwt_secret
+ENCRYPTION_KEY_FILE=/run/secrets/encryption_key
+```
 
 ### Networking
 
@@ -285,6 +302,40 @@ primary_region = "iad"
 - Use internal DNS names for service-to-service communication
 - Expose only port 1989 (or your configured PORT) externally
 - Use a reverse proxy (nginx, Caddy, Traefik) or cloud load balancer for TLS
+
+`docker-compose.prod.yml` removes host port publishing for internal stateful
+services. Keep only the CMS/reverse-proxy ingress reachable from untrusted
+networks.
+
+### TLS Termination Example
+
+Lumibase terminates HTTP inside the container. Terminate HTTPS at a cloud load
+balancer or reverse proxy and forward traffic to `cms:1989`.
+
+Example Caddy service:
+
+```yaml
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    depends_on:
+      - cms
+
+volumes:
+  caddydata:
+```
+
+```caddyfile
+api.example.com {
+  reverse_proxy cms:1989
+}
+```
 
 ### Logging
 

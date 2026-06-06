@@ -4,7 +4,11 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { schema } from '@lumibase/database';
 import cron from 'node-cron';
 import app from './index';
+import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
+
+loadSecretFiles();
+validateProductionConfig();
 
 const port = parseInt(process.env.PORT || '1989', 10);
 const runtime = createRuntime(process.env as unknown as Record<string, unknown>);

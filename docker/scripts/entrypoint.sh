@@ -1,6 +1,34 @@
 #!/bin/bash
 set -e
 
+load_secret_file() {
+  local key="$1"
+  local file_var="${key}_FILE"
+  local file_path="${!file_var:-}"
+
+  if [ -n "${file_path}" ] && [ -z "${!key:-}" ]; then
+    if [ ! -r "${file_path}" ]; then
+      echo "[entrypoint] ${file_var} points to an unreadable file: ${file_path}"
+      exit 1
+    fi
+    export "${key}=$(tr -d '\r\n' < "${file_path}")"
+  fi
+}
+
+for key in \
+  DATABASE_URL \
+  REDIS_URL \
+  JWT_SECRET \
+  ENCRYPTION_KEY \
+  S3_ACCESS_KEY \
+  S3_SECRET_KEY \
+  MEILISEARCH_API_KEY \
+  IMGPROXY_KEY \
+  IMGPROXY_SALT
+do
+  load_secret_file "${key}"
+done
+
 if [ "${SKIP_MIGRATIONS}" = "true" ]; then
   echo "[entrypoint] SKIP_MIGRATIONS=true, skipping database migrations."
 else

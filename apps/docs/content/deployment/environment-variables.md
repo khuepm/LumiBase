@@ -9,12 +9,15 @@ Complete reference for all Lumibase CMS environment variables across both runtim
 | `LUMIBASE_RUNTIME` | `string` | No | `docker` | Runtime mode. Values: `cloudflare` or `docker`. Determines which adapter set is loaded. |
 | `PORT` | `number` | No | `1989` | HTTP server listen port (Docker mode only). |
 | `LUMIBASE_ENV` | `string` | No | `development` | Environment name. Values: `development`, `preview`, `production`. Affects logging verbosity and dev features. |
+| `NODE_ENV` | `string` | No | — | Set to `production` in production Docker images. Enables production config validation. |
 
 ## Database
 
 | Variable | Type | Required | Default | Runtime | Description |
 |----------|------|----------|---------|---------|-------------|
 | `DATABASE_URL` | `string` | Yes | — | Docker | PostgreSQL connection string. Format: `postgresql://user:password@host:port/database` |
+| `DATABASE_URL_FILE` | `string` | No | — | Docker | File path containing `DATABASE_URL`. Used for Docker secrets when `DATABASE_URL` is unset. |
+| `DATABASE_SSL_MODE` | `string` | No | `require` in production | Docker | Set to `disable` only for private non-TLS test stacks. Otherwise `DATABASE_URL` must include `sslmode=require`, `sslmode=verify-ca`, or `sslmode=verify-full`. |
 | `HYPERDRIVE` | binding | Yes | — | Cloudflare | Hyperdrive binding (configured in `wrangler.toml`, not set as env var). Provides connection pooling to PostgreSQL. |
 
 ### Database URL Examples
@@ -38,6 +41,7 @@ DATABASE_URL=postgresql://user:pass@ep-cool-name-123456.us-east-2.aws.neon.tech/
 | Variable | Type | Required | Default | Runtime | Description |
 |----------|------|----------|---------|---------|-------------|
 | `REDIS_URL` | `string` | Yes | — | Docker | Redis connection URL. Used for caching and BullMQ queues. |
+| `REDIS_URL_FILE` | `string` | No | — | Docker | File path containing `REDIS_URL`. Used for Docker secrets when `REDIS_URL` is unset. |
 | `CONFIG_CACHE` | binding | Yes | — | Cloudflare | KV namespace binding (configured in `wrangler.toml`). |
 
 ### Redis URL Examples
@@ -128,6 +132,8 @@ echo $(head -c 32 /dev/urandom | xxd -p -c 64)
 |----------|------|----------|---------|---------|-------------|
 | `LOGTO_ISSUER` | `string` | No | — | Both | OIDC issuer URL (e.g., Logto instance). Required for production. |
 | `LOGTO_AUDIENCE` | `string` | No | — | Both | OIDC audience identifier. Typically your API URL. |
+| `JWT_SECRET` | `string` | Yes in production | — | Docker | Secret used for application JWT verification/signing. |
+| `JWT_SECRET_FILE` | `string` | No | — | Docker | File path containing `JWT_SECRET`. Used for Docker secrets when `JWT_SECRET` is unset. |
 | `LUMIBASE_DEV_AUTH` | `string` | No | `false` | Both | Enable dev auth mode. Accepts `Bearer dev:<logtoId>` tokens. **Never enable in production.** |
 
 ### Authentication Examples
@@ -146,7 +152,8 @@ LOGTO_AUDIENCE=https://api.yourdomain.com
 
 | Variable | Type | Required | Default | Runtime | Description |
 |----------|------|----------|---------|---------|-------------|
-| `ENCRYPTION_KEY` | `string` | No | — | Both | AES-GCM encryption key (base64-encoded, 256-bit). Used for encrypting sensitive field values at rest. |
+| `ENCRYPTION_KEY` | `string` | Yes in production | — | Both | AES-GCM encryption key (base64-encoded, 128/192/256-bit; 256-bit recommended). Used for encrypting sensitive field values at rest. |
+| `ENCRYPTION_KEY_FILE` | `string` | No | — | Docker | File path containing `ENCRYPTION_KEY`. Used for Docker secrets when `ENCRYPTION_KEY` is unset. |
 
 ### Generating an Encryption Key
 
@@ -154,6 +161,12 @@ LOGTO_AUDIENCE=https://api.yourdomain.com
 # Generate a 256-bit key, base64-encoded
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
+
+## CORS
+
+| Variable | Type | Required | Default | Runtime | Description |
+|----------|------|----------|---------|---------|-------------|
+| `CORS_ALLOWED_ORIGINS` | `string` | Yes in production | permissive in non-production | Both | Comma-separated list of allowed frontend origins, for example `https://studio.example.com,https://app.example.com`. Wildcard `*` is rejected in production. |
 
 ## Docker Compose Defaults
 

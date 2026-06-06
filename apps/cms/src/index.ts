@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from './env';
+import { resolveCorsOrigin } from './config/cors';
 import { adminPathGuard } from './middleware/admin-path-guard';
 import { withAuditContext } from './middleware/audit-context';
 import { withAuth } from './middleware/auth';
@@ -64,7 +65,7 @@ app.use('*', withRuntime());
 app.use(
   '*',
   cors({
-    origin: (origin) => origin ?? '*',
+    origin: (origin, c) => resolveCorsOrigin(origin, c.env),
     credentials: true,
     allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password'],
     exposeHeaders: ['X-Request-Id'],

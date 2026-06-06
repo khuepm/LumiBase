@@ -31,6 +31,8 @@ export interface Bindings {
   LUMIBASE_DEV_AUTH?: string;
   /** Secret key for AES-GCM per-field encryption (base64 encoded). */
   ENCRYPTION_KEY?: string;
+  /** Comma-separated frontend origins allowed by CORS. */
+  CORS_ALLOWED_ORIGINS?: string;
   // ── LLM Provider (POST-GA Task #1) ──────────────────────────────────────
   /** `'openai'` | `'anthropic'` | `'workers-ai'` | `'echo'` (default). */
   LLM_PROVIDER?: string;
