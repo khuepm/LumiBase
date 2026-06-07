@@ -121,6 +121,15 @@ export class AgentRunService {
     return record!.id;
   }
 
+  async countToolCalls(runId: string): Promise<number> {
+    const rows = await this.db
+      .select({ id: agentToolCalls.id })
+      .from(agentToolCalls)
+      .where(and(eq(agentToolCalls.siteId, this.siteId), eq(agentToolCalls.runId, runId)))
+      .limit(10_000);
+    return rows.length;
+  }
+
   async finishToolCall(
     toolCallId: string,
     patch: {

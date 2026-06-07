@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stableHash, stableStringify } from '../agent-artifact-service';
+import { AgentArtifactService, stableHash, stableStringify } from '../agent-artifact-service';
 import { maskSecrets } from '../agent-run-service';
 
 describe('agent harness service invariants', () => {
@@ -26,5 +26,15 @@ describe('agent harness service invariants', () => {
     const right = { a: { d: [1, 2], c: 3 }, b: 2 };
     expect(stableStringify(left)).toBe(stableStringify(right));
     expect(stableHash(left)).toBe(stableHash(right));
+  });
+
+  it('rejects oversized artifact content before writing to the database', async () => {
+    const service = new AgentArtifactService({} as never, 'site_1');
+    await expect(service.createArtifact({
+      runId: 'run_1',
+      type: 'page_spec',
+      title: 'Too large',
+      content: { body: 'x'.repeat(600 * 1024) },
+    })).rejects.toThrow(/exceeds/);
   });
 });

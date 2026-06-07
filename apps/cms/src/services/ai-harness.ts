@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
-import { ToolRegistryService, type AgentRiskLevel } from './tool-registry-service';
+import { ToolRegistryService } from './tool-registry-service';
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
@@ -519,6 +519,21 @@ export class AISecureHarness {
       contextMessage: contextMessage ?? envelope.contextMessage,
     });
     const startedAt = Date.now();
+    const maxToolCalls = typeof envelope.budget?.['maxToolCalls'] === 'number'
+      ? envelope.budget['maxToolCalls']
+      : undefined;
+    if (maxToolCalls !== undefined) {
+      const existingCalls = await this.runService.countToolCalls(run.runId);
+      if (existingCalls >= maxToolCalls) {
+        const message = `Run budget exceeded: maxToolCalls=${maxToolCalls}`;
+        await this.runService.failRun(run.runId, message, {
+          stopReason: 'max_tool_calls',
+          maxToolCalls,
+          existingCalls,
+        });
+        return { status: 'denied', message, ...run };
+      }
+    }
 
     // Step 1: Validate skill exists
     const tool = await this.toolRegistry.getTool(skillName);

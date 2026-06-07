@@ -49,6 +49,11 @@ export class AgentArtifactService {
     status?: string;
     metadata?: Record<string, unknown>;
   }) {
+    const serialized = stableStringify(input.content);
+    const maxBytes = 512 * 1024;
+    if (new TextEncoder().encode(serialized).byteLength > maxBytes) {
+      throw new Error(`Artifact content exceeds ${maxBytes} bytes`);
+    }
     const hash = stableHash(input.content);
     const [record] = await this.db
       .insert(agentArtifacts)
