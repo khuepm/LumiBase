@@ -2595,6 +2595,23 @@ paths:
       responses:
         '200': { description: Published artifact }
 
+  /agent/artifacts/{id}/rollback:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Roll back a published agent artifact
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        '200': { description: Rolled-back artifact }
+
   /agent/memory:
     get:
       summary: Build agent memory context
@@ -2620,6 +2637,7 @@ paths:
   /agent/generate-app:
     post:
       summary: Generate app artifacts from schema
+      description: Creates a run plus page_spec, component_spec, seed_data, and api_spec artifacts, then evaluates each artifact before returning.
       parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
       requestBody:
         required: true

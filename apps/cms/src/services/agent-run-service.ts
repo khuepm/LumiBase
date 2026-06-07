@@ -4,7 +4,14 @@ import {
   agentToolCalls,
   type Database,
 } from '@lumibase/database';
+import type { QueueProvider } from '@lumibase/runtime';
 import { and, desc, eq } from 'drizzle-orm';
+import {
+  agentDeadLettersTotal,
+  agentRunsTotal,
+  agentToolLatency,
+  observeAgentCost,
+} from './agent-metrics';
 
 export interface AgentRunEnvelope {
   goalId?: string;
@@ -56,6 +63,7 @@ export class AgentRunService {
   constructor(
     private readonly db: Database,
     private readonly siteId: string,
+    private readonly queue?: QueueProvider,
   ) {}
 
   async ensureRun(envelope: AgentRunEnvelope = {}): Promise<AgentRunContext> {
@@ -158,20 +166,50 @@ export class AgentRunService {
           eq(agentToolCalls.siteId, this.siteId),
         ),
       );
+
+    if (patch.latencyMs !== undefined) {
+      agentToolLatency.observe(
+        { tool: await this.toolNameForCall(toolCallId), status: patch.status },
+        patch.latencyMs / 1000,
+      );
+    }
+    observeAgentCost(await this.toolNameForCall(toolCallId), patch.cost);
   }
 
   async closeRun(runId: string, metrics: Record<string, unknown> = {}): Promise<void> {
+    const [run] = await this.db
+      .select()
+      .from(agentRuns)
+      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
     await this.db
       .update(agentRuns)
       .set({ status: 'succeeded', metrics, finishedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
+    agentRunsTotal.inc({
+      agent: run?.agentName ?? 'unknown',
+      status: 'succeeded',
+      stop_reason: String(metrics['stopReason'] ?? 'completed'),
+    });
   }
 
   async failRun(runId: string, error: string, metrics: Record<string, unknown> = {}): Promise<void> {
+    const [run] = await this.db
+      .select()
+      .from(agentRuns)
+      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
     await this.db
       .update(agentRuns)
       .set({ status: 'failed', error, metrics, finishedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
+    const stopReason = String(metrics['stopReason'] ?? 'error');
+    agentRunsTotal.inc({
+      agent: run?.agentName ?? 'unknown',
+      status: 'failed',
+      stop_reason: stopReason,
+    });
+    if (run) {
+      await this.enqueueDeadLetterIfRepeatedFailure(run, error, stopReason);
+    }
   }
 
   async retryRun(runId: string): Promise<AgentRunContext | null> {
@@ -209,5 +247,48 @@ export class AgentRunService {
       .where(eq(agentRuns.siteId, this.siteId))
       .orderBy(desc(agentRuns.createdAt))
       .limit(limit);
+  }
+
+  private async toolNameForCall(toolCallId: string): Promise<string> {
+    const [call] = await this.db
+      .select({ toolName: agentToolCalls.toolName })
+      .from(agentToolCalls)
+      .where(and(eq(agentToolCalls.id, toolCallId), eq(agentToolCalls.siteId, this.siteId)))
+      .limit(1);
+    return call?.toolName ?? 'unknown';
+  }
+
+  private async enqueueDeadLetterIfRepeatedFailure(
+    run: typeof agentRuns.$inferSelect,
+    error: string,
+    stopReason: string,
+  ): Promise<void> {
+    if (!this.queue) return;
+
+    const failedRuns = await this.db
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.siteId, this.siteId),
+          eq(agentRuns.goalId, run.goalId),
+          eq(agentRuns.status, 'failed'),
+        ),
+      )
+      .limit(3);
+
+    if (failedRuns.length < 3) return;
+
+    await this.queue.enqueue('agent-dead-letter', 'run.failed', {
+      siteId: this.siteId,
+      goalId: run.goalId,
+      runId: run.id,
+      agentName: run.agentName,
+      error,
+      stopReason,
+      failedRuns: failedRuns.length,
+      enqueuedAt: new Date().toISOString(),
+    });
+    agentDeadLettersTotal.inc({ agent: run.agentName, reason: stopReason });
   }
 }

@@ -312,6 +312,16 @@ export function publishAgentArtifact(id: string, overrideReason?: string) {
   };
 }
 
+export function rollbackAgentArtifact(id: string, reason?: string) {
+  return async (client: LumiClient): Promise<AgentArtifactResource> => {
+    const res = await client.rawRequest<AgentArtifactResource>(`/api/v1/agent/artifacts/${id}/rollback`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+    return res.data;
+  };
+}
+
 export function readAgentMemoryContext(scope?: string, scopeId?: string) {
   return async (client: LumiClient): Promise<AgentMemoryContext> => {
     const qs = new URLSearchParams();

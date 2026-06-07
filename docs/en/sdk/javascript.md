@@ -221,6 +221,35 @@ const url = lumibase.files.getAssetUrl('fil_abc123', {
 
 ---
 
+## Agent Harness API
+
+The SDK exposes the governance lifecycle used by AI runs and generated app artifacts:
+
+```typescript
+import {
+  generateAgentApp,
+  listAgentRuns,
+  publishAgentArtifact,
+  rollbackAgentArtifact,
+} from '@lumibase/sdk/rest'
+
+const result = await generateAgentApp({
+  collections: ['products', 'orders', 'customers'],
+  targetApp: 'storefront',
+  approvalPolicy: 'before_commit',
+  budget: { maxToolCalls: 20 },
+})(lumibase)
+
+// result.artifacts contains page_spec, component_spec, seed_data, api_spec
+const runs = await listAgentRuns()(lumibase)
+const published = await publishAgentArtifact(result.artifacts[0].id)(lumibase)
+await rollbackAgentArtifact(published.id, 'revert generated storefront')(lumibase)
+```
+
+Publishing is idempotent. Schema and migration artifacts require a passing evaluation unless the caller supplies an override reason.
+
+---
+
 ## WebSocket / Realtime
 
 ```typescript

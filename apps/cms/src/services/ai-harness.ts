@@ -803,6 +803,14 @@ export class AISecureHarness {
         title: `Approved ${record.skillName}`,
         contextMessage: record.context ?? undefined,
       });
+    if (existingAgentApproval) {
+      if (existingAgentApproval.status !== 'pending') {
+        return { status: 'denied', message: 'Approval not found or already processed', runId: run.runId };
+      }
+      if (existingAgentApproval.expiresAt && existingAgentApproval.expiresAt <= new Date()) {
+        return { status: 'denied', message: 'Approval expired', runId: run.runId };
+      }
+    }
     const startedAt = Date.now();
     const toolCallId = await this.runService.appendToolCall({
       runId: run.runId,
