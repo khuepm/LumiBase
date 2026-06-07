@@ -224,8 +224,8 @@ export async function installAutoRefreshTrigger(
     RETURNS trigger AS $$
     BEGIN
       PERFORM pg_notify('${channelName}', json_build_object(
-        'target', '${config.target}',
-        'site_id', '${config.siteId}',
+        'target', '${config.target.replace(/'/g, "''")}',
+        'site_id', '${config.siteId.replace(/'/g, "''")}',
         'action', TG_OP
       )::text);
       RETURN COALESCE(NEW, OLD);
