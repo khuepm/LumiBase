@@ -140,9 +140,10 @@ Mọi truy vấn đều scope `siteId` — request từ site B không bao giờ 
 LumiBase Copilot đã tích hợp hoàn chỉnh với các mô hình ngôn ngữ lớn (LLM) và hệ thống lưu trữ vector/lịch sử trò chuyện:
 
 ### 1. LLM Providers
-Hệ thống hỗ trợ 4 LLM providers (cấu hình qua `LLM_PROVIDER` env):
-- **OpenAI**: Sử dụng mô hình `gpt-4o-mini` (mặc định) thông qua native tool calling.
-- **Anthropic**: Sử dụng dòng mô hình Claude (ví dụ `claude-3-5-sonnet`) thông qua native `tool_use`.
+Hệ thống hỗ trợ nhiều LLM providers (cấu hình qua `LLM_PROVIDER` env, model qua `LLM_MODEL`):
+- **OpenAI**: Sử dụng Chat Completions tool calling (ví dụ `gpt-4.1-nano`, mặc định `gpt-4o-mini`).
+- **Anthropic / Claude**: Sử dụng dòng mô hình Claude thông qua native `tool_use`.
+- **Gemini**: Sử dụng Gemini REST `generateContent` với function declarations.
 - **Workers AI**: Chạy trực tiếp tại edge trên hạ tầng Cloudflare Workers AI (mặc định sử dụng `@cf/meta/llama-3.1-8b-instruct`).
 - **Echo**: Bộ khớp từ khóa (fallback mock) dùng cho môi trường test hoặc khi thiếu API credentials.
 

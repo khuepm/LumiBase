@@ -82,10 +82,11 @@ For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `LLM_PROVIDER` | ✗ | LLM provider: `openai`, `anthropic`, `workers-ai`, `echo` (default: `echo`) |
+| `LLM_PROVIDER` | ✗ | LLM provider: `openai`, `anthropic`, `claude`, `gemini`, `workers-ai`, `echo` (default: `echo`) |
 | `OPENAI_API_KEY` | If `openai` provider | OpenAI API key |
-| `ANTHROPIC_API_KEY` | If `anthropic` provider | Anthropic API key |
-| `LLM_MODEL` | ✗ | Model name override (e.g., `gpt-4o`, `claude-3-5-sonnet-20241022`) |
+| `ANTHROPIC_API_KEY` | If `anthropic` / `claude` provider | Anthropic API key |
+| `GEMINI_API_KEY` | If `gemini` provider | Google Gemini API key |
+| `LLM_MODEL` | ✗ | Model name override (e.g., `gpt-4.1-nano`, `claude-3-5-haiku-latest`, `gemini-3.5-flash`) |
 | `WORKERS_AI_GATEWAY` | Workers AI only | CF Workers AI gateway URL |
 
 ---
