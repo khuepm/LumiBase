@@ -16,13 +16,13 @@ Mục tiêu không phải “thêm chat AI” nữa. Mục tiêu là biến mọ
 
 Mục tiêu: biến AI Copilot hiện tại từ chat/HITL rời rạc thành lifecycle có goal/run rõ ràng.
 
-- [ ] `[DB]` Thêm `agent_goals` với `siteId`, `title`, `description`, `source` (`user`/`flow`/`api`/`schedule`), `createdBy`, `assigneeAgent`, `priority`, `deadline`, `status`, `successCriteria jsonb`, `createdAt`, `updatedAt`.
-- [ ] `[DB]` Thêm `agent_runs` với `goalId`, `siteId`, `agentName`, `provider`, `model`, `status`, `budget jsonb`, `policySnapshotHash`, `risk`, `startedAt`, `finishedAt`, `error`.
-- [ ] `[DB]` Thêm `agent_plans` với `runId`, `steps jsonb`, `status`, `risk`, `approvalPolicy`, `createdAt`, `approvedAt`, `approvedBy`.
-- [ ] `[DB]` Thêm `agent_tool_calls` với `runId`, `toolName`, `input jsonb`, `output jsonb`, `error`, `status`, `latencyMs`, `cost jsonb`, `createdAt`; input/output phải hỗ trợ secret masking.
-- [ ] `[DB]` Thêm indexes `(siteId, status)`, `(goalId, createdAt)`, `(runId, createdAt)` và cascade theo `siteId`/`goalId` hợp lý.
-- [ ] `[BE]` Tạo `AgentRunService` để mở run, append plan/tool call, close run, fail run, retry run.
-- [ ] `[BE]` Refactor `AISecureHarness.execute()` để nếu request chưa có `goalId/runId` thì tự tạo transient goal/run thay vì chỉ tạo approval rời rạc.
+- [x] `[DB]` Thêm `agent_goals` với `siteId`, `title`, `description`, `source` (`user`/`flow`/`api`/`schedule`), `createdBy`, `assigneeAgent`, `priority`, `deadline`, `status`, `successCriteria jsonb`, `createdAt`, `updatedAt`.
+- [x] `[DB]` Thêm `agent_runs` với `goalId`, `siteId`, `agentName`, `provider`, `model`, `status`, `budget jsonb`, `policySnapshotHash`, `risk`, `startedAt`, `finishedAt`, `error`.
+- [x] `[DB]` Thêm `agent_plans` với `runId`, `steps jsonb`, `status`, `risk`, `approvalPolicy`, `createdAt`, `approvedAt`, `approvedBy`.
+- [x] `[DB]` Thêm `agent_tool_calls` với `runId`, `toolName`, `input jsonb`, `output jsonb`, `error`, `status`, `latencyMs`, `cost jsonb`, `createdAt`; input/output phải hỗ trợ secret masking.
+- [x] `[DB]` Thêm indexes `(siteId, status)`, `(goalId, createdAt)`, `(runId, createdAt)` và cascade theo `siteId`/`goalId` hợp lý.
+- [x] `[BE]` Tạo `AgentRunService` để mở run, append plan/tool call, close run, fail run, retry run.
+- [x] `[BE]` Refactor `AISecureHarness.execute()` để nếu request chưa có `goalId/runId` thì tự tạo transient goal/run thay vì chỉ tạo approval rời rạc.
 - [ ] `[TEST]` Property tests đảm bảo mọi tool call luôn thuộc đúng `siteId/runId`, run failed vẫn giữ audit trail, cross-site không đọc được run/goal.
 
 ## 2. Phase B — Tool Registry và capability policy

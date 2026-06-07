@@ -290,9 +290,9 @@ Hành vi: Skill nguy hiểm (`schema:write` hoặc tên bắt đầu bằng `del
 - RAG chunks theo `siteId`, `collection`, `itemId`, `fieldName`, `chunkText`, `embedding jsonb`, `model`, `createdAt`.
 - Index: `(siteId, collection)`, `(itemId)`. Khi production có pgvector, migrate `embedding` từ JSONB sang `vector(1536)` hoặc dimension theo model.
 
-## 11. Agent Harness Layer — system collections đề xuất
+## 11. Agent Harness Layer — system collections
 
-Các collection sau chưa bắt buộc ở MVP nhưng là đích thiết kế để LumiBase trở thành CMS cho AI Agent:
+Các collection sau là nền tảng hiện tại để LumiBase vận hành AI Agent theo lifecycle có audit/retry/evaluation:
 
 | Collection | Mục đích | Quan hệ chính |
 |---|---|---|
@@ -300,12 +300,14 @@ Các collection sau chưa bắt buộc ở MVP nhưng là đích thiết kế đ
 | `agent_runs` | Một lần thực thi goal/task | `goalId`, `agentName`, `model`, `provider`, `budget`, `status`, `startedAt`, `finishedAt` |
 | `agent_plans` | Plan/steps trước khi execute | `runId`, `steps jsonb`, `risk`, `approvalPolicy`, `status` |
 | `agent_tools` | Registry tool/API/extension agent được gọi | `name`, `inputSchema`, `requiredCapabilities`, `riskPolicy`, `rateLimit`, `owner` |
-| `agent_tool_calls` | Audit từng tool call | `runId`, `toolId`, `input`, `output`, `error`, `latencyMs`, `cost`, `createdAt` |
+| `agent_tool_calls` | Audit từng tool call | `runId`, `toolName`, `input`, `output`, `error`, `latencyMs`, `cost`, `createdAt` |
 | `agent_memory` | Memory dài hạn ngoài conversation | `scope`, `source`, `content`, `confidence`, `expiresAt` |
 | `agent_artifacts` | Output versioned: page/component/dataset/config/prompt/migration/API spec | `runId`, `type`, `target`, `contentRef`, `hash`, `status` |
-| `agent_evaluations` | Validation/eval trước khi commit | `runId`, `artifactId`, `kind`, `result`, `score`, `details` |
+| `agent_evaluations` | Validation/eval trước khi commit | `runId`, `artifactId`, `kind`, `status`, `score`, `summary`, `details` |
 | `agent_approvals` | Approval tổng quát cho plan/tool/artifact | `runId`, `subjectType`, `subjectId`, `status`, `decidedBy`, `reason` |
 | `agent_permissions` | Mapping agent/role/policy/capability | `agentName`, `policyId`, `capabilities`, `validFrom`, `validUntil` |
+
+Các API runtime nằm dưới `/api/v1/agent/*`: goals, runs, tools, approvals, artifacts, memory và `generate-app`. `AISecureHarness` vẫn giữ `/ai/*` backward-compatible nhưng khi chạy với service thật sẽ tự tạo transient goal/run và ghi `agent_tool_calls`/`agent_approvals`.
 
 Thiết kế bắt buộc: mọi bảng domain có `siteId`, index `(siteId, ...)`, audit metadata, và không cho prompt tự nâng quyền ngoài `agent_permissions`/policy snapshot.
 
