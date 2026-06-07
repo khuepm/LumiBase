@@ -256,7 +256,12 @@ Indexes: `(siteId, name)`, `(publisher, publishedAt)`, `marketplaceSlug`.
 
 > Realtime cursor data (CRDT-lite) **không** persist trong Postgres — chỉ broadcast qua Durable Object/host process. Xem `apps/cms/src/services/cursor-protocol.ts`.
 
-## 10. AI Copilot — HITL (`ai.ts`)
+## 10. AI Copilot and Agent Harness (`ai.ts`)
+
+The existing Copilot tables provide chat/HITL history. The Agent Harness extends
+that foundation with first-class lifecycle, tools, approvals, artifacts,
+evaluations, and memory. See [Agent Harness Layer](./features/agent-harness-layer.md)
+for the user-facing and runtime contract.
 
 ### `ai_approvals`
 | Column | Type | Note |
@@ -273,7 +278,28 @@ Indexes: `(siteId, name)`, `(publisher, publishedAt)`, `marketplaceSlug`.
 
 Index: `(siteId, status)`.
 
-Hành vi: Skill nguy hiểm (`schema:write` hoặc tên bắt đầu bằng `delete`) bắt buộc tạo `ai_approvals` row chờ duyệt thay vì execute trực tiếp. Xem `docs/features/ai-copilot.md`.
+Behavior: dangerous skills (`schema:write` or names starting with `delete`) must
+create an `ai_approvals` row and wait for approval instead of executing
+directly. See [AI Copilot](./features/ai-copilot.md). New dangerous harness
+actions also write linked/generalized `agent_approvals` records where applicable.
+
+### `agent_*` harness tables
+
+| Collection | Purpose |
+|---|---|
+| `agent_goals` | Business goals created by a user, workflow, or generation template |
+| `agent_runs` | Individual execution attempts with status, budget, metrics, and retry linkage |
+| `agent_plans` | Planned steps associated with a run |
+| `agent_tools` | Tool registry entries with schemas, owner, enabled state, capability, risk, and rate policy |
+| `agent_permissions` | Agent/role/policy capability grants |
+| `agent_tool_calls` | Scoped audit records for each tool call or denial |
+| `agent_approvals` | Generalized approvals for plans, tool calls, artifacts, and schema diffs |
+| `agent_artifacts` | Versioned generated outputs such as schema diffs, specs, seed data, prompts, and migrations |
+| `agent_evaluations` | Evaluation results used as gates before approval/publish |
+| `agent_memory` | Scoped long-lived memory with provenance, confidence, expiry, and optional embedding |
+
+All harness tables include `siteId` and must be queried through tenant-scoped
+filters.
 
 ## 11. Indexing & RLS
 
