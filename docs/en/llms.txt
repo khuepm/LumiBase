@@ -71,6 +71,9 @@
 - [deployment/cloudflare.md](./deployment/cloudflare.md) — Wrangler deploy steps
 - [deployment/docker.md](./deployment/docker.md) — Docker self-hosted
 
+## Operations
+- [operations/upgrades.md](./operations/upgrades.md) — fixed-version policy, release channels, Cloudflare/Docker upgrade flows, backup, migrations, rollback limits
+
 ## Contributing
 - [contributing/index.md](./contributing/index.md) — setup, conventions, PR checklist
 - [contributing/code-style.md](./contributing/code-style.md) — TypeScript, naming, patterns

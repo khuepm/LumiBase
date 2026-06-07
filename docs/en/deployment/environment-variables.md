@@ -12,8 +12,8 @@ This page documents every environment variable and Cloudflare binding used by Lu
 |----------|----------|---------|-------------|
 | `LUMIBASE_ENV` | ✓ | — | Environment label: `development`, `staging`, `production` |
 | `LUMIBASE_RUNTIME` | Docker only | `cloudflare` | `docker` for Node.js/Docker; Cloudflare Workers infers from bindings |
-| `JWT_SECRET` | ✓ | — | Secret for signing/verifying application JWTs. Min 32 chars. **Store as a secret, never commit.** |
-| `LUMIBASE_DEV_AUTH` | Local dev only | `false` | Set to `true` to bypass Logto auth in local dev. **Never enable in production.** |
+| `JWT_SECRET` | ✓ | — | Secret for signing/verifying application JWTs. Min 32 chars. **For Cloudflare production, set with `wrangler secret put JWT_SECRET --env production`; never commit or place in `[env.production.vars]`.** |
+| `LUMIBASE_DEV_AUTH` | Local dev only | `false` | Set to `true` to bypass Logto auth in local dev. **Never enable in production; `pnpm release:check` fails if production resolves to `true`.** |
 | `LUMIBASE_REALTIME_ENABLED` | ✗ | `true` | Set to `false` to disable WebSocket at deployment level |
 | `LUMIBASE_ADMIN_PATH` | ✗ | (random) | Custom path for Studio admin panel (security through obscurity) |
 

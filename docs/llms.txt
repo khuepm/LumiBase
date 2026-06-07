@@ -78,6 +78,9 @@ LumiBase is an Edge-native Headless CMS built on Hono.js + PostgreSQL + Cloudfla
 - [Cloudflare Workers](./en/deployment/cloudflare.md)
 - [Docker / Self-hosted](./en/deployment/docker.md)
 
+## Operations
+- [Upgrade Operations](./en/operations/upgrades.md) — fixed-version policy, release channels, Cloudflare/Docker upgrade flows, backup, migrations, rollback limits
+
 ## Contributing
 - [Contributing Guide](./en/contributing/index.md) — setup, branch conventions, PR checklist
 - [Code Style](./en/contributing/code-style.md) — TypeScript, naming, patterns

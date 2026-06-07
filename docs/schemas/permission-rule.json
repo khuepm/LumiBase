@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.lumibase.dev/schemas/permission-rule.json",
+  "title": "PermissionRule",
+  "description": "A single permission rule that grants access to a collection action.",
+  "type": "object",
+  "required": ["collection", "action"],
+  "properties": {
+    "collection": {
+      "type": "string",
+      "description": "Collection name or '*' for all collections.",
+      "examples": ["articles", "*"]
+    },
+    "action": {
+      "type": "string",
+      "enum": ["create", "read", "update", "delete", "*"],
+      "description": "The CRUD action this rule grants."
+    },
+    "fields": {
+      "oneOf": [
+        { "type": "array", "items": { "type": "string" } },
+        { "type": "null" }
+      ],
+      "description": "Allowed fields. null or omitted means all fields. Use ['id','title'] to restrict.",
+      "examples": [null, ["id", "title", "status"]]
+    },
+    "conditions": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Filter conditions in LumiBase query syntax. Evaluated against item data.",
+      "examples": [
+        { "status": { "_eq": "published" } },
+        { "_and": [{ "status": { "_eq": "published" } }, { "author": { "_eq": "$CURRENT_USER" } }] }
+      ]
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Input validation rules for create/update. Same syntax as conditions."
+    },
+    "presets": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Default field values auto-applied on create/update."
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "collection": "articles",
+      "action": "read",
+      "fields": ["id", "title", "content", "status"],
+      "conditions": { "status": { "_eq": "published" } }
+    },
+    {
+      "collection": "articles",
+      "action": "update",
+      "fields": ["title", "content"],
+      "conditions": { "author": { "_eq": "$CURRENT_USER" } }
+    }
+  ]
+}

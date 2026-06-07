@@ -5,8 +5,8 @@
   "description": "LumiBase Docs Viewer — browse project documentation (React + Vite).",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "node scripts/sync-public.js && vite",
+    "build": "node scripts/sync-public.js && tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "echo \"(lint not configured)\" && exit 0",
