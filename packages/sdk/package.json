@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/sdk",
-  "version": "0.1.0",
+  "version": "0.4.2",
   "private": true,
   "description": "LumiBase JS SDK (REST + WebSocket) + typegen core. Isomorphic ESM.",
   "type": "module",
@@ -10,6 +10,7 @@
     ".": "./src/index.ts"
   },
   "publishConfig": {
+    "access": "public",
     "main": "./dist/index.cjs",
     "module": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -27,12 +28,12 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .turbo dist"
   },
-  "dependencies": {
-    "@lumibase/shared": "workspace:*"
-  },
   "devDependencies": {
     "tsup": "^8.5.1",
     "typescript": "^5.6.2",
     "vitest": "^2.1.2"
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }

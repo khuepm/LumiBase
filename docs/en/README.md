@@ -4,6 +4,13 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
 
 > Mục tiêu: vượt Directus ở các mảng **No-code Collection Builder**, **Permissions theo field/JSON policy**, **Raw editor cho mọi field**, **Extension SDK an toàn (kèm Marketplace ký số)**, **Display Templates**, **Realtime WebSocket** và **AI-First Copilot (HITL)** — đồng thời giữ DNA Edge-native, Multi-tenant của LumiBase nhưng cho phép tự host trên Docker khi cần.
 
+## Agent Setup (cho AI agent)
+
+- [agent-setup/index.md](./agent-setup/index.md) — Trang tổng hợp thiết lập AI agent cho LumiBase.
+- [agent-setup/prompt.md](./agent-setup/prompt.md) — Hướng dẫn máy đọc được (machine-readable), agent fetch và execute trực tiếp.
+- [agent-setup/claude-code.md](./agent-setup/claude-code.md) · [cursor.md](./agent-setup/cursor.md) · [github-copilot.md](./agent-setup/github-copilot.md) · [codex.md](./agent-setup/codex.md) · [windsurf.md](./agent-setup/windsurf.md) — Hướng dẫn từng agent.
+- [llms.txt](../llms.txt) — Index toàn bộ docs cho LLM. [en/llms.txt](./llms.txt) — Index English docs.
+
 ## Cấu trúc tài liệu
 
 - **Vision & Định vị**
@@ -11,6 +18,7 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
 - **Kiến trúc**
   - [architecture/overview.md](./architecture/overview.md) — Tổng thể tech stack, các lớp, module, runtime abstraction.
   - [architecture/page-hydration.md](./architecture/page-hydration.md) — Hợp đồng API hydrate trang.
+  - [architecture/decisions/index.md](./architecture/decisions/index.md) — Architecture Decision Records (ADR-001 đến ADR-008).
 - **Mô hình dữ liệu**
   - [data-model.md](./data-model.md) — Schema lõi (sites, collections, fields, relations, permissions, presets, translations, files, revisions, activity, webhooks, extensions, **flows, ai_approvals, materialized_collections, translation_memory, glossary**).
 - **Tính năng cốt lõi** (`features/`)
@@ -47,8 +55,12 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [cdc/troubleshooting.md](./cdc/troubleshooting.md) — Xử lý lỗi replication slot, kết nối, sync, schema drift.
   - Setup: [Debezium+Kafka](./cdc/setup-debezium-kafka.md) · [Materialized Engine](./cdc/setup-materialized-engine.md) · [Airbyte](./cdc/setup-airbyte.md).
   - Deployment: [Docker Compose / managed services](./cdc/deployment-docker-compose.md) · [Cloudflare Workers (edge only)](./cdc/deployment-cloudflare-workers.md).
+- **SDK** (`sdk/`)
+  - [sdk/index.md](./sdk/index.md) — SDK overview.
+  - [sdk/javascript.md](./sdk/javascript.md) — JS/TS SDK đầy đủ (auth, items, files, realtime, AI Copilot, Flows).
+  - [sdk/typegen.md](./sdk/typegen.md) — Sinh TypeScript types từ schema live.
 - **API**
-  - [api/hono-api-spec.md](./api/hono-api-spec.md) — REST/WS endpoints chuẩn hoá.
+  - [api/hono-api-spec.md](./api/hono-api-spec.md) — REST/WS endpoints chuẩn hoá với đầy đủ request/response examples.
 - **UI Studio**
   - [ui/README.md](../ui/README.md) — Spec for the redesigned Lumibase Studio and detailed screen specifications.
   - [en/ui/studio-ui-spec.md](./ui/studio-ui-spec.md) — Original page structure, modules, layouts, components, and state.
@@ -58,6 +70,13 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [deployment/docker.md](./deployment/docker.md) — Chạy CMS API ở Docker/self-hosted mode.
   - [deployment/environment-variables.md](./deployment/environment-variables.md) — Biến môi trường và bindings.
   - [deployment/local-development.md](./deployment/local-development.md) — Quy trình local dev và kiểm tra trước deploy.
+- **Operations** (`operations/`)
+  - [operations/upgrades.md](./operations/upgrades.md) — Fixed-version upgrade policy, Cloudflare/Docker flows, backup, migrations, and rollback limits.
+- **Đóng góp** (`contributing/`)
+  - [contributing/index.md](./contributing/index.md) — Setup, branching, commit conventions, PR checklist.
+  - [contributing/code-style.md](./contributing/code-style.md) — TypeScript, naming, service patterns.
+  - [contributing/testing.md](./contributing/testing.md) — Vitest unit, property-based, integration tests.
+  - [contributing/extension-dev.md](./contributing/extension-dev.md) — Build custom extensions (interface, display, operation, hook, endpoint).
 - **Lộ trình**
   - [roadmap/tasks.md](./roadmap/tasks.md) — Task list chi tiết theo phase (Phase 0 → POST-GA + Dual-deployment + AI Copilot).
   - [roadmap/consumer-sdk.md](./roadmap/consumer-sdk.md), [roadmap/phase-d1-users.md](./roadmap/phase-d1-users.md), [roadmap/studio-content-slices.md](./roadmap/studio-content-slices.md).

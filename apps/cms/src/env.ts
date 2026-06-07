@@ -17,6 +17,14 @@ export interface Bindings {
   /** SiteRoom Durable Object namespace — one DO instance per siteId. */
   SITE_ROOM?: DurableObjectNamespace;
   LUMIBASE_ENV: string;
+  /** Semver package/application version for the deployed Lumibase build. */
+  LUMIBASE_VERSION?: string;
+  /** Source-control revision used for this build. */
+  LUMIBASE_GIT_SHA?: string;
+  /** ISO-8601 timestamp for when this build artifact was produced. */
+  LUMIBASE_BUILD_TIME?: string;
+  /** Release track for the artifact, e.g. development, staging, production. */
+  LUMIBASE_RELEASE_CHANNEL?: string;
   /** Runtime mode: `'cloudflare'` or `'docker'`. Defaults to `'docker'`. */
   LUMIBASE_RUNTIME?: string;
   /** Direct Postgres connection string (used in local development). */
@@ -31,6 +39,12 @@ export interface Bindings {
   LUMIBASE_DEV_AUTH?: string;
   /** Secret key for AES-GCM per-field encryption (base64 encoded). */
   ENCRYPTION_KEY?: string;
+  /** Comma-separated frontend origins allowed by CORS. */
+  CORS_ALLOWED_ORIGINS?: string;
+  /** Maximum bytes accepted by the file upload policy. Defaults to 10 MiB. */
+  FILE_UPLOAD_MAX_BYTES?: string;
+  /** Comma-separated MIME allowlist accepted by the file upload policy. */
+  FILE_UPLOAD_ALLOWED_MIME_TYPES?: string;
   // ── LLM Provider (POST-GA Task #1) ──────────────────────────────────────
   /** `'openai'` | `'anthropic'` | `'workers-ai'` | `'echo'` (default). */
   LLM_PROVIDER?: string;

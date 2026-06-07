@@ -280,7 +280,9 @@ export function defaultCdcServicesFactory(
   c: Context<AppEnv>,
 ): CdcRouteServices {
   const db = c.get('db');
-  const encryptionKey = c.env?.ENCRYPTION_KEY ?? FALLBACK_ENCRYPTION_KEY;
+  const processEncryptionKey =
+    typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : undefined;
+  const encryptionKey = c.env?.ENCRYPTION_KEY ?? processEncryptionKey ?? FALLBACK_ENCRYPTION_KEY;
 
   const registry = new PipelineRegistry({
     db,

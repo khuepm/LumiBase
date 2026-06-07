@@ -1,8 +1,8 @@
-# Environment Variables
+# Environment Variables Reference
 
-This page lists the deployment variables most operators need when running LumiBase.
+> **For AI agents:** All required variables must be set before starting the CMS API. Missing required variables will cause startup to fail with an explicit error message.
 
-## CMS Runtime
+This page documents every environment variable and Cloudflare binding used by LumiBase.
 
 ---
 
@@ -119,22 +119,43 @@ For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](
 
 ## Cloudflare Bindings
 
+Configure these in `apps/cms/wrangler.toml` (not environment variables):
+
 | Binding | Type | Purpose |
-| --- | --- | --- |
-| `HYPERDRIVE` | Hyperdrive | Pooled PostgreSQL connections for the Worker runtime. |
-| `CONFIG_CACHE` | KV | Schema, permission and settings cache. |
-| `MEDIA` | R2 | Media object storage. |
-| `SITE_ROOM` | Durable Object | Per-site realtime coordination. |
+|---------|------|---------|
+| `HYPERDRIVE` | Hyperdrive | Pooled PostgreSQL connections |
+| `CONFIG_CACHE` | KV Namespace | Schema, permission, and settings cache |
+| `MEDIA` | R2 Bucket | Media/file object storage |
+| `SITE_ROOM` | Durable Object | Per-site WebSocket coordination (realtime) |
+| `AI` | Workers AI | Workers AI binding for `workers-ai` LLM provider |
 
-## Docker Services
+```toml
+# wrangler.toml excerpt
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "<your-hyperdrive-id>"
 
-| Variable | Required | Notes |
-| --- | --- | --- |
-| `DATABASE_URL` | Yes | PostgreSQL connection string. |
-| `REDIS_URL` | Yes | Redis connection string for cache/queue adapters. |
-| `S3_ENDPOINT` | If media enabled | MinIO or S3-compatible endpoint. |
-| `S3_ACCESS_KEY_ID` | If media enabled | Object storage access key. |
-| `S3_SECRET_ACCESS_KEY` | If media enabled | Object storage secret key. |
-| `S3_BUCKET` | If media enabled | Media bucket name. |
+[[kv_namespaces]]
+binding = "CONFIG_CACHE"
+id = "<your-kv-namespace-id>"
 
-Do not commit production secrets. Use Wrangler secrets for Workers and environment-specific secret storage for Docker.
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "lumibase-media"
+
+[durable_objects]
+bindings = [{ name = "SITE_ROOM", class_name = "SiteRoom" }]
+```
+
+---
+
+## Security checklist
+
+Before deploying to production, verify:
+
+- [ ] `JWT_SECRET` is at least 32 characters and stored as a Wrangler Secret or Docker secret
+- [ ] `LUMIBASE_DEV_AUTH` is NOT set to `true`
+- [ ] Database credentials are stored as secrets, not in `.env` files committed to git
+- [ ] `S3_SECRET_ACCESS_KEY` is stored as a secret
+- [ ] `RESEND_API_KEY` is stored as a secret
+- [ ] CORS is configured to allow only your Studio and consumer domains

@@ -259,7 +259,7 @@ PostgreSQL will replay WAL segments up to the specified timestamp.
 3. Perform PITR to the timestamp just before the deletion
 4. Verify recovered data
 5. Restart the CMS
-6. Re-index search (content may be stale in MeiliSearch)
+6. Rebuild the search index (content may be stale in MeiliSearch)
 
 ```bash
 # Quick recovery using latest daily backup + WAL replay
@@ -267,8 +267,9 @@ docker compose stop cms
 ./docker/scripts/restore.sh --pitr "2024-01-15 14:25:00 UTC"
 docker compose start cms
 
-# Re-index search
-curl -X POST http://localhost:1989/api/search/reindex
+# Rebuild search with your deployment's reindex job or admin operation.
+# If your deployment exposes a reindex endpoint:
+curl -fsS -X POST http://localhost:1989/api/search/reindex
 ```
 
 ### Scenario 2: Database Corruption
@@ -349,6 +350,197 @@ curl http://localhost:1989/health
 5. **Patch** — Address the vulnerability that allowed the breach
 6. **Monitor** — Increase monitoring and alerting thresholds
 
+## Backup / DR Validation
+
+Run a restore drill at least monthly, and after any change to database schema,
+storage provider, search provider, backup schedule, retention, or infrastructure
+topology. A drill is only complete when the restored application is usable, not
+just when `pg_restore` exits successfully.
+
+### Restore Drill Runbook
+
+Use an isolated environment that cannot send production webhooks or email.
+Record the start time before restoring so the measured recovery time can be
+compared with the RTO target.
+
+```bash
+# 1. Capture the drill start time
+date -u +"%Y-%m-%dT%H:%M:%SZ" | tee restore-drill-start.txt
+
+# 2. Start the dependencies in the isolated environment
+docker compose up -d postgres redis minio meilisearch imgproxy
+
+# 3. Restore the selected backup
+./docker/scripts/restore.sh s3://lumibase-backups/daily/backup_20240115_020000.dump
+
+# 4. Start the CMS against the restored database
+docker compose up -d cms
+```
+
+Restore drills must use a named backup artifact, not `latest`, unless the drill
+is specifically testing the `latest` pointer. Keep the backup object key, WAL
+target timestamp, Git SHA, and environment name in the drill notes.
+
+### Row-Count Verification
+
+Before the drill, capture production row counts for business-critical tables and
+store them with the backup metadata. After restore, compare the restored counts
+against that baseline.
+
+```bash
+# Capture exact row counts for every public table in the restored database
+docker compose exec -T postgres psql -U lumibase -d lumibase -Atc "
+  SELECT format(
+    'SELECT %L AS table_name, count(*) AS rows FROM %I.%I;',
+    schemaname || '.' || tablename,
+    schemaname,
+    tablename
+  )
+  FROM pg_tables
+  WHERE schemaname = 'public';
+" | docker compose exec -T postgres psql -U lumibase -d lumibase -At \
+  | sort > restored-row-counts.txt
+
+# Compare with the production baseline captured at backup time
+diff -u expected-row-counts.txt restored-row-counts.txt
+```
+
+For tables with active writes, compare against the backup timestamp, not the
+current production state. If PITR is used, validate that rows created after the
+recovery target are absent and rows created before the target are present.
+
+### Application Health Check After Restore
+
+The restored app must pass the public health endpoint and at least one
+authenticated smoke test before the drill is accepted.
+
+```bash
+# Service-level health
+curl -fsS http://localhost:1989/health
+
+# Confirm backing services report healthy, or document intentional degraded services
+curl -fsS http://localhost:1989/health | jq '.status, .services'
+```
+
+Also verify the most important user journeys for the deployment:
+
+- [ ] Admin can log in
+- [ ] Collections and items load
+- [ ] A restored item can be read through the API
+- [ ] A non-production write can be created and rolled back
+- [ ] Background queues do not contain production-only jobs
+
+### Cloudflare Restore Drill
+
+Cloudflare deployments use the same PostgreSQL restore process, but the
+validation surface is wider than Docker. Hyperdrive only connects the Worker to
+PostgreSQL; it is not the backup source. Restore and row-count verification must
+run against the origin PostgreSQL provider, then validate each Cloudflare service
+that fronts or derives state from that database.
+
+Use a separate Cloudflare environment for drills whenever possible:
+
+```bash
+# Deploy the Worker against restore-drill bindings, not production bindings
+wrangler deploy --env restore-drill
+
+# Confirm the deployed Worker is using the expected account and environment
+wrangler whoami
+
+# Watch Worker errors while the restored app starts
+wrangler tail --env restore-drill
+```
+
+Validate the Cloudflare service layer after the database restore:
+
+| Service | What to validate | Example check |
+|---------|------------------|---------------|
+| Workers | The restored API route is deployed and healthy. | `curl -fsS https://restore-api.example.com/health` |
+| Hyperdrive | The Worker can reach the restored PostgreSQL database and is not pointing at production by mistake. | Health response reports `database: healthy`; row counts match the restored database. |
+| R2 | Media objects exist in the restore bucket and are readable through the API or media custom domain. | `curl -fsS https://restore-api.example.com/api/media?prefix= \| jq '.data \| length'` |
+| KV | Config and permission cache are either empty for the drill or repopulated from restored database reads. | Log in and load collections after clearing stale restore-environment cache keys. |
+| Queues | No production-only jobs are replayed; restore-environment queues and dead-letter queues are empty before smoke tests. | Check Cloudflare Queues metrics/dashboards for backlog and failures. |
+| MeiliSearch Cloud | Search is rebuilt from restored database content, not copied from production indexes. | Query restored collections after the reindex job completes. |
+| DNS / WAF / Access | Custom domains, Cloudflare Access, and WAF rules allow health, auth, media, and API smoke tests. | Run health and authenticated smoke tests through the real restore domain, not only the workers.dev URL. |
+
+For Cloudflare, include these extra fields in the drill record:
+
+| Field | Example |
+|-------|---------|
+| Cloudflare account | `acme-prod` |
+| Worker environment | `restore-drill` |
+| Worker deployment ID | `from wrangler deploy output` |
+| Hyperdrive binding | `lumibase-hyperdrive-restore` |
+| Origin database | `restore-postgres-us-east-1` |
+| R2 bucket | `lumibase-media-restore` |
+| KV namespace | `CONFIG_CACHE restore namespace` |
+| Queue names | `content-indexing-restore`, `media-processing-restore` |
+| Custom domain tested | `https://restore-api.example.com` |
+
+Do not count KV, R2, search indexes, or queue state as covered by the PostgreSQL
+backup. KV and search are derived state and should be rebuilt or repopulated.
+R2 media needs its own replication or backup policy. Queues should be drained,
+discarded, or replayed intentionally according to the incident type.
+
+### Media and Search Rebuild
+
+Database restore does not prove that object storage and derived indexes are
+consistent. Validate media separately, then rebuild derived search state from
+the restored database.
+
+```bash
+# Verify the storage adapter can list restored media keys
+curl -fsS http://localhost:1989/api/v1/media?prefix= | jq '.data | length'
+
+# Verify a known restored media object can be fetched
+curl -fsS -o /tmp/lumibase-media-check.bin \
+  http://localhost:1989/api/v1/media/path/to/known-object.jpg
+
+# If media is restored from a replicated bucket, compare object counts
+mc ls --recursive remote/lumibase-media | wc -l
+mc ls --recursive local/lumibase-media | wc -l
+```
+
+Rebuild MeiliSearch or the configured search backend after every restore because
+the index is derived state. Use the deployment's reindex job or administrative
+operation. If your deployment exposes a reindex endpoint, run:
+
+```bash
+curl -fsS -X POST http://localhost:1989/api/search/reindex
+```
+
+After rebuild, run representative search queries against restored collections
+and compare the result count with expected fixtures.
+
+```bash
+curl -fsS "http://localhost:1989/api/v1/search?q=release&collection=articles&limit=5" \
+  | jq '.meta.totalHits'
+```
+
+### RTO / RPO Documentation
+
+Every drill must produce a short record that can be audited later:
+
+| Field | Example |
+|-------|---------|
+| Drill date | `2024-01-15` |
+| Environment | `restore-drill-us-east-1` |
+| Backup artifact | `s3://lumibase-backups/daily/backup_20240115_020000.dump` |
+| WAL target | `2024-01-15 14:25:00 UTC` |
+| Restore start | `2024-01-15T15:00:00Z` |
+| App healthy | `2024-01-15T15:18:00Z` |
+| Measured RTO | `18 minutes` |
+| Backup timestamp | `2024-01-15T14:00:00Z` |
+| Last recovered transaction | `2024-01-15T14:24:52Z` |
+| Measured RPO | `8 seconds` |
+| Row-count diff | `0 unexpected diffs` |
+| Media check | `passed: listed bucket and fetched known object` |
+| Search rebuild | `passed: articles query returned expected hits` |
+| Exceptions | `none` |
+
+If measured RTO or RPO exceeds the target, open an incident follow-up and update
+the recovery plan before considering the drill passed.
+
 ## Backup Verification
 
 ### Automated Verification
@@ -381,6 +573,230 @@ Run verification:
 docker compose --profile verify run --rm backup-verify
 ```
 
+### Automated Restore Drills
+
+Use `docker/scripts/restore-drill.sh` to restore a named backup into a dedicated
+restore database, capture exact row counts, check the restored app health
+endpoint, validate media, and trigger/search-check derived indexes. The same
+script works for Docker and Cloudflare restore environments because it targets a
+database URL and an app URL rather than assuming a specific runtime.
+
+```bash
+BACKUP_FILE=lumibase_20240115_020000.sql.gz \
+RESTORE_DATABASE_URL=postgresql://lumibase:password@restore-db:5432/lumibase_restore \
+RESTORE_APP_URL=https://restore-api.example.com \
+RESTORE_AUTH_HEADER="Authorization: Bearer dev:admin@lumibase.dev:admin" \
+RESTORE_SITE_HEADER="X-Lumi-Site: site_demo" \
+SEARCH_EXPECT_MIN_HITS=1 \
+EXPECTED_ROW_COUNTS_FILE=expected-row-counts.txt \
+S3_ENDPOINT=https://s3.example.com \
+S3_BUCKET=lumibase-backups \
+S3_ACCESS_KEY=restore-readonly \
+S3_SECRET_KEY=restore-secret \
+DRILL_ENV=cloudflare \
+CLOUDFLARE_ENV=restore-drill \
+./docker/scripts/restore-drill.sh
+```
+
+Store the required environment variables in the scheduler's secret store or in a
+root-readable env file. Never point `RESTORE_DATABASE_URL` at production; the
+script refuses to run when it matches `DATABASE_URL` unless
+`ALLOW_PRODUCTION_RESTORE_DRILL=true` is explicitly set.
+
+#### Scheduler Setup by OS
+
+All schedulers need these commands available on `PATH`: `bash`, `psql`, `curl`,
+`node`, and `aws` when backups are fetched from S3. Use absolute paths or set
+`PATH` in wrapper scripts because OS schedulers do not load your interactive
+shell profile.
+
+##### Linux: systemd timer
+
+For a production Linux host, install the included systemd timer:
+
+```bash
+sudo useradd --system --home /opt/lumibase --shell /usr/sbin/nologin lumibase
+sudo install -d -o lumibase -g lumibase -m 0750 /opt/lumibase
+sudo install -d -o lumibase -g lumibase -m 0750 /var/lib/lumibase/restore-drill-reports
+sudo install -d -o root -g lumibase -m 0750 /etc/lumibase
+
+# Copy the repository to /opt/lumibase, then install scheduler files
+sudo install -o root -g root -m 0644 \
+  docker/systemd/lumibase-restore-drill.service \
+  /etc/systemd/system/lumibase-restore-drill.service
+sudo install -o root -g root -m 0644 \
+  docker/systemd/lumibase-restore-drill.timer \
+  /etc/systemd/system/lumibase-restore-drill.timer
+sudo install -o root -g lumibase -m 0640 \
+  docker/restore-drill.env.example \
+  /etc/lumibase/restore-drill.env
+
+sudoedit /etc/lumibase/restore-drill.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now lumibase-restore-drill.timer
+sudo systemctl list-timers 'lumibase-restore-drill*'
+```
+
+Run one drill immediately after configuring secrets:
+
+```bash
+sudo systemctl start lumibase-restore-drill.service
+sudo journalctl -u lumibase-restore-drill.service -n 100 --no-pager
+```
+
+For simpler Linux hosts without systemd, use cron:
+
+```cron
+0 3 * * 0 cd /opt/lumibase && /usr/bin/env bash docker/scripts/restore-drill.sh >> /var/log/lumibase-restore-drill.log 2>&1
+```
+
+##### macOS: launchd LaunchAgent
+
+On macOS, use `launchd`. Keep secrets in a user-readable env file, then run the
+drill through a wrapper that sets `PATH` explicitly:
+
+```bash
+mkdir -p "$HOME/.config/lumibase" "$HOME/.local/bin"
+mkdir -p "$HOME/Library/Logs/lumibase"
+mkdir -p "$HOME/Library/Application Support/Lumibase/restore-drill-reports"
+
+cp docker/restore-drill.env.example "$HOME/.config/lumibase/restore-drill.env"
+chmod 600 "$HOME/.config/lumibase/restore-drill.env"
+```
+
+Set `DRILL_REPORT_DIR` in that env file to a macOS path such as:
+
+```bash
+DRILL_REPORT_DIR=/Users/khuepm/Library/Application Support/Lumibase/restore-drill-reports
+```
+
+Create the wrapper:
+
+```bash
+cat > "$HOME/.local/bin/lumibase-restore-drill" <<'EOF'
+#!/usr/bin/env zsh
+set -euo pipefail
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+cd /Users/khuepm/workplace/Lumibase
+
+set -a
+source "$HOME/.config/lumibase/restore-drill.env"
+set +a
+
+exec ./docker/scripts/restore-drill.sh
+EOF
+
+chmod +x "$HOME/.local/bin/lumibase-restore-drill"
+```
+
+Install a weekly Sunday 03:00 LaunchAgent:
+
+```bash
+cat > "$HOME/Library/LaunchAgents/com.lumibase.restore-drill.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.lumibase.restore-drill</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/Users/khuepm/.local/bin/lumibase-restore-drill</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Weekday</key>
+      <integer>0</integer>
+      <key>Hour</key>
+      <integer>3</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/khuepm/Library/Logs/lumibase/restore-drill.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/khuepm/Library/Logs/lumibase/restore-drill.err.log</string>
+  </dict>
+</plist>
+EOF
+```
+
+Load and test it:
+
+```bash
+launchctl unload "$HOME/Library/LaunchAgents/com.lumibase.restore-drill.plist" 2>/dev/null || true
+launchctl load "$HOME/Library/LaunchAgents/com.lumibase.restore-drill.plist"
+launchctl start com.lumibase.restore-drill
+tail -f "$HOME/Library/Logs/lumibase/restore-drill.out.log"
+```
+
+##### Windows: Task Scheduler
+
+On Windows, run the Bash script from PowerShell through Git Bash or WSL. Git
+Bash is usually the lightest option for an operator workstation; WSL is better
+for a server-like restore environment.
+
+Create a secret env file outside the repo:
+
+```powershell
+New-Item -ItemType Directory -Force C:\ProgramData\Lumibase | Out-Null
+Copy-Item .\docker\restore-drill.env.example C:\ProgramData\Lumibase\restore-drill.env
+notepad C:\ProgramData\Lumibase\restore-drill.env
+```
+
+Create a PowerShell wrapper:
+
+```powershell
+@'
+$ErrorActionPreference = "Stop"
+
+$Repo = "C:\Lumibase"
+$EnvFile = "C:\ProgramData\Lumibase\restore-drill.env"
+$GitBash = "C:\Program Files\Git\bin\bash.exe"
+
+Get-Content $EnvFile | ForEach-Object {
+  if ($_ -match '^\s*$' -or $_ -match '^\s*#') { return }
+  $name, $value = $_ -split '=', 2
+  [Environment]::SetEnvironmentVariable($name.Trim(), $value.Trim(), "Process")
+}
+
+Set-Location $Repo
+& $GitBash -lc "./docker/scripts/restore-drill.sh"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+'@ | Set-Content C:\ProgramData\Lumibase\restore-drill.ps1 -Encoding UTF8
+```
+
+Register a weekly Sunday 03:00 task:
+
+```powershell
+$Action = New-ScheduledTaskAction `
+  -Execute "PowerShell.exe" `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\Lumibase\restore-drill.ps1"
+
+$Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3:00am
+$Principal = New-ScheduledTaskPrincipal -UserId "$env:USERNAME" -LogonType Interactive -RunLevel Highest
+
+Register-ScheduledTask `
+  -TaskName "Lumibase Restore Drill" `
+  -Action $Action `
+  -Trigger $Trigger `
+  -Principal $Principal `
+  -Description "Runs the Lumibase restore drill weekly."
+```
+
+Run it immediately and inspect the result:
+
+```powershell
+Start-ScheduledTask -TaskName "Lumibase Restore Drill"
+Get-ScheduledTaskInfo -TaskName "Lumibase Restore Drill"
+```
+
 ### Manual Verification Checklist
 
 - [ ] Restore backup to a test database
@@ -389,6 +805,7 @@ docker compose --profile verify run --rm backup-verify
 - [ ] Verify media files are accessible
 - [ ] Check that search index can be rebuilt from restored data
 - [ ] Document recovery time (RTO) and data loss window (RPO)
+- [ ] Attach the completed restore drill record to the operations log
 
 ## Backup Failure Notifications
 

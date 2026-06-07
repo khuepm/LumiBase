@@ -158,8 +158,10 @@ class_name = "SiteRoom"
 # Validate production config before deploy
 pnpm release:check
 
-# Build and deploy to production
+# Build production bundle
 pnpm --filter @lumibase/cms build:production
+
+# Deploy to production
 pnpm --filter @lumibase/cms deploy:production
 
 # Deploy to staging

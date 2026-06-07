@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/shared",
-  "version": "0.1.0",
+  "version": "0.4.2",
   "private": true,
   "description": "Shared types, zod schemas, policy DSL, field DSL. Pure ESM, no runtime deps on Hono/React.",
   "type": "module",
@@ -10,7 +10,8 @@
     ".": "./src/index.ts",
     "./policy": "./src/policy/index.ts",
     "./field": "./src/field/index.ts",
-    "./schemas": "./src/schemas/index.ts"
+    "./schemas": "./src/schemas/index.ts",
+    "./version": "./src/version.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

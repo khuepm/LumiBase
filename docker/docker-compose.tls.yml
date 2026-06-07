@@ -1,0 +1,28 @@
+# TLS termination overlay for production Docker deployments.
+# Usage:
+#   PUBLIC_DOMAIN=api.example.com ACME_EMAIL=ops@example.com \
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.tls.yml up -d
+#
+# Caddy terminates HTTPS on 443, obtains/renews ACME certificates, and forwards
+# HTTP traffic to the private CMS service on the Compose network.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?Set PUBLIC_DOMAIN to the public API hostname}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL for ACME certificate registration}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - cms
+
+volumes:
+  caddydata:
+  caddyconfig:

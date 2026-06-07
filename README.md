@@ -8,9 +8,30 @@
 <!-- [![GitHub Sponsors](https://img.shields.io/github/sponsors/khuepm)](https://github.com/sponsors/khuepm) -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/khuepm/lumibase/blob/main/LICENSE)
 
-[Documentation](https://docs.lumibase.dev) • [Community](https://github.com/khuepm/lumibase/discussions)
+[Documentation](https://docs.lumibase.dev) • [Agent Setup](https://docs.lumibase.dev/en/agent-setup/) • [Community](https://github.com/khuepm/lumibase/discussions)
 
 </div>
+
+---
+
+## 🤖 AI Agent Setup
+
+LumiBase is built to work natively with AI coding agents. Get your agent up to speed instantly:
+
+```bash
+# For any AI agent — paste this into your first message:
+Read https://docs.lumibase.dev/en/agent-setup/prompt.md and follow the setup instructions.
+```
+
+| Agent | Config file | Guide |
+|-------|------------|-------|
+| Claude Code | `CLAUDE.md` (this repo) | [claude-code.md](./docs/en/agent-setup/claude-code.md) |
+| Cursor | `.cursorrules` (this repo) | [cursor.md](./docs/en/agent-setup/cursor.md) |
+| GitHub Copilot | `.github/copilot-instructions.md` | [github-copilot.md](./docs/en/agent-setup/github-copilot.md) |
+| OpenAI Codex | `AGENTS.md` (this repo) | [codex.md](./docs/en/agent-setup/codex.md) |
+| Windsurf | See guide | [windsurf.md](./docs/en/agent-setup/windsurf.md) |
+
+**LLM-friendly docs index:** [`docs/llms.txt`](./docs/llms.txt)
 
 ---
 
@@ -59,7 +80,11 @@ pnpm --filter @lumibase/cms dev      # Hono API on :1989
 pnpm --filter @lumibase/studio dev   # Studio SPA on :5173
 ```
 
-The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire-up. Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is in [`docs/en/roadmap/tasks.md`](./docs/en/roadmap/tasks.md).
+The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire-up. Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is in [`docs/en/roadmap/tasks.md`](./docs/en/roadmap/tasks.md). For production release operations, see the upgrade runbooks in [English](./docs/en/operations/upgrades.md) and [Vietnamese](./docs/vi/operations/upgrades.md).
+
+## Release policy
+
+Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
 ### Why port 1989?
 

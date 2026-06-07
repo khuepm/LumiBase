@@ -69,7 +69,7 @@ const buildService = (c: Context<AppEnv>) => {
       headers,
       apiKey: auth?.apiKey ?? null,
     },
-    encryptionKey: c.env.ENCRYPTION_KEY,
+    encryptionKey: c.env.ENCRYPTION_KEY || (typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : undefined),
   });
 };
 

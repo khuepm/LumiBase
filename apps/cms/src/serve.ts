@@ -4,7 +4,12 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { schema } from '@lumibase/database';
 import cron from 'node-cron';
 import app from './index';
+import type { Bindings } from './env';
+import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
+
+loadSecretFiles();
+validateProductionConfig();
 
 const port = parseInt(process.env.PORT || '1989', 10);
 const runtime = createRuntime(process.env as unknown as Record<string, unknown>);
@@ -15,7 +20,13 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-const server = serve({ fetch: app.fetch, port });
+const server = serve({
+  fetch: (request, nodeBindings) => app.fetch(
+    request,
+    { ...process.env, ...nodeBindings } as unknown as Bindings,
+  ),
+  port,
+});
 console.log(`[lumibase-cms] Started in ${runtime.runtime} mode on port ${port}`);
 
 // ── Audit-log retention rotation (admin-setup-wizard task 11.4; Req 15.5;

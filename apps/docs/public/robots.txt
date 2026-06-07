@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# Sitemap for AI agents & Search Crawlers
+Sitemap: https://docs.lumibase.dev/en/sitemap-ai.xml

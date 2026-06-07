@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Lumibase restore drill weekly
+
+[Timer]
+OnCalendar=Sun *-*-* 03:00:00
+RandomizedDelaySec=10min
+Persistent=true
+Unit=lumibase-restore-drill.service
+
+[Install]
+WantedBy=timers.target

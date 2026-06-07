@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/cms",
-  "version": "0.1.0",
+  "version": "0.4.2",
   "private": true,
   "description": "Lumibase CMS API — Hono.js on Cloudflare Workers.",
   "type": "module",
@@ -11,11 +11,12 @@
   "scripts": {
     "dev": "wrangler dev --port 1989",
     "build": "node ../../scripts/with-build-metadata.mjs wrangler deploy --dry-run --outdir=dist",
+    "build:staging": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env staging --dry-run --outdir=dist",
     "build:production": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env production --dry-run --outdir=dist",
     "build:node": "node ../../scripts/with-build-metadata.mjs esbuild src/serve.ts --bundle --platform=node --format=cjs --outfile=dist/serve.cjs --external:pg-native --external:cloudflare:workers && node ../../scripts/with-build-metadata.mjs esbuild ../../packages/database/scripts/migrate.ts --bundle --platform=node --format=cjs --outfile=dist/migrate.cjs --external:pg-native",
     "deploy": "pnpm run deploy:production",
-    "deploy:staging": "wrangler deploy --env staging",
-    "deploy:production": "node ../../scripts/check-release-env.mjs --env production --config apps/cms/wrangler.toml && wrangler deploy --env production",
+    "deploy:staging": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env staging",
+    "deploy:production": "node ../../scripts/check-release-env.mjs --env production --config apps/cms/wrangler.toml && node ../../scripts/with-build-metadata.mjs wrangler deploy --env production",
     "typecheck": "tsc --noEmit",
     "typegen": "tsx scripts/typegen.ts",
     "lint": "echo \"(lint not configured)\" && exit 0",

@@ -1,6 +1,6 @@
 {
   "name": "lumibase",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "private": true,
   "description": "Lumibase - Edge-native Headless CMS (Turborepo monorepo)",
   "packageManager": "pnpm@9.12.0",
@@ -33,12 +33,20 @@
     "cms:deploy": "pnpm release:check && pnpm --filter @lumibase/cms build:production && pnpm --filter @lumibase/cms deploy:production",
     "lumibase": "turbo run dev --filter=@lumibase/studio --filter=@lumibase/cms",
     "landing:deploy": "pnpm landing:build && wrangler pages deploy apps/landing/out --project-name lumibase-landing",
-    "docs:deploy": "pnpm docs:build && wrangler pages deploy apps/docs/dist --project-name lumibase-docs",
+    "docs:deploy": "pnpm docs:build && wrangler pages deploy dist --project-name lumibase-docs --branch main --cwd apps/docs",
     "marketplace:dev": "pnpm --filter @lumibase/marketplace dev",
     "marketplace:build": "pnpm --filter @lumibase/marketplace build",
     "marketplace:preview": "pnpm --filter @lumibase/marketplace start",
     "marketplace:deploy": "pnpm marketplace:build && wrangler pages deploy apps/marketplace/out --project-name lumibase-marketplace",
-    "prepare": "husky"
+    "prepare": "husky",
+    "version:sync": "node scripts/sync-version.mjs",
+    "version:check": "node scripts/sync-version.mjs --check",
+    "db:migrate:preflight": "pnpm --filter @lumibase/database migrate:preflight",
+    "db:migrate:dry-run": "pnpm --filter @lumibase/database migrate:dry-run",
+    "db:migrate:version": "pnpm --filter @lumibase/database migrate:version",
+    "npm:publish": "node scripts/publish-npm.mjs",
+    "npm:publish:plan": "node scripts/publish-npm.mjs --plan",
+    "npm:release-notes": "node scripts/publish-npm.mjs --notes"
   },
   "devDependencies": {
     "husky": "^9.1.7",

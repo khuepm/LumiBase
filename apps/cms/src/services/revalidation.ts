@@ -19,6 +19,8 @@
  *   }
  */
 
+import { guardedFetch } from './ssrf-guard';
+
 export interface RevalidationTarget {
   /** Unique id for this target entry. */
   id: string;
@@ -67,7 +69,7 @@ export async function dispatchRevalidation(
           headers['Authorization'] = `Bearer ${target.secret}`;
         }
 
-        const res = await fetch(url.toString(), {
+        const res = await guardedFetch(url.toString(), {
           method: 'POST',
           headers,
           // 5-second timeout — revalidation is best-effort.
