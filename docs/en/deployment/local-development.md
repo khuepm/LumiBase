@@ -88,6 +88,13 @@ MEILISEARCH_API_KEY=masterKey
 
 # AI (optional for local dev)
 LLM_PROVIDER=echo              # Use echo mock — no API key needed
+# Optional real provider smoke tests:
+# LLM_PROVIDER=openai
+# LLM_MODEL=gpt-4.1-nano
+# OPENAI_API_KEY=...
+# LLM_PROVIDER=gemini
+# LLM_MODEL=gemini-3.5-flash
+# GEMINI_API_KEY=...
 ```
 
 ---

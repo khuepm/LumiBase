@@ -2,7 +2,7 @@
 
 Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm hứng từ Directus, **chạy được trên cả Cloudflare Workers và Docker self-hosted** thông qua một runtime abstraction layer chung.
 
-> Mục tiêu: vượt Directus ở các mảng **No-code Collection Builder**, **Permissions theo field/JSON policy**, **Raw editor cho mọi field**, **Extension SDK an toàn**, **Display Templates**, **Realtime WebSocket** và **AI-First Copilot (HITL)** — đồng thời giữ DNA Edge-native, Multi-tenant nhưng cho phép tự host trên Docker khi cần.
+> Mục tiêu: vượt Directus ở các mảng **No-code Collection Builder**, **Permissions theo field/JSON policy**, **Raw editor cho mọi field**, **Extension SDK an toàn**, **Display Templates**, **Realtime WebSocket**, **AI-First Copilot (HITL)** và **Agent Harness Layer** — đồng thời giữ DNA Edge-native, Multi-tenant nhưng cho phép tự host trên Docker khi cần.
 
 ## Cấu trúc tài liệu
 
@@ -24,6 +24,7 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [user-management.md](./features/user-management.md) — Quản lý user, invitation, SSO.
   - [extensions-system.md](./features/extensions-system.md) — SDK extension + sandbox.
   - [ai-copilot.md](./features/ai-copilot.md) — AI Chat + Human-in-the-Loop approvals.
+  - [agent-harness-layer.md](./features/agent-harness-layer.md) — Control plane cho agent: goals, runs, tools, memory, approvals, artifacts, evaluations.
   - [websockets-realtime.md](./features/websockets-realtime.md) — Realtime subscribe/publish.
 - **API**
   - [api/hono-api-spec.md](./api/hono-api-spec.md) — REST/WS endpoints chuẩn hoá.
@@ -33,6 +34,7 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [operations/upgrades.md](./operations/upgrades.md) — Chính sách fixed-version, luồng nâng cấp Cloudflare/Docker, backup, migration và giới hạn rollback.
 - **Lộ trình**
   - [roadmap/tasks.md](./roadmap/tasks.md) — Task list chi tiết theo phase.
+  - [roadmap/agent-harness-implementation.md](./roadmap/agent-harness-implementation.md) — Checklist triển khai Agent Harness: lifecycle, tool registry, approvals, artifacts, evaluations, memory, app generation.
 
 ## Apps & packages chính
 
@@ -54,3 +56,4 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
 3. **Edge-friendly** — business logic qua `@lumibase/runtime`, không khoá Cloudflare.
 4. **1-roundtrip** — API ưu tiên payload aggregated.
 5. **HITL cho AI** — hành động nguy hiểm luôn qua approval workflow.
+6. **Agent harness first** — agent phải có goal, context, quyền, log, eval và artifact versioned; prompt không thể tự nâng quyền.

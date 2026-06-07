@@ -53,6 +53,7 @@ import { utilsRouter } from './routes/utils';
 import { webhooksRouter } from './routes/webhooks';
 import { testAuthRouter } from './routes/test-auth';
 import { aiRouter } from './routes/ai';
+import { agentRouter } from './routes/agent';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
@@ -208,6 +209,7 @@ api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
 api.route('/scim-tokens', scimAdminRouter);
 api.route('/ai', aiRouter);
+api.route('/agent', agentRouter);
 
 // ClickHouse CDC control-plane surface (`/api/v1/cdc/*`) — clickhouse-cdc
 // task 12.2; Req 1.1; design "CDC API Routes" §7. Mounted on the

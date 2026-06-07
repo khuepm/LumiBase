@@ -607,6 +607,111 @@ components:
         decidedBy: { type: string, nullable: true }
         decidedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
+    AgentGoal:
+      type: object
+      properties:
+        id: { type: string }
+        siteId: { type: string }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        source: { type: string }
+        assigneeAgent: { type: string }
+        priority: { type: string }
+        status: { type: string }
+        successCriteria: { type: object, additionalProperties: true }
+        metadata: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AgentRun:
+      type: object
+      properties:
+        id: { type: string }
+        goalId: { type: string }
+        siteId: { type: string }
+        agentName: { type: string }
+        provider: { type: string }
+        model: { type: string }
+        status: { type: string }
+        budget: { type: object, additionalProperties: true }
+        risk: { type: string, enum: [safe, review_required, dangerous, blocked] }
+        metrics: { type: object, additionalProperties: true }
+        error: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AgentTool:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        requiredCapabilities:
+          type: array
+          items: { type: string }
+        service: { type: string, enum: [schema, items, ai] }
+        inputSchema: { type: object, additionalProperties: true }
+        outputSchema: { type: object, additionalProperties: true }
+        riskPolicy: { type: object, additionalProperties: true }
+        rateLimit: { type: object, additionalProperties: true }
+        enabled: { type: boolean }
+        owner: { type: string }
+    AgentApproval:
+      type: object
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        siteId: { type: string }
+        legacyApprovalId: { type: string, nullable: true }
+        subjectType: { type: string, enum: [plan, tool_call, artifact, schema_diff] }
+        subjectId: { type: string }
+        status: { type: string, enum: [pending, approved, rejected] }
+        approvalPolicy: { type: string }
+        requestedByAgent: { type: string }
+        decisionReason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        decidedAt: { type: string, format: date-time, nullable: true }
+    AgentArtifact:
+      type: object
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        siteId: { type: string }
+        type: { type: string, enum: [schema_diff, page_spec, component_spec, seed_data, api_spec, prompt, migration] }
+        target: { type: string, nullable: true }
+        title: { type: string }
+        contentRef: { type: string, nullable: true }
+        content: { type: object, additionalProperties: true }
+        hash: { type: string }
+        version: { type: integer }
+        status: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AgentEvaluation:
+      type: object
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        siteId: { type: string }
+        artifactId: { type: string, nullable: true }
+        kind: { type: string }
+        status: { type: string, enum: [pass, warn, fail] }
+        score: { type: integer, nullable: true }
+        summary: { type: string }
+        details: { type: object, additionalProperties: true }
+        artifactHash: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    AgentMemoryContext:
+      type: object
+      properties:
+        siteId: { type: string }
+        memories:
+          type: array
+          items: { type: object, additionalProperties: true }
+        recentRuns:
+          type: array
+          items: { $ref: '#/components/schemas/AgentRun' }
+        approvedArtifacts:
+          type: array
+          items: { $ref: '#/components/schemas/AgentArtifact' }
     # --- Flows (POST-GA2) ---
     FlowGraph:
       type: object
@@ -2313,6 +2418,225 @@ paths:
                     properties:
                       content: { type: string }
                       tokensUsed: { type: integer }
+
+  # ---------------------------------------------------------------------------
+  # Agent Harness Layer
+  # ---------------------------------------------------------------------------
+  /agent/goals:
+    get:
+      summary: List agent goals
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentGoal' }
+    post:
+      summary: Create an agent goal
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                description: { type: string }
+                source: { type: string, enum: [user, flow, api, schedule] }
+                assigneeAgent: { type: string }
+                priority: { type: string, enum: [low, normal, high, urgent] }
+                successCriteria: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AgentGoal' }
+
+  /agent/runs:
+    get:
+      summary: List agent runs
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentRun' }
+
+  /agent/runs/{id}/retry:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Retry an agent run
+      responses:
+        '201': { description: Retry run created }
+
+  /agent/tools:
+    get:
+      summary: List agent tools
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentTool' }
+
+  /agent/approvals:
+    get:
+      summary: List generalized agent approvals
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentApproval' }
+
+  /agent/approvals/{id}/decide:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Decide a generalized agent approval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approved, rejected] }
+                reason: { type: string }
+      responses:
+        '200': { description: Decision recorded }
+
+  /agent/artifacts:
+    get:
+      summary: List agent artifacts
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: runId, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentArtifact' }
+    post:
+      summary: Create an agent artifact
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [runId, type, title, content]
+              properties:
+                runId: { type: string }
+                type: { type: string }
+                title: { type: string }
+                target: { type: string }
+                content: { type: object, additionalProperties: true }
+      responses:
+        '201': { description: Created }
+
+  /agent/artifacts/{id}/evaluate:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: runId, in: query, required: true, schema: { type: string } }
+    post:
+      summary: Evaluate an agent artifact
+      responses:
+        '200': { description: Evaluation result }
+
+  /agent/artifacts/{id}/publish:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Publish an agent artifact
+      responses:
+        '200': { description: Published artifact }
+
+  /agent/memory:
+    get:
+      summary: Build agent memory context
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: scope, in: query, required: false, schema: { type: string } }
+        - { name: scopeId, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AgentMemoryContext' }
+    post:
+      summary: Write agent memory
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '201': { description: Created }
+
+  /agent/generate-app:
+    post:
+      summary: Generate app artifacts from schema
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                collections:
+                  type: array
+                  items: { type: string }
+                targetApp: { type: string }
+                constraints: { type: object, additionalProperties: true }
+                budget: { type: object, additionalProperties: true }
+                approvalPolicy: { type: string }
+      responses:
+        '201': { description: Run, artifacts, and evaluations created }
 
   # ---------------------------------------------------------------------------
   # Flows Automation (POST-GA2)

@@ -46,10 +46,13 @@ export interface Bindings {
   /** Comma-separated MIME allowlist accepted by the file upload policy. */
   FILE_UPLOAD_ALLOWED_MIME_TYPES?: string;
   // ── LLM Provider (POST-GA Task #1) ──────────────────────────────────────
-  /** `'openai'` | `'anthropic'` | `'workers-ai'` | `'echo'` (default). */
+  /** `'openai'` | `'anthropic'` | `'claude'` | `'gemini'` | `'workers-ai'` | `'echo'` (default). */
   LLM_PROVIDER?: string;
+  /** Provider-specific model override. */
+  LLM_MODEL?: string;
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
+  GEMINI_API_KEY?: string;
   WORKERS_AI_ACCOUNT_ID?: string;
   WORKERS_AI_API_TOKEN?: string;
   /** Optional Workers AI gateway URL override. */

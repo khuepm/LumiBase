@@ -7,6 +7,11 @@
 | `LUMIBASE_ENV` | Có | Nhãn môi trường như `development`, `staging`, `production`. |
 | `LUMIBASE_RUNTIME` | Chỉ Docker | Đặt `docker` khi chạy Node.js self-hosted. Workers suy ra runtime từ binding. |
 | `LUMIBASE_DEV_AUTH` | Chỉ local | Chỉ bật `true` khi phát triển local. Không bật ở production. |
+| `LLM_PROVIDER` | Tùy chọn | Provider AI: `echo`, `openai`, `anthropic`, `claude`, `gemini`, `workers-ai`. Mặc định `echo` để test không tốn phí. |
+| `LLM_MODEL` | Tùy chọn | Model override theo provider, ví dụ `gpt-4.1-nano`, `claude-3-5-haiku-latest`, `gemini-3.5-flash`. |
+| `OPENAI_API_KEY` | Khi dùng `openai` | API key OpenAI. |
+| `ANTHROPIC_API_KEY` | Khi dùng `anthropic`/`claude` | API key Anthropic. |
+| `GEMINI_API_KEY` | Khi dùng `gemini` | API key Google Gemini. |
 | `JWT_SECRET` | Có | Secret cho JWT ứng dụng. Lưu bằng secret store. |
 | `CF_ACCESS_CERTS_URL` | Production admin auth | JWKS URL của Cloudflare Access. |
 | `CF_ACCESS_AUDIENCE` | Production admin auth | Audience của Cloudflare Access application. |

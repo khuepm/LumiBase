@@ -39,6 +39,7 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [cloudflare-auth.md](./features/cloudflare-auth.md) — Logto/Cloudflare auth integration.
 - **Tính năng nâng cao (POST-GA / Dual-runtime)** (`features/`)
   - [ai-copilot.md](./features/ai-copilot.md) — AI Chat + Human-in-the-Loop approvals (Studio Copilot).
+  - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, and app generation governance.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — Lớp `@lumibase/runtime` cho phép chạy trên Cloudflare và Docker.
   - [flows-automation.md](./features/flows-automation.md) — Flows / Operations engine (workflow automation).
   - [marketplace.md](./features/marketplace.md) — Marketplace extensions có ký số (signed bundles).

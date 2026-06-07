@@ -45,6 +45,7 @@ const ActivityPage = lazy(() => import('./modules/settings/activity-page').then(
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
 const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
+const AgentHarnessPage = lazy(() => import('./modules/settings/agent-harness-page').then((m) => ({ default: m.AgentHarnessPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
 const TeamsPage = lazy(() => import('./modules/users/teams-page').then((m) => ({ default: m.TeamsPage })));
 const UsersPage = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
@@ -580,6 +581,12 @@ const updatesRoute = createRoute({
   component: withSuspense(UpdatesPage),
 });
 
+const agentHarnessRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/settings/agent-harness',
+  component: withSuspense(AgentHarnessPage),
+});
+
 const adminPathSettingsTypesRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/settings/developer/types',
@@ -620,6 +627,12 @@ const adminPathUpdatesRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/settings/updates',
   component: withSuspense(UpdatesPage),
+});
+
+const adminPathAgentHarnessRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/settings/agent-harness',
+  component: withSuspense(AgentHarnessPage),
 });
 
 const automationFlowsRoute = createRoute({
@@ -888,6 +901,7 @@ const routeTree = rootRoute.addChildren([
     extensionsRoute,
     marketplaceRoute,
     updatesRoute,
+    agentHarnessRoute,
     automationFlowsRoute,
     automationFlowNewRoute,
     automationFlowEditRoute,
@@ -920,6 +934,7 @@ const routeTree = rootRoute.addChildren([
     adminPathExtensionsRoute,
     adminPathMarketplaceRoute,
     adminPathUpdatesRoute,
+    adminPathAgentHarnessRoute,
     adminPathAutomationFlowsRoute,
     adminPathAutomationFlowNewRoute,
     adminPathAutomationFlowEditRoute,
