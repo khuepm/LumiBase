@@ -87,7 +87,28 @@ jobs:
       - name: Build CMS
         run: pnpm --filter @lumibase/cms run build:${{ env.LUMIBASE_RELEASE_CHANNEL }}
 
+      - name: Check Cloudflare deploy credentials
+        id: cloudflare-credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -n "${CLOUDFLARE_API_TOKEN}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID}" ]; then
+            echo "can_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "can_deploy=false" >> "$GITHUB_OUTPUT"
+
+          if [ "${LUMIBASE_RELEASE_CHANNEL}" = "production" ]; then
+            echo "::error::Production deploy requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets on the production environment."
+            exit 1
+          fi
+
+          echo "::notice::Skipping staging deploy because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured for the staging environment."
+
       - name: Deploy CMS
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         run: pnpm --filter @lumibase/cms run deploy:${{ env.LUMIBASE_RELEASE_CHANNEL }}
 
       - name: Verify production version
