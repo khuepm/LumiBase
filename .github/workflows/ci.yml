@@ -38,6 +38,12 @@ jobs:
         shell: bash
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare cache directories
+        shell: bash
+        run: |
+          mkdir -p "${{ steps.pnpm-store.outputs.path }}"
+          mkdir -p .turbo
+
       - name: Restore pnpm cache
         uses: actions/cache@v4
         with:
@@ -98,6 +104,12 @@ jobs:
         id: pnpm-store
         shell: bash
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare cache directories
+        shell: bash
+        run: |
+          mkdir -p "${{ steps.pnpm-store.outputs.path }}"
+          mkdir -p .turbo
 
       - name: Restore pnpm cache
         uses: actions/cache@v4
