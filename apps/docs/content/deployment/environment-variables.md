@@ -128,7 +128,9 @@ echo $(head -c 32 /dev/urandom | xxd -p -c 64)
 |----------|------|----------|---------|---------|-------------|
 | `LOGTO_ISSUER` | `string` | No | — | Both | OIDC issuer URL (e.g., Logto instance). Required for production. |
 | `LOGTO_AUDIENCE` | `string` | No | — | Both | OIDC audience identifier. Typically your API URL. |
-| `LUMIBASE_DEV_AUTH` | `string` | No | `false` | Both | Enable dev auth mode. Accepts `Bearer dev:<logtoId>` tokens. **Never enable in production.** |
+| `JWT_SECRET` | `string` | Yes in production | — | Both | Secret used for application JWT verification/signing. In Cloudflare production, set with `wrangler secret put JWT_SECRET --env production`; never hardcode in `[env.production.vars]`. |
+| `JWT_SECRET_FILE` | `string` | No | — | Docker | File path containing `JWT_SECRET`. Used for Docker secrets when `JWT_SECRET` is unset. |
+| `LUMIBASE_DEV_AUTH` | `string` | No | `false` | Both | Enable dev auth mode. Accepts `Bearer dev:<logtoId>` tokens. **Never enable in production; `pnpm release:check` blocks production deploys when it is `true`.** |
 
 ### Authentication Examples
 
@@ -191,6 +193,9 @@ Secrets set via `wrangler secret put`:
 
 | Secret | Description |
 |--------|-------------|
+| `JWT_SECRET` | Application JWT signing/verification secret |
+| `CF_ACCESS_CERTS_URL` | Cloudflare Access JWKS URL |
+| `CF_ACCESS_AUDIENCE` | Cloudflare Access application audience tag |
 | `LOGTO_ISSUER` | OIDC issuer URL |
 | `LOGTO_AUDIENCE` | OIDC audience |
 | `ENCRYPTION_KEY` | AES-GCM key |
