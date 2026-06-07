@@ -60,7 +60,7 @@ cp docker/.env.example docker/.env
 # Edit docker/.env with your values
 
 # Start all services with a pinned CMS image version
-LUMIBASE_VERSION=0.4.2 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=0.4.3 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 
 # Check status
 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml ps
@@ -399,17 +399,17 @@ For Compose production deploys, set the desired image tag with `LUMIBASE_VERSION
 pull the CMS image, and recreate the service:
 
 ```bash
-LUMIBASE_VERSION=0.4.2 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml pull cms
-LUMIBASE_VERSION=0.4.2 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d cms
+LUMIBASE_VERSION=0.4.3 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml pull cms
+LUMIBASE_VERSION=0.4.3 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d cms
 ```
 
 For standalone containers:
 
 ```bash
-docker pull ghcr.io/khuepm/lumibase-cms:0.4.2
+docker pull ghcr.io/khuepm/lumibase-cms:0.4.3
 docker stop lumibase-cms
 docker rm lumibase-cms
-docker run -d --name lumibase-cms ... ghcr.io/khuepm/lumibase-cms:0.4.2
+docker run -d --name lumibase-cms ... ghcr.io/khuepm/lumibase-cms:0.4.3
 ```
 
 Migrations run automatically on container startup. Before upgrading to any release whose changelog includes a `Migrations` section with pending database changes, create and verify a database backup or storage snapshot first.

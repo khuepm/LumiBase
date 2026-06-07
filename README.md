@@ -86,6 +86,14 @@ The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire
 
 Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
+Current release: `v0.4.3` (`2026-06-07`). This release adds the Agent Harness Layer foundation, expands AI provider support for OpenAI, Gemini, Claude/Anthropic, Workers AI, and echo testing, and includes database migration `0018_agent_harness.sql`.
+
+```bash
+LUMIBASE_VERSION=0.4.3 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+```
+
+See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.
+
 ### Why port 1989?
 
 LumiBase uses `1989` as its default CMS API port as a small tribute to the Web's origin story: in March 1989, Tim Berners-Lee wrote the proposal that became the World Wide Web. The same year also evokes walls coming down, which fits a headless CMS built to separate backend content infrastructure from frontend presentation.

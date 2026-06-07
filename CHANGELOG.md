@@ -79,6 +79,101 @@ changelog and the published GitHub Release notes:
 - Backup scope: `<database|object storage|search index|configuration|none>`
 - Reason: `<why backup is or is not required>`
 
+## [0.4.3] - 2026-06-07
+
+### Version
+
+- `v0.4.3`
+
+### Date
+
+- `2026-06-07`
+
+### Highlights
+
+- Added the Agent Harness Layer foundation, including agent goals, runs,
+  plans, tool calls, approvals, artifacts, evaluations, memory, and tool
+  registry services.
+- Expanded AI provider support for LumiBase Copilot with model overrides,
+  Gemini function calling, Claude/Anthropic aliases, OpenAI model selection,
+  Workers AI model selection, and echo fallback tests.
+- Added Studio, SDK, OpenAPI, and documentation surfaces for agent harness
+  workflows and release/deployment operations.
+- Hardened CI and release workflows for pnpm setup, cache behavior, build
+  metadata, Docker publishing, and Pages deployment.
+- Fixed SCIM tenant authorization scoping.
+
+### Breaking changes
+
+- None.
+
+### Migrations
+
+- Includes database migration `0018_agent_harness.sql`.
+- The migration adds Agent Harness tables and indexes for goals, runs, plans,
+  tool registry, permissions, tool calls, approvals, artifacts, evaluations,
+  and memory.
+- Compatible DB/schema: `v0.4.2` schema upgraded through
+  `0018_agent_harness.sql`.
+- No destructive schema changes are included.
+
+### Upgrade steps
+
+1. Review the breaking changes and migrations above.
+2. Confirm the target Docker image tag exists:
+   `ghcr.io/.../lumibase-cms:0.4.3`.
+3. Take a database backup before applying the Agent Harness migration.
+4. Deploy the `v0.4.3` image or Cloudflare Worker release.
+5. Run database migrations through `0018_agent_harness.sql`.
+6. Verify `/api/v1/agent/*`, `/api/v1/ai/chat`, `/health`, Studio settings,
+   and critical CMS workflows.
+
+### Rollback notes
+
+- Application rollback to `v0.4.2` is safe if the new Agent Harness tables are
+  unused.
+- If production data has been written to Agent Harness tables and must be
+  preserved exactly, take a database backup before rollback and avoid dropping
+  the new tables.
+- No destructive rollback migration is provided for `0018_agent_harness.sql`.
+
+### Docker image tags
+
+- CMS: `ghcr.io/.../lumibase-cms:0.4.3`
+- Optional immutable digest: `ghcr.io/.../lumibase-cms@sha256:<digest>`
+
+### Compatibility DB/schema
+
+- Compatible DB/schema: `v0.4.2` plus `0018_agent_harness.sql`.
+- Minimum supported database engine/version: PostgreSQL 16 or the version
+  supported by the target deployment environment.
+
+### Backup guidance
+
+- Backup required: Yes.
+- Backup scope: database.
+- Reason: this release introduces new Agent Harness database tables and
+  indexes.
+
+### Added
+
+- Added Agent Harness database schema, runtime services, Studio settings page,
+  SDK types, OpenAPI routes, and English/Vietnamese feature documentation.
+- Added Gemini provider support for AI Copilot through REST
+  `generateContent` function declarations.
+- Added provider-level model override support via `LLM_MODEL` for OpenAI,
+  Anthropic/Claude, Gemini, and Workers AI.
+- Added provider factory and tool-call parsing tests for OpenAI, Claude,
+  Gemini, and echo fallback.
+- Added developer integration examples and expanded AI-readable repo docs.
+
+### Fixed
+
+- Fixed SCIM tenant authorization scoping.
+- Fixed CI pnpm cache handling for `actions/setup-node@v5`.
+- Fixed release and deploy workflow setup for build metadata, Docker images,
+  Pages apps, and package publishing.
+
 ## [0.4.2] - 2026-06-07
 
 ### Version

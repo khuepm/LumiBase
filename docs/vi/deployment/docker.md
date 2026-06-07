@@ -29,7 +29,7 @@ Pin CMS image bằng `LUMIBASE_VERSION` để production chạy đúng release m
 Nếu không set, `docker/docker-compose.prod.yml` sẽ fallback về `latest`.
 
 ```bash
-LUMIBASE_VERSION=0.4.2 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=0.4.3 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 Kiểm tra API:

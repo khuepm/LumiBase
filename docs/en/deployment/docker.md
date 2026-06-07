@@ -30,7 +30,7 @@ Pin the CMS image with `LUMIBASE_VERSION` so production runs a predictable
 release. If unset, `docker/docker-compose.prod.yml` falls back to `latest`.
 
 ```bash
-LUMIBASE_VERSION=0.4.2 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=0.4.3 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 Verify the API:
