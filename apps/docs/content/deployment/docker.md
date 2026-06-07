@@ -432,6 +432,16 @@ docker compose pull cms
 docker compose up -d cms
 ```
 
+## Rollback
+
+To roll back a Compose production deployment, change `LUMIBASE_VERSION` back to
+the previous version, then pull and recreate the CMS service:
+
+```bash
+docker compose pull cms
+docker compose up -d cms
+```
+
 ## Next Steps
 
 - [Environment Variables Reference](./environment-variables.md) — All configuration options
