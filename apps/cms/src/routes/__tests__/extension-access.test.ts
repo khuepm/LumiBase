@@ -186,6 +186,65 @@ describe('extension management access', () => {
     expect(state.inserts).toHaveLength(2);
   });
 
+  it('requires enable and grant_capability permissions when creating active extensions with capabilities', async () => {
+    const createPayload = {
+      name: 'Search',
+      version: '1.0.0',
+      type: 'endpoint',
+      enabled: true,
+      bundleUrl: 'https://cdn.example/search.js',
+      capabilities: ['db:write'],
+    };
+    const createdRow = { id: 'ext_1', siteId: SITE_ID, key: 'search', ...createPayload };
+    const { db, state } = makeDb([
+      ...permissionRows(['install']),
+      ...permissionRows([]),
+      ...permissionRows(['install']),
+      ...permissionRows(['enable']),
+      ...permissionRows([]),
+      ...permissionRows(['install']),
+      ...permissionRows(['enable']),
+      ...permissionRows(['grant_capability']),
+      [createdRow],
+    ]);
+    const app = buildApp(db);
+
+    const enableRes = await app.request('/api/v1/extensions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(createPayload),
+    });
+    const capabilityRes = await app.request('/api/v1/extensions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(createPayload),
+    });
+    const allowedRes = await app.request('/api/v1/extensions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(createPayload),
+    });
+
+    expect(enableRes.status).toBe(403);
+    expect(await enableRes.json()).toEqual({
+      errors: [{ code: 'FORBIDDEN', message: 'Action "extensions:enable" is not allowed.' }],
+    });
+    expect(capabilityRes.status).toBe(403);
+    expect(await capabilityRes.json()).toEqual({
+      errors: [{ code: 'FORBIDDEN', message: 'Action "extensions:grant_capability" is not allowed.' }],
+    });
+    expect(allowedRes.status).toBe(200);
+    expect(state.inserts).toEqual([
+      {
+        ...createPayload,
+        key: 'search',
+        manifest: {},
+        siteId: SITE_ID,
+        installedBy: USER_ID,
+      },
+    ]);
+  });
+
   it('maps patch payloads to configure, enable, and grant_capability permissions', async () => {
     const updateRow = { id: 'ext_1', siteId: SITE_ID, name: 'Search', enabled: true };
     const { db, state } = makeDb([
