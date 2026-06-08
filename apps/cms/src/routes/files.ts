@@ -22,7 +22,9 @@ async function signUploadToken(payload: { key: string; siteId: string }, secret:
 async function verifyUploadToken(token: string, secret: string): Promise<{ key: string; siteId: string }> {
   const encoder = new TextEncoder();
   const secretKey = encoder.encode(secret);
-  const { payload } = await jwtVerify(token, secretKey);
+  const { payload } = await jwtVerify(token, secretKey, {
+    algorithms: ['HS256'],
+  });
   return payload as { key: string; siteId: string };
 }
 

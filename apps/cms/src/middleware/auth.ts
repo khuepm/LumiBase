@@ -20,7 +20,9 @@ const getJwks = (certsUrl: string) => {
 async function verifyCustomJwt(token: string, secret: string): Promise<any> {
   const encoder = new TextEncoder();
   const secretKey = encoder.encode(secret);
-  const { payload } = await jwtVerify(token, secretKey);
+  const { payload } = await jwtVerify(token, secretKey, {
+    algorithms: ['HS256'],
+  });
   return payload;
 }
 
@@ -124,6 +126,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     try {
       const { payload } = await jwtVerify(cfAccessAssertion, getJwks(certsUrl), {
         audience,
+        algorithms: ['RS256'],
       });
 
       const principal: AuthPrincipal = {
