@@ -1,0 +1,134 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "title": "Lumibase Agent Harness",
+  "uid": "lumibase-agent-harness",
+  "tags": ["lumibase", "agent-harness"],
+  "schemaVersion": 39,
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "version": 1,
+  "panels": [
+    {
+      "title": "Runs by status",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_agent_runs_total[5m])) by (status, stop_reason)",
+          "legendFormat": "{{status}} / {{stop_reason}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+    },
+    {
+      "title": "Tool latency p95",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(lumibase_agent_tool_latency_seconds_bucket[5m])) by (le, tool, status))",
+          "legendFormat": "{{tool}} / {{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+    },
+    {
+      "title": "Approval decisions",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_agent_approvals_total[5m])) by (subject_type, status)",
+          "legendFormat": "{{subject_type}} / {{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+    },
+    {
+      "title": "Approval latency p95",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(lumibase_agent_approval_latency_seconds_bucket[15m])) by (le, subject_type, status))",
+          "legendFormat": "{{subject_type}} / {{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+    },
+    {
+      "title": "Evaluation outcomes",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_agent_evaluations_total[5m])) by (kind, status)",
+          "legendFormat": "{{kind}} / {{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+    },
+    {
+      "title": "Estimated token and cost",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_agent_estimated_tokens_total[5m])) by (tool)",
+          "legendFormat": "tokens {{tool}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(lumibase_agent_estimated_cost_usd_total[5m])) by (tool)",
+          "legendFormat": "usd {{tool}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+    },
+    {
+      "title": "Dead-letter enqueue rate",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_agent_dead_letters_total[15m])) * 60",
+          "legendFormat": "DLQ/min",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

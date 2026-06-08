@@ -446,11 +446,15 @@ function EssentialsStep({
               )}
             </button>
           </div>
-          <ul className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+          <ul className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
             {Object.entries(PASSWORD_RULE_LABELS).map(([key, label]) => {
               const passed = passwordRules[key as keyof typeof passwordRules];
               return (
-                <li key={key} className="flex items-center gap-1.5">
+                <li
+                  key={key}
+                  className={`flex items-center gap-1.5 ${passed ? 'font-semibold text-emerald-700' : 'text-muted-foreground'
+                    }`}
+                >
                   <Check
                     className={passed ? 'h-3.5 w-3.5 text-emerald-600' : 'h-3.5 w-3.5 text-muted-foreground/50'}
                     aria-hidden="true"
@@ -795,7 +799,7 @@ function SimpleProgress({
   onStepSelect: (step: SimpleStep) => void;
 }) {
   return (
-    <ol className="grid gap-2 sm:grid-cols-3">
+    <ol className="grid gap-2 sm:grid-cols-3 cursor-pointer">
       {SIMPLE_STEPS.map((item, index) => {
         const done = index < activeIndex;
         const active = index === activeIndex;

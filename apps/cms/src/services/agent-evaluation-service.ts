@@ -1,6 +1,7 @@
 import { agentArtifacts, agentEvaluations, type Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { stableHash } from './agent-artifact-service';
+import { agentEvaluationsTotal } from './agent-metrics';
 
 export class AgentEvaluationService {
   constructor(
@@ -49,6 +50,7 @@ export class AgentEvaluationService {
       })
       .returning();
 
+    agentEvaluationsTotal.inc({ kind: evaluation!.kind, status: evaluation!.status });
     return evaluation!;
   }
 }

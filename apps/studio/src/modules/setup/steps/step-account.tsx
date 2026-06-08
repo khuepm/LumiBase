@@ -557,7 +557,7 @@ function RuleRow({ ok, label }: RuleRowProps) {
           aria-hidden="true"
         />
       )}
-      <span className={ok ? 'text-emerald-700' : 'text-muted-foreground'}>
+      <span className={ok ? 'font-semibold text-emerald-700' : 'text-muted-foreground'}>
         <span className="sr-only">{ok ? 'Met: ' : 'Not met: '}</span>
         {label}
       </span>

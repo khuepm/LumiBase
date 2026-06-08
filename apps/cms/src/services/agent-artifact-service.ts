@@ -94,10 +94,27 @@ export class AgentArtifactService {
     if (!artifact) {
       return { allowed: false, message: 'Artifact not found' };
     }
+    if (artifact.status === 'published') {
+      return { allowed: true, artifact };
+    }
+    if (artifact.status === 'rejected') {
+      return { allowed: false, message: 'Rejected artifacts cannot be published' };
+    }
 
     const requiresEval = artifact.type === 'schema_diff' || artifact.type === 'migration';
+    const [latestEval] = await this.db
+      .select()
+      .from(agentEvaluations)
+      .where(and(eq(agentEvaluations.siteId, this.siteId), eq(agentEvaluations.artifactId, artifactId)))
+      .orderBy(desc(agentEvaluations.createdAt))
+      .limit(1);
+
+    if (latestEval?.artifactHash && latestEval.artifactHash !== artifact.hash) {
+      return { allowed: false, message: 'Artifact changed after evaluation; run evaluation again' };
+    }
+
     if (requiresEval && !overrideReason) {
-      const [passingEval] = await this.db
+      const passingEval = await this.db
         .select()
         .from(agentEvaluations)
         .where(
@@ -108,7 +125,7 @@ export class AgentArtifactService {
           ),
         )
         .limit(1);
-      if (!passingEval) {
+      if (passingEval.length === 0) {
         return { allowed: false, message: 'Artifact requires a passing evaluation before publish' };
       }
     }
@@ -121,6 +138,38 @@ export class AgentArtifactService {
           ...(artifact.metadata as Record<string, unknown>),
           overrideReason: overrideReason ?? null,
           publishedAt: new Date().toISOString(),
+        },
+        updatedAt: new Date(),
+      })
+      .where(and(eq(agentArtifacts.id, artifactId), eq(agentArtifacts.siteId, this.siteId)))
+      .returning();
+
+    return { allowed: true, artifact: updated };
+  }
+
+  async rollbackArtifact(artifactId: string, reason?: string) {
+    const [artifact] = await this.db
+      .select()
+      .from(agentArtifacts)
+      .where(and(eq(agentArtifacts.id, artifactId), eq(agentArtifacts.siteId, this.siteId)));
+    if (!artifact) {
+      return { allowed: false, message: 'Artifact not found' };
+    }
+    if (artifact.status === 'rolled_back') {
+      return { allowed: true, artifact };
+    }
+    if (artifact.status !== 'published') {
+      return { allowed: false, message: 'Only published artifacts can be rolled back' };
+    }
+
+    const [updated] = await this.db
+      .update(agentArtifacts)
+      .set({
+        status: 'rolled_back',
+        metadata: {
+          ...(artifact.metadata as Record<string, unknown>),
+          rollbackReason: reason ?? null,
+          rolledBackAt: new Date().toISOString(),
         },
         updatedAt: new Date(),
       })

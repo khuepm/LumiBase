@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { agentApprovalLatency, agentApprovalsTotal } from '../services/agent-metrics';
 import { AgentArtifactService } from '../services/agent-artifact-service';
 import { AgentEvaluationService } from '../services/agent-evaluation-service';
 import { AgentMemoryService } from '../services/agent-memory-service';
@@ -86,12 +87,12 @@ agentRouter.post('/goals', async (c) => {
 });
 
 agentRouter.get('/runs', async (c) => {
-  const service = new AgentRunService(c.get('db'), c.get('siteId'));
+  const service = new AgentRunService(c.get('db'), c.get('siteId'), c.get('runtime').queue);
   return c.json({ data: await service.listRuns() });
 });
 
 agentRouter.post('/runs/:id/retry', async (c) => {
-  const service = new AgentRunService(c.get('db'), c.get('siteId'));
+  const service = new AgentRunService(c.get('db'), c.get('siteId'), c.get('runtime').queue);
   const retry = await service.retryRun(c.req.param('id'));
   if (!retry) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Run not found' }] }, 404);
@@ -131,6 +132,22 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
   const auth = c.get('auth');
+  const [existing] = await db
+    .select()
+    .from(agentApprovals)
+    .where(and(eq(agentApprovals.id, c.req.param('id')), eq(agentApprovals.siteId, siteId)))
+    .limit(1);
+
+  if (!existing) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Approval not found' }] }, 404);
+  }
+  if (existing.status !== 'pending') {
+    return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
+  }
+  if (existing.expiresAt && existing.expiresAt <= new Date()) {
+    return c.json({ errors: [{ code: 'EXPIRED', message: 'Approval expired' }] }, 409);
+  }
+
   const [record] = await db
     .update(agentApprovals)
     .set({
@@ -145,6 +162,11 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
   if (!record) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Approval not found' }] }, 404);
   }
+  agentApprovalsTotal.inc({ subject_type: record.subjectType, status: record.status });
+  agentApprovalLatency.observe(
+    { subject_type: record.subjectType, status: record.status },
+    (Date.now() - record.createdAt.getTime()) / 1000,
+  );
   return c.json({ data: record });
 });
 
@@ -184,6 +206,19 @@ agentRouter.post('/artifacts/:id/publish', async (c) => {
   return c.json({ data: result.artifact });
 });
 
+agentRouter.post('/artifacts/:id/rollback', async (c) => {
+  const body = z.object({ reason: z.string().optional() }).safeParse(await c.req.json().catch(() => ({})));
+  if (!body.success) {
+    return validationError(c, body.error);
+  }
+  const service = new AgentArtifactService(c.get('db'), c.get('siteId'));
+  const result = await service.rollbackArtifact(c.req.param('id'), body.data.reason);
+  if (!result.allowed) {
+    return c.json({ errors: [{ code: 'FORBIDDEN', message: result.message }] }, 403);
+  }
+  return c.json({ data: result.artifact });
+});
+
 agentRouter.get('/memory', async (c) => {
   const service = new AgentMemoryService(c.get('db'), c.get('siteId'));
   return c.json({ data: await service.buildContext({ scope: c.req.query('scope'), scopeId: c.req.query('scopeId') }) });
@@ -207,7 +242,7 @@ agentRouter.post('/generate-app', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
   const auth = c.get('auth');
-  const runService = new AgentRunService(db, siteId);
+  const runService = new AgentRunService(db, siteId, c.get('runtime').queue);
   const artifactService = new AgentArtifactService(db, siteId);
   const evaluationService = new AgentEvaluationService(db, siteId);
 
@@ -241,14 +276,43 @@ agentRouter.post('/generate-app', async (c) => {
     },
     metadata: { approvalPolicy: parsed.data.approvalPolicy },
   });
+  const seedArtifact = await artifactService.createArtifact({
+    runId: run.runId,
+    type: 'seed_data',
+    title: `${parsed.data.targetApp} seed data`,
+    content: {
+      collections: Object.fromEntries(
+        parsed.data.collections.map((collection) => [
+          collection,
+          [{ id: `${collection}_sample`, status: 'draft' }],
+        ]),
+      ),
+    },
+    metadata: { approvalPolicy: parsed.data.approvalPolicy },
+  });
+  const apiArtifact = await artifactService.createArtifact({
+    runId: run.runId,
+    type: 'api_spec',
+    title: `${parsed.data.targetApp} API spec`,
+    content: {
+      openapi: '3.1.0',
+      info: { title: `${parsed.data.targetApp} generated API`, version: '0.1.0' },
+      paths: Object.fromEntries(
+        parsed.data.collections.map((collection) => [`/${collection}`, { get: { summary: `List ${collection}` } }]),
+      ),
+    },
+    metadata: { approvalPolicy: parsed.data.approvalPolicy },
+  });
 
   const evaluations = await Promise.all([
     evaluationService.evaluateArtifact({ runId: run.runId, artifactId: pageArtifact.id }),
     evaluationService.evaluateArtifact({ runId: run.runId, artifactId: componentArtifact.id }),
+    evaluationService.evaluateArtifact({ runId: run.runId, artifactId: seedArtifact.id }),
+    evaluationService.evaluateArtifact({ runId: run.runId, artifactId: apiArtifact.id }),
   ]);
-  await runService.closeRun(run.runId, { artifacts: 2, evaluations: evaluations.length });
+  await runService.closeRun(run.runId, { artifacts: 4, evaluations: evaluations.length });
 
-  return c.json({ data: { run, artifacts: [pageArtifact, componentArtifact], evaluations } }, 201);
+  return c.json({ data: { run, artifacts: [pageArtifact, componentArtifact, seedArtifact, apiArtifact], evaluations } }, 201);
 });
 
 function validationError(c: Context<AppEnv>, error: z.ZodError) {

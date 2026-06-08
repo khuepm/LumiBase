@@ -147,7 +147,7 @@ Goal → Context package → Plan → Tool calls → Validation/Evaluation
 → Human approval if needed → Commit artifact/result → Audit trail + Memory update
 ```
 
-Implementation hiện tại đã có `AISecureHarness`, `ai_approvals`, conversation history và embeddings. Roadmap tiếp theo là first-class `agent_goals`, `agent_runs`, `agent_tool_calls`, `agent_artifacts`, `agent_evaluations` và tool registry có capability/risk policy rõ ràng. Blueprint chi tiết nằm ở [Agent Harness Layer](../features/agent-harness-layer.md).
+Implementation hiện tại đã có `AISecureHarness`, backward-compatible `ai_approvals`, first-class `agent_goals`, `agent_runs`, `agent_tool_calls`, `agent_artifacts`, `agent_evaluations`, `agent_approvals`, memory, tool registry và app-generation MVP. Run fail lặp lại được đẩy vào `agent-dead-letter` khi runtime queue adapter khả dụng; Prometheus/Grafana theo dõi run status, approval latency, tool latency, eval fail rate và token/cost estimate. Blueprint chi tiết nằm ở [Agent Harness Layer](../features/agent-harness-layer.md).
 
 ## 4. Caching & Vô hiệu hoá cache
 

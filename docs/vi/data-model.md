@@ -307,7 +307,9 @@ Các collection sau là nền tảng hiện tại để LumiBase vận hành AI 
 | `agent_approvals` | Approval tổng quát cho plan/tool/artifact | `runId`, `subjectType`, `subjectId`, `status`, `decidedBy`, `reason` |
 | `agent_permissions` | Mapping agent/role/policy/capability | `agentName`, `policyId`, `capabilities`, `validFrom`, `validUntil` |
 
-Các API runtime nằm dưới `/api/v1/agent/*`: goals, runs, tools, approvals, artifacts, memory và `generate-app`. `AISecureHarness` vẫn giữ `/ai/*` backward-compatible nhưng khi chạy với service thật sẽ tự tạo transient goal/run và ghi `agent_tool_calls`/`agent_approvals`.
+Các API runtime nằm dưới `/api/v1/agent/*`: goals, runs, tools, approvals, artifacts, memory và `generate-app`. `generate-app` tạo bộ artifact MVP gồm `page_spec`, `component_spec`, `seed_data`, `api_spec` và chạy evaluation trước khi trả kết quả. `AISecureHarness` vẫn giữ `/ai/*` backward-compatible nhưng khi chạy với service thật sẽ tự tạo transient goal/run và ghi `agent_tool_calls`/`agent_approvals`.
+
+Vận hành: `agent_runs.metrics.stopReason` ghi lý do dừng như `completed`, `error`, `max_tool_calls`; `agent_tool_calls.cost` ghi token/cost estimate đã mask secret. Khi một goal fail lặp lại ít nhất 3 run và runtime có `QueueProvider`, service enqueue job vào queue `agent-dead-letter` với `siteId`, `goalId`, `runId`, `agentName`, `error`, `stopReason`.
 
 Thiết kế bắt buộc: mọi bảng domain có `siteId`, index `(siteId, ...)`, audit metadata, và không cho prompt tự nâng quyền ngoài `agent_permissions`/policy snapshot.
 

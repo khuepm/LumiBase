@@ -116,6 +116,15 @@ agent tasks:
 
 Artifact được commit ngược về LumiBase để con người review, version, publish hoặc rollback.
 
+MVP hiện tại trả 4 artifact từ `/api/v1/agent/generate-app`: `page_spec`, `component_spec`, `seed_data`, `api_spec`. Publish idempotent, artifact đã publish có thể rollback, và schema/migration artifact fail evaluation không được publish nếu không có override reason.
+
+## 6.1. Runtime limitations & operations
+
+- **Cloudflare Workers**: route CMS và service Drizzle-backed chạy trong Worker runtime; evaluation runner MVP giữ ngắn và synchronous để tránh vượt request runtime.
+- **Docker / Node.js**: cùng API và service chạy qua Docker runtime, dùng BullMQ/Redis khi cần queue.
+- **Queues**: run fail lặp lại dùng runtime `QueueProvider` để enqueue `agent-dead-letter`; nếu không có queue adapter, audit trail vẫn nằm trong `agent_runs` và `agent_tool_calls`.
+- **Observability**: Prometheus metrics bao phủ run status, stop reason, tool latency, approval latency, evaluation status, token/cost estimate và dead-letter enqueue rate. Docker mode auto-load dashboard Grafana `Lumibase Agent Harness`.
+
 ## 7. Roadmap ứng dụng vào LumiBase
 
 Roadmap chi tiết theo checklist nằm ở [Roadmap triển khai Agent Harness Layer](../roadmap/agent-harness-implementation.md). Tóm tắt các chặng chính:

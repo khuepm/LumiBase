@@ -24,6 +24,14 @@ Implementation: `apps/cms/src/routes/metrics.ts` + middleware `withMetrics()`.
 | `lumibase_queue_depth` | gauge | `queue` |
 | `lumibase_db_pool_active` | gauge | — |
 | `lumibase_db_pool_idle` | gauge | — |
+| `lumibase_agent_runs_total` | counter | `agent`, `status`, `stop_reason` |
+| `lumibase_agent_tool_latency_seconds` | histogram | `tool`, `status` |
+| `lumibase_agent_approvals_total` | counter | `subject_type`, `status` |
+| `lumibase_agent_approval_latency_seconds` | histogram | `subject_type`, `status` |
+| `lumibase_agent_evaluations_total` | counter | `kind`, `status` |
+| `lumibase_agent_estimated_tokens_total` | counter | `tool` |
+| `lumibase_agent_estimated_cost_usd_total` | counter | `tool` |
+| `lumibase_agent_dead_letters_total` | counter | `agent`, `reason` |
 
 Backend: `prom-client` (works trên Node + emulated trong Workers).
 
@@ -72,7 +80,7 @@ Toàn bộ stack chạy qua `docker compose -f docker-compose.yml -f docker-comp
 | Promtail | — | Log shipping (per-host) |
 | pg-backup | — | Scheduled `pg_dump` |
 
-Config: `docker/prometheus/prometheus.yml`, `docker/grafana/provisioning/`, `docker/grafana/dashboards/lumibase.json`.
+Config: `docker/prometheus/prometheus.yml`, `docker/grafana/provisioning/`, `docker/grafana/dashboards/lumibase.json`, `docker/grafana/dashboards/agent-harness.json`.
 
 ## Pre-provisioned Grafana dashboard
 
@@ -85,6 +93,8 @@ Dashboard `Lumibase` (auto-loaded) bao gồm:
 - **Cache hit ratio** (%).
 - **DB pool utilization** (active vs idle).
 - **CPU / Memory** of CMS container.
+
+Dashboard `Lumibase Agent Harness` bao gồm run success/fail rate, budget stop reason, tool latency, approval latency, evaluation outcome, token/cost estimate và dead-letter enqueue rate. Run fail lặp lại được đẩy vào queue `agent-dead-letter` khi runtime queue adapter khả dụng.
 
 ## Backup monitoring
 

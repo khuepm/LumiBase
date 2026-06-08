@@ -301,6 +301,13 @@ actions also write linked/generalized `agent_approvals` records where applicable
 All harness tables include `siteId` and must be queried through tenant-scoped
 filters.
 
+Operational notes:
+
+- `POST /api/v1/agent/generate-app` creates `page_spec`, `component_spec`, `seed_data`, and `api_spec` artifacts and evaluates each artifact before returning.
+- `agent_runs.metrics.stopReason` records completion or budget stop reasons such as `completed`, `error`, and `max_tool_calls`.
+- `agent_tool_calls.cost` stores token/cost estimates after secret masking.
+- If the same goal fails at least three runs and a runtime `QueueProvider` is available, the run service enqueues `agent-dead-letter` with the scoped run failure payload.
+
 ## 11. Indexing & RLS
 
 - Bắt buộc index `(siteId, …)` ở mọi bảng domain.

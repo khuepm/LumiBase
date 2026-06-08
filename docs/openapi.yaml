@@ -51,6 +51,8 @@ tags:
     description: Automation flows — create, run, inspect
   - name: ai
     description: AI Copilot — chat, HITL approvals
+  - name: agent
+    description: Agent Harness lifecycle, artifacts, evaluations, approvals, and app generation
   - name: settings
     description: Site-wide settings
   - name: utils
@@ -833,3 +835,140 @@ paths:
                     properties:
                       version: { type: string }
                       runtime: { type: string }
+
+  # ─── Agent Harness ───────────────────────────────────────────────────────
+  /api/v1/agent/runs:
+    get:
+      tags: [agent]
+      summary: List agent runs
+      responses:
+        '200':
+          description: Runs for the active site
+
+  /api/v1/agent/runs/{id}/retry:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [agent]
+      summary: Retry an agent run
+      description: Creates a new run linked by retryOfRunId. The failed run audit trail is preserved.
+      responses:
+        '201':
+          description: Retry run created
+
+  /api/v1/agent/artifacts:
+    get:
+      tags: [agent]
+      summary: List agent artifacts
+      parameters:
+        - name: runId
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Artifacts for the active site
+    post:
+      tags: [agent]
+      summary: Create an agent artifact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [runId, type, title, content]
+              properties:
+                runId: { type: string }
+                type: { type: string, enum: [schema_diff, page_spec, component_spec, seed_data, api_spec, prompt, migration] }
+                title: { type: string }
+                target: { type: string }
+                content: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: Artifact created
+
+  /api/v1/agent/artifacts/{id}/evaluate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+      - name: runId
+        in: query
+        required: true
+        schema: { type: string }
+    post:
+      tags: [agent]
+      summary: Evaluate an agent artifact
+      responses:
+        '200':
+          description: Evaluation result
+
+  /api/v1/agent/artifacts/{id}/publish:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [agent]
+      summary: Publish an agent artifact
+      description: Schema and migration artifacts require a passing evaluation unless an override reason is supplied.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                overrideReason: { type: string }
+      responses:
+        '200':
+          description: Published artifact
+
+  /api/v1/agent/artifacts/{id}/rollback:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [agent]
+      summary: Roll back a published agent artifact
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: Rolled-back artifact
+
+  /api/v1/agent/generate-app:
+    post:
+      tags: [agent]
+      summary: Generate app artifacts from schema
+      description: Creates a run plus page_spec, component_spec, seed_data, and api_spec artifacts, then evaluates each artifact.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                collections:
+                  type: array
+                  items: { type: string }
+                targetApp: { type: string }
+                constraints: { type: object, additionalProperties: true }
+                budget: { type: object, additionalProperties: true }
+                approvalPolicy: { type: string }
+      responses:
+        '201':
+          description: Run, artifacts, and evaluations created

@@ -83,8 +83,8 @@ filesRouter.delete('/folders/:id', async (c) => {
 });
 
 // --- Files ---
-// In a real implementation, we would issue presigned R2 URLs.
-// Here we mock the file entity creation.
+// File bytes are uploaded through the JWT-signed upload endpoint below; this
+// route persists the file entity after storage accepts the stream.
 const fileCreateSchema = z.object({
   filenameDisk: z.string(),
   filenameDownload: z.string(),
