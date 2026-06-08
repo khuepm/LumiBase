@@ -1,4 +1,5 @@
 import type { FieldResource } from '@lumibase/sdk';
+import { AioInterface } from './aio';
 import { CodeInterface } from './code';
 import { ColorInterface } from './color';
 import { DatetimeInterface } from './datetime';
@@ -60,6 +61,7 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   'presentation-notice': PresentationInterface,
   'translatable-text': TranslatableText,
   seo: SeoInterface,
+  aio: AioInterface,
 
   // Aliases by underlying type so collections without an explicit interface
   // still get a sensible editor.

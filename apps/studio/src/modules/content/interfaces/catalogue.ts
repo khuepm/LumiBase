@@ -132,6 +132,15 @@ export const INTERFACE_CATALOGUE: InterfaceCatalogueItem[] = [
     width: 'full',
   },
   {
+    id: 'aio',
+    label: 'AIO',
+    description: 'AI overview prompts, entity hints, tone, and answer summary.',
+    type: 'json',
+    group: 'Content',
+    defaultOptions: { tones: ['neutral', 'expert', 'friendly'], summaryMaxLength: 300 },
+    width: 'full',
+  },
+  {
     id: 'json-raw',
     label: 'JSON (raw)',
     description: 'Raw JSON editor.',

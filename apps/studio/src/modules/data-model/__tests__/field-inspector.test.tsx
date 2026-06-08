@@ -141,4 +141,33 @@ describe('FieldInspector', () => {
       }),
     );
   });
+
+  it('applies AIO extension defaults from the catalogue', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <FieldInspector
+        state={{ ...baseState, options: {}, special: [], display: null }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+        isSubmitting={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/interface/i), { target: { value: 'aio' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        interface: 'aio',
+        type: 'json',
+        options: expect.objectContaining({
+          summaryMaxLength: 300,
+          tones: ['neutral', 'expert', 'friendly'],
+        }),
+        special: [],
+        width: 'full',
+      }),
+    );
+  });
 });
