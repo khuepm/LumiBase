@@ -60,6 +60,13 @@ async function requireExtensionPermission(
   );
 }
 
+function createActions(input: z.infer<typeof extensionSchema>): PermissionAction[] {
+  const actions = new Set<PermissionAction>(['install']);
+  if (input.enabled) actions.add('enable');
+  if (input.capabilities.length > 0) actions.add('grant_capability');
+  return [...actions];
+}
+
 function patchActions(input: Partial<z.infer<typeof extensionSchema>>): PermissionAction[] {
   const actions = new Set<PermissionAction>();
   if (Object.prototype.hasOwnProperty.call(input, 'enabled')) actions.add('enable');
@@ -95,13 +102,15 @@ extensionsRouter.get('/', async (c) => {
 });
 
 extensionsRouter.post('/', async (c) => {
-  const denied = await requireExtensionPermission(c, 'install');
-  if (denied) return denied;
-
   const siteId = c.get('siteId');
   const db = c.get('db');
   const auth = c.get('auth');
   const input = extensionSchema.parse(await c.req.json());
+
+  for (const action of createActions(input)) {
+    const denied = await requireExtensionPermission(c, action);
+    if (denied) return denied;
+  }
 
   const [row] = await db
     .insert(extensions)
