@@ -11,6 +11,7 @@ import { RatingInterface } from './rating';
 import { RelationM2OInterface } from './relation-m2o';
 import { RelationManyInterface } from './relation-many';
 import { RepeaterInterface } from './repeater';
+import { SeoInterface } from './seo';
 import { SelectDropdownInterface } from './select';
 import { SlugInterface } from './slug';
 import { TagsInterface } from './tags';
@@ -58,6 +59,7 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   'presentation-divider': PresentationInterface,
   'presentation-notice': PresentationInterface,
   'translatable-text': TranslatableText,
+  seo: SeoInterface,
 
   // Aliases by underlying type so collections without an explicit interface
   // still get a sensible editor.

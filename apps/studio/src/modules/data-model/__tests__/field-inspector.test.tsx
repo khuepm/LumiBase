@@ -112,4 +112,33 @@ describe('FieldInspector', () => {
       }),
     );
   });
+
+  it('applies SEO extension defaults from the catalogue', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <FieldInspector
+        state={{ ...baseState, options: {}, special: [], display: null }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+        isSubmitting={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/interface/i), { target: { value: 'seo' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        interface: 'seo',
+        type: 'json',
+        options: expect.objectContaining({
+          titleMaxLength: 70,
+          descriptionMaxLength: 160,
+        }),
+        special: [],
+        width: 'full',
+      }),
+    );
+  });
 });

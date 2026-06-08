@@ -119,6 +119,19 @@ export const INTERFACE_CATALOGUE: InterfaceCatalogueItem[] = [
     defaultDisplay: 'image',
   },
   {
+    id: 'seo',
+    label: 'SEO',
+    description: 'Title, description, canonical URL, robots, and social image.',
+    type: 'json',
+    group: 'Content',
+    defaultOptions: {
+      titleMaxLength: 70,
+      descriptionMaxLength: 160,
+      imageAccept: 'image/*',
+    },
+    width: 'full',
+  },
+  {
     id: 'json-raw',
     label: 'JSON (raw)',
     description: 'Raw JSON editor.',
