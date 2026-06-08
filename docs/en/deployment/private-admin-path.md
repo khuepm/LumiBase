@@ -17,7 +17,15 @@ In production, LumiBase must never use the stored admin path as a convenience re
 
 This prevents the browser address bar, referrers, proxies, monitoring tools, or screenshots from revealing the private admin path during normal setup completion or later probing.
 
-Local development may keep convenience redirects to speed up testing, but production behavior is authoritative and must remain no-redirect.
+Local development may keep convenience redirects to speed up testing. Production behavior is no-redirect by default.
+
+For controlled setup or debugging windows, operators may explicitly opt in by setting:
+
+```bash
+VITE_LUMIBASE_ALLOW_ADMIN_PATH_REDIRECT=true
+```
+
+Treat this as a temporary operational override. Disable it again after setup/debugging so production returns to the no-redirect policy.
 
 ## Operator Guidance
 

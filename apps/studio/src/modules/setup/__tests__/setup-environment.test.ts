@@ -6,6 +6,7 @@ describe('shouldAutoRedirectToAdmin', () => {
     expect(
       shouldAutoRedirectToAdmin({
         PROD: false,
+        VITE_LUMIBASE_ALLOW_ADMIN_PATH_REDIRECT: undefined,
         VITE_LUMIBASE_RELEASE_CHANNEL: 'development',
       }),
     ).toBe(true);
@@ -15,6 +16,7 @@ describe('shouldAutoRedirectToAdmin', () => {
     expect(
       shouldAutoRedirectToAdmin({
         PROD: true,
+        VITE_LUMIBASE_ALLOW_ADMIN_PATH_REDIRECT: undefined,
         VITE_LUMIBASE_RELEASE_CHANNEL: 'development',
       }),
     ).toBe(false);
@@ -24,8 +26,19 @@ describe('shouldAutoRedirectToAdmin', () => {
     expect(
       shouldAutoRedirectToAdmin({
         PROD: false,
+        VITE_LUMIBASE_ALLOW_ADMIN_PATH_REDIRECT: undefined,
         VITE_LUMIBASE_RELEASE_CHANNEL: ' production ',
       }),
     ).toBe(false);
+  });
+
+  it('allows an explicit setup/debug override', () => {
+    expect(
+      shouldAutoRedirectToAdmin({
+        PROD: true,
+        VITE_LUMIBASE_ALLOW_ADMIN_PATH_REDIRECT: ' true ',
+        VITE_LUMIBASE_RELEASE_CHANNEL: 'production',
+      }),
+    ).toBe(true);
   });
 });
