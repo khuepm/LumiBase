@@ -57,18 +57,20 @@ export function ItemDetailPage() {
     enabled: shareOpen && canShare,
     queryFn: async () => {
       const roles = (await client.roles.list()).data.filter((role) => !role.adminAccess && !role.appAccess);
-      const out = [];
-      for (const role of roles) {
-        const detail = (await client.roles.detail(role.id)).data;
-        const policyDetails = await Promise.all(
-          detail.policies.map((binding) => client.policies.detail(binding.policyId).then((res) => res.data)),
-        );
-        const permissions = policyDetails.flatMap((policy) => policy.permissions ?? []);
-        const hasRead = permissions.some((perm) => perm.collection === collection && perm.action === 'read');
-        const hasNonRead = permissions.some((perm) => perm.action !== 'read');
-        if (hasRead && !hasNonRead) out.push(role);
-      }
-      return out;
+      const out = await Promise.all(
+        roles.map(async (role) => {
+          const detail = (await client.roles.detail(role.id)).data;
+          const policyDetails = await Promise.all(
+            detail.policies.map((binding) => client.policies.detail(binding.policyId).then((res) => res.data)),
+          );
+          const permissions = policyDetails.flatMap((policy) => policy.permissions ?? []);
+          const hasRead = permissions.some((perm) => perm.collection === collection && perm.action === 'read');
+          const hasNonRead = permissions.some((perm) => perm.action !== 'read');
+          if (hasRead && !hasNonRead) return role;
+          return null;
+        })
+      );
+      return out.filter((role): role is NonNullable<typeof role> => role !== null);
     },
   });
 
