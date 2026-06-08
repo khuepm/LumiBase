@@ -87,4 +87,29 @@ describe('FieldInspector', () => {
       }),
     );
   });
+
+  it('applies catalogue defaults when selecting a relation interface', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <FieldInspector
+        state={{ ...baseState, options: {}, special: [], display: null }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+        isSubmitting={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/interface/i), { target: { value: 'relation-m2m' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        interface: 'relation-m2m',
+        type: 'alias',
+        display: 'relation',
+        options: expect.objectContaining({ collection: '', junctionCollection: '' }),
+        special: ['m2m'],
+      }),
+    );
+  });
 });
