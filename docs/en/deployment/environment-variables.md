@@ -17,6 +17,11 @@ This page documents every environment variable and Cloudflare binding used by Lu
 | `LUMIBASE_REALTIME_ENABLED` | ✗ | `true` | Set to `false` to disable WebSocket at deployment level |
 | `LUMIBASE_ADMIN_PATH` | ✗ | (random) | Custom path for Studio admin panel (security through obscurity) |
 
+The admin path is private operational state. Do not expose it through `VITE_*`
+environment variables or client build metadata, and do not automatically
+redirect public/setup routes to it in production. See
+[Private admin path](./private-admin-path.md).
+
 ---
 
 ## Authentication (Logto)

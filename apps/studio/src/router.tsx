@@ -10,6 +10,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { AppShell } from './components/app-shell';
 import { BareLayout } from './components/bare-layout';
 import { AdminReadyGate } from './modules/setup/admin-ready-gate';
+import { shouldAutoRedirectToAdmin } from './modules/setup/setup-environment';
 import { SetupLayout } from './modules/setup/setup-layout';
 import { SetupStateGate } from './modules/setup/setup-state-gate';
 import { useCompleteSetup } from './modules/setup/hooks/use-complete-setup';
@@ -137,12 +138,12 @@ function AdminRootRedirect() {
   const adminPath = useSetupStore((s) => s.adminPath);
 
   useEffect(() => {
-    if (adminPath) {
+    if (adminPath && shouldAutoRedirectToAdmin()) {
       navigate({ to: adminPath });
     }
   }, [adminPath, navigate]);
 
-  if (adminPath) {
+  if (adminPath && shouldAutoRedirectToAdmin()) {
     return <PageLoader />;
   }
 
