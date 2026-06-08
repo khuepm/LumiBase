@@ -119,6 +119,16 @@ export const INTERFACE_CATALOGUE: InterfaceCatalogueItem[] = [
     defaultDisplay: 'image',
   },
   {
+    id: 'files',
+    label: 'Files',
+    description: 'Multiple file upload and picker.',
+    type: 'alias',
+    group: 'File',
+    defaultOptions: { accept: 'image/*,application/pdf', limit: 15 },
+    defaultSpecial: ['files'],
+    defaultDisplay: 'relation',
+  },
+  {
     id: 'seo',
     label: 'SEO',
     description: 'Title, description, canonical URL, robots, and social image.',

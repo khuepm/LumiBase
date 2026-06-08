@@ -4,6 +4,7 @@ import { CodeInterface } from './code';
 import { ColorInterface } from './color';
 import { DatetimeInterface } from './datetime';
 import { FileInterface } from './file';
+import { FilesInterface } from './files';
 import { JsonRawInterface } from './json-raw';
 import { MarkdownInterface } from './markdown';
 import { NumberInterface } from './number';
@@ -56,6 +57,7 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   wysiwyg: WysiwygInterface,
   markdown: MarkdownInterface,
   file: FileInterface,
+  files: FilesInterface,
   repeater: RepeaterInterface,
   'presentation-divider': PresentationInterface,
   'presentation-notice': PresentationInterface,

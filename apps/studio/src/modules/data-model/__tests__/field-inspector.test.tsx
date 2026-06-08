@@ -170,4 +170,30 @@ describe('FieldInspector', () => {
       }),
     );
   });
+
+  it('applies Files extension defaults from the catalogue', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <FieldInspector
+        state={{ ...baseState, options: {}, special: [], display: null }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+        isSubmitting={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/interface/i), { target: { value: 'files' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        interface: 'files',
+        type: 'alias',
+        display: 'relation',
+        options: expect.objectContaining({ limit: 15 }),
+        special: ['files'],
+      }),
+    );
+  });
 });
