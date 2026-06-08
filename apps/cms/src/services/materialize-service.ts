@@ -6,7 +6,7 @@
  * traffic.
  *
  * Strategy:
- *   1. `createPhysicalTable()` — creates `mat_{target}` with flattened columns
+ *   1. `createPhysicalTable()` — creates `mat_{materialization_id}` with flattened columns
  *   2. `refreshPhysicalTable()` — TRUNCATE + INSERT INTO ... SELECT
  *   3. `dropPhysicalTable()` — drops the physical table
  *   4. `installAutoRefreshTrigger()` — creates a PG trigger for auto-refresh
@@ -41,13 +41,20 @@ export interface RefreshResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Sanitize a target name to prevent SQL injection in DDL.
- * Only allows lowercase alphanumeric + underscores, max 63 chars.
+ * Sanitize a materialization id to prevent SQL injection in DDL.
+ *
+ * Physical table names must be unique per materialization, not just per target:
+ * target names are only unique within a site and may be reused by other
+ * tenants. Using the metadata id keeps DDL, refreshes, drops, and reads scoped
+ * to a caller-owned materialization.
  */
-function sanitizeTableName(target: string): string {
-  const clean = target.replace(/[^a-z0-9_]/g, '').slice(0, 63);
-  if (!clean || !/^[a-z]/.test(clean)) {
-    throw new Error(`Invalid materialized table name: ${target}`);
+function sanitizeTableName(materializationId: string): string {
+  const clean = materializationId
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '')
+    .slice(0, 59);
+  if (!clean) {
+    throw new Error(`Invalid materialized collection id: ${materializationId}`);
   }
   return `mat_${clean}`;
 }
@@ -70,7 +77,7 @@ export async function createPhysicalTable(
   db: Database,
   config: MaterializeConfig,
 ): Promise<void> {
-  const tableName = sanitizeTableName(config.target);
+  const tableName = sanitizeTableName(config.id);
 
   await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS ${tableName} (
@@ -102,7 +109,7 @@ export async function refreshPhysicalTable(
   db: Database,
   config: MaterializeConfig,
 ): Promise<RefreshResult> {
-  const tableName = sanitizeTableName(config.target);
+  const tableName = sanitizeTableName(config.id);
   const startTime = Date.now();
 
   // Resolve source collection id
@@ -184,7 +191,7 @@ export async function dropPhysicalTable(
   db: Database,
   config: MaterializeConfig,
 ): Promise<void> {
-  const tableName = sanitizeTableName(config.target);
+  const tableName = sanitizeTableName(config.id);
   await db.execute(sql.raw(`DROP TABLE IF EXISTS ${tableName} CASCADE`));
 }
 
@@ -200,8 +207,9 @@ export async function installAutoRefreshTrigger(
   db: Database,
   config: MaterializeConfig,
 ): Promise<void> {
-  const triggerName = `trg_mat_refresh_${config.target.replace(/[^a-z0-9_]/g, '')}`;
-  const channelName = `mat_refresh_${config.target.replace(/[^a-z0-9_]/g, '')}`;
+  const triggerSuffix = sanitizeTableName(config.id).replace(/^mat_/, '');
+  const triggerName = `trg_mat_refresh_${triggerSuffix}`;
+  const channelName = `mat_refresh_${triggerSuffix}`;
 
   // Resolve source collection id
   const [coll] = await db
@@ -251,7 +259,10 @@ export async function removeAutoRefreshTrigger(
   db: Database,
   config: MaterializeConfig,
 ): Promise<void> {
-  const triggerName = `trg_mat_refresh_${config.target.replace(/[^a-z0-9_]/g, '')}`;
+  const triggerName = `trg_mat_refresh_${sanitizeTableName(config.id).replace(
+    /^mat_/,
+    '',
+  )}`;
 
   await db.execute(sql.raw(`
     DROP TRIGGER IF EXISTS ${triggerName} ON items;
@@ -265,26 +276,28 @@ export async function removeAutoRefreshTrigger(
  */
 export async function queryPhysicalTable(
   db: Database,
-  target: string,
+  materializationId: string,
+  siteId: string,
   opts: { limit?: number; offset?: number; status?: string } = {},
 ): Promise<{ data: unknown[]; total: number }> {
-  const tableName = sanitizeTableName(target);
+  const tableName = sanitizeTableName(materializationId);
   const limit = opts.limit ?? 100;
   const offset = opts.offset ?? 0;
+  const escapedSiteId = siteId.replace(/'/g, "''");
   const statusFilter = opts.status
     ? `AND status = '${opts.status.replace(/'/g, "''")}'`
     : '';
 
   const rows = await db.execute(sql.raw(`
     SELECT * FROM ${tableName}
-    WHERE 1=1 ${statusFilter}
+    WHERE site_id = '${escapedSiteId}' ${statusFilter}
     ORDER BY sort, created_at
     LIMIT ${limit} OFFSET ${offset}
   `));
 
   const countResult = await db.execute(sql.raw(`
     SELECT COUNT(*) as cnt FROM ${tableName}
-    WHERE 1=1 ${statusFilter}
+    WHERE site_id = '${escapedSiteId}' ${statusFilter}
   `));
   const total = Number((countResult as unknown as Array<{ cnt: string }>)[0]?.cnt ?? 0);
 
