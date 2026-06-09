@@ -190,7 +190,7 @@ function ProgressIndicator({ current }: ProgressIndicatorProps) {
           <>
             <span
               className={cn(
-                'flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium',
+                'flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium cursor-pointer',
                 isCompleted && 'border-primary bg-primary text-primary-foreground',
                 isActive && 'border-primary bg-background text-primary ring-2 ring-primary/20',
                 !isCompleted && !isActive && 'border-border bg-background text-muted-foreground',
@@ -201,7 +201,7 @@ function ProgressIndicator({ current }: ProgressIndicatorProps) {
             </span>
             <span
               className={cn(
-                'mt-2 text-xs',
+                'mt-2 text-xs cursor-pointer',
                 isActive ? 'font-medium text-foreground' : 'text-muted-foreground',
                 canNavigateBack && 'text-foreground',
               )}
