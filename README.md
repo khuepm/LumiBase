@@ -1,7 +1,7 @@
 # LumiBase
 
 <div align="center">
-
+<img width="1024" height="434" alt="Image" src="https://github.com/user-attachments/assets/c4aeb109-5832-43b7-82be-0583f2c8ac48" />
 **⚡ Edge-Native, AI-Native Headless CMS for Agentic Business Software**
 
 [![GitHub Stars](https://img.shields.io/github/stars/khuepm/lumibase?style=social)](https://github.com/khuepm/lumibase)

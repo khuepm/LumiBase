@@ -1,5 +1,7 @@
 import { extensions } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
+import { Hono } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
@@ -7,6 +9,26 @@ import { ExtensionSandbox } from '../extensions/sandbox';
 import { PermissionService, type PermissionAction } from '../services/permission-service';
 
 export const extensionsRouter = new Hono<AppEnv>();
+
+function requireAdmin(c: Context<AppEnv>) {
+  const auth = c.get('auth');
+  const roles = Array.isArray(auth?.roles) ? auth.roles : [];
+  if (!roles.includes('admin')) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Admin role required.' }] },
+      403,
+    );
+  }
+  return null;
+}
+
+const adminOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const forbidden = requireAdmin(c);
+  if (forbidden) return forbidden;
+  return next();
+};
+
+extensionsRouter.use('*', adminOnly);
 
 const extensionSchema = z.object({
   key: z.string().regex(/^[a-z0-9_:-]+$/).optional(),
@@ -218,5 +240,8 @@ extensionsRouter.all('/:name/*', async (c) => {
   const subPath = originalPath.startsWith(prefix) ? originalPath.slice(prefix.length) || '/' : '/';
   const subUrl = new URL(subPath + new URL(c.req.url).search, c.req.url);
 
+  // Do not forward the CMS environment bindings or execution context into
+  // third-party extension handlers; the capability-checked ctx is the only
+  // supported way to expose host resources.
   return subApp.fetch(new Request(subUrl.toString(), c.req.raw), c.env, optionalExecutionCtx(c));
 });

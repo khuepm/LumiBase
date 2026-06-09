@@ -3,8 +3,10 @@ import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { requireSiteAdmin } from '../middleware/site-admin';
 
 export const teamsRouter = new Hono<AppEnv>();
+teamsRouter.use('*', requireSiteAdmin());
 
 // List teams in the active site
 teamsRouter.get('/', async (c) => {
