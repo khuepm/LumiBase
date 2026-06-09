@@ -8,7 +8,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 const DEFAULT_CONFIG = 'apps/cms/wrangler.toml';
 const DEFAULT_ENV = 'production';
-const DEFAULT_REQUIRED_SECRETS = ['JWT_SECRET', 'CF_ACCESS_CERTS_URL', 'CF_ACCESS_AUDIENCE'];
+const DEFAULT_REQUIRED_SECRETS = ['JWT_SECRET', 'CF_ACCESS_CERTS_URL', 'CF_ACCESS_AUDIENCE', 'ENCRYPTION_KEY'];
 const DEV_JWT_SECRET = 'dev_secret_key';
 
 function parseArgs(argv) {
@@ -68,7 +68,7 @@ function parseScalar(value) {
 function parseInlineTable(value) {
   const entries = {};
   const inner = value.trim().replace(/^\{/, '').replace(/\}$/, '');
-  const pairs = inner.match(/(?:[^,"{}]|"(?:\\.|[^"])*")+/g) || [];
+  const pairs = inner.match(/(?:[^,"{}]|"(?:[^"\\]|\\.)*")+/g) || [];
   for (const pair of pairs) {
     const separator = pair.indexOf('=');
     if (separator === -1) continue;

@@ -14,8 +14,8 @@
  *  - "env:read"      — access to declared env vars
  *  - "queue:enqueue" — enqueue jobs to a queue
  *
- * The sandbox uses dynamic import() to load the bundle. Workers/Browsers
- * require the bundle to be a valid ESM module served from a trusted URL.
+ * The sandbox uses dynamic import() to load the bundle only after the
+ * bundle URL passes the trusted-origin policy configured by the operator.
  *
  * Usage:
  *   const sandbox = new ExtensionSandbox(env, db);
@@ -112,6 +112,11 @@ interface SandboxLoadOptions {
 interface SandboxEnv {
   /** Cloudflare KV binding (optional). */
   CONFIG_CACHE?: KVNamespace;
+  /**
+   * Comma-separated list of trusted extension bundle origins. Extension
+   * execution is disabled unless this allowlist is explicitly configured.
+   */
+  EXTENSION_BUNDLE_ORIGINS?: string;
   /** Extension-accessible env vars. */
   [key: string]: unknown;
 }
@@ -135,6 +140,13 @@ export class ExtensionSandbox {
   async load(opts: SandboxLoadOptions): Promise<ExtensionModule | null> {
     if (this.cache.has(opts.name)) {
       return this.cache.get(opts.name)!;
+    }
+
+    if (!this.isTrustedBundleUrl(opts.bundleUrl)) {
+      console.error(
+        `[extension-sandbox] refused to load "${opts.name}" from an untrusted bundle URL`,
+      );
+      return null;
     }
 
     const caps = new Set(opts.capabilities);
@@ -273,6 +285,41 @@ export class ExtensionSandbox {
       /** Extension metadata — always available. */
       meta: { name },
     };
+  }
+
+  private isTrustedBundleUrl(bundleUrl: string): boolean {
+    let parsed: URL;
+    try {
+      parsed = new URL(bundleUrl);
+    } catch {
+      return false;
+    }
+
+    if (!['https:', 'http:'].includes(parsed.protocol)) {
+      return false;
+    }
+
+    if (
+      parsed.protocol === 'http:' &&
+      !['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)
+    ) {
+      return false;
+    }
+
+    const trustedOrigins = String(
+      this.env.EXTENSION_BUNDLE_ORIGINS ??
+        (typeof process !== 'undefined' ? process.env.EXTENSION_BUNDLE_ORIGINS : '') ??
+        '',
+    )
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+
+    if (trustedOrigins.length === 0) {
+      return false;
+    }
+
+    return trustedOrigins.includes(parsed.origin);
   }
 
   private importWithTimeout(url: string, timeoutMs: number): Promise<Record<string, unknown>> {

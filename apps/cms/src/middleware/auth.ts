@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
-import { apiKeys } from '@lumibase/database';
-import { eq } from 'drizzle-orm';
+import { apiKeys, users, userSites } from '@lumibase/database';
+import { and, eq } from 'drizzle-orm';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
@@ -21,7 +21,9 @@ const getJwks = (certsUrl: string) => {
 async function verifyCustomJwt(token: string, secret: string): Promise<any> {
   const encoder = new TextEncoder();
   const secretKey = encoder.encode(secret);
-  const { payload } = await jwtVerify(token, secretKey);
+  const { payload } = await jwtVerify(token, secretKey, {
+    algorithms: ['HS256'],
+  });
   return payload;
 }
 
@@ -78,6 +80,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   if (
     path === '/api/v1/auth/register' ||
     path === '/api/v1/auth/login' ||
+    path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/')
   ) {
     return next();
@@ -85,7 +88,6 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
   const authHeader = c.req.header('authorization') ?? '';
   const [scheme, token] = authHeader.split(' ');
-  const realtimeQueryToken = path === '/api/v1/realtime' ? c.req.query('token') : undefined;
 
   // 1. Dev Mode Auth (Only check if enabled in env)
   // Fall back to process.env so the Node.js / Docker serve path works
@@ -93,7 +95,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const devAuthEnabled =
     c.env.LUMIBASE_DEV_AUTH === 'true' || process.env.LUMIBASE_DEV_AUTH === 'true';
   if (devAuthEnabled) {
-    const devToken = token || realtimeQueryToken || authHeader;
+    const devToken = token || authHeader;
     if (devToken && devToken.startsWith('dev:')) {
       const parts = devToken.slice(4).split(':'); // dev:<email>:<role>
       const email = parts[0] || 'dev@lumibase.dev';
@@ -125,6 +127,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     try {
       const { payload } = await jwtVerify(cfAccessAssertion, getJwks(certsUrl), {
         audience,
+        algorithms: ['RS256'],
       });
 
       const principal: AuthPrincipal = {
@@ -146,7 +149,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
   // 3. Custom JWT Auth (Frontend Users flow)
   const bearerToken =
-    scheme?.toLowerCase() === 'bearer' && token ? token : realtimeQueryToken;
+    scheme?.toLowerCase() === 'bearer' && token ? token : undefined;
 
   if (bearerToken) {
     const tokenHash = await sha256Hex(bearerToken);
@@ -214,10 +217,46 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
     try {
       const payload = await verifyCustomJwt(bearerToken, jwtSecret);
+      const tokenSiteId = typeof payload.siteId === 'string' ? payload.siteId : null;
+      const requestSiteId = c.get('siteId');
+      if (!tokenSiteId || tokenSiteId !== requestSiteId) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
+          401,
+        );
+      }
+
+      const userId = String(payload.userId);
+      const [user] = await c
+        .get('db')
+        .select({ id: users.id, status: users.status, isBootstrap: users.isBootstrap })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (!user || user.status !== 'active') {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
+          401,
+        );
+      }
+
+      const [membership] = await c
+        .get('db')
+        .select({ roleId: userSites.roleId })
+        .from(userSites)
+        .where(and(eq(userSites.userId, userId), eq(userSites.siteId, requestSiteId)))
+        .limit(1);
+      if (!membership && !user.isBootstrap) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
+          401,
+        );
+      }
+
       const principal: AuthPrincipal = {
-        userId: String(payload.userId),
+        userId,
         email: typeof payload.email === 'string' ? payload.email : undefined,
-        roles: Array.isArray(payload.roles) ? (payload.roles as string[]) : ['member'],
+        roles: user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'],
         isFrontendUser: true,
         raw: payload as Record<string, unknown>,
       };

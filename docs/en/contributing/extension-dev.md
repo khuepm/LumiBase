@@ -82,18 +82,19 @@ export default function ColorPickerInterface({
 }
 ```
 
-### Register the interface
+### Define the interface
 
 ```typescript
 // src/index.ts
-import { registerInterface } from '@lumibase/extension-sdk'
+import { defineInterface } from '@lumibase/extension-sdk'
 import ColorPickerInterface from './interface'
 
-registerInterface({
+export default defineInterface({
   id: 'color-picker',
   name: 'Color Picker',
   component: ColorPickerInterface,
   types: ['string'],   // Compatible field types
+  group: 'standard',
   options: [],         // Interface config options shown in Studio
 })
 ```
