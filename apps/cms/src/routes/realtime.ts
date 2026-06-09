@@ -15,10 +15,45 @@
  */
 
 import { Hono } from 'hono';
-import type { AppEnv } from '../env';
+import { SignJWT, jwtVerify } from 'jose';
+import type { AppEnv, AuthPrincipal } from '../env';
 import { getLocationHint, getShardKey } from '../realtime/shard-config';
 
 export const realtimeRouter = new Hono<AppEnv>();
+
+// Generate a short-lived ticket for realtime WS connection
+realtimeRouter.post('/ticket', async (c) => {
+  const auth = c.get('auth');
+  if (!auth) {
+    return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'Not authenticated' }] }, 401);
+  }
+
+  const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return c.json(
+      { errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET missing' }] },
+      500,
+    );
+  }
+
+  const encoder = new TextEncoder();
+  const secretKey = encoder.encode(jwtSecret);
+
+  // Extract necessary context to reconstruct minimal AuthPrincipal on WS connect
+  const payload = {
+    userId: auth.userId || auth.externalId || 'anon',
+    roles: auth.roles || [],
+    siteId: c.get('siteId'),
+  };
+
+  const ticket = await new SignJWT(payload)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('1m') // Short-lived single-use ticket
+    .sign(secretKey);
+
+  return c.json({ data: { ticket } }, 200);
+});
 
 realtimeRouter.get('/', async (c) => {
   const upgradeHeader = c.req.header('Upgrade');
@@ -26,15 +61,59 @@ realtimeRouter.get('/', async (c) => {
     return c.json(
       {
         status: 'realtime_ready',
-        message: 'Connect with ws://.../api/v1/realtime?token=<jwt>',
+        message: 'Connect with ws://.../api/v1/realtime?ticket=<ticket>',
         supportedProtocols: ['lumibase-sync-v1'],
       },
       200,
     );
   }
 
+  const ticket = c.req.query('ticket');
+  if (!ticket) {
+    return c.json(
+      { errors: [{ code: 'UNAUTHENTICATED', message: 'Missing realtime ticket' }] },
+      401,
+    );
+  }
+
+  const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return c.json(
+      { errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET missing' }] },
+      500,
+    );
+  }
+
+  let verifiedPayload;
+  try {
+    const encoder = new TextEncoder();
+    const secretKey = encoder.encode(jwtSecret);
+    const { payload } = await jwtVerify(ticket, secretKey, {
+      algorithms: ['HS256'],
+    });
+    verifiedPayload = payload;
+  } catch (err) {
+    return c.json(
+      { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid or expired ticket' }] },
+      401,
+    );
+  }
+
+  // The siteId must be passed via query string since browsers can't set headers.
+  // The ticket validates which siteId the user intended to connect to.
+  const requestedSiteId = c.req.query('siteId') || c.req.query('site');
+  if (requestedSiteId && requestedSiteId !== verifiedPayload.siteId) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Ticket does not match requested site' }] },
+      403,
+    );
+  }
+
+
   // Resolve the SiteRoom Durable Object for this site.
-  const siteId = c.get('siteId');
+  // Note: Since this route is exempt from global withAuth/withTenant to support WS,
+  // c.get('siteId') is not populated by the middleware, we read it from the ticket.
+  const siteId = String(verifiedPayload.siteId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const siteRoom = (c.env as unknown as Record<string, DurableObjectNamespace>)['SITE_ROOM'];
 
@@ -69,8 +148,7 @@ realtimeRouter.get('/', async (c) => {
     : siteRoom.get(id);
 
   // Pass userId from auth context so the DO can associate the session.
-  const auth = c.get('auth');
-  const userId = auth?.userId ?? auth?.externalId ?? 'anon';
+  const userId = String(verifiedPayload.userId);
 
   // Forward the raw Request to the DO — it handles the WS upgrade internally.
   const url = new URL(c.req.url);
