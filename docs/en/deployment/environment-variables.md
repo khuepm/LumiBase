@@ -114,6 +114,21 @@ For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](
 
 ---
 
+## Pressure limiter (Docker / Node.js)
+
+The Docker CMS process includes an overload guard for the Node.js event loop. When enabled and the process is saturated, API requests fail fast with HTTP `503`, a `SERVICE_UNAVAILABLE` JSON envelope, `Retry-After`, and `X-Lumi-Overload` instead of queueing until the container becomes unresponsive. The guard bypasses `/health` and `/metrics` by default so operators can still inspect the instance.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LUMIBASE_PRESSURE_LIMITER_ENABLED` | Docker only | `true` | Enables the Node.js overload guard. Set `false` only as a temporary mitigation while you scale or optimize the overloaded path. |
+| `LUMIBASE_PRESSURE_LIMITER_SAMPLE_INTERVAL` | ✗ | `250` | Sampling interval in milliseconds for event-loop pressure checks. |
+| `LUMIBASE_PRESSURE_LIMITER_MAX_EVENT_LOOP_DELAY` | ✗ | `1000` | Maximum observed event-loop delay in milliseconds before API traffic receives `503`. Set `false` to disable this threshold. |
+| `LUMIBASE_PRESSURE_LIMITER_MAX_EVENT_LOOP_UTILIZATION` | ✗ | `false` | Optional utilization threshold such as `0.99`. Disabled by default because sustained useful CPU work can otherwise produce noisy rejections. |
+| `LUMIBASE_PRESSURE_LIMITER_RETRY_AFTER` | ✗ | `5` | Seconds advertised in the `Retry-After` response header. |
+| `LUMIBASE_PRESSURE_LIMITER_EXCLUDED_PATHS` | ✗ | `/health,/metrics` | Comma-separated path prefixes that should keep serving during overload checks. |
+
+---
+
 ## Observability
 
 | Variable | Required | Description |
