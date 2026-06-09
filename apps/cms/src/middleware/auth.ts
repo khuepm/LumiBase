@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
-import { apiKeys } from '@lumibase/database';
-import { eq } from 'drizzle-orm';
+import { apiKeys, users, userSites } from '@lumibase/database';
+import { and, eq } from 'drizzle-orm';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
@@ -216,10 +216,46 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
     try {
       const payload = await verifyCustomJwt(bearerToken, jwtSecret);
+      const tokenSiteId = typeof payload.siteId === 'string' ? payload.siteId : null;
+      const requestSiteId = c.get('siteId');
+      if (!tokenSiteId || tokenSiteId !== requestSiteId) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
+          401,
+        );
+      }
+
+      const userId = String(payload.userId);
+      const [user] = await c
+        .get('db')
+        .select({ id: users.id, status: users.status, isBootstrap: users.isBootstrap })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (!user || user.status !== 'active') {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
+          401,
+        );
+      }
+
+      const [membership] = await c
+        .get('db')
+        .select({ roleId: userSites.roleId })
+        .from(userSites)
+        .where(and(eq(userSites.userId, userId), eq(userSites.siteId, requestSiteId)))
+        .limit(1);
+      if (!membership && !user.isBootstrap) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
+          401,
+        );
+      }
+
       const principal: AuthPrincipal = {
-        userId: String(payload.userId),
+        userId,
         email: typeof payload.email === 'string' ? payload.email : undefined,
-        roles: Array.isArray(payload.roles) ? (payload.roles as string[]) : ['member'],
+        roles: user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'],
         isFrontendUser: true,
         raw: payload as Record<string, unknown>,
       };
