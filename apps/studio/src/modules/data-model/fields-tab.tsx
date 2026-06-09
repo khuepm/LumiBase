@@ -120,14 +120,16 @@ export function FieldsTab({ collectionName }: FieldsTabProps) {
   const reorderMutation = useMutation({
     mutationFn: async (newOrder: { name: string; type: string; interface: string; sortOrder: number }[]) => {
       // Persist new sortOrder for each field. Backend supports per-field upsert.
-      for (const f of newOrder) {
-        await client.schema.upsertField(collectionName, f.name, {
-          name: f.name,
-          type: f.type,
-          interface: f.interface,
-          sortOrder: f.sortOrder,
-        });
-      }
+      await Promise.all(
+        newOrder.map((f) =>
+          client.schema.upsertField(collectionName, f.name, {
+            name: f.name,
+            type: f.type,
+            interface: f.interface,
+            sortOrder: f.sortOrder,
+          })
+        )
+      );
     },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['fields', collectionName] }),
