@@ -2,8 +2,10 @@ import { activity } from '@lumibase/database';
 import { eq, desc } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
+import { requireSiteAdmin } from '../middleware/site-admin';
 
 export const activityRouter = new Hono<AppEnv>();
+activityRouter.use('*', requireSiteAdmin());
 
 activityRouter.get('/', async (c) => {
   const siteId = c.get('siteId');
