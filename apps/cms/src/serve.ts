@@ -7,6 +7,7 @@ import app from './index';
 import type { Bindings } from './env';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
+import { formatSafeError } from '@lumibase/shared/utils';
 import { createPressureLimiter } from './pressure-limiter';
 
 loadSecretFiles();
@@ -92,7 +93,7 @@ process.on('SIGTERM', () => {
     try {
       await runtime.database.close();
     } catch (err) {
-      console.error('[lumibase-cms] Error closing database connection:', err);
+      console.error('[lumibase-cms] Error closing database connection:', formatSafeError(err));
     }
     clearTimeout(forceTimeout);
     process.exit(0);

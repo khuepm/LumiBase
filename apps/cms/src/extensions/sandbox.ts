@@ -26,6 +26,7 @@
 
 import type { Database } from '@lumibase/database';
 import { validateOutboundUrl } from '../services/ssrf-guard';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -163,7 +164,7 @@ export class ExtensionSandbox {
       this.cache.set(opts.name, extensionMod);
       return extensionMod;
     } catch (err) {
-      console.error(`[extension-sandbox] failed to load "${opts.name}"`, err);
+      console.error(`[extension-sandbox] failed to load "${opts.name}"`, formatSafeError(err));
       return null;
     }
   }

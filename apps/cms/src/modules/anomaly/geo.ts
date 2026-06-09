@@ -64,6 +64,7 @@ import { eq } from 'drizzle-orm';
 import { loginBaselines, type Database } from '@lumibase/database';
 
 import { isPrivateOrLoopback } from './private-ip';
+import { formatSafeError } from '@lumibase/shared/utils';
 import type {
   GeoBaselineSnapshot,
   GeoLookupStatus,
@@ -307,7 +308,7 @@ async function safeLoadBaseline(
     return await loader(userId);
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.warn('[anomaly/geo] baseline load failed; treating as warmup', err);
+    console.warn('[anomaly/geo] baseline load failed; treating as warmup', formatSafeError(err));
     return null;
   }
 }

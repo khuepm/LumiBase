@@ -30,6 +30,7 @@ import type { LoginAttemptDraft } from '../modules/anomaly/types';
 import { getSecurityNotificationDispatcher, scheduleWorkersDrain } from '../modules/notifications/security-dispatcher';
 import type { NotificationDeps } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 export const authRouter = new Hono<AppEnv>();
 
@@ -428,7 +429,7 @@ authRouter.post('/login', async (c) => {
     // investigate. Phase F (task 11.2) will replace this with a
     // proper audit entry.
     // eslint-disable-next-line no-console
-    console.warn('[anomaly] detector run failed; treating as no anomaly', err);
+    console.warn('[anomaly] detector run failed; treating as no anomaly', formatSafeError(err));
     anomaly = { score: 0, baselineWarmup: false };
   }
 

@@ -7,6 +7,7 @@ import { AISecureHarness } from '../services/ai-harness';
 import { SchemaService } from '../services/schema-service';
 import { ItemService } from '../services/item-service';
 import { createLLMProvider, type LLMMessage } from '../services/llm-provider';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 // ---------------------------------------------------------------------------
 // Zod Schemas
@@ -222,7 +223,7 @@ aiRouter.post('/chat', async (c) => {
     );
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Internal server error';
-    console.error('[ai/chat] execution error', err);
+    console.error('[ai/chat] execution error', formatSafeError(err));
     return c.json(
       {
         errors: [{ code: 'INTERNAL', message: errorMessage }],

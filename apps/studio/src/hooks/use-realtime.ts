@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getApiClient } from '@/lib/api';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 export function useRealtimeSubscription(collection: string, onUpdate?: (payload: any) => void) {
   const [isConnected, setIsConnected] = useState(false);
@@ -12,10 +13,28 @@ export function useRealtimeSubscription(collection: string, onUpdate?: (payload:
 
     // In a real application, we would pass the active siteId.
     // For this stub, we just pass 'default'.
-    client.realtime.connect('default').then((ws) => {
+    const ws = client.realtime.connect('default').then((ws) => {
       if (!isMounted) {
         ws.close();
         return;
+      }
+    });
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setIsConnected(true);
+      // Subscribe to the specific collection
+      ws.send(JSON.stringify({ type: 'subscribe', collection }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.collection === collection && onUpdate) {
+          onUpdate(data);
+        }
+      } catch (err) {
+        console.error('Failed to parse realtime message:', formatSafeError(err));
       }
       wsRef.current = ws;
 

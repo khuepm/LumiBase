@@ -30,6 +30,7 @@
 
 import { createMiddleware } from 'hono/factory';
 import type { AppEnv } from '../env';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 export function withRls() {
   return createMiddleware<AppEnv>(async (c, next) => {
@@ -54,7 +55,7 @@ export function withRls() {
         // Non-fatal: RLS is defence-in-depth. Application-level permission
         // checks still apply. Log and continue.
         const requestId = c.get('requestId');
-        console.warn('[rls] Failed to set app.site_id', { requestId, err });
+        console.warn('[rls] Failed to set app.site_id', { requestId, err: formatSafeError(err) });
       }
     }
 
