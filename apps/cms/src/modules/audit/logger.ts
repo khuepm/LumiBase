@@ -176,6 +176,8 @@ export interface AuditLogEntry {
   readonly id: string;
   /** Insert time, assigned by the DB `defaultNow()`. */
   readonly timestamp: Date;
+  /** Active tenant/site id used to isolate audit reads and exports. */
+  readonly siteId?: string | null;
   /** One of the Req 15.1 event codes (stored as text). */
   readonly event: AuditEvent;
   /** Email of the actor performing the action; null when unauthenticated. */
@@ -389,6 +391,8 @@ class AuditBudgetExceededError extends Error {
 }
 
 export interface AuditLoggerDeps {
+  /** Active tenant/site id applied to entries that do not provide one explicitly. */
+  readonly siteId?: string | null;
   /** Drizzle client used for the `INSERT INTO audit_log`. */
   readonly db: Database;
   /**
@@ -424,9 +428,11 @@ export class AuditLogger {
   private readonly db: Database;
   private readonly errorSink: (record: AuditFallbackRecord) => void;
   private readonly budgetMs: number;
+  private readonly siteId: string | null;
 
   constructor(deps: AuditLoggerDeps) {
     this.db = deps.db;
+    this.siteId = deps.siteId ?? null;
     this.errorSink = deps.errorSink ?? defaultErrorSink;
     this.budgetMs = deps.budgetMs ?? DEFAULT_BUDGET_MS;
   }
@@ -516,6 +522,7 @@ export class AuditLogger {
   /** The bare `INSERT INTO audit_log` with the masked entry's columns. */
   private async runInsert(entry: AuditLogWriteInput): Promise<void> {
     await this.db.insert(auditLog).values({
+      siteId: entry.siteId ?? this.siteId,
       event: entry.event,
       actorEmail: entry.actorEmail ?? null,
       targetEmail: entry.targetEmail ?? null,

@@ -1,0 +1,89 @@
+name: Publish npm packages
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check fixed package versions
+        run: pnpm version:check
+
+      - name: Validate npm publish allowlist
+        run: pnpm npm:publish:plan
+
+      - name: Typecheck public packages
+        run: |
+          pnpm --filter @lumibase/sdk typecheck
+          pnpm --filter @lumibase/extension-sdk typecheck
+
+      - name: Build public packages
+        run: |
+          pnpm --filter @lumibase/sdk build
+          pnpm --filter @lumibase/extension-sdk build
+
+      - name: Publish allowlisted packages with provenance
+        run: pnpm npm:publish
+
+      - name: Update release notes with published package versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          notes_file="$(mktemp)"
+          node scripts/publish-npm.mjs --notes > "$notes_file"
+
+          section_file="$(mktemp)"
+          {
+            echo '<!-- lumibase-npm-packages:start -->'
+            echo '## npm packages published'
+            cat "$notes_file"
+            echo '<!-- lumibase-npm-packages:end -->'
+          } > "$section_file"
+
+          body_file="$(mktemp)"
+          updated_body_file="$(mktemp)"
+
+          if gh release view "$RELEASE_TAG" --json body -q .body > "$body_file" 2>/dev/null; then
+            node --input-type=module - "$body_file" "$section_file" "$updated_body_file" <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+
+          const [bodyPath, sectionPath, outputPath] = process.argv.slice(2);
+          const body = readFileSync(bodyPath, 'utf8').trimEnd();
+          const section = readFileSync(sectionPath, 'utf8').trimEnd();
+          const pattern = /<!-- lumibase-npm-packages:start -->[\s\S]*?<!-- lumibase-npm-packages:end -->/;
+          const nextBody = pattern.test(body)
+            ? body.replace(pattern, section)
+            : `${body}${body ? '\n\n' : ''}${section}`;
+
+          writeFileSync(outputPath, `${nextBody}\n`);
+          NODE
+            gh release edit "$RELEASE_TAG" --notes-file "$updated_body_file"
+          else
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file "$section_file"
+          fi

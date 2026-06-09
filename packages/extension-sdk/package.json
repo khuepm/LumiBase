@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/extension-sdk",
-  "version": "0.1.0",
+  "version": "0.4.3",
   "private": true,
   "description": "Types + helpers for building LumiBase extensions (hooks, endpoints, UI).",
   "type": "module",
@@ -11,12 +11,27 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf .turbo dist"
-  },
-  "dependencies": {
-    "@lumibase/shared": "workspace:*"
+    "clean": "rm -rf .turbo dist",
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean"
   },
   "devDependencies": {
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "tsup": "^8.5.1"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
+      }
+    }
   }
 }

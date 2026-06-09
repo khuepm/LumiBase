@@ -10,6 +10,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { AppShell } from './components/app-shell';
 import { BareLayout } from './components/bare-layout';
 import { AdminReadyGate } from './modules/setup/admin-ready-gate';
+import { shouldAutoRedirectToAdmin } from './modules/setup/setup-environment';
 import { SetupLayout } from './modules/setup/setup-layout';
 import { SetupStateGate } from './modules/setup/setup-state-gate';
 import { useCompleteSetup } from './modules/setup/hooks/use-complete-setup';
@@ -23,6 +24,8 @@ import {
 // Heavy dependencies (Monaco, WYSIWYG, etc.) are pulled in only when needed.
 // ---------------------------------------------------------------------------
 const AccessLayout = lazy(() => import('./modules/access/layout').then((m) => ({ default: m.AccessLayout })));
+const ApiKeysPage = lazy(() => import('./modules/access/api-keys-page').then((m) => ({ default: m.ApiKeysPage })));
+const AccessImportExportPage = lazy(() => import('./modules/access/import-export-page').then((m) => ({ default: m.AccessImportExportPage })));
 const PermissionMatrixPage = lazy(() => import('./modules/access/permission-matrix').then((m) => ({ default: m.PermissionMatrixPage })));
 const PoliciesListPage = lazy(() => import('./modules/access/policies-page').then((m) => ({ default: m.PoliciesListPage })));
 const PolicyDetailPage = lazy(() => import('./modules/access/policy-detail').then((m) => ({ default: m.PolicyDetailPage })));
@@ -42,6 +45,8 @@ const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then(
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
+const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
+const AgentHarnessPage = lazy(() => import('./modules/settings/agent-harness-page').then((m) => ({ default: m.AgentHarnessPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
 const TeamsPage = lazy(() => import('./modules/users/teams-page').then((m) => ({ default: m.TeamsPage })));
 const UsersPage = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
@@ -64,6 +69,7 @@ const StepSecurity = lazy(() => import('./modules/setup/steps/step-security').th
 const StepProject = lazy(() => import('./modules/setup/steps/step-project').then((m) => ({ default: m.StepProject })));
 const StepRecovery = lazy(() => import('./modules/setup/steps/step-recovery').then((m) => ({ default: m.StepRecovery })));
 const StepDone = lazy(() => import('./modules/setup/steps/step-done').then((m) => ({ default: m.StepDone })));
+const SimpleSetupWizard = lazy(() => import('./modules/setup/simple-setup-wizard').then((m) => ({ default: m.SimpleSetupWizard })));
 const AdminLoginPage = lazy(() => import('./modules/auth/admin-login-page').then((m) => ({ default: m.AdminLoginPage })));
 
 let setupBackupCodes: readonly string[] = [];
@@ -132,12 +138,12 @@ function AdminRootRedirect() {
   const adminPath = useSetupStore((s) => s.adminPath);
 
   useEffect(() => {
-    if (adminPath) {
+    if (adminPath && shouldAutoRedirectToAdmin()) {
       navigate({ to: adminPath });
     }
   }, [adminPath, navigate]);
 
-  if (adminPath) {
+  if (adminPath && shouldAutoRedirectToAdmin()) {
     return <PageLoader />;
   }
 
@@ -239,17 +245,15 @@ const setupShellRoute = createRoute({
 });
 
 /**
- * Index route for `/setup`. The wizard has no body of its own at this
- * URL — it always forwards to the earliest unsatisfied step so a fresh
- * visit lands on Account, a refresh mid-flow lands back on the right
- * step, and a post-completion deep-link drops onto Done.
+ * Index route for `/setup`. New operators land on the 3-step quick
+ * setup by default. The full six-step flow remains available through
+ * `/setup/advance` for advanced security/project tuning.
  */
 const setupIndexRoute = createRoute({
   getParentRoute: () => setupShellRoute,
   path: '/setup',
   beforeLoad: () => {
-    const state = useSetupStore.getState();
-    throw redirect({ to: getEarliestUnsatisfiedStep(state) });
+    throw redirect({ to: '/setup/account' });
   },
   // Component is unreachable because beforeLoad always redirects; kept
   // as a safety net so a future router quirk that bypasses beforeLoad
@@ -257,9 +261,21 @@ const setupIndexRoute = createRoute({
   component: withSuspense(StepAccount),
 });
 
+const setupSimpleRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: '/setup/account',
+  component: () => (
+    <SetupStateGate>
+      <Suspense fallback={<PageLoader />}>
+        <SimpleSetupWizard />
+      </Suspense>
+    </SetupStateGate>
+  ),
+});
+
 const setupAccountRoute = createRoute({
   getParentRoute: () => setupShellRoute,
-  path: '/setup/account',
+  path: '/setup/advance',
   component: () => {
     const navigate = useNavigate();
     return (
@@ -277,7 +293,7 @@ const setupPathRoute = createRoute({
     // Operators must complete the Account step before they can pick
     // an admin path; deep-linking past Account redirects back.
     if (!useSetupStore.getState().accountValid) {
-      throw redirect({ to: '/setup/account' });
+      throw redirect({ to: '/setup/advance' });
     }
   },
   component: () => {
@@ -560,6 +576,18 @@ const marketplaceRoute = createRoute({
   component: withSuspense(MarketplacePage),
 });
 
+const updatesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/settings/updates',
+  component: withSuspense(UpdatesPage),
+});
+
+const agentHarnessRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/settings/agent-harness',
+  component: withSuspense(AgentHarnessPage),
+});
+
 const adminPathSettingsTypesRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/settings/developer/types',
@@ -594,6 +622,18 @@ const adminPathMarketplaceRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/settings/marketplace',
   component: withSuspense(MarketplacePage),
+});
+
+const adminPathUpdatesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/settings/updates',
+  component: withSuspense(UpdatesPage),
+});
+
+const adminPathAgentHarnessRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/settings/agent-harness',
+  component: withSuspense(AgentHarnessPage),
 });
 
 const automationFlowsRoute = createRoute({
@@ -758,6 +798,18 @@ const accessPolicyDetailRoute = createRoute({
   component: withSuspense(PolicyDetailPage),
 });
 
+const accessApiKeysRoute = createRoute({
+  getParentRoute: () => accessRoute,
+  path: 'api-keys',
+  component: withSuspense(ApiKeysPage),
+});
+
+const accessImportExportRoute = createRoute({
+  getParentRoute: () => accessRoute,
+  path: 'import-export',
+  component: withSuspense(AccessImportExportPage),
+});
+
 const accessMatrixRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: 'matrix',
@@ -810,6 +862,18 @@ const adminPathAccessPolicyDetailRoute = createRoute({
   component: withSuspense(PolicyDetailPage),
 });
 
+const adminPathAccessApiKeysRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'api-keys',
+  component: withSuspense(ApiKeysPage),
+});
+
+const adminPathAccessImportExportRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'import-export',
+  component: withSuspense(AccessImportExportPage),
+});
+
 const adminPathAccessMatrixRoute = createRoute({
   getParentRoute: () => adminPathAccessRoute,
   path: 'matrix',
@@ -837,6 +901,8 @@ const routeTree = rootRoute.addChildren([
     activityRoute,
     extensionsRoute,
     marketplaceRoute,
+    updatesRoute,
+    agentHarnessRoute,
     automationFlowsRoute,
     automationFlowNewRoute,
     automationFlowEditRoute,
@@ -850,6 +916,8 @@ const routeTree = rootRoute.addChildren([
       accessRoleDetailRoute,
       accessPoliciesRoute,
       accessPolicyDetailRoute,
+      accessApiKeysRoute,
+      accessImportExportRoute,
       accessMatrixRoute,
       accessSandboxRoute,
     ]),
@@ -866,6 +934,8 @@ const routeTree = rootRoute.addChildren([
     adminPathActivityRoute,
     adminPathExtensionsRoute,
     adminPathMarketplaceRoute,
+    adminPathUpdatesRoute,
+    adminPathAgentHarnessRoute,
     adminPathAutomationFlowsRoute,
     adminPathAutomationFlowNewRoute,
     adminPathAutomationFlowEditRoute,
@@ -879,6 +949,8 @@ const routeTree = rootRoute.addChildren([
       adminPathAccessRoleDetailRoute,
       adminPathAccessPoliciesRoute,
       adminPathAccessPolicyDetailRoute,
+      adminPathAccessApiKeysRoute,
+      adminPathAccessImportExportRoute,
       adminPathAccessMatrixRoute,
       adminPathAccessSandboxRoute,
     ]),
@@ -886,6 +958,7 @@ const routeTree = rootRoute.addChildren([
   // Children of publicLayoutRoute (e.g. /setup, /recovery) are added in
   // subsequent tasks for the admin-setup-wizard spec.
   publicLayoutRoute.addChildren([
+    setupSimpleRoute,
     setupShellRoute.addChildren([
       setupIndexRoute,
       setupAccountRoute,

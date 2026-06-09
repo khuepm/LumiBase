@@ -19,6 +19,8 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
+export const dynamicParams = false;
+
 export async function generateStaticParams() {
   const slugs = await getAllSlugs();
   return slugs.map((slug) => ({ slug }));
@@ -39,7 +41,8 @@ function formatNumber(n: number): string {
   return String(n);
 }
 
-function formatDate(iso: string) {
+function formatDate(iso: string | null) {
+  if (!iso) return "Unknown";
   return new Date(iso).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -77,7 +80,6 @@ export default async function ExtensionDetailPage({ params }: PageProps) {
     tags,
     publisherName,
     latestVersion,
-    totalDownloads,
     rating,
     ratingCount,
     publishedAt,
@@ -152,14 +154,16 @@ export default async function ExtensionDetailPage({ params }: PageProps) {
               <span className="text-gray-500">Latest version</span>
               <span className="font-mono text-gray-200">v{latestVersion}</span>
             </div>
-            <div className="px-5 py-3 flex items-center justify-between text-sm">
-              <span className="flex items-center gap-1.5 text-gray-500">
-                <Download className="h-3.5 w-3.5" />
-                Downloads
-              </span>
-              <span className="text-gray-200">{formatNumber(totalDownloads)}</span>
-            </div>
-            {rating != null && (
+            {ext.totalDownloads ? (
+              <div className="px-5 py-3 flex items-center justify-between text-sm">
+                <span className="flex items-center gap-1.5 text-gray-500">
+                  <Download className="h-3.5 w-3.5" />
+                  Downloads
+                </span>
+                <span className="text-gray-200">{formatNumber(ext.totalDownloads)}</span>
+              </div>
+            ) : null}
+            {rating != null && ratingCount != null && ratingCount > 0 && (
               <div className="px-5 py-3 flex items-center justify-between text-sm">
                 <span className="flex items-center gap-1.5 text-gray-500">
                   <Star className="h-3.5 w-3.5" />
@@ -167,9 +171,7 @@ export default async function ExtensionDetailPage({ params }: PageProps) {
                 </span>
                 <span className="text-gray-200">
                   {rating.toFixed(1)}
-                  {ratingCount != null && (
-                    <span className="text-gray-600 ml-1">({ratingCount})</span>
-                  )}
+                  <span className="text-gray-600 ml-1">({ratingCount})</span>
                 </span>
               </div>
             )}

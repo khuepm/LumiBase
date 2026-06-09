@@ -2,9 +2,11 @@ import { extensions } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context, MiddlewareHandler } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ExtensionSandbox } from '../extensions/sandbox';
+import { PermissionService, type PermissionAction } from '../services/permission-service';
 
 export const extensionsRouter = new Hono<AppEnv>();
 
@@ -29,6 +31,7 @@ const adminOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
 extensionsRouter.use('*', adminOnly);
 
 const extensionSchema = z.object({
+  key: z.string().regex(/^[a-z0-9_:-]+$/).optional(),
   name: z.string(),
   version: z.string(),
   type: z.string(),
@@ -38,7 +41,81 @@ const extensionSchema = z.object({
   capabilities: z.array(z.string()).default([]),
 });
 
+function extensionKey(input: { key?: string | null; name: string }): string {
+  return (
+    input.key?.trim() ||
+    input.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  );
+}
+
+function permissionCtx(c: Context<AppEnv>) {
+  const auth = c.get('auth');
+  const headers: Record<string, string> = {};
+  c.req.raw.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value;
+  });
+  return {
+    userId: auth?.userId ?? null,
+    siteId: c.get('siteId'),
+    roleId: null,
+    user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
+    ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+    headers,
+    apiKey: auth?.apiKey ?? null,
+  };
+}
+
+async function requireExtensionPermission(
+  c: Context<AppEnv>,
+  action: PermissionAction,
+): Promise<Response | null> {
+  const perm = await new PermissionService({
+    db: c.get('db'),
+    cache: c.get('runtime').cache,
+    ctx: permissionCtx(c),
+  }).canAccess('extensions', action);
+
+  if (perm) return null;
+  return c.json(
+    { errors: [{ code: 'FORBIDDEN', message: `Action "extensions:${action}" is not allowed.` }] },
+    403,
+  );
+}
+
+function createActions(input: z.infer<typeof extensionSchema>): PermissionAction[] {
+  const actions = new Set<PermissionAction>(['install']);
+  if (input.enabled) actions.add('enable');
+  if (input.capabilities.length > 0) actions.add('grant_capability');
+  return [...actions];
+}
+
+function patchActions(input: Partial<z.infer<typeof extensionSchema>>): PermissionAction[] {
+  const actions = new Set<PermissionAction>();
+  if (Object.prototype.hasOwnProperty.call(input, 'enabled')) actions.add('enable');
+  if (Object.prototype.hasOwnProperty.call(input, 'capabilities')) actions.add('grant_capability');
+  if (
+    ['key', 'name', 'version', 'type', 'bundleUrl', 'manifest'].some((field) =>
+      Object.prototype.hasOwnProperty.call(input, field),
+    )
+  ) {
+    actions.add('configure');
+  }
+  if (!actions.size) actions.add('configure');
+  return [...actions];
+}
+
+function optionalExecutionCtx(c: Context<AppEnv>): ExecutionContext | undefined {
+  try {
+    return c.executionCtx;
+  } catch {
+    return undefined;
+  }
+}
+
 extensionsRouter.get('/', async (c) => {
+  const denied = await requireExtensionPermission(c, 'read');
+  if (denied) return denied;
+
   const siteId = c.get('siteId');
   const db = c.get('db');
   
@@ -52,10 +129,16 @@ extensionsRouter.post('/', async (c) => {
   const auth = c.get('auth');
   const input = extensionSchema.parse(await c.req.json());
 
+  for (const action of createActions(input)) {
+    const denied = await requireExtensionPermission(c, action);
+    if (denied) return denied;
+  }
+
   const [row] = await db
     .insert(extensions)
     .values({
       ...input,
+      key: extensionKey(input),
       siteId,
       installedBy: auth?.userId,
     })
@@ -69,6 +152,10 @@ extensionsRouter.patch('/:id', async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
   const input = extensionSchema.partial().parse(await c.req.json());
+  for (const action of patchActions(input)) {
+    const denied = await requireExtensionPermission(c, action);
+    if (denied) return denied;
+  }
 
   const [row] = await db
     .update(extensions)
@@ -81,6 +168,9 @@ extensionsRouter.patch('/:id', async (c) => {
 });
 
 extensionsRouter.delete('/:id', async (c) => {
+  const denied = await requireExtensionPermission(c, 'delete');
+  if (denied) return denied;
+
   const id = c.req.param('id');
   const siteId = c.get('siteId');
   const db = c.get('db');
@@ -104,6 +194,9 @@ extensionsRouter.delete('/:id', async (c) => {
  * If the extension does not exist, is not enabled, or has no handler, 404 is returned.
  */
 extensionsRouter.all('/:name/*', async (c) => {
+  const denied = await requireExtensionPermission(c, 'execute');
+  if (denied) return denied;
+
   const name = c.req.param('name');
   const siteId = c.get('siteId');
   const db = c.get('db');
@@ -150,5 +243,5 @@ extensionsRouter.all('/:name/*', async (c) => {
   // Do not forward the CMS environment bindings or execution context into
   // third-party extension handlers; the capability-checked ctx is the only
   // supported way to expose host resources.
-  return subApp.fetch(new Request(subUrl.toString(), c.req.raw));
+  return subApp.fetch(new Request(subUrl.toString(), c.req.raw), c.env, optionalExecutionCtx(c));
 });

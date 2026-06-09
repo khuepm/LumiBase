@@ -1,15 +1,17 @@
 /**
  * LLM Provider abstraction — POST-GA Task #1.
  *
- * Provides a unified interface to call OpenAI, Anthropic, or Workers AI
+ * Provides a unified interface to call OpenAI, Anthropic, Gemini, or Workers AI
  * for intent analysis in the AI Copilot. Each provider formats the
  * CORE_SKILLS as tool definitions in its native schema and returns
  * structured tool calls.
  *
  * Configuration:
- *   LLM_PROVIDER = 'openai' | 'anthropic' | 'workers-ai' | 'echo'
+ *   LLM_PROVIDER = 'openai' | 'anthropic' | 'claude' | 'gemini' | 'workers-ai' | 'echo'
+ *   LLM_MODEL          — optional provider-specific model override
  *   OPENAI_API_KEY       — required when LLM_PROVIDER = 'openai'
- *   ANTHROPIC_API_KEY    — required when LLM_PROVIDER = 'anthropic'
+ *   ANTHROPIC_API_KEY    — required when LLM_PROVIDER = 'anthropic' or 'claude'
+ *   GEMINI_API_KEY       — required when LLM_PROVIDER = 'gemini'
  *   WORKERS_AI_GATEWAY   — optional Workers AI gateway URL
  *
  * The `echo` provider is a no-LLM fallback that uses the legacy keyword
@@ -92,6 +94,24 @@ function skillsToAnthropicTools(): AnthropicTool[] {
     description: skill.description,
     input_schema: skill.parameters,
   }));
+}
+
+interface GeminiFunctionDeclaration {
+  name: string;
+  description: string;
+  parameters: AISkillDefinition['parameters'];
+}
+
+function skillsToGeminiFunctionDeclarations(): GeminiFunctionDeclaration[] {
+  return (Object.values(CORE_SKILLS) as AISkillDefinition[]).map((skill) => ({
+    name: skill.name,
+    description: skill.description,
+    parameters: skill.parameters,
+  }));
+}
+
+function normalizeGeminiModel(model: string): string {
+  return model.startsWith('models/') ? model.slice('models/'.length) : model;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +235,95 @@ export class AnthropicProvider implements LLMProvider {
         toolCalls.push({ name: block.name, arguments: block.input });
       }
     }
+
+    return { content, toolCalls };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gemini Provider
+// ---------------------------------------------------------------------------
+
+export class GeminiProvider implements LLMProvider {
+  private readonly apiKey: string;
+  private readonly model: string;
+
+  constructor(apiKey: string, model = 'gemini-3.5-flash') {
+    this.apiKey = apiKey;
+    this.model = normalizeGeminiModel(model);
+  }
+
+  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
+    const contents = messages.map((message) => ({
+      role: message.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: message.content }],
+    }));
+
+    const body = {
+      systemInstruction: {
+        parts: [{ text: SYSTEM_PROMPT }],
+      },
+      contents,
+      tools: [
+        {
+          functionDeclarations: skillsToGeminiFunctionDeclarations(),
+        },
+      ],
+      toolConfig: {
+        functionCallingConfig: {
+          mode: 'AUTO',
+        },
+      },
+      generationConfig: {
+        maxOutputTokens: 1024,
+      },
+    };
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': this.apiKey,
+        },
+        body: JSON.stringify(body),
+      },
+    );
+
+    if (!res.ok) {
+      const err = await res.text().catch(() => 'Unknown error');
+      throw new Error(`Gemini API error ${res.status}: ${err}`);
+    }
+
+    const data = (await res.json()) as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{
+            text?: string;
+            functionCall?: {
+              name?: string;
+              args?: Record<string, unknown>;
+            };
+          }>;
+        };
+      }>;
+    };
+
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    const content = parts
+      .map((part) => part.text)
+      .filter((text): text is string => typeof text === 'string')
+      .join('\n') || null;
+    const toolCalls: LLMToolCall[] = parts
+      .map((part) => part.functionCall)
+      .filter((call): call is { name: string; args?: Record<string, unknown> } =>
+        typeof call?.name === 'string',
+      )
+      .map((call) => ({
+        name: call.name,
+        arguments: call.args ?? {},
+      }));
 
     return { content, toolCalls };
   }
@@ -365,8 +474,10 @@ export class EchoProvider implements LLMProvider {
 
 export interface LLMProviderEnv {
   LLM_PROVIDER?: string;
+  LLM_MODEL?: string;
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
+  GEMINI_API_KEY?: string;
   WORKERS_AI_ACCOUNT_ID?: string;
   WORKERS_AI_API_TOKEN?: string;
   WORKERS_AI_GATEWAY?: string;
@@ -385,7 +496,7 @@ export function createLLMProvider(env: LLMProviderEnv): LLMProvider {
         console.warn('[llm] OPENAI_API_KEY not set, falling back to echo provider');
         return new EchoProvider();
       }
-      return new OpenAIProvider(env.OPENAI_API_KEY);
+      return new OpenAIProvider(env.OPENAI_API_KEY, env.LLM_MODEL);
     }
 
     case 'anthropic': {
@@ -393,7 +504,23 @@ export function createLLMProvider(env: LLMProviderEnv): LLMProvider {
         console.warn('[llm] ANTHROPIC_API_KEY not set, falling back to echo provider');
         return new EchoProvider();
       }
-      return new AnthropicProvider(env.ANTHROPIC_API_KEY);
+      return new AnthropicProvider(env.ANTHROPIC_API_KEY, env.LLM_MODEL);
+    }
+
+    case 'claude': {
+      if (!env.ANTHROPIC_API_KEY) {
+        console.warn('[llm] ANTHROPIC_API_KEY not set, falling back to echo provider');
+        return new EchoProvider();
+      }
+      return new AnthropicProvider(env.ANTHROPIC_API_KEY, env.LLM_MODEL);
+    }
+
+    case 'gemini': {
+      if (!env.GEMINI_API_KEY) {
+        console.warn('[llm] GEMINI_API_KEY not set, falling back to echo provider');
+        return new EchoProvider();
+      }
+      return new GeminiProvider(env.GEMINI_API_KEY, env.LLM_MODEL);
     }
 
     case 'workers-ai': {
@@ -404,6 +531,7 @@ export function createLLMProvider(env: LLMProviderEnv): LLMProvider {
       return new WorkersAIProvider({
         accountId: env.WORKERS_AI_ACCOUNT_ID,
         apiToken: env.WORKERS_AI_API_TOKEN,
+        model: env.LLM_MODEL,
         gatewayUrl: env.WORKERS_AI_GATEWAY,
       });
     }

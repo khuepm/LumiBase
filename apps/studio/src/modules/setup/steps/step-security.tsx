@@ -120,7 +120,7 @@ export function clearPolicyDraft(): void {
   policyDraft = null;
 }
 
-function setPolicyDraftInternal(value: LockoutPolicyFormValues): void {
+export function setPolicyDraft(value: LockoutPolicyFormValues): void {
   policyDraft = value;
 }
 
@@ -370,7 +370,7 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
   const onSubmit: SubmitHandler<SecurityFormValues> = useCallback(
     (values) => {
       // The resolver-transformed value is what we want to persist.
-      setPolicyDraftInternal(values);
+      setPolicyDraft(values);
       setPolicyValid(true);
       onSubmitted?.(values);
     },

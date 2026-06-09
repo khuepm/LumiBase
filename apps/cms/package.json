@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/cms",
-  "version": "0.1.0",
+  "version": "0.4.3",
   "private": true,
   "description": "Lumibase CMS API — Hono.js on Cloudflare Workers.",
   "type": "module",
@@ -10,9 +10,13 @@
   },
   "scripts": {
     "dev": "wrangler dev --port 1989",
-    "build": "wrangler deploy --dry-run --outdir=dist",
-    "build:node": "esbuild src/serve.ts --bundle --platform=node --format=cjs --outfile=dist/serve.cjs --external:pg-native --external:cloudflare:workers && esbuild ../../packages/database/scripts/migrate.ts --bundle --platform=node --format=cjs --outfile=dist/migrate.cjs --external:pg-native",
-    "deploy": "wrangler deploy",
+    "build": "node ../../scripts/with-build-metadata.mjs wrangler deploy --dry-run --outdir=dist",
+    "build:staging": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env staging --dry-run --outdir=dist",
+    "build:production": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env production --dry-run --outdir=dist",
+    "build:node": "node ../../scripts/with-build-metadata.mjs esbuild src/serve.ts --bundle --platform=node --format=cjs --outfile=dist/serve.cjs --external:pg-native --external:cloudflare:workers && node ../../scripts/with-build-metadata.mjs esbuild ../../packages/database/scripts/migrate.ts --bundle --platform=node --format=cjs --outfile=dist/migrate.cjs --external:pg-native",
+    "deploy": "pnpm run deploy:production",
+    "deploy:staging": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env staging",
+    "deploy:production": "node ../../scripts/check-release-env.mjs --env production --config apps/cms/wrangler.toml && node ../../scripts/with-build-metadata.mjs wrangler deploy --env production",
     "typecheck": "tsc --noEmit",
     "typegen": "tsx scripts/typegen.ts",
     "lint": "echo \"(lint not configured)\" && exit 0",
@@ -27,14 +31,14 @@
     "@lumibase/runtime": "workspace:*",
     "@lumibase/sdk": "workspace:*",
     "@lumibase/shared": "workspace:*",
-    "drizzle-orm": "^0.36.4",
-    "hono": "^4.6.5",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.25",
     "jose": "^5.9.6",
     "maxmind": "5.0.6",
     "nanoid": "^5.0.7",
     "node-cron": "^3.0.3",
     "nodemailer": "8.0.10",
-    "postgres": "^3.4.5",
+    "postgres": "^3.4.9",
     "prom-client": "^15.1.0",
     "zod": "^3.23.8"
   },
@@ -47,7 +51,7 @@
     "fast-check": "^3.22.0",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2",
-    "vitest": "^2.1.2",
+    "vitest": "^3.2.6",
     "wrangler": "^4.96.0"
   }
 }

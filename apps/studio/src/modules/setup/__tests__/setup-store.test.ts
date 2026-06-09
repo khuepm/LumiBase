@@ -11,7 +11,7 @@ import { getEarliestUnsatisfiedStep } from '../setup-store';
  */
 
 describe('getEarliestUnsatisfiedStep', () => {
-  it('redirects to /setup/account when account is not yet valid', () => {
+  it('redirects to /setup/advance when account is not yet valid', () => {
     expect(
       getEarliestUnsatisfiedStep({
         accountValid: false,
@@ -20,10 +20,10 @@ describe('getEarliestUnsatisfiedStep', () => {
         projectValid: false,
         completed: false,
       }),
-    ).toBe('/setup/account');
+    ).toBe('/setup/advance');
   });
 
-  it('still redirects to /setup/account when later flags are set but account is not', () => {
+  it('still redirects to /setup/advance when later flags are set but account is not', () => {
     // Defensive: a stale store from a half-finished previous run could
     // technically have `pathValid=true` while `accountValid=false`. The
     // guard's job is to keep the redirect chain monotonic, so the
@@ -36,7 +36,7 @@ describe('getEarliestUnsatisfiedStep', () => {
         projectValid: true,
         completed: false,
       }),
-    ).toBe('/setup/account');
+    ).toBe('/setup/advance');
   });
 
   it('redirects to /setup/path once account is valid but path is not', () => {

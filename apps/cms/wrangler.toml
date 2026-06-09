@@ -22,13 +22,17 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 LUMIBASE_ENV = "development"
+LUMIBASE_VERSION = "unknown"
+LUMIBASE_GIT_SHA = "unknown"
+LUMIBASE_BUILD_TIME = "unknown"
+LUMIBASE_RELEASE_CHANNEL = "development"
 # Set to "true" only in local dev. Accepts `Bearer dev:<email>` tokens
 # and `?site=<id>` query for tenant resolution.
 LUMIBASE_DEV_AUTH = "true"
-# Cloudflare Access & Custom JWT bindings. Override per environment.
-CF_ACCESS_CERTS_URL = ""
-CF_ACCESS_AUDIENCE = ""
-JWT_SECRET = "dev_secret_key"
+# Local-only auth secrets belong in `apps/cms/.dev.vars`, for example:
+# JWT_SECRET=dev_secret_key
+# CF_ACCESS_CERTS_URL=
+# CF_ACCESS_AUDIENCE=
 
 # ─── Durable Objects ──────────────────────────────────────────────────────────
 # One SiteRoom DO instance per siteId handles all WebSocket connections for
@@ -55,3 +59,78 @@ crons = ["0 * * * *"]
 # [[queues.producers]]
 # binding = "REALTIME_QUEUE"
 # queue = "lumibase-realtime"
+
+# ─── Environment Profiles ────────────────────────────────────────────────────
+# Top-level [vars] is intentionally local/development only. Named environments
+# below repeat their non-sensitive vars and bindings because Wrangler treats
+# environment-scoped values and bindings as independent deployment profiles.
+# Secrets such as JWT_SECRET, CF_ACCESS_CERTS_URL and CF_ACCESS_AUDIENCE must be
+# set with `wrangler secret put --env <environment>`, not hardcoded here.
+
+[env.staging]
+name = "lumibase-cms-staging"
+
+[env.staging.vars]
+LUMIBASE_ENV = "staging"
+LUMIBASE_VERSION = "unknown"
+LUMIBASE_GIT_SHA = "unknown"
+LUMIBASE_BUILD_TIME = "unknown"
+LUMIBASE_RELEASE_CHANNEL = "staging"
+LUMIBASE_DEV_AUTH = "false"
+
+[[env.staging.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
+
+[[env.staging.migrations]]
+tag = "v1"
+new_classes = ["SiteRoom"]
+
+# [[env.staging.hyperdrive]]
+# binding = "HYPERDRIVE"
+# id = "REPLACE_WITH_STAGING_HYPERDRIVE_ID"
+
+# [[env.staging.kv_namespaces]]
+# binding = "CONFIG_CACHE"
+# id = "REPLACE_WITH_STAGING_KV_ID"
+
+# [[env.staging.r2_buckets]]
+# binding = "MEDIA"
+# bucket_name = "lumibase-media-staging"
+
+[env.staging.triggers]
+crons = ["0 * * * *"]
+
+[env.production]
+name = "lumibase-cms-production"
+
+[env.production.vars]
+LUMIBASE_ENV = "production"
+LUMIBASE_VERSION = "unknown"
+LUMIBASE_GIT_SHA = "unknown"
+LUMIBASE_BUILD_TIME = "unknown"
+LUMIBASE_RELEASE_CHANNEL = "production"
+LUMIBASE_DEV_AUTH = "false"
+
+[[env.production.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
+
+[[env.production.migrations]]
+tag = "v1"
+new_classes = ["SiteRoom"]
+
+# [[env.production.hyperdrive]]
+# binding = "HYPERDRIVE"
+# id = "REPLACE_WITH_PRODUCTION_HYPERDRIVE_ID"
+
+# [[env.production.kv_namespaces]]
+# binding = "CONFIG_CACHE"
+# id = "REPLACE_WITH_PRODUCTION_KV_ID"
+
+# [[env.production.r2_buckets]]
+# binding = "MEDIA"
+# bucket_name = "lumibase-media"
+
+[env.production.triggers]
+crons = ["0 * * * *"]

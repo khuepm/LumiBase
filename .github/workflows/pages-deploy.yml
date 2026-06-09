@@ -1,0 +1,189 @@
+name: Deploy Pages
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy (for example v0.4.2). Defaults to the selected ref."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages-deploy-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 24
+  WRANGLER_SEND_METRICS: "false"
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  deploy:
+    name: Build and deploy Pages apps
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Validate release tag
+        run: |
+          if ! [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "RELEASE_TAG must match vX.Y.Z, got: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check package versions
+        run: pnpm version:check
+
+      - name: Export build metadata
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          COMMIT_SHA="$(git rev-parse HEAD)"
+          SHORT_SHA="${COMMIT_SHA::7}"
+          BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          {
+            echo "LUMIBASE_VERSION=$VERSION"
+            echo "LUMIBASE_RELEASE_TAG=$RELEASE_TAG"
+            echo "LUMIBASE_COMMIT_SHA=$COMMIT_SHA"
+            echo "LUMIBASE_SHORT_SHA=$SHORT_SHA"
+            echo "LUMIBASE_BUILD_TIME=$BUILD_TIME"
+            echo "NEXT_PUBLIC_LUMIBASE_VERSION=$VERSION"
+            echo "NEXT_PUBLIC_LUMIBASE_RELEASE_TAG=$RELEASE_TAG"
+            echo "NEXT_PUBLIC_LUMIBASE_COMMIT_SHA=$COMMIT_SHA"
+            echo "NEXT_PUBLIC_LUMIBASE_SHORT_SHA=$SHORT_SHA"
+            echo "NEXT_PUBLIC_LUMIBASE_BUILD_TIME=$BUILD_TIME"
+            echo "VITE_LUMIBASE_VERSION=$VERSION"
+            echo "VITE_LUMIBASE_RELEASE_TAG=$RELEASE_TAG"
+            echo "VITE_LUMIBASE_COMMIT_SHA=$COMMIT_SHA"
+            echo "VITE_LUMIBASE_SHORT_SHA=$SHORT_SHA"
+            echo "VITE_LUMIBASE_BUILD_TIME=$BUILD_TIME"
+          } >> "$GITHUB_ENV"
+
+      - name: Build docs
+        run: pnpm docs:build
+
+      - name: Deploy docs to Cloudflare Pages
+        id: deploy_docs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          wrangler pages deploy dist --project-name lumibase-docs --branch main --cwd apps/docs 2>&1 | tee docs-deploy.log
+          URL="$(grep -Eo 'https://[^[:space:]]+' docs-deploy.log | tail -n1 | sed 's/[),.]*$//')"
+          if [ -z "$URL" ]; then
+            echo "Failed to parse docs deployment URL" >&2
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify docs deployment
+        run: curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --max-time 20 "${{ steps.deploy_docs.outputs.url }}" --output /dev/null
+
+      - name: Build landing
+        run: pnpm landing:build
+
+      - name: Deploy landing to Cloudflare Pages
+        id: deploy_landing
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          wrangler pages deploy apps/landing/out --project-name lumibase-landing 2>&1 | tee landing-deploy.log
+          URL="$(grep -Eo 'https://[^[:space:]]+' landing-deploy.log | tail -n1 | sed 's/[),.]*$//')"
+          if [ -z "$URL" ]; then
+            echo "Failed to parse landing deployment URL" >&2
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify landing deployment
+        run: curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --max-time 20 "${{ steps.deploy_landing.outputs.url }}" --output /dev/null
+
+      - name: Build marketplace
+        run: pnpm marketplace:build
+
+      - name: Deploy marketplace to Cloudflare Pages
+        id: deploy_marketplace
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          wrangler pages deploy apps/marketplace/out --project-name lumibase-marketplace 2>&1 | tee marketplace-deploy.log
+          URL="$(grep -Eo 'https://[^[:space:]]+' marketplace-deploy.log | tail -n1 | sed 's/[),.]*$//')"
+          if [ -z "$URL" ]; then
+            echo "Failed to parse marketplace deployment URL" >&2
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify marketplace deployment
+        run: curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --max-time 20 "${{ steps.deploy_marketplace.outputs.url }}" --output /dev/null
+
+      - name: Add deployment URLs to GitHub Release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOCS_URL: ${{ steps.deploy_docs.outputs.url }}
+          LANDING_URL: ${{ steps.deploy_landing.outputs.url }}
+          MARKETPLACE_URL: ${{ steps.deploy_marketplace.outputs.url }}
+        run: |
+          cat > deployment-notes.md <<EOF_NOTES
+          <!-- lumibase-pages-deployments:start -->
+          ## Cloudflare Pages deployments
+
+          - Docs: ${DOCS_URL}
+          - Landing: ${LANDING_URL}
+          - Marketplace: ${MARKETPLACE_URL}
+          <!-- lumibase-pages-deployments:end -->
+          EOF_NOTES
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release view "$RELEASE_TAG" --json body --jq .body > current-release-notes.md
+            python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          current = Path("current-release-notes.md").read_text().rstrip()
+          block = Path("deployment-notes.md").read_text().strip()
+          pattern = re.compile(
+              r"<!-- lumibase-pages-deployments:start -->.*?<!-- lumibase-pages-deployments:end -->",
+              re.S,
+          )
+
+          if pattern.search(current):
+              updated = pattern.sub(block, current)
+          elif current:
+              updated = f"{current}\n\n{block}"
+          else:
+              updated = block
+
+          Path("updated-release-notes.md").write_text(updated + "\n")
+          PY
+            gh release edit "$RELEASE_TAG" --notes-file updated-release-notes.md
+          else
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file deployment-notes.md
+          fi

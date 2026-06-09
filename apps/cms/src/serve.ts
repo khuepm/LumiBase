@@ -4,10 +4,17 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { schema } from '@lumibase/database';
 import cron from 'node-cron';
 import app from './index';
+import type { Bindings } from './env';
+import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
+import { createPressureLimiter } from './pressure-limiter';
+
+loadSecretFiles();
+validateProductionConfig();
 
 const port = parseInt(process.env.PORT || '1989', 10);
 const runtime = createRuntime(process.env as unknown as Record<string, unknown>);
+const pressureLimiter = createPressureLimiter(process.env as Record<string, string | undefined>);
 
 // Inject runtime into Hono context for all requests.
 app.use('*', async (c, next) => {
@@ -15,7 +22,18 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-const server = serve({ fetch: app.fetch, port });
+const server = serve({
+  fetch: (request, nodeBindings) => {
+    const pressureResponse = pressureLimiter.handle(request);
+    if (pressureResponse) return pressureResponse;
+
+    return app.fetch(
+      request,
+      { ...process.env, ...nodeBindings } as unknown as Bindings,
+    );
+  },
+  port,
+});
 console.log(`[lumibase-cms] Started in ${runtime.runtime} mode on port ${port}`);
 
 // ── Audit-log retention rotation (admin-setup-wizard task 11.4; Req 15.5;
@@ -58,9 +76,10 @@ const rotationTask = cron.schedule('0 * * * *', () => {
 process.on('SIGTERM', () => {
   console.log('[lumibase-cms] SIGTERM received, shutting down...');
 
-  // Stop the hourly audit-rotation cron so its timer can't keep the event
-  // loop alive past the server close (task 11.4).
+  // Stop the hourly audit-rotation cron and pressure sampler so their timers
+  // can't keep the event loop alive past the server close (task 11.4).
   rotationTask.stop();
+  pressureLimiter.stop();
 
   // Force exit after 10 seconds if graceful shutdown stalls
   const forceTimeout = setTimeout(() => {

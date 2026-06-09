@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { SignJWT } from 'jose';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { systemState, users, userSites } from '@lumibase/database';
 import type { AppEnv } from '../env';
 import { hashPassword, verifyPassword } from '../services/auth/password';
@@ -137,6 +137,14 @@ const loginSchema = z.object({
 authRouter.post('/register', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  if (!auth.roles?.includes('admin')) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Only administrators can register users for a site.' }] },
+      403,
+    );
+  }
+
   const body = await c.req.json();
   const input = registerSchema.parse(body);
 
@@ -281,7 +289,7 @@ authRouter.post('/login', async (c) => {
   // `anomaly_triggered`) can never break the login flow. `requestId` is
   // resolved from the context (populated by the `audit-context`
   // middleware) so each audit row carries its correlation id.
-  const audit = new AuditLogger({ db });
+  const audit = new AuditLogger({ db, siteId: c.get('siteId') });
   const notify: NotificationDeps = {
     dispatcher,
     notifyChannels: policy.notifyChannels,
@@ -355,6 +363,29 @@ authRouter.post('/login', async (c) => {
       401
     );
   }
+
+  if (user.status !== 'active') {
+    return c.json(
+      { errors: [{ code: 'ACCOUNT_DISABLED', message: 'This account is not active.' }] },
+      403,
+    );
+  }
+
+  const siteId = c.get('siteId');
+  const [membership] = await db
+    .select({ roleId: userSites.roleId })
+    .from(userSites)
+    .where(and(eq(userSites.userId, user.id), eq(userSites.siteId, siteId)))
+    .limit(1);
+
+  if (!membership && !user.isBootstrap) {
+    return c.json(
+      { errors: [{ code: 'TENANT_ACCESS_DENIED', message: 'This account is not a member of the selected site.' }] },
+      403,
+    );
+  }
+
+  const tokenRoles = user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'];
 
   // ── Anomaly detection (task 8.1; Req 12.2-12.5; design §8.5) ───────
   //
@@ -494,7 +525,8 @@ authRouter.post('/login', async (c) => {
     {
       userId: user.id,
       email: user.email,
-      roles: user.isBootstrap ? ['admin'] : ['member'],
+      roles: tokenRoles,
+      siteId,
     },
     jwtSecret
   );

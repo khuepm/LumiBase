@@ -47,9 +47,14 @@ title: My great doc
 
 ## Deploying
 
-The build output (`dist/`) is a fully static site. The repository deploy script publishes it to Cloudflare Pages project `lumibase-docs`.
+The build output (`dist/`) is a fully static site. The repository deploy script publishes it to Cloudflare Pages project `lumibase-docs`, which is intended to serve `docs.lumibase.dev`.
+
+Cloudflare Pages uses [`public/_redirects`](./public/_redirects) to route all direct page loads back to `index.html`, so React Router deep links such as `/en/docs/README` work after refresh.
+
+Wrangler does not support `account_id` inside a Pages `wrangler.toml`; pass the account through the environment when the local login cannot resolve it automatically.
 
 ```bash
+export CLOUDFLARE_ACCOUNT_ID=792c8e28da56d9568474df5fcf00cfc7
 pnpm --filter @lumibase/docs build
 pnpm docs:deploy
 ```
@@ -57,5 +62,6 @@ pnpm docs:deploy
 Equivalent Wrangler command:
 
 ```bash
-wrangler pages deploy apps/docs/dist --project-name lumibase-docs
+CLOUDFLARE_ACCOUNT_ID=792c8e28da56d9568474df5fcf00cfc7 \
+wrangler pages deploy dist --project-name lumibase-docs --branch main --cwd apps/docs
 ```

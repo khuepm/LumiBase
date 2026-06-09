@@ -32,6 +32,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <link rel="llms-txt" href="https://docs.lumibase.dev/llms.txt" />
+      </head>
       <body className={inter.className}>
         <Header />
         <main className="min-h-screen">{children}</main>

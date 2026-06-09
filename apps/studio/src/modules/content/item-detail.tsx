@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { ChevronLeft, Lock, Save, Trash2 } from 'lucide-react';
+import { Check, ChevronLeft, Copy, Lock, Save, Share2, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { FieldResource, ItemRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
@@ -28,10 +28,18 @@ export function ItemDetailPage() {
 
   const [tab, setTab] = useState<Tab>('fields');
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareRoleId, setShareRoleId] = useState('');
+  const [sharePassword, setSharePassword] = useState('');
+  const [shareValidUntil, setShareValidUntil] = useState('');
+  const [shareMaxUses, setShareMaxUses] = useState('');
+  const [shareUrl, setShareUrl] = useState('');
+  const [shareCopied, setShareCopied] = useState(false);
 
   const canRead = perms.can(collection, 'read');
   const canUpdate = perms.can(collection, 'update');
   const canDelete = perms.can(collection, 'delete');
+  const canShare = perms.can(collection, 'share');
 
   const fieldsQuery = useQuery({
     queryKey: ['fields', collection],
@@ -42,6 +50,28 @@ export function ItemDetailPage() {
     queryKey: ['item', collection, id],
     queryFn: async () => (await client.items(collection as never).detail(id)).data as ItemRow,
     enabled: !perms.isLoading && canRead,
+  });
+
+  const shareRolesQuery = useQuery({
+    queryKey: ['share-roles', collection],
+    enabled: shareOpen && canShare,
+    queryFn: async () => {
+      const roles = (await client.roles.list()).data.filter((role) => !role.adminAccess && !role.appAccess);
+      const out = await Promise.all(
+        roles.map(async (role) => {
+          const detail = (await client.roles.detail(role.id)).data;
+          const policyDetails = await Promise.all(
+            detail.policies.map((binding) => client.policies.detail(binding.policyId).then((res) => res.data)),
+          );
+          const permissions = policyDetails.flatMap((policy) => policy.permissions ?? []);
+          const hasRead = permissions.some((perm) => perm.collection === collection && perm.action === 'read');
+          const hasNonRead = permissions.some((perm) => perm.action !== 'read');
+          if (hasRead && !hasNonRead) return role;
+          return null;
+        })
+      );
+      return out.filter((role): role is NonNullable<typeof role> => role !== null);
+    },
   });
 
   // Hydrate draft from server data once.
@@ -87,6 +117,24 @@ export function ItemDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
       navigate({ to: '/content/$collection', params: { collection } });
+    },
+  });
+
+  const createShareMutation = useMutation({
+    mutationFn: async () => {
+      const res = await client.shares.create({
+        collection,
+        itemId: id,
+        roleId: shareRoleId,
+        password: sharePassword.trim() || undefined,
+        validUntil: shareValidUntil ? new Date(shareValidUntil).toISOString() : null,
+        maxUses: shareMaxUses ? Number(shareMaxUses) : null,
+      });
+      return res.data;
+    },
+    onSuccess: (share) => {
+      setShareUrl(new URL(share.url, window.location.origin).toString());
+      setShareCopied(false);
     },
   });
 
@@ -146,6 +194,21 @@ export function ItemDetailPage() {
           <PresenceChip collection={collection} itemId={id} />
           <button
             type="button"
+            onClick={() => setShareOpen(true)}
+            disabled={!canShare}
+            title={canShare ? undefined : 'You do not have share permission on this collection.'}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50',
+              canShare
+                ? 'border-border text-foreground hover:bg-muted'
+                : 'cursor-not-allowed border-muted-foreground/20 text-muted-foreground',
+            )}
+          >
+            {canShare ? <Share2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+            Share
+          </button>
+          <button
+            type="button"
             onClick={() => deleteMutation.mutate()}
             disabled={deleteMutation.isPending || !canDelete}
             title={canDelete ? undefined : 'You do not have delete permission on this collection.'}
@@ -180,6 +243,116 @@ export function ItemDetailPage() {
       {saveMutation.error && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
           Save failed.
+        </div>
+      )}
+
+      {shareOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-lg rounded-lg border bg-background p-4 shadow-xl">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Create share link</h2>
+              <button
+                type="button"
+                onClick={() => setShareOpen(false)}
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Close share dialog"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <label className="block text-xs font-medium text-muted-foreground">
+                Share role
+                <select
+                  value={shareRoleId}
+                  onChange={(event) => setShareRoleId(event.target.value)}
+                  className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm"
+                >
+                  <option value="">Select a read-only role</option>
+                  {(shareRolesQuery.data ?? []).map((role) => (
+                    <option key={role.id} value={role.id}>{role.name}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block text-xs font-medium text-muted-foreground">
+                  Password
+                  <input
+                    type="password"
+                    value={sharePassword}
+                    onChange={(event) => setSharePassword(event.target.value)}
+                    className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm"
+                  />
+                </label>
+                <label className="block text-xs font-medium text-muted-foreground">
+                  Max uses
+                  <input
+                    type="number"
+                    min={1}
+                    value={shareMaxUses}
+                    onChange={(event) => setShareMaxUses(event.target.value)}
+                    className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm"
+                  />
+                </label>
+              </div>
+              <label className="block text-xs font-medium text-muted-foreground">
+                Valid until
+                <input
+                  type="datetime-local"
+                  value={shareValidUntil}
+                  onChange={(event) => setShareValidUntil(event.target.value)}
+                  className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm"
+                />
+              </label>
+              {shareRolesQuery.isLoading && <p className="text-xs text-muted-foreground">Loading eligible roles…</p>}
+              {shareRolesQuery.data?.length === 0 && (
+                <p className="text-xs text-muted-foreground">No read-only share roles are available.</p>
+              )}
+              {createShareMutation.error && (
+                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+                  Failed to create share link.
+                </p>
+              )}
+              {shareUrl && (
+                <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-2">
+                  <input
+                    readOnly
+                    value={shareUrl}
+                    className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(shareUrl);
+                      setShareCopied(true);
+                    }}
+                    className="rounded-md border bg-background p-1.5 hover:bg-muted"
+                    aria-label="Copy share link"
+                  >
+                    {shareCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </button>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShareOpen(false)}
+                  className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => createShareMutation.mutate()}
+                  disabled={!shareRoleId || createShareMutation.isPending}
+                  className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                  {createShareMutation.isPending ? 'Creating…' : 'Create link'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
