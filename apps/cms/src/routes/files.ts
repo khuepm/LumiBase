@@ -4,8 +4,15 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { SignJWT, jwtVerify } from 'jose';
 import type { AppEnv } from '../env';
+import { requireSiteAdmin } from '../middleware/site-admin';
 
 export const filesRouter = new Hono<AppEnv>();
+filesRouter.use('*', async (c, next) => {
+  if (c.req.path.includes('/files/upload/')) {
+    return next();
+  }
+  return requireSiteAdmin()(c, next);
+});
 
 // Helper to sign upload token
 async function signUploadToken(payload: { key: string; siteId: string }, secret: string): Promise<string> {
