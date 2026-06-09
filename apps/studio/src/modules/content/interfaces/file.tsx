@@ -3,6 +3,7 @@ import { useRef, useState, type DragEvent } from 'react';
 import { cn } from '@/lib/cn';
 import { getApiClient } from '@/lib/api';
 import { readOptions, type InterfaceComponent } from './types';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 interface FileOptions {
   accept?: string;
@@ -54,7 +55,7 @@ export const FileInterface: InterfaceComponent<string> = ({
 
       onChange(fileRecord.filenameDisk);
     } catch (err) {
-      console.error(err);
+      console.error(formatSafeError(err));
       alert('Failed to upload file.');
     } finally {
       setUploading(false);

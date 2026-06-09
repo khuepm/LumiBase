@@ -22,6 +22,7 @@ import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/s
 import { HookDispatcher } from '../extensions/hook-dispatcher';
 import { AuditLogger } from '../modules/audit/logger';
 import type { PrimaryKeyType, StorageMode } from './schema-service';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
  * ItemService — generic CRUD over the `items` JSONB store, driven by the
@@ -976,7 +977,7 @@ export class ItemService {
       }
     } catch (err) {
       // Search indexing is non-critical — log and continue.
-      console.error('[item-service] search index failed', { collectionName, id, err });
+      console.error('[item-service] search index failed', { collectionName, id, err: formatSafeError(err) });
     }
   }
 
@@ -998,7 +999,7 @@ export class ItemService {
       }
     } catch (err) {
       // Search de-indexing is non-critical — log and continue.
-      console.error('[item-service] search deindex failed', { collectionName, id, err });
+      console.error('[item-service] search deindex failed', { collectionName, id, err: formatSafeError(err) });
     }
   }
 
@@ -1035,7 +1036,7 @@ export class ItemService {
       );
     } catch (err) {
       // Realtime fan-out is non-critical — log and continue.
-      console.error('[item-service] realtime publish failed', { collection, itemId, err });
+      console.error('[item-service] realtime publish failed', { collection, itemId, err: formatSafeError(err) });
     }
   }
 
@@ -1110,7 +1111,7 @@ export class ItemService {
         }
       }
     } catch (err) {
-      console.error('[item-service] materialize trigger failed', { collectionName, err });
+      console.error('[item-service] materialize trigger failed', { collectionName, err: formatSafeError(err) });
     }
   }
 

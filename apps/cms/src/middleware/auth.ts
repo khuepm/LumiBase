@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -135,7 +136,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       c.set('auth', principal);
       return next();
     } catch (err) {
-      console.warn('[withAuth] CF Access verification failed:', err);
+      console.warn('[withAuth] CF Access verification failed:', formatSafeError(err));
       return c.json(
         { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid Cloudflare Access token.' }] },
         401,
@@ -223,7 +224,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       c.set('auth', principal);
       return next();
     } catch (err) {
-      console.warn('[withAuth] Custom JWT verification failed:', err);
+      console.warn('[withAuth] Custom JWT verification failed:', formatSafeError(err));
       return c.json(
         { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
         401,
