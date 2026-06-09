@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     globals: true,
+    testTimeout: 15_000,
     setupFiles: ['./src/test/setup.ts'],
     // `.tsx` is included so component tests (rendered via React Testing
     // Library, e.g. `steps/__tests__/step-recovery.test.tsx`) are

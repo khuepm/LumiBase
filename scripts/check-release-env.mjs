@@ -68,7 +68,7 @@ function parseScalar(value) {
 function parseInlineTable(value) {
   const entries = {};
   const inner = value.trim().replace(/^\{/, '').replace(/\}$/, '');
-  const pairs = inner.match(/(?:[^,"{}]|"(?:\\.|[^"])*")+/g) || [];
+  const pairs = inner.match(/(?:[^,"{}]|"(?:[^"\\]|\\.)*")+/g) || [];
   for (const pair of pairs) {
     const separator = pair.indexOf('=');
     if (separator === -1) continue;
