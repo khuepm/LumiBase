@@ -52,6 +52,51 @@ docker compose \
   up -d --build
 ```
 
+## Note: `SERVICE_UNAVAILABLE` when the instance is under pressure
+
+If a client receives HTTP `503` with a body similar to:
+
+```json
+{
+  "errors": [
+    {
+      "code": "SERVICE_UNAVAILABLE",
+      "message": "Lumibase API is temporarily unavailable because this instance is under pressure. Retry later.",
+      "details": { "reason": "event_loop_delay" }
+    }
+  ]
+}
+```
+
+it does not necessarily mean the CMS service is dead. In Docker mode, `LUMIBASE_PRESSURE_LIMITER_ENABLED=true` lets the CMS protect itself when the Node.js event loop is saturated. The guard returns `503` with `Retry-After` so clients and upstream proxies can retry in a controlled way instead of adding more work to an overloaded process.
+
+Common causes include bursty API traffic, undersized CPU/RAM, heavy export or analytics endpoints, queries that fetch too much data before filtering or JSON processing in JavaScript, slow cache/queue backends, or Docker networking misconfiguration such as using `localhost` instead of the Compose service name for PostgreSQL.
+
+Quick checks:
+
+```bash
+docker stats
+docker compose logs --since=10m cms
+curl -i http://localhost:1989/health
+curl -s http://localhost:1989/metrics | grep -E 'nodejs_eventloop|process_cpu|lumibase_http_request_duration'
+```
+
+Temporary tuning while investigating:
+
+```env
+LUMIBASE_PRESSURE_LIMITER_MAX_EVENT_LOOP_DELAY=1500
+LUMIBASE_PRESSURE_LIMITER_MAX_EVENT_LOOP_UTILIZATION=false
+LUMIBASE_PRESSURE_LIMITER_RETRY_AFTER=5
+```
+
+Disable the guard only briefly when another layer already provides overload protection:
+
+```env
+LUMIBASE_PRESSURE_LIMITER_ENABLED=false
+```
+
+The long-term fix is to identify the endpoint causing spikes, optimize query/index/pagination/export streaming, or add CMS replicas/CPU.
+
 ## Roll back
 
 To roll back the CMS container to a previous release:
