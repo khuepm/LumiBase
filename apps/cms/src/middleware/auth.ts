@@ -80,6 +80,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   if (
     path === '/api/v1/auth/register' ||
     path === '/api/v1/auth/login' ||
+    path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/')
   ) {
     return next();
@@ -87,7 +88,6 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
   const authHeader = c.req.header('authorization') ?? '';
   const [scheme, token] = authHeader.split(' ');
-  const realtimeQueryToken = path === '/api/v1/realtime' ? c.req.query('token') : undefined;
 
   // 1. Dev Mode Auth (Only check if enabled in env)
   // Fall back to process.env so the Node.js / Docker serve path works
@@ -95,7 +95,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const devAuthEnabled =
     c.env.LUMIBASE_DEV_AUTH === 'true' || process.env.LUMIBASE_DEV_AUTH === 'true';
   if (devAuthEnabled) {
-    const devToken = token || realtimeQueryToken || authHeader;
+    const devToken = token || authHeader;
     if (devToken && devToken.startsWith('dev:')) {
       const parts = devToken.slice(4).split(':'); // dev:<email>:<role>
       const email = parts[0] || 'dev@lumibase.dev';
@@ -149,7 +149,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
   // 3. Custom JWT Auth (Frontend Users flow)
   const bearerToken =
-    scheme?.toLowerCase() === 'bearer' && token ? token : realtimeQueryToken;
+    scheme?.toLowerCase() === 'bearer' && token ? token : undefined;
 
   if (bearerToken) {
     const tokenHash = await sha256Hex(bearerToken);

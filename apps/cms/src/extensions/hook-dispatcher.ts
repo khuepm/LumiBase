@@ -52,7 +52,7 @@ export class HookDispatcher {
    * @returns Possibly-mutated context (for before hooks).
    */
   async dispatch(event: HookEvent, ctx: ExtensionHookContext): Promise<ExtensionHookContext> {
-    const enabled = this.extensions.filter((e) => e.enabled);
+    const enabled = this.extensions.filter((e) => e.enabled && e.type === 'hook');
     let current = { ...ctx };
 
     for (const ext of enabled) {

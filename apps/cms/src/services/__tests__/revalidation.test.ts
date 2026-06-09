@@ -34,4 +34,40 @@ describe('dispatchRevalidation', () => {
     expect(results[0]?.error).toContain('blocked');
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('handles fetch errors during revalidation', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+
+    const results = await dispatchRevalidation(
+      [{ id: 'prod', label: 'Production', url: 'https://example.com/api/revalidate', status: 'active' }],
+      ['posts'],
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual({
+      targetId: 'prod',
+      tag: 'posts',
+      ok: false,
+      error: 'Network error',
+    });
+  });
+
+  it('handles fetch timeout errors', async () => {
+    const timeoutError = new Error('The operation was aborted due to timeout');
+    timeoutError.name = 'TimeoutError';
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(timeoutError);
+
+    const results = await dispatchRevalidation(
+      [{ id: 'prod', label: 'Production', url: 'https://example.com/api/revalidate', status: 'active' }],
+      ['posts'],
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual({
+      targetId: 'prod',
+      tag: 'posts',
+      ok: false,
+      error: 'The operation was aborted due to timeout',
+    });
+  });
 });
