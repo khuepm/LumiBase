@@ -1,4 +1,5 @@
 import ColorPickerInterface from './interface';
+import { defineInterface } from '@lumibase/extension-sdk';
 
 // 1. Export the extension manifest
 export const manifest = {
@@ -16,13 +17,14 @@ export const manifest = {
   compatibleWith: '^0.4.0',
 };
 
-// 2. Export the component registration function
-// At runtime, LumiBase Studio will import index.js and load this registration
-export default {
+// 2. Export the interface definition.
+// At runtime, LumiBase Studio imports this default export and registers the component.
+export default defineInterface({
   id: 'color-picker',
   name: 'Color Picker',
   component: ColorPickerInterface,
   types: ['string'], // compatible with string field types in Postgres
+  group: 'standard',
   options: [
     {
       field: 'defaultColor',
@@ -36,4 +38,4 @@ export default {
       },
     },
   ],
-};
+});
