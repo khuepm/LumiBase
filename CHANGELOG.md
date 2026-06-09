@@ -7,16 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Website: [lumibase.dev](https://lumibase.dev)
 
-## [Unreleased]
+## [0.4.4] - 2026-06-10
 
-### Added
+### Version
+
+- `v0.4.4`
+
+### Date
+
+- `2026-06-10`
+
+### Highlights
 
 - Added database migration preflight/dry-run and version commands for operators and Docker startup checks.
+- Refined migration policies to enforce backward compatibility and robust preflight validation.
+
+### Breaking changes
+
+- None.
 
 ### Migrations
 
 - No new schema migration is included in this change. The migration runner now reports the current Drizzle schema version, verifies database connectivity, and lists pending migrations before applying DDL.
 - Migration policy now requires backward-compatible migrations for at least one release window: add nullable/defaulted fields first, backfill separately when needed, and defer destructive drops to a later cleanup release.
+- Compatible DB/schema: `v0.4.3` schema state.
+
+### Upgrade steps
+
+1. Review the breaking changes and migrations above.
+2. Confirm the target Docker image tag exists:
+   `ghcr.io/khuepm/lumibase-cms:0.4.4`.
+3. Deploy the `v0.4.4` image or Cloudflare Worker release.
+4. Verify `/health`, and critical CMS workflows after deployment.
+
+### Rollback notes
+
+- Roll back by redeploying the previously known-good CMS image tag (`v0.4.3`).
+- No database/schema restore is required.
+
+### Docker image tags
+
+- CMS: `ghcr.io/khuepm/lumibase-cms:0.4.4`
+- Optional immutable digest: `ghcr.io/khuepm/lumibase-cms@sha256:<digest>`
+
+### Compatibility DB/schema
+
+- Compatible DB/schema: `v0.4.3` schema state.
+- Minimum supported database engine/version: use the version supported by the target deployment environment.
+
+### Backup guidance
+
+- Backup required: No.
+- Backup scope: none.
+- Reason: this release does not modify runtime data or schema state.
+
+### Added
+
+- Added database migration preflight/dry-run and version commands for operators and Docker startup checks.
 
 ## Required release notes format
 

@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/docs",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "description": "LumiBase Docs Viewer — browse project documentation (React + Vite).",
   "type": "module",

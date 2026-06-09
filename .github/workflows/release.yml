@@ -202,11 +202,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set IMAGE_NAME to lowercase
+      - name: Set IMAGE_NAME
         run: |
-          echo "IMAGE_NAME=$(echo "$RAW_IMAGE_NAME" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
-        env:
-          RAW_IMAGE_NAME: ${{ github.repository }}
+          echo "IMAGE_NAME=khuepm/lumibase-cms" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

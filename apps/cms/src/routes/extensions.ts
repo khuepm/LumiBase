@@ -2,7 +2,6 @@ import { extensions } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context, MiddlewareHandler } from 'hono';
-import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ExtensionSandbox } from '../extensions/sandbox';
@@ -28,8 +27,6 @@ const adminOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (forbidden) return forbidden;
   return next();
 };
-
-extensionsRouter.use('*', adminOnly);
 
 const extensionSchema = z.object({
   key: z.string().regex(/^[a-z0-9_:-]+$/).optional(),
@@ -113,7 +110,7 @@ function optionalExecutionCtx(c: Context<AppEnv>): ExecutionContext | undefined 
   }
 }
 
-extensionsRouter.get('/', async (c) => {
+extensionsRouter.get('/', adminOnly, async (c) => {
   const denied = await requireExtensionPermission(c, 'read');
   if (denied) return denied;
 
@@ -124,7 +121,7 @@ extensionsRouter.get('/', async (c) => {
   return c.json({ data });
 });
 
-extensionsRouter.post('/', async (c) => {
+extensionsRouter.post('/', adminOnly, async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
   const auth = c.get('auth');
@@ -148,7 +145,7 @@ extensionsRouter.post('/', async (c) => {
   return c.json({ data: row });
 });
 
-extensionsRouter.patch('/:id', async (c) => {
+extensionsRouter.patch('/:id', adminOnly, async (c) => {
   const id = c.req.param('id');
   const siteId = c.get('siteId');
   const db = c.get('db');
@@ -168,7 +165,7 @@ extensionsRouter.patch('/:id', async (c) => {
   return c.json({ data: row });
 });
 
-extensionsRouter.delete('/:id', async (c) => {
+extensionsRouter.delete('/:id', adminOnly, async (c) => {
   const denied = await requireExtensionPermission(c, 'delete');
   if (denied) return denied;
 

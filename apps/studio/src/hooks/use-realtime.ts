@@ -13,34 +13,16 @@ export function useRealtimeSubscription(collection: string, onUpdate?: (payload:
 
     // In a real application, we would pass the active siteId.
     // For this stub, we just pass 'default'.
-    const ws = client.realtime.connect('default').then((ws) => {
+    client.realtime.connect('default').then((ws) => {
       if (!isMounted) {
         ws.close();
         return;
       }
-    });
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setIsConnected(true);
-      // Subscribe to the specific collection
-      ws.send(JSON.stringify({ type: 'subscribe', collection }));
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.collection === collection && onUpdate) {
-          onUpdate(data);
-        }
-      } catch (err) {
-        console.error('Failed to parse realtime message:', formatSafeError(err));
-      }
+      
       wsRef.current = ws;
 
       ws.onopen = () => {
         setIsConnected(true);
-        // Subscribe to the specific collection
         ws.send(JSON.stringify({ type: 'subscribe', collection }));
       };
 
@@ -51,7 +33,7 @@ export function useRealtimeSubscription(collection: string, onUpdate?: (payload:
             onUpdate(data);
           }
         } catch (err) {
-          console.error('Failed to parse realtime message:', err);
+          console.error('Failed to parse realtime message:', formatSafeError(err));
         }
       };
 

@@ -22,6 +22,7 @@ async function loadCtx(
 ) {
   globalThis.__lumibaseExtensionCtx = undefined;
   const sandbox = new ExtensionSandbox({}, deps.db, deps.actorDataAccess, deps.audit);
+  vi.spyOn(sandbox as any, 'isTrustedBundleUrl').mockReturnValue(true);
   await sandbox.load({
     name: `test_${capabilities.join('_') || 'actor'}`,
     bundleUrl: bundleUrl(`test_${capabilities.join('_') || 'actor'}`),
