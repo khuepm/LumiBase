@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getApiClient } from '@/lib/api';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 export function useRealtimeSubscription(collection: string, onUpdate?: (payload: any) => void) {
   const [isConnected, setIsConnected] = useState(false);
@@ -26,7 +27,7 @@ export function useRealtimeSubscription(collection: string, onUpdate?: (payload:
           onUpdate(data);
         }
       } catch (err) {
-        console.error('Failed to parse realtime message:', err);
+        console.error('Failed to parse realtime message:', formatSafeError(err));
       }
     };
 

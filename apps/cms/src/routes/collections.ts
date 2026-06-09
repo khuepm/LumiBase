@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { SchemaService, SchemaServiceError } from '../services/schema-service';
 import { requireSchemaPermission } from './schema-permissions';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
  * /collections, /fields, /relations — Phase A schema admin surface.
@@ -122,7 +123,7 @@ const toError = (err: unknown) => {
   if (err instanceof SchemaServiceError) {
     return { status: err.status, body: { errors: [{ code: err.code, message: err.message }] } };
   }
-  console.error('[schema] unexpected error', err);
+  console.error('[schema] unexpected error', formatSafeError(err));
   return {
     status: 500 as const,
     body: { errors: [{ code: 'INTERNAL', message: 'Unhandled schema error.' }] },

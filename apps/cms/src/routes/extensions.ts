@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ExtensionSandbox } from '../extensions/sandbox';
 import { PermissionService, type PermissionAction } from '../services/permission-service';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 export const extensionsRouter = new Hono<AppEnv>();
 
@@ -208,7 +209,7 @@ extensionsRouter.all('/:name/*', async (c) => {
   try {
     mod.handler(subApp);
   } catch (err) {
-    console.error(`[extensions] handler mount failed for "${name}":`, err);
+    console.error(`[extensions] handler mount failed for "${name}":`, formatSafeError(err));
     return c.json({ errors: [{ code: 'HANDLER_ERROR', message: 'Extension handler threw during mount.' }] }, 500);
   }
 

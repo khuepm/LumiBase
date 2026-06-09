@@ -24,6 +24,7 @@ import { teams, teamMembers, userSites, users, scimTokens, activity } from "@lum
 import { and, eq, ilike, or, isNull, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import type { AppEnv } from "../env";
+import { formatSafeError } from '@lumibase/shared/utils';
 
 export const scimRouter = new Hono<AppEnv>();
 
@@ -94,7 +95,7 @@ scimRouter.use("*", async (c, next) => {
       .set({ lastUsedAt: new Date() })
       .where(eq(scimTokens.id, token.id));
   } catch (err) {
-    console.error("Failed to update SCIM lastUsedAt", err);
+    console.error("Failed to update SCIM lastUsedAt", formatSafeError(err));
   }
 
   // Set siteId context to the token's siteId to enforce multi-tenant isolation
@@ -142,7 +143,7 @@ scimRouter.use("*", async (c, next) => {
           },
         });
       } catch (err) {
-        console.error("Failed to log SCIM activity", err);
+        console.error("Failed to log SCIM activity", formatSafeError(err));
       }
     }
   }

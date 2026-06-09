@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { SchemaService, SchemaServiceError } from '../services/schema-service';
 import { requireSchemaPermission } from './schema-permissions';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 const relationInputSchema = z.object({
   manyCollection: z.string().min(1),
@@ -31,7 +32,7 @@ const toError = (err: unknown) => {
   if (err instanceof SchemaServiceError) {
     return { status: err.status, body: { errors: [{ code: err.code, message: err.message }] } };
   }
-  console.error('[relations] unexpected error', err);
+  console.error('[relations] unexpected error', formatSafeError(err));
   return {
     status: 500 as const,
     body: { errors: [{ code: 'INTERNAL', message: 'Unhandled relation error.' }] },

@@ -58,6 +58,7 @@ import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 const app = new Hono<AppEnv>();
 
@@ -237,7 +238,7 @@ app.notFound((c) =>
 );
 app.onError((err, c) => {
   const requestId = c.get('requestId');
-  console.error('[lumibase-cms] unhandled error', { requestId, err });
+  console.error('[lumibase-cms] unhandled error', { requestId, err: formatSafeError(err) });
   return c.json(
     { errors: [{ code: 'INTERNAL', message: 'Internal Server Error', requestId }] },
     500,

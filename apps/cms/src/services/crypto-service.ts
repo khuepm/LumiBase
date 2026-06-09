@@ -1,3 +1,5 @@
+import { formatSafeError } from '@lumibase/shared/utils';
+
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -60,7 +62,7 @@ export class CryptoService {
       return JSON.parse(text);
     } catch (e) {
       // In case of decryption failure, return a fallback or throw
-      console.error('Decryption failed', e);
+      console.error('Decryption failed', formatSafeError(e));
       return '*** (decryption failed) ***';
     }
   }

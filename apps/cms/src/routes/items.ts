@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ItemService, ItemServiceError, parseDeepQueryParams } from '../services/item-service';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
  * /items/:collection — generic CRUD over the items store.
@@ -77,7 +78,7 @@ const toError = (err: unknown) => {
   if (err instanceof ItemServiceError) {
     return { status: err.status, body: { errors: [{ code: err.code, message: err.message }] } };
   }
-  console.error('[items] unexpected error', err);
+  console.error('[items] unexpected error', formatSafeError(err));
   return {
     status: 500 as const,
     body: { errors: [{ code: 'INTERNAL', message: 'Unhandled item error.' }] },

@@ -1,3 +1,4 @@
+import { formatSafeError } from "@lumibase/shared/utils";
 /**
  * ExtensionLoader — dynamically loads Studio UI extensions at runtime.
  *
@@ -85,7 +86,7 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
       });
     }
   } catch (err) {
-    console.warn('[extension-loader] failed to load extensions:', err);
+    console.warn('[extension-loader] failed to load extensions:', formatSafeError(err));
   }
 
   loaded = true;
