@@ -19,8 +19,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Highlights
 
-- Added database migration preflight/dry-run and version commands for operators and Docker startup checks.
-- Refined migration policies to enforce backward compatibility and robust preflight validation.
+- Implemented core security hardening measures, including restricting management and backup/restore APIs to site administrators, tenant isolation for materialized physical tables, and strict JWT verification algorithm enforcement.
+- Hardened extension execution environments, restricted extension creation privileges, and sanitized error logs to prevent API key leaks.
+- Implemented a secure short-lived ticket authentication system for WebSocket/realtime connections.
+- Introduced three new standard interface extensions for Studio: SEO, Files, and AIO (All-in-One), along with `@lumibase/extension-sdk` improvements.
+- Added database migration preflight checks, dry-run commands, and a Docker request pressure-limiting middleware.
+- Resolved N+1 query bottlenecks in marketplace publishing and item detail share role fetching.
 
 ### Breaking changes
 
@@ -63,7 +67,35 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
-- Added database migration preflight/dry-run and version commands for operators and Docker startup checks.
+- Added Docker request pressure-limiting middleware (`apps/cms/src/pressure-limiter.ts`) to prevent service exhaustion.
+- Added CodeQL analysis workflow (`.github/workflows/codeql-analysis.yml`) for continuous security scanning.
+- Introduced standard interface extensions in Studio: SEO (`apps/studio/src/modules/content/interfaces/seo.tsx`), Files (`apps/studio/src/modules/content/interfaces/files.tsx`), and AIO (`apps/studio/src/modules/content/interfaces/aio.tsx`), integrated with the new interface catalogue plumbing.
+- Added the `defineInterface` helper in `@lumibase/extension-sdk` for custom UI interface development.
+- Added `llms.txt` and sitemap references in `robots.txt` for AI crawler discovery.
+- Added database migration preflight/dry-run checks to verify DB schema versions and connectivity before executing DDL.
+- Made the setup progress indicator clickable in Studio for easier step navigation.
+- Added override for admin redirection in setup.
+
+### Changed
+
+- Upgraded the CI/CD build environments to Node 24 and fixed script runner shell execution settings.
+- Enforced a strict list of permitted signature algorithms in JWT verification (`jwtVerify`).
+- Refactored landing page rewards claims to transition claim status.
+
+### Fixed
+
+- Fixed an XSS (Cross-Site Scripting) vulnerability in the docs app search dialog by sanitizing search snippets.
+- Fixed an N+1 query performance bottleneck in the marketplace publishing route.
+- Fixed an N+1 query in item details share role fetching.
+- Hardened tenant isolation by securing and isolating materialized physical tables (`apps/cms/src/routes/materialize.ts`).
+- Gated extension creation privileges to authorized users only.
+- Gated administrative backup/restore endpoints and management APIs to site administrators only.
+- Hardened sandbox execution of custom interface extensions to prevent breakouts.
+- Sanitized CMS error logs to filter out potential API key leaks.
+- Mitigated potential SQL injection vectors in Drizzle materialize-service triggers.
+- Fixed setup redirections in production in Studio.
+- Highlighted met password rules in the setup page.
+- Fixed delivery section page hydration source hydration in CMS.
 
 ## Required release notes format
 
@@ -138,17 +170,13 @@ changelog and the published GitHub Release notes:
 
 ### Highlights
 
-- Added the Agent Harness Layer foundation, including agent goals, runs,
-  plans, tool calls, approvals, artifacts, evaluations, memory, and tool
-  registry services.
-- Expanded AI provider support for LumiBase Copilot with model overrides,
-  Gemini function calling, Claude/Anthropic aliases, OpenAI model selection,
-  Workers AI model selection, and echo fallback tests.
-- Added Studio, SDK, OpenAPI, and documentation surfaces for agent harness
-  workflows and release/deployment operations.
-- Hardened CI and release workflows for pnpm setup, cache behavior, build
-  metadata, Docker publishing, and Pages deployment.
-- Fixed SCIM tenant authorization scoping.
+- Added the Agent Harness Layer foundation, including agent goals, runs, plans, tool calls, approvals, artifacts, evaluations, memory, and tool registry services.
+- Expanded AI provider support for LumiBase Copilot with model overrides, Gemini function calling, Claude/Anthropic aliases, OpenAI model selection, Workers AI model selection, and echo fallback tests.
+- Introduced opt-in release update checks in Studio and a version footer in settings.
+- Hardened CI and release workflows for pnpm setup, cache behavior, build metadata, Docker publishing, and Pages deployment.
+- Added verification of uploaded extensions and file signatures.
+- Scoped SCIM tenant authorization to prevent cross-tenant token vulnerabilities.
+- Added comprehensive developer integration examples and machine-readable specs (OpenAPI, JSON Schemas, MCP configurations).
 
 ### Breaking changes
 
@@ -157,69 +185,66 @@ changelog and the published GitHub Release notes:
 ### Migrations
 
 - Includes database migration `0018_agent_harness.sql`.
-- The migration adds Agent Harness tables and indexes for goals, runs, plans,
-  tool registry, permissions, tool calls, approvals, artifacts, evaluations,
-  and memory.
-- Compatible DB/schema: `v0.4.2` schema upgraded through
-  `0018_agent_harness.sql`.
+- The migration adds Agent Harness tables and indexes for goals, runs, plans, tool registry, permissions, tool calls, approvals, artifacts, evaluations, and memory.
+- Compatible DB/schema: `v0.4.2` schema upgraded through `0018_agent_harness.sql`.
 - No destructive schema changes are included.
 
 ### Upgrade steps
 
 1. Review the breaking changes and migrations above.
 2. Confirm the target Docker image tag exists:
-   `ghcr.io/.../lumibase-cms:0.4.3`.
+   `ghcr.io/khuepm/lumibase-cms:0.4.3`.
 3. Take a database backup before applying the Agent Harness migration.
 4. Deploy the `v0.4.3` image or Cloudflare Worker release.
 5. Run database migrations through `0018_agent_harness.sql`.
-6. Verify `/api/v1/agent/*`, `/api/v1/ai/chat`, `/health`, Studio settings,
-   and critical CMS workflows.
+6. Verify `/api/v1/agent/*`, `/api/v1/ai/chat`, `/health`, Studio settings, and critical CMS workflows.
 
 ### Rollback notes
 
-- Application rollback to `v0.4.2` is safe if the new Agent Harness tables are
-  unused.
-- If production data has been written to Agent Harness tables and must be
-  preserved exactly, take a database backup before rollback and avoid dropping
-  the new tables.
+- Application rollback to `v0.4.2` is safe if the new Agent Harness tables are unused.
+- If production data has been written to Agent Harness tables and must be preserved exactly, take a database backup before rollback and avoid dropping the new tables.
 - No destructive rollback migration is provided for `0018_agent_harness.sql`.
 
 ### Docker image tags
 
-- CMS: `ghcr.io/.../lumibase-cms:0.4.3`
-- Optional immutable digest: `ghcr.io/.../lumibase-cms@sha256:<digest>`
+- CMS: `ghcr.io/khuepm/lumibase-cms:0.4.3`
+- Optional immutable digest: `ghcr.io/khuepm/lumibase-cms@sha256:<digest>`
 
 ### Compatibility DB/schema
 
 - Compatible DB/schema: `v0.4.2` plus `0018_agent_harness.sql`.
-- Minimum supported database engine/version: PostgreSQL 16 or the version
-  supported by the target deployment environment.
+- Minimum supported database engine/version: PostgreSQL 16 or the version supported by the target deployment environment.
 
 ### Backup guidance
 
 - Backup required: Yes.
 - Backup scope: database.
-- Reason: this release introduces new Agent Harness database tables and
-  indexes.
+- Reason: this release introduces new Agent Harness database tables and indexes.
 
 ### Added
 
-- Added Agent Harness database schema, runtime services, Studio settings page,
-  SDK types, OpenAPI routes, and English/Vietnamese feature documentation.
-- Added Gemini provider support for AI Copilot through REST
-  `generateContent` function declarations.
-- Added provider-level model override support via `LLM_MODEL` for OpenAI,
-  Anthropic/Claude, Gemini, and Workers AI.
-- Added provider factory and tool-call parsing tests for OpenAI, Claude,
-  Gemini, and echo fallback.
-- Added developer integration examples and expanded AI-readable repo docs.
+- Added Agent Harness database schema, runtime services, Studio settings page, SDK types, OpenAPI routes, and English/Vietnamese feature documentation.
+- Added Gemini provider support for AI Copilot through REST `generateContent` function declarations.
+- Added provider-level model override support via `LLM_MODEL` for OpenAI, Anthropic/Claude, Gemini, and Workers AI.
+- Added provider factory and tool-call parsing tests for OpenAI, Claude, Gemini, and echo fallback.
+- Added developer integration examples (Next.js, Hono webhooks, and Studio extensions).
+- Added machine-readable specs (OpenAPI spec `docs/openapi.yaml`, JSON Schemas, MCP configurations).
+- Added opt-in release update checks in Studio settings.
+- Added Studio version footer displaying build metadata.
+- Added tag-driven npm publishing for the public package allowlist, with OIDC trusted publishing and provenance.
+- Added deployment CI/CD workflows: CMS deployment to GHCR, Cloudflare Pages deploy for docs app, and automated release creations.
+- Added verification of uploaded extensions and file signatures for security.
+- Added database migration preflight checks to dry-run and verify connectivity/schema version.
+
+### Changed
+
+- Refined release and deploy workflow cache settings, aligned workflow Node versions to Node 24, and fixed metadata setup.
+- Version synchronization script updated to automate Turborepo and package version management.
 
 ### Fixed
 
-- Fixed SCIM tenant authorization scoping.
-- Fixed CI pnpm cache handling for `actions/setup-node@v5`.
-- Fixed release and deploy workflow setup for build metadata, Docker images,
-  Pages apps, and package publishing.
+- Fixed SCIM tenant authorization scoping to prevent cross-tenant access.
+- Fixed CI pnpm cache handling for Node setup (`actions/setup-node@v5`).
 
 ## [0.4.2] - 2026-06-07
 
@@ -233,8 +258,7 @@ changelog and the published GitHub Release notes:
 
 ### Highlights
 
-- Added backup and disaster recovery validation runbooks, restore drill
-  automation, scheduler guidance, and Cloudflare Pages deployment configuration.
+- Added backup and disaster recovery validation runbooks, restore drill automation, scheduler guidance, and Cloudflare Pages deployment configuration.
 
 ### Breaking changes
 
@@ -242,73 +266,54 @@ changelog and the published GitHub Release notes:
 
 ### Migrations
 
-- No application database/schema migration is introduced by this documentation
-  and deployment-process release.
+- No application database/schema migration is introduced by this documentation and deployment-process release.
 - Compatible DB/schema: existing `v0.4.2` schema state.
 
 ### Upgrade steps
 
 1. Confirm the target Docker image tag exists:
-   `ghcr.io/.../lumibase-cms:0.4.2`.
+   `ghcr.io/khuepm/lumibase-cms:0.4.2`.
 2. Review the compatibility and backup guidance in these notes.
 3. Deploy the `v0.4.2` image when available for the target environment.
-4. Verify restore drill automation, `/health`, and critical CMS workflows after
-   deployment.
+4. Verify restore drill automation, `/health`, and critical CMS workflows after deployment.
 
 ### Rollback notes
 
 - Roll back by redeploying the previously known-good CMS image tag.
-- No database/schema restore is required for this documentation and
-  deployment-process release.
+- No database/schema restore is required for this documentation and deployment-process release.
 
 ### Docker image tags
 
-- CMS: `ghcr.io/.../lumibase-cms:0.4.2`
+- CMS: `ghcr.io/khuepm/lumibase-cms:0.4.2`
 
 ### Compatibility DB/schema
 
 - Compatible DB/schema: existing `v0.4.2` schema state.
-- Minimum supported database engine/version: use the version supported by the
-  target deployment environment.
+- Minimum supported database engine/version: use the version supported by the target deployment environment.
 
 ### Backup guidance
 
 - Backup required: No.
 - Backup scope: none.
-- Reason: this release-process update does not modify runtime data or schema
-  state.
+- Reason: this release-process update does not modify runtime data or schema state.
 
 ### Added
 
-- Added tag-driven npm publishing for the public package allowlist, with OIDC trusted publishing, provenance, and release-note package/version reporting.
-- Added a backup and disaster recovery validation runbook covering restore
-  drills, row-count verification, app health checks, media/search rebuilds,
-  RTO/RPO evidence, and Cloudflare-specific recovery checks.
-- Added restore drill automation for database restore validation, row-count
-  checks, app health checks, media checks, reindex triggers, and search result
-  verification.
-- Added Linux, macOS, and Windows scheduler setup guidance for recurring
-  restore drills.
-- Added Cloudflare Pages deployment configuration for the docs app, including
-  SPA deep-link fallback support for `docs.lumibase.dev`.
+- Added a backup and disaster recovery validation runbook covering restore drills, row-count verification, app health checks, media/search rebuilds, RTO/RPO evidence, and Cloudflare-specific recovery checks.
+- Added restore drill automation for database restore validation, row-count checks, app health checks, media checks, reindex triggers, and search result verification.
+- Added Linux, macOS, and Windows scheduler setup guidance for recurring restore drills.
+- Added Cloudflare Pages deployment configuration for the docs app, including SPA deep-link fallback support for `docs.lumibase.dev`.
 
 ### Changed
 
-- Updated restore drill scheduling docs and examples to cover systemd timers,
-  cron, launchd, and Windows Task Scheduler.
-- Updated docs deployment commands to run Wrangler from the docs app directory
-  and to pass the Cloudflare account through `CLOUDFLARE_ACCOUNT_ID` instead of
-  unsupported Pages config fields.
-- Updated the repository remote/deploy documentation for the new GitHub
-  repository location.
+- Updated restore drill scheduling docs and examples to cover systemd timers, cron, launchd, and Windows Task Scheduler.
+- Updated docs deployment commands to run Wrangler from the docs app directory and to pass the Cloudflare account through `CLOUDFLARE_ACCOUNT_ID` instead of unsupported Pages config fields.
+- Updated the repository remote/deploy documentation for the new GitHub repository location.
 
 ### Fixed
 
-- Hardened restore drill reruns by resetting the Drizzle schema during restore
-  cleanup and by supporting authenticated app, media, reindex, and search
-  checks.
-- Fixed Cloudflare Pages deploy configuration after Wrangler validation rejected
-  `account_id` in a Pages `wrangler.toml`.
+- Hardened restore drill reruns by resetting the Drizzle schema during restore cleanup and by supporting authenticated app, media, reindex, and search checks.
+- Fixed Cloudflare Pages deploy configuration after Wrangler validation rejected `account_id` in a Pages `wrangler.toml`.
 
 ## [0.4.1] - 2026-06-06
 
@@ -579,9 +584,13 @@ changelog and the published GitHub Release notes:
 
 Initial tagged release.
 
+[0.4.4]: https://github.com/khuepm/lumibase/compare/v0.4.3...v0.4.4
+[0.4.3]: https://github.com/khuepm/lumibase/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/khuepm/lumibase/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/khuepm/lumibase/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/khuepm/lumibase/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/khuepm/lumibase/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/khuepm/lumibase/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/khuepm/lumibase/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/khuepm/lumibase/releases/tag/v0.1.0
+
