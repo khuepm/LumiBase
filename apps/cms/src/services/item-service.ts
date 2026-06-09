@@ -266,7 +266,13 @@ export class ItemService {
       const rows = await this.deps.db
         .select()
         .from(extensionsTable)
-        .where(and(eq(extensionsTable.siteId, this.deps.siteId), eq(extensionsTable.enabled, true)));
+        .where(
+          and(
+            eq(extensionsTable.siteId, this.deps.siteId),
+            eq(extensionsTable.enabled, true),
+            eq(extensionsTable.type, 'hook'),
+          ),
+        );
       const sandbox = new ExtensionSandbox(this.deps.extensionEnv as never, this.deps.db);
       this.hookDispatcher = new HookDispatcher(sandbox, rows);
     } catch {
