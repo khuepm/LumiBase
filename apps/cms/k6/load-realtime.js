@@ -16,6 +16,7 @@
  *          load-realtime.js
  */
 
+import http from 'k6/http';
 import ws from 'k6/ws';
 import { check, sleep } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
@@ -49,7 +50,27 @@ const realtimeErrors   = new Counter('realtime_errors');
 const messageLatency   = new Trend('realtime_msg_latency_ms', true);
 
 export default function () {
-  const url = `${BASE_URL}/api/v1/realtime?token=${TOKEN}&site=${SITE_ID}`;
+  // First, obtain a ticket using the token.
+  // We need the HTTP equivalent of BASE_URL
+  const httpUrl = BASE_URL.replace(/^ws/, 'http');
+  const ticketRes = http.post(`${httpUrl}/api/v1/realtime/ticket`, null, {
+    headers: {
+      'Authorization': `Bearer ${TOKEN}`,
+      'X-Lumi-Site': SITE_ID
+    }
+  });
+
+  check(ticketRes, { 'got ticket': (r) => r.status === 200 });
+
+  let ticket = '';
+  try {
+    ticket = ticketRes.json().data.ticket;
+  } catch (err) {
+    realtimeErrors.add(1);
+    return;
+  }
+
+  const url = `${BASE_URL}/api/v1/realtime?ticket=${ticket}&site=${SITE_ID}`;
 
   const res = ws.connect(url, {}, function (socket) {
     let subscribed = false;

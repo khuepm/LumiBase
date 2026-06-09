@@ -701,8 +701,13 @@ export function legacyRest() {
           });
         },
         /** @deprecated Use .realtime.create() instead. */
-        connect: (siteId: string) => {
-          const wsUrl = client.url.replace(/^http/, 'ws') + '/api/v1/realtime?siteId=' + siteId;
+        connect: async (siteId: string) => {
+          const res = await client.rawRequest<{ ticket: string }>("/api/v1/realtime/ticket", { method: "POST" });
+          const ticket = res.data?.ticket;
+          if (!ticket) {
+            throw new Error("Failed to get realtime ticket");
+          }
+          const wsUrl = client.url.replace(/^http/, 'ws') + '/api/v1/realtime?ticket=' + ticket + '&siteId=' + siteId;
           return new WebSocket(wsUrl);
         },
       },
