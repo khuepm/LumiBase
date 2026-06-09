@@ -7,6 +7,7 @@ describe('control-plane access guard helpers', () => {
   it('identifies system administration paths', () => {
     expect(isControlPlanePath('/api/v1/roles')).toBe(true);
     expect(isControlPlanePath('/api/v1/roles/role-1/users')).toBe(true);
+    expect(isControlPlanePath('/api/v1/materialize/mat_1/refresh')).toBe(true);
     expect(isControlPlanePath('/api/v1/items/posts')).toBe(false);
   });
 
