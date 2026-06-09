@@ -45,6 +45,8 @@ export interface Bindings {
   FILE_UPLOAD_MAX_BYTES?: string;
   /** Comma-separated MIME allowlist accepted by the file upload policy. */
   FILE_UPLOAD_ALLOWED_MIME_TYPES?: string;
+  /** Bearer token required to read Prometheus metrics in production. */
+  METRICS_TOKEN?: string;
   // ── LLM Provider (POST-GA Task #1) ──────────────────────────────────────
   /** `'openai'` | `'anthropic'` | `'claude'` | `'gemini'` | `'workers-ai'` | `'echo'` (default). */
   LLM_PROVIDER?: string;
