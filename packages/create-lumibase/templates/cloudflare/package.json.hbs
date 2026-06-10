@@ -1,0 +1,27 @@
+{
+  "name": "{{projectName}}",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply lumibase-db",
+    "db:migrate:remote": "wrangler d1 migrations apply lumibase-db --remote",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.0.0",
+    "drizzle-orm": "^0.44.0",
+    "nanoid": "^5.1.5",
+    "uuidv7": "^1.0.2",
+    "zod": "^3.25.51"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "@types/node": "^22.0.0",
+    "drizzle-kit": "^0.31.0",
+    "typescript": "^5.6.2",
+    "wrangler": "^4.0.0"
+  }
+}

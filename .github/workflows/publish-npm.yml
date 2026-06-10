@@ -51,12 +51,14 @@ jobs:
         run: |
           pnpm --filter @lumibase/sdk typecheck
           pnpm --filter @lumibase/extension-sdk typecheck
+          pnpm --filter create-lumibase typecheck
 
       - name: Build public packages
         if: steps.check_token.outputs.has_token == 'true'
         run: |
           pnpm --filter @lumibase/sdk build
           pnpm --filter @lumibase/extension-sdk build
+          pnpm --filter create-lumibase build
 
       - name: Publish allowlisted packages with provenance
         if: steps.check_token.outputs.has_token == 'true'
