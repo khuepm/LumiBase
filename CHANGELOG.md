@@ -658,6 +658,7 @@ changelog and the published GitHub Release notes:
 
 Initial tagged release.
 
+[0.4.5]: https://github.com/khuepm/lumibase/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/khuepm/lumibase/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/khuepm/lumibase/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/khuepm/lumibase/compare/v0.4.1...v0.4.2
