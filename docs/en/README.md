@@ -4,6 +4,10 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
 
 > Mục tiêu: vượt Directus ở các mảng **No-code Collection Builder**, **Permissions theo field/JSON policy**, **Raw editor cho mọi field**, **Extension SDK an toàn (kèm Marketplace ký số)**, **Display Templates**, **Realtime WebSocket** và **AI-First Copilot (HITL)** — đồng thời giữ DNA Edge-native, Multi-tenant của LumiBase nhưng cho phép tự host trên Docker khi cần.
 
+## Bắt đầu nhanh
+
+- [getting-started.md](./getting-started.md) — Khởi tạo dự án LumiBase mới bằng `npm create lumibase@latest` (CLI `create-lumibase`), từ thư mục trống đến server chạy được (Docker hoặc Cloudflare Workers).
+
 ## Agent Setup (cho AI agent)
 
 - [agent-setup/index.md](./agent-setup/index.md) — Trang tổng hợp thiết lập AI agent cho LumiBase.
@@ -97,6 +101,8 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
 - **`packages/sdk`** — JS SDK (REST + WS + typegen).
 - **`packages/ui`** — shadcn components + CVA tokens.
 - **`packages/extension-sdk`** — Types và helpers cho dev viết extension.
+- **`packages/create-lumibase`** — CLI bootstrap (`npm create lumibase@latest`) sinh dự án LumiBase mới từ template Docker hoặc Cloudflare Workers. Xem [getting-started.md](./getting-started.md).
+- **`packages/mcp-server`** — MCP stdio server (`@lumibase/mcp-server`) expose tool cho AI assistant tạo/quản lý collections, fields, items.
 
 ## Nguyên tắc khi đọc tài liệu
 
