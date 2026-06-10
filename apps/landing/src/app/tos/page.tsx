@@ -3,6 +3,9 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Terms of Service - LumiBase",
   description: "Terms of Service for LumiBase - Edge-Native Headless CMS",
+  alternates: {
+    canonical: "/tos/",
+  },
 };
 
 export default function TermsOfService() {

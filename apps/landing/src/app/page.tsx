@@ -1,9 +1,59 @@
 import Link from "next/link";
 import { ArrowRight, Zap, Globe, Lock, Code2, Cloud } from "lucide-react";
 
+const softwareApplicationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "LumiBase",
+  url: "https://lumibase.dev",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Cloudflare Workers, Docker, Node.js",
+  description:
+    "Edge-native headless CMS built on Cloudflare Workers. Deploy globally, manage content via REST API, multi-tenant by default.",
+  softwareVersion: "0.4.5",
+  codeRepository: "https://github.com/khuepm/lumibase",
+  license: "https://lumibase.dev/license",
+  isAccessibleForFree: true,
+  offers: [
+    {
+      "@type": "Offer",
+      name: "Community",
+      price: "0",
+      priceCurrency: "USD",
+      description: "Self-hosted, open-source, free forever under MIT license.",
+      url: "https://lumibase.dev/pricing/",
+    },
+    {
+      "@type": "Offer",
+      name: "Hobby",
+      price: "29",
+      priceCurrency: "USD",
+      description: "Managed hosting with priority support and advanced analytics.",
+      url: "https://lumibase.dev/pricing/",
+    },
+    {
+      "@type": "Offer",
+      name: "Enterprise",
+      price: "99",
+      priceCurrency: "USD",
+      description: "Dedicated support, custom SLA, SSO, and on-premise deployment.",
+      url: "https://lumibase.dev/pricing/",
+    },
+  ],
+  author: {
+    "@type": "Person",
+    name: "Khuepm",
+    url: "https://github.com/khuepm",
+  },
+};
+
 export default function Home() {
   return (
     <div className="flex flex-col">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
+      />
       {/* Hero Section */}
       <section className="relative px-6 pt-24 pb-16 md:pt-32 md:pb-24 lg:pt-40 lg:pb-32">
         <div className="mx-auto max-w-4xl text-center">
@@ -34,6 +84,27 @@ export default function Home() {
               Read Docs
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/* What is LumiBase — answer-target section for search & AI extraction */}
+      <section className="px-6 py-16 md:py-24 bg-gray-50 dark:bg-gray-900">
+        <div className="mx-auto max-w-3xl">
+          <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl">
+            What is LumiBase?
+          </h2>
+          <p className="mt-6 text-lg leading-8 text-gray-600 dark:text-gray-300">
+            LumiBase is an open-source, edge-native headless CMS that runs on
+            Cloudflare Workers. It delivers content through a type-safe REST
+            API, supports multi-tenancy out of the box, and can also be
+            self-hosted with Docker. The core is free forever under the MIT
+            license.
+          </p>
+          <p className="mt-4 text-lg leading-8 text-gray-600 dark:text-gray-300">
+            Unlike traditional CMS platforms that run on a central server,
+            LumiBase executes at the edge — close to your users — so content
+            APIs respond with minimal latency from anywhere in the world.
+          </p>
         </div>
       </section>
 
@@ -85,7 +156,7 @@ export default function Home() {
             Ready to Build at the Edge?
           </h2>
           <p className="mt-4 text-lg text-blue-100">
-            Join thousands of developers building fast, modern content experiences.
+            Start building fast, modern content experiences with an open-source, edge-native CMS.
           </p>
           <div className="mt-8 flex items-center justify-center gap-4">
             <Link

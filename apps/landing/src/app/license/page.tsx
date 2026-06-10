@@ -3,6 +3,9 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "License - LumiBase",
   description: "License information for LumiBase - Edge-Native Headless CMS",
+  alternates: {
+    canonical: "/license/",
+  },
 };
 
 export default function License() {
