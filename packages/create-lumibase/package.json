@@ -15,6 +15,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean && node scripts/postbuild.mjs",
     "dev": "tsup src/index.ts --format esm --watch",
+    "test": "vitest --run",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .turbo dist"
   },
@@ -28,7 +29,8 @@
     "@types/node": "^22.0.0",
     "@types/prompts": "^2.4.9",
     "tsup": "^8.5.1",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "vitest": "^3.2.6"
   },
   "files": [
     "dist",

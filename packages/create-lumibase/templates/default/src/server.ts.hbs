@@ -1,12 +1,45 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { logger } from 'hono/logger';
+import { eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from './db/client.js';
+import { posts } from './db/schema.js';
 
 const app = new Hono();
 
 app.use('*', logger());
 
 app.get('/', (c) => c.json({ name: '{{projectName}}', status: 'ok' }));
+
+// Demo CMS resource — every query is scoped by site_id (multi-tenant rule).
+const DEMO_SITE_ID = 'default';
+
+app.get('/posts', async (c) => {
+  const data = await db
+    .select()
+    .from(posts)
+    .where(eq(posts.siteId, DEMO_SITE_ID));
+  return c.json({ data });
+});
+
+const createPost = z.object({
+  title: z.string().min(1),
+  slug: z.string().min(1),
+  body: z.string().optional(),
+});
+
+app.post('/posts', async (c) => {
+  const parsed = createPost.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues }, 400);
+  }
+  const [created] = await db
+    .insert(posts)
+    .values({ ...parsed.data, siteId: DEMO_SITE_ID })
+    .returning();
+  return c.json({ data: created }, 201);
+});
 
 const port = Number(process.env['PORT'] ?? 8787);
 
