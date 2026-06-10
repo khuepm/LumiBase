@@ -1,11 +1,12 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../env';
 
 type ServiceStatus = 'healthy' | 'unhealthy';
+type OverallStatus = 'healthy' | 'degraded';
 type ServiceName = keyof HealthResponse['services'];
 
 interface HealthResponse {
-  status: 'healthy' | 'degraded';
+  status: OverallStatus;
   services: {
     database: ServiceStatus;
     cache: ServiceStatus;
@@ -54,7 +55,7 @@ async function probeService(check: () => Promise<boolean>): Promise<ServiceStatu
   }
 }
 
-healthRouter.get('/', async (c) => {
+async function collectHealth(c: Context<AppEnv>): Promise<HealthResponse> {
   const runtime = c.get('runtime');
 
   const probes: Record<ServiceName, Promise<ServiceStatus>> = {
@@ -113,5 +114,12 @@ healthRouter.get('/', async (c) => {
     services: results,
   };
 
-  return c.json(response, 200);
+  return response;
+}
+
+healthRouter.get('/', async (c) => c.json(await collectHealth(c), 200));
+
+healthRouter.get('/ready', async (c) => {
+  const response = await collectHealth(c);
+  return c.json(response, response.status === 'healthy' ? 200 : 503);
 });

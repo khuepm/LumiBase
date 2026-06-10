@@ -148,6 +148,15 @@ export const dbQueryDuration = new Histogram({
  * Attach this early in the middleware chain so it captures all requests.
  * The `/metrics` path itself is excluded to avoid self-referential noise.
  */
+export function normalizeObservabilityPath(path: string): string {
+  return path
+    .replace(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+      ':id',
+    )
+    .replace(/\/\d+/g, '/:id');
+}
+
 export const withMetrics = () =>
   createMiddleware<AppEnv>(async (c, next) => {
     // Skip recording metrics for the /metrics endpoint itself.
@@ -162,12 +171,7 @@ export const withMetrics = () =>
 
     // Normalize path to avoid high-cardinality labels.
     // Replace UUIDs and numeric IDs with placeholders.
-    const normalizedPath = c.req.path
-      .replace(
-        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
-        ':id',
-      )
-      .replace(/\/\d+/g, '/:id');
+    const normalizedPath = normalizeObservabilityPath(c.req.path);
 
     const method = c.req.method;
     const status = String(c.res.status);

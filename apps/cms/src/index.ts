@@ -12,6 +12,7 @@ import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
 import { withStudioAccess } from './middleware/studio-access';
 import { withTenant } from './middleware/tenant';
+import { withTracing } from './middleware/tracing';
 import { activityRouter } from './routes/activity';
 import { accessRouter } from './routes/access';
 import { adminRouter } from './routes/admin';
@@ -60,6 +61,7 @@ const app = new Hono<AppEnv>();
 // CORS before auth so preflight requests succeed. Runtime must be available
 // before tenant resolution (which may use the cache).
 app.use('*', withLogger());
+app.use('*', withTracing());
 app.use('*', withMetrics());
 app.use('*', withRuntime());
 app.use(
