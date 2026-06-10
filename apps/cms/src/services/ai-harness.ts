@@ -191,6 +191,42 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       },
     },
 
+    createField: {
+      name: 'createField',
+      description: 'Append a new field to an existing collection',
+      requiredCapabilities: ['schema:update'],
+      service: 'schema',
+      handler: async (args) => {
+        // Connects to: SchemaService.createField(collectionName, input)
+        if (!schemaService) {
+          return { created: true };
+        }
+        const collection = args['collection'] as string;
+        const name = args['name'] as string;
+        const type = args['type'] as string;
+        const required = (args['required'] as boolean) ?? false;
+        const result = await schemaService.createField(collection, { name, type, interface: 'input', required });
+        return { created: true, field: result };
+      },
+    },
+
+    deleteField: {
+      name: 'deleteField',
+      description: 'Delete a field from an existing collection',
+      requiredCapabilities: ['schema:delete'],
+      service: 'schema',
+      handler: async (args) => {
+        // Connects to: SchemaService.deleteField(collectionName, fieldName)
+        if (!schemaService) {
+          return { deleted: true };
+        }
+        const collection = args['collection'] as string;
+        const name = args['name'] as string;
+        const result = await schemaService.deleteField(collection, name);
+        return { deleted: true, result };
+      },
+    },
+
     listItems: {
       name: 'listItems',
       description: 'List items in a collection with optional filtering',
