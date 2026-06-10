@@ -1,0 +1,55 @@
+{
+  "name": "create-lumibase",
+  "version": "0.4.6",
+  "description": "Scaffold a new LumiBase project — Edge-native Headless CMS",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "create-lumibase": "./bin/create-lumibase.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean && node scripts/postbuild.mjs",
+    "dev": "tsup src/index.ts --format esm --watch",
+    "test": "vitest --run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo dist"
+  },
+  "dependencies": {
+    "handlebars": "^4.7.8",
+    "picocolors": "^1.1.1",
+    "prompts": "^2.4.2",
+    "execa": "^9.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/prompts": "^2.4.9",
+    "tsup": "^8.5.1",
+    "typescript": "^5.6.2",
+    "vitest": "^3.2.6"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "templates"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "lumibase",
+    "cms",
+    "headless-cms",
+    "scaffold",
+    "create"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lumibase/lumibase.git",
+    "directory": "packages/create-lumibase"
+  }
+}

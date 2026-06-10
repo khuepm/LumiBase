@@ -14,8 +14,8 @@
  *  - "env:read"      — access to declared env vars
  *  - "queue:enqueue" — enqueue jobs to a queue
  *
- * The sandbox uses dynamic import() to load the bundle. Workers/Browsers
- * require the bundle to be a valid ESM module served from a trusted URL.
+ * The sandbox uses dynamic import() to load the bundle only after the
+ * bundle URL passes the trusted-origin policy configured by the operator.
  *
  * Usage:
  *   const sandbox = new ExtensionSandbox(env, db);
@@ -25,6 +25,8 @@
  */
 
 import type { Database } from '@lumibase/database';
+import { validateOutboundUrl } from '../services/ssrf-guard';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -110,6 +112,11 @@ interface SandboxLoadOptions {
 interface SandboxEnv {
   /** Cloudflare KV binding (optional). */
   CONFIG_CACHE?: KVNamespace;
+  /**
+   * Comma-separated list of trusted extension bundle origins. Extension
+   * execution is disabled unless this allowlist is explicitly configured.
+   */
+  EXTENSION_BUNDLE_ORIGINS?: string;
   /** Extension-accessible env vars. */
   [key: string]: unknown;
 }
@@ -135,6 +142,13 @@ export class ExtensionSandbox {
       return this.cache.get(opts.name)!;
     }
 
+    if (!this.isTrustedBundleUrl(opts.bundleUrl)) {
+      console.error(
+        `[extension-sandbox] refused to load "${opts.name}" from an untrusted bundle URL`,
+      );
+      return null;
+    }
+
     const caps = new Set(opts.capabilities);
 
     // Build capability-checked proxy context passed to the extension.
@@ -150,7 +164,7 @@ export class ExtensionSandbox {
       this.cache.set(opts.name, extensionMod);
       return extensionMod;
     } catch (err) {
-      console.error(`[extension-sandbox] failed to load "${opts.name}"`, err);
+      console.error(`[extension-sandbox] failed to load "${opts.name}"`, formatSafeError(err));
       return null;
     }
   }
@@ -230,6 +244,10 @@ export class ExtensionSandbox {
       /** Outbound HTTP — guarded by http:fetch capability. */
       fetch: async (input: RequestInfo, init?: RequestInit) => {
         gate('http:fetch');
+        const guarded = validateOutboundUrl(requestInfoToUrl(input));
+        if (!guarded.allowed) {
+          throw new Error(guarded.reason ?? 'Outbound URL is not allowed.');
+        }
         return globalThis.fetch(input, init);
       },
 
@@ -269,7 +287,47 @@ export class ExtensionSandbox {
     };
   }
 
+  private isTrustedBundleUrl(bundleUrl: string): boolean {
+    let parsed: URL;
+    try {
+      parsed = new URL(bundleUrl);
+    } catch {
+      return false;
+    }
+
+    if (!['https:', 'http:'].includes(parsed.protocol)) {
+      return false;
+    }
+
+    if (
+      parsed.protocol === 'http:' &&
+      !['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)
+    ) {
+      return false;
+    }
+
+    const trustedOrigins = String(
+      this.env.EXTENSION_BUNDLE_ORIGINS ??
+        (typeof process !== 'undefined' ? process.env.EXTENSION_BUNDLE_ORIGINS : '') ??
+        '',
+    )
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+
+    if (trustedOrigins.length === 0) {
+      return false;
+    }
+
+    return trustedOrigins.includes(parsed.origin);
+  }
+
   private importWithTimeout(url: string, timeoutMs: number): Promise<Record<string, unknown>> {
+    const bundleGuard = validateExtensionBundleUrl(url);
+    if (!bundleGuard.allowed) {
+      return Promise.reject(new SandboxLoadError(url, bundleGuard.reason));
+    }
+
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
         () => reject(new SandboxLoadError(url, `load timed out after ${timeoutMs}ms`)),
@@ -289,4 +347,26 @@ export class ExtensionSandbox {
         });
     });
   }
+}
+
+
+function requestInfoToUrl(input: RequestInfo): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
+
+function validateExtensionBundleUrl(raw: string): { allowed: boolean; reason?: string } {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { allowed: false, reason: 'Extension bundle URL is invalid.' };
+  }
+
+  if (url.protocol === 'data:') {
+    return { allowed: url.pathname.startsWith('text/javascript'), reason: 'Only JavaScript data URLs are allowed.' };
+  }
+
+  return validateOutboundUrl(raw);
 }

@@ -12,7 +12,7 @@ Schema được tách theo domain:
 | `access.ts` | `roles`, `policies`, `role_policies`, `user_policies`, `permissions` |
 | `cms.ts` | `pages`, `collections`, `fields`, `relations`, `items`, `revisions`, `activity`, `flows`, `flow_runs`, `operations`, `materialized_collections` |
 | `platform.ts` | `folders`, `files`, `presets`, `translations`, `settings`, `webhooks`, `extensions`, `translation_memory`, `glossary` |
-| `ai.ts` | `ai_approvals` |
+| `ai.ts` | `ai_approvals`, `ai_conversations`, `ai_messages`, `ai_embeddings` |
 
 Migrations đầy đủ trong `packages/database/migrations/` và `packages/database/drizzle/`.
 
@@ -257,7 +257,9 @@ Indexes: `(siteId, name)`, `(publisher, publishedAt)`, `marketplaceSlug`.
 
 > Realtime cursor data (CRDT-lite) **không** persist trong Postgres — chỉ broadcast qua Durable Object/host process. Xem `apps/cms/src/services/cursor-protocol.ts`.
 
-## 10. AI Copilot — HITL (`ai.ts`)
+## 10. AI Copilot seed (`ai.ts`)
+
+Các bảng hiện có là bước đầu của **Agent Harness Layer**: chat/copilot, HITL approval và RAG context. Blueprint mở rộng nằm ở [Agent Harness Layer](./features/agent-harness-layer.md).
 
 ### `ai_approvals`
 | Column | Type | Note |
@@ -276,7 +278,42 @@ Index: `(siteId, status)`.
 
 Hành vi: Skill nguy hiểm (`schema:write` hoặc tên bắt đầu bằng `delete`) bắt buộc tạo `ai_approvals` row chờ duyệt thay vì execute trực tiếp. Xem `docs/features/ai-copilot.md`.
 
-## 11. Indexing & RLS
+### `ai_conversations`
+- Thread hội thoại theo `siteId`, `userId`, `title`, `createdAt`, `updatedAt`.
+- Index: `(siteId, userId)`.
+
+### `ai_messages`
+- Message trong conversation: `conversationId`, `role` (`user`/`assistant`/`system`), `content`, `toolCalls jsonb`, `metadata jsonb`, `createdAt`.
+- Index: `(conversationId, createdAt)`.
+
+### `ai_embeddings`
+- RAG chunks theo `siteId`, `collection`, `itemId`, `fieldName`, `chunkText`, `embedding jsonb`, `model`, `createdAt`.
+- Index: `(siteId, collection)`, `(itemId)`. Khi production có pgvector, migrate `embedding` từ JSONB sang `vector(1536)` hoặc dimension theo model.
+
+## 11. Agent Harness Layer — system collections
+
+Các collection sau là nền tảng hiện tại để LumiBase vận hành AI Agent theo lifecycle có audit/retry/evaluation:
+
+| Collection | Mục đích | Quan hệ chính |
+|---|---|---|
+| `agent_goals` | Mục tiêu business người dùng/workflow giao cho agent | `siteId`, `createdBy`, `priority`, `deadline`, `status` |
+| `agent_runs` | Một lần thực thi goal/task | `goalId`, `agentName`, `model`, `provider`, `budget`, `status`, `startedAt`, `finishedAt` |
+| `agent_plans` | Plan/steps trước khi execute | `runId`, `steps jsonb`, `risk`, `approvalPolicy`, `status` |
+| `agent_tools` | Registry tool/API/extension agent được gọi | `name`, `inputSchema`, `requiredCapabilities`, `riskPolicy`, `rateLimit`, `owner` |
+| `agent_tool_calls` | Audit từng tool call | `runId`, `toolName`, `input`, `output`, `error`, `latencyMs`, `cost`, `createdAt` |
+| `agent_memory` | Memory dài hạn ngoài conversation | `scope`, `source`, `content`, `confidence`, `expiresAt` |
+| `agent_artifacts` | Output versioned: page/component/dataset/config/prompt/migration/API spec | `runId`, `type`, `target`, `contentRef`, `hash`, `status` |
+| `agent_evaluations` | Validation/eval trước khi commit | `runId`, `artifactId`, `kind`, `status`, `score`, `summary`, `details` |
+| `agent_approvals` | Approval tổng quát cho plan/tool/artifact | `runId`, `subjectType`, `subjectId`, `status`, `decidedBy`, `reason` |
+| `agent_permissions` | Mapping agent/role/policy/capability | `agentName`, `policyId`, `capabilities`, `validFrom`, `validUntil` |
+
+Các API runtime nằm dưới `/api/v1/agent/*`: goals, runs, tools, approvals, artifacts, memory và `generate-app`. `generate-app` tạo bộ artifact MVP gồm `page_spec`, `component_spec`, `seed_data`, `api_spec` và chạy evaluation trước khi trả kết quả. `AISecureHarness` vẫn giữ `/ai/*` backward-compatible nhưng khi chạy với service thật sẽ tự tạo transient goal/run và ghi `agent_tool_calls`/`agent_approvals`.
+
+Vận hành: `agent_runs.metrics.stopReason` ghi lý do dừng như `completed`, `error`, `max_tool_calls`; `agent_tool_calls.cost` ghi token/cost estimate đã mask secret. Khi một goal fail lặp lại ít nhất 3 run và runtime có `QueueProvider`, service enqueue job vào queue `agent-dead-letter` với `siteId`, `goalId`, `runId`, `agentName`, `error`, `stopReason`.
+
+Thiết kế bắt buộc: mọi bảng domain có `siteId`, index `(siteId, ...)`, audit metadata, và không cho prompt tự nâng quyền ngoài `agent_permissions`/policy snapshot.
+
+## 12. Indexing & RLS
 
 - Bắt buộc index `(siteId, …)` ở mọi bảng domain.
 - Áp dụng Drizzle helper `scopeSite(siteId)` ở tầng repo.

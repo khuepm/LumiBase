@@ -1,8 +1,10 @@
-import { aiApprovals } from '@lumibase/database';
+import { agentApprovals, aiApprovals } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
+import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
+import { ToolRegistryService } from './tool-registry-service';
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
@@ -18,6 +20,9 @@ export interface SkillDefinition {
   /** Service this skill connects to (for documentation/tracing). */
   service: 'schema' | 'items' | 'ai';
   handler: (args: Record<string, unknown>) => Promise<unknown>;
+  inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  owner?: string;
 }
 
 /**
@@ -27,6 +32,10 @@ export interface HarnessExecutionResult {
   status: 'executed' | 'pending_approval' | 'denied';
   data?: unknown;
   approvalId?: string;
+  agentApprovalId?: string;
+  goalId?: string;
+  runId?: string;
+  toolCallId?: string;
   message?: string;
 }
 
@@ -44,6 +53,8 @@ export interface AISecureHarnessConfig {
   schemaService?: SchemaService;
   /** ItemService instance for items:read/write skills (listItems, createItem, deleteItem). */
   itemService?: ItemService;
+  /** Enables first-class agent_goals/runs/tool_calls audit for tests or non-service callers. */
+  enableAgentHarnessAudit?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +191,42 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       },
     },
 
+    createField: {
+      name: 'createField',
+      description: 'Append a new field to an existing collection',
+      requiredCapabilities: ['schema:update'],
+      service: 'schema',
+      handler: async (args) => {
+        // Connects to: SchemaService.createField(collectionName, input)
+        if (!schemaService) {
+          return { created: true };
+        }
+        const collection = args['collection'] as string;
+        const name = args['name'] as string;
+        const type = args['type'] as string;
+        const required = (args['required'] as boolean) ?? false;
+        const result = await schemaService.createField(collection, { name, type, interface: 'input', required });
+        return { created: true, field: result };
+      },
+    },
+
+    deleteField: {
+      name: 'deleteField',
+      description: 'Delete a field from an existing collection',
+      requiredCapabilities: ['schema:delete'],
+      service: 'schema',
+      handler: async (args) => {
+        // Connects to: SchemaService.deleteField(collectionName, fieldName)
+        if (!schemaService) {
+          return { deleted: true };
+        }
+        const collection = args['collection'] as string;
+        const name = args['name'] as string;
+        const result = await schemaService.deleteField(collection, name);
+        return { deleted: true, result };
+      },
+    },
+
     listItems: {
       name: 'listItems',
       description: 'List items in a collection with optional filtering',
@@ -213,6 +260,25 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         const status = args['status'] as string | undefined;
         const result = await itemService.create(collection, { data, status });
         return { created: true, item: result };
+      },
+    },
+
+    updateItem: {
+      name: 'updateItem',
+      description: 'Update fields of an existing item in a collection',
+      requiredCapabilities: ['items:update'],
+      service: 'items',
+      handler: async (args) => {
+        // Connects to: ItemService.patch(collectionName, id, patch)
+        if (!itemService) {
+          return { updated: true };
+        }
+        const collection = args['collection'] as string;
+        const id = args['id'] as string;
+        const data = (args['data'] as Record<string, unknown>) ?? {};
+        const status = args['status'] as string | undefined;
+        const result = await itemService.patch(collection, id, { data, ...(status ? { status } : {}) });
+        return { updated: true, item: result };
       },
     },
 
@@ -285,6 +351,91 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         return result;
       },
     },
+
+    generateAppSpec: {
+      name: 'generateAppSpec',
+      description: 'Generate page and component specs from selected collections',
+      requiredCapabilities: ['schema:read', 'items:read'],
+      service: 'ai',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collections: { type: 'array', items: { type: 'string' } },
+          targetApp: { type: 'string' },
+        },
+      },
+      handler: async (args) => {
+        const collections = Array.isArray(args['collections'])
+          ? (args['collections'] as unknown[]).filter((entry): entry is string => typeof entry === 'string')
+          : ['products', 'orders', 'customers'];
+        const targetApp = (args['targetApp'] as string) ?? 'storefront';
+        return {
+          artifacts: [
+            {
+              type: 'page_spec',
+              title: `${targetApp} page spec`,
+              content: { targetApp, collections, pages: collections.map((collection) => ({ collection, route: `/${collection}` })) },
+            },
+            {
+              type: 'component_spec',
+              title: `${targetApp} component spec`,
+              content: { targetApp, components: collections.map((collection) => `${collection}List`) },
+            },
+          ],
+        };
+      },
+    },
+
+    generateApiDocs: {
+      name: 'generateApiDocs',
+      description: 'Generate API documentation artifact from schema and permissions',
+      requiredCapabilities: ['schema:read'],
+      service: 'ai',
+      handler: async (args) => {
+        const collections = Array.isArray(args['collections'])
+          ? (args['collections'] as unknown[]).filter((entry): entry is string => typeof entry === 'string')
+          : [];
+        return {
+          artifacts: [
+            {
+              type: 'api_spec',
+              title: 'Generated API spec',
+              content: {
+                openapi: '3.1.0',
+                info: { title: 'Lumibase generated API', version: '0.1.0' },
+                paths: Object.fromEntries(collections.map((collection) => [`/items/${collection}`, { get: { summary: `List ${collection}` } }])),
+              },
+            },
+          ],
+        };
+      },
+    },
+
+    generateSeedData: {
+      name: 'generateSeedData',
+      description: 'Generate seed data artifact for selected collections',
+      requiredCapabilities: ['items:write'],
+      service: 'ai',
+      handler: async (args) => {
+        const collection = (args['collection'] as string) ?? 'products';
+        const count = Math.max(1, Math.min(Number(args['count'] ?? 3), 20));
+        return {
+          artifacts: [
+            {
+              type: 'seed_data',
+              title: `Seed data for ${collection}`,
+              content: {
+                collection,
+                rows: Array.from({ length: count }, (_entry, index) => ({
+                  title: `${collection} sample ${index + 1}`,
+                  status: 'draft',
+                })),
+              },
+            },
+          ],
+        };
+      },
+    },
   };
 }
 
@@ -322,10 +473,14 @@ export class AISecureHarness {
   private readonly db: Database;
   private readonly siteId: string;
   private readonly skills: Record<string, SkillDefinition>;
+  private readonly agentHarnessEnabled: boolean;
+  private readonly runService: AgentRunService;
+  private readonly toolRegistry: ToolRegistryService;
 
   constructor(config: AISecureHarnessConfig) {
     this.db = config.db;
     this.siteId = config.siteId;
+    this.agentHarnessEnabled = config.enableAgentHarnessAudit ?? Boolean(config.schemaService || config.itemService);
 
     // When services are provided, build fresh skills wired to real services.
     // When no services are provided, use the shared CORE_SKILLS object
@@ -338,6 +493,9 @@ export class AISecureHarness {
     } else {
       this.skills = CORE_SKILLS;
     }
+
+    this.runService = new AgentRunService(this.db, this.siteId);
+    this.toolRegistry = new ToolRegistryService(this.db, this.siteId, this.skills);
   }
 
   // ---------- Validation ----------
@@ -404,20 +562,80 @@ export class AISecureHarness {
     args: Record<string, unknown>,
     userCapabilities: string[],
     contextMessage?: string,
+    envelope: AgentRunEnvelope = {},
   ): Promise<HarnessExecutionResult> {
+    if (!this.agentHarnessEnabled) {
+      return this.executeLegacy(skillName, args, userCapabilities, contextMessage);
+    }
+
+    const run = await this.runService.ensureRun({
+      ...envelope,
+      title: envelope.title ?? `Run ${skillName}`,
+      contextMessage: contextMessage ?? envelope.contextMessage,
+    });
+    const startedAt = Date.now();
+    const maxToolCalls = typeof envelope.budget?.['maxToolCalls'] === 'number'
+      ? envelope.budget['maxToolCalls']
+      : undefined;
+    if (maxToolCalls !== undefined) {
+      const existingCalls = await this.runService.countToolCalls(run.runId);
+      if (existingCalls >= maxToolCalls) {
+        const message = `Run budget exceeded: maxToolCalls=${maxToolCalls}`;
+        await this.runService.failRun(run.runId, message, {
+          stopReason: 'max_tool_calls',
+          maxToolCalls,
+          existingCalls,
+        });
+        return { status: 'denied', message, ...run };
+      }
+    }
+
     // Step 1: Validate skill exists
-    const skill = this.validateSkill(skillName);
-    if (!skill) {
-      return { status: 'denied', message: `Unknown skill: ${skillName}` };
+    const tool = await this.toolRegistry.getTool(skillName);
+    const toolCallId = await this.runService.appendToolCall({
+      runId: run.runId,
+      toolName: skillName,
+      input: args,
+      status: 'running',
+    });
+
+    if (!tool) {
+      const message = `Unknown skill: ${skillName}`;
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'denied',
+        error: message,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.failRun(run.runId, message);
+      return { status: 'denied', message, ...run, toolCallId };
     }
 
     // Step 2: Check capabilities
-    if (!this.checkCapabilities(skill, userCapabilities)) {
-      return { status: 'denied', message: 'Insufficient capabilities' };
+    if (!this.checkCapabilities(tool, userCapabilities)) {
+      const message = 'Insufficient capabilities';
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'denied',
+        error: message,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.failRun(run.runId, message);
+      return { status: 'denied', message, ...run, toolCallId };
+    }
+
+    const policy = await this.toolRegistry.evaluatePolicy(tool, run.runId);
+    if (!policy.allowed) {
+      const message = policy.message ?? 'Tool denied by policy';
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'denied',
+        error: message,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.failRun(run.runId, message);
+      return { status: 'denied', message, ...run, toolCallId };
     }
 
     // Step 3: Evaluate risk
-    const isDangerous = this.evaluateRisk(skill, skillName);
+    const isDangerous = this.evaluateRisk(tool, skillName) || policy.risk === 'dangerous' || policy.risk === 'review_required';
 
     if (isDangerous) {
       // Create approval record and return pending_approval
@@ -432,15 +650,90 @@ export class AISecureHarness {
         })
         .returning();
 
-      return { status: 'pending_approval', approvalId: record!.id };
+      const [agentApproval] = await this.db
+        .insert(agentApprovals)
+        .values({
+          runId: run.runId,
+          siteId: this.siteId,
+          legacyApprovalId: record!.id,
+          subjectType: 'tool_call',
+          subjectId: toolCallId,
+          status: 'pending',
+          approvalPolicy: policy.approvalPolicy,
+          requestedByAgent: run.agentName,
+        })
+        .returning();
+
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'pending_approval',
+        output: { approvalId: record!.id, agentApprovalId: agentApproval!.id },
+        approvalId: agentApproval!.id,
+        latencyMs: Date.now() - startedAt,
+      });
+
+      return {
+        status: 'pending_approval',
+        approvalId: record!.id,
+        agentApprovalId: agentApproval!.id,
+        ...run,
+        toolCallId,
+      };
     }
 
     // Step 4: Safe skill — execute directly
     const result = await this.runSkill(skillName, args);
     if (result.success) {
-      return { status: 'executed', data: result.data };
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'executed',
+        output: result.data,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.closeRun(run.runId, { toolCalls: 1, lastToolLatencyMs: Date.now() - startedAt });
+      return { status: 'executed', data: result.data, ...run, toolCallId };
     }
-    return { status: 'denied', message: result.error };
+    await this.runService.finishToolCall(toolCallId, {
+      status: 'failed',
+      error: result.error,
+      latencyMs: Date.now() - startedAt,
+    });
+    await this.runService.failRun(run.runId, result.error, { toolCalls: 1 });
+    return { status: 'denied', message: result.error, ...run, toolCallId };
+  }
+
+  private async executeLegacy(
+    skillName: string,
+    args: Record<string, unknown>,
+    userCapabilities: string[],
+    contextMessage?: string,
+  ): Promise<HarnessExecutionResult> {
+    const skill = this.validateSkill(skillName);
+    if (!skill) {
+      return { status: 'denied', message: `Unknown skill: ${skillName}` };
+    }
+
+    if (!this.checkCapabilities(skill, userCapabilities)) {
+      return { status: 'denied', message: 'Insufficient capabilities' };
+    }
+
+    const isDangerous = this.evaluateRisk(skill, skillName);
+    if (isDangerous) {
+      const [record] = await this.db
+        .insert(aiApprovals)
+        .values({
+          siteId: this.siteId,
+          skillName,
+          arguments: args,
+          status: 'pending',
+          context: contextMessage ?? null,
+        })
+        .returning();
+      return { status: 'pending_approval', approvalId: record!.id };
+    }
+
+    const result = await this.runSkill(skillName, args);
+    return result.success
+      ? { status: 'executed', data: result.data }
+      : { status: 'denied', message: result.error };
   }
 
   /**
@@ -511,6 +804,10 @@ export class AISecureHarness {
     }
 
     // Execute the stored skill
+    if (this.agentHarnessEnabled) {
+      return this.executeApprovedWithAudit(record, userId);
+    }
+
     const result = await this.runSkill(
       record.skillName,
       record.arguments as Record<string, unknown>,
@@ -539,6 +836,105 @@ export class AISecureHarness {
     return { status: 'denied', message: result.error };
   }
 
+  private async executeApprovedWithAudit(
+    record: typeof aiApprovals.$inferSelect,
+    userId: string,
+  ): Promise<HarnessExecutionResult> {
+    const [existingAgentApproval] = await this.db
+      .select()
+      .from(agentApprovals)
+      .where(
+        and(
+          eq(agentApprovals.legacyApprovalId, record.id),
+          eq(agentApprovals.siteId, this.siteId),
+        ),
+      )
+      .limit(1);
+
+    const run = existingAgentApproval
+      ? { goalId: '', runId: existingAgentApproval.runId, agentName: existingAgentApproval.requestedByAgent }
+      : await this.runService.ensureRun({
+        agentName: record.agentName,
+        title: `Approved ${record.skillName}`,
+        contextMessage: record.context ?? undefined,
+      });
+    if (existingAgentApproval) {
+      if (existingAgentApproval.status !== 'pending') {
+        return { status: 'denied', message: 'Approval not found or already processed', runId: run.runId };
+      }
+      if (existingAgentApproval.expiresAt && existingAgentApproval.expiresAt <= new Date()) {
+        return { status: 'denied', message: 'Approval expired', runId: run.runId };
+      }
+    }
+    const startedAt = Date.now();
+    const toolCallId = await this.runService.appendToolCall({
+      runId: run.runId,
+      toolName: record.skillName,
+      input: record.arguments as Record<string, unknown>,
+      status: 'running',
+      approvalId: existingAgentApproval?.id ?? null,
+    });
+
+    const result = await this.runSkill(
+      record.skillName,
+      record.arguments as Record<string, unknown>,
+    );
+
+    if (result.success) {
+      await this.db
+        .update(aiApprovals)
+        .set({
+          status: 'approved',
+          decidedAt: new Date(),
+          decidedBy: userId,
+        })
+        .where(
+          and(
+            eq(aiApprovals.id, record.id),
+            eq(aiApprovals.siteId, this.siteId),
+          ),
+        );
+      if (existingAgentApproval) {
+        await this.db
+          .update(agentApprovals)
+          .set({
+            status: 'approved',
+            decidedAt: new Date(),
+            decidedBy: userId,
+          })
+          .where(
+            and(
+              eq(agentApprovals.id, existingAgentApproval.id),
+              eq(agentApprovals.siteId, this.siteId),
+            ),
+          );
+      }
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'executed',
+        output: result.data,
+        approvalId: existingAgentApproval?.id ?? null,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.closeRun(run.runId, { approvedBy: userId });
+      return {
+        status: 'executed',
+        data: result.data,
+        runId: run.runId,
+        toolCallId,
+        agentApprovalId: existingAgentApproval?.id,
+      };
+    }
+
+    await this.runService.finishToolCall(toolCallId, {
+      status: 'failed',
+      error: result.error,
+      approvalId: existingAgentApproval?.id ?? null,
+      latencyMs: Date.now() - startedAt,
+    });
+    await this.runService.failRun(run.runId, result.error);
+    return { status: 'denied', message: result.error, runId: run.runId, toolCallId };
+  }
+
   /**
    * Rejects an approval record.
    * Updates the status to 'rejected' and records who rejected it and when.
@@ -560,5 +956,21 @@ export class AISecureHarness {
           eq(aiApprovals.siteId, this.siteId),
         ),
       );
+
+    if (this.agentHarnessEnabled) {
+      await this.db
+        .update(agentApprovals)
+        .set({
+          status: 'rejected',
+          decidedAt: new Date(),
+          decidedBy: userId,
+        })
+        .where(
+          and(
+            eq(agentApprovals.legacyApprovalId, approvalId),
+            eq(agentApprovals.siteId, this.siteId),
+          ),
+        );
+    }
   }
 }

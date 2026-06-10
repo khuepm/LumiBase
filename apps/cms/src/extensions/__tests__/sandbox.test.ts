@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Database } from '@lumibase/database';
 import { CapabilityError, ExtensionSandbox, type ExtensionActorDataAccess } from '../sandbox';
 
@@ -22,6 +22,7 @@ async function loadCtx(
 ) {
   globalThis.__lumibaseExtensionCtx = undefined;
   const sandbox = new ExtensionSandbox({}, deps.db, deps.actorDataAccess, deps.audit);
+  vi.spyOn(sandbox as any, 'isTrustedBundleUrl').mockReturnValue(true);
   await sandbox.load({
     name: `test_${capabilities.join('_') || 'actor'}`,
     bundleUrl: bundleUrl(`test_${capabilities.join('_') || 'actor'}`),
@@ -31,6 +32,9 @@ async function loadCtx(
 }
 
 describe('ExtensionSandbox data access', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
   it('exposes actor-scoped item helpers for default extension data access', async () => {
     const actorDataAccess = {
       list: vi.fn().mockResolvedValue({ data: [{ id: 'post_1' }] }),
@@ -53,6 +57,24 @@ describe('ExtensionSandbox data access', () => {
 
     await expect((ctx.db as any).query('SELECT 1')).rejects.toBeInstanceOf(CapabilityError);
     expect(db.execute).not.toHaveBeenCalled();
+  });
+
+
+
+  it('blocks extension http:fetch calls to private network targets', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}'));
+    const ctx = await loadCtx(['http:fetch']);
+
+    await expect((ctx.fetch as any)('http://169.254.169.254/latest/meta-data')).rejects.toThrow(/blocked/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('allows extension http:fetch calls to public HTTPS targets', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}'));
+    const ctx = await loadCtx(['http:fetch']);
+
+    await expect((ctx.fetch as any)('https://example.com/api')).resolves.toBeInstanceOf(Response);
+    expect(fetchMock).toHaveBeenCalledWith('https://example.com/api', undefined);
   });
 
   it('audits service-account raw DB reads and writes', async () => {

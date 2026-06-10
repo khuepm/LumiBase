@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); if [ -n \"$f\" ] && echo \"$f\" | grep -qE 'ai-harness\\.ts|packages/ai-skills/src/'; then jq -n --arg msg \"Docs out-of-sync: $f was modified. Update docs/en/ai-skills.md and/or docs/en/features/agent-harness-layer.md to reflect any skill, handler, capability, or risk classification changes before finishing.\" '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":$msg}}'; fi 2>/dev/null || true",
+            "statusMessage": "Checking if docs need updating..."
+          }
+        ]
+      }
+    ]
+  }
+}

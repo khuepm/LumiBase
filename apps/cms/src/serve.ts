@@ -6,6 +6,12 @@ import cron from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { bootstrapNodeObservability } from './observability/node';
+import app from './index';
+import type { Bindings } from './env';
+import { loadSecretFiles, validateProductionConfig } from './config/production';
+import { runScheduledRotation } from './modules/audit/scheduled';
+import { formatSafeError } from '@lumibase/shared/utils';
+import { createPressureLimiter } from './pressure-limiter';
 
 async function main() {
   loadSecretFiles();
@@ -15,6 +21,9 @@ async function main() {
   // OpenTelemetry auto-instrumentations can patch supported modules early.
   const observability = await bootstrapNodeObservability(process.env);
   const { default: app } = await import('./index');
+const port = parseInt(process.env.PORT || '1989', 10);
+const runtime = createRuntime(process.env as unknown as Record<string, unknown>);
+const pressureLimiter = createPressureLimiter(process.env as Record<string, string | undefined>);
 
   const port = parseInt(process.env.PORT || '1989', 10);
   const runtime = createRuntime(process.env as unknown as Record<string, unknown>);
@@ -24,6 +33,19 @@ async function main() {
     c.set('runtime', runtime);
     await next();
   });
+const server = serve({
+  fetch: (request, nodeBindings) => {
+    const pressureResponse = pressureLimiter.handle(request);
+    if (pressureResponse) return pressureResponse;
+
+    return app.fetch(
+      request,
+      { ...process.env, ...nodeBindings } as unknown as Bindings,
+    );
+  },
+  port,
+});
+console.log(`[lumibase-cms] Started in ${runtime.runtime} mode on port ${port}`);
 
   const server = serve({ fetch: app.fetch, port });
   console.log(`[lumibase-cms] Started in ${runtime.runtime} mode on port ${port}`);
@@ -68,9 +90,10 @@ async function main() {
   process.on('SIGTERM', () => {
     console.log('[lumibase-cms] SIGTERM received, shutting down...');
 
-    // Stop the hourly audit-rotation cron so its timer can't keep the event
-    // loop alive past the server close (task 11.4).
-    rotationTask.stop();
+  // Stop the hourly audit-rotation cron and pressure sampler so their timers
+  // can't keep the event loop alive past the server close (task 11.4).
+  rotationTask.stop();
+  pressureLimiter.stop();
 
     // Force exit after 10 seconds if graceful shutdown stalls
     const forceTimeout = setTimeout(() => {
@@ -83,12 +106,12 @@ async function main() {
       try {
         await observability.shutdown();
       } catch (err) {
-        console.error('[lumibase-cms] Error shutting down observability:', err);
+        console.error('[lumibase-cms] Error shutting down observability:', formatSafeError(err));
       }
       try {
         await runtime.database.close();
       } catch (err) {
-        console.error('[lumibase-cms] Error closing database connection:', err);
+        console.error('[lumibase-cms] Error closing database connection:', formatSafeError(err));
       }
       clearTimeout(forceTimeout);
       process.exit(0);
@@ -97,6 +120,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[lumibase-cms] Failed to start:', err);
+  console.error('[lumibase-cms] Failed to start:', formatSafeError(err));
   process.exit(1);
 });

@@ -181,6 +181,7 @@ import { STANDARD_LOCKOUT_POLICY } from '../setup/policy-codec';
 // the recovery routes (`routes.ts`) and injected via the constructor —
 // admin-setup-wizard task 11.2 / Req 15.1, 15.2.
 import type { AuditLogger, AuditLogWriteInput } from '../audit/logger';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 // ── unlock-token store abstraction ──────────────────────────────────────
 
@@ -647,7 +648,7 @@ export class RecoveryService {
       await this.audit.write(entry);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn('[recovery] audit write failed; recovery unaffected', err);
+      console.warn('[recovery] audit write failed; recovery unaffected', formatSafeError(err));
     }
   }
 
@@ -674,7 +675,7 @@ export class RecoveryService {
       // hiccup can't become an enumeration / timing oracle. Log for
       // operators; never surface detail to the caller.
       // eslint-disable-next-line no-console
-      console.warn('[recovery] recover() failed; returning generic null', err);
+      console.warn('[recovery] recover() failed; returning generic null', formatSafeError(err));
       result = null;
     }
     // Anti-timing: uniform random delay on success AND failure.

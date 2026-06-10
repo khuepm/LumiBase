@@ -1,22 +1,43 @@
 # LumiBase
 
 <div align="center">
-
-**⚡ Edge-Native Headless CMS for Modern Web Development**
+<img width="1024" height="434" alt="Image" src="https://github.com/user-attachments/assets/a11def9c-f238-4a6d-9816-7f7c4f718ea9" />
+**⚡ Edge-Native, AI-Native Headless CMS for Agentic Business Software**
 
 [![GitHub Stars](https://img.shields.io/github/stars/khuepm/lumibase?style=social)](https://github.com/khuepm/lumibase)
 <!-- [![GitHub Sponsors](https://img.shields.io/github/sponsors/khuepm)](https://github.com/sponsors/khuepm) -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/khuepm/lumibase/blob/main/LICENSE)
 
-[Documentation](https://docs.lumibase.dev) • [Community](https://github.com/khuepm/lumibase/discussions)
+[Documentation](https://docs.lumibase.dev) • [Agent Setup](https://docs.lumibase.dev/en/agent-setup/) • [Community](https://github.com/khuepm/lumibase/discussions)
 
 </div>
 
 ---
 
+## 🤖 AI Agent Setup
+
+LumiBase is built to work natively with AI coding agents. Get your agent up to speed instantly:
+
+```bash
+# For any AI agent — paste this into your first message:
+Read https://docs.lumibase.dev/en/agent-setup/prompt.md and follow the setup instructions.
+```
+
+| Agent | Config file | Guide |
+|-------|------------|-------|
+| Claude Code | `CLAUDE.md` (this repo) | [claude-code.md](./docs/en/agent-setup/claude-code.md) |
+| Cursor | `.cursorrules` (this repo) | [cursor.md](./docs/en/agent-setup/cursor.md) |
+| GitHub Copilot | `.github/copilot-instructions.md` | [github-copilot.md](./docs/en/agent-setup/github-copilot.md) |
+| OpenAI Codex | `AGENTS.md` (this repo) | [codex.md](./docs/en/agent-setup/codex.md) |
+| Windsurf | See guide | [windsurf.md](./docs/en/agent-setup/windsurf.md) |
+
+**LLM-friendly docs index:** [`docs/llms.txt`](./docs/llms.txt)
+
+---
+
 ## 🎯 What is LumiBase?
 
-LumiBase is an Edge-native Headless CMS built for high-performance multi-website deployments, resolving the scalability and CI/CD bottlenecks of traditional monolithic CMS platforms. Inspired by Directus but designed for the edge computing era.
+LumiBase is an Edge-native, AI-native Headless CMS built for high-performance multi-website deployments and agent-assisted business software generation. Inspired by Directus but designed for the edge computing era, LumiBase adds an Agent Harness Layer so AI agents receive goals, context, tools, permissions, approvals, evaluations, and artifact storage through a governed control plane.
 
 ### ✨ Key Features
 
@@ -26,6 +47,7 @@ LumiBase is an Edge-native Headless CMS built for high-performance multi-website
 - **GitOps Ready:** Export/import configurations for roles and schemas
 - **Privacy-First:** Per-field encryption with AES-GCM for sensitive data
 - **Developer Experience:** Type-safe SDKs, comprehensive documentation, and modern tooling
+- **Agent Harness Layer:** Goals, runs, tool registry, memory, HITL approvals, evaluations, and versioned artifacts for AI agents
 
 ## Folder Structure (Turborepo)
 
@@ -58,7 +80,19 @@ pnpm --filter @lumibase/cms dev      # Hono API on :1989
 pnpm --filter @lumibase/studio dev   # Studio SPA on :5173
 ```
 
-The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire-up. Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is in [`docs/en/roadmap/tasks.md`](./docs/en/roadmap/tasks.md).
+The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire-up. Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is in [`docs/en/roadmap/tasks.md`](./docs/en/roadmap/tasks.md). For production release operations, see the upgrade runbooks in [English](./docs/en/operations/upgrades.md) and [Vietnamese](./docs/vi/operations/upgrades.md).
+
+## Release policy
+
+Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
+
+Current release: `v0.4.3` (`2026-06-07`). This release adds the Agent Harness Layer foundation, expands AI provider support for OpenAI, Gemini, Claude/Anthropic, Workers AI, and echo testing, and includes database migration `0018_agent_harness.sql`.
+
+```bash
+LUMIBASE_VERSION=0.4.3 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+```
+
+See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.
 
 ### Why port 1989?
 
@@ -114,6 +148,7 @@ Includes everything in Hobby tier plus:
 2. **True Multi-Tenancy:** Hard-coded `site_id` isolation.
 3. **Page Hydration API:** Delivers layout and data in a single payload.
 4. **GitOps Ready:** `cms config:export` for roles and schemas.
+5. **Agent Harness:** Govern AI agents with goals, context, capabilities, approvals, evaluations, and artifact commits.
 
 ---
 

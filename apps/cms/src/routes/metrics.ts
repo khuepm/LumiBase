@@ -180,6 +180,48 @@ export const withMetrics = () =>
     httpRequestDuration.observe({ method, path: normalizedPath }, durationSec);
   });
 
+
+function processEnvValue(key: string): string | undefined {
+  try {
+    return typeof process !== 'undefined' ? process.env[key] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isProductionMetricsEnv(env: AppEnv['Bindings']): boolean {
+  return env.LUMIBASE_ENV === 'production' || processEnvValue('LUMIBASE_ENV') === 'production';
+}
+
+function resolveMetricsToken(env: AppEnv['Bindings']): string | undefined {
+  return env.METRICS_TOKEN || processEnvValue('METRICS_TOKEN');
+}
+
+function extractBearerToken(header: string | undefined): string | null {
+  if (!header) return null;
+  const [scheme, ...rest] = header.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer') return null;
+  const token = rest.join(' ').trim();
+  return token.length > 0 ? token : null;
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const max = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < max; i += 1) {
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return diff === 0;
+}
+
+function canReadMetrics(env: AppEnv['Bindings'], authorization: string | undefined): boolean {
+  if (!isProductionMetricsEnv(env)) return true;
+  const expected = resolveMetricsToken(env);
+  if (!expected) return false;
+  const actual = extractBearerToken(authorization);
+  return actual !== null && constantTimeEqual(actual, expected);
+}
+
 // ---------------------------------------------------------------------------
 // Metrics route — GET /metrics
 // ---------------------------------------------------------------------------
@@ -187,6 +229,10 @@ export const withMetrics = () =>
 export const metricsRouter = new Hono<AppEnv>();
 
 metricsRouter.get('/', async (c) => {
+  if (!canReadMetrics(c.env, c.req.header('authorization'))) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Route not found.' }] }, 404);
+  }
+
   const metrics = await register.metrics();
   return c.text(metrics, 200, {
     'Content-Type': register.contentType,

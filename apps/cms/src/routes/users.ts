@@ -4,8 +4,10 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import type { AppEnv } from '../env';
+import { requireSiteAdmin } from '../middleware/site-admin';
 
 export const usersRouter = new Hono<AppEnv>();
+usersRouter.use('*', requireSiteAdmin());
 
 // List users belonging to the active site
 usersRouter.get('/', async (c) => {

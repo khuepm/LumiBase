@@ -1,59 +1,15 @@
 import { useMemo, useState } from 'react';
+import {
+  findInterfaceCatalogueItem,
+  INTERFACE_CATALOGUE,
+  INTERFACE_GROUPS,
+} from '@/modules/content/interfaces/catalogue';
 import { DISPLAY_CATALOGUE } from '@/modules/content/displays/registry';
 import { MustacheTemplateEditor } from '@/modules/content/mustache-template-editor';
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
 const TABS = ['Basics', 'Options', 'Display', 'Validation', 'Conditions', 'Layout', 'Storage', 'Translations'] as const;
 type InspectorTab = (typeof TABS)[number];
-
-/**
- * Phase B inspector — covers every interface listed in the Phase B
- * roadmap so authors can actually pick the new editors from the UI.
- *
- * The catalogue is grouped purely for human readability; the registry
- * inside `modules/content/interfaces/registry.tsx` is the source of
- * truth for which keys actually have a renderer.
- */
-interface InterfaceMeta {
-  id: string;
-  label: string;
-  type: string;
-  group: string;
-}
-
-const INTERFACES: InterfaceMeta[] = [
-  // Text
-  { id: 'input', label: 'Input (single line)', type: 'string', group: 'Text' },
-  { id: 'input-multiline', label: 'Input (multiline)', type: 'text', group: 'Text' },
-  { id: 'wysiwyg', label: 'WYSIWYG', type: 'text', group: 'Text' },
-  { id: 'markdown', label: 'Markdown', type: 'text', group: 'Text' },
-  { id: 'code', label: 'Code (Monaco)', type: 'text', group: 'Text' },
-  { id: 'slug', label: 'Slug', type: 'string', group: 'Text' },
-  { id: 'color', label: 'Color', type: 'string', group: 'Text' },
-  // Number
-  { id: 'input-number', label: 'Number', type: 'integer', group: 'Number' },
-  { id: 'rating', label: 'Rating', type: 'integer', group: 'Number' },
-  // Choice
-  { id: 'select-dropdown', label: 'Dropdown', type: 'string', group: 'Choice' },
-  { id: 'tags', label: 'Tags', type: 'json', group: 'Choice' },
-  // Boolean
-  { id: 'toggle', label: 'Toggle', type: 'boolean', group: 'Boolean' },
-  // Date
-  { id: 'datetime', label: 'Date/time', type: 'datetime', group: 'Date' },
-  // Relation
-  { id: 'relation-m2o', label: 'Many-to-one', type: 'uuid', group: 'Relation' },
-  { id: 'relation-o2m', label: 'One-to-many', type: 'alias', group: 'Relation' },
-  { id: 'relation-m2m', label: 'Many-to-many', type: 'alias', group: 'Relation' },
-  // File
-  { id: 'file', label: 'File', type: 'uuid', group: 'File' },
-  // Special
-  { id: 'json-raw', label: 'JSON (raw)', type: 'json', group: 'Special' },
-  { id: 'repeater', label: 'Repeater', type: 'json', group: 'Special' },
-  { id: 'presentation-divider', label: 'Presentation: divider', type: 'alias', group: 'Special' },
-  { id: 'presentation-notice', label: 'Presentation: notice', type: 'alias', group: 'Special' },
-];
-
-const GROUPS = ['Text', 'Number', 'Choice', 'Boolean', 'Date', 'Relation', 'File', 'Special'] as const;
 
 export interface FieldFormState {
   name: string;
@@ -231,25 +187,39 @@ export function FieldInspector({
                   value={form.interface}
                   disabled={!canEditStorage}
                   onChange={(e) => {
-                    const iface = INTERFACES.find((i) => i.id === e.target.value);
+                    const iface = findInterfaceCatalogueItem(e.target.value);
+                    const nextOptions = iface?.defaultOptions ?? {};
+                    const nextSpecial = iface?.defaultSpecial ?? [];
                     setForm({
                       ...form,
                       interface: e.target.value,
                       type: iface?.type ?? form.type,
+                      options: nextOptions,
+                      special: nextSpecial,
+                      display: iface?.defaultDisplay ?? null,
+                      width: iface?.width ?? form.width,
                     });
+                    setOptionsDraft(stringifyJson(nextOptions));
+                    setSpecialDraft(nextSpecial.join(', '));
+                    setDisplayOptionsDraft('{}');
                   }}
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                 >
-                  {GROUPS.map((g) => (
+                  {INTERFACE_GROUPS.map((g) => (
                     <optgroup key={g} label={g}>
-                      {INTERFACES.filter((i) => i.group === g).map((i) => (
-                        <option key={i.id} value={i.id}>
+                      {INTERFACE_CATALOGUE.filter((i) => i.group === g).map((i) => (
+                        <option key={i.id} value={i.id} title={i.description}>
                           {i.label}
                         </option>
                       ))}
                     </optgroup>
                   ))}
                 </select>
+                {findInterfaceCatalogueItem(form.interface)?.description && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {findInterfaceCatalogueItem(form.interface)?.description}
+                  </p>
+                )}
               </label>
             </>
           )}

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
  * /media — asset storage endpoints powered by the StorageProvider.
@@ -43,7 +44,7 @@ mediaRouter.get('/', async (c) => {
     const result = await storage.list(parsed.data.prefix);
     return c.json({ data: result.keys });
   } catch (err) {
-    console.error('[media] list error', err);
+    console.error('[media] list error', formatSafeError(err));
     return c.json(
       { errors: [{ code: 'SERVICE_UNAVAILABLE', message: 'Storage service encountered an error.' }] },
       503,
@@ -81,7 +82,7 @@ mediaRouter.get('/:key{.+}', async (c) => {
 
     return new Response(obj.body as BodyInit, { status: 200, headers });
   } catch (err) {
-    console.error('[media] get error', err);
+    console.error('[media] get error', formatSafeError(err));
     return c.json(
       { errors: [{ code: 'SERVICE_UNAVAILABLE', message: 'Storage service encountered an error.' }] },
       503,
@@ -129,17 +130,17 @@ mediaRouter.post('/:key{.+}', async (c) => {
               { width: 600, height: 600 },
             ],
           }).catch((err) => {
-            console.warn('[media] failed to enqueue thumbnail generation', err);
+            console.warn('[media] failed to enqueue thumbnail generation', formatSafeError(err));
           });
         }
       } catch (err) {
-        console.warn('[media] queue unavailable for thumbnail generation', err);
+        console.warn('[media] queue unavailable for thumbnail generation', formatSafeError(err));
       }
     }
 
     return c.json({ data: { key, size: data.byteLength, contentType } }, 201);
   } catch (err) {
-    console.error('[media] upload error', err);
+    console.error('[media] upload error', formatSafeError(err));
     return c.json(
       { errors: [{ code: 'SERVICE_UNAVAILABLE', message: 'Storage service encountered an error.' }] },
       503,
@@ -166,7 +167,7 @@ mediaRouter.delete('/:key{.+}', async (c) => {
     await storage.delete(key);
     return c.body(null, 204);
   } catch (err) {
-    console.error('[media] delete error', err);
+    console.error('[media] delete error', formatSafeError(err));
     return c.json(
       { errors: [{ code: 'SERVICE_UNAVAILABLE', message: 'Storage service encountered an error.' }] },
       503,

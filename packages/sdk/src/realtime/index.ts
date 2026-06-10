@@ -143,18 +143,46 @@ export class RealtimeClient {
 
   // ─── Internal ────────────────────────────────────────────────────────────────
 
-  private _connect(): void {
+  private async _connect(): Promise<void> {
     if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) return;
 
     const { baseUrl, token, siteId, userId } = this.opts;
+
+    // Fetch the short-lived ticket first
+    let ticket: string;
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/realtime/ticket`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-Lumi-Site': siteId,
+        },
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to fetch ticket: ${res.status}`);
+      }
+
+      const body = await res.json() as { data?: { ticket: string } };
+      if (!body.data?.ticket) {
+        throw new Error('Ticket missing from response');
+      }
+      ticket = body.data.ticket;
+    } catch (err) {
+      console.warn('[RealtimeClient] Ticket fetch failed', err);
+      this._scheduleReconnect();
+      return;
+    }
+
+    if (this.stopped) return; // Disconnected while fetching ticket
+
     const wsBase = baseUrl.replace(/^http/, 'ws');
     const url = new URL(`${wsBase}/api/v1/realtime`);
-    url.searchParams.set('token', token);
-    // Local/dev tenant middleware accepts `?site=` because browser WebSocket
-    // clients cannot set `X-Lumi-Site` headers during the handshake.
+    url.searchParams.set('ticket', ticket);
+
+    // Site ID is embedded in ticket, but passed here as well
     url.searchParams.set('site', siteId);
     url.searchParams.set('siteId', siteId);
-    if (userId) url.searchParams.set('userId', userId);
 
     let ws: WebSocket;
     try {

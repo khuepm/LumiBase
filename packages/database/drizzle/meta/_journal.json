@@ -127,6 +127,13 @@
       "when": 1781082000000,
       "tag": "0017_directus_relation_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1781168400000,
+      "tag": "0018_agent_harness",
+      "breakpoints": true
     }
   ]
 }

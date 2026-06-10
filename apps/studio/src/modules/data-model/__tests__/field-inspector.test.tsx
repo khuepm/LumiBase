@@ -87,4 +87,113 @@ describe('FieldInspector', () => {
       }),
     );
   });
+
+  it('applies catalogue defaults when selecting a relation interface', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <FieldInspector
+        state={{ ...baseState, options: {}, special: [], display: null }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+        isSubmitting={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/interface/i), { target: { value: 'relation-m2m' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        interface: 'relation-m2m',
+        type: 'alias',
+        display: 'relation',
+        options: expect.objectContaining({ collection: '', junctionCollection: '' }),
+        special: ['m2m'],
+      }),
+    );
+  });
+
+  it('applies SEO extension defaults from the catalogue', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <FieldInspector
+        state={{ ...baseState, options: {}, special: [], display: null }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+        isSubmitting={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/interface/i), { target: { value: 'seo' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        interface: 'seo',
+        type: 'json',
+        options: expect.objectContaining({
+          titleMaxLength: 70,
+          descriptionMaxLength: 160,
+        }),
+        special: [],
+        width: 'full',
+      }),
+    );
+  });
+
+  it('applies AIO extension defaults from the catalogue', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <FieldInspector
+        state={{ ...baseState, options: {}, special: [], display: null }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+        isSubmitting={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/interface/i), { target: { value: 'aio' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        interface: 'aio',
+        type: 'json',
+        options: expect.objectContaining({
+          summaryMaxLength: 300,
+          tones: ['neutral', 'expert', 'friendly'],
+        }),
+        special: [],
+        width: 'full',
+      }),
+    );
+  });
+
+  it('applies Files extension defaults from the catalogue', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <FieldInspector
+        state={{ ...baseState, options: {}, special: [], display: null }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+        isSubmitting={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/interface/i), { target: { value: 'files' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        interface: 'files',
+        type: 'alias',
+        display: 'relation',
+        options: expect.objectContaining({ limit: 15 }),
+        special: ['files'],
+      }),
+    );
+  });
 });

@@ -19,6 +19,23 @@ Quy ước:
 
 Trạng thái tổng quan: Phase 0 → Phase G (GA hardening) đã xong. POST-GA và Dual Deployment + AI Copilot đã hoàn thành. Hiện tại tập trung vào polish, dev experience và mở rộng marketplace.
 
+## Active Ops Hardening Tasks
+
+Nguồn: `apps/docs/content/deployment/docker.md`, `apps/docs/content/guides/backup-recovery.md`.
+
+- [x] `[OPS]` Docker image chạy non-root user.
+- [x] `[BE]` Validate production config khi `NODE_ENV=production` hoặc `LUMIBASE_ENV=production`.
+- [x] `[BE]` Hỗ trợ Docker secret files qua `*_FILE` trước migration/server startup.
+- [x] `[BE]` CORS allowlist qua `CORS_ALLOWED_ORIGINS`; reject wildcard production.
+- [x] `[BE]` Require `ENCRYPTION_KEY` production và validate AES key format.
+- [x] `[BE]` Require DB TLS `sslmode=require|verify-ca|verify-full` production, trừ khi explicit `DATABASE_SSL_MODE=disable`.
+- [x] `[OPS]` `docker-compose.prod.yml` không publish port cho stateful internal services.
+- [x] `[DOC]` Cập nhật Docker deployment docs và environment reference.
+- [x] `[DOC]` Bổ sung restore drill, row-count verification, app health check sau restore, media/search rebuild, RTO/RPO documentation.
+- [x] `[DOC]` Bổ sung Cloudflare DR validation cho Workers, Hyperdrive, R2, KV, Queues, MeiliSearch Cloud, DNS/WAF/Access.
+- [x] `[OPS]` Cấu hình TLS termination thực tế tại load balancer/reverse proxy của môi trường deploy.
+- [x] `[OPS]` Tự động hóa restore drill định kỳ cho Docker và Cloudflare restore environment.
+
 ---
 
 ## Phase 0 — Foundation (DONE)
@@ -362,6 +379,55 @@ Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
 - [x] `[FE]` Flows visual editor (drag-drop graph) — hiện chỉ có list page.
 - [x] `[BE]` SCIM Token rotation + audit.
 - [x] `[OPS]` Multi-tenant isolation testing tự động (k6 cross-site leak detection).
+
+
+---
+
+## Phase Agent Harness Layer (DONE)
+
+Mục tiêu: biến LumiBase thành control plane nơi humans, agents, data, workflows và applications cùng tiến hoá có kiểm soát. Checklist chi tiết nằm ở [`agent-harness-implementation.md`](./agent-harness-implementation.md).
+
+### A. Lifecycle nền tảng
+
+- [x] `[DB]` Thêm `agent_goals`, `agent_runs`, `agent_plans`, `agent_tool_calls` với `siteId`, lifecycle status, policy snapshot, budget, audit metadata và indexes theo `siteId/runId/goalId`.
+- [x] `[BE]` Tạo `AgentRunService` để open/append/close/fail/retry run; refactor `AISecureHarness` để mọi execute runtime đều gắn `goalId/runId`.
+- [x] `[TEST]` Property tests mở rộng cho multi-tenant isolation, run failed vẫn giữ audit trail, retry không duplicate tool calls/artifacts.
+
+### B. Tool Registry + capability policy
+
+- [x] `[DB]` Thêm `agent_tools` và `agent_permissions` để khai báo input/output schema, required capabilities, risk policy, rate limit và validity window.
+- [x] `[BE]` Implement `ToolRegistryService` load core skills + DB overrides; enforce disabled tool, capability, risk policy và rate limit.
+- [x] `[FE]` Studio page “Agent Harness” hiển thị tools, risk, approvals, runs, artifacts và memory.
+- [x] `[SDK]` Thêm types/client methods cho tools, capabilities và risk policies.
+
+### C. Approval tổng quát
+
+- [x] `[DB]` Thêm `agent_approvals` cho `plan` / `tool_call` / `artifact` / `schema_diff`; bridge backward-compatible với `ai_approvals`.
+- [x] `[BE]` Approval policy engine nền tảng: `none`, `before_execute`, `before_commit`, `two_person_rule`, `owner_only`, `security_admin_only` ở contract/policy field.
+- [x] `[FE]` Nâng bề mặt Studio thành queue Agent Harness có subject type, status và decision surface.
+- [x] `[TEST]` Dangerous plan không execute trước approval; rejected/expired approval không commit được.
+
+### D. Artifact Store + Evaluation Gate
+
+- [x] `[DB]` Thêm `agent_artifacts` và `agent_evaluations` với content hash, version, status, eval kind/status/score/details.
+- [x] `[BE]` Artifact writers đầu tiên: `schema_diff`, `page_spec`, `component_spec`, `seed_data`, `api_spec`, `prompt`, `migration`.
+- [x] `[BE]` Eval runners đầu tiên: JSON schema validation, schema/migration guard, generated API spec validation, prompt safety check.
+- [x] `[FE]` Artifact review UI tối thiểu trong Studio Agent Harness: list artifact, status, hash, generated app artifacts.
+- [x] `[TEST]` Artifact fail eval không publish được; artifact hash ổn định; publish/rollback idempotent.
+
+### E. Memory + App Generation MVP
+
+- [x] `[DB]` Thêm `agent_memory` với scope, provenance, confidence, expiry và optional embedding.
+- [x] `[BE]` RAG context builder tôn trọng expiry, provenance và redaction secrets.
+- [x] `[AI]` Skills `generateAppSpec`, `generateApiDocs`, `generateSeedData` sinh artifact payload thay vì ghi thẳng vào content/schema.
+- [x] `[FE]` Action “Generate” trong Agent Harness tạo app artifacts từ `products/orders/customers` với budget và approval policy.
+- [x] `[TEST]` E2E demo: generate storefront từ `products/orders/customers` → plan → artifacts → eval → approval → publish.
+
+### F. Operations
+
+- [x] `[BE]` Metrics cho run success/fail, approval latency, tool latency, eval fail rate, token/cost estimate và budget stop reason.
+- [x] `[OPS]` Grafana dashboard “Agent Harness” và dead-letter queue cho run/tool call fail nhiều lần.
+- [x] `[DOC]` Cập nhật `data-model.md`, `architecture/overview.md`, OpenAPI, SDK docs và runtime limitations cho từng phase.
 
 ---
 

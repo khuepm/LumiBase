@@ -10,6 +10,17 @@ Deploy Lumibase as a Docker container on any platform that supports containers. 
 - Access to a Redis 7 instance
 - S3-compatible object storage (MinIO, AWS S3, etc.)
 
+## Production CMS Image
+
+`docker/docker-compose.prod.yml` uses the published CMS image by default:
+
+```yaml
+image: ${LUMIBASE_CMS_IMAGE:-ghcr.io/khuepm/lumibase-cms:${LUMIBASE_VERSION:-latest}}
+```
+
+Pin `LUMIBASE_VERSION` for repeatable production deploys, or set
+`LUMIBASE_CMS_IMAGE` to use a different registry/image.
+
 ## Building the Production Image
 
 ### From Source
@@ -44,20 +55,33 @@ docker build --build-arg NODE_VERSION=20 -f docker/Dockerfile -t lumibase-cms:la
 For a complete self-hosted stack with all services:
 
 ```bash
-cd docker/
-
 # Copy and configure environment variables
-cp .env.example .env
-# Edit .env with your values
+cp docker/.env.example docker/.env
+# Edit docker/.env with your values
 
-# Start all services
-docker compose up -d
+# Start all services with a pinned CMS image version
+LUMIBASE_VERSION=0.4.3 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 
 # Check status
-docker compose ps
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml ps
 
 # View logs
-docker compose logs -f cms
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml logs -f cms
+```
+
+
+### Local Production Build Override
+
+Production Compose pulls the published CMS image by default. To build the CMS
+image from your local checkout, add `docker/docker-compose.build.yml` after the
+production override:
+
+```bash
+docker compose \
+  -f docker/docker-compose.yml \
+  -f docker/docker-compose.prod.yml \
+  -f docker/docker-compose.build.yml \
+  up -d --build
 ```
 
 This starts:
@@ -80,6 +104,30 @@ This adds:
 - **Prometheus** on port 9090
 - **Grafana** on port 3002 (admin/admin)
 - **Loki** on port 3100
+
+### With TLS Termination
+
+For production Docker hosts, use the TLS overlay to run Caddy as the only public
+ingress. Caddy listens on ports 80/443, obtains and renews certificates through
+ACME, and forwards traffic to the private `cms:1989` service.
+
+```bash
+cd docker/
+
+PUBLIC_DOMAIN=api.example.com ACME_EMAIL=ops@example.com \
+  docker compose \
+    -f docker-compose.yml \
+    -f docker-compose.prod.yml \
+    -f docker-compose.tls.yml \
+    up -d
+```
+
+Requirements:
+
+- `PUBLIC_DOMAIN` must resolve to the Docker host
+- Ports 80 and 443 must be reachable from the public internet
+- `CORS_ALLOWED_ORIGINS` must include your production Studio/app origins
+- Stateful services remain private because `docker-compose.prod.yml` removes their host port mappings
 
 ## Running a Standalone Container
 
@@ -278,7 +326,7 @@ primary_region = "iad"
 - [x] Require `ENCRYPTION_KEY` in production for sensitive data at rest
 - [x] Configure CORS with `CORS_ALLOWED_ORIGINS` in production
 - [x] Require database TLS via `sslmode=require`, `sslmode=verify-ca`, or `sslmode=verify-full` unless `DATABASE_SSL_MODE=disable` is explicitly set for a private test stack
-- [ ] Use TLS termination at load balancer / reverse proxy
+- [x] Use TLS termination at load balancer / reverse proxy via `docker-compose.tls.yml`
 
 Production startup validation is active when `NODE_ENV=production` or
 `LUMIBASE_ENV=production`. It rejects missing `DATABASE_URL`, `REDIS_URL`,
@@ -307,35 +355,25 @@ ENCRYPTION_KEY_FILE=/run/secrets/encryption_key
 services. Keep only the CMS/reverse-proxy ingress reachable from untrusted
 networks.
 
-### TLS Termination Example
+### TLS Termination
 
 Lumibase terminates HTTP inside the container. Terminate HTTPS at a cloud load
 balancer or reverse proxy and forward traffic to `cms:1989`.
 
-Example Caddy service:
+The repository includes a production Caddy overlay:
 
-```yaml
-services:
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddydata:/data
-    depends_on:
-      - cms
-
-volumes:
-  caddydata:
+```bash
+PUBLIC_DOMAIN=api.example.com ACME_EMAIL=ops@example.com \
+  docker compose \
+    -f docker-compose.yml \
+    -f docker-compose.prod.yml \
+    -f docker-compose.tls.yml \
+    up -d caddy
 ```
 
-```caddyfile
-api.example.com {
-  reverse_proxy cms:1989
-}
-```
+For managed platforms, terminate TLS at the platform load balancer instead:
+AWS ALB on port 443, Cloud Run managed HTTPS, Fly.io `force_https`, or an
+equivalent reverse proxy. In every case, only the HTTPS ingress should be public.
 
 ### Logging
 
@@ -357,20 +395,52 @@ Collect logs with your preferred aggregator (Loki, CloudWatch, Datadog, etc.).
 
 ## Updating
 
+For Compose production deploys, set the desired image tag with `LUMIBASE_VERSION`,
+pull the CMS image, and recreate the service:
+
 ```bash
-# Pull the latest image
-docker pull ghcr.io/your-org/lumibase-cms:latest
-
-# Restart with zero downtime (compose)
-docker compose up -d --no-deps cms
-
-# Or for standalone containers
-docker stop lumibase-cms
-docker rm lumibase-cms
-docker run -d --name lumibase-cms ... lumibase-cms:latest
+LUMIBASE_VERSION=0.4.3 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml pull cms
+LUMIBASE_VERSION=0.4.3 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d cms
 ```
 
-Migrations run automatically on container startup. For major version upgrades, check the changelog for breaking changes.
+For standalone containers:
+
+```bash
+docker pull ghcr.io/khuepm/lumibase-cms:0.4.3
+docker stop lumibase-cms
+docker rm lumibase-cms
+docker run -d --name lumibase-cms ... ghcr.io/khuepm/lumibase-cms:0.4.3
+```
+
+Migrations run automatically on container startup. Before upgrading to any release whose changelog includes a `Migrations` section with pending database changes, create and verify a database backup or storage snapshot first.
+
+Run a read-only migration preflight against the new image before replacing the running CMS container:
+
+```bash
+docker compose run --rm -e MIGRATION_MODE=preflight cms
+```
+
+The preflight verifies database connectivity, prints the current Drizzle schema version, and lists pending migrations without applying DDL. The normal startup path runs the same preflight by default before applying migrations; set `RUN_MIGRATION_PREFLIGHT=false` only for emergency recovery where connectivity was already verified. For major version upgrades, check the changelog for breaking changes and the required `Migrations` release-note section.
+
+## Rollback
+
+To roll back a Compose production deployment, change `LUMIBASE_VERSION` back to
+the previous version, then pull and recreate the CMS service:
+
+```bash
+docker compose pull cms
+docker compose up -d cms
+```
+
+## Rollback
+
+To roll back a Compose production deployment, change `LUMIBASE_VERSION` back to
+the previous version, then pull and recreate the CMS service:
+
+```bash
+docker compose pull cms
+docker compose up -d cms
+```
 
 ## Next Steps
 

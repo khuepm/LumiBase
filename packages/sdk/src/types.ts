@@ -6,6 +6,178 @@ export type Brand<TBrand extends string, TValue> = TValue & {
   readonly __brand: TBrand;
 };
 
+export type AgentRiskLevel = "safe" | "review_required" | "dangerous" | "blocked";
+
+export interface AgentGoalResource {
+  id: string;
+  siteId: string;
+  title: string;
+  description: string | null;
+  source: string;
+  createdBy: string | null;
+  assigneeAgent: string;
+  priority: string;
+  deadline: string | null;
+  status: string;
+  successCriteria: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentGoalCreateInput {
+  title: string;
+  description?: string;
+  source?: "user" | "flow" | "api" | "schedule";
+  assigneeAgent?: string;
+  priority?: "low" | "normal" | "high" | "urgent";
+  successCriteria?: Record<string, unknown>;
+}
+
+export interface AgentRunResource {
+  id: string;
+  goalId: string;
+  siteId: string;
+  agentName: string;
+  provider: string;
+  model: string;
+  status: string;
+  budget: Record<string, unknown>;
+  policySnapshotHash: string | null;
+  risk: AgentRiskLevel | string;
+  metrics: Record<string, unknown>;
+  error: string | null;
+  retryOfRunId: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentToolResource {
+  name: string;
+  description: string;
+  requiredCapabilities: string[];
+  service: "schema" | "items" | "ai";
+  inputSchema: Record<string, unknown>;
+  outputSchema: Record<string, unknown>;
+  riskPolicy: { level: AgentRiskLevel; approvalPolicy?: string };
+  rateLimit: { maxCallsPerMinute?: number; maxCallsPerRun?: number };
+  enabled: boolean;
+  owner: string;
+  extensionId?: string | null;
+}
+
+export interface AgentApprovalResource {
+  id: string;
+  runId: string;
+  siteId: string;
+  legacyApprovalId: string | null;
+  subjectType: "plan" | "tool_call" | "artifact" | "schema_diff" | string;
+  subjectId: string;
+  status: string;
+  approvalPolicy: string;
+  requestedByAgent: string;
+  decidedBy: string | null;
+  decisionReason: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
+export type AgentArtifactType =
+  | "schema_diff"
+  | "page_spec"
+  | "component_spec"
+  | "seed_data"
+  | "api_spec"
+  | "prompt"
+  | "migration";
+
+export interface AgentArtifactResource {
+  id: string;
+  runId: string;
+  siteId: string;
+  type: AgentArtifactType | string;
+  target: string | null;
+  title: string;
+  contentRef: string | null;
+  content: Record<string, unknown>;
+  hash: string;
+  version: number;
+  status: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentArtifactCreateInput {
+  runId: string;
+  type: AgentArtifactType;
+  title: string;
+  target?: string;
+  content: Record<string, unknown>;
+}
+
+export interface AgentEvaluationResource {
+  id: string;
+  runId: string;
+  siteId: string;
+  artifactId: string | null;
+  kind: string;
+  status: "pass" | "warn" | "fail" | string;
+  score: number | null;
+  summary: string;
+  details: Record<string, unknown>;
+  artifactHash: string | null;
+  createdAt: string;
+}
+
+export interface AgentMemoryResource {
+  id: string;
+  siteId: string;
+  scope: string;
+  scopeId: string | null;
+  sourceType: string;
+  sourceId: string | null;
+  content: string;
+  embedding: unknown;
+  confidence: number;
+  metadata: Record<string, unknown>;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface AgentMemoryContext {
+  siteId: string;
+  memories: AgentMemoryResource[];
+  recentRuns: AgentRunResource[];
+  approvedArtifacts: AgentArtifactResource[];
+}
+
+export interface AgentMemoryWriteInput {
+  scope: string;
+  scopeId?: string;
+  sourceType: string;
+  sourceId?: string;
+  content: string;
+  confidence?: number;
+}
+
+export interface AgentGenerateAppInput {
+  collections?: string[];
+  targetApp?: string;
+  constraints?: Record<string, unknown>;
+  budget?: Record<string, unknown>;
+  approvalPolicy?: string;
+}
+
+export interface AgentGenerateAppResult {
+  run: { goalId: string; runId: string; agentName: string };
+  artifacts: AgentArtifactResource[];
+  evaluations: AgentEvaluationResource[];
+}
+
 export type PrimaryKeyType =
   | "nanoid"
   | "uuid"

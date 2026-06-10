@@ -67,43 +67,65 @@ export function NotificationsPanel() {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
     const token = localStorage.getItem('lumibase_dev_token') ?? '';
     const siteId = localStorage.getItem('lumibase_site_id') ?? '';
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:1989';
-    const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/api/v1/realtime?token=${encodeURIComponent(token)}&siteId=${encodeURIComponent(siteId)}&userId=notifications-panel`;
 
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(wsUrl);
-    } catch {
-      return;
-    }
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      // Subscribe to all collections by using a wildcard subscription.
-      // The SiteRoom will deliver events for any collection the user is allowed to see.
-      ws.send(JSON.stringify({ type: 'subscribe', collection: '*' }));
-    };
-
-    ws.onmessage = (evt) => {
+    const connect = async () => {
       try {
-        const msg = JSON.parse(evt.data as string) as { type: string; collection?: string; action?: string; itemId?: string; payload?: unknown };
-        if (msg.type === 'event' && msg.collection && msg.action && msg.itemId) {
-          handleEvent(msg as unknown as RealtimeEvent);
-        }
-        if (msg.type === 'ping') ws.send(JSON.stringify({ type: 'pong' }));
-      } catch {
-        /* ignore */
+        const res = await fetch(`${baseUrl}/api/v1/realtime/ticket`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'X-Lumi-Site': siteId,
+          },
+        });
+        if (!res.ok) throw new Error('Ticket fetch failed');
+        const body = await res.json() as { data?: { ticket: string } };
+        const ticket = body.data?.ticket;
+        if (!ticket) throw new Error('No ticket');
+
+        if (!isMounted) return;
+
+        const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/api/v1/realtime?ticket=${encodeURIComponent(ticket)}&siteId=${encodeURIComponent(siteId)}`;
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          // Subscribe to all collections by using a wildcard subscription.
+          // The SiteRoom will deliver events for any collection the user is allowed to see.
+          ws.send(JSON.stringify({ type: 'subscribe', collection: '*' }));
+        };
+
+        ws.onmessage = (evt) => {
+          try {
+            const msg = JSON.parse(evt.data as string) as { type: string; collection?: string; action?: string; itemId?: string; payload?: unknown };
+            if (msg.type === 'event' && msg.collection && msg.action && msg.itemId) {
+              handleEvent(msg as unknown as RealtimeEvent);
+            }
+            if (msg.type === 'ping') ws.send(JSON.stringify({ type: 'pong' }));
+          } catch {
+            /* ignore */
+          }
+        };
+
+        ws.onclose = () => {
+          wsRef.current = null;
+        };
+      } catch (err) {
+        console.warn('Notifications connection failed', err);
       }
     };
 
-    ws.onclose = () => {
-      wsRef.current = null;
-    };
+    connect();
 
     return () => {
-      ws.close(1000, 'notifications panel unmount');
+      isMounted = false;
+      const ws = wsRef.current;
+      if (ws) {
+        ws.close(1000, 'notifications panel unmount');
+      }
     };
   }, [handleEvent]);
 

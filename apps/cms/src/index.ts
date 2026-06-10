@@ -11,6 +11,9 @@ import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
 import { withStudioAccess } from './middleware/studio-access';
+import { withControlPlaneAccessGuard } from './middleware/control-plane-access-guard';
+import { withFileUploadPolicy } from './middleware/file-upload-policy';
+import { withSecurityHeaders } from './middleware/security-headers';
 import { withTenant } from './middleware/tenant';
 import { withTracing } from './middleware/tracing';
 import { activityRouter } from './routes/activity';
@@ -40,6 +43,7 @@ import { searchRouter } from './routes/search';
 import { scimRouter } from './routes/scim';
 import { scimAdminRouter } from './routes/scim-admin';
 import { settingsRouter } from './routes/settings';
+import { systemRouter } from './routes/system';
 import { shareAdminRouter, sharePublicRouter } from './routes/shares';
 import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
@@ -50,10 +54,12 @@ import { utilsRouter } from './routes/utils';
 import { webhooksRouter } from './routes/webhooks';
 import { testAuthRouter } from './routes/test-auth';
 import { aiRouter } from './routes/ai';
+import { agentRouter } from './routes/agent';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 const app = new Hono<AppEnv>();
 
@@ -62,6 +68,7 @@ const app = new Hono<AppEnv>();
 // before tenant resolution (which may use the cache).
 app.use('*', withLogger());
 app.use('*', withTracing());
+app.use('*', withSecurityHeaders());
 app.use('*', withMetrics());
 app.use('*', withRuntime());
 app.use(
@@ -106,6 +113,7 @@ app.use('*', adminPathGuard());
 
 // Public utility endpoints (no tenant, no auth).
 app.route('/api/v1/utils', utilsRouter);
+app.route('/api/v1/system', systemRouter);
 // Prometheus metrics endpoint (public, no auth).
 app.route('/metrics', metricsRouter);
 // Comprehensive health check — tests DB, cache, search, storage, queue connectivity.
@@ -145,7 +153,7 @@ app.route('/scim/v2', scimRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withDb(), withAuth(), requireSetupComplete(), withStudioAccess(), withRls());
+api.use('*', withTenant(), withDb(), withAuth(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).
@@ -204,6 +212,7 @@ api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
 api.route('/scim-tokens', scimAdminRouter);
 api.route('/ai', aiRouter);
+api.route('/agent', agentRouter);
 
 // ClickHouse CDC control-plane surface (`/api/v1/cdc/*`) — clickhouse-cdc
 // task 12.2; Req 1.1; design "CDC API Routes" §7. Mounted on the
@@ -231,7 +240,7 @@ app.notFound((c) =>
 );
 app.onError((err, c) => {
   const requestId = c.get('requestId');
-  console.error('[lumibase-cms] unhandled error', { requestId, err });
+  console.error('[lumibase-cms] unhandled error', { requestId, err: formatSafeError(err) });
   return c.json(
     { errors: [{ code: 'INTERNAL', message: 'Internal Server Error', requestId }] },
     500,

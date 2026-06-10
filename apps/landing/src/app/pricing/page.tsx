@@ -5,11 +5,72 @@ import { Zap, Shield, Users, Code2, Globe, Headphones } from "lucide-react";
 export const metadata: Metadata = {
   title: "Pricing - LumiBase",
   description: "Choose the perfect plan for your needs. Open-source with optional premium features.",
+  alternates: {
+    canonical: "/pricing/",
+  },
+};
+
+const faqs = [
+  {
+    question: "What's the difference between self-hosted and managed?",
+    answer:
+      "Self-hosted means you deploy LumiBase on your own infrastructure (free). Managed means we host it for you with automatic updates, backups, and support (paid tiers).",
+  },
+  {
+    question: "Can I switch plans anytime?",
+    answer:
+      "Yes! You can upgrade or downgrade your plan at any time. Changes take effect immediately and we'll prorate the difference.",
+  },
+  {
+    question: "Do I need to pay for the open-source version?",
+    answer:
+      "No! The core LumiBase is and will always be free and open-source under MIT license. Premium features are optional.",
+  },
+  {
+    question: "How does GitHub Sponsors work?",
+    answer:
+      "When you sponsor us on GitHub, you'll get access to premium features based on your sponsorship tier. We'll send you a reward token to unlock features.",
+  },
+  {
+    question: "What payment methods do you accept?",
+    answer:
+      "We accept GitHub Sponsors (credit card, PayPal), and for Enterprise plans we also accept wire transfers and invoices.",
+  },
+];
+
+const faqPageJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map((faq) => ({
+    "@type": "Question",
+    name: faq.question,
+    acceptedAnswer: {
+      "@type": "Answer",
+      text: faq.answer,
+    },
+  })),
+};
+
+const breadcrumbJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    { "@type": "ListItem", position: 1, name: "Home", item: "https://lumibase.dev" },
+    { "@type": "ListItem", position: 2, name: "Pricing", item: "https://lumibase.dev/pricing/" },
+  ],
 };
 
 export default function PricingPage() {
   return (
     <div className="flex flex-col">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
       {/* Hero Section */}
       <section className="px-6 py-16 md:py-24">
         <div className="mx-auto max-w-4xl text-center">
@@ -185,26 +246,9 @@ export default function PricingPage() {
           </h2>
           
           <div className="mt-12 space-y-8">
-            <FAQItem
-              question="What's the difference between self-hosted and managed?"
-              answer="Self-hosted means you deploy LumiBase on your own infrastructure (free). Managed means we host it for you with automatic updates, backups, and support (paid tiers)."
-            />
-            <FAQItem
-              question="Can I switch plans anytime?"
-              answer="Yes! You can upgrade or downgrade your plan at any time. Changes take effect immediately and we'll prorate the difference."
-            />
-            <FAQItem
-              question="Do I need to pay for the open-source version?"
-              answer="No! The core LumiBase is and will always be free and open-source under MIT license. Premium features are optional."
-            />
-            <FAQItem
-              question="How does GitHub Sponsors work?"
-              answer="When you sponsor us on GitHub, you'll get access to premium features based on your sponsorship tier. We'll send you a reward token to unlock features."
-            />
-            <FAQItem
-              question="What payment methods do you accept?"
-              answer="We accept GitHub Sponsors (credit card, PayPal), and for Enterprise plans we also accept wire transfers and invoices."
-            />
+            {faqs.map((faq) => (
+              <FAQItem key={faq.question} question={faq.question} answer={faq.answer} />
+            ))}
           </div>
         </div>
       </section>
@@ -216,7 +260,7 @@ export default function PricingPage() {
             Ready to Get Started?
           </h2>
           <p className="mt-4 text-lg text-blue-100">
-            Join thousands of developers building fast, modern content experiences.
+            Start free with the open-source core. Upgrade whenever you need more.
           </p>
           <div className="mt-8 flex items-center justify-center gap-4">
             <a

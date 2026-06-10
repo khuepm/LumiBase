@@ -61,44 +61,64 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceResult
   );
 
   useEffect(() => {
+    let isMounted = true;
     const siteId = localStorage.getItem('lumibase_site_id') ?? '';
     const token = localStorage.getItem('lumibase_dev_token') ?? '';
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:1989';
-    const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/api/v1/realtime?token=${encodeURIComponent(token)}&userId=${encodeURIComponent(userId)}&siteId=${encodeURIComponent(siteId)}`;
 
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(wsUrl);
-    } catch {
-      return;
-    }
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setConnected(true);
-      sendPresence(ws);
-    };
-
-    ws.onmessage = (event) => {
+    const connect = async () => {
       try {
-        const msg = JSON.parse(event.data as string) as { type: string; users?: PresenceEntry[] };
-        if (msg.type === 'presence' && Array.isArray(msg.users)) {
-          // Filter out self from the peer list.
-          setPeers(msg.users.filter((u) => u.userId !== userId));
-        }
-      } catch {
-        /* ignore malformed */
+        const res = await fetch(`${baseUrl}/api/v1/realtime/ticket`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'X-Lumi-Site': siteId,
+          },
+        });
+        if (!res.ok) throw new Error('Ticket fetch failed');
+        const body = await res.json() as { data?: { ticket: string } };
+        const ticket = body.data?.ticket;
+        if (!ticket) throw new Error('No ticket');
+
+        if (!isMounted) return;
+
+        const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/api/v1/realtime?ticket=${encodeURIComponent(ticket)}&siteId=${encodeURIComponent(siteId)}`;
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          setConnected(true);
+          sendPresence(ws);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data as string) as { type: string; users?: PresenceEntry[] };
+            if (msg.type === 'presence' && Array.isArray(msg.users)) {
+              // Filter out self from the peer list.
+              setPeers(msg.users.filter((u) => u.userId !== userId));
+            }
+          } catch {
+            /* ignore malformed */
+          }
+        };
+
+        ws.onclose = () => {
+          setConnected(false);
+          setPeers([]);
+        };
+      } catch (err) {
+        console.warn('Presence connection failed', err);
       }
     };
 
-    ws.onclose = () => {
-      setConnected(false);
-      setPeers([]);
-    };
+    connect();
 
     return () => {
+      isMounted = false;
+      const ws = wsRef.current;
       // Send empty presence on unmount so the server drops us from the list.
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'presence' }));
         ws.close(1000, 'component unmount');
       }

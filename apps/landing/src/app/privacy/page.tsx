@@ -3,6 +3,9 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Privacy Policy - LumiBase",
   description: "Privacy Policy for LumiBase - Edge-Native Headless CMS",
+  alternates: {
+    canonical: "/privacy/",
+  },
 };
 
 export default function PrivacyPolicy() {

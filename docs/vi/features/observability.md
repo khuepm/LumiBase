@@ -27,6 +27,21 @@ Implementation: `apps/cms/src/routes/metrics.ts` + middleware `withMetrics()`.
 | `lumibase_realtime_connections_total` | counter | `site` |
 | `lumibase_webhook_dispatch_total` | counter | `target`, `status` |
 | `lumibase_db_query_duration_seconds` | histogram | `operation` |
+| `lumibase_http_errors_total` | counter | `method`, `path`, `code` |
+| `lumibase_active_connections` | gauge | — |
+| `lumibase_cache_hits_total` | counter | `provider` |
+| `lumibase_cache_misses_total` | counter | `provider` |
+| `lumibase_queue_depth` | gauge | `queue` |
+| `lumibase_db_pool_active` | gauge | — |
+| `lumibase_db_pool_idle` | gauge | — |
+| `lumibase_agent_runs_total` | counter | `agent`, `status`, `stop_reason` |
+| `lumibase_agent_tool_latency_seconds` | histogram | `tool`, `status` |
+| `lumibase_agent_approvals_total` | counter | `subject_type`, `status` |
+| `lumibase_agent_approval_latency_seconds` | histogram | `subject_type`, `status` |
+| `lumibase_agent_evaluations_total` | counter | `kind`, `status` |
+| `lumibase_agent_estimated_tokens_total` | counter | `tool` |
+| `lumibase_agent_estimated_cost_usd_total` | counter | `tool` |
+| `lumibase_agent_dead_letters_total` | counter | `agent`, `reason` |
 
 Backend: `prom-client`. Process default metrics are collected only when the runtime exposes a working Node `process.cpuUsage()` implementation; Workers/Wrangler stubs are skipped safely.
 
@@ -111,6 +126,25 @@ docker compose -f docker/docker-compose.yml -f docker/docker-compose.monitoring.
 | pg-backup | — | Scheduled `pg_dump` |
 
 Tracing POC stack chạy thêm file `docker/docker-compose.skywalking.yml`:
+Config: `docker/prometheus/prometheus.yml`, `docker/grafana/provisioning/`, `docker/grafana/dashboards/lumibase.json`, `docker/grafana/dashboards/agent-harness.json`.
+
+## Pre-provisioned Grafana dashboard
+
+Dashboard `Lumibase` (auto-loaded) bao gồm:
+
+- **Request rate** (req/s) over time, broken by status class.
+- **Latency percentiles** p50, p95, p99.
+- **Error rate** (%) and top error codes.
+- **Queue depth** for each queue (search-index, media-thumbnails, webhook).
+- **Cache hit ratio** (%).
+- **DB pool utilization** (active vs idle).
+- **CPU / Memory** of CMS container.
+
+Dashboard `Lumibase Agent Harness` bao gồm run success/fail rate, budget stop reason, tool latency, approval latency, evaluation outcome, token/cost estimate và dead-letter enqueue rate. Run fail lặp lại được đẩy vào queue `agent-dead-letter` khi runtime queue adapter khả dụng.
+
+## Backup monitoring
+
+`pg-backup` service runs `pg_dump` daily at 02:00 UTC, uploads to MinIO/S3 với retention 7 daily + 4 weekly. Failures send notification qua webhook (configurable).
 
 | Service | Port | Mục đích |
 |---------|------|----------|

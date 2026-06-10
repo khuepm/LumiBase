@@ -10,6 +10,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { AppShell } from './components/app-shell';
 import { BareLayout } from './components/bare-layout';
 import { AdminReadyGate } from './modules/setup/admin-ready-gate';
+import { shouldAutoRedirectToAdmin } from './modules/setup/setup-environment';
 import { SetupLayout } from './modules/setup/setup-layout';
 import { SetupStateGate } from './modules/setup/setup-state-gate';
 import { useCompleteSetup } from './modules/setup/hooks/use-complete-setup';
@@ -44,6 +45,8 @@ const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then(
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
+const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
+const AgentHarnessPage = lazy(() => import('./modules/settings/agent-harness-page').then((m) => ({ default: m.AgentHarnessPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
 const TeamsPage = lazy(() => import('./modules/users/teams-page').then((m) => ({ default: m.TeamsPage })));
 const UsersPage = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
@@ -135,12 +138,12 @@ function AdminRootRedirect() {
   const adminPath = useSetupStore((s) => s.adminPath);
 
   useEffect(() => {
-    if (adminPath) {
+    if (adminPath && shouldAutoRedirectToAdmin()) {
       navigate({ to: adminPath });
     }
   }, [adminPath, navigate]);
 
-  if (adminPath) {
+  if (adminPath && shouldAutoRedirectToAdmin()) {
     return <PageLoader />;
   }
 
@@ -573,6 +576,18 @@ const marketplaceRoute = createRoute({
   component: withSuspense(MarketplacePage),
 });
 
+const updatesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/settings/updates',
+  component: withSuspense(UpdatesPage),
+});
+
+const agentHarnessRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/settings/agent-harness',
+  component: withSuspense(AgentHarnessPage),
+});
+
 const adminPathSettingsTypesRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/settings/developer/types',
@@ -607,6 +622,18 @@ const adminPathMarketplaceRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/settings/marketplace',
   component: withSuspense(MarketplacePage),
+});
+
+const adminPathUpdatesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/settings/updates',
+  component: withSuspense(UpdatesPage),
+});
+
+const adminPathAgentHarnessRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/settings/agent-harness',
+  component: withSuspense(AgentHarnessPage),
 });
 
 const automationFlowsRoute = createRoute({
@@ -874,6 +901,8 @@ const routeTree = rootRoute.addChildren([
     activityRoute,
     extensionsRoute,
     marketplaceRoute,
+    updatesRoute,
+    agentHarnessRoute,
     automationFlowsRoute,
     automationFlowNewRoute,
     automationFlowEditRoute,
@@ -905,6 +934,8 @@ const routeTree = rootRoute.addChildren([
     adminPathActivityRoute,
     adminPathExtensionsRoute,
     adminPathMarketplaceRoute,
+    adminPathUpdatesRoute,
+    adminPathAgentHarnessRoute,
     adminPathAutomationFlowsRoute,
     adminPathAutomationFlowNewRoute,
     adminPathAutomationFlowEditRoute,

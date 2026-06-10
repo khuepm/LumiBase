@@ -18,7 +18,7 @@
  */
 
 import { extensions, userSites, notifications, roles } from "@lumibase/database";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../env";
@@ -559,33 +559,53 @@ marketplaceRouter.post("/publish", async (c) => {
     .from(extensions)
     .where(and(query, isNotNull(extensions.siteId)));
 
-  for (const installed of installedOutdated) {
-    if (compareSemver(source.version, installed.version) > 0) {
-      // Notify only site administrators (roles with adminAccess = true).
-      // Members without a role assignment (roleId IS NULL) are excluded.
-      const admins = await db
-        .select({ userId: userSites.userId })
-        .from(userSites)
-        .innerJoin(
-          roles,
-          and(
-            eq(roles.id, userSites.roleId),
-            eq(roles.siteId, installed.siteId!),
-            eq(roles.adminAccess, true),
-          ),
-        )
-        .where(eq(userSites.siteId, installed.siteId!));
+  const outdatedExtensions = installedOutdated.filter(
+    (installed) => compareSemver(source.version, installed.version) > 0
+  );
 
-      for (const admin of admins) {
-        await db.insert(notifications).values({
+  if (outdatedExtensions.length > 0) {
+    const siteIds = Array.from(new Set(outdatedExtensions.map(e => e.siteId!)));
+
+    // Fetch all admins for all affected sites in a single query
+    const admins = await db
+      .select({ userId: userSites.userId, siteId: userSites.siteId })
+      .from(userSites)
+      .innerJoin(
+        roles,
+        and(
+          eq(roles.id, userSites.roleId),
+          eq(roles.adminAccess, true),
+        ),
+      )
+      .where(inArray(userSites.siteId, siteIds));
+
+    // Group admins by siteId for fast lookup
+    const adminsBySite = new Map<string, string[]>();
+    for (const admin of admins) {
+      const list = adminsBySite.get(admin.siteId!) || [];
+      list.push(admin.userId);
+      adminsBySite.set(admin.siteId!, list);
+    }
+
+    // Prepare notifications for all admins
+    const pendingNotifications = [];
+    for (const installed of outdatedExtensions) {
+      const siteAdmins = adminsBySite.get(installed.siteId!) || [];
+      for (const adminUserId of siteAdmins) {
+        pendingNotifications.push({
           siteId: installed.siteId!,
-          recipient: admin.userId,
+          recipient: adminUserId,
           subject: "Extension Update Available",
           message: `A new version ${source.version} of extension '${installed.name}' is available. You are currently running ${installed.version}.`,
           status: "unread",
           pushed: false,
         });
       }
+    }
+
+    // Insert all notifications in a single batch query
+    if (pendingNotifications.length > 0) {
+      await db.insert(notifications).values(pendingNotifications);
     }
   }
 
