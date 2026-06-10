@@ -91,6 +91,35 @@ Rules enforced by the harness:
 - Failed runs keep their audit history. Retries create a new run linked to the original run instead of rewriting history.
 - Budget limits stop execution for max tool calls, runtime, estimated cost, or artifact size.
 
+## Core Skills Registry
+
+Skills are defined in two synchronized locations:
+- **Public registry** (`packages/ai-skills/src/skills.ts`) — LLM tool definitions exposed via `getAISkillsAsTools()`
+- **Harness handlers** (`apps/cms/src/services/ai-harness.ts` → `buildCoreSkills()`) — actual execution logic
+
+A skill classified as **DANGEROUS** (requires HITL approval) when:
+1. Its `requiredCapabilities` includes any `schema:*` except `schema:read`, OR
+2. Its name starts with `delete`
+
+| Skill | Service | Required Capability | Risk | Handler |
+|---|---|---|---|---|
+| `listCollections` | schema | `schema:read` | SAFE | Real → SchemaService |
+| `createCollection` | schema | `schema:create` | **DANGEROUS** | Real → SchemaService |
+| `deleteCollection` | schema | `schema:delete` | **DANGEROUS** | Real → SchemaService |
+| `createField` | schema | `schema:update` | **DANGEROUS** | Real → SchemaService |
+| `deleteField` | schema | `schema:delete` | **DANGEROUS** | Real → SchemaService |
+| `listItems` | items | `items:read` | SAFE | Real → ItemService |
+| `createItem` | items | `items:write` | SAFE | Real → ItemService |
+| `updateItem` | items | `items:update` | SAFE | Real → ItemService.patch() |
+| `deleteItem` | items | `items:write` | **DANGEROUS** | Real → ItemService.softDelete() |
+| `aiSuggestField` | ai | `schema:read` | SAFE | Stub (pattern matching) |
+| `aiContentAssist` | ai | `items:read` | SAFE | Stub (needs LLM_PROVIDER env) |
+| `generateAppSpec` | ai | `schema:read`, `items:read` | SAFE | Stub (artifact generation) |
+| `generateApiDocs` | ai | `schema:read` | SAFE | Stub (OpenAPI artifact) |
+| `generateSeedData` | ai | `items:write` | SAFE | Stub (seed artifact) |
+
+Skills can be overridden per-site via the `agent_tools` database table without redeploying.
+
 ## App generation MVP
 
 When a user asks LumiBase to generate an app, the agent reads the existing schema, content, policies, and scoped memory, then produces artifacts:
