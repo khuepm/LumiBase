@@ -6,7 +6,6 @@ import {
   Settings,
   ShieldCheck,
   Users,
-  Puzzle,
   Workflow,
   GitBranch,
   LogOut,
@@ -34,8 +33,7 @@ const MODULES: ModuleDef[] = [
   { id: 'data-model', label: 'Data model', icon: Database, to: '/data-model' },
   { id: 'automation', label: 'Automation', icon: Workflow, to: '/automation/flows' },
   { id: 'cdc', label: 'CDC', icon: GitBranch, to: '/cdc' },
-  { id: 'marketplace', label: 'Marketplace', icon: Puzzle, to: '/settings/marketplace' },
-  { id: 'settings', label: 'Settings', icon: Settings, to: '/settings/translations' },
+  { id: 'settings', label: 'Settings', icon: Settings, to: '/settings' },
 ];
 
 function getAdminBase(pathname: string): string {
@@ -73,17 +71,15 @@ export function AppShell({ children }: AppShellProps) {
       ? 'automation'
       : appPath.startsWith('/cdc')
         ? 'cdc'
-        : appPath.startsWith('/settings/marketplace')
-          ? 'marketplace'
-          : appPath.startsWith('/settings')
-            ? 'settings'
-            : appPath.startsWith('/access')
-              ? 'access'
-              : appPath.startsWith('/users')
-                ? 'users'
-                : appPath.startsWith('/files')
-                  ? 'files'
-                  : 'content';
+        : appPath.startsWith('/settings')
+          ? 'settings'
+          : appPath.startsWith('/access')
+            ? 'access'
+            : appPath.startsWith('/users')
+              ? 'users'
+              : appPath.startsWith('/files')
+                ? 'files'
+                : 'content';
 
   const handleLogout = () => {
     clearActiveToken();
