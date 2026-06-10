@@ -1,0 +1,15 @@
+import { serve } from '@hono/node-server';
+import { Hono } from 'hono';
+import { logger } from 'hono/logger';
+
+const app = new Hono();
+
+app.use('*', logger());
+
+app.get('/', (c) => c.json({ name: '{{projectName}}', status: 'ok' }));
+
+const port = Number(process.env['PORT'] ?? 8787);
+
+serve({ fetch: app.fetch, port }, () => {
+  console.log(`🚀  LumiBase listening on http://localhost:${port}`);
+});
