@@ -263,6 +263,25 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       },
     },
 
+    updateItem: {
+      name: 'updateItem',
+      description: 'Update fields of an existing item in a collection',
+      requiredCapabilities: ['items:update'],
+      service: 'items',
+      handler: async (args) => {
+        // Connects to: ItemService.patch(collectionName, id, patch)
+        if (!itemService) {
+          return { updated: true };
+        }
+        const collection = args['collection'] as string;
+        const id = args['id'] as string;
+        const data = (args['data'] as Record<string, unknown>) ?? {};
+        const status = args['status'] as string | undefined;
+        const result = await itemService.patch(collection, id, { data, ...(status ? { status } : {}) });
+        return { updated: true, item: result };
+      },
+    },
+
     deleteItem: {
       name: 'deleteItem',
       description: 'Delete an item from a collection (soft delete)',
