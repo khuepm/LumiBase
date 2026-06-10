@@ -2,3 +2,6 @@
 public/en/
 public/vi/
 public/llms.txt
+
+# SSR bundle used only during prerender (removed at end of build)
+dist-ssr/
