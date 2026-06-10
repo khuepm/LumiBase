@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Website: [lumibase.dev](https://lumibase.dev)
 
+## [0.4.6] - 2026-06-10
+
+### Version
+
+- `v0.4.6`
+
+### Date
+
+- `2026-06-10`
+
+### Highlights
+
+- Introduced `create-lumibase` — a new publishable npm package that scaffolds a brand-new LumiBase project with a single command (`npm create lumibase@latest my-project`), the same way `create-next-app` or `create-vite` bootstrap their stacks.
+- Ships two bundled, ready-to-run templates: `default` (Hono + Node.js + PostgreSQL + Redis via Docker Compose) and `cloudflare` (Hono + Cloudflare Workers + D1).
+- The `default` template includes a working `posts` resource demonstrating LumiBase conventions (`nanoid()` IDs, `site_id` multi-tenancy, `{ data }` / `{ errors }` envelope, Zod validation) and a full Drizzle ORM layer with generate/migrate scripts.
+- Added a Getting Started guide and a package README documenting the full scaffold flow from an empty directory to a running server.
+
+### Breaking changes
+
+- None.
+
+### Migrations
+
+- No new database schema migrations.
+- Compatible DB/schema: `v0.4.4` schema state.
+
+### Upgrade steps
+
+1. Review the breaking changes and migrations above.
+2. Confirm the target Docker image tag exists:
+   `ghcr.io/khuepm/lumibase-cms:0.4.6`.
+3. Deploy the `v0.4.6` image or Cloudflare Worker release.
+4. Verify `/health` and critical CMS workflows after deployment.
+5. To scaffold a new project, run `npm create lumibase@latest <name>` (no global install required).
+
+### Rollback notes
+
+- Roll back by redeploying the previously known-good CMS image tag (`v0.4.5`).
+- No database/schema restore is required.
+
+### Docker image tags
+
+- CMS: `ghcr.io/khuepm/lumibase-cms:0.4.6`
+- Optional immutable digest: `ghcr.io/khuepm/lumibase-cms@sha256:<digest>`
+
+### Compatibility DB/schema
+
+- Compatible DB/schema: `v0.4.4` schema state.
+- Minimum supported database engine/version: use the version supported by the target deployment environment.
+
+### Backup guidance
+
+- Backup required: No.
+- Backup scope: none.
+- Reason: this release adds a standalone project scaffolder and does not modify runtime data or schema state.
+
+### Added
+
+- Added `create-lumibase` package (`packages/create-lumibase/`) — a Node.js ESM CLI publishable as `create-lumibase` on npm. Invoke via `npm create lumibase@latest <name>`, `npx create-lumibase@latest <name>`, or `pnpm create lumibase <name>`.
+- Added an interactive prompt flow: project name (validated against npm package-name rules), deployment target, package manager, install dependencies, and git init.
+- Added two bundled templates: `default` (Hono + `@hono/node-server`, Drizzle ORM, PostgreSQL, Redis, `docker-compose.yml`) and `cloudflare` (Hono, Drizzle ORM, D1, `wrangler.toml`).
+- Added a Handlebars-based scaffold engine that renders `.hbs` template files and applies a rename map for dotfiles (`_gitignore` → `.gitignore`, `_env.example` → `.env.example`, `_npmrc` → `.npmrc`).
+- Added a Drizzle DB layer to the `default` template: `src/db/schema.ts` (a `posts` table using `nanoid()` IDs, a `site_id` column, and timestamps), `src/db/client.ts`, `src/db/migrate.ts`, and `drizzle.config.ts`.
+- Added a demo `posts` resource (`GET`/`POST /posts`) to the `default` server template using the `{ data }` / `{ errors }` response format and Zod request validation.
+- Added non-interactive flags for CI/scripting: `--template`, `--pm`, `--install` / `--no-install`, `--git` / `--no-git`, and `DEBUG=1` for verbose output.
+- Added package-manager auto-detection from the `npm_config_user_agent` environment variable (pnpm / npm / yarn / bun), a TTY-aware spinner, and a zero-dependency argument parser.
+- Added Vitest unit tests for `validateProjectName` and `parseArgs` (14 tests).
+- Added `docs/en/getting-started.md` and `packages/create-lumibase/README.md` documenting the scaffold flow, templates, flags, and troubleshooting; linked both from the docs index (`docs/en/README.md`).
+
+### Fixed
+
+- Fixed environment loading in the `default` template: the `dev`, `start`, and `db:migrate` scripts now pass `--env-file=.env` so `tsx`/`node` load environment variables (`drizzle-kit` already auto-loads `.env`).
+
+### Changed
+
+- Added `packages/create-lumibase` to the npm publish allowlist (`scripts/publish-npm.mjs`) and to the CI typecheck/build steps in `.github/workflows/publish-npm.yml`.
+
 ## [0.4.5] - 2026-06-10
 
 ### Version
