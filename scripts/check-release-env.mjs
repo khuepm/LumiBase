@@ -134,7 +134,7 @@ function getConfiguredVars(parsed, envName) {
 }
 
 function listCloudflareSecrets({ config, env }) {
-  const args = ['wrangler', 'secret', 'list', '--config', config, '--env', env, '--json'];
+  const args = ['wrangler', 'secret', 'list', '--config', config, '--env', env, '--format', 'json'];
   const result = spawnSync('pnpm', ['exec', ...args], { cwd: REPO_ROOT, encoding: 'utf8' });
   if (result.status !== 0) {
     throw new Error(`Unable to list Cloudflare secrets with \`pnpm exec ${args.join(' ')}\`.\n${result.stderr || result.stdout}`.trim());
@@ -185,10 +185,15 @@ function main() {
 
   let cloudflareSecrets = new Set();
   if (args.checkCloudflare) {
-    try {
-      cloudflareSecrets = listCloudflareSecrets({ config: args.config, env: args.env });
-    } catch (error) {
-      warnings.push(error.message);
+    const hasCloudflareCredentials = process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID;
+    if (hasCloudflareCredentials) {
+      try {
+        cloudflareSecrets = listCloudflareSecrets({ config: args.config, env: args.env });
+      } catch (error) {
+        warnings.push(error.message);
+      }
+    } else {
+      warnings.push('Skipping Cloudflare secret checks because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured.');
     }
   }
 

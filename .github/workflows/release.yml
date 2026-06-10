@@ -288,10 +288,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check npm token
+        id: check_token
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping npm package publishing because NPM_TOKEN is not configured."
+          fi
+
       - name: Build packages
+        if: steps.check_token.outputs.has_token == 'true'
         run: pnpm --filter "./packages/**" build
 
       - name: Publish public packages
+        if: steps.check_token.outputs.has_token == 'true'
         run: |
           node <<'NODE'
           const fs = require('node:fs');

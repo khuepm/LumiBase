@@ -35,20 +35,37 @@ jobs:
       - name: Validate npm publish allowlist
         run: pnpm npm:publish:plan
 
+      - name: Check npm token
+        id: check_token
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping npm package publishing because NPM_TOKEN is not configured."
+          fi
+
       - name: Typecheck public packages
+        if: steps.check_token.outputs.has_token == 'true'
         run: |
           pnpm --filter @lumibase/sdk typecheck
           pnpm --filter @lumibase/extension-sdk typecheck
 
       - name: Build public packages
+        if: steps.check_token.outputs.has_token == 'true'
         run: |
           pnpm --filter @lumibase/sdk build
           pnpm --filter @lumibase/extension-sdk build
 
       - name: Publish allowlisted packages with provenance
+        if: steps.check_token.outputs.has_token == 'true'
         run: pnpm npm:publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Update release notes with published package versions
+        if: steps.check_token.outputs.has_token == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
