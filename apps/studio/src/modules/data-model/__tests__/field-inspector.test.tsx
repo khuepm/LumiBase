@@ -51,31 +51,36 @@ describe('FieldInspector', () => {
       />,
     );
 
-    for (const tab of ['Basics', 'Options', 'Display', 'Validation', 'Conditions', 'Layout', 'Storage', 'Translations']) {
+    for (const tab of ['Field', 'Interface', 'Table display', 'Validation', 'Conditions', 'Layout', 'Storage']) {
       expect(screen.getByRole('button', { name: tab })).toBeInTheDocument();
     }
 
-    fireEvent.click(screen.getByRole('button', { name: /^options$/i }));
-    expect((screen.getByLabelText(/options json/i) as HTMLTextAreaElement).value).toContain(
+    // Interface tab — options JSON preserved
+    fireEvent.click(screen.getByRole('button', { name: /^interface$/i }));
+    expect((screen.getByLabelText(/interface options/i) as HTMLTextAreaElement).value).toContain(
       '"preserved": "yes"',
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /^display$/i }));
+    // Table display tab — open advanced section and check displayOptions
+    fireEvent.click(screen.getByRole('button', { name: /^table display$/i }));
+    fireEvent.click(screen.getByText(/advanced display options/i));
     expect((screen.getByLabelText(/display options json/i) as HTMLTextAreaElement).value).toContain(
       '"unknownDisplayOption": "keep-me"',
     );
 
+    // Validation tab
     fireEvent.click(screen.getByRole('button', { name: /^validation$/i }));
-    expect((screen.getByLabelText(/validation json/i) as HTMLTextAreaElement).value).toContain(
+    expect((screen.getByLabelText(/validation rules/i) as HTMLTextAreaElement).value).toContain(
       '"unknownValidation": true',
     );
 
+    // Conditions tab
     fireEvent.click(screen.getByRole('button', { name: /^conditions$/i }));
-    expect((screen.getByLabelText(/conditions json/i) as HTMLTextAreaElement).value).toContain(
+    expect((screen.getByLabelText(/conditions/i) as HTMLTextAreaElement).value).toContain(
       '"readonly-archived"',
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save field/i }));
 
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -100,8 +105,9 @@ describe('FieldInspector', () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText(/interface/i), { target: { value: 'relation-m2m' } });
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^interface$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^many-to-many$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save field/i }));
     expect(onSubmit).toHaveBeenLastCalledWith(
       expect.objectContaining({
         interface: 'relation-m2m',
@@ -125,8 +131,9 @@ describe('FieldInspector', () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText(/interface/i), { target: { value: 'seo' } });
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^interface$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^seo$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save field/i }));
 
     expect(onSubmit).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -154,8 +161,9 @@ describe('FieldInspector', () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText(/interface/i), { target: { value: 'aio' } });
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^interface$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^aio$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save field/i }));
 
     expect(onSubmit).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -183,8 +191,9 @@ describe('FieldInspector', () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText(/interface/i), { target: { value: 'files' } });
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^interface$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^files$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save field/i }));
 
     expect(onSubmit).toHaveBeenLastCalledWith(
       expect.objectContaining({
