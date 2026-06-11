@@ -22,6 +22,7 @@ import { CryptoService } from './crypto-service';
 import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
 import { AuditLogger } from '../modules/audit/logger';
+import { WriteCoalescer } from './load-guard-service';
 import type { PrimaryKeyType, StorageMode } from './schema-service';
 import { formatSafeError } from '@lumibase/shared/utils';
 
@@ -281,6 +282,7 @@ export class ItemService {
   private readonly cryptoService: CryptoService | null;
   private hookDispatcher: HookDispatcher | null = null;
   private provenance: ItemProvenance;
+  private writeCoalescer: WriteCoalescer | null = null;
 
   constructor(private readonly deps: ItemServiceDeps) {
     this.provenance = deps.provenance ?? { authorType: 'human' };
@@ -544,7 +546,7 @@ export class ItemService {
     await this.publishRealtimeEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
-    await this.triggerMaterializeRefresh(collectionName);
+    await this.afterWriteInvalidation(collectionName);
     return row;
   }
 
@@ -676,7 +678,7 @@ export class ItemService {
     await this.publishRealtimeEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
-    await this.triggerMaterializeRefresh(collectionName);
+    await this.afterWriteInvalidation(collectionName);
     return row;
   }
 
@@ -750,7 +752,7 @@ export class ItemService {
     await this.publishRealtimeEvent(collectionName, 'delete', id, {});
     // After hook — fire-and-forget.
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
-    await this.triggerMaterializeRefresh(collectionName);
+    await this.afterWriteInvalidation(collectionName);
     return { ok: true } as const;
   }
 
@@ -1150,6 +1152,38 @@ export class ItemService {
       }
     }
     return out;
+  }
+
+  /**
+   * Starts a write-coalescing window (Load Guard, Req 9.1). While active,
+   * per-write invalidation work (materialized-view refresh) is deferred and
+   * deduplicated per collection; `flushCoalescedWrites` runs it once per
+   * collection at the tool-call boundary. The harness wraps every skill
+   * handler in a window so a batch of N writes to one collection costs one
+   * refresh instead of N.
+   */
+  beginWriteCoalescing(): void {
+    this.writeCoalescer = new WriteCoalescer();
+  }
+
+  /** Flushes deferred invalidations; returns the refreshed collections. */
+  async flushCoalescedWrites(): Promise<string[]> {
+    if (!this.writeCoalescer) return [];
+    const collections = this.writeCoalescer.flush();
+    this.writeCoalescer = null;
+    for (const collection of collections) {
+      await this.triggerMaterializeRefresh(collection);
+    }
+    return collections;
+  }
+
+  /** Per-write invalidation: immediate normally, deferred while coalescing. */
+  private async afterWriteInvalidation(collectionName: string): Promise<void> {
+    if (this.writeCoalescer) {
+      this.writeCoalescer.record(collectionName);
+      return;
+    }
+    await this.triggerMaterializeRefresh(collectionName);
   }
 
   private async triggerMaterializeRefresh(collectionName: string): Promise<void> {

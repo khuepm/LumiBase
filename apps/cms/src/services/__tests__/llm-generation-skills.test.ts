@@ -17,6 +17,8 @@ import type { ConfiguredLLM, LLMMessage } from '../llm-provider';
 function fakeItemService(samples: unknown[] = []): ItemService {
   return {
     setProvenance: () => {},
+    beginWriteCoalescing: () => {},
+    flushCoalescedWrites: async () => [],
     list: async () => ({ data: samples, meta: { total: samples.length, limit: 3, offset: 0 } }),
   } as unknown as ItemService;
 }

@@ -79,6 +79,19 @@ async function main() {
     void runScheduledRotation(rotatorDb);
   });
 
+  // ── Load-aware autonomy (content-os task 9; Req 9.4/9.5) ─────────────────
+  //
+  // Feed event-loop pressure samples into the agent load guard: overload
+  // pauses reconciler-origin runs at the tool-call boundary (human work is
+  // never auto-paused) and a hold-down of continuous calm auto-resumes them.
+  const { getLoadGuard } = await import('./services/load-guard-service');
+  const loadGuard = getLoadGuard();
+  const loadGuardTimer = setInterval(() => {
+    const sample = pressureLimiter.getSample();
+    loadGuard.signal({ overloaded: sample.overloaded, reason: sample.reason });
+  }, 5_000);
+  loadGuardTimer.unref();
+
   // ── Async agent runs (content-os task 3; Req 3.2) ────────────────────────
   //
   // Long-lived Node process consumes the `agent-runs` queue so goals created
@@ -103,6 +116,7 @@ async function main() {
     // can't keep the event loop alive past the server close (task 11.4).
     rotationTask.stop();
     pressureLimiter.stop();
+    clearInterval(loadGuardTimer);
 
     // Force exit after 10 seconds if graceful shutdown stalls
     const forceTimeout = setTimeout(() => {

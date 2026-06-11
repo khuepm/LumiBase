@@ -6,6 +6,7 @@ import {
 } from '@lumibase/database';
 import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
 import { AutonomyService } from './autonomy-service';
+import { isWithinMaintenanceWindow, type MaintenanceWindow } from './load-guard-service';
 
 /**
  * ReconcilerService — turns open drift into agent goals (Content OS task 7).
@@ -79,6 +80,9 @@ export interface ReconcileResult {
   goalsCreated: number;
   deferred: number;
   breakerTripped: boolean;
+  /** True when the cycle was skipped because the intent is outside its
+   * maintenance window — open drifts queue until the window opens (Req 9.2). */
+  outsideWindow?: boolean;
 }
 
 export interface ReconcilerServiceDeps {
@@ -103,6 +107,12 @@ export class ReconcilerService {
       .limit(1);
     if (!intent || intent.status !== 'active') {
       return { goalsCreated: 0, deferred: 0, breakerTripped: false };
+    }
+
+    // Maintenance window (Req 9.2): outside the declared window the cycle
+    // is a no-op — open drifts stay queued for the next in-window cycle.
+    if (!isWithinMaintenanceWindow(intent.maintenanceWindow as MaintenanceWindow | null)) {
+      return { goalsCreated: 0, deferred: 0, breakerTripped: false, outsideWindow: true };
     }
 
     if (await this.breakerShouldTrip(intentId)) {

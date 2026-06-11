@@ -5,6 +5,8 @@ import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
 import type { ConfiguredLLM } from './llm-provider';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
+import { AutonomyService } from './autonomy-service';
+import { getLoadGuard } from './load-guard-service';
 import { ToolRegistryService } from './tool-registry-service';
 
 // ---------------------------------------------------------------------------
@@ -123,6 +125,14 @@ export function extractJson(text: string): unknown {
 interface LLMJsonResult<T> {
   value: T;
   meta: { provider: string; model: string; estimatedTokens: number };
+}
+
+/** A skill counts against the write budget when it mutates data or schema. */
+function isWriteSkill(tool: { requiredCapabilities?: unknown }): boolean {
+  const caps = Array.isArray(tool.requiredCapabilities)
+    ? (tool.requiredCapabilities as string[])
+    : [];
+  return caps.some((cap) => /:(write|update|create|delete)$/.test(cap));
 }
 
 /**
@@ -920,6 +930,26 @@ export class AISecureHarness {
     if (await this.runService.isCancelled(run.runId)) {
       return { status: 'denied', message: 'Run was cancelled', ...run };
     }
+
+    // Backpressure: reconciler-origin work yields to real user traffic.
+    // The run is deferred (not failed) and retries when load subsides;
+    // human-triggered runs are never auto-paused (Req 9.4).
+    const loadGuard = getLoadGuard();
+    if (loadGuard.shouldPause(envelope.origin)) {
+      if (loadGuard.markIncidentOnce(this.siteId)) {
+        await new AutonomyService({ db: this.db, siteId: this.siteId }).recordIncident({
+          agentRole: 'reconciler',
+          source: 'load_guard',
+          severity: 'low',
+          detail: { activationId: loadGuard.backpressure.activationId },
+        });
+      }
+      return {
+        status: 'denied',
+        message: 'Deferred by backpressure: runtime under load; retry when load subsides',
+        ...run,
+      };
+    }
     const startedAt = Date.now();
     const maxToolCalls = typeof envelope.budget?.['maxToolCalls'] === 'number'
       ? envelope.budget['maxToolCalls']
@@ -979,6 +1009,24 @@ export class AISecureHarness {
       });
       await this.runService.failRun(run.runId, message);
       return { status: 'denied', message, ...run, toolCallId };
+    }
+
+    // Write rate budget (Req 9.3): per-intent maxWritesPerMinute defers
+    // write-capable tool calls at the boundary. The run is NOT failed —
+    // it resumes when quota returns to the sliding window.
+    const writeLimit = Number((envelope.budget ?? {})['maxWritesPerMinute'] ?? 0);
+    if (writeLimit > 0 && isWriteSkill(tool)) {
+      const scopeKey = `${this.siteId}:${envelope.intentId ?? run.goalId}`;
+      const budgetCheck = loadGuard.tryConsumeWrite(scopeKey, writeLimit);
+      if (!budgetCheck.allowed) {
+        const message = `write_budget_exceeded: retry in ${Math.ceil(budgetCheck.retryAfterMs / 1000)}s`;
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'denied',
+          error: message,
+          latencyMs: Date.now() - startedAt,
+        });
+        return { status: 'denied', message, ...run, toolCallId };
+      }
     }
 
     // Step 3: Evaluate risk
@@ -1116,6 +1164,9 @@ export class AISecureHarness {
       runId: runContext?.runId ?? null,
       model: runContext?.model ?? null,
     });
+    // Coalescing window: N writes to one collection inside this handler
+    // flush exactly one invalidation at the boundary (Load Guard, Req 9.1).
+    this.itemService?.beginWriteCoalescing();
 
     const TIMEOUT_MS = 30_000;
 
@@ -1133,6 +1184,10 @@ export class AISecureHarness {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown execution error';
       return { success: false, error: message };
+    } finally {
+      // Tool-call boundary: writes that happened (even on failure) flush
+      // their deferred invalidations exactly once per collection (Req 9.1).
+      await this.itemService?.flushCoalescedWrites().catch(() => {});
     }
   }
 

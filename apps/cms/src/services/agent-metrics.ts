@@ -71,3 +71,16 @@ export function observeAgentCost(toolName: string, cost: Record<string, unknown>
     agentEstimatedCostUsdTotal.inc({ tool: toolName }, usd);
   }
 }
+
+export const agentBackpressureActivationsTotal = new Counter({
+  name: 'lumibase_agent_backpressure_activations_total',
+  help: 'Times the load guard paused reconciler autonomy due to runtime load',
+  labelNames: ['reason'] as const,
+  registers: [register],
+});
+
+export const agentWriteBudgetDenialsTotal = new Counter({
+  name: 'lumibase_agent_write_budget_denials_total',
+  help: 'Tool calls deferred at the boundary by the per-intent write rate budget',
+  registers: [register],
+});

@@ -100,6 +100,15 @@ Run status follows `queued → running → awaiting_approval → succeeded | fai
 - When a dangerous action creates an approval, the run parks as `awaiting_approval`. An approval decision resumes it and executes only the stored skill — completed tool calls are never re-run.
 - `POST /api/v1/agent/runs/:id/cancel` cancels `queued`/`running`/`awaiting_approval` runs. Cancellation takes effect at the next tool-call boundary (the harness re-checks before every tool call), wins over late approvals, and is recorded with `stopReason` in run metrics.
 
+### Load-aware autonomy (Load Guard)
+
+A system that generates load must also sense load. Three guards bound agent-originated work:
+
+- **Write coalescing** — every skill handler runs inside a coalescing window: item writes defer their materialized-view refresh and flush exactly once per collection at the tool-call boundary (N writes to one collection cost one invalidation), on success and failure alike.
+- **Write rate budget** — when a run envelope carries `budget.maxWritesPerMinute` (reconciler goals attach it from their intent), write-capable tool calls consume a sliding-window quota scoped to `${siteId}:${intentId}`. An exhausted budget defers the tool call with `write_budget_exceeded` and a retry hint — the run is not failed.
+- **Backpressure** — the Node entrypoint feeds event-loop pressure samples into the guard every 5s. Overload pauses **reconciler-origin runs only** (human-triggered work is never auto-paused) with a `load_guard` incident recorded once per activation per site; a hold-down of continuous calm auto-resumes. Activations are counted in `lumibase_agent_backpressure_activations_total`, budget deferrals in `lumibase_agent_write_budget_denials_total`.
+- **Maintenance windows** — intents may declare `{ tz, windows: [{ dow, start, end }] }`; outside the window the reconciliation cycle is a no-op and open drifts queue until the window opens. Overnight windows span midnight; an invalid timezone fails open.
+
 ## Core Skills Registry
 
 Skills are defined in two synchronized locations:

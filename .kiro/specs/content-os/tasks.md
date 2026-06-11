@@ -80,14 +80,14 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
   - [x] 8.4 Property test: Pin supremacy (Property 2)
     - **Validates: Requirements 8.1, 8.3**
 
-- [ ] 9. Load-aware autonomy
-  - [ ] 9.1 `load-guard-service.ts`: write coalescing per (run, collection) → 1 tag-invalidation; enforce `maxWritesPerMinute` (pause/resume tại tool-call boundary)
+- [x] 9. Load-aware autonomy
+  - [x] 9.1 `load-guard-service.ts`: write coalescing per (run, collection) → 1 tag-invalidation; enforce `maxWritesPerMinute` (pause/resume tại tool-call boundary)
     - _Requirements: 9.1, 9.3_
-  - [ ] 9.2 Maintenance window scheduling cho goal `origin='reconciler'`
+  - [x] 9.2 Maintenance window scheduling cho goal `origin='reconciler'`
     - _Requirements: 9.2_
-  - [ ] 9.3 Backpressure: subscribe anomaly signal → pause reconciler runs của site + incident; hold-down resume; metrics `backpressure_activations`
+  - [x] 9.3 Backpressure: subscribe anomaly signal → pause reconciler runs của site + incident; hold-down resume; metrics `backpressure_activations`
     - _Requirements: 9.4, 9.5_
-  - [ ] 9.4 Property test: write coalescing (Property 9)
+  - [x] 9.4 Property test: write coalescing (Property 9)
     - **Validates: Requirements 9.1**
 
 ### Module C — Multi-agent org

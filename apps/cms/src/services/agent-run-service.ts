@@ -29,6 +29,14 @@ export interface AgentRunEnvelope {
    * created immediately and picked up by a queue worker (Req 3.1/3.2).
    */
   status?: 'running' | 'queued';
+  /**
+   * Work origin (`user` | `reconciler` | …). Backpressure pauses
+   * reconciler-origin work only — human-triggered runs are never
+   * auto-paused (Req 9.4).
+   */
+  origin?: string;
+  /** Governing content intent, when reconciler-originated (write budget scope). */
+  intentId?: string;
 }
 
 export interface AgentRunContext {
