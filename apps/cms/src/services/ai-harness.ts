@@ -3,6 +3,7 @@ import type { Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
+import type { ConfiguredLLM } from './llm-provider';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
 import { ToolRegistryService } from './tool-registry-service';
 
@@ -53,6 +54,13 @@ export interface AISecureHarnessConfig {
   schemaService?: SchemaService;
   /** ItemService instance for items:read/write skills (listItems, createItem, deleteItem). */
   itemService?: ItemService;
+  /**
+   * Configured LLM for generation skills (`createConfiguredLLMProvider`).
+   * Pass `null` when the environment was checked and no provider exists —
+   * generation skills then fail with LLM_NOT_CONFIGURED instead of stubbing.
+   * Omit entirely to keep offline deterministic handlers (tests).
+   */
+  llm?: ConfiguredLLM | null;
   /** Enables first-class agent_goals/runs/tool_calls audit for tests or non-service callers. */
   enableAgentHarnessAudit?: boolean;
 }
@@ -68,6 +76,106 @@ export interface AISecureHarnessConfig {
 interface SkillServices {
   schemaService?: SchemaService;
   itemService?: ItemService;
+  /**
+   * Configured LLM for generation skills.
+   * - key absent: offline deterministic handlers (shared CORE_SKILLS test registry).
+   * - `null`: the caller resolved the environment and found no provider —
+   *   generation skills fail with LLM_NOT_CONFIGURED instead of stubbing.
+   * - object: real LLM execution.
+   */
+  llm?: ConfiguredLLM | null;
+}
+
+// ---------------------------------------------------------------------------
+// LLM JSON completion helpers (generation skills)
+// ---------------------------------------------------------------------------
+
+/** Rough token estimate (~4 chars/token) for run cost metrics. */
+function estimateTokens(...texts: Array<string | null | undefined>): number {
+  return Math.ceil(texts.reduce((sum, t) => sum + (t?.length ?? 0), 0) / 4);
+}
+
+/**
+ * Extracts the first JSON value from an LLM response, tolerating prose or
+ * markdown fences around it.
+ */
+export function extractJson(text: string): unknown {
+  const trimmed = text.replace(/```(?:json)?/g, '').trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Fall back to the outermost {...} or [...] block.
+    for (const [open, close] of [['{', '}'], ['[', ']']] as const) {
+      const start = trimmed.indexOf(open);
+      const end = trimmed.lastIndexOf(close);
+      if (start !== -1 && end > start) {
+        try {
+          return JSON.parse(trimmed.slice(start, end + 1));
+        } catch {
+          // try next bracket pair
+        }
+      }
+    }
+  }
+  throw new Error('LLM_INVALID_JSON: model response did not contain valid JSON');
+}
+
+interface LLMJsonResult<T> {
+  value: T;
+  meta: { provider: string; model: string; estimatedTokens: number };
+}
+
+/**
+ * Lifts LLM usage metadata returned by generation skills into run metrics
+ * (model + estimated tokens/cost; Req 2.3).
+ */
+function extractLLMMeta(data: unknown): Record<string, unknown> {
+  if (data && typeof data === 'object' && 'meta' in data) {
+    const meta = (data as { meta?: unknown }).meta;
+    if (meta && typeof meta === 'object') {
+      return { llm: meta };
+    }
+  }
+  return {};
+}
+
+/**
+ * Runs a single system+user completion and parses the response as JSON.
+ * Throws LLM_NOT_CONFIGURED when no provider is available (no stub fallback)
+ * and surfaces provider errors with an explicit code.
+ */
+async function completeJson<T = unknown>(
+  llm: ConfiguredLLM | null | undefined,
+  system: string,
+  user: string,
+): Promise<LLMJsonResult<T>> {
+  if (!llm) {
+    throw new Error(
+      'LLM_NOT_CONFIGURED: set LLM_PROVIDER and provider credentials to enable AI generation skills',
+    );
+  }
+  let content: string | null;
+  try {
+    const response = await llm.provider.chat([
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ]);
+    content = response.content;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`LLM_PROVIDER_ERROR: ${message}`);
+  }
+  if (!content) {
+    throw new Error('LLM_EMPTY_RESPONSE: model returned no content');
+  }
+  return {
+    value: extractJson(content) as T,
+    meta: {
+      provider: llm.name,
+      model: llm.model,
+      estimatedTokens: estimateTokens(system, user, content),
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +234,54 @@ function generateFieldSuggestions(
   return [...matched, ...defaults].slice(0, maxSuggestions);
 }
 
+interface CollectionFieldSummary {
+  name: string;
+  type: string;
+  required: boolean;
+}
+
+/** Reads real field definitions for the given collections (best-effort). */
+async function describeCollections(
+  schemaService: SchemaService | undefined,
+  collections: string[],
+): Promise<Record<string, CollectionFieldSummary[]>> {
+  const result: Record<string, CollectionFieldSummary[]> = {};
+  if (!schemaService) return result;
+  for (const name of collections) {
+    try {
+      const fields = (await schemaService.listFields(name)) as Array<{
+        name: string;
+        type: string;
+        nullable?: boolean;
+      }>;
+      result[name] = fields.map((f) => ({
+        name: f.name,
+        type: f.type,
+        required: f.nullable === false,
+      }));
+    } catch {
+      result[name] = [];
+    }
+  }
+  return result;
+}
+
+/** Maps LumiBase field types onto OpenAPI schema types. */
+function openApiType(fieldType: string): string {
+  switch (fieldType) {
+    case 'integer':
+      return 'integer';
+    case 'float':
+      return 'number';
+    case 'boolean':
+      return 'boolean';
+    case 'json':
+      return 'object';
+    default:
+      return 'string';
+  }
+}
+
 /**
  * Creates the CORE_SKILLS registry with handlers wired to real services.
  *
@@ -139,6 +295,9 @@ function generateFieldSuggestions(
  */
 function buildCoreSkills(services: SkillServices): Record<string, SkillDefinition> {
   const { schemaService, itemService } = services;
+  /** Distinguishes "offline test registry" from "environment has no LLM". */
+  const llmResolved = 'llm' in services;
+  const llm = services.llm ?? null;
 
   return {
     listCollections: {
@@ -322,9 +481,32 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           }
         }
 
-        // Generate field suggestions based on description
-        const suggestions = generateFieldSuggestions(description, existingFields, maxSuggestions);
-        return { collection, suggestions, existingFields };
+        if (!llmResolved) {
+          // Offline registry: deterministic keyword-based suggestions.
+          const suggestions = generateFieldSuggestions(description, existingFields, maxSuggestions);
+          return { collection, suggestions, existingFields };
+        }
+
+        const { value, meta } = await completeJson<unknown>(
+          llm,
+          'You design CMS field schemas. Reply with ONLY a JSON array of field suggestions, each: ' +
+            '{"name": string (snake_case), "type": one of string|text|integer|float|boolean|dateTime|json, ' +
+            '"interface": one of input|input-multiline|wysiwyg|slug|datetime|file|select-dropdown|tags|toggle|color|rating, ' +
+            '"required": boolean, "description": string}. Never duplicate existing fields.',
+          `Collection: ${collection}\nExisting fields: ${existingFields.join(', ') || '(none)'}\n` +
+            `Description: ${description}\nReturn at most ${maxSuggestions} suggestions.`,
+        );
+        const suggestions = (Array.isArray(value) ? value : [])
+          .filter(
+            (entry): entry is FieldSuggestion =>
+              typeof entry === 'object' &&
+              entry !== null &&
+              typeof (entry as FieldSuggestion).name === 'string' &&
+              typeof (entry as FieldSuggestion).type === 'string',
+          )
+          .filter((entry) => !existingFields.includes(entry.name))
+          .slice(0, maxSuggestions);
+        return { collection, suggestions, existingFields, meta };
       },
     },
 
@@ -339,16 +521,52 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         const instruction = (args['instruction'] as string) ?? '';
         const currentContent = args['currentContent'] as string | undefined;
 
-        // Build context-aware response
-        const result = {
+        if (!llmResolved) {
+          // Offline registry: deterministic placeholder.
+          return {
+            collection,
+            fieldName,
+            instruction,
+            generatedContent: `[AI-generated content for ${fieldName}: ${instruction}]`,
+            currentContent: currentContent ?? null,
+            note: 'Content generation requires an active LLM provider. Configure LLM_PROVIDER in environment.',
+          };
+        }
+
+        // Retrieval context: sample existing items so generated content
+        // matches the collection's real tone and structure.
+        let samples: unknown[] = [];
+        if (itemService) {
+          try {
+            const listed = await itemService.list(collection, { limit: 3 });
+            samples = (listed as { data?: unknown[] }).data ?? [];
+          } catch {
+            // Collection may not exist or be empty; generate without samples.
+          }
+        }
+
+        const { value, meta } = await completeJson<{ content?: unknown }>(
+          llm,
+          'You write CMS field content. Reply with ONLY JSON: {"content": string}. ' +
+            'Match the tone and structure of the sample items when provided. ' +
+            'Plain text or HTML depending on what the samples use; no markdown fences.',
+          `Collection: ${collection}\nField: ${fieldName}\nInstruction: ${instruction}\n` +
+            (currentContent ? `Current content to edit:\n${currentContent}\n` : '') +
+            (samples.length > 0 ? `Sample items for context:\n${JSON.stringify(samples).slice(0, 4000)}` : ''),
+        );
+        const generatedContent = typeof value?.content === 'string' ? value.content : null;
+        if (generatedContent === null) {
+          throw new Error('LLM_INVALID_JSON: expected {"content": string}');
+        }
+        return {
           collection,
           fieldName,
           instruction,
-          generatedContent: `[AI-generated content for ${fieldName}: ${instruction}]`,
+          generatedContent,
           currentContent: currentContent ?? null,
-          note: 'Content generation requires an active LLM provider. Configure LLM_PROVIDER in environment.',
+          ragSamples: samples.length,
+          meta,
         };
-        return result;
       },
     },
 
@@ -369,19 +587,56 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           ? (args['collections'] as unknown[]).filter((entry): entry is string => typeof entry === 'string')
           : ['products', 'orders', 'customers'];
         const targetApp = (args['targetApp'] as string) ?? 'storefront';
+
+        if (!llmResolved) {
+          // Offline registry: deterministic skeleton spec.
+          return {
+            artifacts: [
+              {
+                type: 'page_spec',
+                title: `${targetApp} page spec`,
+                content: { targetApp, collections, pages: collections.map((collection) => ({ collection, route: `/${collection}` })) },
+              },
+              {
+                type: 'component_spec',
+                title: `${targetApp} component spec`,
+                content: { targetApp, components: collections.map((collection) => `${collection}List`) },
+              },
+            ],
+          };
+        }
+
+        const fieldsByCollection = await describeCollections(schemaService, collections);
+        const { value, meta } = await completeJson<{ pages?: unknown[]; components?: unknown[] }>(
+          llm,
+          'You design app specs for a headless CMS frontend. Reply with ONLY JSON: ' +
+            '{"pages": [{"collection": string, "route": string, "title": string, ' +
+            '"sections": [{"id": string, "component": string, ' +
+            '"source": {"collection": string, "limit": number, "orderBy": string}}]}], ' +
+            '"components": [{"name": string, "collection": string, "props": object}]}. ' +
+            'Every section that renders collection data MUST declare a "source" binding ' +
+            'so it hydrates through the single-roundtrip Delivery API.',
+          `Target app: ${targetApp}\nCollections and their fields:\n${JSON.stringify(fieldsByCollection, null, 2)}`,
+        );
+        const pages = Array.isArray(value?.pages) ? value.pages : [];
+        const components = Array.isArray(value?.components) ? value.components : [];
+        if (pages.length === 0) {
+          throw new Error('LLM_INVALID_JSON: expected at least one page in app spec');
+        }
         return {
           artifacts: [
             {
               type: 'page_spec',
               title: `${targetApp} page spec`,
-              content: { targetApp, collections, pages: collections.map((collection) => ({ collection, route: `/${collection}` })) },
+              content: { targetApp, collections, pages },
             },
             {
               type: 'component_spec',
               title: `${targetApp} component spec`,
-              content: { targetApp, components: collections.map((collection) => `${collection}List`) },
+              content: { targetApp, components },
             },
           ],
+          meta,
         };
       },
     },
@@ -392,9 +647,59 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['schema:read'],
       service: 'ai',
       handler: async (args) => {
-        const collections = Array.isArray(args['collections'])
+        let collections = Array.isArray(args['collections'])
           ? (args['collections'] as unknown[]).filter((entry): entry is string => typeof entry === 'string')
           : [];
+
+        if (!llmResolved || !schemaService) {
+          // Offline registry: path skeleton without field-level schemas.
+          return {
+            artifacts: [
+              {
+                type: 'api_spec',
+                title: 'Generated API spec',
+                content: {
+                  openapi: '3.1.0',
+                  info: { title: 'Lumibase generated API', version: '0.1.0' },
+                  paths: Object.fromEntries(collections.map((collection) => [`/items/${collection}`, { get: { summary: `List ${collection}` } }])),
+                },
+              },
+            ],
+          };
+        }
+
+        // Schema-driven generation: the source of truth is the live schema,
+        // so the spec is derived deterministically rather than asked of an LLM.
+        if (collections.length === 0) {
+          const all = await schemaService.listCollections();
+          collections = (all as Array<{ name: string }>).map((c) => c.name);
+        }
+        const fieldsByCollection = await describeCollections(schemaService, collections);
+        const paths: Record<string, unknown> = {};
+        const schemas: Record<string, unknown> = {};
+        for (const [name, fields] of Object.entries(fieldsByCollection)) {
+          const properties: Record<string, unknown> = {
+            id: { type: 'string' },
+            status: { type: 'string' },
+          };
+          for (const field of fields) {
+            properties[field.name] = { type: openApiType(field.type), description: field.type };
+          }
+          schemas[name] = { type: 'object', properties };
+          const ref = { $ref: `#/components/schemas/${name}` };
+          paths[`/api/v1/items/${name}`] = {
+            get: {
+              summary: `List ${name}`,
+              responses: { '200': { description: 'OK', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: ref } } } } } } },
+            },
+            post: { summary: `Create ${name}`, requestBody: { content: { 'application/json': { schema: ref } } }, responses: { '201': { description: 'Created' } } },
+          };
+          paths[`/api/v1/items/${name}/{id}`] = {
+            get: { summary: `Get one ${name}`, responses: { '200': { description: 'OK', content: { 'application/json': { schema: ref } } } } },
+            patch: { summary: `Update ${name}`, requestBody: { content: { 'application/json': { schema: ref } } }, responses: { '200': { description: 'OK' } } },
+            delete: { summary: `Soft-delete ${name}`, responses: { '204': { description: 'Deleted' } } },
+          };
+        }
         return {
           artifacts: [
             {
@@ -403,7 +708,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
               content: {
                 openapi: '3.1.0',
                 info: { title: 'Lumibase generated API', version: '0.1.0' },
-                paths: Object.fromEntries(collections.map((collection) => [`/items/${collection}`, { get: { summary: `List ${collection}` } }])),
+                paths,
+                components: { schemas },
               },
             },
           ],
@@ -419,20 +725,50 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       handler: async (args) => {
         const collection = (args['collection'] as string) ?? 'products';
         const count = Math.max(1, Math.min(Number(args['count'] ?? 3), 20));
+
+        if (!llmResolved) {
+          // Offline registry: deterministic placeholder rows.
+          return {
+            artifacts: [
+              {
+                type: 'seed_data',
+                title: `Seed data for ${collection}`,
+                content: {
+                  collection,
+                  rows: Array.from({ length: count }, (_entry, index) => ({
+                    title: `${collection} sample ${index + 1}`,
+                    status: 'draft',
+                  })),
+                },
+              },
+            ],
+          };
+        }
+
+        const fieldsByCollection = await describeCollections(schemaService, [collection]);
+        const { value, meta } = await completeJson<unknown>(
+          llm,
+          'You generate realistic seed data for a CMS collection. Reply with ONLY a JSON array ' +
+            `of exactly ${count} row objects. Keys must match the field names given; values must ` +
+            'fit the field types. Vary the data realistically; never repeat identical rows.',
+          `Collection: ${collection}\nFields:\n${JSON.stringify(fieldsByCollection[collection] ?? [], null, 2)}`,
+        );
+        const rows = (Array.isArray(value) ? value : [])
+          .filter((row): row is Record<string, unknown> => typeof row === 'object' && row !== null)
+          .slice(0, count)
+          .map((row) => ({ status: 'draft', ...row }));
+        if (rows.length === 0) {
+          throw new Error('LLM_INVALID_JSON: expected a non-empty array of seed rows');
+        }
         return {
           artifacts: [
             {
               type: 'seed_data',
               title: `Seed data for ${collection}`,
-              content: {
-                collection,
-                rows: Array.from({ length: count }, (_entry, index) => ({
-                  title: `${collection} sample ${index + 1}`,
-                  status: 'draft',
-                })),
-              },
+              content: { collection, rows },
             },
           ],
+          meta,
         };
       },
     },
@@ -491,6 +827,9 @@ export class AISecureHarness {
       this.skills = buildCoreSkills({
         schemaService: config.schemaService,
         itemService: config.itemService,
+        // Preserve the "offline registry" mode when callers never resolved
+        // an LLM; forward null/instance when they did (Req 2.1/2.2).
+        ...('llm' in config ? { llm: config.llm ?? null } : {}),
       });
     } else {
       this.skills = CORE_SKILLS;
@@ -690,7 +1029,11 @@ export class AISecureHarness {
         output: result.data,
         latencyMs: Date.now() - startedAt,
       });
-      await this.runService.closeRun(run.runId, { toolCalls: 1, lastToolLatencyMs: Date.now() - startedAt });
+      await this.runService.closeRun(run.runId, {
+        toolCalls: 1,
+        lastToolLatencyMs: Date.now() - startedAt,
+        ...extractLLMMeta(result.data),
+      });
       return { status: 'executed', data: result.data, ...run, toolCallId };
     }
     await this.runService.finishToolCall(toolCallId, {
@@ -927,7 +1270,7 @@ export class AISecureHarness {
         approvalId: existingAgentApproval?.id ?? null,
         latencyMs: Date.now() - startedAt,
       });
-      await this.runService.closeRun(run.runId, { approvedBy: userId });
+      await this.runService.closeRun(run.runId, { approvedBy: userId, ...extractLLMMeta(result.data) });
       return {
         status: 'executed',
         data: result.data,

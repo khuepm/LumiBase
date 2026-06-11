@@ -6,7 +6,7 @@ import type { AppEnv } from '../env';
 import { AISecureHarness } from '../services/ai-harness';
 import { SchemaService } from '../services/schema-service';
 import { ItemService } from '../services/item-service';
-import { createLLMProvider, type LLMMessage } from '../services/llm-provider';
+import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 // ---------------------------------------------------------------------------
@@ -177,7 +177,13 @@ aiRouter.post('/chat', async (c) => {
       queue: runtime.queue,
     });
 
-    const harness = new AISecureHarness({ db, siteId, schemaService, itemService });
+    const harness = new AISecureHarness({
+      db,
+      siteId,
+      schemaService,
+      itemService,
+      llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
+    });
     const result = await harness.execute(
       toolCall.name,
       toolCall.arguments,
@@ -391,7 +397,13 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
     queue: runtime.queue,
   });
 
-  const harness = new AISecureHarness({ db, siteId, schemaService, itemService });
+  const harness = new AISecureHarness({
+    db,
+    siteId,
+    schemaService,
+    itemService,
+    llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
+  });
 
   if (decision === 'approved') {
     const result = await harness.executeApproved(approvalId, userId);

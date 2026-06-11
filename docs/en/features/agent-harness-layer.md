@@ -112,13 +112,15 @@ A skill classified as **DANGEROUS** (requires HITL approval) when:
 | `createItem` | items | `items:write` | SAFE | Real → ItemService |
 | `updateItem` | items | `items:update` | SAFE | Real → ItemService.patch() |
 | `deleteItem` | items | `items:write` | **DANGEROUS** | Real → ItemService.softDelete() |
-| `aiSuggestField` | ai | `schema:read` | SAFE | Stub (pattern matching) |
-| `aiContentAssist` | ai | `items:read` | SAFE | Stub (needs LLM_PROVIDER env) |
-| `generateAppSpec` | ai | `schema:read`, `items:read` | SAFE | Stub (artifact generation) |
-| `generateApiDocs` | ai | `schema:read` | SAFE | Stub (OpenAPI artifact) |
-| `generateSeedData` | ai | `items:write` | SAFE | Stub (seed artifact) |
+| `aiSuggestField` | ai | `schema:read` | SAFE | Real → LLM + existing-field context (offline registry: keyword patterns) |
+| `aiContentAssist` | ai | `items:read` | SAFE | Real → LLM + RAG item samples via ItemService |
+| `generateAppSpec` | ai | `schema:read`, `items:read` | SAFE | Real → LLM + live schema introspection; sections must declare `source` bindings |
+| `generateApiDocs` | ai | `schema:read` | SAFE | Real → deterministic OpenAPI 3.1 from live schema (no LLM needed) |
+| `generateSeedData` | ai | `items:write` | SAFE | Real → LLM rows matching real field definitions |
 
 Skills can be overridden per-site via the `agent_tools` database table without redeploying.
+
+Generation skills resolve the LLM through `createConfiguredLLMProvider`. When `LLM_PROVIDER` (plus credentials) is not configured they fail with an explicit `LLM_NOT_CONFIGURED` error — there is no silent stub fallback in production routes. Provider failures surface as `LLM_PROVIDER_ERROR`, malformed model output as `LLM_INVALID_JSON`. Successful LLM-backed runs record `{ llm: { provider, model, estimatedTokens } }` in `agent_runs.metrics`.
 
 ## App generation MVP
 
