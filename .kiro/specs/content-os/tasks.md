@@ -8,22 +8,22 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
 
 ### Module A — Foundation
 
-- [ ] 1. Provenance và Pin schema
-  - [ ] 1.1 Thêm cột provenance vào `revisions`: `authorType`, `createdByRunId`, `model`, `constitutionHash`, `sources`, `confidence`, `staged`, `autoCommitAt`; thêm `pinnedFields` vào `items`; sinh + áp migration
+- [x] 1. Provenance và Pin schema
+  - [x] 1.1 Thêm cột provenance vào `revisions`: `authorType`, `createdByRunId`, `model`, `constitutionHash`, `sources`, `confidence`, `staged`, `autoCommitAt`; thêm `pinnedFields` vào `items`; sinh + áp migration
     - _Requirements: 1.1, 1.5_
-  - [ ] 1.2 Ghi `authorType`/`createdByRunId` tại ItemService (human path) và Harness write path (agent path)
+  - [x] 1.2 Ghi `authorType`/`createdByRunId` tại ItemService (human path) và Harness write path (agent path)
     - _Requirements: 1.2, 1.3_
-  - [ ] 1.3 Delivery API hỗ trợ `?provenance=true`, mask thông tin nhạy cảm
+  - [x] 1.3 Delivery API hỗ trợ `?provenance=true`, mask thông tin nhạy cảm
     - _Requirements: 1.4_
-  - [ ] 1.4 Property test: Provenance round-trip (Property 13)
+  - [x] 1.4 Property test: Provenance round-trip (Property 13)
     - **Validates: Requirements 1.1, 1.2, 1.3**
 
-- [ ] 2. Thật hoá 5 stub skills
-  - [ ] 2.1 Nối `aiSuggestField`, `aiContentAssist` vào llm-provider + embedding RAG context; lỗi provider trả lỗi tường minh, không fallback stub
+- [x] 2. Thật hoá 5 stub skills
+  - [x] 2.1 Nối `aiSuggestField`, `aiContentAssist` vào llm-provider + embedding RAG context; lỗi provider trả lỗi tường minh, không fallback stub
     - _Requirements: 2.1, 2.2_
-  - [ ] 2.2 Nối `generateAppSpec`, `generateApiDocs`, `generateSeedData` → output là `agent_artifacts` qua evaluation gate
+  - [x] 2.2 Nối `generateAppSpec`, `generateApiDocs`, `generateSeedData` → output là `agent_artifacts` qua evaluation gate
     - _Requirements: 2.1, 2.4_
-  - [ ] 2.3 Ghi model/token/cost vào run metrics cho mọi LLM call
+  - [x] 2.3 Ghi model/token/cost vào run metrics cho mọi LLM call
     - _Requirements: 2.3_
 
 - [ ] 3. Run qua queue
@@ -44,12 +44,12 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
 
 ### Module B — Reconciliation
 
-- [ ] 5. Content Intents
-  - [ ] 5.1 Bảng `content_intents` + JSON Schema `intent-rule.v1` + migration
+- [x] 5. Content Intents
+  - [x] 5.1 Bảng `content_intents` + JSON Schema `intent-rule.v1` + migration
     - _Requirements: 5.1, 5.4, 17.1, 17.3_
-  - [ ] 5.2 `intent-service.ts`: CRUD, pause/resume, NL compile (trả bản compile chờ xác nhận, không tự kích hoạt)
+  - [x] 5.2 `intent-service.ts`: CRUD, pause/resume, NL compile (trả bản compile chờ xác nhận, không tự kích hoạt)
     - _Requirements: 5.2, 5.3, 5.5_
-  - [ ] 5.3 Routes `/api/v1/agent/intents` (capability `intents:write`)
+  - [x] 5.3 Routes `/api/v1/agent/intents` (capability `intents:write`)
     - _Requirements: 5.2_
 
 - [ ] 6. Drift detection
@@ -71,13 +71,13 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
     - **Validates: Requirements 7.5**
 
 - [ ] 8. Override-is-law (Pin)
-  - [ ] 8.1 `pin-service.ts`: auto-pin khi human sửa field thuộc intent active; prompt "ngoại lệ hay luật mới" (không chặn save, default giữ pin); release + audit
+  - [x] 8.1 `pin-service.ts`: auto-pin khi human sửa field thuộc intent active; prompt "ngoại lệ hay luật mới" (không chặn save, default giữ pin); release + audit
     - _Requirements: 8.1, 8.2, 8.4_
-  - [ ] 8.2 PinGuard hook trong Harness: chặn agent write vào pinned field, denial `pinned_by_human`
+  - [x] 8.2 PinGuard hook trong Harness: chặn agent write vào pinned field, denial `pinned_by_human`
     - _Requirements: 8.3_
   - [ ] 8.3 Routes pins (GET/DELETE) + badge Pin per field trong Studio item editor
     - _Requirements: 8.4, 8.5_
-  - [ ] 8.4 Property test: Pin supremacy (Property 2)
+  - [x] 8.4 Property test: Pin supremacy (Property 2)
     - **Validates: Requirements 8.1, 8.3**
 
 - [ ] 9. Load-aware autonomy
@@ -110,18 +110,18 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
 
 ### Module D — Trust ledger
 
-- [ ] 12. Autonomy grants L0–L4
-  - [ ] 12.1 Bảng `agent_autonomy_grants` + `agent_incidents`; migration
+- [x] 12. Autonomy grants L0–L4
+  - [x] 12.1 Bảng `agent_autonomy_grants` + `agent_incidents`; migration
     - _Requirements: 12.1, 12.4, 17.1_
-  - [ ] 12.2 `autonomy-service.ts`: resolveAutonomy (min của grant/intentCap/hardCeiling; defaults L2 safe / L1 dangerous; không-revert-được ≤ L2); tích hợp vào điểm quyết định risk của Harness
+  - [x] 12.2 `autonomy-service.ts`: resolveAutonomy (min của grant/intentCap/hardCeiling; defaults L2 safe / L1 dangerous; không-revert-được ≤ L2); tích hợp vào điểm quyết định risk của Harness
     - _Requirements: 12.2, 12.3, 12.7_
-  - [ ] 12.3 Property test: autonomy resolver (Property 3)
+  - [x] 12.3 Property test: autonomy resolver (Property 3)
     - **Validates: Requirements 12.2, 12.3, 12.7**
 
 - [ ] 13. Promotion/demotion engine
   - [ ] 13.1 `trust-ledger-service.ts`: promote-check định kỳ (streak/approve-rate/zero-incident, ngưỡng per site) → tạo approval; chỉ effective khi human approve
     - _Requirements: 12.5_
-  - [ ] 13.2 Demotion event-driven từ incident insert: −1 level (severity high → L1) tức thì + notify + evidence
+  - [x] 13.2 Demotion event-driven từ incident insert: −1 level (severity high → L1) tức thì + notify + evidence
     - _Requirements: 12.6_
   - [ ] 13.3 Property test: demotion bất biến (Property 7)
     - **Validates: Requirements 12.5, 12.6**
