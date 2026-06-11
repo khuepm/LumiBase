@@ -914,6 +914,12 @@ export class AISecureHarness {
       title: envelope.title ?? `Run ${skillName}`,
       contextMessage: contextMessage ?? envelope.contextMessage,
     });
+
+    // Tool-call boundary: cancellation (and freeze) wins before any new
+    // tool call starts (Req 3.5).
+    if (await this.runService.isCancelled(run.runId)) {
+      return { status: 'denied', message: 'Run was cancelled', ...run };
+    }
     const startedAt = Date.now();
     const maxToolCalls = typeof envelope.budget?.['maxToolCalls'] === 'number'
       ? envelope.budget['maxToolCalls']
@@ -1011,6 +1017,10 @@ export class AISecureHarness {
         approvalId: agentApproval!.id,
         latencyMs: Date.now() - startedAt,
       });
+
+      // Park the run while the approval is pending; the approval decision
+      // resumes it without re-running completed tool calls (Req 3.1/3.4).
+      await this.runService.awaitApproval(run.runId);
 
       return {
         status: 'pending_approval',
@@ -1219,6 +1229,13 @@ export class AISecureHarness {
       if (existingAgentApproval.expiresAt && existingAgentApproval.expiresAt <= new Date()) {
         return { status: 'denied', message: 'Approval expired', runId: run.runId };
       }
+      // Cancellation wins over a late approval (Req 3.5).
+      if (await this.runService.isCancelled(run.runId)) {
+        return { status: 'denied', message: 'Run was cancelled', runId: run.runId };
+      }
+      // Resume the parked run; only the approved tool call executes —
+      // previously completed tool calls are never re-run (Req 3.4).
+      await this.runService.markRunning(run.runId);
     }
     const startedAt = Date.now();
     const toolCallId = await this.runService.appendToolCall({

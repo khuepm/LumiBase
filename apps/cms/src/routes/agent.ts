@@ -10,6 +10,7 @@ import type { Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { agentApprovalLatency, agentApprovalsTotal } from '../services/agent-metrics';
+import { AGENT_RUNS_QUEUE, type AgentRunJobPayload } from '../services/agent-run-worker';
 import { AgentArtifactService } from '../services/agent-artifact-service';
 import { AgentEvaluationService } from '../services/agent-evaluation-service';
 import { AgentMemoryService } from '../services/agent-memory-service';
@@ -26,6 +27,16 @@ const createGoalSchema = z.object({
   assigneeAgent: z.string().default('lumibase-copilot'),
   priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
   successCriteria: z.record(z.unknown()).default({}),
+  /** `async` enqueues a run via the QueueProvider and returns immediately (Req 3.2). */
+  execution: z.enum(['sync', 'async']).default('sync'),
+  /** Skill to execute when `execution: 'async'`. */
+  task: z
+    .object({
+      skillName: z.string().min(1).max(120),
+      arguments: z.record(z.unknown()).default({}),
+    })
+    .optional(),
+  budget: z.record(z.unknown()).default({}),
 });
 
 const artifactSchema = z.object({
@@ -73,6 +84,31 @@ agentRouter.post('/goals', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
   const auth = c.get('auth');
+  const queue = c.get('runtime').queue;
+
+  if (parsed.data.execution === 'async') {
+    if (!parsed.data.task) {
+      return c.json(
+        { errors: [{ code: 'VALIDATION', message: 'task.skillName is required for async execution' }] },
+        400,
+      );
+    }
+    // No queue adapter → explicit error; sync execution remains available (Req 3.3).
+    if (!queue) {
+      return c.json(
+        {
+          errors: [
+            {
+              code: 'ASYNC_UNAVAILABLE',
+              message: 'Async execution requires a queue adapter; this runtime has none. Use execution: "sync".',
+            },
+          ],
+        },
+        400,
+      );
+    }
+  }
+
   const [goal] = await db.insert(agentGoals).values({
     siteId,
     createdBy: auth.userId ?? null,
@@ -83,7 +119,45 @@ agentRouter.post('/goals', async (c) => {
     priority: parsed.data.priority,
     successCriteria: parsed.data.successCriteria,
   }).returning();
+
+  if (parsed.data.execution === 'async') {
+    const runService = new AgentRunService(db, siteId, queue);
+    const run = await runService.ensureRun({
+      goalId: goal!.id,
+      agentName: parsed.data.assigneeAgent,
+      title: parsed.data.title,
+      contextMessage: parsed.data.description,
+      createdBy: auth.userId ?? null,
+      budget: parsed.data.budget,
+      status: 'queued',
+    });
+    const payload: AgentRunJobPayload = {
+      siteId,
+      goalId: goal!.id,
+      runId: run.runId,
+      skillName: parsed.data.task!.skillName,
+      arguments: parsed.data.task!.arguments,
+      capabilities: auth.roles ?? [],
+      userId: auth.userId ?? null,
+      contextMessage: parsed.data.description,
+    };
+    await queue!.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
+    return c.json({ data: { goal, runId: run.runId, status: 'queued' } }, 202);
+  }
+
   return c.json({ data: goal }, 201);
+});
+
+agentRouter.post('/runs/:id/cancel', async (c) => {
+  const service = new AgentRunService(c.get('db'), c.get('siteId'), c.get('runtime').queue);
+  const cancelled = await service.cancelRun(c.req.param('id'));
+  if (!cancelled) {
+    return c.json(
+      { errors: [{ code: 'NOT_CANCELLABLE', message: 'Run not found or already in a terminal state' }] },
+      409,
+    );
+  }
+  return c.json({ data: cancelled });
 });
 
 agentRouter.get('/runs', async (c) => {

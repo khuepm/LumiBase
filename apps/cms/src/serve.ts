@@ -79,6 +79,22 @@ async function main() {
     void runScheduledRotation(rotatorDb);
   });
 
+  // ── Async agent runs (content-os task 3; Req 3.2) ────────────────────────
+  //
+  // Long-lived Node process consumes the `agent-runs` queue so goals created
+  // with `execution: 'async'` run outside the request runtime limit. The
+  // worker reuses the same Drizzle client as the audit rotator and executes
+  // through the harness codepath (capabilities, risk, budget, audit).
+  // Cloudflare Workers wire the same handler via their queue consumer export.
+  const { registerAgentRunWorker } = await import('./services/agent-run-worker');
+  registerAgentRunWorker({
+    db: rotatorDb,
+    cache: runtime.cache,
+    search: runtime.search,
+    queue: runtime.queue,
+    env: process.env as Record<string, string | undefined>,
+  });
+
   // Graceful shutdown with 10s timeout
   process.on('SIGTERM', () => {
     console.log('[lumibase-cms] SIGTERM received, shutting down...');

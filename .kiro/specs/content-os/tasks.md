@@ -26,10 +26,10 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
   - [x] 2.3 Ghi model/token/cost vào run metrics cho mọi LLM call
     - _Requirements: 2.3_
 
-- [ ] 3. Run qua queue
-  - [ ] 3.1 Mở rộng run state machine (`queued`, `cancelled`; stopReason `frozen/backpressure/write_budget`); enqueue qua `QueueProvider` khi `execution='async'`
+- [x] 3. Run qua queue
+  - [x] 3.1 Mở rộng run state machine (`queued`, `cancelled`; stopReason `frozen/backpressure/write_budget`); enqueue qua `QueueProvider` khi `execution='async'`
     - _Requirements: 3.1, 3.2, 3.3_
-  - [ ] 3.2 Resume run từ `awaiting_approval` không chạy lại tool call đã xong; cancel tại tool-call boundary
+  - [x] 3.2 Resume run từ `awaiting_approval` không chạy lại tool call đã xong; cancel tại tool-call boundary
     - _Requirements: 3.4, 3.5_
 
 - [ ] 4. MCP server + llms.txt

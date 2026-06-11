@@ -91,6 +91,15 @@ Rules enforced by the harness:
 - Failed runs keep their audit history. Retries create a new run linked to the original run instead of rewriting history.
 - Budget limits stop execution for max tool calls, runtime, estimated cost, or artifact size.
 
+### Run lifecycle and async execution
+
+Run status follows `queued → running → awaiting_approval → succeeded | failed | cancelled`:
+
+- `POST /api/v1/agent/goals` with `execution: 'async'` and a `task: { skillName, arguments }` creates the goal plus a `queued` run, enqueues it on the `agent-runs` queue via the runtime `QueueProvider`, and returns `202` with the `runId` immediately. Runtimes without a queue adapter reject async execution with `ASYNC_UNAVAILABLE`; sync execution is unaffected.
+- The queue worker (`registerAgentRunWorker`, wired in the Node entrypoint) drives queued runs through the same harness codepath — capability checks, risk policy, budgets and audit apply identically. Capabilities are captured from the enqueuing session and never widened.
+- When a dangerous action creates an approval, the run parks as `awaiting_approval`. An approval decision resumes it and executes only the stored skill — completed tool calls are never re-run.
+- `POST /api/v1/agent/runs/:id/cancel` cancels `queued`/`running`/`awaiting_approval` runs. Cancellation takes effect at the next tool-call boundary (the harness re-checks before every tool call), wins over late approvals, and is recorded with `stopReason` in run metrics.
+
 ## Core Skills Registry
 
 Skills are defined in two synchronized locations:
