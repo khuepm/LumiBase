@@ -244,6 +244,8 @@ Chưa có (khoảng cách):
 
 ## 8. Lộ trình 5 phase
 
+> **Spec triển khai chi tiết** (requirements EARS, design, task checklist): [`.kiro/specs/content-os/`](../../.kiro/specs/content-os/requirements.md)
+
 Mỗi phase ship được độc lập, phase sau xây trên phase trước. Quy ước nhãn theo [roadmap/tasks.md](./roadmap/tasks.md).
 
 ### Phase A — Thật hoá nền móng (Make it real)
