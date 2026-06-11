@@ -183,6 +183,7 @@ aiRouter.post('/chat', async (c) => {
       schemaService,
       itemService,
       llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
+      queue: runtime.queue,
     });
     const result = await harness.execute(
       toolCall.name,
@@ -403,6 +404,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
     schemaService,
     itemService,
     llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
+    queue: runtime.queue,
   });
 
   if (decision === 'approved') {

@@ -148,6 +148,41 @@ agentRouter.post('/goals', async (c) => {
   return c.json({ data: goal }, 201);
 });
 
+// ── Veto window (content-os task 14; Req 13.2/13.4/13.6) ────────────────────
+
+function canVeto(c: Context<AppEnv>): boolean {
+  const roles = c.get('auth').roles ?? [];
+  return roles.includes('admin') || roles.includes('veto') || roles.includes('*');
+}
+
+/** Stagings inside their veto window, soonest deadline first. */
+agentRouter.get('/staged', async (c) => {
+  const { VetoService } = await import('../services/veto-service');
+  const service = new VetoService({ db: c.get('db'), siteId: c.get('siteId') });
+  return c.json({ data: await service.listPending() });
+});
+
+agentRouter.post('/staged/:id/veto', async (c) => {
+  if (!canVeto(c)) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Veto requires the admin or veto role.' }] },
+      403,
+    );
+  }
+  const body = (await c.req.json().catch(() => ({}))) as { reason?: string };
+  const { VetoService, VetoServiceError } = await import('../services/veto-service');
+  const service = new VetoService({ db: c.get('db'), siteId: c.get('siteId') });
+  try {
+    const data = await service.veto(c.req.param('id'), c.get('auth').userId ?? null, body.reason);
+    return c.json({ data });
+  } catch (err) {
+    if (err instanceof VetoServiceError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
 agentRouter.post('/runs/:id/cancel', async (c) => {
   const service = new AgentRunService(c.get('db'), c.get('siteId'), c.get('runtime').queue);
   const cancelled = await service.cancelRun(c.req.param('id'));

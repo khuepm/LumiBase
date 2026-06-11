@@ -108,6 +108,28 @@ async function main() {
     env: process.env as Record<string, string | undefined>,
   });
 
+  // ── Veto-window commits (content-os task 14; Req 13.3/13.5) ─────────────
+  //
+  // Primary path: delayed queue jobs fire at each staging's autoCommitAt.
+  // Safety net: a 5-minute sweep commits anything the queue missed (lost
+  // jobs, queue-less runtimes). Both converge on VetoService.commit, which
+  // re-checks status and deadline — no premature or double commits.
+  const { registerVetoCommitWorker, sweepDueVetoCommits } = await import(
+    './services/veto-commit-worker'
+  );
+  const vetoWorkerDeps = {
+    db: rotatorDb,
+    cache: runtime.cache,
+    search: runtime.search,
+    queue: runtime.queue,
+  };
+  registerVetoCommitWorker(vetoWorkerDeps);
+  const vetoSweepTask = cron.schedule('*/5 * * * *', () => {
+    void sweepDueVetoCommits(vetoWorkerDeps).catch((err) => {
+      console.error('[veto-sweep] failed', formatSafeError(err));
+    });
+  });
+
   // Graceful shutdown with 10s timeout
   process.on('SIGTERM', () => {
     console.log('[lumibase-cms] SIGTERM received, shutting down...');
@@ -115,6 +137,7 @@ async function main() {
     // Stop the hourly audit-rotation cron and pressure sampler so their timers
     // can't keep the event loop alive past the server close (task 11.4).
     rotationTask.stop();
+    vetoSweepTask.stop();
     pressureLimiter.stop();
     clearInterval(loadGuardTimer);
 

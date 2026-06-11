@@ -100,6 +100,15 @@ Run status follows `queued → running → awaiting_approval → succeeded | fai
 - When a dangerous action creates an approval, the run parks as `awaiting_approval`. An approval decision resumes it and executes only the stored skill — completed tool calls are never re-run.
 - `POST /api/v1/agent/runs/:id/cancel` cancels `queued`/`running`/`awaiting_approval` runs. Cancellation takes effect at the next tool-call boundary (the harness re-checks before every tool call), wins over late approvals, and is recorded with `stopReason` in run metrics.
 
+### Trust gradient at the risk decision (L0–L4)
+
+When a dangerous skill reaches Step 3, the harness resolves the effective autonomy level for `(agentRole, capability)` via the trust ledger — `min(grant-or-default, intent cap, hard ceiling)` — and routes accordingly:
+
+- **≤ L2** — classic pre-execute HITL: an approval record is created and the run parks as `awaiting_approval`.
+- **L3 (veto window)** — stageable single-item patches (`updateItem` with a `data` patch) execute into a **staged revision** instead of live content, paired with a `kind='veto'` approval whose `autoCommitAt` defaults to 4 hours out. Silence means consent: a delayed queue job on `agent-veto-commits` (plus a 5-minute safety-net sweep) promotes the staging to live at the deadline with full provenance. A human veto (`POST /api/v1/agent/staged/:id/veto`, admin or `veto` role) before the deadline discards the staging — live content was never touched — and records a `veto` incident that automatically demotes the agent role on that capability. Fields pinned by a human **after** staging win at commit time: the pinned part of the patch is dropped (`auto_commit_partial`), never overwritten. Pending stagings are listed at `GET /api/v1/agent/staged` and announced via a `veto.staged` activity entry with a review deep-link. Commit failures leave the staging intact and retry with exponential backoff; exhausting the attempts opens an incident.
+- **L4 (autopilot)** — the dangerous action executes directly within capability and budget; the kill switch still applies.
+- Irreversible skills (`deleteCollection`, `deleteField`) are hard-capped at L2 by the resolver and can never stage or run on autopilot.
+
 ### Load-aware autonomy (Load Guard)
 
 A system that generates load must also sense load. Three guards bound agent-originated work:

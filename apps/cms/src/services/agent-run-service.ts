@@ -37,6 +37,8 @@ export interface AgentRunEnvelope {
   origin?: string;
   /** Governing content intent, when reconciler-originated (write budget scope). */
   intentId?: string;
+  /** Autonomy ceiling from the governing intent (resolver input, Req 7.2). */
+  autonomyCap?: number;
 }
 
 export interface AgentRunContext {

@@ -76,6 +76,7 @@ export async function processAgentRunJob(
     schemaService,
     itemService,
     llm: createConfiguredLLMProvider(deps.env),
+    queue: deps.queue,
   });
 
   try {

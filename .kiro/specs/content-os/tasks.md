@@ -126,14 +126,14 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
   - [ ] 13.3 Property test: demotion bất biến (Property 7)
     - **Validates: Requirements 12.5, 12.6**
 
-- [ ] 14. Veto Window
-  - [ ] 14.1 `veto-service.ts`: dangerous @L3 → staged revision + approval `kind=veto, autoCommitAt`; notify users có quyền veto
+- [x] 14. Veto Window
+  - [x] 14.1 `veto-service.ts`: dangerous @L3 → staged revision + approval `kind=veto, autoCommitAt`; notify users có quyền veto
     - _Requirements: 13.1, 13.2_
-  - [ ] 14.2 Commit job qua queue: re-check pinnedFields (pin sau staging thắng), promote → live + provenance; retry backoff → incident
+  - [x] 14.2 Commit job qua queue: re-check pinnedFields (pin sau staging thắng), promote → live + provenance; retry backoff → incident
     - _Requirements: 13.3, 13.5, 8.6_
-  - [ ] 14.3 Veto path: huỷ staging + rollback + incident(source=veto) + demotion signal
+  - [x] 14.3 Veto path: huỷ staging + rollback + incident(source=veto) + demotion signal
     - _Requirements: 13.4_
-  - [ ] 14.4 Property test: veto window (Property 6)
+  - [x] 14.4 Property test: veto window (Property 6)
     - **Validates: Requirements 13.1, 13.3, 13.4, 8.6**
 
 - [ ] 15. Kill Switch

@@ -297,6 +297,10 @@ export const agentApprovals = pgTable(
     subjectId: text('subject_id').notNull(),
     status: text('status').default('pending').notNull(),
     approvalPolicy: text('approval_policy').default('before_execute').notNull(),
+    /** `approval` (pre-execute HITL) | `veto` (L3 post-veto window). */
+    kind: text('kind').default('approval').notNull(),
+    /** Veto window deadline: staged work auto-commits here unless vetoed. */
+    autoCommitAt: timestamp('auto_commit_at'),
     requestedByAgent: text('requested_by_agent').default('lumibase-copilot').notNull(),
     decidedBy: text('decided_by').references(() => users.id, { onDelete: 'set null' }),
     decisionReason: text('decision_reason'),

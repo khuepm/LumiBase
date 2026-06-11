@@ -4,10 +4,12 @@ import { and, eq } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
 import type { ConfiguredLLM } from './llm-provider';
+import type { QueueProvider } from '@lumibase/runtime';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
-import { AutonomyService } from './autonomy-service';
+import { AUTONOMY_LEVELS, AutonomyService } from './autonomy-service';
 import { getLoadGuard } from './load-guard-service';
 import { ToolRegistryService } from './tool-registry-service';
+import { VetoService } from './veto-service';
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
@@ -63,6 +65,8 @@ export interface AISecureHarnessConfig {
    * Omit entirely to keep offline deterministic handlers (tests).
    */
   llm?: ConfiguredLLM | null;
+  /** Queue provider for veto-window commit jobs and dead letters. */
+  queue?: QueueProvider;
   /** Enables first-class agent_goals/runs/tool_calls audit for tests or non-service callers. */
   enableAgentHarnessAudit?: boolean;
 }
@@ -133,6 +137,41 @@ function isWriteSkill(tool: { requiredCapabilities?: unknown }): boolean {
     ? (tool.requiredCapabilities as string[])
     : [];
   return caps.some((cap) => /:(write|update|create|delete)$/.test(cap));
+}
+
+/**
+ * Skills whose effects cannot be reverted from revisions (dropped schema
+ * loses data). The autonomy resolver hard-caps them at L2 — they never
+ * stage into the veto window or run on autopilot (Req 12.7).
+ */
+const IRREVERSIBLE_SKILLS = new Set(['deleteCollection', 'deleteField']);
+
+/** The capability whose autonomy grant governs a dangerous skill. */
+function primaryDangerousCapability(
+  tool: { requiredCapabilities?: unknown },
+  skillName: string,
+): string {
+  const caps = Array.isArray(tool.requiredCapabilities)
+    ? (tool.requiredCapabilities as string[])
+    : [];
+  return caps.find((cap) => /:(write|update|create|delete)$/.test(cap)) ?? caps[0] ?? skillName;
+}
+
+/**
+ * Only single-item data patches stage into the veto window in v1 — the
+ * staged delta has a well-defined before/after and commit path.
+ */
+function isStageableItemPatch(skillName: string, args: Record<string, unknown>): boolean {
+  return (
+    skillName === 'updateItem' &&
+    typeof args['collection'] === 'string' &&
+    typeof args['id'] === 'string' &&
+    typeof args['data'] === 'object' &&
+    args['data'] !== null &&
+    !Array.isArray(args['data']) &&
+    Object.keys(args['data'] as Record<string, unknown>).length > 0 &&
+    args['status'] === undefined
+  );
 }
 
 /**
@@ -823,11 +862,13 @@ export class AISecureHarness {
   private readonly runService: AgentRunService;
   private readonly toolRegistry: ToolRegistryService;
   private readonly itemService?: ItemService;
+  private readonly queue?: QueueProvider;
 
   constructor(config: AISecureHarnessConfig) {
     this.db = config.db;
     this.siteId = config.siteId;
     this.itemService = config.itemService;
+    this.queue = config.queue;
     this.agentHarnessEnabled = config.enableAgentHarnessAudit ?? Boolean(config.schemaService || config.itemService);
 
     // When services are provided, build fresh skills wired to real services.
@@ -1033,6 +1074,98 @@ export class AISecureHarness {
     const isDangerous = this.evaluateRisk(tool, skillName) || policy.risk === 'dangerous' || policy.risk === 'review_required';
 
     if (isDangerous) {
+      // Trust gradient (L0-L4): the effective level decides whether the
+      // dangerous action awaits approval (≤L2), stages into the veto
+      // window (L3) or executes directly (L4). Irreversible skills never
+      // resolve above L2 via the resolver's hard ceiling.
+      const autonomy = new AutonomyService({ db: this.db, siteId: this.siteId });
+      const agentRole = envelope.agentName ?? run.agentName;
+      const capability = primaryDangerousCapability(tool, skillName);
+      const level = await autonomy.resolve(agentRole, capability, {
+        dangerous: true,
+        intentCap: envelope.autonomyCap ?? null,
+        irreversible: IRREVERSIBLE_SKILLS.has(skillName),
+      });
+
+      // L3 veto window: stageable item writes execute into staging and
+      // auto-commit at the deadline unless a human vetoes (Req 13.1).
+      if (level === AUTONOMY_LEVELS.VETO_WINDOW && isStageableItemPatch(skillName, args)) {
+        const vetoWindowMs = Number((envelope.budget ?? {})['vetoWindowMs']) || undefined;
+        const veto = new VetoService({ db: this.db, siteId: this.siteId, vetoWindowMs });
+        try {
+          const staged = await veto.stageItemPatch({
+            runId: run.runId,
+            agentRole,
+            capability,
+            collection: String(args['collection']),
+            itemId: String(args['id']),
+            patch: args['data'] as Record<string, unknown>,
+          });
+          await this.runService.finishToolCall(toolCallId, {
+            status: 'pending_approval',
+            output: {
+              staged: true,
+              vetoApprovalId: staged.approvalId,
+              revisionId: staged.revisionId,
+              autoCommitAt: staged.autoCommitAt.toISOString(),
+              reviewPath: staged.reviewPath,
+            },
+            approvalId: staged.approvalId,
+            latencyMs: Date.now() - startedAt,
+          });
+          await this.runService.closeRun(run.runId, {
+            toolCalls: 1,
+            stopReason: 'staged_veto_window',
+            vetoApprovalId: staged.approvalId,
+          });
+          await veto.scheduleCommit(staged, this.queue);
+          return {
+            status: 'pending_approval',
+            approvalId: staged.approvalId,
+            agentApprovalId: staged.approvalId,
+            message: `Staged; auto-commits at ${staged.autoCommitAt.toISOString()} unless vetoed`,
+            ...run,
+            toolCallId,
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          await this.runService.finishToolCall(toolCallId, {
+            status: 'failed',
+            error: message,
+            latencyMs: Date.now() - startedAt,
+          });
+          await this.runService.failRun(run.runId, message);
+          return { status: 'denied', message, ...run, toolCallId };
+        }
+      }
+
+      // L4 autopilot: execute directly within capability and budget.
+      if (level >= AUTONOMY_LEVELS.AUTOPILOT) {
+        const result = await this.runSkill(skillName, args, { runId: run.runId });
+        if (result.success) {
+          await this.runService.finishToolCall(toolCallId, {
+            status: 'executed',
+            output: result.data,
+            latencyMs: Date.now() - startedAt,
+          });
+          await this.runService.closeRun(run.runId, {
+            toolCalls: 1,
+            lastToolLatencyMs: Date.now() - startedAt,
+            autonomyLevel: level,
+            ...extractLLMMeta(result.data),
+          });
+          return { status: 'executed', data: result.data, ...run, toolCallId };
+        }
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'failed',
+          error: result.error,
+          latencyMs: Date.now() - startedAt,
+        });
+        await this.runService.failRun(run.runId, result.error, { toolCalls: 1 });
+        return { status: 'denied', message: result.error, ...run, toolCallId };
+      }
+
+      // ≤L2 (or L3 without a stageable patch): classic pre-execute HITL.
       // Create approval record and return pending_approval
       const [record] = await this.db
         .insert(aiApprovals)
