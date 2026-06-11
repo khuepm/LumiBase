@@ -6,12 +6,9 @@ import cron from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { bootstrapNodeObservability } from './observability/node';
-import app from './index';
-import type { Bindings } from './env';
-import { loadSecretFiles, validateProductionConfig } from './config/production';
-import { runScheduledRotation } from './modules/audit/scheduled';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { createPressureLimiter } from './pressure-limiter';
+import type { Bindings } from './env';
 
 async function main() {
   loadSecretFiles();
@@ -21,33 +18,29 @@ async function main() {
   // OpenTelemetry auto-instrumentations can patch supported modules early.
   const observability = await bootstrapNodeObservability(process.env);
   const { default: app } = await import('./index');
-const port = parseInt(process.env.PORT || '1989', 10);
-const runtime = createRuntime(process.env as unknown as Record<string, unknown>);
-const pressureLimiter = createPressureLimiter(process.env as Record<string, string | undefined>);
 
   const port = parseInt(process.env.PORT || '1989', 10);
   const runtime = createRuntime(process.env as unknown as Record<string, unknown>);
+  const pressureLimiter = createPressureLimiter(process.env as Record<string, string | undefined>);
 
   // Inject runtime into Hono context for all requests.
   app.use('*', async (c, next) => {
     c.set('runtime', runtime);
     await next();
   });
-const server = serve({
-  fetch: (request, nodeBindings) => {
-    const pressureResponse = pressureLimiter.handle(request);
-    if (pressureResponse) return pressureResponse;
 
-    return app.fetch(
-      request,
-      { ...process.env, ...nodeBindings } as unknown as Bindings,
-    );
-  },
-  port,
-});
-console.log(`[lumibase-cms] Started in ${runtime.runtime} mode on port ${port}`);
+  const server = serve({
+    fetch: (request, nodeBindings) => {
+      const pressureResponse = pressureLimiter.handle(request);
+      if (pressureResponse) return pressureResponse;
 
-  const server = serve({ fetch: app.fetch, port });
+      return app.fetch(
+        request,
+        { ...process.env, ...nodeBindings } as unknown as Bindings,
+      );
+    },
+    port,
+  });
   console.log(`[lumibase-cms] Started in ${runtime.runtime} mode on port ${port}`);
 
   // ── Audit-log retention rotation (admin-setup-wizard task 11.4; Req 15.5;
@@ -90,10 +83,10 @@ console.log(`[lumibase-cms] Started in ${runtime.runtime} mode on port ${port}`)
   process.on('SIGTERM', () => {
     console.log('[lumibase-cms] SIGTERM received, shutting down...');
 
-  // Stop the hourly audit-rotation cron and pressure sampler so their timers
-  // can't keep the event loop alive past the server close (task 11.4).
-  rotationTask.stop();
-  pressureLimiter.stop();
+    // Stop the hourly audit-rotation cron and pressure sampler so their timers
+    // can't keep the event loop alive past the server close (task 11.4).
+    rotationTask.stop();
+    pressureLimiter.stop();
 
     // Force exit after 10 seconds if graceful shutdown stalls
     const forceTimeout = setTimeout(() => {
