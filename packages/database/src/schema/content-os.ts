@@ -160,3 +160,32 @@ export const contentDrifts = pgTable(
     siteItemIdx: index('content_drifts_site_item_idx').on(t.siteId, t.itemId),
   }),
 );
+
+/**
+ * Kill switch freezes (scope `site` or `role`). A row with `liftedAt IS
+ * NULL` is an active freeze; the table doubles as the audit trail of who
+ * froze/lifted what, when and why (Req 14.5). Run cancellation and intent
+ * pausing reuse their own state (agent_runs.status, content_intents.status).
+ */
+export const agentFreezes = pgTable(
+  'agent_freezes',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** `site` | `role` */
+    scope: text('scope').notNull(),
+    /** Frozen agent role when scope='role'. */
+    targetRole: text('target_role'),
+    reason: text('reason'),
+    frozenBy: text('frozen_by').references(() => users.id, { onDelete: 'set null' }),
+    liftedAt: timestamp('lifted_at'),
+    liftedBy: text('lifted_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    siteActiveIdx: index('agent_freezes_site_active_idx').on(t.siteId, t.liftedAt),
+    siteScopeIdx: index('agent_freezes_site_scope_idx').on(t.siteId, t.scope, t.targetRole),
+  }),
+);

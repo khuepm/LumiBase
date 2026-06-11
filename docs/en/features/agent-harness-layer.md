@@ -109,6 +109,16 @@ When a dangerous skill reaches Step 3, the harness resolves the effective autono
 - **L4 (autopilot)** — the dangerous action executes directly within capability and budget; the kill switch still applies.
 - Irreversible skills (`deleteCollection`, `deleteField`) are hard-capped at L2 by the resolver and can never stage or run on autopilot.
 
+### Kill switch (the human "stop" right)
+
+Four escalating scopes, all behind `POST /api/v1/agent/kill-switch` with `{ scope: run | intent | role | site, targetId?, reason? }`:
+
+- **cancel run** — delegates to the run state machine (boundary cancellation from the async-runs work).
+- **pause intent** — flips the intent's status; the reconciler stops generating goals for it.
+- **freeze role / freeze site** — recorded as `agent_freezes` rows (`liftedAt IS NULL` = active; the table doubles as the audit trail with actor, scope, reason and timestamps). The harness consults the freeze state **before creating any goal/run and at every tool-call boundary**: an in-flight handler finishes, the next call is denied and the run is cancelled with stopReason `frozen`. A site freeze dominates every role; a role freeze blocks exactly that role. Approved-and-resumed executions are denied the same way — the kill switch wins over approvals.
+
+Freezing/lifting a role or site requires the `agents:freeze` capability (admin included). While a site is frozen, `POST /api/v1/agent/goals` returns `423 FROZEN` and the reconciler creates no goals — read endpoints keep working. `GET /api/v1/agent/kill-switch` lists active freezes plus history; `POST /api/v1/agent/kill-switch/lift` restores execution.
+
 ### Load-aware autonomy (Load Guard)
 
 A system that generates load must also sense load. Three guards bound agent-originated work:

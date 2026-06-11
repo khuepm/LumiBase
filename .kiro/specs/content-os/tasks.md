@@ -136,12 +136,12 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
   - [x] 14.4 Property test: veto window (Property 6)
     - **Validates: Requirements 13.1, 13.3, 13.4, 8.6**
 
-- [ ] 15. Kill Switch
-  - [ ] 15.1 `kill-switch-service.ts` + route: 4 mức (cancel run / pause intent / freeze role / freeze site); enforce tại tool-call boundary; capability `agents:freeze`; audit đầy đủ
+- [x] 15. Kill Switch
+  - [x] 15.1 `kill-switch-service.ts` + route: 4 mức (cancel run / pause intent / freeze role / freeze site); enforce tại tool-call boundary; capability `agents:freeze`; audit đầy đủ
     - _Requirements: 14.1, 14.2, 14.3, 14.5_
-  - [ ] 15.2 Site frozen → từ chối goal/run mới, đọc vẫn hoạt động
+  - [x] 15.2 Site frozen → từ chối goal/run mới, đọc vẫn hoạt động
     - _Requirements: 14.4_
-  - [ ] 15.3 Property test: kill switch (Property 10)
+  - [x] 15.3 Property test: kill switch (Property 10)
     - **Validates: Requirements 14.2**
 
 - [ ] 16. Constitution

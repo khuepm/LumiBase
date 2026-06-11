@@ -7,6 +7,7 @@ import type { ConfiguredLLM } from './llm-provider';
 import type { QueueProvider } from '@lumibase/runtime';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
 import { AUTONOMY_LEVELS, AutonomyService } from './autonomy-service';
+import { KillSwitchService } from './kill-switch-service';
 import { getLoadGuard } from './load-guard-service';
 import { ToolRegistryService } from './tool-registry-service';
 import { VetoService } from './veto-service';
@@ -960,6 +961,23 @@ export class AISecureHarness {
       return this.executeLegacy(skillName, args, userCapabilities, contextMessage);
     }
 
+    // Kill switch (Req 14.2/14.4): a frozen site/role blocks before any
+    // goal/run is created; an in-flight run hitting this boundary is
+    // cancelled with stopReason 'frozen'. Reads are untouched.
+    const killSwitch = new KillSwitchService({ db: this.db, siteId: this.siteId });
+    const frozenScope = await killSwitch.frozenScopeFor(envelope.agentName ?? 'lumibase-copilot');
+    if (frozenScope) {
+      if (envelope.runId) {
+        await this.runService.cancelRun(envelope.runId, 'frozen');
+      }
+      return {
+        status: 'denied',
+        message: `frozen: agent runtime is frozen for this ${frozenScope}`,
+        ...(envelope.goalId ? { goalId: envelope.goalId } : {}),
+        ...(envelope.runId ? { runId: envelope.runId } : {}),
+      };
+    }
+
     const run = await this.runService.ensureRun({
       ...envelope,
       title: envelope.title ?? `Run ${skillName}`,
@@ -1424,6 +1442,18 @@ export class AISecureHarness {
       // Resume the parked run; only the approved tool call executes —
       // previously completed tool calls are never re-run (Req 3.4).
       await this.runService.markRunning(run.runId);
+    }
+
+    // Kill switch wins over approvals: a frozen site/role denies the
+    // approved execution at this boundary (Req 14.2).
+    const approvalKillSwitch = new KillSwitchService({ db: this.db, siteId: this.siteId });
+    const approvalFrozenScope = await approvalKillSwitch.frozenScopeFor(record.agentName);
+    if (approvalFrozenScope) {
+      return {
+        status: 'denied',
+        message: `frozen: agent runtime is frozen for this ${approvalFrozenScope}`,
+        runId: run.runId,
+      };
     }
     const startedAt = Date.now();
     const toolCallId = await this.runService.appendToolCall({

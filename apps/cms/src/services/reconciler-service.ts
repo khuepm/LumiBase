@@ -6,6 +6,7 @@ import {
 } from '@lumibase/database';
 import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
 import { AutonomyService } from './autonomy-service';
+import { KillSwitchService } from './kill-switch-service';
 import { isWithinMaintenanceWindow, type MaintenanceWindow } from './load-guard-service';
 
 /**
@@ -113,6 +114,12 @@ export class ReconcilerService {
     // is a no-op — open drifts stay queued for the next in-window cycle.
     if (!isWithinMaintenanceWindow(intent.maintenanceWindow as MaintenanceWindow | null)) {
       return { goalsCreated: 0, deferred: 0, breakerTripped: false, outsideWindow: true };
+    }
+
+    // Kill switch (Req 14.4): a frozen site creates no new goals.
+    const killSwitch = new KillSwitchService({ db: this.deps.db, siteId: this.deps.siteId });
+    if (await killSwitch.isSiteFrozen()) {
+      return { goalsCreated: 0, deferred: 0, breakerTripped: false };
     }
 
     if (await this.breakerShouldTrip(intentId)) {

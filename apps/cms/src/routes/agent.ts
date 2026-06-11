@@ -86,6 +86,17 @@ agentRouter.post('/goals', async (c) => {
   const auth = c.get('auth');
   const queue = c.get('runtime').queue;
 
+  // A frozen site rejects new goal/run creation; reads stay available (Req 14.4).
+  {
+    const { KillSwitchService } = await import('../services/kill-switch-service');
+    if (await new KillSwitchService({ db, siteId }).isSiteFrozen()) {
+      return c.json(
+        { errors: [{ code: 'FROZEN', message: 'Agent runtime is frozen for this site; lift the kill switch to create goals.' }] },
+        423,
+      );
+    }
+  }
+
   if (parsed.data.execution === 'async') {
     if (!parsed.data.task) {
       return c.json(
@@ -146,6 +157,87 @@ agentRouter.post('/goals', async (c) => {
   }
 
   return c.json({ data: goal }, 201);
+});
+
+// ── Kill switch (content-os task 15; Req 14.1-14.5) ─────────────────────────
+
+const killSwitchSchema = z.object({
+  scope: z.enum(['run', 'intent', 'role', 'site']),
+  targetId: z.string().min(1).optional(),
+  reason: z.string().max(500).optional(),
+});
+
+function canFreeze(c: Context<AppEnv>): boolean {
+  const roles = c.get('auth').roles ?? [];
+  return roles.includes('admin') || roles.includes('agents:freeze') || roles.includes('*');
+}
+
+function canOperateAgents(c: Context<AppEnv>): boolean {
+  const roles = c.get('auth').roles ?? [];
+  return roles.includes('admin') || roles.includes('agents:freeze') || roles.includes('*');
+}
+
+/** Active freezes + recent freeze/lift history. */
+agentRouter.get('/kill-switch', async (c) => {
+  const { KillSwitchService } = await import('../services/kill-switch-service');
+  const service = new KillSwitchService({ db: c.get('db'), siteId: c.get('siteId') });
+  return c.json({ data: { active: await service.listActive(), history: await service.listHistory(50) } });
+});
+
+agentRouter.post('/kill-switch', async (c) => {
+  const parsed = killSwitchSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+  // Freezing a role/site requires the dedicated capability (Req 14.3);
+  // run/intent scopes accept the same operators.
+  const allowed = parsed.data.scope === 'role' || parsed.data.scope === 'site' ? canFreeze(c) : canOperateAgents(c);
+  if (!allowed) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Capability "agents:freeze" is required.' }] },
+      403,
+    );
+  }
+  const { KillSwitchService, KillSwitchError } = await import('../services/kill-switch-service');
+  const service = new KillSwitchService({ db: c.get('db'), siteId: c.get('siteId') });
+  try {
+    const data = await service.activate(parsed.data, c.get('auth').userId ?? null);
+    return c.json({ data });
+  } catch (err) {
+    if (err instanceof KillSwitchError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
+agentRouter.post('/kill-switch/lift', async (c) => {
+  const parsed = z
+    .object({ scope: z.enum(['role', 'site']), targetId: z.string().min(1).optional() })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+  if (!canFreeze(c)) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Capability "agents:freeze" is required.' }] },
+      403,
+    );
+  }
+  const { KillSwitchService, KillSwitchError } = await import('../services/kill-switch-service');
+  const service = new KillSwitchService({ db: c.get('db'), siteId: c.get('siteId') });
+  try {
+    const data = await service.lift(parsed.data.scope, {
+      targetRole: parsed.data.targetId,
+      actor: c.get('auth').userId ?? null,
+    });
+    return c.json({ data });
+  } catch (err) {
+    if (err instanceof KillSwitchError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
 });
 
 // ── Veto window (content-os task 14; Req 13.2/13.4/13.6) ────────────────────

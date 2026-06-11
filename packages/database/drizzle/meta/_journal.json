@@ -169,6 +169,13 @@
       "when": 1781600400000,
       "tag": "0023_content_os_veto_window",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1781686800000,
+      "tag": "0024_content_os_kill_switch",
+      "breakpoints": true
     }
   ]
 }
