@@ -1,6 +1,7 @@
 import {
   activity,
   collections,
+  contentIntents,
   extensions as extensionsTable,
   items,
   relations,
@@ -572,6 +573,25 @@ export class ItemService {
       .limit(1);
     if (!rawRow) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
 
+    // Law Zero: agents never overwrite fields a human pinned.
+    const pinnedFields = Array.isArray(rawRow.pinnedFields)
+      ? (rawRow.pinnedFields as string[])
+      : [];
+    if (patch.data) {
+      const blocked = blockedPinnedFields(
+        pinnedFields,
+        Object.keys(patch.data),
+        this.provenance.authorType,
+      );
+      if (blocked.length > 0) {
+        throw new ItemServiceError(
+          'PINNED_BY_HUMAN',
+          `Field(s) pinned by a human edit: ${blocked.join(', ')}. Release the pin to allow agent writes.`,
+          403,
+        );
+      }
+    }
+
     const currentData = await this.processCrypto(collectionName, rawRow.data as Record<string, unknown>, 'decrypt', true);
 
     const merged: Record<string, unknown> = patch.data
@@ -610,12 +630,24 @@ export class ItemService {
     }));
     const encryptedFinal = await this.processCrypto(collectionName, finalData, 'encrypt', true);
 
+    // Law Zero: human edits on intent-governed collections pin the fields
+    // they touched so the reconciler never argues with a person.
+    const nextPinned = patch.data
+      ? computeNextPinnedFields(
+          pinnedFields,
+          Object.keys(patch.data),
+          this.provenance.authorType,
+          await this.isIntentGoverned(coll.name),
+        )
+      : pinnedFields;
+
     const [row] = await this.deps.db
       .update(items)
       .set({
         data: encryptedFinal,
         status: finalStatus,
         sort: finalSort,
+        pinnedFields: nextPinned,
         userUpdated: this.deps.userId ?? null,
         updatedAt: new Date(),
       })
@@ -634,6 +666,10 @@ export class ItemService {
 
     await this.writeRevision(coll.id, id, encryptedFinal, rawRow.data as Record<string, unknown>);
     await this.writeActivity('update', coll.name, id, { patch });
+    const addedPins = nextPinned.filter((field) => !pinnedFields.includes(field));
+    if (addedPins.length > 0) {
+      await this.writeActivity('pin', coll.name, id, { fields: addedPins });
+    }
     
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', false);
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
@@ -1150,6 +1186,74 @@ export class ItemService {
     }
   }
 
+  /** True when an active content intent governs this collection (Law Zero). */
+  private async isIntentGoverned(collectionName: string): Promise<boolean> {
+    try {
+      const [intent] = await this.deps.db
+        .select({ id: contentIntents.id })
+        .from(contentIntents)
+        .where(
+          and(
+            eq(contentIntents.siteId, this.deps.siteId),
+            eq(contentIntents.collection, collectionName),
+            eq(contentIntents.status, 'active'),
+          ),
+        )
+        .limit(1);
+      return Boolean(intent);
+    } catch {
+      // Intent lookup must never block a human write.
+      return false;
+    }
+  }
+
+  /** Lists pinned fields for an item. */
+  async listPins(collectionName: string, id: string): Promise<{ pinnedFields: string[] }> {
+    const coll = await this.resolveCollection(collectionName);
+    await this.perm(collectionName, 'read');
+    const [row] = await this.deps.db
+      .select({ pinnedFields: items.pinnedFields })
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          eq(items.id, id),
+          isNull(items.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+    return { pinnedFields: Array.isArray(row.pinnedFields) ? (row.pinnedFields as string[]) : [] };
+  }
+
+  /**
+   * Releases a human pin, handing the field back to agents. Audited with
+   * the releasing actor (Req 8.4).
+   */
+  async releasePin(collectionName: string, id: string, field: string): Promise<{ pinnedFields: string[] }> {
+    const coll = await this.resolveCollection(collectionName);
+    await this.perm(collectionName, 'update');
+    const { pinnedFields } = await this.listPins(collectionName, id);
+    if (!pinnedFields.includes(field)) {
+      throw new ItemServiceError('NOT_PINNED', `Field "${field}" is not pinned.`, 404);
+    }
+    const next = pinnedFields.filter((f) => f !== field);
+    await this.deps.db
+      .update(items)
+      .set({ pinnedFields: next, updatedAt: new Date() })
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          eq(items.id, id),
+          isNull(items.deletedAt),
+        ),
+      );
+    await this.writeActivity('pin.release', coll.name, id, { field });
+    return { pinnedFields: next };
+  }
+
   private async writeRevision(
     collectionId: string,
     itemId: string,
@@ -1186,6 +1290,36 @@ export class ItemService {
       payload,
     });
   }
+}
+
+/**
+ * Law Zero (override-is-law) helpers. Pure functions so pin semantics can be
+ * property-tested in isolation.
+ */
+
+/** Returns the patched fields that are blocked for agents by a human pin. */
+export function blockedPinnedFields(
+  pinnedFields: readonly string[],
+  patchKeys: readonly string[],
+  authorType: 'human' | 'agent',
+): string[] {
+  if (authorType !== 'agent') return [];
+  const pinned = new Set(pinnedFields);
+  return patchKeys.filter((key) => pinned.has(key));
+}
+
+/**
+ * Computes the next pin set after a write. Human edits on intent-governed
+ * collections pin the touched fields; agent writes never alter pins.
+ */
+export function computeNextPinnedFields(
+  pinnedFields: readonly string[],
+  patchKeys: readonly string[],
+  authorType: 'human' | 'agent',
+  intentGoverned: boolean,
+): string[] {
+  if (authorType !== 'human' || !intentGoverned) return [...pinnedFields];
+  return [...new Set([...pinnedFields, ...patchKeys])];
 }
 
 export function assertWritablePermissionFields(

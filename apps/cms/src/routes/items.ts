@@ -220,3 +220,28 @@ itemsRouter.post('/:collection/:id/revert/:revisionId', async (c) => {
     return c.json(body, status as 400);
   }
 });
+
+// Law Zero pins — fields locked against agent writes by a human edit.
+itemsRouter.get('/:collection/:id/pins', async (c) => {
+  try {
+    const data = await buildService(c).listPins(c.req.param('collection'), c.req.param('id'));
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.delete('/:collection/:id/pins/:field', async (c) => {
+  try {
+    const data = await buildService(c).releasePin(
+      c.req.param('collection'),
+      c.req.param('id'),
+      c.req.param('field'),
+    );
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});

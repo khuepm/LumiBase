@@ -163,6 +163,7 @@ If future evaluation runners depend on runtime-specific APIs, they must be featu
 
 - All agent tables are scoped by `siteId`.
 - Item revisions carry provenance: skill-driven writes are stamped `authorType='agent'` with the executing `createdByRunId`, while Studio/API writes by people record `authorType='human'`. The harness sets this on the ItemService before any skill handler runs.
+- **Law Zero (override-is-law):** human edits on collections governed by an active content intent pin the touched fields (`items.pinnedFields`). Agent writes to pinned fields are denied at the ItemService boundary with `PINNED_BY_HUMAN`; pins are listed/released via `GET/DELETE /api/v1/items/:collection/:id/pins[/:field]` and every pin/release is audited in the activity log.
 - Tool inputs and memory context are redacted/masked before audit or prompt assembly.
 - Prompt text cannot grant permissions; only policy snapshots and capability grants can.
 - Approval decisions are recorded with actor, decision, reason, and timestamps.
