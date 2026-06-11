@@ -148,6 +148,13 @@
       "when": 1781341200000,
       "tag": "0020_content_os_intents",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1781427600000,
+      "tag": "0021_content_os_trust_ledger",
+      "breakpoints": true
     }
   ]
 }

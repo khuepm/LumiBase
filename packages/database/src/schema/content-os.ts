@@ -13,6 +13,69 @@ const id = () => text('id').$defaultFn(() => nanoid()).primaryKey();
 const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
+/**
+ * Earned autonomy: per (site, agentRole, capability) trust level.
+ * L0 shadow · L1 propose · L2 co-sign · L3 veto-window · L4 autopilot.
+ * Promotions require human approval; demotions are automatic on incidents.
+ */
+export const agentAutonomyGrants = pgTable(
+  'agent_autonomy_grants',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    agentRole: text('agent_role').notNull(),
+    capability: text('capability').notNull(),
+    /** 0-4; see autonomy-service for level semantics. */
+    level: integer('level').default(2).notNull(),
+    /** Promotion/demotion evidence: eval streaks, approve rate, incidents. */
+    evidence: jsonb('evidence').default({}).notNull(),
+    grantedBy: text('granted_by').references(() => users.id, { onDelete: 'set null' }),
+    grantedAt: timestamp('granted_at').defaultNow().notNull(),
+    expiresAt: timestamp('expires_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteRoleCapUnique: uniqueIndex('agent_autonomy_site_role_cap_unique').on(
+      t.siteId,
+      t.agentRole,
+      t.capability,
+    ),
+    siteRoleIdx: index('agent_autonomy_site_role_idx').on(t.siteId, t.agentRole),
+  }),
+);
+
+/**
+ * Incidents feed automatic demotion (trust ledger) and the exception inbox.
+ * Sources: veto, eval_fail, human_report, load_guard, runtime_error.
+ */
+export const agentIncidents = pgTable(
+  'agent_incidents',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    agentRole: text('agent_role').notNull(),
+    capability: text('capability'),
+    source: text('source').notNull(),
+    /** `low` | `medium` | `high` */
+    severity: text('severity').default('medium').notNull(),
+    runId: text('run_id'),
+    detail: jsonb('detail').default({}).notNull(),
+    resolvedAt: timestamp('resolved_at'),
+    resolvedBy: text('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    siteCreatedIdx: index('agent_incidents_site_created_idx').on(t.siteId, t.createdAt),
+    siteRoleIdx: index('agent_incidents_site_role_idx').on(t.siteId, t.agentRole),
+    siteOpenIdx: index('agent_incidents_site_open_idx').on(t.siteId, t.resolvedAt),
+  }),
+);
+
 export const contentIntents = pgTable(
   'content_intents',
   {
