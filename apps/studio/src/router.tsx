@@ -24,6 +24,7 @@ import {
 // Heavy dependencies (Monaco, WYSIWYG, etc.) are pulled in only when needed.
 // ---------------------------------------------------------------------------
 const AccessLayout = lazy(() => import('./modules/access/layout').then((m) => ({ default: m.AccessLayout })));
+const SettingsLayout = lazy(() => import('./modules/settings/layout').then((m) => ({ default: m.SettingsLayout })));
 const ApiKeysPage = lazy(() => import('./modules/access/api-keys-page').then((m) => ({ default: m.ApiKeysPage })));
 const AccessImportExportPage = lazy(() => import('./modules/access/import-export-page').then((m) => ({ default: m.AccessImportExportPage })));
 const PermissionMatrixPage = lazy(() => import('./modules/access/permission-matrix').then((m) => ({ default: m.PermissionMatrixPage })));
@@ -540,99 +541,138 @@ const adminPathFilesRoute = createRoute({
   )),
 });
 
-const settingsTypesRoute = createRoute({
+const settingsRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
-  path: '/settings/developer/types',
+  path: '/settings',
+  component: withSuspense(() => (
+    <SettingsLayout>
+      <Outlet />
+    </SettingsLayout>
+  )),
+});
+
+const settingsIndexRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/settings/translations' });
+  },
+});
+
+const settingsTypesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'developer/types',
   component: withSuspense(DeveloperTypesPage),
 });
 
 const translationsRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/settings/translations',
+  getParentRoute: () => settingsRoute,
+  path: 'translations',
   component: withSuspense(TranslationsPage),
 });
 
 const webhooksRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/settings/webhooks',
+  getParentRoute: () => settingsRoute,
+  path: 'webhooks',
   component: withSuspense(WebhooksPage),
 });
 
 const activityRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/settings/activity',
+  getParentRoute: () => settingsRoute,
+  path: 'activity',
   component: withSuspense(ActivityPage),
 });
 
 const extensionsRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/settings/extensions',
+  getParentRoute: () => settingsRoute,
+  path: 'extensions',
   component: withSuspense(ExtensionsPage),
 });
 
 const marketplaceRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/settings/marketplace',
+  getParentRoute: () => settingsRoute,
+  path: 'marketplace',
   component: withSuspense(MarketplacePage),
 });
 
 const updatesRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/settings/updates',
+  getParentRoute: () => settingsRoute,
+  path: 'updates',
   component: withSuspense(UpdatesPage),
 });
 
 const agentHarnessRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/settings/agent-harness',
+  getParentRoute: () => settingsRoute,
+  path: 'agent-harness',
   component: withSuspense(AgentHarnessPage),
 });
 
-const adminPathSettingsTypesRoute = createRoute({
+const adminPathSettingsRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/developer/types',
+  path: '/$adminPath/settings',
+  component: withSuspense(() => (
+    <SettingsLayout>
+      <Outlet />
+    </SettingsLayout>
+  )),
+});
+
+const adminPathSettingsIndexRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: '/',
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: '/$adminPath/settings/translations',
+      params: { adminPath: params.adminPath },
+    });
+  },
+});
+
+const adminPathSettingsTypesRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'developer/types',
   component: withSuspense(DeveloperTypesPage),
 });
 
 const adminPathTranslationsRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/translations',
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'translations',
   component: withSuspense(TranslationsPage),
 });
 
 const adminPathWebhooksRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/webhooks',
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'webhooks',
   component: withSuspense(WebhooksPage),
 });
 
 const adminPathActivityRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/activity',
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'activity',
   component: withSuspense(ActivityPage),
 });
 
 const adminPathExtensionsRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/extensions',
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'extensions',
   component: withSuspense(ExtensionsPage),
 });
 
 const adminPathMarketplaceRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/marketplace',
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'marketplace',
   component: withSuspense(MarketplacePage),
 });
 
 const adminPathUpdatesRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/updates',
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'updates',
   component: withSuspense(UpdatesPage),
 });
 
 const adminPathAgentHarnessRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/agent-harness',
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'agent-harness',
   component: withSuspense(AgentHarnessPage),
 });
 
@@ -895,14 +935,17 @@ const routeTree = rootRoute.addChildren([
     dataModelNewRoute,
     dataModelDetailRoute,
     filesRoute,
-    settingsTypesRoute,
-    translationsRoute,
-    webhooksRoute,
-    activityRoute,
-    extensionsRoute,
-    marketplaceRoute,
-    updatesRoute,
-    agentHarnessRoute,
+    settingsRoute.addChildren([
+      settingsIndexRoute,
+      settingsTypesRoute,
+      translationsRoute,
+      webhooksRoute,
+      activityRoute,
+      extensionsRoute,
+      marketplaceRoute,
+      updatesRoute,
+      agentHarnessRoute,
+    ]),
     automationFlowsRoute,
     automationFlowNewRoute,
     automationFlowEditRoute,
@@ -928,14 +971,17 @@ const routeTree = rootRoute.addChildren([
     adminPathDataModelNewRoute,
     adminPathDataModelDetailRoute,
     adminPathFilesRoute,
-    adminPathSettingsTypesRoute,
-    adminPathTranslationsRoute,
-    adminPathWebhooksRoute,
-    adminPathActivityRoute,
-    adminPathExtensionsRoute,
-    adminPathMarketplaceRoute,
-    adminPathUpdatesRoute,
-    adminPathAgentHarnessRoute,
+    adminPathSettingsRoute.addChildren([
+      adminPathSettingsIndexRoute,
+      adminPathSettingsTypesRoute,
+      adminPathTranslationsRoute,
+      adminPathWebhooksRoute,
+      adminPathActivityRoute,
+      adminPathExtensionsRoute,
+      adminPathMarketplaceRoute,
+      adminPathUpdatesRoute,
+      adminPathAgentHarnessRoute,
+    ]),
     adminPathAutomationFlowsRoute,
     adminPathAutomationFlowNewRoute,
     adminPathAutomationFlowEditRoute,
