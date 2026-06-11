@@ -155,6 +155,13 @@
       "when": 1781427600000,
       "tag": "0021_content_os_trust_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1781514000000,
+      "tag": "0022_content_os_drifts",
+      "breakpoints": true
     }
   ]
 }

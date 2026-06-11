@@ -34,6 +34,7 @@ Khai báo trong cột `operations.type`:
 - **`run-extension`** — gọi extension đã mount.
 - **`item.create`** / **`item.update`** / **`item.delete`** — CRUD vào CMS data.
 - **`notify`** — push notification tới user/team.
+- **`drift-scan`** — một chu kỳ reconciliation của Content OS cho một intent (`options.intentId`): quét drift theo rules của `content_intents` (tôn trọng pinned fields, time-box qua `options.timeBudgetMs`, cursor resume), rồi sinh reconciler goals trong budget `maxGoalsPerCycle`. Lên lịch một flow trigger `schedule` per intent theo cron của intent.
 
 ## Graph format
 

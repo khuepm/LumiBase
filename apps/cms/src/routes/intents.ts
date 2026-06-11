@@ -127,6 +127,47 @@ intentsRouter.post('/:id/resume', async (c) => {
   }
 });
 
+/** Open/assigned/resolved drifts detected for an intent. */
+intentsRouter.get('/:id/drifts', async (c) => {
+  try {
+    const { DriftService } = await import('../services/drift-service');
+    const drift = new DriftService({ db: c.get('db'), siteId: c.get('siteId') });
+    const status = c.req.query('status');
+    const data = await drift.listDrifts({
+      intentId: c.req.param('id'),
+      ...(status ? { status } : {}),
+    });
+    return c.json({ data });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+/**
+ * Manual reconciliation cycle: drift scan + goal generation. The same cycle
+ * runs on schedule via the Flows `drift-scan` operation.
+ */
+intentsRouter.post('/:id/scan', async (c) => {
+  if (!canWriteIntents(c)) return forbidden(c);
+  try {
+    const { DriftService, DriftServiceError } = await import('../services/drift-service');
+    const { ReconcilerService } = await import('../services/reconciler-service');
+    const deps = { db: c.get('db'), siteId: c.get('siteId') };
+    try {
+      const scan = await new DriftService(deps).scanIntent(c.req.param('id'));
+      const reconcile = await new ReconcilerService(deps).reconcileIntent(c.req.param('id'));
+      return c.json({ data: { scan, reconcile } });
+    } catch (err) {
+      if (err instanceof DriftServiceError) {
+        return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+      }
+      throw err;
+    }
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
 /** Compile natural language into rules; returns a draft, never persists. */
 intentsRouter.post('/compile', async (c) => {
   if (!canWriteIntents(c)) return forbidden(c);

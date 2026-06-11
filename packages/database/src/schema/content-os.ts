@@ -1,5 +1,6 @@
 import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
+import { agentGoals } from './ai';
 import { sites, users } from './core';
 
 /**
@@ -100,6 +101,11 @@ export const contentIntents = pgTable(
     status: text('status').default('active').notNull(),
     /** Why the intent is in `error` (circuit breaker detail). */
     statusReason: text('status_reason'),
+    /**
+     * Partial-scan resume point (last item id scanned). Null when the last
+     * drift scan completed a full pass (Req 6.5).
+     */
+    scanCursor: text('scan_cursor'),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -108,5 +114,49 @@ export const contentIntents = pgTable(
     siteNameUnique: uniqueIndex('content_intents_site_name_unique').on(t.siteId, t.name),
     siteStatusIdx: index('content_intents_site_status_idx').on(t.siteId, t.status),
     siteCollectionIdx: index('content_intents_site_collection_idx').on(t.siteId, t.collection),
+  }),
+);
+
+/**
+ * Detected drift between content and an intent's rules. One row per
+ * (intent, item, ruleType, ruleKey) — the fingerprint dedupes detection
+ * across scan cycles and the reconciler never creates a second open goal
+ * for the same fingerprint (Properties 4/11).
+ */
+export const contentDrifts = pgTable(
+  'content_drifts',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    intentId: text('intent_id')
+      .notNull()
+      .references(() => contentIntents.id, { onDelete: 'cascade' }),
+    itemId: text('item_id').notNull(),
+    ruleType: text('rule_type').notNull(),
+    /** Disambiguates multiple violations of one rule type (e.g. field name). */
+    ruleKey: text('rule_key').notNull(),
+    /** `${intentId}:${itemId}:${ruleType}:${ruleKey}` — unique per site. */
+    fingerprint: text('fingerprint').notNull(),
+    /** `open` | `assigned` | `resolved` | `stale` */
+    status: text('status').default('open').notNull(),
+    goalId: text('goal_id').references(() => agentGoals.id, { onDelete: 'set null' }),
+    detail: jsonb('detail').default({}).notNull(),
+    resolvedAt: timestamp('resolved_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteFingerprintUnique: uniqueIndex('content_drifts_site_fingerprint_unique').on(
+      t.siteId,
+      t.fingerprint,
+    ),
+    siteIntentStatusIdx: index('content_drifts_site_intent_status_idx').on(
+      t.siteId,
+      t.intentId,
+      t.status,
+    ),
+    siteItemIdx: index('content_drifts_site_item_idx').on(t.siteId, t.itemId),
   }),
 );

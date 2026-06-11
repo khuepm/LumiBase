@@ -119,6 +119,31 @@ registerHandler('mail', async (_ctx, options) => {
   return { queued: true, to: options['to'], subject: options['subject'] };
 });
 
+registerHandler('drift-scan', async (ctx, options) => {
+  // Content OS reconciliation cycle (task 6.3; Req 6.1): scan one intent's
+  // collection for drift, then turn open drift into reconciler goals.
+  // Schedule a flow per intent with the intent's cron in `triggerOptions`.
+  // `db`/`siteId` arrive via the run environment (see routes/flows.ts).
+  const db = ctx.env['db'];
+  const siteId = ctx.env['siteId'];
+  const intentId = options['intentId'] ?? ctx.input['intentId'];
+  if (!db || typeof siteId !== 'string' || typeof intentId !== 'string') {
+    throw new Error('drift-scan requires env.db, env.siteId and an intentId option');
+  }
+
+  // Lazy imports keep the generic flow engine decoupled from Content OS.
+  const { DriftService } = await import('./drift-service');
+  const { ReconcilerService } = await import('./reconciler-service');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const deps = { db: db as any, siteId };
+
+  const scan = await new DriftService(deps).scanIntent(intentId, {
+    timeBudgetMs: Math.min(60_000, Number(options['timeBudgetMs'] ?? 10_000)),
+  });
+  const reconcile = await new ReconcilerService(deps).reconcileIntent(intentId);
+  return { scan, reconcile };
+});
+
 // ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------

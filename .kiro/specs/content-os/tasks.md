@@ -52,22 +52,22 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
   - [x] 5.3 Routes `/api/v1/agent/intents` (capability `intents:write`)
     - _Requirements: 5.2_
 
-- [ ] 6. Drift detection
-  - [ ] 6.1 Bảng `content_drifts` (unique fingerprint per site) + migration
+- [x] 6. Drift detection
+  - [x] 6.1 Bảng `content_drifts` (unique fingerprint per site) + migration
     - _Requirements: 6.3, 17.1_
-  - [ ] 6.2 `drift-service.ts`: rule runners 6 loại v1; skip pinnedFields; partial-scan trong budget thời gian
+  - [x] 6.2 `drift-service.ts`: rule runners 6 loại v1; skip pinnedFields; partial-scan trong budget thời gian
     - _Requirements: 6.2, 6.4, 6.5_
-  - [ ] 6.3 Flows operation type `drift-scan` chạy theo schedule của intent
+  - [x] 6.3 Flows operation type `drift-scan` chạy theo schedule của intent
     - _Requirements: 6.1_
-  - [ ] 6.4 Property tests: Pinned field không sinh drift (Property 5); fingerprint dedupe (Property 4)
+  - [x] 6.4 Property tests: Pinned field không sinh drift (Property 5); fingerprint dedupe (Property 4)
     - **Validates: Requirements 6.3, 6.4, 7.1**
 
-- [ ] 7. Reconciler
-  - [ ] 7.1 `reconciler-service.ts`: drift → goals (`origin='reconciler'`, intentId, driftFingerprint), dedupe, route theo role, autonomy = min(autonomyCap, grant)
+- [x] 7. Reconciler
+  - [x] 7.1 `reconciler-service.ts`: drift → goals (`origin='reconciler'`, intentId, driftFingerprint), dedupe, route theo role, autonomy = min(autonomyCap, grant)
     - _Requirements: 7.1, 7.2, 7.4_
-  - [ ] 7.2 Budget `maxGoalsPerCycle` + circuit breaker (3 fails → intent error + incident + notify)
+  - [x] 7.2 Budget `maxGoalsPerCycle` + circuit breaker (3 fails → intent error + incident + notify)
     - _Requirements: 7.3, 7.5_
-  - [ ] 7.3 Property test: budget per cycle (Property 11)
+  - [x] 7.3 Property test: budget per cycle (Property 11)
     - **Validates: Requirements 7.5**
 
 - [ ] 8. Override-is-law (Pin)
