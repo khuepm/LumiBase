@@ -151,6 +151,12 @@ function isPresent(value) {
   return value !== undefined && value !== null && `${value}`.trim() !== '';
 }
 
+function sanitizeForLog(message) {
+  return `${message}`
+    .replace(/`[^`]*`/g, '`[REDACTED]`')
+    .replace(/\b[A-Z0-9_]*(SECRET|TOKEN|KEY|PASSWORD|CERT|AUDIENCE)[A-Z0-9_]*\b/g, '[REDACTED]');
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const configPath = path.isAbsolute(args.config) ? args.config : path.resolve(REPO_ROOT, args.config);
@@ -209,7 +215,7 @@ function main() {
 
   if (failures.length > 0) {
     console.error('Release config check failed:');
-    for (const failure of failures) console.error(`- ${failure}`);
+    for (const failure of failures) console.error(`- ${sanitizeForLog(failure)}`);
     process.exit(1);
   }
 
