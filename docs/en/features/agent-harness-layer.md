@@ -109,6 +109,13 @@ When a dangerous skill reaches Step 3, the harness resolves the effective autono
 - **L4 (autopilot)** — the dangerous action executes directly within capability and budget; the kill switch still applies.
 - Irreversible skills (`deleteCollection`, `deleteField`) are hard-capped at L2 by the resolver and can never stage or run on autopilot.
 
+### Trust ledger: promotion is human-gated, demotion is automatic
+
+Autonomy levels are **earned**, and the asymmetry is deliberate: trust rises slowly through people, falls instantly through incidents.
+
+- **Promotion** (`trust-ledger-service.ts`) — a periodic sweep (`POST /api/v1/agent/autonomy/promotions/check`, or the `trust-promote-check` flow operation) evaluates every `(agentRole, capability)` grant below L4 against evidence: an unbroken streak of succeeded runs, enough decided approvals at the required approve-rate, and **zero open incidents**. Eligible candidates get a `kind='promotion'` approval proposing exactly **one level up** (capped at L4) with the evidence attached. The proposal is inert until a human decides it (`POST /api/v1/agent/autonomy/promotions/:id/decide`, admin-gated) — there is no auto-commit path for promotions, ever. Pending proposals are deduplicated and listed at `GET /api/v1/agent/autonomy/promotions`; current grants and open incidents at `GET /api/v1/agent/autonomy`.
+- **Demotion** — event-driven from incident insert: −1 level immediately (severity `high` drops straight to L1), no human required. A veto records an incident, so a vetoed staging demotes the role on that capability as a side effect.
+
 ### Kill switch (the human "stop" right)
 
 Four escalating scopes, all behind `POST /api/v1/agent/kill-switch` with `{ scope: run | intent | role | site, targetId?, reason? }`:

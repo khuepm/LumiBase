@@ -118,12 +118,12 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
   - [x] 12.3 Property test: autonomy resolver (Property 3)
     - **Validates: Requirements 12.2, 12.3, 12.7**
 
-- [ ] 13. Promotion/demotion engine
-  - [ ] 13.1 `trust-ledger-service.ts`: promote-check định kỳ (streak/approve-rate/zero-incident, ngưỡng per site) → tạo approval; chỉ effective khi human approve
+- [x] 13. Promotion/demotion engine
+  - [x] 13.1 `trust-ledger-service.ts`: promote-check định kỳ (streak/approve-rate/zero-incident, ngưỡng per site) → tạo approval; chỉ effective khi human approve
     - _Requirements: 12.5_
   - [x] 13.2 Demotion event-driven từ incident insert: −1 level (severity high → L1) tức thì + notify + evidence
     - _Requirements: 12.6_
-  - [ ] 13.3 Property test: demotion bất biến (Property 7)
+  - [x] 13.3 Property test: demotion bất biến (Property 7)
     - **Validates: Requirements 12.5, 12.6**
 
 - [x] 14. Veto Window

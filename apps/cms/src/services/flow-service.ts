@@ -144,6 +144,20 @@ registerHandler('drift-scan', async (ctx, options) => {
   return { scan, reconcile };
 });
 
+registerHandler('trust-promote-check', async (ctx) => {
+  // Content OS trust ledger sweep (task 13.1; Req 12.5): evaluates every
+  // grant below L4 and creates promotion proposals for eligible candidates.
+  // Proposals only become effective through a human decision.
+  const db = ctx.env['db'];
+  const siteId = ctx.env['siteId'];
+  if (!db || typeof siteId !== 'string') {
+    throw new Error('trust-promote-check requires env.db and env.siteId');
+  }
+  const { TrustLedgerService } = await import('./trust-ledger-service');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new TrustLedgerService({ db: db as any, siteId }).sweepPromotions();
+});
+
 // ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------

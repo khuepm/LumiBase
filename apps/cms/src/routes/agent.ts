@@ -159,6 +159,79 @@ agentRouter.post('/goals', async (c) => {
   return c.json({ data: goal }, 201);
 });
 
+// ── Trust ledger (content-os task 13; Req 12.5) ─────────────────────────────
+
+/** Grants + open incidents — the trust ledger view. */
+agentRouter.get('/autonomy', async (c) => {
+  const { AutonomyService } = await import('../services/autonomy-service');
+  const autonomy = new AutonomyService({ db: c.get('db'), siteId: c.get('siteId') });
+  return c.json({
+    data: {
+      grants: await autonomy.listGrants(),
+      openIncidents: await autonomy.listIncidents({ openOnly: true }),
+    },
+  });
+});
+
+agentRouter.get('/autonomy/promotions', async (c) => {
+  const { TrustLedgerService } = await import('../services/trust-ledger-service');
+  const ledger = new TrustLedgerService({ db: c.get('db'), siteId: c.get('siteId') });
+  return c.json({ data: await ledger.listPendingProposals() });
+});
+
+const promotionCheckSchema = z.object({
+  agentRole: z.string().min(1).max(120),
+  capability: z.string().min(1).max(120),
+});
+
+/** Evaluates evidence and creates a proposal when eligible — never applies. */
+agentRouter.post('/autonomy/promotions/check', async (c) => {
+  const parsed = promotionCheckSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+  const { TrustLedgerService } = await import('../services/trust-ledger-service');
+  const ledger = new TrustLedgerService({ db: c.get('db'), siteId: c.get('siteId') });
+  const data = await ledger.proposePromotion(parsed.data.agentRole, parsed.data.capability);
+  return c.json({ data }, data.proposed ? 201 : 200);
+});
+
+const promotionDecideSchema = z.object({
+  decision: z.enum(['approved', 'rejected']),
+  reason: z.string().max(500).optional(),
+});
+
+/** Human decision on a promotion proposal — the only path to a higher level. */
+agentRouter.post('/autonomy/promotions/:id/decide', async (c) => {
+  const roles = c.get('auth').roles ?? [];
+  if (!(roles.includes('admin') || roles.includes('agents:freeze') || roles.includes('*'))) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Promotion decisions require an admin.' }] },
+      403,
+    );
+  }
+  const parsed = promotionDecideSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+  const { TrustLedgerService, TrustLedgerError } = await import('../services/trust-ledger-service');
+  const ledger = new TrustLedgerService({ db: c.get('db'), siteId: c.get('siteId') });
+  try {
+    const data = await ledger.decidePromotion(
+      c.req.param('id'),
+      parsed.data.decision,
+      c.get('auth').userId ?? null,
+      parsed.data.reason,
+    );
+    return c.json({ data });
+  } catch (err) {
+    if (err instanceof TrustLedgerError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
 // ── Kill switch (content-os task 15; Req 14.1-14.5) ─────────────────────────
 
 const killSwitchSchema = z.object({
