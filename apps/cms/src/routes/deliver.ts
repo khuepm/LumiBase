@@ -1,5 +1,5 @@
 import { schema } from '@lumibase/database';
-import { and, asc, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { AppEnv, Variables } from '../env';
 
@@ -96,10 +96,68 @@ function serializeItem(row: DeliveryItemRow): Record<string, unknown> {
   };
 }
 
+/**
+ * Public provenance projection (C2PA-inspired). Deliberately excludes
+ * internal data such as run inputs or prompt material — only the lineage
+ * facts a downstream consumer needs to attribute the content.
+ */
+interface ItemProvenanceView {
+  authorType: string;
+  model: string | null;
+  confidence: number | null;
+  constitutionHash: string | null;
+  sources: unknown;
+  revisedAt: Date;
+}
+
+async function loadProvenance(
+  db: Variables['db'],
+  siteId: string,
+  itemIds: string[],
+): Promise<Map<string, ItemProvenanceView>> {
+  const result = new Map<string, ItemProvenanceView>();
+  if (itemIds.length === 0) return result;
+
+  const rows = await db
+    .select({
+      itemId: schema.revisions.itemId,
+      authorType: schema.revisions.authorType,
+      model: schema.revisions.model,
+      confidence: schema.revisions.confidence,
+      constitutionHash: schema.revisions.constitutionHash,
+      sources: schema.revisions.sources,
+      createdAt: schema.revisions.createdAt,
+    })
+    .from(schema.revisions)
+    .where(
+      and(
+        eq(schema.revisions.siteId, siteId),
+        inArray(schema.revisions.itemId, itemIds),
+        eq(schema.revisions.staged, false),
+      ),
+    )
+    .orderBy(desc(schema.revisions.createdAt));
+
+  for (const row of rows) {
+    // Rows are newest-first; keep only the latest revision per item.
+    if (result.has(row.itemId)) continue;
+    result.set(row.itemId, {
+      authorType: row.authorType,
+      model: row.model,
+      confidence: row.confidence,
+      constitutionHash: row.constitutionHash,
+      sources: row.sources,
+      revisedAt: row.createdAt,
+    });
+  }
+  return result;
+}
+
 async function hydrateSection(
   db: Variables['db'],
   siteId: string,
   section: SectionConfig,
+  withProvenance = false,
 ) {
   const base = {
     id: section.id,
@@ -153,11 +211,25 @@ async function hydrateSection(
     .orderBy(...buildSort(section.source.orderBy))
     .limit(clampLimit(section.source.limit));
 
+  const items = rows.map((row) => serializeItem(row as DeliveryItemRow));
+
+  if (withProvenance) {
+    const provenance = await loadProvenance(
+      db,
+      siteId,
+      rows.map((row) => row.id),
+    );
+    for (const item of items) {
+      const view = provenance.get(item['id'] as string);
+      if (view) item['_provenance'] = view;
+    }
+  }
+
   return {
     ...base,
     data: {
       ...base.data,
-      items: rows.map((row) => serializeItem(row as DeliveryItemRow)),
+      items,
     },
   };
 }
@@ -178,8 +250,11 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
 
   const layout = (page.layoutConfig ?? {}) as LayoutConfig;
   const sections = layout.sections ?? [];
+  const withProvenance = c.req.query('provenance') === 'true';
 
-  const resolved = await Promise.all(sections.map((section) => hydrateSection(db, siteId, section)));
+  const resolved = await Promise.all(
+    sections.map((section) => hydrateSection(db, siteId, section, withProvenance)),
+  );
 
   return c.json({
     page: {
