@@ -108,6 +108,22 @@ export interface PrimaryKeyResolution {
   id: string | undefined;
 }
 
+/**
+ * Provenance carried onto every revision written by this service instance.
+ * Human callers omit it (defaults to authorType 'human'); the AI harness
+ * sets an agent provenance with the executing run id before invoking skills.
+ */
+export interface ItemProvenance {
+  authorType: 'human' | 'agent';
+  runId?: string | null;
+  model?: string | null;
+  constitutionHash?: string | null;
+  /** Source references (URLs, item ids, memory ids) used by the agent. */
+  sources?: unknown[] | null;
+  /** Agent self-reported confidence in [0, 1]. */
+  confidence?: number | null;
+}
+
 export interface ItemServiceDeps {
   db: Database;
   /** Optional cache used by SchemaService for compiled manifests. */
@@ -135,6 +151,8 @@ export interface ItemServiceDeps {
   extensionEnv?: Record<string, unknown>;
   /** Internal guard for actor-scoped extension item access to avoid recursive hooks. */
   suppressExtensionHooks?: boolean;
+  /** Revision provenance; defaults to `{ authorType: 'human' }` when omitted. */
+  provenance?: ItemProvenance;
 }
 
 const STRUCTURAL_FIELDS = new Set([
@@ -261,8 +279,10 @@ export class ItemService {
   private readonly permissions: PermissionService | null;
   private readonly cryptoService: CryptoService | null;
   private hookDispatcher: HookDispatcher | null = null;
+  private provenance: ItemProvenance;
 
   constructor(private readonly deps: ItemServiceDeps) {
+    this.provenance = deps.provenance ?? { authorType: 'human' };
     this.schemaService = new SchemaService({
       db: deps.db,
       siteId: deps.siteId,
@@ -272,6 +292,15 @@ export class ItemService {
       ? new PermissionService({ db: deps.db, cache: deps.cache, ctx: deps.permissionCtx })
       : null;
     this.cryptoService = deps.encryptionKey ? new CryptoService(deps.encryptionKey) : null;
+  }
+
+  /**
+   * Overrides revision provenance for subsequent writes. Called by the AI
+   * harness once the executing run is known (the run is created after this
+   * service instance is constructed).
+   */
+  setProvenance(provenance: ItemProvenance): void {
+    this.provenance = provenance;
   }
 
   /** Resolve permission for the active principal; returns null when denied. */
@@ -1133,6 +1162,12 @@ export class ItemService {
       itemId,
       delta: { before, after },
       userId: this.deps.userId ?? null,
+      authorType: this.provenance.authorType,
+      createdByRunId: this.provenance.runId ?? null,
+      model: this.provenance.model ?? null,
+      constitutionHash: this.provenance.constitutionHash ?? null,
+      sources: this.provenance.sources ?? null,
+      confidence: this.provenance.confidence ?? null,
     });
   }
 

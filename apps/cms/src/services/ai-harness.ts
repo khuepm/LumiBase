@@ -476,10 +476,12 @@ export class AISecureHarness {
   private readonly agentHarnessEnabled: boolean;
   private readonly runService: AgentRunService;
   private readonly toolRegistry: ToolRegistryService;
+  private readonly itemService?: ItemService;
 
   constructor(config: AISecureHarnessConfig) {
     this.db = config.db;
     this.siteId = config.siteId;
+    this.itemService = config.itemService;
     this.agentHarnessEnabled = config.enableAgentHarnessAudit ?? Boolean(config.schemaService || config.itemService);
 
     // When services are provided, build fresh skills wired to real services.
@@ -681,7 +683,7 @@ export class AISecureHarness {
     }
 
     // Step 4: Safe skill — execute directly
-    const result = await this.runSkill(skillName, args);
+    const result = await this.runSkill(skillName, args, { runId: run.runId });
     if (result.success) {
       await this.runService.finishToolCall(toolCallId, {
         status: 'executed',
@@ -747,11 +749,20 @@ export class AISecureHarness {
   async runSkill(
     skillName: string,
     args: Record<string, unknown>,
+    runContext?: { runId?: string; model?: string },
   ): Promise<{ success: true; data: unknown } | { success: false; error: string }> {
     if (!Object.hasOwn(this.skills, skillName)) {
       return { success: false, error: `Skill not found: ${skillName}` };
     }
     const skill = this.skills[skillName]!;
+
+    // Item writes performed by skills are agent-authored: stamp revision
+    // provenance with the executing run before the handler touches data.
+    this.itemService?.setProvenance({
+      authorType: 'agent',
+      runId: runContext?.runId ?? null,
+      model: runContext?.model ?? null,
+    });
 
     const TIMEOUT_MS = 30_000;
 
@@ -878,6 +889,7 @@ export class AISecureHarness {
     const result = await this.runSkill(
       record.skillName,
       record.arguments as Record<string, unknown>,
+      { runId: run.runId },
     );
 
     if (result.success) {

@@ -160,6 +160,7 @@ If future evaluation runners depend on runtime-specific APIs, they must be featu
 ## Security model
 
 - All agent tables are scoped by `siteId`.
+- Item revisions carry provenance: skill-driven writes are stamped `authorType='agent'` with the executing `createdByRunId`, while Studio/API writes by people record `authorType='human'`. The harness sets this on the ItemService before any skill handler runs.
 - Tool inputs and memory context are redacted/masked before audit or prompt assembly.
 - Prompt text cannot grant permissions; only policy snapshots and capability grants can.
 - Approval decisions are recorded with actor, decision, reason, and timestamps.
