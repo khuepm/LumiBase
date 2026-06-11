@@ -5,11 +5,13 @@ import {
   integer,
   jsonb,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
+import { agentRuns } from './ai';
 import { sites, users } from './core';
 
 /**
@@ -186,6 +188,11 @@ export const items = pgTable(
     /** `draft` | `published` | `archived` */
     status: text('status').default('draft').notNull(),
     data: jsonb('data').default({}).notNull(),
+    /**
+     * Field names pinned by a human edit (Law Zero / override-is-law).
+     * Agents are denied writes to pinned fields at the harness boundary.
+     */
+    pinnedFields: jsonb('pinned_fields').default([]).notNull(),
     sort: integer('sort').default(0).notNull(),
     userCreated: text('user_created').references(() => users.id),
     userUpdated: text('user_updated').references(() => users.id),
@@ -224,10 +231,30 @@ export const revisions = pgTable(
     delta: jsonb('delta').default({}).notNull(),
     parentId: text('parent_id'),
     userId: text('user_id').references(() => users.id),
+    /** Provenance: `human` | `agent`. Agent revisions must carry a run id. */
+    authorType: text('author_type').default('human').notNull(),
+    createdByRunId: text('created_by_run_id').references(() => agentRuns.id, {
+      onDelete: 'set null',
+    }),
+    /** LLM model identifier used to produce this revision, if agent-authored. */
+    model: text('model'),
+    /** Constitution version hash pinned by the producing run. */
+    constitutionHash: text('constitution_hash'),
+    /** Source references (URLs, item ids, memory ids) used by the agent. */
+    sources: jsonb('sources'),
+    /** Agent self-reported confidence in [0, 1]. */
+    confidence: real('confidence'),
+    /** Veto-window staging: staged revisions are not live until committed. */
+    staged: boolean('staged').default(false).notNull(),
+    /** When a staged revision auto-commits unless vetoed (L3 veto window). */
+    autoCommitAt: timestamp('auto_commit_at'),
     createdAt: createdAt(),
   },
   (t) => ({
     itemIdx: index('revisions_item_idx').on(t.itemId, t.createdAt),
+    stagedIdx: index('revisions_staged_idx')
+      .on(t.siteId, t.autoCommitAt)
+      .where(sql`${t.staged} = true`),
   }),
 );
 

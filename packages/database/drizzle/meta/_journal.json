@@ -134,6 +134,13 @@
       "when": 1781168400000,
       "tag": "0018_agent_harness",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1781254800000,
+      "tag": "0019_content_os_provenance_pins",
+      "breakpoints": true
     }
   ]
 }
