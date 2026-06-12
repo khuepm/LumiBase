@@ -1,6 +1,8 @@
 import {
   agentBackpressureActivationsTotal,
+  agentCoalescedWritesTotal,
   agentWriteBudgetDenialsTotal,
+  agentWriteFlushesTotal,
 } from './agent-metrics';
 
 /**
@@ -36,7 +38,11 @@ export class WriteCoalescer {
 
   /** Returns true on the first write for this collection in the window. */
   record(collection: string): boolean {
-    if (this.pending.has(collection)) return false;
+    if (this.pending.has(collection)) {
+      // Absorbed write: coalescing ratio numerator (task 20.2).
+      agentCoalescedWritesTotal.inc();
+      return false;
+    }
     this.pending.add(collection);
     return true;
   }
@@ -45,6 +51,9 @@ export class WriteCoalescer {
   flush(): string[] {
     const collections = [...this.pending];
     this.pending.clear();
+    if (collections.length > 0) {
+      agentWriteFlushesTotal.inc(collections.length);
+    }
     return collections;
   }
 

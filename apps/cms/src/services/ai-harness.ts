@@ -5,6 +5,7 @@ import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
 import type { ConfiguredLLM } from './llm-provider';
 import type { QueueProvider } from '@lumibase/runtime';
+import { agentAutonomousOpsTotal } from './agent-metrics';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
 import { AUTONOMY_LEVELS, AutonomyService } from './autonomy-service';
 import { KillSwitchService } from './kill-switch-service';
@@ -1117,7 +1118,16 @@ export class AISecureHarness {
 
       // L3 veto window: stageable item writes execute into staging and
       // auto-commit at the deadline unless a human vetoes (Req 13.1).
-      if (level === AUTONOMY_LEVELS.VETO_WINDOW && isStageableItemPatch(skillName, args)) {
+      // Gated by contentOs.vetoWindow (task 20.1): with the flag off, L3
+      // falls through to classic pre-execute HITL — pre-Content-OS
+      // behaviour exactly.
+      const vetoWindowEnabled =
+        level === AUTONOMY_LEVELS.VETO_WINDOW &&
+        (await import('./feature-flags')
+          .then(({ getContentOsFlags }) => getContentOsFlags(this.db, this.siteId))
+          .then((flags) => flags.vetoWindow)
+          .catch(() => false));
+      if (vetoWindowEnabled && isStageableItemPatch(skillName, args)) {
         const vetoWindowMs = Number((envelope.budget ?? {})['vetoWindowMs']) || undefined;
         const veto = new VetoService({ db: this.db, siteId: this.siteId, vetoWindowMs });
         // Pin the active constitution to the run before staging (Req 15.3,
@@ -1160,6 +1170,7 @@ export class AISecureHarness {
             vetoApprovalId: staged.approvalId,
           });
           await veto.scheduleCommit(staged, this.queue);
+          agentAutonomousOpsTotal.inc({ level: 'L3' });
           return {
             status: 'pending_approval',
             approvalId: staged.approvalId,
@@ -1182,6 +1193,7 @@ export class AISecureHarness {
 
       // L4 autopilot: execute directly within capability and budget.
       if (level >= AUTONOMY_LEVELS.AUTOPILOT) {
+        agentAutonomousOpsTotal.inc({ level: 'L4' });
         const result = await this.runSkill(skillName, args, { runId: run.runId });
         if (result.success) {
           await this.runService.finishToolCall(toolCallId, {

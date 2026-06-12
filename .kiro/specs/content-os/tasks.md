@@ -178,12 +178,12 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
   - [x] 19.3 Mask secrets trong audit cho mọi guard/denial mới
     - _Requirements: 17.6_
 
-- [ ] 20. Feature flags, metrics, docs
-  - [ ] 20.1 Flags per site: `contentOs.reconciler / vetoWindow / agentReview / mcp` (default off); mọi flag off ⇒ hành vi như hiện tại
+- [x] 20. Feature flags, metrics, docs
+  - [x] 20.1 Flags per site: `contentOs.reconciler / vetoWindow / agentReview / mcp` (default off); mọi flag off ⇒ hành vi như hiện tại
     - _Requirements: (rollout — design)_
-  - [ ] 20.2 Prometheus metrics mới: autonomous operation rate, veto rate, coalescing ratio, backpressure activations, intent health; Grafana dashboard cập nhật
+  - [x] 20.2 Prometheus metrics mới: autonomous operation rate, veto rate, coalescing ratio, backpressure activations, intent health; Grafana dashboard cập nhật
     - _Requirements: 9.5_
-  - [ ] 20.3 Integration tests end-to-end: reconciliation cycle, veto flow, backpressure pause/resume
+  - [x] 20.3 Integration tests end-to-end: reconciliation cycle, veto flow, backpressure pause/resume
     - _Requirements: 6.x, 7.x, 9.4, 13.x_
-  - [ ] 20.4 Cập nhật docs: data-model.md, hono-api-spec.md, agent-harness-layer.md, ai-native-vision.md (link spec), llms.txt index
+  - [x] 20.4 Cập nhật docs: data-model.md, hono-api-spec.md, agent-harness-layer.md, ai-native-vision.md (link spec), llms.txt index
     - _Requirements: (docs)_

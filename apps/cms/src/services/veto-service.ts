@@ -7,6 +7,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { and, asc, eq, isNull, lte } from 'drizzle-orm';
+import { agentVetoesTotal, agentVetoStagingsTotal } from './agent-metrics';
 import { AutonomyService } from './autonomy-service';
 import { ItemService, type ItemProvenance } from './item-service';
 
@@ -180,6 +181,7 @@ export class VetoService {
       })
       .returning();
 
+    agentVetoStagingsTotal.inc();
     const reviewPath = `/agent/staged/${approval!.id}`;
     // Notify reviewers (Req 13.2): audited activity entry the exception
     // inbox surfaces immediately; channel fan-out hangs off the same event.
@@ -246,6 +248,7 @@ export class VetoService {
     if (approval.status !== 'pending') {
       throw new VetoServiceError('ALREADY_DECIDED', 'Staging already committed or vetoed.', 409);
     }
+    agentVetoesTotal.inc();
 
     await this.deps.db
       .update(agentApprovals)

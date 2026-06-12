@@ -144,6 +144,12 @@ Four escalating scopes, all behind `POST /api/v1/agent/kill-switch` with `{ scop
 
 Freezing/lifting a role or site requires the `agents:freeze` capability (admin included). While a site is frozen, `POST /api/v1/agent/goals` returns `423 FROZEN` and the reconciler creates no goals — read endpoints keep working. `GET /api/v1/agent/kill-switch` lists active freezes plus history; `POST /api/v1/agent/kill-switch/lift` restores execution.
 
+### Rollout flags and Content OS metrics
+
+Four per-site flags (settings key `contentOs`, all default **off**) gate the autonomous surfaces: `reconciler` (drift scans generate goals), `vetoWindow` (L3 stages instead of falling back to classic pre-execute HITL), `agentReview` (agents may decide approvals), `mcp` (the `/api/v1/mcp` endpoint answers). With every flag off the system behaves exactly like the pre-Content-OS Copilot + harness baseline.
+
+Rollout metrics (Prometheus): `lumibase_agent_autonomous_operations_total{level}` (L3 stagings + L4 autopilot — autonomous operation rate), `lumibase_agent_veto_stagings_total` / `lumibase_agent_vetoes_total` (veto rate), `lumibase_agent_coalesced_writes_total` / `lumibase_agent_write_flushes_total` (coalescing ratio), `lumibase_agent_backpressure_activations_total`, `lumibase_intent_open_drifts{intent}` and `lumibase_intent_breaker_trips_total` (intent health).
+
 ### Load-aware autonomy (Load Guard)
 
 A system that generates load must also sense load. Three guards bound agent-originated work:

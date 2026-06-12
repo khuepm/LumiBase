@@ -5,6 +5,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
+import { intentBreakerTripsTotal, intentOpenDriftsGauge } from './agent-metrics';
 import { AutonomyService } from './autonomy-service';
 import { KillSwitchService } from './kill-switch-service';
 import { isWithinMaintenanceWindow, type MaintenanceWindow } from './load-guard-service';
@@ -84,6 +85,8 @@ export interface ReconcileResult {
   /** True when the cycle was skipped because the intent is outside its
    * maintenance window — open drifts queue until the window opens (Req 9.2). */
   outsideWindow?: boolean;
+  /** True when the cycle was skipped because contentOs.reconciler is off. */
+  flagOff?: boolean;
 }
 
 export interface ReconcilerServiceDeps {
@@ -101,6 +104,15 @@ export class ReconcilerService {
   }
 
   async reconcileIntent(intentId: string): Promise<ReconcileResult> {
+    // Rollout flag (task 20.1): with contentOs.reconciler off the cycle is
+    // a no-op — drift scans may record state but no goals are generated,
+    // matching pre-Content-OS behaviour exactly.
+    const { getContentOsFlags } = await import('./feature-flags');
+    const flags = await getContentOsFlags(this.deps.db, this.deps.siteId);
+    if (!flags.reconciler) {
+      return { goalsCreated: 0, deferred: 0, breakerTripped: false, flagOff: true };
+    }
+
     const [intent] = await this.deps.db
       .select()
       .from(contentIntents)
@@ -124,6 +136,7 @@ export class ReconcilerService {
 
     if (await this.breakerShouldTrip(intentId)) {
       await this.tripBreaker(intentId);
+      intentBreakerTripsTotal.inc();
       return { goalsCreated: 0, deferred: 0, breakerTripped: true };
     }
 
@@ -153,6 +166,8 @@ export class ReconcilerService {
       .limit(Math.max(maxGoalsPerCycle * 2, 50));
 
     const plan = planReconciliation(openDrifts as ReconcilableDrift[], maxGoalsPerCycle);
+    // Intent health (task 20.2): open drift backlog at this pass.
+    intentOpenDriftsGauge.set({ intent: intent.name }, openDrifts.length);
 
     let goalsCreated = 0;
     for (const drift of plan.selected) {

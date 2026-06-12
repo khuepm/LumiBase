@@ -228,17 +228,19 @@ Bất biến kế thừa nguyên vẹn từ harness hiện tại (không thươn
 - ✅ Flows engine (trigger webhook/event/schedule/manual) — nền cho reconciler.
 - ✅ Artifact-first app generation MVP + evaluation gates.
 
-Chưa có (khoảng cách):
+Đã đóng các khoảng cách (Content OS spec — xem [`.kiro/specs/content-os/tasks.md`](../../.kiro/specs/content-os/tasks.md)):
 
-- ❌ 5/14 core skills còn **stub** (`aiSuggestField`, `aiContentAssist`, `generateAppSpec`, `generateApiDocs`, `generateSeedData`) — chưa nối LLM thật.
-- ❌ Không có khái niệm SLO/desired-state cho content; không có reconciliation loop.
-- ❌ Autonomy nhị phân, không có trust ledger, không có veto-window, không có promotion/demotion.
-- ❌ Không có constitution per tenant (evaluation mới ở mức schema validation / spec lint / prompt safety).
-- ❌ Không có provenance trên item revisions.
-- ❌ Không có multi-agent delegation (`parentGoalId`, role agents, agent-as-reviewer).
-- ❌ Không có MCP server; agent ngoài chưa thao tác CMS được theo chuẩn.
-- ❌ Run dài hơn request limit chưa chạy được (chưa đẩy qua queue/workflow).
-- ❌ Studio vẫn là editing surface; chưa có mission control / exception inbox.
+- ✅ 5 core skills nối LLM thật, lỗi provider trả lỗi tường minh (không fallback stub).
+- ✅ SLO/desired-state: `content_intents` + drift detection + reconciliation loop trên Flows.
+- ✅ Trust ledger L0–L4: grants, promotion human-gated, demotion tự động, veto-window (L3), kill switch 4 mức.
+- ✅ Constitution per tenant: versioned evaluators (rule DSL + llm_judge), pin hash vào run, publish gate.
+- ✅ Provenance trên revisions (`authorType`, `createdByRunId`, `model`, `constitutionHash`, …) + `?provenance=true` trên Delivery.
+- ✅ Multi-agent delegation: `parentGoalId`, role library (role ∩ grant), agent-as-reviewer (cấm self-review).
+- ✅ MCP server `/api/v1/mcp` (Streamable HTTP) + llms.txt public per site.
+- ✅ Run dài chạy qua queue (`queued/cancelled`, resume không chạy lại tool call đã xong).
+- ✅ Mission Control trong Studio: exception inbox, SLO health, trust ledger, constitution editor, intent composer, kill switch UI.
+
+Rollout: bốn flag per site `contentOs.reconciler / vetoWindow / agentReview / mcp` — mặc định **off**; mọi flag off ⇒ hành vi giống hệt pre-Content-OS.
 
 ---
 
