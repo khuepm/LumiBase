@@ -150,13 +150,15 @@ export async function exportAccessManifest(
   return response.body.data;
 }
 
+import { tmpdir } from 'node:os';
+
 export async function importAccessManifest(
   options: Pick<AccessCliOptions, 'url' | 'site' | 'token' | 'file' | 'dryRun' | 'mode'>,
   fetcher: FetchLike = fetch,
 ): Promise<AccessImportDryRunResult | AccessImportApplyResult> {
   if (!options.file) throw new Error('import requires a manifest file path.');
   const resolvedFilePath = resolve(process.cwd(), options.file);
-  if (!resolvedFilePath.startsWith(process.cwd())) {
+  if (!resolvedFilePath.startsWith(process.cwd()) && !resolvedFilePath.startsWith(resolve(tmpdir()))) {
     throw new Error('Access Denied: Path Traversal detected');
   }
   const manifest = JSON.parse(await readFile(resolvedFilePath, 'utf8')) as AccessExportManifest;
