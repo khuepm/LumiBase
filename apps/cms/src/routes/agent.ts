@@ -361,6 +361,78 @@ agentRouter.post('/autonomy/promotions/:id/decide', async (c) => {
   }
 });
 
+// ── Constitution (content-os task 16; Req 15.1-15.6) ────────────────────────
+
+function canEditConstitution(c: Context<AppEnv>): boolean {
+  const roles = c.get('auth').roles ?? [];
+  return roles.includes('admin') || roles.includes('constitution:write') || roles.includes('*');
+}
+
+/** All versions plus the active one — the editor's version list. */
+agentRouter.get('/constitution', async (c) => {
+  const { ConstitutionService } = await import('../services/constitution-service');
+  const service = new ConstitutionService({ db: c.get('db'), siteId: c.get('siteId') });
+  return c.json({ data: { versions: await service.listVersions(), active: (await service.getActive()) ?? null } });
+});
+
+agentRouter.post('/constitution', async (c) => {
+  if (!canEditConstitution(c)) {
+    return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Editing the constitution requires an admin.' }] }, 403);
+  }
+  const body = (await c.req.json().catch(() => null)) as { evaluators?: unknown } | null;
+  const { ConstitutionService, ConstitutionError } = await import('../services/constitution-service');
+  const service = new ConstitutionService({ db: c.get('db'), siteId: c.get('siteId') });
+  try {
+    return c.json({ data: await service.createDraft(body?.evaluators, c.get('auth').userId ?? null) }, 201);
+  } catch (err) {
+    if (err instanceof ConstitutionError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
+const dryRunSchema = z.object({ samples: z.array(z.record(z.unknown())).min(1).max(20) });
+
+/** Evaluates a version against real content samples without activating (Req 15.5). */
+agentRouter.post('/constitution/:id/dry-run', async (c) => {
+  const parsed = dryRunSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+  const { ConstitutionService, ConstitutionError } = await import('../services/constitution-service');
+  const { createConfiguredLLMProvider } = await import('../services/llm-provider');
+  const service = new ConstitutionService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
+  });
+  try {
+    return c.json({ data: await service.dryRun(c.req.param('id'), parsed.data.samples) });
+  } catch (err) {
+    if (err instanceof ConstitutionError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
+agentRouter.post('/constitution/:id/activate', async (c) => {
+  if (!canEditConstitution(c)) {
+    return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Activating a constitution requires an admin.' }] }, 403);
+  }
+  const { ConstitutionService, ConstitutionError } = await import('../services/constitution-service');
+  const service = new ConstitutionService({ db: c.get('db'), siteId: c.get('siteId') });
+  try {
+    return c.json({ data: await service.activate(c.req.param('id'), c.get('auth').userId ?? null) });
+  } catch (err) {
+    if (err instanceof ConstitutionError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
 // ── Kill switch (content-os task 15; Req 14.1-14.5) ─────────────────────────
 
 const killSwitchSchema = z.object({

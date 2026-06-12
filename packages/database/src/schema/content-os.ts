@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 import { agentGoals } from './ai';
@@ -158,6 +159,42 @@ export const contentDrifts = pgTable(
       t.status,
     ),
     siteItemIdx: index('content_drifts_site_item_idx').on(t.siteId, t.itemId),
+  }),
+);
+
+/**
+ * Constitutions (Module D, Req 15.x): versioned evaluator sets that gate
+ * publishing. Definitions live here; run results stay in
+ * `agent_evaluations` (design decision 7). Runs pin the active hash at
+ * start so results are reproducible even when the active version changes
+ * mid-run (Property 12). At most one `active` version per site.
+ */
+export const constitutions = pgTable(
+  'constitutions',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    /** Evaluator list: `rule` DSL entries and `llm_judge` prompts. */
+    evaluators: jsonb('evaluators').default([]).notNull(),
+    /** sha256 of the canonicalized evaluators — the pinnable identity. */
+    hash: text('hash').notNull(),
+    /** `draft` | `active` | `archived` */
+    status: text('status').default('draft').notNull(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    activatedAt: timestamp('activated_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteVersionUnique: uniqueIndex('constitutions_site_version_unique').on(t.siteId, t.version),
+    /** One active constitution per site — enforced in the database. */
+    siteActiveUnique: uniqueIndex('constitutions_site_active_unique')
+      .on(t.siteId)
+      .where(sql`${t.status} = 'active'`),
+    siteStatusIdx: index('constitutions_site_status_idx').on(t.siteId, t.status),
   }),
 );
 

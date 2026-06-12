@@ -1120,6 +1120,18 @@ export class AISecureHarness {
       if (level === AUTONOMY_LEVELS.VETO_WINDOW && isStageableItemPatch(skillName, args)) {
         const vetoWindowMs = Number((envelope.budget ?? {})['vetoWindowMs']) || undefined;
         const veto = new VetoService({ db: this.db, siteId: this.siteId, vetoWindowMs });
+        // Pin the active constitution to the run before staging (Req 15.3,
+        // Property 12): the staged revision carries the hash the run
+        // started with, even if a new version activates before commit.
+        let constitutionHash: string | null = null;
+        try {
+          const { ConstitutionService } = await import('./constitution-service');
+          constitutionHash = await new ConstitutionService({ db: this.db, siteId: this.siteId }).pinToRun(
+            run.runId,
+          );
+        } catch {
+          constitutionHash = null;
+        }
         try {
           const staged = await veto.stageItemPatch({
             runId: run.runId,
@@ -1128,6 +1140,7 @@ export class AISecureHarness {
             collection: String(args['collection']),
             itemId: String(args['id']),
             patch: args['data'] as Record<string, unknown>,
+            ...(constitutionHash ? { provenance: { constitutionHash } } : {}),
           });
           await this.runService.finishToolCall(toolCallId, {
             status: 'pending_approval',

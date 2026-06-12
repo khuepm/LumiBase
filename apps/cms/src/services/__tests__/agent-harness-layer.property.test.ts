@@ -9,6 +9,7 @@ import {
   agentRuns,
   agentToolCalls,
   aiApprovals,
+  constitutions,
   type Database,
 } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
@@ -37,6 +38,8 @@ function tableKey(table: unknown): string {
       return 'evaluations';
     case aiApprovals:
       return 'legacyApprovals';
+    case constitutions:
+      return 'constitutions';
     default:
       return 'unknown';
   }
@@ -52,6 +55,8 @@ function createHarnessDb(activeSiteId: string, seed: Partial<Record<string, Row[
     artifacts: [...(seed.artifacts ?? [])],
     evaluations: [...(seed.evaluations ?? [])],
     legacyApprovals: [...(seed.legacyApprovals ?? [])],
+    // Publish gate dependency: no active constitution → gate passes.
+    constitutions: [...(seed.constitutions ?? [])],
   };
 
   const visible = (key: string) => {

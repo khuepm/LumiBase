@@ -144,12 +144,12 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
   - [x] 15.3 Property test: kill switch (Property 10)
     - **Validates: Requirements 14.2**
 
-- [ ] 16. Constitution
-  - [ ] 16.1 Bảng `constitutions` (versioned, hash, một active per site) + migration
+- [x] 16. Constitution
+  - [x] 16.1 Bảng `constitutions` (versioned, hash, một active per site) + migration
     - _Requirements: 15.1, 17.1_
-  - [ ] 16.2 `constitution-service.ts`: evaluator types (`rule` DSL + `llm_judge`), pin hash vào run, publish gate (blocking evaluator fail → chặn publish, override cần lý do), dry-run, activate + diff audit
+  - [x] 16.2 `constitution-service.ts`: evaluator types (`rule` DSL + `llm_judge`), pin hash vào run, publish gate (blocking evaluator fail → chặn publish, override cần lý do), dry-run, activate + diff audit
     - _Requirements: 15.2, 15.3, 15.4, 15.5, 15.6_
-  - [ ] 16.3 Property test: constitution pinning (Property 12)
+  - [x] 16.3 Property test: constitution pinning (Property 12)
     - **Validates: Requirements 15.3**
 
 ### Module E — Mission Control

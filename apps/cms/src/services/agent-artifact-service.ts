@@ -130,6 +130,21 @@ export class AgentArtifactService {
       }
     }
 
+    // Constitution publish gate (content-os Req 15.4): a blocking evaluator
+    // failure vetoes publish; overriding requires an explicit reason and is
+    // recorded in the artifact metadata.
+    const { ConstitutionService } = await import('./constitution-service');
+    const gate = await new ConstitutionService({ db: this.db, siteId: this.siteId }).publishGate(
+      artifact.content as Record<string, unknown>,
+    );
+    if (!gate.allowed && !overrideReason) {
+      const detail = gate.failures
+        .filter((f) => f.blocking)
+        .map((f) => f.message ?? f.evaluatorId)
+        .join('; ');
+      return { allowed: false, message: `Constitution blocks publish: ${detail}` };
+    }
+
     const [updated] = await this.db
       .update(agentArtifacts)
       .set({
@@ -138,6 +153,7 @@ export class AgentArtifactService {
           ...(artifact.metadata as Record<string, unknown>),
           overrideReason: overrideReason ?? null,
           publishedAt: new Date().toISOString(),
+          ...(gate.hash ? { constitutionHash: gate.hash, constitutionOverridden: !gate.allowed } : {}),
         },
         updatedAt: new Date(),
       })

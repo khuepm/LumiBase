@@ -126,6 +126,14 @@ Autonomy levels are **earned**, and the asymmetry is deliberate: trust rises slo
 - **Promotion** (`trust-ledger-service.ts`) — a periodic sweep (`POST /api/v1/agent/autonomy/promotions/check`, or the `trust-promote-check` flow operation) evaluates every `(agentRole, capability)` grant below L4 against evidence: an unbroken streak of succeeded runs, enough decided approvals at the required approve-rate, and **zero open incidents**. Eligible candidates get a `kind='promotion'` approval proposing exactly **one level up** (capped at L4) with the evidence attached. The proposal is inert until a human decides it (`POST /api/v1/agent/autonomy/promotions/:id/decide`, admin-gated) — there is no auto-commit path for promotions, ever. Pending proposals are deduplicated and listed at `GET /api/v1/agent/autonomy/promotions`; current grants and open incidents at `GET /api/v1/agent/autonomy`.
 - **Demotion** — event-driven from incident insert: −1 level immediately (severity `high` drops straight to L1), no human required. A veto records an incident, so a vetoed staging demotes the role on that capability as a side effect.
 
+### Constitution: versioned publish-gate evaluators (Module D)
+
+A constitution is a versioned set of evaluators (`constitutions` table, at most one `active` per site) managed at `/api/v1/agent/constitution` (versions list, draft, `:id/dry-run`, `:id/activate` — admin or `constitution:write`). Two evaluator types: a deterministic **rule DSL** (`required`, `equals`, `max_length`, `min_length`, `regex`, `contains`, `not_contains` over content fields) and **`llm_judge`** prompts that fail loudly with `LLM_NOT_CONFIGURED` when no provider exists. Identity is `sha256` of the canonicalized evaluator list.
+
+- **Pinning (Property 12)** — the active hash is pinned to a run once (first-write-wins into run metrics); veto stagings carry it into revision provenance and artifact evaluations record it, so results stay reproducible even when a new version activates mid-run.
+- **Publish gate** — `publishArtifact` evaluates the active constitution against the artifact content: a blocking evaluator failure blocks publish; overriding requires an explicit reason and is recorded (`constitutionOverridden`) in the artifact metadata.
+- **Dry-run + diff audit** — drafts can be evaluated against real content samples before activation; activating archives the previous version and writes a `constitution.activated` activity entry with the added/removed evaluator ids and both hashes.
+
 ### Kill switch (the human "stop" right)
 
 Four escalating scopes, all behind `POST /api/v1/agent/kill-switch` with `{ scope: run | intent | role | site, targetId?, reason? }`:
