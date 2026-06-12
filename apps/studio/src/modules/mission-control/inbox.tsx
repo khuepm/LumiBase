@@ -1,58 +1,29 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle, Clock, ShieldAlert, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/cn';
-import {
-  missionControlApi,
-  type AgentApproval,
-  type AgentIncident,
-  type ContentIntent,
-  type StagedVeto,
-} from './api';
+import { missionControlApi } from './api';
+import { useInboxData, type InboxEntry } from './use-inbox';
 
 /**
- * Exception Inbox (content-os task 17.1; Req 16.1, 16.2, 13.6).
- * One queue for everything that needs a human: veto countdowns first
- * (hard deadline), then pending approvals, open incidents, errored intents.
+ * Exception Inbox (content-os task 17.1; Req 16.1, 16.2, 13.6 ·
+ * content-os-ui task 1.2; Req 3.6). Compact list with inline actions —
+ * embedded on the dashboard (with `limit`) and reused as the list pane of
+ * the full inbox page (with `onOpenEntry`).
  */
 
-type InboxEntry =
-  | { kind: 'veto'; urgency: number; veto: StagedVeto }
-  | { kind: 'approval'; urgency: number; approval: AgentApproval }
-  | { kind: 'incident'; urgency: number; incident: AgentIncident }
-  | { kind: 'intent_error'; urgency: number; intent: ContentIntent };
+interface ExceptionInboxProps {
+  /** Show only the N most urgent entries (dashboard preview). */
+  limit?: number;
+  /** When set, each entry gets an "Open" affordance for the detail pane. */
+  onOpenEntry?: (entry: InboxEntry) => void;
+}
 
-function buildEntries(
-  approvals: AgentApproval[],
-  staged: StagedVeto[],
-  incidents: AgentIncident[],
-  intents: ContentIntent[],
-): InboxEntry[] {
-  const now = Date.now();
-  const entries: InboxEntry[] = [
-    // Veto windows: urgency = time to auto-commit (sooner = more urgent).
-    ...staged.map((veto): InboxEntry => ({
-      kind: 'veto',
-      urgency: new Date(veto.autoCommitAt).getTime() - now,
-      veto,
-    })),
-    ...approvals
-      .filter((a) => a.status === 'pending' && a.kind !== 'veto')
-      .map((approval): InboxEntry => ({
-        kind: 'approval',
-        urgency: 1_000_000_000 + (now - new Date(approval.createdAt).getTime()) * -1,
-        approval,
-      })),
-    ...incidents.map((incident): InboxEntry => ({
-      kind: 'incident',
-      urgency: incident.severity === 'high' ? 500_000_000 : 1_500_000_000,
-      incident,
-    })),
-    ...intents
-      .filter((i) => i.status === 'error')
-      .map((intent): InboxEntry => ({ kind: 'intent_error', urgency: 1_200_000_000, intent })),
-  ];
-  return entries.sort((a, b) => a.urgency - b.urgency);
+export function invalidateInboxQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ['mc-approvals'] });
+  queryClient.invalidateQueries({ queryKey: ['mc-staged'] });
+  queryClient.invalidateQueries({ queryKey: ['mc-autonomy'] });
+  queryClient.invalidateQueries({ queryKey: ['mc-intents'] });
 }
 
 function Countdown({ deadline }: { deadline: string }) {
@@ -67,21 +38,13 @@ function Countdown({ deadline }: { deadline: string }) {
   );
 }
 
-export function ExceptionInbox() {
+export function ExceptionInbox({ limit, onOpenEntry }: ExceptionInboxProps) {
   const queryClient = useQueryClient();
   const [diffOpen, setDiffOpen] = useState<string | null>(null);
 
-  const approvalsQuery = useQuery({ queryKey: ['mc-approvals'], queryFn: missionControlApi.approvals });
-  const stagedQuery = useQuery({ queryKey: ['mc-staged'], queryFn: missionControlApi.staged, refetchInterval: 30_000 });
-  const autonomyQuery = useQuery({ queryKey: ['mc-autonomy'], queryFn: missionControlApi.autonomy });
-  const intentsQuery = useQuery({ queryKey: ['mc-intents'], queryFn: missionControlApi.intents });
+  const { entries: allEntries, isLoading } = useInboxData();
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['mc-approvals'] });
-    queryClient.invalidateQueries({ queryKey: ['mc-staged'] });
-    queryClient.invalidateQueries({ queryKey: ['mc-autonomy'] });
-    queryClient.invalidateQueries({ queryKey: ['mc-intents'] });
-  };
+  const invalidate = () => invalidateInboxQueries(queryClient);
 
   const decideMutation = useMutation({
     mutationFn: ({ id, decision }: { id: string; decision: 'approved' | 'rejected' }) =>
@@ -97,16 +60,23 @@ export function ExceptionInbox() {
     onSuccess: invalidate,
   });
 
-  if (approvalsQuery.isLoading || stagedQuery.isLoading) {
+  if (isLoading) {
     return <p className="text-sm text-muted-foreground">Loading inbox…</p>;
   }
 
-  const entries = buildEntries(
-    approvalsQuery.data ?? [],
-    stagedQuery.data ?? [],
-    autonomyQuery.data?.openIncidents ?? [],
-    intentsQuery.data ?? [],
-  );
+  const entries = limit ? allEntries.slice(0, limit) : allEntries;
+
+  // In split-pane mode every entry gets an explicit open affordance.
+  const openButton = (entry: InboxEntry) =>
+    onOpenEntry ? (
+      <button
+        type="button"
+        onClick={() => onOpenEntry(entry)}
+        className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+      >
+        Details
+      </button>
+    ) : null;
 
   if (entries.length === 0) {
     return (
@@ -119,8 +89,8 @@ export function ExceptionInbox() {
 
   return (
     <ul className="space-y-2">
-      {entries.map((entry, i) => (
-        <li key={i} className="rounded-lg border bg-background p-3">
+      {entries.map((entry) => (
+        <li key={entry.id} className="rounded-lg border bg-background p-3">
           {entry.kind === 'veto' && (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -133,13 +103,23 @@ export function ExceptionInbox() {
                   by {String(entry.veto.agentRole ?? 'agent')} — <Countdown deadline={entry.veto.autoCommitAt} />
                 </span>
                 <span className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setDiffOpen(diffOpen === `v${i}` ? null : `v${i}`)}
-                    className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
-                  >
-                    {diffOpen === `v${i}` ? 'Hide diff' : 'View diff'}
-                  </button>
+                  {onOpenEntry ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenEntry(entry)}
+                      className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                    >
+                      View diff
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setDiffOpen(diffOpen === entry.id ? null : entry.id)}
+                      className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                    >
+                      {diffOpen === entry.id ? 'Hide diff' : 'View diff'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => vetoMutation.mutate(String(entry.veto.approvalId ?? entry.veto.id))}
@@ -150,7 +130,7 @@ export function ExceptionInbox() {
                   </button>
                 </span>
               </div>
-              {diffOpen === `v${i}` && (
+              {!onOpenEntry && diffOpen === entry.id && (
                 <pre className="max-h-48 overflow-auto rounded-md bg-muted/40 p-2 text-xs">
                   {JSON.stringify(entry.veto.patch ?? entry.veto, null, 2)}
                 </pre>
@@ -169,6 +149,7 @@ export function ExceptionInbox() {
                 </span>
               </span>
               <span className="flex gap-2">
+                {openButton(entry)}
                 <button
                   type="button"
                   onClick={() => decideMutation.mutate({ id: entry.approval.id, decision: 'approved' })}
@@ -190,20 +171,23 @@ export function ExceptionInbox() {
           )}
 
           {entry.kind === 'incident' && (
-            <span className="text-sm">
-              <AlertTriangle
-                className={cn(
-                  'mr-1 inline h-4 w-4',
-                  entry.incident.severity === 'high' ? 'text-destructive' : 'text-amber-600',
-                )}
-              />
-              Incident ({entry.incident.severity}): {entry.incident.source} —{' '}
-              {entry.incident.agentRole}
-              {entry.incident.capability ? ` / ${entry.incident.capability}` : ''}
-              <span className="ml-2 text-xs text-muted-foreground">
-                {new Date(entry.incident.createdAt).toLocaleString()}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm">
+                <AlertTriangle
+                  className={cn(
+                    'mr-1 inline h-4 w-4',
+                    entry.incident.severity === 'high' ? 'text-destructive' : 'text-amber-600',
+                  )}
+                />
+                Incident ({entry.incident.severity}): {entry.incident.source} —{' '}
+                {entry.incident.agentRole}
+                {entry.incident.capability ? ` / ${entry.incident.capability}` : ''}
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {new Date(entry.incident.createdAt).toLocaleString()}
+                </span>
               </span>
-            </span>
+              {openButton(entry)}
+            </div>
           )}
 
           {entry.kind === 'intent_error' && (
@@ -215,14 +199,17 @@ export function ExceptionInbox() {
                   <span className="ml-2 text-xs text-muted-foreground">{entry.intent.statusReason}</span>
                 )}
               </span>
-              <button
-                type="button"
-                onClick={() => resumeMutation.mutate(entry.intent.id)}
-                disabled={resumeMutation.isPending}
-                className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
-              >
-                Resume
-              </button>
+              <span className="flex gap-2">
+                {openButton(entry)}
+                <button
+                  type="button"
+                  onClick={() => resumeMutation.mutate(entry.intent.id)}
+                  disabled={resumeMutation.isPending}
+                  className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                >
+                  Resume
+                </button>
+              </span>
             </div>
           )}
         </li>
