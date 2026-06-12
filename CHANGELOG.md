@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Website: [lumibase.dev](https://lumibase.dev)
 
+## [Unreleased]
+
+### Added
+
+- **Setup seeds Content OS state** (Setup Impact Registry G.1–G.3, G.5). The setup transaction now additionally:
+  - seeds the 7-role agent library for the default site (previously lazy-seeded on first `GET /agent/roles`);
+  - materialises the `contentOs` feature-flags settings row with every flag OFF;
+  - creates explicit L1 (PROPOSE) autonomy grants for every seed (role, capability), attributed to the bootstrap admin with `evidence.source = 'setup_bootstrap'`;
+  - persists the lockout policy to `settings.login_security_policy` under the `__default__` site (resolves open-question-8; the login guard already reads the row by key alone).
+
+### Upgrade steps
+
+- **Existing (already-initialized) instances need no action.** Agent roles continue to lazy-seed on first list; an absent `contentOs` row still reads as all-OFF; autonomy resolution keeps its code fallbacks (safe→L2, dangerous→L1). Baseline L1 grants are intentionally **not** backfilled — doing so would tighten safe-capability autonomy from L2 to L1 on live sites. Opt in by creating grants via the trust ledger UI/API.
+
 ## [0.5.0] - 2026-06-12
 
 ### Version
