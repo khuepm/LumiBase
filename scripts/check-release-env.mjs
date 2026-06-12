@@ -8,7 +8,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 const DEFAULT_CONFIG = 'apps/cms/wrangler.toml';
 const DEFAULT_ENV = 'production';
-const DEFAULT_REQUIRED_SECRETS = ['JWT_SECRET', 'CF_ACCESS_CERTS_URL', 'CF_ACCESS_AUDIENCE'];
+const DEFAULT_REQUIRED_SECRETS = ['JWT_SECRET', 'CF_ACCESS_CERTS_URL', 'CF_ACCESS_AUDIENCE', 'ENCRYPTION_KEY'];
 const DEV_JWT_SECRET = 'dev_secret_key';
 
 function parseArgs(argv) {
@@ -68,7 +68,7 @@ function parseScalar(value) {
 function parseInlineTable(value) {
   const entries = {};
   const inner = value.trim().replace(/^\{/, '').replace(/\}$/, '');
-  const pairs = inner.match(/(?:[^,"{}]|"(?:\\.|[^"])*")+/g) || [];
+  const pairs = inner.match(/(?:[^,"{}]|"(?:[^"\\]|\\.)*")+/g) || [];
   for (const pair of pairs) {
     const separator = pair.indexOf('=');
     if (separator === -1) continue;
@@ -134,7 +134,7 @@ function getConfiguredVars(parsed, envName) {
 }
 
 function listCloudflareSecrets({ config, env }) {
-  const args = ['wrangler', 'secret', 'list', '--config', config, '--env', env, '--json'];
+  const args = ['wrangler', 'secret', 'list', '--config', config, '--env', env, '--format', 'json'];
   const result = spawnSync('pnpm', ['exec', ...args], { cwd: REPO_ROOT, encoding: 'utf8' });
   if (result.status !== 0) {
     throw new Error(`Unable to list Cloudflare secrets with \`pnpm exec ${args.join(' ')}\`.\n${result.stderr || result.stdout}`.trim());
@@ -149,6 +149,12 @@ function listCloudflareSecrets({ config, env }) {
 
 function isPresent(value) {
   return value !== undefined && value !== null && `${value}`.trim() !== '';
+}
+
+function sanitizeForLog(message) {
+  return `${message}`
+    .replace(/`[^`]*`/g, '`[REDACTED]`')
+    .replace(/\b[A-Z0-9_]*(SECRET|TOKEN|KEY|PASSWORD|CERT|AUDIENCE)[A-Z0-9_]*\b/g, '[REDACTED]');
 }
 
 function main() {
@@ -185,10 +191,15 @@ function main() {
 
   let cloudflareSecrets = new Set();
   if (args.checkCloudflare) {
-    try {
-      cloudflareSecrets = listCloudflareSecrets({ config: args.config, env: args.env });
-    } catch (error) {
-      warnings.push(error.message);
+    const hasCloudflareCredentials = process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID;
+    if (hasCloudflareCredentials) {
+      try {
+        cloudflareSecrets = listCloudflareSecrets({ config: args.config, env: args.env });
+      } catch (error) {
+        warnings.push(error.message);
+      }
+    } else {
+      warnings.push('Skipping Cloudflare secret checks because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured.');
     }
   }
 
@@ -204,7 +215,7 @@ function main() {
 
   if (failures.length > 0) {
     console.error('Release config check failed:');
-    for (const failure of failures) console.error(`- ${failure}`);
+    console.error(`- ${failures.length} validation issue(s) found.`);
     process.exit(1);
   }
 

@@ -9,8 +9,12 @@ export class CloudflareSearchProvider implements SearchProvider {
   private apiKey: string;
 
   constructor(host: string, apiKey: string) {
-    // Ensure no trailing slash on host
-    this.host = host.replace(/\/+$/, '');
+    // Strip trailing slashes without a regex: `/\/+$/` backtracks
+    // polynomially on adversarial input like "http://h/////…". A linear
+    // scan from the end is ReDoS-proof.
+    let end = host.length;
+    while (end > 0 && host.charCodeAt(end - 1) === 47 /* '/' */) end--;
+    this.host = host.slice(0, end);
     this.apiKey = apiKey;
   }
 

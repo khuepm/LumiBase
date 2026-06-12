@@ -152,7 +152,14 @@ export default function (data) {
   // Scenario 5: Realtime isolation
   // ws subscribe site_a -> create item site_b -> verify no event received
   // ---------------------------------------------------------------------------
-  const wsUrl = baseUrl.replace(/^http/, 'ws') + `/api/v1/realtime?token=${tokenA}&site=${siteA}`;
+  const ticketResA = http.post(`${baseUrl}/api/v1/realtime/ticket`, null, {
+    headers: headersA
+  });
+
+  check(ticketResA, { 'got realtime ticket for site A': (r) => r.status === 200 });
+  const ticketA = ticketResA.json().data?.ticket;
+
+  const wsUrl = baseUrl.replace(/^http/, 'ws') + `/api/v1/realtime?ticket=${ticketA}&site=${siteA}`;
   
   let wsEventLeaked = false;
   

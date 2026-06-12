@@ -87,6 +87,7 @@ import type { AuditLogger, AuditLogWriteInput } from '../audit/logger';
 import type { LockoutPolicy } from '../setup/policy-codec';
 import type { CounterStore } from './counter';
 import { normalizeEmail } from './email-normalize';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 // ── Public types ───────────────────────────────────────────────────────
 
@@ -920,7 +921,7 @@ async function safeCount(fn: () => Promise<number>): Promise<number> {
     return await fn();
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.warn('[login-guard] counter read failed; treating as 0', err);
+    console.warn('[login-guard] counter read failed; treating as 0', formatSafeError(err));
     return 0;
   }
 }

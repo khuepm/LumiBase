@@ -2,16 +2,19 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Privacy Policy - LumiBase",
-  description: "Privacy Policy for LumiBase - Edge-Native Headless CMS",
+  description: "Privacy Policy for LumiBase — the Content Operating System.",
+  alternates: {
+    canonical: "/privacy/",
+  },
 };
 
 export default function PrivacyPolicy() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-16">
       <h1 className="text-4xl font-bold">Privacy Policy</h1>
-      <p className="mt-4 text-gray-600 dark:text-gray-400">Last updated: {new Date().toLocaleDateString()}</p>
+      <p className="mt-4 text-gray-400">Last updated: {new Date().toLocaleDateString()}</p>
 
-      <div className="mt-12 space-y-8 prose dark:prose-invert">
+      <div className="mt-12 space-y-8 [&_h2]:text-2xl [&_h2]:font-semibold [&_h2]:text-foreground [&_p]:mt-2 [&_p]:leading-7 [&_p]:text-gray-400 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1 [&_li]:text-gray-400">
         <section>
           <h2 className="text-2xl font-semibold">1. Introduction</h2>
           <p>
@@ -126,7 +129,7 @@ export default function PrivacyPolicy() {
           <h2 className="text-2xl font-semibold">11. Contact Us</h2>
           <p>
             If you have questions about this Privacy Policy, please contact us through our
-            <a href="https://github.com/khuepm/lumibase" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">GitHub repository</a>.
+            <a href="https://github.com/khuepm/lumibase" target="_blank" rel="noopener noreferrer" className="text-signal-400 hover:underline">GitHub repository</a>.
           </p>
         </section>
       </div>

@@ -10,6 +10,7 @@ const ROOT_PACKAGE_PATH = path.join(REPO_ROOT, 'package.json');
 const PUBLIC_PACKAGE_ALLOWLIST = [
   'packages/sdk',
   'packages/extension-sdk',
+  'packages/create-lumibase',
 ];
 
 const args = new Set(process.argv.slice(2));

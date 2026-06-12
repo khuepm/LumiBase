@@ -233,3 +233,20 @@ Sau khi build thành công, file đóng gói cuối cùng sẽ nằm tại `dist
 4. Bạn sẽ nhận được thông báo lỗi từ sandbox: `"Bài viết quá ngắn! Nội dung hiện tại chỉ có ... từ, yêu cầu tối thiểu 100 từ."` chặn đứng hành động lưu bài viết lỗi.
 5. Để điều chỉnh ngưỡng từ tối thiểu, quay lại **Settings** -> **Extensions**, mở phần cấu hình của extension **Word Count Validator**, đổi `minWords` thành `50` hoặc bất cứ con số nào bạn mong muốn rồi bấm lưu.
 
+
+## 9. Future operations plugins (observability/runtime)
+
+LumiBase currently treats process-level observability differently from regular tenant extensions:
+
+- Item hooks, endpoint extensions, and UI extensions run through the tenant-scoped extension sandbox.
+- Tracing providers such as Apache SkyWalking need Node process bootstrap before the CMS app is imported, so they are built-in Node/Docker providers in the first POC.
+
+Before exposing observability as marketplace extensions, add an explicit operations-plugin model:
+
+- Extend `ExtensionType` with `observability` or `runtime`.
+- Add `runtimeTargets?: ['node' | 'cloudflare']` to the manifest so Node-only packages never enter the Workers bundle.
+- Add capabilities such as `observability:trace`, `observability:metrics`, and secret references for provider tokens.
+- Restrict process-level providers to built-in or signed/allowlisted bundles.
+- Treat provider/endpoint changes as restart-required until a safe hot-reload design exists.
+
+This keeps the current edge-safe extension sandbox intact while leaving a migration path from the built-in SkyWalking POC to a more general plugin architecture.

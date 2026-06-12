@@ -15,6 +15,7 @@ import { withControlPlaneAccessGuard } from './middleware/control-plane-access-g
 import { withFileUploadPolicy } from './middleware/file-upload-policy';
 import { withSecurityHeaders } from './middleware/security-headers';
 import { withTenant } from './middleware/tenant';
+import { withTracing } from './middleware/tracing';
 import { activityRouter } from './routes/activity';
 import { accessRouter } from './routes/access';
 import { adminRouter } from './routes/admin';
@@ -54,10 +55,13 @@ import { webhooksRouter } from './routes/webhooks';
 import { testAuthRouter } from './routes/test-auth';
 import { aiRouter } from './routes/ai';
 import { agentRouter } from './routes/agent';
+import { intentsRouter } from './routes/intents';
+import { mcpRouter } from './routes/mcp';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 const app = new Hono<AppEnv>();
 
@@ -65,6 +69,7 @@ const app = new Hono<AppEnv>();
 // CORS before auth so preflight requests succeed. Runtime must be available
 // before tenant resolution (which may use the cache).
 app.use('*', withLogger());
+app.use('*', withTracing());
 app.use('*', withSecurityHeaders());
 app.use('*', withMetrics());
 app.use('*', withRuntime());
@@ -209,7 +214,12 @@ api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
 api.route('/scim-tokens', scimAdminRouter);
 api.route('/ai', aiRouter);
+api.route('/agent/intents', intentsRouter);
 api.route('/agent', agentRouter);
+// MCP server (content-os task 4; Req 4.1). Same authenticated chain as the
+// Agent API — the MCP adapter passes the token's roles to the harness, so
+// both surfaces share one decision codepath (Property 14).
+api.route('/mcp', mcpRouter);
 
 // ClickHouse CDC control-plane surface (`/api/v1/cdc/*`) — clickhouse-cdc
 // task 12.2; Req 1.1; design "CDC API Routes" §7. Mounted on the
@@ -237,7 +247,7 @@ app.notFound((c) =>
 );
 app.onError((err, c) => {
   const requestId = c.get('requestId');
-  console.error('[lumibase-cms] unhandled error', { requestId, err });
+  console.error('[lumibase-cms] unhandled error', { requestId, err: formatSafeError(err) });
   return c.json(
     { errors: [{ code: 'INTERNAL', message: 'Internal Server Error', requestId }] },
     500,

@@ -308,6 +308,25 @@ Operational notes:
 - `agent_tool_calls.cost` stores token/cost estimates after secret masking.
 - If the same goal fails at least three runs and a runtime `QueueProvider` is available, the run service enqueues `agent-dead-letter` with the scoped run failure payload.
 
+### Content OS tables (`content-os.ts`)
+
+| Collection | Purpose |
+|---|---|
+| `content_intents` | Declared desired state (SLO) per collection: rules, cron schedule, budget, autonomy cap, maintenance window |
+| `content_drifts` | Detected rule violations; unique `(siteId, fingerprint)` dedupes detection across scans |
+| `agent_autonomy_grants` | Earned trust per (site, agentRole, capability): level 0–4, evidence, expiry |
+| `agent_incidents` | Demotion evidence and exception-inbox feed (`veto`, `eval_fail`, `load_guard`, …) |
+| `agent_freezes` | Kill-switch freezes (scope `site`/`role`); `liftedAt IS NULL` = active; doubles as audit trail |
+| `agent_roles` | Multi-agent role library with minimal capability sets; harness enforces role ∩ grant |
+| `constitutions` | Versioned publish-gate evaluator sets; sha256 hash identity; at most one `active` per site |
+
+Content OS columns on existing tables:
+
+- `revisions`: `authorType`, `createdByRunId`, `model`, `constitutionHash`, `sources`, `confidence`, `staged`, `autoCommitAt` (provenance + veto staging).
+- `items`: `pinnedFields` (Law Zero — fields a human edit locked against agent writes).
+- `agent_goals`: `parentGoalId` (goal tree), `origin` (`user/reconciler/planner/flow`), `intentId`, `driftFingerprint`, `agentRole`.
+- `agent_approvals`: `kind` (`approval`/`veto`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`.
+
 ## 11. Indexing & RLS
 
 - Bắt buộc index `(siteId, …)` ở mọi bảng domain.

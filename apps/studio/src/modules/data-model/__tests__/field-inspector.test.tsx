@@ -51,31 +51,36 @@ describe('FieldInspector', () => {
       />,
     );
 
-    for (const tab of ['Basics', 'Options', 'Display', 'Validation', 'Conditions', 'Layout', 'Storage', 'Translations']) {
+    for (const tab of ['Field', 'Interface', 'Table display', 'Validation', 'Conditions', 'Layout', 'Storage']) {
       expect(screen.getByRole('button', { name: tab })).toBeInTheDocument();
     }
 
-    fireEvent.click(screen.getByRole('button', { name: /^options$/i }));
-    expect((screen.getByLabelText(/options json/i) as HTMLTextAreaElement).value).toContain(
+    // Interface tab — options JSON preserved
+    fireEvent.click(screen.getByRole('button', { name: /^interface$/i }));
+    expect((screen.getByLabelText(/interface options/i) as HTMLTextAreaElement).value).toContain(
       '"preserved": "yes"',
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /^display$/i }));
+    // Table display tab — open advanced section and check displayOptions
+    fireEvent.click(screen.getByRole('button', { name: /^table display$/i }));
+    fireEvent.click(screen.getByText(/advanced display options/i));
     expect((screen.getByLabelText(/display options json/i) as HTMLTextAreaElement).value).toContain(
       '"unknownDisplayOption": "keep-me"',
     );
 
+    // Validation tab
     fireEvent.click(screen.getByRole('button', { name: /^validation$/i }));
-    expect((screen.getByLabelText(/validation json/i) as HTMLTextAreaElement).value).toContain(
+    expect((screen.getByLabelText(/validation rules/i) as HTMLTextAreaElement).value).toContain(
       '"unknownValidation": true',
     );
 
+    // Conditions tab
     fireEvent.click(screen.getByRole('button', { name: /^conditions$/i }));
-    expect((screen.getByLabelText(/conditions json/i) as HTMLTextAreaElement).value).toContain(
+    expect((screen.getByLabelText(/conditions/i) as HTMLTextAreaElement).value).toContain(
       '"readonly-archived"',
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save field/i }));
 
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -84,6 +89,119 @@ describe('FieldInspector', () => {
         validation: { rules: [{ _contains: 'news' }], unknownValidation: true },
         conditions: [{ name: 'readonly-archived', rule: { status: { _eq: 'archived' } } }],
         translations: { vi: { label: 'Tieu de' } },
+      }),
+    );
+  });
+
+  it('applies catalogue defaults when selecting a relation interface', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <FieldInspector
+        state={{ ...baseState, options: {}, special: [], display: null }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+        isSubmitting={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^interface$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^many-to-many$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save field/i }));
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        interface: 'relation-m2m',
+        type: 'alias',
+        display: 'relation',
+        options: expect.objectContaining({ collection: '', junctionCollection: '' }),
+        special: ['m2m'],
+      }),
+    );
+  });
+
+  it('applies SEO extension defaults from the catalogue', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <FieldInspector
+        state={{ ...baseState, options: {}, special: [], display: null }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+        isSubmitting={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^interface$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^seo$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save field/i }));
+
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        interface: 'seo',
+        type: 'json',
+        options: expect.objectContaining({
+          titleMaxLength: 70,
+          descriptionMaxLength: 160,
+        }),
+        special: [],
+        width: 'full',
+      }),
+    );
+  });
+
+  it('applies AIO extension defaults from the catalogue', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <FieldInspector
+        state={{ ...baseState, options: {}, special: [], display: null }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+        isSubmitting={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^interface$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^aio$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save field/i }));
+
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        interface: 'aio',
+        type: 'json',
+        options: expect.objectContaining({
+          summaryMaxLength: 300,
+          tones: ['neutral', 'expert', 'friendly'],
+        }),
+        special: [],
+        width: 'full',
+      }),
+    );
+  });
+
+  it('applies Files extension defaults from the catalogue', () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <FieldInspector
+        state={{ ...baseState, options: {}, special: [], display: null }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+        isSubmitting={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^interface$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^files$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save field/i }));
+
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        interface: 'files',
+        type: 'alias',
+        display: 'relation',
+        options: expect.objectContaining({ limit: 15 }),
+        special: ['files'],
       }),
     );
   });

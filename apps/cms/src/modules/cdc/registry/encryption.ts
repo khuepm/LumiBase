@@ -90,66 +90,59 @@ export async function decrypt(
 }
 
 /**
- * Synchronous encrypt wrapper for use in the pipeline registry service.
- * Internally uses the async Web Crypto API but provides a sync-looking
- * interface by returning a Promise that the caller must await.
+ * Decrypt with backward compatibility for rows written before the registry
+ * moved to AES-256-GCM.
  *
- * For the pipeline registry, we use the sync-compatible versions that
- * work within the service's async methods.
+ * Tries AES-GCM first. If that fails, falls back to the legacy XOR stream
+ * cipher that earlier releases used for pipeline connection strings, so
+ * existing pipelines keep decrypting after an upgrade. Legacy rows are
+ * re-encrypted with AES-GCM the next time their connection is updated.
+ *
+ * @throws Error if neither format decrypts (wrong key or tampered data)
  */
-export function encryptSync(plaintext: string, key: string): string {
-  // For synchronous contexts, use a simple XOR-based cipher.
-  // This is used internally by the pipeline registry where we need
-  // synchronous encryption within an already-async flow.
-  const encoder = new TextEncoder();
-  const data = encoder.encode(plaintext);
-  const keyBytes = hashKeySync(key);
-  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-
-  const encrypted = new Uint8Array(data.length);
-  for (let i = 0; i < data.length; i++) {
-    const keyByte = keyBytes[(i + iv[i % IV_LENGTH]!) % keyBytes.length]!;
-    encrypted[i] = data[i]! ^ keyByte ^ iv[i % IV_LENGTH]!;
+export async function decryptCompat(
+  ciphertext: string,
+  key?: string,
+): Promise<string> {
+  try {
+    return await decrypt(ciphertext, key);
+  } catch {
+    return decryptLegacyXor(ciphertext, key ?? FALLBACK_KEY);
   }
-
-  const authTag = computeAuthTag(encrypted, iv, keyBytes);
-
-  const combined = new Uint8Array(IV_LENGTH + encrypted.length + 16);
-  combined.set(iv, 0);
-  combined.set(encrypted, IV_LENGTH);
-  combined.set(authTag, IV_LENGTH + encrypted.length);
-
-  return btoa(String.fromCharCode(...combined));
 }
 
-/**
- * Synchronous decrypt wrapper.
- */
-export function decryptSync(ciphertext: string, key: string): string {
+// ── legacy format support (read-only) ────────────────────────────────────
+//
+// Earlier releases encrypted connection strings with a homegrown XOR stream
+// cipher. It is cryptographically weak and is no longer used for writes;
+// this block exists solely so decryptCompat can read rows that predate the
+// AES-GCM migration. Do not use it for new data.
+
+function decryptLegacyXor(ciphertext: string, key: string): string {
   const combined = Uint8Array.from(atob(ciphertext), (c) => c.charCodeAt(0));
-  const keyBytes = hashKeySync(key);
+  const keyBytes = legacyHashKey(key);
 
   const iv = combined.slice(0, IV_LENGTH);
   const authTag = combined.slice(combined.length - 16);
   const encrypted = combined.slice(IV_LENGTH, combined.length - 16);
 
-  const expectedTag = computeAuthTag(encrypted, iv, keyBytes);
+  const expectedTag = legacyAuthTag(encrypted, iv, keyBytes);
   if (!constantTimeEqual(authTag, expectedTag)) {
     throw new Error('Decryption failed: authentication tag mismatch');
   }
 
   const decrypted = new Uint8Array(encrypted.length);
   for (let i = 0; i < encrypted.length; i++) {
-    const keyByte = keyBytes[(i + iv[i % IV_LENGTH]!) % keyBytes.length]!;
-    decrypted[i] = encrypted[i]! ^ keyByte ^ iv[i % IV_LENGTH]!;
+    const ivByte = iv[i % IV_LENGTH]!;
+    const offset = unbiasedByteModulo(ivByte, keyBytes.length);
+    const keyByte = keyBytes[(i + offset) % keyBytes.length]!;
+    decrypted[i] = encrypted[i]! ^ keyByte ^ ivByte;
   }
 
   return new TextDecoder().decode(decrypted);
 }
 
-// ── internal helpers ─────────────────────────────────────────────────────
-
-function hashKeySync(key: string): Uint8Array {
+function legacyHashKey(key: string): Uint8Array {
   const encoder = new TextEncoder();
   const input = encoder.encode(key);
   const output = new Uint8Array(32);
@@ -168,7 +161,7 @@ function hashKeySync(key: string): Uint8Array {
   return output;
 }
 
-function computeAuthTag(
+function legacyAuthTag(
   ciphertext: Uint8Array,
   iv: Uint8Array,
   key: Uint8Array,

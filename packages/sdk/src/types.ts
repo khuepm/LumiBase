@@ -474,6 +474,17 @@ export interface RevisionRow {
   };
   userId: string | null;
   createdAt: string;
+  /* Provenance (content-os Req 1.1; content-os-ui Req 4.1). The CMS has
+   * returned these columns since the content-os provenance migration —
+   * optional here so older payloads stay assignable. */
+  authorType?: "human" | "agent";
+  createdByRunId?: string | null;
+  model?: string | null;
+  constitutionHash?: string | null;
+  confidence?: number | null;
+  sources?: unknown[] | null;
+  staged?: boolean;
+  autoCommitAt?: string | null;
 }
 
 export interface ListItemsResponse<

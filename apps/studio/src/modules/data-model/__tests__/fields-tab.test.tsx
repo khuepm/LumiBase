@@ -82,7 +82,6 @@ describe('FieldsTab', () => {
 
     expect(await screen.findByText('System fields')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'status' })).toBeInTheDocument();
-    expect(screen.getByText('Locked')).toBeInTheDocument();
     expect(screen.queryByLabelText(/delete status/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'status' }));
@@ -91,14 +90,12 @@ describe('FieldsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /^layout$/i }));
     fireEvent.click(screen.getByLabelText(/hidden/i));
     fireEvent.click(screen.getByLabelText(/readonly/i));
-    fireEvent.change(screen.getByLabelText(/width/i), {
-      target: { value: 'full' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /^translations$/i }));
-    fireEvent.change(screen.getByLabelText(/translations json/i), {
+    fireEvent.click(screen.getByRole('button', { name: /^full$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^storage$/i }));
+    fireEvent.change(screen.getByLabelText(/translations/i), {
       target: { value: '{ "vi": { "label": "Trang thai" } }' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save field/i }));
 
     await waitFor(() => {
       expect(updateCollection).toHaveBeenCalledWith('posts', {

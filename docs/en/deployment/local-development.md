@@ -30,8 +30,8 @@ pnpm dev
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| CMS API | http://localhost:8787 | Hono REST + WebSocket API |
-| Studio | http://localhost:5173 | Admin SPA |
+| CMS API | http://localhost:1989 | Hono REST + WebSocket API |
+| Studio | http://localhost:2026 | Admin SPA |
 | Docs viewer | http://localhost:5174 | This docs site |
 | PostgreSQL | localhost:5432 | Database |
 | Redis | localhost:6379 | Cache + queues |
@@ -44,10 +44,10 @@ pnpm dev
 
 ```bash
 # CMS API only
-pnpm -F @lumibase/cms dev        # Hono with hot-reload (port 8787)
+pnpm -F @lumibase/cms dev        # Hono with hot-reload (port 1989)
 
 # Studio only
-pnpm -F @lumibase/studio dev     # Vite SPA (port 5173)
+pnpm -F @lumibase/studio dev     # Vite SPA (port 2026)
 
 # Docs only
 pnpm -F @lumibase/docs dev       # Vite docs (port 5174)
@@ -57,7 +57,7 @@ pnpm -F @lumibase/docs dev       # Vite docs (port 5174)
 
 ## First-time setup wizard
 
-On first run, the CMS API detects an empty database and activates the setup wizard. Visit http://localhost:8787/setup to:
+On first run, the CMS API detects an empty database and activates the setup wizard. Visit http://localhost:1989/setup to:
 
 1. Create the first admin user
 2. Set the site name and default language
@@ -168,8 +168,8 @@ pnpm -F @lumibase/cms wrangler:dev
 If ports are already in use, override in `.env`:
 
 ```env
-CMS_PORT=8788
-STUDIO_PORT=5174
+CMS_PORT=1990
+STUDIO_PORT=2027
 ```
 
 ### Docker not starting
@@ -196,7 +196,7 @@ pnpm typecheck
 
 ```bash
 # Reindex all searchable collections
-curl -X POST http://localhost:8787/api/v1/search/reindex \
+curl -X POST http://localhost:1989/api/v1/search/reindex \
   -H "Authorization: Bearer <admin-token>" \
   -H "X-Lumi-Site: <your-site-id>"
 ```

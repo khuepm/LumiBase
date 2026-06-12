@@ -290,6 +290,15 @@ export function legacyRest() {
           client.rawRequest<Row>(`${base}/${id}/revert/${revisionId}`, {
             method: "POST",
           }),
+        // Law Zero pins (content-os Req 8.4/8.5): fields a human edit locked
+        // against agent writes. Release hands the field back to agents.
+        listPins: (id: string) =>
+          client.rawRequest<{ pinnedFields: string[] }>(`${base}/${id}/pins`),
+        releasePin: (id: string, field: string) =>
+          client.rawRequest<{ pinnedFields: string[] }>(
+            `${base}/${id}/pins/${encodeURIComponent(field)}`,
+            { method: "DELETE" },
+          ),
       };
     }
 
@@ -701,8 +710,13 @@ export function legacyRest() {
           });
         },
         /** @deprecated Use .realtime.create() instead. */
-        connect: (siteId: string) => {
-          const wsUrl = client.url.replace(/^http/, 'ws') + '/api/v1/realtime?siteId=' + siteId;
+        connect: async (siteId: string) => {
+          const res = await client.rawRequest<{ ticket: string }>("/api/v1/realtime/ticket", { method: "POST" });
+          const ticket = res.data?.ticket;
+          if (!ticket) {
+            throw new Error("Failed to get realtime ticket");
+          }
+          const wsUrl = client.url.replace(/^http/, 'ws') + '/api/v1/realtime?ticket=' + ticket + '&siteId=' + siteId;
           return new WebSocket(wsUrl);
         },
       },

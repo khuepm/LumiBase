@@ -1,6 +1,7 @@
 import {
   activity,
   collections,
+  contentIntents,
   extensions as extensionsTable,
   items,
   relations,
@@ -21,7 +22,9 @@ import { CryptoService } from './crypto-service';
 import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
 import { AuditLogger } from '../modules/audit/logger';
+import { WriteCoalescer } from './load-guard-service';
 import type { PrimaryKeyType, StorageMode } from './schema-service';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
  * ItemService — generic CRUD over the `items` JSONB store, driven by the
@@ -107,6 +110,22 @@ export interface PrimaryKeyResolution {
   id: string | undefined;
 }
 
+/**
+ * Provenance carried onto every revision written by this service instance.
+ * Human callers omit it (defaults to authorType 'human'); the AI harness
+ * sets an agent provenance with the executing run id before invoking skills.
+ */
+export interface ItemProvenance {
+  authorType: 'human' | 'agent';
+  runId?: string | null;
+  model?: string | null;
+  constitutionHash?: string | null;
+  /** Source references (URLs, item ids, memory ids) used by the agent. */
+  sources?: unknown[] | null;
+  /** Agent self-reported confidence in [0, 1]. */
+  confidence?: number | null;
+}
+
 export interface ItemServiceDeps {
   db: Database;
   /** Optional cache used by SchemaService for compiled manifests. */
@@ -134,6 +153,8 @@ export interface ItemServiceDeps {
   extensionEnv?: Record<string, unknown>;
   /** Internal guard for actor-scoped extension item access to avoid recursive hooks. */
   suppressExtensionHooks?: boolean;
+  /** Revision provenance; defaults to `{ authorType: 'human' }` when omitted. */
+  provenance?: ItemProvenance;
 }
 
 const STRUCTURAL_FIELDS = new Set([
@@ -260,8 +281,11 @@ export class ItemService {
   private readonly permissions: PermissionService | null;
   private readonly cryptoService: CryptoService | null;
   private hookDispatcher: HookDispatcher | null = null;
+  private provenance: ItemProvenance;
+  private writeCoalescer: WriteCoalescer | null = null;
 
   constructor(private readonly deps: ItemServiceDeps) {
+    this.provenance = deps.provenance ?? { authorType: 'human' };
     this.schemaService = new SchemaService({
       db: deps.db,
       siteId: deps.siteId,
@@ -271,6 +295,15 @@ export class ItemService {
       ? new PermissionService({ db: deps.db, cache: deps.cache, ctx: deps.permissionCtx })
       : null;
     this.cryptoService = deps.encryptionKey ? new CryptoService(deps.encryptionKey) : null;
+  }
+
+  /**
+   * Overrides revision provenance for subsequent writes. Called by the AI
+   * harness once the executing run is known (the run is created after this
+   * service instance is constructed).
+   */
+  setProvenance(provenance: ItemProvenance): void {
+    this.provenance = provenance;
   }
 
   /** Resolve permission for the active principal; returns null when denied. */
@@ -295,7 +328,13 @@ export class ItemService {
       const rows = await this.deps.db
         .select()
         .from(extensionsTable)
-        .where(and(eq(extensionsTable.siteId, this.deps.siteId), eq(extensionsTable.enabled, true)));
+        .where(
+          and(
+            eq(extensionsTable.siteId, this.deps.siteId),
+            eq(extensionsTable.enabled, true),
+            eq(extensionsTable.type, 'hook'),
+          ),
+        );
       const sandbox = new ExtensionSandbox(
         this.deps.extensionEnv as never,
         this.deps.db,
@@ -507,7 +546,7 @@ export class ItemService {
     await this.publishRealtimeEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
-    await this.triggerMaterializeRefresh(collectionName);
+    await this.afterWriteInvalidation(collectionName);
     return row;
   }
 
@@ -535,6 +574,25 @@ export class ItemService {
       )
       .limit(1);
     if (!rawRow) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+
+    // Law Zero: agents never overwrite fields a human pinned.
+    const pinnedFields = Array.isArray(rawRow.pinnedFields)
+      ? (rawRow.pinnedFields as string[])
+      : [];
+    if (patch.data) {
+      const blocked = blockedPinnedFields(
+        pinnedFields,
+        Object.keys(patch.data),
+        this.provenance.authorType,
+      );
+      if (blocked.length > 0) {
+        throw new ItemServiceError(
+          'PINNED_BY_HUMAN',
+          `Field(s) pinned by a human edit: ${blocked.join(', ')}. Release the pin to allow agent writes.`,
+          403,
+        );
+      }
+    }
 
     const currentData = await this.processCrypto(collectionName, rawRow.data as Record<string, unknown>, 'decrypt', true);
 
@@ -574,12 +632,24 @@ export class ItemService {
     }));
     const encryptedFinal = await this.processCrypto(collectionName, finalData, 'encrypt', true);
 
+    // Law Zero: human edits on intent-governed collections pin the fields
+    // they touched so the reconciler never argues with a person.
+    const nextPinned = patch.data
+      ? computeNextPinnedFields(
+          pinnedFields,
+          Object.keys(patch.data),
+          this.provenance.authorType,
+          await this.isIntentGoverned(coll.name),
+        )
+      : pinnedFields;
+
     const [row] = await this.deps.db
       .update(items)
       .set({
         data: encryptedFinal,
         status: finalStatus,
         sort: finalSort,
+        pinnedFields: nextPinned,
         userUpdated: this.deps.userId ?? null,
         updatedAt: new Date(),
       })
@@ -598,13 +668,17 @@ export class ItemService {
 
     await this.writeRevision(coll.id, id, encryptedFinal, rawRow.data as Record<string, unknown>);
     await this.writeActivity('update', coll.name, id, { patch });
+    const addedPins = nextPinned.filter((field) => !pinnedFields.includes(field));
+    if (addedPins.length > 0) {
+      await this.writeActivity('pin', coll.name, id, { fields: addedPins });
+    }
     
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', false);
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
-    await this.triggerMaterializeRefresh(collectionName);
+    await this.afterWriteInvalidation(collectionName);
     return row;
   }
 
@@ -678,7 +752,7 @@ export class ItemService {
     await this.publishRealtimeEvent(collectionName, 'delete', id, {});
     // After hook — fire-and-forget.
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
-    await this.triggerMaterializeRefresh(collectionName);
+    await this.afterWriteInvalidation(collectionName);
     return { ok: true } as const;
   }
 
@@ -976,7 +1050,7 @@ export class ItemService {
       }
     } catch (err) {
       // Search indexing is non-critical — log and continue.
-      console.error('[item-service] search index failed', { collectionName, id, err });
+      console.error('[item-service] search index failed', { collectionName, id, err: formatSafeError(err) });
     }
   }
 
@@ -998,7 +1072,7 @@ export class ItemService {
       }
     } catch (err) {
       // Search de-indexing is non-critical — log and continue.
-      console.error('[item-service] search deindex failed', { collectionName, id, err });
+      console.error('[item-service] search deindex failed', { collectionName, id, err: formatSafeError(err) });
     }
   }
 
@@ -1035,7 +1109,7 @@ export class ItemService {
       );
     } catch (err) {
       // Realtime fan-out is non-critical — log and continue.
-      console.error('[item-service] realtime publish failed', { collection, itemId, err });
+      console.error('[item-service] realtime publish failed', { collection, itemId, err: formatSafeError(err) });
     }
   }
 
@@ -1080,6 +1154,38 @@ export class ItemService {
     return out;
   }
 
+  /**
+   * Starts a write-coalescing window (Load Guard, Req 9.1). While active,
+   * per-write invalidation work (materialized-view refresh) is deferred and
+   * deduplicated per collection; `flushCoalescedWrites` runs it once per
+   * collection at the tool-call boundary. The harness wraps every skill
+   * handler in a window so a batch of N writes to one collection costs one
+   * refresh instead of N.
+   */
+  beginWriteCoalescing(): void {
+    this.writeCoalescer = new WriteCoalescer();
+  }
+
+  /** Flushes deferred invalidations; returns the refreshed collections. */
+  async flushCoalescedWrites(): Promise<string[]> {
+    if (!this.writeCoalescer) return [];
+    const collections = this.writeCoalescer.flush();
+    this.writeCoalescer = null;
+    for (const collection of collections) {
+      await this.triggerMaterializeRefresh(collection);
+    }
+    return collections;
+  }
+
+  /** Per-write invalidation: immediate normally, deferred while coalescing. */
+  private async afterWriteInvalidation(collectionName: string): Promise<void> {
+    if (this.writeCoalescer) {
+      this.writeCoalescer.record(collectionName);
+      return;
+    }
+    await this.triggerMaterializeRefresh(collectionName);
+  }
+
   private async triggerMaterializeRefresh(collectionName: string): Promise<void> {
     try {
       const mcs = await this.deps.db
@@ -1110,8 +1216,76 @@ export class ItemService {
         }
       }
     } catch (err) {
-      console.error('[item-service] materialize trigger failed', { collectionName, err });
+      console.error('[item-service] materialize trigger failed', { collectionName, err: formatSafeError(err) });
     }
+  }
+
+  /** True when an active content intent governs this collection (Law Zero). */
+  private async isIntentGoverned(collectionName: string): Promise<boolean> {
+    try {
+      const [intent] = await this.deps.db
+        .select({ id: contentIntents.id })
+        .from(contentIntents)
+        .where(
+          and(
+            eq(contentIntents.siteId, this.deps.siteId),
+            eq(contentIntents.collection, collectionName),
+            eq(contentIntents.status, 'active'),
+          ),
+        )
+        .limit(1);
+      return Boolean(intent);
+    } catch {
+      // Intent lookup must never block a human write.
+      return false;
+    }
+  }
+
+  /** Lists pinned fields for an item. */
+  async listPins(collectionName: string, id: string): Promise<{ pinnedFields: string[] }> {
+    const coll = await this.resolveCollection(collectionName);
+    await this.perm(collectionName, 'read');
+    const [row] = await this.deps.db
+      .select({ pinnedFields: items.pinnedFields })
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          eq(items.id, id),
+          isNull(items.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+    return { pinnedFields: Array.isArray(row.pinnedFields) ? (row.pinnedFields as string[]) : [] };
+  }
+
+  /**
+   * Releases a human pin, handing the field back to agents. Audited with
+   * the releasing actor (Req 8.4).
+   */
+  async releasePin(collectionName: string, id: string, field: string): Promise<{ pinnedFields: string[] }> {
+    const coll = await this.resolveCollection(collectionName);
+    await this.perm(collectionName, 'update');
+    const { pinnedFields } = await this.listPins(collectionName, id);
+    if (!pinnedFields.includes(field)) {
+      throw new ItemServiceError('NOT_PINNED', `Field "${field}" is not pinned.`, 404);
+    }
+    const next = pinnedFields.filter((f) => f !== field);
+    await this.deps.db
+      .update(items)
+      .set({ pinnedFields: next, updatedAt: new Date() })
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          eq(items.id, id),
+          isNull(items.deletedAt),
+        ),
+      );
+    await this.writeActivity('pin.release', coll.name, id, { field });
+    return { pinnedFields: next };
   }
 
   private async writeRevision(
@@ -1126,6 +1300,12 @@ export class ItemService {
       itemId,
       delta: { before, after },
       userId: this.deps.userId ?? null,
+      authorType: this.provenance.authorType,
+      createdByRunId: this.provenance.runId ?? null,
+      model: this.provenance.model ?? null,
+      constitutionHash: this.provenance.constitutionHash ?? null,
+      sources: this.provenance.sources ?? null,
+      confidence: this.provenance.confidence ?? null,
     });
   }
 
@@ -1144,6 +1324,36 @@ export class ItemService {
       payload,
     });
   }
+}
+
+/**
+ * Law Zero (override-is-law) helpers. Pure functions so pin semantics can be
+ * property-tested in isolation.
+ */
+
+/** Returns the patched fields that are blocked for agents by a human pin. */
+export function blockedPinnedFields(
+  pinnedFields: readonly string[],
+  patchKeys: readonly string[],
+  authorType: 'human' | 'agent',
+): string[] {
+  if (authorType !== 'agent') return [];
+  const pinned = new Set(pinnedFields);
+  return patchKeys.filter((key) => pinned.has(key));
+}
+
+/**
+ * Computes the next pin set after a write. Human edits on intent-governed
+ * collections pin the touched fields; agent writes never alter pins.
+ */
+export function computeNextPinnedFields(
+  pinnedFields: readonly string[],
+  patchKeys: readonly string[],
+  authorType: 'human' | 'agent',
+  intentGoverned: boolean,
+): string[] {
+  if (authorType !== 'human' || !intentGoverned) return [...pinnedFields];
+  return [...new Set([...pinnedFields, ...patchKeys])];
 }
 
 export function assertWritablePermissionFields(

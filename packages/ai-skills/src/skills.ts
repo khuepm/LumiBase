@@ -248,4 +248,62 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     },
     requiredCapabilities: ['items:read'],
   },
+
+  generateAppSpec: {
+    name: 'generateAppSpec',
+    description: 'Generate page and component specs from selected collections.',
+    parameters: {
+      type: 'object',
+      properties: {
+        collections: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Collection names to include in the spec.',
+        },
+        targetApp: {
+          type: 'string',
+          description: 'Target application type (e.g. storefront, dashboard).',
+        },
+      },
+      required: [],
+    },
+    requiredCapabilities: ['schema:read', 'items:read'],
+  },
+
+  generateApiDocs: {
+    name: 'generateApiDocs',
+    description: 'Generate an OpenAPI documentation artifact from the schema and permissions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        collections: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Collection names to document (defaults to all).',
+        },
+      },
+      required: [],
+    },
+    requiredCapabilities: ['schema:read'],
+  },
+
+  generateSeedData: {
+    name: 'generateSeedData',
+    description: 'Generate a seed data artifact for a collection.',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: {
+          type: 'string',
+          description: 'The collection to generate seed data for.',
+        },
+        count: {
+          type: 'integer',
+          description: 'Number of sample records to generate (1–20, default: 3).',
+        },
+      },
+      required: ['collection'],
+    },
+    requiredCapabilities: ['items:write'],
+  },
 };

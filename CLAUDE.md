@@ -6,9 +6,9 @@
 
 ## Project overview
 
-LumiBase is an Edge-native Headless CMS with dual deployment (Cloudflare Workers + Docker). It is a Turborepo monorepo.
+LumiBase is a **Content Operating System (Content OS)** — an Edge-native, AI-native headless CMS with dual deployment (Cloudflare Workers + Docker). It is a Turborepo monorepo. As of v0.5.0, content is operated by governed agents against declarative SLOs (intents), reconciled continuously, with earned autonomy (L0–L4) and full provenance; humans set intent, taste, and accountability.
 
-**Philosophy:** Multi-tenant by default · Edge-first caching · Config-as-Code · HITL for dangerous AI ops
+**Philosophy:** Multi-tenant by default · Edge-first caching · Config-as-Code · Intent-driven & reconciled · Earned autonomy (HITL → veto-window → autopilot) for AI ops
 
 ## Quick architecture map
 
@@ -55,7 +55,7 @@ pnpm -F @lumibase/database db:migrate
 ```bash
 docker compose -f docker/docker-compose.yml up -d
 pnpm dev
-# CMS: http://localhost:8787 | Studio: http://localhost:5173
+# CMS: http://localhost:1989 | Studio: http://localhost:2026
 ```
 
 ### Type check

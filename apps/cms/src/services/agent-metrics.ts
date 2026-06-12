@@ -1,4 +1,4 @@
-import { Counter, Histogram } from 'prom-client';
+import { Counter, Gauge, Histogram } from 'prom-client';
 import { register } from '../routes/metrics';
 
 export const agentRunsTotal = new Counter({
@@ -71,3 +71,73 @@ export function observeAgentCost(toolName: string, cost: Record<string, unknown>
     agentEstimatedCostUsdTotal.inc({ tool: toolName }, usd);
   }
 }
+
+export const agentBackpressureActivationsTotal = new Counter({
+  name: 'lumibase_agent_backpressure_activations_total',
+  help: 'Times the load guard paused reconciler autonomy due to runtime load',
+  labelNames: ['reason'] as const,
+  registers: [register],
+});
+
+export const agentWriteBudgetDenialsTotal = new Counter({
+  name: 'lumibase_agent_write_budget_denials_total',
+  help: 'Tool calls deferred at the boundary by the per-intent write rate budget',
+  registers: [register],
+});
+
+// ── Content OS rollout metrics (content-os task 20.2; Req 9.5) ──────────────
+
+/**
+ * Dangerous actions that executed WITHOUT a prior human approval, by
+ * autonomy level (L3 = staged into the veto window, L4 = autopilot).
+ * Autonomous operation rate = this / lumibase_agent_runs_total.
+ */
+export const agentAutonomousOpsTotal = new Counter({
+  name: 'lumibase_agent_autonomous_operations_total',
+  help: 'Dangerous actions executed without pre-approval, by autonomy level',
+  labelNames: ['level'] as const,
+  registers: [register],
+});
+
+export const agentVetoStagingsTotal = new Counter({
+  name: 'lumibase_agent_veto_stagings_total',
+  help: 'Staged revisions entering the L3 veto window',
+  registers: [register],
+});
+
+/** Veto rate = lumibase_agent_vetoes_total / lumibase_agent_veto_stagings_total. */
+export const agentVetoesTotal = new Counter({
+  name: 'lumibase_agent_vetoes_total',
+  help: 'Human vetoes of staged revisions before auto-commit',
+  registers: [register],
+});
+
+/**
+ * Coalescing ratio = coalesced / (coalesced + flushes): the share of item
+ * writes absorbed by the per-tool-call coalescing window.
+ */
+export const agentCoalescedWritesTotal = new Counter({
+  name: 'lumibase_agent_coalesced_writes_total',
+  help: 'Item writes absorbed by the write-coalescing window (no extra invalidation)',
+  registers: [register],
+});
+
+export const agentWriteFlushesTotal = new Counter({
+  name: 'lumibase_agent_write_flushes_total',
+  help: 'Tag invalidations flushed at tool-call boundaries (one per collection per window)',
+  registers: [register],
+});
+
+/** Intent health: open drift backlog per intent at the last reconcile pass. */
+export const intentOpenDriftsGauge = new Gauge({
+  name: 'lumibase_intent_open_drifts',
+  help: 'Open/assigned drifts per content intent at the last reconciliation',
+  labelNames: ['intent'] as const,
+  registers: [register],
+});
+
+export const intentBreakerTripsTotal = new Counter({
+  name: 'lumibase_intent_breaker_trips_total',
+  help: 'Reconciler circuit-breaker trips (intent moved to error)',
+  registers: [register],
+});

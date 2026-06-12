@@ -850,23 +850,22 @@ function validateProject(project: SetupCompleteProject | undefined):
 }
 
 function generateBackupCode(): string {
-  // Draw 16 bytes (128 bits) of CSPRNG entropy from `getRandomValues`
-  // — that is the "≥128 bit/code" randomness SOURCE the task calls for.
-  // Each byte maps to one alphabet char, yielding 16 visible chars from
-  // a 31-char alphabet → log2(31) * 16 ≈ 79 bits of *rendered* code
-  // space (the security-relevant figure, bounded by the human-typable
-  // `XXXX-XXXX` format Req 14.1 mandates). Format as two 8-char groups
-  // separated by a dash (8 visible chars per side, 17 chars total).
-  const buf = crypto.getRandomValues(new Uint8Array(16));
-  let chars = '';
-  for (let i = 0; i < 8; i++) {
-    chars += BACKUP_CODE_ALPHABET[buf[i]! % BACKUP_CODE_ALPHABET.length];
+  // Draw characters from the alphabet using rejection sampling so the
+  // distribution is uniform (no modulo bias).
+  const alphabetLen = BACKUP_CODE_ALPHABET.length;
+  const unbiasedUpperBound = Math.floor(256 / alphabetLen) * alphabetLen;
+  let raw = '';
+
+  while (raw.length < 16) {
+    const buf = crypto.getRandomValues(new Uint8Array(16));
+    for (let i = 0; i < buf.length && raw.length < 16; i++) {
+      const byte = buf[i]!;
+      if (byte >= unbiasedUpperBound) continue;
+      raw += BACKUP_CODE_ALPHABET[byte % alphabetLen];
+    }
   }
-  let chars2 = '';
-  for (let i = 8; i < 16; i++) {
-    chars2 += BACKUP_CODE_ALPHABET[buf[i]! % BACKUP_CODE_ALPHABET.length];
-  }
-  return `${chars}-${chars2}`;
+
+  return `${raw.slice(0, 8)}-${raw.slice(8, 16)}`;
 }
 
 /**

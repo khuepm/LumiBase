@@ -91,6 +91,105 @@ Rules enforced by the harness:
 - Failed runs keep their audit history. Retries create a new run linked to the original run instead of rewriting history.
 - Budget limits stop execution for max tool calls, runtime, estimated cost, or artifact size.
 
+### Run lifecycle and async execution
+
+Run status follows `queued → running → awaiting_approval → succeeded | failed | cancelled`:
+
+- `POST /api/v1/agent/goals` with `execution: 'async'` and a `task: { skillName, arguments }` creates the goal plus a `queued` run, enqueues it on the `agent-runs` queue via the runtime `QueueProvider`, and returns `202` with the `runId` immediately. Runtimes without a queue adapter reject async execution with `ASYNC_UNAVAILABLE`; sync execution is unaffected.
+- The queue worker (`registerAgentRunWorker`, wired in the Node entrypoint) drives queued runs through the same harness codepath — capability checks, risk policy, budgets and audit apply identically. Capabilities are captured from the enqueuing session and never widened.
+- When a dangerous action creates an approval, the run parks as `awaiting_approval`. An approval decision resumes it and executes only the stored skill — completed tool calls are never re-run.
+- `POST /api/v1/agent/runs/:id/cancel` cancels `queued`/`running`/`awaiting_approval` runs. Cancellation takes effect at the next tool-call boundary (the harness re-checks before every tool call), wins over late approvals, and is recorded with `stopReason` in run metrics.
+
+### Multi-agent org: roles and capability narrowing (Module C)
+
+Agent roles are data, not code. The `agent_roles` table holds a per-site role library (seeded with Planner, Writer, Translator, Taxonomist, SEO, FactChecker, Librarian — each with a deliberately minimal capability set; the Writer has no `schema:*` at all). When a run envelope carries `agentRole`, the harness narrows the caller's capabilities to **role ∩ grant** before the capability check (Step 2): a role can never exceed the token that runs it, and a token can never exceed the role it acts under. Unknown or disabled roles fail closed to the empty capability set. Roles are managed at `/api/v1/agent/roles` (admin).
+
+The **Planner** decomposes a goal into role-scoped sub-goals (`POST /api/v1/agent/goals/:id/decompose`): sub-goals link via `parentGoalId` with `origin='planner'`, inherit the parent's intent lineage and autonomy cap, and split the parent's **remaining** tool-call budget — the planner re-slices what is left, never mints new budget. `POST /api/v1/agent/goals/:id/settle` settles the parent from its children's terminal states: one failed sub-goal fails the parent (acceptance unmet); all completed completes it.
+
+### Trust gradient at the risk decision (L0–L4)
+
+When a dangerous skill reaches Step 3, the harness resolves the effective autonomy level for `(agentRole, capability)` via the trust ledger — `min(grant-or-default, intent cap, hard ceiling)` — and routes accordingly:
+
+- **≤ L2** — classic pre-execute HITL: an approval record is created and the run parks as `awaiting_approval`.
+- **L3 (veto window)** — stageable single-item patches (`updateItem` with a `data` patch) execute into a **staged revision** instead of live content, paired with a `kind='veto'` approval whose `autoCommitAt` defaults to 4 hours out. Silence means consent: a delayed queue job on `agent-veto-commits` (plus a 5-minute safety-net sweep) promotes the staging to live at the deadline with full provenance. A human veto (`POST /api/v1/agent/staged/:id/veto`, admin or `veto` role) before the deadline discards the staging — live content was never touched — and records a `veto` incident that automatically demotes the agent role on that capability. Fields pinned by a human **after** staging win at commit time: the pinned part of the patch is dropped (`auto_commit_partial`), never overwritten. Pending stagings are listed at `GET /api/v1/agent/staged` and announced via a `veto.staged` activity entry with a review deep-link. Commit failures leave the staging intact and retry with exponential backoff; exhausting the attempts opens an incident.
+- **L4 (autopilot)** — the dangerous action executes directly within capability and budget; the kill switch still applies.
+- Irreversible skills (`deleteCollection`, `deleteField`) are hard-capped at L2 by the resolver and can never stage or run on autopilot.
+
+### Agent-as-reviewer (Module C)
+
+With the `contentOs.agentReview` flag on, agents can decide routine approvals so humans only see exceptions (`POST /api/v1/agent/approvals/:id/agent-decide`). Hard rules: the reviewer needs `review:<domain>` for the approval's domain (schema-shaped tools → `review:schema`, item tools → `review:items`); **self-review is forbidden** — an approval belonging to goal-tree G can never be decided by a run inside G (ancestry paths are compared up to the root); veto-window approvals are human-only by definition. Only a confident approve (≥ the per-site `agentReviewMinConfidence`, default 0.8) finalizes — recorded with `approverType='agent'` and the reviewing run in `approverRunId`. A rejection or low-confidence verdict never finalizes: it escalates with a `review.escalated` activity entry and deep-link while the approval stays pending for a human (Req 11.4).
+
+### Trust ledger: promotion is human-gated, demotion is automatic
+
+Autonomy levels are **earned**, and the asymmetry is deliberate: trust rises slowly through people, falls instantly through incidents.
+
+- **Promotion** (`trust-ledger-service.ts`) — a periodic sweep (`POST /api/v1/agent/autonomy/promotions/check`, or the `trust-promote-check` flow operation) evaluates every `(agentRole, capability)` grant below L4 against evidence: an unbroken streak of succeeded runs, enough decided approvals at the required approve-rate, and **zero open incidents**. Eligible candidates get a `kind='promotion'` approval proposing exactly **one level up** (capped at L4) with the evidence attached. The proposal is inert until a human decides it (`POST /api/v1/agent/autonomy/promotions/:id/decide`, admin-gated) — there is no auto-commit path for promotions, ever. Pending proposals are deduplicated and listed at `GET /api/v1/agent/autonomy/promotions`; current grants and open incidents at `GET /api/v1/agent/autonomy`.
+- **Demotion** — event-driven from incident insert: −1 level immediately (severity `high` drops straight to L1), no human required. A veto records an incident, so a vetoed staging demotes the role on that capability as a side effect.
+
+### Constitution: versioned publish-gate evaluators (Module D)
+
+A constitution is a versioned set of evaluators (`constitutions` table, at most one `active` per site) managed at `/api/v1/agent/constitution` (versions list, draft, `:id/dry-run`, `:id/activate` — admin or `constitution:write`). Two evaluator types: a deterministic **rule DSL** (`required`, `equals`, `max_length`, `min_length`, `regex`, `contains`, `not_contains` over content fields) and **`llm_judge`** prompts that fail loudly with `LLM_NOT_CONFIGURED` when no provider exists. Identity is `sha256` of the canonicalized evaluator list.
+
+- **Pinning (Property 12)** — the active hash is pinned to a run once (first-write-wins into run metrics); veto stagings carry it into revision provenance and artifact evaluations record it, so results stay reproducible even when a new version activates mid-run.
+- **Publish gate** — `publishArtifact` evaluates the active constitution against the artifact content: a blocking evaluator failure blocks publish; overriding requires an explicit reason and is recorded (`constitutionOverridden`) in the artifact metadata.
+- **Dry-run + diff audit** — drafts can be evaluated against real content samples before activation; activating archives the previous version and writes a `constitution.activated` activity entry with the added/removed evaluator ids and both hashes.
+
+### Kill switch (the human "stop" right)
+
+Four escalating scopes, all behind `POST /api/v1/agent/kill-switch` with `{ scope: run | intent | role | site, targetId?, reason? }`:
+
+- **cancel run** — delegates to the run state machine (boundary cancellation from the async-runs work).
+- **pause intent** — flips the intent's status; the reconciler stops generating goals for it.
+- **freeze role / freeze site** — recorded as `agent_freezes` rows (`liftedAt IS NULL` = active; the table doubles as the audit trail with actor, scope, reason and timestamps). The harness consults the freeze state **before creating any goal/run and at every tool-call boundary**: an in-flight handler finishes, the next call is denied and the run is cancelled with stopReason `frozen`. A site freeze dominates every role; a role freeze blocks exactly that role. Approved-and-resumed executions are denied the same way — the kill switch wins over approvals.
+
+Freezing/lifting a role or site requires the `agents:freeze` capability (admin included). While a site is frozen, `POST /api/v1/agent/goals` returns `423 FROZEN` and the reconciler creates no goals — read endpoints keep working. `GET /api/v1/agent/kill-switch` lists active freezes plus history; `POST /api/v1/agent/kill-switch/lift` restores execution.
+
+### Rollout flags and Content OS metrics
+
+Four per-site flags (settings key `contentOs`, all default **off**) gate the autonomous surfaces: `reconciler` (drift scans generate goals), `vetoWindow` (L3 stages instead of falling back to classic pre-execute HITL), `agentReview` (agents may decide approvals), `mcp` (the `/api/v1/mcp` endpoint answers). With every flag off the system behaves exactly like the pre-Content-OS Copilot + harness baseline.
+
+Rollout metrics (Prometheus): `lumibase_agent_autonomous_operations_total{level}` (L3 stagings + L4 autopilot — autonomous operation rate), `lumibase_agent_veto_stagings_total` / `lumibase_agent_vetoes_total` (veto rate), `lumibase_agent_coalesced_writes_total` / `lumibase_agent_write_flushes_total` (coalescing ratio), `lumibase_agent_backpressure_activations_total`, `lumibase_intent_open_drifts{intent}` and `lumibase_intent_breaker_trips_total` (intent health).
+
+### Load-aware autonomy (Load Guard)
+
+A system that generates load must also sense load. Three guards bound agent-originated work:
+
+- **Write coalescing** — every skill handler runs inside a coalescing window: item writes defer their materialized-view refresh and flush exactly once per collection at the tool-call boundary (N writes to one collection cost one invalidation), on success and failure alike.
+- **Write rate budget** — when a run envelope carries `budget.maxWritesPerMinute` (reconciler goals attach it from their intent), write-capable tool calls consume a sliding-window quota scoped to `${siteId}:${intentId}`. An exhausted budget defers the tool call with `write_budget_exceeded` and a retry hint — the run is not failed.
+- **Backpressure** — the Node entrypoint feeds event-loop pressure samples into the guard every 5s. Overload pauses **reconciler-origin runs only** (human-triggered work is never auto-paused) with a `load_guard` incident recorded once per activation per site; a hold-down of continuous calm auto-resumes. Activations are counted in `lumibase_agent_backpressure_activations_total`, budget deferrals in `lumibase_agent_write_budget_denials_total`.
+- **Maintenance windows** — intents may declare `{ tz, windows: [{ dow, start, end }] }`; outside the window the reconciliation cycle is a no-op and open drifts queue until the window opens. Overnight windows span midnight; an invalid timezone fails open.
+
+## Core Skills Registry
+
+Skills are defined in two synchronized locations:
+- **Public registry** (`packages/ai-skills/src/skills.ts`) — LLM tool definitions exposed via `getAISkillsAsTools()`
+- **Harness handlers** (`apps/cms/src/services/ai-harness.ts` → `buildCoreSkills()`) — actual execution logic
+
+A skill classified as **DANGEROUS** (requires HITL approval) when:
+1. Its `requiredCapabilities` includes any `schema:*` except `schema:read`, OR
+2. Its name starts with `delete`
+
+| Skill | Service | Required Capability | Risk | Handler |
+|---|---|---|---|---|
+| `listCollections` | schema | `schema:read` | SAFE | Real → SchemaService |
+| `createCollection` | schema | `schema:create` | **DANGEROUS** | Real → SchemaService |
+| `deleteCollection` | schema | `schema:delete` | **DANGEROUS** | Real → SchemaService |
+| `createField` | schema | `schema:update` | **DANGEROUS** | Real → SchemaService |
+| `deleteField` | schema | `schema:delete` | **DANGEROUS** | Real → SchemaService |
+| `listItems` | items | `items:read` | SAFE | Real → ItemService |
+| `createItem` | items | `items:write` | SAFE | Real → ItemService |
+| `updateItem` | items | `items:update` | SAFE | Real → ItemService.patch() |
+| `deleteItem` | items | `items:write` | **DANGEROUS** | Real → ItemService.softDelete() |
+| `aiSuggestField` | ai | `schema:read` | SAFE | Real → LLM + existing-field context (offline registry: keyword patterns) |
+| `aiContentAssist` | ai | `items:read` | SAFE | Real → LLM + RAG item samples via ItemService |
+| `generateAppSpec` | ai | `schema:read`, `items:read` | SAFE | Real → LLM + live schema introspection; sections must declare `source` bindings |
+| `generateApiDocs` | ai | `schema:read` | SAFE | Real → deterministic OpenAPI 3.1 from live schema (no LLM needed) |
+| `generateSeedData` | ai | `items:write` | SAFE | Real → LLM rows matching real field definitions |
+
+Skills can be overridden per-site via the `agent_tools` database table without redeploying.
+
+Generation skills resolve the LLM through `createConfiguredLLMProvider`. When `LLM_PROVIDER` (plus credentials) is not configured they fail with an explicit `LLM_NOT_CONFIGURED` error — there is no silent stub fallback in production routes. Provider failures surface as `LLM_PROVIDER_ERROR`, malformed model output as `LLM_INVALID_JSON`. Successful LLM-backed runs record `{ llm: { provider, model, estimatedTokens } }` in `agent_runs.metrics`.
+
 ## App generation MVP
 
 When a user asks LumiBase to generate an app, the agent reads the existing schema, content, policies, and scoped memory, then produces artifacts:
@@ -131,6 +230,8 @@ If future evaluation runners depend on runtime-specific APIs, they must be featu
 ## Security model
 
 - All agent tables are scoped by `siteId`.
+- Item revisions carry provenance: skill-driven writes are stamped `authorType='agent'` with the executing `createdByRunId`, while Studio/API writes by people record `authorType='human'`. The harness sets this on the ItemService before any skill handler runs.
+- **Law Zero (override-is-law):** human edits on collections governed by an active content intent pin the touched fields (`items.pinnedFields`). Agent writes to pinned fields are denied at the ItemService boundary with `PINNED_BY_HUMAN`; pins are listed/released via `GET/DELETE /api/v1/items/:collection/:id/pins[/:field]` and every pin/release is audited in the activity log.
 - Tool inputs and memory context are redacted/masked before audit or prompt assembly.
 - Prompt text cannot grant permissions; only policy snapshots and capability grants can.
 - Approval decisions are recorded with actor, decision, reason, and timestamps.

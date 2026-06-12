@@ -1,8 +1,14 @@
 # LumiBase Documentation
 
-Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm hứng từ Directus, **chạy được trên cả Cloudflare Workers và Docker self-hosted** thông qua một runtime abstraction layer chung.
+Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS)** Edge-native: nơi AI agent *vận hành* nội dung còn con người đặt ý định, định gu và chịu trách nhiệm cuối. **Chạy được trên cả Cloudflare Workers và Docker self-hosted** thông qua một runtime abstraction layer chung.
+
+> Từ **v0.5.0**, LumiBase được tái định nghĩa từ *Content Management System* → *Content Operating System*: đơn vị công việc là **ý định (intent/SLO)**, nội dung được **reconcile liên tục** về desired state, agent kiếm **autonomy theo cấp (L0–L4)**, và mọi byte nội dung đều có **lai lịch (provenance)**. Xem [ai-native-vision.md](./ai-native-vision.md).
 
 > Mục tiêu: vượt Directus ở các mảng **No-code Collection Builder**, **Permissions theo field/JSON policy**, **Raw editor cho mọi field**, **Extension SDK an toàn (kèm Marketplace ký số)**, **Display Templates**, **Realtime WebSocket** và **AI-First Copilot (HITL)** — đồng thời giữ DNA Edge-native, Multi-tenant của LumiBase nhưng cho phép tự host trên Docker khi cần.
+
+## Bắt đầu nhanh
+
+- [getting-started.md](./getting-started.md) — Khởi tạo dự án LumiBase mới bằng `npm create lumibase@latest` (CLI `create-lumibase`), từ thư mục trống đến server chạy được (Docker hoặc Cloudflare Workers).
 
 ## Agent Setup (cho AI agent)
 
@@ -15,6 +21,7 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
 
 - **Vision & Định vị**
   - [vision-and-positioning.md](./vision-and-positioning.md) — So sánh Directus, định vị USP của LumiBase.
+  - [ai-native-vision.md](./ai-native-vision.md) — Tầm nhìn Content OS: tái định nghĩa CMS cho kỷ nguyên AI (intent-driven, reconciliation, trust gradient, multi-agent, mission control).
 - **Kiến trúc**
   - [architecture/overview.md](./architecture/overview.md) — Tổng thể tech stack, các lớp, module, runtime abstraction.
   - [architecture/page-hydration.md](./architecture/page-hydration.md) — Hợp đồng API hydrate trang.
@@ -37,6 +44,11 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
   - [websockets-realtime.md](./features/websockets-realtime.md) — Realtime subscribe/publish + presence + collaborative cursors.
   - [typegen.md](./features/typegen.md) — Sinh `lumibase-types.ts` (schema → TypeScript) như Directus.
   - [cloudflare-auth.md](./features/cloudflare-auth.md) — Logto/Cloudflare auth integration.
+- **Content OS (v0.5 — AI-native)** (`ai-native-vision.md` + `.kiro/specs/content-os/`)
+  - [ai-native-vision.md](./ai-native-vision.md) — Tầm nhìn & 7 nguyên lý: intent-driven, reconciliation loop, trust gradient (L0–L4), tenant constitution, provenance-first, multi-agent newsroom, Studio as Mission Control.
+  - [.kiro/specs/content-os/requirements.md](../../.kiro/specs/content-os/requirements.md) — 17 EARS requirements (provenance, real skills, queued runs, MCP server, content intents/SLO, trust ledger, veto window, kill switch, constitution, agent org).
+  - [.kiro/specs/content-os/design.md](../../.kiro/specs/content-os/design.md) — Kiến trúc, bảng/cột mới (migrations `0019`–`0027`), control loop, evaluator pinning.
+  - [.kiro/specs/content-os/tasks.md](../../.kiro/specs/content-os/tasks.md) — 20 nhóm task theo module A–E.
 - **Tính năng nâng cao (POST-GA / Dual-runtime)** (`features/`)
   - [ai-copilot.md](./features/ai-copilot.md) — AI Chat + Human-in-the-Loop approvals (Studio Copilot).
   - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, and app generation governance.
@@ -97,6 +109,8 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
 - **`packages/sdk`** — JS SDK (REST + WS + typegen).
 - **`packages/ui`** — shadcn components + CVA tokens.
 - **`packages/extension-sdk`** — Types và helpers cho dev viết extension.
+- **`packages/create-lumibase`** — CLI bootstrap (`npm create lumibase@latest`) sinh dự án LumiBase mới từ template Docker hoặc Cloudflare Workers. Xem [getting-started.md](./getting-started.md).
+- **`packages/mcp-server`** — MCP stdio server (`@lumibase/mcp-server`) expose tool cho AI assistant tạo/quản lý collections, fields, items.
 
 ## Nguyên tắc khi đọc tài liệu
 

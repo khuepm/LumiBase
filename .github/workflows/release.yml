@@ -135,11 +135,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check Cloudflare credentials
+        id: cloudflare-credentials
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] && [ -n "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "can_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "can_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping CMS Worker deployment because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured."
+          fi
+
       - name: Deploy CMS Worker
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         run: pnpm --filter @lumibase/cms deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
 
   deploy-cloudflare-pages-apps:
     name: Deploy Cloudflare Pages apps (${{ matrix.app.name }})
@@ -185,7 +198,19 @@ jobs:
       - name: Build Pages app
         run: pnpm --filter ${{ matrix.app.package }} build
 
+      - name: Check Cloudflare credentials
+        id: cloudflare-credentials
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] && [ -n "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "can_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "can_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping Pages deployment because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured."
+          fi
+
       - name: Deploy Pages app
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         run: pnpm exec wrangler pages deploy "${{ matrix.app.output }}" --project-name "${{ matrix.app.project }}" --branch main
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -202,11 +227,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set IMAGE_NAME to lowercase
+      - name: Set IMAGE_NAME
         run: |
-          echo "IMAGE_NAME=$(echo "$RAW_IMAGE_NAME" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
-        env:
-          RAW_IMAGE_NAME: ${{ github.repository }}
+          echo "IMAGE_NAME=khuepm/lumibase-cms" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -265,10 +288,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check npm token
+        id: check_token
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping npm package publishing because NPM_TOKEN is not configured."
+          fi
+
       - name: Build packages
+        if: steps.check_token.outputs.has_token == 'true'
         run: pnpm --filter "./packages/**" build
 
       - name: Publish public packages
+        if: steps.check_token.outputs.has_token == 'true'
         run: |
           node <<'NODE'
           const fs = require('node:fs');

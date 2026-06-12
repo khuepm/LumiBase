@@ -39,12 +39,16 @@ export interface Bindings {
   LUMIBASE_DEV_AUTH?: string;
   /** Secret key for AES-GCM per-field encryption (base64 encoded). */
   ENCRYPTION_KEY?: string;
+  /** Comma-separated trusted origins for executable extension bundles. */
+  EXTENSION_BUNDLE_ORIGINS?: string;
   /** Comma-separated frontend origins allowed by CORS. */
   CORS_ALLOWED_ORIGINS?: string;
   /** Maximum bytes accepted by the file upload policy. Defaults to 10 MiB. */
   FILE_UPLOAD_MAX_BYTES?: string;
   /** Comma-separated MIME allowlist accepted by the file upload policy. */
   FILE_UPLOAD_ALLOWED_MIME_TYPES?: string;
+  /** Bearer token required to read Prometheus metrics in production. */
+  METRICS_TOKEN?: string;
   // ── LLM Provider (POST-GA Task #1) ──────────────────────────────────────
   /** `'openai'` | `'anthropic'` | `'claude'` | `'gemini'` | `'workers-ai'` | `'echo'` (default). */
   LLM_PROVIDER?: string;

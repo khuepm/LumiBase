@@ -1,5 +1,7 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -7,10 +9,18 @@
   "links": [],
   "title": "Lumibase Agent Harness",
   "uid": "lumibase-agent-harness",
-  "tags": ["lumibase", "agent-harness"],
+  "tags": [
+    "lumibase",
+    "agent-harness"
+  ],
   "schemaVersion": 39,
-  "templating": { "list": [] },
-  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "version": 1,
@@ -18,8 +28,16 @@
     {
       "title": "Runs by status",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
           "expr": "sum(rate(lumibase_agent_runs_total[5m])) by (status, stop_reason)",
@@ -27,13 +45,29 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        }
+      }
     },
     {
       "title": "Tool latency p95",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
           "expr": "histogram_quantile(0.95, sum(rate(lumibase_agent_tool_latency_seconds_bucket[5m])) by (le, tool, status))",
@@ -41,13 +75,29 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        }
+      }
     },
     {
       "title": "Approval decisions",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
           "expr": "sum(rate(lumibase_agent_approvals_total[5m])) by (subject_type, status)",
@@ -55,13 +105,29 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        }
+      }
     },
     {
       "title": "Approval latency p95",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
           "expr": "histogram_quantile(0.95, sum(rate(lumibase_agent_approval_latency_seconds_bucket[15m])) by (le, subject_type, status))",
@@ -69,13 +135,29 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        }
+      }
     },
     {
       "title": "Evaluation outcomes",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
           "expr": "sum(rate(lumibase_agent_evaluations_total[5m])) by (kind, status)",
@@ -83,13 +165,29 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        }
+      }
     },
     {
       "title": "Estimated token and cost",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
           "expr": "sum(rate(lumibase_agent_estimated_tokens_total[5m])) by (tool)",
@@ -102,13 +200,28 @@
           "refId": "B"
         }
       ],
-      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        }
+      }
     },
     {
       "title": "Dead-letter enqueue rate",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 24 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
           "expr": "sum(rate(lumibase_agent_dead_letters_total[15m])) * 60",
@@ -122,13 +235,153 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "red", "value": 5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
             ]
           }
         }
       }
+    },
+    {
+      "title": "Autonomous operations (L3/L4)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (level) (rate(lumibase_agent_autonomous_operations_total[15m])) * 60",
+          "legendFormat": "{{level}}/min",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Veto rate",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_agent_vetoes_total[1h])) / clamp_min(sum(rate(lumibase_agent_veto_stagings_total[1h])), 1e-9)",
+          "legendFormat": "vetoes / stagings",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Write coalescing ratio",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_agent_coalesced_writes_total[15m])) / clamp_min(sum(rate(lumibase_agent_coalesced_writes_total[15m])) + sum(rate(lumibase_agent_write_flushes_total[15m])), 1e-9)",
+          "legendFormat": "coalesced share",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Backpressure activations & write-budget denials",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_agent_backpressure_activations_total[15m])) * 60",
+          "legendFormat": "backpressure/min",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(lumibase_agent_write_budget_denials_total[15m])) * 60",
+          "legendFormat": "budget denials/min",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Intent health: open drifts",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 44
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "lumibase_intent_open_drifts",
+          "legendFormat": "{{intent}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Intent breaker trips",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 44
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_intent_breaker_trips_total[1h])) * 3600",
+          "legendFormat": "trips/h",
+          "refId": "A"
+        }
+      ]
     }
   ]
 }

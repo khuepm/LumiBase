@@ -11,7 +11,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { cdcPipelines, type Database } from '@lumibase/database';
 
-import { encryptSync } from '../encryption';
+import { encrypt } from '../encryption';
 import {
   PipelineRegistry,
   PipelineLimitExceededError,
@@ -148,14 +148,14 @@ const failingConnectivityChecker: ConnectivityChecker = async (
  * `PipelineRegistry.get` can decrypt and map it to a PipelineRecord. Used by
  * the delete tests, which must resolve the pipeline before connector teardown.
  */
-function makePipelineRow(
+async function makePipelineRow(
   overrides?: Partial<{
     id: string;
     siteId: string;
     pipelineName: string;
     connectorType: CdcConnectorType;
   }>,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   const now = new Date();
   return {
     id: overrides?.id ?? 'pipeline-1',
@@ -164,11 +164,11 @@ function makePipelineRow(
     connectorType: overrides?.connectorType ?? 'debezium_kafka',
     status: 'active',
     statusMessage: null,
-    sourceConnection: encryptSync(
+    sourceConnection: await encrypt(
       'postgresql://user:pass@localhost:5432/db',
       TEST_ENCRYPTION_KEY,
     ),
-    sinkConnection: encryptSync(
+    sinkConnection: await encrypt(
       'clickhouse://user:pass@localhost:8123/db',
       TEST_ENCRYPTION_KEY,
     ),
@@ -355,7 +355,7 @@ describe('PipelineRegistry', () => {
     });
 
     it('should invoke connector.destroy BEFORE removing the registry record (Req 1.8)', async () => {
-      const row = makePipelineRow({
+      const row = await makePipelineRow({
         id: 'pipeline-1',
         siteId: 'site-1',
         connectorType: 'debezium_kafka',
@@ -388,7 +388,7 @@ describe('PipelineRegistry', () => {
     });
 
     it('should resolve the connector by the pipeline connector type (Req 1.8)', async () => {
-      const row = makePipelineRow({
+      const row = await makePipelineRow({
         id: 'pipeline-1',
         siteId: 'site-1',
         connectorType: 'materialized_engine',
@@ -412,7 +412,7 @@ describe('PipelineRegistry', () => {
     });
 
     it('should keep the registry record when connector.destroy (slot cleanup) fails (Req 1.8)', async () => {
-      const row = makePipelineRow({
+      const row = await makePipelineRow({
         id: 'pipeline-1',
         siteId: 'site-1',
         connectorType: 'debezium_kafka',
@@ -442,7 +442,7 @@ describe('PipelineRegistry', () => {
     });
 
     it('should remove the record without connector teardown when no resolver is provided', async () => {
-      const row = makePipelineRow({ id: 'pipeline-1', siteId: 'site-1' });
+      const row = await makePipelineRow({ id: 'pipeline-1', siteId: 'site-1' });
       const { db } = createFakeDb({ existingPipelines: [row] });
       const deleteSpy = vi.spyOn(db, 'delete');
 
@@ -458,7 +458,7 @@ describe('PipelineRegistry', () => {
     });
 
     it('should skip connector teardown when the resolver returns null', async () => {
-      const row = makePipelineRow({ id: 'pipeline-1', siteId: 'site-1' });
+      const row = await makePipelineRow({ id: 'pipeline-1', siteId: 'site-1' });
       const { db } = createFakeDb({ existingPipelines: [row] });
       const deleteSpy = vi.spyOn(db, 'delete');
 

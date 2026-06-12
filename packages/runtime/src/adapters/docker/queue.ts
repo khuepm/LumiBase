@@ -16,7 +16,7 @@ export class BullMQProvider implements QueueProvider {
 
   private getQueue(name: string): Queue {
     if (!this.queues.has(name)) {
-      this.queues.set(name, new Queue(name, { connection: this.connection }));
+      this.queues.set(name, new Queue(name, { connection: this.connection as any }));
     }
     return this.queues.get(name)!;
   }
@@ -48,7 +48,7 @@ export class BullMQProvider implements QueueProvider {
           status: 'active',
         });
       },
-      { connection: this.connection },
+      { connection: this.connection as any },
     );
     this.workers.push(worker);
   }

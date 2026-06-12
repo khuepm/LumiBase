@@ -5,7 +5,7 @@
 
 ## What is LumiBase?
 
-LumiBase is an **Edge-native Headless CMS** — a Directus-inspired, multi-tenant content platform built on:
+LumiBase is a **Content Operating System (Content OS)** — an Edge-native, AI-native, Directus-inspired multi-tenant content platform where governed agents operate content against declarative SLOs (intents) with earned autonomy and full provenance. Built on:
 - **Backend:** Hono.js on Cloudflare Workers (dual: also runs on Node.js/Docker via runtime abstraction)
 - **Database:** PostgreSQL + Drizzle ORM (connection via Cloudflare Hyperdrive or direct pg pool)
 - **Auth:** Logto (OIDC/OAuth2, multi-tenant)

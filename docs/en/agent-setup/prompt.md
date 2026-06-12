@@ -52,7 +52,7 @@ packages/
 
 ## Key API endpoints
 
-Base URL: `https://<your-site>.lumibase.dev` (or `http://localhost:8787` locally)
+Base URL: `https://<your-site>.lumibase.dev` (or `http://localhost:1989` locally)
 
 All requests require:
 - `Authorization: Bearer <access_token>`
@@ -133,8 +133,8 @@ pnpm install
 # Start all services (CMS API + Studio + Docs)
 pnpm dev
 
-# CMS API runs at:   http://localhost:8787
-# Studio runs at:    http://localhost:5173
+# CMS API runs at:   http://localhost:1989
+# Studio runs at:    http://localhost:2026
 # Docs run at:       http://localhost:5174
 ```
 

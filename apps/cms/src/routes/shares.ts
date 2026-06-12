@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ShareService, ShareServiceError } from '../services/share-service';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 export const sharePublicRouter = new Hono<AppEnv>();
 export const shareAdminRouter = new Hono<AppEnv>();
@@ -28,7 +29,7 @@ function toError(err: unknown) {
   if (err instanceof ShareServiceError) {
     return { status: err.status, body: { errors: [{ code: err.code, message: err.message }] } };
   }
-  console.error('[shares] unexpected error', err);
+  console.error('[shares] unexpected error', formatSafeError(err));
   return { status: 500, body: { errors: [{ code: 'INTERNAL', message: 'Unhandled share error.' }] } };
 }
 

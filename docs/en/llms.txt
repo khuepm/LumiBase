@@ -42,6 +42,8 @@
 
 ## Features
 - [features/ai-copilot.md](./features/ai-copilot.md) — AI Copilot, HITL, skill system, LLM providers, RAG
+- [features/agent-harness-layer.md](./features/agent-harness-layer.md) — Content OS: agent harness, trust ledger L0-L4, veto window, kill switch, MCP server, constitution, multi-agent roles
+- [ai-native-vision.md](./ai-native-vision.md) — AI-native Content OS vision, autonomy ladder, rollout flags
 - [features/flows-automation.md](./features/flows-automation.md) — Flows engine, operations, graph format
 - [features/permissions-rbac.md](./features/permissions-rbac.md) — roles, policies, field-level permissions
 - [features/collections-builder.md](./features/collections-builder.md) — no-code collection builder
