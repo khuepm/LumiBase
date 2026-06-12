@@ -223,10 +223,30 @@ export class VetoService {
   }
 
   /** Stagings still inside their veto window (Req 13.6). */
+  /**
+   * Stagings inside their veto window, soonest deadline first — enriched
+   * with the staged revision's context (content-os-ui Req 8): the inbox
+   * needs collection/item/patch to render a real diff, and the approval
+   * row alone doesn't carry them. Left joins so a broken staging degrades
+   * to null fields instead of emptying the list.
+   */
   async listPending() {
-    return this.deps.db
-      .select()
+    const rows = await this.deps.db
+      .select({
+        approval: agentApprovals,
+        revisionItemId: revisions.itemId,
+        revisionDelta: revisions.delta,
+        collectionName: collections.name,
+      })
       .from(agentApprovals)
+      .leftJoin(
+        revisions,
+        and(eq(revisions.id, agentApprovals.subjectId), eq(revisions.siteId, agentApprovals.siteId)),
+      )
+      .leftJoin(
+        collections,
+        and(eq(collections.id, revisions.collectionId), eq(collections.siteId, agentApprovals.siteId)),
+      )
       .where(
         and(
           eq(agentApprovals.siteId, this.deps.siteId),
@@ -236,6 +256,16 @@ export class VetoService {
       )
       .orderBy(asc(agentApprovals.autoCommitAt))
       .limit(200);
+
+    return rows.map(({ approval, revisionItemId, revisionDelta, collectionName }) => ({
+      ...approval,
+      approvalId: approval.id,
+      agentRole: approval.requestedByAgent,
+      collection: collectionName ?? null,
+      itemId: revisionItemId ?? null,
+      patch:
+        (revisionDelta as { patch?: Record<string, unknown> } | null)?.patch ?? null,
+    }));
   }
 
   /**
