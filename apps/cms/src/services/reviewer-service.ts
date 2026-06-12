@@ -1,6 +1,7 @@
 import { activity, agentApprovals, agentGoals, agentRuns, agentToolCalls, settings } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
+import { maskSecrets } from './agent-run-service';
 import { getContentOsFlags } from './feature-flags';
 
 /**
@@ -161,17 +162,18 @@ export class ReviewerService {
     const deepLink = `/agent/approvals/${approval.id}`;
     if (input.decision === 'rejected' || input.confidence < config.minConfidence) {
       const reason = input.decision === 'rejected' ? 'rejected' : 'low_confidence';
+      // Audit payloads never carry secret-named values (Req 17.6).
       await this.deps.db.insert(activity).values({
         siteId: this.deps.siteId,
         action: 'review.escalated',
-        payload: {
+        payload: maskSecrets({
           approvalId: approval.id,
           reviewerRunId: input.reviewerRunId,
           reason,
           confidence: input.confidence,
           comment: input.reason ?? null,
           deepLink,
-        },
+        }) as Record<string, unknown>,
       });
       return { outcome: 'escalated', reason, deepLink };
     }

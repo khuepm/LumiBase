@@ -170,12 +170,12 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
 
 ### Xuyên suốt
 
-- [ ] 19. Bất biến an ninh & tenancy
-  - [ ] 19.1 Property test tenant isolation cho mọi service/route mới (Property 1)
+- [x] 19. Bất biến an ninh & tenancy
+  - [x] 19.1 Property test tenant isolation cho mọi service/route mới (Property 1)
     - **Validates: Requirements 17.1**
-  - [ ] 19.2 Property test: prompt/tool input không đổi được capability/level (mở rộng test hiện có của Harness)
+  - [x] 19.2 Property test: prompt/tool input không đổi được capability/level (mở rộng test hiện có của Harness)
     - **Validates: Requirements 17.2**
-  - [ ] 19.3 Mask secrets trong audit cho mọi guard/denial mới
+  - [x] 19.3 Mask secrets trong audit cho mọi guard/denial mới
     - _Requirements: 17.6_
 
 - [ ] 20. Feature flags, metrics, docs
