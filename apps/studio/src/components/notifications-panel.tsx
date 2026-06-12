@@ -147,8 +147,9 @@ export function NotificationsPanel() {
 
   useEffect(() => {
     let isMounted = true;
-    const token = localStorage.getItem('lumibase_dev_token') ?? '';
-    const siteId = localStorage.getItem('lumibase_site_id') ?? '';
+    const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+    const token = storage?.getItem('lumibase_dev_token') ?? '';
+    const siteId = storage?.getItem('lumibase_site_id') ?? '';
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:1989';
 
     const connect = async () => {
