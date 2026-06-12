@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCounts, buildEntries } from '../use-inbox';
+import { buildCounts, buildEntries, diffNewEntries, entryLabel } from '../use-inbox';
 import type { AgentApproval, AgentIncident, ContentIntent, StagedVeto } from '../api';
 
 /**
@@ -146,5 +146,23 @@ describe('buildCounts', () => {
       intentErrors: 0,
       nearestAutoCommitAt: null,
     });
+  });
+});
+
+describe('diffNewEntries / entryLabel (Req 14.5, 14.2)', () => {
+  it('returns only entries missing from the seen set', () => {
+    const entries = buildEntries([approval()], [staged()], [], [], NOW);
+    const seen = new Set(['veto:veto_1']);
+    expect(diffNewEntries(seen, entries).map((e) => e.id)).toEqual(['approval:apr_1']);
+    expect(diffNewEntries(new Set(entries.map((e) => e.id)), entries)).toEqual([]);
+  });
+
+  it('labels every kind with its decision context', () => {
+    const entries = buildEntries([approval()], [staged()], [incident()], [intent()], NOW);
+    const labels = Object.fromEntries(entries.map((e) => [e.kind, entryLabel(e)]));
+    expect(labels.veto).toMatch(/articles\/item_1.*veto window/i);
+    expect(labels.approval).toMatch(/tool_call.*writer/);
+    expect(labels.incident).toMatch(/medium.*eval_fail.*writer/);
+    expect(labels.intent_error).toMatch(/articles-fresh.*error/);
   });
 });

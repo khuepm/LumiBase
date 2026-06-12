@@ -90,6 +90,6 @@ UI-only, không endpoint mới. Thứ tự: nguồn dữ liệu chung → khung 
   - [x] 13.1 `goals-page.tsx`: cây từ `parentGoalId` (mồ côi thành root), node có role/status/origin badge + run mới nhất + link intent; routes ×2 + mục "Goals" trong sub-nav; component test (nesting, orphan, link intent)
     - _Requirements: 12.1-12.4_
 
-- [ ] 14. Exception notifications → deep-link ?entry=
-  - [ ] 14.1 `NotificationsPanel`: nguồn thứ hai từ `useInboxData` — diff entry mới giữa các poll (pure helper + unit test), nhãn per kind, Link `{adminBase}/mission-control/inbox?entry=<id>` đóng panel khi click, lần load đầu coi là đã-thấy, gộp unread count/mark-read/clear hiện có; component test
+- [x] 14. Exception notifications → deep-link ?entry=
+  - [x] 14.1 `NotificationsPanel`: nguồn thứ hai từ `useInboxData` — diff entry mới giữa các poll (pure helper + unit test), nhãn per kind, Link `{adminBase}/mission-control/inbox?entry=<id>` đóng panel khi click, lần load đầu coi là đã-thấy, gộp unread count/mark-read/clear hiện có; component test
     - _Requirements: 14.1-14.5_

@@ -37,6 +37,28 @@ export function entryId(kind: InboxEntry['kind'], sourceId: string): string {
   return `${kind}:${sourceId}`;
 }
 
+/**
+ * Entries not yet in the seen set — the notification trigger (Req 14.1/14.5).
+ * Pure so the poll-diff is unit-testable without timers or sockets.
+ */
+export function diffNewEntries(seen: ReadonlySet<string>, entries: InboxEntry[]): InboxEntry[] {
+  return entries.filter((e) => !seen.has(e.id));
+}
+
+/** One-line human label per exception kind (Req 14.2). */
+export function entryLabel(entry: InboxEntry): string {
+  switch (entry.kind) {
+    case 'veto':
+      return `Staged change on ${String(entry.veto.collection ?? '?')}/${String(entry.veto.itemId ?? '?')} — veto window open`;
+    case 'approval':
+      return `Approval requested: ${entry.approval.subjectType} by ${entry.approval.requestedByAgent}`;
+    case 'incident':
+      return `Incident (${entry.incident.severity}): ${entry.incident.source} — ${entry.incident.agentRole}`;
+    case 'intent_error':
+      return `Intent "${entry.intent.name}" entered error`;
+  }
+}
+
 export function buildEntries(
   approvals: AgentApproval[],
   staged: StagedVeto[],
