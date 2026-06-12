@@ -7,6 +7,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Website: [lumibase.dev](https://lumibase.dev)
 
+## [0.5.0] - 2026-06-12
+
+### Version
+
+- `v0.5.0`
+
+### Date
+
+- `2026-06-12`
+
+### Highlights
+
+- **Content OS — the AI-native redefinition of LumiBase.** This release reframes LumiBase from a *Content Management System* (a tool humans operate on content) to a *Content Operating System* (a runtime where agents operate content while humans set intent, taste, and accountability). See `docs/en/ai-native-vision.md`.
+- **Intent-driven operation.** Content intents (declarative SLOs) describe the desired state of content — e.g. "every published `product` has ≥1 image, a 50–200 word description, and `vi`+`en` translations" — expressed via a rule schema with a backing service and API.
+- **Reconciliation control loop.** Drift detection plus a reconciler continuously compares content against its declared SLOs, raises goals on drift, and lets agents converge content toward the desired state within a write budget — the Content OS control loop.
+- **Earned-autonomy trust ledger (L0–L4).** Autonomy is earned, not granted: per (site, agent, capability) levels from Shadow → Propose → Co-sign → Veto-window → Autopilot, with data-driven promotion, automatic demotion on incidents, and a human-gated promotion engine. Includes the **L3 veto window** (staged commits auto-commit after T hours unless a human vetoes) and a **four-scope kill switch** with boundary enforcement.
+- **Tenant Constitution.** Versioned, hashed publish-gate evaluators (rule DSL + LLM-judge) that every agent run pins to; artifacts that fail the constitution cannot publish regardless of autonomy level.
+- **Provenance-first revisions.** Every revision records the agent/run/model that produced it, references, constitution hash, evaluation result, and approver. Item provenance is exposed on the Delivery API via `?provenance=true`.
+- **Multi-agent newsroom organization.** A role library with planner delegation and narrow per-role capability grants (role ∩ grant), plus **agent-as-reviewer** — gated approvals with a self-review ban.
+- **Studio Mission Control.** Exception inbox, trust ledger view, and kill-switch UI; per-field pin badges with a release action in the item editor.
+- **Operational hardening.** Queue-backed async agent runs with cancel/resume, load-aware autonomy (coalescing, write budgets, backpressure), the MCP server adapter, and a public `llms.txt` per site.
+
+### Breaking changes
+
+- None at the API envelope level. New capabilities are additive. However, this release introduces new database tables and columns (see Migrations) and new feature flags governing Content OS behavior.
+
+### Migrations
+
+- **9 new schema migrations (`0019`–`0027`)** introducing Content OS tables and columns:
+  - `0019_content_os_provenance_pins` — revision provenance + item pinned fields.
+  - `0020_content_os_intents` — content intents (SLO) tables.
+  - `0021_content_os_trust_ledger` — earned-autonomy trust ledger (L0–L4).
+  - `0022_content_os_drifts` — drift records for the reconciliation loop.
+  - `0023_content_os_veto_window` — staged-commit veto window.
+  - `0024_content_os_kill_switch` — four-scope kill switch.
+  - `0025_content_os_agent_org` — multi-agent role library / org.
+  - `0026_content_os_agent_reviewer` — agent-as-reviewer approvals.
+  - `0027_content_os_constitutions` — versioned tenant constitution evaluators.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+- Migrations are additive (new tables/columns); no destructive changes to existing tables.
+
+### Upgrade steps
+
+1. Review the breaking changes and migrations above.
+2. **Back up your database before migrating** (this release adds schema; see Backup guidance).
+3. Apply migrations: `pnpm -F @lumibase/database db:migrate`.
+4. Confirm the target Docker image tag exists: `ghcr.io/khuepm/lumibase-cms:0.5.0`.
+5. Deploy the `v0.5.0` image or Cloudflare Worker release.
+6. Verify `/health` and `/ready` plus critical CMS workflows after deployment.
+7. Content OS features ship behind flags. Roll out gradually: start agents at **L0 (Shadow)** / **L1 (Propose)** per (site, capability) and promote via the trust ledger only after evaluation data supports it.
+
+### Rollback notes
+
+- Roll back the application by redeploying the previously known-good CMS image tag (`v0.4.7`).
+- The new tables are additive; rolling back the app does not require dropping them. If you must reverse the schema, restore from the pre-migration backup.
+
+### Docker image tags
+
+- CMS: `ghcr.io/khuepm/lumibase-cms:0.5.0`
+- Optional immutable digest: `ghcr.io/khuepm/lumibase-cms@sha256:<digest>`
+
+### Compatibility DB/schema
+
+- Compatible DB/schema: `v0.5.0` schema state (migrations `0019`–`0027` applied).
+- Minimum supported database engine/version: use the version supported by the target deployment environment.
+
+### Backup guidance
+
+- **Backup required: Yes.** This release applies 9 schema migrations.
+- Backup scope: full database (all tenant data).
+- Reason: new Content OS tables and columns are added; a pre-migration backup is the supported rollback path if a reverse is needed.
+
+### Added
+
+- **Content OS schema** (`packages/database/src/schema/content-os.ts`): intents, trust ledger, drifts, veto window, kill switch, agent org/roles, agent-reviewer, and constitutions; revision provenance + item pinned columns in `cms.ts`/`ai.ts`.
+- **Content intents (SLO):** rule schema, service, and API for declaring desired content state.
+- **Reconciliation loop:** drift detection and a reconciler that raises goals on drift and converges content within a write budget.
+- **Trust ledger (L0–L4):** earned-autonomy levels per (site, agent, capability), a human-gated promotion engine, and automatic demotion on incidents.
+- **L3 veto window:** dangerous actions execute into revision staging and commit after T hours unless vetoed (human-on-the-loop).
+- **Kill switch:** four-scope stop with boundary enforcement.
+- **Tenant constitution:** versioned, hashed publish-gate evaluators; agent runs pin to `constitutionHash`.
+- **Provenance:** agent provenance stamped on revisions written via the harness; exposed on the Delivery API via `?provenance=true`; provenance round-trip property test.
+- **Multi-agent organization:** role library, planner delegation, narrow per-role capability grants (role ∩ grant), and agent-as-reviewer gated approvals with a self-review ban.
+- **Studio Mission Control:** exception inbox, trust ledger, and kill-switch UI; per-field pin badge with release action in the item editor.
+- **Async agent runs:** queue-backed runs with cancel and resume.
+- **Load-aware autonomy:** coalescing, write budgets, and backpressure.
+- **MCP server adapter** and a public `llms.txt` per site.
+- **Docs:** AI-native Content OS vision (`docs/en/ai-native-vision.md`), human control plane / two-plane mapping, and Content OS requirements/design/tasks spec.
+- **Content OS rollout:** feature flags, metrics, and integration flows wiring the above together.
+
+### Changed
+
+- Refined Law Zero enforcement: human pins block agent writes.
+- Bumped all workspace package versions `0.4.7` → `0.5.0`.
+
+### Tested
+
+- Security & tenancy invariants for Content OS services.
+- DB-backed reconciliation cycle integration tests.
+- Studio component tests for Mission Control panels.
+- Provenance round-trip property test for revisions.
+
 ## [0.4.7] - 2026-06-11
 
 ### Version
