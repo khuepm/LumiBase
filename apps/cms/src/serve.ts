@@ -79,6 +79,57 @@ async function main() {
     void runScheduledRotation(rotatorDb);
   });
 
+  // ── Load-aware autonomy (content-os task 9; Req 9.4/9.5) ─────────────────
+  //
+  // Feed event-loop pressure samples into the agent load guard: overload
+  // pauses reconciler-origin runs at the tool-call boundary (human work is
+  // never auto-paused) and a hold-down of continuous calm auto-resumes them.
+  const { getLoadGuard } = await import('./services/load-guard-service');
+  const loadGuard = getLoadGuard();
+  const loadGuardTimer = setInterval(() => {
+    const sample = pressureLimiter.getSample();
+    loadGuard.signal({ overloaded: sample.overloaded, reason: sample.reason });
+  }, 5_000);
+  loadGuardTimer.unref();
+
+  // ── Async agent runs (content-os task 3; Req 3.2) ────────────────────────
+  //
+  // Long-lived Node process consumes the `agent-runs` queue so goals created
+  // with `execution: 'async'` run outside the request runtime limit. The
+  // worker reuses the same Drizzle client as the audit rotator and executes
+  // through the harness codepath (capabilities, risk, budget, audit).
+  // Cloudflare Workers wire the same handler via their queue consumer export.
+  const { registerAgentRunWorker } = await import('./services/agent-run-worker');
+  registerAgentRunWorker({
+    db: rotatorDb,
+    cache: runtime.cache,
+    search: runtime.search,
+    queue: runtime.queue,
+    env: process.env as Record<string, string | undefined>,
+  });
+
+  // ── Veto-window commits (content-os task 14; Req 13.3/13.5) ─────────────
+  //
+  // Primary path: delayed queue jobs fire at each staging's autoCommitAt.
+  // Safety net: a 5-minute sweep commits anything the queue missed (lost
+  // jobs, queue-less runtimes). Both converge on VetoService.commit, which
+  // re-checks status and deadline — no premature or double commits.
+  const { registerVetoCommitWorker, sweepDueVetoCommits } = await import(
+    './services/veto-commit-worker'
+  );
+  const vetoWorkerDeps = {
+    db: rotatorDb,
+    cache: runtime.cache,
+    search: runtime.search,
+    queue: runtime.queue,
+  };
+  registerVetoCommitWorker(vetoWorkerDeps);
+  const vetoSweepTask = cron.schedule('*/5 * * * *', () => {
+    void sweepDueVetoCommits(vetoWorkerDeps).catch((err) => {
+      console.error('[veto-sweep] failed', formatSafeError(err));
+    });
+  });
+
   // Graceful shutdown with 10s timeout
   process.on('SIGTERM', () => {
     console.log('[lumibase-cms] SIGTERM received, shutting down...');
@@ -86,7 +137,9 @@ async function main() {
     // Stop the hourly audit-rotation cron and pressure sampler so their timers
     // can't keep the event loop alive past the server close (task 11.4).
     rotationTask.stop();
+    vetoSweepTask.stop();
     pressureLimiter.stop();
+    clearInterval(loadGuardTimer);
 
     // Force exit after 10 seconds if graceful shutdown stalls
     const forceTimeout = setTimeout(() => {

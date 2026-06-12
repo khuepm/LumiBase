@@ -349,6 +349,27 @@ Authorization: Bearer <token>
 { "decision": "approved" }
 ```
 
+### Agent API (Content OS)
+
+All routes mount under the authenticated chain; the token's roles are the capability set.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST` | `/api/v1/agent/goals` | List / create goals (`execution: 'async'` enqueues a queued run) |
+| `POST` | `/api/v1/agent/goals/:id/decompose` | Planner: create role-scoped sub-goals inheriting remaining budget |
+| `POST` | `/api/v1/agent/goals/:id/settle` | Settle a parent goal from its children's terminal states |
+| `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | Agent role library CRUD (admin) — seeded with Planner, Writer, … |
+| `GET` | `/api/v1/agent/autonomy` | Trust ledger: grants + open incidents |
+| `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Promotion proposals; `POST :id/decide` is the only path to a higher level (admin) |
+| `GET/POST` | `/api/v1/agent/staged[...]` | Veto window: pending stagings; `POST :id/veto` discards a staging |
+| `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Agent-as-reviewer decision (needs `review:<domain>`; self-review forbidden) |
+| `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
+| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze` |
+| `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag |
+| `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |
+| `GET` | `/api/v1/deliver/llms.txt/:site_id` | Public llms.txt index per site |
+
 ---
 
 ## 9. Realtime (WebSocket)

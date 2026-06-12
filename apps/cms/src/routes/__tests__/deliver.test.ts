@@ -8,6 +8,7 @@ interface FakeDbData {
   pages: Array<Record<string, unknown>>;
   collections: Array<Record<string, unknown>>;
   items: Array<Record<string, unknown>>;
+  revisions?: Array<Record<string, unknown>>;
 }
 
 function makeDb(data: FakeDbData): Database {
@@ -19,11 +20,14 @@ function makeDb(data: FakeDbData): Database {
             ? data.pages
             : table === schema.collections
               ? data.collections
-              : data.items;
+              : table === schema.revisions
+                ? (data.revisions ?? [])
+                : data.items;
 
         const fluent = {
           where: () => fluent,
-          orderBy: () => fluent,
+          // The provenance query terminates at orderBy (no limit clause).
+          orderBy: () => (table === schema.revisions ? rows : fluent),
           limit: (limit: number) => {
             if (table === schema.items) {
               return rows
@@ -148,6 +152,82 @@ describe('delivery page hydration route', () => {
         },
       ],
     });
+  });
+
+  it('attaches latest-revision provenance to items when ?provenance=true', async () => {
+    const older = new Date('2026-06-01T00:00:00.000Z');
+    const data: FakeDbData = {
+      pages: [
+        {
+          id: 'page_1',
+          siteId: 'site_1',
+          slug: 'home',
+          title: 'Home',
+          layoutConfig: {
+            sections: [
+              {
+                id: 'featured',
+                component: 'PostGrid',
+                source: { collection: 'posts', limit: 5 },
+              },
+            ],
+          },
+        },
+      ],
+      collections: [{ id: 'posts_collection', siteId: 'site_1', name: 'posts' }],
+      items: [
+        {
+          id: 'post_1',
+          siteId: 'site_1',
+          collectionId: 'posts_collection',
+          status: 'published',
+          sort: 1,
+          data: { title: 'First post' },
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      revisions: [
+        {
+          itemId: 'post_1',
+          authorType: 'agent',
+          model: 'claude-test',
+          confidence: 0.9,
+          constitutionHash: 'sha256:abc',
+          sources: ['item:ref_1'],
+          createdAt: now,
+        },
+        {
+          itemId: 'post_1',
+          authorType: 'human',
+          model: null,
+          confidence: null,
+          constitutionHash: null,
+          sources: null,
+          createdAt: older,
+        },
+      ],
+    };
+
+    const withFlag = await buildApp(data).request('/api/v1/deliver/page/site_1/home?provenance=true');
+    expect(withFlag.status).toBe(200);
+    const body = (await withFlag.json()) as {
+      sections: Array<{ data: { items: Array<Record<string, unknown>> } }>;
+    };
+    expect(body.sections[0]?.data.items[0]?.['_provenance']).toEqual({
+      authorType: 'agent',
+      model: 'claude-test',
+      confidence: 0.9,
+      constitutionHash: 'sha256:abc',
+      sources: ['item:ref_1'],
+      revisedAt: now.toISOString(),
+    });
+
+    const withoutFlag = await buildApp(data).request('/api/v1/deliver/page/site_1/home');
+    const plain = (await withoutFlag.json()) as {
+      sections: Array<{ data: { items: Array<Record<string, unknown>> } }>;
+    };
+    expect(plain.sections[0]?.data.items[0]?.['_provenance']).toBeUndefined();
   });
 
   it('returns 404 when the page slug is missing', async () => {

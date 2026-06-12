@@ -1,5 +1,5 @@
 import { schema } from '@lumibase/database';
-import { and, asc, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { AppEnv, Variables } from '../env';
 
@@ -96,10 +96,68 @@ function serializeItem(row: DeliveryItemRow): Record<string, unknown> {
   };
 }
 
+/**
+ * Public provenance projection (C2PA-inspired). Deliberately excludes
+ * internal data such as run inputs or prompt material — only the lineage
+ * facts a downstream consumer needs to attribute the content.
+ */
+interface ItemProvenanceView {
+  authorType: string;
+  model: string | null;
+  confidence: number | null;
+  constitutionHash: string | null;
+  sources: unknown;
+  revisedAt: Date;
+}
+
+async function loadProvenance(
+  db: Variables['db'],
+  siteId: string,
+  itemIds: string[],
+): Promise<Map<string, ItemProvenanceView>> {
+  const result = new Map<string, ItemProvenanceView>();
+  if (itemIds.length === 0) return result;
+
+  const rows = await db
+    .select({
+      itemId: schema.revisions.itemId,
+      authorType: schema.revisions.authorType,
+      model: schema.revisions.model,
+      confidence: schema.revisions.confidence,
+      constitutionHash: schema.revisions.constitutionHash,
+      sources: schema.revisions.sources,
+      createdAt: schema.revisions.createdAt,
+    })
+    .from(schema.revisions)
+    .where(
+      and(
+        eq(schema.revisions.siteId, siteId),
+        inArray(schema.revisions.itemId, itemIds),
+        eq(schema.revisions.staged, false),
+      ),
+    )
+    .orderBy(desc(schema.revisions.createdAt));
+
+  for (const row of rows) {
+    // Rows are newest-first; keep only the latest revision per item.
+    if (result.has(row.itemId)) continue;
+    result.set(row.itemId, {
+      authorType: row.authorType,
+      model: row.model,
+      confidence: row.confidence,
+      constitutionHash: row.constitutionHash,
+      sources: row.sources,
+      revisedAt: row.createdAt,
+    });
+  }
+  return result;
+}
+
 async function hydrateSection(
   db: Variables['db'],
   siteId: string,
   section: SectionConfig,
+  withProvenance = false,
 ) {
   const base = {
     id: section.id,
@@ -153,14 +211,104 @@ async function hydrateSection(
     .orderBy(...buildSort(section.source.orderBy))
     .limit(clampLimit(section.source.limit));
 
+  const items = rows.map((row) => serializeItem(row as DeliveryItemRow));
+
+  if (withProvenance) {
+    const provenance = await loadProvenance(
+      db,
+      siteId,
+      rows.map((row) => row.id),
+    );
+    for (const item of items) {
+      const view = provenance.get(item['id'] as string);
+      if (view) item['_provenance'] = view;
+    }
+  }
+
   return {
     ...base,
     data: {
       ...base.data,
-      items: rows.map((row) => serializeItem(row as DeliveryItemRow)),
+      items,
     },
   };
 }
+
+/**
+ * Public llms.txt index per site (content-os task 4.3; Req 4.5).
+ *
+ * Follows the llms.txt convention (H1 title, blockquote summary, H2 link
+ * sections) so LLM crawlers and agents can discover what the site publishes
+ * and where the machine-readable surfaces live. Only public facts are
+ * listed: visible non-system collections and published pages — never drafts,
+ * hidden collections or internal agent state.
+ */
+deliverRouter.get('/llms.txt/:site_id', async (c) => {
+  const siteId = c.req.param('site_id');
+  const db = c.get('db');
+
+  const [site] = await db
+    .select({ id: schema.sites.id, name: schema.sites.name, domain: schema.sites.domain })
+    .from(schema.sites)
+    .where(eq(schema.sites.id, siteId))
+    .limit(1);
+  if (!site) {
+    return c.text('Site not found.', 404);
+  }
+
+  const [cols, publishedPages] = await Promise.all([
+    db
+      .select({
+        name: schema.collections.name,
+        label: schema.collections.label,
+        note: schema.collections.note,
+      })
+      .from(schema.collections)
+      .where(
+        and(
+          eq(schema.collections.siteId, siteId),
+          eq(schema.collections.hidden, false),
+          eq(schema.collections.system, false),
+        ),
+      )
+      .orderBy(asc(schema.collections.name)),
+    db
+      .select({ slug: schema.pages.slug, title: schema.pages.title })
+      .from(schema.pages)
+      .where(eq(schema.pages.siteId, siteId))
+      .orderBy(asc(schema.pages.slug))
+      .limit(100),
+  ]);
+
+  const base = `/api/v1/deliver`;
+  const lines: string[] = [
+    `# ${site.name}`,
+    '',
+    `> Content published by ${site.name} via LumiBase, an Edge-native headless CMS. Pages are served as a single JSON payload; append \`?provenance=true\` for C2PA-style authorship lineage on every item.`,
+    '',
+    '## Pages',
+    '',
+    ...(publishedPages.length > 0
+      ? publishedPages.map((p) => `- [${p.title}](${base}/page/${site.id}/${p.slug}): page delivery JSON`)
+      : ['- No public pages yet.']),
+    '',
+    '## Collections',
+    '',
+    ...(cols.length > 0
+      ? cols.map((col) => `- ${col.label ?? col.name} (\`${col.name}\`)${col.note ? `: ${col.note}` : ''}`)
+      : ['- No public collections yet.']),
+    '',
+    '## Optional',
+    '',
+    `- [Provenance](${base}/page/${site.id}/{slug}?provenance=true): per-item authorType, model and confidence`,
+    '',
+  ];
+
+  return c.text(lines.join('\n'), 200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'public, max-age=300',
+  });
+});
 
 deliverRouter.get('/page/:site_id/:slug', async (c) => {
   const { site_id: siteId, slug } = c.req.param();
@@ -178,8 +326,11 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
 
   const layout = (page.layoutConfig ?? {}) as LayoutConfig;
   const sections = layout.sections ?? [];
+  const withProvenance = c.req.query('provenance') === 'true';
 
-  const resolved = await Promise.all(sections.map((section) => hydrateSection(db, siteId, section)));
+  const resolved = await Promise.all(
+    sections.map((section) => hydrateSection(db, siteId, section, withProvenance)),
+  );
 
   return c.json({
     page: {

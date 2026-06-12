@@ -55,6 +55,8 @@ import { webhooksRouter } from './routes/webhooks';
 import { testAuthRouter } from './routes/test-auth';
 import { aiRouter } from './routes/ai';
 import { agentRouter } from './routes/agent';
+import { intentsRouter } from './routes/intents';
+import { mcpRouter } from './routes/mcp';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
@@ -212,7 +214,12 @@ api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
 api.route('/scim-tokens', scimAdminRouter);
 api.route('/ai', aiRouter);
+api.route('/agent/intents', intentsRouter);
 api.route('/agent', agentRouter);
+// MCP server (content-os task 4; Req 4.1). Same authenticated chain as the
+// Agent API — the MCP adapter passes the token's roles to the harness, so
+// both surfaces share one decision codepath (Property 14).
+api.route('/mcp', mcpRouter);
 
 // ClickHouse CDC control-plane surface (`/api/v1/cdc/*`) — clickhouse-cdc
 // task 12.2; Req 1.1; design "CDC API Routes" §7. Mounted on the

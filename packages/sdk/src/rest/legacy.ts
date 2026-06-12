@@ -290,6 +290,15 @@ export function legacyRest() {
           client.rawRequest<Row>(`${base}/${id}/revert/${revisionId}`, {
             method: "POST",
           }),
+        // Law Zero pins (content-os Req 8.4/8.5): fields a human edit locked
+        // against agent writes. Release hands the field back to agents.
+        listPins: (id: string) =>
+          client.rawRequest<{ pinnedFields: string[] }>(`${base}/${id}/pins`),
+        releasePin: (id: string, field: string) =>
+          client.rawRequest<{ pinnedFields: string[] }>(
+            `${base}/${id}/pins/${encodeURIComponent(field)}`,
+            { method: "DELETE" },
+          ),
       };
     }
 

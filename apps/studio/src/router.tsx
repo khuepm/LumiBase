@@ -48,6 +48,7 @@ const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').t
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
 const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
 const AgentHarnessPage = lazy(() => import('./modules/settings/agent-harness-page').then((m) => ({ default: m.AgentHarnessPage })));
+const MissionControlPage = lazy(() => import('./modules/mission-control/index-page').then((m) => ({ default: m.MissionControlPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
 const TeamsPage = lazy(() => import('./modules/users/teams-page').then((m) => ({ default: m.TeamsPage })));
 const UsersPage = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
@@ -712,6 +713,19 @@ const adminPathAutomationFlowEditRoute = createRoute({
   component: withSuspense(FlowEditor),
 });
 
+// Mission Control (content-os tasks 17-18) — the Content OS operator console.
+const missionControlRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control',
+  component: withSuspense(MissionControlPage),
+});
+
+const adminPathMissionControlRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control',
+  component: withSuspense(MissionControlPage),
+});
+
 const cdcRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/cdc',
@@ -949,6 +963,8 @@ const routeTree = rootRoute.addChildren([
     automationFlowsRoute,
     automationFlowNewRoute,
     automationFlowEditRoute,
+    missionControlRoute,
+    adminPathMissionControlRoute,
     cdcRoute,
     cdcNewRoute,
     cdcDetailRoute,

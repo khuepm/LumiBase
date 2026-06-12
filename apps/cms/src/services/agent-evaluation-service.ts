@@ -35,6 +35,21 @@ export class AgentEvaluationService {
     }
 
     const status = issues.length === 0 ? 'pass' : 'fail';
+
+    // Constitution pinning (content-os Req 15.3, Property 12): every
+    // evaluation of a run records the hash pinned at run start — repeat
+    // pins are idempotent, so mid-run activations never leak in. Best
+    // effort: evaluation still works on sites without a constitution.
+    let constitutionHash: string | null = null;
+    try {
+      const { ConstitutionService } = await import('./constitution-service');
+      constitutionHash = await new ConstitutionService({ db: this.db, siteId: this.siteId }).pinToRun(
+        input.runId,
+      );
+    } catch {
+      constitutionHash = null;
+    }
+
     const [evaluation] = await this.db
       .insert(agentEvaluations)
       .values({
@@ -45,7 +60,7 @@ export class AgentEvaluationService {
         status,
         score: status === 'pass' ? 100 : 0,
         summary: status === 'pass' ? 'Evaluation passed.' : issues.join(' '),
-        details: { issues },
+        details: { issues, ...(constitutionHash ? { constitutionHash } : {}) },
         artifactHash: stableHash(content),
       })
       .returning();

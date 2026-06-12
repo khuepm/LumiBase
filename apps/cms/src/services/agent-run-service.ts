@@ -24,6 +24,26 @@ export interface AgentRunEnvelope {
   createdBy?: string | null;
   title?: string;
   contextMessage?: string;
+  /**
+   * Initial run status. `queued` is used by async execution — the run is
+   * created immediately and picked up by a queue worker (Req 3.1/3.2).
+   */
+  status?: 'running' | 'queued';
+  /**
+   * Work origin (`user` | `reconciler` | …). Backpressure pauses
+   * reconciler-origin work only — human-triggered runs are never
+   * auto-paused (Req 9.4).
+   */
+  origin?: string;
+  /** Governing content intent, when reconciler-originated (write budget scope). */
+  intentId?: string;
+  /** Autonomy ceiling from the governing intent (resolver input, Req 7.2). */
+  autonomyCap?: number;
+  /**
+   * Role from the agent_roles library executing this run (Module C). When
+   * set, the Harness narrows capabilities to role ∩ grant (Req 10.4).
+   */
+  agentRole?: string;
 }
 
 export interface AgentRunContext {
@@ -85,6 +105,9 @@ export class AgentRunService {
           createdBy: envelope.createdBy ?? null,
           assigneeAgent: agentName,
           status: 'in_progress',
+          origin: envelope.origin ?? 'user',
+          intentId: envelope.intentId ?? null,
+          agentRole: envelope.agentRole ?? null,
           metadata: { transient: true },
         })
         .returning();
@@ -105,7 +128,7 @@ export class AgentRunService {
         model: envelope.model ?? 'tool-registry',
         budget: envelope.budget ?? {},
         policySnapshotHash: envelope.policySnapshotHash ?? null,
-        status: 'running',
+        status: envelope.status ?? 'running',
       })
       .returning();
 
@@ -210,6 +233,76 @@ export class AgentRunService {
     if (run) {
       await this.enqueueDeadLetterIfRepeatedFailure(run, error, stopReason);
     }
+  }
+
+  async getRun(runId: string) {
+    const [run] = await this.db
+      .select()
+      .from(agentRuns)
+      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)))
+      .limit(1);
+    return run ?? null;
+  }
+
+  /**
+   * Transitions a `queued` or `awaiting_approval` run to `running`.
+   * Returns false when the run is missing or in a terminal/cancelled state,
+   * so workers can skip work that was cancelled while waiting (Req 3.5).
+   */
+  async markRunning(runId: string): Promise<boolean> {
+    const run = await this.getRun(runId);
+    if (!run || !['queued', 'awaiting_approval', 'running'].includes(run.status)) {
+      return false;
+    }
+    if (run.status !== 'running') {
+      await this.db
+        .update(agentRuns)
+        .set({ status: 'running', startedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
+    }
+    return true;
+  }
+
+  /** Parks a run while a dangerous action waits for an approval (Req 3.1). */
+  async awaitApproval(runId: string): Promise<void> {
+    await this.db
+      .update(agentRuns)
+      .set({ status: 'awaiting_approval', updatedAt: new Date() })
+      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
+  }
+
+  /**
+   * Cancels a non-terminal run. Cancellation takes effect at the next
+   * tool-call boundary — the harness re-checks the status before every
+   * tool call (Req 3.5). Returns the updated run, or null when the run is
+   * missing or already terminal.
+   */
+  async cancelRun(runId: string, reason = 'cancelled_by_user') {
+    const run = await this.getRun(runId);
+    if (!run || !['queued', 'running', 'awaiting_approval'].includes(run.status)) {
+      return null;
+    }
+    const metrics = {
+      ...(run.metrics as Record<string, unknown>),
+      stopReason: reason,
+    };
+    const [updated] = await this.db
+      .update(agentRuns)
+      .set({ status: 'cancelled', metrics, finishedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)))
+      .returning();
+    agentRunsTotal.inc({
+      agent: run.agentName,
+      status: 'cancelled',
+      stop_reason: reason,
+    });
+    return updated ?? null;
+  }
+
+  /** True when the run was cancelled (checked at tool-call boundaries). */
+  async isCancelled(runId: string): Promise<boolean> {
+    const run = await this.getRun(runId);
+    return run?.status === 'cancelled';
   }
 
   async retryRun(runId: string): Promise<AgentRunContext | null> {

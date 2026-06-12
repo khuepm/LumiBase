@@ -540,3 +540,47 @@ export function createLLMProvider(env: LLMProviderEnv): LLMProvider {
       return new EchoProvider();
   }
 }
+
+// ---------------------------------------------------------------------------
+// Configured provider resolution (no silent echo fallback)
+// ---------------------------------------------------------------------------
+
+const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-sonnet-4-20250514',
+  claude: 'claude-sonnet-4-20250514',
+  gemini: 'gemini-3.5-flash',
+  'workers-ai': '@cf/meta/llama-3.1-8b-instruct',
+};
+
+export interface ConfiguredLLM {
+  provider: LLMProvider;
+  /** Provider name from LLM_PROVIDER (e.g. 'openai'). */
+  name: string;
+  /** Resolved model identifier, recorded in run metrics and provenance. */
+  model: string;
+}
+
+/**
+ * Resolves a real LLM provider from the environment, or `null` when none is
+ * configured. Unlike `createLLMProvider`, this never falls back to the echo
+ * provider — generation skills use it to fail loudly (LLM_NOT_CONFIGURED)
+ * instead of silently returning stub output.
+ */
+export function createConfiguredLLMProvider(env: LLMProviderEnv): ConfiguredLLM | null {
+  const name = env.LLM_PROVIDER;
+  if (!name || name === 'echo') return null;
+
+  const hasCredentials =
+    (name === 'openai' && Boolean(env.OPENAI_API_KEY)) ||
+    ((name === 'anthropic' || name === 'claude') && Boolean(env.ANTHROPIC_API_KEY)) ||
+    (name === 'gemini' && Boolean(env.GEMINI_API_KEY)) ||
+    (name === 'workers-ai' && Boolean(env.WORKERS_AI_ACCOUNT_ID) && Boolean(env.WORKERS_AI_API_TOKEN));
+  if (!hasCredentials) return null;
+
+  return {
+    provider: createLLMProvider(env),
+    name,
+    model: env.LLM_MODEL ?? PROVIDER_DEFAULT_MODELS[name] ?? 'default',
+  };
+}

@@ -464,14 +464,27 @@ const textEncoder = new TextEncoder();
  * Random anti-timing delay in **inclusive** `[200, 500]` milliseconds.
  *
  * Pure helper (no side effects) so it can be unit-tested in isolation.
- * The jitter is drawn from a CSPRNG byte pair rather than `Math.random`
- * so an attacker can't model and subtract the delay distribution out of
- * many timed probes. Returns an integer.
+ * The jitter is drawn from a CSPRNG rather than `Math.random` so an
+ * attacker can't model and subtract the delay distribution out of many
+ * timed probes. Returns an integer.
+ *
+ * Uses **rejection sampling**: a plain `% DELAY_SPAN` over a 16-bit value
+ * is biased because 65536 is not a multiple of 301, so the lowest few
+ * outputs would occur slightly more often. We discard the unbalanced tail
+ * (samples at or above the largest multiple of DELAY_SPAN that fits in 16
+ * bits) and redraw, giving a uniform distribution over [200, 500]. The
+ * rejection probability is ~0.3%, so it almost always succeeds first try.
  */
 export function randomDelayMs(): number {
-  const bytes = crypto.getRandomValues(new Uint8Array(2));
-  const sample = ((bytes[0]! << 8) | bytes[1]!) % DELAY_SPAN;
-  return DELAY_MIN_MS + sample;
+  const MAX_16 = 0x1_0000; // 65536
+  const limit = MAX_16 - (MAX_16 % DELAY_SPAN); // largest unbiased ceiling
+  const bytes = new Uint8Array(2);
+  let value: number;
+  do {
+    crypto.getRandomValues(bytes);
+    value = (bytes[0]! << 8) | bytes[1]!;
+  } while (value >= limit);
+  return DELAY_MIN_MS + (value % DELAY_SPAN);
 }
 
 function toBase64Url(bytes: Uint8Array): string {

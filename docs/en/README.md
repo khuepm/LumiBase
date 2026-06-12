@@ -19,6 +19,7 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
 
 - **Vision & Định vị**
   - [vision-and-positioning.md](./vision-and-positioning.md) — So sánh Directus, định vị USP của LumiBase.
+  - [ai-native-vision.md](./ai-native-vision.md) — Tầm nhìn Content OS: tái định nghĩa CMS cho kỷ nguyên AI (intent-driven, reconciliation, trust gradient, multi-agent, mission control).
 - **Kiến trúc**
   - [architecture/overview.md](./architecture/overview.md) — Tổng thể tech stack, các lớp, module, runtime abstraction.
   - [architecture/page-hydration.md](./architecture/page-hydration.md) — Hợp đồng API hydrate trang.

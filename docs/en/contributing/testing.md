@@ -121,6 +121,58 @@ describe('POST /api/v1/ai/chat', () => {
 })
 ```
 
+### DB-backed integration tests
+
+Some suites exercise real SQL against a live Postgres (drift→goal transitions, fingerprint dedupe, partial unique indexes, tenant scoping). They follow the shared `DATABASE_URL` pattern: when the variable is unset or the database is unreachable, the suite **self-skips** with a warning so local-only `pnpm test` and CI without a database stay green.
+
+```typescript
+const TEST_DATABASE_URL = process.env.DATABASE_URL
+
+describe('My DB integration', () => {
+  let db: Database
+  let canConnect = false
+
+  beforeAll(async () => {
+    if (!TEST_DATABASE_URL) return
+    try {
+      db = createDb(TEST_DATABASE_URL)
+      await db.execute(sql`SELECT 1`)
+      canConnect = true
+    } catch {
+      canConnect = false
+    }
+  })
+
+  beforeEach(async () => {
+    if (!canConnect) return
+    // Reset shared tables; cascade from `sites` clears tenant-scoped rows.
+    await db.delete(sites).where(/* this suite's site ids */)
+  })
+
+  it.runIf(TEST_DATABASE_URL)('does the thing', async () => {
+    if (!canConnect) return
+    // …
+  })
+})
+```
+
+Run them against a local database:
+
+```bash
+# Start Postgres (override the port if 5432 is taken locally)
+POSTGRES_PORT=5433 docker compose -f docker/docker-compose.yml up -d postgres
+
+# Apply all migrations to the fresh database
+DATABASE_URL="postgres://lumibase:lumibase_dev@localhost:5433/lumibase" \
+  pnpm -F @lumibase/database migrate
+
+# Run the suite with the database wired in
+DATABASE_URL="postgres://lumibase:lumibase_dev@localhost:5433/lumibase" \
+  pnpm -F @lumibase/cms test
+```
+
+> **File parallelism.** When `DATABASE_URL` is set, `apps/cms/vitest.config.ts` disables `fileParallelism` automatically. Integration suites share one database and reset shared tables in `beforeEach`, so running their files concurrently lets one file's reset wipe another's fixtures mid-test. Without a database the tests self-skip and the rest of the suite runs fully parallel.
+
 ## Test conventions
 
 ### What to test
