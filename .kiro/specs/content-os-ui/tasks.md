@@ -93,3 +93,9 @@ UI-only, không endpoint mới. Thứ tự: nguồn dữ liệu chung → khung 
 - [x] 14. Exception notifications → deep-link ?entry=
   - [x] 14.1 `NotificationsPanel`: nguồn thứ hai từ `useInboxData` — diff entry mới giữa các poll (pure helper + unit test), nhãn per kind, Link `{adminBase}/mission-control/inbox?entry=<id>` đóng panel khi click, lần load đầu coi là đã-thấy, gộp unread count/mark-read/clear hiện có; component test
     - _Requirements: 14.1-14.5_
+
+- [x] 15. Rollout flags switchboard (gap phát hiện khi rà soát 2026-06-13: 4 cờ `contentOs` gate toàn bộ Content OS nhưng không có UI nào để bật)
+  - [x] 15.1 `api.ts`: `contentOsFlags()` (GET `/settings/contentOs`, 404 → all-OFF + raw rỗng, trả `{flags, raw}`) và `saveContentOsFlags(value)` (POST `/settings` key `contentOs`); `rollout-flags.tsx` (`RolloutFlagsPanel`): 4 hàng cờ + mô tả, confirm 2 bước khi bật, tắt ngay một click, save merge flags lên raw value, note baseline khi all-off; nhúng section "Rollout" vào cột phải dashboard
+    - _Requirements: 15.1-15.4_
+  - [x] 15.2 Component test: 2-step enable + merge giữ key ngoài cờ, cancel không save, disable ngay một click
+    - **Validates: Requirements 15.2, 15.3**

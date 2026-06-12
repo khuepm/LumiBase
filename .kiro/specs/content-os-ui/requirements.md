@@ -175,3 +175,14 @@ Phạm vi: **UI-only** — không tạo endpoint backend mới; chỉ dùng các
 3. WHEN panel mount lần đầu (login/refresh), THE panel SHALL coi toàn bộ entry hiện hữu là đã-thấy — chỉ entry xuất hiện SAU đó mới sinh notification (không dội bom khi mở app).
 4. Exception notifications SHALL được tính vào unread count trên chuông và tuân hành vi mark-all-read/clear hiện có; entry biến mất (đã quyết/commit) KHÔNG xoá notification đã sinh.
 5. THE cơ chế diff SHALL là pure function có unit test (seen-set → danh sách entry mới).
+
+### Requirement 15: Rollout flags switchboard
+
+**User Story:** Là một quản trị viên, tôi muốn bật/tắt 4 cờ rollout Content OS (`reconciler`/`vetoWindow`/`agentReview`/`mcp`) ngay trong Mission Control, để vận hành rollout không phải tự tay POST `/settings` (gap phát hiện khi rà soát: cờ gate toàn bộ Content OS nhưng không có UI nào).
+
+#### Acceptance Criteria
+
+1. THE Dashboard SHALL có panel "Rollout" hiển thị 4 cờ kèm mô tả ngắn; trạng thái đọc từ `GET /api/v1/settings/contentOs`, row vắng (404) đọc là all-OFF — khớp semantics `getContentOsFlags` phía CMS.
+2. WHEN bật một cờ (OFF→ON), THE panel SHALL yêu cầu confirm 2 bước (nhất quán với confirm freeze của kill switch); tắt (ON→OFF) SHALL áp dụng ngay một click — control dừng không bao giờ có friction.
+3. WHEN lưu, THE panel SHALL merge 4 cờ lên trên value hiện có của row (`POST /api/v1/settings`, key `contentOs`) — các key ngoài cờ trên cùng row (vd `agentReviewMinConfidence`) phải sống sót qua toggle.
+4. WHEN mọi cờ đều off, THE panel SHALL hiển thị ghi chú site đang hành xử như baseline pre-Content-OS.

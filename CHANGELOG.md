@@ -11,6 +11,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
+- **Mission Control rollout switchboard** (content-os-ui Req 15). The dashboard gains a "Rollout" panel to toggle the four per-site Content OS flags (`reconciler`, `vetoWindow`, `agentReview`, `mcp`) — previously only flippable by hand-crafting a `POST /api/v1/settings` call. Enabling a subsystem takes a two-step confirm (consistent with the kill-switch freeze confirm); disabling applies on the first click. Saves merge over the existing `contentOs` settings row so non-flag keys (e.g. `agentReviewMinConfidence`) survive a toggle.
 - **Setup seeds Content OS state** (Setup Impact Registry G.1–G.3, G.5). The setup transaction now additionally:
   - seeds the 7-role agent library for the default site (previously lazy-seeded on first `GET /agent/roles`);
   - materialises the `contentOs` feature-flags settings row with every flag OFF;
