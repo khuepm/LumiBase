@@ -1,4 +1,4 @@
-import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 import { agentGoals } from './ai';
 import { sites, users } from './core';
@@ -158,6 +158,37 @@ export const contentDrifts = pgTable(
       t.status,
     ),
     siteItemIdx: index('content_drifts_site_item_idx').on(t.siteId, t.itemId),
+  }),
+);
+
+/**
+ * Multi-agent role library (Module C, Req 10.2/10.3). Each role carries a
+ * minimal capability set; the Harness enforces effective capability =
+ * role ∩ grant, so a role can never exceed what the caller's token allows
+ * and a token can never exceed what the role declares (Req 10.4).
+ */
+export const agentRoles = pgTable(
+  'agent_roles',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    /** Key into the prompt store; the role's system prompt is not inlined. */
+    systemPromptRef: text('system_prompt_ref'),
+    /** Optional model override; null inherits the site default. */
+    model: text('model'),
+    /** Minimal capability strings, e.g. ["items:read", "items:write"]. */
+    capabilities: jsonb('capabilities').default([]).notNull(),
+    enabled: boolean('enabled').default(true).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteNameUnique: uniqueIndex('agent_roles_site_name_unique').on(t.siteId, t.name),
+    siteEnabledIdx: index('agent_roles_site_enabled_idx').on(t.siteId, t.enabled),
   }),
 );
 

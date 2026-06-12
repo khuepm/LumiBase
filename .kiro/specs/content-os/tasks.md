@@ -92,12 +92,12 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
 
 ### Module C — Multi-agent org
 
-- [ ] 10. Delegation + Agent Roles
-  - [ ] 10.1 Cột `parentGoalId/origin/intentId/driftFingerprint/agentRole` trên `agent_goals`; bảng `agent_roles`; migration
+- [x] 10. Delegation + Agent Roles
+  - [x] 10.1 Cột `parentGoalId/origin/intentId/driftFingerprint/agentRole` trên `agent_goals`; bảng `agent_roles`; migration
     - _Requirements: 10.1, 10.2, 17.1_
-  - [ ] 10.2 Seed role library: Planner, Writer, Translator, Taxonomist, SEO, FactChecker, Librarian — capability tối thiểu, Writer không có `schema:*`
+  - [x] 10.2 Seed role library: Planner, Writer, Translator, Taxonomist, SEO, FactChecker, Librarian — capability tối thiểu, Writer không có `schema:*`
     - _Requirements: 10.3_
-  - [ ] 10.3 Planner: phân rã goal → sub-goals (kế thừa budget còn lại); Harness enforce capability = role ∩ grant; goal cha fail nếu acceptance không đạt
+  - [x] 10.3 Planner: phân rã goal → sub-goals (kế thừa budget còn lại); Harness enforce capability = role ∩ grant; goal cha fail nếu acceptance không đạt
     - _Requirements: 10.1, 10.4, 10.5_
 
 - [ ] 11. Agent-as-reviewer

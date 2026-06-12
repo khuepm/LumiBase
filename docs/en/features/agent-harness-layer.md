@@ -100,6 +100,12 @@ Run status follows `queued → running → awaiting_approval → succeeded | fai
 - When a dangerous action creates an approval, the run parks as `awaiting_approval`. An approval decision resumes it and executes only the stored skill — completed tool calls are never re-run.
 - `POST /api/v1/agent/runs/:id/cancel` cancels `queued`/`running`/`awaiting_approval` runs. Cancellation takes effect at the next tool-call boundary (the harness re-checks before every tool call), wins over late approvals, and is recorded with `stopReason` in run metrics.
 
+### Multi-agent org: roles and capability narrowing (Module C)
+
+Agent roles are data, not code. The `agent_roles` table holds a per-site role library (seeded with Planner, Writer, Translator, Taxonomist, SEO, FactChecker, Librarian — each with a deliberately minimal capability set; the Writer has no `schema:*` at all). When a run envelope carries `agentRole`, the harness narrows the caller's capabilities to **role ∩ grant** before the capability check (Step 2): a role can never exceed the token that runs it, and a token can never exceed the role it acts under. Unknown or disabled roles fail closed to the empty capability set. Roles are managed at `/api/v1/agent/roles` (admin).
+
+The **Planner** decomposes a goal into role-scoped sub-goals (`POST /api/v1/agent/goals/:id/decompose`): sub-goals link via `parentGoalId` with `origin='planner'`, inherit the parent's intent lineage and autonomy cap, and split the parent's **remaining** tool-call budget — the planner re-slices what is left, never mints new budget. `POST /api/v1/agent/goals/:id/settle` settles the parent from its children's terminal states: one failed sub-goal fails the parent (acceptance unmet); all completed completes it.
+
 ### Trust gradient at the risk decision (L0–L4)
 
 When a dangerous skill reaches Step 3, the harness resolves the effective autonomy level for `(agentRole, capability)` via the trust ledger — `min(grant-or-default, intent cap, hard ceiling)` — and routes accordingly:

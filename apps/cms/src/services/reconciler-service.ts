@@ -168,6 +168,12 @@ export class ReconcilerService {
           priority: 'normal',
           status: 'open',
           successCriteria: { driftResolved: drift.fingerprint },
+          // First-class lineage columns (Module C, Req 10.1) — metadata
+          // mirrors them for existing consumers.
+          origin: 'reconciler',
+          intentId,
+          driftFingerprint: drift.fingerprint,
+          agentRole: role,
           metadata: {
             origin: 'reconciler',
             intentId,

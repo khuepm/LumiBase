@@ -1,4 +1,5 @@
 import { boolean, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 import { sites, users } from './core';
 
@@ -140,12 +141,34 @@ export const agentGoals = pgTable(
     status: text('status').default('open').notNull(),
     successCriteria: jsonb('success_criteria').default({}).notNull(),
     metadata: jsonb('metadata').default({}).notNull(),
+    /**
+     * Planner delegation (Module C, Req 10.1): parent goal in the goal
+     * tree. Sub-goals inherit the parent's remaining budget and report
+     * acceptance back to it.
+     */
+    parentGoalId: text('parent_goal_id').references((): AnyPgColumn => agentGoals.id, {
+      onDelete: 'set null',
+    }),
+    /** `user` | `reconciler` | `planner` | `flow` */
+    origin: text('origin').default('user').notNull(),
+    /**
+     * Governing content intent id. Plain text (no FK): `content_intents`
+     * is declared in the downstream content-os schema module, which itself
+     * imports this file — a declared FK would create an import cycle.
+     */
+    intentId: text('intent_id'),
+    /** Drift fingerprint this goal resolves (reconciler origin). */
+    driftFingerprint: text('drift_fingerprint'),
+    /** Role from the `agent_roles` library executing this goal. */
+    agentRole: text('agent_role'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => ({
     siteStatusIdx: index('agent_goals_site_status_idx').on(t.siteId, t.status),
     siteCreatedIdx: index('agent_goals_site_created_idx').on(t.siteId, t.createdAt),
+    siteParentIdx: index('agent_goals_site_parent_idx').on(t.siteId, t.parentGoalId),
+    siteOriginIdx: index('agent_goals_site_origin_idx').on(t.siteId, t.origin),
   }),
 );
 

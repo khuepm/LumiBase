@@ -159,6 +159,135 @@ agentRouter.post('/goals', async (c) => {
   return c.json({ data: goal }, 201);
 });
 
+// ── Agent roles + planner delegation (content-os task 10; Req 10.1-10.5) ───
+
+function canManageRoles(c: Context<AppEnv>): boolean {
+  const roles = c.get('auth').roles ?? [];
+  return roles.includes('admin') || roles.includes('*');
+}
+
+const roleBodySchema = z.object({
+  name: z.string().min(1).max(80).regex(/^[a-z][a-z0-9_-]*$/),
+  description: z.string().max(500).optional(),
+  systemPromptRef: z.string().max(200).optional(),
+  model: z.string().max(120).optional(),
+  capabilities: z.array(z.string().min(1).max(80)).max(32),
+  enabled: z.boolean().optional(),
+});
+
+agentRouter.get('/roles', async (c) => {
+  const { AgentRoleService } = await import('../services/agent-role-service');
+  const service = new AgentRoleService({ db: c.get('db'), siteId: c.get('siteId') });
+  return c.json({ data: await service.list() });
+});
+
+agentRouter.post('/roles', async (c) => {
+  if (!canManageRoles(c)) {
+    return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
+  }
+  const parsed = roleBodySchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+  const { AgentRoleService, AgentRoleError } = await import('../services/agent-role-service');
+  const service = new AgentRoleService({ db: c.get('db'), siteId: c.get('siteId') });
+  try {
+    return c.json({ data: await service.create(parsed.data) }, 201);
+  } catch (err) {
+    if (err instanceof AgentRoleError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
+agentRouter.patch('/roles/:name', async (c) => {
+  if (!canManageRoles(c)) {
+    return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
+  }
+  const parsed = roleBodySchema.partial().omit({ name: true }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+  const { AgentRoleService, AgentRoleError } = await import('../services/agent-role-service');
+  const service = new AgentRoleService({ db: c.get('db'), siteId: c.get('siteId') });
+  try {
+    return c.json({ data: await service.update(c.req.param('name'), parsed.data) });
+  } catch (err) {
+    if (err instanceof AgentRoleError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
+agentRouter.delete('/roles/:name', async (c) => {
+  if (!canManageRoles(c)) {
+    return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
+  }
+  const { AgentRoleService, AgentRoleError } = await import('../services/agent-role-service');
+  const service = new AgentRoleService({ db: c.get('db'), siteId: c.get('siteId') });
+  try {
+    await service.delete(c.req.param('name'));
+    return c.json({ data: null });
+  } catch (err) {
+    if (err instanceof AgentRoleError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
+const decomposeSchema = z.object({
+  subGoals: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(200),
+        description: z.string().max(2000).optional(),
+        agentRole: z.string().min(1).max(80),
+        acceptance: z.record(z.unknown()).optional(),
+      }),
+    )
+    .min(1)
+    .max(20),
+});
+
+/** Planner: decompose a goal into role-scoped sub-goals (Req 10.1/10.3). */
+agentRouter.post('/goals/:id/decompose', async (c) => {
+  const roles = c.get('auth').roles ?? [];
+  if (!(roles.includes('admin') || roles.includes('goals:write') || roles.includes('*'))) {
+    return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Capability "goals:write" is required.' }] }, 403);
+  }
+  const parsed = decomposeSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+  const { PlannerService, PlannerError } = await import('../services/planner-service');
+  const planner = new PlannerService({ db: c.get('db'), siteId: c.get('siteId') });
+  try {
+    return c.json({ data: await planner.decompose(c.req.param('id'), parsed.data.subGoals) }, 201);
+  } catch (err) {
+    if (err instanceof PlannerError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
+/** Settles a parent goal from its children's terminal states (Req 10.5). */
+agentRouter.post('/goals/:id/settle', async (c) => {
+  const { PlannerService, PlannerError } = await import('../services/planner-service');
+  const planner = new PlannerService({ db: c.get('db'), siteId: c.get('siteId') });
+  try {
+    return c.json({ data: await planner.settleParent(c.req.param('id')) });
+  } catch (err) {
+    if (err instanceof PlannerError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
 // ── Trust ledger (content-os task 13; Req 12.5) ─────────────────────────────
 
 /** Grants + open incidents — the trust ledger view. */

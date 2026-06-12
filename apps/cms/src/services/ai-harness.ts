@@ -1046,8 +1046,18 @@ export class AISecureHarness {
       return { status: 'denied', message, ...run, toolCallId };
     }
 
-    // Step 2: Check capabilities
-    if (!this.checkCapabilities(tool, userCapabilities)) {
+    // Step 2: Check capabilities. A role-attributed run is narrowed to
+    // role ∩ grant first (Module C, Req 10.4): the role can never exceed
+    // the caller's token, and the token can never exceed the role.
+    let effectiveCapabilities = userCapabilities;
+    if (envelope.agentRole) {
+      const { AgentRoleService } = await import('./agent-role-service');
+      effectiveCapabilities = await new AgentRoleService({
+        db: this.db,
+        siteId: this.siteId,
+      }).effectiveCapabilities(envelope.agentRole, userCapabilities);
+    }
+    if (!this.checkCapabilities(tool, effectiveCapabilities)) {
       const message = 'Insufficient capabilities';
       await this.runService.finishToolCall(toolCallId, {
         status: 'denied',

@@ -39,6 +39,11 @@ export interface AgentRunEnvelope {
   intentId?: string;
   /** Autonomy ceiling from the governing intent (resolver input, Req 7.2). */
   autonomyCap?: number;
+  /**
+   * Role from the agent_roles library executing this run (Module C). When
+   * set, the Harness narrows capabilities to role ∩ grant (Req 10.4).
+   */
+  agentRole?: string;
 }
 
 export interface AgentRunContext {
@@ -100,6 +105,9 @@ export class AgentRunService {
           createdBy: envelope.createdBy ?? null,
           assigneeAgent: agentName,
           status: 'in_progress',
+          origin: envelope.origin ?? 'user',
+          intentId: envelope.intentId ?? null,
+          agentRole: envelope.agentRole ?? null,
           metadata: { transient: true },
         })
         .returning();
