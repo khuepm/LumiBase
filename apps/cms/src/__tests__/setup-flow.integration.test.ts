@@ -12,6 +12,7 @@ import {
   agentAutonomyGrants,
   agentRoles,
   auditLog,
+  constitutions,
   createDb,
   settings,
   systemState,
@@ -19,6 +20,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { ROLE_LIBRARY } from '../services/agent-role-service';
+import { BASELINE_CONSTITUTION_TEMPLATE } from '../services/constitution-service';
 import { CONTENT_OS_SETTINGS_KEY } from '../services/feature-flags';
 import { SetupService } from '../modules/setup/service';
 import {
@@ -238,6 +240,26 @@ describe('Setup flow — integration', () => {
       expect(grant.level).toBe(1);
       expect(grant.evidence).toEqual({ source: 'setup_bootstrap' });
       expect(grant.grantedBy).not.toBeNull();
+    }
+
+    // G.4 — baseline constitution seeded as a non-blocking draft.
+    const constitutionRows = await db
+      .select()
+      .from(constitutions)
+      .where(eq(constitutions.siteId, '__default__'));
+    expect(constitutionRows).toHaveLength(1);
+    expect(constitutionRows[0]!.status).toBe('draft');
+    expect(constitutionRows[0]!.version).toBe(1);
+    expect(constitutionRows[0]!.createdBy).not.toBeNull();
+    const evaluators = constitutionRows[0]!.evaluators as Array<{
+      id: string;
+      blocking?: boolean;
+    }>;
+    expect(evaluators.map((e) => e.id).sort()).toEqual(
+      BASELINE_CONSTITUTION_TEMPLATE.map((e) => e.id).sort(),
+    );
+    for (const evaluator of evaluators) {
+      expect(evaluator.blocking).toBe(false);
     }
 
     // G.5 — lockout policy is persisted and queryable from settings.
