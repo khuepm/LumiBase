@@ -122,11 +122,11 @@ Kế hoạch triển khai **Admin Setup Wizard** cho LumiBase Studio, gồm 6 ph
   - [x] 12.4 Mở rộng Studio module `apps/studio/src/modules/settings/activity-page.tsx` thêm tab "Security audit" gọi `/audit-log` với filter UI (event dropdown, email input, date range picker), nút "Export NDJSON" download blob (Req 15.4, 15.6; design §10.3)
   - [x] 12.5 Viết integration test `apps/cms/src/__tests__/audit-log.integration.test.ts` cover write event → query trả entry; cover retention rotation xóa rows cũ; cover export streaming với 1000 row mock (Req 15.1, 15.4, 15.5, 15.6; design §13.2, Property 10)
 
-- [-] G. Setup Impact catch-up (xem `setup-impact.md` — registry là nguồn sự thật, cập nhật trạng thái ở đó khi tick task tại đây)
+- [x] G. Setup Impact catch-up (xem `setup-impact.md` — registry là nguồn sự thật, cập nhật trạng thái ở đó khi tick task tại đây)
   - [x] G.1 Seed agent role library trong setup transaction (bước 8b trong `SetupService.complete()`); instance cũ dùng lazy `ensureSeeded()` làm fallback, không cần backfill (registry #1, content-os Req 10.3)
   - [x] G.2 Insert row `contentOs` flags mặc định (all false, `onConflictDoNothing`) vào `settings` trong setup tx (bước 8c); instance cũ: row vắng vẫn đọc all-OFF (registry #2)
   - [x] G.3 Baseline autonomy grants: L1 (PROPOSE) cho mọi (role, capability) seed, `grantedBy` = bootstrap admin, `evidence: { source: 'setup_bootstrap' }` (bước 9b). Chọn L1 thay vì safe→L2 vì grant row áp cho cả context safe lẫn dangerous của cùng capability — L1 không bao giờ nâng quyền. KHÔNG backfill instance cũ (registry #3)
-  - [ ] G.4 (Tùy chọn — cần chốt template trước) Bước wizard "Create default constitution?" trong Studio, POST constitution draft tối thiểu (registry #4)
+  - [x] G.4 Seed "Baseline Constitution v1" status `draft` trong setup tx (bước 9c) thay vì bước UI wizard — draft không có tác động runtime, operator review/activate trong Mission Control. Template `BASELINE_CONSTITUTION_TEMPLATE` trong constitution-service: 3 rules schema-safe (title-required, title-max-length 120, no-placeholder-text), tất cả `blocking: false` (registry #4)
   - [x] G.5 Chốt open-question-8: policy row `login_security_policy` dưới site `__default__` (bước 10); reader login-guard lookup theo key bất kể siteId nên không prejudge multi-tenancy (registry #5)
   - [x] G.6 Integration test `setup-flow.integration.test.ts` "seeds Content OS state": assert 7 agent_roles, row contentOs all-false, grants L1 + grantedBy, policy row queryable; CHANGELOG Unreleased + upgrade steps đã thêm. (`docs/en/agent-setup/prompt.md` không mô tả chi tiết setup nên không cần sửa)
 

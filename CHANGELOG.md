@@ -15,7 +15,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   - seeds the 7-role agent library for the default site (previously lazy-seeded on first `GET /agent/roles`);
   - materialises the `contentOs` feature-flags settings row with every flag OFF;
   - creates explicit L1 (PROPOSE) autonomy grants for every seed (role, capability), attributed to the bootstrap admin with `evidence.source = 'setup_bootstrap'`;
-  - persists the lockout policy to `settings.login_security_policy` under the `__default__` site (resolves open-question-8; the login guard already reads the row by key alone).
+  - persists the lockout policy to `settings.login_security_policy` under the `__default__` site (resolves open-question-8; the login guard already reads the row by key alone);
+  - seeds "Baseline Constitution v1" as a **draft** (3 schema-safe rules, all report-only) so the publish-gate feature is discoverable in Mission Control — drafts have zero runtime effect until a human activates them.
 
 ### Upgrade steps
 
