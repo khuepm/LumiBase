@@ -2,13 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { Check, ChevronLeft, Copy, Lock, Pin, Save, Share2, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { FieldResource, ItemRow } from '@lumibase/sdk';
+import type { FieldResource, ItemRow, RevisionRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePermissions, type PermissionHelpers } from '@/lib/use-permissions';
 import { PresenceChip } from '@/components/presence-chip';
 import { resolveInterface } from './interfaces/registry';
 import { RawToggle } from './interfaces/raw-toggle';
+import { ProvenanceBadge } from './provenance-badge';
 import { RevisionsPanel } from './revisions-panel';
 import { RawJsonPanel } from './raw-json-panel';
 
@@ -59,6 +60,16 @@ export function ItemDetailPage() {
     queryFn: async () => (await client.items(collection as never).listPins(id)).data.pinnedFields,
     enabled: !perms.isLoading && canRead,
   });
+
+  // Provenance of the latest revision (content-os-ui Req 4.4): who — human
+  // or agent — last shaped this item. Shares the revisions query cache.
+  const revisionsQuery = useQuery({
+    queryKey: ['revisions', collection, id],
+    queryFn: async () =>
+      (await client.items(collection as never).listRevisions(id)).data as RevisionRow[],
+    enabled: !perms.isLoading && canRead,
+  });
+  const latestRevision = revisionsQuery.data?.[0];
 
   const releasePinMutation = useMutation({
     mutationFn: async (field: string) => {
@@ -205,6 +216,7 @@ export function ItemDetailPage() {
               <ChevronLeft className="h-5 w-5" />
             </Link>
             Edit item
+            {latestRevision && <ProvenanceBadge revision={latestRevision} />}
           </h1>
         </div>
         <div className="flex items-center gap-2">
