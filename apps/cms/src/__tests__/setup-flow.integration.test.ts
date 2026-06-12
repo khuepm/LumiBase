@@ -6,15 +6,20 @@ import {
   afterAll,
   beforeEach,
 } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   adminBackupCodes,
+  agentAutonomyGrants,
+  agentRoles,
   auditLog,
   createDb,
+  settings,
   systemState,
   users,
   type Database,
 } from '@lumibase/database';
+import { ROLE_LIBRARY } from '../services/agent-role-service';
+import { CONTENT_OS_SETTINGS_KEY } from '../services/feature-flags';
 import { SetupService } from '../modules/setup/service';
 import {
   STANDARD_LOCKOUT_POLICY,
@@ -68,8 +73,10 @@ describe('Setup flow — integration', () => {
     // Reset every relevant table so each test starts on a clean slate.
     // `admin_backup_codes` cascades from `users`, but list it explicitly
     // so the intent is obvious and RESTART IDENTITY covers it too.
+    // `sites` cascades into `settings`, `agent_roles` and
+    // `agent_autonomy_grants` (the Setup Impact seeds — task G.6).
     await db.execute(
-      sql`TRUNCATE TABLE admin_backup_codes, audit_log, system_state, users RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE TABLE admin_backup_codes, audit_log, system_state, users, sites RESTART IDENTITY CASCADE`,
     );
   });
 
@@ -175,6 +182,78 @@ describe('Setup flow — integration', () => {
       );
       expect(matches.filter(Boolean)).toHaveLength(1);
     }
+  });
+
+  it('seeds Content OS state in the setup transaction (Req 17; tasks G.1–G.3, G.5)', async () => {
+    if (!canConnect) {
+      console.warn('Skipping: DATABASE_URL not set or database not reachable');
+      return;
+    }
+    const svc = makeService();
+    const outcome = await svc.complete(makeInput(), {
+      requestId: 'req-seeds',
+      ip: '127.0.0.1',
+      userAgent: 'vitest',
+    });
+    expect(outcome.ok).toBe(true);
+
+    // G.1 — agent role library: all 7 seed roles exist for the default site.
+    const roleRows = await db
+      .select()
+      .from(agentRoles)
+      .where(eq(agentRoles.siteId, '__default__'));
+    expect(roleRows.map((r) => r.name).sort()).toEqual(
+      ROLE_LIBRARY.map((r) => r.name).sort(),
+    );
+
+    // G.2 — Content OS flags row exists with every flag OFF.
+    const [flagsRow] = await db
+      .select()
+      .from(settings)
+      .where(
+        and(
+          eq(settings.siteId, '__default__'),
+          eq(settings.key, CONTENT_OS_SETTINGS_KEY),
+        ),
+      );
+    expect(flagsRow).toBeDefined();
+    expect(flagsRow!.value).toEqual({
+      reconciler: false,
+      vetoWindow: false,
+      agentReview: false,
+      mcp: false,
+    });
+
+    // G.3 — one L1 grant per (role, capability), attributed to bootstrap.
+    const grantRows = await db
+      .select()
+      .from(agentAutonomyGrants)
+      .where(eq(agentAutonomyGrants.siteId, '__default__'));
+    const expectedGrantCount = ROLE_LIBRARY.reduce(
+      (n, r) => n + r.capabilities.length,
+      0,
+    );
+    expect(grantRows).toHaveLength(expectedGrantCount);
+    for (const grant of grantRows) {
+      expect(grant.level).toBe(1);
+      expect(grant.evidence).toEqual({ source: 'setup_bootstrap' });
+      expect(grant.grantedBy).not.toBeNull();
+    }
+
+    // G.5 — lockout policy is persisted and queryable from settings.
+    const [policyRow] = await db
+      .select()
+      .from(settings)
+      .where(
+        and(
+          eq(settings.siteId, '__default__'),
+          eq(settings.key, 'login_security_policy'),
+        ),
+      );
+    expect(policyRow).toBeDefined();
+    expect(policyRow!.value).toMatchObject({
+      userMaxFailedAttempts: STANDARD_LOCKOUT_POLICY.userMaxFailedAttempts,
+    });
   });
 
   it('rolls back backup-code rows when the setup transaction fails (Req 1.5 / 14.2)', async () => {
