@@ -40,6 +40,38 @@ export interface LlmJudgeEvaluator {
 
 export type ConstitutionEvaluator = RuleEvaluator | LlmJudgeEvaluator;
 
+/**
+ * Baseline constitution seeded as a DRAFT at setup (Setup Impact Registry
+ * #4). Every evaluator is report-only (`blocking: false`) so even after a
+ * conscious activation it observes without vetoing — enforcing a rule is a
+ * per-evaluator human decision in Mission Control. Rules are schema-safe:
+ * a missing field passes `max_length`/`not_contains`, and only
+ * `title-required` reports on content without a title.
+ */
+export const BASELINE_CONSTITUTION_TEMPLATE: readonly ConstitutionEvaluator[] = [
+  {
+    id: 'title-required',
+    type: 'rule',
+    blocking: false,
+    description: 'Published content should have a non-empty title.',
+    rule: { field: 'title', op: 'required' },
+  },
+  {
+    id: 'title-max-length',
+    type: 'rule',
+    blocking: false,
+    description: 'Titles should stay scannable (≤ 120 characters).',
+    rule: { field: 'title', op: 'max_length', value: 120 },
+  },
+  {
+    id: 'no-placeholder-text',
+    type: 'rule',
+    blocking: false,
+    description: 'Content should not ship with placeholder text.',
+    rule: { field: 'content', op: 'not_contains', value: 'lorem ipsum' },
+  },
+] as const;
+
 export interface EvaluatorResult {
   evaluatorId: string;
   type: 'rule' | 'llm_judge';

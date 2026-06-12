@@ -33,6 +33,7 @@ import {
   adminBackupCodes,
   agentAutonomyGrants,
   agentRoles,
+  constitutions,
   settings,
   sites,
   systemState,
@@ -42,6 +43,10 @@ import {
 import { hashPassword } from '../../services/auth/password';
 import { ROLE_LIBRARY } from '../../services/agent-role-service';
 import { AUTONOMY_LEVELS } from '../../services/autonomy-service';
+import {
+  BASELINE_CONSTITUTION_TEMPLATE,
+  computeConstitutionHash,
+} from '../../services/constitution-service';
 import {
   CONTENT_OS_FLAG_DEFAULTS,
   CONTENT_OS_SETTINGS_KEY,
@@ -384,6 +389,9 @@ export class SetupService {
       plainBackupCodes.map((c) => hashPassword(c)),
     );
 
+    const baselineConstitutionHash = await computeConstitutionHash(
+      BASELINE_CONSTITUTION_TEMPLATE,
+    );
     const policyJson = serializeLockoutPolicy(input.policy);
     const policyValue = JSON.parse(policyJson) as Record<string, unknown>;
     const projectCheck = validateProject(input.project);
@@ -588,6 +596,26 @@ export class SetupService {
               })),
             ),
           )
+          .onConflictDoNothing();
+
+        // ── 9c. Baseline constitution, seeded as a DRAFT (Setup Impact
+        //        Registry #4). Drafts have zero runtime effect — the
+        //        publish gate only consults the active version — so this
+        //        is purely a discoverability seed: the operator reviews
+        //        and activates it in Mission Control. Every template
+        //        evaluator is report-only (`blocking: false`), so even
+        //        activation never vetoes a publish until a human flips a
+        //        rule to blocking.
+        await tx
+          .insert(constitutions)
+          .values({
+            siteId: DEFAULT_SITE_ID,
+            version: 1,
+            evaluators: [...BASELINE_CONSTITUTION_TEMPLATE],
+            hash: baselineConstitutionHash,
+            status: 'draft',
+            createdBy: newUser.id,
+          })
           .onConflictDoNothing();
 
         // ── 10. Lockout policy persistence (Req 6.6, 6.7; Setup Impact
