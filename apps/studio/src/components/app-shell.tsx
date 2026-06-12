@@ -17,7 +17,7 @@ import { NotificationsPanel } from '@/components/notifications-panel';
 import { ReleaseUpdateNotice } from '@/components/release-update-notice';
 import { clearActiveToken } from '@/lib/api';
 import { VersionInfoFooter } from '@/components/version-info-footer';
-import { ADMIN_PATH_REGEX } from '@/modules/setup/schemas/admin-path';
+import { getAdminBase } from '@/lib/admin-base';
 import { useInboxData } from '@/modules/mission-control/use-inbox';
 
 interface ModuleDef {
@@ -56,13 +56,6 @@ function MissionControlBadge() {
       {counts.total > 9 ? '9+' : counts.total}
     </span>
   );
-}
-
-function getAdminBase(pathname: string): string {
-  const first = pathname.split('/').filter(Boolean)[0];
-  if (!first) return '';
-  const candidate = `/${first}`;
-  return ADMIN_PATH_REGEX.test(candidate) ? candidate : '';
 }
 
 interface AppShellProps {

@@ -1,8 +1,8 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 import { OctagonX, Sparkles, X } from 'lucide-react';
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { getAdminBase } from '@/lib/admin-base';
 import { cn } from '@/lib/cn';
-import { ADMIN_PATH_REGEX } from '@/modules/setup/schemas/admin-path';
 import { IntentComposer } from './intent-composer';
 import { KillSwitchPanel } from './kill-switch';
 
@@ -20,16 +20,10 @@ const SECTIONS = [
   { id: 'overview', label: 'Overview', path: '' },
   { id: 'inbox', label: 'Inbox', path: '/inbox' },
   { id: 'intents', label: 'Intents', path: '/intents' },
+  { id: 'goals', label: 'Goals', path: '/goals' },
   { id: 'trust', label: 'Trust ledger', path: '/trust' },
   { id: 'constitution', label: 'Constitution', path: '/constitution' },
 ] as const;
-
-function getAdminBase(pathname: string): string {
-  const first = pathname.split('/').filter(Boolean)[0];
-  if (!first) return '';
-  const candidate = `/${first}`;
-  return ADMIN_PATH_REGEX.test(candidate) ? candidate : '';
-}
 
 /** Optional `/$adminPath` prefix of the current location ('' when absent). */
 export function useAdminBase(): string {
