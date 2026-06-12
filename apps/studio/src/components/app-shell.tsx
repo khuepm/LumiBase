@@ -18,6 +18,7 @@ import { ReleaseUpdateNotice } from '@/components/release-update-notice';
 import { clearActiveToken } from '@/lib/api';
 import { VersionInfoFooter } from '@/components/version-info-footer';
 import { ADMIN_PATH_REGEX } from '@/modules/setup/schemas/admin-path';
+import { useInboxData } from '@/modules/mission-control/use-inbox';
 
 interface ModuleDef {
   id: string;
@@ -37,6 +38,25 @@ const MODULES: ModuleDef[] = [
   { id: 'cdc', label: 'CDC', icon: GitBranch, to: '/cdc' },
   { id: 'settings', label: 'Settings', icon: Settings, to: '/settings' },
 ];
+
+/**
+ * Exception count on the Mission Control icon (content-os-ui task 7; Req
+ * 6.1-6.4). Editors working in other modules must not miss a ticking veto
+ * window. Shares the inbox query cache with Mission Control, hides itself
+ * entirely at zero or when the data is unavailable.
+ */
+function MissionControlBadge() {
+  const { counts } = useInboxData();
+  if (counts.total === 0) return null;
+  return (
+    <span
+      aria-label={`${counts.total} exceptions awaiting attention`}
+      className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
+    >
+      {counts.total > 9 ? '9+' : counts.total}
+    </span>
+  );
+}
 
 function getAdminBase(pathname: string): string {
   const first = pathname.split('/').filter(Boolean)[0];
@@ -69,6 +89,8 @@ export function AppShell({ children }: AppShellProps) {
     : location.pathname;
   const activeModule = appPath.startsWith('/data-model')
     ? 'data-model'
+    : appPath.startsWith('/mission-control')
+      ? 'mission-control'
     : appPath.startsWith('/automation')
       ? 'automation'
       : appPath.startsWith('/cdc')
@@ -117,7 +139,7 @@ export function AppShell({ children }: AppShellProps) {
               aria-current={isActive ? 'page' : undefined}
               title={label}
               className={cn(
-                'flex h-10 w-10 items-center justify-center rounded-md transition',
+                'relative flex h-10 w-10 items-center justify-center rounded-md transition',
                 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
                 isActive
                   ? 'bg-primary text-primary-foreground'
@@ -125,6 +147,7 @@ export function AppShell({ children }: AppShellProps) {
               )}
             >
               <Icon className="h-5 w-5" aria-hidden="true" />
+              {id === 'mission-control' && <MissionControlBadge />}
             </Link>
           );
         })}
