@@ -160,8 +160,10 @@ export function decryptSync(ciphertext: string, key: string): string {
 
   const decrypted = new Uint8Array(encrypted.length);
   for (let i = 0; i < encrypted.length; i++) {
-    const keyByte = keyBytes[(i + iv[i % IV_LENGTH]!) % keyBytes.length]!;
-    decrypted[i] = encrypted[i]! ^ keyByte ^ iv[i % IV_LENGTH]!;
+    const ivByte = iv[i % IV_LENGTH]!;
+    const offset = unbiasedByteModulo(ivByte, keyBytes.length);
+    const keyByte = keyBytes[(i + offset) % keyBytes.length]!;
+    decrypted[i] = encrypted[i]! ^ keyByte ^ ivByte;
   }
 
   return new TextDecoder().decode(decrypted);
