@@ -118,6 +118,25 @@ export async function decryptCompat(
 // this block exists solely so decryptCompat can read rows that predate the
 // AES-GCM migration. Do not use it for new data.
 
+/**
+ * Maps a byte to `[0, modulus)` without modulo bias, mirroring the legacy
+ * encryptor exactly — changing this breaks decryption of pre-AES rows.
+ * Deterministically probes subsequent byte values until one lands inside
+ * the accepted range.
+ */
+function unbiasedByteModulo(byte: number, modulus: number): number {
+  if (modulus <= 0) {
+    throw new Error('modulus must be > 0');
+  }
+
+  const limit = Math.floor(256 / modulus) * modulus;
+  let candidate = byte & 0xff;
+  while (candidate >= limit) {
+    candidate = (candidate + 1) & 0xff;
+  }
+  return candidate % modulus;
+}
+
 function decryptLegacyXor(ciphertext: string, key: string): string {
   const combined = Uint8Array.from(atob(ciphertext), (c) => c.charCodeAt(0));
   const keyBytes = legacyHashKey(key);
