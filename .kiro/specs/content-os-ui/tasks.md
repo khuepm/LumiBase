@@ -72,10 +72,10 @@ UI-only, không endpoint mới. Thứ tự: nguồn dữ liệu chung → khung 
   - [x] 10.1 `packages/database/scripts/seed-content-os-demo.ts` + npm script `seed:content-os-demo`: collection+items demo, 2 intents (active có drifts, error), staged revision + veto approval trong window, incidents, autonomy grants, constitution active, revisions provenance agent — id prefix `cosdemo_`, upsert re-run an toàn
     - _Requirements: 9.1, 9.2, 9.3_
 
-- [ ] 11. Icon convention + Activity feed
-  - [ ] 11.1 `components/fill-icon.tsx` (`FillIcon`): lucide với `fill="currentColor"` — dùng cho mọi surface mới
+- [x] 11. Icon convention + Activity feed
+  - [x] 11.1 `components/fill-icon.tsx` (`FillIcon`): lucide với `fill="currentColor"` — dùng cho mọi surface mới
     - _Requirements: 13.1_
-  - [ ] 11.2 `api.ts` thêm fetchers `runs()`/`goals()`; `activity-feed.tsx` (12 run mới nhất, badge status, join goal title, fallback goal id rút gọn); nhúng vào cột phải dashboard; component test
+  - [x] 11.2 `api.ts` thêm fetchers `runs()`/`goals()`; `activity-feed.tsx` (12 run mới nhất, badge status, join goal title, fallback goal id rút gọn); nhúng vào cột phải dashboard; component test
     - _Requirements: 10.1, 10.2, 10.3_
 
 - [ ] 12. Intent Composer v2 — rule cards

@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { AlertTriangle, Clock, Gauge, Inbox, OctagonX } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { ActivityFeed } from './activity-feed';
 import { missionControlApi } from './api';
 import { ExceptionInbox } from './inbox';
 import {
@@ -149,19 +150,31 @@ function DashboardBody() {
           <ExceptionInbox limit={5} />
         </section>
 
-        <section className="rounded-lg border bg-background p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">SLO health</h2>
-            <Link to={`${base}/intents` as never} className="text-xs text-primary hover:underline">
-              All intents →
-            </Link>
-          </div>
-          {sloLoading ? (
-            <p className="text-sm text-muted-foreground">Loading SLO health…</p>
-          ) : (
-            <SloTable rows={rows} linkBase={`${base}/intents`} />
-          )}
-        </section>
+        <div className="space-y-4">
+          <section className="rounded-lg border bg-background p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">SLO health</h2>
+              <Link to={`${base}/intents` as never} className="text-xs text-primary hover:underline">
+                All intents →
+              </Link>
+            </div>
+            {sloLoading ? (
+              <p className="text-sm text-muted-foreground">Loading SLO health…</p>
+            ) : (
+              <SloTable rows={rows} linkBase={`${base}/intents`} />
+            )}
+          </section>
+
+          <section className="rounded-lg border bg-background p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Agent activity</h2>
+              <Link to={`${base}/goals` as never} className="text-xs text-primary hover:underline">
+                Goal tree →
+              </Link>
+            </div>
+            <ActivityFeed />
+          </section>
+        </div>
       </div>
     </div>
   );
