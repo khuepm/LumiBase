@@ -392,6 +392,34 @@ agentRouter.post('/constitution', async (c) => {
   }
 });
 
+/**
+ * NL → evaluators compile (Req 16.4). Returns a proposal only — the human
+ * confirms by POSTing a draft; nothing activates from here.
+ */
+agentRouter.post('/constitution/compile', async (c) => {
+  const parsed = z
+    .object({ text: z.string().min(1).max(4000) })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+  const { ConstitutionService, ConstitutionError } = await import('../services/constitution-service');
+  const { createConfiguredLLMProvider } = await import('../services/llm-provider');
+  const service = new ConstitutionService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
+  });
+  try {
+    return c.json({ data: { evaluators: await service.compileFromText(parsed.data.text) } });
+  } catch (err) {
+    if (err instanceof ConstitutionError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
 const dryRunSchema = z.object({ samples: z.array(z.record(z.unknown())).min(1).max(20) });
 
 /** Evaluates a version against real content samples without activating (Req 15.5). */

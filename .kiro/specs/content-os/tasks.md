@@ -154,18 +154,18 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
 
 ### Module E — Mission Control
 
-- [ ] 17. Exception Inbox
-  - [ ] 17.1 `mission-control/` module: inbox hợp nhất (approvals, veto countdown, escalations, incidents, intents lỗi) sắp theo độ khẩn; diff view + hành động inline
+- [x] 17. Exception Inbox
+  - [x] 17.1 `mission-control/` module: inbox hợp nhất (approvals, veto countdown, escalations, incidents, intents lỗi) sắp theo độ khẩn; diff view + hành động inline
     - _Requirements: 16.1, 16.2, 13.6_
-  - [ ] 17.2 SLO health per collection + trust ledger UI (role × capability, lịch sử promote/demote)
+  - [x] 17.2 SLO health per collection + trust ledger UI (role × capability, lịch sử promote/demote)
     - _Requirements: 16.3_
 
-- [ ] 18. Constitution editor + Intent composer
-  - [ ] 18.1 Constitution editor: NL → compile → dry-run trên content thật → activate; version diff
+- [x] 18. Constitution editor + Intent composer
+  - [x] 18.1 Constitution editor: NL → compile → dry-run trên content thật → activate; version diff
     - _Requirements: 16.4_
-  - [ ] 18.2 Intent composer làm primary CTA; form editing giữ làm secondary path
+  - [x] 18.2 Intent composer làm primary CTA; form editing giữ làm secondary path
     - _Requirements: 16.5_
-  - [ ] 18.3 Kill switch UI 4 mức, confirm 2 bước cho freeze
+  - [x] 18.3 Kill switch UI 4 mức, confirm 2 bước cho freeze
     - _Requirements: 16.6_
 
 ### Xuyên suốt

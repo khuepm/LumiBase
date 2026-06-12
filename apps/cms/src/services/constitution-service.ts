@@ -349,6 +349,44 @@ export class ConstitutionService {
     return { allowed: !blockingFailure, hash: active.hash, failures };
   }
 
+  /**
+   * Compiles natural language into an evaluator list (Req 16.4). Returns a
+   * proposal only — nothing is persisted or activated; the human confirms
+   * by creating a draft. Fails loudly without a configured LLM.
+   */
+  async compileFromText(text: string): Promise<ConstitutionEvaluator[]> {
+    if (!this.deps.llm) {
+      throw new ConstitutionError(
+        'LLM_NOT_CONFIGURED',
+        'Compiling natural language requires a configured LLM provider.',
+        503,
+      );
+    }
+    const messages: LLMMessage[] = [
+      {
+        role: 'system',
+        content: [
+          'Translate content-policy text into a JSON array of constitution evaluators.',
+          'Allowed shapes:',
+          '{"id":"<slug>","type":"rule","blocking":true|false,"description":"...","rule":{"field":"<field>","op":"required|equals|max_length|min_length|regex|contains|not_contains","value":<any>}}',
+          '{"id":"<slug>","type":"llm_judge","blocking":true|false,"description":"...","prompt":"..."}',
+          'Prefer deterministic rule evaluators; use llm_judge only for genuinely subjective judgements.',
+          'Reply with the JSON array only.',
+        ].join('\n'),
+      },
+      { role: 'user', content: text },
+    ];
+    const response = await this.deps.llm.provider.chat(messages);
+    let parsed: unknown;
+    try {
+      const raw = (response.content ?? '').replace(/```(?:json)?/g, '').trim();
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new ConstitutionError('COMPILE_FAILED', 'The model did not return valid JSON evaluators.', 502);
+    }
+    return validateEvaluators(parsed);
+  }
+
   private async getById(constitutionId: string) {
     const [row] = await this.deps.db
       .select()
