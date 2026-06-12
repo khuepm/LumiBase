@@ -215,7 +215,7 @@ function main() {
 
   if (failures.length > 0) {
     console.error('Release config check failed:');
-    for (const failure of failures) console.error(`- ${sanitizeForLog(failure)}`);
+    console.error(`- ${failures.length} validation issue(s) found.`);
     process.exit(1);
   }
 
