@@ -163,3 +163,15 @@ Phạm vi: **UI-only** — không tạo endpoint backend mới; chỉ dùng các
 #### Acceptance Criteria
 
 1. THE Studio SHALL có helper `FillIcon` render lucide icon với `fill="currentColor"`; mọi icon trang trí chính trong các surface mới của spec này (activity feed, composer v2, goal tree) dùng helper này.
+
+### Requirement 14: Exception notifications với deep-link
+
+**User Story:** Là một biên tập viên đang làm việc ở module khác, tôi muốn nhận notification trong Studio khi xuất hiện exception mới (staged change vào veto window, approval chờ, incident, intent lỗi) kèm link mở thẳng đúng entry, để tôi quyết trong vài giây thay vì đi tìm (đóng vòng content-os Req 13.2 phía Studio).
+
+#### Acceptance Criteria
+
+1. THE NotificationsPanel SHALL hiển thị notification cho mỗi Inbox_Entry MỚI xuất hiện giữa các chu kỳ poll của nguồn inbox dùng chung (`useInboxData` — không thêm request mới, dùng chung query cache với badge/Mission Control).
+2. Mỗi exception notification SHALL có nhãn theo kind (staged/approval/incident/intent error) và link deep-link `{adminBase}/mission-control/inbox?entry=<entryId>`; click SHALL điều hướng và đóng panel.
+3. WHEN panel mount lần đầu (login/refresh), THE panel SHALL coi toàn bộ entry hiện hữu là đã-thấy — chỉ entry xuất hiện SAU đó mới sinh notification (không dội bom khi mở app).
+4. Exception notifications SHALL được tính vào unread count trên chuông và tuân hành vi mark-all-read/clear hiện có; entry biến mất (đã quyết/commit) KHÔNG xoá notification đã sinh.
+5. THE cơ chế diff SHALL là pure function có unit test (seen-set → danh sách entry mới).
