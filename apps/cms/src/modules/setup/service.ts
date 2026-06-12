@@ -31,6 +31,8 @@
 import { eq, sql } from 'drizzle-orm';
 import {
   adminBackupCodes,
+  agentAutonomyGrants,
+  agentRoles,
   settings,
   sites,
   systemState,
@@ -38,6 +40,12 @@ import {
   type Database,
 } from '@lumibase/database';
 import { hashPassword } from '../../services/auth/password';
+import { ROLE_LIBRARY } from '../../services/agent-role-service';
+import { AUTONOMY_LEVELS } from '../../services/autonomy-service';
+import {
+  CONTENT_OS_FLAG_DEFAULTS,
+  CONTENT_OS_SETTINGS_KEY,
+} from '../../services/feature-flags';
 import { AuditLogger } from '../audit/logger';
 import {
   serializeLockoutPolicy,
@@ -484,6 +492,39 @@ export class SetupService {
           .values({ id: DEFAULT_SITE_ID, name: projectValue.displayTitle })
           .onConflictDoNothing();
 
+        // ── 8b. Seed the agent role library (Setup Impact Registry #1;
+        //        content-os Req 10.3). Without this, `agent_roles` stays
+        //        empty until the first `GET /agent/roles` lazily seeds it,
+        //        and any agent run before that fails "role not found".
+        //        `onConflictDoNothing` keeps a re-entrant wizard run (and
+        //        the lazy `ensureSeeded()` fallback) idempotent.
+        await tx
+          .insert(agentRoles)
+          .values(
+            ROLE_LIBRARY.map((role) => ({
+              siteId: DEFAULT_SITE_ID,
+              name: role.name,
+              description: role.description,
+              systemPromptRef: role.systemPromptRef,
+              capabilities: [...role.capabilities],
+            })),
+          )
+          .onConflictDoNothing();
+
+        // ── 8c. Materialise the Content OS feature flags row, all OFF
+        //        (Setup Impact Registry #2). With the row present, Studio
+        //        has a base row to toggle and "never set" is
+        //        distinguishable from "intentionally off".
+        await tx
+          .insert(settings)
+          .values({
+            siteId: DEFAULT_SITE_ID,
+            key: CONTENT_OS_SETTINGS_KEY,
+            value: CONTENT_OS_FLAG_DEFAULTS,
+            scope: 'site',
+          })
+          .onConflictDoNothing();
+
         // ── 9. Insert the bootstrap admin.
         const inserted = await tx
           .insert(users)
@@ -521,41 +562,59 @@ export class SetupService {
           tx,
         );
 
-        // ── 10. Lockout policy persistence (Req 6.6, 6.7) — DEFERRED.
-        //
-        //        Decision: Option 3 from task 2.3's three options.
-        //        Settings is keyed by `(siteId, key)` with `siteId`
-        //        FK-NOT-NULL → sites. Open question 8 (design §15.8 /
-        //        tasks open question 7) leaves the bootstrap admin's
-        //        relationship to the `sites` table unresolved: the
-        //        scope is instance-wide, not per-site, so attaching
-        //        the canonical lockout policy to a synthesised
-        //        `__instance__` site row would create an orphan and
-        //        prejudge the multi-tenancy decision.
-        //
-        //        Mitigations until the open question lands:
-        //        a) The canonical JSON is captured verbatim in the
-        //           `setup_completed` audit_log entry's `metadata.policy`
-        //           field (post-commit block below). Any forensic
-        //           replay can recover the policy bytes from there.
-        //        b) The wizard already echoes the policy back to the
-        //           operator in the response payload, so the UI
-        //           round-trip Req 16.x already passes via in-memory
-        //           state.
-        //        c) The integration test (task 2.8) verifies the audit
-        //           write happens; it does NOT yet read back from
-        //           `settings`, so this deferral does not break the
-        //           Phase A gate.
-        //
-        //        TODO(open-question-8): once multi-tenancy intent is
-        //        resolved, replace this comment with either
-        //          (1) `tx.insert(settings).values({ siteId: <bootstrap-site>,
-        //                key: 'login_security_policy', value: policyValue })`
-        //              + companion site row insert, OR
-        //          (2) a new `system_state.metadata` jsonb column
-        //              migration that owns instance-scoped policy
-        //              storage. Update task 8.x (Login_Guard) to read
-        //              from the chosen home.
+        // ── 9b. Baseline autonomy grants (Setup Impact Registry #3):
+        //        one explicit L1 (PROPOSE — full HITL) grant per
+        //        (role, capability) in the seed library, so autonomy is
+        //        data with an audit trail from day one rather than a
+        //        hardcoded fallback. L1 is the only level that can never
+        //        ELEVATE a dangerous skill sharing a capability with a
+        //        safe one (resolver fallback is L1 dangerous / L2 safe,
+        //        but a grant row applies to both contexts) — matching the
+        //        v0.5.0 rollout guidance "start agents at L0/L1 per site
+        //        and promote via trust ledger". Fresh instances only; we
+        //        deliberately do NOT backfill existing instances, where
+        //        the implicit safe→L2 fallback is already in effect.
+        await tx
+          .insert(agentAutonomyGrants)
+          .values(
+            ROLE_LIBRARY.flatMap((role) =>
+              role.capabilities.map((capability) => ({
+                siteId: DEFAULT_SITE_ID,
+                agentRole: role.name,
+                capability,
+                level: AUTONOMY_LEVELS.PROPOSE,
+                grantedBy: newUser.id,
+                evidence: { source: 'setup_bootstrap' },
+              })),
+            ),
+          )
+          .onConflictDoNothing();
+
+        // ── 10. Lockout policy persistence (Req 6.6, 6.7; Setup Impact
+        //        Registry #5 — resolves open-question-8). The policy row
+        //        lives under the `__default__` site because that is the
+        //        only site that exists at bootstrap, and the reader
+        //        (`loadLockoutPolicyFromSettings` in login-guard) looks
+        //        the row up by `key` alone — so this placement satisfies
+        //        the instance-wide semantics without prejudging the
+        //        multi-tenancy decision. If per-site policies land later,
+        //        the reader is the single place to change. The canonical
+        //        JSON also remains in the `setup_completed` audit entry
+        //        (`metadata.policy`) for forensic replay.
+        const policySettingsInsert = tx.insert(settings).values({
+          siteId: DEFAULT_SITE_ID,
+          key: 'login_security_policy',
+          value: policyValue,
+          scope: 'site',
+        });
+        if (typeof policySettingsInsert.onConflictDoUpdate === 'function') {
+          await policySettingsInsert.onConflictDoUpdate({
+            target: [settings.siteId, settings.key],
+            set: { value: policyValue, updatedAt: new Date() },
+          });
+        } else {
+          await policySettingsInsert;
+        }
 
         const projectSettingsInsert = tx
           .insert(settings)
