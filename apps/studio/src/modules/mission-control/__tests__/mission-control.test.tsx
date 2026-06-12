@@ -45,11 +45,29 @@ const api = vi.hoisted(() => ({
 
 vi.mock('../api', () => ({ missionControlApi: api }));
 
+// Composer v2 loads the collection picker through the SDK client.
+vi.mock('@/lib/api', () => ({
+  getApiClient: () => ({
+    schema: {
+      listCollections: vi
+        .fn()
+        .mockResolvedValue({ data: [{ name: 'articles', label: 'Articles' }] }),
+    },
+  }),
+}));
+
 import { ExceptionInbox } from '../inbox';
 import { TrustLedger } from '../trust-ledger';
-import { SloHealth } from '../slo-health';
+import { SloTable, useSloRows } from '../slo-table';
 import { KillSwitchPanel } from '../kill-switch';
 import { IntentComposer } from '../intent-composer';
+
+/** Harness mirroring how the dashboard/intents pages compose the table. */
+function SloHealth() {
+  const { rows, isLoading } = useSloRows();
+  if (isLoading) return <p>Loading SLO health…</p>;
+  return <SloTable rows={rows} />;
+}
 
 function renderWithClient(ui: ReactElement) {
   const client = new QueryClient({
@@ -212,17 +230,30 @@ describe('KillSwitchPanel — two-step freeze confirm (Req 16.6)', () => {
 });
 
 describe('IntentComposer — primary CTA (Req 16.5)', () => {
-  it('compiles NL to rules, then confirms to create the intent', async () => {
-    api.compileIntent.mockResolvedValue({ name: 'fresh', collection: 'articles', rules: [] });
+  it('compiles NL to rules with the collection context, then confirms to create the intent', async () => {
+    api.compileIntent.mockResolvedValue({
+      rules: [{ type: 'freshness', maxAgeDays: 90 }],
+      schedule: '0 6 * * *',
+      warnings: [],
+    });
     renderWithClient(<IntentComposer onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText(/describe the desired state/i), {
       target: { value: 'articles must be fresh' },
     });
+    // Wait for the async collection options before selecting.
+    await screen.findByRole('option', { name: 'Articles' });
+    fireEvent.change(screen.getByLabelText(/^collection$/i), {
+      target: { value: 'articles' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /compile to rules/i }));
-    await waitFor(() => expect(api.compileIntent).toHaveBeenCalledWith('articles must be fresh'));
+    // Contract (content-os-ui Req 11.1): the route validates {description, collection}.
+    await waitFor(() =>
+      expect(api.compileIntent).toHaveBeenCalledWith('articles must be fresh', 'articles'),
+    );
 
-    // The compiled JSON lands in the review box; confirming creates the intent.
+    // Compiled rules land as cards; confirming creates the intent.
+    expect(await screen.findByLabelText(/max age/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /confirm & create intent/i }));
     await waitFor(() => expect(api.createIntent).toHaveBeenCalled());
   });

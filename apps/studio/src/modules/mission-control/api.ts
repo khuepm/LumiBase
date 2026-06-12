@@ -111,6 +111,29 @@ export interface FreezeRecord {
   createdAt: string;
 }
 
+export interface AgentRunRow {
+  id: string;
+  goalId: string;
+  agentName: string;
+  model: string;
+  status: string;
+  startedAt: string;
+  finishedAt: string | null;
+  createdAt: string;
+}
+
+export interface AgentGoalRow {
+  id: string;
+  title: string;
+  status: string;
+  origin: string;
+  parentGoalId: string | null;
+  intentId: string | null;
+  agentRole: string | null;
+  assigneeAgent: string;
+  createdAt: string;
+}
+
 export interface PromotionProposal {
   id: string;
   subjectType?: string;
@@ -140,14 +163,17 @@ export const missionControlApi = {
       method: 'POST',
       body: JSON.stringify({ decision, reason }),
     }),
+  runs: () => agentFetch<AgentRunRow[]>('/api/v1/agent/runs'),
+  goals: () => agentFetch<AgentGoalRow[]>('/api/v1/agent/goals'),
   intents: () => agentFetch<ContentIntent[]>('/api/v1/agent/intents'),
   drifts: (intentId: string) =>
     agentFetch<ContentDrift[]>(`/api/v1/agent/intents/${intentId}/drifts`),
-  compileIntent: (text: string) =>
-    agentFetch<Record<string, unknown>>('/api/v1/agent/intents/compile', {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    }),
+  /** Contract: the compile route validates `{description, collection}` (Req 11.1). */
+  compileIntent: (description: string, collection: string) =>
+    agentFetch<{ rules: Array<Record<string, unknown>>; schedule: string; warnings: string[] }>(
+      '/api/v1/agent/intents/compile',
+      { method: 'POST', body: JSON.stringify({ description, collection }) },
+    ),
   createIntent: (input: Record<string, unknown>) =>
     agentFetch<ContentIntent>('/api/v1/agent/intents', {
       method: 'POST',

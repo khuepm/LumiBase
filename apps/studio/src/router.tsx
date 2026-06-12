@@ -49,6 +49,12 @@ const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page')
 const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
 const AgentHarnessPage = lazy(() => import('./modules/settings/agent-harness-page').then((m) => ({ default: m.AgentHarnessPage })));
 const MissionControlPage = lazy(() => import('./modules/mission-control/index-page').then((m) => ({ default: m.MissionControlPage })));
+const MissionControlInboxPage = lazy(() => import('./modules/mission-control/inbox-page').then((m) => ({ default: m.InboxPage })));
+const MissionControlIntentsPage = lazy(() => import('./modules/mission-control/intents-page').then((m) => ({ default: m.IntentsPage })));
+const MissionControlIntentDetailPage = lazy(() => import('./modules/mission-control/intent-detail').then((m) => ({ default: m.IntentDetailPage })));
+const MissionControlGoalsPage = lazy(() => import('./modules/mission-control/goals-page').then((m) => ({ default: m.GoalsPage })));
+const MissionControlTrustPage = lazy(() => import('./modules/mission-control/trust-page').then((m) => ({ default: m.TrustPage })));
+const MissionControlConstitutionPage = lazy(() => import('./modules/mission-control/constitution-page').then((m) => ({ default: m.ConstitutionPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
 const TeamsPage = lazy(() => import('./modules/users/teams-page').then((m) => ({ default: m.TeamsPage })));
 const UsersPage = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
@@ -713,17 +719,97 @@ const adminPathAutomationFlowEditRoute = createRoute({
   component: withSuspense(FlowEditor),
 });
 
-// Mission Control (content-os tasks 17-18) — the Content OS operator console.
+// Mission Control (content-os tasks 17-18; content-os-ui Req 1.1) — the
+// Content OS operator console. URL-driven sub-routes so every section is
+// bookmarkable and notifications can deep-link (?entry= on the inbox).
+const inboxSearch = (search: Record<string, unknown>) => ({
+  entry: typeof search.entry === 'string' ? search.entry : undefined,
+});
+
 const missionControlRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/mission-control',
   component: withSuspense(MissionControlPage),
 });
 
+const missionControlInboxRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/inbox',
+  validateSearch: inboxSearch,
+  component: withSuspense(MissionControlInboxPage),
+});
+
+const missionControlIntentsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/intents',
+  component: withSuspense(MissionControlIntentsPage),
+});
+
+const missionControlIntentDetailRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/intents/$intentId',
+  component: withSuspense(MissionControlIntentDetailPage),
+});
+
+const missionControlGoalsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/goals',
+  component: withSuspense(MissionControlGoalsPage),
+});
+
+const missionControlTrustRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/trust',
+  component: withSuspense(MissionControlTrustPage),
+});
+
+const missionControlConstitutionRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/constitution',
+  component: withSuspense(MissionControlConstitutionPage),
+});
+
 const adminPathMissionControlRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/mission-control',
   component: withSuspense(MissionControlPage),
+});
+
+const adminPathMissionControlInboxRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/inbox',
+  validateSearch: inboxSearch,
+  component: withSuspense(MissionControlInboxPage),
+});
+
+const adminPathMissionControlIntentsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/intents',
+  component: withSuspense(MissionControlIntentsPage),
+});
+
+const adminPathMissionControlIntentDetailRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/intents/$intentId',
+  component: withSuspense(MissionControlIntentDetailPage),
+});
+
+const adminPathMissionControlGoalsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/goals',
+  component: withSuspense(MissionControlGoalsPage),
+});
+
+const adminPathMissionControlTrustRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/trust',
+  component: withSuspense(MissionControlTrustPage),
+});
+
+const adminPathMissionControlConstitutionRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/constitution',
+  component: withSuspense(MissionControlConstitutionPage),
 });
 
 const cdcRoute = createRoute({
@@ -964,7 +1050,19 @@ const routeTree = rootRoute.addChildren([
     automationFlowNewRoute,
     automationFlowEditRoute,
     missionControlRoute,
+    missionControlInboxRoute,
+    missionControlIntentsRoute,
+    missionControlIntentDetailRoute,
+    missionControlGoalsRoute,
+    missionControlTrustRoute,
+    missionControlConstitutionRoute,
     adminPathMissionControlRoute,
+    adminPathMissionControlInboxRoute,
+    adminPathMissionControlIntentsRoute,
+    adminPathMissionControlIntentDetailRoute,
+    adminPathMissionControlGoalsRoute,
+    adminPathMissionControlTrustRoute,
+    adminPathMissionControlConstitutionRoute,
     cdcRoute,
     cdcNewRoute,
     cdcDetailRoute,
