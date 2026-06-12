@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Website: [lumibase.dev](https://lumibase.dev)
 
+## [0.4.7] - 2026-06-11
+
+### Version
+
+- `v0.4.7`
+
+### Date
+
+- `2026-06-11`
+
+### Highlights
+
+- Prerendered `docs.lumibase.dev` to static HTML (SSG) at build time so AI crawlers and search engines receive real content instead of an empty SPA shell. The full React viewer (i18n, search, link-rewriting) is preserved via client hydration; 140 HTML pages (en + vi) are emitted with per-page title, meta description, canonical URL, and `TechArticle` JSON-LD.
+- Added an optional Apache SkyWalking observability stack with a Node.js tracing bootstrap, metrics normalization, and refined health/ready checks.
+- Completed AIO (AI Overviews Optimization) phase 1 on the landing site: `Organization` + `SoftwareApplication` + `FAQPage` + `BreadcrumbList` JSON-LD, canonical URLs, dynamic `og:image`, and a `/llms.txt` for AI crawler discovery.
+- Added an MIT `LICENSE` file so the GitHub repository correctly reports `license: MIT`.
+
+### Breaking changes
+
+- None.
+
+### Migrations
+
+- No new database schema migrations.
+- Compatible DB/schema: `v0.4.4` schema state.
+
+### Upgrade steps
+
+1. Review the breaking changes and migrations above.
+2. Confirm the target Docker image tag exists:
+   `ghcr.io/khuepm/lumibase-cms:0.4.7`.
+3. Deploy the `v0.4.7` image or Cloudflare Worker release.
+4. Verify `/health` and `/ready` plus critical CMS workflows after deployment.
+5. (Optional) To enable distributed tracing, start the SkyWalking stack with
+   `docker compose -f docker/docker-compose.skywalking.yml up -d` and set the
+   tracing env vars documented in `docker/.env.example`.
+
+### Rollback notes
+
+- Roll back by redeploying the previously known-good CMS image tag (`v0.4.6`).
+- No database/schema restore is required.
+
+### Docker image tags
+
+- CMS: `ghcr.io/khuepm/lumibase-cms:0.4.7`
+- Optional immutable digest: `ghcr.io/khuepm/lumibase-cms@sha256:<digest>`
+
+### Compatibility DB/schema
+
+- Compatible DB/schema: `v0.4.4` schema state.
+- Minimum supported database engine/version: use the version supported by the target deployment environment.
+
+### Backup guidance
+
+- Backup required: No.
+- Backup scope: none.
+- Reason: this release adds documentation prerendering, optional observability tooling, AIO metadata, and a license file; it does not modify runtime data or schema state.
+
+### Added
+
+- Prerender pipeline for `apps/docs`: `scripts/prerender.mjs` emits static HTML for every doc route (en + vi), `entry-server.tsx` renders via the static router with `getAllPaths()`, and shared `routes.tsx` is consumed by both `createBrowserRouter` (client) and `createStaticHandler` (prerender).
+- Client hydration in `apps/docs/src/main.tsx`: `hydrateRoot` over prerendered markup with a `createRoot` SPA fallback.
+- Optional SkyWalking observability stack: `docker/docker-compose.skywalking.yml`, Node tracing bootstrap (`apps/cms/src/observability/node.ts`, `config.ts`), tracing middleware (`apps/cms/src/middleware/tracing.ts`), and related env vars in `docker/.env.example`.
+- MIT `LICENSE` file at the repository root.
+- AIO assets on the landing site: JSON-LD schema (`Organization`, `SoftwareApplication`, `FAQPage`, `BreadcrumbList`), canonical URLs + `metadataBase`, dynamic `opengraph-image` (1200×630), and `public/llms.txt`.
+- `docs/en/aio/AIO-AUDIT-REPORT.md` and `docs/en/aio/README.md` documenting the AIO findings and roadmap.
+
+### Changed
+
+- Normalized CMS metrics output and refined the `/health` and `/ready` route behavior.
+- Renamed GEO → AIO (AI Overviews Optimization) across the documentation.
+- Updated the landing sitemap to include `/pricing` with realistic `lastmod` dates and removed an unverified social-proof claim.
+- Bumped all workspace package versions `0.4.6` → `0.4.7`.
+
 ## [0.4.6] - 2026-06-10
 
 ### Version
