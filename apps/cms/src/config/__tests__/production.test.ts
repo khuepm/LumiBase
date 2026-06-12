@@ -72,4 +72,9 @@ describe('production config validation', () => {
     expect(env.JWT_SECRET).toBe('secret-from-file');
     rmSync(dir, { recursive: true, force: true });
   });
+
+  it('rejects path traversal attempts in *_FILE variables', () => {
+    const env: NodeJS.ProcessEnv = { JWT_SECRET_FILE: '../../../../../../etc/passwd' };
+    expect(() => loadSecretFiles(env)).toThrow(/Access Denied: Path Traversal detected/);
+  });
 });

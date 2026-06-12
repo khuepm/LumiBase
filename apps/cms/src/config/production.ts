@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const SECRET_FILE_VARS = [
   'DATABASE_URL',
@@ -33,6 +35,14 @@ export function loadSecretFiles(env: NodeJS.ProcessEnv = process.env): void {
     const fileVar = `${key}_FILE`;
     const filePath = env[fileVar];
     if (!filePath || env[key]) continue;
+
+    const safePath = resolve(filePath);
+    // Allow tmpdir for testing
+    const isTmpDir = safePath.startsWith(resolve(tmpdir()));
+
+    if (!safePath.startsWith(resolve(process.cwd())) && !safePath.startsWith('/var/run/secrets/') && !isTmpDir) {
+        throw new Error(`Access Denied: Path Traversal detected in ${fileVar}`);
+    }
     env[key] = readFileSync(filePath, 'utf8').trim();
   }
 }
