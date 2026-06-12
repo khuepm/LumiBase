@@ -168,11 +168,12 @@ export const missionControlApi = {
   intents: () => agentFetch<ContentIntent[]>('/api/v1/agent/intents'),
   drifts: (intentId: string) =>
     agentFetch<ContentDrift[]>(`/api/v1/agent/intents/${intentId}/drifts`),
-  compileIntent: (text: string) =>
-    agentFetch<Record<string, unknown>>('/api/v1/agent/intents/compile', {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    }),
+  /** Contract: the compile route validates `{description, collection}` (Req 11.1). */
+  compileIntent: (description: string, collection: string) =>
+    agentFetch<{ rules: Array<Record<string, unknown>>; schedule: string; warnings: string[] }>(
+      '/api/v1/agent/intents/compile',
+      { method: 'POST', body: JSON.stringify({ description, collection }) },
+    ),
   createIntent: (input: Record<string, unknown>) =>
     agentFetch<ContentIntent>('/api/v1/agent/intents', {
       method: 'POST',

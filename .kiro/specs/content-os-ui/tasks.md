@@ -78,12 +78,12 @@ UI-only, không endpoint mới. Thứ tự: nguồn dữ liệu chung → khung 
   - [x] 11.2 `api.ts` thêm fetchers `runs()`/`goals()`; `activity-feed.tsx` (12 run mới nhất, badge status, join goal title, fallback goal id rút gọn); nhúng vào cột phải dashboard; component test
     - _Requirements: 10.1, 10.2, 10.3_
 
-- [ ] 12. Intent Composer v2 — rule cards
-  - [ ] 12.1 Sửa `compileIntent` gửi `{description, collection}` đúng contract; collection picker từ schema API (fallback nhập tay)
+- [x] 12. Intent Composer v2 — rule cards
+  - [x] 12.1 Sửa `compileIntent` gửi `{description, collection}` đúng contract; collection picker từ schema API (fallback nhập tay)
     - _Requirements: 11.1_
-  - [ ] 12.2 Viết lại `intent-composer.tsx`: rule cards 6 loại (editor tham số per loại, Add rule, xoá), metadata form (name/schedule/autonomyCap/budget), warnings, raw JSON toggle 2 chiều; confirm gửi object có rules array
+  - [x] 12.2 Viết lại `intent-composer.tsx`: rule cards 6 loại (editor tham số per loại, Add rule, xoá), metadata form (name/schedule/autonomyCap/budget), warnings, raw JSON toggle 2 chiều; confirm gửi object có rules array
     - _Requirements: 11.2-11.6_
-  - [ ] 12.3 Cập nhật test v1 composer theo contract mới + test mới: compile đúng payload, sửa tham số card, confirm payload
+  - [x] 12.3 Cập nhật test v1 composer theo contract mới + test mới: compile đúng payload, sửa tham số card, confirm payload
     - **Validates: Requirements 11.1, 11.2, 11.6**
 
 - [ ] 13. Goal tree
