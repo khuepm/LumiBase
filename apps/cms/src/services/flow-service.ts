@@ -9,6 +9,8 @@
  * be registered via `registerHandler()` (used by extensions).
  */
 
+import { validateOutboundUrl } from './ssrf-guard';
+
 export interface FlowNode {
   id: string;
   /** Operation key; resolved against the registry. */
@@ -94,7 +96,16 @@ registerHandler('http', async (_ctx, options) => {
   const body = options['body'];
   if (!url) throw new Error('http operation requires url');
 
-  const res = await fetch(url, {
+  // Flow URLs are user-supplied; apply the same SSRF policy as the
+  // extension sandbox's http:fetch capability.
+  const guard = validateOutboundUrl(url);
+  if (!guard.allowed || !guard.url) {
+    throw new Error(
+      `http operation blocked: ${guard.reason ?? 'outbound URL is not allowed'}`,
+    );
+  }
+
+  const res = await fetch(guard.url, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
