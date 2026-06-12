@@ -86,6 +86,6 @@ UI-only, không endpoint mới. Thứ tự: nguồn dữ liệu chung → khung 
   - [x] 12.3 Cập nhật test v1 composer theo contract mới + test mới: compile đúng payload, sửa tham số card, confirm payload
     - **Validates: Requirements 11.1, 11.2, 11.6**
 
-- [ ] 13. Goal tree
-  - [ ] 13.1 `goals-page.tsx`: cây từ `parentGoalId` (mồ côi thành root), node có role/status/origin badge + run mới nhất + link intent; routes ×2 + mục "Goals" trong sub-nav; component test (nesting, orphan, link intent)
+- [x] 13. Goal tree
+  - [x] 13.1 `goals-page.tsx`: cây từ `parentGoalId` (mồ côi thành root), node có role/status/origin badge + run mới nhất + link intent; routes ×2 + mục "Goals" trong sub-nav; component test (nesting, orphan, link intent)
     - _Requirements: 12.1-12.4_

@@ -52,6 +52,7 @@ const MissionControlPage = lazy(() => import('./modules/mission-control/index-pa
 const MissionControlInboxPage = lazy(() => import('./modules/mission-control/inbox-page').then((m) => ({ default: m.InboxPage })));
 const MissionControlIntentsPage = lazy(() => import('./modules/mission-control/intents-page').then((m) => ({ default: m.IntentsPage })));
 const MissionControlIntentDetailPage = lazy(() => import('./modules/mission-control/intent-detail').then((m) => ({ default: m.IntentDetailPage })));
+const MissionControlGoalsPage = lazy(() => import('./modules/mission-control/goals-page').then((m) => ({ default: m.GoalsPage })));
 const MissionControlTrustPage = lazy(() => import('./modules/mission-control/trust-page').then((m) => ({ default: m.TrustPage })));
 const MissionControlConstitutionPage = lazy(() => import('./modules/mission-control/constitution-page').then((m) => ({ default: m.ConstitutionPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
@@ -750,6 +751,12 @@ const missionControlIntentDetailRoute = createRoute({
   component: withSuspense(MissionControlIntentDetailPage),
 });
 
+const missionControlGoalsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/goals',
+  component: withSuspense(MissionControlGoalsPage),
+});
+
 const missionControlTrustRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/mission-control/trust',
@@ -785,6 +792,12 @@ const adminPathMissionControlIntentDetailRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/mission-control/intents/$intentId',
   component: withSuspense(MissionControlIntentDetailPage),
+});
+
+const adminPathMissionControlGoalsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/goals',
+  component: withSuspense(MissionControlGoalsPage),
 });
 
 const adminPathMissionControlTrustRoute = createRoute({
@@ -1040,12 +1053,14 @@ const routeTree = rootRoute.addChildren([
     missionControlInboxRoute,
     missionControlIntentsRoute,
     missionControlIntentDetailRoute,
+    missionControlGoalsRoute,
     missionControlTrustRoute,
     missionControlConstitutionRoute,
     adminPathMissionControlRoute,
     adminPathMissionControlInboxRoute,
     adminPathMissionControlIntentsRoute,
     adminPathMissionControlIntentDetailRoute,
+    adminPathMissionControlGoalsRoute,
     adminPathMissionControlTrustRoute,
     adminPathMissionControlConstitutionRoute,
     cdcRoute,
