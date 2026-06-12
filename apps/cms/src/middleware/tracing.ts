@@ -21,7 +21,8 @@ type TraceApi = {
 let traceApiPromise: Promise<TraceApi | null> | null = null;
 
 async function getTraceApi(): Promise<TraceApi | null> {
-  traceApiPromise ??= import('@opentelemetry/api').then(m => m as unknown as TraceApi).catch(() => null);
+  // @opentelemetry/api is an optional peer — import() resolves at runtime, .catch() handles missing package
+  traceApiPromise ??= (import('@opentelemetry/api' as string) as Promise<unknown>).then(m => m as TraceApi).catch(() => null);
   return traceApiPromise;
 }
 
