@@ -121,3 +121,45 @@ Phạm vi: **UI-only** — không tạo endpoint backend mới; chỉ dùng các
 1. THE seed script SHALL chạy được qua `pnpm --filter @lumibase/database seed:content-os-demo`, theo pattern `seed-dev.ts` hiện có (id ổn định, upsert, re-run an toàn, yêu cầu `DATABASE_URL`).
 2. THE seed SHALL tạo trên `site_demo`: 1 collection demo + items; 2 content intents (1 active có drift mở + resolved, 1 `error` có `statusReason`); 1 staged revision + approval `kind='veto'` đang trong window; ≥2 incidents mở; ≥3 autonomy grants ở các level khác nhau; 1 constitution active; revisions có provenance agent trên item demo.
 3. THE seed SHALL không đụng dữ liệu ngoài các id ổn định nó sở hữu (prefix `cosdemo_`).
+
+### Requirement 10: Activity feed trên Dashboard
+
+**User Story:** Là một người vận hành, tôi muốn thấy dòng hoạt động gần đây của agent (run nào, vai gì, model gì, kết quả ra sao, phục vụ goal nào) ngay trên dashboard, để cảm nhận được hệ thống đang "sống" mà không phải đào bảng.
+
+#### Acceptance Criteria
+
+1. THE Dashboard SHALL hiển thị Activity feed: các run mới nhất (tối đa 12) từ `GET /api/v1/agent/runs`, mỗi dòng gồm agent, model, status (badge màu theo trạng thái), tiêu đề goal (join client-side từ `GET /api/v1/agent/goals`) và thời gian.
+2. THE feed SHALL poll cùng chu kỳ với dashboard (≥60s) và có trạng thái loading/empty rõ ràng.
+3. WHEN một run thuộc goal không còn trong trang goals trả về, THE feed SHALL hiển thị run với goal id rút gọn thay vì bỏ dòng.
+
+### Requirement 11: Intent Composer v2 — rule cards
+
+**User Story:** Là một biên tập viên, tôi muốn duyệt và chỉnh intent đã compile bằng form có cấu trúc theo từng rule, để xác nhận desired state mà không phải đọc/sửa JSON thô.
+
+#### Acceptance Criteria
+
+1. THE Composer SHALL yêu cầu chọn `collection` (load từ schema API, có fallback nhập tay khi load lỗi) trước khi compile, và gọi `POST /intents/compile` với body `{description, collection}` — sửa lỗi v1 gửi `{text}` không đúng contract.
+2. THE Composer SHALL render `rules` đã compile thành rule cards theo đúng 6 loại của `intent-rule.v1`; mỗi card có form tham số đúng loại (fields/locales nhập dạng danh sách phân tách dấu phẩy; số dùng number input), nút xoá card và menu "Add rule" với default hợp lệ per loại.
+3. THE Composer SHALL có form metadata: name, schedule (cron), autonomyCap (0–4 kèm nhãn mức), budget (maxGoalsPerCycle/maxWritesPerMinute/maxCostUsd với default theo schema backend).
+4. THE Composer SHALL hiển thị `warnings` từ compile response (nếu có) phía trên rule cards.
+5. THE Composer SHALL giữ lối thoát raw JSON (toggle) đồng bộ hai chiều với form — form là đường chính, JSON là secondary path (kế thừa content-os Req 16.5).
+6. WHEN người dùng confirm, THE Composer SHALL gọi create intent với object có `rules` là array đã chỉnh (không phải chuỗi JSON), và validation lỗi từ backend hiển thị tại chỗ.
+
+### Requirement 12: Goal tree — toà soạn agent
+
+**User Story:** Là một quản trị viên, tôi muốn nhìn thấy cây phân rã goal (Planner → sub-goals theo role) với trạng thái từng nhánh, để hiểu toà soạn agent đang tổ chức công việc thế nào.
+
+#### Acceptance Criteria
+
+1. THE Mission_Control SHALL có Sub_Route `/mission-control/goals` (cả hai biến thể Admin_Base, thêm mục "Goals" vào sub-nav) hiển thị cây goal dựng từ `parentGoalId` của `GET /api/v1/agent/goals`.
+2. Mỗi node SHALL hiển thị: title, badge role (`agentRole`, fallback `assigneeAgent`), badge status, origin (user/reconciler/planner/flow) và trạng thái run mới nhất của goal đó (join client-side từ `GET /api/v1/agent/runs`).
+3. WHEN goal có `intentId`, THE node SHALL link đến trang intent detail tương ứng.
+4. THE cây SHALL render goal mồ côi (có `parentGoalId` không nằm trong trang kết quả) như root — không bỏ rơi node nào.
+
+### Requirement 13: Icon convention
+
+**User Story:** Là một designer, tôi muốn hệ icon nhất quán dùng lucide dạng fill, để UI mới có ngôn ngữ hình ảnh đồng nhất.
+
+#### Acceptance Criteria
+
+1. THE Studio SHALL có helper `FillIcon` render lucide icon với `fill="currentColor"`; mọi icon trang trí chính trong các surface mới của spec này (activity feed, composer v2, goal tree) dùng helper này.
