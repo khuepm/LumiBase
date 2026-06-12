@@ -2,7 +2,7 @@
 
 > **For AI agents:** This page is also available as clean Markdown. Append `/index.md` to any LumiBase docs URL.
 >
-> **Base URL:** `https://api.<your-site>.lumibase.dev` (or `http://localhost:8787` in local dev)
+> **Base URL:** `https://api.<your-site>.lumibase.dev` (or `http://localhost:1989` in local dev)
 >
 > All endpoints are versioned under `/api/v1`. Every request must include:
 > - `Authorization: Bearer <access_token>` — JWT from Logto or local auth

@@ -55,7 +55,7 @@ pnpm -F @lumibase/database db:migrate
 ```bash
 docker compose -f docker/docker-compose.yml up -d
 pnpm dev
-# CMS: http://localhost:8787 | Studio: http://localhost:5173
+# CMS: http://localhost:1989 | Studio: http://localhost:2026
 ```
 
 ### Type check

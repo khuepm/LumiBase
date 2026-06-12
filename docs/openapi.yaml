@@ -23,7 +23,7 @@ servers:
     variables:
       site:
         default: demo
-  - url: http://localhost:8787
+  - url: http://localhost:1989
     description: Local development
 
 security:

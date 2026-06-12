@@ -68,7 +68,7 @@ Add to `.cursor/mcp.json` in the project root (create if missing):
 {
   "mcpServers": {
     "lumibase": {
-      "url": "http://localhost:8787/mcp"
+      "url": "http://localhost:1989/mcp"
     }
   }
 }

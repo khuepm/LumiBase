@@ -69,7 +69,7 @@ EOF
 ### Step 5 — Add MCP server (optional)
 
 ```bash
-codex mcp add lumibase --url http://localhost:8787/mcp
+codex mcp add lumibase --url http://localhost:1989/mcp
 ```
 
 Set auth via environment:

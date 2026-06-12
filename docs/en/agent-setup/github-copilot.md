@@ -67,7 +67,7 @@ Add to `.vscode/mcp.json`:
   "servers": {
     "lumibase": {
       "type": "http",
-      "url": "http://localhost:8787/mcp",
+      "url": "http://localhost:1989/mcp",
       "headers": {
         "Authorization": "Bearer ${env:LUMIBASE_TOKEN}",
         "X-Site-Id": "${env:LUMIBASE_SITE_ID}"

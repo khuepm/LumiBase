@@ -33,13 +33,8 @@ export function printNextSteps(config: ProjectConfig) {
 
   console.log();
   console.log(
-    pc.dim('  CMS  ') + pc.underline('http://localhost:8787'),
+    pc.dim('  API  ') + pc.underline('http://localhost:8787'),
   );
-  if (template === 'default') {
-    console.log(
-      pc.dim('  Studio ') + pc.underline('http://localhost:5173'),
-    );
-  }
   console.log();
   console.log(pc.dim('  Docs → https://lumibase.dev/docs'));
   console.log();

@@ -67,7 +67,7 @@ Add to your Claude MCP config (`~/.claude.json` or `.claude/mcp.json`):
 {
   "mcpServers": {
     "lumibase": {
-      "url": "http://localhost:8787/mcp",
+      "url": "http://localhost:1989/mcp",
       "env": {
         "LUMIBASE_TOKEN": "<your-access-token>",
         "LUMIBASE_SITE_ID": "<your-site-id>"

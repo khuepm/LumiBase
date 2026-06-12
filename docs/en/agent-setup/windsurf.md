@@ -30,7 +30,7 @@ Add to `~/.codeium/windsurf/mcp_config.json` (note: uses `serverUrl`, not `url`)
 {
   "mcpServers": {
     "lumibase": {
-      "serverUrl": "http://localhost:8787/mcp"
+      "serverUrl": "http://localhost:1989/mcp"
     }
   }
 }
@@ -102,8 +102,8 @@ Windsurf suggests terminal commands automatically. Common LumiBase commands:
 ```bash
 pnpm install                          # Install all workspace dependencies
 pnpm dev                              # Start CMS + Studio + Docs
-pnpm -F @lumibase/cms dev             # CMS API only (port 8787)
-pnpm -F @lumibase/studio dev          # Studio only (port 5173)
+pnpm -F @lumibase/cms dev             # CMS API only (port 1989)
+pnpm -F @lumibase/studio dev          # Studio only (port 2026)
 pnpm -F @lumibase/database db:generate   # Regenerate Drizzle types
 pnpm typecheck                        # Type-check all packages
 pnpm test                             # Run all tests

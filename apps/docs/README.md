@@ -30,7 +30,7 @@ Site metadata, navbar items, sidebar groups and footer links are declared in [`d
 ## Local development
 
 ```bash
-pnpm --filter @lumibase/docs dev      # http://localhost:5173
+pnpm --filter @lumibase/docs dev      # http://localhost:5174
 pnpm --filter @lumibase/docs build    # static output in dist/
 pnpm --filter @lumibase/docs preview  # serve the build locally
 ```

@@ -66,8 +66,8 @@ pnpm dev
 ```
 
 This starts all apps in watch mode:
-- **CMS API** — `http://localhost:8787`
-- **Studio** — `http://localhost:5173`
+- **CMS API** — `http://localhost:1989`
+- **Studio** — `http://localhost:2026`
 - **Docs viewer** — `http://localhost:5174`
 
 ---
