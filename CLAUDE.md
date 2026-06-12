@@ -63,6 +63,10 @@ pnpm dev
 pnpm typecheck
 ```
 
+## Definition of Done
+
+Mọi feature trước khi đánh dấu hoàn thành phải qua checklist `.kiro/steering/definition-of-done.md` — đặc biệt mục **Setup impact**: rà soát `.kiro/specs/admin-setup-wizard/setup-impact.md` (Setup Impact Registry) và ghi kết quả vào bảng Registry, kể cả khi kết quả là `n/a`.
+
 ## Key docs
 
 - Architecture decisions: `docs/en/architecture/decisions/`
