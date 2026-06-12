@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Check, ChevronLeft, Copy, Lock, Save, Share2, Trash2, X } from 'lucide-react';
+import { Check, ChevronLeft, Copy, Lock, Pin, Save, Share2, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { FieldResource, ItemRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
@@ -50,6 +50,24 @@ export function ItemDetailPage() {
     queryKey: ['item', collection, id],
     queryFn: async () => (await client.items(collection as never).detail(id)).data as ItemRow,
     enabled: !perms.isLoading && canRead,
+  });
+
+  // Law Zero pins (content-os Req 8.5): fields a human edit locked against
+  // agent writes. Shown as a badge per field; release hands the field back.
+  const pinsQuery = useQuery({
+    queryKey: ['pins', collection, id],
+    queryFn: async () => (await client.items(collection as never).listPins(id)).data.pinnedFields,
+    enabled: !perms.isLoading && canRead,
+  });
+
+  const releasePinMutation = useMutation({
+    mutationFn: async (field: string) => {
+      const res = await client.items(collection as never).releasePin(id, field);
+      return res.data.pinnedFields;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pins', collection, id] });
+    },
   });
 
   const shareRolesQuery = useQuery({
@@ -365,6 +383,8 @@ export function ItemDetailPage() {
               onChange={setDraft}
               collection={collection}
               perms={perms}
+              pinnedFields={pinsQuery.data ?? []}
+              onReleasePin={canUpdate ? (field) => releasePinMutation.mutate(field) : undefined}
             />
           )}
           {tab === 'revisions' && (
@@ -455,12 +475,18 @@ function FieldsTab({
   onChange,
   collection,
   perms,
+  pinnedFields,
+  onReleasePin,
 }: {
   fields: FieldResource[];
   value: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
   collection: string;
   perms: PermissionHelpers;
+  /** Law Zero: fields locked against agent writes by a human edit. */
+  pinnedFields: string[];
+  /** Present when the user may release pins; absent renders the badge only. */
+  onReleasePin?: (field: string) => void;
 }) {
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">No editable fields.</p>;
@@ -471,6 +497,7 @@ function FieldsTab({
         const Interface = resolveInterface(f);
         const cellValue = value?.[f.name];
         const writable = perms.fieldAllowed(collection, 'update', f.name);
+        const pinned = pinnedFields.includes(f.name);
         const setCell = (next: unknown) => {
           if (!writable) return;
           onChange({ ...value, [f.name]: next });
@@ -481,6 +508,25 @@ function FieldsTab({
               <span>{f.name}</span>
               {f.required && <span className="text-destructive">*</span>}
               <span className="text-[10px] uppercase">{f.interface || f.type}</span>
+              {pinned && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
+                  title="Pinned by a human edit — agents cannot overwrite this field."
+                >
+                  <Pin className="h-3 w-3" /> Pinned
+                  {onReleasePin && (
+                    <button
+                      type="button"
+                      onClick={() => onReleasePin(f.name)}
+                      className="ml-0.5 rounded-full px-1 hover:bg-sky-100"
+                      aria-label={`Release pin on ${f.name}`}
+                      title="Release pin — allow agents to write this field again."
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  )}
+                </span>
+              )}
               {!writable && (
                 <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
                   <Lock className="h-3 w-3" /> read-only

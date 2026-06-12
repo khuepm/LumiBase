@@ -70,12 +70,12 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
   - [x] 7.3 Property test: budget per cycle (Property 11)
     - **Validates: Requirements 7.5**
 
-- [ ] 8. Override-is-law (Pin)
+- [x] 8. Override-is-law (Pin)
   - [x] 8.1 `pin-service.ts`: auto-pin khi human sửa field thuộc intent active; prompt "ngoại lệ hay luật mới" (không chặn save, default giữ pin); release + audit
     - _Requirements: 8.1, 8.2, 8.4_
   - [x] 8.2 PinGuard hook trong Harness: chặn agent write vào pinned field, denial `pinned_by_human`
     - _Requirements: 8.3_
-  - [ ] 8.3 Routes pins (GET/DELETE) + badge Pin per field trong Studio item editor
+  - [x] 8.3 Routes pins (GET/DELETE) + badge Pin per field trong Studio item editor
     - _Requirements: 8.4, 8.5_
   - [x] 8.4 Property test: Pin supremacy (Property 2)
     - **Validates: Requirements 8.1, 8.3**
