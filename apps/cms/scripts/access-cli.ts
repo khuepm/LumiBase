@@ -116,6 +116,9 @@ export async function runAccessCli(
         stdout.write(json);
       } else {
         const outPath = resolve(process.cwd(), options.out);
+        if (!outPath.startsWith(process.cwd())) {
+          throw new Error('Access Denied: Path Traversal detected');
+        }
         await mkdir(dirname(outPath), { recursive: true });
         await writeFile(outPath, json, 'utf8');
         stdout.write(`[access] Exported ${outPath}\n`);
@@ -152,7 +155,11 @@ export async function importAccessManifest(
   fetcher: FetchLike = fetch,
 ): Promise<AccessImportDryRunResult | AccessImportApplyResult> {
   if (!options.file) throw new Error('import requires a manifest file path.');
-  const manifest = JSON.parse(await readFile(resolve(process.cwd(), options.file), 'utf8')) as AccessExportManifest;
+  const resolvedFilePath = resolve(process.cwd(), options.file);
+  if (!resolvedFilePath.startsWith(process.cwd())) {
+    throw new Error('Access Denied: Path Traversal detected');
+  }
+  const manifest = JSON.parse(await readFile(resolvedFilePath, 'utf8')) as AccessExportManifest;
   const params = new URLSearchParams();
   if (options.dryRun) params.set('dryRun', 'true');
   else if (options.mode !== 'merge') params.set('mode', options.mode);

@@ -17,6 +17,10 @@ const listQuerySchema = z.object({
 
 export const mediaRouter = new Hono<AppEnv>();
 
+function isInvalidKey(key: string): boolean {
+  return key.includes('..') || key.startsWith('/');
+}
+
 /**
  * GET /media
  * List media assets, optionally filtered by prefix.
@@ -28,6 +32,13 @@ mediaRouter.get('/', async (c) => {
   if (!parsed.success) {
     return c.json(
       { errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) },
+      400,
+    );
+  }
+
+  if (parsed.data.prefix && isInvalidKey(parsed.data.prefix)) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: 'Invalid prefix format.' }] },
       400,
     );
   }
@@ -58,6 +69,13 @@ mediaRouter.get('/', async (c) => {
  */
 mediaRouter.get('/:key{.+}', async (c) => {
   const key = c.req.param('key');
+
+  if (isInvalidKey(key)) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: 'Invalid key format.' }] },
+      400,
+    );
+  }
 
   const storage = c.get('runtime').storage;
   if (!storage) {
@@ -100,6 +118,13 @@ mediaRouter.get('/:key{.+}', async (c) => {
  */
 mediaRouter.post('/:key{.+}', async (c) => {
   const key = c.req.param('key');
+
+  if (isInvalidKey(key)) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: 'Invalid key format.' }] },
+      400,
+    );
+  }
 
   const storage = c.get('runtime').storage;
   if (!storage) {
@@ -154,6 +179,13 @@ mediaRouter.post('/:key{.+}', async (c) => {
  */
 mediaRouter.delete('/:key{.+}', async (c) => {
   const key = c.req.param('key');
+
+  if (isInvalidKey(key)) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: 'Invalid key format.' }] },
+      400,
+    );
+  }
 
   const storage = c.get('runtime').storage;
   if (!storage) {

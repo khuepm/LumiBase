@@ -91,20 +91,27 @@ export function discoverLocaleEntries(
   }
 
   for (const absPath of mdFiles) {
+    // Path Traversal mitigation: ensure resolved absolute path is actually inside docsDir
+    const safeAbsPath = path.resolve(docsDir, absPath);
+    if (!safeAbsPath.startsWith(path.resolve(docsDir))) {
+      console.warn(`[vite-plugin-docs-loader] Path traversal detected, ignoring: ${absPath}`);
+      continue;
+    }
+
     // Path relative to the locale folder → used for slug derivation
-    const relativeToLocale = path.relative(localeDir, absPath);
+    const relativeToLocale = path.relative(localeDir, safeAbsPath);
     const slug = deriveSlug(relativeToLocale);
     // Path relative to docsDir root → includes locale prefix, e.g. "en/features/ai-copilot.md"
-    const filePath = path.relative(docsDir, absPath).split(path.sep).join('/');
+    const filePath = path.relative(docsDir, safeAbsPath).split(path.sep).join('/');
 
     try {
-      const raw = fs.readFileSync(absPath, 'utf-8');
+      const raw = fs.readFileSync(safeAbsPath, 'utf-8');
       const { data: frontMatter, content } = matter(raw);
       const title = deriveTitle(frontMatter.title, relativeToLocale);
 
       let lastModified: string | undefined;
       try {
-        const stat = fs.statSync(absPath);
+        const stat = fs.statSync(safeAbsPath);
         lastModified = stat.mtime.toISOString();
       } catch {
         // ignore stat errors
