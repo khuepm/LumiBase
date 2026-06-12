@@ -523,6 +523,43 @@ agentRouter.get('/approvals', async (c) => {
   return c.json({ data: rows });
 });
 
+const agentDecideSchema = z.object({
+  reviewerRunId: z.string().min(1),
+  decision: z.enum(['approved', 'rejected']),
+  confidence: z.number().min(0).max(1),
+  reason: z.string().max(1000).optional(),
+});
+
+/**
+ * Agent-as-reviewer decision (content-os task 11; Req 11.2-11.4). Approvals
+ * finalize only on confident approve; rejections/low confidence escalate to
+ * a human with a deep-link and the approval stays pending.
+ */
+agentRouter.post('/approvals/:id/agent-decide', async (c) => {
+  const parsed = agentDecideSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+  const { ReviewerService, ReviewerError } = await import('../services/reviewer-service');
+  const service = new ReviewerService({ db: c.get('db'), siteId: c.get('siteId') });
+  try {
+    const data = await service.decide({
+      approvalId: c.req.param('id'),
+      reviewerRunId: parsed.data.reviewerRunId,
+      decision: parsed.data.decision,
+      confidence: parsed.data.confidence,
+      reason: parsed.data.reason,
+      capabilities: c.get('auth').roles ?? [],
+    });
+    return c.json({ data });
+  } catch (err) {
+    if (err instanceof ReviewerError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
 agentRouter.post('/approvals/:id/decide', async (c) => {
   const body = z.object({
     decision: z.enum(['approved', 'rejected']),

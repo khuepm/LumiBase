@@ -327,6 +327,13 @@ export const agentApprovals = pgTable(
     requestedByAgent: text('requested_by_agent').default('lumibase-copilot').notNull(),
     decidedBy: text('decided_by').references(() => users.id, { onDelete: 'set null' }),
     decisionReason: text('decision_reason'),
+    /**
+     * Who decided: `human` (default) or `agent` (Module C agent-as-reviewer,
+     * Req 11.1). Agent decisions record the reviewing run in approverRunId.
+     */
+    approverType: text('approver_type').default('human').notNull(),
+    /** Reviewing agent run when approverType='agent'. */
+    approverRunId: text('approver_run_id').references(() => agentRuns.id, { onDelete: 'set null' }),
     expiresAt: timestamp('expires_at'),
     createdAt: createdAt(),
     decidedAt: timestamp('decided_at'),

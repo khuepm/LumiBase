@@ -115,6 +115,10 @@ When a dangerous skill reaches Step 3, the harness resolves the effective autono
 - **L4 (autopilot)** — the dangerous action executes directly within capability and budget; the kill switch still applies.
 - Irreversible skills (`deleteCollection`, `deleteField`) are hard-capped at L2 by the resolver and can never stage or run on autopilot.
 
+### Agent-as-reviewer (Module C)
+
+With the `contentOs.agentReview` flag on, agents can decide routine approvals so humans only see exceptions (`POST /api/v1/agent/approvals/:id/agent-decide`). Hard rules: the reviewer needs `review:<domain>` for the approval's domain (schema-shaped tools → `review:schema`, item tools → `review:items`); **self-review is forbidden** — an approval belonging to goal-tree G can never be decided by a run inside G (ancestry paths are compared up to the root); veto-window approvals are human-only by definition. Only a confident approve (≥ the per-site `agentReviewMinConfidence`, default 0.8) finalizes — recorded with `approverType='agent'` and the reviewing run in `approverRunId`. A rejection or low-confidence verdict never finalizes: it escalates with a `review.escalated` activity entry and deep-link while the approval stays pending for a human (Req 11.4).
+
 ### Trust ledger: promotion is human-gated, demotion is automatic
 
 Autonomy levels are **earned**, and the asymmetry is deliberate: trust rises slowly through people, falls instantly through incidents.

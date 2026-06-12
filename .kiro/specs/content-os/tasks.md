@@ -100,12 +100,12 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
   - [x] 10.3 Planner: phân rã goal → sub-goals (kế thừa budget còn lại); Harness enforce capability = role ∩ grant; goal cha fail nếu acceptance không đạt
     - _Requirements: 10.1, 10.4, 10.5_
 
-- [ ] 11. Agent-as-reviewer
-  - [ ] 11.1 Cột `approverType/approverRunId` trên `agent_approvals`; ngưỡng agent-review per site + công tắc tắt toàn bộ
+- [x] 11. Agent-as-reviewer
+  - [x] 11.1 Cột `approverType/approverRunId` trên `agent_approvals`; ngưỡng agent-review per site + công tắc tắt toàn bộ
     - _Requirements: 11.1, 11.2, 11.5_
-  - [ ] 11.2 Reviewer flow: quyết trong ngưỡng + capability `review:<domain>`; cấm self-review (cùng goal-tree); escalate người khi reject/low-confidence kèm deep-link
+  - [x] 11.2 Reviewer flow: quyết trong ngưỡng + capability `review:<domain>`; cấm self-review (cùng goal-tree); escalate người khi reject/low-confidence kèm deep-link
     - _Requirements: 11.2, 11.3, 11.4_
-  - [ ] 11.3 Property test: self-review cấm (Property 8)
+  - [x] 11.3 Property test: self-review cấm (Property 8)
     - **Validates: Requirements 11.3**
 
 ### Module D — Trust ledger
