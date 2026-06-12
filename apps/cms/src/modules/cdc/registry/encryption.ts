@@ -90,24 +90,6 @@ export async function decrypt(
 }
 
 /**
- * Maps a cryptographically secure random byte to [0, modulus) without modulo bias
- * using rejection sampling.
- */
-function unbiasedByteModulo(modulus: number): number {
-  if (modulus <= 0) {
-    throw new Error('modulus must be > 0');
-  }
-
-  const limit = Math.floor(256 / modulus) * modulus;
-  let candidate: number;
-  do {
-    candidate = crypto.getRandomValues(new Uint8Array(1))[0]!;
-  } while (candidate >= limit);
-
-  return candidate % modulus;
-}
-
-/**
  * Synchronous encrypt wrapper for use in the pipeline registry service.
  * Internally uses the async Web Crypto API but provides a sync-looking
  * interface by returning a Promise that the caller must await.
@@ -127,8 +109,7 @@ export function encryptSync(plaintext: string, key: string): string {
   const encrypted = new Uint8Array(data.length);
   for (let i = 0; i < data.length; i++) {
     const ivByte = iv[i % IV_LENGTH]!;
-    const offset = unbiasedByteModulo(keyBytes.length);
-    const keyByte = keyBytes[(i + offset) % keyBytes.length]!;
+    const keyByte = keyBytes[(i + ivByte) % keyBytes.length]!;
     encrypted[i] = data[i]! ^ keyByte ^ ivByte;
   }
 
