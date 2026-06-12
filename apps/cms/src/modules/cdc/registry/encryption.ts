@@ -119,10 +119,10 @@ export async function decryptCompat(
 // AES-GCM migration. Do not use it for new data.
 
 /**
- * Maps an 8-bit value to [0, modulus) without modulo bias using rejection
- * sampling. Deterministic: probes subsequent byte values until one lands in
- * the accepted range — decrypt must derive the exact offset the legacy
- * encrypt used, so no fresh randomness is allowed here.
+ * Maps a byte to `[0, modulus)` without modulo bias, mirroring the legacy
+ * encryptor exactly — changing this breaks decryption of pre-AES rows.
+ * Deterministically probes subsequent byte values until one lands inside
+ * the accepted range.
  */
 function unbiasedByteModulo(byte: number, modulus: number): number {
   if (modulus <= 0) {
