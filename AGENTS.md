@@ -5,7 +5,7 @@
 
 ## Identity
 
-**LumiBase** — Edge-native Headless CMS  
+**LumiBase** — Content Operating System (Content OS): an Edge-native, AI-native headless CMS where agents operate content under governed autonomy and humans set intent/taste/accountability.  
 Stack: Hono.js · PostgreSQL · Drizzle ORM · Logto · Cloudflare Workers / Docker · Turborepo · pnpm
 
 ## Codebase layout
