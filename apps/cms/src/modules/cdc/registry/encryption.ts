@@ -90,6 +90,24 @@ export async function decrypt(
 }
 
 /**
+ * Maps an 8-bit value to [0, modulus) without modulo bias using rejection sampling.
+ * Since we only have one byte input here, we deterministically probe subsequent
+ * byte values until we hit an accepted range.
+ */
+function unbiasedByteModulo(byte: number, modulus: number): number {
+  if (modulus <= 0) {
+    throw new Error('modulus must be > 0');
+  }
+
+  const limit = Math.floor(256 / modulus) * modulus;
+  let candidate = byte & 0xff;
+  while (candidate >= limit) {
+    candidate = (candidate + 1) & 0xff;
+  }
+  return candidate % modulus;
+}
+
+/**
  * Synchronous encrypt wrapper for use in the pipeline registry service.
  * Internally uses the async Web Crypto API but provides a sync-looking
  * interface by returning a Promise that the caller must await.
@@ -108,8 +126,10 @@ export function encryptSync(plaintext: string, key: string): string {
 
   const encrypted = new Uint8Array(data.length);
   for (let i = 0; i < data.length; i++) {
-    const keyByte = keyBytes[(i + iv[i % IV_LENGTH]!) % keyBytes.length]!;
-    encrypted[i] = data[i]! ^ keyByte ^ iv[i % IV_LENGTH]!;
+    const ivByte = iv[i % IV_LENGTH]!;
+    const offset = unbiasedByteModulo(ivByte, keyBytes.length);
+    const keyByte = keyBytes[(i + offset) % keyBytes.length]!;
+    encrypted[i] = data[i]! ^ keyByte ^ ivByte;
   }
 
   const authTag = computeAuthTag(encrypted, iv, keyBytes);
