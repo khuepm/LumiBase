@@ -234,6 +234,82 @@ async function hydrateSection(
   };
 }
 
+/**
+ * Public llms.txt index per site (content-os task 4.3; Req 4.5).
+ *
+ * Follows the llms.txt convention (H1 title, blockquote summary, H2 link
+ * sections) so LLM crawlers and agents can discover what the site publishes
+ * and where the machine-readable surfaces live. Only public facts are
+ * listed: visible non-system collections and published pages — never drafts,
+ * hidden collections or internal agent state.
+ */
+deliverRouter.get('/llms.txt/:site_id', async (c) => {
+  const siteId = c.req.param('site_id');
+  const db = c.get('db');
+
+  const [site] = await db
+    .select({ id: schema.sites.id, name: schema.sites.name, domain: schema.sites.domain })
+    .from(schema.sites)
+    .where(eq(schema.sites.id, siteId))
+    .limit(1);
+  if (!site) {
+    return c.text('Site not found.', 404);
+  }
+
+  const [cols, publishedPages] = await Promise.all([
+    db
+      .select({
+        name: schema.collections.name,
+        label: schema.collections.label,
+        note: schema.collections.note,
+      })
+      .from(schema.collections)
+      .where(
+        and(
+          eq(schema.collections.siteId, siteId),
+          eq(schema.collections.hidden, false),
+          eq(schema.collections.system, false),
+        ),
+      )
+      .orderBy(asc(schema.collections.name)),
+    db
+      .select({ slug: schema.pages.slug, title: schema.pages.title })
+      .from(schema.pages)
+      .where(eq(schema.pages.siteId, siteId))
+      .orderBy(asc(schema.pages.slug))
+      .limit(100),
+  ]);
+
+  const base = `/api/v1/deliver`;
+  const lines: string[] = [
+    `# ${site.name}`,
+    '',
+    `> Content published by ${site.name} via LumiBase, an Edge-native headless CMS. Pages are served as a single JSON payload; append \`?provenance=true\` for C2PA-style authorship lineage on every item.`,
+    '',
+    '## Pages',
+    '',
+    ...(publishedPages.length > 0
+      ? publishedPages.map((p) => `- [${p.title}](${base}/page/${site.id}/${p.slug}): page delivery JSON`)
+      : ['- No public pages yet.']),
+    '',
+    '## Collections',
+    '',
+    ...(cols.length > 0
+      ? cols.map((col) => `- ${col.label ?? col.name} (\`${col.name}\`)${col.note ? `: ${col.note}` : ''}`)
+      : ['- No public collections yet.']),
+    '',
+    '## Optional',
+    '',
+    `- [Provenance](${base}/page/${site.id}/{slug}?provenance=true): per-item authorType, model and confidence`,
+    '',
+  ];
+
+  return c.text(lines.join('\n'), 200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'public, max-age=300',
+  });
+});
+
 deliverRouter.get('/page/:site_id/:slug', async (c) => {
   const { site_id: siteId, slug } = c.req.param();
   const db = c.get('db');

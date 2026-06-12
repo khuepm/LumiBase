@@ -32,14 +32,14 @@ Triển khai 5 module A–E theo thứ tự phụ thuộc. Mỗi task nhóm theo
   - [x] 3.2 Resume run từ `awaiting_approval` không chạy lại tool call đã xong; cancel tại tool-call boundary
     - _Requirements: 3.4, 3.5_
 
-- [ ] 4. MCP server + llms.txt
-  - [ ] 4.1 `mcp-service.ts` + route `/api/v1/mcp` (Streamable HTTP): tool list từ `agent_tools` enabled, mọi call qua Harness, auth token capability
+- [x] 4. MCP server + llms.txt
+  - [x] 4.1 `mcp-service.ts` + route `/api/v1/mcp` (Streamable HTTP): tool list từ `agent_tools` enabled, mọi call qua Harness, auth token capability
     - _Requirements: 4.1, 4.2, 4.3_
-  - [ ] 4.2 Dangerous → trả `pending_approval` + approvalId trong tool result (không block)
+  - [x] 4.2 Dangerous → trả `pending_approval` + approvalId trong tool result (không block)
     - _Requirements: 4.4_
-  - [ ] 4.3 `llms.txt` public per site
+  - [x] 4.3 `llms.txt` public per site
     - _Requirements: 4.5_
-  - [ ] 4.4 Property test: MCP parity (Property 14)
+  - [x] 4.4 Property test: MCP parity (Property 14)
     - **Validates: Requirements 4.2**
 
 ### Module B — Reconciliation
