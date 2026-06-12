@@ -47,9 +47,16 @@ vi.mock('../api', () => ({ missionControlApi: api }));
 
 import { ExceptionInbox } from '../inbox';
 import { TrustLedger } from '../trust-ledger';
-import { SloHealth } from '../slo-health';
+import { SloTable, useSloRows } from '../slo-table';
 import { KillSwitchPanel } from '../kill-switch';
 import { IntentComposer } from '../intent-composer';
+
+/** Harness mirroring how the dashboard/intents pages compose the table. */
+function SloHealth() {
+  const { rows, isLoading } = useSloRows();
+  if (isLoading) return <p>Loading SLO health…</p>;
+  return <SloTable rows={rows} />;
+}
 
 function renderWithClient(ui: ReactElement) {
   const client = new QueryClient({
