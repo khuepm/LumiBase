@@ -381,6 +381,24 @@ describe('randomDelayMs (Req 14.4 anti-timing)', () => {
     expect(min).toBeLessThanOrEqual(205);
     expect(max).toBeGreaterThanOrEqual(495);
   });
+
+  it('is unbiased across the range (rejection sampling, not modulo bias)', () => {
+    // A plain `% 301` over 16 bits would over-represent the lowest 65536 %
+    // 301 = 235 buckets. Bucketing samples into low/high halves of the
+    // range and asserting near-parity catches reintroduced modulo bias.
+    const DELAY_MIN = 200;
+    const DELAY_MAX = 500;
+    const buckets = new Array(DELAY_MAX - DELAY_MIN + 1).fill(0) as number[];
+    const N = 120_000;
+    for (let i = 0; i < N; i++) buckets[randomDelayMs() - DELAY_MIN]! += 1;
+    const expected = N / buckets.length; // ~399 per bucket
+    // Every bucket must be populated and within ±35% of the mean — a
+    // modulo-biased generator would leave ~22% of buckets a full step low.
+    for (const count of buckets) {
+      expect(count).toBeGreaterThan(expected * 0.65);
+      expect(count).toBeLessThan(expected * 1.35);
+    }
+  });
 });
 
 // ── forgotPath: minting + sending + anti-enumeration ────────────────────
