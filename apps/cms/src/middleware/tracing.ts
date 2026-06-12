@@ -2,9 +2,6 @@ import { createMiddleware } from 'hono/factory';
 import type { AppEnv } from '../env';
 import { normalizeObservabilityPath } from '../routes/metrics';
 
-type DynamicImport = <T = unknown>(specifier: string) => Promise<T>;
-const dynamicImport = new Function('specifier', 'return import(specifier)') as DynamicImport;
-
 type Span = {
   setAttribute(key: string, value: string | number | boolean): void;
   setAttributes(attributes: Record<string, string | number | boolean | undefined>): void;
@@ -24,7 +21,7 @@ type TraceApi = {
 let traceApiPromise: Promise<TraceApi | null> | null = null;
 
 async function getTraceApi(): Promise<TraceApi | null> {
-  traceApiPromise ??= dynamicImport<TraceApi>('@opentelemetry/api').catch(() => null);
+  traceApiPromise ??= import('@opentelemetry/api').then(m => m as unknown as TraceApi).catch(() => null);
   return traceApiPromise;
 }
 
