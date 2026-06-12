@@ -51,7 +51,9 @@ describe('access-cli', () => {
     await writeFile(file, JSON.stringify(manifest()), 'utf8');
     const stdout = writer();
     const stderr = writer();
-    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ data: dryRunResult(false) }, 400));
+    // The CLI treats 400 as a request/network error, causing it to print FAILED to stderr
+    // A blocked dry run is typically a successful HTTP request with valid=false in the response body.
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ data: dryRunResult(false) }, 200));
 
     const code = await runAccessCli(
       {
