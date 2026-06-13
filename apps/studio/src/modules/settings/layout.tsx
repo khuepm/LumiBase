@@ -20,6 +20,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Localization',
     items: [
       { id: 'translations', label: 'Translations', to: '/settings/translations' },
+      { id: 'translation-memory', label: 'Translation memory', to: '/settings/translation-memory' },
     ],
   },
   {
@@ -37,6 +38,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'types', label: 'TypeScript types', to: '/settings/developer/types' },
       { id: 'agent-harness', label: 'Agent harness', to: '/settings/agent-harness' },
+      { id: 'materialize', label: 'Materialized views', to: '/settings/materialize' },
     ],
   },
   {

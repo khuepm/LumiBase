@@ -43,6 +43,8 @@ const FilesPage = lazy(() => import('./modules/files').then((m) => ({ default: m
 const DeveloperTypesPage = lazy(() => import('./modules/settings/types-page').then((m) => ({ default: m.DeveloperTypesPage })));
 const TranslationsPage = lazy(() => import('./modules/translations').then((m) => ({ default: m.TranslationsPage })));
 const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
+const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
+const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
@@ -585,6 +587,18 @@ const webhooksRoute = createRoute({
   component: withSuspense(WebhooksPage),
 });
 
+const materializeSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'materialize',
+  component: withSuspense(MaterializePage),
+});
+
+const translationMemoryRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'translation-memory',
+  component: withSuspense(TranslationMemoryPage),
+});
+
 const activityRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'activity',
@@ -652,6 +666,18 @@ const adminPathWebhooksRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'webhooks',
   component: withSuspense(WebhooksPage),
+});
+
+const adminPathMaterializeSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'materialize',
+  component: withSuspense(MaterializePage),
+});
+
+const adminPathTranslationMemoryRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'translation-memory',
+  component: withSuspense(TranslationMemoryPage),
 });
 
 const adminPathActivityRoute = createRoute({
@@ -1053,6 +1079,8 @@ const routeTree = rootRoute.addChildren([
       settingsTypesRoute,
       translationsRoute,
       webhooksRoute,
+      materializeSettingsRoute,
+      translationMemoryRoute,
       activityRoute,
       extensionsRoute,
       marketplaceRoute,
@@ -1105,6 +1133,8 @@ const routeTree = rootRoute.addChildren([
       adminPathSettingsTypesRoute,
       adminPathTranslationsRoute,
       adminPathWebhooksRoute,
+      adminPathMaterializeSettingsRoute,
+      adminPathTranslationMemoryRoute,
       adminPathActivityRoute,
       adminPathExtensionsRoute,
       adminPathMarketplaceRoute,
