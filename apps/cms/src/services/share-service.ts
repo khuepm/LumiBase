@@ -9,7 +9,7 @@ import {
 import type { CacheProvider } from '@lumibase/runtime';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { hashPassword, verifyPassword } from './auth/password';
-import { PermissionService } from './permission-service';
+import { PermissionService, type CompiledPermission } from './permission-service';
 import { SchemaService } from './schema-service';
 import type { MagicContext } from './permission-dsl';
 
@@ -82,6 +82,12 @@ function assertActiveShare(row: typeof shares.$inferSelect, now: Date): void {
   }
 }
 
+function intersectPermissionFields(a: CompiledPermission, b: CompiledPermission): string[] {
+  if (a.fields.includes('*')) return b.fields;
+  if (b.fields.includes('*')) return a.fields;
+  return a.fields.filter((field) => b.fields.includes(field));
+}
+
 function baseMagicContext(input: {
   siteId: string;
   roleId: string | null;
@@ -136,6 +142,10 @@ export class ShareService {
     if (!sharePerm) {
       throw new ShareServiceError('FORBIDDEN', `Action "share" on "${input.collection}" is not allowed.`, 403);
     }
+    const actorReadPerm = await actorPerms.canAccess(input.collection, 'read');
+    if (!actorReadPerm) {
+      throw new ShareServiceError('FORBIDDEN', `Action "read" on "${input.collection}" is required to create a share.`, 403);
+    }
 
     const [targetCollection] = await this.deps.db
       .select()
@@ -154,6 +164,7 @@ export class ShareService {
           eq(items.id, input.itemId),
           isNull(items.deletedAt),
           actorPerms.whereFor(sharePerm),
+          actorPerms.whereFor(actorReadPerm),
         ),
       )
       .limit(1);
@@ -220,6 +231,22 @@ export class ShareService {
     if (!readPerm) {
       throw new ShareServiceError('FORBIDDEN', 'Share role cannot read this collection.', 403);
     }
+    const creatorPermissionService = new PermissionService({
+      db: this.deps.db,
+      cache: this.deps.cache,
+      ctx: baseMagicContext({
+        siteId: share.siteId,
+        roleId: null,
+        userId: share.createdBy,
+        ip: input.ip,
+        headers: input.headers,
+        now,
+      }),
+    });
+    const creatorReadPerm = await creatorPermissionService.canAccess(share.collection, 'read');
+    if (!creatorReadPerm) {
+      throw new ShareServiceError('FORBIDDEN', 'Share creator cannot read this collection.', 403);
+    }
 
     const [targetCollection] = await this.deps.db
       .select()
@@ -238,6 +265,7 @@ export class ShareService {
           eq(items.id, share.itemId),
           isNull(items.deletedAt),
           permissionService.whereFor(readPerm),
+          creatorPermissionService.whereFor(creatorReadPerm),
         ),
       )
       .limit(1);
@@ -249,7 +277,8 @@ export class ShareService {
       cache: this.deps.cache,
     }).getCompiled(share.collection);
     const knownFields = compiled?.fields.map((f) => f.name) ?? [];
-    const masked = permissionService.maskItem(readPerm, row as typeof row & { data: Record<string, unknown> }, knownFields);
+    const effectiveReadPerm = { ...readPerm, fields: intersectPermissionFields(readPerm, creatorReadPerm) };
+    const masked = permissionService.maskItem(effectiveReadPerm, row as typeof row & { data: Record<string, unknown> }, knownFields);
 
     await this.deps.db
       .update(shares)

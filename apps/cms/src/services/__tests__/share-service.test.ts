@@ -1,4 +1,5 @@
 import type { Database } from '@lumibase/database';
+import type { CacheProvider } from '@lumibase/runtime';
 import { describe, expect, it } from 'vitest';
 import { ShareService, ShareServiceError, hashShareToken } from '../share-service';
 
@@ -71,7 +72,28 @@ const permissionRow = {
   permissions: { status: { _eq: 'published' } },
   validation: {},
   presets: {},
+  fields: ['*'],
+};
+
+const creatorPermissionRow = {
+  ...permissionRow,
+  id: 'perm_creator_read_posts',
   fields: ['title', 'status'],
+};
+
+const userRow = {
+  id: 'user_1',
+  externalId: null,
+  email: 'creator@example.com',
+  firstName: null,
+  lastName: null,
+  status: 'active',
+  preferences: {},
+  tfa: {},
+  isBootstrap: false,
+  lastSeenAt: null,
+  createdAt: now,
+  updatedAt: now,
 };
 
 const collectionRow = {
@@ -166,6 +188,13 @@ function successfulReadResults(overrides: { share?: Record<string, unknown>; ite
     [{ policyId: 'policy_share_read', priority: 100 }],
     [policyRow],
     [permissionRow],
+    [userRow],
+    [roleRow],
+    [],
+    [{ policyId: 'policy_share_read', priority: 100 }],
+    [],
+    [policyRow],
+    [creatorPermissionRow],
     [collectionRow],
     overrides.itemRows ?? [visibleItemRow],
     [collectionRow],
@@ -174,8 +203,50 @@ function successfulReadResults(overrides: { share?: Record<string, unknown>; ite
   ];
 }
 
+function makePermissionCache(entries: Record<string, unknown>): CacheProvider {
+  return {
+    get: async (key: string) => entries[key] ?? null,
+    set: async () => undefined,
+    delete: async () => undefined,
+  } as CacheProvider;
+}
+
+describe('ShareService create links', () => {
+  it('requires the creator to have read permission before sharing', async () => {
+    const cache = makePermissionCache({
+      [`perm:${SITE_ID}:user_1`]: {
+        admin: false,
+        appAccess: false,
+        tfaRequired: false,
+        roles: [],
+        policies: [],
+        byKey: {
+          'posts::share': {
+            collection: 'posts',
+            action: 'share',
+            rule: null,
+            fields: ['*'],
+            presets: {},
+            validation: {},
+            sources: [],
+          },
+        },
+      },
+    });
+    const { db } = makeDb([]);
+    const promise = new ShareService({ db, cache, siteId: SITE_ID, now }).create({
+      collection: 'posts',
+      itemId: 'item_visible',
+      roleId: ROLE_ID,
+      actor: { userId: 'user_1' },
+    });
+
+    await expect(promise).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+  });
+});
+
 describe('ShareService public read links', () => {
-  it('returns only rows and fields allowed by the share role policy', async () => {
+  it('returns only rows and fields allowed by both the share role and creator read policies', async () => {
     const { db, state } = makeDb(successfulReadResults());
     const result = await new ShareService({ db, now }).read({ token: TOKEN });
 
