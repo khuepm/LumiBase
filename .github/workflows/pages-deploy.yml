@@ -103,7 +103,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
-          wrangler pages deploy dist --project-name lumibase-docs --branch main --cwd apps/docs 2>&1 | tee docs-deploy.log
+          pnpm exec wrangler pages deploy dist --project-name lumibase-docs --branch main --cwd apps/docs 2>&1 | tee docs-deploy.log
           URL="$(grep -Eo 'https://[^[:space:]]+' docs-deploy.log | tail -n1 | sed 's/[),.]*$//')"
           if [ -z "$URL" ]; then
             echo "Failed to parse docs deployment URL" >&2
@@ -126,7 +126,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
-          wrangler pages deploy apps/landing/out --project-name lumibase-landing 2>&1 | tee landing-deploy.log
+          pnpm exec wrangler pages deploy apps/landing/out --project-name lumibase-landing --branch main 2>&1 | tee landing-deploy.log
           URL="$(grep -Eo 'https://[^[:space:]]+' landing-deploy.log | tail -n1 | sed 's/[),.]*$//')"
           if [ -z "$URL" ]; then
             echo "Failed to parse landing deployment URL" >&2
@@ -149,7 +149,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
-          wrangler pages deploy apps/marketplace/out --project-name lumibase-marketplace 2>&1 | tee marketplace-deploy.log
+          pnpm exec wrangler pages deploy apps/marketplace/out --project-name lumibase-marketplace --branch main 2>&1 | tee marketplace-deploy.log
           URL="$(grep -Eo 'https://[^[:space:]]+' marketplace-deploy.log | tail -n1 | sed 's/[),.]*$//')"
           if [ -z "$URL" ]; then
             echo "Failed to parse marketplace deployment URL" >&2
