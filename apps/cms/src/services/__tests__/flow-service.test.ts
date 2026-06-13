@@ -34,9 +34,11 @@ describe('flow http operation — SSRF guard', () => {
     ['loopback IP', 'http://127.0.0.1:5432/'],
     ['private range', 'http://192.168.1.10/router'],
     ['private range (10.x)', 'http://10.0.0.5/internal'],
+    ['private range (172.16-31)', 'http://172.16.0.10/metadata'],
     ['cloud metadata', 'http://169.254.169.254/latest/meta-data/'],
     ['metadata hostname', 'http://metadata.google.internal/computeMetadata/v1/'],
     ['IPv6 loopback', 'http://[::1]/data'],
+    ['IPv6 unique-local', 'http://[fd00::1]/metadata'],
   ])('blocks %s without calling fetch', async (_label, url) => {
     await expect(httpHandler(ctx, { url })).rejects.toThrow(
       /http operation blocked/,
