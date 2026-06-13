@@ -7,6 +7,12 @@
 # HTTP traffic to the private CMS service on the Compose network.
 
 services:
+  cms:
+    # Remove the base host port mapping so Caddy is the only public ingress.
+    ports: !reset []
+    expose:
+      - "1989"
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
