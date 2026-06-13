@@ -9,6 +9,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-13
+
+### Version
+
+- `v0.6.0`
+
+### Date
+
+- `2026-06-13`
+
 ### Added
 
 - **Mission Control phase 3** (content-os-ui Req 16–20). Five Content OS endpoints that previously had no UI are now operable from Studio: an **Agents** sub-route managing the agent role library (CRUD, enabled toggle, two-step delete); intent detail gains **Scan now** (manual reconciliation cycle), inline **Edit** and two-step **Delete**; the goal tree gains planner **Decompose**/**Settle** actions; the Artifacts tab gains an **Evaluate** action with inline verdict; the trust ledger gains a **promotion eligibility check**.
@@ -24,9 +34,22 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ### Security
 
 - **esbuild bumped to 0.28.1** (Dependabot alert #46, high — missing binary integrity verification enabling RCE via `NPM_CONFIG_REGISTRY`). The pnpm override moves from `^0.25.12` to `^0.28.1`; vite is unified on `^7.3.5` across the workspace (studio, docs, and a matching override for vitest's internal copy) because vite 6 cannot drive esbuild 0.28's syntax lowering.
+- **Flow execution SSRF hardened** (#104). The authenticated `http` flow operation now applies the SSRF guard (private/loopback/link-local ranges blocked, redirect re-validation), closing a server-side request forgery path through user-defined flows.
+- **Signed file uploads hardened** (#103). Upload endpoints now verify the request is authenticated and the uploaded bytes match the declared type via magic-byte signature checks, closing an unauthenticated/spoofed-upload path.
+- **AI approval authorization** (#101, #102). Executing a staged AI approval and the AI-approval management endpoints are now restricted to admins, preventing a lower-privileged caller from executing or mutating pending approvals.
+- **Setup CPU-exhaustion guard** (#100, #105). Setup completion is gated before the expensive password-hashing step, so unauthenticated callers can no longer drive CPU exhaustion against the setup route.
+- **Marketplace update feed constrained** (#99). Marketplace update checks are now scoped to global extensions, preventing a tenant from probing or pulling another tenant's extension state through the update feed.
+- **Policy IP-guard evaluation preserved** (#96). Legacy RBAC policy IP guards are evaluated again after the policy rewrite, restoring IP-allowlist enforcement that had regressed.
+- **Tenant-isolation hardening.** Studio access is enforced on management routes, share links are constrained to the creator's read access, extension item-access capabilities are gated, dev-only auth is restricted to development runtimes, and the backup-code redemption race is closed. The TLS Docker Compose overlay keeps the CMS private (not published on the host).
+- **IDOR coverage.** Added the 8 cross-tenant IDOR isolation tests asserting that one site cannot read or mutate another site's resources.
+
+### Fixed
+
+- **SDK typegen docs** use a workspace-scoped command instead of an unscoped `npx` invocation.
 
 ### Upgrade steps
 
+- **No new schema migrations in this release.** `0.6.0` is additive UI/ops surfaces over the `0.5.0` Content OS schema plus security hardening; existing `0.5.0` databases need no migration.
 - **Existing (already-initialized) instances need no action.** Agent roles continue to lazy-seed on first list; an absent `contentOs` row still reads as all-OFF; autonomy resolution keeps its code fallbacks (safe→L2, dangerous→L1). Baseline L1 grants are intentionally **not** backfilled — doing so would tighten safe-capability autonomy from L2 to L1 on live sites. Opt in by creating grants via the trust ledger UI/API.
 
 ## [0.5.0] - 2026-06-12
