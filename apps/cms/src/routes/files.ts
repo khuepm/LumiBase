@@ -3,12 +3,23 @@ import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { SignJWT, jwtVerify } from 'jose';
-import type { AppEnv } from '../env';
+import type { AppEnv, Bindings } from '../env';
 
 export const filesRouter = new Hono<AppEnv>();
 
+const uploadTokenPayloadSchema = z.object({
+  key: z.string().min(1),
+  siteId: z.string().min(1),
+});
+
+type UploadTokenPayload = z.infer<typeof uploadTokenPayloadSchema>;
+
+function getUploadJwtSecret(env: Bindings): string | null {
+  return env.JWT_SECRET || process.env.JWT_SECRET || null;
+}
+
 // Helper to sign upload token
-async function signUploadToken(payload: { key: string; siteId: string }, secret: string): Promise<string> {
+async function signUploadToken(payload: UploadTokenPayload, secret: string): Promise<string> {
   const encoder = new TextEncoder();
   const secretKey = encoder.encode(secret);
   return new SignJWT(payload)
@@ -19,11 +30,11 @@ async function signUploadToken(payload: { key: string; siteId: string }, secret:
 }
 
 // Helper to verify upload token
-async function verifyUploadToken(token: string, secret: string): Promise<{ key: string; siteId: string }> {
+async function verifyUploadToken(token: string, secret: string): Promise<UploadTokenPayload> {
   const encoder = new TextEncoder();
   const secretKey = encoder.encode(secret);
   const { payload } = await jwtVerify(token, secretKey);
-  return payload as { key: string; siteId: string };
+  return uploadTokenPayloadSchema.parse(payload);
 }
 
 // --- Folders ---
@@ -156,7 +167,13 @@ filesRouter.post('/presigned-url', async (c) => {
   const body = await c.req.json();
   const filename = body.filename || 'unknown';
   const siteId = c.get('siteId');
-  const jwtSecret = c.env.JWT_SECRET || 'dev_secret_key';
+  const jwtSecret = getUploadJwtSecret(c.env);
+  if (!jwtSecret) {
+    return c.json(
+      { errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET configuration missing.' }] },
+      500,
+    );
+  }
 
   const key = `${Date.now()}_${filename}`;
   const token = await signUploadToken({ key, siteId }, jwtSecret);
@@ -176,17 +193,23 @@ filesRouter.post('/presigned-url', async (c) => {
 // Stream receiver for JWT-signed uploads
 filesRouter.put('/upload/:key', async (c) => {
   const key = c.req.param('key');
-  const siteId = c.get('siteId');
   const token = c.req.query('token');
 
   if (!token) {
     return c.json({ errors: [{ code: 'UNAUTHORIZED', message: 'Upload token is required.' }] }, 401);
   }
 
-  const jwtSecret = c.env.JWT_SECRET || 'dev_secret_key';
+  const jwtSecret = getUploadJwtSecret(c.env);
+  if (!jwtSecret) {
+    return c.json(
+      { errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET configuration missing.' }] },
+      500,
+    );
+  }
+
   try {
     const payload = await verifyUploadToken(token, jwtSecret);
-    if (payload.key !== key || payload.siteId !== siteId) {
+    if (payload.key !== key) {
       return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Invalid upload token parameters.' }] }, 403);
     }
   } catch (err) {
