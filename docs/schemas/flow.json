@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.lumibase.dev/schemas/flow.json",
+  "title": "Flow",
+  "description": "A LumiBase automation flow definition — trigger + directed graph of operations.",
+  "type": "object",
+  "required": ["name", "trigger"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "maxLength": 255,
+      "description": "Human-readable flow name."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "inactive"],
+      "default": "active"
+    },
+    "trigger": {
+      "type": "string",
+      "enum": ["manual", "schedule", "event", "webhook"],
+      "description": "What starts this flow."
+    },
+    "options": {
+      "type": "object",
+      "description": "Trigger-specific options.",
+      "properties": {
+        "cron":       { "type": "string", "description": "Cron expression (schedule trigger)" },
+        "event":      { "type": "string", "description": "Event name pattern (event trigger, e.g. 'items.create.articles')" },
+        "return":     { "type": "string", "description": "JSONata expression for webhook response body" },
+        "method":     { "type": "string", "enum": ["GET", "POST", "PATCH", "PUT", "DELETE"] }
+      }
+    },
+    "description": {
+      "type": "string"
+    },
+    "icon": {
+      "type": "string"
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "operations": {
+      "type": "array",
+      "description": "Ordered list of operation nodes in the flow graph.",
+      "items": {
+        "type": "object",
+        "required": ["key", "type"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Unique identifier for this operation within the flow."
+          },
+          "type": {
+            "type": "string",
+            "description": "Operation type. Built-in: 'create', 'read', 'update', 'delete', 'request', 'send-email', 'log', 'condition', 'exec-script', 'transform', 'sleep', 'trigger-flow'."
+          },
+          "options": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Type-specific configuration."
+          },
+          "resolve": {
+            "type": "string",
+            "description": "Key of next operation on success."
+          },
+          "reject": {
+            "type": "string",
+            "description": "Key of next operation on failure."
+          },
+          "position_x": { "type": "integer" },
+          "position_y": { "type": "integer" }
+        }
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "name": "Send welcome email on signup",
+      "trigger": "event",
+      "status": "active",
+      "options": { "event": "items.create.users" },
+      "operations": [
+        {
+          "key": "send-email",
+          "type": "send-email",
+          "options": {
+            "to": "{{$trigger.email}}",
+            "subject": "Welcome to LumiBase!",
+            "template": "welcome"
+          }
+        }
+      ]
+    }
+  ]
+}

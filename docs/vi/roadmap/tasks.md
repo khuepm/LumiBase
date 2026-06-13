@@ -19,6 +19,23 @@ Quy ước:
 
 Trạng thái tổng quan: Phase 0 → Phase G (GA hardening) đã xong. POST-GA và Dual Deployment + AI Copilot đã hoàn thành. Hiện tại tập trung vào polish, dev experience và mở rộng marketplace.
 
+## Active Ops Hardening Tasks
+
+Nguồn: `apps/docs/content/deployment/docker.md`, `apps/docs/content/guides/backup-recovery.md`.
+
+- [x] `[OPS]` Docker image chạy non-root user.
+- [x] `[BE]` Validate production config khi `NODE_ENV=production` hoặc `LUMIBASE_ENV=production`.
+- [x] `[BE]` Hỗ trợ Docker secret files qua `*_FILE` trước migration/server startup.
+- [x] `[BE]` CORS allowlist qua `CORS_ALLOWED_ORIGINS`; reject wildcard production.
+- [x] `[BE]` Require `ENCRYPTION_KEY` production và validate AES key format.
+- [x] `[BE]` Require DB TLS `sslmode=require|verify-ca|verify-full` production, trừ khi explicit `DATABASE_SSL_MODE=disable`.
+- [x] `[OPS]` `docker-compose.prod.yml` không publish port cho stateful internal services.
+- [x] `[DOC]` Cập nhật Docker deployment docs và environment reference.
+- [x] `[DOC]` Bổ sung restore drill, row-count verification, app health check sau restore, media/search rebuild, RTO/RPO documentation.
+- [x] `[DOC]` Bổ sung Cloudflare DR validation cho Workers, Hyperdrive, R2, KV, Queues, MeiliSearch Cloud, DNS/WAF/Access.
+- [x] `[OPS]` Cấu hình TLS termination thực tế tại load balancer/reverse proxy của môi trường deploy.
+- [x] `[OPS]` Tự động hóa restore drill định kỳ cho Docker và Cloudflare restore environment.
+
 ---
 
 ## Phase 0 — Foundation (DONE)
@@ -209,6 +226,8 @@ Mục tiêu: tạo/quản lý collection & field qua API + UI.
 - [x] `[DB]` Bổ sung cột `signature`, `signatureAlg`, `publisherKeyId`, `publisher`, `marketplaceSlug`, `publishedAt`, `bundleSha256` vào `extensions`.
 - [x] `[BE]` Routes `/api/v1/marketplace/extensions` (list, detail, install, publish).
 - [x] `[BE]` Signature verification: SHA-256 bundle + ed25519/RSA-PSS qua WebCrypto, public keys load từ env `MARKETPLACE_PUBLIC_KEYS`.
+- [x] `[FE]` Public Marketplace site dùng catalog API thật, SEO/static export/deploy checklist.
+- [x] `[DOC]` Revenue sharing chốt hướng Free-first; commercial checkout/payout tách backlog pha sau.
 - [x] `[DOC]` `features/marketplace.md`.
 
 ## Phase POST-GA6 — Materialized collections (DONE)
@@ -361,9 +380,58 @@ Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
 - [x] `[BE]` SCIM Token rotation + audit.
 - [x] `[OPS]` Multi-tenant isolation testing tự động (k6 cross-site leak detection).
 
+
 ---
 
-## Phase POST-GA8 — Directus Data Model Parity (TODO)
+## Phase Agent Harness Layer (DONE)
+
+Mục tiêu: biến LumiBase thành control plane nơi humans, agents, data, workflows và applications cùng tiến hoá có kiểm soát. Checklist chi tiết nằm ở [`agent-harness-implementation.md`](./agent-harness-implementation.md).
+
+### A. Lifecycle nền tảng
+
+- [x] `[DB]` Thêm `agent_goals`, `agent_runs`, `agent_plans`, `agent_tool_calls` với `siteId`, lifecycle status, policy snapshot, budget, audit metadata và indexes theo `siteId/runId/goalId`.
+- [x] `[BE]` Tạo `AgentRunService` để open/append/close/fail/retry run; refactor `AISecureHarness` để mọi execute runtime đều gắn `goalId/runId`.
+- [x] `[TEST]` Property tests mở rộng cho multi-tenant isolation, run failed vẫn giữ audit trail, retry không duplicate tool calls/artifacts.
+
+### B. Tool Registry + capability policy
+
+- [x] `[DB]` Thêm `agent_tools` và `agent_permissions` để khai báo input/output schema, required capabilities, risk policy, rate limit và validity window.
+- [x] `[BE]` Implement `ToolRegistryService` load core skills + DB overrides; enforce disabled tool, capability, risk policy và rate limit.
+- [x] `[FE]` Studio page “Agent Harness” hiển thị tools, risk, approvals, runs, artifacts và memory.
+- [x] `[SDK]` Thêm types/client methods cho tools, capabilities và risk policies.
+
+### C. Approval tổng quát
+
+- [x] `[DB]` Thêm `agent_approvals` cho `plan` / `tool_call` / `artifact` / `schema_diff`; bridge backward-compatible với `ai_approvals`.
+- [x] `[BE]` Approval policy engine nền tảng: `none`, `before_execute`, `before_commit`, `two_person_rule`, `owner_only`, `security_admin_only` ở contract/policy field.
+- [x] `[FE]` Nâng bề mặt Studio thành queue Agent Harness có subject type, status và decision surface.
+- [x] `[TEST]` Dangerous plan không execute trước approval; rejected/expired approval không commit được.
+
+### D. Artifact Store + Evaluation Gate
+
+- [x] `[DB]` Thêm `agent_artifacts` và `agent_evaluations` với content hash, version, status, eval kind/status/score/details.
+- [x] `[BE]` Artifact writers đầu tiên: `schema_diff`, `page_spec`, `component_spec`, `seed_data`, `api_spec`, `prompt`, `migration`.
+- [x] `[BE]` Eval runners đầu tiên: JSON schema validation, schema/migration guard, generated API spec validation, prompt safety check.
+- [x] `[FE]` Artifact review UI tối thiểu trong Studio Agent Harness: list artifact, status, hash, generated app artifacts.
+- [x] `[TEST]` Artifact fail eval không publish được; artifact hash ổn định; publish/rollback idempotent.
+
+### E. Memory + App Generation MVP
+
+- [x] `[DB]` Thêm `agent_memory` với scope, provenance, confidence, expiry và optional embedding.
+- [x] `[BE]` RAG context builder tôn trọng expiry, provenance và redaction secrets.
+- [x] `[AI]` Skills `generateAppSpec`, `generateApiDocs`, `generateSeedData` sinh artifact payload thay vì ghi thẳng vào content/schema.
+- [x] `[FE]` Action “Generate” trong Agent Harness tạo app artifacts từ `products/orders/customers` với budget và approval policy.
+- [x] `[TEST]` E2E demo: generate storefront từ `products/orders/customers` → plan → artifacts → eval → approval → publish.
+
+### F. Operations
+
+- [x] `[BE]` Metrics cho run success/fail, approval latency, tool latency, eval fail rate, token/cost estimate và budget stop reason.
+- [x] `[OPS]` Grafana dashboard “Agent Harness” và dead-letter queue cho run/tool call fail nhiều lần.
+- [x] `[DOC]` Cập nhật `data-model.md`, `architecture/overview.md`, OpenAPI, SDK docs và runtime limitations cho từng phase.
+
+---
+
+## Phase POST-GA8 — Directus Data Model Parity (DONE)
 
 Mục tiêu: nâng cấp Data Model / Collections Builder để một collection trong LumiBase có contract rõ như Directus: metadata đầy đủ, primary key strategy, system fields, field config nâng cao, relation metadata, schema permission, diff/apply atomic, SDK/typegen/OpenAPI và test parity. Tham chiếu chi tiết: `docs/en/features/directus-data-model-parity-tasks.md`.
 
@@ -374,50 +442,50 @@ Mục tiêu: nâng cấp Data Model / Collections Builder để một collection
 - [x] `[BE]` Relation delete/dependency check đủ cả hai chiều `manyCollection` và `oneCollection`; block xoá field/collection khi còn relation trỏ tới.
 - [x] `[TEST]` Thêm regression tests cho wizard payload, update/delete permission và relation dependency checks.
 
-### Milestone 2 — Collection metadata + primary key contract
+### Milestone 2 — Collection metadata + primary key contract (DONE)
 
-- [ ] `[DB]` Thêm first-class collection columns: `label`, `pluralLabel`, `hidden`, `system`, `primaryKeyField`, `primaryKeyType`, `storageMode`, `unarchiveValue`, `itemDuplicationFields`, `translations`.
-- [ ] `[BE]` Backfill/migration backward-compatible; route validation và `SchemaService` dùng field mới, giữ `meta` cho extension/custom UI hints.
-- [ ] `[SDK]` Cập nhật collection input/output types và schema client methods cho metadata mới.
-- [ ] `[FE]` Wizard có các bước Identity, Storage, System fields, Permissions defaults, Review JSON.
-- [ ] `[BE]` Implement primary key strategy cho `jsonb`: `nanoid`, `uuid`, `string`; defer hoặc block rõ `integer/bigInteger` nếu chưa có sequence.
-- [ ] `[TEST]` Create item respect primary key strategy; duplicate user-provided ID trả `409`.
+- [x] `[DB]` Thêm first-class collection columns: `label`, `pluralLabel`, `hidden`, `system`, `primaryKeyField`, `primaryKeyType`, `storageMode`, `unarchiveValue`, `itemDuplicationFields`, `translations`.
+- [x] `[BE]` Backfill/migration backward-compatible; route validation và `SchemaService` dùng field mới, giữ `meta` cho extension/custom UI hints.
+- [x] `[SDK]` Cập nhật collection input/output types và schema client methods cho metadata mới.
+- [x] `[FE]` Wizard có các bước Identity, Storage, System fields, Permissions defaults, Review JSON.
+- [x] `[BE]` Implement primary key strategy cho `jsonb`: `nanoid`, `uuid`, `string`; defer hoặc block rõ `integer/bigInteger` nếu chưa có sequence.
+- [x] `[TEST]` Create item respect primary key strategy; duplicate user-provided ID trả `409`.
 
 ### Milestone 3 — System fields và field configuration parity
 
-- [ ] `[BE]` Extend compiled schema với `systemFields` (`id`, `status`, `sort`, `user_created`, `user_updated`, `created_at`, `updated_at`, `deleted_at`).
-- [ ] `[FE]` Fields tab hiển thị system fields trong locked group; cho cấu hình display/hidden/readonly/translations/width nhưng không cho xoá.
-- [ ] `[DB]` Thêm field metadata: `label`, `note`, `defaultValue`, `nullable`, `unique`, `indexed`, `searchable`, `length`, `precision`, `scale`, `special`.
-- [ ] `[FE]` FieldInspector advanced tabs: Basics, Options, Display, Validation, Conditions, Layout, Storage, Translations.
-- [ ] `[BE]` Tách create/update/rename/delete/migration field path; reject đổi type/name khi đã có data nếu chưa có migration plan.
-- [ ] `[TEST]` FieldInspector không làm mất unknown `options/displayOptions/validation/conditions`; risky changes trả `409` hoặc cần confirm.
+- [x] `[BE]` Extend compiled schema với `systemFields` (`id`, `status`, `sort`, `user_created`, `user_updated`, `created_at`, `updated_at`, `deleted_at`).
+- [x] `[FE]` Fields tab hiển thị system fields trong locked group; cho cấu hình display/hidden/readonly/translations/width nhưng không cho xoá.
+- [x] `[DB]` Thêm field metadata: `label`, `note`, `defaultValue`, `nullable`, `unique`, `indexed`, `searchable`, `length`, `precision`, `scale`, `special`.
+- [x] `[FE]` FieldInspector advanced tabs: Basics, Options, Display, Validation, Conditions, Layout, Storage, Translations.
+- [x] `[BE]` Tách create/update/rename/delete/migration field path; reject đổi type/name khi đã có data nếu chưa có migration plan.
+- [x] `[TEST]` FieldInspector không làm mất unknown `options/displayOptions/validation/conditions`; risky changes trả `409` hoặc cần confirm.
 
 ### Milestone 4 — Relations parity và deep read
 
-- [ ] `[BE]` Validate relation references: collection/field tồn tại, relation name không duplicate, `onDelete` hợp lệ theo storage mode.
-- [ ] `[DB]` Mở rộng relation metadata: `type`, `aliasField`, `relatedDisplayTemplate`, `junctionManyField`, `junctionOneField`.
-- [ ] `[BE]` Hỗ trợ relation types `m2o`, `o2m`, `m2m`; reserve `m2a` và trả "not implemented" nếu chọn.
-- [ ] `[BE]` Implement relation expansion cho item query (`fields=author.name,categories.*`, `deep[...]`) với permission masking cho related collections.
-- [ ] `[TEST]` M2O trả object khi request expand; O2M/M2M trả array; batching tránh N+1 ở case phổ biến.
+- [x] `[BE]` Validate relation references: collection/field tồn tại, relation name không duplicate, `onDelete` hợp lệ theo storage mode.
+- [x] `[DB]` Mở rộng relation metadata: `type`, `aliasField`, `relatedDisplayTemplate`, `junctionManyField`, `junctionOneField`.
+- [x] `[BE]` Hỗ trợ relation types `m2o`, `o2m`, `m2m`; reserve `m2a` và trả "not implemented" nếu chọn.
+- [x] `[BE]` Implement relation expansion cho item query (`fields=author.name,categories.*`, `deep[...]`) với permission masking cho related collections.
+- [x] `[TEST]` M2O trả object khi request expand; O2M/M2M trả array; batching tránh N+1 ở case phổ biến.
 
 ### Milestone 5 — Schema permissions, diff/apply và storage positioning
 
-- [ ] `[BE]` Thêm schema permission actions: `schema:read/create/update/delete/migrate`.
-- [ ] `[BE]` Áp dụng `requireSchemaPermission` cho collections/fields/relations/compiled schema routes và AI schema skills.
-- [ ] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification và runtime impact.
-- [ ] `[BE]` `PUT /collections/:name/schema` validate toàn bộ, compute diff, apply transactionally khi runtime hỗ trợ, invalidate schema/permission/typegen cache và emit `schema.changed`.
-- [ ] `[FE]` Raw JSON schema tab hiển thị diff/risk trước khi apply.
-- [ ] `[DOC]` Ghi rõ storage modes `jsonb/materialized/physical/external`, kèm limitations badge trong Studio.
-- [ ] `[DOC]` Tạo design doc `docs/en/architecture/physical-collections.md` để quyết định physical/external mode.
+- [x] `[BE]` Thêm schema permission actions: `schema:read/create/update/delete/migrate`.
+- [x] `[BE]` Áp dụng `requireSchemaPermission` cho collections/fields/relations/compiled schema routes và AI schema skills.
+- [x] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification và runtime impact.
+- [x] `[BE]` `PUT /collections/:name/schema` validate toàn bộ, compute diff, apply transactionally khi runtime hỗ trợ, invalidate schema/permission/typegen cache và emit `schema.changed`.
+- [x] `[FE]` Raw JSON schema tab hiển thị diff/risk trước khi apply.
+- [x] `[DOC]` Ghi rõ storage modes `jsonb/materialized/physical/external`, kèm limitations badge trong Studio.
+- [x] `[DOC]` Tạo design doc `docs/en/architecture/physical-collections.md` để quyết định physical/external mode.
 
 ### Milestone 6 — SDK, typegen, OpenAPI, docs và parity tests
 
-- [ ] `[SDK]` Mở schema resources đầy đủ: collections/fields/relations CRUD, field rename/delete options, schema diff/apply.
-- [ ] `[SDK]` Giữ legacy methods hoặc deprecation wrapper; preserve error `code/path/risk` metadata.
-- [ ] `[SDK]` Typegen include primary key type, system fields, nullable/required, readonly/generated và relation-expanded response types.
-- [ ] `[DOC]` Cập nhật `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
-- [ ] `[DOC]` Sync bản tiếng Việt sau khi English contract ổn định.
-- [ ] `[TEST]` Backend/frontend/SDK parity suite đủ các acceptance criteria trong `directus-data-model-parity-tasks.md`.
+- [x] `[SDK]` Mở schema resources đầy đủ: collections/fields/relations CRUD, field rename/delete options, schema diff/apply.
+- [x] `[SDK]` Giữ legacy methods hoặc deprecation wrapper; preserve error `code/path/risk` metadata.
+- [x] `[SDK]` Typegen include primary key type, system fields, nullable/required, readonly/generated và relation-expanded response types.
+- [x] `[DOC]` Cập nhật `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
+- [x] `[DOC]` Sync bản tiếng Việt sau khi English contract ổn định.
+- [x] `[TEST]` Backend/frontend/SDK parity suite đủ các acceptance criteria trong `directus-data-model-parity-tasks.md`.
 
 ---
 

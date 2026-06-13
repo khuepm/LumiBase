@@ -1,6 +1,7 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { getApiClient } from './api';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
  * Initializes i18next for the Studio UI.
@@ -40,6 +41,6 @@ export async function initI18n() {
       i18n.addResourceBundle(lang, 'ui', keys, true, true);
     }
   } catch (error) {
-    console.error('[i18n] Failed to load UI translations', error);
+    console.error('[i18n] Failed to load UI translations', formatSafeError(error));
   }
 }

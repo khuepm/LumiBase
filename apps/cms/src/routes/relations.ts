@@ -2,6 +2,8 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { SchemaService, SchemaServiceError } from '../services/schema-service';
+import { requireSchemaPermission } from './schema-permissions';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 const relationInputSchema = z.object({
   manyCollection: z.string().min(1),
@@ -9,6 +11,11 @@ const relationInputSchema = z.object({
   oneCollection: z.string().min(1),
   oneField: z.string().nullable().optional(),
   junctionCollection: z.string().nullable().optional(),
+  type: z.enum(['m2o', 'o2m', 'm2m', 'm2a']).optional(),
+  aliasField: z.string().nullable().optional(),
+  relatedDisplayTemplate: z.string().nullable().optional(),
+  junctionManyField: z.string().nullable().optional(),
+  junctionOneField: z.string().nullable().optional(),
   sortField: z.string().nullable().optional(),
   onDelete: z.enum(['restrict', 'cascade', 'set null', 'no action']).optional(),
   meta: z.record(z.unknown()).optional(),
@@ -25,7 +32,7 @@ const toError = (err: unknown) => {
   if (err instanceof SchemaServiceError) {
     return { status: err.status, body: { errors: [{ code: err.code, message: err.message }] } };
   }
-  console.error('[relations] unexpected error', err);
+  console.error('[relations] unexpected error', formatSafeError(err));
   return {
     status: 500 as const,
     body: { errors: [{ code: 'INTERNAL', message: 'Unhandled relation error.' }] },
@@ -35,6 +42,8 @@ const toError = (err: unknown) => {
 export const relationsRouter = new Hono<AppEnv>();
 
 relationsRouter.get('/', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:read');
+  if (denied) return denied;
   try {
     const data = await buildService(c).listRelations();
     return c.json({ data });
@@ -45,6 +54,8 @@ relationsRouter.get('/', async (c) => {
 });
 
 relationsRouter.post('/', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:create');
+  if (denied) return denied;
   const parsed = relationInputSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json(
@@ -62,6 +73,8 @@ relationsRouter.post('/', async (c) => {
 });
 
 relationsRouter.delete('/:id', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:delete');
+  if (denied) return denied;
   try {
     await buildService(c).deleteRelation(c.req.param('id'));
     return c.body(null, 204);

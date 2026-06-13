@@ -1,40 +1,123 @@
-# Lumibase AI System Instructions
+# LumiBase — AI System Instructions
+
+> For full machine-readable setup, read `docs/en/agent-setup/prompt.md`
+> For full API spec, read `docs/en/api/hono-api-spec.md`
 
 ## Project Identity
-Name: Lumibase
-Description: A Directus-inspired, Edge-native, Production-ready Headless CMS.
-Core Philosophy: Multi-tenant by default, edge-first caching, config-as-code, and 1-roundtrip page hydration.
+
+**Name:** LumiBase  
+**Type:** Content Operating System (Content OS) — Edge-native, AI-native headless CMS (Directus-inspired)
+**Philosophy:** Multi-tenant by default · Edge-first caching · Config-as-Code · Intent-driven & reconciled · Earned autonomy (HITL → veto-window → autopilot) for AI ops
 
 ## Tech Stack
-- Monorepo: Turborepo, pnpm.
-- Backend (CMS API): Hono.js, Cloudflare Workers.
-- Database: PostgreSQL (via Cloudflare Hyperdrive), Drizzle ORM.
-- Storage: Cloudflare R2.
-- Authentication: Logto (OIDC).
-- Email: Resend + React Email.
-- Frontend (Demo/Client): Next.js 14+ (App Router), TailwindCSS, Shadcn UI, CVA.
 
-## STRICT ARCHITECTURAL RULES (CRITICAL)
+**Monorepo:** Turborepo + pnpm  
+**Backend (apps/cms):** Hono.js · Cloudflare Workers (+ Node.js/Docker via runtime abstraction)  
+**Database:** PostgreSQL · Drizzle ORM · Cloudflare Hyperdrive (CF) or pg pool (Docker)  
+**Cache:** Cloudflare KV (CF) or Redis (Docker) — tag-based invalidation via `CacheProvider`  
+**Storage:** Cloudflare R2 (CF) or MinIO/S3 (Docker) via `StorageProvider`  
+**Auth:** Logto (OIDC/OAuth2, multi-tenant organizations)  
+**Queue:** Cloudflare Queues (CF) or BullMQ/Redis (Docker)  
+**Search:** MeiliSearch  
+**AI:** Gemini / OpenAI / Anthropic / Workers AI via `AISecureHarness`  
+**Frontend (apps/studio):** React + Vite + TailwindCSS + Shadcn UI + CVA  
+**Consumer (apps/consumer):** Next.js 15 App Router
+
+## STRICT ARCHITECTURAL RULES (NEVER violate)
 
 ### 1. Database & IDs
-- NEVER use Auto-increment/Serial IDs. 
-- MUST use `nanoid` (string, length 11-21) for all Primary Keys to prevent collision across environments.
-- ALL domain tables MUST include a `site_id` (nanoid) column for Multi-tenancy.
-- Use `JSONB` for dynamic fields, UI configurations, and AI Contexts.
+- **NEVER** use Auto-increment/Serial IDs anywhere
+- **MUST** use `nanoid()` (21 chars) for all domain Primary Keys
+- **MUST** use `uuidv7()` for audit/system tables (activity, revisions, ai_approvals)
+- **ALL** domain tables MUST include `site_id TEXT NOT NULL` for multi-tenancy
+- Use `JSONB` for dynamic fields, UI configs, AI Contexts, permission rules
 
-### 2. Multi-tenancy & Permissions
-- All Database queries MUST be scoped by `site_id` (Row-Level Security concept applied at the ORM/Query level).
-- Permissions are defined as Config-as-Code. Do not rely solely on DB rows for core system roles.
+### 2. Multi-tenancy & RLS
+- **EVERY** DB query MUST be scoped by `site_id`
+- Use `and(eq(table.siteId, siteId), ...)` pattern always
+- Helper: `scopeSite(siteId)` from `@lumibase/database`
+- Never expose cross-tenant data — RLS is enforced at ORM level, not DB level
 
-### 3. API Design (The 1-Roundtrip Rule)
-- For frontend rendering, prioritize the Hydration Pattern.
-- Endpoint `/api/v1/deliver/page/:slug` MUST return aggregated JSON containing BOTH Page Layout Config AND populated Collection Data.
-- Standardize response formats.
+### 3. Runtime Abstraction (CRITICAL for CF ↔ Docker)
+- Business logic MUST NEVER import CF bindings directly (`KVNamespace`, `R2Bucket`, `DurableObjectNamespace`)
+- Always access infra via `c.get('runtime').cache`, `c.get('runtime').storage`, etc.
+- Runtime injected by `withRuntime()` middleware from `packages/runtime`
+- This ensures same code runs on CF Workers AND Docker Node.js
 
-### 4. Caching & Edge
-- Use Cloudflare KV for caching Configurations and Permissions.
-- Implement Tag-based cache invalidation. When an item updates, emit a webhook to invalidate Next.js tags (`revalidateTag`).
+### 4. API Design
+- All responses: `{ data: T, meta?: PaginationMeta }` or `{ errors: [...] }`
+- 1-roundtrip rule: `/api/v1/deliver/page/:slug` returns layout + data in one payload
+- Middleware order: `logger → metrics → runtime → cors → tenant → auth → db → rls`
+- Route handlers must be thin — delegate business logic to services
 
-### 5. Frontend & UI
-- Parse CMS HTML content using `html-react-parser`. Always replace `<a>` with Next.js `<Link>` and `<img>` with Next.js `<Image>`.
-- Use `class-variance-authority` (cva) and `tailwind-merge` to handle UI configurations sent from the CMS. Do NOT generate raw arbitrary Tailwind classes from the backend unless injected as CSS variables.
+### 5. Caching (Tag-based)
+- Use `CacheProvider.set(key, value, { tags: ['schema:siteId', 'item:siteId:collection:id'] })`
+- Invalidate with `CacheProvider.invalidateByTag('schema:siteId')` — NOT by key enumeration
+- Schema cache TTL: 60s | Permission cache TTL: 300s | Settings cache TTL: 60s
+
+### 6. AI Safety (HITL mandatory)
+- Any AI skill with `requiredCapabilities.includes('schema:write')` → pending_approval
+- Any AI skill name starting with `delete` → pending_approval
+- `AISecureHarness.evaluateRisk()` in `apps/cms/src/services/ai-harness.ts` enforces this
+- All approvals stored in `ai_approvals` table with full audit trail
+
+### 7. TypeScript
+- Strict mode: `"strict": true`, `"noImplicitAny": true`
+- Always `import type` for type-only imports
+- No `any` — use `unknown` + type guards
+- Zod schemas for all API inputs (from `packages/shared/src/schemas/`)
+- Names: variables/functions=camelCase, classes/types=PascalCase, constants=UPPER_SNAKE, files=kebab-case, db columns=snake_case
+
+### 8. Frontend (apps/studio, apps/consumer)
+- Parse CMS HTML via `html-react-parser` — replace `<a>` with `<Link>`, `<img>` with `<Image>`
+- Use `class-variance-authority` (cva) + `tailwind-merge` for UI config from CMS
+- No arbitrary Tailwind classes from backend — use CSS variables instead
+- TanStack Query for server state; React state for local UI state
+
+## Key File Reference
+
+| What | Where |
+|------|-------|
+| DB schema | `packages/database/src/schema/` |
+| Zod schemas | `packages/shared/src/schemas/` |
+| Middleware chain | `apps/cms/src/index.ts` |
+| Route handlers | `apps/cms/src/routes/` |
+| Services | `apps/cms/src/services/` |
+| AI skills registry | `packages/ai-skills/src/skills.ts` |
+| HITL harness | `apps/cms/src/services/ai-harness.ts` |
+| Runtime factory | `packages/runtime/src/factory.ts` |
+| Permission DSL | `apps/cms/src/services/permission-dsl.ts` |
+| API spec | `docs/en/api/hono-api-spec.md` |
+| ADRs | `docs/en/architecture/decisions/` |
+
+## Common Code Patterns
+
+### New route handler
+```typescript
+router.post('/', zValidator('json', CreateSchema), async (c) => {
+  const siteId = c.get('siteId')
+  const body = c.req.valid('json')
+  const result = await myService.create(c, siteId, body)
+  return c.json({ data: result }, 201)
+})
+```
+
+### New DB table
+```typescript
+export const myTable = pgTable('my_table', {
+  id:        text('id').primaryKey(),         // nanoid()
+  siteId:    text('site_id').notNull(),       // REQUIRED
+  name:      text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+```
+
+### Cache write with tags
+```typescript
+const runtime = c.get('runtime')
+await runtime.cache.set(`schema:${siteId}`, JSON.stringify(schema), {
+  tags: [`schema:${siteId}`],
+  ttl: 60,
+})
+```

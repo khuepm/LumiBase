@@ -1,15 +1,17 @@
 import {
   activity,
   collections,
+  contentIntents,
   extensions as extensionsTable,
   items,
+  relations,
   revisions,
   scopeSite,
   materializedCollections,
   type Database,
 } from '@lumibase/database';
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
-import { and, asc, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
 import { validateItem } from './validation';
 import type { CacheProvider, SearchProvider, QueueProvider } from '@lumibase/runtime';
@@ -20,6 +22,9 @@ import { CryptoService } from './crypto-service';
 import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
 import { AuditLogger } from '../modules/audit/logger';
+import { WriteCoalescer } from './load-guard-service';
+import type { PrimaryKeyType, StorageMode } from './schema-service';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
  * ItemService — generic CRUD over the `items` JSONB store, driven by the
@@ -30,6 +35,7 @@ import { AuditLogger } from '../modules/audit/logger';
 
 export interface ListItemsParams {
   fields?: string[];
+  deep?: DeepQuery;
   filter?: ItemFilter;
   sort?: string[];
   limit?: number;
@@ -77,11 +83,47 @@ export interface ItemRow {
   deletedAt: Date | null;
 }
 
+export interface DeepRelationOptions {
+  fields?: string[];
+  limit?: number;
+}
+
+export type DeepQuery = Record<string, DeepRelationOptions>;
+
 export class ItemServiceError extends Error {
   constructor(public code: string, message: string, public status = 400) {
     super(message);
     this.name = 'ItemServiceError';
   }
+}
+
+interface PrimaryKeyStrategyInput {
+  field?: string | null;
+  type?: string | null;
+  storageMode?: string | null;
+}
+
+export interface PrimaryKeyResolution {
+  field: string;
+  type: PrimaryKeyType;
+  storageMode: StorageMode;
+  id: string | undefined;
+}
+
+/**
+ * Provenance carried onto every revision written by this service instance.
+ * Human callers omit it (defaults to authorType 'human'); the AI harness
+ * sets an agent provenance with the executing run id before invoking skills.
+ */
+export interface ItemProvenance {
+  authorType: 'human' | 'agent';
+  runId?: string | null;
+  model?: string | null;
+  constitutionHash?: string | null;
+  /** Source references (URLs, item ids, memory ids) used by the agent. */
+  sources?: unknown[] | null;
+  /** Agent self-reported confidence in [0, 1]. */
+  confidence?: number | null;
 }
 
 export interface ItemServiceDeps {
@@ -111,6 +153,8 @@ export interface ItemServiceDeps {
   extensionEnv?: Record<string, unknown>;
   /** Internal guard for actor-scoped extension item access to avoid recursive hooks. */
   suppressExtensionHooks?: boolean;
+  /** Revision provenance; defaults to `{ authorType: 'human' }` when omitted. */
+  provenance?: ItemProvenance;
 }
 
 const STRUCTURAL_FIELDS = new Set([
@@ -124,6 +168,8 @@ const STRUCTURAL_FIELDS = new Set([
 ]);
 
 const WRITABLE_STRUCTURAL_FIELDS = ['status', 'sort'] as const;
+
+type RelationMetadata = typeof relations.$inferSelect;
 
 /** Reserved data keys that map to structural columns rather than JSONB. */
 function fieldExpression(name: string): SQL {
@@ -235,8 +281,11 @@ export class ItemService {
   private readonly permissions: PermissionService | null;
   private readonly cryptoService: CryptoService | null;
   private hookDispatcher: HookDispatcher | null = null;
+  private provenance: ItemProvenance;
+  private writeCoalescer: WriteCoalescer | null = null;
 
   constructor(private readonly deps: ItemServiceDeps) {
+    this.provenance = deps.provenance ?? { authorType: 'human' };
     this.schemaService = new SchemaService({
       db: deps.db,
       siteId: deps.siteId,
@@ -246,6 +295,15 @@ export class ItemService {
       ? new PermissionService({ db: deps.db, cache: deps.cache, ctx: deps.permissionCtx })
       : null;
     this.cryptoService = deps.encryptionKey ? new CryptoService(deps.encryptionKey) : null;
+  }
+
+  /**
+   * Overrides revision provenance for subsequent writes. Called by the AI
+   * harness once the executing run is known (the run is created after this
+   * service instance is constructed).
+   */
+  setProvenance(provenance: ItemProvenance): void {
+    this.provenance = provenance;
   }
 
   /** Resolve permission for the active principal; returns null when denied. */
@@ -270,7 +328,13 @@ export class ItemService {
       const rows = await this.deps.db
         .select()
         .from(extensionsTable)
-        .where(and(eq(extensionsTable.siteId, this.deps.siteId), eq(extensionsTable.enabled, true)));
+        .where(
+          and(
+            eq(extensionsTable.siteId, this.deps.siteId),
+            eq(extensionsTable.enabled, true),
+            eq(extensionsTable.type, 'hook'),
+          ),
+        );
       const sandbox = new ExtensionSandbox(
         this.deps.extensionEnv as never,
         this.deps.db,
@@ -366,11 +430,15 @@ export class ItemService {
       ? rows.map((r) => this.permissions!.maskItem(perm, r as ItemRow, knownFields))
       : rows;
 
-    const data = [];
+    const decrypted: ItemRow[] = [];
     for (const r of masked) {
       r.data = await this.processCrypto(collectionName, r.data as Record<string, unknown>, 'decrypt', false);
-      data.push(params.fields ? projectFields(r as ItemRow, params.fields) : r);
+      decrypted.push(r as ItemRow);
     }
+    const expanded = params.fields || params.deep
+      ? await this.expandRelationFields(collectionName, decrypted, params.fields ?? [], params.deep)
+      : decrypted;
+    const data = expanded.map((r) => (params.fields ? projectFields(r, params.fields) : r));
 
     return {
       data,
@@ -378,7 +446,7 @@ export class ItemService {
     };
   }
 
-  async detail(collectionName: string, id: string, fields?: string[]) {
+  async detail(collectionName: string, id: string, fields?: string[], deep?: DeepQuery) {
     const perm = await this.perm(collectionName, 'read');
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
     const coll = await this.resolveCollection(collectionName);
@@ -399,11 +467,18 @@ export class ItemService {
     const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
     const masked = perm && this.permissions ? this.permissions.maskItem(perm, row as ItemRow, knownFields) : row;
     masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', false);
-    return fields ? projectFields(masked as ItemRow, fields) : masked;
+    if (!fields && !deep) return masked;
+    const [expanded] = await this.expandRelationFields(collectionName, [masked as ItemRow], fields ?? [], deep);
+    return fields ? projectFields(expanded ?? masked as ItemRow, fields) : expanded ?? masked;
   }
 
   async create(collectionName: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) {
     const coll = await this.resolveCollection(collectionName);
+    const primaryKey = resolvePrimaryKey({
+      field: coll.primaryKeyField,
+      type: coll.primaryKeyType,
+      storageMode: coll.storageMode,
+    }, payload.data ?? {});
     const perm = await this.perm(collectionName, 'create');
     const knownFields = await this.getKnownWritableFields(collectionName);
     assertWritablePermissionFields(perm, knownFields, payload.data ?? {}, {
@@ -447,9 +522,13 @@ export class ItemService {
     }
     this.assertPermissionValidation(perm, finalCreateSnapshot);
     const encryptedData = await this.processCrypto(collectionName, data, 'encrypt', true);
+    if (primaryKey.id) {
+      await this.assertItemIdAvailable(coll.id, primaryKey.id);
+    }
     const [row] = await this.deps.db
       .insert(items)
       .values({
+        ...(primaryKey.id ? { id: primaryKey.id } : {}),
         siteId: this.deps.siteId,
         collectionId: coll.id,
         data: encryptedData,
@@ -467,7 +546,7 @@ export class ItemService {
     await this.publishRealtimeEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
-    await this.triggerMaterializeRefresh(collectionName);
+    await this.afterWriteInvalidation(collectionName);
     return row;
   }
 
@@ -495,6 +574,25 @@ export class ItemService {
       )
       .limit(1);
     if (!rawRow) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+
+    // Law Zero: agents never overwrite fields a human pinned.
+    const pinnedFields = Array.isArray(rawRow.pinnedFields)
+      ? (rawRow.pinnedFields as string[])
+      : [];
+    if (patch.data) {
+      const blocked = blockedPinnedFields(
+        pinnedFields,
+        Object.keys(patch.data),
+        this.provenance.authorType,
+      );
+      if (blocked.length > 0) {
+        throw new ItemServiceError(
+          'PINNED_BY_HUMAN',
+          `Field(s) pinned by a human edit: ${blocked.join(', ')}. Release the pin to allow agent writes.`,
+          403,
+        );
+      }
+    }
 
     const currentData = await this.processCrypto(collectionName, rawRow.data as Record<string, unknown>, 'decrypt', true);
 
@@ -534,12 +632,24 @@ export class ItemService {
     }));
     const encryptedFinal = await this.processCrypto(collectionName, finalData, 'encrypt', true);
 
+    // Law Zero: human edits on intent-governed collections pin the fields
+    // they touched so the reconciler never argues with a person.
+    const nextPinned = patch.data
+      ? computeNextPinnedFields(
+          pinnedFields,
+          Object.keys(patch.data),
+          this.provenance.authorType,
+          await this.isIntentGoverned(coll.name),
+        )
+      : pinnedFields;
+
     const [row] = await this.deps.db
       .update(items)
       .set({
         data: encryptedFinal,
         status: finalStatus,
         sort: finalSort,
+        pinnedFields: nextPinned,
         userUpdated: this.deps.userId ?? null,
         updatedAt: new Date(),
       })
@@ -558,13 +668,17 @@ export class ItemService {
 
     await this.writeRevision(coll.id, id, encryptedFinal, rawRow.data as Record<string, unknown>);
     await this.writeActivity('update', coll.name, id, { patch });
+    const addedPins = nextPinned.filter((field) => !pinnedFields.includes(field));
+    if (addedPins.length > 0) {
+      await this.writeActivity('pin', coll.name, id, { fields: addedPins });
+    }
     
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', false);
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
-    await this.triggerMaterializeRefresh(collectionName);
+    await this.afterWriteInvalidation(collectionName);
     return row;
   }
 
@@ -638,7 +752,7 @@ export class ItemService {
     await this.publishRealtimeEvent(collectionName, 'delete', id, {});
     // After hook — fire-and-forget.
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
-    await this.triggerMaterializeRefresh(collectionName);
+    await this.afterWriteInvalidation(collectionName);
     return { ok: true } as const;
   }
 
@@ -703,6 +817,211 @@ export class ItemService {
     return [...dataFields, ...WRITABLE_STRUCTURAL_FIELDS];
   }
 
+  private async expandRelationFields(
+    collectionName: string,
+    rows: ItemRow[],
+    fields: string[],
+    deep?: DeepQuery,
+  ): Promise<ItemRow[]> {
+    const selections = parseRelationFieldSelections(fields, deep);
+    if (rows.length === 0 || selections.length === 0) return rows;
+    const relationRows = await this.deps.db
+      .select()
+      .from(relations)
+      .where(
+        and(
+          scopeSite(relations.siteId, this.deps.siteId),
+          sql`(${relations.manyCollection} = ${collectionName} or ${relations.oneCollection} = ${collectionName})`,
+        ),
+      );
+
+    for (const rel of relationRows) {
+      const alias = relationAlias(rel);
+      const selected = selections.find((selection) => selection.alias === alias);
+      if (!selected) continue;
+      if (rel.type === 'm2o' && rel.manyCollection === collectionName) {
+        await this.expandManyToOne(rows, rel, selected);
+        continue;
+      }
+      if (rel.type === 'o2m' && rel.oneCollection === collectionName) {
+        await this.expandOneToMany(rows, rel, selected);
+        continue;
+      }
+      if (rel.type === 'm2m' && rel.manyCollection === collectionName) {
+        await this.expandManyToMany(rows, rel, selected);
+      }
+    }
+    return rows;
+  }
+
+  private async expandManyToOne(
+    rows: ItemRow[],
+    rel: RelationMetadata,
+    selected: RelationFieldSelection,
+  ): Promise<void> {
+    const alias = relationAlias(rel);
+    const foreignIds = uniqueStrings(rows.map((row) => row.data?.[rel.manyField]));
+    if (foreignIds.length === 0) {
+      assignRelation(rows, alias, () => null);
+      return;
+    }
+    const byId = await this.loadRelatedByIds(rel.oneCollection, foreignIds, selected.fields);
+    assignRelation(rows, alias, (row) => {
+      const foreignId = row.data?.[rel.manyField];
+      return typeof foreignId === 'string' ? byId.get(foreignId) ?? null : null;
+    });
+  }
+
+  private async expandOneToMany(
+    rows: ItemRow[],
+    rel: RelationMetadata,
+    selected: RelationFieldSelection,
+  ): Promise<void> {
+    const alias = relationAlias(rel);
+    const parentIds = uniqueStrings(rows.map((row) => row.id));
+    if (parentIds.length === 0) {
+      assignRelation(rows, alias, () => []);
+      return;
+    }
+    const relatedCollection = await this.resolveCollection(rel.manyCollection);
+    const relatedPerm = await this.perm(rel.manyCollection, 'read');
+    const relatedRows = await this.loadRowsByJsonField(
+      relatedCollection.id,
+      rel.manyField,
+      parentIds,
+      this.permissions?.whereFor(relatedPerm) ?? undefined,
+    );
+    const projected = await this.projectRelatedRows(rel.manyCollection, relatedRows, relatedPerm, selected.fields);
+    const byParent = new Map<string, Record<string, unknown>[]>();
+    for (const related of relatedRows) {
+      const parentId = related.data?.[rel.manyField];
+      if (typeof parentId !== 'string') continue;
+      const list = byParent.get(parentId) ?? [];
+      const projection = projected.get(related.id);
+      if (projection) list.push(projection);
+      byParent.set(parentId, list);
+    }
+    assignRelation(rows, alias, (row) => limitArray(byParent.get(row.id) ?? [], selected.limit));
+  }
+
+  private async expandManyToMany(
+    rows: ItemRow[],
+    rel: RelationMetadata,
+    selected: RelationFieldSelection,
+  ): Promise<void> {
+    const alias = relationAlias(rel);
+    if (!rel.junctionCollection || !rel.junctionManyField || !rel.junctionOneField) {
+      assignRelation(rows, alias, () => []);
+      return;
+    }
+    const sourceIds = uniqueStrings(rows.map((row) => row.id));
+    if (sourceIds.length === 0) {
+      assignRelation(rows, alias, () => []);
+      return;
+    }
+    const junctionCollection = await this.resolveCollection(rel.junctionCollection);
+    const junctionRows = await this.loadRowsByJsonField(
+      junctionCollection.id,
+      rel.junctionManyField,
+      sourceIds,
+    );
+    const targetIds = uniqueStrings(junctionRows.map((row) => row.data?.[rel.junctionOneField!]));
+    const targetById = targetIds.length > 0
+      ? await this.loadRelatedByIds(rel.oneCollection, targetIds, selected.fields)
+      : new Map<string, Record<string, unknown>>();
+    const bySource = new Map<string, Record<string, unknown>[]>();
+    for (const junction of junctionRows) {
+      const sourceId = junction.data?.[rel.junctionManyField];
+      const targetId = junction.data?.[rel.junctionOneField];
+      if (typeof sourceId !== 'string' || typeof targetId !== 'string') continue;
+      const target = targetById.get(targetId);
+      if (!target) continue;
+      const list = bySource.get(sourceId) ?? [];
+      list.push(target);
+      bySource.set(sourceId, list);
+    }
+    assignRelation(rows, alias, (row) => limitArray(bySource.get(row.id) ?? [], selected.limit));
+  }
+
+  private async loadRowsByJsonField(
+    collectionId: string,
+    field: string,
+    values: string[],
+    permissionClause?: SQL,
+  ): Promise<ItemRow[]> {
+    if (values.length === 0) return [];
+    return (await this.deps.db
+      .select()
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, collectionId),
+          inArray(sql`${items.data}->>${field}`, values),
+          isNull(items.deletedAt),
+          permissionClause,
+        ),
+      )) as ItemRow[];
+  }
+
+  private async loadRelatedByIds(
+    collectionName: string,
+    ids: string[],
+    fields: string[],
+  ): Promise<Map<string, Record<string, unknown>>> {
+    const relatedCollection = await this.resolveCollection(collectionName);
+    const relatedPerm = await this.perm(collectionName, 'read');
+    const relatedPermClause = this.permissions?.whereFor(relatedPerm) ?? undefined;
+    const relatedRows = await this.deps.db
+      .select()
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, relatedCollection.id),
+          inArray(items.id, ids),
+          isNull(items.deletedAt),
+          relatedPermClause,
+        ),
+      );
+    return this.projectRelatedRows(collectionName, relatedRows as ItemRow[], relatedPerm, fields);
+  }
+
+  private async projectRelatedRows(
+    collectionName: string,
+    rows: ItemRow[],
+    perm: CompiledPermission | null,
+    fields: string[],
+  ): Promise<Map<string, Record<string, unknown>>> {
+    const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
+    const byId = new Map<string, Record<string, unknown>>();
+    for (const row of rows) {
+      const masked = perm && this.permissions
+        ? this.permissions.maskItem(perm, row, knownFields)
+        : row;
+      masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', false);
+      byId.set(masked.id, projectRelatedRow(masked, fields));
+    }
+    return byId;
+  }
+
+  private async assertItemIdAvailable(collectionId: string, id: string): Promise<void> {
+    const [existing] = await this.deps.db
+      .select({ id: items.id })
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, collectionId),
+          eq(items.id, id),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      assertPrimaryKeyAvailable(id, true);
+    }
+  }
+
   private assertPermissionValidation(
     perm: CompiledPermission | null,
     snapshot: Record<string, unknown>,
@@ -731,7 +1050,7 @@ export class ItemService {
       }
     } catch (err) {
       // Search indexing is non-critical — log and continue.
-      console.error('[item-service] search index failed', { collectionName, id, err });
+      console.error('[item-service] search index failed', { collectionName, id, err: formatSafeError(err) });
     }
   }
 
@@ -753,7 +1072,7 @@ export class ItemService {
       }
     } catch (err) {
       // Search de-indexing is non-critical — log and continue.
-      console.error('[item-service] search deindex failed', { collectionName, id, err });
+      console.error('[item-service] search deindex failed', { collectionName, id, err: formatSafeError(err) });
     }
   }
 
@@ -790,7 +1109,7 @@ export class ItemService {
       );
     } catch (err) {
       // Realtime fan-out is non-critical — log and continue.
-      console.error('[item-service] realtime publish failed', { collection, itemId, err });
+      console.error('[item-service] realtime publish failed', { collection, itemId, err: formatSafeError(err) });
     }
   }
 
@@ -835,6 +1154,38 @@ export class ItemService {
     return out;
   }
 
+  /**
+   * Starts a write-coalescing window (Load Guard, Req 9.1). While active,
+   * per-write invalidation work (materialized-view refresh) is deferred and
+   * deduplicated per collection; `flushCoalescedWrites` runs it once per
+   * collection at the tool-call boundary. The harness wraps every skill
+   * handler in a window so a batch of N writes to one collection costs one
+   * refresh instead of N.
+   */
+  beginWriteCoalescing(): void {
+    this.writeCoalescer = new WriteCoalescer();
+  }
+
+  /** Flushes deferred invalidations; returns the refreshed collections. */
+  async flushCoalescedWrites(): Promise<string[]> {
+    if (!this.writeCoalescer) return [];
+    const collections = this.writeCoalescer.flush();
+    this.writeCoalescer = null;
+    for (const collection of collections) {
+      await this.triggerMaterializeRefresh(collection);
+    }
+    return collections;
+  }
+
+  /** Per-write invalidation: immediate normally, deferred while coalescing. */
+  private async afterWriteInvalidation(collectionName: string): Promise<void> {
+    if (this.writeCoalescer) {
+      this.writeCoalescer.record(collectionName);
+      return;
+    }
+    await this.triggerMaterializeRefresh(collectionName);
+  }
+
   private async triggerMaterializeRefresh(collectionName: string): Promise<void> {
     try {
       const mcs = await this.deps.db
@@ -865,8 +1216,76 @@ export class ItemService {
         }
       }
     } catch (err) {
-      console.error('[item-service] materialize trigger failed', { collectionName, err });
+      console.error('[item-service] materialize trigger failed', { collectionName, err: formatSafeError(err) });
     }
+  }
+
+  /** True when an active content intent governs this collection (Law Zero). */
+  private async isIntentGoverned(collectionName: string): Promise<boolean> {
+    try {
+      const [intent] = await this.deps.db
+        .select({ id: contentIntents.id })
+        .from(contentIntents)
+        .where(
+          and(
+            eq(contentIntents.siteId, this.deps.siteId),
+            eq(contentIntents.collection, collectionName),
+            eq(contentIntents.status, 'active'),
+          ),
+        )
+        .limit(1);
+      return Boolean(intent);
+    } catch {
+      // Intent lookup must never block a human write.
+      return false;
+    }
+  }
+
+  /** Lists pinned fields for an item. */
+  async listPins(collectionName: string, id: string): Promise<{ pinnedFields: string[] }> {
+    const coll = await this.resolveCollection(collectionName);
+    await this.perm(collectionName, 'read');
+    const [row] = await this.deps.db
+      .select({ pinnedFields: items.pinnedFields })
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          eq(items.id, id),
+          isNull(items.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+    return { pinnedFields: Array.isArray(row.pinnedFields) ? (row.pinnedFields as string[]) : [] };
+  }
+
+  /**
+   * Releases a human pin, handing the field back to agents. Audited with
+   * the releasing actor (Req 8.4).
+   */
+  async releasePin(collectionName: string, id: string, field: string): Promise<{ pinnedFields: string[] }> {
+    const coll = await this.resolveCollection(collectionName);
+    await this.perm(collectionName, 'update');
+    const { pinnedFields } = await this.listPins(collectionName, id);
+    if (!pinnedFields.includes(field)) {
+      throw new ItemServiceError('NOT_PINNED', `Field "${field}" is not pinned.`, 404);
+    }
+    const next = pinnedFields.filter((f) => f !== field);
+    await this.deps.db
+      .update(items)
+      .set({ pinnedFields: next, updatedAt: new Date() })
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          eq(items.id, id),
+          isNull(items.deletedAt),
+        ),
+      );
+    await this.writeActivity('pin.release', coll.name, id, { field });
+    return { pinnedFields: next };
   }
 
   private async writeRevision(
@@ -881,6 +1300,12 @@ export class ItemService {
       itemId,
       delta: { before, after },
       userId: this.deps.userId ?? null,
+      authorType: this.provenance.authorType,
+      createdByRunId: this.provenance.runId ?? null,
+      model: this.provenance.model ?? null,
+      constitutionHash: this.provenance.constitutionHash ?? null,
+      sources: this.provenance.sources ?? null,
+      confidence: this.provenance.confidence ?? null,
     });
   }
 
@@ -899,6 +1324,36 @@ export class ItemService {
       payload,
     });
   }
+}
+
+/**
+ * Law Zero (override-is-law) helpers. Pure functions so pin semantics can be
+ * property-tested in isolation.
+ */
+
+/** Returns the patched fields that are blocked for agents by a human pin. */
+export function blockedPinnedFields(
+  pinnedFields: readonly string[],
+  patchKeys: readonly string[],
+  authorType: 'human' | 'agent',
+): string[] {
+  if (authorType !== 'agent') return [];
+  const pinned = new Set(pinnedFields);
+  return patchKeys.filter((key) => pinned.has(key));
+}
+
+/**
+ * Computes the next pin set after a write. Human edits on intent-governed
+ * collections pin the touched fields; agent writes never alter pins.
+ */
+export function computeNextPinnedFields(
+  pinnedFields: readonly string[],
+  patchKeys: readonly string[],
+  authorType: 'human' | 'agent',
+  intentGoverned: boolean,
+): string[] {
+  if (authorType !== 'human' || !intentGoverned) return [...pinnedFields];
+  return [...new Set([...pinnedFields, ...patchKeys])];
 }
 
 export function assertWritablePermissionFields(
@@ -924,6 +1379,81 @@ export function assertWritablePermissionFields(
       403,
     );
   }
+}
+
+export function resolvePrimaryKey(
+  strategy: PrimaryKeyStrategyInput,
+  input: Record<string, unknown>,
+): PrimaryKeyResolution {
+  const field = strategy.field || 'id';
+  const type = normalizePrimaryKeyType(strategy.type);
+  const storageMode = normalizeStorageMode(strategy.storageMode);
+
+  if (storageMode === 'jsonb' && (type === 'integer' || type === 'bigInteger')) {
+    throw new ItemServiceError(
+      'UNSUPPORTED_PRIMARY_KEY',
+      `${type} primary keys require materialized or physical storage mode.`,
+      400,
+    );
+  }
+
+  if (type === 'uuid') {
+    return { field, type, storageMode, id: generateUuid() };
+  }
+
+  if (type === 'string') {
+    const candidate = input[field] ?? input.id;
+    if (typeof candidate !== 'string' || candidate.trim().length === 0) {
+      throw new ItemServiceError(
+        'PRIMARY_KEY_REQUIRED',
+        `String primary key requires "${field}" in the item data.`,
+        400,
+      );
+    }
+    return { field, type, storageMode, id: candidate };
+  }
+
+  return { field, type, storageMode, id: undefined };
+}
+
+export function assertPrimaryKeyAvailable(id: string, exists: boolean): void {
+  if (!exists) return;
+  throw new ItemServiceError('ITEM_ID_EXISTS', `Item "${id}" already exists.`, 409);
+}
+
+function normalizePrimaryKeyType(value: string | null | undefined): PrimaryKeyType {
+  switch (value) {
+    case 'uuid':
+    case 'integer':
+    case 'bigInteger':
+    case 'string':
+    case 'nanoid':
+      return value;
+    default:
+      return 'nanoid';
+  }
+}
+
+function normalizeStorageMode(value: string | null | undefined): StorageMode {
+  switch (value) {
+    case 'materialized':
+    case 'physical':
+    case 'external':
+    case 'jsonb':
+      return value;
+    default:
+      return 'jsonb';
+  }
+}
+
+function generateUuid(): string {
+  const runtimeCrypto = (globalThis as {
+    crypto?: { randomUUID?: () => `${string}-${string}-${string}-${string}-${string}` };
+  }).crypto;
+  if (!runtimeCrypto?.randomUUID) {
+    throw new ItemServiceError('UNSUPPORTED_PRIMARY_KEY', 'UUID generation requires Web Crypto randomUUID support.', 500);
+  }
+  return runtimeCrypto.randomUUID();
 }
 
 export function buildPermissionSnapshot(input: {
@@ -966,10 +1496,95 @@ function redactSql(statement: string): string {
     .slice(0, 500);
 }
 
-function projectFields(row: ItemRow, fields: string[]): Record<string, unknown> {
+export interface RelationFieldSelection {
+  alias: string;
+  fields: string[];
+  limit?: number;
+}
+
+export function parseRelationFieldSelections(fields: string[], deep: DeepQuery = {}): RelationFieldSelection[] {
+  const byAlias = new Map<string, Set<string>>();
+  const limits = new Map<string, number>();
+  for (const token of fields) {
+    const [alias, ...path] = token.split('.');
+    if (!alias || path.length === 0) continue;
+    const field = path.join('.');
+    if (!field) continue;
+    const selected = byAlias.get(alias) ?? new Set<string>();
+    selected.add(field);
+    byAlias.set(alias, selected);
+  }
+  for (const [alias, options] of Object.entries(deep)) {
+    if (!alias) continue;
+    const selected = byAlias.get(alias) ?? new Set<string>();
+    const deepFields = options.fields?.length ? options.fields : ['*'];
+    for (const field of deepFields) {
+      if (field) selected.add(field);
+    }
+    byAlias.set(alias, selected);
+    if (typeof options.limit === 'number') limits.set(alias, options.limit);
+  }
+  return [...byAlias.entries()].map(([alias, selected]) => ({
+    alias,
+    fields: [...selected],
+    ...(limits.has(alias) ? { limit: limits.get(alias) } : {}),
+  }));
+}
+
+export function relationAlias(rel: {
+  aliasField?: string | null;
+  manyField: string;
+  manyCollection?: string;
+  oneCollection: string;
+  type?: string | null;
+}): string {
+  if (rel.aliasField) return rel.aliasField;
+  if (rel.type === 'o2m') return rel.manyCollection ?? rel.manyField;
+  if (rel.type === 'm2m') return rel.oneCollection;
+  return rel.manyField.endsWith('_id') ? rel.manyField.slice(0, -3) : rel.oneCollection;
+}
+
+export function parseDeepQueryParams(searchParams: URLSearchParams): DeepQuery | undefined {
+  const deep: DeepQuery = {};
+  for (const [key, value] of searchParams.entries()) {
+    const match = /^deep\[([^\]]+)\]\[([^\]]+)\]$/.exec(key);
+    if (!match) continue;
+    const [, alias, option] = match;
+    if (!alias || !option) continue;
+    const current = deep[alias] ?? {};
+    if (option === 'fields') {
+      current.fields = value.split(',').map((field) => field.trim()).filter(Boolean);
+    } else if (option === 'limit') {
+      const limit = Number.parseInt(value, 10);
+      if (Number.isFinite(limit) && limit >= 0) current.limit = limit;
+    }
+    deep[alias] = current;
+  }
+  return Object.keys(deep).length > 0 ? deep : undefined;
+}
+
+export function projectRelatedRow(row: ItemRow, fields: string[]): Record<string, unknown> {
+  if (fields.includes('*')) {
+    return {
+      id: row.id,
+      status: row.status,
+      sort: row.sort,
+      user_created: row.userCreated,
+      user_updated: row.userUpdated,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt,
+      ...(row.data ?? {}),
+    };
+  }
+  return projectFields(row, fields);
+}
+
+export function projectFields(row: ItemRow, fields: string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const f of fields) {
-    if (STRUCTURAL_FIELDS.has(f)) {
+    if (f.includes('.')) {
+      assignNestedProjection(out, row.data ?? {}, f);
+    } else if (STRUCTURAL_FIELDS.has(f)) {
       const map: Record<string, unknown> = {
         id: row.id,
         status: row.status,
@@ -985,4 +1600,67 @@ function projectFields(row: ItemRow, fields: string[]): Record<string, unknown> 
     }
   }
   return out;
+}
+
+function assignNestedProjection(out: Record<string, unknown>, source: Record<string, unknown>, token: string): void {
+  const [alias, ...pathParts] = token.split('.');
+  if (!alias || pathParts.length === 0) return;
+  const value = source[alias];
+  const path = pathParts.join('.');
+  if (path === '*') {
+    out[alias] = value;
+    return;
+  }
+  if (Array.isArray(value)) {
+    const previous = Array.isArray(out[alias]) ? out[alias] as unknown[] : [];
+    out[alias] = value.map((item, index) => ({
+      ...(isPlainRecord(previous[index]) ? previous[index] : {}),
+      ...(isPlainRecord(item) ? pickNestedValue(item, path) as Record<string, unknown> : {}),
+    }));
+    return;
+  }
+  if (!isPlainRecord(value)) {
+    out[alias] = value == null ? value : {};
+    return;
+  }
+  out[alias] = {
+    ...(isPlainRecord(out[alias]) ? out[alias] : {}),
+    ...(pickNestedValue(value, path) as Record<string, unknown>),
+  };
+}
+
+function pickNestedValue(value: unknown, path: string): unknown {
+  if (!isPlainRecord(value)) return value;
+  const [head, ...tail] = path.split('.');
+  if (!head) return {};
+  if (tail.length === 0) return { [head]: value[head] };
+  const nested = pickNestedValue(value[head], tail.join('.'));
+  return { [head]: nested };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function uniqueStrings(values: unknown[]): string[] {
+  return [
+    ...new Set(values.filter((value): value is string => typeof value === 'string' && value.length > 0)),
+  ];
+}
+
+function assignRelation(
+  rows: ItemRow[],
+  alias: string,
+  resolve: (row: ItemRow) => unknown,
+): void {
+  for (const row of rows) {
+    row.data = {
+      ...(row.data ?? {}),
+      [alias]: resolve(row),
+    };
+  }
+}
+
+function limitArray<T>(values: T[], limit: number | undefined): T[] {
+  return typeof limit === 'number' ? values.slice(0, limit) : values;
 }

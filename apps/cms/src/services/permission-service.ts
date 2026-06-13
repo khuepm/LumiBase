@@ -53,7 +53,12 @@ export type PermissionAction =
   | 'install'
   | 'enable'
   | 'grant_capability'
-  | 'execute';
+  | 'execute'
+  | 'schema:read'
+  | 'schema:create'
+  | 'schema:update'
+  | 'schema:delete'
+  | 'schema:migrate';
 
 export interface CompiledPermission {
   collection: string;

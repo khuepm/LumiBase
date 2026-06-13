@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { RevisionRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { ProvenanceBadge, ProvenancePanel } from './provenance-badge';
 import { RevisionsDiff } from './revisions-diff';
 
 interface RevisionsPanelProps {
@@ -78,8 +79,9 @@ export function RevisionsPanel({ collection, itemId, onRevert }: RevisionsPanelP
                   {new Date(rev.createdAt).toLocaleString()}
                 </span>
               </div>
-              <div className="mt-0.5 text-[10px] text-muted-foreground">
-                by {rev.userId ? rev.userId.slice(0, 8) + '…' : 'system'}
+              <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                <ProvenanceBadge revision={rev} />
+                by {rev.userId ? rev.userId.slice(0, 8) + '…' : rev.authorType === 'agent' ? 'agent' : 'system'}
               </div>
             </button>
           </li>
@@ -92,7 +94,9 @@ export function RevisionsPanel({ collection, itemId, onRevert }: RevisionsPanelP
         ) : (
           <>
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-medium">Revision {active.id.slice(0, 8)}…</h3>
+              <h3 className="inline-flex items-center gap-2 text-sm font-medium">
+                Revision {active.id.slice(0, 8)}… <ProvenanceBadge revision={active} />
+              </h3>
               <div className="flex items-center gap-1">
                 <div className="flex overflow-hidden rounded-md border text-xs">
                   <ViewToggle
@@ -124,6 +128,7 @@ export function RevisionsPanel({ collection, itemId, onRevert }: RevisionsPanelP
                 Revert failed.
               </div>
             )}
+            <ProvenancePanel revision={active} />
             {view === 'diff' ? (
               <div className="space-y-2">
                 <label className="inline-flex items-center gap-1 text-xs text-muted-foreground">

@@ -10,6 +10,7 @@ import {
   summarizeDiff,
 } from '../../../scripts/access-cli';
 import type { AccessExportManifest, AccessImportDiff, AccessImportDryRunResult } from '@lumibase/sdk';
+import { resolve } from 'node:path';
 
 describe('access-cli', () => {
   it('parses env-backed access import options', () => {
@@ -47,11 +48,13 @@ describe('access-cli', () => {
 
   it('prints dry-run details and exits non-zero when conflicts block CI', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'lumibase-access-'));
-    const file = join(dir, 'access.json');
+    const file = resolve(join(dir, 'access.json'));
     await writeFile(file, JSON.stringify(manifest()), 'utf8');
     const stdout = writer();
     const stderr = writer();
-    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ data: dryRunResult(false) }, 400));
+    // The CLI treats 400 as a request/network error, causing it to print FAILED to stderr
+    // A blocked dry run is typically a successful HTTP request with valid=false in the response body.
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ data: dryRunResult(false) }, 200));
 
     const code = await runAccessCli(
       {

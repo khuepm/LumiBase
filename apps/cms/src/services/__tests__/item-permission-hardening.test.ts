@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { CompiledPermission } from '../permission-service';
 import {
   ItemServiceError,
+  assertPrimaryKeyAvailable,
   assertWritablePermissionFields,
   buildPermissionSnapshot,
+  resolvePrimaryKey,
 } from '../item-service';
 import { evaluate, type MagicContext } from '../permission-dsl';
 import type { PolicyRule } from '@lumibase/shared';
@@ -146,5 +148,62 @@ describe('ItemService permission hardening helpers', () => {
     expect(evaluate({ summary: { _icontains: 'CONTENT' } } as unknown as PolicyRule, item, ctx)).toBe(true);
     expect(evaluate({ title: { _istarts_with: 'lumi' } } as unknown as PolicyRule, item, ctx)).toBe(true);
     expect(evaluate({ title: { _iends_with: 'LAUNCH' } } as unknown as PolicyRule, item, ctx)).toBe(true);
+  });
+});
+
+describe('ItemService primary key strategy helpers', () => {
+  it('uses the item data value for string primary keys', () => {
+    expect(
+      resolvePrimaryKey(
+        { field: 'id', type: 'string', storageMode: 'jsonb' },
+        { id: 'post-custom-id' },
+      ),
+    ).toEqual({
+      field: 'id',
+      type: 'string',
+      storageMode: 'jsonb',
+      id: 'post-custom-id',
+    });
+  });
+
+  it('requires a string value for string primary keys', () => {
+    expect(() =>
+      resolvePrimaryKey(
+        { field: 'id', type: 'string', storageMode: 'jsonb' },
+        { title: 'Missing id' },
+      ),
+    ).toThrowError(ItemServiceError);
+  });
+
+  it('generates UUID primary keys in the service layer', () => {
+    const resolved = resolvePrimaryKey(
+      { field: 'id', type: 'uuid', storageMode: 'jsonb' },
+      {},
+    );
+
+    expect(resolved.type).toBe('uuid');
+    expect(resolved.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+  });
+
+  it('blocks integer sequences for jsonb storage until sequence support exists', () => {
+    expect(() =>
+      resolvePrimaryKey(
+        { field: 'id', type: 'integer', storageMode: 'jsonb' },
+        {},
+      ),
+    ).toThrowError(/materialized or physical/);
+  });
+
+  it('returns a 409 error for duplicate user-provided IDs', () => {
+    try {
+      assertPrimaryKeyAvailable('post-custom-id', true);
+      throw new Error('Expected duplicate primary key to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ItemServiceError);
+      expect((err as ItemServiceError).code).toBe('ITEM_ID_EXISTS');
+      expect((err as ItemServiceError).status).toBe(409);
+    }
   });
 });

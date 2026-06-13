@@ -1,25 +1,229 @@
 export type DefaultSchema = Record<string, Record<string, unknown>>;
 
+export type ID = string;
+export type Locale = string;
+export type Brand<TBrand extends string, TValue> = TValue & {
+  readonly __brand: TBrand;
+};
+
+export type AgentRiskLevel = "safe" | "review_required" | "dangerous" | "blocked";
+
+export interface AgentGoalResource {
+  id: string;
+  siteId: string;
+  title: string;
+  description: string | null;
+  source: string;
+  createdBy: string | null;
+  assigneeAgent: string;
+  priority: string;
+  deadline: string | null;
+  status: string;
+  successCriteria: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentGoalCreateInput {
+  title: string;
+  description?: string;
+  source?: "user" | "flow" | "api" | "schedule";
+  assigneeAgent?: string;
+  priority?: "low" | "normal" | "high" | "urgent";
+  successCriteria?: Record<string, unknown>;
+}
+
+export interface AgentRunResource {
+  id: string;
+  goalId: string;
+  siteId: string;
+  agentName: string;
+  provider: string;
+  model: string;
+  status: string;
+  budget: Record<string, unknown>;
+  policySnapshotHash: string | null;
+  risk: AgentRiskLevel | string;
+  metrics: Record<string, unknown>;
+  error: string | null;
+  retryOfRunId: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentToolResource {
+  name: string;
+  description: string;
+  requiredCapabilities: string[];
+  service: "schema" | "items" | "ai";
+  inputSchema: Record<string, unknown>;
+  outputSchema: Record<string, unknown>;
+  riskPolicy: { level: AgentRiskLevel; approvalPolicy?: string };
+  rateLimit: { maxCallsPerMinute?: number; maxCallsPerRun?: number };
+  enabled: boolean;
+  owner: string;
+  extensionId?: string | null;
+}
+
+export interface AgentApprovalResource {
+  id: string;
+  runId: string;
+  siteId: string;
+  legacyApprovalId: string | null;
+  subjectType: "plan" | "tool_call" | "artifact" | "schema_diff" | string;
+  subjectId: string;
+  status: string;
+  approvalPolicy: string;
+  requestedByAgent: string;
+  decidedBy: string | null;
+  decisionReason: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
+export type AgentArtifactType =
+  | "schema_diff"
+  | "page_spec"
+  | "component_spec"
+  | "seed_data"
+  | "api_spec"
+  | "prompt"
+  | "migration";
+
+export interface AgentArtifactResource {
+  id: string;
+  runId: string;
+  siteId: string;
+  type: AgentArtifactType | string;
+  target: string | null;
+  title: string;
+  contentRef: string | null;
+  content: Record<string, unknown>;
+  hash: string;
+  version: number;
+  status: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentArtifactCreateInput {
+  runId: string;
+  type: AgentArtifactType;
+  title: string;
+  target?: string;
+  content: Record<string, unknown>;
+}
+
+export interface AgentEvaluationResource {
+  id: string;
+  runId: string;
+  siteId: string;
+  artifactId: string | null;
+  kind: string;
+  status: "pass" | "warn" | "fail" | string;
+  score: number | null;
+  summary: string;
+  details: Record<string, unknown>;
+  artifactHash: string | null;
+  createdAt: string;
+}
+
+export interface AgentMemoryResource {
+  id: string;
+  siteId: string;
+  scope: string;
+  scopeId: string | null;
+  sourceType: string;
+  sourceId: string | null;
+  content: string;
+  embedding: unknown;
+  confidence: number;
+  metadata: Record<string, unknown>;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface AgentMemoryContext {
+  siteId: string;
+  memories: AgentMemoryResource[];
+  recentRuns: AgentRunResource[];
+  approvedArtifacts: AgentArtifactResource[];
+}
+
+export interface AgentMemoryWriteInput {
+  scope: string;
+  scopeId?: string;
+  sourceType: string;
+  sourceId?: string;
+  content: string;
+  confidence?: number;
+}
+
+export interface AgentGenerateAppInput {
+  collections?: string[];
+  targetApp?: string;
+  constraints?: Record<string, unknown>;
+  budget?: Record<string, unknown>;
+  approvalPolicy?: string;
+}
+
+export interface AgentGenerateAppResult {
+  run: { goalId: string; runId: string; agentName: string };
+  artifacts: AgentArtifactResource[];
+  evaluations: AgentEvaluationResource[];
+}
+
+export type PrimaryKeyType =
+  | "nanoid"
+  | "uuid"
+  | "integer"
+  | "bigInteger"
+  | "string";
+
+export type StorageMode = "jsonb" | "materialized" | "physical" | "external";
+
 export interface CollectionResource {
   id: string;
   siteId: string;
   name: string;
+  label?: string | null;
+  pluralLabel?: string | null;
+  hidden?: boolean;
+  system?: boolean;
   singleton: boolean;
   icon?: string | null;
   color?: string | null;
   note?: string | null;
+  primaryKeyField?: string;
   displayTemplate: string | null;
   sortField: string | null;
   archiveField: string | null;
   archiveValue: string | null;
+  unarchiveValue?: string | null;
+  itemDuplicationFields?: string[];
+  translations?: Record<string, unknown>;
   accountability?: "all" | "activity" | "none";
   versioning?: boolean;
-  primaryKeyType?: "nanoid" | "uuid" | "integer" | "bigInteger" | "string";
-  storageMode?: "jsonb" | "materialized" | "physical" | "external";
+  primaryKeyType?: PrimaryKeyType;
+  storageMode?: StorageMode;
   meta: Record<string, unknown>;
+  fields?: FieldResource[];
+  systemFields?: FieldResource[];
   createdAt?: string;
   updatedAt?: string;
 }
+
+export type CollectionInput = Omit<
+  Partial<CollectionResource>,
+  "id" | "siteId" | "fields" | "systemFields" | "createdAt" | "updatedAt"
+> & {
+  name: string;
+};
 
 export interface FieldResource {
   id: string;
@@ -27,10 +231,90 @@ export interface FieldResource {
   name: string;
   type: string;
   interface: string;
+  display?: string | null;
+  label?: string | null;
+  note?: string | null;
+  defaultValue?: unknown;
+  nullable?: boolean;
+  unique?: boolean;
+  indexed?: boolean;
+  searchable?: boolean;
+  length?: number | null;
+  precision?: number | null;
+  scale?: number | null;
+  special?: unknown[];
+  translations?: Record<string, unknown>;
+  options?: Record<string, unknown>;
+  displayOptions?: Record<string, unknown>;
+  validation?: Record<string, unknown>;
+  conditions?: unknown[];
   required: boolean;
+  readonly?: boolean;
   hidden: boolean;
+  encrypted?: boolean;
+  versioned?: boolean;
+  rawEnabled?: boolean;
+  width?: "half" | "full" | "fill";
+  group?: string | null;
   sortOrder: number;
+  system?: boolean;
+  locked?: boolean;
+  generated?: boolean;
+  column?: string;
+  renameFrom?: string;
+  migrationPlan?: Record<string, unknown>;
+  confirmRiskyChange?: boolean;
   [key: string]: unknown;
+}
+
+export type FieldInput = Omit<
+  Partial<FieldResource>,
+  "id" | "collectionId"
+> & {
+  name: string;
+  type: string;
+  interface: string;
+};
+
+export interface FieldMutationOptions {
+  migrationPlan?: Record<string, unknown>;
+  confirmRiskyChange?: boolean;
+}
+
+export interface FieldRenameInput extends FieldMutationOptions {
+  type: string;
+  interface: string;
+  display?: string | null;
+  label?: string | null;
+  note?: string | null;
+  defaultValue?: unknown;
+  nullable?: boolean;
+  unique?: boolean;
+  indexed?: boolean;
+  searchable?: boolean;
+  length?: number | null;
+  precision?: number | null;
+  scale?: number | null;
+  special?: unknown[];
+  options?: Record<string, unknown>;
+  displayOptions?: Record<string, unknown>;
+  validation?: Record<string, unknown>;
+  conditions?: unknown[];
+  required?: boolean;
+  readonly?: boolean;
+  hidden?: boolean;
+  encrypted?: boolean;
+  versioned?: boolean;
+  rawEnabled?: boolean;
+  width?: "half" | "full" | "fill";
+  group?: string | null;
+  sortOrder?: number;
+  [key: string]: unknown;
+}
+
+export interface FieldDeleteOptions extends FieldMutationOptions {
+  force?: boolean;
+  backupToRevisions?: boolean;
 }
 
 export interface RelationResource {
@@ -41,6 +325,95 @@ export interface RelationResource {
   oneCollection: string;
   oneField: string | null;
   junctionCollection: string | null;
+  type?: RelationType;
+  aliasField?: string | null;
+  relatedDisplayTemplate?: string | null;
+  junctionManyField?: string | null;
+  junctionOneField?: string | null;
+  sortField?: string | null;
+  onDelete?: "restrict" | "cascade" | "set null" | "no action";
+  meta?: Record<string, unknown>;
+}
+
+export type RelationType = "m2o" | "o2m" | "m2m" | "m2a";
+
+export type RelationInput = Omit<
+  Partial<RelationResource>,
+  "id" | "siteId"
+> & {
+  manyCollection: string;
+  manyField: string;
+  oneCollection: string;
+  type?: RelationType;
+};
+
+export type SchemaDiffRisk = "low" | "medium" | "high";
+
+export type SchemaRuntimeImpact =
+  | "cache_invalidation"
+  | "permission_recompile"
+  | "typegen_rebuild"
+  | "data_migration_required"
+  | "relation_reindex"
+  | "storage_runtime_change";
+
+export interface SchemaDiffEntry {
+  name?: string;
+  field?: string;
+  identity?: string;
+  type?: string;
+  changes?: string[];
+  risk: SchemaDiffRisk;
+  runtimeImpact: SchemaRuntimeImpact[];
+}
+
+export interface SchemaDiff {
+  risk: SchemaDiffRisk;
+  runtimeImpact: SchemaRuntimeImpact[];
+  collection: {
+    added: string[];
+    removed: string[];
+    changed: SchemaDiffEntry[];
+  };
+  fields: {
+    added: SchemaDiffEntry[];
+    removed: SchemaDiffEntry[];
+    changed: SchemaDiffEntry[];
+  };
+  relations: {
+    added: SchemaDiffEntry[];
+    removed: SchemaDiffEntry[];
+    changed: SchemaDiffEntry[];
+  };
+}
+
+export interface SchemaChangedEvent {
+  type: "schema.changed";
+  siteId: string;
+  collection: string;
+  affectedCollections: string[];
+  diff: SchemaDiff;
+}
+
+export interface SchemaApplyResult {
+  collection: CollectionResource;
+  diff: SchemaDiff;
+  affectedCollections: string[];
+  event: SchemaChangedEvent;
+}
+
+export type SchemaApplyInput = Partial<CollectionInput> & {
+  fields?: FieldInput[];
+  relations?: RelationInput[];
+};
+
+export type SchemaDiffInput = SchemaApplyInput & {
+  name: string;
+};
+
+export interface TypegenSchemaFilters {
+  include?: string[];
+  exclude?: string[];
 }
 
 export type ItemFilterOp =
@@ -101,6 +474,17 @@ export interface RevisionRow {
   };
   userId: string | null;
   createdAt: string;
+  /* Provenance (content-os Req 1.1; content-os-ui Req 4.1). The CMS has
+   * returned these columns since the content-os provenance migration —
+   * optional here so older payloads stay assignable. */
+  authorType?: "human" | "agent";
+  createdByRunId?: string | null;
+  model?: string | null;
+  constitutionHash?: string | null;
+  confidence?: number | null;
+  sources?: unknown[] | null;
+  staged?: boolean;
+  autoCommitAt?: string | null;
 }
 
 export interface ListItemsResponse<

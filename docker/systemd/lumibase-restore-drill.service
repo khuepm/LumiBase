@@ -1,0 +1,16 @@
+[Unit]
+Description=Lumibase restore drill
+Documentation=https://github.com/khuepm/LumiBase
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=lumibase
+Group=lumibase
+WorkingDirectory=/opt/lumibase
+EnvironmentFile=/etc/lumibase/restore-drill.env
+ExecStart=/opt/lumibase/docker/scripts/restore-drill.sh
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

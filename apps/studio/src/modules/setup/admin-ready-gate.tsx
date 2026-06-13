@@ -7,6 +7,7 @@ import {
   type SetupStateFetchError,
   type SetupStateResponse,
 } from './setup-state';
+import { shouldAutoRedirectToAdmin } from './setup-environment';
 import { selectAdminPath, useSetupStore } from './setup-store';
 
 interface AdminReadyGateProps {
@@ -37,7 +38,12 @@ export function AdminReadyGate({ children }: AdminReadyGateProps) {
       navigate({ to: '/setup' });
       return;
     }
-    if (query.data?.state === 'initialized' && !hasActiveToken() && adminPath) {
+    if (
+      query.data?.state === 'initialized' &&
+      !hasActiveToken() &&
+      adminPath &&
+      shouldAutoRedirectToAdmin()
+    ) {
       navigate({ to: `${adminPath}/login` });
     }
   }, [adminPath, navigate, query.data?.state]);

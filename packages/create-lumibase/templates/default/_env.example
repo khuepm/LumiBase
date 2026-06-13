@@ -1,0 +1,14 @@
+# Database
+DATABASE_URL=postgresql://lumibase:lumibase@localhost:5432/lumibase
+
+# Redis (optional — for queue/cache)
+REDIS_URL=redis://localhost:6379
+
+# Auth
+JWT_SECRET=change-me-in-production
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=change-me
+
+# App
+PORT=8787
+NODE_ENV=development

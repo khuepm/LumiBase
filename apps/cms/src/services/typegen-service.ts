@@ -1,6 +1,7 @@
 import { collections as collectionsTable, fields, relations, scopeSite } from '@lumibase/database';
 import { asc, eq } from 'drizzle-orm';
 import type { Database } from '@lumibase/database';
+import { compileSystemFields, type PrimaryKeyType, type RelationType } from './schema-service';
 
 export interface TypegenManifest {
   version: number;
@@ -11,7 +12,10 @@ export interface TypegenManifest {
 export interface TypegenCollection {
   name: string;
   primaryKey: string;
+  primaryKeyField: string;
+  primaryKeyType: PrimaryKeyType;
   fields: TypegenField[];
+  relations: TypegenRelation[];
 }
 
 export interface TypegenField {
@@ -19,10 +23,26 @@ export interface TypegenField {
   type: string;
   required: boolean;
   nullable: boolean;
+  readonly: boolean;
+  generated: boolean;
+  system: boolean;
+  encrypted: boolean;
+  primaryKey: boolean;
   branded?: string;
   kind?: 'm2o' | 'o2m' | 'm2m' | 'm2a';
   target?: string;
   enum?: string[];
+}
+
+export interface TypegenRelation {
+  field: string;
+  kind: RelationType;
+  target: string;
+  manyCollection: string;
+  manyField: string;
+  oneCollection: string;
+  oneField: string | null;
+  junctionCollection: string | null;
 }
 
 export class TypegenService {
@@ -58,12 +78,17 @@ export class TypegenService {
         .where(eq(fields.collectionId, coll.id))
         .orderBy(asc(fields.sortOrder), asc(fields.name));
 
-      const typegenFields: TypegenField[] = fieldRows.map((f) => {
+      const userFields: TypegenField[] = fieldRows.map((f) => {
         const field: TypegenField = {
           name: f.name,
           type: f.type,
           required: f.required,
-          nullable: !f.required,
+          nullable: f.nullable,
+          readonly: f.readonly,
+          generated: false,
+          system: false,
+          encrypted: f.encrypted,
+          primaryKey: f.name === coll.primaryKeyField,
         };
 
         // Detect relation fields
@@ -73,6 +98,7 @@ export class TypegenService {
         if (rel) {
           field.kind = 'm2o';
           field.target = rel.oneCollection;
+          field.branded = `${rel.oneCollection.charAt(0).toUpperCase()}${rel.oneCollection.slice(1)}Id`;
         }
 
         // Handle branded ID fields
@@ -92,15 +118,71 @@ export class TypegenService {
         return field;
       });
 
+      const existingFieldNames = new Set(userFields.map((field) => field.name));
+      const systemFields: TypegenField[] = compileSystemFields(coll)
+        .filter((field) => !existingFieldNames.has(field.name))
+        .map((field) => ({
+          name: field.name,
+          type: field.type,
+          required: !field.nullable,
+          nullable: field.nullable,
+          readonly: field.readonly,
+          generated: field.generated,
+          system: true,
+          encrypted: false,
+          primaryKey: field.name === coll.primaryKeyField,
+          branded:
+            field.name === coll.primaryKeyField
+              ? `${coll.name.charAt(0).toUpperCase()}${coll.name.slice(1)}Id`
+              : undefined,
+        }));
+
+      const typegenFields = [...systemFields, ...userFields];
+      const typegenRelations = relationRows
+        .flatMap((relation): TypegenRelation[] => {
+          const kind = relation.type as RelationType;
+          if (relation.manyCollection === coll.name) {
+            return [{
+              field: relation.manyField,
+              kind,
+              target: relation.oneCollection,
+              manyCollection: relation.manyCollection,
+              manyField: relation.manyField,
+              oneCollection: relation.oneCollection,
+              oneField: relation.oneField,
+              junctionCollection: relation.junctionCollection,
+            }];
+          }
+
+          if (relation.oneCollection === coll.name) {
+            return [{
+              field: relation.oneField ?? relation.aliasField ?? relation.manyCollection,
+              kind: kind === 'm2m' ? 'm2m' : 'o2m',
+              target: relation.manyCollection,
+              manyCollection: relation.manyCollection,
+              manyField: relation.manyField,
+              oneCollection: relation.oneCollection,
+              oneField: relation.oneField,
+              junctionCollection: relation.junctionCollection,
+            }];
+          }
+
+          return [];
+        })
+        .sort((a, b) => a.field.localeCompare(b.field));
+
       resultCollections.push({
         name: coll.name,
-        primaryKey: 'id',
+        primaryKey: coll.primaryKeyField,
+        primaryKeyField: coll.primaryKeyField,
+        primaryKeyType: coll.primaryKeyType as PrimaryKeyType,
         fields: typegenFields,
+        relations: typegenRelations,
       });
     }
 
     return {
-      version: 1,
+      version: 2,
       site: siteId,
       collections: resultCollections,
     };

@@ -25,6 +25,7 @@
 import type { extensions as extensionsTable } from '@lumibase/database';
 import type { InferSelectModel } from 'drizzle-orm';
 import { ExtensionSandbox, type ExtensionHookContext } from './sandbox';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 type ExtensionRow = InferSelectModel<typeof extensionsTable>;
 
@@ -51,7 +52,7 @@ export class HookDispatcher {
    * @returns Possibly-mutated context (for before hooks).
    */
   async dispatch(event: HookEvent, ctx: ExtensionHookContext): Promise<ExtensionHookContext> {
-    const enabled = this.extensions.filter((e) => e.enabled);
+    const enabled = this.extensions.filter((e) => e.enabled && e.type === 'hook');
     let current = { ...ctx };
 
     for (const ext of enabled) {
@@ -72,11 +73,11 @@ export class HookDispatcher {
       } catch (err) {
         if (event.endsWith('.before')) {
           // Before-hook abort — re-throw to cancel the mutation.
-          console.error(`[hook-dispatcher] extension "${ext.name}" aborted ${event}:`, err);
+          console.error(`[hook-dispatcher] extension "${ext.name}" aborted ${event}:`, formatSafeError(err));
           throw err;
         } else {
           // After-hook error — log and continue (don't break the response).
-          console.error(`[hook-dispatcher] extension "${ext.name}" errored in ${event}:`, err);
+          console.error(`[hook-dispatcher] extension "${ext.name}" errored in ${event}:`, formatSafeError(err));
         }
       }
     }

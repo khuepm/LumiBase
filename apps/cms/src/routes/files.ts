@@ -4,8 +4,15 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { SignJWT, jwtVerify } from 'jose';
 import type { AppEnv } from '../env';
+import { requireSiteAdmin } from '../middleware/site-admin';
 
 export const filesRouter = new Hono<AppEnv>();
+filesRouter.use('*', async (c, next) => {
+  if (c.req.path.includes('/files/upload/')) {
+    return next();
+  }
+  return requireSiteAdmin()(c, next);
+});
 
 // Helper to sign upload token
 async function signUploadToken(payload: { key: string; siteId: string }, secret: string): Promise<string> {
@@ -22,7 +29,9 @@ async function signUploadToken(payload: { key: string; siteId: string }, secret:
 async function verifyUploadToken(token: string, secret: string): Promise<{ key: string; siteId: string }> {
   const encoder = new TextEncoder();
   const secretKey = encoder.encode(secret);
-  const { payload } = await jwtVerify(token, secretKey);
+  const { payload } = await jwtVerify(token, secretKey, {
+    algorithms: ['HS256'],
+  });
   return payload as { key: string; siteId: string };
 }
 
@@ -83,8 +92,8 @@ filesRouter.delete('/folders/:id', async (c) => {
 });
 
 // --- Files ---
-// In a real implementation, we would issue presigned R2 URLs.
-// Here we mock the file entity creation.
+// File bytes are uploaded through the JWT-signed upload endpoint below; this
+// route persists the file entity after storage accepts the stream.
 const fileCreateSchema = z.object({
   filenameDisk: z.string(),
   filenameDownload: z.string(),

@@ -1,0 +1,12 @@
+# Local production-image build override.
+#
+# Use this after docker-compose.prod.yml when you want Compose to build the CMS
+# image from the local checkout instead of pulling the published GHCR image:
+#
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml -f docker/docker-compose.build.yml up -d --build
+
+services:
+  cms:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile

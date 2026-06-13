@@ -19,6 +19,23 @@ Quy ước:
 
 Trạng thái tổng quan: Phase 0 → Phase G (GA hardening) đã xong. POST-GA và Dual Deployment + AI Copilot đã hoàn thành. Hiện tại tập trung vào polish, dev experience và mở rộng marketplace.
 
+## Active Ops Hardening Tasks
+
+Nguồn: `apps/docs/content/deployment/docker.md`, `apps/docs/content/guides/backup-recovery.md`.
+
+- [x] `[OPS]` Docker image chạy non-root user.
+- [x] `[BE]` Validate production config khi `NODE_ENV=production` hoặc `LUMIBASE_ENV=production`.
+- [x] `[BE]` Hỗ trợ Docker secret files qua `*_FILE` trước migration/server startup.
+- [x] `[BE]` CORS allowlist qua `CORS_ALLOWED_ORIGINS`; reject wildcard production.
+- [x] `[BE]` Require `ENCRYPTION_KEY` production và validate AES key format.
+- [x] `[BE]` Require DB TLS `sslmode=require|verify-ca|verify-full` production, trừ khi explicit `DATABASE_SSL_MODE=disable`.
+- [x] `[OPS]` `docker-compose.prod.yml` không publish port cho stateful internal services.
+- [x] `[DOC]` Cập nhật Docker deployment docs và environment reference.
+- [x] `[DOC]` Bổ sung restore drill, row-count verification, app health check sau restore, media/search rebuild, RTO/RPO documentation.
+- [x] `[DOC]` Bổ sung Cloudflare DR validation cho Workers, Hyperdrive, R2, KV, Queues, MeiliSearch Cloud, DNS/WAF/Access.
+- [x] `[OPS]` Cấu hình TLS termination thực tế tại load balancer/reverse proxy của môi trường deploy.
+- [x] `[OPS]` Tự động hóa restore drill định kỳ cho Docker và Cloudflare restore environment.
+
 ---
 
 ## Phase 0 — Foundation (DONE)
@@ -209,6 +226,8 @@ Mục tiêu: tạo/quản lý collection & field qua API + UI.
 - [x] `[DB]` Bổ sung cột `signature`, `signatureAlg`, `publisherKeyId`, `publisher`, `marketplaceSlug`, `publishedAt`, `bundleSha256` vào `extensions`.
 - [x] `[BE]` Routes `/api/v1/marketplace/extensions` (list, detail, install, publish).
 - [x] `[BE]` Signature verification: SHA-256 bundle + ed25519/RSA-PSS qua WebCrypto, public keys load từ env `MARKETPLACE_PUBLIC_KEYS`.
+- [x] `[FE]` Public Marketplace site uses the real catalog API with SEO/static export/deploy checklist.
+- [x] `[DOC]` Revenue sharing is Free-first for launch; commercial checkout/payout moved to a later backlog.
 - [x] `[DOC]` `features/marketplace.md`.
 
 ## Phase POST-GA6 — Materialized collections (DONE)
@@ -363,7 +382,7 @@ Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
 
 ---
 
-## Phase POST-GA8 — Directus Data Model Parity (TODO)
+## Phase POST-GA8 — Directus Data Model Parity (DONE)
 
 Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Directus-grade contract: complete metadata, primary key strategy, system fields, advanced field config, relation metadata, schema permissions, atomic diff/apply, SDK/typegen/OpenAPI, and parity tests. Detailed reference: `docs/en/features/directus-data-model-parity-tasks.md`.
 
@@ -374,50 +393,50 @@ Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Di
 - [x] `[BE]` Relation delete/dependency checks cover both `manyCollection` and `oneCollection`; block field/collection deletion while referenced by relations.
 - [x] `[TEST]` Add regression tests for wizard payload, update/delete permissions, and relation dependency checks.
 
-### Milestone 2 — Collection metadata + primary key contract
+### Milestone 2 — Collection metadata + primary key contract (DONE)
 
-- [ ] `[DB]` Add first-class collection columns: `label`, `pluralLabel`, `hidden`, `system`, `primaryKeyField`, `primaryKeyType`, `storageMode`, `unarchiveValue`, `itemDuplicationFields`, `translations`.
-- [ ] `[BE]` Add backward-compatible backfill/migration; route validation and `SchemaService` use new fields while `meta` remains for extension/custom UI hints.
-- [ ] `[SDK]` Update collection input/output types and schema client methods for the new metadata.
-- [ ] `[FE]` Wizard has Identity, Storage, System fields, Permissions defaults, and Review JSON steps.
-- [ ] `[BE]` Implement primary key strategy for `jsonb`: `nanoid`, `uuid`, `string`; defer or explicitly block `integer/bigInteger` until sequence support exists.
-- [ ] `[TEST]` Item create respects primary key strategy; duplicate user-provided ID returns `409`.
+- [x] `[DB]` Add first-class collection columns: `label`, `pluralLabel`, `hidden`, `system`, `primaryKeyField`, `primaryKeyType`, `storageMode`, `unarchiveValue`, `itemDuplicationFields`, `translations`.
+- [x] `[BE]` Add backward-compatible backfill/migration; route validation and `SchemaService` use new fields while `meta` remains for extension/custom UI hints.
+- [x] `[SDK]` Update collection input/output types and schema client methods for the new metadata.
+- [x] `[FE]` Wizard has Identity, Storage, System fields, Permissions defaults, and Review JSON steps.
+- [x] `[BE]` Implement primary key strategy for `jsonb`: `nanoid`, `uuid`, `string`; defer or explicitly block `integer/bigInteger` until sequence support exists.
+- [x] `[TEST]` Item create respects primary key strategy; duplicate user-provided ID returns `409`.
 
 ### Milestone 3 — System fields and field configuration parity
 
-- [ ] `[BE]` Extend compiled schema with `systemFields` (`id`, `status`, `sort`, `user_created`, `user_updated`, `created_at`, `updated_at`, `deleted_at`).
-- [ ] `[FE]` Fields tab renders system fields in a locked group; allow display/hidden/readonly/translations/width config but not deletion.
-- [ ] `[DB]` Add field metadata: `label`, `note`, `defaultValue`, `nullable`, `unique`, `indexed`, `searchable`, `length`, `precision`, `scale`, `special`.
-- [ ] `[FE]` FieldInspector advanced tabs: Basics, Options, Display, Validation, Conditions, Layout, Storage, Translations.
-- [ ] `[BE]` Split create/update/rename/delete/migration field paths; reject type/name changes when data exists unless a migration plan exists.
-- [ ] `[TEST]` FieldInspector preserves unknown `options/displayOptions/validation/conditions`; risky changes return `409` or require confirmation.
+- [x] `[BE]` Extend compiled schema with `systemFields` (`id`, `status`, `sort`, `user_created`, `user_updated`, `created_at`, `updated_at`, `deleted_at`).
+- [x] `[FE]` Fields tab renders system fields in a locked group; allow display/hidden/readonly/translations/width config but not deletion.
+- [x] `[DB]` Add field metadata: `label`, `note`, `defaultValue`, `nullable`, `unique`, `indexed`, `searchable`, `length`, `precision`, `scale`, `special`.
+- [x] `[FE]` FieldInspector advanced tabs: Basics, Options, Display, Validation, Conditions, Layout, Storage, Translations.
+- [x] `[BE]` Split create/update/rename/delete/migration field paths; reject type/name changes when data exists unless a migration plan exists.
+- [x] `[TEST]` FieldInspector preserves unknown `options/displayOptions/validation/conditions`; risky changes return `409` or require confirmation.
 
 ### Milestone 4 — Relations parity and deep read
 
-- [ ] `[BE]` Validate relation references: collection/field existence, non-duplicate relation names, and storage-mode-compatible `onDelete`.
-- [ ] `[DB]` Extend relation metadata: `type`, `aliasField`, `relatedDisplayTemplate`, `junctionManyField`, `junctionOneField`.
-- [ ] `[BE]` Support relation types `m2o`, `o2m`, `m2m`; reserve `m2a` and return "not implemented" if selected.
-- [ ] `[BE]` Implement relation expansion for item queries (`fields=author.name,categories.*`, `deep[...]`) with permission masking for related collections.
-- [ ] `[TEST]` M2O expands to an object when requested; O2M/M2M return arrays; common cases batch to avoid N+1 behavior.
+- [x] `[BE]` Validate relation references: collection/field existence, non-duplicate relation names, and storage-mode-compatible `onDelete`.
+- [x] `[DB]` Extend relation metadata: `type`, `aliasField`, `relatedDisplayTemplate`, `junctionManyField`, `junctionOneField`.
+- [x] `[BE]` Support relation types `m2o`, `o2m`, `m2m`; reserve `m2a` and return "not implemented" if selected.
+- [x] `[BE]` Implement relation expansion for item queries (`fields=author.name,categories.*`, `deep[...]`) with permission masking for related collections.
+- [x] `[TEST]` M2O expands to an object when requested; O2M/M2M return arrays; common cases batch to avoid N+1 behavior.
 
 ### Milestone 5 — Schema permissions, diff/apply, and storage positioning
 
-- [ ] `[BE]` Add schema permission actions: `schema:read/create/update/delete/migrate`.
-- [ ] `[BE]` Apply `requireSchemaPermission` to collections/fields/relations/compiled schema routes and AI schema skills.
-- [ ] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification, and runtime impact.
-- [ ] `[BE]` `PUT /collections/:name/schema` validates all input, computes diff, applies transactionally when supported, invalidates schema/permission/typegen caches, and emits `schema.changed`.
-- [ ] `[FE]` Raw JSON schema tab shows diff/risk before apply.
-- [ ] `[DOC]` Document storage modes `jsonb/materialized/physical/external`, including limitations badges in Studio.
-- [ ] `[DOC]` Create `docs/en/architecture/physical-collections.md` design doc to decide physical/external mode.
+- [x] `[BE]` Add schema permission actions: `schema:read/create/update/delete/migrate`.
+- [x] `[BE]` Apply `requireSchemaPermission` to collections/fields/relations/compiled schema routes and AI schema skills.
+- [x] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification, and runtime impact.
+- [x] `[BE]` `PUT /collections/:name/schema` validates all input, computes diff, applies transactionally when supported, invalidates schema/permission/typegen caches, and emits `schema.changed`.
+- [x] `[FE]` Raw JSON schema tab shows diff/risk before apply.
+- [x] `[DOC]` Document storage modes `jsonb/materialized/physical/external`, including limitations badges in Studio.
+- [x] `[DOC]` Create `docs/en/architecture/physical-collections.md` design doc to decide physical/external mode.
 
 ### Milestone 6 — SDK, typegen, OpenAPI, docs, and parity tests
 
-- [ ] `[SDK]` Expose complete schema resources: collections/fields/relations CRUD, field rename/delete options, schema diff/apply.
-- [ ] `[SDK]` Preserve legacy methods or provide deprecation wrappers; preserve error `code/path/risk` metadata.
-- [ ] `[SDK]` Typegen includes primary key type, system fields, nullable/required, readonly/generated, and relation-expanded response types.
-- [ ] `[DOC]` Update `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
-- [ ] `[DOC]` Sync Vietnamese docs after the English contract stabilizes.
-- [ ] `[TEST]` Backend/frontend/SDK parity suite covers all acceptance criteria in `directus-data-model-parity-tasks.md`.
+- [x] `[SDK]` Expose complete schema resources: collections/fields/relations CRUD, field rename/delete options, schema diff/apply.
+- [x] `[SDK]` Preserve legacy methods or provide deprecation wrappers; preserve error `code/path/risk` metadata.
+- [x] `[SDK]` Typegen includes primary key type, system fields, nullable/required, readonly/generated, and relation-expanded response types.
+- [x] `[DOC]` Update `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
+- [x] `[DOC]` Sync Vietnamese docs after the English contract stabilizes.
+- [x] `[TEST]` Backend/frontend/SDK parity suite covers all acceptance criteria in `directus-data-model-parity-tasks.md`.
 
 ---
 
