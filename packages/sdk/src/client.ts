@@ -16,6 +16,15 @@ export interface LumiClientOptions {
   fetcher?: typeof fetch;
   /** Additional headers sent with every request. */
   headers?: Record<string, string>;
+  /**
+   * Invoked once whenever the server answers a request with `401
+   * Unauthorized` — i.e. the bearer token is missing, expired, or no
+   * longer valid for the resolved site/user. Fires before the `LumiError`
+   * is thrown so a host (e.g. Studio) can clear the stale token and route
+   * the operator back to the login screen. Errors thrown by the callback
+   * are swallowed so they never mask the original `LumiError`.
+   */
+  onUnauthorized?: () => void;
 }
 
 export interface LumiResponse<T> {
@@ -111,7 +120,17 @@ export function createLumiClient<TSchema extends DefaultSchema = DefaultSchema>(
     const text = await res.text();
     const body = parseResponseBody(text);
 
-    if (!res.ok) throw new LumiError(res.status, toErrorBody(res.status, body));
+    if (!res.ok) {
+      if (res.status === 401 && opts.onUnauthorized) {
+        // Best-effort: a throwing handler must not mask the LumiError.
+        try {
+          opts.onUnauthorized();
+        } catch {
+          /* ignore */
+        }
+      }
+      throw new LumiError(res.status, toErrorBody(res.status, body));
+    }
     return body as LumiResponse<T>;
   }
 
