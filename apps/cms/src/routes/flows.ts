@@ -13,11 +13,27 @@
 import { flows, flowRuns } from '@lumibase/database';
 import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { runFlow, type FlowGraph } from '../services/flow-service';
 
 export const flowsRouter = new Hono<AppEnv>();
+
+const requireFlowAdmin = createMiddleware<AppEnv>(async (c, next) => {
+  const auth = c.get('auth');
+  const roles = Array.isArray(auth?.roles) ? auth.roles : [];
+  if (!roles.includes('admin')) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Admin role required.' }] },
+      403,
+    );
+  }
+
+  await next();
+});
+
+flowsRouter.use('*', requireFlowAdmin);
 
 const flowSchema = z.object({
   name: z.string().min(1),

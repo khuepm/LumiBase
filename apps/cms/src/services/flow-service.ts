@@ -45,6 +45,84 @@ export function getHandler(key: string): OperationHandler | undefined {
   return handlers.get(key);
 }
 
+const BLOCKED_HOST_SUFFIXES = ['.localhost', '.local', '.internal', '.lan', '.home'];
+
+function parseIpv4(hostname: string): [number, number, number, number] | null {
+  const parts = hostname.split('.');
+  if (parts.length !== 4) return null;
+
+  const octets = parts.map((part) => {
+    if (!/^\d+$/.test(part)) return Number.NaN;
+    const value = Number(part);
+    return value >= 0 && value <= 255 ? value : Number.NaN;
+  });
+
+  return octets.every(Number.isInteger) ? (octets as [number, number, number, number]) : null;
+}
+
+function isBlockedIpv4(hostname: string): boolean {
+  const ipv4 = parseIpv4(hostname);
+  if (!ipv4) return false;
+
+  const [a, b] = ipv4;
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 192 && b === 0) ||
+    a === 198 && (b === 18 || b === 19)
+  );
+}
+
+function isBlockedIpv6(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!normalized.includes(':')) return false;
+
+  const ipv4Mapped = normalized.match(/(?::ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (ipv4Mapped?.[1] && isBlockedIpv4(ipv4Mapped[1])) return true;
+
+  return (
+    normalized === '::' ||
+    normalized === '::1' ||
+    normalized.startsWith('0:0:0:0:0:0:0:0') ||
+    normalized.startsWith('::ffff:') ||
+    normalized.startsWith('fc') ||
+    normalized.startsWith('fd') ||
+    /^fe[89ab]/.test(normalized)
+  );
+}
+
+function validateHttpUrl(rawUrl: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('http operation requires a valid URL');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('http operation only supports http(s) URLs');
+  }
+
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  if (
+    hostname === 'localhost' ||
+    hostname === 'metadata.google.internal' ||
+    (!hostname.includes('.') && !hostname.includes(':')) ||
+    BLOCKED_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix)) ||
+    isBlockedIpv4(hostname) ||
+    isBlockedIpv6(hostname)
+  ) {
+    throw new Error('http operation cannot target local or private network addresses');
+  }
+
+  return parsed;
+}
+
 // ---------------------------------------------------------------------------
 // Built-in handlers
 // ---------------------------------------------------------------------------
@@ -94,7 +172,9 @@ registerHandler('http', async (_ctx, options) => {
   const body = options['body'];
   if (!url) throw new Error('http operation requires url');
 
-  const res = await fetch(url, {
+  const parsedUrl = validateHttpUrl(url);
+
+  const res = await fetch(parsedUrl.toString(), {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
