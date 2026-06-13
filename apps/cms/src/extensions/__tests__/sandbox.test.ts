@@ -31,7 +31,7 @@ async function loadCtx(
 }
 
 describe('ExtensionSandbox data access', () => {
-  it('exposes actor-scoped item helpers for default extension data access', async () => {
+  it('blocks actor-scoped item helpers without item capabilities', async () => {
     const actorDataAccess = {
       list: vi.fn().mockResolvedValue({ data: [{ id: 'post_1' }] }),
       detail: vi.fn(),
@@ -41,10 +41,57 @@ describe('ExtensionSandbox data access', () => {
     };
     const ctx = await loadCtx([], { actorDataAccess });
 
+    await expect((ctx.items as any).list('posts', { limit: 1 })).rejects.toBeInstanceOf(CapabilityError);
+    await expect((ctx.items as any).detail('posts', 'post_1')).rejects.toBeInstanceOf(CapabilityError);
+    await expect((ctx.items as any).create('posts', { data: { title: 'Draft' } })).rejects.toBeInstanceOf(CapabilityError);
+    await expect((ctx.items as any).patch('posts', 'post_1', { data: { title: 'Updated' } })).rejects.toBeInstanceOf(CapabilityError);
+    await expect((ctx.items as any).delete('posts', 'post_1')).rejects.toBeInstanceOf(CapabilityError);
+    expect(actorDataAccess.list).not.toHaveBeenCalled();
+    expect(actorDataAccess.detail).not.toHaveBeenCalled();
+    expect(actorDataAccess.create).not.toHaveBeenCalled();
+    expect(actorDataAccess.patch).not.toHaveBeenCalled();
+    expect(actorDataAccess.delete).not.toHaveBeenCalled();
+  });
+
+  it('allows actor-scoped item reads with a collection-scoped read capability', async () => {
+    const actorDataAccess = {
+      list: vi.fn().mockResolvedValue({ data: [{ id: 'post_1' }] }),
+      detail: vi.fn().mockResolvedValue({ id: 'post_1' }),
+      create: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+    };
+    const ctx = await loadCtx(['items:read:posts'], { actorDataAccess });
+
     await expect((ctx.items as any).list('posts', { limit: 1 })).resolves.toEqual({
       data: [{ id: 'post_1' }],
     });
+    await expect((ctx.items as any).detail('posts', 'post_1', ['title'])).resolves.toEqual({ id: 'post_1' });
+    await expect((ctx.items as any).list('secrets')).rejects.toBeInstanceOf(CapabilityError);
     expect(actorDataAccess.list).toHaveBeenCalledWith('posts', { limit: 1 });
+    expect(actorDataAccess.detail).toHaveBeenCalledWith('posts', 'post_1', ['title']);
+  });
+
+  it('allows actor-scoped item writes with a generic write capability', async () => {
+    const actorDataAccess = {
+      list: vi.fn(),
+      detail: vi.fn(),
+      create: vi.fn().mockResolvedValue({ id: 'post_1' }),
+      patch: vi.fn().mockResolvedValue({ id: 'post_1', title: 'Updated' }),
+      delete: vi.fn().mockResolvedValue({ id: 'post_1', deleted: true }),
+    };
+    const ctx = await loadCtx(['items:write'], { actorDataAccess });
+
+    await expect((ctx.items as any).create('posts', { data: { title: 'Draft' } })).resolves.toEqual({ id: 'post_1' });
+    await expect((ctx.items as any).patch('posts', 'post_1', { data: { title: 'Updated' } })).resolves.toEqual({
+      id: 'post_1',
+      title: 'Updated',
+    });
+    await expect((ctx.items as any).delete('posts', 'post_1')).resolves.toEqual({ id: 'post_1', deleted: true });
+    await expect((ctx.items as any).detail('posts', 'post_1')).rejects.toBeInstanceOf(CapabilityError);
+    expect(actorDataAccess.create).toHaveBeenCalledWith('posts', { data: { title: 'Draft' } });
+    expect(actorDataAccess.patch).toHaveBeenCalledWith('posts', 'post_1', { data: { title: 'Updated' } });
+    expect(actorDataAccess.delete).toHaveBeenCalledWith('posts', 'post_1');
   });
 
   it('blocks raw DB reads without the service-account capability', async () => {

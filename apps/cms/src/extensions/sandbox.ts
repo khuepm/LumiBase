@@ -13,6 +13,8 @@
  *  - "kv:write"      — KV namespace writes
  *  - "env:read"      — access to declared env vars
  *  - "queue:enqueue" — enqueue jobs to a queue
+ *  - "items:read" / "items:read:<collection>" — actor-scoped item reads
+ *  - "items:write" / "items:write:<collection>" — actor-scoped item writes
  *
  * The sandbox uses dynamic import() to load the bundle. Workers/Browsers
  * require the bundle to be a valid ESM module served from a trusted URL.
@@ -36,7 +38,11 @@ export type ExtensionCapability =
   | 'kv:read'
   | 'kv:write'
   | 'env:read'
-  | 'queue:enqueue';
+  | 'queue:enqueue'
+  | 'items:read'
+  | 'items:write'
+  | `items:read:${string}`
+  | `items:write:${string}`;
 
 export interface ExtensionHookContext {
   collection: string;
@@ -171,31 +177,44 @@ export class ExtensionSandbox {
     const gate = (cap: ExtensionCapability) => {
       if (!caps.has(cap)) throw new CapabilityError(cap);
     };
+    const gateItems = (access: 'read' | 'write', collection: string) => {
+      const baseCap = `items:${access}` as const;
+      const collectionCap = `${baseCap}:${collection}` as const;
+      if (!caps.has(baseCap) && !caps.has(collectionCap)) {
+        throw new CapabilityError(collectionCap);
+      }
+    };
 
     return {
       /**
-       * Actor-scoped item access. This is the default extension data path:
-       * calls are routed through the host ItemService, so row/field/action
-       * permissions are evaluated for the request principal.
+       * Actor-scoped item access. Calls are routed through the host ItemService,
+       * so row/field/action permissions are evaluated for the request principal.
+       * Extensions must also be granted items:read/items:write, or a
+       * collection-scoped variant such as items:read:posts.
        */
       items: {
-        list: (collection: string, params?: Record<string, unknown>) => {
+        list: async (collection: string, params?: Record<string, unknown>) => {
+          gateItems('read', collection);
           if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
           return this.actorDataAccess.list(collection, params);
         },
-        detail: (collection: string, id: string, fields?: string[]) => {
+        detail: async (collection: string, id: string, fields?: string[]) => {
+          gateItems('read', collection);
           if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
           return this.actorDataAccess.detail(collection, id, fields);
         },
-        create: (collection: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) => {
+        create: async (collection: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) => {
+          gateItems('write', collection);
           if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
           return this.actorDataAccess.create(collection, payload);
         },
-        patch: (collection: string, id: string, patch: { data?: Record<string, unknown>; status?: string; sort?: number }) => {
+        patch: async (collection: string, id: string, patch: { data?: Record<string, unknown>; status?: string; sort?: number }) => {
+          gateItems('write', collection);
           if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
           return this.actorDataAccess.patch(collection, id, patch);
         },
-        delete: (collection: string, id: string) => {
+        delete: async (collection: string, id: string) => {
+          gateItems('write', collection);
           if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
           return this.actorDataAccess.delete(collection, id);
         },
