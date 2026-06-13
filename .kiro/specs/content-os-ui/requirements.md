@@ -186,3 +186,53 @@ Phạm vi: **UI-only** — không tạo endpoint backend mới; chỉ dùng các
 2. WHEN bật một cờ (OFF→ON), THE panel SHALL yêu cầu confirm 2 bước (nhất quán với confirm freeze của kill switch); tắt (ON→OFF) SHALL áp dụng ngay một click — control dừng không bao giờ có friction.
 3. WHEN lưu, THE panel SHALL merge 4 cờ lên trên value hiện có của row (`POST /api/v1/settings`, key `contentOs`) — các key ngoài cờ trên cùng row (vd `agentReviewMinConfidence`) phải sống sót qua toggle.
 4. WHEN mọi cờ đều off, THE panel SHALL hiển thị ghi chú site đang hành xử như baseline pre-Content-OS.
+
+### Requirement 16: Agent roles manager
+
+**User Story:** Là một quản trị viên, tôi muốn xem và quản lý thư viện agent role (capability, model, system prompt ref, enabled) ngay trong Mission Control, để toà soạn agent tự quản trị được mà không cần sửa code/seed (gap rà soát 2026-06-13: CRUD `/agent/roles` không có UI nào).
+
+#### Acceptance Criteria
+
+1. THE Mission_Control SHALL có Sub_Route `/mission-control/agents` (cả hai biến thể Admin_Base, mục "Agents" trong sub-nav) hiển thị bảng role từ `GET /api/v1/agent/roles`: name, description, model, capabilities (badge list), trạng thái enabled.
+2. THE trang SHALL cho tạo role mới: form name (pattern `^[a-z][a-z0-9_-]*$`), capabilities (danh sách phân tách dấu phẩy), description/model/systemPromptRef optional → `POST /agent/roles`; lỗi backend (vd CONFLICT) hiển thị tại chỗ.
+3. THE trang SHALL cho sửa role (mọi field trừ name) → `PATCH /agent/roles/:name`, gồm toggle enabled trực tiếp từ bảng.
+4. WHEN xoá role, THE trang SHALL yêu cầu confirm 2 bước → `DELETE /agent/roles/:name`.
+5. WHEN backend trả 403 (caller không phải admin), THE trang SHALL hiển thị thông báo cần quyền admin thay vì form.
+
+### Requirement 17: Intent lifecycle hoàn chỉnh
+
+**User Story:** Là một biên tập viên quản lý SLO, tôi muốn sửa/xoá intent và chạy drift scan thủ công từ trang intent detail, để vận hành intent không phải gọi API tay (gap rà soát: PATCH/DELETE/`:id/scan` không có UI).
+
+#### Acceptance Criteria
+
+1. THE Intent_Detail SHALL có nút "Scan now" → `POST /agent/intents/:id/scan`; kết quả (số drift phát hiện, số goal tạo) hiển thị inline và drift list refresh.
+2. THE Intent_Detail SHALL có form Edit (name, schedule, autonomyCap, budget; rules qua raw JSON textarea) → `PATCH /agent/intents/:id`; validation lỗi hiển thị tại chỗ.
+3. WHEN xoá intent, THE trang SHALL confirm 2 bước → `DELETE /agent/intents/:id` rồi điều hướng về danh sách intents.
+
+### Requirement 18: Goal decompose & settle
+
+**User Story:** Là một quản trị viên, tôi muốn phân rã goal thành sub-goals theo role và chốt goal cha từ trạng thái các con ngay trên goal tree, để vận hành toà soạn agent trực quan (gap rà soát: `POST /goals/:id/decompose|settle` không có UI).
+
+#### Acceptance Criteria
+
+1. THE Goals_Page SHALL có action "Decompose" trên node goal mở form thêm sub-goals (title bắt buộc, agentRole chọn từ `GET /agent/roles`, description optional, thêm/xoá dòng) → `POST /agent/goals/:id/decompose`; cây refresh sau khi tạo.
+2. THE Goals_Page SHALL có action "Settle" trên node goal có con → `POST /agent/goals/:id/settle`; trạng thái node cập nhật theo response.
+3. Lỗi backend (vd goal không ở trạng thái phân rã được) SHALL hiển thị message tại node, không phá vỡ cây.
+
+### Requirement 19: Artifact evaluation từ UI
+
+**User Story:** Là một quản trị viên, tôi muốn chấm điểm (evaluate) một artifact ngay từ tab Artifacts, để kiểm định output của agent trước khi publish mà không cần gọi API tay (gap rà soát: `POST /artifacts/:id/evaluate` không có UI).
+
+#### Acceptance Criteria
+
+1. THE Artifacts_Tab (Settings → Agent harness) SHALL có nút "Evaluate" trên mỗi artifact → `POST /agent/artifacts/:id/evaluate?runId=<artifact.runId>`.
+2. Kết quả evaluation (score/verdict/feedback theo response) SHALL hiển thị inline dưới artifact vừa evaluate; lỗi hiển thị message.
+
+### Requirement 20: Promotion eligibility check
+
+**User Story:** Là một quản trị viên, tôi muốn kiểm tra một (role, capability) đã đủ bằng chứng thăng cấp chưa ngay trên trang Trust ledger, để chủ động tạo proposal thay vì chờ promote-check định kỳ (gap rà soát: `POST /autonomy/promotions/check` không có UI).
+
+#### Acceptance Criteria
+
+1. THE Trust_Page SHALL có form "Check eligibility": chọn agentRole + capability (suggest từ grants hiện có, cho nhập tay) → `POST /agent/autonomy/promotions/check`.
+2. WHEN response `proposed=true`, THE trang SHALL refresh danh sách promotion proposals; WHEN `proposed=false`, hiển thị lý do/đánh giá từ response.

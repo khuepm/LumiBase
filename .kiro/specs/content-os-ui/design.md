@@ -150,3 +150,44 @@ Theo convention `mission-control.test.tsx` hiện có (mock `missionControlApi` 
 4. **Provenance**: revisions panel hiển thị badge agent + khối provenance khi chọn revision agent (Req 4.2, 4.3).
 5. **IntentDetailPage**: pause gọi `activateKillSwitch('intent', id, …)`, resume gọi `resumeIntent` (Req 5.4); id lạ → not-found (Req 5.5).
 6. **Hồi quy**: test v1 (`mission-control.test.tsx`) giữ pass — `ExceptionInbox`, `TrustLedger`, `KillSwitchPanel`, `IntentComposer` không đổi hành vi.
+
+---
+
+## Phase 3 additions (Req 16–20) — đóng nốt gap backend-không-UI
+
+Rà soát 2026-06-13 đối chiếu route backend ↔ lời gọi `api/v1` trong Studio tìm ra 5 endpoint Content OS không có UI. Toàn bộ vẫn UI-only.
+
+### Route map mới
+
+```
+/mission-control/agents   MissionControlLayout > AgentsPage (Req 16) — thêm "Agents" vào SECTIONS
+```
+
+### Fetchers mới trong `mission-control/api.ts`
+
+```
+roles()                              GET    /agent/roles
+createRole(input)                    POST   /agent/roles
+updateRole(name, patch)              PATCH  /agent/roles/:name
+deleteRole(name)                     DELETE /agent/roles/:name
+intent(id)                           GET    /agent/intents/:id        (detail đang tự fetch từ list — giữ, thêm khi cần)
+updateIntent(id, patch)              PATCH  /agent/intents/:id
+deleteIntent(id)                     DELETE /agent/intents/:id
+scanIntent(id)                       POST   /agent/intents/:id/scan   → {scan, reconcile}
+decomposeGoal(id, subGoals)          POST   /agent/goals/:id/decompose
+settleGoal(id)                       POST   /agent/goals/:id/settle
+checkPromotion(agentRole, capability) POST  /agent/autonomy/promotions/check → {proposed, ...}
+```
+
+Artifact evaluate dùng `agentRequest` cục bộ của `settings/agent-harness-page.tsx` (cùng pattern các action sẵn có của trang đó): `POST /artifacts/:id/evaluate?runId=`.
+
+### Component shape
+
+- `agents-page.tsx` — bảng role + form create (collapse), edit inline per row (capabilities textarea phân tách phẩy), toggle enabled, delete confirm 2 bước. 403 → notice "requires admin".
+- `intent-detail.tsx` (mở rộng) — thêm hàng action: [Scan now] [Edit] [Delete]; Edit mở form inline (name/schedule/autonomyCap/budget + rules JSON textarea); kết quả scan render inline `{driftsFound, goalsCreated}` đọc từ response.
+- `goals-page.tsx` (mở rộng) — mỗi node thêm [Decompose] [Settle]; Decompose mở form sub-goals (rows: title + role select từ `roles()`); lỗi hiển thị tại node.
+- `trust-ledger.tsx` hoặc `trust-page.tsx` (mở rộng) — khối "Check eligibility": 2 input (datalist suggest từ grants) + nút Check → render proposed/reason; proposed=true → invalidate promotions query.
+
+### Testing
+
+Convention test hiện hành (vi.hoisted mock `../api`, QueryClientProvider). Mỗi feature 1 file test: agents-page (render list, create payload, delete 2 bước), intent-actions (scan gọi đúng API + render kết quả, delete confirm), goals-actions (decompose payload, settle), promotion-check (payload + proposed=false render lý do), artifact evaluate (gọi đúng query string).
