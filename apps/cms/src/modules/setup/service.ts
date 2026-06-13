@@ -480,6 +480,32 @@ export class SetupService {
           }
         }
 
+        // ── 5b. `setup_started` audit entry (Req 15.1; task 11.2). Emit it
+        //        only after the cheap initialized/token gates pass so an
+        //        unauthenticated caller cannot force setup-attempt audit writes
+        //        or the PBKDF2 work below with missing/invalid tokens.
+        await this.resolveAuditLogger().write({
+          event: 'setup_started',
+          actorEmail: input.account.email,
+          ip: ctx.ip ?? null,
+          userAgent: ctx.userAgent ?? null,
+          requestId: ctx.requestId ?? null,
+          metadata: { adminPathHash: await sha256ShortHex(normalizedPath) },
+        });
+
+        // ── 6. Hash only after the row-lock, initialized-state check, and
+        //       setup-token gate have succeeded. PBKDF2 100k is intentionally
+        //       expensive, so invalid public setup requests must be rejected
+        //       before reaching this point.
+        const passwordHash = await hashPassword(input.account.password);
+        const plainBackupCodes: string[] = [];
+        for (let i = 0; i < BACKUP_CODE_COUNT; i++) {
+          plainBackupCodes.push(generateBackupCode());
+        }
+        const backupCodeHashes = await Promise.all(
+          plainBackupCodes.map((c) => hashPassword(c)),
+        );
+
         // Path uniqueness is enforced by the
         // `system_state_admin_path_unique` index on commit. Because
         // `system_state` is a singleton, that index can only collide
