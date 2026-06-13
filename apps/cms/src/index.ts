@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from './env';
+import { resolveCorsOrigin } from './config/cors';
 import { adminPathGuard } from './middleware/admin-path-guard';
 import { withAuditContext } from './middleware/audit-context';
 import { withAuth } from './middleware/auth';
@@ -10,7 +11,11 @@ import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
 import { withStudioAccess } from './middleware/studio-access';
+import { withControlPlaneAccessGuard } from './middleware/control-plane-access-guard';
+import { withFileUploadPolicy } from './middleware/file-upload-policy';
+import { withSecurityHeaders } from './middleware/security-headers';
 import { withTenant } from './middleware/tenant';
+import { withTracing } from './middleware/tracing';
 import { activityRouter } from './routes/activity';
 import { accessRouter } from './routes/access';
 import { adminRouter } from './routes/admin';
@@ -38,6 +43,8 @@ import { searchRouter } from './routes/search';
 import { scimRouter } from './routes/scim';
 import { scimAdminRouter } from './routes/scim-admin';
 import { settingsRouter } from './routes/settings';
+import { systemRouter } from './routes/system';
+import { shareAdminRouter, sharePublicRouter } from './routes/shares';
 import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
 import { tmRouter } from './routes/translation-memory';
@@ -47,10 +54,14 @@ import { utilsRouter } from './routes/utils';
 import { webhooksRouter } from './routes/webhooks';
 import { testAuthRouter } from './routes/test-auth';
 import { aiRouter } from './routes/ai';
+import { agentRouter } from './routes/agent';
+import { intentsRouter } from './routes/intents';
+import { mcpRouter } from './routes/mcp';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 const app = new Hono<AppEnv>();
 
@@ -58,14 +69,16 @@ const app = new Hono<AppEnv>();
 // CORS before auth so preflight requests succeed. Runtime must be available
 // before tenant resolution (which may use the cache).
 app.use('*', withLogger());
+app.use('*', withTracing());
+app.use('*', withSecurityHeaders());
 app.use('*', withMetrics());
 app.use('*', withRuntime());
 app.use(
   '*',
   cors({
-    origin: (origin) => origin ?? '*',
+    origin: (origin, c) => resolveCorsOrigin(origin, c.env),
     credentials: true,
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password'],
     exposeHeaders: ['X-Request-Id'],
   }),
 );
@@ -102,6 +115,7 @@ app.use('*', adminPathGuard());
 
 // Public utility endpoints (no tenant, no auth).
 app.route('/api/v1/utils', utilsRouter);
+app.route('/api/v1/system', systemRouter);
 // Prometheus metrics endpoint (public, no auth).
 app.route('/metrics', metricsRouter);
 // Comprehensive health check — tests DB, cache, search, storage, queue connectivity.
@@ -141,7 +155,7 @@ app.route('/scim/v2', scimRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withDb(), withAuth(), requireSetupComplete(), withStudioAccess(), withRls());
+api.use('*', withTenant(), withDb(), withAuth(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).
@@ -163,6 +177,7 @@ api.route('/media', mediaRouter);
 api.route('/presets', presetsRouter);
 api.route('/translations', translationsRouter);
 api.route('/settings', settingsRouter);
+api.route('/shares', shareAdminRouter);
 api.route('/users', usersRouter);
 api.route('/teams', teamsRouter);
 api.route('/files', filesRouter);
@@ -199,6 +214,12 @@ api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
 api.route('/scim-tokens', scimAdminRouter);
 api.route('/ai', aiRouter);
+api.route('/agent/intents', intentsRouter);
+api.route('/agent', agentRouter);
+// MCP server (content-os task 4; Req 4.1). Same authenticated chain as the
+// Agent API — the MCP adapter passes the token's roles to the harness, so
+// both surfaces share one decision codepath (Property 14).
+api.route('/mcp', mcpRouter);
 
 // ClickHouse CDC control-plane surface (`/api/v1/cdc/*`) — clickhouse-cdc
 // task 12.2; Req 1.1; design "CDC API Routes" §7. Mounted on the
@@ -211,6 +232,10 @@ api.route('/ai', aiRouter);
 // `/api/v1/cdc/*` prefix — matching how every sibling module above is wired.
 api.route('/cdc', cdcRouter);
 
+// Share links are public. The opaque token resolves the site and share role.
+app.use('/api/v1/shares/*', withDb());
+app.route('/api/v1/shares', sharePublicRouter);
+
 app.route('/api/v1', api);
 
 // Delivery (public) routes — tenancy is encoded in the URL.
@@ -222,7 +247,7 @@ app.notFound((c) =>
 );
 app.onError((err, c) => {
   const requestId = c.get('requestId');
-  console.error('[lumibase-cms] unhandled error', { requestId, err });
+  console.error('[lumibase-cms] unhandled error', { requestId, err: formatSafeError(err) });
   return c.json(
     { errors: [{ code: 'INTERNAL', message: 'Internal Server Error', requestId }] },
     500,

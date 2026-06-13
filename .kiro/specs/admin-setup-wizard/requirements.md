@@ -267,3 +267,14 @@ Wizard chỉ truy cập được khi instance ở trạng thái **Uninitialized*
 4. WHEN `parseLockoutPolicy` nhận JSON với field thiếu, THE Setup_Service SHALL điền giá trị mặc định preset "Standard" cho field thiếu thay vì reject (forward compatibility).
 5. WHEN `parseLockoutPolicy` nhận JSON với field thừa, THE Setup_Service SHALL bỏ qua field thừa và log warning một lần per startup.
 6. WHEN `parseLockoutPolicy` nhận JSON với field sai kiểu hoặc ngoài range, THE Setup_Service SHALL trả `ValidationError` với danh sách field lỗi.
+
+### Requirement 17: Setup Impact Registry — giữ setup đồng bộ với tính năng mới
+
+**User Story:** Là một maintainer, tôi muốn có một nơi duy nhất theo dõi việc setup wizard có khởi tạo đầy đủ trạng thái mà các tính năng mới yêu cầu hay không, để setup không bị tụt hậu âm thầm qua các phiên bản.
+
+#### Acceptance Criteria
+
+1. THE spec admin-setup-wizard SHALL duy trì file `setup-impact.md` (Setup Impact Registry) là nguồn sự thật duy nhất về các yêu cầu khởi tạo phát sinh từ feature khác.
+2. WHEN một feature spec mới hoàn thành, THE feature đó SHALL được rà soát theo 6 câu hỏi trong `setup-impact.md` và ghi kết quả vào bảng Registry (kể cả khi kết quả là `n/a`), theo DoD chung tại `.kiro/steering/definition-of-done.md`.
+3. WHEN Registry có entry `pending`, THE entry SHALL có task tương ứng trong `tasks.md` (Phase G trở đi) trước khi được triển khai.
+4. WHEN một entry chuyển sang `done`, THE thay đổi SHALL bao gồm: cập nhật setup transaction, backfill idempotent cho instance đã khởi tạo (nếu cần), và cập nhật docs (`docs/en/agent-setup/prompt.md`, CHANGELOG upgrade steps).

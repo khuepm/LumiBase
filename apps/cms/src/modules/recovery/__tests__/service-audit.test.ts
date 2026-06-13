@@ -35,6 +35,7 @@ interface FakeDbOptions {
   readonly userRows?: ReadonlyArray<Record<string, unknown>>;
   readonly stateRows?: ReadonlyArray<Record<string, unknown>>;
   readonly codeRows?: ReadonlyArray<Record<string, unknown>>;
+  readonly backupCodeUpdateRows?: ReadonlyArray<Record<string, unknown>>;
 }
 
 function makeFakeDb(opts: FakeDbOptions = {}) {
@@ -74,12 +75,20 @@ function makeFakeDb(opts: FakeDbOptions = {}) {
       };
     },
     update(table: unknown) {
-      void getTableName(table as never);
+      const name = getTableName(table as never);
       return {
         set() {
           return {
-            async where() {
-              /* no-op */
+            where() {
+              return {
+                returning() {
+                  return Promise.resolve(
+                    name === 'admin_backup_codes'
+                      ? (opts.backupCodeUpdateRows ?? [{ id: 'bkc_1' }])
+                      : [],
+                  );
+                },
+              };
             },
           };
         },
@@ -193,6 +202,21 @@ describe('RecoveryService.recover → audit (Req 15.1)', () => {
       userRows: [{ id: 'usr_boot', isBootstrap: true }],
       stateRows: [{ adminPath: ADMIN_PATH }],
       codeRows: await bootstrapCodeRows('WXYZ-9876'), // a DIFFERENT code
+    });
+    const svc = new RecoveryService({ db, sleep: instantSleep, audit });
+
+    const result = await svc.recover(BOOT_EMAIL, PLAINTEXT_CODE, IP);
+    expect(result).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('writes NOTHING when the guarded backup-code update spends zero rows', async () => {
+    const { audit, calls } = makeSpyAudit();
+    const db = makeFakeDb({
+      userRows: [{ id: 'usr_boot', isBootstrap: true }],
+      stateRows: [{ adminPath: ADMIN_PATH }],
+      codeRows: await bootstrapCodeRows(PLAINTEXT_CODE),
+      backupCodeUpdateRows: [],
     });
     const svc = new RecoveryService({ db, sleep: instantSleep, audit });
 

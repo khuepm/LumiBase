@@ -1,0 +1,16 @@
+{
+  "name": "Color Picker Field",
+  "version": "1.0.0",
+  "type": "field",
+  "description": "A customized visual color picker field for hex colors.",
+  "entrypoint": "index.html",
+  "fieldTypes": ["string"],
+  "options": [
+    {
+      "name": "defaultColor",
+      "type": "string",
+      "label": "Default Color Hex",
+      "default": "#000000"
+    }
+  ]
+}

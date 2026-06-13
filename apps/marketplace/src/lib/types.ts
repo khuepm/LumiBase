@@ -3,8 +3,8 @@
 export interface ExtensionVersion {
   id: string;
   version: string;
-  publishedAt: string;
-  sha256: string;
+  publishedAt: string | null;
+  sha256: string | null;
   changelog?: string;
 }
 
@@ -21,9 +21,9 @@ export interface Extension {
   iconUrl?: string;
   bannerUrl?: string;
   latestVersion: string;
-  totalDownloads: number;
-  rating?: number;
-  ratingCount?: number;
+  totalDownloads?: number;
+  rating?: number | null;
+  ratingCount?: number | null;
   versions: ExtensionVersion[];
   publishedAt: string;
   updatedAt: string;

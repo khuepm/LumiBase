@@ -1,0 +1,32 @@
+# Agent Setup — LumiBase Page Index
+
+> Token-efficient page index for AI agents. Sized to fit in a single context window.
+> For the full English docs index, see [../llms.txt](../llms.txt).
+
+## Pages in this section
+
+- [index.md](./index.md) — Agent setup overview: quick setup, agent comparison table, agent-friendly docs
+- [prompt.md](./prompt.md) — Machine-readable agent setup instructions (fetch and execute directly)
+- [claude-code.md](./claude-code.md) — Claude Code setup guide (CLAUDE.md, MCP config, example prompts)
+- [cursor.md](./cursor.md) — Cursor setup guide (.cursorrules, Composer usage, codebase indexing)
+- [github-copilot.md](./github-copilot.md) — GitHub Copilot setup guide (workspace instructions, MCP, agent mode)
+- [codex.md](./codex.md) — OpenAI Codex setup guide (AGENTS.md, MCP, example sessions)
+- [windsurf.md](./windsurf.md) — Windsurf setup guide (MCP config, Cascade Flows, command suggestions)
+
+## Quick context for agents
+
+**LumiBase** is an Edge-native Headless CMS.
+
+Stack: Hono.js (Cloudflare Workers + Docker) · PostgreSQL + Drizzle · Logto OIDC · Cloudflare KV/R2 · @lumibase/runtime abstraction
+
+Key rules:
+- IDs: NanoID or UUIDv7 (never auto-increment)
+- Multi-tenancy: `site_id` on every domain table, every query scoped
+- AI safety: dangerous skills gate through `ai_approvals` (HITL)
+- Cache: tag-based invalidation (`CacheProvider.invalidateByTag`)
+
+Key entry points:
+- API: `GET/POST /api/v1/items/:collection`, `POST /api/v1/ai/chat`, `POST /api/v1/flows/:id/run`
+- Services: `apps/cms/src/services/`
+- Schema: `packages/database/src/schema/`
+- AI Skills: `packages/ai-skills/src/skills.ts`

@@ -287,6 +287,8 @@ export function decodeCursor(
  * absent field means "no constraint on that dimension".
  */
 export interface AuditLogFilter {
+  /** Active tenant/site id; set by route handlers before executing DB reads. */
+  readonly siteId?: string;
   /** Exact `event` match; one of {@link AUDIT_EVENTS}. */
   readonly event?: string;
   /** Lower-cased email matched against actorEmail OR targetEmail. */
@@ -473,12 +475,13 @@ export interface AuditLogPage {
  * paginated view of the same filters).
  */
 function auditFilterConditions(filter: {
+  readonly siteId: string;
   readonly event?: string;
   readonly email?: string;
   readonly from?: Date;
   readonly to?: Date;
 }): SQL[] {
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(auditLog.siteId, filter.siteId)];
   if (filter.event) {
     conditions.push(eq(auditLog.event, filter.event));
   }
@@ -525,6 +528,7 @@ function toAuditLogEntry(row: Record<string, unknown>): AuditLogEntry {
   return {
     id: row.id as string,
     timestamp: row.timestamp as Date,
+    siteId: (row.siteId ?? null) as string | null,
     event: row.event as string,
     actorEmail: (row.actorEmail ?? null) as string | null,
     targetEmail: (row.targetEmail ?? null) as string | null,
@@ -555,7 +559,7 @@ function toAuditLogEntry(row: Record<string, unknown>): AuditLogEntry {
  */
 export async function queryAuditLog(
   db: Database,
-  filter: AuditLogFilter,
+  filter: AuditLogFilter & { readonly siteId: string },
 ): Promise<AuditLogPage> {
   const conditions: SQL[] = auditFilterConditions(filter);
   if (filter.cursor) {
@@ -596,6 +600,7 @@ export async function queryAuditLog(
  * query route's pagination knobs).
  */
 export interface AuditExportFilter {
+  readonly siteId?: string;
   readonly event?: string;
   readonly email?: string;
   readonly from?: Date;
@@ -658,7 +663,7 @@ export function parseAuditExportFilter(
  */
 export async function countAuditRows(
   db: Database,
-  filter: AuditExportFilter,
+  filter: AuditExportFilter & { readonly siteId: string },
 ): Promise<number> {
   const conditions = auditFilterConditions(filter);
   const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -711,7 +716,7 @@ export interface AuditExportOptions {
  */
 export async function* auditExportLines(
   db: Database,
-  filter: AuditExportFilter,
+  filter: AuditExportFilter & { readonly siteId: string },
   opts: AuditExportOptions = {},
 ): AsyncGenerator<string, void, unknown> {
   const batchSize =
@@ -857,7 +862,10 @@ auditRouter.get('/audit-log', async (c) => {
   // 3. Run the index-aligned, cursor-paginated query. P95 ≤ 2s is met by
   //    the `(timestamp)` / `(event, timestamp)` indexes (design §10.3),
   //    not by a code-level timeout.
-  const page = await queryAuditLog(c.get('db'), parsed.filter);
+  const page = await queryAuditLog(c.get('db'), {
+    ...parsed.filter,
+    siteId: c.get('siteId'),
+  });
 
   return c.json({ data: { items: page.items, nextCursor: page.nextCursor } });
 });
@@ -889,7 +897,8 @@ auditRouter.get('/audit-log/export', async (c) => {
   // 3. PRE-FLIGHT CAP CHECK → 413. Decide the cap deterministically with
   //    a count probe BEFORE opening the stream (a 200 + body can no
   //    longer change its status code). Req 15.6; design §10.4.
-  const total = await countAuditRows(db, parsed.filter);
+  const filter = { ...parsed.filter, siteId: c.get('siteId') };
+  const total = await countAuditRows(db, filter);
   if (total > EXPORT_MAX_ROWS) {
     return c.json(
       {
@@ -913,6 +922,6 @@ auditRouter.get('/audit-log/export', async (c) => {
     'attachment; filename="audit-log-export.ndjson"',
   );
 
-  const stream = ndjsonStream(auditExportLines(db, parsed.filter));
+  const stream = ndjsonStream(auditExportLines(db, filter));
   return c.body(stream);
 });

@@ -17,7 +17,7 @@ import { cdcPipelines, type Database } from '@lumibase/database';
 import { nanoid } from 'nanoid';
 
 import type { CdcConnector } from '../connectors/types';
-import { encryptSync as encrypt, decryptSync as decrypt } from './encryption';
+import { encrypt, decryptCompat } from './encryption';
 
 // ── constants ────────────────────────────────────────────────────────────
 
@@ -335,16 +335,16 @@ export class PipelineRegistry implements PipelineRegistryService {
     );
 
     // 4. Encrypt connection parameters (Req 1.4)
-    const encryptedSource = encrypt(
+    const encryptedSource = await encrypt(
       input.source_database_connection,
       this.encryptionKey,
     );
-    const encryptedSink = encrypt(
+    const encryptedSink = await encrypt(
       input.clickhouse_sink_connection,
       this.encryptionKey,
     );
     const encryptedIntermediary = input.intermediary_connection
-      ? encrypt(input.intermediary_connection, this.encryptionKey)
+      ? await encrypt(input.intermediary_connection, this.encryptionKey)
       : null;
 
     // 5. Persist the pipeline (Req 1.1)
@@ -396,7 +396,7 @@ export class PipelineRegistry implements PipelineRegistryService {
       .from(cdcPipelines)
       .where(eq(cdcPipelines.siteId, siteId));
 
-    return rows.map((row) => this.toRecord(row));
+    return Promise.all(rows.map((row) => this.toRecord(row)));
   }
 
   async update(
@@ -438,13 +438,13 @@ export class PipelineRegistry implements PipelineRegistryService {
       updateSet.pipelineName = patch.pipeline_name;
     }
     if (patch.source_database_connection !== undefined) {
-      updateSet.sourceConnection = encrypt(
+      updateSet.sourceConnection = await encrypt(
         patch.source_database_connection,
         this.encryptionKey,
       );
     }
     if (patch.clickhouse_sink_connection !== undefined) {
-      updateSet.sinkConnection = encrypt(
+      updateSet.sinkConnection = await encrypt(
         patch.clickhouse_sink_connection,
         this.encryptionKey,
       );
@@ -453,7 +453,7 @@ export class PipelineRegistry implements PipelineRegistryService {
       updateSet.intermediaryConnection =
         patch.intermediary_connection === null
           ? null
-          : encrypt(patch.intermediary_connection, this.encryptionKey);
+          : await encrypt(patch.intermediary_connection, this.encryptionKey);
     }
     if (patch.replication_tables !== undefined) {
       updateSet.replicationTables = patch.replication_tables;
@@ -586,9 +586,12 @@ export class PipelineRegistry implements PipelineRegistryService {
 
   /**
    * Map a raw database row to a PipelineRecord, decrypting connection
-   * parameters.
+   * parameters. Uses decryptCompat so rows written before the AES-GCM
+   * migration still decrypt.
    */
-  private toRecord(row: typeof cdcPipelines.$inferSelect): PipelineRecord {
+  private async toRecord(
+    row: typeof cdcPipelines.$inferSelect,
+  ): Promise<PipelineRecord> {
     return {
       id: row.id,
       siteId: row.siteId,
@@ -596,10 +599,16 @@ export class PipelineRegistry implements PipelineRegistryService {
       connectorType: row.connectorType as CdcConnectorType,
       status: row.status as PipelineStatus,
       statusMessage: row.statusMessage,
-      sourceConnection: decrypt(row.sourceConnection, this.encryptionKey),
-      sinkConnection: decrypt(row.sinkConnection, this.encryptionKey),
+      sourceConnection: await decryptCompat(
+        row.sourceConnection,
+        this.encryptionKey,
+      ),
+      sinkConnection: await decryptCompat(
+        row.sinkConnection,
+        this.encryptionKey,
+      ),
       intermediaryConnection: row.intermediaryConnection
-        ? decrypt(row.intermediaryConnection, this.encryptionKey)
+        ? await decryptCompat(row.intermediaryConnection, this.encryptionKey)
         : null,
       replicationTables: row.replicationTables as string[],
       config: row.config as Record<string, unknown>,

@@ -18,10 +18,11 @@
  */
 
 import { extensions, userSites, notifications, roles } from "@lumibase/database";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
-import { Hono } from "hono";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../env";
+import { PermissionService } from "../services/permission-service";
 
 export const marketplaceRouter = new Hono<AppEnv>();
 
@@ -44,6 +45,45 @@ async function sha256(buf: ArrayBuffer): Promise<string> {
   return Array.from(new Uint8Array(hash))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function permissionCtx(c: Context<AppEnv>) {
+  const auth = c.get("auth");
+  const headers: Record<string, string> = {};
+  c.req.raw.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value;
+  });
+  return {
+    userId: auth?.userId ?? null,
+    siteId: c.get("siteId"),
+    roleId: null,
+    user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
+    ip: c.get("ip") ?? c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? null,
+    headers,
+    apiKey: auth?.apiKey ?? null,
+  };
+}
+
+async function requireInstallPermission(c: Context<AppEnv>): Promise<Response | null> {
+  const perm = await new PermissionService({
+    db: c.get("db"),
+    cache: c.get("runtime").cache,
+    ctx: permissionCtx(c),
+  }).canAccess("extensions", "install");
+
+  if (perm) return null;
+  return c.json(
+    { errors: [{ code: "FORBIDDEN", message: 'Action "extensions:install" is not allowed.' }] },
+    403,
+  );
+}
+
+function extensionKey(input: { key?: string | null; marketplaceSlug?: string | null; name: string }): string {
+  return (input.key ?? input.marketplaceSlug ?? input.name)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 async function verifyEd25519Signature(
@@ -90,31 +130,202 @@ export function compareSemver(a: string, b: string): number {
   return 0;
 }
 
+type MarketplaceManifest = Record<string, unknown> & {
+  name?: string;
+  description?: string;
+  readme?: string;
+  category?: string;
+  tags?: unknown;
+  publisher?: string;
+  marketplace?: Record<string, unknown>;
+  repositoryUrl?: string;
+  documentationUrl?: string;
+  license?: string;
+  licenseType?: string;
+};
+
+type ExtensionRow = typeof extensions.$inferSelect;
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_PER_PAGE = 12;
+const MAX_PER_PAGE = 50;
+
+function asManifest(input: unknown): MarketplaceManifest {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    return input as MarketplaceManifest;
+  }
+  return {};
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function asTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((tag): tag is string => typeof tag === "string")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+function catalogValue(manifest: MarketplaceManifest, key: string): unknown {
+  return manifest.marketplace?.[key] ?? manifest[key];
+}
+
+function latestPublishedRows(rows: ExtensionRow[]): ExtensionRow[] {
+  const bySlug = new Map<string, ExtensionRow>();
+
+  for (const row of rows) {
+    const slug = row.marketplaceSlug ?? row.key ?? row.name;
+    const current = bySlug.get(slug);
+    if (!current || compareSemver(row.version, current.version) > 0) {
+      bySlug.set(slug, row);
+    }
+  }
+
+  return [...bySlug.values()];
+}
+
+function toCatalogExtension(row: ExtensionRow) {
+  const manifest = asManifest(row.manifest);
+  const slug = row.marketplaceSlug ?? row.key ?? extensionKey(row);
+  const category = asString(catalogValue(manifest, "category")) ?? row.type;
+  const tags = asTags(catalogValue(manifest, "tags"));
+  const publisherName =
+    asString(catalogValue(manifest, "publisherName")) ??
+    asString(manifest.publisher) ??
+    row.publisher ??
+    "Unknown publisher";
+  const description =
+    asString(catalogValue(manifest, "description")) ??
+    `${row.name} extension for LumiBase.`;
+
+  return {
+    id: row.id,
+    slug,
+    marketplaceSlug: slug,
+    name: asString(catalogValue(manifest, "name")) ?? row.name,
+    description,
+    readme: asString(catalogValue(manifest, "readme")) ?? description,
+    category,
+    tags,
+    publisherName,
+    publisher: publisherName,
+    latestVersion: row.version,
+    version: row.version,
+    type: row.type,
+    totalDownloads: 0,
+    rating: null,
+    ratingCount: null,
+    versions: [
+      {
+        id: row.id,
+        version: row.version,
+        publishedAt: row.publishedAt?.toISOString() ?? null,
+        sha256: row.bundleSha256,
+      },
+    ],
+    publishedAt: row.publishedAt?.toISOString() ?? null,
+    updatedAt: row.publishedAt?.toISOString() ?? null,
+    repositoryUrl: asString(catalogValue(manifest, "repositoryUrl")),
+    documentationUrl: asString(catalogValue(manifest, "documentationUrl")),
+    licenseType:
+      asString(catalogValue(manifest, "licenseType")) ??
+      asString(catalogValue(manifest, "license")),
+    manifest: row.manifest,
+    bundleUrl: row.bundleUrl,
+    bundleSha256: row.bundleSha256,
+    signature: row.signature,
+    signatureAlg: row.signatureAlg,
+    publisherKeyId: row.publisherKeyId,
+  };
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number, max?: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  const integer = Math.floor(parsed);
+  return max ? Math.min(integer, max) : integer;
+}
+
 // ── routes ─────────────────────────────────────────────────────────────────
 
 marketplaceRouter.get("/extensions", async (c) => {
   const db = c.get("db");
+  const q = c.req.query("q")?.trim().toLowerCase() ?? "";
+  const category = c.req.query("category")?.trim().toLowerCase() ?? "";
+  const tagQuery = c.req.query("tags") ?? "";
+  const tags = tagQuery
+    .split(",")
+    .map((tag) => tag.trim().toLowerCase())
+    .filter(Boolean);
+  const sort = c.req.query("sort") ?? "latest";
+  const page = parsePositiveInt(c.req.query("page"), DEFAULT_PAGE);
+  const perPage = parsePositiveInt(c.req.query("perPage"), DEFAULT_PER_PAGE, MAX_PER_PAGE);
+
   const rows = await db
     .select()
     .from(extensions)
     .where(and(isNull(extensions.siteId), isNotNull(extensions.publishedAt)));
+
+  let catalog = latestPublishedRows(rows).map(toCatalogExtension);
+
+  if (q) {
+    catalog = catalog.filter((ext) => {
+      const haystack = [
+        ext.name,
+        ext.description,
+        ext.publisherName,
+        ext.slug,
+        ext.category,
+        ...ext.tags,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }
+
+  if (category) {
+    catalog = catalog.filter((ext) => ext.category.toLowerCase() === category);
+  }
+
+  if (tags.length > 0) {
+    catalog = catalog.filter((ext) =>
+      tags.some((tag) => ext.tags.map((t) => t.toLowerCase()).includes(tag)),
+    );
+  }
+
+  if (sort === "name") {
+    catalog.sort((a, b) => a.name.localeCompare(b.name));
+  } else {
+    // `popular` falls back to latest until download metrics exist.
+    catalog.sort((a, b) => {
+      const bTime = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+      const aTime = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+      return bTime - aTime;
+    });
+  }
+
+  const total = catalog.length;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const start = (page - 1) * perPage;
+
+
   return c.json({
-    data: rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      version: r.version,
-      type: r.type,
-      publisher: r.publisher,
-      marketplaceSlug: r.marketplaceSlug,
-      publishedAt: r.publishedAt,
-    })),
+    data: catalog.slice(start, start + perPage),
+    total,
+    page,
+    perPage,
+    totalPages,
   });
 });
 
 marketplaceRouter.get("/extensions/:slug", async (c) => {
   const db = c.get("db");
   const slug = c.req.param("slug");
-  const [row] = await db
+  const rows = await db
     .select()
     .from(extensions)
     .where(
@@ -124,6 +335,7 @@ marketplaceRouter.get("/extensions/:slug", async (c) => {
         isNotNull(extensions.publishedAt),
       ),
     );
+  const [row] = latestPublishedRows(rows);
   if (!row)
     return c.json(
       { errors: [{ code: "NOT_FOUND", message: "Extension not found" }] },
@@ -131,21 +343,7 @@ marketplaceRouter.get("/extensions/:slug", async (c) => {
     );
 
   return c.json({
-    data: {
-      id: row.id,
-      name: row.name,
-      version: row.version,
-      type: row.type,
-      publisher: row.publisher,
-      marketplaceSlug: row.marketplaceSlug,
-      manifest: row.manifest,
-      bundleUrl: row.bundleUrl,
-      bundleSha256: row.bundleSha256,
-      signature: row.signature,
-      signatureAlg: row.signatureAlg,
-      publisherKeyId: row.publisherKeyId,
-      publishedAt: row.publishedAt,
-    },
+    data: toCatalogExtension(row),
   });
 });
 
@@ -204,6 +402,9 @@ marketplaceRouter.get("/updates", async (c) => {
 });
 
 marketplaceRouter.post("/extensions/:slug/install", async (c) => {
+  const denied = await requireInstallPermission(c);
+  if (denied) return denied;
+
   const siteId = c.get("siteId");
   const db = c.get("db");
   const slug = c.req.param("slug");
@@ -286,6 +487,7 @@ marketplaceRouter.post("/extensions/:slug/install", async (c) => {
     .insert(extensions)
     .values({
       siteId,
+      key: extensionKey(source),
       name: source.name,
       version: source.version,
       type: source.type,
@@ -333,6 +535,7 @@ marketplaceRouter.post("/publish", async (c) => {
   const updated = await db
     .update(extensions)
     .set({
+      key: parsed.data.marketplaceSlug,
       marketplaceSlug: parsed.data.marketplaceSlug,
       publisher: parsed.data.publisher,
       signature: parsed.data.signature,
@@ -363,33 +566,53 @@ marketplaceRouter.post("/publish", async (c) => {
     .from(extensions)
     .where(and(query, isNotNull(extensions.siteId)));
 
-  for (const installed of installedOutdated) {
-    if (compareSemver(source.version, installed.version) > 0) {
-      // Notify only site administrators (roles with adminAccess = true).
-      // Members without a role assignment (roleId IS NULL) are excluded.
-      const admins = await db
-        .select({ userId: userSites.userId })
-        .from(userSites)
-        .innerJoin(
-          roles,
-          and(
-            eq(roles.id, userSites.roleId),
-            eq(roles.siteId, installed.siteId!),
-            eq(roles.adminAccess, true),
-          ),
-        )
-        .where(eq(userSites.siteId, installed.siteId!));
+  const outdatedExtensions = installedOutdated.filter(
+    (installed) => compareSemver(source.version, installed.version) > 0
+  );
 
-      for (const admin of admins) {
-        await db.insert(notifications).values({
+  if (outdatedExtensions.length > 0) {
+    const siteIds = Array.from(new Set(outdatedExtensions.map(e => e.siteId!)));
+
+    // Fetch all admins for all affected sites in a single query
+    const admins = await db
+      .select({ userId: userSites.userId, siteId: userSites.siteId })
+      .from(userSites)
+      .innerJoin(
+        roles,
+        and(
+          eq(roles.id, userSites.roleId),
+          eq(roles.adminAccess, true),
+        ),
+      )
+      .where(inArray(userSites.siteId, siteIds));
+
+    // Group admins by siteId for fast lookup
+    const adminsBySite = new Map<string, string[]>();
+    for (const admin of admins) {
+      const list = adminsBySite.get(admin.siteId!) || [];
+      list.push(admin.userId);
+      adminsBySite.set(admin.siteId!, list);
+    }
+
+    // Prepare notifications for all admins
+    const pendingNotifications = [];
+    for (const installed of outdatedExtensions) {
+      const siteAdmins = adminsBySite.get(installed.siteId!) || [];
+      for (const adminUserId of siteAdmins) {
+        pendingNotifications.push({
           siteId: installed.siteId!,
-          recipient: admin.userId,
+          recipient: adminUserId,
           subject: "Extension Update Available",
           message: `A new version ${source.version} of extension '${installed.name}' is available. You are currently running ${installed.version}.`,
           status: "unread",
           pushed: false,
         });
       }
+    }
+
+    // Insert all notifications in a single batch query
+    if (pendingNotifications.length > 0) {
+      await db.insert(notifications).values(pendingNotifications);
     }
   }
 

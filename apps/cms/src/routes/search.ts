@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
  * /search — full-text search endpoint powered by the SearchProvider.
@@ -94,7 +95,7 @@ searchRouter.get('/', async (c) => {
       400,
     );
   } catch (err) {
-    console.error('[search] error', err);
+    console.error('[search] error', formatSafeError(err));
     return c.json(
       {
         errors: [

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 import {
   SetupService,
@@ -39,7 +39,13 @@ function getTableName(table: { [k: string]: unknown }): string {
   return '';
 }
 
-function makeFakeDb() {
+function makeFakeDb(
+  systemStateRow: {
+    state: string;
+    setupTokenHash: string | null;
+    adminPath: string | null;
+  } = { state: 'uninitialized', setupTokenHash: null, adminPath: null },
+) {
   const queryApi = {
     insert(table: { [k: string]: unknown }) {
       void getTableName(table);
@@ -77,9 +83,7 @@ function makeFakeDb() {
                   return Promise.resolve([]);
                 },
                 for() {
-                  return Promise.resolve([
-                    { state: 'uninitialized', setupTokenHash: null, adminPath: null },
-                  ]);
+                  return Promise.resolve([systemStateRow]);
                 },
                 then(resolve: (v: unknown) => void) {
                   resolve([]);
@@ -206,6 +210,62 @@ describe('SetupService.complete() → audit events (Req 15.1)', () => {
       targetEmail: 'admin@example.com',
       requestId: 'req-xyz',
     });
+  });
+
+  it('rejects already-initialized setup before hashing or audit writes', async () => {
+    const deriveSpy = vi.spyOn(crypto.subtle, 'deriveBits');
+    const { audit, calls } = makeSpyAudit();
+    const db = makeFakeDb({
+      state: 'initialized',
+      setupTokenHash: null,
+      adminPath: '/existing-admin',
+    }) as never;
+    const svc = new SetupService({
+      db,
+      requireSetupToken: false,
+      smtpAvailable: false,
+      audit,
+    });
+
+    try {
+      const outcome = await svc.complete(makeInput(), { requestId: 'req-init' });
+      expect(outcome).toEqual({
+        ok: false,
+        error: { code: 'ALREADY_INITIALIZED' },
+      });
+      expect(deriveSpy).not.toHaveBeenCalled();
+      expect(calls).toHaveLength(0);
+    } finally {
+      deriveSpy.mockRestore();
+    }
+  });
+
+  it('rejects a missing setup token before hashing or audit writes', async () => {
+    const deriveSpy = vi.spyOn(crypto.subtle, 'deriveBits');
+    const { audit, calls } = makeSpyAudit();
+    const db = makeFakeDb({
+      state: 'uninitialized',
+      setupTokenHash: 'not-a-valid-token-hash',
+      adminPath: null,
+    }) as never;
+    const svc = new SetupService({
+      db,
+      requireSetupToken: true,
+      smtpAvailable: false,
+      audit,
+    });
+
+    try {
+      const outcome = await svc.complete(makeInput(), { requestId: 'req-token' });
+      expect(outcome).toEqual({
+        ok: false,
+        error: { code: 'SETUP_TOKEN_REQUIRED' },
+      });
+      expect(deriveSpy).not.toHaveBeenCalled();
+      expect(calls).toHaveLength(0);
+    } finally {
+      deriveSpy.mockRestore();
+    }
   });
 
   it('completes successfully with the default AuditLogger (no spy injected)', async () => {

@@ -13,7 +13,7 @@ This guide deploys the **full stateful CDC stack** — Kafka Broker, Debezium Co
 - Docker Engine 24+ and Docker Compose v2 (for self-hosting), **or** accounts for the managed equivalents (Confluent Cloud / ClickHouse Cloud / Airbyte Cloud).
 - A PostgreSQL Source_Database with logical replication enabled (`wal_level = logical`, a `REPLICATION` role, and sufficient `max_replication_slots` / `max_wal_senders`).
 - A running LumiBase CMS with the CDC module enabled, and an admin token + site id for `/api/v1/cdc`.
-- Network reachability between the services on a shared network (or correct firewall rules / VPC peering for managed services).
+- Network reachability between the services on a shared private network (or correct firewall rules / VPC peering for managed services). Do not expose Kafka, Debezium Connect, ClickHouse, or Airbyte directly to the Internet or untrusted LANs.
 
 ## Step 1: Configure environment variables
 
@@ -33,19 +33,21 @@ DEBEZIUM_CONNECT_URL=http://debezium:8083
 
 ## Step 2: Define the Docker Compose stack
 
-The services and their ports/dependencies come from the config generator's service catalog. A minimal Debezium+Kafka stack:
+The services and their ports/dependencies come from the config generator's service catalog. A minimal Debezium+Kafka stack is shown below.
+
+> **Security default:** published CDC service ports are loopback-only (`127.0.0.1`) for local operator access. Docker Compose binds short-form ports such as `9092:9092` on all host interfaces; do not use that form for Kafka, Debezium Connect, ClickHouse, or Airbyte. If LumiBase and the CDC containers run on the same Compose network, remove the `ports` entries entirely and use container-to-container hostnames such as `kafka:9092` and `debezium:8083`. For remote access, put these services behind a private VPC/VPN/firewall and enable the service's authentication, TLS, SASL, and ACL controls before opening any port.
 
 ```yaml
 # docker-compose.cdc.yml
 services:
   kafka:
     image: confluentinc/cp-kafka:7.6.0
-    ports: ["9092:9092"]
+    ports: ["127.0.0.1:9092:9092"]
     networks: [cdc]
 
   debezium:
     image: debezium/connect:2.6
-    ports: ["8083:8083"]
+    ports: ["127.0.0.1:8083:8083"]
     depends_on: [kafka]
     environment:
       BOOTSTRAP_SERVERS: kafka:9092
@@ -57,7 +59,7 @@ services:
 
   clickhouse:
     image: clickhouse/clickhouse-server:24.3
-    ports: ["8123:8123", "9000:9000"]
+    ports: ["127.0.0.1:8123:8123", "127.0.0.1:9000:9000"]
     networks: [cdc]
 
 networks:
@@ -65,10 +67,10 @@ networks:
     driver: bridge
 ```
 
-For the **Materialized Engine** approach, include only the `clickhouse` service. For **Airbyte**, replace Kafka/Debezium with the `airbyte/server:0.63.0` service on port 8001. Service images, ports, and start-ordering match `STATEFUL_SERVICES_BY_APPROACH` in `apps/cms/src/modules/cdc/ai-flow/config-generator.ts`.
+For the **Materialized Engine** approach, include only the `clickhouse` service. For **Airbyte**, replace Kafka/Debezium with the `airbyte/server:0.63.0` service on container port 8001, publishing it only as `127.0.0.1:8001:8001` when local host access is required. Service images, container ports, and start-ordering match `STATEFUL_SERVICES_BY_APPROACH` in `apps/cms/src/modules/cdc/ai-flow/config-generator.ts`.
 
-| Approach | Services | Images | Ports |
-|----------|----------|--------|-------|
+| Approach | Services | Images | Container ports (loopback-only if published) |
+|----------|----------|--------|---------------------------------------------|
 | Debezium + Kafka | kafka_broker, debezium_connector, clickhouse_sink | `confluentinc/cp-kafka:7.6.0`, `debezium/connect:2.6`, `clickhouse/clickhouse-server:24.3` | 9092, 8083, 8123/9000 |
 | Materialized Engine | clickhouse_sink (+ materialized_engine runs inside ClickHouse) | `clickhouse/clickhouse-server:24.3` | 8123/9000 |
 | Airbyte | airbyte_connector, clickhouse_sink | `airbyte/server:0.63.0`, `clickhouse/clickhouse-server:24.3` | 8001, 8123/9000 |
@@ -80,7 +82,7 @@ docker compose -f docker-compose.cdc.yml --env-file .env up -d
 docker compose -f docker-compose.cdc.yml ps
 ```
 
-> **Managed services alternative:** instead of running these containers, point `KAFKA_BOOTSTRAP_SERVERS` at Confluent Cloud, `CLICKHOUSE_SINK_URL` at ClickHouse Cloud, and `AIRBYTE_API_URL` at Airbyte Cloud. The rest of the steps are identical.
+> **Managed services alternative:** instead of running these containers, point `KAFKA_BOOTSTRAP_SERVERS` at Confluent Cloud, `CLICKHOUSE_SINK_URL` at ClickHouse Cloud, and `AIRBYTE_API_URL` at Airbyte Cloud. Require private networking or IP allow-lists plus provider authentication/TLS for each managed endpoint. The rest of the steps are identical.
 
 ## Step 4: Deploy via the AI Flow Engine (recommended)
 
@@ -155,7 +157,7 @@ The `/deploy` response for a successful deployment looks like:
 }
 ```
 
-You can also verify the underlying services directly:
+You can also verify the underlying services directly from the Docker host when you kept the loopback-only port bindings above:
 
 ```bash
 # ClickHouse reachable
