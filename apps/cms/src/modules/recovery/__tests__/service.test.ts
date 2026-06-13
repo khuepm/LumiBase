@@ -48,6 +48,7 @@ interface FakeDbOptions {
   readonly userRows?: ReadonlyArray<Record<string, unknown>>;
   readonly stateRows?: ReadonlyArray<Record<string, unknown>>;
   readonly codeRows?: ReadonlyArray<Record<string, unknown>>;
+  readonly backupCodeUpdateRows?: ReadonlyArray<Record<string, unknown>>;
 }
 
 interface CapturedUpdate {
@@ -108,8 +109,17 @@ function makeFakeDb(opts: FakeDbOptions = {}) {
       return {
         set(values: Record<string, unknown>) {
           return {
-            async where() {
+            where() {
               updates.push({ table: name, values });
+              return {
+                returning() {
+                  return Promise.resolve(
+                    name === 'admin_backup_codes'
+                      ? (opts.backupCodeUpdateRows ?? [{ id: 'bkc_1' }])
+                      : [],
+                  );
+                },
+              };
             },
           };
         },
@@ -217,6 +227,27 @@ describe('RecoveryService.recover — success (Req 14.4)', () => {
 
     const validated = await svc.validateUnlockToken(result!.oneTimeUnlockToken);
     expect(validated).toEqual({ userId: 'usr_boot' });
+  });
+
+  it('returns null and saves no token when the guarded backup-code update spends zero rows', async () => {
+    const { db, updates, deletes } = makeFakeDb({
+      userRows: [{ id: 'usr_boot', isBootstrap: true }],
+      stateRows: [{ adminPath: ADMIN_PATH }],
+      codeRows: await bootstrapCodeRows(PLAINTEXT_CODE),
+      backupCodeUpdateRows: [],
+    });
+    const store = new InMemoryUnlockTokenStore();
+    const sleep = vi.fn(instantSleep);
+    const svc = new RecoveryService({ db, tokenStore: store, sleep });
+
+    const result = await svc.recover('boot@example.com', PLAINTEXT_CODE, IP);
+
+    expect(result).toBeNull();
+    expect(store.size).toBe(0);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.table).toBe('admin_backup_codes');
+    expect(deletes).toHaveLength(0);
+    expect(sleep).toHaveBeenCalledTimes(1);
   });
 });
 

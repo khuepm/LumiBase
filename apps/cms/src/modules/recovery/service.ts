@@ -27,9 +27,9 @@
  *      whose hash verifies is the match.
  *   5. In a single transaction:
  *        - stamp `used_at = now()` + `used_from_ip = ip` on the matched
- *          row (the `used_at IS NULL` guard in the UPDATE makes the
- *          redemption single-use even under a concurrent retry —
- *          Property 4 / Req 14.7);
+ *          row and require the guarded UPDATE to return the spent row;
+ *          if a concurrent transaction already redeemed it, abort before
+ *          any unlock token is saved (Property 4 / Req 14.7);
  *        - clear the user's lockout (`lockedUntil`, `failedCount`,
  *          `failedCountWindowStart`);
  *        - drain the IP block for `ip` and the email's own failure
@@ -863,10 +863,12 @@ export class RecoveryService {
     //    failure bursts, and save the token hash. A partial failure
     //    rolls the whole recovery back so we never leave a code spent
     //    without clearing the lockout, or vice versa.
-    await this.db.transaction(async (tx) => {
-      // 6a. Single-use redemption. The `used_at IS NULL` guard in the
-      //     WHERE makes a concurrent double-redeem a no-op on the loser.
-      await tx
+    const redeemed = await this.db.transaction(async (tx) => {
+      // 6a. Single-use redemption. The `used_at IS NULL` guard makes a
+      //     concurrent double-redeem update zero rows on the loser; the
+      //     `returning()` check is therefore the source of truth for
+      //     whether THIS transaction actually spent the code.
+      const spentRows = await tx
         .update(adminBackupCodes)
         .set({ usedAt: now, usedFromIp: ip })
         .where(
@@ -874,7 +876,10 @@ export class RecoveryService {
             eq(adminBackupCodes.id, matchedId),
             isNull(adminBackupCodes.usedAt),
           ),
-        );
+        )
+        .returning({ id: adminBackupCodes.id });
+
+      if (spentRows.length === 0) return false;
 
       // 6b. Clear the user lockout (mirrors `/unlock-user`).
       await tx
@@ -928,7 +933,11 @@ export class RecoveryService {
         tokenHash: token.hash,
         expiresAt,
       });
+
+      return true;
     });
+
+    if (!redeemed) return null;
 
     // Req 15.1 — `recovery_completed` + `backup_code_used` audit
     // entries (task 11.2). Emitted post-commit (the recovery mutations
