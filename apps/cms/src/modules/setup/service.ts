@@ -359,39 +359,6 @@ export class SetupService {
       };
     }
 
-    // ── 5b. `setup_started` audit entry (Req 15.1; task 11.2). Emitted
-    //        once the request has passed eager validation and we are
-    //        about to take the row lock — it records that a setup
-    //        ATTEMPT began (distinct from `setup_completed`, which only
-    //        fires post-commit). Best-effort + never-throws via the
-    //        AuditLogger; no secrets are in scope (only the actor email
-    //        + masked Admin_Path hash). This is the one setup event that
-    //        is NOT post-commit by design — a failed/aborted attempt
-    //        still legitimately "started".
-    await this.resolveAuditLogger().write({
-      event: 'setup_started',
-      actorEmail: input.account.email,
-      ip: ctx.ip ?? null,
-      userAgent: ctx.userAgent ?? null,
-      requestId: ctx.requestId ?? null,
-      metadata: { adminPathHash: await sha256ShortHex(normalizedPath) },
-    });
-
-    // ── 6. Pre-compute hashes outside the tx so we hold the row lock
-    //       for the minimum time. PBKDF2 100k is ~50ms per hash and we
-    //       compute 9 (1 password + 8 backup codes) in parallel.
-    const passwordHash = await hashPassword(input.account.password);
-    const plainBackupCodes: string[] = [];
-    for (let i = 0; i < BACKUP_CODE_COUNT; i++) {
-      plainBackupCodes.push(generateBackupCode());
-    }
-    const backupCodeHashes = await Promise.all(
-      plainBackupCodes.map((c) => hashPassword(c)),
-    );
-
-    const baselineConstitutionHash = await computeConstitutionHash(
-      BASELINE_CONSTITUTION_TEMPLATE,
-    );
     const policyJson = serializeLockoutPolicy(input.policy);
     const policyValue = JSON.parse(policyJson) as Record<string, unknown>;
     const projectCheck = validateProject(input.project);
@@ -504,6 +471,10 @@ export class SetupService {
         }
         const backupCodeHashes = await Promise.all(
           plainBackupCodes.map((c) => hashPassword(c)),
+        );
+
+        const baselineConstitutionHash = await computeConstitutionHash(
+          BASELINE_CONSTITUTION_TEMPLATE,
         );
 
         // Path uniqueness is enforced by the
