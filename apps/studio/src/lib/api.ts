@@ -1,4 +1,5 @@
 import { createLumiClient, legacyRest } from '@lumibase/sdk';
+import { getAdminBase } from '@/lib/admin-base';
 
 /**
  * Studio API client. In Phase 0/A we run against the Vite dev proxy so the
@@ -39,12 +40,47 @@ export function hasActiveToken(): boolean {
   return getActiveToken().length > 0;
 }
 
+/**
+ * Set once we have kicked off a redirect to the login screen so a burst of
+ * parallel requests all 401-ing at the same time (e.g. the dashboard firing
+ * collections + roles + flows together) only triggers a single navigation.
+ * Reset implicitly by the full page load the redirect performs.
+ */
+let unauthorizedRedirectInFlight = false;
+
+/**
+ * Global `401 Unauthorized` handler. A stale/expired token in localStorage
+ * is otherwise treated as "logged in" by the gate, letting the shell mount
+ * and every API call 401 with a misleading "Failed to load…" message. On the
+ * first 401 we clear the token and send the operator to the admin login page,
+ * derived from the current URL's `/{adminPath}` prefix (the Zustand setup
+ * store may be empty after a reload, so we do NOT rely on it here).
+ */
+function handleUnauthorized(): void {
+  if (typeof window === 'undefined') return;
+  if (unauthorizedRedirectInFlight) return;
+
+  const { pathname } = window.location;
+  // Already on a login/recovery page → clearing + redirecting would loop.
+  const adminBase = getAdminBase(pathname);
+  const rest = adminBase ? pathname.slice(adminBase.length) : pathname;
+  if (rest.startsWith('/login') || rest.startsWith('/recovery')) {
+    clearActiveToken();
+    return;
+  }
+
+  unauthorizedRedirectInFlight = true;
+  clearActiveToken();
+  window.location.assign(adminBase ? `${adminBase}/login` : '/');
+}
+
 function createApiClient(token: string, site: string) {
   return createLumiClient({
     url: '',
     token,
     siteId: site,
     headers: { 'X-Lumi-Client': 'studio' },
+    onUnauthorized: handleUnauthorized,
   }).with(legacyRest());
 }
 

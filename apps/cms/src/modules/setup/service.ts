@@ -28,15 +28,17 @@
  * `routes.ts` translate `SetupServiceError` results to HTTP envelopes.
  */
 
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   adminBackupCodes,
   agentAutonomyGrants,
   agentRoles,
   constitutions,
+  roles,
   settings,
   sites,
   systemState,
+  userRoles,
   users,
   type Database,
 } from '@lumibase/database';
@@ -553,6 +555,27 @@ export class SetupService {
           throw new SetupAbort({ code: 'INTERNAL' });
         }
 
+        // ── 9a. Create the platform `Administrator` role (admin bypass) and
+        //        bind the bootstrap admin to it. requirements.md Req 3 states
+        //        the initialized state requires a user with role `admin` and
+        //        `is_bootstrap=true`; without an actual RBAC role the
+        //        PermissionService bundle resolves `admin=false` and every
+        //        schema/items request 403s. `systemKey: 'administrator'` keeps
+        //        a re-entrant wizard run idempotent via the
+        //        `roles_site_system_key_unique` index.
+        const adminRoleId = await this.upsertAdministratorRole(
+          tx,
+          DEFAULT_SITE_ID,
+        );
+        await tx
+          .insert(userRoles)
+          .values({
+            userId: newUser.id,
+            siteId: DEFAULT_SITE_ID,
+            roleId: adminRoleId,
+          })
+          .onConflictDoNothing();
+
         // ── 9. Persist backup code hashes into `admin_backup_codes`
         //       (task 10.1 created the table). Runs on the same `tx`
         //       handle so the rows commit atomically with the bootstrap
@@ -787,6 +810,50 @@ export class SetupService {
    */
   private resolveAuditLogger(): AuditLoggerLike {
     return this.deps.audit ?? new AuditLogger({ db: this.deps.db });
+  }
+
+  /**
+   * Upsert the platform `Administrator` role for a site and return its id.
+   * Idempotent across re-entrant wizard runs via the
+   * `roles_site_system_key_unique` index — a second run reuses the existing
+   * row rather than inserting a duplicate. `adminAccess: true` makes the
+   * PermissionService bundle short-circuit to full bypass (see
+   * docs permissions-rbac.md §"adminAccess=true là bypass toàn bộ").
+   */
+  private async upsertAdministratorRole(
+    tx: any,
+    siteId: string,
+  ): Promise<string> {
+    const inserted = await tx
+      .insert(roles)
+      .values({
+        siteId,
+        key: 'administrator',
+        systemKey: 'administrator',
+        name: 'Administrator',
+        description: 'Full platform access. Created during first-run setup.',
+        adminAccess: true,
+        appAccess: true,
+      })
+      .onConflictDoNothing()
+      .returning({ id: roles.id });
+
+    if (inserted[0]?.id) return inserted[0].id;
+
+    // Conflict path: row already exists (re-entrant run) — read it back.
+    const existing = await tx
+      .select({ id: roles.id })
+      .from(roles)
+      .where(
+        and(eq(roles.siteId, siteId), eq(roles.systemKey, 'administrator')),
+      )
+      .limit(1);
+
+    const adminRoleId = existing[0]?.id;
+    if (!adminRoleId) {
+      throw new SetupAbort({ code: 'INTERNAL' });
+    }
+    return adminRoleId;
   }
 }
 

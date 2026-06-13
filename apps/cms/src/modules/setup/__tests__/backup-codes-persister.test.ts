@@ -105,8 +105,12 @@ function makeFakeDb(captured: {
       return {
         values(rows: unknown) {
           const builder = {
-            // users insert uses `.returning(...)`
+            // users insert uses `.returning(...)`; roles insert uses
+            // `.onConflictDoNothing().returning(...)`.
             async returning() {
+              if (tableName === 'roles') {
+                return [{ id: 'role_admin' }];
+              }
               return [
                 {
                   id: 'usr_new',
@@ -116,9 +120,20 @@ function makeFakeDb(captured: {
                 },
               ];
             },
-            // system_state upsert uses `.onConflictDoNothing()`
-            async onConflictDoNothing() {
-              /* no-op */
+            // system_state / user_roles upsert use `.onConflictDoNothing()`;
+            // the roles insert chains `.returning()` after it.
+            onConflictDoNothing() {
+              return {
+                async returning() {
+                  if (tableName === 'roles') {
+                    return [{ id: 'role_admin' }];
+                  }
+                  return [];
+                },
+                then(resolve: (v: unknown) => void) {
+                  resolve(undefined);
+                },
+              };
             },
             // bare await (admin_backup_codes / audit_log)
             then(resolve: (v: unknown) => void) {
