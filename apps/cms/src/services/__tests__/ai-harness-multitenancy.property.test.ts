@@ -120,9 +120,13 @@ describe('Feature: ai-first-cms-engine, Property 8: Multi-tenancy isolation', ()
           // Assert: The operation must be denied
           expect(result.status).toBe('denied');
 
-          // Assert: The message should not reveal the record exists in another site
-          expect(result.message).toBeDefined();
-          expect(result.message).not.toContain(siteA);
+          // Assert: the denial is a fixed, generic message — byte-identical
+          // whether the record is absent or belongs to another site — so siteB
+          // cannot distinguish "exists in siteA" from "does not exist", and no
+          // input is echoed back. A naive `not.toContain(siteA)` is unsound: a
+          // random siteId such as "val" is a substring of the constant word
+          // "Approval", so the property must pin the exact generic message.
+          expect(result.message).toBe('Approval not found or already processed');
 
           // Assert: The WHERE clause was called (proving siteId filtering is applied)
           expect(mockWhere).toHaveBeenCalled();
