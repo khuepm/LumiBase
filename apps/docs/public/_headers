@@ -1,0 +1,6 @@
+# Studio fetches the release manifest cross-origin with credentials: 'omit',
+# so a wildcard ACAO is sufficient and safe (no cookies/credentials are sent).
+/releases.json
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET
+  Cache-Control: public, max-age=300

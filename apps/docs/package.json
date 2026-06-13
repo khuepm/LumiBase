@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/sync-public.js && vite",
-    "build": "node scripts/sync-public.js && tsc -b && vite build && pnpm build:ssr && pnpm prerender && rm -rf dist-ssr",
+    "build": "node ../../scripts/build-release-manifest.mjs && node scripts/sync-public.js && tsc -b && vite build && pnpm build:ssr && pnpm prerender && rm -rf dist-ssr",
     "build:ssr": "vite build --ssr src/entry-server.tsx --outDir dist-ssr",
     "prerender": "node scripts/prerender.mjs",
     "preview": "vite preview",
