@@ -25,7 +25,6 @@ export default function ExtensionCard({
     tags,
     publisherName,
     latestVersion,
-    totalDownloads,
     rating,
     ratingCount,
   } = extension;
@@ -78,17 +77,22 @@ export default function ExtensionCard({
       {/* Footer */}
       <div className="flex items-center justify-between border-t border-surface-700/60 px-5 py-3">
         <div className="flex items-center gap-3 text-xs text-gray-500">
-          <span className="flex items-center gap-1">
-            <Download className="h-3.5 w-3.5" />
-            {formatNumber(totalDownloads)}
-          </span>
-          {rating != null && (
+          {extension.totalDownloads ? (
+            <span className="flex items-center gap-1">
+              <Download className="h-3.5 w-3.5" />
+              {formatNumber(extension.totalDownloads)}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1">
+              <Download className="h-3.5 w-3.5" />
+              New
+            </span>
+          )}
+          {rating != null && ratingCount != null && ratingCount > 0 && (
             <span className="flex items-center gap-1">
               <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
               {rating.toFixed(1)}
-              {ratingCount != null && (
-                <span className="text-gray-600">({ratingCount})</span>
-              )}
+              <span className="text-gray-600">({ratingCount})</span>
             </span>
           )}
         </div>

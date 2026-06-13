@@ -1,0 +1,22 @@
+# LumiBase
+
+> Edge-native headless CMS built for modern web development. Open-source (MIT), deployed on Cloudflare Workers, privacy-first, multi-tenant by default.
+
+LumiBase runs content APIs at the edge — close to users — instead of on a central server. It supports dual deployment (Cloudflare Workers and Docker), delivers content through a type-safe REST API, and includes an AI Copilot with human-in-the-loop approval for dangerous operations.
+
+## Documentation
+
+- [Documentation Home](https://docs.lumibase.dev): Guides, API reference, and architecture documentation.
+- [Docs llms.txt](https://docs.lumibase.dev/llms.txt): Machine-readable index of all documentation pages.
+
+## Product
+
+- [Homepage](https://lumibase.dev): Product overview and feature summary.
+- [Pricing](https://lumibase.dev/pricing/): Community (free, self-hosted), Hobby ($29/mo), Enterprise ($99/mo) tiers with feature comparison and FAQ.
+- [GitHub Repository](https://github.com/khuepm/lumibase): Source code, issues, and contribution guide.
+
+## Legal
+
+- [Terms of Service](https://lumibase.dev/tos/): Usage terms.
+- [Privacy Policy](https://lumibase.dev/privacy/): Data handling and privacy commitments.
+- [License](https://lumibase.dev/license/): MIT License terms.

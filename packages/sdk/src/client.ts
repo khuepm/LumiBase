@@ -27,8 +27,10 @@ export interface LumiErrorBody {
   errors: Array<{
     code: string;
     message: string;
-    path?: string[];
+    path?: string | string[];
+    risk?: string;
     trace?: unknown;
+    [key: string]: unknown;
   }>;
 }
 

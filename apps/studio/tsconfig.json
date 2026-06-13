@@ -6,7 +6,9 @@
     "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@lumibase/shared": ["../../packages/shared/src/index.ts"],
+      "@lumibase/shared/*": ["../../packages/shared/src/*"]
     },
     "noEmit": true
   },

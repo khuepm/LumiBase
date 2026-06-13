@@ -251,6 +251,7 @@ function makeRow(over: Partial<Record<string, unknown>> = {}): Record<string, un
   return {
     id: 'row_1',
     timestamp: new Date('2024-06-15T12:00:00.000Z'),
+    siteId: 'site_test',
     event: 'login_success',
     actorEmail: 'actor@example.com',
     targetEmail: null,
@@ -270,7 +271,7 @@ describe('queryAuditLog', () => {
     const rows = [makeRow({ id: 'a' }), makeRow({ id: 'b' })];
     const { db, captured } = makeFakeDb(rows);
 
-    const page = await queryAuditLog(db, { limit: 50 });
+    const page = await queryAuditLog(db, { siteId: 'site_test', limit: 50 });
 
     // It fetches limit + 1 to detect a next page.
     expect(captured.limit).toBe(51);
@@ -287,7 +288,7 @@ describe('queryAuditLog', () => {
     ];
     const { db } = makeFakeDb(rows);
 
-    const page = await queryAuditLog(db, { limit: 2 });
+    const page = await queryAuditLog(db, { siteId: 'site_test', limit: 2 });
 
     expect(page.items).toHaveLength(2);
     expect(page.items.map((i) => i.id)).toEqual(['a', 'b']);
@@ -311,6 +312,7 @@ function buildApp(
   app.use('*', async (c, next) => {
     c.set('db', db);
     c.set('auth', { roles, raw: {} } as never);
+    c.set('siteId', 'site_test');
     c.set('requestId', 'req_test');
     await next();
   });
@@ -526,7 +528,7 @@ describe('parseAuditExportFilter', () => {
 describe('countAuditRows', () => {
   it('returns the count from the probe', async () => {
     const { db } = makeExportFakeDb({ count: 42, batches: [] });
-    expect(await countAuditRows(db, {})).toBe(42);
+    expect(await countAuditRows(db, { siteId: 'site_test' })).toBe(42);
   });
 
   it('falls back to 0 on an empty result set', async () => {
@@ -545,7 +547,7 @@ describe('countAuditRows', () => {
         return chain;
       },
     } as unknown as AppEnv['Variables']['db'];
-    expect(await countAuditRows(db, {})).toBe(0);
+    expect(await countAuditRows(db, { siteId: 'site_test' })).toBe(0);
   });
 });
 
@@ -561,7 +563,7 @@ describe('auditExportLines', () => {
     ];
     const { db, batchCalls } = makeExportFakeDb({ count: 1030, batches });
 
-    const lines = await collect(auditExportLines(db, {}));
+    const lines = await collect(auditExportLines(db, { siteId: 'site_test' }));
 
     expect(lines).toHaveLength(1030);
     // A short final batch (30 < 500) ends the scan — exactly 3 batch reads.
@@ -584,7 +586,7 @@ describe('auditExportLines', () => {
   it('stops at end-of-data when the first batch is short', async () => {
     const batches = [makeRows(3, 0, 2_000_000_000_000)];
     const { db, batchCalls } = makeExportFakeDb({ count: 3, batches });
-    const lines = await collect(auditExportLines(db, {}));
+    const lines = await collect(auditExportLines(db, { siteId: 'site_test' }));
     expect(lines).toHaveLength(3);
     // Short first batch (3 < 500) → a single batch read, no second probe.
     expect(batchCalls()).toBe(1);
@@ -619,7 +621,7 @@ describe('auditExportLines', () => {
       },
     } as unknown as AppEnv['Variables']['db'];
 
-    const lines = await collect(auditExportLines(db, {}, { batchSize: 10, cap: 25 }));
+    const lines = await collect(auditExportLines(db, { siteId: 'site_test' }, { batchSize: 10, cap: 25 }));
     expect(lines).toHaveLength(25);
   });
 
@@ -653,7 +655,7 @@ describe('auditExportLines', () => {
     } as unknown as AppEnv['Variables']['db'];
 
     let count = 0;
-    for await (const _line of auditExportLines(db, {})) count += 1;
+    for await (const _line of auditExportLines(db, { siteId: 'site_test' })) count += 1;
     expect(count).toBe(EXPORT_MAX_ROWS);
   });
 });
@@ -672,6 +674,7 @@ function buildExportApp(
   app.use('*', async (c, next) => {
     c.set('db', db);
     c.set('auth', { roles, raw: {} } as never);
+    c.set('siteId', 'site_test');
     c.set('requestId', 'req_test');
     await next();
   });

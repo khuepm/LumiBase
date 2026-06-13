@@ -1,3 +1,4 @@
+import { formatSafeError } from "@lumibase/shared/utils";
 /**
  * ExtensionLoader — dynamically loads Studio UI extensions at runtime.
  *
@@ -45,6 +46,12 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
 
   try {
     const client = getApiClient();
+    const readCheck = await client.permissions.check({ collection: 'extensions', action: 'read' });
+    if (!readCheck.data.allowed) {
+      loaded = true;
+      return [];
+    }
+
     const resp = await client.extensions.list();
     const exts = (resp.data ?? []) as Array<{
       name: string;
@@ -79,7 +86,7 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
       });
     }
   } catch (err) {
-    console.warn('[extension-loader] failed to load extensions:', err);
+    console.warn('[extension-loader] failed to load extensions:', formatSafeError(err));
   }
 
   loaded = true;

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.lumibase.dev/schemas/field.json",
+  "title": "Field",
+  "description": "A field definition within a LumiBase collection.",
+  "type": "object",
+  "required": ["field", "type"],
+  "properties": {
+    "field": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Field identifier (snake_case). Maps to DB column name."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "string", "text", "integer", "bigInteger", "float", "decimal",
+        "boolean", "json", "csv", "uuid", "hash",
+        "date", "time", "dateTime", "timestamp",
+        "geometry", "geometryPoint", "geometryLineString", "geometryPolygon",
+        "alias", "m2o", "o2m", "m2m", "m2a"
+      ],
+      "description": "Data type. Determines DB column type and available interfaces."
+    },
+    "interface": {
+      "type": "string",
+      "description": "Studio UI component for editing. E.g. 'input', 'textarea', 'select-dropdown', 'file', 'datetime'."
+    },
+    "display": {
+      "type": "string",
+      "description": "Studio display component for read-only view. E.g. 'raw', 'formatted-value', 'image', 'datetime'."
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Interface-specific options object."
+    },
+    "display_options": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Display-specific options object."
+    },
+    "required": {
+      "type": "boolean",
+      "default": false
+    },
+    "readonly": {
+      "type": "boolean",
+      "default": false
+    },
+    "hidden": {
+      "type": "boolean",
+      "default": false,
+      "description": "Hide field from Studio UI (still accessible via API)."
+    },
+    "sort": {
+      "type": "integer",
+      "description": "Display order in Studio field editor."
+    },
+    "note": {
+      "type": "string",
+      "description": "Help text shown below the field input in Studio."
+    },
+    "special": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Special processing flags. E.g. ['uuid', 'user-created', 'date-created', 'cast-boolean', 'json']."
+    },
+    "validation": {
+      "type": "object",
+      "description": "Validation rule in LumiBase filter query syntax.",
+      "additionalProperties": true
+    },
+    "validation_message": {
+      "type": "string",
+      "description": "Custom error message shown on validation failure."
+    },
+    "translations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["language", "translation"],
+        "properties": {
+          "language":    { "type": "string" },
+          "translation": { "type": "string" },
+          "note":        { "type": "string" }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

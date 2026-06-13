@@ -48,6 +48,7 @@ interface FakeDbOptions {
   readonly userRows?: ReadonlyArray<Record<string, unknown>>;
   readonly stateRows?: ReadonlyArray<Record<string, unknown>>;
   readonly codeRows?: ReadonlyArray<Record<string, unknown>>;
+  readonly backupCodeUpdateRows?: ReadonlyArray<Record<string, unknown>>;
 }
 
 interface CapturedUpdate {
@@ -108,8 +109,17 @@ function makeFakeDb(opts: FakeDbOptions = {}) {
       return {
         set(values: Record<string, unknown>) {
           return {
-            async where() {
+            where() {
               updates.push({ table: name, values });
+              return {
+                returning() {
+                  return Promise.resolve(
+                    name === 'admin_backup_codes'
+                      ? (opts.backupCodeUpdateRows ?? [{ id: 'bkc_1' }])
+                      : [],
+                  );
+                },
+              };
             },
           };
         },
@@ -217,6 +227,27 @@ describe('RecoveryService.recover — success (Req 14.4)', () => {
 
     const validated = await svc.validateUnlockToken(result!.oneTimeUnlockToken);
     expect(validated).toEqual({ userId: 'usr_boot' });
+  });
+
+  it('returns null and saves no token when the guarded backup-code update spends zero rows', async () => {
+    const { db, updates, deletes } = makeFakeDb({
+      userRows: [{ id: 'usr_boot', isBootstrap: true }],
+      stateRows: [{ adminPath: ADMIN_PATH }],
+      codeRows: await bootstrapCodeRows(PLAINTEXT_CODE),
+      backupCodeUpdateRows: [],
+    });
+    const store = new InMemoryUnlockTokenStore();
+    const sleep = vi.fn(instantSleep);
+    const svc = new RecoveryService({ db, tokenStore: store, sleep });
+
+    const result = await svc.recover('boot@example.com', PLAINTEXT_CODE, IP);
+
+    expect(result).toBeNull();
+    expect(store.size).toBe(0);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.table).toBe('admin_backup_codes');
+    expect(deletes).toHaveLength(0);
+    expect(sleep).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -380,6 +411,24 @@ describe('randomDelayMs (Req 14.4 anti-timing)', () => {
     // With 50k draws across 301 buckets the extremes are hit w.h.p.
     expect(min).toBeLessThanOrEqual(205);
     expect(max).toBeGreaterThanOrEqual(495);
+  });
+
+  it('is unbiased across the range (rejection sampling, not modulo bias)', () => {
+    // A plain `% 301` over 16 bits would over-represent the lowest 65536 %
+    // 301 = 235 buckets. Bucketing samples into low/high halves of the
+    // range and asserting near-parity catches reintroduced modulo bias.
+    const DELAY_MIN = 200;
+    const DELAY_MAX = 500;
+    const buckets = new Array(DELAY_MAX - DELAY_MIN + 1).fill(0) as number[];
+    const N = 120_000;
+    for (let i = 0; i < N; i++) buckets[randomDelayMs() - DELAY_MIN]! += 1;
+    const expected = N / buckets.length; // ~399 per bucket
+    // Every bucket must be populated and within ±35% of the mean — a
+    // modulo-biased generator would leave ~22% of buckets a full step low.
+    for (const count of buckets) {
+      expect(count).toBeGreaterThan(expected * 0.65);
+      expect(count).toBeLessThan(expected * 1.35);
+    }
   });
 });
 

@@ -9,10 +9,9 @@ import {
 import { cdcPipelines, type Database } from '@lumibase/database';
 
 import {
-  encryptSync,
-  decryptSync,
   encrypt,
   decrypt,
+  decryptCompat,
 } from '../modules/cdc/registry/encryption';
 import {
   PipelineRegistry,
@@ -29,10 +28,10 @@ import {
  * decrypting SHALL produce the original string, and the encrypted stored value
  * SHALL not equal the plaintext input.
  *
- * The Pipeline Registry stores connection parameters using the synchronous
- * `encryptSync`/`decryptSync` pair, so those are the primary subject of this
- * property; the asynchronous Web Crypto `encrypt`/`decrypt` pair is exercised
- * under the same property for completeness.
+ * The Pipeline Registry stores connection parameters using the Web Crypto
+ * AES-256-GCM `encrypt` for writes and `decryptCompat` for reads (the compat
+ * wrapper also accepts rows written by the legacy XOR cipher), so those are
+ * the primary subject of this property.
  *
  * **Validates: Requirements 1.4**
  */
@@ -308,23 +307,31 @@ function makeRegistry(): PipelineRegistry {
 // ── Property 3 ─────────────────────────────────────────────────────────────
 
 describe('Feature: clickhouse-cdc, Property 3: Connection parameter encryption round-trip', () => {
-  it('encryptSync then decryptSync reproduces the original connection string', () => {
-    fc.assert(
-      fc.property(arbConnectionString, arbEncryptionKey, (plaintext, key) => {
-        const encrypted = encryptSync(plaintext, key);
-        const decrypted = decryptSync(encrypted, key);
-        expect(decrypted).toBe(plaintext);
-      }),
+  it('encrypt then decryptCompat (the registry read path) reproduces the original connection string', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        arbConnectionString,
+        arbEncryptionKey,
+        async (plaintext, key) => {
+          const encrypted = await encrypt(plaintext, key);
+          const decrypted = await decryptCompat(encrypted, key);
+          expect(decrypted).toBe(plaintext);
+        },
+      ),
       { numRuns: 100 },
     );
   });
 
-  it('the encryptSync stored value never equals the plaintext input', () => {
-    fc.assert(
-      fc.property(arbConnectionString, arbEncryptionKey, (plaintext, key) => {
-        const encrypted = encryptSync(plaintext, key);
-        expect(encrypted).not.toBe(plaintext);
-      }),
+  it('the encrypted stored value never equals the plaintext input', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        arbConnectionString,
+        arbEncryptionKey,
+        async (plaintext, key) => {
+          const encrypted = await encrypt(plaintext, key);
+          expect(encrypted).not.toBe(plaintext);
+        },
+      ),
       { numRuns: 100 },
     );
   });

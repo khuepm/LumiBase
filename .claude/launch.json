@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "landing-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "serve@latest", "apps/landing/out", "-l", "4311"],
+      "port": 4311
+    }
+  ]
+}

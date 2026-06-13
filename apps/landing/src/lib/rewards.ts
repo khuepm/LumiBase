@@ -78,10 +78,9 @@ export async function saveToDatabase(sponsor: {
 }
 
 export async function updateClaimStatus(token: string) {
-  // TODO: Implement database update
-  // Example with PostgreSQL:
-  // await db.sponsors.update({
-  //   where: { rewardToken: token },
-  //   data: { claimed: true, claimedAt: new Date() }
-  // });
+  const sponsor = getSponsorByToken(token);
+  if (sponsor) {
+    sponsor.claimed = true;
+    sponsor.claimedAt = new Date();
+  }
 }

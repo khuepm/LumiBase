@@ -19,7 +19,7 @@ export function clearProjectDraft(): void {
   projectDraft = null;
 }
 
-function setProjectDraftInternal(value: ProjectConfigurationFormValues): void {
+export function setProjectDraft(value: ProjectConfigurationFormValues): void {
   projectDraft = value;
 }
 
@@ -48,7 +48,7 @@ export function StepProject({ onSubmitted }: StepProjectProps) {
     shouldUnregister: false,
     defaultValues: projectDraft ?? {
       defaultLanguage: 'en',
-      siteUrl: 'http://localhost:5173',
+      siteUrl: 'http://localhost:2026',
       displayTitle: 'Lumibase',
       theme: null,
     },
@@ -96,7 +96,7 @@ export function StepProject({ onSubmitted }: StepProjectProps) {
   const onSubmit: SubmitHandler<ProjectFormFields> = useCallback(
     (values) => {
       const parsed = projectConfigurationSchema.parse(values);
-      setProjectDraftInternal(parsed);
+      setProjectDraft(parsed);
       setProjectValid(true);
       onSubmitted?.(parsed);
     },

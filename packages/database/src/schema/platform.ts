@@ -166,6 +166,8 @@ export const extensions = pgTable(
     id: id(),
     /** Null = globally available; otherwise scoped to a single site. */
     siteId: text('site_id').references(() => sites.id, { onDelete: 'cascade' }),
+    /** Stable extension key used by access targets, import/export, and URLs. */
+    key: text('key'),
     name: text('name').notNull(),
     version: text('version').notNull(),
     /** hook | endpoint | operation | interface | display | layout | panel | module */
@@ -196,6 +198,7 @@ export const extensions = pgTable(
   },
   (t) => ({
     siteNameIdx: index('extensions_site_name_idx').on(t.siteId, t.name),
+    siteKeyIdx: index('extensions_site_key_idx').on(t.siteId, t.key),
     publisherIdx: index('extensions_publisher_idx').on(t.publisher, t.publishedAt),
     marketplaceSlugIdx: index('extensions_marketplace_slug_idx').on(t.marketplaceSlug),
   }),

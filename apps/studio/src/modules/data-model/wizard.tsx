@@ -1,37 +1,124 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { getApiClient } from '@/lib/api';
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4 | 5;
+type PrimaryKeyType = 'nanoid' | 'uuid' | 'string' | 'integer' | 'bigInteger';
+type StorageMode = 'jsonb' | 'materialized' | 'physical' | 'external';
+type PermissionDefault = 'inherit' | 'private' | 'public-read';
+
+const STEPS: Array<{ id: Step; label: string }> = [
+  { id: 1, label: 'Identity' },
+  { id: 2, label: 'Storage' },
+  { id: 3, label: 'System fields' },
+  { id: 4, label: 'Permissions' },
+  { id: 5, label: 'Review' },
+];
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
 
-/**
- * Three-step wizard for creating a new collection.
- *  1. Identity — machine name + display options
- *  2. Defaults — accountability, versioning, archive flags
- *  3. Review — summary + create
- */
+const STORAGE_MODE_INFO: Record<StorageMode, { badge: string; text: string }> = {
+  jsonb: {
+    badge: 'Current',
+    text: 'Fast schema changes with no runtime DDL. SQL-native indexes and uniqueness are advisory until projected.',
+  },
+  materialized: {
+    badge: 'Optimized',
+    text: 'Keeps JSONB as source of truth and adds a managed physical read projection for hot paths.',
+  },
+  physical: {
+    badge: 'Future',
+    text: 'Reserved for Directus-like managed tables. Schema apply flags storage runtime changes before migration.',
+  },
+  external: {
+    badge: 'Future',
+    text: 'Reserved for introspected external tables. Destructive relation actions and DDL are intentionally limited.',
+  },
+};
+
 export function CollectionWizardPage() {
   const [step, setStep] = useState<Step>(1);
   const [name, setName] = useState('');
+  const [label, setLabel] = useState('');
+  const [pluralLabel, setPluralLabel] = useState('');
+  const [icon, setIcon] = useState('');
+  const [color, setColor] = useState('');
+  const [hidden, setHidden] = useState(false);
   const [singleton, setSingleton] = useState(false);
   const [note, setNote] = useState('');
   const [versioning, setVersioning] = useState(false);
   const [accountability, setAccountability] = useState<'all' | 'activity' | 'none'>('all');
+  const [primaryKeyType, setPrimaryKeyType] = useState<PrimaryKeyType>('nanoid');
+  const [storageMode, setStorageMode] = useState<StorageMode>('jsonb');
+  const [statusField, setStatusField] = useState(true);
+  const [sortField, setSortField] = useState(true);
+  const [archiveField, setArchiveField] = useState(false);
+  const [auditFields, setAuditFields] = useState(true);
+  const [permissionDefault, setPermissionDefault] = useState<PermissionDefault>('inherit');
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const client = getApiClient();
+  const storageWarning =
+    storageMode === 'jsonb' && (primaryKeyType === 'integer' || primaryKeyType === 'bigInteger')
+      ? 'Integer primary keys require materialized or physical storage mode.'
+      : null;
+  const storageInfo = STORAGE_MODE_INFO[storageMode];
+
+  const createPayload = useMemo(
+    () => ({
+      name,
+      label: label || null,
+      pluralLabel: pluralLabel || null,
+      hidden,
+      singleton,
+      icon: icon || null,
+      color: color || null,
+      note: note || null,
+      accountability,
+      versioning,
+      primaryKeyType,
+      storageMode,
+      primaryKeyField: 'id',
+      sortField: sortField ? 'sort' : null,
+      archiveField: archiveField ? 'status' : null,
+      archiveValue: archiveField ? 'archived' : null,
+      unarchiveValue: archiveField ? 'draft' : null,
+      meta: {
+        systemFields: {
+          status: statusField,
+          sort: sortField,
+          archive: archiveField,
+          audit: auditFields,
+        },
+        permissionDefault,
+      },
+    }),
+    [
+      accountability,
+      archiveField,
+      auditFields,
+      color,
+      hidden,
+      icon,
+      label,
+      name,
+      note,
+      permissionDefault,
+      pluralLabel,
+      primaryKeyType,
+      singleton,
+      sortField,
+      statusField,
+      storageMode,
+      versioning,
+    ],
+  );
 
   const create = useMutation({
     mutationFn: async () => {
-      const res = await client.schema.createCollection({
-        name,
-        singleton,
-        meta: { note: note || null, versioning, accountability },
-      });
+      const res = await client.schema.createCollection(createPayload);
       return res.data;
     },
     onSuccess: (collection) => {
@@ -41,23 +128,24 @@ export function CollectionWizardPage() {
   });
 
   const nameValid = NAME_PATTERN.test(name);
-  const canNext = step === 1 ? nameValid : true;
+  const canNext = step === 1 ? nameValid : step === 2 ? !storageWarning : true;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <header>
         <h1 className="text-2xl font-semibold">New collection</h1>
         <p className="text-sm text-muted-foreground">
-          Step {step} of 3 — {step === 1 ? 'identity' : step === 2 ? 'defaults' : 'review'}
+          Step {step} of 5 — {STEPS.find((s) => s.id === step)?.label.toLowerCase()}
         </p>
       </header>
 
       <ol className="flex gap-2">
-        {([1, 2, 3] as const).map((s) => (
+        {STEPS.map((s) => (
           <li
-            key={s}
+            key={s.id}
+            aria-label={s.label}
             className={`h-1 flex-1 rounded ${
-              s <= step ? 'bg-primary' : 'bg-muted'
+              s.id <= step ? 'bg-primary' : 'bg-muted'
             }`}
           />
         ))}
@@ -74,9 +162,6 @@ export function CollectionWizardPage() {
               className="w-full rounded-md border bg-background px-3 py-2 text-sm"
               autoFocus
             />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Lowercase letters, digits, underscore. Must start with a letter.
-            </p>
             {name && !nameValid && (
               <p className="mt-1 text-xs text-destructive">
                 Invalid format — must match {String(NAME_PATTERN)}
@@ -84,13 +169,54 @@ export function CollectionWizardPage() {
             )}
           </label>
 
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Label</span>
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Post"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Plural label</span>
+            <input
+              value={pluralLabel}
+              onChange={(e) => setPluralLabel(e.target.value)}
+              placeholder="Posts"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          </label>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">Icon</span>
+              <input
+                value={icon}
+                onChange={(e) => setIcon(e.target.value)}
+                placeholder="newspaper"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">Color</span>
+              <input
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                placeholder="#2563eb"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
+
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
-              checked={singleton}
-              onChange={(e) => setSingleton(e.target.checked)}
+              checked={hidden}
+              onChange={(e) => setHidden(e.target.checked)}
             />
-            <span className="text-sm">Singleton (only one item)</span>
+            <span className="text-sm">Hide from navigation</span>
           </label>
         </div>
       )}
@@ -98,7 +224,113 @@ export function CollectionWizardPage() {
       {step === 2 && (
         <div className="space-y-4 rounded-lg border p-6">
           <label className="block">
-            <span className="mb-1 block text-sm font-medium">Description (optional)</span>
+            <span className="mb-1 block text-sm font-medium">Primary key</span>
+            <select
+              value={primaryKeyType}
+              onChange={(e) => setPrimaryKeyType(e.target.value as PrimaryKeyType)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            >
+              <option value="nanoid">Nano ID</option>
+              <option value="uuid">UUID</option>
+              <option value="string">String provided by API</option>
+              <option value="integer">Integer sequence</option>
+              <option value="bigInteger">Big integer sequence</option>
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Storage mode</span>
+            <select
+              value={storageMode}
+              onChange={(e) => setStorageMode(e.target.value as StorageMode)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            >
+              <option value="jsonb">JSONB document store</option>
+              <option value="materialized">Materialized projection</option>
+              <option value="physical">Physical table</option>
+              <option value="external">External table</option>
+            </select>
+          </label>
+          <div className="rounded-md border bg-muted/40 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span className="rounded-md border bg-background px-2 py-0.5 text-[11px] font-medium">
+                {storageInfo.badge}
+              </span>
+              <span className="text-xs font-medium">{storageMode}</span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{storageInfo.text}</p>
+          </div>
+          {storageWarning && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {storageWarning}
+            </p>
+          )}
+
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={singleton}
+              onChange={(e) => setSingleton(e.target.checked)}
+            />
+            <span className="text-sm">Singleton</span>
+          </label>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="space-y-4 rounded-lg border p-6">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={statusField}
+              onChange={(e) => setStatusField(e.target.checked)}
+            />
+            <span className="text-sm">Status field</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={sortField}
+              onChange={(e) => setSortField(e.target.checked)}
+            />
+            <span className="text-sm">Sort field</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={archiveField}
+              onChange={(e) => setArchiveField(e.target.checked)}
+            />
+            <span className="text-sm">Archive behavior</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={auditFields}
+              onChange={(e) => setAuditFields(e.target.checked)}
+            />
+            <span className="text-sm">Created and updated fields</span>
+          </label>
+        </div>
+      )}
+
+      {step === 4 && (
+        <div className="space-y-4 rounded-lg border p-6">
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Permission defaults</span>
+            <select
+              value={permissionDefault}
+              onChange={(e) => setPermissionDefault(e.target.value as PermissionDefault)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            >
+              <option value="inherit">Inherit default</option>
+              <option value="private">Private</option>
+              <option value="public-read">Public read</option>
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Description</span>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -114,7 +346,7 @@ export function CollectionWizardPage() {
               onChange={(e) => setAccountability(e.target.value as typeof accountability)}
               className="w-full rounded-md border bg-background px-3 py-2 text-sm"
             >
-              <option value="all">All (revisions + activity)</option>
+              <option value="all">All</option>
               <option value="activity">Activity only</option>
               <option value="none">None</option>
             </select>
@@ -126,33 +358,23 @@ export function CollectionWizardPage() {
               checked={versioning}
               onChange={(e) => setVersioning(e.target.checked)}
             />
-            <span className="text-sm">Enable content versioning (drafts)</span>
+            <span className="text-sm">Enable content versioning</span>
           </label>
         </div>
       )}
 
-      {step === 3 && (
+      {step === 5 && (
         <div className="space-y-3 rounded-lg border p-6 text-sm">
-          <div>
-            <span className="text-muted-foreground">Name:</span>{' '}
-            <span className="font-medium">{name}</span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Singleton:</span>{' '}
-            {singleton ? 'yes' : 'no'}
-          </div>
-          <div>
-            <span className="text-muted-foreground">Versioning:</span>{' '}
-            {versioning ? 'yes' : 'no'}
-          </div>
-          <div>
-            <span className="text-muted-foreground">Accountability:</span>{' '}
-            {accountability}
-          </div>
-          {note && (
-            <div>
-              <span className="text-muted-foreground">Note:</span> {note}
-            </div>
+          <pre
+            aria-label="Review JSON"
+            className="max-h-96 overflow-auto rounded-md bg-muted p-4 text-xs"
+          >
+            {JSON.stringify(createPayload, null, 2)}
+          </pre>
+          {storageWarning && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive">
+              {storageWarning}
+            </p>
           )}
           {create.error && (
             <p className="text-destructive">
@@ -170,7 +392,7 @@ export function CollectionWizardPage() {
         >
           {step === 1 ? 'Cancel' : 'Back'}
         </button>
-        {step < 3 ? (
+        {step < 5 ? (
           <button
             type="button"
             disabled={!canNext}
@@ -182,11 +404,11 @@ export function CollectionWizardPage() {
         ) : (
           <button
             type="button"
-            disabled={create.isPending}
+            disabled={create.isPending || Boolean(storageWarning)}
             onClick={() => create.mutate()}
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
           >
-            {create.isPending ? 'Creating…' : 'Create collection'}
+            {create.isPending ? 'Creating...' : 'Create collection'}
           </button>
         )}
       </div>

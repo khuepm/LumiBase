@@ -103,9 +103,9 @@ const intentMessageArb = fc.oneof(
 // Capabilities generator: either wildcard or a subset of known capabilities
 const capabilitiesArb = fc.oneof(
   fc.constant(['*']),
-  fc.subarray(['schema:read', 'schema:write', 'items:read', 'items:write'], {
+  fc.subarray(['schema:read', 'schema:create', 'schema:update', 'schema:delete', 'schema:migrate', 'items:read', 'items:write'], {
     minLength: 0,
-    maxLength: 4,
+    maxLength: 7,
   }),
 );
 
