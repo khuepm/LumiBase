@@ -48,11 +48,14 @@ function makeFakeDb(
 ) {
   const queryApi = {
     insert(table: { [k: string]: unknown }) {
-      void getTableName(table);
+      const tableName = getTableName(table);
       return {
         values() {
           const builder = {
             async returning() {
+              if (tableName === 'roles') {
+                return [{ id: 'role_admin' }];
+              }
               return [
                 {
                   id: 'usr_new',
@@ -62,8 +65,19 @@ function makeFakeDb(
                 },
               ];
             },
-            async onConflictDoNothing() {
-              /* no-op */
+            // roles insert chains `.returning()` after `.onConflictDoNothing()`.
+            onConflictDoNothing() {
+              return {
+                async returning() {
+                  if (tableName === 'roles') {
+                    return [{ id: 'role_admin' }];
+                  }
+                  return [];
+                },
+                then(resolve: (v: unknown) => void) {
+                  resolve(undefined);
+                },
+              };
             },
             then(resolve: (v: unknown) => void) {
               resolve(undefined);
