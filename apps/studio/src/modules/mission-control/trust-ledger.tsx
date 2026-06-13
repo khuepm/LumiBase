@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { cn } from '@/lib/cn';
-import { missionControlApi } from './api';
+import { missionControlApi, type AutonomyGrant, type PromotionCheckResult } from './api';
 
 /**
  * Trust ledger UI (content-os task 17.2; Req 16.3): role × capability
@@ -9,6 +10,104 @@ import { missionControlApi } from './api';
  */
 
 const LEVEL_LABELS = ['L0 shadow', 'L1 propose', 'L2 co-sign', 'L3 veto-window', 'L4 autopilot'];
+
+/**
+ * Promotion eligibility check (content-os-ui task 20; Req 20): lets a human
+ * proactively ask "has this (role, capability) earned a raise?" instead of
+ * waiting for the periodic promote-check. A `proposed=true` answer creates
+ * a real proposal (still human-gated); `false` shows the evidence verdict.
+ */
+function PromotionCheck({ grants }: { grants: AutonomyGrant[] }) {
+  const queryClient = useQueryClient();
+  const [agentRole, setAgentRole] = useState('');
+  const [capability, setCapability] = useState('');
+  const [result, setResult] = useState<PromotionCheckResult | null>(null);
+
+  const checkMutation = useMutation({
+    mutationFn: () => missionControlApi.checkPromotion(agentRole.trim(), capability.trim()),
+    onSuccess: (data) => {
+      setResult(data);
+      if (data.proposed) {
+        void queryClient.invalidateQueries({ queryKey: ['mc-promotions'] });
+      }
+    },
+  });
+
+  const roleSuggestions = [...new Set(grants.map((g) => g.agentRole))];
+  const capabilitySuggestions = [...new Set(grants.map((g) => g.capability))];
+
+  return (
+    <section>
+      <h3 className="mb-2 text-sm font-semibold">Check promotion eligibility</h3>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs">
+          <span className="mb-1 block text-muted-foreground">Role</span>
+          <input
+            value={agentRole}
+            onChange={(e) => setAgentRole(e.target.value)}
+            list="trust-role-suggestions"
+            placeholder="writer"
+            className="rounded-md border bg-background px-2 py-1.5 font-mono"
+          />
+          <datalist id="trust-role-suggestions">
+            {roleSuggestions.map((r) => (
+              <option key={r} value={r} />
+            ))}
+          </datalist>
+        </label>
+        <label className="text-xs">
+          <span className="mb-1 block text-muted-foreground">Capability</span>
+          <input
+            value={capability}
+            onChange={(e) => setCapability(e.target.value)}
+            list="trust-capability-suggestions"
+            placeholder="items:update"
+            className="rounded-md border bg-background px-2 py-1.5 font-mono"
+          />
+          <datalist id="trust-capability-suggestions">
+            {capabilitySuggestions.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </label>
+        <button
+          type="button"
+          onClick={() => checkMutation.mutate()}
+          disabled={checkMutation.isPending || !agentRole.trim() || !capability.trim()}
+          className="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+        >
+          {checkMutation.isPending ? 'Checking…' : 'Check eligibility'}
+        </button>
+      </div>
+      {checkMutation.isError && (
+        <p className="mt-2 text-xs text-destructive">
+          {checkMutation.error instanceof Error ? checkMutation.error.message : 'Check failed.'}
+        </p>
+      )}
+      {result && (
+        <div
+          className={cn(
+            'mt-2 rounded-md border p-2 text-xs',
+            result.proposed
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+              : 'bg-muted/40 text-muted-foreground',
+          )}
+        >
+          {result.proposed ? (
+            <p className="font-medium">
+              Eligible — a promotion proposal was created and awaits a human decision below.
+            </p>
+          ) : (
+            <>
+              <p className="font-medium text-foreground">Not eligible yet.</p>
+              <p className="mt-1 font-mono">{JSON.stringify(result)}</p>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
 
 export function TrustLedger() {
   const queryClient = useQueryClient();
@@ -74,6 +173,8 @@ export function TrustLedger() {
           </table>
         )}
       </section>
+
+      <PromotionCheck grants={grants} />
 
       <section>
         <h3 className="mb-2 text-sm font-semibold">Pending promotions (human decision required)</h3>

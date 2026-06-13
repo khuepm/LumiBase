@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from '@tanstack/react-router';
-import { AlertTriangle, Pause, Play } from 'lucide-react';
+import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { AlertTriangle, Pause, Pencil, Play, Radar, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { cn } from '@/lib/cn';
-import { missionControlApi } from './api';
+import { missionControlApi, type ContentIntent } from './api';
 import { MissionControlLayout, useAdminBase, useMissionControlBase } from './layout';
 import { IntentStatusBadge } from './slo-table';
 
@@ -44,10 +45,130 @@ function RuleCard({ rule }: { rule: unknown }) {
   );
 }
 
+/**
+ * Inline edit form (content-os-ui task 17.1; Req 17.2). Name/schedule/
+ * autonomyCap/budget as fields; rules stay raw JSON — the composer is the
+ * rich editor for rules, this form is for surgical fixes.
+ */
+function EditIntentForm({ intent, onClose }: { intent: ContentIntent; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const budget = (intent as unknown as { budget?: Record<string, unknown> }).budget;
+  const [name, setName] = useState(intent.name);
+  const [schedule, setSchedule] = useState(intent.schedule);
+  const [autonomyCap, setAutonomyCap] = useState(intent.autonomyCap);
+  const [rulesJson, setRulesJson] = useState(() => JSON.stringify(intent.rules, null, 2));
+  const [budgetJson, setBudgetJson] = useState(() => JSON.stringify(budget ?? {}, null, 2));
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: (patch: Record<string, unknown>) =>
+      missionControlApi.updateIntent(intent.id, patch),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['mc-intents'] });
+      onClose();
+    },
+  });
+
+  const submit = () => {
+    let rules: unknown;
+    let parsedBudget: unknown;
+    try {
+      rules = JSON.parse(rulesJson);
+      parsedBudget = JSON.parse(budgetJson);
+    } catch {
+      setLocalError('Rules and budget must be valid JSON.');
+      return;
+    }
+    setLocalError(null);
+    mutation.mutate({ name, schedule, autonomyCap, rules, budget: parsedBudget });
+  };
+
+  return (
+    <section className="space-y-3 rounded-lg border bg-background p-4">
+      <h3 className="text-sm font-semibold">Edit intent</h3>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <label className="text-xs">
+          <span className="mb-1 block text-muted-foreground">Name</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded-md border bg-background px-2 py-1.5"
+          />
+        </label>
+        <label className="text-xs">
+          <span className="mb-1 block text-muted-foreground">Schedule (cron)</span>
+          <input
+            value={schedule}
+            onChange={(e) => setSchedule(e.target.value)}
+            className="w-full rounded-md border bg-background px-2 py-1.5 font-mono"
+          />
+        </label>
+        <label className="text-xs">
+          <span className="mb-1 block text-muted-foreground">Autonomy cap</span>
+          <select
+            value={autonomyCap}
+            onChange={(e) => setAutonomyCap(Number(e.target.value))}
+            className="w-full rounded-md border bg-background px-2 py-1.5"
+          >
+            {LEVEL_LABELS.map((label, level) => (
+              <option key={level} value={level}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs sm:col-span-2">
+          <span className="mb-1 block text-muted-foreground">Rules (JSON)</span>
+          <textarea
+            value={rulesJson}
+            onChange={(e) => setRulesJson(e.target.value)}
+            rows={6}
+            className="w-full rounded-md border bg-background px-2 py-1.5 font-mono"
+          />
+        </label>
+        <label className="text-xs">
+          <span className="mb-1 block text-muted-foreground">Budget (JSON)</span>
+          <textarea
+            value={budgetJson}
+            onChange={(e) => setBudgetJson(e.target.value)}
+            rows={6}
+            className="w-full rounded-md border bg-background px-2 py-1.5 font-mono"
+          />
+        </label>
+      </div>
+      {(localError || mutation.isError) && (
+        <p className="text-xs text-destructive">
+          {localError ?? (mutation.error instanceof Error ? mutation.error.message : 'Save failed.')}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={submit}
+          disabled={mutation.isPending}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+        >
+          {mutation.isPending ? 'Saving…' : 'Save changes'}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
+        >
+          Cancel
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function IntentDetailBody({ intentId }: { intentId: string }) {
   const adminBase = useAdminBase();
   const base = useMissionControlBase();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const intentsQuery = useQuery({ queryKey: ['mc-intents'], queryFn: missionControlApi.intents });
   const driftsQuery = useQuery({
@@ -67,6 +188,22 @@ function IntentDetailBody({ intentId }: { intentId: string }) {
   const resumeMutation = useMutation({
     mutationFn: () => missionControlApi.resumeIntent(intentId),
     onSuccess: invalidate,
+  });
+  // Manual reconciliation cycle (Req 17.1) — same cycle the scheduler runs.
+  const scanMutation = useMutation({
+    mutationFn: () => missionControlApi.scanIntent(intentId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['mc-drifts', intentId] });
+      void queryClient.invalidateQueries({ queryKey: ['mc-goals'] });
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: () => missionControlApi.deleteIntent(intentId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['mc-intents'] });
+      void navigate({ to: `${base}/intents` as never });
+    },
+    onSettled: () => setConfirmingDelete(false),
   });
 
   if (intentsQuery.isLoading) {
@@ -108,26 +245,94 @@ function IntentDetailBody({ intentId }: { intentId: string }) {
             <p className="text-xs text-destructive">{intent.statusReason}</p>
           )}
         </div>
-        {intent.status === 'active' ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Manual reconciliation cycle (Req 17.1). */}
           <button
             type="button"
-            onClick={() => pauseMutation.mutate()}
-            disabled={pauseMutation.isPending}
+            onClick={() => scanMutation.mutate()}
+            disabled={scanMutation.isPending}
             className="inline-flex items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
           >
-            <Pause className="h-4 w-4" /> {pauseMutation.isPending ? 'Pausing…' : 'Pause'}
+            <Radar className="h-4 w-4" /> {scanMutation.isPending ? 'Scanning…' : 'Scan now'}
           </button>
-        ) : (
           <button
             type="button"
-            onClick={() => resumeMutation.mutate()}
-            disabled={resumeMutation.isPending}
-            className="inline-flex items-center gap-1 rounded-md border border-emerald-400 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+            onClick={() => setEditing((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted"
           >
-            <Play className="h-4 w-4" /> {resumeMutation.isPending ? 'Resuming…' : 'Resume'}
+            <Pencil className="h-4 w-4" /> Edit
           </button>
-        )}
+          {intent.status === 'active' ? (
+            <button
+              type="button"
+              onClick={() => pauseMutation.mutate()}
+              disabled={pauseMutation.isPending}
+              className="inline-flex items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+            >
+              <Pause className="h-4 w-4" /> {pauseMutation.isPending ? 'Pausing…' : 'Pause'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => resumeMutation.mutate()}
+              disabled={resumeMutation.isPending}
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-400 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+            >
+              <Play className="h-4 w-4" /> {resumeMutation.isPending ? 'Resuming…' : 'Resume'}
+            </button>
+          )}
+          {confirmingDelete ? (
+            <span className="inline-flex gap-1">
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(false)}
+                className="rounded-md border px-2 py-2 text-xs hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}
+                className="rounded-md bg-destructive px-2 py-2 text-xs font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? 'Deleting…' : 'Confirm delete'}
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              aria-label="Delete intent"
+              className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4" /> Delete
+            </button>
+          )}
+        </div>
       </header>
+
+      {scanMutation.isError && (
+        <p className="text-xs text-destructive">
+          {scanMutation.error instanceof Error ? scanMutation.error.message : 'Scan failed.'}
+        </p>
+      )}
+      {scanMutation.isSuccess && (
+        <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-900">
+          <p className="font-medium">Reconciliation cycle complete.</p>
+          <p className="mt-1 font-mono">
+            scan: {JSON.stringify(scanMutation.data.scan)} · reconcile:{' '}
+            {JSON.stringify(scanMutation.data.reconcile)}
+          </p>
+        </div>
+      )}
+      {deleteMutation.isError && (
+        <p className="text-xs text-destructive">
+          {deleteMutation.error instanceof Error ? deleteMutation.error.message : 'Delete failed.'}
+        </p>
+      )}
+
+      {editing && <EditIntentForm intent={intent} onClose={() => setEditing(false)} />}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <section className="rounded-lg border bg-background p-4">

@@ -11,6 +11,7 @@ import {
   useMissionControlActions,
   useMissionControlBase,
 } from './layout';
+import { RolloutFlagsPanel } from './rollout-flags';
 import { SloTable, useSloRows } from './slo-table';
 import { useInboxData } from './use-inbox';
 
@@ -173,6 +174,14 @@ function DashboardBody() {
               </Link>
             </div>
             <ActivityFeed />
+          </section>
+
+          {/* Rollout switchboard (content-os-ui Req 15): which subsystems are armed. */}
+          <section className="rounded-lg border bg-background p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Rollout</h2>
+            </div>
+            <RolloutFlagsPanel />
           </section>
         </div>
       </div>

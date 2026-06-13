@@ -93,3 +93,39 @@ UI-only, không endpoint mới. Thứ tự: nguồn dữ liệu chung → khung 
 - [x] 14. Exception notifications → deep-link ?entry=
   - [x] 14.1 `NotificationsPanel`: nguồn thứ hai từ `useInboxData` — diff entry mới giữa các poll (pure helper + unit test), nhãn per kind, Link `{adminBase}/mission-control/inbox?entry=<id>` đóng panel khi click, lần load đầu coi là đã-thấy, gộp unread count/mark-read/clear hiện có; component test
     - _Requirements: 14.1-14.5_
+
+- [x] 15. Rollout flags switchboard (gap phát hiện khi rà soát 2026-06-13: 4 cờ `contentOs` gate toàn bộ Content OS nhưng không có UI nào để bật)
+  - [x] 15.1 `api.ts`: `contentOsFlags()` (GET `/settings/contentOs`, 404 → all-OFF + raw rỗng, trả `{flags, raw}`) và `saveContentOsFlags(value)` (POST `/settings` key `contentOs`); `rollout-flags.tsx` (`RolloutFlagsPanel`): 4 hàng cờ + mô tả, confirm 2 bước khi bật, tắt ngay một click, save merge flags lên raw value, note baseline khi all-off; nhúng section "Rollout" vào cột phải dashboard
+    - _Requirements: 15.1-15.4_
+  - [x] 15.2 Component test: 2-step enable + merge giữ key ngoài cờ, cancel không save, disable ngay một click
+    - **Validates: Requirements 15.2, 15.3**
+
+- [x] 16. Agents page — quản lý agent role library
+  - [x] 16.1 `api.ts`: fetchers `roles()/createRole()/updateRole()/deleteRole()`; `agents-page.tsx`: bảng role (name/description/model/capabilities/enabled), form create, edit inline, toggle enabled, delete confirm 2 bước, 403 → notice; thêm "Agents" vào SECTIONS + routes ×2 Admin_Base
+    - _Requirements: 16.1-16.5_
+  - [x] 16.2 Component test: render list, create đúng payload, delete cần 2 click, 403 notice
+    - **Validates: Requirements 16.2, 16.4, 16.5**
+
+- [x] 17. Intent lifecycle hoàn chỉnh trên intent detail
+  - [x] 17.1 `api.ts`: `updateIntent()/deleteIntent()/scanIntent()`; `intent-detail.tsx`: nút Scan now (render driftsFound/goalsCreated + invalidate drifts), form Edit inline (name/schedule/autonomyCap/budget + rules JSON), Delete confirm 2 bước → navigate về intents
+    - _Requirements: 17.1-17.3_
+  - [x] 17.2 Component test: scan gọi đúng API + hiển thị kết quả; delete 2 bước; edit gửi PATCH đúng payload
+    - **Validates: Requirements 17.1, 17.2, 17.3**
+
+- [x] 18. Goal decompose/settle trên goal tree
+  - [x] 18.1 `api.ts`: `decomposeGoal()/settleGoal()`; `goals-page.tsx`: action Decompose (form sub-goal rows: title + agentRole select từ roles()), action Settle; lỗi hiển thị tại node; invalidate goals sau mutation
+    - _Requirements: 18.1-18.3_
+  - [x] 18.2 Component test: decompose gửi đúng subGoals payload; settle gọi đúng goal id
+    - **Validates: Requirements 18.1, 18.2**
+
+- [x] 19. Artifact evaluate từ Artifacts tab
+  - [x] 19.1 `agent-harness-page.tsx`: nút Evaluate per artifact → `POST /artifacts/:id/evaluate?runId=`; render kết quả evaluation inline; lỗi hiển thị message
+    - _Requirements: 19.1, 19.2_
+  - [x] 19.2 Component test: evaluate gọi đúng path+query và render kết quả
+    - **Validates: Requirements 19.1, 19.2**
+
+- [x] 20. Promotion eligibility check trên Trust page
+  - [x] 20.1 `api.ts`: `checkPromotion()`; trust surface: form role+capability (datalist từ grants) + nút Check → proposed=true invalidate promotions, proposed=false render đánh giá
+    - _Requirements: 20.1, 20.2_
+  - [x] 20.2 Component test: check gửi đúng payload; cả hai nhánh proposed render đúng
+    - **Validates: Requirements 20.1, 20.2**

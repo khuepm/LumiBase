@@ -43,6 +43,8 @@ const FilesPage = lazy(() => import('./modules/files').then((m) => ({ default: m
 const DeveloperTypesPage = lazy(() => import('./modules/settings/types-page').then((m) => ({ default: m.DeveloperTypesPage })));
 const TranslationsPage = lazy(() => import('./modules/translations').then((m) => ({ default: m.TranslationsPage })));
 const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
+const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
+const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
@@ -53,6 +55,7 @@ const MissionControlInboxPage = lazy(() => import('./modules/mission-control/inb
 const MissionControlIntentsPage = lazy(() => import('./modules/mission-control/intents-page').then((m) => ({ default: m.IntentsPage })));
 const MissionControlIntentDetailPage = lazy(() => import('./modules/mission-control/intent-detail').then((m) => ({ default: m.IntentDetailPage })));
 const MissionControlGoalsPage = lazy(() => import('./modules/mission-control/goals-page').then((m) => ({ default: m.GoalsPage })));
+const MissionControlAgentsPage = lazy(() => import('./modules/mission-control/agents-page').then((m) => ({ default: m.AgentsPage })));
 const MissionControlTrustPage = lazy(() => import('./modules/mission-control/trust-page').then((m) => ({ default: m.TrustPage })));
 const MissionControlConstitutionPage = lazy(() => import('./modules/mission-control/constitution-page').then((m) => ({ default: m.ConstitutionPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
@@ -584,6 +587,18 @@ const webhooksRoute = createRoute({
   component: withSuspense(WebhooksPage),
 });
 
+const materializeSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'materialize',
+  component: withSuspense(MaterializePage),
+});
+
+const translationMemoryRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'translation-memory',
+  component: withSuspense(TranslationMemoryPage),
+});
+
 const activityRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'activity',
@@ -651,6 +666,18 @@ const adminPathWebhooksRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'webhooks',
   component: withSuspense(WebhooksPage),
+});
+
+const adminPathMaterializeSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'materialize',
+  component: withSuspense(MaterializePage),
+});
+
+const adminPathTranslationMemoryRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'translation-memory',
+  component: withSuspense(TranslationMemoryPage),
 });
 
 const adminPathActivityRoute = createRoute({
@@ -757,6 +784,12 @@ const missionControlGoalsRoute = createRoute({
   component: withSuspense(MissionControlGoalsPage),
 });
 
+const missionControlAgentsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/agents',
+  component: withSuspense(MissionControlAgentsPage),
+});
+
 const missionControlTrustRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/mission-control/trust',
@@ -798,6 +831,12 @@ const adminPathMissionControlGoalsRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/mission-control/goals',
   component: withSuspense(MissionControlGoalsPage),
+});
+
+const adminPathMissionControlAgentsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/agents',
+  component: withSuspense(MissionControlAgentsPage),
 });
 
 const adminPathMissionControlTrustRoute = createRoute({
@@ -1040,6 +1079,8 @@ const routeTree = rootRoute.addChildren([
       settingsTypesRoute,
       translationsRoute,
       webhooksRoute,
+      materializeSettingsRoute,
+      translationMemoryRoute,
       activityRoute,
       extensionsRoute,
       marketplaceRoute,
@@ -1054,6 +1095,7 @@ const routeTree = rootRoute.addChildren([
     missionControlIntentsRoute,
     missionControlIntentDetailRoute,
     missionControlGoalsRoute,
+    missionControlAgentsRoute,
     missionControlTrustRoute,
     missionControlConstitutionRoute,
     adminPathMissionControlRoute,
@@ -1061,6 +1103,7 @@ const routeTree = rootRoute.addChildren([
     adminPathMissionControlIntentsRoute,
     adminPathMissionControlIntentDetailRoute,
     adminPathMissionControlGoalsRoute,
+    adminPathMissionControlAgentsRoute,
     adminPathMissionControlTrustRoute,
     adminPathMissionControlConstitutionRoute,
     cdcRoute,
@@ -1090,6 +1133,8 @@ const routeTree = rootRoute.addChildren([
       adminPathSettingsTypesRoute,
       adminPathTranslationsRoute,
       adminPathWebhooksRoute,
+      adminPathMaterializeSettingsRoute,
+      adminPathTranslationMemoryRoute,
       adminPathActivityRoute,
       adminPathExtensionsRoute,
       adminPathMarketplaceRoute,

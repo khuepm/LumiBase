@@ -226,14 +226,85 @@ function ApprovalsTable({ approvals }: { approvals: AgentApproval[] }) {
   ])} />;
 }
 
+/**
+ * Artifacts with an inline Evaluate action (content-os-ui task 19; Req 19):
+ * runs the evaluation gate on demand and shows the verdict under the table —
+ * the same gate publish goes through, surfaced before publish.
+ */
 function ArtifactsTable({ artifacts }: { artifacts: AgentArtifact[] }) {
-  return <DataTable columns={['Artifact', 'Type', 'Title', 'Status', 'Hash']} rows={artifacts.map((artifact) => [
-    artifact.id,
-    artifact.type,
-    artifact.title,
-    artifact.status,
-    artifact.hash,
-  ])} />;
+  const [evaluating, setEvaluating] = useState<string | null>(null);
+  const [evaluated, setEvaluated] = useState<{ artifactId: string; result: unknown } | null>(null);
+  const [evalError, setEvalError] = useState<string | null>(null);
+
+  const evaluate = async (artifact: AgentArtifact) => {
+    setEvaluating(artifact.id);
+    setEvalError(null);
+    try {
+      const result = await agentRequest<unknown>(
+        `/artifacts/${artifact.id}/evaluate?runId=${encodeURIComponent(artifact.runId)}`,
+        { method: 'POST', body: '{}' },
+      );
+      setEvaluated({ artifactId: artifact.id, result });
+    } catch (err) {
+      setEvalError(err instanceof Error ? err.message : 'Evaluation failed');
+    } finally {
+      setEvaluating(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-hidden rounded-md border bg-background">
+        <table className="w-full table-fixed text-left text-sm">
+          <thead className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
+            <tr>
+              {['Artifact', 'Type', 'Title', 'Status', 'Hash', ''].map((column, i) => (
+                <th key={i} className="px-3 py-2 font-medium">{column}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {artifacts.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                  No records.
+                </td>
+              </tr>
+            ) : (
+              artifacts.map((artifact) => (
+                <tr key={artifact.id} className="border-b last:border-0">
+                  <td className="truncate px-3 py-2" title={artifact.id}>{artifact.id}</td>
+                  <td className="truncate px-3 py-2">{artifact.type}</td>
+                  <td className="truncate px-3 py-2" title={artifact.title}>{artifact.title}</td>
+                  <td className="truncate px-3 py-2">{artifact.status}</td>
+                  <td className="truncate px-3 py-2" title={artifact.hash}>{artifact.hash}</td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => void evaluate(artifact)}
+                      disabled={evaluating !== null}
+                      className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                    >
+                      {evaluating === artifact.id ? 'Evaluating…' : 'Evaluate'}
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      {evalError && <p className="text-xs text-destructive">{evalError}</p>}
+      {evaluated && (
+        <div className="rounded-md border bg-muted/30 p-3 text-xs">
+          <p className="font-medium">
+            Evaluation result for <code className="rounded bg-muted px-1">{evaluated.artifactId}</code>
+          </p>
+          <pre className="mt-1 overflow-x-auto font-mono">{JSON.stringify(evaluated.result, null, 2)}</pre>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function MemoryPanel({ memory }: { memory: AgentMemoryContext | null }) {

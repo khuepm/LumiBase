@@ -27,6 +27,133 @@ interface ExtensionDetail extends PublishedExtension {
   publisherKeyId: string;
 }
 
+/**
+ * Publish dialog (studio-ops-ui task 3; Req 3): completes the publish loop
+ * in the UI — pick a registered extension, attach slug + signing material,
+ * POST /marketplace/publish. Signature fields are pass-through: signing
+ * happens offline with the publisher key; this form only carries the result.
+ */
+function PublishDialog({
+  extensions,
+  onClose,
+}: {
+  extensions: Array<{ id: string; name: string }>;
+  onClose: () => void;
+}) {
+  const client = getApiClient();
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    extensionId: '',
+    marketplaceSlug: '',
+    publisher: '',
+    signature: '',
+    signatureAlg: 'ed25519',
+    publisherKeyId: '',
+    bundleSha256: '',
+  });
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      client.rawRequest<unknown>('/api/v1/marketplace/publish', {
+        method: 'POST',
+        body: JSON.stringify(form),
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['marketplace-extensions'] });
+      onClose();
+    },
+  });
+
+  const set =
+    (key: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setForm((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const valid =
+    form.extensionId &&
+    /^[a-z0-9-]+$/.test(form.marketplaceSlug) &&
+    form.publisher &&
+    form.signature &&
+    form.publisherKeyId &&
+    /^[0-9a-f]{64}$/.test(form.bundleSha256);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4"
+      role="dialog"
+      aria-label="Publish extension"
+    >
+      <div className="max-h-[85vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-lg border bg-background p-4 shadow-xl">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold">Publish extension</h2>
+          <button type="button" onClick={onClose} aria-label="Close publish dialog" className="rounded-md border p-1 hover:bg-muted">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <label className="block text-xs">
+          <span className="mb-1 block text-muted-foreground">Extension *</span>
+          <select
+            value={form.extensionId}
+            onChange={set('extensionId')}
+            aria-label="Extension to publish"
+            className="w-full rounded-md border bg-background px-2 py-1.5"
+          >
+            <option value="">choose…</option>
+            {extensions.map((ext) => (
+              <option key={ext.id} value={ext.id}>
+                {ext.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="text-xs">
+            <span className="mb-1 block text-muted-foreground">Marketplace slug *</span>
+            <input value={form.marketplaceSlug} onChange={set('marketplaceSlug')} placeholder="my-extension" className="w-full rounded-md border bg-background px-2 py-1.5 font-mono" />
+          </label>
+          <label className="text-xs">
+            <span className="mb-1 block text-muted-foreground">Publisher *</span>
+            <input value={form.publisher} onChange={set('publisher')} className="w-full rounded-md border bg-background px-2 py-1.5" />
+          </label>
+          <label className="text-xs">
+            <span className="mb-1 block text-muted-foreground">Signature alg</span>
+            <select value={form.signatureAlg} onChange={set('signatureAlg')} aria-label="Signature algorithm" className="w-full rounded-md border bg-background px-2 py-1.5">
+              <option value="ed25519">ed25519</option>
+              <option value="rsa-pss-sha256">rsa-pss-sha256</option>
+            </select>
+          </label>
+          <label className="text-xs">
+            <span className="mb-1 block text-muted-foreground">Publisher key id *</span>
+            <input value={form.publisherKeyId} onChange={set('publisherKeyId')} className="w-full rounded-md border bg-background px-2 py-1.5 font-mono" />
+          </label>
+          <label className="text-xs sm:col-span-2">
+            <span className="mb-1 block text-muted-foreground">Bundle signature *</span>
+            <input value={form.signature} onChange={set('signature')} className="w-full rounded-md border bg-background px-2 py-1.5 font-mono" />
+          </label>
+          <label className="text-xs sm:col-span-2">
+            <span className="mb-1 block text-muted-foreground">Bundle SHA-256 (64 hex) *</span>
+            <input value={form.bundleSha256} onChange={set('bundleSha256')} className="w-full rounded-md border bg-background px-2 py-1.5 font-mono" />
+          </label>
+        </div>
+        {mutation.isError && (
+          <p className="text-xs text-destructive">
+            {mutation.error instanceof Error ? mutation.error.message : 'Publish failed.'}
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={() => mutation.mutate()}
+          disabled={!valid || mutation.isPending}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+        >
+          {mutation.isPending ? 'Publishing…' : 'Publish to catalog'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function MarketplacePage() {
   const { t } = useTranslation();
   const client = getApiClient();
@@ -35,6 +162,7 @@ export function MarketplacePage() {
   const [search, setSearch] = useState('');
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<string>('all');
+  const [publishing, setPublishing] = useState(false);
 
   // Fetch installed extensions
   const installedQuery = useQuery({
@@ -116,7 +244,25 @@ export function MarketplacePage() {
             Browse and install verified third-party extensions to extend Lumibase's capabilities.
           </p>
         </div>
+        {/* Publish loop (studio-ops-ui Req 3) */}
+        <button
+          type="button"
+          onClick={() => setPublishing(true)}
+          className="inline-flex items-center gap-1 self-start rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted"
+        >
+          <ExternalLink className="h-4 w-4" /> Publish extension
+        </button>
       </header>
+
+      {publishing && (
+        <PublishDialog
+          extensions={installed.map((ext) => ({
+            id: (ext as { id: string }).id,
+            name: (ext as { name: string }).name,
+          }))}
+          onClose={() => setPublishing(false)}
+        />
+      )}
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
