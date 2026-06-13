@@ -219,7 +219,7 @@ describe('Agent Harness Layer completion properties', () => {
     });
     const harness = new AISecureHarness({ db, siteId: 'site_a', enableAgentHarnessAudit: true });
 
-    const rejected = await harness.executeApproved('legacy_1', 'user_1');
+    const rejected = await harness.executeApproved('legacy_1', 'user_1', ['items:write']);
     expect(rejected.status).toBe('denied');
 
     const expiredDb = createHarnessDb('site_a', {
@@ -251,7 +251,7 @@ describe('Agent Harness Layer completion properties', () => {
       ],
     }).db;
     const expiredHarness = new AISecureHarness({ db: expiredDb, siteId: 'site_a', enableAgentHarnessAudit: true });
-    const expired = await expiredHarness.executeApproved('legacy_2', 'user_1');
+    const expired = await expiredHarness.executeApproved('legacy_2', 'user_1', ['items:write']);
     expect(expired.status).toBe('denied');
     expect(expired.message).toMatch(/expired/i);
   });

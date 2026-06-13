@@ -9,7 +9,7 @@ import { vi } from 'vitest';
  * Feature: ai-first-cms-engine, Property 7: Execution failure preserves pending state
  *
  * With any Approval_Record in 'pending' state whose skill handler throws an exception
- * or times out, when calling harness.executeApproved(approvalId, userId), the
+ * or times out, when calling harness.executeApproved(approvalId, userId, ['*']), the
  * Approval_Record must remain in 'pending' state and the result must have
  * status === 'denied' with an error message.
  *
@@ -156,7 +156,7 @@ describe('Feature: ai-first-cms-engine, Property 7: Execution failure preserves 
           const harness = new AISecureHarness({ db, siteId });
 
           // Act
-          const result = await harness.executeApproved(approvalId, userId);
+          const result = await harness.executeApproved(approvalId, userId, ['*']);
 
           // Assert: result has status 'denied'
           expect(result.status).toBe('denied');
@@ -201,7 +201,7 @@ describe('Feature: ai-first-cms-engine, Property 7: Execution failure preserves 
           const harness = new AISecureHarness({ db, siteId });
 
           // Act
-          const result = await harness.executeApproved(approvalId, userId);
+          const result = await harness.executeApproved(approvalId, userId, ['*']);
 
           // Assert: result has status 'denied'
           expect(result.status).toBe('denied');
@@ -246,7 +246,7 @@ describe('Feature: ai-first-cms-engine, Property 7: Execution failure preserves 
           const harness = new AISecureHarness({ db, siteId });
 
           // Act
-          const result = await harness.executeApproved(approvalId, userId);
+          const result = await harness.executeApproved(approvalId, userId, ['*']);
 
           // Assert: status is 'denied'
           expect(result.status).toBe('denied');

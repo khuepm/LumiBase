@@ -193,6 +193,7 @@ describe('AI Integration: Full end-to-end flow (Chat → Harness → DB → Appr
     const approveResult = await harness.executeApproved(
       executeResult.approvalId!,
       USER_ID,
+      ['*'],
     );
 
     // Step 5: Skill executes successfully → record updated to 'approved'
@@ -262,6 +263,7 @@ describe('AI Integration: Full end-to-end flow (Chat → Harness → DB → Appr
     const approveResult = await harness.executeApproved(
       executeResult.approvalId!,
       USER_ID,
+      ['*'],
     );
 
     // Step 5: Executed successfully
@@ -557,6 +559,7 @@ describe('AI Integration: Multi-tenancy isolation in end-to-end flow', () => {
     const approveResult = await harnessB.executeApproved(
       createResult.approvalId!,
       'admin-user',
+      ['*'],
     );
 
     // Should be denied — approval belongs to site-A, not site-B

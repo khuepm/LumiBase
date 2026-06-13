@@ -108,7 +108,7 @@ describe('Feature: ai-first-cms-engine, Property 6: Invalid approval denial', ()
           const harness = new AISecureHarness({ db, siteId });
 
           // Act
-          const result = await harness.executeApproved(approvalId, userId);
+          const result = await harness.executeApproved(approvalId, userId, ['*']);
 
           // Assert: status must be 'denied'
           expect(result.status).toBe('denied');
@@ -139,7 +139,7 @@ describe('Feature: ai-first-cms-engine, Property 6: Invalid approval denial', ()
           const harness = new AISecureHarness({ db, siteId });
 
           // Act
-          const result = await harness.executeApproved(approvalId, userId);
+          const result = await harness.executeApproved(approvalId, userId, ['*']);
 
           // Assert: status must be 'denied'
           expect(result.status).toBe('denied');
@@ -175,7 +175,7 @@ describe('Feature: ai-first-cms-engine, Property 6: Invalid approval denial', ()
           const harness = new AISecureHarness({ db, siteId });
 
           // Act
-          const result = await harness.executeApproved(approvalId, userId);
+          const result = await harness.executeApproved(approvalId, userId, ['*']);
 
           // Assert: in all invalid cases, status must be 'denied'
           expect(result.status).toBe('denied');

@@ -907,7 +907,7 @@ export class AISecureHarness {
 
   /**
    * Checks whether the user has all capabilities required by a skill.
-   * The wildcard capability '*' satisfies all requirements.
+   * The wildcard capability '*' or admin role satisfies all requirements.
    *
    * @returns true if the user has sufficient capabilities, false otherwise.
    */
@@ -915,8 +915,8 @@ export class AISecureHarness {
     skill: SkillDefinition,
     userCapabilities: string[],
   ): boolean {
-    // Wildcard grants all capabilities
-    if (userCapabilities.includes('*')) {
+    // Wildcard and admin roles grant all capabilities.
+    if (userCapabilities.includes('*') || userCapabilities.includes('admin')) {
       return true;
     }
 
@@ -1388,6 +1388,7 @@ export class AISecureHarness {
   async executeApproved(
     approvalId: string,
     userId: string,
+    userCapabilities: string[],
   ): Promise<HarnessExecutionResult> {
     // Query approval record scoped to current site
     const [record] = await this.db
@@ -1406,6 +1407,15 @@ export class AISecureHarness {
         status: 'denied',
         message: 'Approval not found or already processed',
       };
+    }
+
+    const skill = this.validateSkill(record.skillName);
+    if (!skill) {
+      return { status: 'denied', message: `Unknown skill: ${record.skillName}` };
+    }
+
+    if (!this.checkCapabilities(skill, userCapabilities)) {
+      return { status: 'denied', message: 'Insufficient capabilities' };
     }
 
     // Execute the stored skill
