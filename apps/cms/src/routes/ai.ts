@@ -1,6 +1,7 @@
 import { aiApprovals, aiConversations, aiMessages } from '@lumibase/database';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { AISecureHarness } from '../services/ai-harness';
@@ -38,6 +39,27 @@ const MAX_CONTEXT_MESSAGES = 20;
 // ---------------------------------------------------------------------------
 
 export const aiRouter = new Hono<AppEnv>();
+
+function requireAdmin(c: Context<AppEnv>) {
+  const auth = c.get('auth');
+  const roles = Array.isArray(auth?.roles) ? (auth.roles as string[]) : [];
+
+  if (!roles.includes('admin')) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'FORBIDDEN',
+            message: 'Admin role required.',
+          },
+        ],
+      },
+      403,
+    );
+  }
+
+  return null;
+}
 
 /**
  * POST /chat
@@ -335,6 +357,9 @@ aiRouter.delete('/conversations/:id', async (c) => {
  * Returns pending approval records for the current site, sorted by createdAt DESC, max 100.
  */
 aiRouter.get('/approvals', async (c) => {
+  const forbidden = requireAdmin(c);
+  if (forbidden) return forbidden;
+
   const db = c.get('db');
   const siteId = c.get('siteId');
 
@@ -358,6 +383,9 @@ aiRouter.get('/approvals', async (c) => {
  * Approves or rejects a pending approval record.
  */
 aiRouter.post('/approvals/:id/decide', async (c) => {
+  const forbidden = requireAdmin(c);
+  if (forbidden) return forbidden;
+
   // Step 1: Parse and validate input
   const body = await c.req.json().catch(() => null);
   const parsed = decideSchema.safeParse(body);
