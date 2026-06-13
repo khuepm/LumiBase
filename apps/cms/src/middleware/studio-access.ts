@@ -12,18 +12,39 @@ const PUBLIC_AUTH_PATHS = new Set([
   '/api/v1/auth/register',
 ]);
 
+const STUDIO_ACCESS_PATH_PREFIXES = [
+  '/api/v1/access',
+  '/api/v1/admin',
+  '/api/v1/api-keys',
+  '/api/v1/collections',
+  '/api/v1/extensions',
+  '/api/v1/permissions',
+  '/api/v1/policies',
+  '/api/v1/presets',
+  '/api/v1/realtime',
+  '/api/v1/relations',
+  '/api/v1/roles',
+  '/api/v1/settings',
+  '/api/v1/teams',
+  '/api/v1/translations',
+  '/api/v1/typegen',
+  '/api/v1/users',
+  '/api/v1/webhooks',
+];
+
 /**
  * Enforce policy-level Studio access flags.
  *
  * Directus separates `app_access` from normal API permissions: a user can be
  * allowed to call APIs without being allowed into the Data Studio. LumiBase
- * mirrors that by requiring Studio clients to identify themselves with
- * `X-Lumi-Client: studio`; only those requests are gated by `appAccess` and
- * `enforceTfa`. Regular API calls continue to rely on collection/action
- * permissions.
+ * mirrors that by gating both self-identified Studio clients and the
+ * server-known Studio management API surface with `appAccess` and
+ * `enforceTfa`. Regular content API calls continue to rely on
+ * collection/action permissions.
  */
 export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next) => {
-  if (!isStudioClientRequest(c.req.header(STUDIO_CLIENT_HEADER), c.req.header('user-agent'))) {
+  const studioClient = isStudioClientRequest(c.req.header(STUDIO_CLIENT_HEADER), c.req.header('user-agent'));
+  if (!studioClient && !isStudioAccessPath(c.req.path)) {
     return next();
   }
 
@@ -89,6 +110,10 @@ declare module '../env' {
     /** Effective access bundle resolved by the Studio access gate. */
     access?: PermissionBundle;
   }
+}
+
+function isStudioAccessPath(path: string): boolean {
+  return STUDIO_ACCESS_PATH_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
 
 function isStudioClientRequest(clientHeader: string | undefined, userAgent: string | undefined): boolean {
