@@ -472,14 +472,29 @@ function isPolicyActive(policy: PolicyGuardRow, ctx: MagicContext): boolean {
   const rules = (policy.rules as PolicyGuard | null | undefined) ?? {};
   const validFrom = policy.validFrom ?? rules.validFrom;
   const validUntil = policy.validUntil ?? rules.validUntil;
-  const ipAllow = stringArray(policy.ipAllow) ?? rules.ipAllow;
-  const ipDeny = stringArray(policy.ipDeny) ?? rules.ipDeny;
+  const { ipAllow, ipDeny } = resolvePolicyIpGuards(policy.ipAllow, policy.ipDeny, rules);
 
   if (!rules) return true;
   const now = ctx.now ?? new Date();
   if (validFrom && new Date(validFrom) > now) return false;
   if (validUntil && new Date(validUntil) < now) return false;
   return isIpAllowedByGuard(ctx.ip, ipAllow, ipDeny);
+}
+
+export function resolvePolicyIpGuards(
+  policyIpAllow: unknown,
+  policyIpDeny: unknown,
+  rules: PolicyGuard = {},
+): { ipAllow?: string[]; ipDeny?: string[] } {
+  return {
+    ipAllow: nonEmptyStringArray(policyIpAllow) ?? stringArray(rules.ipAllow),
+    ipDeny: nonEmptyStringArray(policyIpDeny) ?? stringArray(rules.ipDeny),
+  };
+}
+
+function nonEmptyStringArray(value: unknown): string[] | undefined {
+  const values = stringArray(value);
+  return values?.length ? values : undefined;
 }
 
 function stringArray(value: unknown): string[] | undefined {
