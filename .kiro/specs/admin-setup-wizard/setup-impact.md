@@ -33,7 +33,8 @@ Trạng thái: `pending` (chưa làm) · `in-progress` · `done` (setup + backfi
 | 5 | admin-setup-wizard | v0.4.x | Persist lockout policy vào `settings` (hiện chỉ nằm trong audit metadata) | done | tasks.md G.5 | Done 2026-06-13: chốt open-question-8 — row `login_security_policy` dưới site `__default__`; reader (`loadLockoutPolicyFromSettings`) lookup theo key bất kể siteId nên không prejudge multi-tenancy |
 | 6 | ai-first-cms-engine | v0.3.x | Đã rà soát: `ai_approvals` không cần seed; HITL hoạt động không cần config setup | n/a | — | Rà soát 2026-06-13 |
 | 7 | clickhouse-cdc | v0.4.x | Đã rà soát: CDC pipeline registry cấu hình qua env/API riêng, không thuộc setup wizard | n/a | — | Rà soát 2026-06-13 |
-| 8 | content-os-ui | v0.5.x | Đã rà soát (gồm task 15 rollout switchboard): UI-only trên settings row `contentOs` đã được seed bởi #2 — không yêu cầu khởi tạo mới | n/a | — | Rà soát 2026-06-13 |
+| 8 | content-os-ui | v0.5.x | Đã rà soát (gồm task 15 rollout switchboard + phase 3 tasks 16-20 agents/intent-lifecycle/planner/evaluate/promotion-check): UI-only trên endpoint + settings row sẵn có — không yêu cầu khởi tạo mới | n/a | — | Rà soát 2026-06-13 |
+| 9 | studio-ops-ui | v0.5.x | Đã rà soát: UI-only trên `/materialize`, `/tm`, `/marketplace/publish` sẵn có — không seed, không flag, không bước wizard mới | n/a | — | Rà soát 2026-06-13 |
 
 ## Lưu ý backfill
 

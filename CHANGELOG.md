@@ -11,6 +11,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
+- **Mission Control phase 3** (content-os-ui Req 16–20). Five Content OS endpoints that previously had no UI are now operable from Studio: an **Agents** sub-route managing the agent role library (CRUD, enabled toggle, two-step delete); intent detail gains **Scan now** (manual reconciliation cycle), inline **Edit** and two-step **Delete**; the goal tree gains planner **Decompose**/**Settle** actions; the Artifacts tab gains an **Evaluate** action with inline verdict; the trust ledger gains a **promotion eligibility check**.
+- **Studio ops surfaces** (studio-ops-ui Req 1–3). Three more backend-without-UI gaps closed: **Settings → Materialized views** (create with auto/cron/manual strategy, per-row refresh, two-step drop), **Settings → Translation memory** (entry management plus fuzzy-lookup and translate-pipeline try-out panels), and a **Publish extension** dialog on the Marketplace page.
 - **Mission Control rollout switchboard** (content-os-ui Req 15). The dashboard gains a "Rollout" panel to toggle the four per-site Content OS flags (`reconciler`, `vetoWindow`, `agentReview`, `mcp`) — previously only flippable by hand-crafting a `POST /api/v1/settings` call. Enabling a subsystem takes a two-step confirm (consistent with the kill-switch freeze confirm); disabling applies on the first click. Saves merge over the existing `contentOs` settings row so non-flag keys (e.g. `agentReviewMinConfidence`) survive a toggle.
 - **Setup seeds Content OS state** (Setup Impact Registry G.1–G.3, G.5). The setup transaction now additionally:
   - seeds the 7-role agent library for the default site (previously lazy-seeded on first `GET /agent/roles`);
