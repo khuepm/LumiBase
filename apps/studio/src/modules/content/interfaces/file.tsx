@@ -3,6 +3,7 @@ import { useRef, useState, type DragEvent } from 'react';
 import { cn } from '@/lib/cn';
 import { getApiClient } from '@/lib/api';
 import { readOptions, type InterfaceComponent } from './types';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 interface FileOptions {
   accept?: string;
@@ -11,12 +12,8 @@ interface FileOptions {
 }
 
 /**
- * `file` — drag/drop or browse, currently stores a placeholder URL.
- *
- * TODO(phase-e/storage): wire to a presigned-URL endpoint + R2/S3 adapter.
- * Today the upload is *simulated* (no network), returning a synthetic URL of
- * the form `lumibase://pending/<name>` so downstream code can detect that the
- * value has not yet been persisted to storage.
+ * `file` — drag/drop or browse, uploads through the CMS presigned upload
+ * endpoint, creates a file record, and stores the returned storage key.
  */
 export const FileInterface: InterfaceComponent<string> = ({
   value,
@@ -58,7 +55,7 @@ export const FileInterface: InterfaceComponent<string> = ({
 
       onChange(fileRecord.filenameDisk);
     } catch (err) {
-      console.error(err);
+      console.error(formatSafeError(err));
       alert('Failed to upload file.');
     } finally {
       setUploading(false);

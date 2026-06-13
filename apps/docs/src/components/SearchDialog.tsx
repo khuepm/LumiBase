@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, FileText } from 'lucide-react';
+import DOMPurify from 'dompurify';
 import { search, type SearchResult } from '../lib/search';
 import { useLocale } from '../hooks/useLocale';
 import { useT } from '../hooks/useT';
@@ -184,7 +185,7 @@ export function SearchDialog() {
                   <div className="font-medium truncate">{result.title}</div>
                   <div
                     className="mt-0.5 text-xs text-muted-foreground line-clamp-2 [&_mark]:bg-yellow-200 [&_mark]:text-foreground [&_mark]:rounded-sm [&_mark]:px-0.5"
-                    dangerouslySetInnerHTML={{ __html: result.snippet }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(result.snippet) }}
                   />
                 </div>
               </li>

@@ -66,8 +66,41 @@ Chỉ admin (capability `marketplace:publish`) được phép.
 
 - [x] Studio UI marketplace browser (browse + 1-click install).
 - [x] Versioning + auto-update notifications.
-- [ ] Public marketplace site (apps/marketplace).
-- [ ] Revenue sharing cho commercial extensions.
+- [x] Public marketplace site (apps/marketplace) dùng catalog API thật.
+- [x] Revenue sharing cho commercial extensions: chốt hướng **Free-first** cho launch; checkout/payout nằm trong backlog thương mại riêng.
+
+## Public marketplace launch
+
+`apps/marketplace` là site Next.js static export để publish lên Cloudflare Pages. Site đọc dữ liệu từ CMS qua:
+
+```
+GET /api/v1/marketplace/extensions?q=&category=&tags=&page=&perPage=&sort=
+GET /api/v1/marketplace/extensions/:slug
+```
+
+Response public catalog được project từ `extensions.manifest.marketplace` trước, fallback về row `extensions` hiện có. Các field public ổn định gồm `slug`, `name`, `description`, `readme`, `category`, `tags`, `publisherName`, `latestVersion`, `publishedAt`, `updatedAt`, `licenseType`, `repositoryUrl`, `documentationUrl`. Các field cũ (`marketplaceSlug`, `publisher`, `version`, `type`) vẫn được giữ để Studio không vỡ.
+
+Checklist launch:
+
+- Set `NEXT_PUBLIC_USE_REAL_API=true`.
+- Set `NEXT_PUBLIC_CMS_API_URL` trỏ tới CMS production.
+- Build bằng `pnpm marketplace:build`.
+- Deploy bằng `pnpm marketplace:deploy` hoặc Cloudflare Pages với output `apps/marketplace/out`.
+- Smoke test `/`, `/extensions/`, `/categories/seo/`, và `/extensions/<slug>/`.
+- Seed đủ metadata listing trong `manifest.marketplace` nếu production DB còn thiếu description/category/tags/license/link.
+
+## Revenue sharing status
+
+Launch hiện tại là marketplace miễn phí. LumiBase chưa xử lý mua bán extension trả phí, license entitlement, payout, refund hoặc thuế trong vòng này.
+
+Backlog commercial extensions pha sau:
+
+- Pricing fields cho extension listing.
+- Publisher accounts và payout profile.
+- Platform commission mặc định theo phần trăm.
+- License entitlement khi install paid extension.
+- Checkout provider integration.
+- Revenue ledger, payout lifecycle, refund lifecycle.
 
 ## Cấu trúc Phiên bản & Thông báo Cập nhật (Versioning & Auto-update)
 

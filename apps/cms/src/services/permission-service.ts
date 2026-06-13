@@ -42,7 +42,23 @@ import {
  * The compiled bundle is also returned by `GET /permissions/me`.
  */
 
-export type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'share' | 'read_decrypted';
+export type PermissionAction =
+  | 'create'
+  | 'read'
+  | 'update'
+  | 'delete'
+  | 'share'
+  | 'read_decrypted'
+  | 'configure'
+  | 'install'
+  | 'enable'
+  | 'grant_capability'
+  | 'execute'
+  | 'schema:read'
+  | 'schema:create'
+  | 'schema:update'
+  | 'schema:delete'
+  | 'schema:migrate';
 
 export interface CompiledPermission {
   collection: string;
@@ -94,6 +110,7 @@ export class PermissionService {
   private get principalKey(): string {
     const apiKeyId = this.deps.ctx.apiKey?.id;
     if (typeof apiKeyId === 'string' && apiKeyId.length > 0) return `api_key:${apiKeyId}`;
+    if (this.deps.ctx.roleId) return `role:${this.deps.ctx.roleId}`;
     return this.deps.ctx.userId ?? 'anon';
   }
 
@@ -265,8 +282,19 @@ export class PermissionService {
             ),
           )
       : [];
+    const directRoleRows = ctx.roleId
+      ? await db
+          .select({
+            id: roles.id,
+            name: roles.name,
+            adminAccess: roles.adminAccess,
+            appAccess: roles.appAccess,
+          })
+          .from(roles)
+          .where(and(scopeSite(roles.siteId, ctx.siteId), eq(roles.id, ctx.roleId)))
+      : [];
 
-    const roleRows = uniqueRoles([...primaryRoleRows, ...secondaryRoleRows, ...apiKeyRoleRows]);
+    const roleRows = uniqueRoles([...primaryRoleRows, ...secondaryRoleRows, ...apiKeyRoleRows, ...directRoleRows]);
 
     // Collect policy ids from role bindings + direct user/API-key policies.
     const roleIds = roleRows.map((r) => r.id);
@@ -444,14 +472,29 @@ function isPolicyActive(policy: PolicyGuardRow, ctx: MagicContext): boolean {
   const rules = (policy.rules as PolicyGuard | null | undefined) ?? {};
   const validFrom = policy.validFrom ?? rules.validFrom;
   const validUntil = policy.validUntil ?? rules.validUntil;
-  const ipAllow = stringArray(policy.ipAllow) ?? rules.ipAllow;
-  const ipDeny = stringArray(policy.ipDeny) ?? rules.ipDeny;
+  const { ipAllow, ipDeny } = resolvePolicyIpGuards(policy.ipAllow, policy.ipDeny, rules);
 
   if (!rules) return true;
   const now = ctx.now ?? new Date();
   if (validFrom && new Date(validFrom) > now) return false;
   if (validUntil && new Date(validUntil) < now) return false;
   return isIpAllowedByGuard(ctx.ip, ipAllow, ipDeny);
+}
+
+export function resolvePolicyIpGuards(
+  policyIpAllow: unknown,
+  policyIpDeny: unknown,
+  rules: PolicyGuard = {},
+): { ipAllow?: string[]; ipDeny?: string[] } {
+  return {
+    ipAllow: nonEmptyStringArray(policyIpAllow) ?? stringArray(rules.ipAllow),
+    ipDeny: nonEmptyStringArray(policyIpDeny) ?? stringArray(rules.ipDeny),
+  };
+}
+
+function nonEmptyStringArray(value: unknown): string[] | undefined {
+  const values = stringArray(value);
+  return values?.length ? values : undefined;
 }
 
 function stringArray(value: unknown): string[] | undefined {

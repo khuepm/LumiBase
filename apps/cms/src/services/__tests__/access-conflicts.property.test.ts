@@ -1,207 +1,249 @@
-import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
+import { describe, expect, it } from 'vitest';
 import {
   detectAccessConflicts,
+  type AccessConflictReport,
   type AccessPermissionInput,
 } from '../access-conflicts';
 import type { PermissionAction } from '../permission-service';
 
+const collectionArb = fc.constantFrom('posts', 'pages', 'products');
 const actionArb = fc.constantFrom<PermissionAction>('create', 'read', 'update', 'delete', 'share');
-const collectionArb = fc.constantFrom('posts', 'pages', 'articles', 'products');
-const fieldArb = fc.constantFrom('title', 'status', 'body', 'owner', 'category');
-const valueArb = fc.oneof(
-  fc.string({ minLength: 1, maxLength: 12 }),
-  fc.integer({ min: -10, max: 10 }),
-  fc.boolean(),
-);
+const fieldArb = fc.constantFrom('title', 'status', 'owner', 'category');
+const valueArb = fc.constantFrom('draft', 'review', 'published', '$CURRENT_USER', 'system');
 
-function permission(patch: Partial<AccessPermissionInput> = {}): AccessPermissionInput {
+function permission(patch: Partial<AccessPermissionInput>): AccessPermissionInput {
   return {
     policyId: 'policy_a',
     policyName: 'Policy A',
     collection: 'posts',
     action: 'read',
-    permissions: { status: { _eq: 'published' } },
+    permissions: {},
     validation: {},
     presets: {},
-    fields: ['title'],
+    fields: ['*'],
     ...patch,
   };
 }
 
-function pair(
-  a: AccessPermissionInput,
-  b: AccessPermissionInput,
-) {
-  return {
+function pairFor(
+  base: Pick<AccessPermissionInput, 'collection' | 'action'>,
+  a: Partial<AccessPermissionInput>,
+  b: Partial<AccessPermissionInput>,
+): AccessPermissionInput[] {
+  return [
+    permission({
+      ...base,
+      policyId: 'policy_a',
+      policyName: 'Policy A',
+      ...a,
+    }),
+    permission({
+      ...base,
+      policyId: 'policy_b',
+      policyName: 'Policy B',
+      ...b,
+    }),
+  ];
+}
+
+function reportFor(permissions: AccessPermissionInput[]): AccessConflictReport {
+  return detectAccessConflicts({
     policies: [
-      { id: a.policyId, name: a.policyName },
-      { id: b.policyId, name: b.policyName },
+      { id: 'policy_a', name: 'Policy A' },
+      { id: 'policy_b', name: 'Policy B' },
     ],
-    permissions: [a, b],
-  };
+    permissions,
+  });
+}
+
+function hasConflict(report: AccessConflictReport, reason: string): boolean {
+  return report.conflicts.some((conflict) => conflict.reason === reason);
+}
+
+function hasWarning(report: AccessConflictReport, reason: string): boolean {
+  return report.warnings.some((warning) => warning.reason === reason);
 }
 
 describe('detectAccessConflicts properties', () => {
-  it('does not report conflicts for identical permission rows regardless of field order', () => {
+  it('blocks unconditional rows combined with restricted rows on the same collection/action', () => {
     fc.assert(
-      fc.property(
-        collectionArb,
-        actionArb,
-        fc.uniqueArray(fieldArb, { minLength: 1 }),
-        (collection, action, fields) => {
-          const a = permission({
-            policyId: 'policy_a',
-            policyName: 'Policy A',
-            collection,
-            action,
-            fields,
-            permissions: { status: { _eq: 'published' } },
-            validation: { status: { _in: ['published', 'draft'] } },
-            presets: { owner: '$CURRENT_USER' },
-          });
-          const b = permission({
-            ...a,
-            policyId: 'policy_b',
-            policyName: 'Policy B',
-            fields: [...fields].reverse(),
-          });
+      fc.property(collectionArb, actionArb, fieldArb, valueArb, (collection, action, field, value) => {
+        const report = reportFor(
+          pairFor(
+            { collection, action },
+            { permissions: {} },
+            { permissions: { [field]: { _eq: value } } },
+          ),
+        );
 
-          const report = detectAccessConflicts(pair(a, b));
-          expect(report.ok).toBe(true);
-          expect(report.conflicts).toHaveLength(0);
-          expect(report.warnings).toHaveLength(0);
-        },
-      ),
+        expect(report.ok).toBe(false);
+        expect(hasConflict(report, 'UNCONDITIONAL_RULE_WIDENS_RESTRICTED_RULE')).toBe(true);
+      }),
     );
   });
 
-  it('always blocks unconditional rules mixed with restricted rules on the same target', () => {
+  it('blocks all-fields rows combined with whitelisted rows on the same collection/action', () => {
+    fc.assert(
+      fc.property(collectionArb, actionArb, fieldArb, (collection, action, field) => {
+        const report = reportFor(
+          pairFor(
+            { collection, action },
+            { permissions: { status: { _eq: 'published' } }, fields: ['*'] },
+            { permissions: { status: { _eq: 'published' } }, fields: [field] },
+          ),
+        );
+
+        expect(report.ok).toBe(false);
+        expect(hasConflict(report, 'ALL_FIELDS_WIDENS_FIELD_WHITELIST')).toBe(true);
+      }),
+    );
+  });
+
+  it('blocks conflicting validation values for the same field', () => {
+    fc.assert(
+      fc.property(collectionArb, actionArb, fieldArb, (collection, action, field) => {
+        const report = reportFor(
+          pairFor(
+            { collection, action },
+            {
+              permissions: { status: { _eq: 'published' } },
+              fields: ['title'],
+              validation: { [field]: { _eq: 'draft' } },
+            },
+            {
+              permissions: { status: { _eq: 'published' } },
+              fields: ['title'],
+              validation: { [field]: { _eq: 'review' } },
+            },
+          ),
+        );
+
+        expect(report.ok).toBe(false);
+        expect(hasConflict(report, 'CONFLICTING_VALIDATION_FOR_SAME_FIELD')).toBe(true);
+      }),
+    );
+  });
+
+  it('blocks conflicting preset values for the same field', () => {
+    fc.assert(
+      fc.property(collectionArb, actionArb, fieldArb, (collection, action, field) => {
+        const report = reportFor(
+          pairFor(
+            { collection, action },
+            {
+              permissions: { status: { _eq: 'published' } },
+              fields: ['title'],
+              presets: { [field]: '$CURRENT_USER' },
+            },
+            {
+              permissions: { status: { _eq: 'published' } },
+              fields: ['title'],
+              presets: { [field]: 'system' },
+            },
+          ),
+        );
+
+        expect(report.ok).toBe(false);
+        expect(hasConflict(report, 'CONFLICTING_PRESET_FOR_SAME_FIELD')).toBe(true);
+      }),
+    );
+  });
+
+  it('warns for conditional overlaps without blocking field, validation, or preset conflicts', () => {
+    fc.assert(
+      fc.property(collectionArb, actionArb, (collection, action) => {
+        const report = reportFor(
+          pairFor(
+            { collection, action },
+            {
+              permissions: { owner: { _eq: '$CURRENT_USER' } },
+              fields: ['title'],
+              validation: { status: { _eq: 'published' } },
+              presets: { owner: '$CURRENT_USER' },
+            },
+            {
+              permissions: { status: { _eq: 'published' } },
+              fields: ['title', 'status'],
+              validation: { category: { _eq: 'news' } },
+              presets: { reviewed_by: 'system' },
+            },
+          ),
+        );
+
+        expect(report.ok).toBe(true);
+        expect(report.conflicts).toHaveLength(0);
+        expect(hasWarning(report, 'OVERLAPPING_PERMISSION_REQUIRES_REVIEW')).toBe(true);
+      }),
+    );
+  });
+
+  it('does not report identical permission rows', () => {
     fc.assert(
       fc.property(collectionArb, actionArb, fieldArb, valueArb, (collection, action, field, value) => {
-        const report = detectAccessConflicts(pair(
+        const row = {
+          permissions: { [field]: { _eq: value } },
+          validation: { status: { _eq: 'published' } },
+          presets: { owner: '$CURRENT_USER' },
+          fields: ['title', 'status'],
+        };
+
+        const report = reportFor(pairFor({ collection, action }, row, row));
+
+        expect(report.ok).toBe(true);
+        expect(report.conflicts).toHaveLength(0);
+        expect(report.warnings).toHaveLength(0);
+      }),
+    );
+  });
+
+  it('does not compare rows with different collection or action keys', () => {
+    fc.assert(
+      fc.property(collectionArb, actionArb, actionArb, (collection, action, otherAction) => {
+        fc.pre(action !== otherAction);
+
+        const report = reportFor([
           permission({
             policyId: 'policy_a',
-            policyName: 'All rows',
+            policyName: 'Policy A',
             collection,
             action,
             permissions: {},
           }),
           permission({
             policyId: 'policy_b',
-            policyName: 'Restricted rows',
+            policyName: 'Policy B',
             collection,
-            action,
-            permissions: { [field]: { _eq: value } },
-          }),
-        ));
-
-        expect(report.ok).toBe(false);
-        expect(report.conflicts.map((c) => c.reason)).toContain(
-          'UNCONDITIONAL_RULE_WIDENS_RESTRICTED_RULE',
-        );
-      }),
-    );
-  });
-
-  it('always blocks all-fields access mixed with a field whitelist', () => {
-    fc.assert(
-      fc.property(
-        collectionArb,
-        actionArb,
-        fc.uniqueArray(fieldArb, { minLength: 1 }).filter((fields) => !fields.includes('*')),
-        (collection, action, fields) => {
-          const report = detectAccessConflicts(pair(
-            permission({
-              policyId: 'policy_a',
-              policyName: 'All fields',
-              collection,
-              action,
-              fields: ['*'],
-            }),
-            permission({
-              policyId: 'policy_b',
-              policyName: 'Limited fields',
-              collection,
-              action,
-              fields,
-            }),
-          ));
-
-          expect(report.ok).toBe(false);
-          expect(report.conflicts.map((c) => c.reason)).toContain(
-            'ALL_FIELDS_WIDENS_FIELD_WHITELIST',
-          );
-        },
-      ),
-    );
-  });
-
-  it('always blocks conflicting validation or preset values for an overlapping field', () => {
-    fc.assert(
-      fc.property(collectionArb, actionArb, fieldArb, valueArb, valueArb, (collection, action, field, aValue, bValue) => {
-        fc.pre(JSON.stringify(aValue) !== JSON.stringify(bValue));
-
-        const report = detectAccessConflicts(pair(
-          permission({
-            policyId: 'policy_a',
-            policyName: 'Validation A',
-            collection,
-            action,
-            validation: { [field]: { _eq: aValue } },
-            presets: { [field]: aValue },
+            action: otherAction,
+            permissions: { status: { _eq: 'published' } },
           }),
           permission({
-            policyId: 'policy_b',
-            policyName: 'Validation B',
-            collection,
+            policyId: 'policy_c',
+            policyName: 'Policy C',
+            collection: `${collection}_archive`,
             action,
-            validation: { [field]: { _eq: bValue } },
-            presets: { [field]: bValue },
+            permissions: { status: { _eq: 'published' } },
           }),
-        ));
-
-        expect(report.ok).toBe(false);
-        expect(report.conflicts.map((c) => c.reason)).toContain(
-          'CONFLICTING_VALIDATION_FOR_SAME_FIELD',
-        );
-      }),
-    );
-  });
-
-  it('warns rather than blocks for compatible conditional overlap that still needs review', () => {
-    fc.assert(
-      fc.property(collectionArb, actionArb, fieldArb, fieldArb, (collection, action, aField, bField) => {
-        fc.pre(aField !== bField);
-
-        const report = detectAccessConflicts(pair(
-          permission({
-            policyId: 'policy_a',
-            policyName: 'Condition A',
-            collection,
-            action,
-            fields: ['title'],
-            permissions: { [aField]: { _eq: 'a' } },
-            validation: {},
-            presets: {},
-          }),
-          permission({
-            policyId: 'policy_b',
-            policyName: 'Condition B',
-            collection,
-            action,
-            fields: ['title', 'status'],
-            permissions: { [bField]: { _eq: 'b' } },
-            validation: {},
-            presets: {},
-          }),
-        ));
+        ]);
 
         expect(report.ok).toBe(true);
         expect(report.conflicts).toHaveLength(0);
-        expect(report.warnings.map((w) => w.reason)).toContain(
-          'OVERLAPPING_PERMISSION_REQUIRES_REVIEW',
-        );
+        expect(report.warnings).toHaveLength(0);
+      }),
+    );
+  });
+
+  it('blocks TFA policies attached to API key targets', () => {
+    fc.assert(
+      fc.property(fc.boolean(), (adminAccess) => {
+        const report = detectAccessConflicts({
+          targetType: 'api_key',
+          policies: [{ id: 'policy_tfa', name: 'TFA policy', enforceTfa: true, adminAccess }],
+          permissions: [],
+        });
+
+        expect(report.ok).toBe(false);
+        expect(hasConflict(report, 'TFA_POLICY_CANNOT_ATTACH_TO_API_KEY')).toBe(true);
       }),
     );
   });

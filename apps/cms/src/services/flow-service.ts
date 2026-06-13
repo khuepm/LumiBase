@@ -9,6 +9,8 @@
  * be registered via `registerHandler()` (used by extensions).
  */
 
+import { validateOutboundUrl } from './ssrf-guard';
+
 export interface FlowNode {
   id: string;
   /** Operation key; resolved against the registry. */
@@ -43,84 +45,6 @@ export function registerHandler(key: string, handler: OperationHandler): void {
 
 export function getHandler(key: string): OperationHandler | undefined {
   return handlers.get(key);
-}
-
-const BLOCKED_HOST_SUFFIXES = ['.localhost', '.local', '.internal', '.lan', '.home'];
-
-function parseIpv4(hostname: string): [number, number, number, number] | null {
-  const parts = hostname.split('.');
-  if (parts.length !== 4) return null;
-
-  const octets = parts.map((part) => {
-    if (!/^\d+$/.test(part)) return Number.NaN;
-    const value = Number(part);
-    return value >= 0 && value <= 255 ? value : Number.NaN;
-  });
-
-  return octets.every(Number.isInteger) ? (octets as [number, number, number, number]) : null;
-}
-
-function isBlockedIpv4(hostname: string): boolean {
-  const ipv4 = parseIpv4(hostname);
-  if (!ipv4) return false;
-
-  const [a, b] = ipv4;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 192 && b === 0) ||
-    a === 198 && (b === 18 || b === 19)
-  );
-}
-
-function isBlockedIpv6(hostname: string): boolean {
-  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  if (!normalized.includes(':')) return false;
-
-  const ipv4Mapped = normalized.match(/(?::ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/);
-  if (ipv4Mapped?.[1] && isBlockedIpv4(ipv4Mapped[1])) return true;
-
-  return (
-    normalized === '::' ||
-    normalized === '::1' ||
-    normalized.startsWith('0:0:0:0:0:0:0:0') ||
-    normalized.startsWith('::ffff:') ||
-    normalized.startsWith('fc') ||
-    normalized.startsWith('fd') ||
-    /^fe[89ab]/.test(normalized)
-  );
-}
-
-function validateHttpUrl(rawUrl: string): URL {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new Error('http operation requires a valid URL');
-  }
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('http operation only supports http(s) URLs');
-  }
-
-  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
-  if (
-    hostname === 'localhost' ||
-    hostname === 'metadata.google.internal' ||
-    (!hostname.includes('.') && !hostname.includes(':')) ||
-    BLOCKED_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix)) ||
-    isBlockedIpv4(hostname) ||
-    isBlockedIpv6(hostname)
-  ) {
-    throw new Error('http operation cannot target local or private network addresses');
-  }
-
-  return parsed;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,9 +96,16 @@ registerHandler('http', async (_ctx, options) => {
   const body = options['body'];
   if (!url) throw new Error('http operation requires url');
 
-  const parsedUrl = validateHttpUrl(url);
+  // Flow URLs are user-supplied; apply the same SSRF policy as the
+  // extension sandbox's http:fetch capability.
+  const guard = validateOutboundUrl(url);
+  if (!guard.allowed || !guard.url) {
+    throw new Error(
+      `http operation blocked: ${guard.reason ?? 'outbound URL is not allowed'}`,
+    );
+  }
 
-  const res = await fetch(parsedUrl.toString(), {
+  const res = await fetch(guard.url, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
@@ -197,6 +128,45 @@ registerHandler('sleep', async (_ctx, options) => {
 registerHandler('mail', async (_ctx, options) => {
   // Stub — real impl would dispatch via the queue/runtime.
   return { queued: true, to: options['to'], subject: options['subject'] };
+});
+
+registerHandler('drift-scan', async (ctx, options) => {
+  // Content OS reconciliation cycle (task 6.3; Req 6.1): scan one intent's
+  // collection for drift, then turn open drift into reconciler goals.
+  // Schedule a flow per intent with the intent's cron in `triggerOptions`.
+  // `db`/`siteId` arrive via the run environment (see routes/flows.ts).
+  const db = ctx.env['db'];
+  const siteId = ctx.env['siteId'];
+  const intentId = options['intentId'] ?? ctx.input['intentId'];
+  if (!db || typeof siteId !== 'string' || typeof intentId !== 'string') {
+    throw new Error('drift-scan requires env.db, env.siteId and an intentId option');
+  }
+
+  // Lazy imports keep the generic flow engine decoupled from Content OS.
+  const { DriftService } = await import('./drift-service');
+  const { ReconcilerService } = await import('./reconciler-service');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const deps = { db: db as any, siteId };
+
+  const scan = await new DriftService(deps).scanIntent(intentId, {
+    timeBudgetMs: Math.min(60_000, Number(options['timeBudgetMs'] ?? 10_000)),
+  });
+  const reconcile = await new ReconcilerService(deps).reconcileIntent(intentId);
+  return { scan, reconcile };
+});
+
+registerHandler('trust-promote-check', async (ctx) => {
+  // Content OS trust ledger sweep (task 13.1; Req 12.5): evaluates every
+  // grant below L4 and creates promotion proposals for eligible candidates.
+  // Proposals only become effective through a human decision.
+  const db = ctx.env['db'];
+  const siteId = ctx.env['siteId'];
+  if (!db || typeof siteId !== 'string') {
+    throw new Error('trust-promote-check requires env.db and env.siteId');
+  }
+  const { TrustLedgerService } = await import('./trust-ledger-service');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new TrustLedgerService({ db: db as any, siteId }).sweepPromotions();
 });
 
 // ---------------------------------------------------------------------------

@@ -1,69 +1,77 @@
-# Schema Type Generation (`schema.ts` export)
+# Schema Type Generation
 
-> Tương đương `npx directus-typescript-gen` của Directus, nhưng tích hợp gốc vào LumiBase và **multi-tenant aware** (sinh types theo `site_id`).
+LumiBase typegen turns a tenant schema into TypeScript types for apps that use `@lumibase/sdk`. It is multi-tenant aware: the manifest is fetched for one site and can be filtered by collection.
 
-## 1. Mục tiêu
+## 1. Goals
 
-- Sinh file TypeScript chứa **type của toàn bộ collections + fields + relations** của một site, để client (Next.js, app khác) có thể `Items<'posts'>` autocomplete.
-- Hỗ trợ 3 hình thức output:
-  1. **Per-site** `lumibase-types.ts` (collection map + global `LumibaseSchema`).
-  2. **Per-collection** module riêng (`collections/posts.ts`).
-  3. **SDK-ready** — augment module `@lumibase/sdk` để `client.items('posts')` return chuẩn.
+- Generate TypeScript interfaces for collections, fields, system fields, and relations.
+- Preserve primary key strategy, nullable/required, readonly/generated, encrypted field behavior, and relation-expanded response types.
+- Keep the generated schema compatible with `createLumiClient<LumibaseSchema>()`.
 
-## 2. Output shape
+## 2. Output Shape
 
 ```ts
-// lumibase-types.ts (auto-generated, DO NOT EDIT)
+// lumibase-types.ts (auto-generated)
 import type { Brand, ID, Locale } from '@lumibase/sdk';
 
-export interface Post {
-  id: ID;
-  status: 'draft' | 'review' | 'published' | 'archived';
-  title: string;
-  slug: string;
-  body: string | null;
-  cover: File | null;          // m2o → files
-  author: User;                // m2o → users
-  tags: Tag[];                 // m2m → tags
-  translations: Record<Locale, { title: string; body: string }>;
-  user_created: ID;
-  user_updated: ID;
-  date_created: string;        // ISO
-  date_updated: string;
+export interface Authors {
+  readonly id: Brand<'AuthorsId', string>;
+  readonly created_at: string;
+  name: string;
 }
 
-export interface Tag { id: ID; name: string; slug: string; }
+export type AuthorsExpanded = Omit<Authors, "posts"> & {
+  posts?: Array<Posts | PostsExpanded>;
+};
+
+export interface Posts {
+  readonly id: Brand<'PostsId', string>;
+  title: string;
+  body?: string | null;
+  secret_note?: string | '***' | null;
+  author_id?: Brand<'AuthorsId', string> | null;
+}
+
+export type PostsExpanded = Omit<Posts, "author_id"> & {
+  author_id?: Authors | AuthorsExpanded | null;
+};
 
 export interface LumibaseCollections {
-  posts: Post;
-  tags: Tag;
-  // ...
+  authors: Authors;
+  posts: Posts;
 }
 
 export type LumibaseSchema = LumibaseCollections;
 ```
 
-Quy tắc mapping field → TS:
-| Field type | TS |
+Base interfaces represent stored item values. `CollectionExpanded` types represent read responses where relation fields may be expanded into related objects.
+
+## 3. Mapping Rules
+
+| Manifest input | Generated TypeScript |
 |---|---|
-| `string`, `text`, `hash`, `csv` | `string` |
-| `integer`, `bigInteger`, `decimal` | `number` |
-| `boolean` | `boolean` |
-| `json` | `unknown` (hoặc generic nếu có schema) |
-| `uuid` | `ID` brand |
-| `date`/`datetime`/`time`/`timestamp` | `string` (ISO) |
-| `geometry` | `GeoJSON.Geometry` |
-| `alias` m2o | `T \| null` |
-| `alias` o2m / m2m | `T[]` |
-| `alias` m2a | `Array<{ collection: K; item: Collections[K] }>` |
-| `select-dropdown` có choices | union literal |
-| `translatable-text` | `Record<Locale, string>` |
+| `primaryKeyType: "nanoid" | "uuid" | "string"` | `Brand<'CollectionId', string>` when branded, otherwise `ID`/`string`. |
+| `primaryKeyType: "integer" | "bigInteger"` | `number`. |
+| `string`, `text`, `hash`, `csv` | `string`. |
+| `integer`, `bigInteger`, `decimal` | `number`. |
+| `boolean` | `boolean`. |
+| `json` | `unknown`. |
+| `uuid` | branded string when `branded` is present. |
+| `date`, `datetime`, `time`, `timestamp` | `string`. |
+| `geometry` | `GeoJSON.Geometry`. |
+| `enum` choices | String literal union. |
+| `encrypted: true` | Adds `'***'` because decrypted access depends on runtime permissions. |
+| `readonly` or `generated` | Emits `readonly` property. |
+| `nullable: true` | Adds `| null`. |
+| `required: false` | Emits optional `?`. |
+| `m2o` relation | Base field is the target primary key type; expanded type is target object or `null`. |
+| `o2m` / `m2m` relation | Expanded type is an array of target objects. |
+| `m2a` relation | `Array<{ collection: string; item: unknown }>` until a collection union is available. |
 
-Required → property bắt buộc; `required=false` → optional `?` hoặc `\| null` theo cấu hình.
+## 4. CLI
 
-## 3. CLI
+The CLI lives in `apps/cms/scripts/typegen.ts`.
 
-Đặt trong `apps/cms/scripts/typegen.ts` (chạy bằng `tsx` hoặc Node).
 ```sh
 pnpm lumibase typegen \
   --site <siteId> \
@@ -74,60 +82,89 @@ pnpm lumibase typegen \
 ```
 
 Flags:
-- `--auth <token>` (hoặc `LUMI_TOKEN` env).
+
+- `--auth <token>` or `LUMI_TOKEN`.
 - `--url <api-url>`.
-- `--locale <en|vi|...>` để literal hoá translation keys.
-- `--branded` (default true) → dùng `Brand<'PostId', string>` cho id field key (typed FK).
+- `--branded` defaults to true and emits `Brand<'PostId', string>`-style IDs.
 
-## 4. API
+## 5. Manifest API
 
-CLI gọi endpoint `GET /api/v1/typegen/schema?include=&exclude=` trả về **manifest** (collections + fields + relations + enums) đã apply permission của caller. Endpoint trả JSON ổn định, version hoá để tool generate không phụ thuộc raw DB.
+The CLI calls `GET /api/v1/typegen/schema?include=&exclude=`.
+
+Manifest version `2` is the current public contract:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "site": "site_xyz",
   "collections": [
     {
       "name": "posts",
       "primaryKey": "id",
+      "primaryKeyField": "id",
+      "primaryKeyType": "nanoid",
       "fields": [
-        { "name": "id", "type": "uuid", "required": true, "branded": "PostId" },
-        { "name": "status", "type": "string", "enum": ["draft","review","published","archived"], "required": true },
-        { "name": "cover", "kind": "m2o", "target": "files", "nullable": true }
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "readonly": true,
+          "generated": true,
+          "system": true,
+          "encrypted": false,
+          "primaryKey": true,
+          "branded": "PostsId"
+        },
+        {
+          "name": "author_id",
+          "type": "uuid",
+          "required": false,
+          "nullable": true,
+          "readonly": false,
+          "generated": false,
+          "system": false,
+          "encrypted": false,
+          "primaryKey": false,
+          "kind": "m2o",
+          "target": "authors",
+          "branded": "AuthorsId"
+        }
+      ],
+      "relations": [
+        {
+          "field": "author_id",
+          "kind": "m2o",
+          "target": "authors",
+          "manyCollection": "posts",
+          "manyField": "author_id",
+          "oneCollection": "authors",
+          "oneField": "posts",
+          "junctionCollection": null
+        }
       ]
     }
   ]
 }
 ```
 
-## 5. Studio integration
+The manifest includes compiled system fields alongside user fields so generated apps can reference `id`, `status`, `sort`, audit fields, and soft-delete fields with the correct readonly/generated metadata.
 
-- Trang **Settings → Developer → Types**:
-  - Hiển thị curl + lệnh CLI sẵn copy.
-  - Nút "Download lumibase-types.ts" sinh file ngay tại browser (gọi endpoint).
-  - Tab preview code (Monaco).
-- Hook: khi schema thay đổi → bắn webhook (tuỳ chọn) để CI client repo tự regen.
-
-## 6. SDK augment (`@lumibase/sdk`)
+## 6. SDK Usage
 
 ```ts
+import { createLumiClient, legacyRest } from '@lumibase/sdk';
 import type { LumibaseSchema } from './lumibase-types';
-import { createLumiClient } from '@lumibase/sdk';
 
-const client = createLumiClient<LumibaseSchema>({ url, token, siteId });
-const post = await client.items('posts').readOne('abc'); // typed
+const client = createLumiClient<LumibaseSchema>({ url, token, siteId }).with(legacyRest());
+
+const posts = await client.items('posts').list({
+  fields: ['id', 'title', 'author_id'],
+});
 ```
 
-`createLumiClient` generic mặc định `Record<string, unknown>` để vẫn dùng được khi chưa generate.
+`createLumiClient` remains usable without generated types, but generated schemas give collection names and item payloads stronger type checking.
 
-## 7. Tasks
+## 7. Regeneration
 
-- `[BE]` Endpoint `/typegen/schema` (Phase A).
-- `[BE]` Permission gate: chỉ cho role `developer`/`admin`.
-- `[SDK]` Generator core (`packages/sdk/src/typegen/`): manifest → TS AST (dùng `ts-morph` hoặc emit string).
-- `[CLI]` Script `apps/cms/scripts/typegen.ts` + alias `lumibase typegen`.
-- `[FE]` Trang Settings → Developer → Types.
-- `[DOC]` Update với example end-to-end Next.js demo.
-
-Phase: bắt đầu cuối Phase A (sau khi schema engine xong), hoàn thiện ở Phase B.
+Schema apply invalidates typegen cache keys and emits `schema.changed`. Projects can regenerate types in CI by listening to that event or by calling the CLI after schema migrations/config imports.

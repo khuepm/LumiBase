@@ -21,9 +21,10 @@
  */
 
 import { teams, teamMembers, userSites, users, scimTokens, activity } from "@lumibase/database";
-import { and, eq, ilike, or, isNull } from "drizzle-orm";
+import { and, eq, ilike, or, isNull, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import type { AppEnv } from "../env";
+import { formatSafeError } from '@lumibase/shared/utils';
 
 export const scimRouter = new Hono<AppEnv>();
 
@@ -94,7 +95,7 @@ scimRouter.use("*", async (c, next) => {
       .set({ lastUsedAt: new Date() })
       .where(eq(scimTokens.id, token.id));
   } catch (err) {
-    console.error("Failed to update SCIM lastUsedAt", err);
+    console.error("Failed to update SCIM lastUsedAt", formatSafeError(err));
   }
 
   // Set siteId context to the token's siteId to enforce multi-tenant isolation
@@ -142,7 +143,7 @@ scimRouter.use("*", async (c, next) => {
           },
         });
       } catch (err) {
-        console.error("Failed to log SCIM activity", err);
+        console.error("Failed to log SCIM activity", formatSafeError(err));
       }
     }
   }
@@ -159,6 +160,41 @@ interface ScimUser {
   emails: Array<{ value: string; primary: boolean }>;
   active: boolean;
   meta: { resourceType: "User"; created?: string; lastModified?: string };
+}
+
+
+function siteUserIds(siteId: string) {
+  return (db: AppEnv["Variables"]["db"]) =>
+    db.select({ id: userSites.userId }).from(userSites).where(eq(userSites.siteId, siteId));
+}
+
+async function getSiteUser(db: AppEnv["Variables"]["db"], siteId: string, id: string) {
+  const [row] = await db
+    .select({
+      id: users.id,
+      externalId: users.externalId,
+      passwordHash: users.passwordHash,
+      email: users.email,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      avatar: users.avatar,
+      status: users.status,
+      preferences: users.preferences,
+      tfa: users.tfa,
+      lastSeenAt: users.lastSeenAt,
+      isBootstrap: users.isBootstrap,
+      lockedUntil: users.lockedUntil,
+      failedCount: users.failedCount,
+      failedCountWindowStart: users.failedCountWindowStart,
+      createdAt: users.createdAt,
+      updatedAt: users.updatedAt,
+    })
+    .from(users)
+    .innerJoin(userSites, eq(users.id, userSites.userId))
+    .where(and(eq(userSites.siteId, siteId), eq(users.id, id)))
+    .limit(1);
+
+  return row;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -241,26 +277,47 @@ scimRouter.get("/ResourceTypes", (c) =>
 
 scimRouter.get("/Users", async (c) => {
   const db = c.get("db");
+  const siteId = c.get("siteId");
   const filter = c.req.query("filter");
 
   let rows;
+  const selectSiteUsers = () =>
+    db
+      .select({
+        id: users.id,
+        externalId: users.externalId,
+        passwordHash: users.passwordHash,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        avatar: users.avatar,
+        status: users.status,
+        preferences: users.preferences,
+        tfa: users.tfa,
+        lastSeenAt: users.lastSeenAt,
+        isBootstrap: users.isBootstrap,
+        lockedUntil: users.lockedUntil,
+        failedCount: users.failedCount,
+        failedCountWindowStart: users.failedCountWindowStart,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+      })
+      .from(users)
+      .innerJoin(userSites, eq(users.id, userSites.userId));
+
   if (filter) {
     const parsed = parseFilter(filter);
     if (parsed.field === "userName" && parsed.value) {
-      rows = await db.select().from(users).where(eq(users.email, parsed.value));
+      rows = await selectSiteUsers().where(and(eq(userSites.siteId, siteId), eq(users.email, parsed.value)));
     } else if (parsed.field === "externalId" && parsed.value) {
-      rows = await db
-        .select()
-        .from(users)
-        .where(eq(users.externalId, parsed.value));
+      rows = await selectSiteUsers().where(and(eq(userSites.siteId, siteId), eq(users.externalId, parsed.value)));
     } else {
-      rows = await db
-        .select()
-        .from(users)
-        .where(or(ilike(users.email, `%${parsed.value ?? ""}%`)));
+      rows = await selectSiteUsers().where(
+        and(eq(userSites.siteId, siteId), or(ilike(users.email, `%${parsed.value ?? ""}%`))),
+      );
     }
   } else {
-    rows = await db.select().from(users).limit(200);
+    rows = await selectSiteUsers().where(eq(userSites.siteId, siteId)).limit(200);
   }
 
   return c.json({
@@ -274,8 +331,9 @@ scimRouter.get("/Users", async (c) => {
 
 scimRouter.get("/Users/:id", async (c) => {
   const db = c.get("db");
+  const siteId = c.get("siteId");
   const id = c.req.param("id");
-  const [row] = await db.select().from(users).where(eq(users.id, id));
+  const row = await getSiteUser(db, siteId, id);
   if (!row) {
     return c.json(
       { schemas: [SCIM_ERROR], status: "404", detail: "User not found" },
@@ -298,6 +356,7 @@ scimRouter.post("/Users", async (c) => {
     );
   }
 
+  const siteId = c.get("siteId");
   const inserted = await db
     .insert(users)
     .values({
@@ -309,11 +368,17 @@ scimRouter.post("/Users", async (c) => {
     })
     .returning();
 
+  await db
+    .insert(userSites)
+    .values({ userId: inserted[0]!.id, siteId })
+    .onConflictDoNothing();
+
   return c.json(toScimUser(inserted[0]), 201);
 });
 
 scimRouter.put("/Users/:id", async (c) => {
   const db = c.get("db");
+  const siteId = c.get("siteId");
   const id = c.req.param("id");
   const body = (await c.req.json()) as Partial<ScimUser>;
 
@@ -326,7 +391,7 @@ scimRouter.put("/Users/:id", async (c) => {
       status: body.active === false ? "suspended" : "active",
       updatedAt: new Date(),
     })
-    .where(eq(users.id, id))
+    .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
     .returning();
 
   if (updated.length === 0) {
@@ -340,6 +405,7 @@ scimRouter.put("/Users/:id", async (c) => {
 
 scimRouter.patch("/Users/:id", async (c) => {
   const db = c.get("db");
+  const siteId = c.get("siteId");
   const id = c.req.param("id");
   const body = (await c.req.json()) as {
     Operations?: Array<{ op: string; path?: string; value?: unknown }>;
@@ -359,7 +425,7 @@ scimRouter.patch("/Users/:id", async (c) => {
   const updated = await db
     .update(users)
     .set(set)
-    .where(eq(users.id, id))
+    .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
     .returning();
   if (updated.length === 0) {
     return c.json(
@@ -372,11 +438,19 @@ scimRouter.patch("/Users/:id", async (c) => {
 
 scimRouter.delete("/Users/:id", async (c) => {
   const db = c.get("db");
+  const siteId = c.get("siteId");
   const id = c.req.param("id");
-  await db
+  const updated = await db
     .update(users)
     .set({ status: "suspended", updatedAt: new Date() })
-    .where(eq(users.id, id));
+    .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
+    .returning({ id: users.id });
+  if (updated.length === 0) {
+    return c.json(
+      { schemas: [SCIM_ERROR], status: "404", detail: "User not found" },
+      404,
+    );
+  }
   return c.body(null, 204);
 });
 
@@ -384,7 +458,8 @@ scimRouter.delete("/Users/:id", async (c) => {
 
 scimRouter.get("/Groups", async (c) => {
   const db = c.get("db");
-  const rows = await db.select().from(teams).limit(200);
+  const siteId = c.get("siteId");
+  const rows = await db.select().from(teams).where(eq(teams.siteId, siteId)).limit(200);
 
   return c.json({
     schemas: [SCIM_LIST_RESPONSE],

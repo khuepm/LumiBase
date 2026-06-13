@@ -2,16 +2,19 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Terms of Service - LumiBase",
-  description: "Terms of Service for LumiBase - Edge-Native Headless CMS",
+  description: "Terms of Service for LumiBase — the Content Operating System.",
+  alternates: {
+    canonical: "/tos/",
+  },
 };
 
 export default function TermsOfService() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-16">
       <h1 className="text-4xl font-bold">Terms of Service</h1>
-      <p className="mt-4 text-gray-600 dark:text-gray-400">Last updated: {new Date().toLocaleDateString()}</p>
+      <p className="mt-4 text-gray-400">Last updated: {new Date().toLocaleDateString()}</p>
 
-      <div className="mt-12 space-y-8 prose dark:prose-invert">
+      <div className="mt-12 space-y-8 [&_h2]:text-2xl [&_h2]:font-semibold [&_h2]:text-foreground [&_p]:mt-2 [&_p]:leading-7 [&_p]:text-gray-400 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1 [&_li]:text-gray-400">
         <section>
           <h2 className="text-2xl font-semibold">1. Acceptance of Terms</h2>
           <p>
@@ -23,7 +26,7 @@ export default function TermsOfService() {
         <section>
           <h2 className="text-2xl font-semibold">2. Description of Service</h2>
           <p>
-            LumiBase is an open-source, edge-native headless Content Management System designed to help developers
+            LumiBase is an open-source, edge-native, AI-native Content Operating System designed to help teams
             build fast, modern content experiences. The Service is provided as-is without warranties of any kind.
           </p>
         </section>
@@ -32,7 +35,7 @@ export default function TermsOfService() {
           <h2 className="text-2xl font-semibold">3. Open Source License</h2>
           <p>
             LumiBase is released under the MIT License. You are free to use, modify, and distribute the software
-            in accordance with the license terms. See our <a href="/license" className="text-blue-600 hover:underline">License page</a> for details.
+            in accordance with the license terms. See our <a href="/license" className="text-signal-400 hover:underline">License page</a> for details.
           </p>
         </section>
 
@@ -52,7 +55,7 @@ export default function TermsOfService() {
         <section>
           <h2 className="text-2xl font-semibold">5. Privacy and Data Protection</h2>
           <p>
-            Your privacy is important to us. Please review our <a href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</a>
+            Your privacy is important to us. Please review our <a href="/privacy" className="text-signal-400 hover:underline">Privacy Policy</a>
             to understand how we collect, use, and protect your information.
           </p>
         </section>
@@ -85,7 +88,7 @@ export default function TermsOfService() {
           <h2 className="text-2xl font-semibold">9. Contact Us</h2>
           <p>
             If you have questions about these Terms, please contact us through our
-            <a href="https://github.com/khuepm/lumibase" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">GitHub repository</a>.
+            <a href="https://github.com/khuepm/lumibase" target="_blank" rel="noopener noreferrer" className="text-signal-400 hover:underline">GitHub repository</a>.
           </p>
         </section>
       </div>

@@ -105,39 +105,67 @@ For search functionality on Cloudflare, use [MeiliSearch Cloud](https://www.meil
 
 ## Step 6: Set Environment Variables
 
-Use Wrangler secrets for sensitive values:
+Use Wrangler secrets for sensitive production values. Do not hardcode these values in `wrangler.toml` or commit them to git:
 
 ```bash
-# Authentication
-wrangler secret put LOGTO_ISSUER
-wrangler secret put LOGTO_AUDIENCE
+# CMS auth and Cloudflare Access
+wrangler secret put JWT_SECRET --env production
+wrangler secret put CF_ACCESS_CERTS_URL --env production
+wrangler secret put CF_ACCESS_AUDIENCE --env production
 
-# Encryption
-wrangler secret put ENCRYPTION_KEY
-
-# MeiliSearch Cloud
-wrangler secret put MEILISEARCH_HOST
-wrangler secret put MEILISEARCH_API_KEY
+# Optional providers/features
+wrangler secret put ENCRYPTION_KEY --env production
+wrangler secret put MEILISEARCH_HOST --env production
+wrangler secret put MEILISEARCH_API_KEY --env production
 ```
 
-Set non-sensitive variables in `wrangler.toml`:
+Set only non-sensitive variables and binding IDs in `wrangler.toml`. Keep local/dev defaults in top-level `[vars]`, and keep staging/production values under named environments:
 
 ```toml
 [vars]
-LUMIBASE_RUNTIME = "cloudflare"
+LUMIBASE_ENV = "development"
+LUMIBASE_DEV_AUTH = "true"
+
+# Put local-only auth values in apps/cms/.dev.vars instead:
+# JWT_SECRET=dev_secret_key
+
+[env.staging]
+name = "lumibase-cms-staging"
+
+[env.staging.vars]
+LUMIBASE_ENV = "staging"
+LUMIBASE_DEV_AUTH = "false"
+
+[[env.staging.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
+
+[env.production]
+name = "lumibase-cms"
+
+[env.production.vars]
 LUMIBASE_ENV = "production"
-LOGTO_ISSUER = "https://your-logto-instance.logto.app/oidc"
-LOGTO_AUDIENCE = "https://api.yourdomain.com"
+LUMIBASE_DEV_AUTH = "false"
+
+[[env.production.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
 ```
 
 ## Step 7: Deploy
 
 ```bash
-# Deploy to production
-wrangler deploy
+# Validate production config before deploy
+pnpm release:check
 
-# Deploy to a preview environment
-wrangler deploy --env preview
+# Build production bundle
+pnpm --filter @lumibase/cms build:production
+
+# Deploy to production
+pnpm --filter @lumibase/cms deploy:production
+
+# Deploy to staging
+pnpm --filter @lumibase/cms deploy:staging
 ```
 
 ### Verify Deployment
@@ -192,13 +220,34 @@ preview_id = "ghi789-your-preview-kv-id"
 binding = "MEDIA"
 bucket_name = "lumibase-media"
 
+# Staging environment overrides
+[env.staging]
+name = "lumibase-cms-staging"
+
+[env.staging.vars]
+LUMIBASE_ENV = "staging"
+LUMIBASE_DEV_AUTH = "false"
+
+[[env.staging.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
+
 # Production environment overrides
 [env.production]
-vars = { LUMIBASE_ENV = "production" }
+name = "lumibase-cms"
 
-# Preview/staging environment
-[env.preview]
-vars = { LUMIBASE_ENV = "preview" }
+[env.production.vars]
+LUMIBASE_ENV = "production"
+LUMIBASE_DEV_AUTH = "false"
+
+[[env.production.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
+
+# Production secrets are set with Wrangler, not hardcoded:
+# wrangler secret put JWT_SECRET --env production
+# wrangler secret put CF_ACCESS_CERTS_URL --env production
+# wrangler secret put CF_ACCESS_AUDIENCE --env production
 ```
 
 ## Multi-Environment Setup

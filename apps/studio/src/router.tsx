@@ -10,6 +10,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { AppShell } from './components/app-shell';
 import { BareLayout } from './components/bare-layout';
 import { AdminReadyGate } from './modules/setup/admin-ready-gate';
+import { shouldAutoRedirectToAdmin } from './modules/setup/setup-environment';
 import { SetupLayout } from './modules/setup/setup-layout';
 import { SetupStateGate } from './modules/setup/setup-state-gate';
 import { useCompleteSetup } from './modules/setup/hooks/use-complete-setup';
@@ -23,6 +24,9 @@ import {
 // Heavy dependencies (Monaco, WYSIWYG, etc.) are pulled in only when needed.
 // ---------------------------------------------------------------------------
 const AccessLayout = lazy(() => import('./modules/access/layout').then((m) => ({ default: m.AccessLayout })));
+const SettingsLayout = lazy(() => import('./modules/settings/layout').then((m) => ({ default: m.SettingsLayout })));
+const ApiKeysPage = lazy(() => import('./modules/access/api-keys-page').then((m) => ({ default: m.ApiKeysPage })));
+const AccessImportExportPage = lazy(() => import('./modules/access/import-export-page').then((m) => ({ default: m.AccessImportExportPage })));
 const PermissionMatrixPage = lazy(() => import('./modules/access/permission-matrix').then((m) => ({ default: m.PermissionMatrixPage })));
 const PoliciesListPage = lazy(() => import('./modules/access/policies-page').then((m) => ({ default: m.PoliciesListPage })));
 const PolicyDetailPage = lazy(() => import('./modules/access/policy-detail').then((m) => ({ default: m.PolicyDetailPage })));
@@ -39,9 +43,21 @@ const FilesPage = lazy(() => import('./modules/files').then((m) => ({ default: m
 const DeveloperTypesPage = lazy(() => import('./modules/settings/types-page').then((m) => ({ default: m.DeveloperTypesPage })));
 const TranslationsPage = lazy(() => import('./modules/translations').then((m) => ({ default: m.TranslationsPage })));
 const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
+const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
+const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
+const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
+const AgentHarnessPage = lazy(() => import('./modules/settings/agent-harness-page').then((m) => ({ default: m.AgentHarnessPage })));
+const MissionControlPage = lazy(() => import('./modules/mission-control/index-page').then((m) => ({ default: m.MissionControlPage })));
+const MissionControlInboxPage = lazy(() => import('./modules/mission-control/inbox-page').then((m) => ({ default: m.InboxPage })));
+const MissionControlIntentsPage = lazy(() => import('./modules/mission-control/intents-page').then((m) => ({ default: m.IntentsPage })));
+const MissionControlIntentDetailPage = lazy(() => import('./modules/mission-control/intent-detail').then((m) => ({ default: m.IntentDetailPage })));
+const MissionControlGoalsPage = lazy(() => import('./modules/mission-control/goals-page').then((m) => ({ default: m.GoalsPage })));
+const MissionControlAgentsPage = lazy(() => import('./modules/mission-control/agents-page').then((m) => ({ default: m.AgentsPage })));
+const MissionControlTrustPage = lazy(() => import('./modules/mission-control/trust-page').then((m) => ({ default: m.TrustPage })));
+const MissionControlConstitutionPage = lazy(() => import('./modules/mission-control/constitution-page').then((m) => ({ default: m.ConstitutionPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
 const TeamsPage = lazy(() => import('./modules/users/teams-page').then((m) => ({ default: m.TeamsPage })));
 const UsersPage = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
@@ -64,6 +80,7 @@ const StepSecurity = lazy(() => import('./modules/setup/steps/step-security').th
 const StepProject = lazy(() => import('./modules/setup/steps/step-project').then((m) => ({ default: m.StepProject })));
 const StepRecovery = lazy(() => import('./modules/setup/steps/step-recovery').then((m) => ({ default: m.StepRecovery })));
 const StepDone = lazy(() => import('./modules/setup/steps/step-done').then((m) => ({ default: m.StepDone })));
+const SimpleSetupWizard = lazy(() => import('./modules/setup/simple-setup-wizard').then((m) => ({ default: m.SimpleSetupWizard })));
 const AdminLoginPage = lazy(() => import('./modules/auth/admin-login-page').then((m) => ({ default: m.AdminLoginPage })));
 
 let setupBackupCodes: readonly string[] = [];
@@ -132,12 +149,12 @@ function AdminRootRedirect() {
   const adminPath = useSetupStore((s) => s.adminPath);
 
   useEffect(() => {
-    if (adminPath) {
+    if (adminPath && shouldAutoRedirectToAdmin()) {
       navigate({ to: adminPath });
     }
   }, [adminPath, navigate]);
 
-  if (adminPath) {
+  if (adminPath && shouldAutoRedirectToAdmin()) {
     return <PageLoader />;
   }
 
@@ -239,17 +256,15 @@ const setupShellRoute = createRoute({
 });
 
 /**
- * Index route for `/setup`. The wizard has no body of its own at this
- * URL — it always forwards to the earliest unsatisfied step so a fresh
- * visit lands on Account, a refresh mid-flow lands back on the right
- * step, and a post-completion deep-link drops onto Done.
+ * Index route for `/setup`. New operators land on the 3-step quick
+ * setup by default. The full six-step flow remains available through
+ * `/setup/advance` for advanced security/project tuning.
  */
 const setupIndexRoute = createRoute({
   getParentRoute: () => setupShellRoute,
   path: '/setup',
   beforeLoad: () => {
-    const state = useSetupStore.getState();
-    throw redirect({ to: getEarliestUnsatisfiedStep(state) });
+    throw redirect({ to: '/setup/account' });
   },
   // Component is unreachable because beforeLoad always redirects; kept
   // as a safety net so a future router quirk that bypasses beforeLoad
@@ -257,9 +272,21 @@ const setupIndexRoute = createRoute({
   component: withSuspense(StepAccount),
 });
 
+const setupSimpleRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: '/setup/account',
+  component: () => (
+    <SetupStateGate>
+      <Suspense fallback={<PageLoader />}>
+        <SimpleSetupWizard />
+      </Suspense>
+    </SetupStateGate>
+  ),
+});
+
 const setupAccountRoute = createRoute({
   getParentRoute: () => setupShellRoute,
-  path: '/setup/account',
+  path: '/setup/advance',
   component: () => {
     const navigate = useNavigate();
     return (
@@ -277,7 +304,7 @@ const setupPathRoute = createRoute({
     // Operators must complete the Account step before they can pick
     // an admin path; deep-linking past Account redirects back.
     if (!useSetupStore.getState().accountValid) {
-      throw redirect({ to: '/setup/account' });
+      throw redirect({ to: '/setup/advance' });
     }
   },
   component: () => {
@@ -524,76 +551,163 @@ const adminPathFilesRoute = createRoute({
   )),
 });
 
-const settingsTypesRoute = createRoute({
+const settingsRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
-  path: '/settings/developer/types',
+  path: '/settings',
+  component: withSuspense(() => (
+    <SettingsLayout>
+      <Outlet />
+    </SettingsLayout>
+  )),
+});
+
+const settingsIndexRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/settings/translations' });
+  },
+});
+
+const settingsTypesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'developer/types',
   component: withSuspense(DeveloperTypesPage),
 });
 
 const translationsRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/settings/translations',
+  getParentRoute: () => settingsRoute,
+  path: 'translations',
   component: withSuspense(TranslationsPage),
 });
 
 const webhooksRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/settings/webhooks',
+  getParentRoute: () => settingsRoute,
+  path: 'webhooks',
   component: withSuspense(WebhooksPage),
 });
 
+const materializeSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'materialize',
+  component: withSuspense(MaterializePage),
+});
+
+const translationMemoryRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'translation-memory',
+  component: withSuspense(TranslationMemoryPage),
+});
+
 const activityRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/settings/activity',
+  getParentRoute: () => settingsRoute,
+  path: 'activity',
   component: withSuspense(ActivityPage),
 });
 
 const extensionsRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/settings/extensions',
+  getParentRoute: () => settingsRoute,
+  path: 'extensions',
   component: withSuspense(ExtensionsPage),
 });
 
 const marketplaceRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/settings/marketplace',
+  getParentRoute: () => settingsRoute,
+  path: 'marketplace',
   component: withSuspense(MarketplacePage),
 });
 
-const adminPathSettingsTypesRoute = createRoute({
+const updatesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'updates',
+  component: withSuspense(UpdatesPage),
+});
+
+const agentHarnessRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'agent-harness',
+  component: withSuspense(AgentHarnessPage),
+});
+
+const adminPathSettingsRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/developer/types',
+  path: '/$adminPath/settings',
+  component: withSuspense(() => (
+    <SettingsLayout>
+      <Outlet />
+    </SettingsLayout>
+  )),
+});
+
+const adminPathSettingsIndexRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: '/',
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: '/$adminPath/settings/translations',
+      params: { adminPath: params.adminPath },
+    });
+  },
+});
+
+const adminPathSettingsTypesRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'developer/types',
   component: withSuspense(DeveloperTypesPage),
 });
 
 const adminPathTranslationsRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/translations',
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'translations',
   component: withSuspense(TranslationsPage),
 });
 
 const adminPathWebhooksRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/webhooks',
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'webhooks',
   component: withSuspense(WebhooksPage),
 });
 
+const adminPathMaterializeSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'materialize',
+  component: withSuspense(MaterializePage),
+});
+
+const adminPathTranslationMemoryRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'translation-memory',
+  component: withSuspense(TranslationMemoryPage),
+});
+
 const adminPathActivityRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/activity',
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'activity',
   component: withSuspense(ActivityPage),
 });
 
 const adminPathExtensionsRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/extensions',
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'extensions',
   component: withSuspense(ExtensionsPage),
 });
 
 const adminPathMarketplaceRoute = createRoute({
-  getParentRoute: () => adminLayoutRoute,
-  path: '/$adminPath/settings/marketplace',
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'marketplace',
   component: withSuspense(MarketplacePage),
+});
+
+const adminPathUpdatesRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'updates',
+  component: withSuspense(UpdatesPage),
+});
+
+const adminPathAgentHarnessRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'agent-harness',
+  component: withSuspense(AgentHarnessPage),
 });
 
 const automationFlowsRoute = createRoute({
@@ -630,6 +744,111 @@ const adminPathAutomationFlowEditRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/automation/flows/$id',
   component: withSuspense(FlowEditor),
+});
+
+// Mission Control (content-os tasks 17-18; content-os-ui Req 1.1) — the
+// Content OS operator console. URL-driven sub-routes so every section is
+// bookmarkable and notifications can deep-link (?entry= on the inbox).
+const inboxSearch = (search: Record<string, unknown>) => ({
+  entry: typeof search.entry === 'string' ? search.entry : undefined,
+});
+
+const missionControlRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control',
+  component: withSuspense(MissionControlPage),
+});
+
+const missionControlInboxRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/inbox',
+  validateSearch: inboxSearch,
+  component: withSuspense(MissionControlInboxPage),
+});
+
+const missionControlIntentsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/intents',
+  component: withSuspense(MissionControlIntentsPage),
+});
+
+const missionControlIntentDetailRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/intents/$intentId',
+  component: withSuspense(MissionControlIntentDetailPage),
+});
+
+const missionControlGoalsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/goals',
+  component: withSuspense(MissionControlGoalsPage),
+});
+
+const missionControlAgentsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/agents',
+  component: withSuspense(MissionControlAgentsPage),
+});
+
+const missionControlTrustRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/trust',
+  component: withSuspense(MissionControlTrustPage),
+});
+
+const missionControlConstitutionRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/constitution',
+  component: withSuspense(MissionControlConstitutionPage),
+});
+
+const adminPathMissionControlRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control',
+  component: withSuspense(MissionControlPage),
+});
+
+const adminPathMissionControlInboxRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/inbox',
+  validateSearch: inboxSearch,
+  component: withSuspense(MissionControlInboxPage),
+});
+
+const adminPathMissionControlIntentsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/intents',
+  component: withSuspense(MissionControlIntentsPage),
+});
+
+const adminPathMissionControlIntentDetailRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/intents/$intentId',
+  component: withSuspense(MissionControlIntentDetailPage),
+});
+
+const adminPathMissionControlGoalsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/goals',
+  component: withSuspense(MissionControlGoalsPage),
+});
+
+const adminPathMissionControlAgentsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/agents',
+  component: withSuspense(MissionControlAgentsPage),
+});
+
+const adminPathMissionControlTrustRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/trust',
+  component: withSuspense(MissionControlTrustPage),
+});
+
+const adminPathMissionControlConstitutionRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/constitution',
+  component: withSuspense(MissionControlConstitutionPage),
 });
 
 const cdcRoute = createRoute({
@@ -758,6 +977,18 @@ const accessPolicyDetailRoute = createRoute({
   component: withSuspense(PolicyDetailPage),
 });
 
+const accessApiKeysRoute = createRoute({
+  getParentRoute: () => accessRoute,
+  path: 'api-keys',
+  component: withSuspense(ApiKeysPage),
+});
+
+const accessImportExportRoute = createRoute({
+  getParentRoute: () => accessRoute,
+  path: 'import-export',
+  component: withSuspense(AccessImportExportPage),
+});
+
 const accessMatrixRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: 'matrix',
@@ -810,6 +1041,18 @@ const adminPathAccessPolicyDetailRoute = createRoute({
   component: withSuspense(PolicyDetailPage),
 });
 
+const adminPathAccessApiKeysRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'api-keys',
+  component: withSuspense(ApiKeysPage),
+});
+
+const adminPathAccessImportExportRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'import-export',
+  component: withSuspense(AccessImportExportPage),
+});
+
 const adminPathAccessMatrixRoute = createRoute({
   getParentRoute: () => adminPathAccessRoute,
   path: 'matrix',
@@ -831,15 +1074,38 @@ const routeTree = rootRoute.addChildren([
     dataModelNewRoute,
     dataModelDetailRoute,
     filesRoute,
-    settingsTypesRoute,
-    translationsRoute,
-    webhooksRoute,
-    activityRoute,
-    extensionsRoute,
-    marketplaceRoute,
+    settingsRoute.addChildren([
+      settingsIndexRoute,
+      settingsTypesRoute,
+      translationsRoute,
+      webhooksRoute,
+      materializeSettingsRoute,
+      translationMemoryRoute,
+      activityRoute,
+      extensionsRoute,
+      marketplaceRoute,
+      updatesRoute,
+      agentHarnessRoute,
+    ]),
     automationFlowsRoute,
     automationFlowNewRoute,
     automationFlowEditRoute,
+    missionControlRoute,
+    missionControlInboxRoute,
+    missionControlIntentsRoute,
+    missionControlIntentDetailRoute,
+    missionControlGoalsRoute,
+    missionControlAgentsRoute,
+    missionControlTrustRoute,
+    missionControlConstitutionRoute,
+    adminPathMissionControlRoute,
+    adminPathMissionControlInboxRoute,
+    adminPathMissionControlIntentsRoute,
+    adminPathMissionControlIntentDetailRoute,
+    adminPathMissionControlGoalsRoute,
+    adminPathMissionControlAgentsRoute,
+    adminPathMissionControlTrustRoute,
+    adminPathMissionControlConstitutionRoute,
     cdcRoute,
     cdcNewRoute,
     cdcDetailRoute,
@@ -850,6 +1116,8 @@ const routeTree = rootRoute.addChildren([
       accessRoleDetailRoute,
       accessPoliciesRoute,
       accessPolicyDetailRoute,
+      accessApiKeysRoute,
+      accessImportExportRoute,
       accessMatrixRoute,
       accessSandboxRoute,
     ]),
@@ -860,12 +1128,19 @@ const routeTree = rootRoute.addChildren([
     adminPathDataModelNewRoute,
     adminPathDataModelDetailRoute,
     adminPathFilesRoute,
-    adminPathSettingsTypesRoute,
-    adminPathTranslationsRoute,
-    adminPathWebhooksRoute,
-    adminPathActivityRoute,
-    adminPathExtensionsRoute,
-    adminPathMarketplaceRoute,
+    adminPathSettingsRoute.addChildren([
+      adminPathSettingsIndexRoute,
+      adminPathSettingsTypesRoute,
+      adminPathTranslationsRoute,
+      adminPathWebhooksRoute,
+      adminPathMaterializeSettingsRoute,
+      adminPathTranslationMemoryRoute,
+      adminPathActivityRoute,
+      adminPathExtensionsRoute,
+      adminPathMarketplaceRoute,
+      adminPathUpdatesRoute,
+      adminPathAgentHarnessRoute,
+    ]),
     adminPathAutomationFlowsRoute,
     adminPathAutomationFlowNewRoute,
     adminPathAutomationFlowEditRoute,
@@ -879,6 +1154,8 @@ const routeTree = rootRoute.addChildren([
       adminPathAccessRoleDetailRoute,
       adminPathAccessPoliciesRoute,
       adminPathAccessPolicyDetailRoute,
+      adminPathAccessApiKeysRoute,
+      adminPathAccessImportExportRoute,
       adminPathAccessMatrixRoute,
       adminPathAccessSandboxRoute,
     ]),
@@ -886,6 +1163,7 @@ const routeTree = rootRoute.addChildren([
   // Children of publicLayoutRoute (e.g. /setup, /recovery) are added in
   // subsequent tasks for the admin-setup-wizard spec.
   publicLayoutRoute.addChildren([
+    setupSimpleRoute,
     setupShellRoute.addChildren([
       setupIndexRoute,
       setupAccountRoute,

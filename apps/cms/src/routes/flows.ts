@@ -131,7 +131,9 @@ flowsRouter.post('/:id/run', async (c) => {
     .values({ siteId, flowId: id, status: 'running', input })
     .returning();
 
-  const result = await runFlow(flow.graph as FlowGraph, input);
+  // `db`/`siteId` in env let runtime-bound operations (drift-scan…) execute
+  // tenant-scoped without widening the operation options surface.
+  const result = await runFlow(flow.graph as FlowGraph, input, { db, siteId });
 
   await db
     .update(flowRuns)

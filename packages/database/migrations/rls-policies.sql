@@ -42,7 +42,7 @@ DECLARE
     'files', 'folders', 'presets', 'translations',
     'settings', 'webhooks', 'extensions',
     'roles', 'policies', 'user_policies',
-    'permissions'
+    'permissions', 'audit_log'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

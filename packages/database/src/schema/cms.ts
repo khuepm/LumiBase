@@ -5,11 +5,13 @@ import {
   integer,
   jsonb,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
+import { agentRuns } from './ai';
 import { sites, users } from './core';
 
 /**
@@ -51,15 +53,25 @@ export const collections = pgTable(
       .references(() => sites.id, { onDelete: 'cascade' }),
     /** Machine name; unique per site. */
     name: text('name').notNull(),
+    label: text('label'),
+    pluralLabel: text('plural_label'),
+    hidden: boolean('hidden').default(false).notNull(),
+    system: boolean('system').default(false).notNull(),
     singleton: boolean('singleton').default(false).notNull(),
     icon: text('icon'),
     color: text('color'),
     note: text('note'),
+    primaryKeyField: text('primary_key_field').default('id').notNull(),
+    primaryKeyType: text('primary_key_type').default('nanoid').notNull(),
+    storageMode: text('storage_mode').default('jsonb').notNull(),
     /** Default mustache display template, e.g. `{{title}} — {{status}}`. */
     displayTemplate: text('display_template'),
     sortField: text('sort_field'),
     archiveField: text('archive_field'),
     archiveValue: text('archive_value'),
+    unarchiveValue: text('unarchive_value'),
+    itemDuplicationFields: jsonb('item_duplication_fields').default([]).notNull(),
+    translations: jsonb('translations').default({}).notNull(),
     /** `all` | `activity` | `none` — controls revision/activity granularity. */
     accountability: text('accountability').default('all').notNull(),
     versioning: boolean('versioning').default(false).notNull(),
@@ -90,6 +102,17 @@ export const fields = pgTable(
     interface: text('interface').notNull(),
     /** Optional display formatter key. */
     display: text('display'),
+    label: text('label'),
+    note: text('note'),
+    defaultValue: jsonb('default_value'),
+    nullable: boolean('nullable').default(true).notNull(),
+    unique: boolean('unique').default(false).notNull(),
+    indexed: boolean('indexed').default(false).notNull(),
+    searchable: boolean('searchable').default(true).notNull(),
+    length: integer('length'),
+    precision: integer('precision'),
+    scale: integer('scale'),
+    special: jsonb('special').default([]).notNull(),
     options: jsonb('options').default({}).notNull(),
     displayOptions: jsonb('display_options').default({}).notNull(),
     validation: jsonb('validation').default({ rules: [] }).notNull(),
@@ -129,6 +152,12 @@ export const relations = pgTable(
     oneCollection: text('one_collection').notNull(),
     oneField: text('one_field'),
     junctionCollection: text('junction_collection'),
+    /** `m2o` | `o2m` | `m2m` | reserved `m2a` */
+    type: text('type').default('m2o').notNull(),
+    aliasField: text('alias_field'),
+    relatedDisplayTemplate: text('related_display_template'),
+    junctionManyField: text('junction_many_field'),
+    junctionOneField: text('junction_one_field'),
     sortField: text('sort_field'),
     /** `restrict` | `cascade` | `set null` | `no action` */
     onDelete: text('on_delete').default('no action').notNull(),
@@ -159,6 +188,11 @@ export const items = pgTable(
     /** `draft` | `published` | `archived` */
     status: text('status').default('draft').notNull(),
     data: jsonb('data').default({}).notNull(),
+    /**
+     * Field names pinned by a human edit (Law Zero / override-is-law).
+     * Agents are denied writes to pinned fields at the harness boundary.
+     */
+    pinnedFields: jsonb('pinned_fields').default([]).notNull(),
     sort: integer('sort').default(0).notNull(),
     userCreated: text('user_created').references(() => users.id),
     userUpdated: text('user_updated').references(() => users.id),
@@ -197,10 +231,30 @@ export const revisions = pgTable(
     delta: jsonb('delta').default({}).notNull(),
     parentId: text('parent_id'),
     userId: text('user_id').references(() => users.id),
+    /** Provenance: `human` | `agent`. Agent revisions must carry a run id. */
+    authorType: text('author_type').default('human').notNull(),
+    createdByRunId: text('created_by_run_id').references(() => agentRuns.id, {
+      onDelete: 'set null',
+    }),
+    /** LLM model identifier used to produce this revision, if agent-authored. */
+    model: text('model'),
+    /** Constitution version hash pinned by the producing run. */
+    constitutionHash: text('constitution_hash'),
+    /** Source references (URLs, item ids, memory ids) used by the agent. */
+    sources: jsonb('sources'),
+    /** Agent self-reported confidence in [0, 1]. */
+    confidence: real('confidence'),
+    /** Veto-window staging: staged revisions are not live until committed. */
+    staged: boolean('staged').default(false).notNull(),
+    /** When a staged revision auto-commits unless vetoed (L3 veto window). */
+    autoCommitAt: timestamp('auto_commit_at'),
     createdAt: createdAt(),
   },
   (t) => ({
     itemIdx: index('revisions_item_idx').on(t.itemId, t.createdAt),
+    stagedIdx: index('revisions_staged_idx')
+      .on(t.siteId, t.autoCommitAt)
+      .where(sql`${t.staged} = true`),
   }),
 );
 

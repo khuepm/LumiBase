@@ -1,31 +1,58 @@
 # LumiBase
 
 <div align="center">
-
-**⚡ Edge-Native Headless CMS for Modern Web Development**
+<img width="1024" height="434" alt="Image" src="https://github.com/user-attachments/assets/a11def9c-f238-4a6d-9816-7f7c4f718ea9" />
+**⚡ The Content Operating System — Edge-Native, AI-Native, Agent-Operated**
 
 [![GitHub Stars](https://img.shields.io/github/stars/khuepm/lumibase?style=social)](https://github.com/khuepm/lumibase)
 <!-- [![GitHub Sponsors](https://img.shields.io/github/sponsors/khuepm)](https://github.com/sponsors/khuepm) -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/khuepm/lumibase/blob/main/LICENSE)
 
-[Documentation](https://docs.lumibase.dev) • [Community](https://github.com/khuepm/lumibase/discussions)
+[Documentation](https://docs.lumibase.dev) • [Agent Setup](https://docs.lumibase.dev/en/agent-setup/) • [Community](https://github.com/khuepm/lumibase/discussions)
 
 </div>
 
 ---
 
+## 🤖 AI Agent Setup
+
+LumiBase is built to work natively with AI coding agents. Get your agent up to speed instantly:
+
+```bash
+# For any AI agent — paste this into your first message:
+Read https://docs.lumibase.dev/en/agent-setup/prompt.md and follow the setup instructions.
+```
+
+| Agent | Config file | Guide |
+|-------|------------|-------|
+| Claude Code | `CLAUDE.md` (this repo) | [claude-code.md](./docs/en/agent-setup/claude-code.md) |
+| Cursor | `.cursorrules` (this repo) | [cursor.md](./docs/en/agent-setup/cursor.md) |
+| GitHub Copilot | `.github/copilot-instructions.md` | [github-copilot.md](./docs/en/agent-setup/github-copilot.md) |
+| OpenAI Codex | `AGENTS.md` (this repo) | [codex.md](./docs/en/agent-setup/codex.md) |
+| Windsurf | See guide | [windsurf.md](./docs/en/agent-setup/windsurf.md) |
+
+**LLM-friendly docs index:** [`docs/llms.txt`](./docs/llms.txt)
+
+---
+
 ## 🎯 What is LumiBase?
 
-LumiBase is an Edge-native Headless CMS built for high-performance multi-website deployments, resolving the scalability and CI/CD bottlenecks of traditional monolithic CMS platforms. Inspired by Directus but designed for the edge computing era.
+**LumiBase is a Content Operating System (Content OS)** — a runtime where AI agents *operate* content while humans set intent, taste, and accountability. A traditional CMS is a tool humans use to manipulate content. LumiBase inverts that: you declare the *desired state* of your content, and a control loop of governed agents converges toward it — continuously, with full provenance and human-held veto.
+
+Built Edge-native on Cloudflare Workers for high-performance multi-website delivery, LumiBase pairs that delivery layer with an Agent Harness and an earned-autonomy trust model so automation is something agents *earn*, not something granted. Read the full thesis in [`docs/en/ai-native-vision.md`](./docs/en/ai-native-vision.md).
+
+> **CMS → Content OS:** the unit of work shifts from *operations* (create item, edit field, publish) to *intent* (a declarative goal + constraints + budget); the operator shifts from editor-in-the-UI to *agent-in-a-harness with a human reviewing exceptions*; and content state shifts from *static* (correct at last edit) to *live* (continuously reconciled toward its SLO).
 
 ### ✨ Key Features
 
-- **Edge-First Architecture:** Runs entirely on Cloudflare Workers & Hyperdrive for sub-millisecond response times globally
-- **True Multi-Tenancy:** Hard-coded `site_id` isolation for complete data separation
-- **Page Hydration API:** Delivers layout and data in a single payload for optimal performance
-- **GitOps Ready:** Export/import configurations for roles and schemas
-- **Privacy-First:** Per-field encryption with AES-GCM for sensitive data
-- **Developer Experience:** Type-safe SDKs, comprehensive documentation, and modern tooling
+- **Intent-driven operation:** declare content SLOs (e.g. "every published `product` has ≥1 image, a 50–200 word description, and `vi`+`en` translations"); agents converge content toward them
+- **Reconciliation control loop:** continuous drift detection + a reconciler that raises goals on drift and fixes them within a write budget
+- **Earned-autonomy trust ledger (L0–L4):** per (site, agent, capability) autonomy from Shadow → Propose → Co-sign → **Veto-window** → Autopilot, with data-driven promotion, auto-demotion on incidents, and a four-scope kill switch
+- **Tenant Constitution:** versioned, hashed publish-gate evaluators (rule DSL + LLM-judge); artifacts that fail the constitution never publish, at any autonomy level
+- **Provenance-first revisions:** every revision records the agent/run/model, references, constitution hash, evaluation, and approver — exposed on the Delivery API via `?provenance=true`
+- **Multi-agent newsroom:** a role library with planner delegation, narrow per-role capability grants, and agent-as-reviewer gated approvals with a self-review ban
+- **Studio Mission Control:** exception inbox, trust ledger, kill-switch UI, and per-field pin badges
+- **Edge-first + true multi-tenancy:** Cloudflare Workers delivery, hard `site_id` isolation, page-hydration API, per-field AES-GCM encryption, and type-safe SDKs
 
 ## Folder Structure (Turborepo)
 
@@ -55,10 +82,22 @@ lumibase/
 ```bash
 pnpm install
 pnpm --filter @lumibase/cms dev      # Hono API on :1989
-pnpm --filter @lumibase/studio dev   # Studio SPA on :5173
+pnpm --filter @lumibase/studio dev   # Studio SPA on :2026 (proxies /api → :1989)
 ```
 
-The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire-up. Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is in [`docs/en/roadmap/tasks.md`](./docs/en/roadmap/tasks.md).
+The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire-up. Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is in [`docs/en/roadmap/tasks.md`](./docs/en/roadmap/tasks.md). For production release operations, see the upgrade runbooks in [English](./docs/en/operations/upgrades.md) and [Vietnamese](./docs/vi/operations/upgrades.md).
+
+## Release policy
+
+Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
+
+Current release: `v0.5.0` (`2026-06-12`) — **Content OS**. This release introduces content intents (SLOs), the drift/reconciliation control loop, the earned-autonomy trust ledger (L0–L4) with the L3 veto window and a four-scope kill switch, the tenant constitution, provenance-first revisions, the multi-agent newsroom with agent-as-reviewer, and Studio Mission Control. It ships 9 schema migrations (`0019`–`0027`) — **back up your database before upgrading**.
+
+```bash
+LUMIBASE_VERSION=0.5.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+```
+
+See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.
 
 ### Why port 1989?
 
@@ -114,6 +153,7 @@ Includes everything in Hobby tier plus:
 2. **True Multi-Tenancy:** Hard-coded `site_id` isolation.
 3. **Page Hydration API:** Delivers layout and data in a single payload.
 4. **GitOps Ready:** `cms config:export` for roles and schemas.
+5. **Agent Harness:** Govern AI agents with goals, context, capabilities, approvals, evaluations, and artifact commits.
 
 ---
 

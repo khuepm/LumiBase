@@ -1,0 +1,138 @@
+name: Deploy CMS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags:
+      - 'v*.*.*'
+  release:
+    types: [published]
+
+concurrency:
+  group: deploy-cms-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24
+  CMS_PRODUCTION_URL: ${{ vars.LUMIBASE_CMS_PRODUCTION_URL }}
+
+jobs:
+  deploy:
+    name: Deploy CMS (${{ github.ref_type == 'tag' && 'production' || 'staging' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.ref == 'refs/heads/main' || (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) || github.event_name == 'workflow_dispatch' || github.event_name == 'release'
+    environment: ${{ (github.ref_type == 'tag' || github.event_name == 'release') && 'production' || 'staging' }}
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      LUMIBASE_RELEASE_CHANNEL: ${{ (github.ref_type == 'tag' || github.event_name == 'release') && 'production' || 'staging' }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate release tag
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "CMS production deploy tags must match vX.Y.Z; got ${GITHUB_REF_NAME}."
+            exit 1
+          fi
+
+      - name: Inject build metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(node -p "require('./apps/cms/package.json').version")"
+          fi
+
+          {
+            echo "LUMIBASE_VERSION=${VERSION}"
+            echo "LUMIBASE_GIT_SHA=${GITHUB_SHA::12}"
+            echo "LUMIBASE_BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } >> "$GITHUB_ENV"
+
+      - name: Typecheck CMS
+        run: pnpm --filter @lumibase/cms typecheck
+
+      - name: Test CMS
+        run: pnpm --filter @lumibase/cms test
+
+      - name: Validate production release config
+        if: env.LUMIBASE_RELEASE_CHANNEL == 'production'
+        run: pnpm release:check
+
+      - name: Build CMS
+        run: pnpm --filter @lumibase/cms run build:${{ env.LUMIBASE_RELEASE_CHANNEL }}
+
+      - name: Check Cloudflare deploy credentials
+        id: cloudflare-credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -n "${CLOUDFLARE_API_TOKEN}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID}" ]; then
+            echo "can_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "can_deploy=false" >> "$GITHUB_OUTPUT"
+
+          if [ "${LUMIBASE_RELEASE_CHANNEL}" = "production" ]; then
+            echo "::error::Production deploy requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets on the production environment."
+            exit 1
+          fi
+
+          echo "::notice::Skipping staging deploy because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured for the staging environment."
+
+      - name: Deploy CMS
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
+        run: pnpm --filter @lumibase/cms run deploy:${{ env.LUMIBASE_RELEASE_CHANNEL }}
+
+      - name: Verify production version
+        if: env.LUMIBASE_RELEASE_CHANNEL == 'production'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CMS_PRODUCTION_URL}" ]; then
+            echo "Set the LUMIBASE_CMS_PRODUCTION_URL repository or production environment variable to the public CMS origin."
+            exit 1
+          fi
+
+          BASE_URL="${CMS_PRODUCTION_URL%/}"
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            "${BASE_URL}/health" > /tmp/lumibase-cms-health.json
+
+          VERSION_JSON="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            "${BASE_URL}/api/v1/system/version")"
+
+          RUNNING_VERSION="$(node -e "const data = JSON.parse(process.argv[1]); console.log(data.version ?? '')" "$VERSION_JSON")"
+          RUNNING_SHA="$(node -e "const data = JSON.parse(process.argv[1]); console.log(data.gitSha ?? '')" "$VERSION_JSON")"
+          RUNNING_CHANNEL="$(node -e "const data = JSON.parse(process.argv[1]); console.log(data.releaseChannel ?? '')" "$VERSION_JSON")"
+
+          test "$RUNNING_VERSION" = "$LUMIBASE_VERSION"
+          test "$RUNNING_SHA" = "$LUMIBASE_GIT_SHA"
+          test "$RUNNING_CHANNEL" = "production"

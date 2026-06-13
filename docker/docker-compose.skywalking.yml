@@ -1,0 +1,40 @@
+# Optional Apache SkyWalking tracing stack for Docker POC.
+# Usage:
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.skywalking.yml up --build
+# Disable tracing by omitting this file or setting LUMIBASE_TRACING_ENABLED=false.
+
+services:
+  cms:
+    environment:
+      LUMIBASE_TRACING_ENABLED: ${LUMIBASE_TRACING_ENABLED:-true}
+      LUMIBASE_TRACING_PROVIDER: ${LUMIBASE_TRACING_PROVIDER:-skywalking}
+      LUMIBASE_SERVICE_NAME: ${LUMIBASE_SERVICE_NAME:-lumibase-cms}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://skywalking-oap:11800}
+      LUMIBASE_TRACING_SAMPLING_RATIO: ${LUMIBASE_TRACING_SAMPLING_RATIO:-1}
+    depends_on:
+      skywalking-oap:
+        condition: service_started
+
+  skywalking-oap:
+    image: apache/skywalking-oap-server:10.1.0
+    environment:
+      SW_STORAGE: h2
+      SW_RECEIVER_OTLP: default
+    ports:
+      - "${SKYWALKING_OAP_GRPC_PORT:-11800}:11800"
+      - "${SKYWALKING_OAP_HTTP_PORT:-12800}:12800"
+    volumes:
+      - skywalkingdata:/skywalking/data
+
+  skywalking-ui:
+    image: apache/skywalking-ui:10.1.0
+    environment:
+      SW_OAP_ADDRESS: http://skywalking-oap:12800
+    ports:
+      - "${SKYWALKING_UI_PORT:-8080}:8080"
+    depends_on:
+      skywalking-oap:
+        condition: service_started
+
+volumes:
+  skywalkingdata:

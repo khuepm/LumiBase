@@ -220,21 +220,25 @@ describe('runDetectors — policy gating (design §8.4 disabled-detector rule)',
   });
 
   it('runs enabled subscores in parallel rather than sequentially', async () => {
-    // Pin the parallel-execution contract: a 50ms + 50ms + 50ms
-    // sequential run would take ≥ 150ms; the parallel `Promise.all`
-    // we use should complete in well under ~120ms. We use a generous
-    // upper bound to avoid CI flakiness.
-    const slow = (out: Subscore) =>
-      new Promise<Subscore>((resolve) => setTimeout(() => resolve(out), 50));
-    const start = Date.now();
-    await runDetectors({
+    // Pin the parallel-execution contract without relying on wall-clock
+    // timing. `Promise.all` invokes all three thunks synchronously before
+    // awaiting any of them; a sequential implementation would call only the
+    // first thunk until its promise resolves.
+    const pending: Array<(value: Subscore) => void> = [];
+    const slow = vi.fn(() => new Promise<Subscore>((resolve) => pending.push(resolve)));
+
+    const resultPromise = runDetectors({
       policy: ALL_ON,
-      geoSubscoreFn: () => slow(ZERO),
-      timeSubscoreFn: () => slow(ZERO),
-      deviceSubscoreFn: () => slow(ZERO),
+      geoSubscoreFn: slow,
+      timeSubscoreFn: slow,
+      deviceSubscoreFn: slow,
     });
-    const elapsed = Date.now() - start;
-    expect(elapsed).toBeLessThan(140);
+
+    await Promise.resolve();
+    expect(slow).toHaveBeenCalledTimes(3);
+
+    pending.forEach((resolve) => resolve(ZERO));
+    await expect(resultPromise).resolves.toEqual({ score: 0, baselineWarmup: false });
   });
 
   it('propagates a subscore rejection so the caller can decide the fallback', async () => {

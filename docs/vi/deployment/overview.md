@@ -17,6 +17,22 @@ Lumibase hỗ trợ hai chế độ triển khai: **Cloudflare Workers** (edge) 
 | Hàng đợi | Cloudflare Queues | BullMQ (Redis) |
 | Xử lý media | CF Image Resizing | Imgproxy |
 
+## Cloudflare targets
+
+| Target | Package | Output | Deploy command |
+|--------|---------|--------|----------------|
+| CMS API Worker | `@lumibase/cms` | Worker bundle | `pnpm --filter @lumibase/cms deploy` |
+| Documentation site | `@lumibase/docs` | `apps/docs/dist` | `pnpm docs:deploy` |
+| Landing site | `@lumibase/landing` | `apps/landing/out` | `pnpm landing:deploy` |
+| Marketplace site | `@lumibase/marketplace` | `apps/marketplace/out` | `pnpm marketplace:deploy` |
+
+Public Marketplace cần các biến build-time:
+
+- `NEXT_PUBLIC_USE_REAL_API=true`
+- `NEXT_PUBLIC_CMS_API_URL=https://<cms-production-host>`
+
+Smoke test sau deploy: `/`, `/extensions/`, `/categories/seo/`, và `/extensions/<slug>/`.
+
 ## Kiến trúc: Cloudflare Workers
 
 ```

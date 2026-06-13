@@ -43,3 +43,59 @@ export interface HookDefinition<TPayload = unknown> {
 export function defineHook<TPayload = unknown>(def: HookDefinition<TPayload>): HookDefinition<TPayload> {
   return def;
 }
+
+export type InterfaceGroup =
+  | 'standard'
+  | 'selection'
+  | 'relational'
+  | 'presentation'
+  | 'group'
+  | 'other';
+
+export type InterfaceOptionType = 'string' | 'text' | 'integer' | 'decimal' | 'boolean' | 'json';
+
+export interface InterfaceOption {
+  field: string;
+  name: string;
+  type?: InterfaceOptionType;
+  required?: boolean;
+  schema?: Record<string, unknown>;
+  meta?: {
+    width?: 'half' | 'full' | 'fill';
+    interface?: string;
+    note?: string;
+    options?: Record<string, unknown>;
+  };
+}
+
+export interface InterfaceProps<TValue = unknown, TOptions = Record<string, unknown>> {
+  value: TValue | null | undefined;
+  field: unknown;
+  disabled?: boolean;
+  options?: TOptions;
+  onChange: (next: TValue | null) => void;
+}
+
+export type InterfaceComponent<TValue = unknown, TOptions = Record<string, unknown>> = (
+  props: InterfaceProps<TValue, TOptions>,
+) => unknown;
+
+export interface InterfaceDefinition<TValue = unknown, TOptions = Record<string, unknown>> {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  component: InterfaceComponent<TValue, TOptions>;
+  types: string[];
+  group?: InterfaceGroup;
+  relational?: boolean;
+  localTypes?: string[];
+  options?: InterfaceOption[];
+  recommendedDisplays?: string[];
+}
+
+export function defineInterface<TValue = unknown, TOptions = Record<string, unknown>>(
+  def: InterfaceDefinition<TValue, TOptions>,
+): InterfaceDefinition<TValue, TOptions> {
+  return def;
+}

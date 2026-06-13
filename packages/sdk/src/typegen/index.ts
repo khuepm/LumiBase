@@ -1,5 +1,5 @@
-import type { TypegenManifest } from './types';
-export type { TypegenManifest, TypegenCollection, TypegenField } from './types';
+import type { TypegenCollection, TypegenField, TypegenManifest, TypegenRelation } from './types';
+export type { TypegenManifest, TypegenCollection, TypegenField, TypegenRelation } from './types';
 
 export interface GenerateOptions {
   format?: 'single' | 'per-collection';
@@ -25,7 +25,11 @@ function generateSingleFile(manifest: TypegenManifest, branded: boolean): string
     .join('\n');
 
   const collectionInterfaces = manifest.collections
-    .map((coll) => generateCollectionInterface(coll, branded))
+    .map((coll) => {
+      const base = generateCollectionInterface(coll, branded);
+      const expanded = generateExpandedType(coll);
+      return [base, expanded].filter(Boolean).join('\n\n');
+    })
     .join('\n\n');
 
   const collectionsMap = `export interface LumibaseCollections {
@@ -46,9 +50,10 @@ function generatePerCollection(manifest: TypegenManifest, branded: boolean): str
 function generateCollectionInterface(coll: TypegenManifest['collections'][0], branded: boolean): string {
   const fields = coll.fields
     .map((f) => {
-      const tsType = mapFieldTypeToTs(f, branded);
+      const tsType = mapFieldTypeToTs(f, coll, branded);
       const optional = f.required ? '' : '?';
-      return `  ${f.name}${optional}: ${tsType};`;
+      const readonly = f.readonly || f.generated ? 'readonly ' : '';
+      return `  ${readonly}${f.name}${optional}: ${tsType};`;
     })
     .join('\n');
 
@@ -57,9 +62,35 @@ ${fields}
 }`;
 }
 
-function mapFieldTypeToTs(field: TypegenManifest['collections'][0]['fields'][0], branded: boolean): string {
+function generateExpandedType(coll: TypegenCollection): string {
+  const relations = coll.relations ?? [];
+  if (relations.length === 0) {
+    return `export type ${capitalize(coll.name)}Expanded = ${capitalize(coll.name)};`;
+  }
+
+  const omittedKeys = relations.map((relation) => quoteProperty(relation.field)).join(' | ');
+  const fields = relations
+    .map((relation) => `  ${relation.field}?: ${expandedRelationType(relation)};`)
+    .join('\n');
+
+  return `export type ${capitalize(coll.name)}Expanded = Omit<${capitalize(coll.name)}, ${omittedKeys}> & {
+${fields}
+};`;
+}
+
+function expandedRelationType(relation: TypegenRelation): string {
+  if (relation.kind === 'm2o') {
+    return `${capitalize(relation.target)} | ${capitalize(relation.target)}Expanded | null`;
+  }
+  if (relation.kind === 'o2m' || relation.kind === 'm2m') {
+    return `Array<${capitalize(relation.target)} | ${capitalize(relation.target)}Expanded>`;
+  }
+  return `Array<{ collection: string; item: unknown }>`;
+}
+
+function mapFieldTypeToTs(field: TypegenField, coll: TypegenCollection, branded: boolean): string {
   if (field.kind === 'm2o') {
-    return `${capitalize(field.target || 'unknown')} | null`;
+    return nullable(field, mapScalarFieldType(field, branded));
   }
   if (field.kind === 'o2m' || field.kind === 'm2m') {
     return `${capitalize(field.target || 'unknown')}[]`;
@@ -69,9 +100,22 @@ function mapFieldTypeToTs(field: TypegenManifest['collections'][0]['fields'][0],
   }
 
   if (field.enum && field.enum.length > 0) {
-    return field.enum.map((v) => `'${v}'`).join(' | ');
+    return nullable(field, field.enum.map((v) => JSON.stringify(v)).join(' | '));
   }
 
+  if (field.primaryKey) {
+    return nullable(
+      field,
+      mapPrimaryKeyType(coll.primaryKeyType ?? 'nanoid', branded, field.branded),
+    );
+  }
+
+  const tsType = mapScalarFieldType(field, branded);
+
+  return nullable(field, field.encrypted ? `${tsType} | '***'` : tsType);
+}
+
+function mapScalarFieldType(field: TypegenField, branded: boolean): string {
   const typeMap: Record<string, string> = {
     string: 'string',
     text: 'string',
@@ -82,7 +126,7 @@ function mapFieldTypeToTs(field: TypegenManifest['collections'][0]['fields'][0],
     decimal: 'number',
     boolean: 'boolean',
     json: 'unknown',
-    uuid: branded ? `Brand<'${field.branded || 'ID'}', string>` : 'ID',
+    uuid: mapPrimaryKeyType('uuid', branded, field.branded),
     date: 'string',
     datetime: 'string',
     time: 'string',
@@ -90,8 +134,10 @@ function mapFieldTypeToTs(field: TypegenManifest['collections'][0]['fields'][0],
     geometry: 'GeoJSON.Geometry',
   };
 
-  const tsType = typeMap[field.type] || 'unknown';
+  return typeMap[field.type] || 'unknown';
+}
 
+function nullable(field: TypegenField, tsType: string): string {
   if (!field.required || field.nullable) {
     return `${tsType} | null`;
   }
@@ -99,6 +145,20 @@ function mapFieldTypeToTs(field: TypegenManifest['collections'][0]['fields'][0],
   return tsType;
 }
 
+function mapPrimaryKeyType(
+  primaryKeyType: NonNullable<TypegenCollection['primaryKeyType']>,
+  branded: boolean,
+  brand?: string,
+): string {
+  if (primaryKeyType === 'integer' || primaryKeyType === 'bigInteger') return 'number';
+  if (branded) return `Brand<'${brand || 'ID'}', string>`;
+  return 'ID';
+}
+
 function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function quoteProperty(name: string): string {
+  return JSON.stringify(name);
 }
