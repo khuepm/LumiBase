@@ -14,22 +14,44 @@ LumiBase can generate a `lumibase-types.ts` file from your live schema, similar 
 pnpm add -D @lumibase/sdk
 ```
 
-### Run typegen
+### Generate types
 
-```bash
-npx lumibase typegen \
-  --url https://api.mysite.lumibase.dev \
-  --site-id site_abc123 \
-  --token $LUMIBASE_API_TOKEN \
-  --output ./src/lumibase-types.ts
+Create a local script that uses the SDK you installed instead of invoking an unscoped `npx` package:
+
+```typescript
+// scripts/typegen.ts
+import { writeFile } from 'node:fs/promises'
+import { generateTypes } from '@lumibase/sdk'
+import type { TypegenManifest } from '@lumibase/sdk'
+
+const url = new URL('/api/v1/typegen/schema', process.env.LUMIBASE_URL!)
+const response = await fetch(url, {
+  headers: {
+    authorization: `Bearer ${process.env.LUMIBASE_TOKEN!}`,
+    'x-lumi-site': process.env.LUMIBASE_SITE_ID!,
+  },
+})
+
+if (!response.ok) {
+  throw new Error(`Typegen failed: ${response.status} ${response.statusText}`)
+}
+
+const manifest = await response.json() as TypegenManifest
+const types = generateTypes(manifest)
+
+await writeFile('./src/lumibase-types.ts', types)
 ```
 
-Or add to `package.json`:
+Then add a package script that runs the local file:
 
 ```json
 {
   "scripts": {
-    "typegen": "lumibase typegen --url $LUMIBASE_URL --site-id $LUMIBASE_SITE_ID --token $LUMIBASE_TOKEN --output ./src/lumibase-types.ts"
+    "typegen": "tsx scripts/typegen.ts"
+  },
+  "devDependencies": {
+    "@lumibase/sdk": "^0.1.0",
+    "tsx": "^4.0.0"
   }
 }
 ```
@@ -92,13 +114,23 @@ const articles = await lumibase.items('articles').readMany({
 ## API-based typegen (programmatic)
 
 ```typescript
+import { writeFile } from 'node:fs/promises'
 import { generateTypes } from '@lumibase/sdk'
+import type { TypegenManifest } from '@lumibase/sdk'
 
-const types = await generateTypes({
-  url: 'https://api.mysite.lumibase.dev',
-  siteId: 'site_abc123',
-  token: process.env.LUMIBASE_API_TOKEN,
+const response = await fetch('https://api.mysite.lumibase.dev/api/v1/typegen/schema', {
+  headers: {
+    authorization: `Bearer ${process.env.LUMIBASE_API_TOKEN!}`,
+    'x-lumi-site': 'site_abc123',
+  },
 })
+
+if (!response.ok) {
+  throw new Error(`Typegen failed: ${response.status} ${response.statusText}`)
+}
+
+const manifest = await response.json() as TypegenManifest
+const types = generateTypes(manifest)
 
 await writeFile('./src/lumibase-types.ts', types)
 ```
