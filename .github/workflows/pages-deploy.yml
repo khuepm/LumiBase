@@ -161,6 +161,29 @@ jobs:
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         run: curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --max-time 20 "${{ steps.deploy_marketplace.outputs.url }}" --output /dev/null
 
+      - name: Build studio
+        run: pnpm --filter @lumibase/studio build
+
+      - name: Deploy studio to Cloudflare Pages
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
+        id: deploy_studio
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          pnpm exec wrangler pages deploy apps/studio/dist --project-name lumibase-studio --branch main 2>&1 | tee studio-deploy.log
+          URL="$(grep -Eo 'https://[^[:space:]]+' studio-deploy.log | tail -n1 | sed 's/[),.]*$//')"
+          if [ -z "$URL" ]; then
+            echo "Failed to parse studio deployment URL" >&2
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify studio deployment
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
+        run: curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --max-time 20 "${{ steps.deploy_studio.outputs.url }}" --output /dev/null
+
       - name: Add deployment URLs to GitHub Release notes
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         env:
@@ -168,6 +191,7 @@ jobs:
           DOCS_URL: ${{ steps.deploy_docs.outputs.url }}
           LANDING_URL: ${{ steps.deploy_landing.outputs.url }}
           MARKETPLACE_URL: ${{ steps.deploy_marketplace.outputs.url }}
+          STUDIO_URL: ${{ steps.deploy_studio.outputs.url }}
         run: |
           cat > deployment-notes.md <<EOF_NOTES
           <!-- lumibase-pages-deployments:start -->
@@ -176,6 +200,7 @@ jobs:
           - Docs: ${DOCS_URL}
           - Landing: ${LANDING_URL}
           - Marketplace: ${MARKETPLACE_URL}
+          - Studio: ${STUDIO_URL}
           <!-- lumibase-pages-deployments:end -->
           EOF_NOTES
 

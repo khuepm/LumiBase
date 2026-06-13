@@ -1,6 +1,6 @@
 import { studioBuildMetadata } from './build-metadata';
 
-export const RELEASE_MANIFEST_URL = 'https://updates.lumibase.dev/releases.json';
+export const RELEASE_MANIFEST_URL = 'https://docs.lumibase.dev/releases.json';
 export const UPGRADE_GUIDE_URL = 'https://docs.lumibase.dev/upgrade';
 export const RELEASE_UPDATE_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
 
