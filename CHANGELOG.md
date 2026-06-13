@@ -19,6 +19,10 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   - persists the lockout policy to `settings.login_security_policy` under the `__default__` site (resolves open-question-8; the login guard already reads the row by key alone);
   - seeds "Baseline Constitution v1" as a **draft** (3 schema-safe rules, all report-only) so the publish-gate feature is discoverable in Mission Control — drafts have zero runtime effect until a human activates them.
 
+### Security
+
+- **esbuild bumped to 0.28.1** (Dependabot alert #46, high — missing binary integrity verification enabling RCE via `NPM_CONFIG_REGISTRY`). The pnpm override moves from `^0.25.12` to `^0.28.1`; vite is unified on `^7.3.5` across the workspace (studio, docs, and a matching override for vitest's internal copy) because vite 6 cannot drive esbuild 0.28's syntax lowering.
+
 ### Upgrade steps
 
 - **Existing (already-initialized) instances need no action.** Agent roles continue to lazy-seed on first list; an absent `contentOs` row still reads as all-OFF; autonomy resolution keeps its code fallbacks (safe→L2, dangerous→L1). Baseline L1 grants are intentionally **not** backfilled — doing so would tighten safe-capability autonomy from L2 to L1 on live sites. Opt in by creating grants via the trust ledger UI/API.
