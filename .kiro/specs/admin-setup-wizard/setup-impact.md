@@ -35,7 +35,10 @@ Trạng thái: `pending` (chưa làm) · `in-progress` · `done` (setup + backfi
 | 7 | clickhouse-cdc | v0.4.x | Đã rà soát: CDC pipeline registry cấu hình qua env/API riêng, không thuộc setup wizard | n/a | — | Rà soát 2026-06-13 |
 | 8 | content-os-ui | v0.5.x | Đã rà soát (gồm task 15 rollout switchboard + phase 3 tasks 16-20 agents/intent-lifecycle/planner/evaluate/promotion-check): UI-only trên endpoint + settings row sẵn có — không yêu cầu khởi tạo mới | n/a | — | Rà soát 2026-06-13 |
 | 9 | studio-ops-ui | v0.5.x | Đã rà soát: UI-only trên `/materialize`, `/tm`, `/marketplace/publish` sẵn có — không seed, không flag, không bước wizard mới | n/a | — | Rà soát 2026-06-13 |
+| 10 | admin-setup-wizard | v0.6.x | Seed RBAC role `Administrator` (`adminAccess=true`) và bind bootstrap admin qua `user_roles` trong setup transaction | done | — | Done 2026-06-14: bước 9a trong setup tx, `systemKey='administrator'` idempotent qua `roles_site_system_key_unique`. Trước fix, bootstrap user không có role nào → PermissionService resolve `admin=false` → mọi schema/items request 403 ("Failed to load collections"). Thoả requirements.md Req 3. **Cần backfill** instance đã setup trước v0.6.x — xem Lưu ý backfill |
 
 ## Lưu ý backfill
 
 Các gap #1–#3 ảnh hưởng cả instance **đã setup** — fix không chỉ nằm trong setup wizard mà cần kèm migration/backfill idempotent (`onConflictDoNothing`) hoặc giữ lazy-init làm fallback song song.
+
+Gap #10 ảnh hưởng instance **đã setup trước v0.6.x**: bootstrap admin của họ không có RBAC role nên sẽ bị 403 trên mọi schema/items request. Backfill idempotent cần: tạo role `Administrator` (`adminAccess=true`, `systemKey='administrator'`) cho mỗi site đã có bootstrap user, rồi insert `user_roles` cho user `is_bootstrap=true` (dùng `onConflictDoNothing` để an toàn khi chạy lại).
