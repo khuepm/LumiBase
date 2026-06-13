@@ -110,9 +110,9 @@ function fakeRegistry(
  */
 function buildApp(
   registry: PipelineRegistryService,
-  opts: { roles?: string[]; siteId?: string | null } = {},
+  opts: { roles?: string[]; siteId?: string | null; siteAdmin?: boolean } = {},
 ): Hono<AppEnv> {
-  const { roles = ['admin'], siteId = SITE_ID } = opts;
+  const { roles = ['admin'], siteId = SITE_ID, siteAdmin = true } = opts;
 
   const parent = new Hono<AppEnv>();
   parent.use('*', async (c, next) => {
@@ -121,7 +121,10 @@ function buildApp(
     await next();
   });
 
-  const cdc = createCdcRouter(() => ({ registry }));
+  const cdc = createCdcRouter(() => ({
+    registry,
+    authorizeSiteAdmin: async () => siteAdmin,
+  }));
   parent.route('/cdc', cdc);
   return parent;
 }
@@ -308,6 +311,22 @@ describe('POST /pipelines — auth + tenant gate', () => {
 
     const json = (await res.json()) as ErrorEnvelope;
     expect(json.errors[0].code).toBe('FORBIDDEN');
+  });
+
+  it('returns 403 FORBIDDEN when the principal is not an admin for the selected site', async () => {
+    const app = buildApp(
+      fakeRegistry(async () => {
+        throw new Error('registry.create must not run when the guard rejects');
+      }),
+      { siteAdmin: false },
+    );
+
+    const res = await postPipelines(app, validCreateBody());
+    expect(res.status).toBe(403);
+
+    const json = (await res.json()) as ErrorEnvelope;
+    expect(json.errors[0].code).toBe('FORBIDDEN');
+    expect(json.errors[0].message).toContain('requested site');
   });
 
   it('returns 400 TENANT_REQUIRED when no siteId is set (admin but no site context)', async () => {

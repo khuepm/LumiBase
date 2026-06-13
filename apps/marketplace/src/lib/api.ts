@@ -223,6 +223,9 @@ export const CATEGORIES = [
 
 const CMS_BASE_URL =
   process.env.NEXT_PUBLIC_CMS_API_URL ?? "https://api.lumibase.dev";
+const USE_REAL_API = process.env.NEXT_PUBLIC_USE_REAL_API === "true";
+const ALLOW_MOCK_FALLBACK = process.env.NODE_ENV !== "production";
+const USE_STATIC_MOCK = !USE_REAL_API;
 
 function buildQuery(params: Record<string, string | number | undefined>) {
   const q = new URLSearchParams();
@@ -232,28 +235,166 @@ function buildQuery(params: Record<string, string | number | undefined>) {
   return q.toString();
 }
 
+type CmsListResponse = {
+  data?: unknown;
+  total?: number;
+  page?: number;
+  perPage?: number;
+  totalPages?: number;
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function asString(value: unknown, fallback = ""): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeExtension(input: unknown): Extension {
+  const row = asRecord(input);
+  const manifest = asRecord(row.manifest);
+  const marketplace = asRecord(manifest.marketplace);
+  const pick = (key: string) => marketplace[key] ?? manifest[key] ?? row[key];
+
+  const slug = asString(row.slug ?? row.marketplaceSlug ?? row.key, asString(row.id, "extension"));
+  const name = asString(pick("name"), slug);
+  const description = asString(
+    pick("description"),
+    `${name} extension for LumiBase.`
+  );
+  const latestVersion = asString(row.latestVersion ?? row.version, "0.0.0");
+  const publisherName = asString(
+    row.publisherName ?? pick("publisherName") ?? row.publisher ?? manifest.publisher,
+    "Unknown publisher"
+  );
+  const publishedAt = asString(row.publishedAt, new Date(0).toISOString());
+  const updatedAt = asString(row.updatedAt, publishedAt);
+  const versionsInput = Array.isArray(row.versions) ? row.versions : [];
+  const versions =
+    versionsInput.length > 0
+      ? versionsInput.map((version) => {
+          const versionRow = asRecord(version);
+          return {
+            id: asString(versionRow.id, asString(row.id, slug)),
+            version: asString(versionRow.version, latestVersion),
+            publishedAt: asString(versionRow.publishedAt, publishedAt),
+            sha256: asString(versionRow.sha256 ?? row.bundleSha256, ""),
+            changelog: asString(versionRow.changelog) || undefined,
+          };
+        })
+      : [
+          {
+            id: asString(row.id, slug),
+            version: latestVersion,
+            publishedAt,
+            sha256: asString(row.bundleSha256, ""),
+          },
+        ];
+
+  return {
+    id: asString(row.id, slug),
+    slug,
+    name,
+    description,
+    readme: asString(pick("readme"), description),
+    category: asString(pick("category"), asString(row.type, "module")),
+    tags: asStringArray(pick("tags")),
+    publisherName,
+    iconUrl: asString(pick("iconUrl")) || undefined,
+    bannerUrl: asString(pick("bannerUrl")) || undefined,
+    latestVersion,
+    totalDownloads: asNumber(row.totalDownloads, 0),
+    rating: typeof row.rating === "number" ? row.rating : null,
+    ratingCount: typeof row.ratingCount === "number" ? row.ratingCount : null,
+    versions,
+    publishedAt,
+    updatedAt,
+    repositoryUrl: asString(pick("repositoryUrl")) || undefined,
+    documentationUrl: asString(pick("documentationUrl")) || undefined,
+    licenseType: asString(pick("licenseType") ?? pick("license")) || undefined,
+  };
+}
+
+async function fetchCmsList(params: ListExtensionsParams): Promise<ExtensionListResponse> {
+  const qs = buildQuery({
+    q: params.q,
+    category: params.category,
+    tags: params.tags,
+    page: params.page ?? 1,
+    perPage: params.perPage ?? 12,
+    sort: params.sort ?? "popular",
+  });
+  const res = await fetch(`${CMS_BASE_URL}/api/v1/marketplace/extensions?${qs}`, {
+    next: { revalidate: 60 },
+  });
+  if (!res.ok) throw new Error(`CMS API error: ${res.status}`);
+  const body = (await res.json()) as CmsListResponse;
+  const rawData = Array.isArray(body.data) ? body.data : [];
+  const data = rawData.map(normalizeExtension);
+  return {
+    data,
+    total: body.total ?? data.length,
+    page: body.page ?? params.page ?? 1,
+    perPage: body.perPage ?? params.perPage ?? 12,
+    totalPages:
+      body.totalPages ??
+      Math.max(1, Math.ceil((body.total ?? data.length) / (body.perPage ?? params.perPage ?? 12))),
+  };
+}
+
+async function fetchCmsExtension(slug: string): Promise<Extension | null> {
+  const res = await fetch(
+    `${CMS_BASE_URL}/api/v1/marketplace/extensions/${slug}`,
+    { next: { revalidate: 60 } }
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`CMS API error: ${res.status}`);
+  const body = (await res.json()) as { data?: unknown };
+  return body.data ? normalizeExtension(body.data) : null;
+}
+
+function emptyList(params: ListExtensionsParams = {}): ExtensionListResponse {
+  return {
+    data: [],
+    total: 0,
+    page: params.page ?? 1,
+    perPage: params.perPage ?? 12,
+    totalPages: 1,
+  };
+}
+
 /**
  * List extensions with optional filters.
- * In static export mode: filters applied client-side from mock data.
+ * Without NEXT_PUBLIC_USE_REAL_API=true, filters are applied to the local
+ * static catalog so preview builds can still export deterministic pages.
  */
 export async function listExtensions(
   params: ListExtensionsParams = {}
 ): Promise<ExtensionListResponse> {
-  // In production: fetch from CMS API
-  if (process.env.NEXT_PUBLIC_USE_REAL_API === "true") {
-    const qs = buildQuery({
-      q: params.q,
-      category: params.category,
-      tags: params.tags,
-      page: params.page ?? 1,
-      perPage: params.perPage ?? 12,
-      sort: params.sort ?? "popular",
-    });
-    const res = await fetch(`${CMS_BASE_URL}/api/v1/marketplace/extensions?${qs}`, {
-      next: { revalidate: 60 },
-    });
-    if (!res.ok) throw new Error(`CMS API error: ${res.status}`);
-    return res.json() as Promise<ExtensionListResponse>;
+  if (USE_REAL_API) {
+    try {
+      return await fetchCmsList(params);
+    } catch (error) {
+      if (!ALLOW_MOCK_FALLBACK) return emptyList(params);
+      console.warn(error);
+    }
+  } else if (!USE_STATIC_MOCK) {
+    return emptyList(params);
   }
 
   // Static: filter mock data
@@ -286,7 +427,7 @@ export async function listExtensions(
   } else if (params.sort === "name") {
     data.sort((a, b) => a.name.localeCompare(b.name));
   } else {
-    data.sort((a, b) => b.totalDownloads - a.totalDownloads);
+    data.sort((a, b) => (b.totalDownloads ?? 0) - (a.totalDownloads ?? 0));
   }
 
   const page = params.page ?? 1;
@@ -307,14 +448,15 @@ export async function listExtensions(
  * Get a single extension by slug.
  */
 export async function getExtension(slug: string): Promise<Extension | null> {
-  if (process.env.NEXT_PUBLIC_USE_REAL_API === "true") {
-    const res = await fetch(
-      `${CMS_BASE_URL}/api/v1/marketplace/extensions/${slug}`,
-      { next: { revalidate: 60 } }
-    );
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`CMS API error: ${res.status}`);
-    return res.json() as Promise<Extension>;
+  if (USE_REAL_API) {
+    try {
+      return await fetchCmsExtension(slug);
+    } catch (error) {
+      if (!ALLOW_MOCK_FALLBACK) return null;
+      console.warn(error);
+    }
+  } else if (!USE_STATIC_MOCK) {
+    return null;
   }
 
   return MOCK_EXTENSIONS.find((e) => e.slug === slug) ?? null;
@@ -324,6 +466,18 @@ export async function getExtension(slug: string): Promise<Extension | null> {
  * Get all slugs (for generateStaticParams).
  */
 export async function getAllSlugs(): Promise<string[]> {
+  if (USE_REAL_API) {
+    try {
+      const result = await fetchCmsList({ perPage: 50, sort: "latest" });
+      return result.data.map((e) => e.slug);
+    } catch (error) {
+      if (!ALLOW_MOCK_FALLBACK) {
+        throw error;
+      }
+      console.warn(error);
+    }
+  }
+
   return MOCK_EXTENSIONS.map((e) => e.slug);
 }
 
@@ -333,4 +487,15 @@ export async function getAllSlugs(): Promise<string[]> {
 export async function getFeaturedExtensions(): Promise<Extension[]> {
   const result = await listExtensions({ sort: "popular", perPage: 3 });
   return result.data;
+}
+
+export async function getMarketplaceStats(): Promise<{
+  totalExtensions: number;
+  totalCategories: number;
+}> {
+  const result = await listExtensions({ perPage: 1 });
+  return {
+    totalExtensions: result.total,
+    totalCategories: CATEGORIES.length,
+  };
 }

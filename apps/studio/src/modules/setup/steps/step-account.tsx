@@ -93,10 +93,11 @@ export function clearAccountDraft(): void {
 }
 
 /**
- * Internal setter — only the step-account component should reach it.
- * Exported via `getAccountDraft`/`clearAccountDraft` only.
+ * Write the in-memory account draft. The account step owns normal form
+ * submission, while alternate setup surfaces use this for same-tab
+ * handoff before opening the full wizard.
  */
-function setAccountDraft(value: AccountFormValues): void {
+export function setAccountDraft(value: AccountFormValues): void {
   accountDraft = value;
 }
 
@@ -556,7 +557,7 @@ function RuleRow({ ok, label }: RuleRowProps) {
           aria-hidden="true"
         />
       )}
-      <span className={ok ? 'text-emerald-700' : 'text-muted-foreground'}>
+      <span className={ok ? 'font-semibold text-emerald-700' : 'text-muted-foreground'}>
         <span className="sr-only">{ok ? 'Met: ' : 'Not met: '}</span>
         {label}
       </span>

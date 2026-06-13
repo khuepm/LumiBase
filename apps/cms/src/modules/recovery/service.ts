@@ -27,9 +27,9 @@
  *      whose hash verifies is the match.
  *   5. In a single transaction:
  *        - stamp `used_at = now()` + `used_from_ip = ip` on the matched
- *          row (the `used_at IS NULL` guard in the UPDATE makes the
- *          redemption single-use even under a concurrent retry —
- *          Property 4 / Req 14.7);
+ *          row and require the guarded UPDATE to return the spent row;
+ *          if a concurrent transaction already redeemed it, abort before
+ *          any unlock token is saved (Property 4 / Req 14.7);
  *        - clear the user's lockout (`lockedUntil`, `failedCount`,
  *          `failedCountWindowStart`);
  *        - drain the IP block for `ip` and the email's own failure
@@ -181,6 +181,7 @@ import { STANDARD_LOCKOUT_POLICY } from '../setup/policy-codec';
 // the recovery routes (`routes.ts`) and injected via the constructor —
 // admin-setup-wizard task 11.2 / Req 15.1, 15.2.
 import type { AuditLogger, AuditLogWriteInput } from '../audit/logger';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 // ── unlock-token store abstraction ──────────────────────────────────────
 
@@ -463,14 +464,27 @@ const textEncoder = new TextEncoder();
  * Random anti-timing delay in **inclusive** `[200, 500]` milliseconds.
  *
  * Pure helper (no side effects) so it can be unit-tested in isolation.
- * The jitter is drawn from a CSPRNG byte pair rather than `Math.random`
- * so an attacker can't model and subtract the delay distribution out of
- * many timed probes. Returns an integer.
+ * The jitter is drawn from a CSPRNG rather than `Math.random` so an
+ * attacker can't model and subtract the delay distribution out of many
+ * timed probes. Returns an integer.
+ *
+ * Uses **rejection sampling**: a plain `% DELAY_SPAN` over a 16-bit value
+ * is biased because 65536 is not a multiple of 301, so the lowest few
+ * outputs would occur slightly more often. We discard the unbalanced tail
+ * (samples at or above the largest multiple of DELAY_SPAN that fits in 16
+ * bits) and redraw, giving a uniform distribution over [200, 500]. The
+ * rejection probability is ~0.3%, so it almost always succeeds first try.
  */
 export function randomDelayMs(): number {
-  const bytes = crypto.getRandomValues(new Uint8Array(2));
-  const sample = ((bytes[0]! << 8) | bytes[1]!) % DELAY_SPAN;
-  return DELAY_MIN_MS + sample;
+  const MAX_16 = 0x1_0000; // 65536
+  const limit = MAX_16 - (MAX_16 % DELAY_SPAN); // largest unbiased ceiling
+  const bytes = new Uint8Array(2);
+  let value: number;
+  do {
+    crypto.getRandomValues(bytes);
+    value = (bytes[0]! << 8) | bytes[1]!;
+  } while (value >= limit);
+  return DELAY_MIN_MS + (value % DELAY_SPAN);
 }
 
 function toBase64Url(bytes: Uint8Array): string {
@@ -647,7 +661,7 @@ export class RecoveryService {
       await this.audit.write(entry);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn('[recovery] audit write failed; recovery unaffected', err);
+      console.warn('[recovery] audit write failed; recovery unaffected', formatSafeError(err));
     }
   }
 
@@ -674,7 +688,7 @@ export class RecoveryService {
       // hiccup can't become an enumeration / timing oracle. Log for
       // operators; never surface detail to the caller.
       // eslint-disable-next-line no-console
-      console.warn('[recovery] recover() failed; returning generic null', err);
+      console.warn('[recovery] recover() failed; returning generic null', formatSafeError(err));
       result = null;
     }
     // Anti-timing: uniform random delay on success AND failure.
@@ -849,10 +863,12 @@ export class RecoveryService {
     //    failure bursts, and save the token hash. A partial failure
     //    rolls the whole recovery back so we never leave a code spent
     //    without clearing the lockout, or vice versa.
-    await this.db.transaction(async (tx) => {
-      // 6a. Single-use redemption. The `used_at IS NULL` guard in the
-      //     WHERE makes a concurrent double-redeem a no-op on the loser.
-      await tx
+    const redeemed = await this.db.transaction(async (tx) => {
+      // 6a. Single-use redemption. The `used_at IS NULL` guard makes a
+      //     concurrent double-redeem update zero rows on the loser; the
+      //     `returning()` check is therefore the source of truth for
+      //     whether THIS transaction actually spent the code.
+      const spentRows = await tx
         .update(adminBackupCodes)
         .set({ usedAt: now, usedFromIp: ip })
         .where(
@@ -860,7 +876,10 @@ export class RecoveryService {
             eq(adminBackupCodes.id, matchedId),
             isNull(adminBackupCodes.usedAt),
           ),
-        );
+        )
+        .returning({ id: adminBackupCodes.id });
+
+      if (spentRows.length === 0) return false;
 
       // 6b. Clear the user lockout (mirrors `/unlock-user`).
       await tx
@@ -914,7 +933,11 @@ export class RecoveryService {
         tokenHash: token.hash,
         expiresAt,
       });
+
+      return true;
     });
+
+    if (!redeemed) return null;
 
     // Req 15.1 — `recovery_completed` + `backup_code_used` audit
     // entries (task 11.2). Emitted post-commit (the recovery mutations

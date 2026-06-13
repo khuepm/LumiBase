@@ -16,10 +16,10 @@ import { vi } from 'vitest';
  * **Validates: Requirements 3.5, 6.7**
  */
 
-// Identify safe skills (not schema:write, not delete*) from CORE_SKILLS
+// Identify safe skills (not mutating schema capability, not delete*) from CORE_SKILLS
 const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
   .filter(([name, skill]) => {
-    const requiresSchemaWrite = skill.requiredCapabilities.includes('schema:write');
+    const requiresSchemaWrite = skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read');
     const startsWithDelete = name.startsWith('delete');
     return !requiresSchemaWrite && !startsWithDelete;
   })

@@ -1,8 +1,8 @@
 # AI Copilot (HITL)
 
-LumiBase Studio đi kèm một AI Copilot có thể nhận lệnh ngôn ngữ tự nhiên từ admin và thực thi các skill đã được khai báo trên CMS. Mọi hành động nguy hiểm (đụng schema hoặc xoá dữ liệu) đều phải qua **Human-in-the-Loop (HITL)**: AI tạo `ai_approvals` row chờ admin duyệt thay vì execute trực tiếp.
+LumiBase Studio đi kèm một AI Copilot có thể nhận lệnh ngôn ngữ tự nhiên từ admin và thực thi các skill đã được khai báo trên CMS. Đây là bước seed của **Agent Harness Layer**: agent nhận goal/context/quyền hạn qua harness, gọi tool theo registry, bị đánh giá rủi ro và để lại audit trail. Mọi hành động nguy hiểm (đụng schema hoặc xoá dữ liệu) đều phải qua **Human-in-the-Loop (HITL)**: AI tạo `ai_approvals` row chờ admin duyệt thay vì execute trực tiếp.
 
-> Tài liệu lịch sử của giai đoạn triển khai (chia 4 module cho AI agent) nằm ở [`ai-first-specification.md`](./ai-first-specification.md). File này tập trung vào hành vi end-user và contract API.
+> Tài liệu lịch sử của giai đoạn triển khai (chia 4 module cho AI agent) nằm ở [`ai-first-specification.md`](./ai-first-specification.md). Blueprint chiến lược để mở rộng Copilot thành control plane cho agent nằm ở [`agent-harness-layer.md`](./agent-harness-layer.md). File này tập trung vào hành vi end-user và contract API.
 
 ## Kiến trúc 4 module
 
@@ -12,6 +12,21 @@ LumiBase Studio đi kèm một AI Copilot có thể nhận lệnh ngôn ngữ t�
 | **B. Harness** | `apps/cms/src/services/ai-harness.ts` (`AISecureHarness`) | Validate skill, check capability, evaluate risk, execute hoặc gate qua HITL |
 | **C. Routes** | `apps/cms/src/routes/ai.ts` (`aiRouter`) | `/api/v1/ai/chat`, `/api/v1/ai/approvals`, `/api/v1/ai/approvals/:id/decide` |
 | **D. Studio UI** | `apps/studio/src/components/ai-assistant.tsx`, `apps/studio/src/modules/settings/ai-approvals.tsx` | Floating chat panel + Approvals dashboard |
+
+## Quan hệ với Agent Harness Layer
+
+AI Copilot hiện tại xử lý một vòng lặp ngắn: chat → chọn skill → risk/capability check → execute hoặc tạo approval. Agent Harness Layer mở rộng cùng nguyên tắc này cho vòng lặp dài hơn:
+
+```text
+Goal → Run → Plan → Tool calls → Evaluation → Approval → Artifact commit → Memory update
+```
+
+Vì vậy các bảng hiện có được xem như seed:
+
+- `ai_approvals` → tiền thân của approval gate tổng quát cho plan/tool/artifact.
+- `ai_conversations` + `ai_messages` → context memory ngắn hạn.
+- `ai_embeddings` → RAG knowledge base theo site/collection/item.
+- `CORE_SKILLS` → tiền thân của tool registry có input schema, capability, rate limit và risk policy.
 
 ## CORE_SKILLS registry
 
@@ -125,9 +140,10 @@ Mọi truy vấn đều scope `siteId` — request từ site B không bao giờ 
 LumiBase Copilot đã tích hợp hoàn chỉnh với các mô hình ngôn ngữ lớn (LLM) và hệ thống lưu trữ vector/lịch sử trò chuyện:
 
 ### 1. LLM Providers
-Hệ thống hỗ trợ 4 LLM providers (cấu hình qua `LLM_PROVIDER` env):
-- **OpenAI**: Sử dụng mô hình `gpt-4o-mini` (mặc định) thông qua native tool calling.
-- **Anthropic**: Sử dụng dòng mô hình Claude (ví dụ `claude-3-5-sonnet`) thông qua native `tool_use`.
+Hệ thống hỗ trợ nhiều LLM providers (cấu hình qua `LLM_PROVIDER` env, model qua `LLM_MODEL`):
+- **OpenAI**: Sử dụng Chat Completions tool calling (ví dụ `gpt-4.1-nano`, mặc định `gpt-4o-mini`).
+- **Anthropic / Claude**: Sử dụng dòng mô hình Claude thông qua native `tool_use`.
+- **Gemini**: Sử dụng Gemini REST `generateContent` với function declarations.
 - **Workers AI**: Chạy trực tiếp tại edge trên hạ tầng Cloudflare Workers AI (mặc định sử dụng `@cf/meta/llama-3.1-8b-instruct`).
 - **Echo**: Bộ khớp từ khóa (fallback mock) dùng cho môi trường test hoặc khi thiếu API credentials.
 

@@ -3,8 +3,10 @@ import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { requireSiteAdmin } from '../middleware/site-admin';
 
 export const webhooksRouter = new Hono<AppEnv>();
+webhooksRouter.use('*', requireSiteAdmin());
 
 const webhookSchema = z.object({
   name: z.string().min(1).max(255),

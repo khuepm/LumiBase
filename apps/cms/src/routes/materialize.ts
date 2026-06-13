@@ -232,7 +232,7 @@ materializeRouter.get("/:id/data", async (c) => {
   const status = c.req.query("status");
 
   try {
-    const result = await queryPhysicalTable(db, mc.target, {
+    const result = await queryPhysicalTable(db, mc.id, siteId, {
       limit,
       offset,
       status: status ?? undefined,
@@ -282,7 +282,9 @@ materializeRouter.delete("/:id", async (c) => {
       await dropPhysicalTable(db, config);
     } catch {
       // Log but continue with metadata cleanup
-      console.warn(`[materialize] Failed to drop table mat_${mc.target}`);
+      console.warn(
+        `[materialize] Failed to drop table for materialization ${mc.id}`,
+      );
     }
   }
 

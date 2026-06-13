@@ -216,7 +216,7 @@ policiesRouter.post('/:id/users', async (c) => {
     }, 409);
   }
   if (report.warnings.length > 0) {
-    await new AuditLogger({ db }).write({
+    await new AuditLogger({ db, siteId: c.get('siteId') }).write({
       event: 'access_policy_warning_overridden',
       actorEmail: c.get('auth')?.email ?? null,
       ip: c.get('ip') ?? null,

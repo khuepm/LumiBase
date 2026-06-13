@@ -1,138 +1,167 @@
-# Field Types & Configuration
+# Field Types And Configuration
 
-> LumiBase coi field là **đối tượng cấu hình bậc nhất**. Mỗi field có 4 lớp config độc lập: `type` (lưu trữ), `interface` (cách edit), `display` (cách hiển thị), `validation` (rule).
+LumiBase treats each field as a first-class schema object. A field has independent storage, editor, display, validation, permission, and runtime metadata. The same field contract is used by Studio, REST schema endpoints, SDK schema resources, and typegen.
 
-## 1. Type catalogue (storage-level)
+## 1. Storage Types
 
-| Type | DB | Ghi chú |
+| Type | Runtime value | Notes |
 |---|---|---|
-| `string` | text | có `maxLength` |
-| `text` | text | dài, no length |
-| `integer` / `bigInteger` | int4/int8 |
-| `decimal` | numeric(p,s) |
-| `boolean` | boolean |
-| `json` | jsonb |
-| `uuid` | uuid |
-| `date` / `datetime` / `time` / `timestamp` | tương ứng |
-| `csv` | text (CSV serialized) |
-| `hash` | text (one-way) |
-| `geometry` | jsonb (GeoJSON) |
-| `alias` | virtual | dùng cho M2O/O2M/M2M/M2A, group, presentation |
+| `string` | `string` | Short text. May use `length`. |
+| `text` | `string` | Long text. |
+| `integer` / `bigInteger` | `number` | Sequence-backed primary keys are reserved for non-JSONB storage modes. |
+| `decimal` | `number` | Uses `precision` and `scale`. |
+| `boolean` | `boolean` | Boolean flag. |
+| `json` | `unknown` | Raw JSON object/value. |
+| `uuid` | `string` or branded ID | UUID value, often used for primary keys or relations. |
+| `date` / `datetime` / `time` / `timestamp` | `string` | ISO-like serialized date/time values. |
+| `csv` | `string` | CSV serialized text. |
+| `hash` | `string` | One-way stored hash. |
+| `geometry` | `GeoJSON.Geometry` | Stored as GeoJSON-like JSON. |
+| `alias` | virtual | Used for relation aliases, groups, and presentation-only fields. |
 
-## 2. Interface registry
+## 2. Field Metadata
 
-Mỗi interface có:
-```ts
-interface FieldInterface<TOptions> {
-  id: string;            // 'input', 'wysiwyg', 'select-dropdown', 'relation-m2m', 'code', 'json-raw', 'file-image', 'datetime', ...
-  types: FieldType[];    // các type tương thích
-  optionsSchema: ZodSchema<TOptions>;
-  Component: React.FC<{ value; onChange; options: TOptions; field }>; 
-  // raw fallback
-  supportsRaw: true;
-}
-```
+Field definitions can include:
 
-Danh sách interface MVP:
-- Text: `input` ✅, `input-multiline` ✅, `wysiwyg` ✅, `markdown` ✅, `code` (monaco) ✅, `slug` ✅, `color` ✅.
-- Number: `input-number` ✅, `slider` ⏳, `rating` ✅.
-- Choice: `select-dropdown` ✅, `select-radio` ⏳, `select-checkbox` ⏳, `tags` ✅.
-- Boolean: `toggle` ✅.
-- Date: `datetime` ✅, `date-range` ⏳.
-- Relation: `relation-m2o` ✅, `relation-o2m` ✅, `relation-m2m` ✅, `relation-m2a` ⏳, `relation-tree` ⏳.
-- File: `file` ✅, `file-image` ⏳ (covered by `file`), `file-multiple` ⏳.
-- Special: `json-raw` ✅, `geometry-map` ⏳, `repeater` ✅, `presentation-divider` ✅, `presentation-notice` ✅.
-
-> Source of truth: `apps/studio/src/modules/content/interfaces/registry.tsx`.
-> Authors pick interfaces from the **Field inspector** (Data Model → Collection → Fields → Add/Edit field).
-
-## 3. Display registry
-
-| Display | Implemented | File |
-|---|---|---|
-| `formatted-value` | ✅ Phase B | `displays/formatted-value.tsx` |
-| `raw` | ✅ Phase B | `displays/raw.tsx` |
-| `boolean-icon` | ✅ Phase A | `displays/boolean-icon.tsx` |
-| `datetime` (alias of `formatted-date`) | ✅ Phase A | `displays/formatted-date.tsx` |
-| `image` | ✅ Phase B | `displays/image.tsx` |
-| `labels` | ✅ Phase B | `displays/labels.tsx` |
-| `relation-related-values` | ✅ via `relation` | `displays/relation.tsx` |
-| `mustache-template` (alias of `mustache`) | ✅ Phase B | `displays/mustache.tsx` |
-| `badge` | ✅ Phase A | `displays/badge.tsx` |
-| `color-swatch` | ✅ Phase A | `displays/color-swatch.tsx` |
-| `rating-stars` | ✅ Phase A | `displays/rating-stars.tsx` |
-| `tags-pills` | ✅ Phase A | `displays/tags-pills.tsx` |
-
-- Display cho relation hỗ trợ **mustache** sử dụng `displayTemplate` của collection liên quan.
-- Authors edit `displayTemplate` qua **Display tab** của collection (Mustache template editor có
-  autocomplete + live preview, file: `modules/content/mustache-template-editor.tsx`).
-- `display` và `displayOptions` lưu ở top-level columns của bảng `fields` (xem `packages/database/src/schema/cms.ts`).
-
-## 4. Per-field configuration
-
-JSON định nghĩa field:
 ```json
 {
   "name": "cover",
   "type": "uuid",
-  "interface": "file-image",
+  "interface": "file",
   "display": "image",
-  "options": {
-    "folder": "covers",
-    "crop": true,
-    "aspectRatio": "16:9"
-  },
-  "displayOptions": { "size": "medium", "rounded": true },
+  "label": "Cover",
+  "note": "16:9 hero image",
+  "defaultValue": null,
+  "nullable": true,
+  "required": false,
+  "readonly": false,
+  "hidden": false,
+  "encrypted": false,
+  "versioned": true,
+  "rawEnabled": true,
+  "unique": false,
+  "indexed": true,
+  "searchable": true,
+  "special": ["file"],
+  "options": { "folder": "covers" },
+  "displayOptions": { "size": "medium" },
   "validation": {
     "rules": [
-      { "type": "required" },
-      { "type": "filesize", "max": "5MB" },
-      { "type": "mime", "allow": ["image/png","image/jpeg","image/webp"] }
+      { "type": "mime", "allow": ["image/png", "image/jpeg", "image/webp"] }
     ]
   },
   "conditions": [
     { "rule": "$.status == 'published'", "set": { "required": true } }
   ],
   "translations": {
-    "en": { "label": "Cover", "help": "16:9 image" },
-    "vi": { "label": "Ảnh bìa", "help": "Ảnh 16:9" }
+    "en": { "label": "Cover", "help": "16:9 image" }
   },
-  "encrypted": false,
-  "versioned": true,
-  "rawEnabled": true,
   "width": "full",
-  "group": "media"
+  "group": "media",
+  "sortOrder": 20
 }
 ```
 
-### 4.1 Validation DSL
-- Built-in rules: `required`, `regex`, `minLength`, `maxLength`, `min`, `max`, `enum`, `unique`, `filesize`, `mime`, `email`, `url`.
-- Custom: `{ "type": "expression", "expr": "$count(value) <= 5" }` — chạy JSONata server-side & client-side.
+`required` means the value must be present when creating/updating an item. `nullable` describes whether the stored value may be `null`. Typegen preserves both: required fields are emitted as required TypeScript properties, optional fields get `?`, and nullable fields include `| null`.
 
-### 4.2 Conditions DSL
-- `rule` là biểu thức JSONata trên item context (`$`).
-- `set` ghi đè `required`/`readonly`/`hidden`/`options`.
+## 3. Readonly, Generated, And System Fields
 
-### 4.3 Per-field encryption
-- `encrypted: true` → server mã hoá trước khi lưu (AES-GCM, key per site trong Workers Secret), giải mã khi đọc (nếu permission cho phép); raw editor sẽ hiển thị `***` trừ khi có quyền `read:decrypted`.
+Readonly fields cannot be updated through item writes or raw schema edits unless the backend explicitly allows a safe system-field override. Generated fields are produced by LumiBase or by the storage runtime and should be treated as read-only from client code.
 
-### 4.4 Per-field versioning
-- `versioned: true` → ghi delta vào `revisions` mỗi lần thay đổi field này. Field không bật sẽ bỏ qua để tiết kiệm.
+System fields are compiled for every collection:
 
-## 5. Advanced Content Features & Raw mode
+- `id`
+- `status`
+- `sort`
+- `user_created`
+- `user_updated`
+- `created_at`
+- `updated_at`
+- `deleted_at`
 
-Các tính năng nâng cao đã được tích hợp trong Studio Content:
-- **Raw Toggle Per Field**: Người dùng có thể chuyển đổi linh hoạt giữa giao diện component trực quan và Monaco Editor (raw JSON) trên từng field. Trạng thái edit được bảo lưu kể cả khi JSON invalid.
-- **Bulk Raw Editor**: Cho phép chọn hàng loạt items từ danh sách và chỉnh sửa trực tiếp raw JSON của chúng cùng lúc. Tích hợp tính năng validate trước khi lưu.
-- **Revisions Diff Viewer**: Công cụ so sánh trực quan `delta.before` và `delta.after` của revisions. Hỗ trợ hiển thị highlight thay đổi, lọc hiển thị và chuyển đổi qua lại với chế độ raw.
+Typegen emits readonly TypeScript properties for fields marked `readonly` or `generated`.
 
-**Raw mode contract:**
-- Mọi field `rawEnabled !== false` đều render được ở chế độ Raw (xem `raw-data-editing.md`).
-- Interface phải expose hàm `toRaw(value)` và `fromRaw(raw)` để chuyển đổi an toàn (mặc định JSON.stringify/parse).
+## 4. Interface Registry
 
-## 6. Server-side responsibilities
+Interfaces define how Studio edits a field. The registry contract is:
 
-- `SchemaService` cache "compiled field" (zod + JSONata pre-parsed) trong KV.
-- `ItemService` chạy validation trước insert/update, áp `conditions`, mã hoá field flagged.
+```ts
+interface FieldInterface<TOptions> {
+  id: string;
+  types: string[];
+  optionsSchema: unknown;
+  Component: React.ComponentType<{
+    value: unknown;
+    onChange(value: unknown): void;
+    options: TOptions;
+    field: unknown;
+  }>;
+  supportsRaw: boolean;
+}
+```
 
-## 7. Tasks: xem `roadmap/tasks.md` Phase MVP-B & B2.
+Current Studio interfaces include text inputs, multiline text, WYSIWYG, markdown, code, slug, color, number input, rating, dropdown choices, tags, toggle, date/datetime, relation editors, file, raw JSON, repeater, divider, and notice interfaces. The implementation source of truth is `apps/studio/src/modules/content/interfaces/registry.tsx`.
+
+## 5. Display Registry
+
+Displays control read/list rendering and are independent from editor interfaces.
+
+| Display | Purpose |
+|---|---|
+| `formatted-value` / `raw` | Generic scalar rendering. |
+| `boolean-icon` | Boolean icon rendering. |
+| `datetime` | Date/time formatting. |
+| `image` | Image preview. |
+| `labels` / `badge` | Choice/status labels. |
+| `relation-related-values` | Related item display using the target collection template. |
+| `mustache-template` | Mustache-based composed display. |
+| `color-swatch` | Color chip. |
+| `rating-stars` | Rating display. |
+| `tags-pills` | Tag list. |
+
+Authors edit collection `displayTemplate` in the collection Display tab. Relation displays can use the related collection's template.
+
+## 6. Validation And Conditions
+
+Validation rules run server-side before writes and can also power Studio validation:
+
+- Built-ins: `required`, `regex`, `minLength`, `maxLength`, `min`, `max`, `enum`, `unique`, `filesize`, `mime`, `email`, `url`.
+- Expression rule: `{ "type": "expression", "expr": "$count(value) <= 5" }`.
+
+Conditions use item context to override field state:
+
+```json
+{ "rule": "$.status == 'published'", "set": { "required": true, "readonly": true } }
+```
+
+Condition output may override `required`, `readonly`, `hidden`, or `options`.
+
+## 7. Encryption And Versioning
+
+`encrypted: true` tells the item service to encrypt the field before storage. Read permission determines whether the caller receives the decrypted value. Because typegen cannot know the caller's permissions at compile time, encrypted string-like fields are emitted as `T | '***'` plus nullability.
+
+`versioned: true` records field-level deltas in `revisions` when the field changes. Non-versioned fields are omitted from revision deltas to reduce noise and storage.
+
+## 8. Relation Fields
+
+Relations are stored in the `relations` table and may also annotate a field with `kind` and `target` in the typegen manifest.
+
+- `m2o`: the many-side field stores the target primary key. Generated base types use the target branded ID where possible.
+- `o2m` and `m2m`: generated expanded types expose arrays of target items.
+- `m2a`: reserved for many-to-any and emitted as `Array<{ collection: string; item: unknown }>` until a concrete collection union is available.
+
+Generated base collection interfaces represent stored values. Generated `CollectionExpanded` types replace relation fields with expanded object shapes.
+
+## 9. Risky Field Mutations
+
+The schema service classifies risky field mutations before apply:
+
+- Rename: use `renameFrom` and preserve current `type`/`interface` in the SDK rename helper.
+- Type change with existing data: requires `migrationPlan` and `confirmRiskyChange`.
+- Delete with existing data: requires an explicit destructive path. The SDK accepts delete options such as `confirmRiskyChange`, `migrationPlan`, `force`, and `backupToRevisions`.
+
+Schema diff reports `risk` and `runtimeImpact` so Studio and automation can require confirmation before destructive changes.
+
+## 10. Raw Mode
+
+Any field with `rawEnabled !== false` can be edited in raw mode. Interfaces should expose safe `toRaw(value)` and `fromRaw(raw)` behavior, with JSON stringify/parse as the default fallback. The Field Inspector preserves unknown JSON options so older Studio builds do not erase newer field configuration.

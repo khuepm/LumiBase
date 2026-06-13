@@ -6,7 +6,8 @@ import type { AppEnv } from '../env';
 import { AISecureHarness } from '../services/ai-harness';
 import { SchemaService } from '../services/schema-service';
 import { ItemService } from '../services/item-service';
-import { createLLMProvider, type LLMMessage } from '../services/llm-provider';
+import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 // ---------------------------------------------------------------------------
 // Zod Schemas
@@ -41,6 +42,26 @@ export const aiRouter = new Hono<AppEnv>();
 function getUserCapabilities(c: Context<AppEnv>): string[] {
   const auth = c.get('auth');
   return Array.isArray(auth.roles) ? auth.roles : [];
+}
+
+function requireAdmin(c: Context<AppEnv>) {
+  const roles = getUserCapabilities(c);
+
+  if (!roles.includes('admin')) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'FORBIDDEN',
+            message: 'Admin role required.',
+          },
+        ],
+      },
+      403,
+    );
+  }
+
+  return null;
 }
 
 function buildItemService(c: Context<AppEnv>): ItemService {
@@ -208,7 +229,14 @@ aiRouter.post('/chat', async (c) => {
     });
     const itemService = buildItemService(c);
 
-    const harness = new AISecureHarness({ db, siteId, schemaService, itemService });
+    const harness = new AISecureHarness({
+      db,
+      siteId,
+      schemaService,
+      itemService,
+      llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
+      queue: runtime.queue,
+    });
     const result = await harness.execute(
       toolCall.name,
       toolCall.arguments,
@@ -254,7 +282,7 @@ aiRouter.post('/chat', async (c) => {
     );
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Internal server error';
-    console.error('[ai/chat] execution error', err);
+    console.error('[ai/chat] execution error', formatSafeError(err));
     return c.json(
       {
         errors: [{ code: 'INTERNAL', message: errorMessage }],
@@ -359,6 +387,9 @@ aiRouter.delete('/conversations/:id', async (c) => {
  * Returns pending approval records for the current site, sorted by createdAt DESC, max 100.
  */
 aiRouter.get('/approvals', async (c) => {
+  const forbidden = requireAdmin(c);
+  if (forbidden) return forbidden;
+
   const db = c.get('db');
   const siteId = c.get('siteId');
   const userCapabilities = getUserCapabilities(c);
@@ -389,6 +420,9 @@ aiRouter.get('/approvals', async (c) => {
  * Approves or rejects a pending approval record.
  */
 aiRouter.post('/approvals/:id/decide', async (c) => {
+  const forbidden = requireAdmin(c);
+  if (forbidden) return forbidden;
+
   // Step 1: Parse and validate input
   const body = await c.req.json().catch(() => null);
   const parsed = decideSchema.safeParse(body);
@@ -462,6 +496,8 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
       siteId,
       schemaService,
       itemService,
+      llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
+      queue: runtime.queue,
     });
     const result = await authorizedHarness.executeApproved(
       approvalId,

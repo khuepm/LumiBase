@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, Puzzle, TrendingUp, Zap } from "lucide-react";
-import { getFeaturedExtensions, CATEGORIES } from "@/lib/api";
+import { getFeaturedExtensions, getMarketplaceStats, CATEGORIES } from "@/lib/api";
 import ExtensionCard from "@/components/ExtensionCard";
 import type { Metadata } from "next";
 
@@ -9,7 +9,10 @@ export const metadata: Metadata = {
 };
 
 export default async function HomePage() {
-  const featured = await getFeaturedExtensions();
+  const [featured, stats] = await Promise.all([
+    getFeaturedExtensions(),
+    getMarketplaceStats(),
+  ]);
 
   return (
     <div className="flex flex-col">
@@ -62,9 +65,9 @@ export default async function HomePage() {
           {/* Stats */}
           <div className="mt-14 flex flex-wrap items-center justify-center gap-8 text-center">
             {[
-              { label: "Extensions", value: "6+", icon: Puzzle },
-              { label: "Downloads", value: "73k+", icon: TrendingUp },
-              { label: "Categories", value: "6", icon: Zap },
+              { label: "Extensions", value: String(stats.totalExtensions), icon: Puzzle },
+              { label: "Verified bundles", value: "Signed", icon: TrendingUp },
+              { label: "Categories", value: String(stats.totalCategories), icon: Zap },
             ].map(({ label, value, icon: Icon }) => (
               <div key={label} className="flex flex-col items-center gap-1">
                 <div className="flex items-center gap-1.5 text-2xl font-bold text-gray-100">

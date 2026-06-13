@@ -12,6 +12,7 @@ const ACTION_TONE: Record<PermissionAction, string> = {
   update: 'bg-amber-100 text-amber-700',
   delete: 'bg-rose-100 text-rose-700',
   share: 'bg-purple-100 text-purple-700',
+  read_decrypted: 'bg-indigo-100 text-indigo-700',
 };
 
 interface PermissionRowEditorProps {

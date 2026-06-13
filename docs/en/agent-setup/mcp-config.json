@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "lumibase": {
+      "command": "npx",
+      "args": ["-y", "--package", "@lumibase/mcp-server@latest", "lumibase-mcp"],
+      "env": {
+        "LUMIBASE_URL": "https://api.<your-site>.lumibase.dev",
+        "LUMIBASE_SITE_ID": "<your-site-id>",
+        "LUMIBASE_TOKEN": "<your-api-token>"
+      }
+    }
+  }
+}
