@@ -9,17 +9,17 @@ import { vi } from 'vitest';
  * Feature: ai-first-cms-engine, Property 7: Execution failure preserves pending state
  *
  * With any Approval_Record in 'pending' state whose skill handler throws an exception
- * or times out, when calling harness.executeApproved(approvalId, userId), the
+ * or times out, when calling harness.executeApproved(approvalId, userId, ['*']), the
  * Approval_Record must remain in 'pending' state and the result must have
  * status === 'denied' with an error message.
  *
  * **Validates: Requirements 3.5, 6.7**
  */
 
-// Identify safe skills (not schema:write, not delete*) from CORE_SKILLS
+// Identify safe skills (not mutating schema capability, not delete*) from CORE_SKILLS
 const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
   .filter(([name, skill]) => {
-    const requiresSchemaWrite = skill.requiredCapabilities.includes('schema:write');
+    const requiresSchemaWrite = skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read');
     const startsWithDelete = name.startsWith('delete');
     return !requiresSchemaWrite && !startsWithDelete;
   })
@@ -156,7 +156,7 @@ describe('Feature: ai-first-cms-engine, Property 7: Execution failure preserves 
           const harness = new AISecureHarness({ db, siteId });
 
           // Act
-          const result = await harness.executeApproved(approvalId, userId);
+          const result = await harness.executeApproved(approvalId, userId, ['*']);
 
           // Assert: result has status 'denied'
           expect(result.status).toBe('denied');
@@ -201,7 +201,7 @@ describe('Feature: ai-first-cms-engine, Property 7: Execution failure preserves 
           const harness = new AISecureHarness({ db, siteId });
 
           // Act
-          const result = await harness.executeApproved(approvalId, userId);
+          const result = await harness.executeApproved(approvalId, userId, ['*']);
 
           // Assert: result has status 'denied'
           expect(result.status).toBe('denied');
@@ -246,7 +246,7 @@ describe('Feature: ai-first-cms-engine, Property 7: Execution failure preserves 
           const harness = new AISecureHarness({ db, siteId });
 
           // Act
-          const result = await harness.executeApproved(approvalId, userId);
+          const result = await harness.executeApproved(approvalId, userId, ['*']);
 
           // Assert: status is 'denied'
           expect(result.status).toBe('denied');

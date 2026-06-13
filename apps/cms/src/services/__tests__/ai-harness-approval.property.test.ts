@@ -7,7 +7,7 @@ import type { Database } from '@lumibase/database';
  * Feature: ai-first-cms-engine, Property 5: Approval execution flow — phê duyệt thực thi đúng
  *
  * With any Approval_Record in 'pending' status belonging to the current siteId,
- * when calling harness.executeApproved(approvalId, userId) and the skill executes
+ * when calling harness.executeApproved(approvalId, userId, ['*']) and the skill executes
  * successfully, then:
  * (a) result has status === 'executed'
  * (b) Approval_Record is updated to status === 'approved'
@@ -20,7 +20,7 @@ import type { Database } from '@lumibase/database';
 // Safe skills that will execute successfully (not dangerous, handlers return data)
 const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
   .filter(([name, skill]) => {
-    const requiresSchemaWrite = skill.requiredCapabilities.includes('schema:write');
+    const requiresSchemaWrite = skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read');
     const startsWithDelete = name.startsWith('delete');
     return !requiresSchemaWrite && !startsWithDelete;
   })
@@ -117,7 +117,7 @@ describe('Feature: ai-first-cms-engine, Property 5: Approval execution flow — 
           const harness = new AISecureHarness({ db, siteId });
 
           // Act: execute the approved action
-          const result = await harness.executeApproved(approvalId, userId);
+          const result = await harness.executeApproved(approvalId, userId, ['*']);
 
           // Assert (a): result has status === 'executed'
           expect(result.status).toBe('executed');
@@ -170,7 +170,7 @@ describe('Feature: ai-first-cms-engine, Property 5: Approval execution flow — 
           const harness = new AISecureHarness({ db, siteId });
 
           // Act
-          const result = await harness.executeApproved(approvalId, userId);
+          const result = await harness.executeApproved(approvalId, userId, ['*']);
 
           // Assert: result data matches what the skill handler returns
           expect(result.status).toBe('executed');
@@ -187,5 +187,35 @@ describe('Feature: ai-first-cms-engine, Property 5: Approval execution flow — 
       ),
       { numRuns: 100 },
     );
+  });
+
+  it('denies pending approval execution when the approver lacks the stored skill capabilities', async () => {
+    const pendingRecord = {
+      id: 'approval-with-schema-write',
+      siteId: 'site-with-approval',
+      skillName: 'deleteCollection',
+      arguments: { name: 'posts' },
+      status: 'pending',
+      agentName: 'lumibase-copilot',
+      context: null,
+      createdAt: new Date(),
+      decidedAt: null,
+      decidedBy: null,
+    };
+
+    const { db, updateSetArgs } = createMockDbForApproval(pendingRecord);
+    const harness = new AISecureHarness({ db, siteId: pendingRecord.siteId });
+
+    const result = await harness.executeApproved(
+      pendingRecord.id,
+      'low-privilege-user',
+      ['items:read'],
+    );
+
+    expect(result).toEqual({
+      status: 'denied',
+      message: 'Insufficient capabilities',
+    });
+    expect(updateSetArgs).toHaveLength(0);
   });
 });

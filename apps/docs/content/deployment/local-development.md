@@ -142,11 +142,17 @@ pnpm --filter @lumibase/database drizzle-kit studio
 Migrations run automatically when the CMS container starts. To run them manually:
 
 ```bash
-# Run pending migrations
-pnpm --filter @lumibase/database migrate
+# Check connectivity, current schema version, and pending migrations without applying DDL
+pnpm db:migrate:preflight
 
-# Or via Docker
-docker compose exec cms pnpm --filter @lumibase/database migrate
+# Run pending migrations
+pnpm db:migrate
+
+# Print only the current migration version
+pnpm db:migrate:version
+
+# Or via Docker, run the CMS entrypoint in dry-run mode
+docker compose run --rm -e MIGRATION_MODE=preflight cms
 ```
 
 ### Creating New Migrations

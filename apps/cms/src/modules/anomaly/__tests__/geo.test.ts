@@ -1,9 +1,16 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+
+const maxmindOpenMock = vi.hoisted(() => vi.fn());
+
+vi.mock('maxmind', () => ({
+  open: maxmindOpenMock,
+}));
 
 import {
   DEFAULT_TIMEOUT_MS,
   GEO_TIMEOUT_ERROR_MESSAGE,
   createGeoSubscore,
+  createMmdbLookup,
   withTimeout,
 } from '../geo';
 import type {
@@ -35,6 +42,10 @@ import type {
 
 const NULL_DB = null as unknown as Parameters<typeof createGeoSubscore>[0];
 
+beforeEach(() => {
+  maxmindOpenMock.mockReset();
+});
+
 function makeBaselineLoader(
   baselines: Record<string, GeoBaselineSnapshot | null>,
 ): (userId: string) => Promise<GeoBaselineSnapshot | null> {
@@ -58,6 +69,40 @@ function makeLookup(
     }),
   };
 }
+
+// ── MMDB lazy loading regression ────────────────────────────────────────
+
+describe('createMmdbLookup — lazy loading', () => {
+  it('reports available before first load so the detector initializes the MMDB reader', async () => {
+    maxmindOpenMock.mockResolvedValue({
+      get: vi.fn(() => ({ country: { iso_code: 'US' } })),
+    });
+
+    const subscore = createGeoSubscore(NULL_DB, {
+      loadBaseline: makeBaselineLoader({
+        u1: { countries: ['VN'], successfulLogins: 10 },
+      }),
+      mmdbPath: 'test-lazy-load-country.mmdb',
+    });
+    const attempt: LoginAttemptDraft = {};
+
+    const result = await subscore('u1', '8.8.8.8', attempt);
+
+    expect(maxmindOpenMock).toHaveBeenCalledWith('test-lazy-load-country.mmdb');
+    expect(result).toEqual({ value: 1, baselineWarmup: false });
+    expect(attempt.countryCode).toBe('US');
+    expect(attempt.geoLookupStatus).toBe('ok');
+  });
+
+  it('reports unavailable after a failed load has completed', async () => {
+    maxmindOpenMock.mockResolvedValue(null);
+    const lookup = createMmdbLookup('test-lazy-load-missing.mmdb');
+
+    expect(lookup.available()).toBe(true);
+    await expect(lookup.lookupCountry('8.8.8.8')).resolves.toBeNull();
+    expect(lookup.available()).toBe(false);
+  });
+});
 
 // ── Req 9.5: private/loopback skip ──────────────────────────────────────
 

@@ -10,6 +10,26 @@ To solve the "2-roundtrip" problem, the CMS provides a BFF (Backend-for-Frontend
 3. **Parallel Fetch:** Execute Drizzle DB queries to fetch the required collection data.
 4. **Merge & Deliver:** Combine layout configuration and data into one unified JSON response.
 
+Sections can declare a data source:
+
+```json
+{
+  "id": "featured-posts-1",
+  "component": "PostGrid",
+  "data": { "heading": "Featured posts" },
+  "source": {
+    "collection": "posts",
+    "limit": 3,
+    "orderBy": "-created_at"
+  }
+}
+```
+
+The delivery resolver scopes the query by `site_id`, defaults to
+`status: "published"` for public delivery, clamps `limit` to 50 items, and
+merges the hydrated rows into `data.items`. Set `source.status` only when a
+public page intentionally needs a different item status.
+
 ### Expected JSON Response Structure:
 ```json
 {

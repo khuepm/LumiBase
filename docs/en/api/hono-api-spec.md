@@ -1,140 +1,490 @@
-# Hono API Specification
+# Hono API Specification — LumiBase
 
-> Base URL: `https://api.lumibase.dev` (configurable). Tất cả endpoint phiên bản hoá dưới `/api/v1`. Yêu cầu header `Authorization: Bearer <jwt>` và `X-Lumi-Site: <siteId>` (hoặc subdomain mapping).
+> **For AI agents:** This page is also available as clean Markdown. Append `/index.md` to any LumiBase docs URL.
+>
+> **Base URL:** `https://api.<your-site>.lumibase.dev` (or `http://localhost:1989` in local dev)
+>
+> All endpoints are versioned under `/api/v1`. Every request must include:
+> - `Authorization: Bearer <access_token>` — JWT from Logto or local auth
+> - `X-Lumi-Site: <siteId>` — site identifier (or resolved via subdomain routing)
 
-## 1. Quy ước response
+---
+
+## Response envelope
+
+All responses follow this structure:
 
 ```json
-{ "data": <T>, "meta": { "total": 123, "page": 1, "pageSize": 50 } }
+{
+  "data": <T>,
+  "meta": {
+    "total": 123,
+    "page": 1,
+    "pageSize": 50,
+    "filter_count": 50
+  }
+}
 ```
-Lỗi:
+
+Error response:
+
 ```json
-{ "errors": [{ "code": "PERMISSION_DENIED", "message": "...", "path": ["fields","title"], "trace": {} }] }
+{
+  "errors": [
+    {
+      "code": "PERMISSION_DENIED",
+      "message": "You don't have permission to read field 'secret'.",
+      "path": ["fields", "secret"],
+      "extensions": { "reason": "field_policy" }
+    }
+  ]
+}
 ```
 
-Query params chuẩn cho list:
-- `fields=a,b,relation.title`
-- `filter={"status":{"_eq":"published"}}` (JSON urlencoded) hoặc `filter[status][_eq]=published` (bracket)
-- `sort=-updated_at,title`
-- `page`, `limit` (≤200)
-- `search=keyword` (full-text trên fields đánh dấu searchable)
-- `aggregate[count]=*` / `aggregate[sum]=price`
-- `groupBy=status`
-- `deep[author][fields]=name,avatar`
+### Error codes
 
-## 2. Auth
+| Code | HTTP | Description |
+|------|------|-------------|
+| `PERMISSION_DENIED` | 403 | Policy check failed |
+| `RECORD_NOT_FOUND` | 404 | Item does not exist or not visible to this role |
+| `VALIDATION_FAILED` | 400 | Input schema validation error |
+| `CONFLICT` | 409 | Unique constraint violated |
+| `RATE_LIMITED` | 429 | Rate limit exceeded |
+| `SITE_NOT_FOUND` | 404 | `X-Lumi-Site` header resolves to unknown tenant |
+| `TOKEN_EXPIRED` | 401 | JWT has expired — refresh and retry |
+| `SKILL_DENIED` | 403 | AI skill requires a capability the session lacks |
+| `HITL_REQUIRED` | 202 | Dangerous operation gated for human approval |
 
-- `POST /auth/login` — proxy Logto (PKCE) hoặc local exchange code.
-- `POST /auth/refresh`
-- `POST /auth/logout`
-- `GET  /auth/me`
+---
 
-## 3. Schema admin
+## Standard query parameters (list endpoints)
 
-| Method | Path | Mô tả |
-|---|---|---|
-| GET | `/collections` | list |
-| POST | `/collections` | create |
-| GET | `/collections/:name` | detail |
-| PATCH | `/collections/:name` | update meta |
-| DELETE | `/collections/:name` | soft delete |
-| GET | `/collections/:name/schema` | export JSON |
-| PUT | `/collections/:name/schema` | apply (with diff option) |
-| POST | `/collections/diff` | so sánh bundle vs current |
-| GET/POST/PATCH/DELETE | `/fields/:collection/:field` | quản lý field |
-| GET/POST/PATCH/DELETE | `/relations` | quản lý relation |
+| Parameter | Example | Description |
+|-----------|---------|-------------|
+| `fields` | `fields=id,title,author.name` | Select specific fields + nested relations |
+| `filter` | `filter[status][_eq]=published` | Filter using rule operators |
+| `sort` | `sort=-updated_at,title` | Comma-separated, `-` prefix for DESC |
+| `page` | `page=2` | Page number (1-indexed) |
+| `limit` | `limit=25` | Items per page (max 200) |
+| `search` | `search=lumibase` | Full-text search on searchable fields |
+| `aggregate[count]` | `aggregate[count]=*` | Aggregate functions |
+| `groupBy` | `groupBy=status` | Group aggregation results |
+| `deep` | `deep[author][fields]=name,avatar` | Nested relation query params |
 
-## 4. Items (CRUD generic)
+### Filter operators
 
-| Method | Path | Mô tả |
-|---|---|---|
-| GET | `/items/:collection` | list (filter/sort/paginate) |
-| POST | `/items/:collection` | create (array body = bulk) |
-| GET | `/items/:collection/:id` | detail |
-| PATCH | `/items/:collection/:id` | partial update |
-| PUT | `/items/:collection/:id` | replace |
-| DELETE | `/items/:collection/:id` | delete (or array bulk) |
-| POST | `/items/:collection/:id/raw` | bulk raw replace |
-| GET | `/items/:collection/:id/revisions` | revision list |
-| POST | `/items/:collection/:id/revert` | revert to revision |
+| Operator | Description |
+|----------|-------------|
+| `_eq` | Equals |
+| `_neq` | Not equals |
+| `_lt`, `_lte`, `_gt`, `_gte` | Comparison |
+| `_in`, `_nin` | In / not in array |
+| `_null`, `_nnull` | Is null / not null |
+| `_contains`, `_icontains` | Contains (case-sensitive / insensitive) |
+| `_starts_with`, `_ends_with` | String prefix/suffix |
+| `_between` | Range (two-element array) |
+| `_and`, `_or` | Logical grouping |
 
-Headers tuỳ chọn:
-- `X-Lumi-Draft: true` để fetch bản nháp.
-- `X-Lumi-Locale: vi` để translation render server-side.
+---
 
-## 5. Permissions / Roles / Policies
+## 1. Auth
 
-- `GET /permissions/me` — ma trận hiệu lực cho user hiện tại.
-- `POST /permissions/check` — debug rule eval.
-- CRUD: `/roles`, `/policies`, `/policies/:id/permissions`.
-- `POST /policies/:id/attach` — gắn vào role/user/team.
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/auth/login` | Exchange Logto auth code or username/password for access + refresh tokens |
+| `POST` | `/api/v1/auth/refresh` | Refresh expired access token |
+| `POST` | `/api/v1/auth/logout` | Revoke tokens |
+| `GET` | `/api/v1/auth/me` | Get current user profile |
 
-## 6. Users / Teams / Sessions
+**Login request:**
+```json
+{
+  "email": "admin@example.com",
+  "password": "your-password"
+}
+```
 
-- CRUD `/users`, `/teams`.
-- `POST /users/invite`.
-- `POST /users/:id/impersonate`.
-- `GET /users/:id/sessions`, `DELETE /sessions/:id`.
+**Login response:**
+```json
+{
+  "data": {
+    "access_token": "eyJ...",
+    "refresh_token": "...",
+    "expires_in": 3600,
+    "user": {
+      "id": "usr_abc123",
+      "email": "admin@example.com",
+      "role": "administrator"
+    }
+  }
+}
+```
 
-## 7. Files
+---
 
-- `POST /files/upload-url` → presigned R2 PUT.
-- `POST /files` body metadata sau khi upload xong.
-- `GET /files`, `/files/:id`, `PATCH`, `DELETE`.
-- `GET /assets/:id?width=&height=&format=webp` — transform (Workers image).
+## 2. Schema Admin
 
-## 8. Presets & Bookmarks
+### Collections
 
-- CRUD `/presets`.
-- `POST /presets/:id/subscribe` → trả topic WS.
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/collections` | List all collections |
+| `POST` | `/api/v1/collections` | Create a new collection |
+| `GET` | `/api/v1/collections/:name` | Get collection detail |
+| `PATCH` | `/api/v1/collections/:name` | Update collection meta (display name, icon, note) |
+| `DELETE` | `/api/v1/collections/:name` | Soft-delete collection |
+| `GET` | `/api/v1/collections/:name/schema` | Export collection schema as JSON |
+| `PUT` | `/api/v1/collections/:name/schema` | Apply schema (idempotent, diff-aware) |
+| `POST` | `/api/v1/collections/diff` | Compare bundle schema vs current |
 
-## 9. Translations
+**Create collection request:**
+```json
+{
+  "name": "articles",
+  "displayName": "Articles",
+  "icon": "article",
+  "note": "Blog articles",
+  "singleton": false,
+  "status_field": "status",
+  "sort_field": "sort"
+}
+```
 
-- `GET /translations` (filter).
-- `POST /translations/bulk`.
-- `POST /translations/auto` (MT).
+### Fields
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/fields/:collection` | List fields in a collection |
+| `POST` | `/api/v1/fields/:collection` | Add a field |
+| `GET` | `/api/v1/fields/:collection/:field` | Get field detail |
+| `PATCH` | `/api/v1/fields/:collection/:field` | Update field config |
+| `DELETE` | `/api/v1/fields/:collection/:field` | Remove field |
+
+**Create field request:**
+```json
+{
+  "field": "title",
+  "type": "string",
+  "interface": "input",
+  "display": "raw",
+  "options": { "placeholder": "Article title" },
+  "required": true,
+  "sort": 1
+}
+```
+
+### Relations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/relations` | List all relations |
+| `POST` | `/api/v1/relations` | Create relation |
+| `PATCH` | `/api/v1/relations/:id` | Update relation |
+| `DELETE` | `/api/v1/relations/:id` | Remove relation |
+
+---
+
+## 3. Items (Generic CRUD)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/items/:collection` | List items (paginated, filterable) |
+| `POST` | `/api/v1/items/:collection` | Create item (or array for bulk) |
+| `GET` | `/api/v1/items/:collection/:id` | Get single item |
+| `PATCH` | `/api/v1/items/:collection/:id` | Partial update |
+| `PUT` | `/api/v1/items/:collection/:id` | Full replace |
+| `DELETE` | `/api/v1/items/:collection/:id` | Delete item (or array bulk) |
+| `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |
+| `POST` | `/api/v1/items/:collection/:id/revert` | Revert to revision |
+
+**Optional headers:**
+- `X-Lumi-Draft: true` — fetch draft version
+- `X-Lumi-Locale: vi` — apply translation server-side
+
+**Create item:**
+```json
+{ "title": "Hello World", "status": "draft", "author": "usr_abc123" }
+```
+
+**Bulk create (array body):**
+```json
+[
+  { "title": "Article 1", "status": "published" },
+  { "title": "Article 2", "status": "draft" }
+]
+```
+
+---
+
+## 4. Permissions, Roles & Policies
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/permissions/me` | Effective permission matrix for current user |
+| `POST` | `/api/v1/permissions/check` | Debug: evaluate a policy rule |
+| `GET/POST/PATCH/DELETE` | `/api/v1/roles` | Role CRUD |
+| `GET/POST/PATCH/DELETE` | `/api/v1/policies` | Policy CRUD |
+| `GET/POST/DELETE` | `/api/v1/policies/:id/permissions` | Permission rules in a policy |
+| `POST` | `/api/v1/policies/:id/attach` | Attach policy to a role, user, or team |
+
+**Permission rule shape:**
+```json
+{
+  "collection": "articles",
+  "action": "read",
+  "fields": ["id", "title", "status"],
+  "conditions": { "status": { "_eq": "published" } }
+}
+```
+
+---
+
+## 5. Users & Teams
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST` | `/api/v1/users` | List / create users |
+| `GET/PATCH/DELETE` | `/api/v1/users/:id` | Get / update / delete user |
+| `POST` | `/api/v1/users/invite` | Send invitation email |
+| `POST` | `/api/v1/users/:id/impersonate` | Impersonate (admin only) |
+| `GET` | `/api/v1/users/:id/sessions` | List active sessions |
+| `DELETE` | `/api/v1/sessions/:id` | Revoke a session |
+| `GET/POST/PATCH/DELETE` | `/api/v1/teams` | Team CRUD |
+
+---
+
+## 6. Files & Assets
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/files/upload-url` | Get presigned R2/S3 PUT URL |
+| `POST` | `/api/v1/files` | Register file metadata after upload |
+| `GET` | `/api/v1/files` | List files (filterable) |
+| `GET` | `/api/v1/files/:id` | File metadata |
+| `PATCH` | `/api/v1/files/:id` | Update metadata (title, tags, folder) |
+| `DELETE` | `/api/v1/files/:id` | Delete file |
+| `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
+
+**Image transform params for `/api/v1/assets/:id`:**
+```
+?width=800&height=600&format=webp&quality=80&fit=cover
+```
+
+---
+
+## 7. Flows / Automation
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/flows` | List flows (filter by `status`, `trigger`) |
+| `POST` | `/api/v1/flows` | Create a new flow |
+| `GET` | `/api/v1/flows/:id` | Get flow detail + graph |
+| `PATCH` | `/api/v1/flows/:id` | Update flow (graph, status, options) |
+| `DELETE` | `/api/v1/flows/:id` | Delete flow |
+| `POST` | `/api/v1/flows/:id/run` | Manual trigger with body as input |
+| `GET` | `/api/v1/flows/:id/runs` | Execution history |
+| `GET` | `/api/v1/flows/:id/runs/:runId` | Single run detail (steps output) |
+
+**Trigger a flow:**
+```bash
+POST /api/v1/flows/flw_abc123/run
+Content-Type: application/json
+Authorization: Bearer <token>
+
+{ "userId": "usr_xyz", "action": "welcome" }
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "runId": "run_def456",
+    "status": "running",
+    "startedAt": "2026-06-07T00:00:00Z"
+  }
+}
+```
+
+---
+
+## 8. AI Copilot
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/ai/chat` | Send natural-language instruction to AI Copilot |
+| `GET` | `/api/v1/ai/approvals` | List pending HITL approvals |
+| `POST` | `/api/v1/ai/approvals/:id/decide` | Approve or reject a pending action |
+| `GET` | `/api/v1/ai/conversations` | List conversation history |
+| `GET` | `/api/v1/ai/conversations/:id/messages` | Get messages in a conversation |
+| `DELETE` | `/api/v1/ai/conversations/:id` | Delete a conversation |
+
+**Chat request:**
+```json
+{ "message": "Create a collection called 'products' with title, price, and status fields" }
+```
+
+**Safe skill response:**
+```json
+{
+  "data": {
+    "status": "executed",
+    "data": { "collectionName": "products", "fieldsCreated": 3 }
+  }
+}
+```
+
+**HITL required (dangerous skill) response:**
+```json
+{
+  "data": {
+    "status": "pending_approval",
+    "approvalId": "apr_ghi789",
+    "message": "Creating a collection requires admin approval."
+  }
+}
+```
+
+**Decide on an approval:**
+```json
+{ "decision": "approved" }
+```
+
+### Agent API (Content OS)
+
+All routes mount under the authenticated chain; the token's roles are the capability set.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST` | `/api/v1/agent/goals` | List / create goals (`execution: 'async'` enqueues a queued run) |
+| `POST` | `/api/v1/agent/goals/:id/decompose` | Planner: create role-scoped sub-goals inheriting remaining budget |
+| `POST` | `/api/v1/agent/goals/:id/settle` | Settle a parent goal from its children's terminal states |
+| `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | Agent role library CRUD (admin) — seeded with Planner, Writer, … |
+| `GET` | `/api/v1/agent/autonomy` | Trust ledger: grants + open incidents |
+| `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Promotion proposals; `POST :id/decide` is the only path to a higher level (admin) |
+| `GET/POST` | `/api/v1/agent/staged[...]` | Veto window: pending stagings enriched with `approvalId/collection/itemId/patch/agentRole` from the staging revision (null fields when the staging is gone); `POST :id/veto` discards a staging |
+| `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Agent-as-reviewer decision (needs `review:<domain>`; self-review forbidden) |
+| `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
+| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze` |
+| `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag |
+| `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |
+| `GET` | `/api/v1/deliver/llms.txt/:site_id` | Public llms.txt index per site |
+
+---
+
+## 9. Realtime (WebSocket)
+
+**Endpoint:** `wss://api.<your-site>.lumibase.dev/api/v1/realtime`
+
+**Auth:** Pass token in query string or first message:
+```
+wss://...realtime?token=<access_token>&site=<siteId>
+```
+
+**Subscribe to collection:**
+```json
+{ "type": "subscribe", "collection": "articles", "query": { "filter": { "status": { "_eq": "published" } } } }
+```
+
+**Server event:**
+```json
+{ "type": "event", "collection": "articles", "event": "update", "data": { "id": "art_001", "title": "Updated title" } }
+```
+
+See [features/websockets-realtime.md](../features/websockets-realtime.md) for full protocol reference.
+
+---
 
 ## 10. Settings
 
-- `GET /settings` / `PATCH /settings`.
-- `GET /settings/:key` / `PUT /settings/:key`.
-- `POST /settings/export`, `POST /settings/apply`.
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/settings` | Get all site settings |
+| `PATCH` | `/api/v1/settings` | Update multiple settings |
+| `GET` | `/api/v1/settings/:key` | Get single setting by key |
+| `PUT` | `/api/v1/settings/:key` | Set single setting |
+| `POST` | `/api/v1/settings/export` | Export settings as JSON bundle |
+| `POST` | `/api/v1/settings/apply` | Apply settings bundle |
 
-## 11. Webhooks
+---
 
-- CRUD `/webhooks`.
-- `POST /webhooks/:id/test`.
+## 11. Extensions
 
-## 12. Extensions
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/extensions` | List installed extensions |
+| `POST` | `/api/v1/extensions/upload` | Upload extension bundle (multipart) |
+| `POST` | `/api/v1/extensions/:id/enable` | Enable extension |
+| `POST` | `/api/v1/extensions/:id/disable` | Disable extension |
+| `POST` | `/api/v1/extensions/:id/capabilities` | Grant capabilities |
+| `GET` | `/api/v1/extensions/ui/manifest` | UI manifest for dynamic Studio import |
 
-- `GET /extensions`, `POST /extensions/upload` (multipart).
-- `POST /extensions/:id/enable` / `/disable`.
-- `POST /extensions/:id/capabilities` — grant.
-- `GET /extensions/ui/manifest` (cho Studio dynamic import).
+---
 
-## 13. Delivery (public)
+## 12. Delivery (Public)
 
-- `GET /api/v1/deliver/page/:slug` — page hydration (xem `architecture/page-hydration.md`).
-- `GET /api/v1/deliver/items/:collection` — public read, áp role `public`.
-- `GET /api/v1/deliver/menu/:key` — menu config.
+No `Authorization` header needed. Permission applied via `public` role.
 
-## 14. Realtime
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/deliver/page/:slug` | 1-roundtrip page hydration |
+| `GET` | `/api/v1/deliver/items/:collection` | Public item list |
+| `GET` | `/api/v1/deliver/menu/:key` | Menu config |
 
-- `GET /realtime` (WebSocket upgrade) — xem `features/websockets-realtime.md`.
+---
 
-## 15. Utils
+## 13. Utility endpoints
 
-- `POST /utils/render-template` — render display template server-side.
-- `POST /utils/jsonata/test` — eval rule debug.
-- `GET /utils/health`, `/utils/version`.
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/utils/health` | Health check (DB, cache, storage, search, queue) |
+| `GET` | `/api/v1/utils/version` | API version info |
+| `POST` | `/api/v1/utils/render-template` | Render a display template server-side |
+| `POST` | `/api/v1/utils/jsonata/test` | Evaluate JSONata expression |
+| `GET` | `/api/v1/metrics` | Prometheus metrics (Docker mode only) |
 
-## 16. Rate limits
+**Health response:**
+```json
+{
+  "data": {
+    "status": "healthy",
+    "checks": {
+      "database": "ok",
+      "cache": "ok",
+      "storage": "ok",
+      "search": "ok",
+      "queue": "ok"
+    },
+    "version": "1.0.0",
+    "runtime": "cloudflare"
+  }
+}
+```
 
-- Auth: 30 req/min/IP.
-- Items write: 600/min/user.
-- Items read: 6000/min/user (cache hỗ trợ giảm).
-- Realtime: như mục 5 của doc websockets.
+---
 
-## 17. Versioning
+## 14. Rate limits
 
-- Header `X-Lumi-API-Version: 1` (mặc định). Breaking thay đổi → tăng version path `/api/v2`. Giữ v1 ít nhất 12 tháng.
+| Scope | Limit |
+|-------|-------|
+| Auth endpoints | 30 req/min per IP |
+| Items write | 600 req/min per user |
+| Items read | 6,000 req/min per user |
+| File upload | 100 req/min per user |
+| Realtime connections | 50 concurrent per site |
+| AI Chat | 60 req/min per user |
+
+Rate limit headers:
+```
+X-RateLimit-Limit: 600
+X-RateLimit-Remaining: 598
+X-RateLimit-Reset: 1749254460
+```
+
+---
+
+## 15. Versioning
+
+Breaking changes get a new path prefix (`/api/v2`). The previous version is maintained for at least 12 months.
+
+Send `X-Lumi-API-Version: 1` to pin to a specific API version. Default is the latest stable.

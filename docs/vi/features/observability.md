@@ -1,13 +1,14 @@
-# Observability — Metrics, Logs, Dashboards
+# Observability — Metrics, Logs, Dashboards, Tracing
 
 ## Endpoints
 
-| Endpoint | Mục đích | Auth |
-|----------|----------|------|
-| `/health` | Liveness + readiness probe (test DB, cache, search, storage, queue) | None |
-| `/metrics` | Prometheus exposition format | None |
+| Endpoint | Mục đích | Auth | HTTP status |
+|----------|----------|------|-------------|
+| `/health` | Liveness + dependency summary for operators | None | Always `200`; body is `healthy` or `degraded` |
+| `/health/ready` | Readiness probe for orchestrators | None | `200` when all probes healthy, `503` when degraded |
+| `/metrics` | Prometheus exposition format | None | `200` |
 
-Cả hai mount ngoài `/api/v1` — không cần JWT, dùng cho infra probes.
+Các endpoint này mount ngoài `/api/v1` để infra probes có thể gọi không cần JWT.
 
 ## Metrics exposed
 
@@ -17,6 +18,15 @@ Implementation: `apps/cms/src/routes/metrics.ts` + middleware `withMetrics()`.
 |--------|------|--------|
 | `lumibase_http_requests_total` | counter | `method`, `path`, `status` |
 | `lumibase_http_request_duration_seconds` | histogram | `method`, `path` |
+| `lumibase_cache_operations_total` | counter | `operation`, `hit` |
+| `lumibase_queue_jobs_total` | counter | `queue`, `status` |
+| `lumibase_search_queries_total` | counter | `collection` |
+| `lumibase_search_duration_seconds` | histogram | `collection` |
+| `lumibase_item_mutations_total` | counter | `collection`, `action`, `status` |
+| `lumibase_permission_denials_total` | counter | `collection`, `action` |
+| `lumibase_realtime_connections_total` | counter | `site` |
+| `lumibase_webhook_dispatch_total` | counter | `target`, `status` |
+| `lumibase_db_query_duration_seconds` | histogram | `operation` |
 | `lumibase_http_errors_total` | counter | `method`, `path`, `code` |
 | `lumibase_active_connections` | gauge | — |
 | `lumibase_cache_hits_total` | counter | `provider` |
@@ -24,8 +34,48 @@ Implementation: `apps/cms/src/routes/metrics.ts` + middleware `withMetrics()`.
 | `lumibase_queue_depth` | gauge | `queue` |
 | `lumibase_db_pool_active` | gauge | — |
 | `lumibase_db_pool_idle` | gauge | — |
+| `lumibase_agent_runs_total` | counter | `agent`, `status`, `stop_reason` |
+| `lumibase_agent_tool_latency_seconds` | histogram | `tool`, `status` |
+| `lumibase_agent_approvals_total` | counter | `subject_type`, `status` |
+| `lumibase_agent_approval_latency_seconds` | histogram | `subject_type`, `status` |
+| `lumibase_agent_evaluations_total` | counter | `kind`, `status` |
+| `lumibase_agent_estimated_tokens_total` | counter | `tool` |
+| `lumibase_agent_estimated_cost_usd_total` | counter | `tool` |
+| `lumibase_agent_dead_letters_total` | counter | `agent`, `reason` |
 
-Backend: `prom-client` (works trên Node + emulated trong Workers).
+Backend: `prom-client`. Process default metrics are collected only when the runtime exposes a working Node `process.cpuUsage()` implementation; Workers/Wrangler stubs are skipped safely.
+
+Request path labels are normalized before recording to avoid high-cardinality labels from UUIDs and numeric IDs.
+
+## Tracing / Apache SkyWalking POC
+
+Docker/Node runtime supports an optional tracing bootstrap. It is disabled by default and controlled by environment variables:
+
+```env
+LUMIBASE_TRACING_ENABLED=false
+LUMIBASE_TRACING_PROVIDER=skywalking
+LUMIBASE_SERVICE_NAME=lumibase-cms
+OTEL_EXPORTER_OTLP_ENDPOINT=http://skywalking-oap:11800
+LUMIBASE_TRACING_SAMPLING_RATIO=1
+```
+
+Enable the SkyWalking stack in Docker by including the optional compose override:
+
+```bash
+docker compose \
+  -f docker/docker-compose.yml \
+  -f docker/docker-compose.skywalking.yml \
+  up --build
+```
+
+Disable tracing by omitting `docker/docker-compose.skywalking.yml` or setting `LUMIBASE_TRACING_ENABLED=false`.
+
+Notes:
+
+- Tracing is Node/Docker-only for this POC. Cloudflare Workers should use Cloudflare-native observability until a separate Workers tracing design exists.
+- OpenTelemetry SDK bootstrap must run before the Hono app import so auto-instrumentations can patch supported Node modules early.
+- Changing tracing provider/endpoint should be treated as a process restart operation; hot reload is intentionally out of scope for this POC.
+- Request spans use normalized paths and never copy `Authorization`, cookies, raw query strings, or request bodies into attributes.
 
 ## Structured logging
 
@@ -46,7 +96,7 @@ Mọi request log JSON với fields:
 ```
 
 - **Cloudflare**: log đẩy qua Workers Logpush ra R2/S3/external.
-- **Docker**: log stdout, được Promtail pick lên Loki.
+- **Docker**: log stdout, được Promtail/Loki hoặc runtime log driver thu thập.
 
 ## Stack monitoring
 
@@ -62,17 +112,21 @@ Documentation only — không tự host gì cả.
 
 ### Docker mode
 
-Toàn bộ stack chạy qua `docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up`:
+Metrics/log dashboard stack chạy qua:
+
+```bash
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.monitoring.yml up
+```
 
 | Service | Port | Mục đích |
 |---------|------|----------|
 | Prometheus | 9090 | Metrics scrape |
 | Grafana | 3002 | Dashboards |
 | Loki | 3100 | Log aggregation |
-| Promtail | — | Log shipping (per-host) |
 | pg-backup | — | Scheduled `pg_dump` |
 
-Config: `docker/prometheus/prometheus.yml`, `docker/grafana/provisioning/`, `docker/grafana/dashboards/lumibase.json`.
+Tracing POC stack chạy thêm file `docker/docker-compose.skywalking.yml`:
+Config: `docker/prometheus/prometheus.yml`, `docker/grafana/provisioning/`, `docker/grafana/dashboards/lumibase.json`, `docker/grafana/dashboards/agent-harness.json`.
 
 ## Pre-provisioned Grafana dashboard
 
@@ -86,13 +140,18 @@ Dashboard `Lumibase` (auto-loaded) bao gồm:
 - **DB pool utilization** (active vs idle).
 - **CPU / Memory** of CMS container.
 
+Dashboard `Lumibase Agent Harness` bao gồm run success/fail rate, budget stop reason, tool latency, approval latency, evaluation outcome, token/cost estimate và dead-letter enqueue rate. Run fail lặp lại được đẩy vào queue `agent-dead-letter` khi runtime queue adapter khả dụng.
+
 ## Backup monitoring
 
 `pg-backup` service runs `pg_dump` daily at 02:00 UTC, uploads to MinIO/S3 với retention 7 daily + 4 weekly. Failures send notification qua webhook (configurable).
 
-Restore: `docker/scripts/restore.sh <backup-key>`.
+| Service | Port | Mục đích |
+|---------|------|----------|
+| SkyWalking OAP | 11800 / 12800 | OTLP receiver + API |
+| SkyWalking UI | 8080 | Trace explorer |
 
-Xem `apps/docs/content/guides/backup-recovery.md` cho disaster recovery playbook.
+Config: `docker/prometheus/prometheus.yml`, `docker/grafana/provisioning/`, `docker/grafana/dashboards/lumibase.json`.
 
 ## Health check details
 
@@ -100,18 +159,20 @@ Xem `apps/docs/content/guides/backup-recovery.md` cho disaster recovery playbook
 
 ```json
 {
-  "status": "ok",
-  "checks": {
-    "database": { "status": "ok", "latency": 5 },
-    "cache":    { "status": "ok", "latency": 1 },
-    "search":   { "status": "ok", "latency": 12 },
-    "storage":  { "status": "ok", "latency": 8 },
-    "queue":    { "status": "ok", "latency": 2 }
+  "status": "healthy",
+  "services": {
+    "database": "healthy",
+    "cache": "healthy",
+    "search": "healthy",
+    "storage": "healthy",
+    "queue": "healthy"
   }
 }
 ```
 
-Trả 200 nếu tất cả `ok`, 503 nếu bất kỳ check nào fail. Probe interval khuyến nghị: 30s.
+`GET /health` always returns `200` so it is safe as a liveness/diagnostic endpoint. `GET /health/ready` returns `503` when any dependency probe is unhealthy, so orchestrators can use it for readiness.
+
+Probe timeout: 750ms per dependency.
 
 ## Alerting
 
@@ -119,8 +180,8 @@ Khuyến nghị alert rules trong Prometheus:
 
 - Error rate > 5% trong 5 phút.
 - p95 latency > 500ms trong 10 phút.
-- Queue depth > 1000 items trong 5 phút.
-- DB pool active = max trong 2 phút (saturation).
-- Health check fail.
+- Health readiness fail.
+- Queue job failures rising continuously.
+- DB query duration p95 above service SLO.
 
 Xem `apps/docs/content/guides/tooling-recommendations.md` cho managed alternatives (Datadog, Sentry, New Relic).

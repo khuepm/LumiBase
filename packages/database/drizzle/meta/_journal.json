@@ -85,6 +85,118 @@
       "when": 1780570093313,
       "tag": "0011_outstanding_jack_power",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1780650000000,
+      "tag": "0012_tenant_audit_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1780736400000,
+      "tag": "0013_extension_access_targets",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1780822800000,
+      "tag": "0014_shares",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1780909200000,
+      "tag": "0015_directus_collection_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1780995600000,
+      "tag": "0016_directus_field_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1781082000000,
+      "tag": "0017_directus_relation_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1781168400000,
+      "tag": "0018_agent_harness",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1781254800000,
+      "tag": "0019_content_os_provenance_pins",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1781341200000,
+      "tag": "0020_content_os_intents",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1781427600000,
+      "tag": "0021_content_os_trust_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1781514000000,
+      "tag": "0022_content_os_drifts",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1781600400000,
+      "tag": "0023_content_os_veto_window",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1781686800000,
+      "tag": "0024_content_os_kill_switch",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1781773200000,
+      "tag": "0025_content_os_agent_org",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1781773260000,
+      "tag": "0026_content_os_agent_reviewer",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1781773320000,
+      "tag": "0027_content_os_constitutions",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,7 @@ import {
   CloudflareStorageProvider,
   type R2Bucket,
 } from "../adapters/cloudflare/storage";
+import { CloudflareSearchProvider } from "../adapters/cloudflare/search";
 
 // ─── Mock KVNamespace ────────────────────────────────────────────────────────
 
@@ -352,5 +353,35 @@ describe("CloudflareStorageProvider", () => {
         limit: 1000,
       });
     });
+  });
+});
+
+describe("CloudflareSearchProvider — host normalization", () => {
+  // `host` is private; read it via an index cast for the assertion.
+  const hostOf = (h: string) =>
+    (new CloudflareSearchProvider(h, "key") as unknown as { host: string }).host;
+
+  it("strips a single trailing slash", () => {
+    expect(hostOf("https://search.example.com/")).toBe("https://search.example.com");
+  });
+
+  it("strips many trailing slashes without a regex (ReDoS-proof)", () => {
+    expect(hostOf("https://search.example.com/////")).toBe("https://search.example.com");
+  });
+
+  it("leaves a host with no trailing slash untouched", () => {
+    expect(hostOf("https://search.example.com")).toBe("https://search.example.com");
+  });
+
+  it("does not strip slashes inside the host/path, only the tail", () => {
+    expect(hostOf("https://h.example.com/base/")).toBe("https://h.example.com/base");
+  });
+
+  it("handles a pathological all-slashes / long input in linear time", () => {
+    // A backtracking `/\/+$/` would stall here; the linear scan returns fast.
+    const start = performance.now();
+    expect(hostOf("/".repeat(100_000))).toBe("");
+    expect(hostOf("https://h" + "/".repeat(100_000))).toBe("https://h");
+    expect(performance.now() - start).toBeLessThan(100);
   });
 });

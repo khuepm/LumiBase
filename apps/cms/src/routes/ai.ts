@@ -1,12 +1,13 @@
 import { aiApprovals, aiConversations, aiMessages } from '@lumibase/database';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { AISecureHarness } from '../services/ai-harness';
 import { SchemaService } from '../services/schema-service';
 import { ItemService } from '../services/item-service';
-import { createLLMProvider, type LLMMessage } from '../services/llm-provider';
+import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 // ---------------------------------------------------------------------------
 // Zod Schemas
@@ -37,6 +38,65 @@ const MAX_CONTEXT_MESSAGES = 20;
 // ---------------------------------------------------------------------------
 
 export const aiRouter = new Hono<AppEnv>();
+
+function getUserCapabilities(c: Context<AppEnv>): string[] {
+  const auth = c.get('auth');
+  return Array.isArray(auth.roles) ? auth.roles : [];
+}
+
+function requireAdmin(c: Context<AppEnv>) {
+  const roles = getUserCapabilities(c);
+
+  if (!roles.includes('admin')) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'FORBIDDEN',
+            message: 'Admin role required.',
+          },
+        ],
+      },
+      403,
+    );
+  }
+
+  return null;
+}
+
+function buildItemService(c: Context<AppEnv>): ItemService {
+  const auth = c.get('auth');
+  const runtime = c.get('runtime');
+  const headers: Record<string, string> = {};
+  c.req.raw.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value;
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const realtimeNamespace = (c.env as unknown as Record<string, any>)[
+    'SITE_ROOM'
+  ] as DurableObjectNamespace | undefined;
+
+  return new ItemService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    userId: auth.userId ?? null,
+    cache: runtime.cache,
+    search: runtime.search,
+    queue: runtime.queue,
+    realtimeNamespace,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    extensionEnv: c.env as unknown as Record<string, unknown>,
+    permissionCtx: {
+      userId: auth.userId ?? null,
+      siteId: c.get('siteId'),
+      roleId: null,
+      ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+      headers,
+      apiKey: auth.apiKey ?? null,
+    },
+    encryptionKey: c.env.ENCRYPTION_KEY,
+  });
+}
 
 /**
  * POST /chat
@@ -160,23 +220,23 @@ aiRouter.post('/chat', async (c) => {
 
     // Execute the first tool call via AISecureHarness
     const toolCall = llmResponse.toolCalls[0]!;
-    const userCapabilities = auth.roles ?? [];
+    const userCapabilities = getUserCapabilities(c);
 
     const schemaService = new SchemaService({
       db,
       siteId,
       cache: runtime.cache,
     });
-    const itemService = new ItemService({
+    const itemService = buildItemService(c);
+
+    const harness = new AISecureHarness({
       db,
       siteId,
-      userId: auth.userId ?? null,
-      cache: runtime.cache,
-      search: runtime.search,
+      schemaService,
+      itemService,
+      llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
       queue: runtime.queue,
     });
-
-    const harness = new AISecureHarness({ db, siteId, schemaService, itemService });
     const result = await harness.execute(
       toolCall.name,
       toolCall.arguments,
@@ -222,7 +282,7 @@ aiRouter.post('/chat', async (c) => {
     );
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Internal server error';
-    console.error('[ai/chat] execution error', err);
+    console.error('[ai/chat] execution error', formatSafeError(err));
     return c.json(
       {
         errors: [{ code: 'INTERNAL', message: errorMessage }],
@@ -327,10 +387,15 @@ aiRouter.delete('/conversations/:id', async (c) => {
  * Returns pending approval records for the current site, sorted by createdAt DESC, max 100.
  */
 aiRouter.get('/approvals', async (c) => {
+  const forbidden = requireAdmin(c);
+  if (forbidden) return forbidden;
+
   const db = c.get('db');
   const siteId = c.get('siteId');
+  const userCapabilities = getUserCapabilities(c);
+  const harness = new AISecureHarness({ db, siteId });
 
-  const data = await db
+  const pendingApprovals = await db
     .select()
     .from(aiApprovals)
     .where(
@@ -342,6 +407,11 @@ aiRouter.get('/approvals', async (c) => {
     .orderBy(desc(aiApprovals.createdAt))
     .limit(100);
 
+  const data = pendingApprovals.filter((approval) => {
+    const skill = harness.validateSkill(approval.skillName);
+    return Boolean(skill && harness.checkCapabilities(skill, userCapabilities));
+  });
+
   return c.json({ data });
 });
 
@@ -350,6 +420,9 @@ aiRouter.get('/approvals', async (c) => {
  * Approves or rejects a pending approval record.
  */
 aiRouter.post('/approvals/:id/decide', async (c) => {
+  const forbidden = requireAdmin(c);
+  if (forbidden) return forbidden;
+
   // Step 1: Parse and validate input
   const body = await c.req.json().catch(() => null);
   const parsed = decideSchema.safeParse(body);
@@ -374,31 +447,73 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
   const auth = c.get('auth');
   const runtime = c.get('runtime');
   const userId = auth.userId ?? auth.externalId ?? 'unknown';
+  const userCapabilities = getUserCapabilities(c);
+  const harness = new AISecureHarness({ db, siteId });
 
-  // Wire up real services for skill execution on approval
-  const schemaService = new SchemaService({
-    db,
-    siteId,
-    cache: runtime.cache,
-  });
-  const itemService = new ItemService({
-    db,
-    siteId,
-    userId: auth.userId ?? null,
-    cache: runtime.cache,
-    search: runtime.search,
-    queue: runtime.queue,
-  });
+  const [approval] = await db
+    .select({
+      id: aiApprovals.id,
+      status: aiApprovals.status,
+      skillName: aiApprovals.skillName,
+    })
+    .from(aiApprovals)
+    .where(
+      and(
+        eq(aiApprovals.id, approvalId),
+        eq(aiApprovals.siteId, siteId),
+      ),
+    );
 
-  const harness = new AISecureHarness({ db, siteId, schemaService, itemService });
+  const skill = approval ? harness.validateSkill(approval.skillName) : undefined;
+  if (!approval || approval.status !== 'pending' || !skill) {
+    return c.json(
+      {
+        errors: [{ code: 'FORBIDDEN', message: 'Approval not found or already processed' }],
+      },
+      403,
+    );
+  }
+
+  if (!harness.checkCapabilities(skill, userCapabilities)) {
+    return c.json(
+      {
+        errors: [{ code: 'FORBIDDEN', message: 'Insufficient capabilities' }],
+      },
+      403,
+    );
+  }
 
   if (decision === 'approved') {
-    const result = await harness.executeApproved(approvalId, userId);
+    // Wire up real services for skill execution on approval only after authorization.
+    const schemaService = new SchemaService({
+      db,
+      siteId,
+      cache: runtime.cache,
+    });
+    const itemService = buildItemService(c);
+    const authorizedHarness = new AISecureHarness({
+      db,
+      siteId,
+      schemaService,
+      itemService,
+      llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
+      queue: runtime.queue,
+    });
+    const result = await authorizedHarness.executeApproved(
+      approvalId,
+      userId,
+      userCapabilities,
+    );
 
     if (result.status === 'denied') {
       return c.json(
         {
-          errors: [{ code: 'FORBIDDEN', message: result.message ?? 'Approval not found or already processed' }],
+          errors: [
+            {
+              code: 'FORBIDDEN',
+              message: result.message ?? 'Approval not found or already processed',
+            },
+          ],
         },
         403,
       );
@@ -408,25 +523,6 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
   }
 
   // decision === 'rejected'
-  const [existing] = await db
-    .select({ id: aiApprovals.id, status: aiApprovals.status })
-    .from(aiApprovals)
-    .where(
-      and(
-        eq(aiApprovals.id, approvalId),
-        eq(aiApprovals.siteId, siteId),
-      ),
-    );
-
-  if (!existing || existing.status !== 'pending') {
-    return c.json(
-      {
-        errors: [{ code: 'FORBIDDEN', message: 'Approval not found or already processed' }],
-      },
-      403,
-    );
-  }
-
   await harness.rejectApproval(approvalId, userId);
   return c.json({ data: { success: true } });
 });

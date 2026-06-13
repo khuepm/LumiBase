@@ -171,7 +171,7 @@ async function emitAuditEvent(
   // request URL) is automatically masked at default log levels per
   // Req 5.5. The AuditLogger then masks secret keys (Req 15.3) on top.
   const safeMetadata = maskAdminPath(metadata, null);
-  const logger = new AuditLogger({ db: c.get('db') });
+  const logger = new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') });
   await logger.write({
     event,
     actorEmail: auth?.email ?? null,

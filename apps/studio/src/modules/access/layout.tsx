@@ -5,6 +5,8 @@ import { cn } from '@/lib/cn';
 const TABS: Array<{ id: string; label: string; to: string }> = [
   { id: 'roles', label: 'Roles', to: '/access/roles' },
   { id: 'policies', label: 'Policies', to: '/access/policies' },
+  { id: 'api-keys', label: 'API keys', to: '/access/api-keys' },
+  { id: 'import-export', label: 'Import / export', to: '/access/import-export' },
   { id: 'matrix', label: 'Permission matrix', to: '/access/matrix' },
   { id: 'sandbox', label: 'Test sandbox', to: '/access/sandbox' },
 ];
@@ -31,7 +33,7 @@ export function AccessLayout({ children }: AccessLayoutProps) {
           matrix to audit and the sandbox to debug a verdict.
         </p>
       </header>
-      <nav className="flex gap-1 border-b">
+      <nav className="flex gap-1 overflow-x-auto border-b">
         {TABS.map((t) => (
           <Link
             key={t.id}

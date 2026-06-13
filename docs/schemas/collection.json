@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.lumibase.dev/schemas/collection.json",
+  "title": "Collection",
+  "description": "A LumiBase collection definition — represents a table of content items.",
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 64,
+      "description": "Unique collection identifier (snake_case). Used as DB table name prefix."
+    },
+    "displayName": {
+      "type": "string",
+      "maxLength": 255,
+      "description": "Human-readable label shown in Studio UI."
+    },
+    "icon": {
+      "type": "string",
+      "description": "Material icon name shown in Studio sidebar."
+    },
+    "note": {
+      "type": "string",
+      "description": "Internal description visible to editors."
+    },
+    "singleton": {
+      "type": "boolean",
+      "default": false,
+      "description": "If true, this collection holds exactly one item (e.g. site settings)."
+    },
+    "status_field": {
+      "type": "string",
+      "description": "Name of the field used as the status/lifecycle indicator."
+    },
+    "sort_field": {
+      "type": "string",
+      "description": "Name of the integer field used for manual drag-to-sort ordering."
+    },
+    "archive_field": {
+      "type": "string",
+      "description": "Name of the field that controls soft-delete / archival."
+    },
+    "archive_value": {
+      "type": "string",
+      "description": "Value of archive_field that marks an item as archived."
+    },
+    "unarchive_value": {
+      "type": "string",
+      "description": "Value of archive_field that marks an item as active (not archived)."
+    },
+    "accountability": {
+      "type": "string",
+      "enum": ["all", "activity", "null"],
+      "default": "all",
+      "description": "Level of activity logging for this collection."
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$",
+      "description": "Accent color shown in Studio."
+    },
+    "translations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["language", "translation"],
+        "properties": {
+          "language":    { "type": "string" },
+          "translation": { "type": "string" },
+          "singular":    { "type": "string" },
+          "plural":      { "type": "string" }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

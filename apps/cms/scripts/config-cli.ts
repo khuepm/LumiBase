@@ -19,7 +19,7 @@
  */
 
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 // ── CLI helpers ────────────────────────────────────────────────────────────
 
@@ -88,9 +88,14 @@ async function runExport(): Promise<void> {
   if (!SITE_ID) { console.error('--site <siteId> is required'); process.exit(1); }
 
   const outDir = getArg('--out') ?? getArg('-o') ?? `./lumibase-config-${SITE_ID}`;
-  mkdirSync(outDir, { recursive: true });
+  const resolvedOutDir = resolve(process.cwd(), outDir);
+  if (!resolvedOutDir.startsWith(process.cwd())) {
+    console.error('Error: Access Denied: Path Traversal detected');
+    process.exit(1);
+  }
+  mkdirSync(resolvedOutDir, { recursive: true });
 
-  console.log(`⏳ Exporting config for site "${SITE_ID}" → ${outDir}/`);
+  console.log(`⏳ Exporting config for site "${SITE_ID}" → ${resolvedOutDir}/`);
 
   let collectionsList: any[] = [];
 
@@ -116,7 +121,7 @@ async function runExport(): Promise<void> {
           collectionsList = data.data;
         }
       }
-      writeFileSync(join(outDir, file), JSON.stringify(data, null, 2), 'utf-8');
+      writeFileSync(join(resolvedOutDir, file), JSON.stringify(data, null, 2), 'utf-8');
       console.log(`  ✓ ${key}`);
     } catch (err) {
       console.warn(`  ⚠ ${key}: ${(err as Error).message}`);
@@ -125,11 +130,11 @@ async function runExport(): Promise<void> {
 
   // Write meta file.
   writeFileSync(
-    join(outDir, '_meta.json'),
+    join(resolvedOutDir, '_meta.json'),
     JSON.stringify({ siteId: SITE_ID, exportedAt: new Date().toISOString(), version: '1' }, null, 2),
   );
 
-  console.log(`✅ Export complete: ${outDir}/`);
+  console.log(`✅ Export complete: ${resolvedOutDir}/`);
 }
 
 // ── import command ─────────────────────────────────────────────────────────
@@ -140,16 +145,22 @@ async function runImport(): Promise<void> {
   const inDir = getArg('--dir') ?? getArg('-d');
   if (!inDir) { console.error('--dir <path> is required for import'); process.exit(1); }
 
-  console.log(`⏳ Importing config for site "${SITE_ID}" from ${inDir}/`);
+  const resolvedInDir = resolve(process.cwd(), inDir);
+  if (!resolvedInDir.startsWith(process.cwd())) {
+    console.error('Error: Access Denied: Path Traversal detected');
+    process.exit(1);
+  }
 
-  const files = readdirSync(inDir).filter((f) => f.endsWith('.json') && f !== '_meta.json');
+  console.log(`⏳ Importing config for site "${SITE_ID}" from ${resolvedInDir}/`);
+
+  const files = readdirSync(resolvedInDir).filter((f) => f.endsWith('.json') && f !== '_meta.json');
 
   for (const file of files) {
     const resource = RESOURCES.find((r) => r.file === file);
     if (!resource) { console.log(`  - Skipping unknown file: ${file}`); continue; }
 
     try {
-      const raw = JSON.parse(readFileSync(join(inDir, file), 'utf-8')) as { data?: unknown[] };
+      const raw = JSON.parse(readFileSync(join(resolvedInDir, file), 'utf-8')) as { data?: unknown[] };
       const rows: any[] = Array.isArray(raw) ? raw : Array.isArray(raw.data) ? raw.data : [];
 
       let ok = 0;
@@ -238,14 +249,25 @@ async function runDiff(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`⏳ Diffing ${dirA} ↔ ${dirB}\n`);
+  const resolvedDirA = resolve(process.cwd(), dirA);
+  if (!resolvedDirA.startsWith(process.cwd())) {
+    console.error('Error: Access Denied: Path Traversal detected');
+    process.exit(1);
+  }
+  const resolvedDirB = resolve(process.cwd(), dirB);
+  if (!resolvedDirB.startsWith(process.cwd())) {
+    console.error('Error: Access Denied: Path Traversal detected');
+    process.exit(1);
+  }
+
+  console.log(`⏳ Diffing ${resolvedDirA} ↔ ${resolvedDirB}\n`);
 
   let hasDiff = false;
 
   for (const { file, key } of RESOURCES) {
     let rawA: unknown, rawB: unknown;
-    try { rawA = JSON.parse(readFileSync(join(dirA, file), 'utf-8')); } catch { continue; }
-    try { rawB = JSON.parse(readFileSync(join(dirB, file), 'utf-8')); } catch { continue; }
+    try { rawA = JSON.parse(readFileSync(join(resolvedDirA, file), 'utf-8')); } catch { continue; }
+    try { rawB = JSON.parse(readFileSync(join(resolvedDirB, file), 'utf-8')); } catch { continue; }
 
     const strA = JSON.stringify(rawA, null, 2);
     const strB = JSON.stringify(rawB, null, 2);

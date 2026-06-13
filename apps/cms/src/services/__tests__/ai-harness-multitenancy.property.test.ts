@@ -115,7 +115,7 @@ describe('Feature: ai-first-cms-engine, Property 8: Multi-tenancy isolation', ()
           const harnessB = new AISecureHarness({ db, siteId: siteB });
 
           // Act: Try to execute an approval that belongs to siteA from siteB's context
-          const result = await harnessB.executeApproved(approvalId, userId);
+          const result = await harnessB.executeApproved(approvalId, userId, ['*']);
 
           // Assert: The operation must be denied
           expect(result.status).toBe('denied');
@@ -166,7 +166,7 @@ describe('Feature: ai-first-cms-engine, Property 8: Multi-tenancy isolation', ()
           const harnessB = new AISecureHarness({ db, siteId: siteB });
 
           // Act
-          const result = await harnessB.executeApproved(approvalId, userId);
+          const result = await harnessB.executeApproved(approvalId, userId, ['*']);
 
           // Assert: Operation denied (record not found for siteB)
           expect(result.status).toBe('denied');
