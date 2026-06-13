@@ -19,6 +19,7 @@ export function ApiKeysPage() {
   const client = getApiClient();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
+  const [creatingAccess, setCreatingAccess] = useState<'role' | 'policy' | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [secret, setSecret] = useState<ApiKeySecretResult | null>(null);
   const [conflictReport, setConflictReport] = useState<AccessConflictReport | null>(null);
@@ -141,6 +142,30 @@ export function ApiKeysPage() {
       return client.apiKeys.detachPolicy(selectedKey.id, policyId);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['access', 'api-keys'] }),
+  });
+
+  // Inline "create new" for the attach pickers. A freshly created role/policy
+  // has no permission rows yet, so attaching it can never raise a conflict —
+  // we reuse the existing attach mutations so the conflict-preview + cache
+  // invalidation paths stay identical to picking an existing one.
+  const createRole = useMutation({
+    mutationFn: async (input: { name: string; adminAccess: boolean; appAccess: boolean }) =>
+      (await client.roles.create(input)).data,
+    onSuccess: (role) => {
+      setCreatingAccess(null);
+      queryClient.invalidateQueries({ queryKey: ['access', 'roles'] });
+      if (selectedKey) attachRole.mutate(role.id);
+    },
+  });
+
+  const createPolicy = useMutation({
+    mutationFn: async (input: { name: string; adminAccess: boolean }) =>
+      (await client.policies.create(input)).data,
+    onSuccess: (policy) => {
+      setCreatingAccess(null);
+      queryClient.invalidateQueries({ queryKey: ['access', 'policies'] });
+      if (selectedKey) attachPolicy.mutate(policy.id);
+    },
   });
 
   const attachedRoleIds = new Set((selectedKey?.roles ?? []).map((role) => role.roleId));
@@ -270,9 +295,11 @@ export function ApiKeysPage() {
                 }))}
                 available={availableRoles.map((role) => ({ id: role.id, label: role.name }))}
                 attachLabel="Attach role…"
-                isPending={attachRole.isPending || detachRole.isPending}
+                createLabel="New role"
+                isPending={attachRole.isPending || detachRole.isPending || createRole.isPending}
                 onAttach={(id) => attachRole.mutate(id)}
                 onDetach={(id) => detachRole.mutate(id)}
+                onCreateNew={() => setCreatingAccess('role')}
               />
 
               <AttachmentSection
@@ -285,9 +312,11 @@ export function ApiKeysPage() {
                 }))}
                 available={availablePolicies.map((policy) => ({ id: policy.id, label: policy.name }))}
                 attachLabel="Attach policy…"
-                isPending={attachPolicy.isPending || detachPolicy.isPending}
+                createLabel="New policy"
+                isPending={attachPolicy.isPending || detachPolicy.isPending || createPolicy.isPending}
                 onAttach={(id) => attachPolicy.mutate(id)}
                 onDetach={(id) => detachPolicy.mutate(id)}
+                onCreateNew={() => setCreatingAccess('policy')}
               />
 
               {conflictReport && (
@@ -315,6 +344,25 @@ export function ApiKeysPage() {
           error={createKey.error}
           onClose={() => setCreating(false)}
           onCreate={(input) => createKey.mutate(input, { onSuccess: () => setCreating(false) })}
+        />
+      )}
+      {creatingAccess && (
+        <CreateAccessDialog
+          kind={creatingAccess}
+          isPending={creatingAccess === 'role' ? createRole.isPending : createPolicy.isPending}
+          error={creatingAccess === 'role' ? createRole.error : createPolicy.error}
+          onClose={() => setCreatingAccess(null)}
+          onCreate={(input) => {
+            if (creatingAccess === 'role') {
+              createRole.mutate({
+                name: input.name,
+                adminAccess: input.adminAccess,
+                appAccess: input.appAccess ?? true,
+              });
+            } else {
+              createPolicy.mutate({ name: input.name, adminAccess: input.adminAccess });
+            }
+          }}
         />
       )}
       {secret && <SecretDialog result={secret} onClose={() => setSecret(null)} />}
@@ -346,18 +394,22 @@ function AttachmentSection({
   attachments,
   available,
   attachLabel,
+  createLabel,
   isPending,
   onAttach,
   onDetach,
+  onCreateNew,
 }: {
   title: string;
   empty: string;
   attachments: Array<{ id: string; label: string; priority: number }>;
   available: Array<{ id: string; label: string }>;
   attachLabel: string;
+  createLabel?: string;
   isPending: boolean;
   onAttach: (id: string) => void;
   onDetach: (id: string) => void;
+  onCreateNew?: () => void;
 }) {
   return (
     <section className="space-y-2">
@@ -384,27 +436,40 @@ function AttachmentSection({
           ))}
         </ul>
       )}
-      {available.length > 0 && (
-        <select
-          defaultValue=""
-          disabled={isPending}
-          onChange={(event) => {
-            const value = event.target.value;
-            if (value) onAttach(value);
-            event.target.value = '';
-          }}
-          className="w-full rounded-md border bg-background px-2 py-1 text-xs"
-        >
-          <option value="" disabled>
-            {attachLabel}
-          </option>
-          {available.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
+      <div className="flex items-center gap-2">
+        {available.length > 0 && (
+          <select
+            defaultValue=""
+            disabled={isPending}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (value) onAttach(value);
+              event.target.value = '';
+            }}
+            className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-xs"
+          >
+            <option value="" disabled>
+              {attachLabel}
             </option>
-          ))}
-        </select>
-      )}
+            {available.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        )}
+        {onCreateNew && (
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={onCreateNew}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs font-medium hover:bg-muted disabled:opacity-40"
+          >
+            <Plus className="h-3 w-3" />
+            {createLabel ?? 'New'}
+          </button>
+        )}
+      </div>
     </section>
   );
 }
@@ -572,6 +637,98 @@ function CreateApiKeyDialog({
             className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
           >
             {isPending ? 'Creating…' : 'Create'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Inline dialog to create a role or policy without leaving the API-keys
+ * screen. On success the parent auto-attaches the new entity to the selected
+ * key. Permission rows are configured later on the dedicated Roles/Policies
+ * pages — here we only expose name + the bypass/access flags.
+ */
+function CreateAccessDialog({
+  kind,
+  isPending,
+  error,
+  onClose,
+  onCreate,
+}: {
+  kind: 'role' | 'policy';
+  isPending: boolean;
+  error: unknown;
+  onClose: () => void;
+  onCreate: (input: { name: string; adminAccess: boolean; appAccess?: boolean }) => void;
+}) {
+  const [name, setName] = useState('');
+  const [adminAccess, setAdminAccess] = useState(false);
+  const [appAccess, setAppAccess] = useState(true);
+
+  const isRole = kind === 'role';
+
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
+      <div className="w-full max-w-md rounded-lg border bg-background p-5 shadow-lg">
+        <h3 className="mb-3 text-base font-semibold">{isRole ? 'New role' : 'New policy'}</h3>
+        <div className="space-y-3 text-sm">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">Name</span>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              autoFocus
+              placeholder={isRole ? 'editor' : 'read-only'}
+              className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+            />
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={adminAccess}
+              onChange={(event) => setAdminAccess(event.target.checked)}
+              className="h-4 w-4 rounded border"
+            />
+            <span className="text-xs">
+              Admin access
+              <span className="ml-1 text-muted-foreground">(bypass all permission checks)</span>
+            </span>
+          </label>
+          {isRole && (
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={appAccess}
+                onChange={(event) => setAppAccess(event.target.checked)}
+                className="h-4 w-4 rounded border"
+              />
+              <span className="text-xs">
+                App access
+                <span className="ml-1 text-muted-foreground">(can sign in to Studio)</span>
+              </span>
+            </label>
+          )}
+          <MutationError error={error} />
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-md border px-3 py-1.5 text-xs">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!name.trim() || isPending}
+            onClick={() =>
+              onCreate(
+                isRole
+                  ? { name: name.trim(), adminAccess, appAccess }
+                  : { name: name.trim(), adminAccess },
+              )
+            }
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+          >
+            {isPending ? 'Creating…' : 'Create & attach'}
           </button>
         </div>
       </div>
