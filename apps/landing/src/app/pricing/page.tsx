@@ -1,229 +1,248 @@
 import type { Metadata } from "next";
 import PricingCard from "@/components/PricingCard";
-import { Zap, Shield, Users, Code2, Globe, Headphones } from "lucide-react";
+import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
+import { Zap, Shield, Fingerprint, GitBranch, ScrollText, Headphones } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "Pricing - LumiBase",
-  description: "Choose the perfect plan for your needs. Open-source with optional premium features.",
+  title: "Pricing — LumiBase Content OS",
+  description:
+    "Open-source core, free forever under MIT. Optional managed hosting and enterprise support for the LumiBase Content Operating System.",
+  alternates: {
+    canonical: "/pricing/",
+  },
 };
+
+const faqs = [
+  {
+    question: "What's the difference between self-hosted and managed?",
+    answer:
+      "Self-hosted means you deploy LumiBase on your own infrastructure (free, MIT). Managed means we host the Content OS for you with automatic updates, backups, and support (paid tiers).",
+  },
+  {
+    question: "Is the Content OS core free?",
+    answer:
+      "Yes. The full Content OS — intents, the reconciliation loop, the trust ledger, the constitution, provenance, and the multi-agent newsroom — is open-source under MIT. Premium tiers add managed hosting and support, not core capabilities.",
+  },
+  {
+    question: "Can I switch plans anytime?",
+    answer:
+      "Yes. Upgrade or downgrade at any time. Changes take effect immediately and we prorate the difference.",
+  },
+  {
+    question: "How does GitHub Sponsors work?",
+    answer:
+      "When you sponsor us on GitHub, you get access to premium managed features based on your tier. We send you a reward token to unlock them.",
+  },
+  {
+    question: "What payment methods do you accept?",
+    answer:
+      "GitHub Sponsors (credit card, PayPal), and for Enterprise we also accept wire transfers and invoices.",
+  },
+];
+
+const faqPageJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map((faq) => ({
+    "@type": "Question",
+    name: faq.question,
+    acceptedAnswer: { "@type": "Answer", text: faq.answer },
+  })),
+};
+
+const breadcrumbJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    { "@type": "ListItem", position: 1, name: "Home", item: "https://lumibase.dev" },
+    { "@type": "ListItem", position: 2, name: "Pricing", item: "https://lumibase.dev/pricing/" },
+  ],
+};
+
+const comparison = [
+  { icon: Zap, name: "Edge-native delivery", community: "✓", hobby: "✓", enterprise: "✓" },
+  { icon: GitBranch, name: "Trust ledger (L0–L4)", community: "✓", hobby: "✓", enterprise: "✓" },
+  { icon: ScrollText, name: "Tenant constitution", community: "✓", hobby: "✓", enterprise: "✓" },
+  { icon: Fingerprint, name: "Provenance on Delivery API", community: "✓", hobby: "✓", enterprise: "✓" },
+  { icon: Shield, name: "Per-field encryption", community: "✓", hobby: "✓", enterprise: "✓" },
+  { icon: Headphones, name: "Priority support", community: "—", hobby: "✓", enterprise: "✓✓" },
+  { icon: Shield, name: "SSO (SAML, LDAP)", community: "—", hobby: "—", enterprise: "✓" },
+  { icon: Shield, name: "Custom SLA", community: "—", hobby: "—", enterprise: "✓" },
+];
 
 export default function PricingPage() {
   return (
     <div className="flex flex-col">
-      {/* Hero Section */}
-      <section className="px-6 py-16 md:py-24">
-        <div className="mx-auto max-w-4xl text-center">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+
+      {/* Hero */}
+      <section className="relative overflow-hidden border-b border-ink-700 px-6 py-16 md:py-24">
+        <div className="absolute inset-0 -z-10 bg-grid mask-radial opacity-50" />
+        <Reveal className="mx-auto max-w-3xl text-center">
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
-            Simple, Transparent Pricing
+            Simple, transparent pricing
           </h1>
-          <p className="mt-6 text-lg leading-8 text-gray-600 dark:text-gray-300 sm:text-xl">
-            Start for free, upgrade when you need more. Open-source core with optional premium features.
+          <p className="mt-6 text-lg leading-8 text-gray-400">
+            The Content OS core is free forever under MIT. Pay only when you want
+            us to run it for you.
           </p>
-        </div>
+        </Reveal>
       </section>
 
-      {/* Pricing Cards */}
-      <section className="px-6 pb-16 md:pb-24">
-        <div className="mx-auto max-w-6xl">
-          <div className="grid gap-8 md:grid-cols-3">
-            {/* Free Tier */}
+      {/* Cards */}
+      <section className="border-b border-ink-700 px-6 py-16 md:py-24">
+        <RevealGroup className="mx-auto grid max-w-6xl gap-8 md:grid-cols-3">
+          <RevealItem>
             <PricingCard
               name="Community"
               price={0}
               period="forever"
-              description="Perfect for personal projects and small teams"
+              description="Self-hosted Content OS for builders and small teams"
               features={[
-                "Unlimited content items",
-                "Full API access",
-                "Community support",
-                "Basic analytics",
-                "Self-hosted",
+                "Full Content OS core",
+                "Intents, reconciliation loop, trust ledger",
+                "Constitution + provenance",
+                "Full REST/MCP API access",
+                "Self-hosted (Workers or Docker)",
                 "MIT License",
               ]}
               unavailableFeatures={[
+                "Managed hosting",
                 "Priority support",
-                "Advanced analytics",
-                "Custom integrations",
                 "SSO",
               ]}
               ctaText="Get Started Free"
               ctaLink="https://github.com/khuepm/lumibase"
             />
-
-            {/* Hobby Tier - Popular */}
+          </RevealItem>
+          <RevealItem>
             <PricingCard
               name="Hobby"
               price={29}
               period="month"
-              description="For growing projects and professional use"
-              popular={true}
+              description="Managed hosting for growing, professional projects"
+              popular
               features={[
                 "Everything in Community",
+                "Managed hosting + backups",
                 "Priority email support",
                 "Advanced analytics dashboard",
-                "Custom integrations",
                 "Early access to new features",
-                "GitHub Sponsors badge",
-                "Vote on feature roadmap",
+                "Vote on the roadmap",
               ]}
-              unavailableFeatures={[
-                "SSO",
-                "Dedicated support",
-                "Custom SLA",
-              ]}
+              unavailableFeatures={["SSO", "Dedicated support", "Custom SLA"]}
               ctaText="Sponsor on GitHub"
               ctaLink="https://github.com/sponsors/khuepm"
             />
-
-            {/* Enterprise Tier */}
+          </RevealItem>
+          <RevealItem>
             <PricingCard
               name="Enterprise"
               price={99}
               period="month"
-              description="For large teams and mission-critical projects"
+              description="For large teams and mission-critical content"
               features={[
                 "Everything in Hobby",
                 "Dedicated support channel",
                 "Custom SLA guarantees",
                 "SSO (SAML, LDAP)",
-                "Custom contracts",
                 "On-premise deployment",
                 "Training & onboarding",
               ]}
               ctaText="Contact Sales"
               ctaLink="mailto:contact@lumibase.dev"
             />
-          </div>
-        </div>
+          </RevealItem>
+        </RevealGroup>
       </section>
 
-      {/* Features Comparison */}
-      <section className="px-6 py-16 md:py-24 bg-gray-50 dark:bg-gray-900">
+      {/* Comparison */}
+      <section className="border-b border-ink-700 px-6 py-16 md:py-24">
         <div className="mx-auto max-w-6xl">
-          <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl">
-            Feature Comparison
-          </h2>
-          
-          <div className="mt-12 overflow-x-auto">
+          <Reveal>
+            <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl">
+              Feature comparison
+            </h2>
+          </Reveal>
+          <Reveal className="mt-12 overflow-x-auto rounded-xl border border-ink-700">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-800">
-                  <th className="px-6 py-4 text-left text-sm font-semibold">Feature</th>
-                  <th className="px-6 py-4 text-center text-sm font-semibold">Community</th>
-                  <th className="px-6 py-4 text-center text-sm font-semibold text-blue-600">Hobby</th>
-                  <th className="px-6 py-4 text-center text-sm font-semibold">Enterprise</th>
+                <tr className="border-b border-ink-700 bg-ink-900">
+                  <th className="px-6 py-4 text-left font-mono text-xs uppercase tracking-widest text-gray-500">
+                    Feature
+                  </th>
+                  <th className="px-6 py-4 text-center font-mono text-xs uppercase tracking-widest text-gray-500">
+                    Community
+                  </th>
+                  <th className="px-6 py-4 text-center font-mono text-xs uppercase tracking-widest text-signal-400">
+                    Hobby
+                  </th>
+                  <th className="px-6 py-4 text-center font-mono text-xs uppercase tracking-widest text-gray-500">
+                    Enterprise
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                <FeatureRow
-                  icon={<Zap className="h-5 w-5" />}
-                  name="Edge Performance"
-                  community="✓"
-                  hobby="✓"
-                  enterprise="✓"
-                />
-                <FeatureRow
-                  icon={<Shield className="h-5 w-5" />}
-                  name="Per-field Encryption"
-                  community="✓"
-                  hobby="✓"
-                  enterprise="✓"
-                />
-                <FeatureRow
-                  icon={<Users className="h-5 w-5" />}
-                  name="Team Collaboration"
-                  community="✓"
-                  hobby="✓"
-                  enterprise="✓"
-                />
-                <FeatureRow
-                  icon={<Code2 className="h-5 w-5" />}
-                  name="API Access"
-                  community="✓"
-                  hobby="✓"
-                  enterprise="✓"
-                />
-                <FeatureRow
-                  icon={<Globe className="h-5 w-5" />}
-                  name="Custom Domain"
-                  community="✓"
-                  hobby="✓"
-                  enterprise="✓"
-                />
-                <FeatureRow
-                  icon={<Headphones className="h-5 w-5" />}
-                  name="Priority Support"
-                  community="—"
-                  hobby="✓"
-                  enterprise="✓✓"
-                />
-                <FeatureRow
-                  icon={<Shield className="h-5 w-5" />}
-                  name="SSO"
-                  community="—"
-                  hobby="—"
-                  enterprise="✓"
-                />
-                <FeatureRow
-                  icon={<Users className="h-5 w-5" />}
-                  name="Custom SLA"
-                  community="—"
-                  hobby="—"
-                  enterprise="✓"
-                />
+                {comparison.map((row) => (
+                  <tr key={row.name} className="border-b border-ink-800 bg-ink-950/40 last:border-0">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <row.icon className="h-4 w-4 flex-shrink-0 text-signal-400" />
+                        <span className="text-sm text-gray-300">{row.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-center text-sm text-gray-500">{row.community}</td>
+                    <td className="px-6 py-4 text-center text-sm font-semibold text-signal-400">{row.hobby}</td>
+                    <td className="px-6 py-4 text-center text-sm text-gray-500">{row.enterprise}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
-          </div>
+          </Reveal>
         </div>
       </section>
 
-      {/* FAQ Section */}
-      <section className="px-6 py-16 md:py-24">
+      {/* FAQ */}
+      <section className="border-b border-ink-700 px-6 py-16 md:py-24">
         <div className="mx-auto max-w-3xl">
-          <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl">
-            Frequently Asked Questions
-          </h2>
-          
-          <div className="mt-12 space-y-8">
-            <FAQItem
-              question="What's the difference between self-hosted and managed?"
-              answer="Self-hosted means you deploy LumiBase on your own infrastructure (free). Managed means we host it for you with automatic updates, backups, and support (paid tiers)."
-            />
-            <FAQItem
-              question="Can I switch plans anytime?"
-              answer="Yes! You can upgrade or downgrade your plan at any time. Changes take effect immediately and we'll prorate the difference."
-            />
-            <FAQItem
-              question="Do I need to pay for the open-source version?"
-              answer="No! The core LumiBase is and will always be free and open-source under MIT license. Premium features are optional."
-            />
-            <FAQItem
-              question="How does GitHub Sponsors work?"
-              answer="When you sponsor us on GitHub, you'll get access to premium features based on your sponsorship tier. We'll send you a reward token to unlock features."
-            />
-            <FAQItem
-              question="What payment methods do you accept?"
-              answer="We accept GitHub Sponsors (credit card, PayPal), and for Enterprise plans we also accept wire transfers and invoices."
-            />
-          </div>
+          <Reveal>
+            <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl">
+              Frequently asked questions
+            </h2>
+          </Reveal>
+          <RevealGroup className="mt-12 space-y-px overflow-hidden rounded-xl border border-ink-700 bg-ink-700">
+            {faqs.map((faq) => (
+              <RevealItem key={faq.question} className="bg-ink-900 p-6">
+                <h3 className="text-lg font-semibold text-foreground">{faq.question}</h3>
+                <p className="mt-2 leading-7 text-gray-400">{faq.answer}</p>
+              </RevealItem>
+            ))}
+          </RevealGroup>
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="px-6 py-16 md:py-24">
-        <div className="mx-auto max-w-4xl rounded-2xl bg-blue-600 px-6 py-16 text-center text-white">
-          <h2 className="text-3xl font-bold sm:text-4xl">
-            Ready to Get Started?
-          </h2>
-          <p className="mt-4 text-lg text-blue-100">
-            Join thousands of developers building fast, modern content experiences.
+      {/* CTA */}
+      <section className="px-6 py-20 md:py-28">
+        <Reveal className="relative mx-auto max-w-4xl overflow-hidden rounded-2xl border border-signal-500/30 bg-ink-900 px-6 py-16 text-center">
+          <div className="absolute inset-0 -z-10 bg-grid mask-radial opacity-50" />
+          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Ready to get started?</h2>
+          <p className="mx-auto mt-4 max-w-xl text-gray-400">
+            Start free with the open-source core. Upgrade whenever you need us to
+            run it for you.
           </p>
-          <div className="mt-8 flex items-center justify-center gap-4">
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <a
               href="https://github.com/khuepm/lumibase"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg bg-white px-6 py-3 text-sm font-semibold text-blue-600 shadow-sm hover:bg-blue-50"
+              className="inline-flex items-center gap-2 rounded-md bg-signal-500 px-6 py-3 text-sm font-semibold text-ink-950 transition-colors hover:bg-signal-400"
             >
               Start Free
             </a>
@@ -231,50 +250,13 @@ export default function PricingPage() {
               href="https://github.com/sponsors/khuepm"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg border border-blue-400 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700"
+              className="inline-flex items-center gap-2 rounded-md border border-ink-600 px-6 py-3 text-sm font-semibold text-gray-200 transition-colors hover:border-signal-500/50 hover:text-signal-400"
             >
               View Plans
             </a>
           </div>
-        </div>
+        </Reveal>
       </section>
-    </div>
-  );
-}
-
-function FeatureRow({
-  icon,
-  name,
-  community,
-  hobby,
-  enterprise,
-}: {
-  icon: React.ReactNode;
-  name: string;
-  community: string;
-  hobby: string;
-  enterprise: string;
-}) {
-  return (
-    <tr className="border-b border-gray-200 dark:border-gray-800">
-      <td className="px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="text-blue-600">{icon}</div>
-          <span className="text-gray-700 dark:text-gray-300">{name}</span>
-        </div>
-      </td>
-      <td className="px-6 py-4 text-center text-gray-600 dark:text-gray-400">{community}</td>
-      <td className="px-6 py-4 text-center font-semibold text-blue-600">{hobby}</td>
-      <td className="px-6 py-4 text-center text-gray-600 dark:text-gray-400">{enterprise}</td>
-    </tr>
-  );
-}
-
-function FAQItem({ question, answer }: { question: string; answer: string }) {
-  return (
-    <div>
-      <h3 className="text-lg font-semibold">{question}</h3>
-      <p className="mt-2 text-gray-600 dark:text-gray-400">{answer}</p>
     </div>
   );
 }

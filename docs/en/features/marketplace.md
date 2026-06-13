@@ -66,8 +66,41 @@ Chỉ admin (capability `marketplace:publish`) được phép.
 
 - [x] Studio UI marketplace browser (browse + 1-click install).
 - [x] Versioning + auto-update notifications.
-- [x] Public marketplace site (apps/marketplace).
-- [ ] Revenue sharing cho commercial extensions.
+- [x] Public marketplace site (apps/marketplace) backed by the real catalog API.
+- [x] Revenue sharing for commercial extensions: launch is **Free-first**; checkout/payout work is tracked as a separate commercial backlog.
+
+## Public marketplace launch
+
+`apps/marketplace` is a Next.js static export deployed to Cloudflare Pages. It reads catalog data from CMS through:
+
+```
+GET /api/v1/marketplace/extensions?q=&category=&tags=&page=&perPage=&sort=
+GET /api/v1/marketplace/extensions/:slug
+```
+
+The public catalog response is projected from `extensions.manifest.marketplace` first, then falls back to the existing `extensions` row. Stable public fields include `slug`, `name`, `description`, `readme`, `category`, `tags`, `publisherName`, `latestVersion`, `publishedAt`, `updatedAt`, `licenseType`, `repositoryUrl`, and `documentationUrl`. Existing fields (`marketplaceSlug`, `publisher`, `version`, `type`) remain for Studio compatibility.
+
+Launch checklist:
+
+- Set `NEXT_PUBLIC_USE_REAL_API=true`.
+- Set `NEXT_PUBLIC_CMS_API_URL` to the production CMS URL.
+- Build with `pnpm marketplace:build`.
+- Deploy with `pnpm marketplace:deploy` or Cloudflare Pages using `apps/marketplace/out`.
+- Smoke test `/`, `/extensions/`, `/categories/seo/`, and `/extensions/<slug>/`.
+- Seed listing metadata in `manifest.marketplace` if production rows are missing description/category/tags/license/link data.
+
+## Revenue sharing status
+
+The launch marketplace is free-first. LumiBase does not process paid extension checkout, license entitlement, payout, refund, or tax handling in this phase.
+
+Commercial extensions backlog:
+
+- Pricing fields for extension listings.
+- Publisher accounts and payout profile.
+- Default percentage-based platform commission.
+- License entitlement for paid extension installs.
+- Checkout provider integration.
+- Revenue ledger, payout lifecycle, and refund lifecycle.
 
 ## Cấu trúc Phiên bản & Thông báo Cập nhật (Versioning & Auto-update)
 

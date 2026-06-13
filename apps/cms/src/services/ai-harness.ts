@@ -1,8 +1,17 @@
-import { aiApprovals } from '@lumibase/database';
+import { agentApprovals, aiApprovals } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
+import type { ConfiguredLLM } from './llm-provider';
+import type { QueueProvider } from '@lumibase/runtime';
+import { agentAutonomousOpsTotal } from './agent-metrics';
+import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
+import { AUTONOMY_LEVELS, AutonomyService } from './autonomy-service';
+import { KillSwitchService } from './kill-switch-service';
+import { getLoadGuard } from './load-guard-service';
+import { ToolRegistryService } from './tool-registry-service';
+import { VetoService } from './veto-service';
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
@@ -18,6 +27,9 @@ export interface SkillDefinition {
   /** Service this skill connects to (for documentation/tracing). */
   service: 'schema' | 'items' | 'ai';
   handler: (args: Record<string, unknown>) => Promise<unknown>;
+  inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  owner?: string;
 }
 
 /**
@@ -27,6 +39,10 @@ export interface HarnessExecutionResult {
   status: 'executed' | 'pending_approval' | 'denied';
   data?: unknown;
   approvalId?: string;
+  agentApprovalId?: string;
+  goalId?: string;
+  runId?: string;
+  toolCallId?: string;
   message?: string;
 }
 
@@ -44,6 +60,17 @@ export interface AISecureHarnessConfig {
   schemaService?: SchemaService;
   /** ItemService instance for items:read/write skills (listItems, createItem, deleteItem). */
   itemService?: ItemService;
+  /**
+   * Configured LLM for generation skills (`createConfiguredLLMProvider`).
+   * Pass `null` when the environment was checked and no provider exists —
+   * generation skills then fail with LLM_NOT_CONFIGURED instead of stubbing.
+   * Omit entirely to keep offline deterministic handlers (tests).
+   */
+  llm?: ConfiguredLLM | null;
+  /** Queue provider for veto-window commit jobs and dead letters. */
+  queue?: QueueProvider;
+  /** Enables first-class agent_goals/runs/tool_calls audit for tests or non-service callers. */
+  enableAgentHarnessAudit?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -57,6 +84,149 @@ export interface AISecureHarnessConfig {
 interface SkillServices {
   schemaService?: SchemaService;
   itemService?: ItemService;
+  /**
+   * Configured LLM for generation skills.
+   * - key absent: offline deterministic handlers (shared CORE_SKILLS test registry).
+   * - `null`: the caller resolved the environment and found no provider —
+   *   generation skills fail with LLM_NOT_CONFIGURED instead of stubbing.
+   * - object: real LLM execution.
+   */
+  llm?: ConfiguredLLM | null;
+}
+
+// ---------------------------------------------------------------------------
+// LLM JSON completion helpers (generation skills)
+// ---------------------------------------------------------------------------
+
+/** Rough token estimate (~4 chars/token) for run cost metrics. */
+function estimateTokens(...texts: Array<string | null | undefined>): number {
+  return Math.ceil(texts.reduce((sum, t) => sum + (t?.length ?? 0), 0) / 4);
+}
+
+/**
+ * Extracts the first JSON value from an LLM response, tolerating prose or
+ * markdown fences around it.
+ */
+export function extractJson(text: string): unknown {
+  const trimmed = text.replace(/```(?:json)?/g, '').trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Fall back to the outermost {...} or [...] block.
+    for (const [open, close] of [['{', '}'], ['[', ']']] as const) {
+      const start = trimmed.indexOf(open);
+      const end = trimmed.lastIndexOf(close);
+      if (start !== -1 && end > start) {
+        try {
+          return JSON.parse(trimmed.slice(start, end + 1));
+        } catch {
+          // try next bracket pair
+        }
+      }
+    }
+  }
+  throw new Error('LLM_INVALID_JSON: model response did not contain valid JSON');
+}
+
+interface LLMJsonResult<T> {
+  value: T;
+  meta: { provider: string; model: string; estimatedTokens: number };
+}
+
+/** A skill counts against the write budget when it mutates data or schema. */
+function isWriteSkill(tool: { requiredCapabilities?: unknown }): boolean {
+  const caps = Array.isArray(tool.requiredCapabilities)
+    ? (tool.requiredCapabilities as string[])
+    : [];
+  return caps.some((cap) => /:(write|update|create|delete)$/.test(cap));
+}
+
+/**
+ * Skills whose effects cannot be reverted from revisions (dropped schema
+ * loses data). The autonomy resolver hard-caps them at L2 — they never
+ * stage into the veto window or run on autopilot (Req 12.7).
+ */
+const IRREVERSIBLE_SKILLS = new Set(['deleteCollection', 'deleteField']);
+
+/** The capability whose autonomy grant governs a dangerous skill. */
+function primaryDangerousCapability(
+  tool: { requiredCapabilities?: unknown },
+  skillName: string,
+): string {
+  const caps = Array.isArray(tool.requiredCapabilities)
+    ? (tool.requiredCapabilities as string[])
+    : [];
+  return caps.find((cap) => /:(write|update|create|delete)$/.test(cap)) ?? caps[0] ?? skillName;
+}
+
+/**
+ * Only single-item data patches stage into the veto window in v1 — the
+ * staged delta has a well-defined before/after and commit path.
+ */
+function isStageableItemPatch(skillName: string, args: Record<string, unknown>): boolean {
+  return (
+    skillName === 'updateItem' &&
+    typeof args['collection'] === 'string' &&
+    typeof args['id'] === 'string' &&
+    typeof args['data'] === 'object' &&
+    args['data'] !== null &&
+    !Array.isArray(args['data']) &&
+    Object.keys(args['data'] as Record<string, unknown>).length > 0 &&
+    args['status'] === undefined
+  );
+}
+
+/**
+ * Lifts LLM usage metadata returned by generation skills into run metrics
+ * (model + estimated tokens/cost; Req 2.3).
+ */
+function extractLLMMeta(data: unknown): Record<string, unknown> {
+  if (data && typeof data === 'object' && 'meta' in data) {
+    const meta = (data as { meta?: unknown }).meta;
+    if (meta && typeof meta === 'object') {
+      return { llm: meta };
+    }
+  }
+  return {};
+}
+
+/**
+ * Runs a single system+user completion and parses the response as JSON.
+ * Throws LLM_NOT_CONFIGURED when no provider is available (no stub fallback)
+ * and surfaces provider errors with an explicit code.
+ */
+async function completeJson<T = unknown>(
+  llm: ConfiguredLLM | null | undefined,
+  system: string,
+  user: string,
+): Promise<LLMJsonResult<T>> {
+  if (!llm) {
+    throw new Error(
+      'LLM_NOT_CONFIGURED: set LLM_PROVIDER and provider credentials to enable AI generation skills',
+    );
+  }
+  let content: string | null;
+  try {
+    const response = await llm.provider.chat([
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ]);
+    content = response.content;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`LLM_PROVIDER_ERROR: ${message}`);
+  }
+  if (!content) {
+    throw new Error('LLM_EMPTY_RESPONSE: model returned no content');
+  }
+  return {
+    value: extractJson(content) as T,
+    meta: {
+      provider: llm.name,
+      model: llm.model,
+      estimatedTokens: estimateTokens(system, user, content),
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +285,54 @@ function generateFieldSuggestions(
   return [...matched, ...defaults].slice(0, maxSuggestions);
 }
 
+interface CollectionFieldSummary {
+  name: string;
+  type: string;
+  required: boolean;
+}
+
+/** Reads real field definitions for the given collections (best-effort). */
+async function describeCollections(
+  schemaService: SchemaService | undefined,
+  collections: string[],
+): Promise<Record<string, CollectionFieldSummary[]>> {
+  const result: Record<string, CollectionFieldSummary[]> = {};
+  if (!schemaService) return result;
+  for (const name of collections) {
+    try {
+      const fields = (await schemaService.listFields(name)) as Array<{
+        name: string;
+        type: string;
+        nullable?: boolean;
+      }>;
+      result[name] = fields.map((f) => ({
+        name: f.name,
+        type: f.type,
+        required: f.nullable === false,
+      }));
+    } catch {
+      result[name] = [];
+    }
+  }
+  return result;
+}
+
+/** Maps LumiBase field types onto OpenAPI schema types. */
+function openApiType(fieldType: string): string {
+  switch (fieldType) {
+    case 'integer':
+      return 'integer';
+    case 'float':
+      return 'number';
+    case 'boolean':
+      return 'boolean';
+    case 'json':
+      return 'object';
+    default:
+      return 'string';
+  }
+}
+
 /**
  * Creates the CORE_SKILLS registry with handlers wired to real services.
  *
@@ -128,6 +346,9 @@ function generateFieldSuggestions(
  */
 function buildCoreSkills(services: SkillServices): Record<string, SkillDefinition> {
   const { schemaService, itemService } = services;
+  /** Distinguishes "offline test registry" from "environment has no LLM". */
+  const llmResolved = 'llm' in services;
+  const llm = services.llm ?? null;
 
   return {
     listCollections: {
@@ -148,7 +369,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     createCollection: {
       name: 'createCollection',
       description: 'Create a new collection with the given name and options',
-      requiredCapabilities: ['schema:write'],
+      requiredCapabilities: ['schema:create'],
       service: 'schema',
       handler: async (args) => {
         // Connects to: SchemaService.createCollection(input)
@@ -167,7 +388,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     deleteCollection: {
       name: 'deleteCollection',
       description: 'Delete an existing collection by name',
-      requiredCapabilities: ['schema:write'],
+      requiredCapabilities: ['schema:delete'],
       service: 'schema',
       handler: async (args) => {
         // Connects to: SchemaService.deleteCollection(name)
@@ -176,6 +397,42 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         }
         const name = args['name'] as string;
         const result = await schemaService.deleteCollection(name);
+        return { deleted: true, result };
+      },
+    },
+
+    createField: {
+      name: 'createField',
+      description: 'Append a new field to an existing collection',
+      requiredCapabilities: ['schema:update'],
+      service: 'schema',
+      handler: async (args) => {
+        // Connects to: SchemaService.createField(collectionName, input)
+        if (!schemaService) {
+          return { created: true };
+        }
+        const collection = args['collection'] as string;
+        const name = args['name'] as string;
+        const type = args['type'] as string;
+        const required = (args['required'] as boolean) ?? false;
+        const result = await schemaService.createField(collection, { name, type, interface: 'input', required });
+        return { created: true, field: result };
+      },
+    },
+
+    deleteField: {
+      name: 'deleteField',
+      description: 'Delete a field from an existing collection',
+      requiredCapabilities: ['schema:delete'],
+      service: 'schema',
+      handler: async (args) => {
+        // Connects to: SchemaService.deleteField(collectionName, fieldName)
+        if (!schemaService) {
+          return { deleted: true };
+        }
+        const collection = args['collection'] as string;
+        const name = args['name'] as string;
+        const result = await schemaService.deleteField(collection, name);
         return { deleted: true, result };
       },
     },
@@ -213,6 +470,25 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         const status = args['status'] as string | undefined;
         const result = await itemService.create(collection, { data, status });
         return { created: true, item: result };
+      },
+    },
+
+    updateItem: {
+      name: 'updateItem',
+      description: 'Update fields of an existing item in a collection',
+      requiredCapabilities: ['items:update'],
+      service: 'items',
+      handler: async (args) => {
+        // Connects to: ItemService.patch(collectionName, id, patch)
+        if (!itemService) {
+          return { updated: true };
+        }
+        const collection = args['collection'] as string;
+        const id = args['id'] as string;
+        const data = (args['data'] as Record<string, unknown>) ?? {};
+        const status = args['status'] as string | undefined;
+        const result = await itemService.patch(collection, id, { data, ...(status ? { status } : {}) });
+        return { updated: true, item: result };
       },
     },
 
@@ -256,9 +532,32 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           }
         }
 
-        // Generate field suggestions based on description
-        const suggestions = generateFieldSuggestions(description, existingFields, maxSuggestions);
-        return { collection, suggestions, existingFields };
+        if (!llmResolved) {
+          // Offline registry: deterministic keyword-based suggestions.
+          const suggestions = generateFieldSuggestions(description, existingFields, maxSuggestions);
+          return { collection, suggestions, existingFields };
+        }
+
+        const { value, meta } = await completeJson<unknown>(
+          llm,
+          'You design CMS field schemas. Reply with ONLY a JSON array of field suggestions, each: ' +
+            '{"name": string (snake_case), "type": one of string|text|integer|float|boolean|dateTime|json, ' +
+            '"interface": one of input|input-multiline|wysiwyg|slug|datetime|file|select-dropdown|tags|toggle|color|rating, ' +
+            '"required": boolean, "description": string}. Never duplicate existing fields.',
+          `Collection: ${collection}\nExisting fields: ${existingFields.join(', ') || '(none)'}\n` +
+            `Description: ${description}\nReturn at most ${maxSuggestions} suggestions.`,
+        );
+        const suggestions = (Array.isArray(value) ? value : [])
+          .filter(
+            (entry): entry is FieldSuggestion =>
+              typeof entry === 'object' &&
+              entry !== null &&
+              typeof (entry as FieldSuggestion).name === 'string' &&
+              typeof (entry as FieldSuggestion).type === 'string',
+          )
+          .filter((entry) => !existingFields.includes(entry.name))
+          .slice(0, maxSuggestions);
+        return { collection, suggestions, existingFields, meta };
       },
     },
 
@@ -273,16 +572,255 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         const instruction = (args['instruction'] as string) ?? '';
         const currentContent = args['currentContent'] as string | undefined;
 
-        // Build context-aware response
-        const result = {
+        if (!llmResolved) {
+          // Offline registry: deterministic placeholder.
+          return {
+            collection,
+            fieldName,
+            instruction,
+            generatedContent: `[AI-generated content for ${fieldName}: ${instruction}]`,
+            currentContent: currentContent ?? null,
+            note: 'Content generation requires an active LLM provider. Configure LLM_PROVIDER in environment.',
+          };
+        }
+
+        // Retrieval context: sample existing items so generated content
+        // matches the collection's real tone and structure.
+        let samples: unknown[] = [];
+        if (itemService) {
+          try {
+            const listed = await itemService.list(collection, { limit: 3 });
+            samples = (listed as { data?: unknown[] }).data ?? [];
+          } catch {
+            // Collection may not exist or be empty; generate without samples.
+          }
+        }
+
+        const { value, meta } = await completeJson<{ content?: unknown }>(
+          llm,
+          'You write CMS field content. Reply with ONLY JSON: {"content": string}. ' +
+            'Match the tone and structure of the sample items when provided. ' +
+            'Plain text or HTML depending on what the samples use; no markdown fences.',
+          `Collection: ${collection}\nField: ${fieldName}\nInstruction: ${instruction}\n` +
+            (currentContent ? `Current content to edit:\n${currentContent}\n` : '') +
+            (samples.length > 0 ? `Sample items for context:\n${JSON.stringify(samples).slice(0, 4000)}` : ''),
+        );
+        const generatedContent = typeof value?.content === 'string' ? value.content : null;
+        if (generatedContent === null) {
+          throw new Error('LLM_INVALID_JSON: expected {"content": string}');
+        }
+        return {
           collection,
           fieldName,
           instruction,
-          generatedContent: `[AI-generated content for ${fieldName}: ${instruction}]`,
+          generatedContent,
           currentContent: currentContent ?? null,
-          note: 'Content generation requires an active LLM provider. Configure LLM_PROVIDER in environment.',
+          ragSamples: samples.length,
+          meta,
         };
-        return result;
+      },
+    },
+
+    generateAppSpec: {
+      name: 'generateAppSpec',
+      description: 'Generate page and component specs from selected collections',
+      requiredCapabilities: ['schema:read', 'items:read'],
+      service: 'ai',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collections: { type: 'array', items: { type: 'string' } },
+          targetApp: { type: 'string' },
+        },
+      },
+      handler: async (args) => {
+        const collections = Array.isArray(args['collections'])
+          ? (args['collections'] as unknown[]).filter((entry): entry is string => typeof entry === 'string')
+          : ['products', 'orders', 'customers'];
+        const targetApp = (args['targetApp'] as string) ?? 'storefront';
+
+        if (!llmResolved) {
+          // Offline registry: deterministic skeleton spec.
+          return {
+            artifacts: [
+              {
+                type: 'page_spec',
+                title: `${targetApp} page spec`,
+                content: { targetApp, collections, pages: collections.map((collection) => ({ collection, route: `/${collection}` })) },
+              },
+              {
+                type: 'component_spec',
+                title: `${targetApp} component spec`,
+                content: { targetApp, components: collections.map((collection) => `${collection}List`) },
+              },
+            ],
+          };
+        }
+
+        const fieldsByCollection = await describeCollections(schemaService, collections);
+        const { value, meta } = await completeJson<{ pages?: unknown[]; components?: unknown[] }>(
+          llm,
+          'You design app specs for a headless CMS frontend. Reply with ONLY JSON: ' +
+            '{"pages": [{"collection": string, "route": string, "title": string, ' +
+            '"sections": [{"id": string, "component": string, ' +
+            '"source": {"collection": string, "limit": number, "orderBy": string}}]}], ' +
+            '"components": [{"name": string, "collection": string, "props": object}]}. ' +
+            'Every section that renders collection data MUST declare a "source" binding ' +
+            'so it hydrates through the single-roundtrip Delivery API.',
+          `Target app: ${targetApp}\nCollections and their fields:\n${JSON.stringify(fieldsByCollection, null, 2)}`,
+        );
+        const pages = Array.isArray(value?.pages) ? value.pages : [];
+        const components = Array.isArray(value?.components) ? value.components : [];
+        if (pages.length === 0) {
+          throw new Error('LLM_INVALID_JSON: expected at least one page in app spec');
+        }
+        return {
+          artifacts: [
+            {
+              type: 'page_spec',
+              title: `${targetApp} page spec`,
+              content: { targetApp, collections, pages },
+            },
+            {
+              type: 'component_spec',
+              title: `${targetApp} component spec`,
+              content: { targetApp, components },
+            },
+          ],
+          meta,
+        };
+      },
+    },
+
+    generateApiDocs: {
+      name: 'generateApiDocs',
+      description: 'Generate API documentation artifact from schema and permissions',
+      requiredCapabilities: ['schema:read'],
+      service: 'ai',
+      handler: async (args) => {
+        let collections = Array.isArray(args['collections'])
+          ? (args['collections'] as unknown[]).filter((entry): entry is string => typeof entry === 'string')
+          : [];
+
+        if (!llmResolved || !schemaService) {
+          // Offline registry: path skeleton without field-level schemas.
+          return {
+            artifacts: [
+              {
+                type: 'api_spec',
+                title: 'Generated API spec',
+                content: {
+                  openapi: '3.1.0',
+                  info: { title: 'Lumibase generated API', version: '0.1.0' },
+                  paths: Object.fromEntries(collections.map((collection) => [`/items/${collection}`, { get: { summary: `List ${collection}` } }])),
+                },
+              },
+            ],
+          };
+        }
+
+        // Schema-driven generation: the source of truth is the live schema,
+        // so the spec is derived deterministically rather than asked of an LLM.
+        if (collections.length === 0) {
+          const all = await schemaService.listCollections();
+          collections = (all as Array<{ name: string }>).map((c) => c.name);
+        }
+        const fieldsByCollection = await describeCollections(schemaService, collections);
+        const paths: Record<string, unknown> = {};
+        const schemas: Record<string, unknown> = {};
+        for (const [name, fields] of Object.entries(fieldsByCollection)) {
+          const properties: Record<string, unknown> = {
+            id: { type: 'string' },
+            status: { type: 'string' },
+          };
+          for (const field of fields) {
+            properties[field.name] = { type: openApiType(field.type), description: field.type };
+          }
+          schemas[name] = { type: 'object', properties };
+          const ref = { $ref: `#/components/schemas/${name}` };
+          paths[`/api/v1/items/${name}`] = {
+            get: {
+              summary: `List ${name}`,
+              responses: { '200': { description: 'OK', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: ref } } } } } } },
+            },
+            post: { summary: `Create ${name}`, requestBody: { content: { 'application/json': { schema: ref } } }, responses: { '201': { description: 'Created' } } },
+          };
+          paths[`/api/v1/items/${name}/{id}`] = {
+            get: { summary: `Get one ${name}`, responses: { '200': { description: 'OK', content: { 'application/json': { schema: ref } } } } },
+            patch: { summary: `Update ${name}`, requestBody: { content: { 'application/json': { schema: ref } } }, responses: { '200': { description: 'OK' } } },
+            delete: { summary: `Soft-delete ${name}`, responses: { '204': { description: 'Deleted' } } },
+          };
+        }
+        return {
+          artifacts: [
+            {
+              type: 'api_spec',
+              title: 'Generated API spec',
+              content: {
+                openapi: '3.1.0',
+                info: { title: 'Lumibase generated API', version: '0.1.0' },
+                paths,
+                components: { schemas },
+              },
+            },
+          ],
+        };
+      },
+    },
+
+    generateSeedData: {
+      name: 'generateSeedData',
+      description: 'Generate seed data artifact for selected collections',
+      requiredCapabilities: ['items:write'],
+      service: 'ai',
+      handler: async (args) => {
+        const collection = (args['collection'] as string) ?? 'products';
+        const count = Math.max(1, Math.min(Number(args['count'] ?? 3), 20));
+
+        if (!llmResolved) {
+          // Offline registry: deterministic placeholder rows.
+          return {
+            artifacts: [
+              {
+                type: 'seed_data',
+                title: `Seed data for ${collection}`,
+                content: {
+                  collection,
+                  rows: Array.from({ length: count }, (_entry, index) => ({
+                    title: `${collection} sample ${index + 1}`,
+                    status: 'draft',
+                  })),
+                },
+              },
+            ],
+          };
+        }
+
+        const fieldsByCollection = await describeCollections(schemaService, [collection]);
+        const { value, meta } = await completeJson<unknown>(
+          llm,
+          'You generate realistic seed data for a CMS collection. Reply with ONLY a JSON array ' +
+            `of exactly ${count} row objects. Keys must match the field names given; values must ` +
+            'fit the field types. Vary the data realistically; never repeat identical rows.',
+          `Collection: ${collection}\nFields:\n${JSON.stringify(fieldsByCollection[collection] ?? [], null, 2)}`,
+        );
+        const rows = (Array.isArray(value) ? value : [])
+          .filter((row): row is Record<string, unknown> => typeof row === 'object' && row !== null)
+          .slice(0, count)
+          .map((row) => ({ status: 'draft', ...row }));
+        if (rows.length === 0) {
+          throw new Error('LLM_INVALID_JSON: expected a non-empty array of seed rows');
+        }
+        return {
+          artifacts: [
+            {
+              type: 'seed_data',
+              title: `Seed data for ${collection}`,
+              content: { collection, rows },
+            },
+          ],
+          meta,
+        };
       },
     },
   };
@@ -322,10 +860,18 @@ export class AISecureHarness {
   private readonly db: Database;
   private readonly siteId: string;
   private readonly skills: Record<string, SkillDefinition>;
+  private readonly agentHarnessEnabled: boolean;
+  private readonly runService: AgentRunService;
+  private readonly toolRegistry: ToolRegistryService;
+  private readonly itemService?: ItemService;
+  private readonly queue?: QueueProvider;
 
   constructor(config: AISecureHarnessConfig) {
     this.db = config.db;
     this.siteId = config.siteId;
+    this.itemService = config.itemService;
+    this.queue = config.queue;
+    this.agentHarnessEnabled = config.enableAgentHarnessAudit ?? Boolean(config.schemaService || config.itemService);
 
     // When services are provided, build fresh skills wired to real services.
     // When no services are provided, use the shared CORE_SKILLS object
@@ -334,10 +880,16 @@ export class AISecureHarness {
       this.skills = buildCoreSkills({
         schemaService: config.schemaService,
         itemService: config.itemService,
+        // Preserve the "offline registry" mode when callers never resolved
+        // an LLM; forward null/instance when they did (Req 2.1/2.2).
+        ...('llm' in config ? { llm: config.llm ?? null } : {}),
       });
     } else {
       this.skills = CORE_SKILLS;
     }
+
+    this.runService = new AgentRunService(this.db, this.siteId);
+    this.toolRegistry = new ToolRegistryService(this.db, this.siteId, this.skills);
   }
 
   // ---------- Validation ----------
@@ -379,13 +931,13 @@ export class AISecureHarness {
   /**
    * Evaluates whether a skill is dangerous and requires HITL approval.
    * A skill is considered dangerous if:
-   * - It requires the 'schema:write' capability, OR
+   * - It requires a mutating `schema:*` capability, OR
    * - Its name starts with 'delete'
    *
    * @returns true if the skill is classified as dangerous, false otherwise.
    */
   evaluateRisk(skill: SkillDefinition, skillName: string): boolean {
-    if (skill.requiredCapabilities.includes('schema:write')) {
+    if (skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read')) {
       return true;
     }
     if (skillName.startsWith('delete')) {
@@ -404,22 +956,269 @@ export class AISecureHarness {
     args: Record<string, unknown>,
     userCapabilities: string[],
     contextMessage?: string,
+    envelope: AgentRunEnvelope = {},
   ): Promise<HarnessExecutionResult> {
-    // Step 1: Validate skill exists
-    const skill = this.validateSkill(skillName);
-    if (!skill) {
-      return { status: 'denied', message: `Unknown skill: ${skillName}` };
+    if (!this.agentHarnessEnabled) {
+      return this.executeLegacy(skillName, args, userCapabilities, contextMessage);
     }
 
-    // Step 2: Check capabilities
-    if (!this.checkCapabilities(skill, userCapabilities)) {
-      return { status: 'denied', message: 'Insufficient capabilities' };
+    // Kill switch (Req 14.2/14.4): a frozen site/role blocks before any
+    // goal/run is created; an in-flight run hitting this boundary is
+    // cancelled with stopReason 'frozen'. Reads are untouched.
+    const killSwitch = new KillSwitchService({ db: this.db, siteId: this.siteId });
+    const frozenScope = await killSwitch.frozenScopeFor(envelope.agentName ?? 'lumibase-copilot');
+    if (frozenScope) {
+      if (envelope.runId) {
+        await this.runService.cancelRun(envelope.runId, 'frozen');
+      }
+      return {
+        status: 'denied',
+        message: `frozen: agent runtime is frozen for this ${frozenScope}`,
+        ...(envelope.goalId ? { goalId: envelope.goalId } : {}),
+        ...(envelope.runId ? { runId: envelope.runId } : {}),
+      };
+    }
+
+    const run = await this.runService.ensureRun({
+      ...envelope,
+      title: envelope.title ?? `Run ${skillName}`,
+      contextMessage: contextMessage ?? envelope.contextMessage,
+    });
+
+    // Tool-call boundary: cancellation (and freeze) wins before any new
+    // tool call starts (Req 3.5).
+    if (await this.runService.isCancelled(run.runId)) {
+      return { status: 'denied', message: 'Run was cancelled', ...run };
+    }
+
+    // Backpressure: reconciler-origin work yields to real user traffic.
+    // The run is deferred (not failed) and retries when load subsides;
+    // human-triggered runs are never auto-paused (Req 9.4).
+    const loadGuard = getLoadGuard();
+    if (loadGuard.shouldPause(envelope.origin)) {
+      if (loadGuard.markIncidentOnce(this.siteId)) {
+        await new AutonomyService({ db: this.db, siteId: this.siteId }).recordIncident({
+          agentRole: 'reconciler',
+          source: 'load_guard',
+          severity: 'low',
+          detail: { activationId: loadGuard.backpressure.activationId },
+        });
+      }
+      return {
+        status: 'denied',
+        message: 'Deferred by backpressure: runtime under load; retry when load subsides',
+        ...run,
+      };
+    }
+    const startedAt = Date.now();
+    const maxToolCalls = typeof envelope.budget?.['maxToolCalls'] === 'number'
+      ? envelope.budget['maxToolCalls']
+      : undefined;
+    if (maxToolCalls !== undefined) {
+      const existingCalls = await this.runService.countToolCalls(run.runId);
+      if (existingCalls >= maxToolCalls) {
+        const message = `Run budget exceeded: maxToolCalls=${maxToolCalls}`;
+        await this.runService.failRun(run.runId, message, {
+          stopReason: 'max_tool_calls',
+          maxToolCalls,
+          existingCalls,
+        });
+        return { status: 'denied', message, ...run };
+      }
+    }
+
+    // Step 1: Validate skill exists
+    const tool = await this.toolRegistry.getTool(skillName);
+    const toolCallId = await this.runService.appendToolCall({
+      runId: run.runId,
+      toolName: skillName,
+      input: args,
+      status: 'running',
+    });
+
+    if (!tool) {
+      const message = `Unknown skill: ${skillName}`;
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'denied',
+        error: message,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.failRun(run.runId, message);
+      return { status: 'denied', message, ...run, toolCallId };
+    }
+
+    // Step 2: Check capabilities. A role-attributed run is narrowed to
+    // role ∩ grant first (Module C, Req 10.4): the role can never exceed
+    // the caller's token, and the token can never exceed the role.
+    let effectiveCapabilities = userCapabilities;
+    if (envelope.agentRole) {
+      const { AgentRoleService } = await import('./agent-role-service');
+      effectiveCapabilities = await new AgentRoleService({
+        db: this.db,
+        siteId: this.siteId,
+      }).effectiveCapabilities(envelope.agentRole, userCapabilities);
+    }
+    if (!this.checkCapabilities(tool, effectiveCapabilities)) {
+      const message = 'Insufficient capabilities';
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'denied',
+        error: message,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.failRun(run.runId, message);
+      return { status: 'denied', message, ...run, toolCallId };
+    }
+
+    const policy = await this.toolRegistry.evaluatePolicy(tool, run.runId);
+    if (!policy.allowed) {
+      const message = policy.message ?? 'Tool denied by policy';
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'denied',
+        error: message,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.failRun(run.runId, message);
+      return { status: 'denied', message, ...run, toolCallId };
+    }
+
+    // Write rate budget (Req 9.3): per-intent maxWritesPerMinute defers
+    // write-capable tool calls at the boundary. The run is NOT failed —
+    // it resumes when quota returns to the sliding window.
+    const writeLimit = Number((envelope.budget ?? {})['maxWritesPerMinute'] ?? 0);
+    if (writeLimit > 0 && isWriteSkill(tool)) {
+      const scopeKey = `${this.siteId}:${envelope.intentId ?? run.goalId}`;
+      const budgetCheck = loadGuard.tryConsumeWrite(scopeKey, writeLimit);
+      if (!budgetCheck.allowed) {
+        const message = `write_budget_exceeded: retry in ${Math.ceil(budgetCheck.retryAfterMs / 1000)}s`;
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'denied',
+          error: message,
+          latencyMs: Date.now() - startedAt,
+        });
+        return { status: 'denied', message, ...run, toolCallId };
+      }
     }
 
     // Step 3: Evaluate risk
-    const isDangerous = this.evaluateRisk(skill, skillName);
+    const isDangerous = this.evaluateRisk(tool, skillName) || policy.risk === 'dangerous' || policy.risk === 'review_required';
 
     if (isDangerous) {
+      // Trust gradient (L0-L4): the effective level decides whether the
+      // dangerous action awaits approval (≤L2), stages into the veto
+      // window (L3) or executes directly (L4). Irreversible skills never
+      // resolve above L2 via the resolver's hard ceiling.
+      const autonomy = new AutonomyService({ db: this.db, siteId: this.siteId });
+      const agentRole = envelope.agentName ?? run.agentName;
+      const capability = primaryDangerousCapability(tool, skillName);
+      const level = await autonomy.resolve(agentRole, capability, {
+        dangerous: true,
+        intentCap: envelope.autonomyCap ?? null,
+        irreversible: IRREVERSIBLE_SKILLS.has(skillName),
+      });
+
+      // L3 veto window: stageable item writes execute into staging and
+      // auto-commit at the deadline unless a human vetoes (Req 13.1).
+      // Gated by contentOs.vetoWindow (task 20.1): with the flag off, L3
+      // falls through to classic pre-execute HITL — pre-Content-OS
+      // behaviour exactly.
+      const vetoWindowEnabled =
+        level === AUTONOMY_LEVELS.VETO_WINDOW &&
+        (await import('./feature-flags')
+          .then(({ getContentOsFlags }) => getContentOsFlags(this.db, this.siteId))
+          .then((flags) => flags.vetoWindow)
+          .catch(() => false));
+      if (vetoWindowEnabled && isStageableItemPatch(skillName, args)) {
+        const vetoWindowMs = Number((envelope.budget ?? {})['vetoWindowMs']) || undefined;
+        const veto = new VetoService({ db: this.db, siteId: this.siteId, vetoWindowMs });
+        // Pin the active constitution to the run before staging (Req 15.3,
+        // Property 12): the staged revision carries the hash the run
+        // started with, even if a new version activates before commit.
+        let constitutionHash: string | null = null;
+        try {
+          const { ConstitutionService } = await import('./constitution-service');
+          constitutionHash = await new ConstitutionService({ db: this.db, siteId: this.siteId }).pinToRun(
+            run.runId,
+          );
+        } catch {
+          constitutionHash = null;
+        }
+        try {
+          const staged = await veto.stageItemPatch({
+            runId: run.runId,
+            agentRole,
+            capability,
+            collection: String(args['collection']),
+            itemId: String(args['id']),
+            patch: args['data'] as Record<string, unknown>,
+            ...(constitutionHash ? { provenance: { constitutionHash } } : {}),
+          });
+          await this.runService.finishToolCall(toolCallId, {
+            status: 'pending_approval',
+            output: {
+              staged: true,
+              vetoApprovalId: staged.approvalId,
+              revisionId: staged.revisionId,
+              autoCommitAt: staged.autoCommitAt.toISOString(),
+              reviewPath: staged.reviewPath,
+            },
+            approvalId: staged.approvalId,
+            latencyMs: Date.now() - startedAt,
+          });
+          await this.runService.closeRun(run.runId, {
+            toolCalls: 1,
+            stopReason: 'staged_veto_window',
+            vetoApprovalId: staged.approvalId,
+          });
+          await veto.scheduleCommit(staged, this.queue);
+          agentAutonomousOpsTotal.inc({ level: 'L3' });
+          return {
+            status: 'pending_approval',
+            approvalId: staged.approvalId,
+            agentApprovalId: staged.approvalId,
+            message: `Staged; auto-commits at ${staged.autoCommitAt.toISOString()} unless vetoed`,
+            ...run,
+            toolCallId,
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          await this.runService.finishToolCall(toolCallId, {
+            status: 'failed',
+            error: message,
+            latencyMs: Date.now() - startedAt,
+          });
+          await this.runService.failRun(run.runId, message);
+          return { status: 'denied', message, ...run, toolCallId };
+        }
+      }
+
+      // L4 autopilot: execute directly within capability and budget.
+      if (level >= AUTONOMY_LEVELS.AUTOPILOT) {
+        agentAutonomousOpsTotal.inc({ level: 'L4' });
+        const result = await this.runSkill(skillName, args, { runId: run.runId });
+        if (result.success) {
+          await this.runService.finishToolCall(toolCallId, {
+            status: 'executed',
+            output: result.data,
+            latencyMs: Date.now() - startedAt,
+          });
+          await this.runService.closeRun(run.runId, {
+            toolCalls: 1,
+            lastToolLatencyMs: Date.now() - startedAt,
+            autonomyLevel: level,
+            ...extractLLMMeta(result.data),
+          });
+          return { status: 'executed', data: result.data, ...run, toolCallId };
+        }
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'failed',
+          error: result.error,
+          latencyMs: Date.now() - startedAt,
+        });
+        await this.runService.failRun(run.runId, result.error, { toolCalls: 1 });
+        return { status: 'denied', message: result.error, ...run, toolCallId };
+      }
+
+      // ≤L2 (or L3 without a stageable patch): classic pre-execute HITL.
       // Create approval record and return pending_approval
       const [record] = await this.db
         .insert(aiApprovals)
@@ -432,15 +1231,98 @@ export class AISecureHarness {
         })
         .returning();
 
-      return { status: 'pending_approval', approvalId: record!.id };
+      const [agentApproval] = await this.db
+        .insert(agentApprovals)
+        .values({
+          runId: run.runId,
+          siteId: this.siteId,
+          legacyApprovalId: record!.id,
+          subjectType: 'tool_call',
+          subjectId: toolCallId,
+          status: 'pending',
+          approvalPolicy: policy.approvalPolicy,
+          requestedByAgent: run.agentName,
+        })
+        .returning();
+
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'pending_approval',
+        output: { approvalId: record!.id, agentApprovalId: agentApproval!.id },
+        approvalId: agentApproval!.id,
+        latencyMs: Date.now() - startedAt,
+      });
+
+      // Park the run while the approval is pending; the approval decision
+      // resumes it without re-running completed tool calls (Req 3.1/3.4).
+      await this.runService.awaitApproval(run.runId);
+
+      return {
+        status: 'pending_approval',
+        approvalId: record!.id,
+        agentApprovalId: agentApproval!.id,
+        ...run,
+        toolCallId,
+      };
     }
 
     // Step 4: Safe skill — execute directly
-    const result = await this.runSkill(skillName, args);
+    const result = await this.runSkill(skillName, args, { runId: run.runId });
     if (result.success) {
-      return { status: 'executed', data: result.data };
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'executed',
+        output: result.data,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.closeRun(run.runId, {
+        toolCalls: 1,
+        lastToolLatencyMs: Date.now() - startedAt,
+        ...extractLLMMeta(result.data),
+      });
+      return { status: 'executed', data: result.data, ...run, toolCallId };
     }
-    return { status: 'denied', message: result.error };
+    await this.runService.finishToolCall(toolCallId, {
+      status: 'failed',
+      error: result.error,
+      latencyMs: Date.now() - startedAt,
+    });
+    await this.runService.failRun(run.runId, result.error, { toolCalls: 1 });
+    return { status: 'denied', message: result.error, ...run, toolCallId };
+  }
+
+  private async executeLegacy(
+    skillName: string,
+    args: Record<string, unknown>,
+    userCapabilities: string[],
+    contextMessage?: string,
+  ): Promise<HarnessExecutionResult> {
+    const skill = this.validateSkill(skillName);
+    if (!skill) {
+      return { status: 'denied', message: `Unknown skill: ${skillName}` };
+    }
+
+    if (!this.checkCapabilities(skill, userCapabilities)) {
+      return { status: 'denied', message: 'Insufficient capabilities' };
+    }
+
+    const isDangerous = this.evaluateRisk(skill, skillName);
+    if (isDangerous) {
+      const [record] = await this.db
+        .insert(aiApprovals)
+        .values({
+          siteId: this.siteId,
+          skillName,
+          arguments: args,
+          status: 'pending',
+          context: contextMessage ?? null,
+        })
+        .returning();
+      return { status: 'pending_approval', approvalId: record!.id };
+    }
+
+    const result = await this.runSkill(skillName, args);
+    return result.success
+      ? { status: 'executed', data: result.data }
+      : { status: 'denied', message: result.error };
   }
 
   /**
@@ -454,11 +1336,23 @@ export class AISecureHarness {
   async runSkill(
     skillName: string,
     args: Record<string, unknown>,
+    runContext?: { runId?: string; model?: string },
   ): Promise<{ success: true; data: unknown } | { success: false; error: string }> {
     if (!Object.hasOwn(this.skills, skillName)) {
       return { success: false, error: `Skill not found: ${skillName}` };
     }
     const skill = this.skills[skillName]!;
+
+    // Item writes performed by skills are agent-authored: stamp revision
+    // provenance with the executing run before the handler touches data.
+    this.itemService?.setProvenance({
+      authorType: 'agent',
+      runId: runContext?.runId ?? null,
+      model: runContext?.model ?? null,
+    });
+    // Coalescing window: N writes to one collection inside this handler
+    // flush exactly one invalidation at the boundary (Load Guard, Req 9.1).
+    this.itemService?.beginWriteCoalescing();
 
     const TIMEOUT_MS = 30_000;
 
@@ -476,6 +1370,10 @@ export class AISecureHarness {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown execution error';
       return { success: false, error: message };
+    } finally {
+      // Tool-call boundary: writes that happened (even on failure) flush
+      // their deferred invalidations exactly once per collection (Req 9.1).
+      await this.itemService?.flushCoalescedWrites().catch(() => {});
     }
   }
 
@@ -511,6 +1409,10 @@ export class AISecureHarness {
     }
 
     // Execute the stored skill
+    if (this.agentHarnessEnabled) {
+      return this.executeApprovedWithAudit(record, userId);
+    }
+
     const result = await this.runSkill(
       record.skillName,
       record.arguments as Record<string, unknown>,
@@ -539,6 +1441,125 @@ export class AISecureHarness {
     return { status: 'denied', message: result.error };
   }
 
+  private async executeApprovedWithAudit(
+    record: typeof aiApprovals.$inferSelect,
+    userId: string,
+  ): Promise<HarnessExecutionResult> {
+    const [existingAgentApproval] = await this.db
+      .select()
+      .from(agentApprovals)
+      .where(
+        and(
+          eq(agentApprovals.legacyApprovalId, record.id),
+          eq(agentApprovals.siteId, this.siteId),
+        ),
+      )
+      .limit(1);
+
+    const run = existingAgentApproval
+      ? { goalId: '', runId: existingAgentApproval.runId, agentName: existingAgentApproval.requestedByAgent }
+      : await this.runService.ensureRun({
+        agentName: record.agentName,
+        title: `Approved ${record.skillName}`,
+        contextMessage: record.context ?? undefined,
+      });
+    if (existingAgentApproval) {
+      if (existingAgentApproval.status !== 'pending') {
+        return { status: 'denied', message: 'Approval not found or already processed', runId: run.runId };
+      }
+      if (existingAgentApproval.expiresAt && existingAgentApproval.expiresAt <= new Date()) {
+        return { status: 'denied', message: 'Approval expired', runId: run.runId };
+      }
+      // Cancellation wins over a late approval (Req 3.5).
+      if (await this.runService.isCancelled(run.runId)) {
+        return { status: 'denied', message: 'Run was cancelled', runId: run.runId };
+      }
+      // Resume the parked run; only the approved tool call executes —
+      // previously completed tool calls are never re-run (Req 3.4).
+      await this.runService.markRunning(run.runId);
+    }
+
+    // Kill switch wins over approvals: a frozen site/role denies the
+    // approved execution at this boundary (Req 14.2).
+    const approvalKillSwitch = new KillSwitchService({ db: this.db, siteId: this.siteId });
+    const approvalFrozenScope = await approvalKillSwitch.frozenScopeFor(record.agentName);
+    if (approvalFrozenScope) {
+      return {
+        status: 'denied',
+        message: `frozen: agent runtime is frozen for this ${approvalFrozenScope}`,
+        runId: run.runId,
+      };
+    }
+    const startedAt = Date.now();
+    const toolCallId = await this.runService.appendToolCall({
+      runId: run.runId,
+      toolName: record.skillName,
+      input: record.arguments as Record<string, unknown>,
+      status: 'running',
+      approvalId: existingAgentApproval?.id ?? null,
+    });
+
+    const result = await this.runSkill(
+      record.skillName,
+      record.arguments as Record<string, unknown>,
+      { runId: run.runId },
+    );
+
+    if (result.success) {
+      await this.db
+        .update(aiApprovals)
+        .set({
+          status: 'approved',
+          decidedAt: new Date(),
+          decidedBy: userId,
+        })
+        .where(
+          and(
+            eq(aiApprovals.id, record.id),
+            eq(aiApprovals.siteId, this.siteId),
+          ),
+        );
+      if (existingAgentApproval) {
+        await this.db
+          .update(agentApprovals)
+          .set({
+            status: 'approved',
+            decidedAt: new Date(),
+            decidedBy: userId,
+          })
+          .where(
+            and(
+              eq(agentApprovals.id, existingAgentApproval.id),
+              eq(agentApprovals.siteId, this.siteId),
+            ),
+          );
+      }
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'executed',
+        output: result.data,
+        approvalId: existingAgentApproval?.id ?? null,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.closeRun(run.runId, { approvedBy: userId, ...extractLLMMeta(result.data) });
+      return {
+        status: 'executed',
+        data: result.data,
+        runId: run.runId,
+        toolCallId,
+        agentApprovalId: existingAgentApproval?.id,
+      };
+    }
+
+    await this.runService.finishToolCall(toolCallId, {
+      status: 'failed',
+      error: result.error,
+      approvalId: existingAgentApproval?.id ?? null,
+      latencyMs: Date.now() - startedAt,
+    });
+    await this.runService.failRun(run.runId, result.error);
+    return { status: 'denied', message: result.error, runId: run.runId, toolCallId };
+  }
+
   /**
    * Rejects an approval record.
    * Updates the status to 'rejected' and records who rejected it and when.
@@ -560,5 +1581,21 @@ export class AISecureHarness {
           eq(aiApprovals.siteId, this.siteId),
         ),
       );
+
+    if (this.agentHarnessEnabled) {
+      await this.db
+        .update(agentApprovals)
+        .set({
+          status: 'rejected',
+          decidedAt: new Date(),
+          decidedBy: userId,
+        })
+        .where(
+          and(
+            eq(agentApprovals.legacyApprovalId, approvalId),
+            eq(agentApprovals.siteId, this.siteId),
+          ),
+        );
+    }
   }
 }

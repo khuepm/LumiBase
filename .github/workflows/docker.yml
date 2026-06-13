@@ -12,13 +12,25 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     permissions:
       contents: read
       packages: write
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Check package versions
+        run: pnpm version:check
 
       - name: Set IMAGE_NAME to lowercase
         run: |
@@ -84,7 +96,14 @@ jobs:
           load: true
 
       - name: Run container health check
+        timeout-minutes: 5
         run: |
+          cleanup() {
+            docker logs lumibase-health 2>/dev/null || true
+            docker rm -f lumibase-health 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             IMAGE_TAG="lumibase-health-check:pr"
           else
@@ -111,14 +130,14 @@ jobs:
 
           echo "Waiting for container to start..."
           sleep 5
+          docker ps -a --filter name=lumibase-health
 
           MAX_RETRIES=6
           RETRY_COUNT=0
-          until curl -sf http://localhost:1989/health > /dev/null 2>&1; do
+          until curl --max-time 5 -sf http://localhost:1989/health > /dev/null 2>&1; do
             RETRY_COUNT=$((RETRY_COUNT + 1))
             if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
               echo "Health check failed after $MAX_RETRIES attempts"
-              docker logs lumibase-health
               exit 1
             fi
             echo "Attempt $RETRY_COUNT/$MAX_RETRIES - waiting..."
@@ -126,5 +145,3 @@ jobs:
           done
 
           echo "Health check passed!"
-          docker stop lumibase-health
-          docker rm lumibase-health

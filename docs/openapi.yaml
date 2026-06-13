@@ -1,0 +1,974 @@
+openapi: 3.1.0
+info:
+  title: LumiBase CMS API
+  version: 1.0.0
+  description: |
+    Edge-native Headless CMS REST + WebSocket API.
+    
+    **Authentication:** All endpoints require `Authorization: Bearer <access_token>` and `X-Lumi-Site: <siteId>` headers.
+    
+    **Base URL:** `https://api.<your-site>.lumibase.dev`
+    
+    **Docs:** https://docs.lumibase.dev/en/api/hono-api-spec.md
+  contact:
+    name: LumiBase
+    url: https://lumibase.dev
+  license:
+    name: MIT
+    url: https://github.com/khuepm/lumibase/blob/main/LICENSE
+
+servers:
+  - url: https://api.{site}.lumibase.dev
+    description: Production (Cloudflare Workers)
+    variables:
+      site:
+        default: demo
+  - url: http://localhost:1989
+    description: Local development
+
+security:
+  - bearerAuth: []
+    siteHeader: []
+
+tags:
+  - name: auth
+    description: Authentication — login, refresh, logout, current user
+  - name: items
+    description: Generic CRUD for any collection
+  - name: collections
+    description: Schema — manage collections
+  - name: fields
+    description: Schema — manage fields
+  - name: relations
+    description: Schema — manage relations
+  - name: permissions
+    description: Roles, policies, permission rules
+  - name: users
+    description: User management
+  - name: files
+    description: File upload and asset delivery
+  - name: flows
+    description: Automation flows — create, run, inspect
+  - name: ai
+    description: AI Copilot — chat, HITL approvals
+  - name: agent
+    description: Agent Harness lifecycle, artifacts, evaluations, approvals, and app generation
+  - name: settings
+    description: Site-wide settings
+  - name: utils
+    description: Health, version, utility endpoints
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    siteHeader:
+      type: apiKey
+      in: header
+      name: X-Lumi-Site
+
+  schemas:
+    # ─── Common ───────────────────────────────────────────────
+    PaginationMeta:
+      type: object
+      properties:
+        total:      { type: integer }
+        page:       { type: integer }
+        pageSize:   { type: integer }
+        filter_count: { type: integer }
+
+    ErrorResponse:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code:    { type: string, example: PERMISSION_DENIED }
+              message: { type: string }
+              path:    { type: array, items: { type: string } }
+
+    # ─── Auth ─────────────────────────────────────────────────
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:    { type: string, format: email }
+        password: { type: string, minLength: 8 }
+
+    AuthTokens:
+      type: object
+      properties:
+        access_token:  { type: string }
+        refresh_token: { type: string }
+        expires_in:    { type: integer, example: 3600 }
+        user:
+          type: object
+          properties:
+            id:    { type: string, example: usr_abc123 }
+            email: { type: string, format: email }
+            role:  { type: string, example: administrator }
+
+    # ─── Items ────────────────────────────────────────────────
+    ItemRecord:
+      type: object
+      additionalProperties: true
+      properties:
+        id:         { type: string, example: art_Mk3qp7XyZ }
+        site_id:    { type: string, example: site_abc123 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateItemRequest:
+      type: object
+      additionalProperties: true
+      description: Field values for the new item. ID is auto-generated (nanoid) if not provided.
+
+    PatchItemRequest:
+      type: object
+      additionalProperties: true
+      description: Partial field updates. Only provided fields are changed.
+
+    ItemListResponse:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ItemRecord' } }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    ItemSingleResponse:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/ItemRecord' }
+
+    # ─── Collections ──────────────────────────────────────────
+    Collection:
+      type: object
+      properties:
+        name:          { type: string, example: articles }
+        displayName:   { type: string, example: Articles }
+        icon:          { type: string, example: article }
+        note:          { type: string }
+        singleton:     { type: boolean, default: false }
+        status_field:  { type: string, example: status }
+        sort_field:    { type: string, example: sort }
+        created_at:    { type: string, format: date-time }
+
+    CreateCollectionRequest:
+      type: object
+      required: [name]
+      properties:
+        name:          { type: string, pattern: '^[a-z][a-z0-9_]*$' }
+        displayName:   { type: string }
+        icon:          { type: string }
+        note:          { type: string }
+        singleton:     { type: boolean, default: false }
+        status_field:  { type: string }
+        sort_field:    { type: string }
+
+    # ─── Fields ───────────────────────────────────────────────
+    Field:
+      type: object
+      properties:
+        field:     { type: string, example: title }
+        type:      { type: string, enum: [string, text, integer, float, boolean, json, uuid, date, time, datetime, geometry] }
+        interface: { type: string, example: input }
+        display:   { type: string, example: raw }
+        options:   { type: object, additionalProperties: true }
+        required:  { type: boolean }
+        sort:      { type: integer }
+
+    # ─── Flows ────────────────────────────────────────────────
+    Flow:
+      type: object
+      properties:
+        id:          { type: string, example: flw_abc123 }
+        name:        { type: string }
+        status:      { type: string, enum: [active, inactive] }
+        trigger:     { type: string, enum: [manual, schedule, event, webhook] }
+        description: { type: string }
+        created_at:  { type: string, format: date-time }
+
+    FlowRun:
+      type: object
+      properties:
+        runId:     { type: string, example: run_def456 }
+        status:    { type: string, enum: [running, completed, failed] }
+        startedAt: { type: string, format: date-time }
+
+    # ─── AI Copilot ───────────────────────────────────────────
+    AIChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message:        { type: string, maxLength: 2000 }
+        conversationId: { type: string }
+
+    AIChatResponseExecuted:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            status: { type: string, enum: [executed] }
+            data:   { type: object, additionalProperties: true }
+
+    AIChatResponsePending:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            status:     { type: string, enum: [pending_approval] }
+            approvalId: { type: string, example: apr_ghi789 }
+            message:    { type: string }
+
+    AIApprovalDecision:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [approved, rejected] }
+
+    # ─── Files ────────────────────────────────────────────────
+    FileMeta:
+      type: object
+      properties:
+        id:           { type: string, example: fil_abc123 }
+        filename:     { type: string }
+        title:        { type: string }
+        type:         { type: string, example: image/jpeg }
+        filesize:     { type: integer }
+        width:        { type: integer }
+        height:       { type: integer }
+        folder:       { type: string }
+        uploaded_by:  { type: string }
+        created_at:   { type: string, format: date-time }
+
+paths:
+  # ─── Auth ─────────────────────────────────────────────────────────────────
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Login
+      operationId: authLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AuthTokens' }
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Refresh token
+      operationId: authRefresh
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: New tokens
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AuthTokens' }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Logout
+      operationId: authLogout
+      responses:
+        '204':
+          description: Logged out
+
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Current user
+      operationId: authMe
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:           { type: string }
+                      email:        { type: string, format: email }
+                      firstName:    { type: string }
+                      lastName:     { type: string }
+                      role:         { type: string }
+                      capabilities: { type: array, items: { type: string } }
+
+  # ─── Items ────────────────────────────────────────────────────────────────
+  /api/v1/items/{collection}:
+    parameters:
+      - name: collection
+        in: path
+        required: true
+        schema: { type: string }
+      - name: fields
+        in: query
+        schema: { type: string }
+        description: "Comma-separated fields. Supports dot-notation for relations: `author.name`"
+      - name: filter
+        in: query
+        schema: { type: object, additionalProperties: true }
+        style: deepObject
+        description: Filter rules using operators like `filter[status][_eq]=published`
+      - name: sort
+        in: query
+        schema: { type: string }
+        description: "Comma-separated sort fields. Prefix with `-` for DESC: `-created_at,title`"
+      - name: page
+        in: query
+        schema: { type: integer, default: 1 }
+      - name: limit
+        in: query
+        schema: { type: integer, default: 50, maximum: 200 }
+      - name: search
+        in: query
+        schema: { type: string }
+
+    get:
+      tags: [items]
+      summary: List items
+      operationId: listItems
+      responses:
+        '200':
+          description: Item list with pagination meta
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemListResponse' }
+
+    post:
+      tags: [items]
+      summary: Create item(s)
+      operationId: createItems
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/CreateItemRequest'
+                - type: array
+                  items: { $ref: '#/components/schemas/CreateItemRequest' }
+      responses:
+        '201':
+          description: Created item(s)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemSingleResponse' }
+
+  /api/v1/items/{collection}/{id}:
+    parameters:
+      - name: collection
+        in: path
+        required: true
+        schema: { type: string }
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+
+    get:
+      tags: [items]
+      summary: Get item
+      operationId: getItem
+      responses:
+        '200':
+          description: Item data
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemSingleResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+    patch:
+      tags: [items]
+      summary: Update item (partial)
+      operationId: updateItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PatchItemRequest' }
+      responses:
+        '200':
+          description: Updated item
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemSingleResponse' }
+
+    delete:
+      tags: [items]
+      summary: Delete item
+      operationId: deleteItem
+      responses:
+        '204':
+          description: Deleted
+
+  # ─── Collections ──────────────────────────────────────────────────────────
+  /api/v1/collections:
+    get:
+      tags: [collections]
+      summary: List collections
+      operationId: listCollections
+      responses:
+        '200':
+          description: Collection list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Collection' } }
+
+    post:
+      tags: [collections]
+      summary: Create collection
+      operationId: createCollection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCollectionRequest' }
+      responses:
+        '201':
+          description: Created collection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Collection' }
+
+  /api/v1/collections/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: { type: string }
+
+    get:
+      tags: [collections]
+      summary: Get collection
+      operationId: getCollection
+      responses:
+        '200':
+          description: Collection detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Collection' }
+
+    patch:
+      tags: [collections]
+      summary: Update collection metadata
+      operationId: updateCollection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName: { type: string }
+                icon:        { type: string }
+                note:        { type: string }
+      responses:
+        '200':
+          description: Updated collection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Collection' }
+
+    delete:
+      tags: [collections]
+      summary: Delete collection
+      operationId: deleteCollection
+      responses:
+        '204':
+          description: Deleted
+
+  # ─── Fields ───────────────────────────────────────────────────────────────
+  /api/v1/fields/{collection}:
+    parameters:
+      - name: collection
+        in: path
+        required: true
+        schema: { type: string }
+
+    get:
+      tags: [fields]
+      summary: List fields
+      operationId: listFields
+      responses:
+        '200':
+          description: Field list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Field' } }
+
+    post:
+      tags: [fields]
+      summary: Add field
+      operationId: createField
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Field' }
+      responses:
+        '201':
+          description: Created field
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Field' }
+
+  # ─── Flows ────────────────────────────────────────────────────────────────
+  /api/v1/flows:
+    get:
+      tags: [flows]
+      summary: List flows
+      operationId: listFlows
+      responses:
+        '200':
+          description: Flow list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Flow' } }
+
+    post:
+      tags: [flows]
+      summary: Create flow
+      operationId: createFlow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, trigger]
+              properties:
+                name:        { type: string }
+                trigger:     { type: string, enum: [manual, schedule, event, webhook] }
+                description: { type: string }
+                status:      { type: string, enum: [active, inactive], default: active }
+      responses:
+        '201':
+          description: Created flow
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Flow' }
+
+  /api/v1/flows/{id}/run:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+
+    post:
+      tags: [flows]
+      summary: Trigger flow manually
+      operationId: runFlow
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Input payload passed to the flow's first operation
+      responses:
+        '200':
+          description: Flow run started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/FlowRun' }
+
+  # ─── AI Copilot ───────────────────────────────────────────────────────────
+  /api/v1/ai/chat:
+    post:
+      tags: [ai]
+      summary: Send message to AI Copilot
+      operationId: aiChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AIChatRequest' }
+      responses:
+        '200':
+          description: Skill executed immediately (safe skill)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIChatResponseExecuted' }
+        '202':
+          description: Pending human approval (dangerous skill)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIChatResponsePending' }
+
+  /api/v1/ai/approvals:
+    get:
+      tags: [ai]
+      summary: List pending HITL approvals
+      operationId: listApprovals
+      responses:
+        '200':
+          description: Approval list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:        { type: string }
+                        skillName: { type: string }
+                        args:      { type: object, additionalProperties: true }
+                        status:    { type: string, enum: [pending, approved, rejected] }
+                        createdAt: { type: string, format: date-time }
+
+  /api/v1/ai/approvals/{id}/decide:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+
+    post:
+      tags: [ai]
+      summary: Approve or reject a pending AI action
+      operationId: decideApproval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AIApprovalDecision' }
+      responses:
+        '200':
+          description: Decision recorded, skill executed if approved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status: { type: string, enum: [executed, rejected] }
+
+  # ─── Files ────────────────────────────────────────────────────────────────
+  /api/v1/files:
+    post:
+      tags: [files]
+      summary: Register file metadata (after upload to R2/S3)
+      operationId: createFile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, type, filesize]
+              properties:
+                filename: { type: string }
+                title:    { type: string }
+                type:     { type: string }
+                filesize: { type: integer }
+                folder:   { type: string }
+      responses:
+        '201':
+          description: File registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/FileMeta' }
+
+  /api/v1/assets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+      - name: width
+        in: query
+        schema: { type: integer }
+      - name: height
+        in: query
+        schema: { type: integer }
+      - name: format
+        in: query
+        schema: { type: string, enum: [webp, avif, jpeg, png] }
+      - name: quality
+        in: query
+        schema: { type: integer, minimum: 1, maximum: 100 }
+      - name: fit
+        in: query
+        schema: { type: string, enum: [cover, contain, fill, inside, outside] }
+
+    get:
+      tags: [files]
+      summary: Serve / transform image asset
+      operationId: getAsset
+      security: []
+      responses:
+        '200':
+          description: Image binary
+          content:
+            image/webp: {}
+            image/jpeg: {}
+            image/png: {}
+        '302':
+          description: Redirect to CDN URL
+
+  # ─── Utils ────────────────────────────────────────────────────────────────
+  /api/v1/utils/health:
+    get:
+      tags: [utils]
+      summary: Health check
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: All systems healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status:   { type: string, enum: [healthy, degraded, unhealthy] }
+                      checks:
+                        type: object
+                        properties:
+                          database: { type: string }
+                          cache:    { type: string }
+                          storage:  { type: string }
+                          search:   { type: string }
+                          queue:    { type: string }
+                      version: { type: string }
+                      runtime: { type: string, enum: [cloudflare, docker] }
+
+  /api/v1/utils/version:
+    get:
+      tags: [utils]
+      summary: API version
+      operationId: getVersion
+      security: []
+      responses:
+        '200':
+          description: Version info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      version: { type: string }
+                      runtime: { type: string }
+
+  # ─── Agent Harness ───────────────────────────────────────────────────────
+  /api/v1/agent/runs:
+    get:
+      tags: [agent]
+      summary: List agent runs
+      responses:
+        '200':
+          description: Runs for the active site
+
+  /api/v1/agent/runs/{id}/retry:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [agent]
+      summary: Retry an agent run
+      description: Creates a new run linked by retryOfRunId. The failed run audit trail is preserved.
+      responses:
+        '201':
+          description: Retry run created
+
+  /api/v1/agent/artifacts:
+    get:
+      tags: [agent]
+      summary: List agent artifacts
+      parameters:
+        - name: runId
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Artifacts for the active site
+    post:
+      tags: [agent]
+      summary: Create an agent artifact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [runId, type, title, content]
+              properties:
+                runId: { type: string }
+                type: { type: string, enum: [schema_diff, page_spec, component_spec, seed_data, api_spec, prompt, migration] }
+                title: { type: string }
+                target: { type: string }
+                content: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: Artifact created
+
+  /api/v1/agent/artifacts/{id}/evaluate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+      - name: runId
+        in: query
+        required: true
+        schema: { type: string }
+    post:
+      tags: [agent]
+      summary: Evaluate an agent artifact
+      responses:
+        '200':
+          description: Evaluation result
+
+  /api/v1/agent/artifacts/{id}/publish:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [agent]
+      summary: Publish an agent artifact
+      description: Schema and migration artifacts require a passing evaluation unless an override reason is supplied.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                overrideReason: { type: string }
+      responses:
+        '200':
+          description: Published artifact
+
+  /api/v1/agent/artifacts/{id}/rollback:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [agent]
+      summary: Roll back a published agent artifact
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: Rolled-back artifact
+
+  /api/v1/agent/generate-app:
+    post:
+      tags: [agent]
+      summary: Generate app artifacts from schema
+      description: Creates a run plus page_spec, component_spec, seed_data, and api_spec artifacts, then evaluates each artifact.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                collections:
+                  type: array
+                  items: { type: string }
+                targetApp: { type: string }
+                constraints: { type: object, additionalProperties: true }
+                budget: { type: object, additionalProperties: true }
+                approvalPolicy: { type: string }
+      responses:
+        '201':
+          description: Run, artifacts, and evaluations created

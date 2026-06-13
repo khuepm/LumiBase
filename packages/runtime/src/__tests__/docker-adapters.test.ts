@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ─── Mock ioredis ───────────────────────────────────────────────────────────
 
 const mockRedis = {
+  status: 'ready',
+  connect: vi.fn(),
   get: vi.fn(),
   set: vi.fn(),
   setex: vi.fn(),
@@ -58,6 +60,7 @@ describe('RedisCacheProvider', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRedis.status = 'ready';
     provider = new RedisCacheProvider('redis://localhost:6379');
   });
 
@@ -102,6 +105,18 @@ describe('RedisCacheProvider', () => {
       const result = await provider.get<number[]>('arr-key');
 
       expect(result).toEqual([1, 2, 3]);
+    });
+
+    it('should connect lazy Redis clients before reading', async () => {
+      mockRedis.status = 'wait';
+      mockRedis.connect.mockResolvedValue(undefined);
+      mockRedis.get.mockResolvedValue(JSON.stringify('ready'));
+
+      const result = await provider.get<string>('lazy-key');
+
+      expect(mockRedis.connect).toHaveBeenCalled();
+      expect(mockRedis.get).toHaveBeenCalledWith('lazy-key');
+      expect(result).toBe('ready');
     });
   });
 

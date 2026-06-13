@@ -3,25 +3,52 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Control-room dark is the canonical palette */
+  --background: #05070a;
+  --foreground: #e6edf3;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  /* Faint blueprint grid for the control-room backdrop */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgba(74, 222, 128, 0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(74, 222, 128, 0.06) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+
+  /* Radial mask so the grid fades toward the edges */
+  .mask-radial {
+    -webkit-mask-image: radial-gradient(ellipse 60% 60% at 50% 40%, #000 40%, transparent 100%);
+    mask-image: radial-gradient(ellipse 60% 60% at 50% 40%, #000 40%, transparent 100%);
+  }
+
+  .text-signal-glow {
+    text-shadow: 0 0 24px rgba(34, 197, 94, 0.35);
+  }
+}
+
+/* Respect users who prefer less motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

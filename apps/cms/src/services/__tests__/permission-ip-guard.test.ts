@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isIpAllowedByGuard } from '../permission-service';
+import { isIpAllowedByGuard, resolvePolicyIpGuards } from '../permission-service';
 
 describe('isIpAllowedByGuard', () => {
   it('allows requests when no IP guard is configured', () => {
@@ -27,5 +27,18 @@ describe('isIpAllowedByGuard', () => {
 
   it('fails closed when allow list exists but request IP is unavailable', () => {
     expect(isIpAllowedByGuard(undefined, ['10.15.68.0/24'])).toBe(false);
+  });
+
+  it('falls back to legacy rules guards when migrated top-level lists are empty', () => {
+    const allowGuard = resolvePolicyIpGuards([], [], { ipAllow: ['203.0.113.10'] });
+    expect(isIpAllowedByGuard('198.51.100.20', allowGuard.ipAllow, allowGuard.ipDeny)).toBe(false);
+
+    const denyGuard = resolvePolicyIpGuards([], [], { ipDeny: ['198.51.100.20'] });
+    expect(isIpAllowedByGuard('198.51.100.20', denyGuard.ipAllow, denyGuard.ipDeny)).toBe(false);
+  });
+
+  it('prefers populated top-level guards over legacy rules guards', () => {
+    const guard = resolvePolicyIpGuards(['198.51.100.20'], [], { ipAllow: ['203.0.113.10'] });
+    expect(isIpAllowedByGuard('198.51.100.20', guard.ipAllow, guard.ipDeny)).toBe(true);
   });
 });

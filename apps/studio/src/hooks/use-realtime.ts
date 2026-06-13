@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getApiClient } from '@/lib/api';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 export function useRealtimeSubscription(collection: string, onUpdate?: (payload: any) => void) {
   const [isConnected, setIsConnected] = useState(false);
@@ -8,39 +9,52 @@ export function useRealtimeSubscription(collection: string, onUpdate?: (payload:
   const client = getApiClient();
 
   useEffect(() => {
+    let isMounted = true;
+
     // In a real application, we would pass the active siteId.
     // For this stub, we just pass 'default'.
-    const ws = client.realtime.connect('default');
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setIsConnected(true);
-      // Subscribe to the specific collection
-      ws.send(JSON.stringify({ type: 'subscribe', collection }));
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.collection === collection && onUpdate) {
-          onUpdate(data);
-        }
-      } catch (err) {
-        console.error('Failed to parse realtime message:', err);
+    client.realtime.connect('default').then((ws) => {
+      if (!isMounted) {
+        ws.close();
+        return;
       }
-    };
+      
+      wsRef.current = ws;
 
-    ws.onerror = (event) => {
-      setError(new Error('WebSocket error'));
-    };
+      ws.onopen = () => {
+        setIsConnected(true);
+        ws.send(JSON.stringify({ type: 'subscribe', collection }));
+      };
 
-    ws.onclose = () => {
-      setIsConnected(false);
-    };
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.collection === collection && onUpdate) {
+            onUpdate(data);
+          }
+        } catch (err) {
+          console.error('Failed to parse realtime message:', formatSafeError(err));
+        }
+      };
+
+      ws.onerror = (event) => {
+        setError(new Error('WebSocket error'));
+      };
+
+      ws.onclose = () => {
+        setIsConnected(false);
+      };
+    }).catch(err => {
+      console.error('Failed to connect to realtime:', err);
+      if (isMounted) setError(err);
+    });
 
     return () => {
-      ws.close();
-      wsRef.current = null;
+      isMounted = false;
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, [collection, client.realtime, onUpdate]);
 

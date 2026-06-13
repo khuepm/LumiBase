@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { type Database } from '@lumibase/database';
 
-import { encryptSync } from '../modules/cdc/registry/encryption';
+import { encrypt } from '../modules/cdc/registry/encryption';
 import {
   PipelineRegistry,
   type ConnectivityChecker,
@@ -95,11 +95,11 @@ const stubSchemaReader: PgSchemaReader = {
 // `delete … returning({ id })`. This fake faithfully serves the single
 // provisioned pipeline row for the resolve step and removes it on delete.
 
-function makePipelineRow(
+async function makePipelineRow(
   pipelineId: string,
   siteId: string,
   connectorType: CdcConnectorType,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   const now = new Date();
   return {
     id: pipelineId,
@@ -108,8 +108,8 @@ function makePipelineRow(
     connectorType,
     status: 'active',
     statusMessage: null,
-    sourceConnection: encryptSync(SOURCE_CONNECTION, TEST_ENCRYPTION_KEY),
-    sinkConnection: encryptSync(SINK_CONNECTION, TEST_ENCRYPTION_KEY),
+    sourceConnection: await encrypt(SOURCE_CONNECTION, TEST_ENCRYPTION_KEY),
+    sinkConnection: await encrypt(SINK_CONNECTION, TEST_ENCRYPTION_KEY),
     intermediaryConnection: null,
     replicationTables: ['users'],
     config: {},
@@ -244,7 +244,7 @@ describe('Feature: clickhouse-cdc, Property 22: Replication slot cleanup on dele
 
           // 2. Delete through the real registry, which resolves the connector
           //    and calls destroy() (slot cleanup) before removing the record.
-          const row = makePipelineRow(pipelineId, siteId, connectorType);
+          const row = await makePipelineRow(pipelineId, siteId, connectorType);
           const resolver: ConnectorResolver = (type) =>
             type === connector.type ? connector : null;
           const registry = new PipelineRegistry({

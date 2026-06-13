@@ -47,6 +47,29 @@ const STRUCTURAL_FIELDS: Record<string, string> = {
   updated_at: 'updated_at',
 };
 
+const KNOWN_OPERATORS = new Set([
+  '_eq',
+  '_neq',
+  '_in',
+  '_nin',
+  '_gt',
+  '_gte',
+  '_lt',
+  '_lte',
+  '_contains',
+  '_starts_with',
+  '_ends_with',
+  '_icontains',
+  '_istarts_with',
+  '_iends_with',
+  '_between',
+  '_null',
+  '_nnull',
+  '_empty',
+  '_nempty',
+  '_regex',
+]);
+
 /** Resolve a single PolicyValue, expanding magic vars to a concrete value. */
 export function resolveMagic(value: unknown, ctx: MagicContext): unknown {
   if (typeof value !== 'string') return value;
@@ -105,6 +128,7 @@ function fieldExpr(field: string): SQL {
  */
 export function compileWhere(rule: PolicyRule | null | undefined, ctx: MagicContext): SQL | undefined {
   if (!rule) return undefined;
+  if (ruleHasFailClosedCondition(rule, ctx)) return sql`false`;
   const r = rule as Record<string, unknown>;
   if (Array.isArray(r._and)) {
     const sub = (r._and as PolicyRule[])
@@ -142,10 +166,10 @@ export function compileWhere(rule: PolicyRule | null | undefined, ctx: MagicCont
           clauses.push(sql`${expr} <> ${v}`);
           break;
         case '_in':
-          clauses.push(sql`${expr} = any(${v as unknown[]})`);
+          clauses.push(Array.isArray(v) ? sql`${expr} = any(${v as unknown[]})` : sql`false`);
           break;
         case '_nin':
-          clauses.push(sql`${expr} <> all(${v as unknown[]})`);
+          clauses.push(Array.isArray(v) ? sql`${expr} <> all(${v as unknown[]})` : sql`false`);
           break;
         case '_gt':
           clauses.push(sql`${expr} > ${v}`);
@@ -178,6 +202,10 @@ export function compileWhere(rule: PolicyRule | null | undefined, ctx: MagicCont
           clauses.push(sql`lower(${expr}) like ${'%' + String(v).toLowerCase()}`);
           break;
         case '_between': {
+          if (!Array.isArray(v) || v.length !== 2) {
+            clauses.push(sql`false`);
+            break;
+          }
           const [lo, hi] = v as [unknown, unknown];
           clauses.push(sql`${expr} between ${lo} and ${hi}`);
           break;
@@ -225,6 +253,7 @@ export function evaluate(
   ctx: MagicContext,
 ): boolean {
   if (!rule) return true;
+  if (ruleHasFailClosedCondition(rule, ctx)) return false;
   const r = rule as Record<string, unknown>;
   if (Array.isArray(r._and)) return (r._and as PolicyRule[]).every((x) => evaluate(x, item, ctx));
   if (Array.isArray(r._or)) return (r._or as PolicyRule[]).some((x) => evaluate(x, item, ctx));
@@ -293,6 +322,26 @@ function matchOp(op: string, lhs: unknown, rhs: unknown): boolean {
 
 function containsUnknownMagic(value: unknown): boolean {
   return Array.isArray(value) ? value.some(containsUnknownMagic) : value === UNKNOWN_MAGIC;
+}
+
+function ruleHasFailClosedCondition(rule: PolicyRule, ctx: MagicContext): boolean {
+  const r = rule as Record<string, unknown>;
+  if (Array.isArray(r._and)) return (r._and as PolicyRule[]).some((x) => ruleHasFailClosedCondition(x, ctx));
+  if (Array.isArray(r._or)) return (r._or as PolicyRule[]).some((x) => ruleHasFailClosedCondition(x, ctx));
+  if (r._not && typeof r._not === 'object') return ruleHasFailClosedCondition(r._not as PolicyRule, ctx);
+
+  for (const [field, op] of Object.entries(r)) {
+    if (field === '_and' || field === '_or' || field === '_not') continue;
+    if (!op || typeof op !== 'object' || Array.isArray(op)) return true;
+    for (const [opKey, raw] of Object.entries(op as Record<string, unknown>)) {
+      if (!KNOWN_OPERATORS.has(opKey)) return true;
+      const v = Array.isArray(raw) ? raw.map((x) => resolveMagic(x, ctx)) : resolveMagic(raw, ctx);
+      if (containsUnknownMagic(v)) return true;
+      if ((opKey === '_in' || opKey === '_nin') && !Array.isArray(v)) return true;
+      if (opKey === '_between' && (!Array.isArray(v) || v.length !== 2)) return true;
+    }
+  }
+  return false;
 }
 
 function getPath(source: Record<string, unknown>, path: string): unknown {

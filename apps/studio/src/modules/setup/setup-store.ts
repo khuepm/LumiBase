@@ -224,7 +224,7 @@ export const selectAdminPath = (s: SetupState): string | null => s.adminPath;
  * route tree in `router.tsx` (tasks 3.9, 6.6, 10.3).
  */
 export type SetupRoutePath =
-  | '/setup/account'
+  | '/setup/advance'
   | '/setup/path'
   | '/setup/security'
   | '/setup/project'
@@ -240,7 +240,7 @@ export type SetupRoutePath =
  * step the wizard isn't ready for falls back to the right place.
  *
  * Behaviour:
- *   - `!accountValid` → `/setup/account`
+ *   - `!accountValid` → `/setup/advance`
  *   - `!pathValid`    → `/setup/path`
  *   - `!policyValid`  → `/setup/security`
  *   - `!projectValid` → `/setup/project`
@@ -258,7 +258,7 @@ export function getEarliestUnsatisfiedStep(
     | 'completed'
   > & { confirmed?: boolean },
 ): SetupRoutePath {
-  if (!state.accountValid) return '/setup/account';
+  if (!state.accountValid) return '/setup/advance';
   if (!state.pathValid) return '/setup/path';
   if (!state.policyValid) return '/setup/security';
   if (!state.projectValid) return '/setup/project';

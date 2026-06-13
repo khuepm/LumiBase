@@ -19,8 +19,15 @@ export class RedisCacheProvider implements CacheProvider {
     }
   }
 
+  private async ensureConnected(): Promise<void> {
+    if (this.client.status === 'wait') {
+      await this.client.connect();
+    }
+  }
+
   async get<T = string>(key: string): Promise<T | null> {
     try {
+      await this.ensureConnected();
       const val = await this.client.get(key);
       return val ? (JSON.parse(val) as T) : null;
     } catch {
@@ -31,6 +38,7 @@ export class RedisCacheProvider implements CacheProvider {
 
   async set(key: string, value: string, options?: { ttl?: number }): Promise<void> {
     try {
+      await this.ensureConnected();
       if (options?.ttl) {
         await this.client.setex(key, options.ttl, value);
       } else {
@@ -43,6 +51,7 @@ export class RedisCacheProvider implements CacheProvider {
 
   async delete(key: string): Promise<void> {
     try {
+      await this.ensureConnected();
       await this.client.del(key);
     } catch {
       console.warn('[cache] Redis delete failed — skipping cache delete');

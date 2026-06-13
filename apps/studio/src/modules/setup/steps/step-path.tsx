@@ -79,7 +79,7 @@ export function clearPathDraft(): void {
   pathDraft = null;
 }
 
-function setPathDraftInternal(value: AdminPathFormValues): void {
+export function setPathDraft(value: AdminPathFormValues): void {
   pathDraft = value;
 }
 
@@ -237,7 +237,7 @@ export function StepPath({ onSubmitted }: StepPathProps) {
       // schema's transform runs before validation surfaces here.
       const normalized = values.adminPath;
 
-      setPathDraftInternal({ adminPath: normalized });
+      setPathDraft({ adminPath: normalized });
       setStoreAdminPath(normalized);
       setPathValid(true);
       onSubmitted?.({ adminPath: normalized });

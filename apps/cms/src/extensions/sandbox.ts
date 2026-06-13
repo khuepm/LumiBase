@@ -13,9 +13,11 @@
  *  - "kv:write"      — KV namespace writes
  *  - "env:read"      — access to declared env vars
  *  - "queue:enqueue" — enqueue jobs to a queue
+ *  - "items:read" / "items:read:<collection>" — actor-scoped item reads
+ *  - "items:write" / "items:write:<collection>" — actor-scoped item writes
  *
- * The sandbox uses dynamic import() to load the bundle. Workers/Browsers
- * require the bundle to be a valid ESM module served from a trusted URL.
+ * The sandbox uses dynamic import() to load the bundle only after the
+ * bundle URL passes the trusted-origin policy configured by the operator.
  *
  * Usage:
  *   const sandbox = new ExtensionSandbox(env, db);
@@ -25,17 +27,24 @@
  */
 
 import type { Database } from '@lumibase/database';
+import { validateOutboundUrl } from '../services/ssrf-guard';
+import { formatSafeError } from '@lumibase/shared/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ExtensionCapability =
   | 'db:read'
   | 'db:write'
+  | 'service-account'
   | 'http:fetch'
   | 'kv:read'
   | 'kv:write'
   | 'env:read'
-  | 'queue:enqueue';
+  | 'queue:enqueue'
+  | 'items:read'
+  | 'items:write'
+  | `items:read:${string}`
+  | `items:write:${string}`;
 
 export interface ExtensionHookContext {
   collection: string;
@@ -47,6 +56,20 @@ export interface ExtensionHookContext {
 }
 
 export type HookFn = (ctx: ExtensionHookContext) => Promise<void | Record<string, unknown>>;
+
+export interface ExtensionActorDataAccess {
+  list: (collection: string, params?: Record<string, unknown>) => Promise<unknown>;
+  detail: (collection: string, id: string, fields?: string[]) => Promise<unknown>;
+  create: (collection: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) => Promise<unknown>;
+  patch: (collection: string, id: string, patch: { data?: Record<string, unknown>; status?: string; sort?: number }) => Promise<unknown>;
+  delete: (collection: string, id: string) => Promise<unknown>;
+}
+
+export type ExtensionServiceAccountAudit = (event: {
+  extensionName: string;
+  operation: 'query' | 'execute';
+  statement: string;
+}) => Promise<void>;
 
 export interface ExtensionModule {
   /** Lifecycle hooks for item mutations. */
@@ -95,6 +118,11 @@ interface SandboxLoadOptions {
 interface SandboxEnv {
   /** Cloudflare KV binding (optional). */
   CONFIG_CACHE?: KVNamespace;
+  /**
+   * Comma-separated list of trusted extension bundle origins. Extension
+   * execution is disabled unless this allowlist is explicitly configured.
+   */
+  EXTENSION_BUNDLE_ORIGINS?: string;
   /** Extension-accessible env vars. */
   [key: string]: unknown;
 }
@@ -107,6 +135,8 @@ export class ExtensionSandbox {
   constructor(
     private readonly env: SandboxEnv,
     private readonly db?: Database,
+    private readonly actorDataAccess?: ExtensionActorDataAccess,
+    private readonly serviceAccountAudit?: ExtensionServiceAccountAudit,
   ) {}
 
   /**
@@ -116,6 +146,13 @@ export class ExtensionSandbox {
   async load(opts: SandboxLoadOptions): Promise<ExtensionModule | null> {
     if (this.cache.has(opts.name)) {
       return this.cache.get(opts.name)!;
+    }
+
+    if (!this.isTrustedBundleUrl(opts.bundleUrl)) {
+      console.error(
+        `[extension-sandbox] refused to load "${opts.name}" from an untrusted bundle URL`,
+      );
+      return null;
     }
 
     const caps = new Set(opts.capabilities);
@@ -133,7 +170,7 @@ export class ExtensionSandbox {
       this.cache.set(opts.name, extensionMod);
       return extensionMod;
     } catch (err) {
-      console.error(`[extension-sandbox] failed to load "${opts.name}"`, err);
+      console.error(`[extension-sandbox] failed to load "${opts.name}"`, formatSafeError(err));
       return null;
     }
   }
@@ -154,25 +191,70 @@ export class ExtensionSandbox {
     const gate = (cap: ExtensionCapability) => {
       if (!caps.has(cap)) throw new CapabilityError(cap);
     };
+    const gateItems = (access: 'read' | 'write', collection: string) => {
+      const baseCap = `items:${access}` as const;
+      const collectionCap = `${baseCap}:${collection}` as const;
+      if (!caps.has(baseCap) && !caps.has(collectionCap)) {
+        throw new CapabilityError(collectionCap);
+      }
+    };
 
     return {
+      /**
+       * Actor-scoped item access. Calls are routed through the host ItemService,
+       * so row/field/action permissions are evaluated for the request principal.
+       * Extensions must also be granted items:read/items:write, or a
+       * collection-scoped variant such as items:read:posts.
+       */
+      items: {
+        list: async (collection: string, params?: Record<string, unknown>) => {
+          gateItems('read', collection);
+          if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
+          return this.actorDataAccess.list(collection, params);
+        },
+        detail: async (collection: string, id: string, fields?: string[]) => {
+          gateItems('read', collection);
+          if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
+          return this.actorDataAccess.detail(collection, id, fields);
+        },
+        create: async (collection: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) => {
+          gateItems('write', collection);
+          if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
+          return this.actorDataAccess.create(collection, payload);
+        },
+        patch: async (collection: string, id: string, patch: { data?: Record<string, unknown>; status?: string; sort?: number }) => {
+          gateItems('write', collection);
+          if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
+          return this.actorDataAccess.patch(collection, id, patch);
+        },
+        delete: async (collection: string, id: string) => {
+          gateItems('write', collection);
+          if (!this.actorDataAccess) throw new Error('Actor data access is not available in this context.');
+          return this.actorDataAccess.delete(collection, id);
+        },
+      },
+
       /** Read-only DB helper — SELECT only. */
       db: {
         query: async (sqlStr: string, _params?: unknown[]) => {
           gate('db:read');
+          gate('service-account');
           if (!this.db) throw new Error('DB not available in this environment.');
           // Safety: allow only SELECT statements.
           const trimmed = sqlStr.trim().toUpperCase();
           if (!trimmed.startsWith('SELECT')) {
             throw new CapabilityError('db:read (non-SELECT query blocked)');
           }
+          await this.serviceAccountAudit?.({ extensionName: name, operation: 'query', statement: sqlStr });
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           return (this.db as any).execute(sqlStr);
         },
         /** Write access — INSERT / UPDATE / DELETE. */
         execute: async (sqlStr: string, _params?: unknown[]) => {
           gate('db:write');
+          gate('service-account');
           if (!this.db) throw new Error('DB not available in this environment.');
+          await this.serviceAccountAudit?.({ extensionName: name, operation: 'execute', statement: sqlStr });
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           return (this.db as any).execute(sqlStr);
         },
@@ -181,6 +263,10 @@ export class ExtensionSandbox {
       /** Outbound HTTP — guarded by http:fetch capability. */
       fetch: async (input: RequestInfo, init?: RequestInit) => {
         gate('http:fetch');
+        const guarded = validateOutboundUrl(requestInfoToUrl(input));
+        if (!guarded.allowed) {
+          throw new Error(guarded.reason ?? 'Outbound URL is not allowed.');
+        }
         return globalThis.fetch(input, init);
       },
 
@@ -220,7 +306,47 @@ export class ExtensionSandbox {
     };
   }
 
+  private isTrustedBundleUrl(bundleUrl: string): boolean {
+    let parsed: URL;
+    try {
+      parsed = new URL(bundleUrl);
+    } catch {
+      return false;
+    }
+
+    if (!['https:', 'http:'].includes(parsed.protocol)) {
+      return false;
+    }
+
+    if (
+      parsed.protocol === 'http:' &&
+      !['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)
+    ) {
+      return false;
+    }
+
+    const trustedOrigins = String(
+      this.env.EXTENSION_BUNDLE_ORIGINS ??
+        (typeof process !== 'undefined' ? process.env.EXTENSION_BUNDLE_ORIGINS : '') ??
+        '',
+    )
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+
+    if (trustedOrigins.length === 0) {
+      return false;
+    }
+
+    return trustedOrigins.includes(parsed.origin);
+  }
+
   private importWithTimeout(url: string, timeoutMs: number): Promise<Record<string, unknown>> {
+    const bundleGuard = validateExtensionBundleUrl(url);
+    if (!bundleGuard.allowed) {
+      return Promise.reject(new SandboxLoadError(url, bundleGuard.reason));
+    }
+
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
         () => reject(new SandboxLoadError(url, `load timed out after ${timeoutMs}ms`)),
@@ -240,4 +366,26 @@ export class ExtensionSandbox {
         });
     });
   }
+}
+
+
+function requestInfoToUrl(input: RequestInfo): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
+
+function validateExtensionBundleUrl(raw: string): { allowed: boolean; reason?: string } {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { allowed: false, reason: 'Extension bundle URL is invalid.' };
+  }
+
+  if (url.protocol === 'data:') {
+    return { allowed: url.pathname.startsWith('text/javascript'), reason: 'Only JavaScript data URLs are allowed.' };
+  }
+
+  return validateOutboundUrl(raw);
 }

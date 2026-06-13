@@ -15,6 +15,7 @@
  */
 
 import { createWriteStream, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 
@@ -52,7 +53,13 @@ function buildHeaders(): Record<string, string> {
 async function runExport(): Promise<void> {
   const outFile = getArg('--out') ?? getArg('-o') ?? `lumibase-backup-${SITE_ID}-${new Date().toISOString().slice(0, 10)}.ndjson`;
 
-  console.log(`⏳ Exporting site ${SITE_ID} → ${outFile} …`);
+  const resolvedOutFile = resolve(process.cwd(), outFile);
+  if (!resolvedOutFile.startsWith(process.cwd())) {
+    console.error('Error: Access Denied: Path Traversal detected');
+    process.exit(1);
+  }
+
+  console.log(`⏳ Exporting site ${SITE_ID} → ${resolvedOutFile} …`);
 
   const res = await fetch(`${API_URL}/api/v1/admin/backup`, {
     headers: buildHeaders(),
@@ -64,10 +71,10 @@ async function runExport(): Promise<void> {
     process.exit(1);
   }
 
-  const dest = createWriteStream(outFile);
+  const dest = createWriteStream(resolvedOutFile);
   await pipeline(Readable.fromWeb(res.body as never), dest);
 
-  console.log(`✅ Export complete: ${outFile}`);
+  console.log(`✅ Export complete: ${resolvedOutFile}`);
 }
 
 async function runImport(): Promise<void> {
@@ -77,9 +84,15 @@ async function runImport(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`⏳ Restoring site ${SITE_ID} from ${inFile} …`);
+  const resolvedInFile = resolve(process.cwd(), inFile);
+  if (!resolvedInFile.startsWith(process.cwd())) {
+    console.error('Error: Access Denied: Path Traversal detected');
+    process.exit(1);
+  }
 
-  const body = readFileSync(inFile, 'utf-8');
+  console.log(`⏳ Restoring site ${SITE_ID} from ${resolvedInFile} …`);
+
+  const body = readFileSync(resolvedInFile, 'utf-8');
 
   const res = await fetch(`${API_URL}/api/v1/admin/restore`, {
     method: 'POST',
