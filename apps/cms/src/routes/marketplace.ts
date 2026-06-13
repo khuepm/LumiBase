@@ -18,7 +18,7 @@
  */
 
 import { extensions, userSites, notifications, roles } from "@lumibase/database";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../env";
@@ -97,7 +97,7 @@ marketplaceRouter.get("/extensions", async (c) => {
   const rows = await db
     .select()
     .from(extensions)
-    .where(isNotNull(extensions.publishedAt));
+    .where(and(isNull(extensions.siteId), isNotNull(extensions.publishedAt)));
   return c.json({
     data: rows.map((r) => ({
       id: r.id,
@@ -120,6 +120,7 @@ marketplaceRouter.get("/extensions/:slug", async (c) => {
     .where(
       and(
         eq(extensions.marketplaceSlug, slug),
+        isNull(extensions.siteId),
         isNotNull(extensions.publishedAt),
       ),
     );
@@ -174,7 +175,9 @@ marketplaceRouter.get("/updates", async (c) => {
     const globals = await db
       .select()
       .from(extensions)
-      .where(and(query, isNotNull(extensions.publishedAt)));
+      .where(
+        and(query, isNull(extensions.siteId), isNotNull(extensions.publishedAt)),
+      );
 
     let latestGlobal = null;
     for (const g of globals) {
@@ -211,6 +214,7 @@ marketplaceRouter.post("/extensions/:slug/install", async (c) => {
     .where(
       and(
         eq(extensions.marketplaceSlug, slug),
+        isNull(extensions.siteId),
         isNotNull(extensions.publishedAt),
       ),
     );
@@ -337,7 +341,9 @@ marketplaceRouter.post("/publish", async (c) => {
       bundleSha256: parsed.data.bundleSha256,
       publishedAt: new Date(),
     })
-    .where(eq(extensions.id, parsed.data.extensionId))
+    .where(
+      and(eq(extensions.id, parsed.data.extensionId), isNull(extensions.siteId)),
+    )
     .returning();
 
   if (updated.length === 0)
