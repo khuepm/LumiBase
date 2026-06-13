@@ -142,6 +142,45 @@ export interface PromotionProposal {
   [key: string]: unknown;
 }
 
+/** Agent role row (content-os-ui Req 16). */
+export interface AgentRoleRow {
+  id: string;
+  name: string;
+  description: string | null;
+  systemPromptRef: string | null;
+  model: string | null;
+  capabilities: string[];
+  enabled: boolean;
+}
+
+export interface AgentRoleInput {
+  name: string;
+  description?: string;
+  systemPromptRef?: string;
+  model?: string;
+  capabilities: string[];
+  enabled?: boolean;
+}
+
+/** Sub-goal input for planner decomposition (content-os-ui Req 18). */
+export interface SubGoalInput {
+  title: string;
+  description?: string;
+  agentRole: string;
+}
+
+/** Result of a manual reconciliation cycle (content-os-ui Req 17.1). */
+export interface IntentScanResult {
+  scan: Record<string, unknown>;
+  reconcile: Record<string, unknown>;
+}
+
+/** Promotion eligibility check result (content-os-ui Req 20). */
+export interface PromotionCheckResult {
+  proposed: boolean;
+  [key: string]: unknown;
+}
+
 /** Mirrors ContentOsFlags in apps/cms/src/services/feature-flags.ts. */
 export interface ContentOsFlags {
   reconciler: boolean;
@@ -234,6 +273,50 @@ export const missionControlApi = {
     agentFetch('/api/v1/agent/kill-switch/lift', {
       method: 'POST',
       body: JSON.stringify({ scope, targetId }),
+    }),
+  // ── Agent roles (content-os-ui Req 16) ──────────────────────────────────
+  roles: () => agentFetch<AgentRoleRow[]>('/api/v1/agent/roles'),
+  createRole: (input: AgentRoleInput) =>
+    agentFetch<AgentRoleRow>('/api/v1/agent/roles', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateRole: (name: string, patch: Partial<Omit<AgentRoleInput, 'name'>>) =>
+    agentFetch<AgentRoleRow>(`/api/v1/agent/roles/${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteRole: (name: string) =>
+    agentFetch(`/api/v1/agent/roles/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  // ── Intent lifecycle (content-os-ui Req 17) ─────────────────────────────
+  updateIntent: (id: string, patch: Record<string, unknown>) =>
+    agentFetch<ContentIntent>(`/api/v1/agent/intents/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteIntent: (id: string) =>
+    agentFetch(`/api/v1/agent/intents/${id}`, { method: 'DELETE' }),
+  scanIntent: (id: string) =>
+    agentFetch<IntentScanResult>(`/api/v1/agent/intents/${id}/scan`, {
+      method: 'POST',
+      body: '{}',
+    }),
+  // ── Planner (content-os-ui Req 18) ──────────────────────────────────────
+  decomposeGoal: (id: string, subGoals: SubGoalInput[]) =>
+    agentFetch<AgentGoalRow[]>(`/api/v1/agent/goals/${id}/decompose`, {
+      method: 'POST',
+      body: JSON.stringify({ subGoals }),
+    }),
+  settleGoal: (id: string) =>
+    agentFetch<AgentGoalRow>(`/api/v1/agent/goals/${id}/settle`, {
+      method: 'POST',
+      body: '{}',
+    }),
+  // ── Promotion eligibility (content-os-ui Req 20) ────────────────────────
+  checkPromotion: (agentRole: string, capability: string) =>
+    agentFetch<PromotionCheckResult>('/api/v1/agent/autonomy/promotions/check', {
+      method: 'POST',
+      body: JSON.stringify({ agentRole, capability }),
     }),
   /**
    * Rollout flags switchboard (content-os-ui Req 15). Reads the per-site

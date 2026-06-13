@@ -1,9 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Bot, GitBranch, User, Workflow } from 'lucide-react';
+import { Bot, GitBranch, Plus, User, Workflow, X } from 'lucide-react';
+import { useState } from 'react';
 import { FillIcon } from '@/components/fill-icon';
 import { cn } from '@/lib/cn';
-import { missionControlApi, type AgentGoalRow, type AgentRunRow } from './api';
+import { missionControlApi, type AgentGoalRow, type AgentRunRow, type SubGoalInput } from './api';
 import { MissionControlLayout, useMissionControlBase } from './layout';
 
 /**
@@ -51,6 +52,97 @@ function latestRunByGoal(runs: AgentRunRow[]): Map<string, AgentRunRow> {
   return latest;
 }
 
+/**
+ * Decompose form (content-os-ui task 18.1; Req 18.1): the human plays
+ * Planner — break a goal into role-scoped sub-goals. Roles come from the
+ * role library so the assignment is always a persona that exists.
+ */
+function DecomposeForm({ goalId, onClose }: { goalId: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const rolesQuery = useQuery({ queryKey: ['mc-agent-roles'], queryFn: missionControlApi.roles });
+  const [rows, setRows] = useState<SubGoalInput[]>([{ title: '', agentRole: '' }]);
+
+  const mutation = useMutation({
+    mutationFn: (subGoals: SubGoalInput[]) => missionControlApi.decomposeGoal(goalId, subGoals),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['mc-goals'] });
+      onClose();
+    },
+  });
+
+  const roles = rolesQuery.data ?? [];
+  const valid = rows.length > 0 && rows.every((r) => r.title.trim() && r.agentRole);
+  const setRow = (i: number, patch: Partial<SubGoalInput>) =>
+    setRows((prev) => prev.map((row, j) => (j === i ? { ...row, ...patch } : row)));
+
+  return (
+    <div className="mt-1 space-y-2 rounded-md border bg-muted/30 p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium">Decompose into sub-goals</p>
+        <button type="button" onClick={onClose} aria-label="Close decompose form" className="rounded-md border p-0.5 hover:bg-muted">
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+      {rows.map((row, i) => (
+        <div key={i} className="flex flex-wrap items-center gap-2">
+          <input
+            value={row.title}
+            onChange={(e) => setRow(i, { title: e.target.value })}
+            placeholder="Sub-goal title"
+            aria-label={`Sub-goal ${i + 1} title`}
+            className="min-w-48 flex-1 rounded-md border bg-background px-2 py-1 text-xs"
+          />
+          <select
+            value={row.agentRole}
+            onChange={(e) => setRow(i, { agentRole: e.target.value })}
+            aria-label={`Sub-goal ${i + 1} role`}
+            className="rounded-md border bg-background px-2 py-1 text-xs"
+          >
+            <option value="">role…</option>
+            {roles.map((r) => (
+              <option key={r.name} value={r.name}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          {rows.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
+              aria-label={`Remove sub-goal ${i + 1}`}
+              className="rounded-md border p-1 hover:bg-muted"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      ))}
+      {mutation.isError && (
+        <p className="text-[10px] text-destructive">
+          {mutation.error instanceof Error ? mutation.error.message : 'Decompose failed.'}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setRows((prev) => [...prev, { title: '', agentRole: '' }])}
+          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] hover:bg-muted"
+        >
+          <Plus className="h-3 w-3" /> Add row
+        </button>
+        <button
+          type="button"
+          onClick={() => mutation.mutate(rows.map((r) => ({ ...r, title: r.title.trim() })))}
+          disabled={!valid || mutation.isPending}
+          className="rounded-md bg-primary px-2 py-1 text-[10px] font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+        >
+          {mutation.isPending ? 'Creating…' : 'Create sub-goals'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function GoalNodeRow({
   node,
   runs,
@@ -61,47 +153,81 @@ function GoalNodeRow({
   depth: number;
 }) {
   const base = useMissionControlBase();
+  const queryClient = useQueryClient();
+  const [decomposing, setDecomposing] = useState(false);
   const { goal } = node;
   const OriginIcon = ORIGIN_ICONS[goal.origin as keyof typeof ORIGIN_ICONS] ?? User;
   const role = goal.agentRole ?? goal.assigneeAgent;
   const run = runs.get(goal.id);
 
+  const settleMutation = useMutation({
+    mutationFn: () => missionControlApi.settleGoal(goal.id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['mc-goals'] }),
+  });
+
   return (
     <li>
-      <div
-        className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2"
-        style={{ marginLeft: depth * 24 }}
-      >
-        <FillIcon
-          icon={OriginIcon}
-          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-          aria-label={`origin: ${goal.origin}`}
-        />
-        <span className="text-sm font-medium">{goal.title}</span>
-        <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-800">
-          <FillIcon icon={Bot} className="h-3 w-3" /> {role}
-        </span>
-        <span
-          className={cn(
-            'rounded-full px-1.5 py-0.5 text-[10px]',
-            GOAL_TONES[goal.status] ?? 'bg-muted text-muted-foreground',
-          )}
-        >
-          {goal.status}
-        </span>
-        {run && (
-          <span className="text-[10px] text-muted-foreground">
-            last run: {run.status} · {run.model}
+      <div style={{ marginLeft: depth * 24 }}>
+        <div className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2">
+          <FillIcon
+            icon={OriginIcon}
+            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+            aria-label={`origin: ${goal.origin}`}
+          />
+          <span className="text-sm font-medium">{goal.title}</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-800">
+            <FillIcon icon={Bot} className="h-3 w-3" /> {role}
           </span>
-        )}
-        {goal.intentId && (
-          <Link
-            to={`${base}/intents/${goal.intentId}` as never}
-            className="ml-auto text-xs text-primary hover:underline"
+          <span
+            className={cn(
+              'rounded-full px-1.5 py-0.5 text-[10px]',
+              GOAL_TONES[goal.status] ?? 'bg-muted text-muted-foreground',
+            )}
           >
-            Intent →
-          </Link>
+            {goal.status}
+          </span>
+          {run && (
+            <span className="text-[10px] text-muted-foreground">
+              last run: {run.status} · {run.model}
+            </span>
+          )}
+          <span className="ml-auto inline-flex items-center gap-2">
+            {/* Planner actions (Req 18) */}
+            <button
+              type="button"
+              onClick={() => setDecomposing((v) => !v)}
+              className="text-xs text-primary hover:underline"
+            >
+              Decompose
+            </button>
+            {node.children.length > 0 && (
+              <button
+                type="button"
+                onClick={() => settleMutation.mutate()}
+                disabled={settleMutation.isPending}
+                className="text-xs text-primary hover:underline disabled:opacity-50"
+              >
+                {settleMutation.isPending ? 'Settling…' : 'Settle'}
+              </button>
+            )}
+            {goal.intentId && (
+              <Link
+                to={`${base}/intents/${goal.intentId}` as never}
+                className="text-xs text-primary hover:underline"
+              >
+                Intent →
+              </Link>
+            )}
+          </span>
+        </div>
+        {settleMutation.isError && (
+          <p className="mt-0.5 text-[10px] text-destructive">
+            {settleMutation.error instanceof Error
+              ? settleMutation.error.message
+              : 'Settle failed.'}
+          </p>
         )}
+        {decomposing && <DecomposeForm goalId={goal.id} onClose={() => setDecomposing(false)} />}
       </div>
       {node.children.length > 0 && (
         <ul className="mt-1 space-y-1">

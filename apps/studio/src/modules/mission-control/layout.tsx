@@ -21,6 +21,7 @@ const SECTIONS = [
   { id: 'inbox', label: 'Inbox', path: '/inbox' },
   { id: 'intents', label: 'Intents', path: '/intents' },
   { id: 'goals', label: 'Goals', path: '/goals' },
+  { id: 'agents', label: 'Agents', path: '/agents' },
   { id: 'trust', label: 'Trust ledger', path: '/trust' },
   { id: 'constitution', label: 'Constitution', path: '/constitution' },
 ] as const;
