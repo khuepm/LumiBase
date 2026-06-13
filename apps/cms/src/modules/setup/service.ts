@@ -346,36 +346,6 @@ export class SetupService {
       };
     }
 
-    // ── 5b. `setup_started` audit entry (Req 15.1; task 11.2). Emitted
-    //        once the request has passed eager validation and we are
-    //        about to take the row lock — it records that a setup
-    //        ATTEMPT began (distinct from `setup_completed`, which only
-    //        fires post-commit). Best-effort + never-throws via the
-    //        AuditLogger; no secrets are in scope (only the actor email
-    //        + masked Admin_Path hash). This is the one setup event that
-    //        is NOT post-commit by design — a failed/aborted attempt
-    //        still legitimately "started".
-    await this.resolveAuditLogger().write({
-      event: 'setup_started',
-      actorEmail: input.account.email,
-      ip: ctx.ip ?? null,
-      userAgent: ctx.userAgent ?? null,
-      requestId: ctx.requestId ?? null,
-      metadata: { adminPathHash: await sha256ShortHex(normalizedPath) },
-    });
-
-    // ── 6. Pre-compute hashes outside the tx so we hold the row lock
-    //       for the minimum time. PBKDF2 100k is ~50ms per hash and we
-    //       compute 9 (1 password + 8 backup codes) in parallel.
-    const passwordHash = await hashPassword(input.account.password);
-    const plainBackupCodes: string[] = [];
-    for (let i = 0; i < BACKUP_CODE_COUNT; i++) {
-      plainBackupCodes.push(generateBackupCode());
-    }
-    const backupCodeHashes = await Promise.all(
-      plainBackupCodes.map((c) => hashPassword(c)),
-    );
-
     const policyJson = serializeLockoutPolicy(input.policy);
     const policyValue = JSON.parse(policyJson) as Record<string, unknown>;
     const projectCheck = validateProject(input.project);
@@ -463,6 +433,32 @@ export class SetupService {
             throw new SetupAbort({ code: 'SETUP_TOKEN_INVALID' });
           }
         }
+
+        // ── 5b. `setup_started` audit entry (Req 15.1; task 11.2). Emit it
+        //        only after the cheap initialized/token gates pass so an
+        //        unauthenticated caller cannot force setup-attempt audit writes
+        //        or the PBKDF2 work below with missing/invalid tokens.
+        await this.resolveAuditLogger().write({
+          event: 'setup_started',
+          actorEmail: input.account.email,
+          ip: ctx.ip ?? null,
+          userAgent: ctx.userAgent ?? null,
+          requestId: ctx.requestId ?? null,
+          metadata: { adminPathHash: await sha256ShortHex(normalizedPath) },
+        });
+
+        // ── 6. Hash only after the row-lock, initialized-state check, and
+        //       setup-token gate have succeeded. PBKDF2 100k is intentionally
+        //       expensive, so invalid public setup requests must be rejected
+        //       before reaching this point.
+        const passwordHash = await hashPassword(input.account.password);
+        const plainBackupCodes: string[] = [];
+        for (let i = 0; i < BACKUP_CODE_COUNT; i++) {
+          plainBackupCodes.push(generateBackupCode());
+        }
+        const backupCodeHashes = await Promise.all(
+          plainBackupCodes.map((c) => hashPassword(c)),
+        );
 
         // Path uniqueness is enforced by the
         // `system_state_admin_path_unique` index on commit. Because
