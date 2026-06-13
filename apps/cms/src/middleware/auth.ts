@@ -89,11 +89,22 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const authHeader = c.req.header('authorization') ?? '';
   const [scheme, token] = authHeader.split(' ');
 
-  // 1. Dev Mode Auth (Only check if enabled in env)
+  // 1. Dev Mode Auth (local development only).
   // Fall back to process.env so the Node.js / Docker serve path works
-  // (c.env is only populated in Cloudflare Workers mode).
-  const devAuthEnabled =
-    c.env.LUMIBASE_DEV_AUTH === 'true' || process.env.LUMIBASE_DEV_AUTH === 'true';
+  // (c.env is only populated in Cloudflare Workers mode). The bypass must
+  // also be gated to an explicit development runtime so an inherited
+  // LUMIBASE_DEV_AUTH flag cannot enable forged principals in production.
+  const devAuthFlagEnabled =
+    c.env?.LUMIBASE_DEV_AUTH === 'true' || process.env.LUMIBASE_DEV_AUTH === 'true';
+  const developmentRuntime =
+    c.env?.LUMIBASE_ENV === 'development' ||
+    process.env.LUMIBASE_ENV === 'development' ||
+    process.env.NODE_ENV === 'development';
+  const productionRuntime =
+    c.env?.LUMIBASE_ENV === 'production' ||
+    process.env.LUMIBASE_ENV === 'production' ||
+    process.env.NODE_ENV === 'production';
+  const devAuthEnabled = devAuthFlagEnabled && developmentRuntime && !productionRuntime;
   if (devAuthEnabled) {
     const devToken = token || authHeader;
     if (devToken && devToken.startsWith('dev:')) {
