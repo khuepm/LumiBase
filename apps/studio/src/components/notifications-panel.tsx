@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { FillIcon } from '@/components/fill-icon';
 import { getAdminBase } from '@/lib/admin-base';
+import { getApiBaseUrl } from '@/lib/api-base';
 import { cn } from '@/lib/cn';
 import {
   diffNewEntries,
@@ -150,7 +151,7 @@ export function NotificationsPanel() {
     const storage = typeof localStorage !== 'undefined' ? localStorage : null;
     const token = storage?.getItem('lumibase_dev_token') ?? '';
     const siteId = storage?.getItem('lumibase_site_id') ?? '';
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:1989';
+    const baseUrl = getApiBaseUrl();
 
     const connect = async () => {
       try {

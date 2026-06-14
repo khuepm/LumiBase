@@ -1,3 +1,5 @@
+import { getApiBaseUrl } from '@/lib/api-base';
+
 /**
  * Shape returned by `GET /api/v1/setup/state`. Mirrors design §4.1.
  *
@@ -26,7 +28,7 @@ export class SetupStateFetchError extends Error {
 export async function fetchSetupState(): Promise<SetupStateResponse> {
   let res: Response;
   try {
-    res = await fetch('/api/v1/setup/state', {
+    res = await fetch(`${getApiBaseUrl()}/api/v1/setup/state`, {
       method: 'GET',
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },

@@ -162,6 +162,14 @@ jobs:
         run: curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --max-time 20 "${{ steps.deploy_marketplace.outputs.url }}" --output /dev/null
 
       - name: Build studio
+        env:
+          # The Studio is a static SPA with no co-located backend on
+          # Cloudflare Pages, so it must call the CMS cross-origin. Point it
+          # at the deployed CMS origin (the same repo variable the CMS deploy
+          # verifies against). The CMS must allow this Studio origin via
+          # CORS_ALLOWED_ORIGINS. If unset, the build falls back to
+          # same-origin and the Studio will fail to reach the API.
+          VITE_API_URL: ${{ vars.LUMIBASE_CMS_PRODUCTION_URL }}
         run: pnpm --filter @lumibase/studio build
 
       - name: Deploy studio to Cloudflare Pages
