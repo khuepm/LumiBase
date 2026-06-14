@@ -6,6 +6,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["-y", "serve@latest", "apps/landing/out", "-l", "4311"],
       "port": 4311
+    },
+    {
+      "name": "studio",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-F", "@lumibase/studio", "dev"],
+      "port": 2026
     }
   ]
 }
