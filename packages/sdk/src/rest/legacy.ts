@@ -46,6 +46,8 @@ import {
   PresetResource,
   TranslationResource,
   SettingResource,
+  SiteResource,
+  SiteConfigUpdate,
   UserResource,
   TeamResource,
   TeamMemberResource,
@@ -469,6 +471,15 @@ export function legacyRest() {
       delete: (key: string) => client.rawRequest<null>(`/api/v1/settings/${key}`, { method: "DELETE" }),
     };
 
+    const site = {
+      get: () => client.rawRequest<SiteResource>("/api/v1/site"),
+      update: (patch: SiteConfigUpdate) =>
+        client.rawRequest<SiteResource>("/api/v1/site", {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        }),
+    };
+
     const users = {
       list: () => client.rawRequest<UserResource[]>("/api/v1/users"),
       get: (id: string) => client.rawRequest<UserResource>(`/api/v1/users/${id}`),
@@ -684,6 +695,7 @@ export function legacyRest() {
       presets,
       translations,
       settings,
+      site,
       users,
       teams,
       folders,

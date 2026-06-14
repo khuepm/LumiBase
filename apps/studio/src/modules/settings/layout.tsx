@@ -16,6 +16,13 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
+    id: 'configuration',
+    label: 'Configuration',
+    items: [
+      { id: 'site', label: 'Site', to: '/settings/site' },
+    ],
+  },
+  {
     id: 'localization',
     label: 'Localization',
     items: [
