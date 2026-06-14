@@ -36,6 +36,7 @@ Trạng thái: `pending` (chưa làm) · `in-progress` · `done` (setup + backfi
 | 8 | content-os-ui | v0.5.x | Đã rà soát (gồm task 15 rollout switchboard + phase 3 tasks 16-20 agents/intent-lifecycle/planner/evaluate/promotion-check): UI-only trên endpoint + settings row sẵn có — không yêu cầu khởi tạo mới | n/a | — | Rà soát 2026-06-13 |
 | 9 | studio-ops-ui | v0.5.x | Đã rà soát: UI-only trên `/materialize`, `/tm`, `/marketplace/publish` sẵn có — không seed, không flag, không bước wizard mới | n/a | — | Rà soát 2026-06-13 |
 | 10 | admin-setup-wizard | v0.6.x | Seed RBAC role `Administrator` (`adminAccess=true`) và bind bootstrap admin qua `user_roles` trong setup transaction | done | — | Done 2026-06-14: bước 9a trong setup tx, `systemKey='administrator'` idempotent qua `roles_site_system_key_unique`. Trước fix, bootstrap user không có role nào → PermissionService resolve `admin=false` → mọi schema/items request 403 ("Failed to load collections"). Thoả requirements.md Req 3. **Cần backfill** instance đã setup trước v0.6.x — xem Lưu ý backfill |
+| 11 | admin-setup-wizard | v0.6.x | Đã rà soát: Studio standalone (Cloudflare Pages) gọi `GET /setup/state` cross-origin. Fix là deploy/connectivity (`VITE_API_URL` + `CORS_ALLOWED_ORIGINS`), không seed/flag/policy/bước wizard/capability/backfill DB | n/a | — | Rà soát 2026-06-14: studio mặc định same-origin nên `fetchSetupState` fail trên studio.lumibase.dev → "Couldn't reach the server". Sửa bằng base URL build-time (`getApiBaseUrl`) + CORS; không có trạng thái khởi tạo trong DB |
 
 ## Lưu ý backfill
 

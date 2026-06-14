@@ -1,10 +1,13 @@
 import { createLumiClient, legacyRest } from '@lumibase/sdk';
 import { getAdminBase } from '@/lib/admin-base';
+import { getApiBaseUrl } from '@/lib/api-base';
 
 /**
- * Studio API client. In Phase 0/A we run against the Vite dev proxy so the
- * Worker URL is empty (same-origin). Token + site come from localStorage in
- * dev; production wires Logto's access token and the site switcher.
+ * Studio API client. The base URL is resolved by `getApiBaseUrl()`:
+ * same-origin in dev (Vite proxy) and Docker, or the absolute CMS origin
+ * (`VITE_API_URL`) when the Studio is deployed standalone (Cloudflare
+ * Pages). Token + site come from localStorage in dev; production wires
+ * Logto's access token and the site switcher.
  */
 
 const STORAGE_KEY = {
@@ -76,7 +79,7 @@ function handleUnauthorized(): void {
 
 function createApiClient(token: string, site: string) {
   return createLumiClient({
-    url: '',
+    url: getApiBaseUrl(),
     token,
     siteId: site,
     headers: { 'X-Lumi-Client': 'studio' },

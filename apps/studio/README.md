@@ -20,6 +20,16 @@ pnpm --filter @lumibase/studio dev   # SPA on :2026 (proxies /api → :1989)
 
 Open <http://127.0.0.1:2026>. The placeholder dashboard pings `/api/v1/utils/health` to confirm the wire-up.
 
+### API base URL
+
+The Studio resolves the CMS origin via `getApiBaseUrl()` (`src/lib/api-base.ts`):
+
+- **Dev / Docker:** leave `VITE_API_URL` unset → same-origin (`/api/*`). Dev
+  goes through the Vite proxy; Docker serves the SPA from the CMS origin.
+- **Standalone (Cloudflare Pages):** set `VITE_API_URL` at build time to the
+  CMS origin (e.g. `https://api.lumibase.dev`). The CMS must allow the Studio
+  origin via `CORS_ALLOWED_ORIGINS`. See `docs/en/deployment/overview.md`.
+
 ## Structure
 
 ```
