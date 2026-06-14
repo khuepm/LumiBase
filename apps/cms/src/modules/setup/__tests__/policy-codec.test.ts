@@ -47,6 +47,9 @@ const validPolicyArb: fc.Arbitrary<LockoutPolicy> = fc.record({
     .subarray<NotificationChannel>(['email', 'webhook'], { minLength: 0 })
     // Ensure stable comparison: notifyChannels canonicalises to sorted.
     .map((arr) => [...arr].sort() as NotificationChannel[]),
+  // Login-failure stall (Directus `LOGIN_STALL_TIME` parity), bounded
+  // to the codec's [0, 5000] ms range.
+  loginStallMs: fc.integer({ min: 0, max: 5_000 }),
 });
 
 describe('Feature: admin-setup-wizard, Property 5: Round-trip serialization', () => {
@@ -77,6 +80,7 @@ describe('Feature: admin-setup-wizard, Property 5: Round-trip serialization', ()
       lockoutWindowSeconds: STANDARD_LOCKOUT_POLICY.lockoutWindowSeconds,
       userLockoutDurationSeconds: STANDARD_LOCKOUT_POLICY.userLockoutDurationSeconds,
       geoAnomalyEnabled: STANDARD_LOCKOUT_POLICY.geoAnomalyEnabled,
+      loginStallMs: STANDARD_LOCKOUT_POLICY.loginStallMs,
     } as LockoutPolicy);
     expect(json).toBe(reordered);
     // Sanity: keys are sorted alphabetically.
@@ -102,6 +106,7 @@ describe('Feature: admin-setup-wizard, Property 5: Round-trip serialization', ()
       STANDARD_LOCKOUT_POLICY.ipLockoutDurationSeconds,
     );
     expect(parsed.notifyChannels).toEqual(['email']);
+    expect(parsed.loginStallMs).toBe(STANDARD_LOCKOUT_POLICY.loginStallMs);
   });
 
   it('drops unknown fields (Req 16.5)', () => {

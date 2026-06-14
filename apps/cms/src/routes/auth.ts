@@ -235,6 +235,28 @@ async function getDummyPasswordHash(): Promise<string> {
   return DUMMY_PASSWORD_HASH;
 }
 
+/**
+ * Artificial login-failure stall (Directus parity: `LOGIN_STALL_TIME`).
+ *
+ * Distinct from the dummy-hash timing parity above: that one makes the
+ * "no such user" and "wrong password" branches take the *same* time so
+ * an attacker can't enumerate accounts. This one floors *both* failure
+ * branches at a fixed wall clock (`policy.loginStallMs`, default 500ms)
+ * so each credential guess is deliberately slow — a brute-force speed
+ * brake layered on top of the rate-limit / lockout guard.
+ *
+ * We resolve a plain `setTimeout` promise and `await` it before the
+ * route returns the 401. This is intentionally a wall-clock delay, not
+ * busy work: on Node it parks the request, and on Cloudflare Workers it
+ * holds the response without consuming CPU budget (idle time inside a
+ * fetch handler isn't billed as CPU). `0` skips the timer entirely so a
+ * disabled stall adds no overhead and no extra microtask tick.
+ */
+export async function stallLoginFailure(stallMs: number): Promise<void> {
+  if (!Number.isFinite(stallMs) || stallMs <= 0) return;
+  await new Promise<void>((resolve) => setTimeout(resolve, stallMs));
+}
+
 // Custom Login (for Frontend Users)
 authRouter.post('/login', async (c) => {
   const db = c.get('db');
@@ -333,6 +355,12 @@ authRouter.post('/login', async (c) => {
     // response via ctx.waitUntil (task 9.6). No-op on Node / tests.
     scheduleWorkersDrain(c, dispatcher, c.env);
 
+    // Brute-force speed brake (Directus `LOGIN_STALL_TIME` parity). The
+    // audit/counter writes above already happened; we only delay the
+    // 401 the client sees. Runs after `scheduleWorkersDrain` so the
+    // background notification drain isn't held behind the stall.
+    await stallLoginFailure(policy.loginStallMs);
+
     return c.json(
       { errors: [{ code: 'INVALID_CREDENTIALS', message: 'Invalid email or password.' }] },
       401
@@ -358,6 +386,11 @@ authRouter.post('/login', async (c) => {
 
     // Workers runtime: drain queued notifications after the response.
     scheduleWorkersDrain(c, dispatcher, c.env);
+
+    // Brute-force speed brake (Directus `LOGIN_STALL_TIME` parity) — see
+    // the no-such-user branch above. Same fixed wall clock so the two
+    // INVALID_CREDENTIALS branches stay timing-indistinguishable.
+    await stallLoginFailure(policy.loginStallMs);
 
     return c.json(
       { errors: [{ code: 'INVALID_CREDENTIALS', message: 'Invalid email or password.' }] },
