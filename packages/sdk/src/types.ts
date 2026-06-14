@@ -872,6 +872,31 @@ export interface SettingResource {
   updatedAt: string;
 }
 
+/** Site (tenant) configuration row — identity, branding and theme defaults. */
+export interface SiteResource {
+  id: string;
+  name: string;
+  domain: string | null;
+  displayTitle: string | null;
+  siteUrl: string | null;
+  descriptor: string | null;
+  defaultLanguage: string;
+  defaultAppearance: string;
+  branding: { logoUrl?: string; faviconUrl?: string; brandColor?: string };
+  themeOverrides: {
+    light?: Record<string, string>;
+    dark?: Record<string, string>;
+  };
+  customCss: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** PATCH payload for `/api/v1/site`; every field optional. */
+export type SiteConfigUpdate = Partial<
+  Omit<SiteResource, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
 /* ---------------- CDC ---------------- */
 
 export type CdcConnectorType =
