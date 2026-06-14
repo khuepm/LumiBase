@@ -2,6 +2,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { router } from './router';
 import { initI18n } from './lib/i18n';
+import { SiteThemeStyle } from './components/site-theme';
 
 /**
  * Root component. Hands off to TanStack Router; AppShell + active module
@@ -18,5 +19,10 @@ export function App() {
     return <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">Loading Studio…</div>;
   }
 
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <SiteThemeStyle />
+      <RouterProvider router={router} />
+    </>
+  );
 }
