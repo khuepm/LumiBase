@@ -43,7 +43,7 @@ class_name = "SiteRoom"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["SiteRoom"]
+new_sqlite_classes = ["SiteRoom"]
 
 # ─── Cron Triggers ────────────────────────────────────────────────────────────
 # Audit-log retention rotation (admin-setup-wizard task 11.4; Req 15.5;
@@ -85,7 +85,7 @@ class_name = "SiteRoom"
 
 [[env.staging.migrations]]
 tag = "v1"
-new_classes = ["SiteRoom"]
+new_sqlite_classes = ["SiteRoom"]
 
 # [[env.staging.hyperdrive]]
 # binding = "HYPERDRIVE"
@@ -119,7 +119,7 @@ class_name = "SiteRoom"
 
 [[env.production.migrations]]
 tag = "v1"
-new_classes = ["SiteRoom"]
+new_sqlite_classes = ["SiteRoom"]
 
 # [[env.production.hyperdrive]]
 # binding = "HYPERDRIVE"
