@@ -26,6 +26,23 @@ export const sites = pgTable('sites', {
   id: id(),
   name: text('name').notNull(),
   domain: text('domain').unique(),
+  /** Human-readable title shown in Studio + public metadata. Falls back to `name`. */
+  displayTitle: text('display_title'),
+  /** Canonical public URL (normalized, no trailing slash). */
+  siteUrl: text('site_url'),
+  /** Short descriptor shown in Studio (Directus: project_descriptor). */
+  descriptor: text('descriptor'),
+  /** Default locale tag (e.g. `en`, `vi`, `en-US`). Inherited by new users. */
+  defaultLanguage: text('default_language').default('en').notNull(),
+  /** Default appearance for new users: `auto` | `light` | `dark`. Per-user override lives in `users.preferences`. */
+  defaultAppearance: text('default_appearance').default('auto').notNull(),
+  /** `{ logoUrl, faviconUrl, brandColor }` — global branding for this site. */
+  branding: jsonb('branding').default({}).notNull(),
+  /** `{ light: { '--primary': 'H S% L%', … }, dark: { … } }` — CSS variable overrides. */
+  themeOverrides: jsonb('theme_overrides').default({}).notNull(),
+  /** Raw CSS escape hatch (untrusted; injected after theme tokens). */
+  customCss: text('custom_css'),
+  updatedAt: updatedAt(),
   createdAt: createdAt(),
 });
 
