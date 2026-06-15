@@ -1,6 +1,7 @@
 import { Bold, Italic, Link as LinkIcon, List, ListOrdered, Underline as UnderlineIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { cn } from '@/lib/cn';
+import { sanitizeHtml } from '@/lib/sanitize-html';
 import type { InterfaceComponent } from './types';
 
 /**
@@ -18,16 +19,19 @@ export const WysiwygInterface: InterfaceComponent<string> = ({
   const ref = useRef<HTMLDivElement>(null);
 
   // Only push upstream HTML into the DOM when it differs (avoid caret jumps).
+  // Sanitise on the way in: stored content may carry XSS payloads from an
+  // earlier write, another client, or an API consumer (Stored XSS defence).
   useEffect(() => {
-    if (ref.current && ref.current.innerHTML !== (value ?? '')) {
-      ref.current.innerHTML = value ?? '';
+    const next = sanitizeHtml(value ?? '');
+    if (ref.current && ref.current.innerHTML !== next) {
+      ref.current.innerHTML = next;
     }
   }, [value]);
 
   const exec = (cmd: string, arg?: string) => {
     if (disabled) return;
     document.execCommand(cmd, false, arg);
-    if (ref.current) onChange(ref.current.innerHTML);
+    if (ref.current) onChange(sanitizeHtml(ref.current.innerHTML));
   };
 
   return (
@@ -53,7 +57,7 @@ export const WysiwygInterface: InterfaceComponent<string> = ({
         ref={ref}
         contentEditable={!disabled}
         suppressContentEditableWarning
-        onInput={() => ref.current && onChange(ref.current.innerHTML)}
+        onInput={() => ref.current && onChange(sanitizeHtml(ref.current.innerHTML))}
         className={cn(
           'prose prose-sm max-w-none px-3 py-2 text-sm focus:outline-none',
           disabled && 'opacity-50',

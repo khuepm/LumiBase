@@ -120,9 +120,50 @@ interface ExtensionComponentProps {
 }
 
 /**
+ * Error boundary isolating a single extension. A buggy or hostile extension
+ * that throws during render is contained here instead of crashing the whole
+ * Studio shell. Combined with the CSP (`script-src 'self'`) and the server-side
+ * `EXTENSION_BUNDLE_ORIGINS` allowlist, this keeps an untrusted bundle from
+ * escalating a render error into a denial of the entire admin UI.
+ *
+ * Note: extensions render their own React tree, so HTML-level sanitisation
+ * (DOMPurify) cannot be applied to them from the host — the trust boundary is
+ * the origin allowlist + CSP, and this boundary limits blast radius.
+ */
+class ExtensionErrorBoundary extends React.Component<
+  { name: string; children: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown): void {
+    console.error(
+      `[extension-loader] extension "${this.props.name}" crashed during render:`,
+      formatSafeError(error),
+    );
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <span className="text-xs text-destructive" role="alert">
+          Extension “{this.props.name}” failed to render.
+        </span>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/**
  * Renders a dynamically loaded extension component by name.
  * Shows a loading spinner while the bundle is being fetched.
- * Returns null if the extension is not found.
+ * Returns null if the extension is not found. Render errors are contained by
+ * an error boundary so one bad extension cannot take down the Studio.
  */
 export function ExtensionComponent({ name, ...props }: ExtensionComponentProps) {
   const entry = cache.get(name);
@@ -130,18 +171,20 @@ export function ExtensionComponent({ name, ...props }: ExtensionComponentProps) 
 
   const Component = entry.component;
   return (
-    <Suspense
-      fallback={
-        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span
-            className="h-3 w-3 animate-spin rounded-full border border-muted-foreground border-t-transparent"
-            aria-hidden="true"
-          />
-          Loading extension…
-        </span>
-      }
-    >
-      <Component {...props} />
-    </Suspense>
+    <ExtensionErrorBoundary name={name}>
+      <Suspense
+        fallback={
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span
+              className="h-3 w-3 animate-spin rounded-full border border-muted-foreground border-t-transparent"
+              aria-hidden="true"
+            />
+            Loading extension…
+          </span>
+        }
+      >
+        <Component {...props} />
+      </Suspense>
+    </ExtensionErrorBoundary>
   );
 }

@@ -1,6 +1,7 @@
 import { Eye, FileText } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { sanitizeHtml } from '@/lib/sanitize-html';
 import { readOptions, type InterfaceComponent } from './types';
 
 interface MarkdownOptions {
@@ -81,7 +82,12 @@ function TabBtn({
   );
 }
 
-/** Tiny markdown renderer; safe-by-default via escapeHtml then targeted regex. */
+/**
+ * Tiny markdown renderer. escapeHtml + targeted regex builds the markup, then
+ * DOMPurify is the authoritative gate: the regex alone would still let through
+ * `[x](javascript:alert(1))` links and unescaped quotes, so the final
+ * sanitizeHtml() pass strips dangerous URL schemes and stray attributes.
+ */
 function renderMarkdown(src: string): string {
   let html = escapeHtml(src);
   // Code blocks ```lang ... ```
@@ -108,7 +114,7 @@ function renderMarkdown(src: string): string {
     .split(/\n{2,}/)
     .map((para) => (para.match(/^<(h\d|pre|ul|ol)/) ? para : `<p>${para.replace(/\n/g, '<br/>')}</p>`))
     .join('');
-  return html;
+  return sanitizeHtml(html);
 }
 
 function escapeHtml(s: string): string {
