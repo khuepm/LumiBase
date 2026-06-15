@@ -37,10 +37,52 @@ export type HookEvent =
   | 'items.delete.before'
   | 'items.delete.after';
 
+/** Default wall-clock budget for a single hook handler invocation (ms). */
+const DEFAULT_HOOK_TIMEOUT_MS = 5000;
+
+/** Thrown when an extension hook handler exceeds its time budget. */
+export class HookTimeoutError extends Error {
+  constructor(event: string, extension: string, timeoutMs: number) {
+    super(`Extension "${extension}" hook ${event} timed out after ${timeoutMs}ms`);
+    this.name = 'HookTimeoutError';
+  }
+}
+
+/**
+ * Race a hook handler against a timeout. A runaway handler (infinite loop,
+ * never-resolving promise) can otherwise stall every item mutation, so we cap
+ * each invocation. The handler keeps running in the background if it ignores
+ * the timeout, but the dispatcher stops waiting and treats it as a failure.
+ */
+function withTimeout<T>(
+  work: Promise<T>,
+  event: string,
+  extension: string,
+  timeoutMs: number,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new HookTimeoutError(event, extension, timeoutMs)),
+      timeoutMs,
+    );
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 export class HookDispatcher {
   constructor(
     private readonly sandbox: ExtensionSandbox,
     private readonly extensions: ExtensionRow[],
+    private readonly hookTimeoutMs: number = DEFAULT_HOOK_TIMEOUT_MS,
   ) {}
 
   /**
@@ -65,7 +107,12 @@ export class HookDispatcher {
       if (!mod?.hooks?.[event]) continue;
 
       try {
-        const result = await mod.hooks[event]!(current);
+        const result = await withTimeout(
+          Promise.resolve(mod.hooks[event]!(current)),
+          event,
+          ext.name,
+          this.hookTimeoutMs,
+        );
         // Before hooks: merge returned object into context.
         if (event.endsWith('.before') && result && typeof result === 'object') {
           current = { ...current, ...result };

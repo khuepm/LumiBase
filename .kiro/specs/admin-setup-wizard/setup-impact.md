@@ -36,6 +36,7 @@ Trạng thái: `pending` (chưa làm) · `in-progress` · `done` (setup + backfi
 | 8 | content-os-ui | v0.5.x | Đã rà soát (gồm task 15 rollout switchboard + phase 3 tasks 16-20 agents/intent-lifecycle/planner/evaluate/promotion-check): UI-only trên endpoint + settings row sẵn có — không yêu cầu khởi tạo mới | n/a | — | Rà soát 2026-06-13 |
 | 9 | studio-ops-ui | v0.5.x | Đã rà soát: UI-only trên `/materialize`, `/tm`, `/marketplace/publish` sẵn có — không seed, không flag, không bước wizard mới | n/a | — | Rà soát 2026-06-13 |
 | 10 | admin-setup-wizard | v0.6.x | Seed RBAC role `Administrator` (`adminAccess=true`) và bind bootstrap admin qua `user_roles` trong setup transaction | done | — | Done 2026-06-14: bước 9a trong setup tx, `systemKey='administrator'` idempotent qua `roles_site_system_key_unique`. Trước fix, bootstrap user không có role nào → PermissionService resolve `admin=false` → mọi schema/items request 403 ("Failed to load collections"). Thoả requirements.md Req 3. **Cần backfill** instance đã setup trước v0.6.x — xem Lưu ý backfill |
+| 11 | (security hardening) | v0.6.x | Đã rà soát: XSS sanitisation (DOMPurify ở Studio WYSIWYG/markdown) + extension hardening (bundleUrl schema, hook timeout, error boundary). Code-only; không seed, không settings key, không bước wizard, không capability. Dựa trên env `EXTENSION_BUNDLE_ORIGINS` **đã tồn tại** từ trước — không phải biến mới. Không cần backfill | n/a | — | Rà soát 2026-06-15 |
 
 ## Lưu ý backfill
 

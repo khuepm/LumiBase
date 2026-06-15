@@ -28,13 +28,47 @@ const adminOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
   return next();
 };
 
+/**
+ * Allowed extension slot types. Constrained to an enum so an arbitrary `type`
+ * string can never reach the loader's dynamic-mount path.
+ */
+const EXTENSION_TYPES = [
+  'interface', 'display', 'layout', 'panel', 'module',
+  'hook', 'endpoint',
+] as const;
+
+/**
+ * Shallow protocol gate for `bundleUrl` at the API boundary. The runtime
+ * `validateExtensionBundleUrl` + `EXTENSION_BUNDLE_ORIGINS` allowlist remain the
+ * authoritative SSRF/trust check at load time; this just rejects obviously
+ * dangerous schemes (javascript:, vbscript:, file:, blob:) before they are ever
+ * persisted. `data:text/javascript` stays permitted to match the loader.
+ */
+const bundleUrlSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (raw) => {
+      let url: URL;
+      try {
+        url = new URL(raw);
+      } catch {
+        return false;
+      }
+      if (url.protocol === 'https:' || url.protocol === 'http:') return true;
+      if (url.protocol === 'data:') return url.pathname.startsWith('text/javascript');
+      return false;
+    },
+    { message: 'bundleUrl must be an https:, http:, or data:text/javascript URL.' },
+  );
+
 const extensionSchema = z.object({
   key: z.string().regex(/^[a-z0-9_:-]+$/).optional(),
   name: z.string(),
   version: z.string(),
-  type: z.string(),
+  type: z.enum(EXTENSION_TYPES),
   enabled: z.boolean().default(false),
-  bundleUrl: z.string(),
+  bundleUrl: bundleUrlSchema,
   manifest: z.record(z.string()).default({}),
   capabilities: z.array(z.string()).default([]),
 });
