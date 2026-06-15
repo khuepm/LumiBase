@@ -1,12 +1,16 @@
 import {
   AlertTriangle,
+  BookOpen,
   Check,
   Copy,
   Download,
+  ExternalLink,
   Eye,
   EyeOff,
+  Plus,
   RefreshCw,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -62,11 +66,28 @@ import { wordlistGenerateUnique } from './wordlist';
 
 type SimpleStep = 'essentials' | 'review' | 'recovery';
 
+type InviteRole = 'admin' | 'member';
+
+interface InviteDraft {
+  email: string;
+  role: InviteRole;
+}
+
 interface SimpleSetupDraft {
   account: AccountFormValues;
   path: AdminPathFormValues;
   project: ProjectConfigurationFormValues;
 }
+
+/**
+ * Documentation links surfaced from the wizard. The base intro page and a
+ * security-presets guide. Mirrors the hardcoded `https://docs.lumibase.dev/*`
+ * pattern already used in `apps/studio/src/lib/release-updates.ts`. If/when a
+ * docs route is added in-app these can point there instead.
+ */
+const DOCS_BASE_URL = 'https://docs.lumibase.dev';
+const DOCS_SECURITY_URL = 'https://docs.lumibase.dev/setup/security-presets';
+const DOCS_USERS_URL = 'https://docs.lumibase.dev/setup/users';
 
 interface SetupCompleteResponse {
   user: {
@@ -78,6 +99,7 @@ interface SetupCompleteResponse {
   adminPath: string;
   backupCodes: string[];
   setupToken: null;
+  invitedCount?: number;
 }
 
 interface FieldErrors {
@@ -130,6 +152,7 @@ export function SimpleSetupWizard() {
     return policyDraft ? inferActivePreset(policyDraft) ?? 'standard' : 'standard';
   });
   const [draft, setDraft] = useState<SimpleSetupDraft | null>(null);
+  const [invites, setInvites] = useState<InviteDraft[]>([]);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [completion, setCompletion] = useState<SetupCompleteResponse | null>(null);
@@ -227,6 +250,7 @@ export function SimpleSetupWizard() {
         adminPath: validDraft.path.adminPath,
         policy,
         project: validDraft.project,
+        invites: sanitizeInvites(invites),
       });
 
       const store = useSetupStore.getState();
@@ -247,7 +271,7 @@ export function SimpleSetupWizard() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [draft, securityPreset, validateEssentials]);
+  }, [draft, invites, securityPreset, validateEssentials]);
 
   return (
     <div className="min-h-screen bg-muted/30 px-4 py-8 sm:py-12">
@@ -301,10 +325,12 @@ export function SimpleSetupWizard() {
             <ReviewStep
               draft={draft}
               securityPreset={securityPreset}
+              invites={invites}
               submitError={submitError}
               isSubmitting={isSubmitting}
               onBack={() => setStep('essentials')}
               onPresetChange={setSecurityPreset}
+              onInvitesChange={setInvites}
               onComplete={handleComplete}
               onAdvancedSetup={() => {
                 persistPolicyPreset(securityPreset);
@@ -549,10 +575,12 @@ function EssentialsStep({
 interface ReviewStepProps {
   draft: SimpleSetupDraft;
   securityPreset: PolicyPresetId;
+  invites: InviteDraft[];
   submitError: string | null;
   isSubmitting: boolean;
   onBack: () => void;
   onPresetChange: (preset: PolicyPresetId) => void;
+  onInvitesChange: (invites: InviteDraft[]) => void;
   onComplete: () => void;
   onAdvancedSetup: () => void;
 }
@@ -560,14 +588,17 @@ interface ReviewStepProps {
 function ReviewStep({
   draft,
   securityPreset,
+  invites,
   submitError,
   isSubmitting,
   onBack,
   onPresetChange,
+  onInvitesChange,
   onComplete,
   onAdvancedSetup,
 }: ReviewStepProps) {
   const preset = POLICY_PRESETS[securityPreset];
+  const presetSelectId = useId();
   return (
     <div className="space-y-6">
       <header className="space-y-1">
@@ -580,31 +611,44 @@ function ReviewStep({
         </p>
       </header>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        {(['standard', 'strict', 'lenient'] as PolicyPresetId[]).map((id) => (
-          <label
-            key={id}
-            className={
-              id === securityPreset
-                ? 'flex cursor-pointer flex-col gap-1 rounded-md border border-primary bg-primary/5 p-3 text-sm ring-1 ring-primary/30'
-                : 'flex cursor-pointer flex-col gap-1 rounded-md border border-border p-3 text-sm transition hover:bg-muted/50'
-            }
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <Field
+            id={presetSelectId}
+            label="Security preset"
+            helpText={describePreset(securityPreset)}
           >
-            <span className="flex items-center gap-2 font-medium capitalize">
-              <input
-                type="radio"
-                checked={id === securityPreset}
-                onChange={() => onPresetChange(id)}
-                className="h-4 w-4 border-border text-primary focus:ring-2 focus:ring-primary/30"
-              />
-              {id}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {describePreset(id)}
-            </span>
-          </label>
-        ))}
+            <select
+              id={presetSelectId}
+              value={securityPreset}
+              onChange={(event) =>
+                onPresetChange(event.target.value as PolicyPresetId)
+              }
+              className={inputClass(false, 'sm:w-64 capitalize')}
+            >
+              {(['standard', 'strict', 'lenient'] as PolicyPresetId[]).map(
+                (id) => (
+                  <option key={id} value={id} className="capitalize">
+                    {id}
+                  </option>
+                ),
+              )}
+            </select>
+          </Field>
+          <a
+            href={DOCS_SECURITY_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 pb-2 text-sm text-primary underline-offset-2 hover:underline"
+          >
+            <BookOpen className="h-4 w-4" aria-hidden="true" />
+            How to choose a preset
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+          </a>
+        </div>
       </div>
+
+      <InviteUsersSection invites={invites} onInvitesChange={onInvitesChange} />
 
       <section className="grid gap-4 lg:grid-cols-2">
         <ReviewGroup title="Essentials">
@@ -679,6 +723,141 @@ function ReviewStep({
         </div>
       </div>
     </div>
+  );
+}
+
+const INVITE_ROLE_OPTIONS: ReadonlyArray<{ value: InviteRole; label: string }> = [
+  { value: 'member', label: 'Member' },
+  { value: 'admin', label: 'Admin' },
+];
+
+/**
+ * Optional invite list rendered inside the review step. Each row is an email
+ * + role. Invites are created as `status: 'invited'` users when setup
+ * completes (see `postSetupComplete`); leaving this empty is valid. Rows with
+ * an invalid or empty email are dropped on submit by `sanitizeInvites`, but we
+ * surface a soft inline hint so the operator isn't surprised.
+ */
+function InviteUsersSection({
+  invites,
+  onInvitesChange,
+}: {
+  invites: InviteDraft[];
+  onInvitesChange: (invites: InviteDraft[]) => void;
+}) {
+  const updateInvite = useCallback(
+    (index: number, patch: Partial<InviteDraft>) => {
+      onInvitesChange(
+        invites.map((invite, i) =>
+          i === index ? { ...invite, ...patch } : invite,
+        ),
+      );
+    },
+    [invites, onInvitesChange],
+  );
+
+  const addInvite = useCallback(() => {
+    onInvitesChange([...invites, { email: '', role: 'member' }]);
+  }, [invites, onInvitesChange]);
+
+  const removeInvite = useCallback(
+    (index: number) => {
+      onInvitesChange(invites.filter((_, i) => i !== index));
+    },
+    [invites, onInvitesChange],
+  );
+
+  return (
+    <section className="space-y-3 rounded-md border border-border p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-foreground">
+            Invite teammates (optional)
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            They&apos;re added as invited users and appear under Users after
+            they sign in. You can also do this later.
+          </p>
+        </div>
+        <a
+          href={DOCS_USERS_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-2 hover:underline"
+        >
+          <BookOpen className="h-4 w-4" aria-hidden="true" />
+          Roles &amp; access
+          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+        </a>
+      </div>
+
+      {invites.length > 0 ? (
+        <ul className="space-y-2">
+          {invites.map((invite, index) => {
+            const showInvalid =
+              invite.email.trim().length > 0 && !isValidEmail(invite.email);
+            return (
+              <li
+                key={index}
+                className="flex flex-col gap-2 sm:flex-row sm:items-start"
+              >
+                <div className="flex-1">
+                  <input
+                    type="email"
+                    value={invite.email}
+                    onChange={(event) =>
+                      updateInvite(index, { email: event.target.value })
+                    }
+                    placeholder="teammate@example.com"
+                    aria-label={`Invite email ${index + 1}`}
+                    className={inputClass(showInvalid)}
+                    autoComplete="off"
+                  />
+                  {showInvalid ? (
+                    <p className="mt-1 text-xs text-red-600">
+                      Enter a valid email address.
+                    </p>
+                  ) : null}
+                </div>
+                <select
+                  value={invite.role}
+                  onChange={(event) =>
+                    updateInvite(index, {
+                      role: event.target.value as InviteRole,
+                    })
+                  }
+                  aria-label={`Invite role ${index + 1}`}
+                  className={inputClass(false, 'sm:w-36')}
+                >
+                  {INVITE_ROLE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => removeInvite(index)}
+                  aria-label={`Remove invite ${index + 1}`}
+                  className={secondaryButtonClass}
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={addInvite}
+        className={secondaryButtonClass}
+      >
+        <Plus className="h-4 w-4" aria-hidden="true" />
+        Add teammate
+      </button>
+    </section>
   );
 }
 
@@ -761,6 +940,14 @@ function RecoveryStep({ completion }: { completion: SetupCompleteResponse }) {
         ) : null}
       </section>
 
+      {completion.invitedCount && completion.invitedCount > 0 ? (
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-100">
+          {completion.invitedCount}{' '}
+          {completion.invitedCount === 1 ? 'teammate' : 'teammates'} invited —
+          they&apos;ll appear under Users after they sign in.
+        </p>
+      ) : null}
+
       <label className="flex items-start gap-3 text-sm">
         <input
           type="checkbox"
@@ -775,17 +962,28 @@ function RecoveryStep({ completion }: { completion: SetupCompleteResponse }) {
         <code className="rounded-md border border-border bg-muted/40 px-3 py-2 font-mono text-sm break-all">
           {adminUrl}
         </code>
-        <a
-          href={adminUrl}
-          aria-disabled={!confirmed}
-          className={
-            confirmed
-              ? primaryButtonClass
-              : `${primaryButtonClass} pointer-events-none opacity-50`
-          }
-        >
-          Go to admin login
-        </a>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <a
+            href={DOCS_BASE_URL}
+            target="_blank"
+            rel="noreferrer"
+            className={secondaryButtonClass}
+          >
+            <BookOpen className="h-4 w-4" aria-hidden="true" />
+            View docs
+          </a>
+          <a
+            href={adminUrl}
+            aria-disabled={!confirmed}
+            className={
+              confirmed
+                ? primaryButtonClass
+                : `${primaryButtonClass} pointer-events-none opacity-50`
+            }
+          >
+            Go to admin login
+          </a>
+        </div>
       </div>
     </div>
   );
@@ -987,8 +1185,12 @@ async function postSetupComplete(body: {
   adminPath: string;
   policy: LockoutPolicyFormValues;
   project: ProjectConfigurationFormValues;
+  invites: InviteDraft[];
 }): Promise<SetupCompleteResponse> {
   const token = readSetupTokenForRequest();
+  // Omit `invites` entirely when empty so the request matches the original
+  // shape on a no-invite setup (the field is optional server-side).
+  const payload = body.invites.length > 0 ? body : { ...body, invites: undefined };
   const response = await fetch('/api/v1/setup/complete', {
     method: 'POST',
     credentials: 'same-origin',
@@ -996,7 +1198,9 @@ async function postSetupComplete(body: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-    body: JSON.stringify(token === null ? body : { ...body, setupToken: token }),
+    body: JSON.stringify(
+      token === null ? payload : { ...payload, setupToken: token },
+    ),
   });
 
   let parsed: unknown = null;
@@ -1034,6 +1238,30 @@ function isSetupCompleteResponse(value: unknown): value is SetupCompleteResponse
     candidate.backupCodes.every((code) => typeof code === 'string') &&
     candidate.setupToken === null
   );
+}
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidEmail(value: string): boolean {
+  return EMAIL_PATTERN.test(value.trim());
+}
+
+/**
+ * Reduce the wizard's invite rows to a clean payload for the API: trim +
+ * lowercase emails, drop empty/invalid rows, and de-duplicate by email
+ * (first occurrence wins). The server re-validates and re-de-dupes, so this
+ * is purely to avoid sending obvious junk.
+ */
+function sanitizeInvites(invites: InviteDraft[]): InviteDraft[] {
+  const seen = new Set<string>();
+  const result: InviteDraft[] = [];
+  for (const invite of invites) {
+    const email = invite.email.trim().toLowerCase();
+    if (!email || !isValidEmail(email) || seen.has(email)) continue;
+    seen.add(email);
+    result.push({ email, role: invite.role });
+  }
+  return result;
 }
 
 function buildAdminLoginUrl(adminPath: string): string {

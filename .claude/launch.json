@@ -12,6 +12,13 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-F", "@lumibase/studio", "dev"],
       "port": 2026
+    },
+    {
+      "name": "docs",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-F", "@lumibase/docs", "dev"],
+      "port": 5174,
+      "autoPort": true
     }
   ]
 }
