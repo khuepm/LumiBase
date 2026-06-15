@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageCircle, Send, X, Loader2, Plus, ChevronDown, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { getApiBaseUrl } from '@/lib/api-base';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -55,7 +56,7 @@ function getApiHeaders(): Record<string, string> {
 }
 
 function getBaseUrl(): string {
-  return import.meta.env?.VITE_API_URL ?? 'http://localhost:1989';
+  return getApiBaseUrl();
 }
 
 export function AIAssistant() {

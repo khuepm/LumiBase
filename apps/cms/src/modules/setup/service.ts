@@ -494,9 +494,20 @@ export class SetupService {
         //       The operator can rename/reconfigure the site via the Studio
         //       after first-run.
         const DEFAULT_SITE_ID = '__default__';
+        // The `sites` row is the source of truth for site identity. Persist the
+        // wizard's project config onto it directly (the `project_configuration`
+        // settings key below is kept for back-compat readers). Theme/branding
+        // are left at their column defaults and configured later via
+        // Studio → Settings → Site.
         await tx
           .insert(sites)
-          .values({ id: DEFAULT_SITE_ID, name: projectValue.displayTitle })
+          .values({
+            id: DEFAULT_SITE_ID,
+            name: projectValue.displayTitle,
+            displayTitle: projectValue.displayTitle,
+            siteUrl: projectValue.siteUrl,
+            defaultLanguage: projectValue.defaultLanguage,
+          })
           .onConflictDoNothing();
 
         // ── 8b. Seed the agent role library (Setup Impact Registry #1;

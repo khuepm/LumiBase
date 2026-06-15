@@ -109,6 +109,21 @@ export const lockoutPolicySchema = z
       .array(notificationChannelSchema)
       .nonempty({ message: 'Select at least one notification channel.' })
       .default(['email']),
+    /**
+     * Artificial login-failure delay in milliseconds (Directus
+     * `LOGIN_STALL_TIME` parity). Not surfaced as a form control yet —
+     * the CMS codec owns the default (500ms) and admins tune it via the
+     * security settings API. Declared here so a policy that already
+     * carries the field survives the wizard's parse/serialize round-trip
+     * instead of being dropped as an unknown field. Bounds mirror the
+     * CMS schema (`[0, 5000]`).
+     */
+    loginStallMs: z
+      .number()
+      .int({ message: 'Must be a whole number of milliseconds.' })
+      .min(0, { message: 'Must be 0 or greater.' })
+      .max(5_000, { message: 'Must be at most 5000 milliseconds.' })
+      .optional(),
     webhookUrl: z
       .string()
       .url({ message: 'Enter a valid URL.' })

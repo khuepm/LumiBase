@@ -43,6 +43,7 @@ const FilesPage = lazy(() => import('./modules/files').then((m) => ({ default: m
 const DeveloperTypesPage = lazy(() => import('./modules/settings/types-page').then((m) => ({ default: m.DeveloperTypesPage })));
 const TranslationsPage = lazy(() => import('./modules/translations').then((m) => ({ default: m.TranslationsPage })));
 const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
+const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then((m) => ({ default: m.SiteSettingsPage })));
 const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
@@ -587,6 +588,12 @@ const webhooksRoute = createRoute({
   component: withSuspense(WebhooksPage),
 });
 
+const siteSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'site',
+  component: withSuspense(SiteSettingsPage),
+});
+
 const materializeSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'materialize',
@@ -666,6 +673,12 @@ const adminPathWebhooksRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'webhooks',
   component: withSuspense(WebhooksPage),
+});
+
+const adminPathSiteSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'site',
+  component: withSuspense(SiteSettingsPage),
 });
 
 const adminPathMaterializeSettingsRoute = createRoute({
@@ -1078,6 +1091,7 @@ const routeTree = rootRoute.addChildren([
       settingsIndexRoute,
       settingsTypesRoute,
       translationsRoute,
+      siteSettingsRoute,
       webhooksRoute,
       materializeSettingsRoute,
       translationMemoryRoute,
@@ -1132,6 +1146,7 @@ const routeTree = rootRoute.addChildren([
       adminPathSettingsIndexRoute,
       adminPathSettingsTypesRoute,
       adminPathTranslationsRoute,
+      adminPathSiteSettingsRoute,
       adminPathWebhooksRoute,
       adminPathMaterializeSettingsRoute,
       adminPathTranslationMemoryRoute,

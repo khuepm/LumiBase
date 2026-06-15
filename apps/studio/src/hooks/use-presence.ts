@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { getApiBaseUrl } from '@/lib/api-base';
 import type { PresenceEntry } from '@/types/realtime';
 
 interface UsePresenceOptions {
@@ -64,7 +65,7 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceResult
     let isMounted = true;
     const siteId = localStorage.getItem('lumibase_site_id') ?? '';
     const token = localStorage.getItem('lumibase_dev_token') ?? '';
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:1989';
+    const baseUrl = getApiBaseUrl();
 
     const connect = async () => {
       try {

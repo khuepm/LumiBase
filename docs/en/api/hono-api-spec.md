@@ -406,6 +406,27 @@ See [features/websockets-realtime.md](../features/websockets-realtime.md) for fu
 | `POST` | `/api/v1/settings/export` | Export settings as JSON bundle |
 | `POST` | `/api/v1/settings/apply` | Apply settings bundle |
 
+### Site configuration
+
+The active site's identity, branding and theme defaults live on the `sites`
+row (not the key/value `settings` table). Scoped to the active tenant via the
+`X-Lumi-Site` header.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/site` | Get the active site's configuration |
+| `PATCH` | `/api/v1/site` | Update site identity / branding / theme (partial) |
+
+`PATCH /api/v1/site` accepts any subset of: `name`, `displayTitle`, `siteUrl`,
+`descriptor`, `domain`, `defaultLanguage`, `defaultAppearance`
+(`auto`\|`light`\|`dark`), `branding` (`{ logoUrl, faviconUrl, brandColor }`),
+`themeOverrides` (`{ light, dark }` maps of whitelisted CSS tokens → `H S% L%`
+values), and `customCss`. An empty string clears a nullable field. A duplicate
+`domain` returns `409 { errors: [{ code: 'DOMAIN_TAKEN' }] }`.
+
+Theme model: the site holds the global defaults; per-user appearance/theme/
+language overrides (resolved client-side) take precedence.
+
 ---
 
 ## 11. Extensions

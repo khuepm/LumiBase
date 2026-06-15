@@ -7,6 +7,27 @@ LumiBase supports two deployment modes from the same CMS codebase:
 
 The public documentation site is a static Vite app deployed separately to **Cloudflare Pages**.
 The public Marketplace site is also deployed to **Cloudflare Pages** and reads the CMS marketplace catalog at build/runtime revalidation.
+The **Studio** admin SPA is a static Vite app deployed to **Cloudflare Pages** as well — see [Studio API connectivity](#studio-api-connectivity).
+
+## Studio API connectivity
+
+The Studio SPA talks to the CMS over a single base URL resolved by
+`apps/studio/src/lib/api-base.ts` (`getApiBaseUrl()`):
+
+- **Dev / Docker single-origin:** leave `VITE_API_URL` unset. The Studio uses
+  same-origin requests — the Vite dev server proxies `/api` to the local CMS,
+  and Docker serves the Studio from the same origin as the CMS.
+- **Cloudflare Pages (e.g. `studio.lumibase.dev`):** the static SPA has **no
+  co-located backend**, so it must call the CMS cross-origin. Set
+  `VITE_API_URL` at build time to the CMS origin (e.g.
+  `https://api.lumibase.dev`). The release workflow wires this from the
+  `LUMIBASE_CMS_PRODUCTION_URL` repository variable.
+
+Because the Studio then calls the CMS from a different origin, the CMS must
+allow that origin via `CORS_ALLOWED_ORIGINS` (see `apps/cms/wrangler.toml`).
+Production rejects `*`, so list the exact Studio origin. If `VITE_API_URL` is
+missing on a standalone deploy, the Studio falls back to same-origin and the
+setup gate shows **"Couldn't reach the server."**
 
 ## Cloudflare Targets
 
