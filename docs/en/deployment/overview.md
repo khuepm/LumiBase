@@ -29,6 +29,11 @@ Production rejects `*`, so list the exact Studio origin. If `VITE_API_URL` is
 missing on a standalone deploy, the Studio falls back to same-origin and the
 setup gate shows **"Couldn't reach the server."**
 
+> The **dev / staging / demo** environments instead serve Studio and the CMS
+> from a **single hostname** (`<env>.lumibase.dev`), so `VITE_API_URL` is empty
+> (same-origin) and no CORS is needed. See
+> [Shared-domain environments](./shared-domain-environments.md).
+
 ## Cloudflare Targets
 
 | Target | Package | Output | Deploy command |
