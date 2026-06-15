@@ -51,6 +51,13 @@ export const STANDARD_LOCKOUT_POLICY = Object.freeze({
   anomalyScoreThreshold: 0.7,
   anomalyAction: 'notify_only' as const,
   notifyChannels: ['email'] as readonly NotificationChannel[],
+  // Artificial delay (milliseconds) added before returning an
+  // `INVALID_CREDENTIALS` response, mirroring Directus' `LOGIN_STALL_TIME`.
+  // Independent of the no-enumeration timing parity (which the dummy-hash
+  // verify in `auth.ts` already provides): this is a brute-force speed
+  // brake that floors *every* failed-credential response at a fixed wall
+  // clock, on top of rate-limiting/lockout. `0` disables the stall.
+  loginStallMs: 500,
 });
 
 /**
@@ -81,6 +88,12 @@ export const lockoutPolicySchema = z.object({
     .refine((v) => Number.isFinite(v), { message: 'must be finite' }),
   anomalyAction: z.enum(['notify_only', 'require_mfa', 'lock']),
   notifyChannels: z.array(notificationChannelSchema).max(2),
+  // Artificial login-failure delay in milliseconds (Directus parity:
+  // `LOGIN_STALL_TIME`). `0` disables the stall; the 5_000ms ceiling
+  // keeps a misconfigured value from turning the login route into a
+  // self-inflicted DoS (a request held open for the stall still ties up
+  // a connection slot).
+  loginStallMs: z.number().int().min(0).max(5_000),
   // Optional webhook configuration. Only meaningful when
   // `notifyChannels` contains `'webhook'`; the codec stores the values
   // as-given without enforcing that constraint so consumers can prepare
@@ -148,6 +161,11 @@ const lockoutPolicyDecodeSchema = z
       .array(notificationChannelSchema)
       .optional()
       .default([...STANDARD_LOCKOUT_POLICY.notifyChannels]),
+    loginStallMs: z
+      .number()
+      .int()
+      .optional()
+      .default(STANDARD_LOCKOUT_POLICY.loginStallMs),
     webhookUrl: z.string().url().max(2048).optional(),
     webhookSecret: z.string().min(1).max(256).optional(),
   })
@@ -168,6 +186,7 @@ const CANONICAL_KEYS: ReadonlyArray<keyof LockoutPolicy> = [
   'ipLockoutDurationSeconds',
   'ipMaxFailedAttempts',
   'lockoutWindowSeconds',
+  'loginStallMs',
   'notifyChannels',
   'timeAnomalyEnabled',
   'userLockoutDurationSeconds',
