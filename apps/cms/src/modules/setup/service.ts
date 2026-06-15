@@ -39,9 +39,11 @@ import {
   sites,
   systemState,
   userRoles,
+  userSites,
   users,
   type Database,
 } from '@lumibase/database';
+import { nanoid } from 'nanoid';
 import { hashPassword } from '../../services/auth/password';
 import { ROLE_LIBRARY } from '../../services/agent-role-service';
 import { AUTONOMY_LEVELS } from '../../services/autonomy-service';
@@ -91,6 +93,12 @@ export interface SetupCompleteInput {
   readonly adminPath: string;
   readonly policy: LockoutPolicy;
   readonly project?: SetupCompleteProject;
+  readonly invites?: ReadonlyArray<SetupCompleteInvite>;
+}
+
+export interface SetupCompleteInvite {
+  readonly email: string;
+  readonly role: 'admin' | 'member';
 }
 
 export interface SetupCompleteProject {
@@ -140,6 +148,13 @@ export interface SetupCompleteResult {
    * clients assert that no reusable token survived completion.
    */
   readonly setupToken: null;
+  /**
+   * Number of teammates created as `status: 'invited'` in this run (after
+   * de-duplication). Lets the wizard's Recovery step confirm how many
+   * invites landed without round-tripping to the users API. `0` when no
+   * invites were supplied.
+   */
+  readonly invitedCount: number;
 }
 
 // ── error taxonomy ──────────────────────────────────────────────────────
@@ -360,6 +375,19 @@ export class SetupService {
         error: { code: 'VALIDATION_ERROR', issues: accountIssues },
       };
     }
+
+    // ── 5a. Normalise + validate the optional invite list before opening
+    //        the tx. We lowercase emails, drop exact duplicates, and reject
+    //        any invite that collides with the bootstrap admin (that account
+    //        is created separately and owns the only `is_bootstrap` row).
+    const inviteCheck = normalizeInvites(input.invites, input.account.email);
+    if (!inviteCheck.ok) {
+      return {
+        ok: false,
+        error: { code: 'VALIDATION_ERROR', issues: inviteCheck.issues },
+      };
+    }
+    const normalizedInvites = inviteCheck.value;
 
     const policyJson = serializeLockoutPolicy(input.policy);
     const policyValue = JSON.parse(policyJson) as Record<string, unknown>;
@@ -587,6 +615,68 @@ export class SetupService {
           })
           .onConflictDoNothing();
 
+        // ── 9a-bis. Create any invited teammates in the SAME transaction
+        //        (Setup Impact Registry: invited users + Member role). They
+        //        are bound to the default site via `user_sites` — the table
+        //        the auth middleware, the Users admin list, and the
+        //        PermissionService primary-role query all read from
+        //        (verified against permission-service.ts / middleware/auth.ts).
+        //        `user_roles` (used for the bootstrap admin above) is the
+        //        secondary-role path and is NOT required for an invitee to
+        //        log in or appear in the list, so we deliberately use only
+        //        `user_sites` here — matching the existing
+        //        `routes/users.ts` invite flow.
+        let invitedCount = 0;
+        if (normalizedInvites.length > 0) {
+          // Member role is seeded lazily — only if at least one invite needs
+          // it. Idempotent via the `roles_site_system_key_unique` index.
+          const needsMember = normalizedInvites.some((i) => i.role === 'member');
+          const memberRoleId = needsMember
+            ? await this.upsertMemberRole(tx, DEFAULT_SITE_ID)
+            : null;
+
+          for (const invite of normalizedInvites) {
+            // `users.email` has no unique index (only `external_id` does), so
+            // we cannot rely on an email upsert — look the account up first,
+            // mirroring `routes/users.ts`. On a fresh instance the only
+            // pre-existing email is the bootstrap admin, already rejected by
+            // `normalizeInvites`, but the lookup keeps this safe if that ever
+            // changes.
+            const existing = await tx
+              .select({ id: users.id })
+              .from(users)
+              .where(eq(users.email, invite.email))
+              .limit(1);
+
+            let invitedUserId = existing[0]?.id;
+            if (!invitedUserId) {
+              const createdRows = await tx
+                .insert(users)
+                .values({
+                  email: invite.email,
+                  externalId: `shadow_${nanoid()}`,
+                  status: 'invited',
+                })
+                .returning({ id: users.id });
+              invitedUserId = createdRows[0]?.id;
+            }
+            if (!invitedUserId) {
+              throw new SetupAbort({ code: 'INTERNAL' });
+            }
+
+            const roleId = invite.role === 'admin' ? adminRoleId : memberRoleId;
+            await tx
+              .insert(userSites)
+              .values({
+                userId: invitedUserId,
+                siteId: DEFAULT_SITE_ID,
+                roleId,
+              })
+              .onConflictDoNothing();
+            invitedCount += 1;
+          }
+        }
+
         // ── 9. Persist backup code hashes into `admin_backup_codes`
         //       (task 10.1 created the table). Runs on the same `tx`
         //       handle so the rows commit atomically with the bootstrap
@@ -723,6 +813,7 @@ export class SetupService {
             adminPath: normalizedPath,
             backupCodes: plainBackupCodes,
             setupToken: null,
+            invitedCount,
           },
         };
       });
@@ -802,6 +893,16 @@ export class SetupService {
           targetEmail: outcome.value.user.email,
           metadata: { adminPathHash, policy: policyValue },
         }),
+        // One `user_invited` entry per teammate created in this run. Same
+        // best-effort guarantees as the events above (never throws).
+        ...normalizedInvites.map((invite) =>
+          audit.write({
+            ...base,
+            event: 'user_invited',
+            targetEmail: invite.email,
+            metadata: { role: invite.role },
+          }),
+        ),
       ]);
     }
 
@@ -866,6 +967,46 @@ export class SetupService {
     }
     return adminRoleId;
   }
+
+  /**
+   * Create (or read back) the platform `Member` role — a non-admin role
+   * with Studio access, used as the lower-privilege preset for invited
+   * teammates. Mirrors {@link upsertAdministratorRole}: idempotent via the
+   * `roles_site_system_key_unique` index so a re-entrant wizard run reuses
+   * the existing row. Distinct from `appAccess`-only here: `adminAccess` is
+   * false, so the PermissionService bundle resolves `admin=false` and the
+   * member only gets whatever explicit permissions the operator later grants.
+   */
+  private async upsertMemberRole(tx: any, siteId: string): Promise<string> {
+    const inserted = await tx
+      .insert(roles)
+      .values({
+        siteId,
+        key: 'member',
+        systemKey: 'member',
+        name: 'Member',
+        description:
+          'Standard Studio access without admin privileges. Created during first-run setup.',
+        adminAccess: false,
+        appAccess: true,
+      })
+      .onConflictDoNothing()
+      .returning({ id: roles.id });
+
+    if (inserted[0]?.id) return inserted[0].id;
+
+    const existing = await tx
+      .select({ id: roles.id })
+      .from(roles)
+      .where(and(eq(roles.siteId, siteId), eq(roles.systemKey, 'member')))
+      .limit(1);
+
+    const memberRoleId = existing[0]?.id;
+    if (!memberRoleId) {
+      throw new SetupAbort({ code: 'INTERNAL' });
+    }
+    return memberRoleId;
+  }
 }
 
 // ── internal helpers ────────────────────────────────────────────────────
@@ -880,6 +1021,72 @@ class SetupAbort extends Error {
 
 const EMAIL_REGEX =
   /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+
+type NormalizeInvitesResult =
+  | { ok: true; value: ReadonlyArray<SetupCompleteInvite> }
+  | {
+      ok: false;
+      issues: Array<{ path: Array<string>; message: string }>;
+    };
+
+/**
+ * Validate + normalise the optional invite list.
+ *
+ * - lowercases every email so de-duplication and the admin-collision check
+ *   are case-insensitive (emails are matched against `users.email` later);
+ * - drops exact duplicate emails (first occurrence wins, keeping its role);
+ * - rejects any invite whose email equals the bootstrap admin's — that
+ *   account is created on its own and owns the only `is_bootstrap` row, so
+ *   inviting the same address would create a conflicting second user.
+ *
+ * Defensive: the route layer already runs Zod (email format + role enum),
+ * but the service re-checks so a direct service caller (tests, future
+ * internal callers) can't bypass the rules.
+ */
+function normalizeInvites(
+  invites: ReadonlyArray<SetupCompleteInvite> | undefined,
+  adminEmail: string,
+): NormalizeInvitesResult {
+  if (!invites || invites.length === 0) {
+    return { ok: true, value: [] };
+  }
+
+  const issues: Array<{ path: Array<string>; message: string }> = [];
+  const adminLower = adminEmail.trim().toLowerCase();
+  const seen = new Set<string>();
+  const value: SetupCompleteInvite[] = [];
+
+  invites.forEach((invite, index) => {
+    const email = invite.email.trim().toLowerCase();
+    if (!EMAIL_REGEX.test(email)) {
+      issues.push({ path: ['invites', String(index), 'email'], message: 'invalid email' });
+      return;
+    }
+    if (invite.role !== 'admin' && invite.role !== 'member') {
+      issues.push({ path: ['invites', String(index), 'role'], message: 'invalid role' });
+      return;
+    }
+    if (email === adminLower) {
+      issues.push({
+        path: ['invites', String(index), 'email'],
+        message: 'cannot invite the admin email',
+      });
+      return;
+    }
+    if (seen.has(email)) {
+      // Silently drop later duplicates rather than erroring — the wizard may
+      // submit the same row twice; first one wins.
+      return;
+    }
+    seen.add(email);
+    value.push({ email, role: invite.role });
+  });
+
+  if (issues.length > 0) {
+    return { ok: false, issues };
+  }
+  return { ok: true, value };
+}
 
 /**
  * Mixed-class character set for the Req 3.3 password rules. The wizard

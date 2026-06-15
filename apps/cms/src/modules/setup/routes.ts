@@ -48,6 +48,19 @@ const completeBodySchema = z.object({
       theme: z.null().optional(),
     })
     .optional(),
+  // Optional teammates to invite alongside the bootstrap admin. Each
+  // becomes a `status: 'invited'` user bound to the default site with the
+  // chosen role preset. Created in the same transaction as the admin, so a
+  // failure rolls them back too (Req 1.5).
+  invites: z
+    .array(
+      z.object({
+        email: z.string().email().max(254),
+        role: z.enum(['admin', 'member']).default('member'),
+      }),
+    )
+    .max(20)
+    .optional(),
 });
 
 // ── rate limit (in-memory sliding window) ──────────────────────────────
