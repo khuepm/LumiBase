@@ -145,25 +145,15 @@ export function Layout() {
         {/* Content + ToC wrapper */}
         <div className="flex flex-1 overflow-hidden">
           {/* Center column — page content */}
-          <main ref={contentRef} className="flex-1 overflow-y-auto">
+          <main ref={contentRef} className="flex flex-1 flex-col overflow-y-auto">
             <Outlet />
-          </main>
-
-          {/* Right column — Table of Contents (visible only >1024px) */}
-          <aside className="hidden w-56 shrink-0 overflow-y-auto border-l p-4 lg:block">
-            <div className="sticky top-4">
-              <TableOfContents contentRef={contentRef} />
-            </div>
-          </aside>
-        </div>
-
-        <footer
-          className={`border-t px-6 py-6 text-xs ${siteConfig.footer.style === 'dark'
-            ? 'border-zinc-800 bg-zinc-900 text-zinc-400'
-            : 'bg-muted text-muted-foreground'
-            }`}
-        >
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            <footer
+              className={`mt-auto border-t px-6 py-6 text-xs ${siteConfig.footer.style === 'dark'
+                ? 'border-zinc-800 bg-zinc-900 text-zinc-400'
+                : 'bg-muted text-muted-foreground'
+                }`}
+            >
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             {siteConfig.footer.links.map((col, colIdx) => (
               <div key={colIdx}>
                 <h3
@@ -211,12 +201,21 @@ export function Layout() {
                     LumiBase
                   </a>
                 </span>
-              ) : (
-                <span key={i}>{part}</span>
-              ),
-            )}
-          </p>
-        </footer>
+                  ) : (
+                    <span key={i}>{part}</span>
+                  ),
+                )}
+              </p>
+            </footer>
+          </main>
+
+          {/* Right column — Table of Contents (visible only >1024px) */}
+          <aside className="hidden w-56 shrink-0 overflow-y-auto border-l p-4 lg:block">
+            <div className="sticky top-4">
+              <TableOfContents contentRef={contentRef} />
+            </div>
+          </aside>
+        </div>
       </div>
     </div>
   );
