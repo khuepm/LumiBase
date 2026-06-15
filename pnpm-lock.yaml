@@ -376,6 +376,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      dompurify:
+        specifier: ^3.4.0
+        version: 3.4.8
       i18next:
         specifier: ^26.2.0
         version: 26.2.0(typescript@5.9.3)

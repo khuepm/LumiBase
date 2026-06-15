@@ -189,7 +189,7 @@ export function PermissionRowEditor({ policyId, row, onChange }: PermissionRowEd
           />
           <JsonBlock
             label="Presets"
-            hint="Server-applied defaults, e.g. {&quot;updated_by&quot;: &quot;$CURRENT_USER&quot;}."
+            hint={'Server-applied defaults, e.g. {"updated_by": "$CURRENT_USER"}.'}
             value={presets}
             onChange={setPresets}
           />
@@ -304,7 +304,7 @@ function JsonBlock({
   return (
     <div>
       <h4 className="mb-1 text-xs font-semibold uppercase text-muted-foreground">{label}</h4>
-      <p className="mb-1 text-[11px] text-muted-foreground" dangerouslySetInnerHTML={{ __html: hint }} />
+      <p className="mb-1 text-[11px] text-muted-foreground">{hint}</p>
       <div className="overflow-hidden rounded-md border">
         <Editor
           height="120px"
