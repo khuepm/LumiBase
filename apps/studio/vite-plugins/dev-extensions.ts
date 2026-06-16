@@ -1,6 +1,15 @@
 import path from 'node:path';
 import type { Plugin } from 'vite';
-import { discoverExtensions, UI_EXTENSION_TYPES } from '@lumibase/extensions';
+
+// NOTE: `@lumibase/extensions` is imported LAZILY inside the `load()` hook
+// (see below), NOT at the top level. The package ships as `.ts` source with
+// `"type": "module"`, and a static top-level import here forces Node's native
+// ESM loader to resolve that source chain when it merely *loads this config* —
+// which it cannot transpile, so its extensionless relative imports
+// (`./discovery`) throw ERR_MODULE_NOT_FOUND and break `vite build`. Because
+// the package is only touched inside the dev-guarded branch of `load()`, the
+// dynamic import runs through Vite's own (TS-aware) pipeline at dev time and
+// never participates in config resolution for production builds.
 
 /**
  * Dev-only Vite plugin: auto-detect UI extensions from the source `extensions/`
@@ -50,7 +59,14 @@ export function devExtensionsPlugin(options: DevExtensionsPluginOptions): Plugin
 
   return {
     name: 'lumibase:dev-extensions',
-    apply: 'serve', // dev server only; never affects production builds
+    // Registered in BOTH serve and build (no `apply: 'serve'`): the production
+    // build must still RESOLVE the `virtual:lumibase-extensions` module that
+    // `extension-loader.tsx` dynamically imports — otherwise Rollup fails with
+    // "failed to resolve import virtual:lumibase-extensions". The dev-only
+    // BEHAVIOUR is preserved by the `isDev` guard in `load()` below: under
+    // `build` the virtual module resolves to an empty `devExtensions` array
+    // (production loads extensions from the CMS API instead), and
+    // `@lumibase/extensions` is never imported off the source folder.
     configResolved(config) {
       isDev = config.command === 'serve';
     },
@@ -61,6 +77,12 @@ export function devExtensionsPlugin(options: DevExtensionsPluginOptions): Plugin
     async load(id) {
       if (id !== RESOLVED_ID) return null;
       if (!isDev) return `export const devExtensions = [];`;
+
+      // Lazy import (see top-of-file note): keeps `@lumibase/extensions` out of
+      // Node's config-load resolution and inside Vite's TS-aware pipeline.
+      const { discoverExtensions, UI_EXTENSION_TYPES } = await import(
+        '@lumibase/extensions'
+      );
 
       const { extensions, errors } = await discoverExtensions(extensionsRoot, {
         types: [...UI_EXTENSION_TYPES],
