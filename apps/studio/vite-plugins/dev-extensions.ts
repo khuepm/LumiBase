@@ -27,6 +27,18 @@ import { discoverExtensions, UI_EXTENSION_TYPES } from '@lumibase/extensions';
 const VIRTUAL_ID = 'virtual:lumibase-extensions';
 const RESOLVED_ID = `\0${VIRTUAL_ID}`;
 
+const UNSAFE_JS_CHAR_MAP: Record<string, string> = {
+  '<': '\\u003C',
+  '>': '\\u003E',
+  '/': '\\u002F',
+  '\u2028': '\\u2028',
+  '\u2029': '\\u2029',
+};
+
+function escapeUnsafeJsChars(str: string): string {
+  return str.replace(/[<>/\u2028\u2029]/g, (ch) => UNSAFE_JS_CHAR_MAP[ch] ?? ch);
+}
+
 export interface DevExtensionsPluginOptions {
   /** Absolute path to the extensions root folder. */
   extensionsRoot: string;
@@ -62,7 +74,9 @@ export function devExtensionsPlugin(options: DevExtensionsPluginOptions): Plugin
       // generated import specifiers work on every platform.
       const entries = extensions
         .map((ext) => {
-          const spec = JSON.stringify(ext.entryPath.split(path.sep).join('/'));
+          const spec = escapeUnsafeJsChars(
+            JSON.stringify(ext.entryPath.split(path.sep).join('/')),
+          );
           return `  { name: ${JSON.stringify(ext.name)}, type: ${JSON.stringify(
             ext.type,
           )}, load: () => import(/* @vite-ignore */ ${spec}) }`;
