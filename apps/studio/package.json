@@ -40,6 +40,7 @@
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
+    "@lumibase/extensions": "workspace:*",
     "@testing-library/jest-dom": "^6.6.2",
     "@testing-library/react": "^16.0.1",
     "@types/react": "^18.3.11",

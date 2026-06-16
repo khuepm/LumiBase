@@ -4,6 +4,7 @@ import path from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { assertNoAdminPathEnv } from './src/lib/build-assertions';
+import { devExtensionsPlugin } from './vite-plugins/dev-extensions';
 
 // Fail the build (or dev server startup) if any env var starts with
 // `VITE_ADMIN_PATH`. Vite would otherwise inline such a var into the
@@ -46,7 +47,12 @@ const viteBuildMetadata = {
 Object.assign(process.env, viteBuildMetadata);
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // Dev-only: auto-detect UI extensions from the source `extensions/` folder
+    // (the lumibase-ai/extensions submodule). No-op in production builds.
+    devExtensionsPlugin({ extensionsRoot: path.resolve(repoRoot, 'extensions') }),
+  ],
   define: {
     'import.meta.env.VITE_LUMIBASE_VERSION': JSON.stringify(viteBuildMetadata.VITE_LUMIBASE_VERSION),
     'import.meta.env.VITE_LUMIBASE_GIT_SHA': JSON.stringify(viteBuildMetadata.VITE_LUMIBASE_GIT_SHA),
