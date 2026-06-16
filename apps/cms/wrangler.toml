@@ -68,6 +68,12 @@ crons = ["0 * * * *"]
 # CF_ACCESS_AUDIENCE, and optional METRICS_TOKEN must be set with
 # `wrangler secret put --env <environment>`, not hardcoded here.
 #
+# Sentry error monitoring (src/cloudflare.ts wraps the handler with
+# @sentry/cloudflare's withSentry). The DSN is read from env per-request and is
+# a no-op when unset, so it can stay out of local/dev. Set per environment:
+#   wrangler secret put SENTRY_DSN --env <environment>
+# Optionally tune SENTRY_TRACES_SAMPLE_RATE (0–1, default 1.0) as a [vars] entry.
+#
 # ─── Shared-domain routing (dev / staging / demo) ─────────────────────────────
 # These non-production environments serve Studio (Cloudflare Pages) and the CMS
 # (this Worker) from ONE hostname. The Studio Pages custom domain owns the
