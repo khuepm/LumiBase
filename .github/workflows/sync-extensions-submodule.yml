@@ -1,0 +1,73 @@
+name: Sync extensions submodule
+
+# Keeps the `extensions/` submodule pointer following the tip of the
+# lumibase-ai/extensions `main` branch. Runs on every push to this repo's
+# `main`, on a daily schedule, and on demand. When the remote `main` has moved
+# ahead of the recorded pointer, the workflow advances the pointer and commits
+# the bump back to `main`.
+#
+# Note: this only moves the SUBMODULE POINTER in this repo. Changes to the
+# extension SOURCE itself are committed/pushed inside the extensions repo by
+# its own authors — this workflow never edits files under `extensions/`.
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # 06:00 UTC daily — catch extension releases made between pushes.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-extensions-submodule
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Bump extensions pointer to origin/main
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          # Use a token that can push back to main. Falls back to the default
+          # GITHUB_TOKEN; set EXTENSIONS_SYNC_TOKEN as a repo secret if branch
+          # protection blocks the default token from pushing to main.
+          token: ${{ secrets.EXTENSIONS_SYNC_TOKEN || github.token }}
+
+      - name: Update submodule to remote main
+        id: bump
+        run: |
+          set -euo pipefail
+          before="$(git -C extensions rev-parse HEAD)"
+          git submodule update --remote --recursive extensions
+          after="$(git -C extensions rev-parse HEAD)"
+          echo "before=$before" >> "$GITHUB_OUTPUT"
+          echo "after=$after" >> "$GITHUB_OUTPUT"
+          if [ "$before" = "$after" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "extensions already at $after — nothing to bump."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "extensions $before -> $after"
+          fi
+
+      - name: Commit and push pointer bump
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "lumibase-bot"
+          git config user.email "bot@lumibase.dev"
+          git add extensions
+          git commit -m "chore(extensions): bump submodule to ${{ steps.bump.outputs.after }}
+
+          Auto-sync extensions/ to the tip of lumibase-ai/extensions main.
+          Previous: ${{ steps.bump.outputs.before }}"
+          git push origin HEAD:main
