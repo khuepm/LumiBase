@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/mcp-server",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "description": "LumiBase MCP server — lets AI assistants create and manage collections, fields, and items.",
   "type": "module",
