@@ -138,23 +138,60 @@ export function escapeHtml(s: string): string {
 }
 
 /**
- * Crude HTML → text fallback: drop `<style>`/`<script>` blocks, turn block
- * boundaries into newlines, strip remaining tags, and decode the handful of
- * entities `escapeHtml` produces. Good enough for a text/plain alternative
- * part; not a full HTML renderer.
+ * Crude HTML → text fallback for the text/plain alternative part. Drops
+ * `<style>`/`<script>` blocks, turns block boundaries into newlines, strips
+ * remaining tags, and decodes the handful of entities `escapeHtml` produces.
+ * Not a full HTML renderer — and NOT a sanitizer: its output is plain text,
+ * never re-inserted into an HTML context.
+ *
+ * Two correctness details (flagged by CodeQL):
+ *   1. Tag/block stripping is applied in a fixed-point loop rather than a
+ *      single pass, so overlapping or nested constructs (e.g. `<scr<script>`
+ *      `ipt>`) can't leave a residual tag after one rewrite.
+ *   2. Entity decoding is a single combined pass over a fixed map (with
+ *      `&amp;` handled in the same pass, not afterwards), so an input like
+ *      `&amp;lt;` decodes to the literal `&lt;` and is NOT double-unescaped
+ *      into `<`.
  */
+const HTML_ENTITY_MAP: Record<string, string> = {
+  '&nbsp;': ' ',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&amp;': '&',
+};
+
+function stripTags(input: string): string {
+  let prev: string;
+  let out = input;
+  // Loop to a fixed point so a tag revealed by removing another tag is also
+  // removed (defends against overlapping/malformed markup like `<scr<b>ipt>`).
+  do {
+    prev = out;
+    out = out
+      .replace(/<(style|script)\b[\s\S]*?<\/\1>/gi, '')
+      .replace(/<\/(p|div|h[1-6]|li|tr|table|section|header|footer)>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^<>]*>/g, '');
+  } while (out !== prev);
+  // Drop any stray angle brackets left by truncated/unclosed tags so the
+  // text/plain output never contains a residual `<` or `>` fragment. We strip
+  // only the bracket characters (not the surrounding text) to avoid eating
+  // legitimate content after an unclosed `<`.
+  return out.replace(/[<>]/g, '');
+}
+
 export function htmlToText(html: string): string {
-  return html
-    .replace(/<(style|script)[\s\S]*?<\/\1>/gi, '')
-    .replace(/<\/(p|div|h[1-6]|li|tr|table|section|header|footer)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+  const stripped = stripTags(html);
+  // Single combined entity decode: each match maps once, so `&amp;lt;` →
+  // `&lt;` (not `<`). `&amp;` is part of the same alternation, never a
+  // separate later pass.
+  const decoded = stripped.replace(
+    /&nbsp;|&lt;|&gt;|&quot;|&#39;|&amp;/g,
+    (m) => HTML_ENTITY_MAP[m] ?? m,
+  );
+  return decoded
     .replace(/\n{3,}/g, '\n\n')
     .split('\n')
     .map((line) => line.trim())

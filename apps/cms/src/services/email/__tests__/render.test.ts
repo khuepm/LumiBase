@@ -92,4 +92,18 @@ describe('escapeHtml / htmlToText', () => {
     const text = htmlToText('<style>.x{}</style><p>A</p><p>B</p>');
     expect(text).toBe('A\nB');
   });
+
+  it('strips overlapping/nested tags to a fixed point (no residual markup)', () => {
+    // A single-pass strip would leave "<script>"; the fixed-point loop must not.
+    const text = htmlToText('<scr<script>ipt>alert(1)</script> hello');
+    expect(text).not.toMatch(/<script/i);
+    expect(text).not.toMatch(/[<>]/);
+    expect(text).toContain('hello');
+  });
+
+  it('does not double-unescape entities', () => {
+    // &amp;lt; must decode to the literal "&lt;", NOT to "<".
+    expect(htmlToText('&amp;lt;')).toBe('&lt;');
+    expect(htmlToText('a &amp;amp; b')).toBe('a &amp; b');
+  });
 });
