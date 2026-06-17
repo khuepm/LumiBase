@@ -187,8 +187,9 @@ const BLOCK_TAGS = new Set([
  *     content is discarded until the matching close tag;
  *   - a recognised block/`br` tag emits a `\n`.
  *
- * The result provably contains no `<` or `>` from a tag, so it needs no
- * follow-up bracket cleanup and no fixed-point loop.
+ * Every `<…>` span is removed in this single pass (no fixed-point loop). A
+ * final `[<>]` strip drops any lone, unpaired angle bracket (e.g. an orphan
+ * `>` with no opener) so the text/plain output carries no stray brackets.
  */
 function stripTags(input: string): string {
   let out = '';
