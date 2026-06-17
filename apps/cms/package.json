@@ -37,6 +37,8 @@
     "@lumibase/shared": "workspace:*",
     "@sentry/cloudflare": "^10.58.0",
     "drizzle-orm": "^0.45.2",
+    "graphql": "^16.9.0",
+    "graphql-yoga": "^5.10.0",
     "hono": "^4.12.25",
     "jose": "^5.9.6",
     "maxmind": "5.0.6",

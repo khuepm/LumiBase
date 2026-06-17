@@ -1,0 +1,207 @@
+import {
+  GraphQLBoolean,
+  GraphQLID,
+  GraphQLInt,
+  GraphQLList,
+  GraphQLNonNull,
+  GraphQLObjectType,
+  GraphQLSchema,
+  GraphQLString,
+  type GraphQLFieldConfigMap,
+} from 'graphql';
+import { JSONScalar, DateTimeScalar } from './scalars';
+import { mapFieldType } from './type-mapping';
+import { toGraphQLError } from './errors';
+import type { GraphQLContext } from './context';
+import type { SchemaService, CompiledCollection } from '../services/schema-service';
+
+/**
+ * Structural columns surfaced on every item type. Content fields whose name
+ * collides with one of these are skipped (the column wins, mirroring
+ * `ItemService.fieldExpression`).
+ */
+const RESERVED = new Set([
+  'id',
+  'status',
+  'sort',
+  'createdAt',
+  'updatedAt',
+  'userCreated',
+  'userUpdated',
+  'created_at',
+  'updated_at',
+  'user_created',
+  'user_updated',
+  '_data',
+]);
+
+const GRAPHQL_NAME = /^[_A-Za-z][_0-9A-Za-z]*$/;
+
+/** `articles` → `Articles`, `blog_posts` → `BlogPosts`. */
+function pascalCase(name: string): string {
+  return name
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('');
+}
+
+type ItemRowish = { data?: Record<string, unknown> | null } & Record<string, unknown>;
+
+/** Builds the GraphQL object type for one compiled collection. */
+function buildItemType(coll: CompiledCollection): GraphQLObjectType<ItemRowish, GraphQLContext> {
+  return new GraphQLObjectType<ItemRowish, GraphQLContext>({
+    name: pascalCase(coll.name),
+    description: coll.note ?? `Items of the "${coll.name}" collection.`,
+    fields: () => {
+      const fields: GraphQLFieldConfigMap<ItemRowish, GraphQLContext> = {
+        id: { type: new GraphQLNonNull(GraphQLID), resolve: (src) => src.id },
+        status: { type: GraphQLString, resolve: (src) => src.status },
+        sort: { type: GraphQLInt, resolve: (src) => src.sort },
+        createdAt: { type: DateTimeScalar, resolve: (src) => src.createdAt },
+        updatedAt: { type: DateTimeScalar, resolve: (src) => src.updatedAt },
+        userCreated: { type: GraphQLString, resolve: (src) => src.userCreated },
+        userUpdated: { type: GraphQLString, resolve: (src) => src.userUpdated },
+        // Escape hatch: the full (permission-masked) data blob.
+        _data: { type: JSONScalar, resolve: (src) => src.data ?? {} },
+      };
+
+      for (const field of coll.fields) {
+        if (RESERVED.has(field.name) || !GRAPHQL_NAME.test(field.name)) continue;
+        fields[field.name] = {
+          type: mapFieldType(field),
+          description: field.note ?? undefined,
+          resolve: (src) => (src.data ?? {})[field.name],
+        };
+      }
+
+      return fields;
+    },
+  });
+}
+
+/** Builds a complete per-site GraphQL schema from the compiled collections. */
+export async function buildSiteSchema(schemaService: SchemaService): Promise<GraphQLSchema> {
+  const collectionRows = await schemaService.listCollections();
+  const compiled: CompiledCollection[] = [];
+  for (const row of collectionRows) {
+    if (!GRAPHQL_NAME.test(row.name)) continue;
+    const c = await schemaService.getCompiled(row.name);
+    if (c) compiled.push(c);
+  }
+
+  const queryFields: GraphQLFieldConfigMap<unknown, GraphQLContext> = {
+    // Always-present meta field guarantees a non-empty Query type even when
+    // a fresh site has no collections yet.
+    _collections: {
+      type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(GraphQLString))),
+      description: 'Names of collections exposed by this schema.',
+      resolve: () => compiled.map((c) => c.name),
+    },
+  };
+  const mutationFields: GraphQLFieldConfigMap<unknown, GraphQLContext> = {};
+
+  for (const coll of compiled) {
+    const name = coll.name;
+    const itemType = buildItemType(coll);
+
+    // Query.<collection> — list with filter/sort/paginate/search.
+    queryFields[name] = {
+      type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(itemType))),
+      args: {
+        filter: { type: JSONScalar },
+        sort: { type: new GraphQLList(new GraphQLNonNull(GraphQLString)) },
+        limit: { type: GraphQLInt },
+        offset: { type: GraphQLInt },
+        status: { type: GraphQLString },
+        search: { type: GraphQLString },
+      },
+      resolve: async (_src, args, ctx) => {
+        try {
+          const res = await ctx.items.list(name, {
+            filter: args.filter,
+            sort: args.sort,
+            limit: args.limit,
+            offset: args.offset,
+            status: args.status,
+            search: args.search,
+          });
+          return res.data;
+        } catch (err) {
+          throw toGraphQLError(err);
+        }
+      },
+    };
+
+    // Query.<collection>_by_id — single item.
+    queryFields[`${name}_by_id`] = {
+      type: itemType,
+      args: { id: { type: new GraphQLNonNull(GraphQLID) } },
+      resolve: async (_src, args, ctx) => {
+        try {
+          return await ctx.items.detail(name, args.id);
+        } catch (err) {
+          throw toGraphQLError(err);
+        }
+      },
+    };
+
+    // Mutation.create_<collection>
+    mutationFields[`create_${name}`] = {
+      type: new GraphQLNonNull(itemType),
+      args: {
+        data: { type: new GraphQLNonNull(JSONScalar) },
+        status: { type: GraphQLString },
+        sort: { type: GraphQLInt },
+      },
+      resolve: async (_src, args, ctx) => {
+        try {
+          return await ctx.items.create(name, { data: args.data, status: args.status, sort: args.sort });
+        } catch (err) {
+          throw toGraphQLError(err);
+        }
+      },
+    };
+
+    // Mutation.update_<collection>
+    mutationFields[`update_${name}`] = {
+      type: new GraphQLNonNull(itemType),
+      args: {
+        id: { type: new GraphQLNonNull(GraphQLID) },
+        data: { type: JSONScalar },
+        status: { type: GraphQLString },
+        sort: { type: GraphQLInt },
+      },
+      resolve: async (_src, args, ctx) => {
+        try {
+          return await ctx.items.patch(name, args.id, { data: args.data, status: args.status, sort: args.sort });
+        } catch (err) {
+          throw toGraphQLError(err);
+        }
+      },
+    };
+
+    // Mutation.delete_<collection> — soft delete, returns success boolean.
+    mutationFields[`delete_${name}`] = {
+      type: new GraphQLNonNull(GraphQLBoolean),
+      args: { id: { type: new GraphQLNonNull(GraphQLID) } },
+      resolve: async (_src, args, ctx) => {
+        try {
+          await ctx.items.softDelete(name, args.id);
+          return true;
+        } catch (err) {
+          throw toGraphQLError(err);
+        }
+      },
+    };
+  }
+
+  return new GraphQLSchema({
+    query: new GraphQLObjectType({ name: 'Query', fields: queryFields }),
+    // Mutation type must be non-empty; omit it on a collection-less site.
+    mutation:
+      Object.keys(mutationFields).length > 0
+        ? new GraphQLObjectType({ name: 'Mutation', fields: mutationFields })
+        : undefined,
+  });
+}
