@@ -92,7 +92,7 @@ describe('Firestore connector', () => {
       vi.fn(async (url: string, init: RequestInit) => {
         calls.push({ url, init });
         // First call = token exchange; subsequent = document write.
-        if (url.includes('oauth2.googleapis.com')) {
+        if (new URL(url).hostname === 'oauth2.googleapis.com') {
           return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 });
         }
         return new Response('{}', { status: 200 });
@@ -134,7 +134,7 @@ describe('Firestore connector', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) =>
-        url.includes('oauth2.googleapis.com')
+        new URL(url).hostname === 'oauth2.googleapis.com'
           ? new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 })
           : new Response('not found', { status: 404 }),
       ),
