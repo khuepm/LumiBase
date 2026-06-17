@@ -204,6 +204,26 @@ export class EditorialService {
     });
   }
 
+  /**
+   * List reviews for the review queue (Req 10.3). Optionally filter by status
+   * (default `pending`) and assignee. Site-scoped, newest first.
+   */
+  async listReviews(opts: { status?: string; assignedTo?: string; limit?: number } = {}) {
+    const status = opts.status ?? 'pending';
+    const limit = Math.min(opts.limit ?? 50, 200);
+    const where = and(
+      scopeSite(contentReviews.siteId, this.deps.siteId),
+      eq(contentReviews.status, status),
+      opts.assignedTo ? eq(contentReviews.assignedTo, opts.assignedTo) : undefined,
+    );
+    return this.deps.db
+      .select()
+      .from(contentReviews)
+      .where(where)
+      .orderBy(desc(contentReviews.createdAt))
+      .limit(limit);
+  }
+
   /** Submit an item for review (Req 9.1): create a pending Content_Review. */
   async submitReview(collectionName: string, itemId: string, opts: { assignedTo?: string | null } = {}) {
     const { coll, item, current } = await this.resolve(collectionName, itemId);

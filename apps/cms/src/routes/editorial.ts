@@ -37,6 +37,26 @@ const toError = (err: unknown) => {
   return { status: 500, body: { errors: [{ code: 'INTERNAL', message: 'Unhandled editorial error.' }] } };
 };
 
+const queueSchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected']).optional(),
+  assignedTo: z.string().max(128).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+editorialRouter.get('/reviews', async (c) => {
+  const parsed = queueSchema.safeParse(Object.fromEntries(new URL(c.req.url).searchParams));
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
+  }
+  try {
+    const data = await buildService(c).listReviews(parsed.data);
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
 editorialRouter.post('/:collection/:id/submit-review', async (c) => {
   const parsed = submitSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) {
