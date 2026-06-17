@@ -60,6 +60,7 @@
 - [features/marketplace.md](./features/marketplace.md) — signed extension marketplace
 - [features/scim-provisioning.md](./features/scim-provisioning.md) — SCIM 2.0 provisioning
 - [features/materialized-collections.md](./features/materialized-collections.md) — materialized read tables
+- [features/firebase-sync.md](./features/firebase-sync.md) — sync content to Firebase Firestore/RTDB in real time
 - [features/cloudflare-auth.md](./features/cloudflare-auth.md) — Logto/Cloudflare auth
 - [features/display-templates.md](./features/display-templates.md) — display templates
 - [features/raw-data-editing.md](./features/raw-data-editing.md) — raw field editor
