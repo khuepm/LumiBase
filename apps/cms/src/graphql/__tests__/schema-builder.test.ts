@@ -104,7 +104,7 @@ function row(overrides: Partial<ItemRow> = {}): ItemRow {
   };
 }
 
-function ctxWith(items: Partial<GraphQLContext['items']>): GraphQLContext {
+function ctxWith(items: Record<string, unknown>): GraphQLContext {
   return { siteId: 'site-1', items, schema: {} } as unknown as GraphQLContext;
 }
 
