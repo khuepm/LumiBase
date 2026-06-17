@@ -15,8 +15,11 @@ import { SchemaService } from '../services/schema-service';
  */
 export interface GraphQLContext {
   siteId: string;
+  userId: string | null;
   items: ItemService;
   schema: SchemaService;
+  /** SiteRoom DO namespace for subscriptions (Cloudflare only). */
+  realtimeNamespace?: DurableObjectNamespace;
 }
 
 /**
@@ -66,9 +69,15 @@ export function buildItemService(c: Context<AppEnv>): ItemService {
 /** Builds the full per-request GraphQL context from a Hono context. */
 export function buildGraphQLContext(c: Context<AppEnv>): GraphQLContext {
   const siteId = c.get('siteId');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const realtimeNamespace = (c.env as unknown as Record<string, any>)['SITE_ROOM'] as
+    | DurableObjectNamespace
+    | undefined;
   return {
     siteId,
+    userId: c.get('auth')?.userId ?? null,
     items: buildItemService(c),
     schema: new SchemaService({ db: c.get('db'), siteId, cache: c.get('runtime').cache }),
+    realtimeNamespace,
   };
 }

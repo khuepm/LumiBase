@@ -120,6 +120,29 @@ mutation {
 }
 ```
 
+## Subscriptions
+
+Each collection exposes `Subscription.<collection>_events`, streaming
+create/update/delete events over Server-Sent Events (GraphQL Yoga's default
+subscription transport — connect with `GET` and `Accept: text/event-stream`).
+
+```graphql
+subscription {
+  articles_events {
+    action     # "create" | "update" | "delete"
+    itemId
+    item       # JSON payload of the changed item
+  }
+}
+```
+
+Events are bridged from the per-site **SiteRoom Durable Object** realtime
+channel (the same fan-out used by the WebSocket realtime API), so delivery is
+cross-isolate-correct on Cloudflare. Where no Durable Object is bound (e.g.
+Docker dev), the subscription is a no-op stream. Field-level masking of
+streamed payloads is a planned refinement — for now the `item` payload mirrors
+the realtime event body.
+
 ## Errors
 
 GraphQL responds with HTTP 200 and an `errors[]` array. Each error carries an
@@ -159,5 +182,6 @@ const { articles } = await client.query<{ articles: Array<{ id: string }> }>(
 
 ## Out of scope (v1)
 
-Subscriptions, m2m/m2a nested relations, persisted queries, and a GraphQL
-surface for admin/schema/users. See ADR-009 "Future work".
+m2m/m2a nested relations, persisted queries, field-level masking of
+subscription payloads, and a GraphQL surface for admin/schema/users. See
+ADR-009 "Future work".

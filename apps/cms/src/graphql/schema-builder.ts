@@ -14,6 +14,7 @@ import { mapFieldType } from './type-mapping';
 import { toGraphQLError } from './errors';
 import type { GraphQLContext } from './context';
 import { ItemServiceError, relationAlias } from '../services/item-service';
+import { createSiteEventSource } from './realtime-source';
 import type { SchemaService, CompiledCollection } from '../services/schema-service';
 
 type RelationRow = Awaited<ReturnType<SchemaService['listRelations']>>[number];
@@ -183,6 +184,19 @@ export async function buildSiteSchema(schemaService: SchemaService): Promise<Gra
     },
   };
   const mutationFields: GraphQLFieldConfigMap<unknown, GraphQLContext> = {};
+  const subscriptionFields: GraphQLFieldConfigMap<unknown, GraphQLContext> = {};
+
+  // Shared payload type for all mutation-event subscriptions.
+  const itemEventType = new GraphQLObjectType({
+    name: 'ItemEvent',
+    description: 'A create/update/delete event for an item.',
+    fields: {
+      collection: { type: new GraphQLNonNull(GraphQLString) },
+      action: { type: new GraphQLNonNull(GraphQLString) },
+      itemId: { type: new GraphQLNonNull(GraphQLID) },
+      item: { type: JSONScalar },
+    },
+  });
 
   for (const coll of compiled) {
     const name = coll.name;
@@ -277,14 +291,28 @@ export async function buildSiteSchema(schemaService: SchemaService): Promise<Gra
         }
       },
     };
+
+    // Subscription.<collection>_events — streams item mutation events via the
+    // SiteRoom realtime channel (Cloudflare). No-op where realtime is absent.
+    subscriptionFields[`${name}_events`] = {
+      type: new GraphQLNonNull(itemEventType),
+      description: `Create/update/delete events for the "${name}" collection.`,
+      subscribe: (_src, _args, ctx) =>
+        createSiteEventSource(ctx.realtimeNamespace, ctx.siteId, ctx.userId, name),
+      resolve: (payload) => payload,
+    };
   }
 
   return new GraphQLSchema({
     query: new GraphQLObjectType({ name: 'Query', fields: queryFields }),
-    // Mutation type must be non-empty; omit it on a collection-less site.
+    // Mutation/Subscription types must be non-empty; omit on a collection-less site.
     mutation:
       Object.keys(mutationFields).length > 0
         ? new GraphQLObjectType({ name: 'Mutation', fields: mutationFields })
+        : undefined,
+    subscription:
+      Object.keys(subscriptionFields).length > 0
+        ? new GraphQLObjectType({ name: 'Subscription', fields: subscriptionFields })
         : undefined,
   });
 }

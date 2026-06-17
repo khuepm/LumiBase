@@ -70,10 +70,17 @@ Adopt **GraphQL Yoga + graphql-js**, mounted inside the authenticated
 - Field-typed introspection is best-effort: structured/relational fields fall
   back to a `JSON` scalar rather than fully nested GraphQL types.
 
+## Follow-ups delivered
+
+- **Hardening:** query depth limit + introspection disabled in production.
+- **Nested relations:** m2o/o2m surfaced as nested fields resolved lazily via
+  `ItemService` (m2m/m2a still on the JSON escape hatch).
+- **Subscriptions:** `Subscription.<collection>_events` over SSE, bridged from
+  the SiteRoom Durable Object realtime channel.
+
 ## Future work
 
-- Nested relation types resolved via `ItemService` `deep` expansion.
-- GraphQL Subscriptions over the existing Durable Object realtime channel.
-- Hardening: disable-introspection in production, persisted queries, and
-  query depth/cost limiting.
+- m2m/m2a nested relation types.
+- Field-level permission masking of subscription payloads.
+- Persisted queries and query cost limiting.
 - Extend the surface beyond items (collections/users/admin) if required.
