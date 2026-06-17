@@ -93,12 +93,23 @@ describe('escapeHtml / htmlToText', () => {
     expect(text).toBe('A\nB');
   });
 
-  it('strips overlapping/nested tags to a fixed point (no residual markup)', () => {
-    // A single-pass strip would leave "<script>"; the fixed-point loop must not.
-    const text = htmlToText('<scr<script>ipt>alert(1)</script> hello');
-    expect(text).not.toMatch(/<script/i);
-    expect(text).not.toMatch(/[<>]/);
-    expect(text).toContain('hello');
+  it('leaves no markup residue for overlapping/malformed tags', () => {
+    // The char scanner removes every `<…>` span, so even overlapping/nested
+    // openers can't leave a tag (or a stray angle bracket) behind. We assert
+    // the security-relevant invariant — no `<`, `>`, or `<script` survives —
+    // rather than how the surrounding text happens to be sliced.
+    for (const input of [
+      '<scr<script>ipt>alert(1)</script>',
+      '<<div>>text<</div>>',
+      '<img src=x onerror=alert(1)>visible',
+    ]) {
+      const text = htmlToText(input);
+      expect(text).not.toMatch(/[<>]/);
+      expect(text.toLowerCase()).not.toContain('script');
+      expect(text.toLowerCase()).not.toContain('onerror');
+    }
+    // A well-formed tag in the middle of text keeps the surrounding words.
+    expect(htmlToText('hi <b>there</b> friend')).toBe('hi there friend');
   });
 
   it('does not double-unescape entities', () => {

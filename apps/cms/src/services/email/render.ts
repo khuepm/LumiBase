@@ -144,10 +144,14 @@ export function escapeHtml(s: string): string {
  * Not a full HTML renderer — and NOT a sanitizer: its output is plain text,
  * never re-inserted into an HTML context.
  *
- * Two correctness details (flagged by CodeQL):
- *   1. Tag/block stripping is applied in a fixed-point loop rather than a
- *      single pass, so overlapping or nested constructs (e.g. `<scr<script>`
- *      `ipt>`) can't leave a residual tag after one rewrite.
+ * Two correctness details:
+ *   1. Tag stripping is done by an explicit single-pass character scan
+ *      ({@link stripTags}) rather than regex tag-matching. The scanner copies
+ *      only text that sits outside a `<…>` span and discards everything from a
+ *      `<` to the next `>` (or to end-of-input for an unclosed `<`). Because it
+ *      removes by the structural `<`/`>` delimiters — not by recognising a tag
+ *      shape — no residual `<…>` can survive, even for overlapping or
+ *      malformed markup like `<scr<script>ipt>`.
  *   2. Entity decoding is a single combined pass over a fixed map (with
  *      `&amp;` handled in the same pass, not afterwards), so an input like
  *      `&amp;lt;` decodes to the literal `&lt;` and is NOT double-unescaped
@@ -162,23 +166,73 @@ const HTML_ENTITY_MAP: Record<string, string> = {
   '&amp;': '&',
 };
 
+/**
+ * Tag names whose *closing* tag (or, for `br`, the self-closing tag) becomes a
+ * newline in the text output. Only the close is mapped so a `<p>…</p>` pair
+ * yields a single boundary, not two.
+ */
+const BLOCK_TAGS = new Set([
+  'p', 'div', 'li', 'tr', 'table', 'section', 'header', 'footer',
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+]);
+
+/**
+ * Strip HTML tags by scanning characters, not by matching tag patterns.
+ *
+ * Single forward pass:
+ *   - text outside `<…>` is copied verbatim;
+ *   - on `<`, skip to the next `>` (the whole tag is dropped); an unclosed `<`
+ *     at end-of-input drops the remainder;
+ *   - `<script>`/`<style>` open the corresponding raw-text mode, in which all
+ *     content is discarded until the matching close tag;
+ *   - a recognised block/`br` tag emits a `\n`.
+ *
+ * The result provably contains no `<` or `>` from a tag, so it needs no
+ * follow-up bracket cleanup and no fixed-point loop.
+ */
 function stripTags(input: string): string {
-  let prev: string;
-  let out = input;
-  // Loop to a fixed point so a tag revealed by removing another tag is also
-  // removed (defends against overlapping/malformed markup like `<scr<b>ipt>`).
-  do {
-    prev = out;
-    out = out
-      .replace(/<(style|script)\b[\s\S]*?<\/\1>/gi, '')
-      .replace(/<\/(p|div|h[1-6]|li|tr|table|section|header|footer)>/gi, '\n')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<[^<>]*>/g, '');
-  } while (out !== prev);
-  // Drop any stray angle brackets left by truncated/unclosed tags so the
-  // text/plain output never contains a residual `<` or `>` fragment. We strip
-  // only the bracket characters (not the surrounding text) to avoid eating
-  // legitimate content after an unclosed `<`.
+  let out = '';
+  let i = 0;
+  const n = input.length;
+  while (i < n) {
+    const ch = input[i];
+    if (ch !== '<') {
+      out += ch;
+      i += 1;
+      continue;
+    }
+    // At a '<': read up to the next '>' as the tag body.
+    const close = input.indexOf('>', i + 1);
+    const end = close === -1 ? n : close;
+    const tagBody = input.slice(i + 1, end);
+    const isClosing = /^\s*\//.test(tagBody);
+    const nameMatch = /^\/?\s*([a-zA-Z][a-zA-Z0-9]*)/.exec(tagBody);
+    const name = nameMatch ? nameMatch[1]!.toLowerCase() : '';
+
+    if (name === 'script' || name === 'style') {
+      // Discard everything until the matching close tag (case-insensitive),
+      // or to end-of-input if it never closes.
+      const closeTag = `</${name}`;
+      const lower = input.toLowerCase();
+      const rawEnd = lower.indexOf(closeTag, end + 1);
+      if (rawEnd === -1) {
+        i = n; // unterminated raw block — drop the rest
+      } else {
+        const afterClose = input.indexOf('>', rawEnd);
+        i = afterClose === -1 ? n : afterClose + 1;
+      }
+      continue;
+    }
+
+    // Emit one boundary per block element: on its closing tag, or on a `br`
+    // (which has no close). Avoids the double newline a `<p>…</p>` pair would
+    // otherwise produce.
+    if (name === 'br' || (isClosing && BLOCK_TAGS.has(name))) out += '\n';
+    i = close === -1 ? n : close + 1; // skip the whole tag
+  }
+  // A lone `>` with no preceding `<` is harmless literal text in the
+  // text/plain output, but strip any such residue so the result carries no
+  // stray angle brackets at all.
   return out.replace(/[<>]/g, '');
 }
 
