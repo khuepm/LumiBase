@@ -42,7 +42,9 @@ DECLARE
     'files', 'folders', 'presets', 'translations',
     'settings', 'webhooks', 'extensions',
     'roles', 'policies', 'user_policies',
-    'permissions', 'audit_log'
+    'permissions', 'audit_log',
+    -- Regulated / sensitive content readiness (site-isolated).
+    'field_access_log', 'content_reviews', 'erasure_requests', 'encryption_keys'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
