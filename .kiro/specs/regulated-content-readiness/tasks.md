@@ -41,7 +41,7 @@ Quy ước: `[ ]` chưa làm · `[x]` xong · `[~]` một phần (core xong, cò
   - [x] 3.3 Migration + schema `encryption_keys` (metadata, không lưu khoá) (Req 3.3; design §4.1)
   - [x] 3.4 Endpoint `POST /api/v1/admin/encryption/keys/rotate` (admin) + Audit `encryption_key_rotated` (Req 3.5; design §7)
   - [x] 3.5 Rewrap worker (queue, idempotent, resume cursor) nâng ciphertext cũ lên active key (Req 3.6; design §7)
-  - [ ] 3.6 (Tuỳ chọn) Envelope mode: `items.dek_wrapped`, sinh/wrap DEK per-record khi `LUMIBASE_ENVELOPE_ENCRYPTION=true` (Req 4.5; design §5)
+  - [~] 3.6 (Tuỳ chọn) Envelope mode: `items.dek_wrapped`, sinh/wrap DEK per-record khi `LUMIBASE_ENVELOPE_ENCRYPTION=true` (Req 4.5; design §5)
   - [ ] 3.7 Integration test: encrypt→read theo quyền `read_decrypted`; rotate rồi vẫn đọc ciphertext cũ; fail-closed trả 500 + audit
 
 ### Phase B — Field classification + access audit
@@ -64,7 +64,7 @@ Quy ước: `[ ]` chưa làm · `[x]` xong · `[~]` một phần (core xong, cò
   - [x] 6.1 Migration thêm `items.publish_at`, `items.unpublish_at` + index `(site_id,status,publish_at)` / `(…,unpublish_at)` (Req 7.1; design §4.4)
   - [x] 6.2 Validate `unpublishAt > publishAt` → `INVALID_PUBLISH_WINDOW` (422) trong ItemService write path (Req 7.2)
   - [x] 6.3 Delivery (`deliver.ts:207`) thêm điều kiện Publish_Window cạnh `status='published'` (Req 7.5; design §6.9)
-  - [ ] 6.4 Studio: control `publishAt/unpublishAt` trong `item-detail.tsx` (interface datetime hiện hữu) (Req 10.1; design §9)
+  - [x] 6.4 Studio: control `publishAt/unpublishAt` trong `item-detail.tsx` (interface datetime hiện hữu) (Req 10.1; design §9)
 
 - [~] 7. Scheduler worker
   - [x] 7.1 Tạo `apps/cms/src/services/scheduler-worker.ts` tái dùng `QueueProvider` + mẫu `veto-commit-worker.ts` + Flows schedule trigger; tick áp publish/unpublish idempotent, phát revalidation/webhook đúng một lần (Req 7.3, 7.4, 7.6, 7.7; design §6.5, §8)
@@ -78,7 +78,7 @@ Quy ước: `[ ]` chưa làm · `[x]` xong · `[~]` một phần (core xong, cò
   - [x] 8.2 Tạo `apps/cms/src/services/editorial-service.ts`: transition table tập trung, map `editorial_state↔status`, enforce gate khi `editorialWorkflow=true` (Req 8.1, 8.2, 8.4; design §6.6)
   - [x] 8.3 Endpoints: submit-review / approve / reject; `requireSeparateReviewer` enforce; Audit `editorial_transition` (Req 9.1, 9.3, 9.4, 8.5; design §6.6)
   - [x] 8.4 Phân biệt rõ với veto-window: editorial-service KHÔNG dùng `agentApprovals`; tài liệu hoá ranh giới (Req 9.5; design §6.6)
-  - [ ] 8.5 Studio module `modules/editorial/review-queue.tsx` + action buttons gated theo quyền (Req 10.2, 10.3, 10.4; design §9)
+  - [x] 8.5 Studio module `modules/editorial/review-queue.tsx` + action buttons gated theo quyền (Req 10.2, 10.3, 10.4; design §9)
   - [ ] 8.6 Integration test: draft→published bị chặn khi workflow on; review approve/reject; collection workflow off giữ hành vi cũ (Req 8.3)
 
 ### Phase E — Erasure, retention, SAR
