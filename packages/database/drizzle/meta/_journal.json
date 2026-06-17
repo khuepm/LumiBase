@@ -204,6 +204,20 @@
       "when": 1781773320001,
       "tag": "0028_site_configuration",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1781773380001,
+      "tag": "0029_insights_dashboards",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1781773440001,
+      "tag": "0030_content_versions",
+      "breakpoints": true
     }
   ]
 }
