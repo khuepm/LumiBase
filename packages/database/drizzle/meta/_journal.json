@@ -204,6 +204,13 @@
       "when": 1781773320001,
       "tag": "0028_site_configuration",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1781773320002,
+      "tag": "0029_lumibase_firebase_sync",
+      "breakpoints": true
     }
   ]
 }
