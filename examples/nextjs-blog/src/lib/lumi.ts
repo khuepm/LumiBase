@@ -1,17 +1,4 @@
-import { createLumiClient, legacyRest } from '@lumibase/sdk';
-
-// 1. Define the schema of the collections you created in LumiBase Studio
-// or use the output of `pnpm @lumibase/sdk typegen` directly!
-export interface BlogSchema {
-  posts: {
-    id: string;
-    title: string;
-    content: string;
-    author: string;
-    status: 'draft' | 'published';
-    created_at: string;
-  };
-}
+import { createLumiClient, graphql } from '@lumibase/sdk';
 
 const url = process.env.LUMIBASE_URL || 'http://127.0.0.1:1989';
 const token = process.env.LUMIBASE_TOKEN || '';
@@ -23,12 +10,22 @@ if (!token || !siteId) {
   );
 }
 
-// 2. Initialize the type-safe client
-const baseClient = createLumiClient<BlogSchema>({
+// 1. Initialize the client and attach the GraphQL composable plugin.
+//    `.with(graphql())` adds `query()` / `mutate()` that hit POST /api/v1/graphql.
+export const lumi = createLumiClient({
   url,
   token,
   siteId,
-});
+}).with(graphql());
 
-// 3. Attach the legacy REST methods for full CRUD capabilities
-export const lumi = baseClient.with(legacyRest());
+// 2. Shape of a `posts` item as exposed by the per-tenant GraphQL schema.
+//    Content fields (`title`, `content`, `author`) keep their declared names;
+//    structural columns are surfaced as camelCase (`createdAt`, not `created_at`).
+export interface Post {
+  id: string;
+  title: string;
+  content: string;
+  author: string;
+  status: 'draft' | 'published';
+  createdAt: string;
+}
