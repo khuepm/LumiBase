@@ -82,7 +82,9 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
   const allowedMimes = resolveFileUploadMimeAllowlist(
     env?.FILE_UPLOAD_ALLOWED_MIME_TYPES ?? process.env.FILE_UPLOAD_ALLOWED_MIME_TYPES,
   );
-  const metadata = isMetadataCreate ? await peekMetadata(c.req.raw.clone()) : null;
+  const metadata = isMetadataCreate
+    ? await peekMetadata(c.req.raw.clone() as Parameters<typeof peekMetadata>[0])
+    : null;
   const mime = metadata?.mime ?? c.req.header('content-type') ?? 'application/octet-stream';
   if (!isFileUploadMimeAllowed(mime, allowedMimes)) {
     await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
@@ -114,7 +116,13 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
     );
   }
 
-  if (isSignedUpload && !(await isFileContentCompatibleWithMime(c.req.raw.clone(), normalizedMime))) {
+  if (
+    isSignedUpload &&
+    !(await isFileContentCompatibleWithMime(
+      c.req.raw.clone() as Parameters<typeof isFileContentCompatibleWithMime>[0],
+      normalizedMime,
+    ))
+  ) {
     await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
       path,
       method,

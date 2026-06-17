@@ -20,7 +20,9 @@ function makeClient(fetcher: typeof fetch) {
 
 describe("graphql() SDK adapter", () => {
   it("POSTs the document + variables with auth and tenant headers", async () => {
-    const fetcher = vi.fn(async () => jsonResponse({ data: { articles: [{ id: "1" }] } }));
+    const fetcher = vi.fn(async (_url: string, _init?: RequestInit) =>
+      jsonResponse({ data: { articles: [{ id: "1" }] } }),
+    );
     const client = makeClient(fetcher as unknown as typeof fetch);
 
     const data = await client.query<{ articles: Array<{ id: string }> }>(
@@ -30,7 +32,9 @@ describe("graphql() SDK adapter", () => {
 
     expect(data.articles).toEqual([{ id: "1" }]);
 
-    const [url, init] = fetcher.mock.calls[0];
+    const call = fetcher.mock.calls[0]!;
+    const url = call[0];
+    const init = call[1];
     expect(url).toBe("https://api.test/api/v1/graphql");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toEqual({
