@@ -13,7 +13,11 @@ import { JSONScalar, DateTimeScalar } from './scalars';
 import { mapFieldType } from './type-mapping';
 import { toGraphQLError } from './errors';
 import type { GraphQLContext } from './context';
+import { ItemServiceError, relationAlias } from '../services/item-service';
 import type { SchemaService, CompiledCollection } from '../services/schema-service';
+
+type RelationRow = Awaited<ReturnType<SchemaService['listRelations']>>[number];
+type ItemObjectType = GraphQLObjectType<ItemRowish, GraphQLContext>;
 
 /**
  * Structural columns surfaced on every item type. Content fields whose name
@@ -48,8 +52,20 @@ function pascalCase(name: string): string {
 
 type ItemRowish = { data?: Record<string, unknown> | null } & Record<string, unknown>;
 
-/** Builds the GraphQL object type for one compiled collection. */
-function buildItemType(coll: CompiledCollection): GraphQLObjectType<ItemRowish, GraphQLContext> {
+/**
+ * Builds the GraphQL object type for one compiled collection.
+ *
+ * `registry` holds the (lazily-resolved) object type for every collection so
+ * relation fields can reference sibling types; `relations` is the full
+ * per-site relation list. m2o/o2m relations are surfaced as nested fields
+ * resolved lazily through `ItemService` (which keeps permission/tenancy
+ * enforcement). m2m/m2a are left to the `JSON` escape hatch for now.
+ */
+function buildItemType(
+  coll: CompiledCollection,
+  registry: Map<string, ItemObjectType>,
+  relations: RelationRow[],
+): ItemObjectType {
   return new GraphQLObjectType<ItemRowish, GraphQLContext>({
     name: pascalCase(coll.name),
     description: coll.note ?? `Items of the "${coll.name}" collection.`,
@@ -75,9 +91,67 @@ function buildItemType(coll: CompiledCollection): GraphQLObjectType<ItemRowish, 
         };
       }
 
+      addRelationFields(coll, fields, registry, relations);
       return fields;
     },
   });
+}
+
+/** Adds nested m2o/o2m relation fields to an item type's field map. */
+function addRelationFields(
+  coll: CompiledCollection,
+  fields: GraphQLFieldConfigMap<ItemRowish, GraphQLContext>,
+  registry: Map<string, ItemObjectType>,
+  relations: RelationRow[],
+): void {
+  for (const rel of relations) {
+    // m2o — this collection holds the foreign key to a single parent.
+    if (rel.type === 'm2o' && rel.manyCollection === coll.name) {
+      const alias = relationAlias(rel);
+      const target = registry.get(rel.oneCollection);
+      if (!target || !GRAPHQL_NAME.test(alias) || fields[alias]) continue;
+      fields[alias] = {
+        type: target,
+        description: `Related ${rel.oneCollection} (m2o).`,
+        resolve: async (src, _args, ctx) => {
+          const fk = (src.data ?? {})[rel.manyField];
+          if (typeof fk !== 'string' || !fk) return null;
+          try {
+            return await ctx.items.detail(rel.oneCollection, fk);
+          } catch (err) {
+            if (err instanceof ItemServiceError && err.code === 'NOT_FOUND') return null;
+            throw toGraphQLError(err);
+          }
+        },
+      };
+      continue;
+    }
+
+    // o2m — children in another collection point back at this item's id.
+    if (rel.type === 'o2m' && rel.oneCollection === coll.name) {
+      const alias = relationAlias(rel);
+      const target = registry.get(rel.manyCollection);
+      if (!target || !GRAPHQL_NAME.test(alias) || fields[alias]) continue;
+      fields[alias] = {
+        type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(target))),
+        args: { limit: { type: GraphQLInt }, offset: { type: GraphQLInt } },
+        description: `Related ${rel.manyCollection} (o2m).`,
+        resolve: async (src, args, ctx) => {
+          if (typeof src.id !== 'string') return [];
+          try {
+            const res = await ctx.items.list(rel.manyCollection, {
+              filter: { [rel.manyField]: { _eq: src.id } },
+              limit: args.limit,
+              offset: args.offset,
+            });
+            return res.data;
+          } catch (err) {
+            throw toGraphQLError(err);
+          }
+        },
+      };
+    }
+  }
 }
 
 /** Builds a complete per-site GraphQL schema from the compiled collections. */
@@ -88,6 +162,15 @@ export async function buildSiteSchema(schemaService: SchemaService): Promise<Gra
     if (!GRAPHQL_NAME.test(row.name)) continue;
     const c = await schemaService.getCompiled(row.name);
     if (c) compiled.push(c);
+  }
+
+  const relations = await schemaService.listRelations();
+
+  // Build every object type up front so relation fields (resolved lazily via
+  // the `fields` thunk) can reference sibling types from the registry.
+  const registry = new Map<string, ItemObjectType>();
+  for (const coll of compiled) {
+    registry.set(coll.name, buildItemType(coll, registry, relations));
   }
 
   const queryFields: GraphQLFieldConfigMap<unknown, GraphQLContext> = {
@@ -103,7 +186,7 @@ export async function buildSiteSchema(schemaService: SchemaService): Promise<Gra
 
   for (const coll of compiled) {
     const name = coll.name;
-    const itemType = buildItemType(coll);
+    const itemType = registry.get(name)!;
 
     // Query.<collection> — list with filter/sort/paginate/search.
     queryFields[name] = {

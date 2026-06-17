@@ -52,10 +52,38 @@ field is surfaced with a mapped scalar:
 | `bigInteger` | `String` (avoids 53-bit precision loss) |
 | `dateTime`, `date`, `time`, `timestamp` | `DateTime` (ISO-8601 string) |
 | `string`, `text`, `uuid`, `hash`, `slug`, `code`, `color` | `String` |
-| `json`, `csv`, `geometry`, `files`, relational (`m2o/o2m/m2m/m2a`) | `JSON` |
+| `json`, `csv`, `geometry`, `files` | `JSON` |
 
 A content field whose name collides with a structural column (e.g. `status`)
 is not duplicated — the column wins.
+
+### Nested relations
+
+`m2o` and `o2m` relations are surfaced as **nested object fields** (named by
+the Directus-style relation alias) and resolved lazily through `ItemService`,
+so permission/tenancy enforcement applies to related items too:
+
+- **m2o** → a single nested object (e.g. `posts.author`), resolved by the
+  foreign key via `ItemService.detail`; returns `null` if missing.
+- **o2m** → a list (e.g. `authors.posts(limit, offset)`), resolved by a
+  back-reference filter via `ItemService.list`.
+
+```graphql
+query {
+  posts_by_id(id: "p1") {
+    title
+    author { name }            # m2o
+  }
+  authors_by_id(id: "a1") {
+    name
+    posts(limit: 10) { title } # o2m
+  }
+}
+```
+
+`m2m` / `m2a` relations are not yet nested — use the `_data` JSON escape hatch
+to read their raw values. Query depth is capped (default 12) to bound nested
+relation traversal.
 
 ## Arguments
 
@@ -131,5 +159,5 @@ const { articles } = await client.query<{ articles: Array<{ id: string }> }>(
 
 ## Out of scope (v1)
 
-Subscriptions, nested relation types, persisted queries, and a GraphQL surface
-for admin/schema/users. See ADR-009 "Future work".
+Subscriptions, m2m/m2a nested relations, persisted queries, and a GraphQL
+surface for admin/schema/users. See ADR-009 "Future work".

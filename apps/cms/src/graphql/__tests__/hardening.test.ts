@@ -28,6 +28,7 @@ function fakeSchemaService(collections: CompiledCollection[]) {
   return {
     listCollections: vi.fn(async () => collections.map((c) => ({ name: c.name }))),
     getCompiled: vi.fn(async (name: string) => collections.find((c) => c.name === name) ?? null),
+    listRelations: vi.fn(async () => []),
   } as unknown as Parameters<typeof buildSiteSchema>[0];
 }
 

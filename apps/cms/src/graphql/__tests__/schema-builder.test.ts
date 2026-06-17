@@ -80,10 +80,11 @@ const articles = collection('articles', [
   field('status', 'string'),
 ]);
 
-function fakeSchemaService(collections: CompiledCollection[]) {
+function fakeSchemaService(collections: CompiledCollection[], relations: unknown[] = []) {
   return {
     listCollections: vi.fn(async () => collections.map((c) => ({ name: c.name }))),
     getCompiled: vi.fn(async (name: string) => collections.find((c) => c.name === name) ?? null),
+    listRelations: vi.fn(async () => relations),
   } as unknown as Parameters<typeof buildSiteSchema>[0];
 }
 
@@ -202,5 +203,52 @@ describe('buildSiteSchema', () => {
     const schema = await buildSiteSchema(fakeSchemaService([]));
     expect(schema.getQueryType()).toBeTruthy();
     expect(schema.getMutationType()).toBeFalsy();
+  });
+});
+
+describe('buildSiteSchema nested relations', () => {
+  const authors = collection('authors', [field('name', 'string')]);
+  const posts = collection('posts', [field('title', 'string'), field('author_id', 'string')]);
+  // posts.author_id -> authors (m2o); authors has many posts (o2m).
+  const relations = [
+    { type: 'm2o', manyCollection: 'posts', manyField: 'author_id', oneCollection: 'authors' },
+    { type: 'o2m', manyCollection: 'posts', manyField: 'author_id', oneCollection: 'authors' },
+  ];
+
+  it('resolves an m2o relation via ItemService.detail', async () => {
+    const schema = await buildSiteSchema(fakeSchemaService([authors, posts], relations));
+    const detail = vi.fn(async (coll: string, id: string) => {
+      if (coll === 'posts') return row({ id, data: { title: 'P1', author_id: 'a1' } });
+      return row({ id: 'a1', data: { name: 'Ada' } });
+    });
+
+    const result = await graphql({
+      schema,
+      source: `query { posts_by_id(id: "p1") { title author { name } } }`,
+      contextValue: ctxWith({ detail }),
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.posts_by_id).toEqual({ title: 'P1', author: { name: 'Ada' } });
+    expect(detail).toHaveBeenCalledWith('authors', 'a1');
+  });
+
+  it('resolves an o2m relation via ItemService.list with a back-reference filter', async () => {
+    const schema = await buildSiteSchema(fakeSchemaService([authors, posts], relations));
+    const detail = vi.fn(async () => row({ id: 'a1', data: { name: 'Ada' } }));
+    const list = vi.fn(async () => ({
+      data: [row({ id: 'p1', data: { title: 'P1', author_id: 'a1' } })],
+      meta: { total: 1, limit: 25, offset: 0 },
+    }));
+
+    const result = await graphql({
+      schema,
+      source: `query { authors_by_id(id: "a1") { name posts { title } } }`,
+      contextValue: ctxWith({ detail, list }),
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.authors_by_id).toEqual({ name: 'Ada', posts: [{ title: 'P1' }] });
+    expect(list).toHaveBeenCalledWith('posts', expect.objectContaining({ filter: { author_id: { _eq: 'a1' } } }));
   });
 });
