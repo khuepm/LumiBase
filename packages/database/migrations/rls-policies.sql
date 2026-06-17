@@ -41,6 +41,7 @@ DECLARE
     'items', 'revisions', 'activity',
     'files', 'folders', 'presets', 'translations',
     'settings', 'webhooks', 'extensions',
+    'email_layouts', 'email_templates',
     'roles', 'policies', 'user_policies',
     'permissions', 'audit_log'
   ];
