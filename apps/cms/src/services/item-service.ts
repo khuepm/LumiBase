@@ -492,7 +492,16 @@ export class ItemService {
     return fields ? projectFields(expanded ?? masked as ItemRow, fields) : expanded ?? masked;
   }
 
-  async create(collectionName: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) {
+  async create(
+    collectionName: string,
+    payload: {
+      data: Record<string, unknown>;
+      status?: string;
+      sort?: number;
+      publishAt?: string | Date | null;
+      unpublishAt?: string | Date | null;
+    },
+  ) {
     const coll = await this.resolveCollection(collectionName);
     const primaryKey = resolvePrimaryKey({
       field: coll.primaryKeyField,
@@ -544,6 +553,7 @@ export class ItemService {
     // Allocate the record id up front so AAD-bound encryption can reference it
     // before the row is flushed (Req 2.3). Matches the schema's nanoid default.
     const recordId = primaryKey.id ?? nanoid();
+    const { publishAt, unpublishAt } = normalizePublishWindow(payload.publishAt, payload.unpublishAt);
     const encryptedData = await this.processCrypto(collectionName, data, 'encrypt', recordId, true);
     if (primaryKey.id) {
       await this.assertItemIdAvailable(coll.id, primaryKey.id);
@@ -557,6 +567,8 @@ export class ItemService {
         data: encryptedData,
         status,
         sort,
+        publishAt,
+        unpublishAt,
         userCreated: this.deps.userId ?? null,
         userUpdated: this.deps.userId ?? null,
       })
@@ -573,7 +585,17 @@ export class ItemService {
     return row;
   }
 
-  async patch(collectionName: string, id: string, patch: Partial<{ data: Record<string, unknown>; status: string; sort: number }>) {
+  async patch(
+    collectionName: string,
+    id: string,
+    patch: Partial<{
+      data: Record<string, unknown>;
+      status: string;
+      sort: number;
+      publishAt: string | Date | null;
+      unpublishAt: string | Date | null;
+    }>,
+  ) {
     const coll = await this.resolveCollection(collectionName);
     const perm = await this.perm(collectionName, 'update');
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
@@ -653,6 +675,14 @@ export class ItemService {
       createdAt: rawRow.createdAt,
       updatedAt: new Date(),
     }));
+    // Validate the resulting Publish_Window against existing values (Req 7.2).
+    const hasSchedulePatch = patch.publishAt !== undefined || patch.unpublishAt !== undefined;
+    const effectiveWindow = hasSchedulePatch
+      ? normalizePublishWindow(
+          patch.publishAt !== undefined ? patch.publishAt : rawRow.publishAt,
+          patch.unpublishAt !== undefined ? patch.unpublishAt : rawRow.unpublishAt,
+        )
+      : null;
     const encryptedFinal = await this.processCrypto(collectionName, finalData, 'encrypt', id, true);
 
     // Law Zero: human edits on intent-governed collections pin the fields
@@ -673,6 +703,9 @@ export class ItemService {
         status: finalStatus,
         sort: finalSort,
         pinnedFields: nextPinned,
+        ...(effectiveWindow
+          ? { publishAt: effectiveWindow.publishAt, unpublishAt: effectiveWindow.unpublishAt }
+          : {}),
         userUpdated: this.deps.userId ?? null,
         updatedAt: new Date(),
       })
@@ -1504,6 +1537,35 @@ export function assertWritablePermissionFields(
       403,
     );
   }
+}
+
+/**
+ * Coerce and validate a scheduling window (Req 7.2). Returns Date|null for each
+ * bound and throws INVALID_PUBLISH_WINDOW (422) when both are set and
+ * `unpublishAt <= publishAt`.
+ */
+export function normalizePublishWindow(
+  publishAt: string | Date | null | undefined,
+  unpublishAt: string | Date | null | undefined,
+): { publishAt: Date | null; unpublishAt: Date | null } {
+  const toDate = (v: string | Date | null | undefined): Date | null => {
+    if (v === null || v === undefined) return null;
+    const d = v instanceof Date ? v : new Date(v);
+    if (Number.isNaN(d.getTime())) {
+      throw new ItemServiceError('INVALID_PUBLISH_WINDOW', 'Invalid publish/unpublish date.', 422);
+    }
+    return d;
+  };
+  const p = toDate(publishAt);
+  const u = toDate(unpublishAt);
+  if (p && u && u.getTime() <= p.getTime()) {
+    throw new ItemServiceError(
+      'INVALID_PUBLISH_WINDOW',
+      'unpublishAt must be after publishAt.',
+      422,
+    );
+  }
+  return { publishAt: p, unpublishAt: u };
 }
 
 export function resolvePrimaryKey(

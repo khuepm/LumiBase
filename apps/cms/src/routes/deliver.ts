@@ -1,5 +1,5 @@
 import { schema } from '@lumibase/database';
-import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { AppEnv, Variables } from '../env';
 
@@ -78,6 +78,20 @@ function buildSort(orderBy?: string) {
   const expression = fieldExpression(field);
   if (!expression) return [desc(schema.items.updatedAt)];
   return direction === 'desc' ? [desc(expression)] : [asc(expression)];
+}
+
+/**
+ * SQL predicate restricting results to the current Publish_Window (Req 7.5):
+ * `publishAt` is unset or in the past AND `unpublishAt` is unset or in the
+ * future. Items with a future `publishAt` or an elapsed `unpublishAt` are
+ * excluded even when `status='published'`.
+ */
+function publishWindowClause(): SQL | undefined {
+  const now = new Date();
+  return and(
+    or(isNull(schema.items.publishAt), lte(schema.items.publishAt, now)),
+    or(isNull(schema.items.unpublishAt), gt(schema.items.unpublishAt, now)),
+  );
 }
 
 function serializeItem(row: DeliveryItemRow): Record<string, unknown> {
@@ -206,6 +220,8 @@ async function hydrateSection(
         eq(schema.items.collectionId, collection.id),
         eq(schema.items.status, section.source.status ?? 'published'),
         isNull(schema.items.deletedAt),
+        // Publish_Window filter (Req 7.5): only items currently in window.
+        publishWindowClause(),
       ),
     )
     .orderBy(...buildSort(section.source.orderBy))
