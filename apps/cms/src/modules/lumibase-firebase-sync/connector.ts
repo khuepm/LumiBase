@@ -119,7 +119,14 @@ class FirestoreConnector implements FirebaseConnector {
     );
     const signingInput = `${header}.${claim}`;
     const key = await importPrivateKey(this.account.private_key);
-    const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, utf8(signingInput));
+    // Cast to BufferSource: under newer TS libs Uint8Array<ArrayBufferLike>
+    // no longer satisfies BufferSource directly (matches the repo-wide TS
+    // lib-skew casts). Behavior-preserving.
+    const sig = await crypto.subtle.sign(
+      'RSASSA-PKCS1-v1_5',
+      key,
+      utf8(signingInput) as BufferSource,
+    );
     const jwt = `${signingInput}.${base64UrlEncode(new Uint8Array(sig))}`;
 
     const res = await fetch(TOKEN_URL, {
