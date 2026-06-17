@@ -442,6 +442,34 @@ language overrides (resolved client-side) take precedence.
 
 ---
 
+## 11b. Email (templates, layouts, send)
+
+Site-admin scope (`requireSiteAdmin`). Backed by the shared EmailService
+(SMTP / MailChannels) + a site-scoped template/layout store. Full guide:
+`docs/en/features/email-service.md`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/email/capabilities` | Transport availability + default `from` |
+| `GET` | `/api/v1/email/layouts` | List layouts |
+| `POST` | `/api/v1/email/layouts` | Create layout (HTML shell with `{{content}}`) |
+| `PATCH` | `/api/v1/email/layouts/:id` | Update layout |
+| `DELETE` | `/api/v1/email/layouts/:id` | Delete layout |
+| `GET` | `/api/v1/email/templates` | List templates |
+| `POST` | `/api/v1/email/templates` | Create template |
+| `PATCH` | `/api/v1/email/templates/:id` | Update template |
+| `DELETE` | `/api/v1/email/templates/:id` | Delete template |
+| `POST` | `/api/v1/email/templates/:key/preview` | Render without sending |
+| `POST` | `/api/v1/email/send` | Render (if `templateKey`) + send — extension entry point |
+| `POST` | `/api/v1/email/test` | Send a one-off test mail |
+
+`POST /api/v1/email/send` body: `{ to[], cc?, replyTo?, variables?, ` and
+exactly one of `templateKey` or `inline: { subject, html?, text? }` `}`.
+Returns `502 DELIVERY_FAILED`, `404 NOT_FOUND` (template), or
+`503 EMAIL_NOT_CONFIGURED` (degraded mode).
+
+---
+
 ## 12. Firebase Sync
 
 Sync content (`items`) to a Firebase target — Cloud Firestore or Realtime Database — in real time. All endpoints require **site-scoped admin**. Firebase credentials are **write-only** (supplied on create/update, encrypted at rest with `ENCRYPTION_KEY`, never returned). See [features/firebase-sync.md](../features/firebase-sync.md).

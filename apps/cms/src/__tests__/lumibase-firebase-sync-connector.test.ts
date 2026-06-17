@@ -15,6 +15,16 @@ import {
 
 const fixedNow = () => 1_700_000_000_000; // fixed clock; connector is time-injectable.
 
+/**
+ * Exact-host match on a request URL. Used by the mocked `fetch` to tell apart
+ * the OAuth2 token exchange from the Firestore document write. We compare the
+ * parsed `hostname` (not a substring) so a host like `evil-oauth2.googleapis.com.attacker.test`
+ * can never be misclassified — this also satisfies CodeQL's URL-sanitization rule.
+ */
+function isHost(url: string, host: string): boolean {
+  return new URL(url).hostname === host;
+}
+
 // A throwaway RSA PKCS#8 key generated for tests only — never a real secret.
 // Generated via: openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048
 const TEST_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
@@ -92,7 +102,7 @@ describe('Firestore connector', () => {
       vi.fn(async (url: string, init: RequestInit) => {
         calls.push({ url, init });
         // First call = token exchange; subsequent = document write.
-        if (url.includes('oauth2.googleapis.com')) {
+        if (isHost(url, 'oauth2.googleapis.com')) {
           return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 });
         }
         return new Response('{}', { status: 200 });
@@ -113,7 +123,7 @@ describe('Firestore connector', () => {
     });
 
     expect(result.ok).toBe(true);
-    const writeCall = calls.find((c) => c.url.includes('firestore.googleapis.com'));
+    const writeCall = calls.find((c) => isHost(c.url, 'firestore.googleapis.com'));
     expect(writeCall).toBeDefined();
     expect(writeCall!.url).toBe(
       'https://firestore.googleapis.com/v1/projects/demo-project/databases/(default)/documents/content/articles/item-1',
@@ -134,7 +144,7 @@ describe('Firestore connector', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) =>
-        url.includes('oauth2.googleapis.com')
+        isHost(url, 'oauth2.googleapis.com')
           ? new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 })
           : new Response('not found', { status: 404 }),
       ),

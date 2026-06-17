@@ -1,0 +1,80 @@
+name: Report a bug
+description: Create a report to help us improve LumiBase
+labels: ['bug', 'triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Hi, thank you for taking the time to create an issue! Before you get started, please ensure the following are correct:
+
+        - I'm using the [latest version of LumiBase](https://github.com/khuepm/lumibase/releases).
+        - I've reviewed the [troubleshooting docs](https://github.com/khuepm/lumibase/tree/main/docs/en).
+        - There's [no other issue](https://github.com/khuepm/lumibase/issues?q=is%3Aissue) that already describes the problem.
+  - type: textarea
+    attributes:
+      label: Describe the Bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: To Reproduce
+      description: |
+        Steps to reproduce the behavior. Contributors should be able to follow the steps provided in order to reproduce the bug. Please include any relevant details that could help with reproduction, such as browser/server logs, the failing API request/response, permission setup, tenant/site configuration, schema snapshot, etc.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: false
+  - type: input
+    attributes:
+      label: LumiBase Version
+      description: You can find this in the Studio footer (`Studio vX.Y.Z` / `Backend vX.Y.Z`).
+      placeholder: v0.7.x
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      description: Which runtime are you running LumiBase on?
+      options:
+        - Cloudflare Workers (Edge)
+        - Node.js / Docker (Self-Hosted)
+        - Both
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Hosting Strategy
+      options:
+        - Self-Hosted (Docker Image)
+        - Self-Hosted (Custom)
+        - Cloudflare Workers + Pages
+        - Local development
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Database
+      description: If applicable, the vendor and version of the database being used. For example, PostgreSQL 16, Cloudflare D1, Neon.
+      placeholder: PostgreSQL 16
+    validations:
+      required: false
+  - type: input
+    attributes:
+      label: Browser
+      description: If this is a Studio (admin UI) issue, which browser and version?
+      placeholder: Chrome 126
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or logs about the problem here.
+    validations:
+      required: false

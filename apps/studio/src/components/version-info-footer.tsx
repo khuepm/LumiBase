@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ExternalLink } from 'lucide-react';
+import { AlertTriangle, Bug, ExternalLink } from 'lucide-react';
 import type { BuildMetadata } from '@lumibase/shared';
 import { getApiClient } from '@/lib/api';
 import { studioBuildMetadata } from '@/lib/build-metadata';
 
 const RELEASES_URL = 'https://github.com/khuepm/lumibase/releases';
+const BUG_REPORT_URL =
+  'https://github.com/khuepm/lumibase/issues/new?template=bug_report.yml';
 const UNKNOWN = 'unknown';
 
 function shortSha(value: string): string {
@@ -78,6 +80,15 @@ export function VersionInfoFooter() {
             </span>
           )}
           <span>No client-side downloads or updates are performed.</span>
+          <a
+            href={BUG_REPORT_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+          >
+            <Bug className="h-3.5 w-3.5" aria-hidden="true" />
+            Report a bug
+          </a>
           <a
             href={RELEASES_URL}
             target="_blank"

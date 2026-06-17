@@ -209,7 +209,14 @@
       "idx": 29,
       "version": "7",
       "when": 1781773320002,
-      "tag": "0029_lumibase_firebase_sync",
+      "tag": "0029_email_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1781773320003,
+      "tag": "0030_lumibase_firebase_sync",
       "breakpoints": true
     }
   ]

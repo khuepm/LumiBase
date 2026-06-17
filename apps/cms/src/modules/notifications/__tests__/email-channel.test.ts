@@ -4,13 +4,20 @@ import {
   buildEmailSubject,
   EMAIL_SUBJECT_PREFIX,
   EmailChannelFactory,
-  MailchannelsChannel,
-  NodemailerChannel,
+  SecurityEmailChannel,
 } from '../email-channel';
+import {
+  MailchannelsTransport,
+  NodemailerTransport,
+} from '../../../services/email/transport';
 import type { NotificationPayload } from '../types';
 
 /**
  * Feature: admin-setup-wizard, task 9.2 — email notification channel.
+ *
+ * As of the email-service refactor the byte-pushing lives in
+ * `services/email/transport.ts`; this channel now composes a transport and
+ * owns only the spec-pinned subject/body templates + recipient-merge rule.
  *
  * Coverage:
  *
@@ -18,10 +25,10 @@ import type { NotificationPayload } from '../types';
  *      shape (Req 13.2).
  *   2. Body template — every variable from Req 13.2 appears, and
  *      optional `recoveryUrl` is appended only when supplied.
- *   3. Factory routing — Cloudflare runtime → MailchannelsChannel,
- *      Docker runtime → NodemailerChannel (or null when SMTP missing).
- *   4. Adapter delivery results — DeliveryResult shape on success,
- *      failure, no recipients.
+ *   3. Factory routing — Cloudflare runtime → MailChannels transport,
+ *      Docker runtime → SMTP transport (or null when SMTP missing).
+ *   4. Channel delivery results — DeliveryResult shape on success,
+ *      failure, no recipients; recipient merge + dedupe.
  *
  * **Validates: Requirements 13.2 — see also design §9.2.**
  */
@@ -111,22 +118,22 @@ describe('buildEmailBody', () => {
 // ── Factory routing ───────────────────────────────────────────────────
 
 describe('EmailChannelFactory.fromEnv', () => {
-  it('returns a MailchannelsChannel on Cloudflare runtime', () => {
+  it('returns a MailChannels-backed channel on Cloudflare runtime', () => {
     const ch = EmailChannelFactory.fromEnv({
       LUMIBASE_ENV: 'production',
       LUMIBASE_RUNTIME: 'cloudflare',
     } as never);
-    expect(ch).toBeInstanceOf(MailchannelsChannel);
+    expect(ch).toBeInstanceOf(SecurityEmailChannel);
     expect(ch?.name).toBe('email');
   });
 
-  it('returns a NodemailerChannel on Docker runtime when SMTP URL is set', () => {
+  it('returns an SMTP-backed channel on Docker runtime when SMTP URL is set', () => {
     const ch = EmailChannelFactory.fromEnv({
       LUMIBASE_ENV: 'production',
       LUMIBASE_RUNTIME: 'docker',
       LUMIBASE_SMTP_URL: 'smtps://user:pass@smtp.example.com:465',
     } as never);
-    expect(ch).toBeInstanceOf(NodemailerChannel);
+    expect(ch).toBeInstanceOf(SecurityEmailChannel);
     expect(ch?.name).toBe('email');
   });
 
@@ -135,7 +142,7 @@ describe('EmailChannelFactory.fromEnv', () => {
       LUMIBASE_ENV: 'production',
       LUMIBASE_SMTP_URL: 'smtp://localhost:1025',
     } as never);
-    expect(ch).toBeInstanceOf(NodemailerChannel);
+    expect(ch).toBeInstanceOf(SecurityEmailChannel);
   });
 
   it('returns null on Docker runtime when SMTP URL is unset (degraded mode)', () => {
@@ -147,17 +154,20 @@ describe('EmailChannelFactory.fromEnv', () => {
   });
 });
 
-// ── MailchannelsChannel ───────────────────────────────────────────────
+// ── SecurityEmailChannel over a MailChannels transport ─────────────────
 
-describe('MailchannelsChannel.send', () => {
+describe('SecurityEmailChannel (MailChannels transport)', () => {
+  const makeChannel = (recipients: string[], fetchMock: typeof fetch) =>
+    new SecurityEmailChannel(new MailchannelsTransport(fetchMock), {
+      from: 'security@example.test',
+      recipients,
+    });
+
   it('POSTs to the MailChannels endpoint with the canonical payload', async () => {
     const fetchMock = vi.fn<typeof fetch>(
       async () => new Response('', { status: 202 }),
     );
-    const ch = new MailchannelsChannel(
-      { from: 'security@example.test', recipients: ['ops@example.test'] },
-      fetchMock,
-    );
+    const ch = makeChannel(['ops@example.test'], fetchMock);
 
     const result = await ch.send(samplePayload);
     expect(result.ok).toBe(true);
@@ -182,13 +192,8 @@ describe('MailchannelsChannel.send', () => {
   it('returns retryable=false on 4xx responses', async () => {
     const fetchMock = vi.fn(
       async () => new Response('bad request', { status: 400 }),
-    );
-    const ch = new MailchannelsChannel(
-      { from: 'security@example.test', recipients: [] },
-      fetchMock as unknown as typeof fetch,
-    );
-
-    const result = await ch.send(samplePayload);
+    ) as unknown as typeof fetch;
+    const result = await makeChannel([], fetchMock).send(samplePayload);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.retryable).toBe(false);
@@ -199,13 +204,8 @@ describe('MailchannelsChannel.send', () => {
   it('returns retryable=true on 5xx responses', async () => {
     const fetchMock = vi.fn(
       async () => new Response('overloaded', { status: 503 }),
-    );
-    const ch = new MailchannelsChannel(
-      { from: 'security@example.test', recipients: [] },
-      fetchMock as unknown as typeof fetch,
-    );
-
-    const result = await ch.send(samplePayload);
+    ) as unknown as typeof fetch;
+    const result = await makeChannel([], fetchMock).send(samplePayload);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.retryable).toBe(true);
@@ -216,13 +216,8 @@ describe('MailchannelsChannel.send', () => {
   it('returns retryable=true on network errors', async () => {
     const fetchMock = vi.fn(async () => {
       throw new TypeError('network down');
-    });
-    const ch = new MailchannelsChannel(
-      { from: 'security@example.test', recipients: [] },
-      fetchMock as unknown as typeof fetch,
-    );
-
-    const result = await ch.send(samplePayload);
+    }) as unknown as typeof fetch;
+    const result = await makeChannel([], fetchMock).send(samplePayload);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.retryable).toBe(true);
@@ -230,13 +225,10 @@ describe('MailchannelsChannel.send', () => {
     }
   });
 
-  it('fails non-retryably with no recipients', async () => {
+  it('fails non-retryably with no recipients before contacting the transport', async () => {
     const fetchMock = vi.fn();
-    const ch = new MailchannelsChannel(
-      { from: 'security@example.test', recipients: [] },
-      fetchMock as unknown as typeof fetch,
-    );
-    // payload.email empty — adapter merge yields zero recipients.
+    const ch = makeChannel([], fetchMock as unknown as typeof fetch);
+    // payload.email empty — channel merge yields zero recipients.
     const result = await ch.send({ ...samplePayload, email: '' });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -250,14 +242,8 @@ describe('MailchannelsChannel.send', () => {
     const fetchMock = vi.fn<typeof fetch>(
       async () => new Response('', { status: 202 }),
     );
-    const ch = new MailchannelsChannel(
-      {
-        from: 'security@example.test',
-        recipients: ['Admin@Example.Com'], // collides with payload.email after lowercase
-      },
-      fetchMock,
-    );
-
+    // 'Admin@Example.Com' collides with payload.email after lowercase.
+    const ch = makeChannel(['Admin@Example.Com'], fetchMock);
     await ch.send(samplePayload);
     const init = fetchMock.mock.calls[0]![1] as RequestInit;
     const body = JSON.parse(init.body as string);
@@ -265,28 +251,27 @@ describe('MailchannelsChannel.send', () => {
   });
 });
 
-// ── NodemailerChannel ─────────────────────────────────────────────────
+// ── SecurityEmailChannel over an SMTP transport ────────────────────────
 
-describe('NodemailerChannel.send', () => {
+describe('SecurityEmailChannel (SMTP transport)', () => {
   it('produces a DeliveryResult shape rather than throwing on a misconfigured URL', async () => {
-    // Pass an obviously-invalid URL; nodemailer's createTransport
-    // tolerates many shapes, so we don't strictly assert success or
-    // failure — only that the adapter never throws and always
-    // returns the {ok: ...} contract.
-    const ch = new NodemailerChannel('not-a-real-smtp-url', {
-      from: 'security@example.test',
-      recipients: [],
-    });
+    // nodemailer's createTransport tolerates many shapes, so we only
+    // assert the channel never throws and always returns the {ok: ...}
+    // contract.
+    const ch = new SecurityEmailChannel(
+      new NodemailerTransport('not-a-real-smtp-url'),
+      { from: 'security@example.test', recipients: [] },
+    );
     const result = await ch.send(samplePayload);
     expect(result).toHaveProperty('ok');
     expect(typeof result.ok).toBe('boolean');
   });
 
   it('fails non-retryably with no recipients before contacting the transport', async () => {
-    const ch = new NodemailerChannel('smtp://localhost:1025', {
-      from: 'security@example.test',
-      recipients: [],
-    });
+    const ch = new SecurityEmailChannel(
+      new NodemailerTransport('smtp://localhost:1025'),
+      { from: 'security@example.test', recipients: [] },
+    );
     const result = await ch.send({ ...samplePayload, email: '' });
     expect(result.ok).toBe(false);
     if (!result.ok) {

@@ -67,6 +67,30 @@ crons = ["0 * * * *"]
 # Secrets such as JWT_SECRET, ENCRYPTION_KEY, CF_ACCESS_CERTS_URL,
 # CF_ACCESS_AUDIENCE, and optional METRICS_TOKEN must be set with
 # `wrangler secret put --env <environment>`, not hardcoded here.
+#
+# Sentry error monitoring (src/cloudflare.ts wraps the handler with
+# @sentry/cloudflare's withSentry). The DSN is read from env per-request and is
+# a no-op when unset, so it can stay out of local/dev. Set per environment:
+#   wrangler secret put SENTRY_DSN --env <environment>
+# Optionally tune SENTRY_TRACES_SAMPLE_RATE (0–1, default 1.0) as a [vars] entry.
+#
+# ─── Shared-domain routing (dev / staging / demo) ─────────────────────────────
+# These non-production environments serve Studio (Cloudflare Pages) and the CMS
+# (this Worker) from ONE hostname. The Studio Pages custom domain owns the
+# hostname for static/SPA paths; the Worker `routes` below claim the API surface
+# on the same hostname. Cloudflare gives a Worker route priority over a Pages
+# custom domain for the paths it matches, so `/api/*`, `/health`, `/metrics`,
+# and `/scim/*` reach the Worker while every other path (the SPA) is served by
+# Pages. `/test-auth` is intentionally NOT routed — it is a local-dev helper.
+#
+# Because Studio and CMS share an origin here, the SPA calls `/api/...`
+# same-origin and CORS is unnecessary, so CORS_ALLOWED_ORIGINS is empty.
+# (Production still uses split origins studio.lumibase.dev + api.lumibase.dev
+# and keeps its cross-origin CORS allow-list below.)
+#
+# NOTE: `zone_name` must match the registrable zone in this Cloudflare account.
+# The Worker, the Studio Pages custom domain, and the DNS record for each
+# hostname must all exist before these routes resolve — see the deploy docs.
 
 [env.staging]
 name = "lumibase-cms-staging"
@@ -78,10 +102,26 @@ LUMIBASE_GIT_SHA = "unknown"
 LUMIBASE_BUILD_TIME = "unknown"
 LUMIBASE_RELEASE_CHANNEL = "staging"
 LUMIBASE_DEV_AUTH = "false"
-# Origins allowed to call the API cross-origin (comma-separated). The Studio
-# SPA is served from a different origin than the CMS Worker, so it must be
-# listed here or browser requests are blocked. Production rejects "*".
-CORS_ALLOWED_ORIGINS = "https://studio.lumibase.dev"
+# Studio shares the staging hostname (staging.lumibase.dev), so the SPA reaches
+# the API same-origin and no CORS allow-list is needed. Add external consumer
+# origins here if any need cross-origin API access.
+CORS_ALLOWED_ORIGINS = ""
+
+[[env.staging.routes]]
+pattern = "staging.lumibase.dev/api/*"
+zone_name = "lumibase.dev"
+
+[[env.staging.routes]]
+pattern = "staging.lumibase.dev/health"
+zone_name = "lumibase.dev"
+
+[[env.staging.routes]]
+pattern = "staging.lumibase.dev/metrics"
+zone_name = "lumibase.dev"
+
+[[env.staging.routes]]
+pattern = "staging.lumibase.dev/scim/*"
+zone_name = "lumibase.dev"
 
 [[env.staging.durable_objects.bindings]]
 name = "SITE_ROOM"
@@ -143,4 +183,89 @@ new_sqlite_classes = ["SiteRoom"]
 # bucket_name = "lumibase-media"
 
 [env.production.triggers]
+crons = ["0 * * * *"]
+
+# ─── Dev environment (dev.lumibase.dev, shared domain) ───────────────────────
+# Continuous-integration environment, auto-deployed from the `dev` branch.
+[env.dev]
+name = "lumibase-cms-dev"
+
+[env.dev.vars]
+LUMIBASE_ENV = "staging"
+LUMIBASE_VERSION = "unknown"
+LUMIBASE_GIT_SHA = "unknown"
+LUMIBASE_BUILD_TIME = "unknown"
+LUMIBASE_RELEASE_CHANNEL = "dev"
+LUMIBASE_DEV_AUTH = "false"
+# Studio shares dev.lumibase.dev → same-origin API calls, no CORS needed.
+CORS_ALLOWED_ORIGINS = ""
+
+[[env.dev.routes]]
+pattern = "dev.lumibase.dev/api/*"
+zone_name = "lumibase.dev"
+
+[[env.dev.routes]]
+pattern = "dev.lumibase.dev/health"
+zone_name = "lumibase.dev"
+
+[[env.dev.routes]]
+pattern = "dev.lumibase.dev/metrics"
+zone_name = "lumibase.dev"
+
+[[env.dev.routes]]
+pattern = "dev.lumibase.dev/scim/*"
+zone_name = "lumibase.dev"
+
+[[env.dev.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
+
+[[env.dev.migrations]]
+tag = "v1"
+new_sqlite_classes = ["SiteRoom"]
+
+[env.dev.triggers]
+crons = ["0 * * * *"]
+
+# ─── Demo environment (demo.lumibase.dev, shared domain) ─────────────────────
+# Public demo / showcase. Deployed manually via workflow_dispatch. May be
+# seeded with sample data out of band.
+[env.demo]
+name = "lumibase-cms-demo"
+
+[env.demo.vars]
+LUMIBASE_ENV = "staging"
+LUMIBASE_VERSION = "unknown"
+LUMIBASE_GIT_SHA = "unknown"
+LUMIBASE_BUILD_TIME = "unknown"
+LUMIBASE_RELEASE_CHANNEL = "demo"
+LUMIBASE_DEV_AUTH = "false"
+# Studio shares demo.lumibase.dev → same-origin API calls, no CORS needed.
+CORS_ALLOWED_ORIGINS = ""
+
+[[env.demo.routes]]
+pattern = "demo.lumibase.dev/api/*"
+zone_name = "lumibase.dev"
+
+[[env.demo.routes]]
+pattern = "demo.lumibase.dev/health"
+zone_name = "lumibase.dev"
+
+[[env.demo.routes]]
+pattern = "demo.lumibase.dev/metrics"
+zone_name = "lumibase.dev"
+
+[[env.demo.routes]]
+pattern = "demo.lumibase.dev/scim/*"
+zone_name = "lumibase.dev"
+
+[[env.demo.durable_objects.bindings]]
+name = "SITE_ROOM"
+class_name = "SiteRoom"
+
+[[env.demo.migrations]]
+tag = "v1"
+new_sqlite_classes = ["SiteRoom"]
+
+[env.demo.triggers]
 crons = ["0 * * * *"]

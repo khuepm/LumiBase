@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { lumi } from '@/lib/lumi';
+import { lumi, type Post } from '@/lib/lumi';
 
 interface PostPageProps {
   params: {
@@ -8,16 +8,36 @@ interface PostPageProps {
   };
 }
 
+// GraphQL query for a single post by id (`posts_by_id` is generated per tenant).
+const GET_POST = /* GraphQL */ `
+  query GetPost($id: ID!) {
+    posts_by_id(id: $id) {
+      id
+      title
+      content
+      author
+      status
+      createdAt
+    }
+  }
+`;
+
+// Lightweight query used only to collect ids for static generation.
+const LIST_POST_IDS = /* GraphQL */ `
+  query ListPostIds($limit: Int) {
+    posts(status: "published", limit: $limit) {
+      id
+    }
+  }
+`;
+
 // Generate static params for all published posts for static generation (SSG)
 export async function generateStaticParams() {
   try {
-    const response = await lumi.items('posts').list({
-      status: 'published',
+    const data = await lumi.query<{ posts: Pick<Post, 'id'>[] }>(LIST_POST_IDS, {
       limit: 100,
     });
-    return response.data.map((post: any) => ({
-      id: post.id,
-    }));
+    return data.posts.map((post) => ({ id: post.id }));
   } catch (err) {
     console.error('Failed to generate static params for posts:', err);
     return [];
@@ -25,11 +45,14 @@ export async function generateStaticParams() {
 }
 
 export default async function PostDetailPage({ params }: PostPageProps) {
-  let post: any = null;
+  let post: Post | null = null;
 
   try {
-    // Fetch a single post detail from the collection
-    post = await lumi.items('posts').detail(params.id);
+    // Fetch a single post detail via GraphQL
+    const data = await lumi.query<{ posts_by_id: Post | null }>(GET_POST, {
+      id: params.id,
+    });
+    post = data.posts_by_id;
   } catch (err) {
     // If not found or API error, fall back to 404
     return notFound();
@@ -50,7 +73,7 @@ export default async function PostDetailPage({ params }: PostPageProps) {
         <div style={styles.meta}>
           <span>By <strong>{post.author}</strong></span>
           <span>•</span>
-          <span>{new Date(post.created_at || Date.now()).toLocaleDateString()}</span>
+          <span>{new Date(post.createdAt || Date.now()).toLocaleDateString()}</span>
         </div>
       </header>
 

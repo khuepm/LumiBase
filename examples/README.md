@@ -21,6 +21,12 @@ A custom field extension for LumiBase Studio.
 - Communicates with the LumiBase Studio shell via postMessage.
 - Uses `manifest.json` declaration for easy uploading.
 
+### 4. [Email Setup Extension](file:///Users/khuepm/workplace/Lumibase/examples/extension-email-setup)
+An endpoint extension that sends email through LumiBase's built-in EmailService.
+- Shows the split: the extension owns the trigger/UI; LumiBase owns transport + templates.
+- Calls the core `POST /api/v1/email/send` with a `templateKey` — never talks SMTP itself.
+- Declares minimal capabilities (`http:fetch`, `env:read`).
+
 ---
 
 ## Getting Started

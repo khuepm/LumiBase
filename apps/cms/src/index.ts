@@ -28,6 +28,7 @@ import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
 import { flowsRouter } from './routes/flows';
 import { itemsRouter } from './routes/items';
+import { handleGraphQL } from './graphql';
 import { permissionsRouter } from './routes/permissions';
 import { policiesRouter } from './routes/policies';
 import { presetsRouter } from './routes/presets';
@@ -58,6 +59,7 @@ import { aiRouter } from './routes/ai';
 import { agentRouter } from './routes/agent';
 import { intentsRouter } from './routes/intents';
 import { mcpRouter } from './routes/mcp';
+import { emailRouter } from './modules/email/routes';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
@@ -167,6 +169,10 @@ api.route('/me', meRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/items', itemsRouter);
+// GraphQL surface (Yoga). Mounted inside the authenticated `api` sub-app so
+// it inherits the full tenant → db → auth → RLS chain; `all` covers POST
+// (operations) and GET (GraphiQL / introspection in non-prod).
+api.all('/graphql', (c) => handleGraphQL(c));
 api.route('/typegen', typegenRouter);
 api.route('/roles', rolesRouter);
 api.route('/policies', policiesRouter);
@@ -185,6 +191,7 @@ api.route('/users', usersRouter);
 api.route('/teams', teamsRouter);
 api.route('/files', filesRouter);
 api.route('/webhooks', webhooksRouter);
+api.route('/email', emailRouter);
 api.route('/activity', activityRouter);
 api.route('/realtime', realtimeRouter);
 api.route('/extensions', extensionsRouter);
