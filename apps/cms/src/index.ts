@@ -23,6 +23,7 @@ import { authRouter, meRouter } from './routes/auth';
 import { adminSecurityRouter } from './routes/admin-security';
 import { adminEncryptionRouter } from './routes/admin-encryption';
 import { editorialRouter } from './routes/editorial';
+import { adminErasureRouter } from './routes/admin-erasure';
 import { apiKeysRouter } from './routes/api-keys';
 import { collectionsRouter } from './routes/collections';
 import { deliverRouter } from './routes/deliver';
@@ -201,6 +202,8 @@ api.route('/admin/security', adminSecurityRouter);
 // Sibling to `/admin/security`, also under `withAuth` with an in-router
 // admin-role gate. Handles key-rotation metadata + key listing.
 api.route('/admin/encryption', adminEncryptionRouter);
+// Admin Erasure surface (regulated-content-readiness task 9.4; Req 11).
+api.route('/admin/erasure', adminErasureRouter);
 // Audit-log QUERY + EXPORT surface (admin-setup-wizard task 12.3; Req
 // 15.4, 15.6; design §4.9, §4.10, §10.3, §10.4). SIBLING mount alongside
 // `adminSecurityRouter` above, both under `withAuth`. The admin-role gate

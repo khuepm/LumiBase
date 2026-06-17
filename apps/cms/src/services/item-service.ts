@@ -837,6 +837,37 @@ export class ItemService {
     return { ok: true } as const;
   }
 
+  /**
+   * Permanently remove an item and (via FK cascade) its revisions (Req 11.2).
+   * Used by erasure/retention — bypasses soft-delete. Audit trails in
+   * `audit_log` / `field_access_log` are intentionally NOT cascaded (Req 11.3).
+   * Returns true when a row was removed.
+   */
+  async hardDelete(collectionName: string, id: string): Promise<boolean> {
+    const coll = await this.resolveCollection(collectionName);
+    const deleted = await this.deps.db
+      .delete(items)
+      .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, coll.id), eq(items.id, id)))
+      .returning({ id: items.id });
+    if (deleted.length === 0) return false;
+    await this.deindexItem(collectionName, id);
+    return true;
+  }
+
+  /**
+   * Crypto-shred a record by destroying its wrapped DEK (Req 11.2, envelope
+   * mode). The row remains but its ciphertext becomes unrecoverable.
+   */
+  async cryptoShred(collectionName: string, id: string): Promise<boolean> {
+    const coll = await this.resolveCollection(collectionName);
+    const updated = await this.deps.db
+      .update(items)
+      .set({ dekWrapped: null, updatedAt: new Date() })
+      .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, coll.id), eq(items.id, id)))
+      .returning({ id: items.id });
+    return updated.length > 0;
+  }
+
   async bulk(
     collectionName: string,
     op: 'create' | 'update' | 'delete',
