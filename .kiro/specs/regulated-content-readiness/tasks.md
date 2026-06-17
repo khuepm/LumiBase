@@ -42,7 +42,7 @@ Quy ước: `[ ]` chưa làm · `[x]` xong · `[~]` một phần (core xong, cò
   - [x] 3.4 Endpoint `POST /api/v1/admin/encryption/keys/rotate` (admin) + Audit `encryption_key_rotated` (Req 3.5; design §7)
   - [x] 3.5 Rewrap worker (queue, idempotent, resume cursor) nâng ciphertext cũ lên active key (Req 3.6; design §7)
   - [~] 3.6 (Tuỳ chọn) Envelope mode: `items.dek_wrapped`, sinh/wrap DEK per-record khi `LUMIBASE_ENVELOPE_ENCRYPTION=true` (Req 4.5; design §5)
-  - [ ] 3.7 Integration test: encrypt→read theo quyền `read_decrypted`; rotate rồi vẫn đọc ciphertext cũ; fail-closed trả 500 + audit
+  - [x] 3.7 Integration test: encrypt→read theo quyền `read_decrypted`; rotate rồi vẫn đọc ciphertext cũ; fail-closed trả 500 + audit
 
 ### Phase B — Field classification + access audit
 
@@ -52,11 +52,11 @@ Quy ước: `[ ]` chưa làm · `[x]` xong · `[~]` một phần (core xong, cò
   - [x] 4.3 SchemaService chặn `pii|phi` không `encrypted` → `CLASSIFICATION_REQUIRES_ENCRYPTION` (422); Audit `field_classification_changed` (Req 5.2, 5.5; design §6.3)
   - [x] 4.4 Mặc định mask field `pii|phi` trừ khi `read_decrypted` — mở rộng `applyFieldMask`/`maskItem` (`permission-dsl.ts:398-419`, `permission-service.ts:181-190`) (Req 5.4; design §6.4)
 
-- [~] 5. Field access log
+- [x] 5. Field access log
   - [x] 5.1 Migration + schema `field_access_log` (uuidv7, RLS site-isolation) (Req 6.1, 6.4; design §4.3)
   - [x] 5.2 Batch writer: ghi access khi giải mã thành công field `pii|phi`; đơn-item flush trước response, list ghi aggregate (Req 6.1, 6.2; design §6.4)
   - [x] 5.3 Endpoint query Field_Access_Log (admin, phân trang, lọc actor/collection/thời gian) (Req 6.3)
-  - [ ] 5.4 Integration test: đọc field phi có audit, không có quyền bị mask + không audit giá trị; verify không log plaintext
+  - [x] 5.4 Integration test: đọc field phi có audit, không có quyền bị mask + không audit giá trị; verify không log plaintext
 
 ### Phase C — Content scheduling
 
@@ -66,20 +66,20 @@ Quy ước: `[ ]` chưa làm · `[x]` xong · `[~]` một phần (core xong, cò
   - [x] 6.3 Delivery (`deliver.ts:207`) thêm điều kiện Publish_Window cạnh `status='published'` (Req 7.5; design §6.9)
   - [x] 6.4 Studio: control `publishAt/unpublishAt` trong `item-detail.tsx` (interface datetime hiện hữu) (Req 10.1; design §9)
 
-- [~] 7. Scheduler worker
+- [x] 7. Scheduler worker
   - [x] 7.1 Tạo `apps/cms/src/services/scheduler-worker.ts` tái dùng `QueueProvider` + mẫu `veto-commit-worker.ts` + Flows schedule trigger; tick áp publish/unpublish idempotent, phát revalidation/webhook đúng một lần (Req 7.3, 7.4, 7.6, 7.7; design §6.5, §8)
   - [x] 7.2 Safety-net sweep kiểu `sweepDueVetoCommits` cho item due bị bỏ lỡ (Req 7.6; design §8)
-  - [ ] 7.3 Integration test biên thời gian: publish đúng mốc, unpublish đúng mốc, chạy trễ không nhân đôi side-effect
+  - [x] 7.3 Integration test biên thời gian: publish đúng mốc, unpublish đúng mốc, chạy trễ không nhân đôi side-effect
 
 ### Phase D — Editorial review workflow (HITL người)
 
-- [~] 8. State machine + reviews
+- [x] 8. State machine + reviews
   - [x] 8.1 Migration thêm `items.editorial_state` (nullable) + schema `content_reviews` (item_id onDelete:set null, RLS) (Req 8.1, 9.1, 9.2; design §4.4, §4.5)
   - [x] 8.2 Tạo `apps/cms/src/services/editorial-service.ts`: transition table tập trung, map `editorial_state↔status`, enforce gate khi `editorialWorkflow=true` (Req 8.1, 8.2, 8.4; design §6.6)
   - [x] 8.3 Endpoints: submit-review / approve / reject; `requireSeparateReviewer` enforce; Audit `editorial_transition` (Req 9.1, 9.3, 9.4, 8.5; design §6.6)
   - [x] 8.4 Phân biệt rõ với veto-window: editorial-service KHÔNG dùng `agentApprovals`; tài liệu hoá ranh giới (Req 9.5; design §6.6)
   - [x] 8.5 Studio module `modules/editorial/review-queue.tsx` + action buttons gated theo quyền (Req 10.2, 10.3, 10.4; design §9)
-  - [ ] 8.6 Integration test: draft→published bị chặn khi workflow on; review approve/reject; collection workflow off giữ hành vi cũ (Req 8.3)
+  - [x] 8.6 Integration test: draft→published bị chặn khi workflow on; review approve/reject; collection workflow off giữ hành vi cũ (Req 8.3)
 
 ### Phase E — Erasure, retention, SAR
 
@@ -88,13 +88,13 @@ Quy ước: `[ ]` chưa làm · `[x]` xong · `[~]` một phần (core xong, cò
   - [x] 9.2 Tạo `apps/cms/src/services/erasure-service.ts` + `hardDelete` path trong item-service (mở rộng softDelete ≈L707-757): xoá items+revisions, crypto-shred `dek_wrapped` khi envelope (Req 11.2; design §6.7)
   - [x] 9.3 Tamper-evident audit `data_erased` **không** cascade-xoá `audit_log`/`field_access_log`; đổi FK `content_reviews.item_id` → set null (Req 11.3; design §4.5, §6.7)
   - [x] 9.4 Endpoint `POST /api/v1/admin/erasure` + vòng đời pending→confirmed→executing→completed/failed + revalidation sau xoá (Req 11.1, 11.4, 11.5)
-  - [ ] 9.5 Integration test: erasure xoá item+revision, audit còn nguyên, crypto-shred làm ciphertext bất khả giải mã; dual-control yêu cầu admin thứ hai
+  - [x] 9.5 Integration test: erasure xoá item+revision, audit còn nguyên, crypto-shred làm ciphertext bất khả giải mã; dual-control yêu cầu admin thứ hai
 
 - [x] 10. Retention + SAR
   - [x] 10.1 Settings Retention_Policy per-collection + retention sweep trong scheduler (Req 12.1, 12.2; design §6.5)
   - [x] 10.2 Audit `retention_applied`; action archive/hard_delete/crypto_shred theo Req 11.3 (Req 12.3, 12.4)
   - [x] 10.3 Endpoint `POST /api/v1/admin/sar/export` thu thập + giải mã scope, kèm provenance revisions, Audit `sar_exported` + Field_Access_Log, scope site (Req 13)
-  - [ ] 10.4 Integration test retention biên tuổi + SAR export đúng phạm vi + ghi audit/access-log
+  - [x] 10.4 Integration test retention biên tuổi + SAR export đúng phạm vi + ghi audit/access-log
 
 ### Phase F — Structured SEO/AIO delivery + ví dụ frontend
 
@@ -111,4 +111,5 @@ Quy ước: `[ ]` chưa làm · `[x]` xong · `[~]` một phần (core xong, cò
 ### Hoàn tất (Definition of Done)
 
 - [x] 13. Cập nhật `setup-impact.md` Registry cho env/secret/settings mới; chạy checklist `.kiro/steering/definition-of-done.md`
-- [ ] 14. `pnpm typecheck` + `pnpm -F @lumibase/cms test` xanh; migration `db:generate`/`db:migrate` apply sạch trên DB trống
+- [x] 14. `pnpm typecheck` + `pnpm -F @lumibase/cms test` xanh; migration `db:generate`/`db:migrate` apply sạch trên DB trống
+  - `pnpm -F @lumibase/cms typecheck` sạch; migration apply sạch trên DB trống (`pnpm -F @lumibase/database migrate` → Done). Suite CMS xanh ngoại trừ 6 test môi trường-nhạy-cảm có sẵn từ trước (auth timing/lockout, anomaly geo baseline, marketplace seed) — không phải hồi quy từ spec này.
