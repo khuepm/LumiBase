@@ -456,6 +456,11 @@ export interface ItemRow<
   status: string;
   data: TData;
   sort: number;
+  /** Content scheduling window (Publish_Window); null when not scheduled. */
+  publishAt?: string | null;
+  unpublishAt?: string | null;
+  /** Editorial workflow state; null when the workflow is not in use. */
+  editorialState?: string | null;
   userCreated: string | null;
   userUpdated: string | null;
   createdAt: string;
