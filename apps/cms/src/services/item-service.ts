@@ -30,6 +30,7 @@ import { nanoid } from 'nanoid';
 import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
 import { AuditLogger } from '../modules/audit/logger';
+import { FirebaseSyncService } from '../modules/lumibase-firebase-sync';
 import { WriteCoalescer } from './load-guard-service';
 import type { PrimaryKeyType, StorageMode } from './schema-service';
 import { formatSafeError } from '@lumibase/shared/utils';
@@ -584,6 +585,7 @@ export class ItemService {
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false);
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
+    await this.dispatchFirebaseSync(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -757,6 +759,7 @@ export class ItemService {
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false);
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
+    await this.dispatchFirebaseSync(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -831,6 +834,7 @@ export class ItemService {
     await this.writeActivity('delete', coll.name, id, {});
     await this.deindexItem(collectionName, id);
     await this.publishRealtimeEvent(collectionName, 'delete', id, {});
+    await this.dispatchFirebaseSync(collectionName, 'delete', id, {});
     // After hook — fire-and-forget.
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -1280,6 +1284,33 @@ export class ItemService {
     } catch (err) {
       // Realtime fan-out is non-critical — log and continue.
       console.error('[item-service] realtime publish failed', { collection, itemId, err: formatSafeError(err) });
+    }
+  }
+
+  /**
+   * Mirror an item change to any configured LumiBase Firebase Sync pipelines.
+   *
+   * Outbound sync is non-critical to the write path: it runs only when an
+   * `encryptionKey` is configured (credentials must be decryptable) and any
+   * failure is swallowed so a Firebase outage never fails a CMS write. The
+   * `FirebaseSyncService` itself records per-pipeline outcomes to the sync log.
+   */
+  private async dispatchFirebaseSync(
+    collection: string,
+    action: 'create' | 'update' | 'delete',
+    itemId: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.deps.encryptionKey) return;
+    try {
+      const sync = new FirebaseSyncService({
+        db: this.deps.db,
+        siteId: this.deps.siteId,
+        encryptionKey: this.deps.encryptionKey,
+      });
+      await sync.syncItemChange({ collection, action, itemId, data });
+    } catch (err) {
+      console.error('[item-service] firebase sync failed', { collection, itemId, err: formatSafeError(err) });
     }
   }
 

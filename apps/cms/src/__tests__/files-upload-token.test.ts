@@ -28,7 +28,7 @@ function buildApp(writes: StoredWrite[]): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const storage: StorageProvider = {
     put: async (key, data, metadata) => {
-      const body = await new Response(data).text();
+      const body = await new Response(data as BodyInit).text();
       writes.push({ key, body, metadata });
     },
     get: async () => null,

@@ -33,6 +33,7 @@ import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
 import { flowsRouter } from './routes/flows';
 import { itemsRouter } from './routes/items';
+import { handleGraphQL } from './graphql';
 import { permissionsRouter } from './routes/permissions';
 import { policiesRouter } from './routes/policies';
 import { presetsRouter } from './routes/presets';
@@ -63,10 +64,12 @@ import { aiRouter } from './routes/ai';
 import { agentRouter } from './routes/agent';
 import { intentsRouter } from './routes/intents';
 import { mcpRouter } from './routes/mcp';
+import { emailRouter } from './modules/email/routes';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
+import { lumibaseFirebaseSyncRouter } from './modules/lumibase-firebase-sync';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 const app = new Hono<AppEnv>();
@@ -172,6 +175,10 @@ api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/items', itemsRouter);
 api.route('/editorial', editorialRouter);
+// GraphQL surface (Yoga). Mounted inside the authenticated `api` sub-app so
+// it inherits the full tenant → db → auth → RLS chain; `all` covers POST
+// (operations) and GET (GraphiQL / introspection in non-prod).
+api.all('/graphql', (c) => handleGraphQL(c));
 api.route('/typegen', typegenRouter);
 api.route('/roles', rolesRouter);
 api.route('/policies', policiesRouter);
@@ -190,6 +197,7 @@ api.route('/users', usersRouter);
 api.route('/teams', teamsRouter);
 api.route('/files', filesRouter);
 api.route('/webhooks', webhooksRouter);
+api.route('/email', emailRouter);
 api.route('/activity', activityRouter);
 api.route('/realtime', realtimeRouter);
 api.route('/extensions', extensionsRouter);
@@ -249,6 +257,11 @@ api.route('/mcp', mcpRouter);
 // `/api/v1` below, mounting `cdcRouter` at `/cdc` yields the intended
 // `/api/v1/cdc/*` prefix — matching how every sibling module above is wired.
 api.route('/cdc', cdcRouter);
+
+// LumiBase Firebase Sync — outbound content mirroring to Firestore/RTDB.
+// Same auth posture as CDC: upstream tenant/auth/db/rls + the router's own
+// site-scoped admin gate. Yields `/api/v1/firebase-sync/*`.
+api.route('/firebase-sync', lumibaseFirebaseSyncRouter);
 
 // Share links are public. The opaque token resolves the site and share role.
 app.use('/api/v1/shares/*', withDb());

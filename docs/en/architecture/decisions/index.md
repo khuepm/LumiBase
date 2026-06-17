@@ -14,6 +14,7 @@ LumiBase follows the [ADR pattern](https://adr.github.io/) to document significa
 | [ADR-006](./adr-006-drizzle-over-prisma.md) | Drizzle ORM over Prisma | Accepted |
 | [ADR-007](./adr-007-logto-for-auth.md) | Logto for Authentication | Accepted |
 | [ADR-008](./adr-008-policy-dsl-json.md) | JSON Policy DSL for Permissions | Accepted |
+| [ADR-009](./adr-009-graphql-yoga.md) | GraphQL Yoga with Dynamic Schema over ItemService | Accepted |
 
 ## Template
 

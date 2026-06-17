@@ -188,6 +188,17 @@ jobs:
           fi
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
+      - name: Ensure Studio custom domain
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        # Idempotently attach the production Studio domain to the Pages project
+        # so studio.lumibase.dev resolves (Cloudflare provisions the proxied DNS
+        # record). The CMS API lives on the separate api.lumibase.dev origin,
+        # which the Worker owns via wrangler `custom_domain`.
+        run: node scripts/ensure-pages-domain.mjs --project lumibase-studio --domain studio.lumibase.dev
+
       - name: Verify studio deployment
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         run: curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --max-time 20 "${{ steps.deploy_studio.outputs.url }}" --output /dev/null

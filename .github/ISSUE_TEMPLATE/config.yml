@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation
+    url: https://github.com/khuepm/lumibase/tree/main/docs/en
+    about: Read the LumiBase documentation before opening an issue.
+  - name: 💬 Discussions & Questions
+    url: https://github.com/khuepm/lumibase/discussions
+    about: Ask questions and discuss ideas with the community.
