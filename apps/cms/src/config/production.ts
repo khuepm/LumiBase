@@ -78,6 +78,31 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv = process.env): 
     errors.push('ENCRYPTION_KEY must be a base64-encoded 128, 192, or 256-bit AES key.');
   }
 
+  // Validate any versioned encryption keys (ENCRYPTION_KEY_<id>) used for
+  // key rotation. Each must be a valid AES-GCM key and not a dev/default value,
+  // and the active key id (if set) must resolve to a configured key.
+  const versionedKeyIds = new Set<string>();
+  for (const [name, value] of Object.entries(env)) {
+    if (!value || !name.startsWith('ENCRYPTION_KEY_') || name.endsWith('_FILE')) continue;
+    if (name === 'ENCRYPTION_KEY_FILE') continue;
+    const keyId = name.slice('ENCRYPTION_KEY_'.length);
+    if (!keyId) continue;
+    versionedKeyIds.add(keyId);
+    if (DEV_SECRET_VALUES.has(value)) {
+      errors.push(`${name} uses a development/default value.`);
+    }
+    if (!isValidAesGcmKey(value)) {
+      errors.push(`${name} must be a base64-encoded 128, 192, or 256-bit AES key.`);
+    }
+  }
+
+  const activeKeyId = env.ENCRYPTION_ACTIVE_KEY_ID?.trim();
+  if (activeKeyId && activeKeyId !== 'v0' && !versionedKeyIds.has(activeKeyId)) {
+    errors.push(
+      `ENCRYPTION_ACTIVE_KEY_ID='${activeKeyId}' has no matching ENCRYPTION_KEY_${activeKeyId}.`,
+    );
+  }
+
   const databaseUrl = env.DATABASE_URL;
   const databaseSslMode = env.DATABASE_SSL_MODE?.trim().toLowerCase();
   if (databaseUrl && databaseSslMode !== 'disable' && !hasRequiredSslMode(databaseUrl)) {

@@ -6,6 +6,7 @@ import { PostgresDatabaseProvider } from './database';
 import { MeiliSearchProvider } from './search';
 import { BullMQProvider } from './queue';
 import { ImgproxyMediaProcessor } from './media';
+import { createDockerKeyProvider } from './keys';
 
 export { RedisCacheProvider } from './cache';
 export { S3StorageProvider } from './storage';
@@ -13,6 +14,7 @@ export { PostgresDatabaseProvider } from './database';
 export { MeiliSearchProvider } from './search';
 export { BullMQProvider } from './queue';
 export { ImgproxyMediaProcessor } from './media';
+export { createDockerKeyProvider } from './keys';
 
 /**
  * Creates a RuntimeContext configured for Docker/Node.js environments.
@@ -64,6 +66,7 @@ export function createDockerRuntime(env: Record<string, unknown>): RuntimeContex
       imgproxySalt,
       `${s3Endpoint}/${s3Bucket}`,
     ),
+    keys: createDockerKeyProvider(env),
     runtime: 'docker',
   };
 }
