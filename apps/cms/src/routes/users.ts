@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import type { AppEnv } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
+import { sendTeammateInvite } from '../modules/email/invite';
 
 export const usersRouter = new Hono<AppEnv>();
 usersRouter.use('*', requireSiteAdmin());
@@ -98,6 +99,22 @@ usersRouter.post('/invite', async (c) => {
     siteId,
     roleId: input.roleId,
   }).onConflictDoNothing(); // If already in site, do nothing
+
+  // Best-effort invite email — sent AFTER the binding so a mail failure can't
+  // affect the invite itself. Detached via waitUntil on Workers; the helper
+  // never throws, so a fire-and-forget on Node is safe too.
+  const inviteEmail = sendTeammateInvite({
+    db,
+    siteId,
+    env: c.env,
+    email: input.email,
+    invitedBy: c.get('auth')?.email ?? undefined,
+  });
+  if (c.executionCtx?.waitUntil) {
+    c.executionCtx.waitUntil(inviteEmail);
+  } else {
+    void inviteEmail;
+  }
 
   return c.json({ data: existingUser });
 });
