@@ -113,7 +113,7 @@ describe('Firestore connector', () => {
     });
 
     expect(result.ok).toBe(true);
-    const writeCall = calls.find((c) => c.url.includes('firestore.googleapis.com'));
+    const writeCall = calls.find((c) => new URL(c.url).hostname === 'firestore.googleapis.com');
     expect(writeCall).toBeDefined();
     expect(writeCall!.url).toBe(
       'https://firestore.googleapis.com/v1/projects/demo-project/databases/(default)/documents/content/articles/item-1',
