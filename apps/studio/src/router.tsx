@@ -59,6 +59,8 @@ const MissionControlGoalsPage = lazy(() => import('./modules/mission-control/goa
 const MissionControlAgentsPage = lazy(() => import('./modules/mission-control/agents-page').then((m) => ({ default: m.AgentsPage })));
 const MissionControlTrustPage = lazy(() => import('./modules/mission-control/trust-page').then((m) => ({ default: m.TrustPage })));
 const MissionControlConstitutionPage = lazy(() => import('./modules/mission-control/constitution-page').then((m) => ({ default: m.ConstitutionPage })));
+const InsightsListPage = lazy(() => import('./modules/insights/list-page').then((m) => ({ default: m.InsightsListPage })));
+const InsightsDashboardPage = lazy(() => import('./modules/insights/dashboard-page').then((m) => ({ default: m.DashboardViewPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
 const TeamsPage = lazy(() => import('./modules/users/teams-page').then((m) => ({ default: m.TeamsPage })));
 const UsersPage = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
@@ -864,6 +866,31 @@ const adminPathMissionControlConstitutionRoute = createRoute({
   component: withSuspense(MissionControlConstitutionPage),
 });
 
+// Insights — dashboards built from content (insights-dashboard spec).
+const insightsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/insights',
+  component: withSuspense(InsightsListPage),
+});
+
+const insightsDashboardRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/insights/$dashboardId',
+  component: withSuspense(InsightsDashboardPage),
+});
+
+const adminPathInsightsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/insights',
+  component: withSuspense(InsightsListPage),
+});
+
+const adminPathInsightsDashboardRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/insights/$dashboardId',
+  component: withSuspense(InsightsDashboardPage),
+});
+
 const cdcRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/cdc',
@@ -1120,6 +1147,10 @@ const routeTree = rootRoute.addChildren([
     adminPathMissionControlAgentsRoute,
     adminPathMissionControlTrustRoute,
     adminPathMissionControlConstitutionRoute,
+    insightsRoute,
+    insightsDashboardRoute,
+    adminPathInsightsRoute,
+    adminPathInsightsDashboardRoute,
     cdcRoute,
     cdcNewRoute,
     cdcDetailRoute,

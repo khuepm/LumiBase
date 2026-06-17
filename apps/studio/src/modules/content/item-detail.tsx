@@ -12,8 +12,9 @@ import { RawToggle } from './interfaces/raw-toggle';
 import { ProvenanceBadge } from './provenance-badge';
 import { RevisionsPanel } from './revisions-panel';
 import { RawJsonPanel } from './raw-json-panel';
+import { VersionPanel } from './version-panel';
 
-type Tab = 'fields' | 'revisions' | 'raw';
+type Tab = 'fields' | 'revisions' | 'versions' | 'raw';
 
 /**
  * Content module detail editor.
@@ -409,6 +410,7 @@ export function ItemDetailPage() {
               }}
             />
           )}
+          {tab === 'versions' && <VersionPanel collection={collection} itemId={id} />}
           {tab === 'raw' && (
             <RawJsonPanel
               value={draft}
@@ -422,6 +424,7 @@ export function ItemDetailPage() {
           <ul className="space-y-1 text-sm">
             <TabButton current={tab} value="fields" onClick={setTab}>Fields</TabButton>
             <TabButton current={tab} value="revisions" onClick={setTab}>Revisions</TabButton>
+            <TabButton current={tab} value="versions" onClick={setTab}>Versions</TabButton>
             <TabButton current={tab} value="raw" onClick={setTab}>Raw JSON</TabButton>
           </ul>
           <dl className="mt-4 space-y-1 border-t pt-3 text-xs text-muted-foreground">

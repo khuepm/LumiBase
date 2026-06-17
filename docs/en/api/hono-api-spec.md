@@ -196,6 +196,13 @@ Error response:
 | `DELETE` | `/api/v1/items/:collection/:id` | Delete item (or array bulk) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Revert to revision |
+| `GET` | `/api/v1/items/:collection/:id/versions` | List named draft versions (each has a `mainChanged` flag) |
+| `POST` | `/api/v1/items/:collection/:id/versions` | Create a version `{ key, name }` (snapshots current main) |
+| `GET` | `/api/v1/items/:collection/:id/versions/:key` | Get a version |
+| `PATCH` | `/api/v1/items/:collection/:id/versions/:key` | Update a version `{ data?, name? }` (does not touch main) |
+| `DELETE` | `/api/v1/items/:collection/:id/versions/:key` | Delete a version |
+| `GET` | `/api/v1/items/:collection/:id/versions/:key/compare` | Field diff vs main → `{ main, version, changes }` |
+| `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Apply version to main (writes a revision); `meta.mainDiverged` |
 
 **Optional headers:**
 - `X-Lumi-Draft: true` — fetch draft version
@@ -439,6 +446,49 @@ language overrides (resolved client-side) take precedence.
 | `POST` | `/api/v1/extensions/:id/disable` | Disable extension |
 | `POST` | `/api/v1/extensions/:id/capabilities` | Grant capabilities |
 | `GET` | `/api/v1/extensions/ui/manifest` | UI manifest for dynamic Studio import |
+
+---
+
+## 11a. Translation Memory
+
+Reusable translations feeding the MT pipeline (TM → glossary → provider).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/tm` | List entries; filters `?source=&target=&entrySource=`; paginated `?limit=&offset=` → `{ data, meta: { total, limit, offset } }` |
+| `POST` | `/api/v1/tm` | Upsert a TM entry |
+| `PATCH` | `/api/v1/tm/:id` | Update `targetText`/`quality`/`context`/`source` |
+| `DELETE` | `/api/v1/tm/:id` | Delete an entry |
+| `POST` | `/api/v1/tm/lookup` | Fuzzy match (threshold default 75, shared `TM_DEFAULT_THRESHOLD`) |
+| `POST` | `/api/v1/tm/translate` | Full pipeline (TM → glossary → MT provider) |
+
+---
+
+## 11b. Insights (Dashboards)
+
+User-built dashboards of aggregate panels over collections. Panel queries are
+executed safely: every referenced field must be in the collection's field
+whitelist and the query is scoped to the active site — no user input reaches SQL
+identifiers.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/dashboards` | List dashboards |
+| `POST` | `/api/v1/dashboards` | Create dashboard `{ name, icon?, color?, note? }` |
+| `GET` | `/api/v1/dashboards/:id` | Get dashboard |
+| `PATCH` | `/api/v1/dashboards/:id` | Update dashboard |
+| `DELETE` | `/api/v1/dashboards/:id` | Delete dashboard |
+| `GET` | `/api/v1/dashboards/:id/panels` | List panels |
+| `POST` | `/api/v1/dashboards/:id/panels` | Create panel `{ name, type, position, query }` |
+| `PATCH` | `/api/v1/dashboards/:id/panels/:panelId` | Update panel (incl. `position` for layout) |
+| `DELETE` | `/api/v1/dashboards/:id/panels/:panelId` | Delete panel |
+| `POST` | `/api/v1/dashboards/:id/panels/:panelId/data` | Run a panel → `{ data, meta: { executedAt, rowCount, durationMs } }` |
+| `POST` | `/api/v1/dashboards/:id/panels/preview` | Dry-run a `PanelQuery` (editor preview) |
+
+`PanelQuery` (shared contract `@lumibase/shared`): `{ collection, aggregate
+(count|sum|avg|min|max), field?, groupBy?, filter? (condition rule), dateRange?,
+limit? }`. `field` is required for non-`count` aggregates. A field outside the
+collection whitelist returns `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
 
 ---
 
