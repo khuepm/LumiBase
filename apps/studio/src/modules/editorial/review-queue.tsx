@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useParams } from '@tanstack/react-router';
 import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
 import { usePermissions } from '@/lib/use-permissions';
@@ -108,4 +109,14 @@ export function ReviewQueue({ collection }: ReviewQueueProps) {
       />
     </section>
   );
+}
+
+/**
+ * Route entry that reads the `:collection` param and renders the queue. Used by
+ * the `/content/$collection/reviews` route.
+ */
+export function ReviewQueuePage() {
+  const params = useParams({ strict: false }) as { collection?: string };
+  if (!params.collection) return <p>Select a collection to review.</p>;
+  return <ReviewQueue collection={params.collection} />;
 }
