@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, isNull, lte, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gt, isNotNull, isNull, lte, ne, or } from 'drizzle-orm';
 import { collections, items, settings, scopeSite, type Database } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
 import { dispatchRevalidation, parseTargets } from './revalidation';
@@ -78,7 +78,7 @@ export async function sweepDuePublish(deps: SchedulerDeps, now = new Date()): Pr
         isNotNull(items.publishAt),
         lte(items.publishAt, now),
         // Respect any unpublish bound that has not yet elapsed.
-        sql`(${items.unpublishAt} is null or ${items.unpublishAt} > ${now})` as SQL,
+        or(isNull(items.unpublishAt), gt(items.unpublishAt, now)),
       ),
     )
     .orderBy(asc(items.publishAt))
