@@ -62,6 +62,7 @@ import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
+import { lumibaseFirebaseSyncRouter } from './modules/lumibase-firebase-sync';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 const app = new Hono<AppEnv>();
@@ -233,6 +234,11 @@ api.route('/mcp', mcpRouter);
 // `/api/v1` below, mounting `cdcRouter` at `/cdc` yields the intended
 // `/api/v1/cdc/*` prefix — matching how every sibling module above is wired.
 api.route('/cdc', cdcRouter);
+
+// LumiBase Firebase Sync — outbound content mirroring to Firestore/RTDB.
+// Same auth posture as CDC: upstream tenant/auth/db/rls + the router's own
+// site-scoped admin gate. Yields `/api/v1/firebase-sync/*`.
+api.route('/firebase-sync', lumibaseFirebaseSyncRouter);
 
 // Share links are public. The opaque token resolves the site and share role.
 app.use('/api/v1/shares/*', withDb());
