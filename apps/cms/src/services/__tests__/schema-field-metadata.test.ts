@@ -31,6 +31,7 @@ describe('SchemaService field metadata', () => {
       readonly: false,
       hidden: false,
       encrypted: false,
+      classification: 'none',
       versioned: true,
       rawEnabled: true,
       width: 'half',

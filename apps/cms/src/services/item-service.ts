@@ -8,6 +8,7 @@ import {
   revisions,
   scopeSite,
   materializedCollections,
+  fieldAccessLog,
   type Database,
 } from '@lumibase/database';
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
@@ -1151,6 +1152,13 @@ export class ItemService {
     const encryptedFields = compiled.fields.filter((f) => f.encrypted).map((f) => f.name);
     if (encryptedFields.length === 0) return data;
 
+    // pii/phi fields whose decrypted reads must be audited (Req 6.1).
+    const sensitiveFields = new Set(
+      compiled.fields
+        .filter((f) => f.classification === 'pii' || f.classification === 'phi')
+        .map((f) => f.name),
+    );
+
     let canDecrypt = internal;
     if (mode === 'decrypt' && !internal) {
       try {
@@ -1162,6 +1170,7 @@ export class ItemService {
     }
 
     const out = { ...data };
+    const accessedSensitive: string[] = [];
     for (const f of encryptedFields) {
       const value = out[f];
       if (value === undefined || value === null) continue;
@@ -1176,6 +1185,7 @@ export class ItemService {
       } else if (canDecrypt) {
         try {
           out[f] = await this.cryptoService.decrypt(value as string, ctx);
+          if (sensitiveFields.has(f)) accessedSensitive.push(f);
         } catch (err) {
           // Fail-closed (Req 1): never substitute a placeholder for a real
           // decryption failure. Audit, then either propagate (single-item) or
@@ -1198,7 +1208,44 @@ export class ItemService {
         out[f] = '***';
       }
     }
+    // Audit successful decrypted reads of pii/phi fields (Req 6.1, 6.2). Only
+    // for non-internal reads — internal decrypts (e.g. read-modify-write) are
+    // not "access" by an actor. Flushed before the response returns.
+    if (mode === 'decrypt' && !internal && accessedSensitive.length > 0) {
+      await this.writeFieldAccessLog(collectionName, [recordId], accessedSensitive);
+    }
     return out;
+  }
+
+  /**
+   * Append a Field_Access_Log entry for decrypted pii/phi reads (Req 6).
+   * Never records decrypted values. Best-effort: a logging failure must not
+   * break the read, but the write is awaited so single-item reads flush first.
+   */
+  private async writeFieldAccessLog(
+    collection: string,
+    recordIds: string[],
+    fields: string[],
+  ): Promise<void> {
+    try {
+      const actor =
+        (typeof this.deps.permissionCtx?.user?.email === 'string'
+          ? this.deps.permissionCtx.user.email
+          : null) ??
+        this.deps.userId ??
+        null;
+      await this.deps.db.insert(fieldAccessLog).values({
+        siteId: this.deps.siteId,
+        collection,
+        recordIds,
+        fields,
+        actor,
+        action: 'read_decrypted',
+        requestId: null,
+      });
+    } catch (err) {
+      console.error('[item-service] field access log write failed', formatSafeError(err));
+    }
   }
 
   /**
