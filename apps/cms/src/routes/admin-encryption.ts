@@ -21,6 +21,7 @@ import { and, eq } from 'drizzle-orm';
 import { encryptionKeys, scopeSite } from '@lumibase/database';
 import type { AppEnv } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
+import { runRewrap } from '../services/rewrap-worker';
 
 export const adminEncryptionRouter = new Hono<AppEnv>();
 
@@ -122,4 +123,20 @@ adminEncryptionRouter.post('/keys/rotate', async (c) => {
   });
 
   return c.json({ data: { activeKeyId: keyId, rotatedAt: now.toISOString() } });
+});
+
+/**
+ * Re-encrypt ciphertext from retired key versions onto the active key
+ * (Req 3.6). Optional, idempotent, resumable; runs a bounded set of batches
+ * per call so large datasets can be drained across multiple invocations.
+ */
+adminEncryptionRouter.post('/keys/rewrap', async (c) => {
+  const forbidden = requireAdmin(c);
+  if (forbidden) return forbidden;
+  const runtime = c.get('runtime');
+  const result = await runRewrap(
+    { db: c.get('db'), siteId: c.get('siteId'), keyProvider: runtime.keys },
+    { batchSize: 100, maxBatches: 50 },
+  );
+  return c.json({ data: result });
 });
