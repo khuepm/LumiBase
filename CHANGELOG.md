@@ -9,6 +9,90 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-16
+
+### Version
+
+- `v0.7.0`
+
+### Date
+
+- `2026-06-16`
+
+### Highlights
+
+- **Site configuration surface.** Sites gain identity/branding/theme configuration end-to-end: new nullable/defaulted columns on `sites` (migration `0028`), `SiteConfig` Zod schemas, a `GET`/`PATCH /api/v1/site` endpoint, an SDK `site` namespace (`get`/`update`), and a Studio **Settings → Site** page with runtime theming.
+- **Simple-setup step 2 redesign with teammate invites.** The simple-wizard step 2 replaces the 3-card role radio with a security-preset dropdown plus a docs link and a teammate-invite section; the final step gains a docs link.
+- **Login-stall parity.** A `LOGIN_STALL_TIME` delay is applied to login failures, and `loginStallMs` is declared in the lockout-policy form schema (registered in the Setup Impact Registry).
+- **Security hardening.** Extension execution is hardened (bundle-URL scheme validation, a 5s per-hook timeout, and render isolation via an error boundary), and Studio rich-text is sanitized to close stored/reflected XSS.
+
+### Breaking changes
+
+- None. New capabilities are additive.
+
+### Migrations
+
+- **1 new schema migration (`0028_site_configuration.sql`)** adding identity/branding/theme columns to `sites` (`display_title`, `site_url`, `descriptor`, `default_language`, `default_appearance`, `branding`, `theme_overrides`, `custom_css`, `updated_at`).
+- Migration is additive and idempotent: every column is nullable or carries a default, existing rows backfill automatically, and `ADD COLUMN IF NOT EXISTS` guards let it re-run safely. No data migration is required.
+- Compatible DB/schema: `v0.6.0` schema state upgraded through `0028_site_configuration.sql`.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
+### Upgrade steps
+
+1. Review the breaking changes and migrations above.
+2. Confirm the target Docker image tag exists: `ghcr.io/khuepm/lumibase-cms:0.7.0`.
+3. Apply migrations: `pnpm -F @lumibase/database db:migrate`.
+4. Deploy the `v0.7.0` image or Cloudflare Worker release.
+5. Verify `/health` and `/ready`, the new `GET`/`PATCH /api/v1/site` endpoint, the Studio **Settings → Site** page, and critical CMS workflows after deployment.
+
+### Rollback notes
+
+- Roll back the application by redeploying the previously known-good CMS image tag (`v0.6.0`).
+- The new `sites` columns are additive; rolling back the app does not require dropping them. If you must reverse the schema, restore from the pre-migration backup.
+
+### Docker image tags
+
+- CMS: `ghcr.io/khuepm/lumibase-cms:0.7.0`
+- Optional immutable digest: `ghcr.io/khuepm/lumibase-cms@sha256:<digest>`
+
+### Compatibility DB/schema
+
+- Compatible DB/schema: `v0.7.0` schema state (migration `0028` applied).
+- Minimum supported database engine/version: use the version supported by the target deployment environment.
+
+### Backup guidance
+
+- **Backup required: Yes.** This release applies 1 additive schema migration.
+- Backup scope: database.
+- Reason: new columns are added to the `sites` table; a pre-migration backup is the supported rollback path if a reverse is needed.
+
+### Added
+
+- **Site configuration** across the stack:
+  - `feat(database)`: site configuration columns on the `sites` table (migration `0028_site_configuration.sql`).
+  - `feat(shared)`: `SiteConfig` Zod schemas.
+  - `feat(cms)`: `GET`/`PATCH /api/v1/site` endpoint.
+  - `feat(sdk)`: `site` namespace (`get`/`update`).
+  - `feat(studio)`: **Settings → Site** page with runtime theming.
+- **Simple-setup teammate invites.** `POST /api/v1/setup/complete` accepts an optional `invites[]` field (`{ email, role: 'admin' | 'member' }`, max 20) and returns `invitedCount`. Each invite becomes a `status='invited'` user bound to the default site via `user_sites` in the same transaction as the bootstrap admin (an invite failure rolls back the admin too). The RBAC Member role (`systemKey='member'`) is seeded idempotently only when a member invite is present, and each invite emits a best-effort `user_invited` audit event post-commit. Existing instances are unaffected.
+- **Login-stall parity.** `LOGIN_STALL_TIME` delay applied to login failures, with `loginStallMs` declared in the Studio lockout-policy form schema.
+
+### Security
+
+- **Extension execution hardened** (`fix(extensions)`). The extensions route constrains `type` to a fixed enum and validates `bundleUrl` schemes (https/http/`data:text/javascript` only, rejecting `javascript:`/`file:`/`blob:`) at the API boundary; the hook dispatcher caps each handler at a 5s wall-clock budget (a before-hook timeout aborts the mutation; an after-hook timeout is logged); and the Studio extension loader wraps components in an error boundary so a crashing or hostile extension cannot take down the admin shell. The runtime `EXTENSION_BUNDLE_ORIGINS` allowlist remains the authoritative SSRF gate.
+- **Rich-text XSS closed** (`fix(studio)`). Studio rich-text HTML is sanitized to close a stored/reflected XSS path.
+
+### Fixed
+
+- **Standalone Studio setup gate** (`fix(studio)`). Studio reaches the CMS cross-origin so a standalone deploy passes the setup gate.
+- **Docs footer scroll** (`fix(docs)`). The footer scrolls with content on long pages instead of staying pinned to the viewport.
+
+### Changed
+
+- Bumped all workspace package versions `0.6.0` → `0.7.0`.
+- `chore(create-lumibase)`: removed the `private` flag to allow npm publish.
+- `chore(ci)`: bumped GitHub Actions to Node 24 runtime majors.
+
 ## [0.6.0] - 2026-06-13
 
 ### Version

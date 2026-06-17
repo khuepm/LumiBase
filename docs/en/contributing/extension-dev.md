@@ -213,6 +213,27 @@ lumibase extension install ./my-extension/dist/index.js --local --watch
 
 The Studio's hot reload picks up extension changes automatically in dev mode.
 
+## Sending email from an extension
+
+Extensions do **not** talk to SMTP or an email API directly. LumiBase ships a
+shared **EmailService** that owns the transport (SMTP / MailChannels) and a
+template + layout store. An extension only decides *who* to mail and *which
+template* to use, then calls the core endpoint:
+
+```ts
+await ctx.fetch(`${baseUrl}/api/v1/email/send`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-site-id': siteId },
+  body: JSON.stringify({ to: ['x@y.z'], templateKey: 'teammate_invite', variables: { name: 'Sam' } }),
+});
+```
+
+Declare only `http:fetch` (to reach the endpoint) and `env:read` (for the base
+URL + token) in your manifest. Author templates in Studio → Settings → Email,
+or configure the transport purely by env. Full reference:
+[`features/email-service.md`](../features/email-service.md). Working example:
+[`examples/extension-email-setup`](../../../examples/extension-email-setup/README.md).
+
 ## Resources
 
 - `packages/extension-sdk/src/types.ts` — full TypeScript types for all extension APIs

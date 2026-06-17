@@ -1,19 +1,30 @@
 import Link from 'next/link';
-import { lumi } from '@/lib/lumi';
+import { lumi, type Post } from '@/lib/lumi';
 
 export const revalidate = 60; // Revalidate every 60 seconds (ISR)
 
+// GraphQL query: list published posts, newest first.
+// The `posts` field + its arguments are generated per tenant from your schema.
+const LIST_POSTS = /* GraphQL */ `
+  query ListPosts($limit: Int) {
+    posts(status: "published", sort: ["-createdAt"], limit: $limit) {
+      id
+      title
+      content
+      author
+      createdAt
+    }
+  }
+`;
+
 export default async function HomePage() {
-  let posts: any[] = [];
+  let posts: Post[] = [];
   let errorMsg = '';
 
   try {
-    // Fetch only 'published' status posts
-    const response = await lumi.items('posts').list({
-      status: 'published',
-      sort: ['-created_at'],
-    });
-    posts = response.data;
+    // Fetch only 'published' status posts via GraphQL
+    const data = await lumi.query<{ posts: Post[] }>(LIST_POSTS, { limit: 50 });
+    posts = data.posts;
   } catch (err: any) {
     errorMsg = err.message || 'Failed to fetch posts from LumiBase';
   }
@@ -23,7 +34,7 @@ export default async function HomePage() {
       <header style={styles.header}>
         <h1 style={styles.title}>LumiBase Next.js Blog</h1>
         <p style={styles.subtitle}>
-          Example app displaying posts fetched using the Type-Safe JS SDK.
+          Example app displaying posts fetched via the LumiBase GraphQL API.
         </p>
       </header>
 
@@ -40,7 +51,7 @@ export default async function HomePage() {
             <article key={post.id} style={styles.card}>
               <h2 style={styles.cardTitle}>{post.title}</h2>
               <p style={styles.cardMeta}>
-                By {post.author} • {new Date(post.created_at || Date.now()).toLocaleDateString()}
+                By {post.author} • {new Date(post.createdAt || Date.now()).toLocaleDateString()}
               </p>
               <p style={styles.cardExcerpt}>
                 {post.content.length > 150

@@ -15,10 +15,12 @@
  *   - Docker / Node.js:   esbuild src/serve.ts → dist/serve.js (index.ts, no SiteRoom)
  */
 
+import * as Sentry from '@sentry/cloudflare';
 import { createDb } from '@lumibase/database';
 import app from './index';
 import type { Bindings } from './env';
 import { runScheduledRotation } from './modules/audit/scheduled';
+import { resolveSentryOptions } from './observability/sentry';
 
 // ── Default export: ExportedHandler (fetch + scheduled) ─────────────────────
 //
@@ -34,7 +36,20 @@ import { runScheduledRotation } from './modules/audit/scheduled';
 //                   Node uses `node-cron` in serve.ts; Workers uses this Cron
 //                   Trigger handler. node-cron is intentionally NOT imported
 //                   here so it never leaks into the Workers bundle.
-export default {
+// ── Sentry wrapper ──────────────────────────────────────────────────────────
+//
+// `withSentry` wraps the ExportedHandler so unhandled errors in BOTH `fetch`
+// and `scheduled` are captured, with tracing + structured logs. Options are
+// resolved per-request from `env` (the Worker has no `process.env`); when
+// `SENTRY_DSN` is unset the DSN is empty and Sentry is a no-op — so dev/test
+// stay clean. The Node/Docker entry (`serve.ts`) is intentionally untouched:
+// `@sentry/cloudflare` only runs on the Workers isolate.
+//
+// `nodejs_compat` is already set in wrangler.toml, satisfying the SDK's
+// AsyncLocalStorage requirement.
+export default Sentry.withSentry(
+  (env: Bindings) => resolveSentryOptions(env),
+  {
   // Bind so `this` inside Hono's fetch stays the app instance.
   fetch: app.fetch.bind(app),
 
@@ -69,7 +84,8 @@ export default {
     // waitUntil keeps the isolate alive until the (best-effort) prune finishes.
     ctx.waitUntil(runScheduledRotation(db));
   },
-} satisfies ExportedHandler<Bindings>;
+  } satisfies ExportedHandler<Bindings>,
+);
 
 // Durable Object class — only bundled by Wrangler's CF bundler.
 // Wrangler reads `class_name = "SiteRoom"` in wrangler.toml and expects

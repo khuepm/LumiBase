@@ -43,6 +43,7 @@ const FilesPage = lazy(() => import('./modules/files').then((m) => ({ default: m
 const DeveloperTypesPage = lazy(() => import('./modules/settings/types-page').then((m) => ({ default: m.DeveloperTypesPage })));
 const TranslationsPage = lazy(() => import('./modules/translations').then((m) => ({ default: m.TranslationsPage })));
 const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
+const EmailSettingsPage = lazy(() => import('./modules/settings/email-page').then((m) => ({ default: m.EmailSettingsPage })));
 const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then((m) => ({ default: m.SiteSettingsPage })));
 const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
@@ -590,6 +591,12 @@ const webhooksRoute = createRoute({
   component: withSuspense(WebhooksPage),
 });
 
+const emailSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'email',
+  component: withSuspense(EmailSettingsPage),
+});
+
 const siteSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'site',
@@ -675,6 +682,12 @@ const adminPathWebhooksRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'webhooks',
   component: withSuspense(WebhooksPage),
+});
+
+const adminPathEmailSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'email',
+  component: withSuspense(EmailSettingsPage),
 });
 
 const adminPathSiteSettingsRoute = createRoute({
@@ -1120,6 +1133,7 @@ const routeTree = rootRoute.addChildren([
       translationsRoute,
       siteSettingsRoute,
       webhooksRoute,
+      emailSettingsRoute,
       materializeSettingsRoute,
       translationMemoryRoute,
       activityRoute,
@@ -1179,6 +1193,7 @@ const routeTree = rootRoute.addChildren([
       adminPathTranslationsRoute,
       adminPathSiteSettingsRoute,
       adminPathWebhooksRoute,
+      adminPathEmailSettingsRoute,
       adminPathMaterializeSettingsRoute,
       adminPathTranslationMemoryRoute,
       adminPathActivityRoute,

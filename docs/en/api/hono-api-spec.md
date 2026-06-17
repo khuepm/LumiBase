@@ -449,7 +449,106 @@ language overrides (resolved client-side) take precedence.
 
 ---
 
-## 11a. Translation Memory
+## 11b. Email (templates, layouts, send)
+
+Site-admin scope (`requireSiteAdmin`). Backed by the shared EmailService
+(SMTP / MailChannels) + a site-scoped template/layout store. Full guide:
+`docs/en/features/email-service.md`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/email/capabilities` | Transport availability + default `from` |
+| `GET` | `/api/v1/email/layouts` | List layouts |
+| `POST` | `/api/v1/email/layouts` | Create layout (HTML shell with `{{content}}`) |
+| `PATCH` | `/api/v1/email/layouts/:id` | Update layout |
+| `DELETE` | `/api/v1/email/layouts/:id` | Delete layout |
+| `GET` | `/api/v1/email/templates` | List templates |
+| `POST` | `/api/v1/email/templates` | Create template |
+| `PATCH` | `/api/v1/email/templates/:id` | Update template |
+| `DELETE` | `/api/v1/email/templates/:id` | Delete template |
+| `POST` | `/api/v1/email/templates/:key/preview` | Render without sending |
+| `POST` | `/api/v1/email/send` | Render (if `templateKey`) + send — extension entry point |
+| `POST` | `/api/v1/email/test` | Send a one-off test mail |
+
+`POST /api/v1/email/send` body: `{ to[], cc?, replyTo?, variables?, ` and
+exactly one of `templateKey` or `inline: { subject, html?, text? }` `}`.
+Returns `502 DELIVERY_FAILED`, `404 NOT_FOUND` (template), or
+`503 EMAIL_NOT_CONFIGURED` (degraded mode).
+
+---
+
+## 12. Firebase Sync
+
+Sync content (`items`) to a Firebase target — Cloud Firestore or Realtime Database — in real time. All endpoints require **site-scoped admin**. Firebase credentials are **write-only** (supplied on create/update, encrypted at rest with `ENCRYPTION_KEY`, never returned). See [features/firebase-sync.md](../features/firebase-sync.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/firebase-sync/pipelines` | List sync pipelines for the active site |
+| `POST` | `/api/v1/firebase-sync/pipelines` | Create a pipeline |
+| `GET` | `/api/v1/firebase-sync/pipelines/:id` | Pipeline detail (credentials omitted) |
+| `PATCH` | `/api/v1/firebase-sync/pipelines/:id` | Update config / rotate credentials |
+| `DELETE` | `/api/v1/firebase-sync/pipelines/:id` | Delete pipeline (cascades its log) |
+| `GET` | `/api/v1/firebase-sync/pipelines/:id/log` | Recent sync attempts |
+| `POST` | `/api/v1/firebase-sync/pipelines/:id/backfill` | Push all matching items to Firebase now |
+
+**Create a pipeline (Firestore):**
+```bash
+POST /api/v1/firebase-sync/pipelines
+Content-Type: application/json
+Authorization: Bearer <token>
+X-Lumi-Site: <siteId>
+
+{
+  "name": "blog-to-firestore",
+  "target": "firestore",
+  "projectId": "my-firebase-project",
+  "credentials": {
+    "project_id": "my-firebase-project",
+    "client_email": "svc@my-firebase-project.iam.gserviceaccount.com",
+    "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+  },
+  "collections": ["articles", "authors"],
+  "targetPath": "content/{collection}",
+  "syncOnCreate": true,
+  "syncOnUpdate": true,
+  "syncOnDelete": true
+}
+```
+
+For `target: "rtdb"`, `credentials` is `{ "databaseUrl": "https://<project>.firebaseio.com", "secret": "<rtdb-secret>" }`.
+
+**Response (201):**
+```json
+{
+  "data": {
+    "id": "V1StGXR8_Z5jdHi6B-myT",
+    "name": "blog-to-firestore",
+    "target": "firestore",
+    "status": "active",
+    "projectId": "my-firebase-project",
+    "collections": ["articles", "authors"],
+    "targetPath": "content/{collection}",
+    "syncOnCreate": true,
+    "syncOnUpdate": true,
+    "syncOnDelete": true,
+    "lastSyncAt": null,
+    "lastSyncItemCount": null,
+    "createdAt": "2026-06-17T00:00:00Z",
+    "updatedAt": "2026-06-17T00:00:00Z"
+  }
+}
+```
+
+**Backfill response:**
+```json
+{ "data": { "scanned": 120, "pushed": 118, "failed": 2, "truncated": false } }
+```
+
+Error codes specific to this section: `ENCRYPTION_KEY_REQUIRED` (400 — `ENCRYPTION_KEY` not configured, cannot encrypt credentials), `VALIDATION_ERROR` (400 — body / credential shape does not match the selected `target`).
+
+---
+
+## 12a. Translation Memory
 
 Reusable translations feeding the MT pipeline (TM → glossary → provider).
 
@@ -464,7 +563,7 @@ Reusable translations feeding the MT pipeline (TM → glossary → provider).
 
 ---
 
-## 11b. Insights (Dashboards)
+## 12b. Insights (Dashboards)
 
 User-built dashboards of aggregate panels over collections. Panel queries are
 executed safely: every referenced field must be in the collection's field
@@ -492,7 +591,7 @@ collection whitelist returns `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
 
 ---
 
-## 12. Delivery (Public)
+## 13. Delivery (Public)
 
 No `Authorization` header needed. Permission applied via `public` role.
 
@@ -504,7 +603,7 @@ No `Authorization` header needed. Permission applied via `public` role.
 
 ---
 
-## 13. Utility endpoints
+## 14. Utility endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -534,7 +633,7 @@ No `Authorization` header needed. Permission applied via `public` role.
 
 ---
 
-## 14. Rate limits
+## 15. Rate limits
 
 | Scope | Limit |
 |-------|-------|
@@ -554,7 +653,7 @@ X-RateLimit-Reset: 1749254460
 
 ---
 
-## 15. Versioning
+## 16. Versioning
 
 Breaking changes get a new path prefix (`/api/v2`). The previous version is maintained for at least 12 months.
 

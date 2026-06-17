@@ -2,22 +2,22 @@
  * Email channel adapter (admin-setup-wizard task 9.2 / Req 13.2;
  * design §9.2).
  *
- * Two concrete implementations live in this module behind the
- * {@link NotificationChannelAdapter} contract from `types.ts`:
+ * This module owns the spec-pinned security-notification templates and the
+ * recipient-merge rule. The actual byte-pushing is delegated to a generic
+ * {@link import('../../services/email/transport').EmailTransport} from
+ * `services/email/transport.ts`, so there is a single transport implementation
+ * shared with the general-purpose EmailService:
  *
- *   - {@link NodemailerChannel} — used in the self-hosted Node /
- *     Docker build. Drives `nodemailer` against an SMTP URL the
- *     operator points at via `LUMIBASE_SMTP_URL`.
- *   - {@link MailchannelsChannel} — used in the Cloudflare Workers
- *     build, which doesn't have a TCP socket primitive that
- *     `nodemailer` can drive. Posts to the MailChannels HTTP API
- *     (`https://api.mailchannels.net/tx/v1/send`), which is the
- *     transactional path Cloudflare exposes for Workers.
+ *   - SMTP transport — self-hosted Node / Docker build. Drives `nodemailer`
+ *     against an SMTP URL the operator points at via `LUMIBASE_SMTP_URL`.
+ *   - MailChannels transport — Cloudflare Workers build, which has no TCP
+ *     socket primitive `nodemailer` can drive. Posts to the MailChannels HTTP
+ *     API, the transactional path Cloudflare exposes for Workers.
  *
- * The {@link EmailChannelFactory} picks between them at request /
+ * The {@link EmailChannelFactory} picks which transport to inject at request /
  * boot time using the same `LUMIBASE_RUNTIME` knob that
- * `apps/cms/src/middleware/runtime.ts` reads to decide between the
- * Docker singleton runtime and the per-request Workers runtime.
+ * `apps/cms/src/middleware/runtime.ts` reads to decide between the Docker
+ * singleton runtime and the per-request Workers runtime.
  *
  * Subject + body templates are pinned here per Req 13.2:
  *
@@ -44,6 +44,11 @@
  */
 
 import type { AppEnv } from '../../env';
+import {
+  MailchannelsTransport,
+  NodemailerTransport,
+  type EmailTransport,
+} from '../../services/email/transport';
 import type {
   DeliveryResult,
   NotificationChannelAdapter,
@@ -153,269 +158,47 @@ export interface EmailChannelConfig {
   readonly recipients: readonly string[];
 }
 
-// ── NodemailerChannel (self-hosted Node) ──────────────────────────────
+// ── SecurityEmailChannel (transport-backed) ────────────────────────────
 
 /**
- * SMTP transport opaque type. We don't import `nodemailer` types at
- * the top level so the Workers bundle (which never instantiates this
- * class) doesn't drag node-only types into the build graph; the
- * adapter `import()`s the package on first send instead, mirroring
- * the dynamic-import seam used by `apps/cms/src/modules/anomaly/geo.ts`
- * for `maxmind`.
+ * Security-notification email channel. Owns the spec-pinned subject/body
+ * templates (Req 13.2) and the recipient-merge rule (configured recipients +
+ * the affected user), then delegates the actual byte-pushing to a generic
+ * {@link EmailTransport} from `services/email/transport.ts`.
+ *
+ * Both runtimes use the same class; the {@link EmailChannelFactory} picks
+ * which transport (SMTP vs MailChannels) to inject. Keeping a single channel
+ * class here removes the duplicated transport code that previously lived in
+ * `NodemailerChannel`/`MailchannelsChannel`.
  */
-type NodemailerTransport = {
-  sendMail(opts: {
-    from: string;
-    to: string;
-    subject: string;
-    text: string;
-  }): Promise<unknown>;
-};
-
-type NodemailerModule = {
-  createTransport(url: string): NodemailerTransport;
-};
-
-/**
- * Email adapter for the Docker / self-hosted Node runtime.
- *
- * The transport is created lazily on first send so:
- *
- *   1. Importing this module on a Workers build doesn't crash on a
- *      missing `nodemailer` install (we mark it optional in
- *      `apps/cms/package.json` and Workers bundles don't include
- *      it).
- *   2. A misconfigured `LUMIBASE_SMTP_URL` only fails at first send,
- *      not at boot — boot-time crashes block unrelated routes
- *      (auth, settings, /health). The trade-off is one extra "SMTP
- *      not configured" log line on first event; acceptable since
- *      audit-trail emission still records the attempt.
- *
- * Per the {@link NotificationChannelAdapter} contract, expected
- * delivery failures (SMTP 4xx/5xx, network refusal) round-trip
- * through {@link DeliveryResult} rather than throwing; the dispatcher
- * relies on this so the retry queue in task 9.4 stays branch-free
- * for the common case.
- */
-export class NodemailerChannel implements NotificationChannelAdapter {
+export class SecurityEmailChannel implements NotificationChannelAdapter {
   readonly name = 'email' as const;
 
-  private transport: NodemailerTransport | null = null;
-  private transportInit: Promise<NodemailerTransport | null> | null = null;
-
   constructor(
-    private readonly smtpUrl: string,
+    private readonly transport: EmailTransport,
     private readonly config: EmailChannelConfig,
   ) {}
 
   async send(payload: NotificationPayload): Promise<DeliveryResult> {
-    const transport = await this.ensureTransport();
-    if (!transport) {
-      return {
-        ok: false,
-        error: 'nodemailer-unavailable',
-        // Not retryable: missing module / unparseable URL won't
-        // fix itself between attempts. The dispatcher should drop
-        // after the first try and audit `notification_delivery_failed`.
-        retryable: false,
-      };
-    }
-
-    const subject = buildEmailSubject(payload.event);
-    const text = buildEmailBody(payload);
     const recipients = this.resolveRecipients(payload);
     if (recipients.length === 0) {
-      return {
-        ok: false,
-        error: 'no-recipients',
-        retryable: false,
-      };
+      return { ok: false, error: 'no-recipients', retryable: false };
     }
-
-    // SMTP servers commonly reject multi-recipient sends; loop one at
-    // a time so a single bad address can't poison the others. The
-    // dispatcher sees `ok: true` only when *every* recipient
-    // accepted; on partial failure we return retryable so it can
-    // try again next backoff slot.
-    for (const to of recipients) {
-      try {
-        await transport.sendMail({
-          from: this.config.from,
-          to,
-          subject,
-          text,
-        });
-      } catch (err) {
-        return {
-          ok: false,
-          error: errorMessage(err),
-          retryable: true,
-        };
-      }
-    }
-
-    return { ok: true };
+    return this.transport.send({
+      from: this.config.from,
+      to: recipients,
+      subject: buildEmailSubject(payload.event),
+      text: buildEmailBody(payload),
+    });
   }
 
   /**
-   * The dispatcher is the source of truth for recipient lists, but
-   * Req 13.2 also wants the affected user when distinct from the
-   * bootstrap admin. We merge the configured `recipients` list with
-   * the payload's `email` (de-duplicated, lowercased for comparison
-   * only) so a misconfigured factory still gets a useful at-least
-   * one-recipient send.
+   * The dispatcher is the source of truth for recipient lists, but Req 13.2
+   * also wants the affected user when distinct from the bootstrap admin. We
+   * merge the configured `recipients` list with the payload's `email`
+   * (de-duplicated, case-insensitive) so a misconfigured factory still gets a
+   * useful at-least-one-recipient send.
    */
-  private resolveRecipients(payload: NotificationPayload): string[] {
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const addr of [...this.config.recipients, payload.email]) {
-      const trimmed = addr.trim();
-      if (trimmed.length === 0) continue;
-      const key = trimmed.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(trimmed);
-    }
-    return out;
-  }
-
-  private async ensureTransport(): Promise<NodemailerTransport | null> {
-    if (this.transport) return this.transport;
-    if (!this.transportInit) {
-      this.transportInit = this.loadTransport();
-      this.transportInit
-        .then((t) => {
-          this.transport = t;
-        })
-        .catch(() => {
-          this.transport = null;
-        });
-    }
-    return this.transportInit;
-  }
-
-  private async loadTransport(): Promise<NodemailerTransport | null> {
-    let mod: NodemailerModule;
-    try {
-      mod = (await import('nodemailer')) as unknown as NodemailerModule;
-    } catch {
-      // Package isn't installed in this build (Workers). The factory
-      // shouldn't have constructed us in that case, but degrade
-      // gracefully if it did.
-      // eslint-disable-next-line no-console
-      console.warn(
-        '[notifications/email] nodemailer module unavailable; email channel disabled',
-      );
-      return null;
-    }
-    try {
-      return mod.createTransport(this.smtpUrl);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        '[notifications/email] nodemailer createTransport failed:',
-        errorMessage(err),
-      );
-      return null;
-    }
-  }
-}
-
-// ── MailchannelsChannel (Cloudflare Workers) ──────────────────────────
-
-/**
- * Cloudflare's MailChannels send endpoint. The free tier is enabled
- * by default for Workers; non-Workers callers will receive a
- * relay-policy rejection from the API, which surfaces as a non-2xx
- * response and round-trips through {@link DeliveryResult} the same
- * way as a network blip.
- */
-const MAILCHANNELS_ENDPOINT = 'https://api.mailchannels.net/tx/v1/send';
-
-/**
- * Email adapter for the Cloudflare Workers runtime.
- *
- * Builds a single MailChannels payload per `send()`. The API accepts
- * multiple recipients in one personalisation block, so unlike the
- * SMTP adapter we don't need to loop; a 4xx/5xx from MailChannels
- * round-trips through {@link DeliveryResult} so the dispatcher can
- * retry on transient errors.
- *
- * Timeout: the Worker request budget is bounded by the platform
- * (default 30s). We layer a 10s explicit `AbortController` so a
- * stuck connection doesn't eat the whole budget and starve other
- * subrequests. A retry on timeout still has time within a single
- * Worker invocation.
- */
-export class MailchannelsChannel implements NotificationChannelAdapter {
-  readonly name = 'email' as const;
-
-  constructor(
-    private readonly config: EmailChannelConfig,
-    private readonly fetchFn: typeof fetch = fetch,
-    private readonly timeoutMs = 10_000,
-  ) {}
-
-  async send(payload: NotificationPayload): Promise<DeliveryResult> {
-    const recipients = this.resolveRecipients(payload);
-    if (recipients.length === 0) {
-      return {
-        ok: false,
-        error: 'no-recipients',
-        retryable: false,
-      };
-    }
-
-    const subject = buildEmailSubject(payload.event);
-    const text = buildEmailBody(payload);
-
-    // MailChannels personalisation allows distinct `to` lists per
-    // entry; we use a single personalisation since the body is the
-    // same for every recipient.
-    const body = JSON.stringify({
-      personalizations: [{ to: recipients.map((email) => ({ email })) }],
-      from: { email: this.config.from },
-      subject,
-      content: [{ type: 'text/plain', value: text }],
-    });
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const res = await this.fetchFn(MAILCHANNELS_ENDPOINT, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body,
-        signal: controller.signal,
-      });
-      if (res.status >= 200 && res.status < 300) {
-        return { ok: true };
-      }
-      // 4xx → unlikely to fix itself (auth/policy). 5xx → retryable.
-      const retryable = res.status >= 500 && res.status < 600;
-      // Body may be JSON or text; we only need a short error string
-      // for the audit trail, so cap the read at 1KB.
-      const errText = await safeReadShortText(res);
-      return {
-        ok: false,
-        error: `mailchannels-${res.status}${errText ? `:${errText}` : ''}`,
-        retryable,
-      };
-    } catch (err) {
-      const aborted =
-        err instanceof Error && err.name === 'AbortError' ? true : false;
-      return {
-        ok: false,
-        error: aborted ? 'mailchannels-timeout' : errorMessage(err),
-        // Network errors and timeouts are typically transient.
-        retryable: true,
-      };
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  /** Mirrors {@link NodemailerChannel.resolveRecipients}. */
   private resolveRecipients(payload: NotificationPayload): string[] {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -451,15 +234,16 @@ export const EmailChannelFactory = {
    *
    * Decision tree (mirrors design §9.2):
    *
-   *   1. Cloudflare runtime (`LUMIBASE_RUNTIME='cloudflare'`) →
-   *      always {@link MailchannelsChannel}. The MailChannels API
-   *      is reachable from any Worker; the operator still has to
-   *      configure SPF/DKIM at the DNS layer for non-trivial
-   *      deliverability, but the adapter doesn't gate on that.
+   *   1. Cloudflare runtime (`LUMIBASE_RUNTIME='cloudflare'`) → a
+   *      {@link SecurityEmailChannel} over a MailChannels transport.
+   *      The MailChannels API is reachable from any Worker; the
+   *      operator still has to configure SPF/DKIM at the DNS layer
+   *      for non-trivial deliverability, but the adapter doesn't gate
+   *      on that.
    *   2. Anything else (`'docker'`, undefined, custom) → if
-   *      `LUMIBASE_SMTP_URL` is set, return a
-   *      {@link NodemailerChannel} bound to that URL. Otherwise
-   *      `null` (no email channel available).
+   *      `LUMIBASE_SMTP_URL` is set, a {@link SecurityEmailChannel}
+   *      over an SMTP transport bound to that URL. Otherwise `null`
+   *      (no email channel available).
    *
    * `LUMIBASE_MAIL_FROM` overrides the default sender; `recipients`
    * defaults to the empty list, since the dispatcher always merges
@@ -477,7 +261,10 @@ export const EmailChannelFactory = {
     );
 
     if (runtime === 'cloudflare') {
-      return new MailchannelsChannel({ from, recipients });
+      return new SecurityEmailChannel(new MailchannelsTransport(), {
+        from,
+        recipients,
+      });
     }
 
     const smtpUrl = readStringEnv(env, 'LUMIBASE_SMTP_URL');
@@ -485,7 +272,10 @@ export const EmailChannelFactory = {
       // Degraded mode (design §12.3 / Req 13 — no SMTP configured).
       return null;
     }
-    return new NodemailerChannel(smtpUrl, { from, recipients });
+    return new SecurityEmailChannel(new NodemailerTransport(smtpUrl), {
+      from,
+      recipients,
+    });
   },
 };
 
@@ -525,19 +315,4 @@ function parseRecipientsEnv(raw: string | undefined): string[] {
     out.push(trimmed);
   }
   return out;
-}
-
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message.slice(0, 256);
-  if (typeof err === 'string') return err.slice(0, 256);
-  return 'unknown-error';
-}
-
-async function safeReadShortText(res: Response): Promise<string> {
-  try {
-    const text = await res.text();
-    return text.slice(0, 1024);
-  } catch {
-    return '';
-  }
 }

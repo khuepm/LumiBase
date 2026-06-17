@@ -1,0 +1,15 @@
+{
+  "name": "email-setup",
+  "version": "1.0.0",
+  "type": "endpoint",
+  "entry": "./dist/index.js",
+  "description": "Demonstrates sending email via LumiBase's core EmailService. The extension owns the trigger/UI; LumiBase owns the transport + templates.",
+  "capabilities": ["http:fetch", "env:read"],
+  "config": [
+    {
+      "key": "templateKey",
+      "type": "string",
+      "default": "teammate_invite"
+    }
+  ]
+}

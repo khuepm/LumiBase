@@ -59,6 +59,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [search.md](./features/search.md) — Full-text search (MeiliSearch self-host hoặc CF managed).
   - [translation-memory.md](./features/translation-memory.md) — Translation Memory + glossary + MT providers.
   - [materialized-collections.md](./features/materialized-collections.md) — Materialized read tables cho hot path.
+  - [firebase-sync.md](./features/firebase-sync.md) — Sync content (`items`) sang Firebase Firestore/RTDB theo thời gian thực.
   - [observability.md](./features/observability.md) — Metrics, logs, dashboards (Prometheus/Grafana/Loki).
   - [ai-first-specification.md](./features/ai-first-specification.md) — Đặc tả gốc cho AI agent triển khai (lịch sử).
 - **ClickHouse CDC** (`cdc/`)

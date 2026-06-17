@@ -208,15 +208,29 @@
     {
       "idx": 29,
       "version": "7",
-      "when": 1781773380001,
-      "tag": "0029_insights_dashboards",
+      "when": 1781773320002,
+      "tag": "0029_email_templates",
       "breakpoints": true
     },
     {
       "idx": 30,
       "version": "7",
-      "when": 1781773440001,
-      "tag": "0030_content_versions",
+      "when": 1781773320003,
+      "tag": "0030_lumibase_firebase_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1781773380003,
+      "tag": "0031_insights_dashboards",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1781773440003,
+      "tag": "0032_content_versions",
       "breakpoints": true
     }
   ]

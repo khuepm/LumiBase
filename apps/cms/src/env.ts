@@ -27,6 +27,17 @@ export interface Bindings {
   LUMIBASE_RELEASE_CHANNEL?: string;
   /** Runtime mode: `'cloudflare'` or `'docker'`. Defaults to `'docker'`. */
   LUMIBASE_RUNTIME?: string;
+  // ── Email service (services/email/*) ────────────────────────────────────
+  /** SMTP connection string (nodemailer format) for the Docker/Node runtime. */
+  LUMIBASE_SMTP_URL?: string;
+  /** Default envelope sender for all outbound mail. Falls back to no-reply@lumibase.local. */
+  LUMIBASE_MAIL_FROM?: string;
+  /** Optional default Reply-To applied to outbound mail. */
+  LUMIBASE_MAIL_REPLY_TO?: string;
+  /** Operator kill switch: set to `"false"` to disable all email sending. */
+  LUMIBASE_MAIL_ENABLED?: string;
+  /** Comma-separated cc list for security notifications (legacy name kept). */
+  LUMIBASE_SECURITY_RECIPIENTS?: string;
   /** Direct Postgres connection string (used in local development). */
   DATABASE_URL?: string;
   /** Cloudflare Access Certificates URL (JWKS format) */
@@ -49,6 +60,18 @@ export interface Bindings {
   FILE_UPLOAD_ALLOWED_MIME_TYPES?: string;
   /** Bearer token required to read Prometheus metrics in production. */
   METRICS_TOKEN?: string;
+  /**
+   * Sentry DSN for the Cloudflare Workers build. When unset, `withSentry`
+   * in `cloudflare.ts` initializes with an empty DSN and Sentry becomes a
+   * no-op — so local dev / Docker / tests stay clean. Set per environment
+   * with `wrangler secret put SENTRY_DSN --env <environment>`.
+   */
+  SENTRY_DSN?: string;
+  /**
+   * Trace sampling ratio (0–1) for Sentry on the Workers build. Defaults
+   * to 1.0 (capture every transaction) when unset or unparseable.
+   */
+  SENTRY_TRACES_SAMPLE_RATE?: string;
   // ── LLM Provider (POST-GA Task #1) ──────────────────────────────────────
   /** `'openai'` | `'anthropic'` | `'claude'` | `'gemini'` | `'workers-ai'` | `'echo'` (default). */
   LLM_PROVIDER?: string;

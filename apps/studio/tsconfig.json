@@ -8,10 +8,11 @@
     "paths": {
       "@/*": ["./src/*"],
       "@lumibase/shared": ["../../packages/shared/src/index.ts"],
-      "@lumibase/shared/*": ["../../packages/shared/src/*"]
+      "@lumibase/shared/*": ["../../packages/shared/src/*"],
+      "@lumibase/extensions": ["../../packages/extensions/src/index.ts"]
     },
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "vitest.config.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "vitest.config.ts", "vite-plugins/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

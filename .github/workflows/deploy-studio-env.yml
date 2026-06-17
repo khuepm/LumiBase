@@ -1,0 +1,140 @@
+name: Deploy Studio (non-prod)
+
+# Deploys the Studio SPA to the shared-domain non-production environments as
+# Cloudflare Pages preview branches of the single `lumibase-studio` project.
+# Each environment shares its hostname with the CMS Worker (see
+# apps/cms/wrangler.toml routes), so VITE_API_URL is empty → the SPA calls
+# `/api/...` same-origin and no CORS is involved.
+#
+#   push to `dev`   → dev branch     (dev.lumibase.dev)
+#   push to `main`  → staging branch (staging.lumibase.dev)
+#   workflow_dispatch → choose dev | staging | demo
+#
+# Production Studio (studio.lumibase.dev, cross-origin) is owned by
+# pages-deploy.yml / release.yml and is intentionally untouched here.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target Studio environment"
+        required: true
+        default: staging
+        type: choice
+        options:
+          - dev
+          - staging
+          - demo
+  push:
+    branches: [dev, main]
+    paths:
+      - "apps/studio/**"
+      - "packages/shared/**"
+      - ".github/workflows/deploy-studio-env.yml"
+
+concurrency:
+  group: deploy-studio-env-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24
+  WRANGLER_SEND_METRICS: "false"
+
+jobs:
+  resolve-env:
+    name: Resolve target environment
+    runs-on: ubuntu-latest
+    outputs:
+      target: ${{ steps.pick.outputs.target }}
+    steps:
+      - name: Pick environment
+        id: pick
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET="${{ github.event.inputs.environment }}"
+          elif [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+            TARGET="dev"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TARGET="staging"
+          else
+            echo "::error::No Studio environment mapping for ref ${{ github.ref }}."
+            exit 1
+          fi
+          echo "target=${TARGET}" >> "$GITHUB_OUTPUT"
+          echo "Deploying Studio to: ${TARGET}"
+
+  deploy:
+    name: Deploy Studio (${{ needs.resolve-env.outputs.target }})
+    needs: resolve-env
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ needs.resolve-env.outputs.target == 'demo' && 'demo' || (needs.resolve-env.outputs.target == 'dev' && 'dev' || 'staging') }}
+    env:
+      TARGET_ENV: ${{ needs.resolve-env.outputs.target }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Studio (same-origin)
+        env:
+          # Empty → getApiBaseUrl() returns '' → SPA calls /api/... same-origin.
+          # The CMS Worker route on the same hostname serves those paths.
+          VITE_API_URL: ""
+        run: pnpm --filter @lumibase/studio build
+
+      - name: Check Cloudflare credentials
+        id: cloudflare-credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] && [ -n "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "can_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "can_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping Studio deploy because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured."
+          fi
+
+      - name: Deploy Studio to Cloudflare Pages
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        # --branch <env> creates a Pages preview deployment. Attach the
+        # custom domain (e.g. demo.lumibase.dev) to this branch alias in the
+        # Cloudflare dashboard so the hostname serves this build.
+        run: |
+          set -o pipefail
+          pnpm exec wrangler pages deploy apps/studio/dist \
+            --project-name lumibase-studio \
+            --branch "${TARGET_ENV}" 2>&1 | tee studio-deploy.log
+          URL="$(grep -Eo 'https://[^[:space:]]+' studio-deploy.log | tail -n1 | sed 's/[),.]*$//')"
+          echo "Preview URL: ${URL:-<none>}"
+
+      - name: Ensure Pages custom domain
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        # Idempotently attach <env>.lumibase.dev to the lumibase-studio Pages
+        # project so the hostname resolves (Cloudflare provisions the proxied
+        # DNS record). Wrangler has no command for this; we call the CF API.
+        run: node scripts/ensure-pages-domain.mjs --project lumibase-studio --domain "${TARGET_ENV}.lumibase.dev"
+
+      - name: Verify Studio reachable
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
+        run: curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --max-time 20 "https://${TARGET_ENV}.lumibase.dev" --output /dev/null
