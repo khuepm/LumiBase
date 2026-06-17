@@ -21,6 +21,7 @@ import { accessRouter } from './routes/access';
 import { adminRouter } from './routes/admin';
 import { authRouter, meRouter } from './routes/auth';
 import { adminSecurityRouter } from './routes/admin-security';
+import { adminEncryptionRouter } from './routes/admin-encryption';
 import { apiKeysRouter } from './routes/api-keys';
 import { collectionsRouter } from './routes/collections';
 import { deliverRouter } from './routes/deliver';
@@ -194,6 +195,10 @@ api.route('/admin', adminRouter);
 // being populated. Sibling to `/admin` rather than nested so future
 // recovery routes (task 10.7) can mount alongside without reshuffling.
 api.route('/admin/security', adminSecurityRouter);
+// Admin Encryption surface (regulated-content-readiness task 3.4; Req 3.5).
+// Sibling to `/admin/security`, also under `withAuth` with an in-router
+// admin-role gate. Handles key-rotation metadata + key listing.
+api.route('/admin/encryption', adminEncryptionRouter);
 // Audit-log QUERY + EXPORT surface (admin-setup-wizard task 12.3; Req
 // 15.4, 15.6; design §4.9, §4.10, §10.3, §10.4). SIBLING mount alongside
 // `adminSecurityRouter` above, both under `withAuth`. The admin-role gate
