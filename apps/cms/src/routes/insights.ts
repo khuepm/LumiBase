@@ -18,7 +18,7 @@ import {
   type PanelQuery,
 } from '@lumibase/shared';
 import { and, eq } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { InsightsService, InsightsServiceError } from '../services/insights-service';
@@ -26,7 +26,7 @@ import { SchemaService } from '../services/schema-service';
 
 export const insightsRouter = new Hono<AppEnv>();
 
-function buildInsights(c: Parameters<Parameters<typeof insightsRouter.get>[1]>[0]): InsightsService {
+function buildInsights(c: Context<AppEnv>): InsightsService {
   const db = c.get('db');
   const siteId = c.get('siteId');
   const runtime = c.get('runtime');
@@ -37,7 +37,7 @@ function buildInsights(c: Parameters<Parameters<typeof insightsRouter.get>[1]>[0
   });
 }
 
-function zodErr(c: Parameters<Parameters<typeof insightsRouter.post>[1]>[0], issues: z.ZodIssue[]) {
+function zodErr(c: Context<AppEnv>, issues: z.ZodIssue[]) {
   return c.json({ errors: issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
 }
 
@@ -103,7 +103,7 @@ insightsRouter.delete('/:id', async (c) => {
 // ── Panels ───────────────────────────────────────────────────────────────────
 
 /** Confirm the dashboard exists in this site; returns its id or null. */
-async function assertDashboard(c: Parameters<Parameters<typeof insightsRouter.get>[1]>[0], id: string) {
+async function assertDashboard(c: Context<AppEnv>, id: string) {
   const siteId = c.get('siteId');
   const db = c.get('db');
   const [row] = await db
