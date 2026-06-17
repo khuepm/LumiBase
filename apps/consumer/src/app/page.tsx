@@ -1,4 +1,4 @@
-import { createLumiClient, readItems, type ItemRow } from "@lumibase/sdk";
+import { createLumiClient, graphql, readItems, type ItemRow } from "@lumibase/sdk";
 import { RealtimeTester } from "./realtime-tester";
 
 // Khởi tạo client tới CMS (chạy local mặc định port 1989 của Cloudflare worker, hoặc mock)
@@ -20,6 +20,14 @@ const client = createLumiClient({
   siteId,
   token,
 });
+
+// Cùng client, mở rộng thêm adapter GraphQL (Composable `.with`).
+const gqlClient = createLumiClient({ url: cmsUrl, siteId, token }).with(graphql());
+
+interface GqlPost {
+  id: string;
+  title?: string | null;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +55,22 @@ export default async function Home() {
   } catch (err: unknown) {
     const e = err as Error;
     errorMsg = e.message || "Failed to fetch posts";
+  }
+
+  // Cùng dữ liệu nhưng lấy qua GraphQL adapter để minh hoạ `.with(graphql())`.
+  let gqlPosts: GqlPost[] = [];
+  let gqlError: string | null = null;
+  try {
+    const res = await withTimeout(
+      gqlClient.query<{ posts: GqlPost[] }>(
+        `query ($limit: Int) { posts(limit: $limit) { id title } }`,
+        { limit: 5 },
+      ),
+      1500,
+    );
+    gqlPosts = res.posts || [];
+  } catch (err: unknown) {
+    gqlError = (err as Error).message || "Failed to fetch posts via GraphQL";
   }
 
   return (
@@ -88,6 +112,34 @@ export default async function Home() {
                     <span>ID: {post.id}</span>
                     <span>Created: {new Date(post.createdAt).toLocaleDateString()}</span>
                   </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold tracking-tight">Cùng &ldquo;posts&rdquo; qua GraphQL</h2>
+            <div className="px-3 py-1 bg-indigo-100 text-indigo-700 text-sm font-semibold rounded-full">
+              .with(graphql())
+            </div>
+          </div>
+
+          {gqlError ? (
+            <div className="p-4 bg-red-50 border border-red-100 text-red-600 rounded-xl">
+              <strong className="block mb-1">Lỗi GraphQL:</strong> {gqlError}
+            </div>
+          ) : gqlPosts.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300">
+              <p className="text-slate-500 font-medium">Không có dữ liệu hoặc backend chưa chạy.</p>
+            </div>
+          ) : (
+            <ul className="grid gap-3">
+              {gqlPosts.map((post) => (
+                <li key={post.id} className="p-4 border border-slate-100 rounded-2xl flex items-center justify-between">
+                  <h3 className="font-semibold">{post.title || "Bài viết không có tiêu đề"}</h3>
+                  <span className="text-xs text-slate-400 font-mono">{post.id}</span>
                 </li>
               ))}
             </ul>
