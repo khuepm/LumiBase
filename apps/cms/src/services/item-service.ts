@@ -838,6 +838,64 @@ export class ItemService {
   }
 
   /**
+   * Collect and decrypt every item matching a subject filter for a SAR export
+   * (Req 13). Decrypts internally (admin scope) but forces field-access
+   * auditing of pii/phi reads (Req 13.2), and includes latest-revision
+   * provenance (Req 13.3). Site-scoped (Req 13.4).
+   */
+  async exportSubject(
+    collectionName: string,
+    filter: Record<string, unknown>,
+  ): Promise<{ records: Array<Record<string, unknown>>; count: number }> {
+    const coll = await this.resolveCollection(collectionName);
+    const rows = await this.deps.db
+      .select()
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          isNull(items.deletedAt),
+          sql`${items.data} @> ${JSON.stringify(filter)}::jsonb`,
+        ),
+      );
+
+    const records: Array<Record<string, unknown>> = [];
+    for (const row of rows) {
+      const data = await this.processCrypto(
+        collectionName,
+        row.data as Record<string, unknown>,
+        'decrypt',
+        row.id,
+        true, // internal: bypass the read_decrypted perm gate (admin SAR)
+        false,
+        true, // force field-access audit (Req 13.2)
+      );
+      const [rev] = await this.deps.db
+        .select({
+          authorType: revisions.authorType,
+          model: revisions.model,
+          sources: revisions.sources,
+          createdAt: revisions.createdAt,
+        })
+        .from(revisions)
+        .where(and(scopeSite(revisions.siteId, this.deps.siteId), eq(revisions.itemId, row.id)))
+        .orderBy(desc(revisions.createdAt))
+        .limit(1);
+      records.push({
+        id: row.id,
+        collection: collectionName,
+        status: row.status,
+        data,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        provenance: rev ?? null,
+      });
+    }
+    return { records, count: records.length };
+  }
+
+  /**
    * Permanently remove an item and (via FK cascade) its revisions (Req 11.2).
    * Used by erasure/retention — bypasses soft-delete. Audit trails in
    * `audit_log` / `field_access_log` are intentionally NOT cascaded (Req 11.3).
@@ -1232,6 +1290,7 @@ export class ItemService {
     recordId: string,
     internal = false,
     degraded = false,
+    auditAccess?: boolean,
   ): Promise<Record<string, unknown>> {
     if (!this.cryptoService) return data;
     if (!data) return data;
@@ -1300,7 +1359,10 @@ export class ItemService {
     // Audit successful decrypted reads of pii/phi fields (Req 6.1, 6.2). Only
     // for non-internal reads — internal decrypts (e.g. read-modify-write) are
     // not "access" by an actor. Flushed before the response returns.
-    if (mode === 'decrypt' && !internal && accessedSensitive.length > 0) {
+    // Audit decrypted pii/phi reads. Defaults to actor reads (!internal); SAR
+    // forces it on even for internal decrypts (Req 13.2).
+    const doAudit = auditAccess ?? !internal;
+    if (mode === 'decrypt' && doAudit && accessedSensitive.length > 0) {
       await this.writeFieldAccessLog(collectionName, [recordId], accessedSensitive);
     }
     return out;

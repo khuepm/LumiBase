@@ -2,6 +2,8 @@ import { and, asc, eq, isNotNull, isNull, lte, ne, sql, type SQL } from 'drizzle
 import { collections, items, settings, scopeSite, type Database } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
 import { dispatchRevalidation, parseTargets } from './revalidation';
+import { AuditLogger } from '../modules/audit/logger';
+import { ItemService } from './item-service';
 
 /**
  * Content scheduler (regulated-content-readiness task 7; Req 7.3, 7.4, 7.6, 7.7).
@@ -160,6 +162,103 @@ export async function runSchedulerTick(deps: SchedulerDeps, now = new Date()): P
   const published = await sweepDuePublish(deps, now);
   const unpublished = await sweepDueUnpublish(deps, now);
   return { published, unpublished };
+}
+
+export type RetentionAction = 'archive' | 'hard_delete' | 'crypto_shred';
+
+export interface RetentionPolicy {
+  collection: string;
+  maxAgeDays: number;
+  action: RetentionAction;
+  /** Age anchor column; defaults to createdAt. */
+  anchor?: 'createdAt' | 'updatedAt';
+}
+
+function parsePolicies(value: unknown): RetentionPolicy[] {
+  const arr = Array.isArray(value)
+    ? value
+    : Array.isArray((value as { policies?: unknown })?.policies)
+      ? (value as { policies: unknown[] }).policies
+      : [];
+  return arr.filter(
+    (p): p is RetentionPolicy =>
+      typeof p === 'object' &&
+      p !== null &&
+      typeof (p as RetentionPolicy).collection === 'string' &&
+      typeof (p as RetentionPolicy).maxAgeDays === 'number' &&
+      ['archive', 'hard_delete', 'crypto_shred'].includes((p as RetentionPolicy).action),
+  );
+}
+
+/**
+ * Apply per-collection retention policies across all sites (Req 12). For each
+ * policy, items older than `maxAgeDays` from the anchor are archived,
+ * hard-deleted, or crypto-shredded; each run audits `retention_applied`.
+ * Idempotent — re-running re-selects only still-matching rows.
+ */
+export async function sweepRetention(deps: SchedulerDeps, now = new Date()): Promise<number> {
+  const rows = await deps.db
+    .select({ siteId: settings.siteId, value: settings.value })
+    .from(settings)
+    .where(eq(settings.key, 'retention.policies'));
+
+  let applied = 0;
+  for (const row of rows) {
+    const policies = parsePolicies(row.value);
+    if (policies.length === 0) continue;
+    const svc = new ItemService({ db: deps.db, siteId: row.siteId });
+
+    for (const policy of policies) {
+      const [coll] = await deps.db
+        .select({ id: collections.id, name: collections.name })
+        .from(collections)
+        .where(and(scopeSite(collections.siteId, row.siteId), eq(collections.name, policy.collection)))
+        .limit(1);
+      if (!coll) continue;
+
+      const cutoff = new Date(now.getTime() - policy.maxAgeDays * 86_400_000);
+      const anchorCol = policy.anchor === 'updatedAt' ? items.updatedAt : items.createdAt;
+      const due = await deps.db
+        .select({ id: items.id })
+        .from(items)
+        .where(
+          and(
+            scopeSite(items.siteId, row.siteId),
+            eq(items.collectionId, coll.id),
+            isNull(items.deletedAt),
+            lte(anchorCol, cutoff),
+          ),
+        )
+        .limit(500);
+      if (due.length === 0) continue;
+
+      let count = 0;
+      for (const it of due) {
+        if (policy.action === 'archive') {
+          const r = await deps.db
+            .update(items)
+            .set({ status: 'archived', updatedAt: new Date() })
+            .where(and(eq(items.id, it.id), ne(items.status, 'archived')))
+            .returning({ id: items.id });
+          if (r.length > 0) count += 1;
+        } else if (policy.action === 'crypto_shred') {
+          if (await svc.cryptoShred(policy.collection, it.id)) count += 1;
+        } else {
+          if (await svc.hardDelete(policy.collection, it.id)) count += 1;
+        }
+      }
+
+      if (count > 0) {
+        await new AuditLogger({ db: deps.db, siteId: row.siteId }).write({
+          event: 'retention_applied',
+          requestId: null,
+          metadata: { siteId: row.siteId, collection: policy.collection, action: policy.action, recordCount: count },
+        });
+        applied += count;
+      }
+    }
+  }
+  return applied;
 }
 
 /** Long-lived runtime consumer (Docker/Node). Mirrors the veto worker. */

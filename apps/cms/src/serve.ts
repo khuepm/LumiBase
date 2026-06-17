@@ -135,7 +135,7 @@ async function main() {
   // A 1-minute tick applies due publish/unpublish transitions. Each flip is a
   // guarded conditional update so catch-up runs after downtime never
   // double-fire side-effects (Req 7.6).
-  const { registerSchedulerWorker, runSchedulerTick } = await import(
+  const { registerSchedulerWorker, runSchedulerTick, sweepRetention } = await import(
     './services/scheduler-worker'
   );
   const schedulerDeps = { db: rotatorDb, queue: runtime.queue };
@@ -143,6 +143,12 @@ async function main() {
   const schedulerTask = cron.schedule('* * * * *', () => {
     void runSchedulerTick(schedulerDeps).catch((err) => {
       console.error('[content-scheduler] tick failed', formatSafeError(err));
+    });
+  });
+  // Retention sweep runs hourly (Req 12.2) — heavier than the publish tick.
+  const retentionTask = cron.schedule('17 * * * *', () => {
+    void sweepRetention(schedulerDeps).catch((err) => {
+      console.error('[retention-sweep] failed', formatSafeError(err));
     });
   });
 
@@ -155,6 +161,7 @@ async function main() {
     rotationTask.stop();
     vetoSweepTask.stop();
     schedulerTask.stop();
+    retentionTask.stop();
     pressureLimiter.stop();
     clearInterval(loadGuardTimer);
 

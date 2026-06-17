@@ -24,6 +24,8 @@ import { adminSecurityRouter } from './routes/admin-security';
 import { adminEncryptionRouter } from './routes/admin-encryption';
 import { editorialRouter } from './routes/editorial';
 import { adminErasureRouter } from './routes/admin-erasure';
+import { adminFieldAccessRouter } from './routes/admin-field-access';
+import { adminSarRouter } from './routes/admin-sar';
 import { apiKeysRouter } from './routes/api-keys';
 import { collectionsRouter } from './routes/collections';
 import { deliverRouter } from './routes/deliver';
@@ -204,6 +206,10 @@ api.route('/admin/security', adminSecurityRouter);
 api.route('/admin/encryption', adminEncryptionRouter);
 // Admin Erasure surface (regulated-content-readiness task 9.4; Req 11).
 api.route('/admin/erasure', adminErasureRouter);
+// Field Access Log query (regulated-content-readiness task 5.3; Req 6.3).
+api.route('/admin/field-access-log', adminFieldAccessRouter);
+// Subject Access Request export (regulated-content-readiness task 10.3; Req 13).
+api.route('/admin/sar', adminSarRouter);
 // Audit-log QUERY + EXPORT surface (admin-setup-wizard task 12.3; Req
 // 15.4, 15.6; design §4.9, §4.10, §10.3, §10.4). SIBLING mount alongside
 // `adminSecurityRouter` above, both under `withAuth`. The admin-role gate
