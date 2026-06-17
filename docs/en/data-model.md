@@ -13,6 +13,7 @@ Schema files are split by domain:
 | `cms.ts` | `pages`, `collections`, `fields`, `relations`, `items`, `revisions`, `activity`, `flows`, `flow_runs`, `operations`, `materialized_collections` |
 | `platform.ts` | `folders`, `files`, `presets`, `translations`, `settings`, `webhooks`, `extensions`, `translation_memory`, `glossary` |
 | `ai.ts` | `ai_approvals` |
+| `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
 
@@ -327,7 +328,44 @@ Content OS columns on existing tables:
 - `agent_goals`: `parentGoalId` (goal tree), `origin` (`user/reconciler/planner/flow`), `intentId`, `driftFingerprint`, `agentRole`.
 - `agent_approvals`: `kind` (`approval`/`veto`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`.
 
-## 11. Indexing & RLS
+## 11. Firebase Sync (`firebase-sync.ts`)
+
+Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0029_lumibase_firebase_sync`.
+
+### `lumibase_firebase_sync_pipelines`
+| Column | Type | Note |
+|---|---|---|
+| `id` | text PK | nanoid |
+| `siteId` | text | FK `sites.id` (cascade) |
+| `name` | text | unique theo `(siteId, name)` |
+| `target` | text | `firestore` / `rtdb` |
+| `status` | text | `active` / `paused` / `error` |
+| `statusMessage` | text | lỗi gần nhất (nullable) |
+| `projectId` | text | Firebase project id |
+| `credentialsEncrypted` | text | credential blob mã hoá AES-GCM (write-only) |
+| `collections` | jsonb | machine-names; `[]` = mọi collection |
+| `targetPath` | text | template, mặc định `{collection}` |
+| `syncOnCreate` / `syncOnUpdate` / `syncOnDelete` | integer | 1/0 bật từng action |
+| `lastSyncAt` | timestamp | lần sync thành công gần nhất |
+| `lastSyncItemCount` | integer | nullable |
+| `createdAt` / `updatedAt` | timestamp | |
+
+### `lumibase_firebase_sync_log`
+| Column | Type | Note |
+|---|---|---|
+| `id` | text PK | nanoid |
+| `pipelineId` | text | FK `lumibase_firebase_sync_pipelines.id` (cascade) |
+| `siteId` | text | FK `sites.id` (cascade) |
+| `collection` / `itemId` | text | nguồn của thay đổi |
+| `action` | text | `create` / `update` / `delete` |
+| `result` | text | `success` / `error` |
+| `errorMessage` | text | nullable |
+| `durationMs` | integer | round-trip gọi Firebase REST |
+| `recordedAt` | timestamp | index `(pipelineId, recordedAt)` |
+
+---
+
+## 12. Indexing & RLS
 
 - Bắt buộc index `(siteId, …)` ở mọi bảng domain.
 - Áp dụng Drizzle helper `scopeSite(siteId)` ở tầng repo.
