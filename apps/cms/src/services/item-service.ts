@@ -20,6 +20,11 @@ import { PermissionService, type CompiledPermission, type PermissionAction } fro
 import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
 import type { PolicyRule } from '@lumibase/shared';
 import { CryptoService, DecryptionError, type CryptoContext } from './crypto-service';
+import {
+  assertEditorialGate,
+  editorialStateFromStatus,
+  type EditorialState,
+} from './editorial-service';
 import type { KeyProvider } from '@lumibase/runtime';
 import { nanoid } from 'nanoid';
 import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
@@ -665,6 +670,26 @@ export class ItemService {
     const finalData = hookPatch ? { ...merged, ...hookPatch } : merged;
     const finalStatus = patch.status ?? rawRow.status;
     const finalSort = patch.sort ?? rawRow.sort;
+    // Editorial gate (Req 8.2): on collections with editorialWorkflow=true, an
+    // item may only reach `published` via the approved/scheduled state. A
+    // direct draft→published through patch is rejected.
+    if (
+      finalStatus === 'published' &&
+      rawRow.status !== 'published' &&
+      (coll.meta as Record<string, unknown> | null)?.editorialWorkflow === true
+    ) {
+      const current =
+        (rawRow.editorialState as EditorialState | null) ?? editorialStateFromStatus('draft');
+      try {
+        assertEditorialGate(current, 'published');
+      } catch {
+        throw new ItemServiceError(
+          'EDITORIAL_GATE_REQUIRED',
+          'Item must be approved before it can be published.',
+          409,
+        );
+      }
+    }
     this.assertPermissionValidation(perm, buildPermissionSnapshot({
       id: rawRow.id,
       data: finalData,
