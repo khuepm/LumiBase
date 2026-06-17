@@ -12,6 +12,21 @@ export {
 } from './cdc';
 
 export {
+  ExtensionTypeSchema,
+  ExtensionConfigOptionSchema,
+  ExtensionAuthorSchema,
+  ExtensionManifestSchema,
+  UI_EXTENSION_TYPES,
+  isUiExtensionType,
+  parseExtensionManifest,
+  type ExtensionType,
+  type UiExtensionType,
+  type ExtensionConfigOption,
+  type ExtensionAuthor,
+  type ExtensionManifest,
+} from './extension-manifest';
+
+export {
   THEME_TOKENS,
   ThemeOverridesSchema,
   BrandingSchema,

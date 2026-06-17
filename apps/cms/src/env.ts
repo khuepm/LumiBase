@@ -60,6 +60,18 @@ export interface Bindings {
   FILE_UPLOAD_ALLOWED_MIME_TYPES?: string;
   /** Bearer token required to read Prometheus metrics in production. */
   METRICS_TOKEN?: string;
+  /**
+   * Sentry DSN for the Cloudflare Workers build. When unset, `withSentry`
+   * in `cloudflare.ts` initializes with an empty DSN and Sentry becomes a
+   * no-op — so local dev / Docker / tests stay clean. Set per environment
+   * with `wrangler secret put SENTRY_DSN --env <environment>`.
+   */
+  SENTRY_DSN?: string;
+  /**
+   * Trace sampling ratio (0–1) for Sentry on the Workers build. Defaults
+   * to 1.0 (capture every transaction) when unset or unparseable.
+   */
+  SENTRY_TRACES_SAMPLE_RATE?: string;
   // ── LLM Provider (POST-GA Task #1) ──────────────────────────────────────
   /** `'openai'` | `'anthropic'` | `'claude'` | `'gemini'` | `'workers-ai'` | `'echo'` (default). */
   LLM_PROVIDER?: string;

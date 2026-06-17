@@ -6,6 +6,11 @@ vi.mock('@/lib/api', () => ({
   getApiClient: getApiClientMock,
 }));
 
+// The dev-only source-extension virtual module is provided by the Vite plugin
+// `lumibase:dev-extensions` at dev time. Under vitest it does not exist, so we
+// stub it to an empty list — the loader's API path is what these tests cover.
+vi.mock('virtual:lumibase-extensions', () => ({ devExtensions: [] }));
+
 describe('extension-loader access filtering', () => {
   beforeEach(async () => {
     vi.resetModules();

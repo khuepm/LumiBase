@@ -41,8 +41,64 @@ let loaded = false;
  * Load all enabled UI extensions from the API and cache them.
  * Safe to call multiple times — subsequent calls return the cache.
  */
+/**
+ * Dev-only: seed the cache from local source extensions discovered by the
+ * `lumibase:dev-extensions` Vite plugin (virtual module). This lets authors
+ * iterate on extension SOURCE in the `extensions/` submodule without publishing
+ * a bundle or touching the DB — the auto-detect path.
+ *
+ * In production builds the virtual module resolves to an empty array, and this
+ * function is a no-op. The dynamic import is wrapped so a missing virtual
+ * module (e.g. under vitest) never breaks the API-backed loader.
+ */
+async function seedDevExtensions(): Promise<void> {
+  if (!import.meta.env.DEV) return;
+
+  try {
+    const mod = (await import(/* @vite-ignore */ 'virtual:lumibase-extensions')) as {
+      devExtensions?: Array<{ name: string; type: string; load: () => Promise<unknown> }>;
+    };
+    const devExtensions = mod.devExtensions ?? [];
+
+    for (const ext of devExtensions) {
+      if (!['interface', 'display', 'layout', 'panel', 'module'].includes(ext.type)) continue;
+      if (cache.has(ext.name)) continue; // API/DB entry wins over dev source
+
+      const load = ext.load;
+      const name = ext.name;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const LazyComponent = lazy(async (): Promise<{ default: ComponentType<any> }> => {
+        const bundle = (await load()) as Record<string, unknown>;
+        const component = (bundle.default ?? bundle.component) as ComponentType<unknown> | undefined;
+        // An interface/display extension's default export is a definition
+        // object ({ component, ... }), not the component itself.
+        const resolved =
+          typeof component === 'function'
+            ? component
+            : ((component as { component?: ComponentType<unknown> } | undefined)?.component ??
+              (bundle.component as ComponentType<unknown> | undefined));
+        if (!resolved) throw new Error(`Dev extension "${name}" does not export a component.`);
+        return { default: resolved };
+      });
+
+      cache.set(name, {
+        name,
+        slot: ext.type as ExtensionSlot,
+        component: LazyComponent,
+        manifest: {},
+      });
+    }
+  } catch (err) {
+    console.warn('[extension-loader] dev source extensions unavailable:', formatSafeError(err));
+  }
+}
+
 export async function loadExtensions(): Promise<ExtensionEntry[]> {
   if (loaded) return Array.from(cache.values());
+
+  // Dev source extensions are seeded first; API/DB entries (below) take
+  // precedence if a name collides (handled by the `cache.has` guard above).
+  await seedDevExtensions();
 
   try {
     const client = getApiClient();
