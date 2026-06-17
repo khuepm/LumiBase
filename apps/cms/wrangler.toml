@@ -162,6 +162,18 @@ LUMIBASE_DEV_AUTH = "false"
 # Production rejects "*"; adjust to your real Studio/consumer domains.
 CORS_ALLOWED_ORIGINS = "https://studio.lumibase.dev"
 
+# ─── Production routing (split origins) ──────────────────────────────────────
+# Production keeps the API and the Studio SPA on SEPARATE origins:
+#   api.lumibase.dev    → this Worker (every path)
+#   studio.lumibase.dev → Studio Pages project (cross-origin, see CORS above)
+# `custom_domain = true` makes Wrangler create + manage the api.lumibase.dev
+# DNS record (proxied) automatically on `wrangler deploy --env production`, so
+# no manual DNS entry is required. Because api.lumibase.dev is owned solely by
+# this Worker (not shared with Pages), the Worker receives every path on it.
+[[env.production.routes]]
+pattern = "api.lumibase.dev"
+custom_domain = true
+
 [[env.production.durable_objects.bindings]]
 name = "SITE_ROOM"
 class_name = "SiteRoom"
