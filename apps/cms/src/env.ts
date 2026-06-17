@@ -27,6 +27,17 @@ export interface Bindings {
   LUMIBASE_RELEASE_CHANNEL?: string;
   /** Runtime mode: `'cloudflare'` or `'docker'`. Defaults to `'docker'`. */
   LUMIBASE_RUNTIME?: string;
+  // ── Email service (services/email/*) ────────────────────────────────────
+  /** SMTP connection string (nodemailer format) for the Docker/Node runtime. */
+  LUMIBASE_SMTP_URL?: string;
+  /** Default envelope sender for all outbound mail. Falls back to no-reply@lumibase.local. */
+  LUMIBASE_MAIL_FROM?: string;
+  /** Optional default Reply-To applied to outbound mail. */
+  LUMIBASE_MAIL_REPLY_TO?: string;
+  /** Operator kill switch: set to `"false"` to disable all email sending. */
+  LUMIBASE_MAIL_ENABLED?: string;
+  /** Comma-separated cc list for security notifications (legacy name kept). */
+  LUMIBASE_SECURITY_RECIPIENTS?: string;
   /** Direct Postgres connection string (used in local development). */
   DATABASE_URL?: string;
   /** Cloudflare Access Certificates URL (JWKS format) */

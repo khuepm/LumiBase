@@ -206,6 +206,72 @@ export const extensions = pgTable(
 
 
 // ---------------------------------------------------------------------------
+// Email templates + layouts (email-service feature).
+// ---------------------------------------------------------------------------
+
+/**
+ * Reusable HTML shells for email. A layout's `html` carries a `{{content}}`
+ * slot that the render engine (`apps/cms/src/services/email/render.ts`) fills
+ * with a template's rendered body, so branding (header/footer/styles) lives in
+ * one place and templates stay focused on their message.
+ */
+export const emailLayouts = pgTable(
+  'email_layouts',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** Stable per-site key (e.g. `default`). */
+    key: text('key').notNull(),
+    name: text('name').notNull(),
+    /** HTML shell containing a `{{content}}` slot. */
+    html: text('html').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteKeyUnique: uniqueIndex('email_layouts_site_key_unique').on(t.siteId, t.key),
+  }),
+);
+
+/**
+ * Email templates. Each row is an addressable message (`key`, e.g.
+ * `teammate_invite`) with a subject + HTML body, optionally wrapped in an
+ * {@link emailLayouts} shell. `variables` declares the placeholder names the
+ * body/subject reference, used by the Studio UI for hints and by the render
+ * engine for missing-variable warnings.
+ */
+export const emailTemplates = pgTable(
+  'email_templates',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** Stable per-site key callers send by (e.g. `teammate_invite`). */
+    key: text('key').notNull(),
+    name: text('name').notNull(),
+    /** Optional layout wrapper. */
+    layoutId: text('layout_id').references(() => emailLayouts.id, {
+      onDelete: 'set null',
+    }),
+    subject: text('subject').notNull(),
+    bodyHtml: text('body_html').notNull(),
+    /** Optional explicit text body; derived from HTML when null. */
+    bodyText: text('body_text'),
+    /** Declared placeholder names (string[]), for UI hints + validation. */
+    variables: jsonb('variables').default([]).notNull(),
+    enabled: boolean('enabled').default(true).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteKeyUnique: uniqueIndex('email_templates_site_key_unique').on(t.siteId, t.key),
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // PGA1 — Translation Memory + MT provider config tables.
 // ---------------------------------------------------------------------------
 
