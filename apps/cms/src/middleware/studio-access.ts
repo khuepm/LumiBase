@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { users } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { PermissionService, type PermissionBundle } from '../services/permission-service';
+import { isFrontendAudience } from '../services/auth/token-audience';
 
 const STUDIO_CLIENT_HEADER = 'x-lumi-client';
 const STUDIO_CLIENT_VALUE = 'studio';
@@ -10,6 +11,7 @@ const STUDIO_CLIENT_VALUE = 'studio';
 const PUBLIC_AUTH_PATHS = new Set([
   '/api/v1/auth/login',
   '/api/v1/auth/register',
+  '/api/v1/auth/verify-email',
 ]);
 
 const STUDIO_ACCESS_PATH_PREFIXES = [
@@ -55,6 +57,17 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
   const auth = c.get('auth');
   if (auth?.raw?.dev === true && auth.roles?.includes('admin')) {
     return next();
+  }
+
+  // Hard wall: a `frontend` (subscriber) session token can NEVER reach the
+  // Studio management surface, regardless of any `appAccess` policy. This
+  // is the audience guardrail from ADR 0001 — defense-in-depth on top of
+  // the `appAccess` bundle check below.
+  if (isFrontendAudience(auth?.raw?.aud)) {
+    return c.json(
+      { errors: [{ code: 'APP_ACCESS_DENIED', message: 'This session is not allowed to use Studio.' }] },
+      403,
+    );
   }
 
   if (!auth?.userId) {

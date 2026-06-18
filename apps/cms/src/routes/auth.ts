@@ -2,9 +2,19 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { SignJWT } from 'jose';
 import { and, eq, sql } from 'drizzle-orm';
-import { systemState, users, userSites } from '@lumibase/database';
+import { roles, systemState, users, userSites } from '@lumibase/database';
 import type { AppEnv } from '../env';
 import { hashPassword, verifyPassword } from '../services/auth/password';
+import { ensureSubscriberRole } from '../services/auth/frontend-role';
+import { TOKEN_AUDIENCE } from '../services/auth/token-audience';
+import {
+  signVerificationToken,
+  verifyVerificationToken,
+} from '../services/auth/email-verification';
+import { sendVerificationEmail } from '../modules/email/verify-email';
+import {
+  checkRegistrationRate,
+} from '../modules/auth/registration-guard';
 import {
   loginGuardMiddleware,
   loadLockoutPolicyFromSettings,
@@ -111,12 +121,24 @@ meRouter.get('/admin-path', async (c) => {
   return c.json({ data: { adminPath } });
 });
 
-// Helper to sign Custom JWT (HS256)
-async function signCustomJwt(payload: any, secret: string): Promise<string> {
+// Helper to sign Custom JWT (HS256).
+//
+// The `audience` (`aud` claim) pins which realm the session token belongs
+// to — `studio` for staff with Studio access, `frontend` for self-service
+// subscribers. `withStudioAccess` rejects `frontend` tokens outright, so a
+// subscriber token can never be replayed against the management surface
+// even if a policy were misconfigured (defense-in-depth). See
+// `services/auth/token-audience.ts`.
+async function signCustomJwt(
+  payload: any,
+  secret: string,
+  audience: string,
+): Promise<string> {
   const encoder = new TextEncoder();
   const secretKey = encoder.encode(secret);
   return new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
+    .setAudience(audience)
     .setIssuedAt()
     .setExpirationTime('24h')
     .sign(secretKey);
@@ -134,71 +156,218 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
-// Custom Register (for Frontend Users)
+/**
+ * Public self-service registration for FRONTEND end-users (the people who
+ * sign up on the consumer Next.js site to read content). This is a
+ * separate realm from staff onboarding: staff are created invite-only via
+ * `POST /api/v1/users/invite` (admin-gated, `member`/`administrator`
+ * roles with Studio access). This endpoint is intentionally
+ * unauthenticated and is bypassed by `withAuth` / `withStudioAccess` like
+ * `/login`.
+ *
+ * Guardrails (see ADR 0001 — user-management realms):
+ *   1. Least-privilege role is resolved SERVER-SIDE
+ *      ({@link ensureSubscriberRole}) — the request body can never choose
+ *      a role, so a self-registered visitor can never get Studio/admin.
+ *   2. The account starts `status: 'invited'` (inactive) and must verify
+ *      its email before `/login` will issue a token (login already gates
+ *      on `status === 'active'`).
+ *   3. Per-IP rate limit brakes scripted mass-registration.
+ *   4. Anti-enumeration: the response is an identical generic 202 whether
+ *      or not the email already exists. We only create + email on a new,
+ *      valid email.
+ */
 authRouter.post('/register', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
-  const auth = c.get('auth');
-  if (!auth.roles?.includes('admin')) {
+  const ip = extractClientIp(c);
+  const userAgent = c.req.header('user-agent') ?? null;
+
+  // (3) Best-effort per-IP abuse brake. Runs before body parse / hashing
+  // so a flood is cheap to reject.
+  const rate = await checkRegistrationRate(c.get('runtime').cache, siteId, ip);
+  if (!rate.allowed) {
     return c.json(
-      { errors: [{ code: 'FORBIDDEN', message: 'Only administrators can register users for a site.' }] },
-      403,
+      {
+        errors: [
+          {
+            code: 'RATE_LIMITED',
+            message: 'Too many registration attempts. Please try again later.',
+            retryAfterSeconds: rate.retryAfterSeconds,
+          },
+        ],
+      },
+      429,
     );
   }
 
   const body = await c.req.json();
   const input = registerSchema.parse(body);
+  const emailLower = normalizeEmail(input.email);
 
-  // Check if user exists by email
-  const [existingUser] = await db
-    .select()
+  const audit = new AuditLogger({ db, siteId });
+
+  // (4) Anti-enumeration: look the user up but DON'T branch the response on
+  // it. Only a brand-new email triggers the create + verification email;
+  // an existing email silently falls through to the same generic 202.
+  const [existing] = await db
+    .select({ id: users.id })
     .from(users)
-    .where(eq(users.email, input.email))
+    .where(sql`lower(${users.email}) = ${emailLower}`)
     .limit(1);
 
-  if (existingUser) {
+  if (!existing) {
+    const passwordHash = await hashPassword(input.password);
+    // (1) Server-resolved least-privilege role. Never from the body.
+    const subscriberRoleId = await ensureSubscriberRole(db, siteId);
+
+    const [newUser] = await db
+      .insert(users)
+      .values({
+        email: input.email,
+        passwordHash,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        // (2) Inactive until email verification flips it to 'active'.
+        status: 'invited',
+      })
+      .returning({ id: users.id, email: users.email });
+
+    if (newUser) {
+      await db
+        .insert(userSites)
+        .values({ userId: newUser.id, siteId, roleId: subscriberRoleId })
+        .onConflictDoNothing();
+
+      // Stateless verification token (no DB row); emailed inside the link.
+      const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+      if (jwtSecret) {
+        const token = await signVerificationToken(
+          { userId: newUser.id, siteId },
+          jwtSecret,
+        );
+        // Best-effort, fire-and-forget AFTER the row is committed so a mail
+        // failure can't roll the registration back.
+        const sendMail = sendVerificationEmail({
+          db,
+          siteId,
+          env: c.env,
+          email: input.email,
+          token,
+        });
+        if (c.executionCtx?.waitUntil) {
+          c.executionCtx.waitUntil(sendMail);
+        } else {
+          void sendMail;
+        }
+      }
+
+      await audit.write({
+        event: 'user_registered',
+        actorEmail: input.email,
+        ip,
+        userAgent,
+        requestId: c.get('requestId') ?? null,
+        metadata: {
+          userId: newUser.id,
+          siteId,
+          roleId: subscriberRoleId,
+          selfService: true,
+        },
+      });
+    }
+  }
+
+  return c.json(
+    {
+      data: {
+        status: 'pending_verification',
+        message:
+          'If this email is eligible, a verification link has been sent. ' +
+          'Confirm it to activate your account.',
+      },
+    },
+    202,
+  );
+});
+
+/**
+ * Public email-verification endpoint. Completes self-service
+ * registration by flipping the user from `invited` → `active`.
+ *
+ * The token is a stateless HS256 JWT minted at registration
+ * ({@link signVerificationToken}); single-use is enforced by the state
+ * transition (an already-`active` account returns `already_verified`).
+ * Bypassed by `withAuth` / `withStudioAccess` like `/login` + `/register`.
+ */
+authRouter.post('/verify-email', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const ip = extractClientIp(c);
+  const userAgent = c.req.header('user-agent') ?? null;
+
+  const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+  if (!jwtSecret) {
     return c.json(
-      { errors: [{ code: 'EMAIL_ALREADY_EXISTS', message: 'Email is already registered.' }] },
-      400
+      { errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET configuration missing.' }] },
+      500,
     );
   }
 
-  const passwordHash = await hashPassword(input.password);
+  const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+  const token =
+    typeof body?.token === 'string' && body.token.length > 0
+      ? body.token
+      : c.req.query('token') ?? '';
 
-  // Insert user
-  const [newUser] = await db
-    .insert(users)
-    .values({
-      email: input.email,
-      passwordHash,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      status: 'active',
-    })
-    .returning();
-
-  if (!newUser) {
-    return c.json({ errors: [{ code: 'REGISTRATION_FAILED', message: 'Failed to create user.' }] }, 500);
+  const claims = token ? await verifyVerificationToken(token, jwtSecret) : null;
+  // The token is bound to the site it was issued for; reject expired,
+  // tampered, wrong-audience, or cross-tenant tokens with one generic code.
+  if (!claims || claims.siteId !== siteId) {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Verification link is invalid or has expired.' }] },
+      400,
+    );
   }
 
-  // Bind new user to the current site (default 'member' role)
-  await db
-    .insert(userSites)
-    .values({
-      userId: newUser.id,
-      siteId,
-      roleId: 'member',
-    })
-    .onConflictDoNothing();
+  const [user] = await db
+    .select({ id: users.id, status: users.status, email: users.email })
+    .from(users)
+    .where(eq(users.id, claims.userId))
+    .limit(1);
 
-  return c.json({
-    data: {
-      id: newUser.id,
-      email: newUser.email,
-      firstName: newUser.firstName,
-      lastName: newUser.lastName,
-    },
+  if (!user) {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Verification link is invalid or has expired.' }] },
+      400,
+    );
+  }
+
+  if (user.status === 'active') {
+    return c.json({ data: { status: 'already_verified' } });
+  }
+  if (user.status === 'suspended') {
+    return c.json(
+      { errors: [{ code: 'ACCOUNT_DISABLED', message: 'This account is not active.' }] },
+      403,
+    );
+  }
+
+  await db
+    .update(users)
+    .set({ status: 'active', updatedAt: new Date() })
+    .where(eq(users.id, user.id));
+
+  await new AuditLogger({ db, siteId }).write({
+    event: 'email_verified',
+    actorEmail: user.email,
+    ip,
+    userAgent,
+    requestId: c.get('requestId') ?? null,
+    metadata: { userId: user.id, siteId, selfService: true },
   });
+
+  return c.json({ data: { status: 'verified' } });
 });
 
 // Login Guard middleware (admin-setup-wizard task 6.1; Req 7.3, 8.3;
@@ -421,6 +590,23 @@ authRouter.post('/login', async (c) => {
 
   const tokenRoles = user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'];
 
+  // Resolve the token AUDIENCE (`aud` claim) from the principal's realm.
+  // The bootstrap admin and any role with `appAccess` get a `studio`
+  // token; everyone else (subscribers / appAccess-less roles) gets a
+  // `frontend` token that `withStudioAccess` refuses. This is computed
+  // here — at sign time — so the wall holds regardless of how the policy
+  // bundle is later evaluated. See `services/auth/token-audience.ts`.
+  let appAccess = user.isBootstrap;
+  if (!appAccess && membership?.roleId) {
+    const [roleRow] = await db
+      .select({ appAccess: roles.appAccess })
+      .from(roles)
+      .where(and(eq(roles.id, membership.roleId), eq(roles.siteId, siteId)))
+      .limit(1);
+    appAccess = roleRow?.appAccess ?? false;
+  }
+  const audience = appAccess ? TOKEN_AUDIENCE.studio : TOKEN_AUDIENCE.frontend;
+
   // ── Anomaly detection (task 8.1; Req 12.2-12.5; design §8.5) ───────
   //
   // The credentials are valid, but before we issue the JWT we need to
@@ -562,7 +748,8 @@ authRouter.post('/login', async (c) => {
       roles: tokenRoles,
       siteId,
     },
-    jwtSecret
+    jwtSecret,
+    audience,
   );
 
   // Workers runtime: keep any queued notification (e.g. an

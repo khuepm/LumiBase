@@ -5,6 +5,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
 import { formatSafeError } from '@lumibase/shared/utils';
+import { TOKEN_AUDIENCE, audienceValues } from '../services/auth/token-audience';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -79,6 +80,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const path = c.req.path;
   if (
     path === '/api/v1/auth/register' ||
+    path === '/api/v1/auth/verify-email' ||
     path === '/api/v1/auth/login' ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/')
@@ -264,11 +266,15 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
+      // The `aud` claim records the realm the token was minted for
+      // (`studio` vs `frontend`). `isFrontendUser` tracks it for the
+      // `/me` surface; `withStudioAccess` enforces the hard wall using
+      // the same claim carried on `raw`.
       const principal: AuthPrincipal = {
         userId,
         email: typeof payload.email === 'string' ? payload.email : undefined,
         roles: user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'],
-        isFrontendUser: true,
+        isFrontendUser: !audienceValues(payload.aud).includes(TOKEN_AUDIENCE.studio),
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);
