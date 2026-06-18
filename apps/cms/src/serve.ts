@@ -152,6 +152,13 @@ async function main() {
     });
   });
 
+  // ── Envelope migration consumer (regulated-content-readiness task 3.6) ──
+  //
+  // Drains background migrations enqueued when an operator toggles
+  // `encryption.envelope`. Batched, resumable, idempotent — safe to re-run.
+  const { registerEnvelopeMigrationWorker } = await import('./services/envelope-migration-worker');
+  registerEnvelopeMigrationWorker({ db: rotatorDb, keyProvider: runtime.keys, queue: runtime.queue });
+
   // Graceful shutdown with 10s timeout
   process.on('SIGTERM', () => {
     console.log('[lumibase-cms] SIGTERM received, shutting down...');
