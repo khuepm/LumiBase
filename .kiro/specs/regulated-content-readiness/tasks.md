@@ -35,13 +35,13 @@ Quy ước: `[ ]` chưa làm · `[x]` xong · `[~]` một phần (core xong, cò
   - [x] 2.3 Refactor `apps/cms/src/services/crypto-service.ts`: `encrypt(data, ctx)` + `decrypt(payload, ctx)` dùng KeyProvider + AAD + envelope; **đổi** path lỗi giải mã từ trả placeholder (`crypto-service.ts:66`) sang ném `DecryptionError` (Req 1.1, 2.1, 2.2, 3; design §6.1)
   - [x] 2.4 Property test round-trip `decrypt(encrypt(x))===x` với fast-check; test AAD mismatch reject; test legacy `v0` decode; test wrong-key reject (Req 1.1, 2.2, 3.2; design §6.2)
 
-- [~] 3. Tích hợp processCrypto + key rotation
+- [x] 3. Tích hợp processCrypto + key rotation
   - [x] 3.1 Cập nhật `processCrypto` trong `apps/cms/src/services/item-service.ts` (≈L1116-1155) truyền `ctx` (siteId/collection/field/recordId) vào encrypt/decrypt tại mọi call-site (L435/469/524/544/597/633/676/1002); với create cấp `recordId` trước khi encrypt (Req 2.3; design §6.4)
   - [x] 3.2 Bắt `DecryptionError`: đơn-item → propagate → route trả `{errors:[{code:'DECRYPTION_FAILED'}]}` HTTP 500 + Audit `decryption_failed`; list + `degradedReadOnFailure` → field=null + `_decryptError` + Audit (Req 1.1, 1.2, 1.4; design §3)
   - [x] 3.3 Migration + schema `encryption_keys` (metadata, không lưu khoá) (Req 3.3; design §4.1)
   - [x] 3.4 Endpoint `POST /api/v1/admin/encryption/keys/rotate` (admin) + Audit `encryption_key_rotated` (Req 3.5; design §7)
   - [x] 3.5 Rewrap worker (queue, idempotent, resume cursor) nâng ciphertext cũ lên active key (Req 3.6; design §7)
-  - [~] 3.6 (Tuỳ chọn) Envelope mode: `items.dek_wrapped`, sinh/wrap DEK per-record khi `LUMIBASE_ENVELOPE_ENCRYPTION=true` (Req 4.5; design §5)
+  - [x] 3.6 Envelope mode: `items.dek_wrapped`, sinh/wrap DEK per-record. Bật/tắt qua **setting có UI** `encryption.envelope` (không phải env), đổi setting yêu cầu **step-up password**; background migration worker (batched, resume-cursor, idempotent) chuyển record hai chiều; read self-describing theo `dek_wrapped`; rewrap worker re-wrap DEK khi rotate KEK (Req 4.5; design §5)
   - [x] 3.7 Integration test: encrypt→read theo quyền `read_decrypted`; rotate rồi vẫn đọc ciphertext cũ; fail-closed trả 500 + audit
 
 ### Phase B — Field classification + access audit
