@@ -3,6 +3,7 @@ import { collections, items, scopeSite, type Database } from '@lumibase/database
 import type { KeyProvider } from '@lumibase/runtime';
 import { CryptoService, type CryptoContext } from './crypto-service';
 import { parseEnvelope } from './crypto/envelope-codec';
+import { unwrapDek, wrapDek } from './crypto/envelope-encryption';
 import { SchemaService } from './schema-service';
 
 /**
@@ -45,7 +46,7 @@ export async function rewrapBatch(
 
   const cursorClause: SQL | undefined = opts.cursor ? gt(items.id, opts.cursor) : undefined;
   const rows = await deps.db
-    .select({ id: items.id, data: items.data, collectionId: items.collectionId })
+    .select({ id: items.id, data: items.data, collectionId: items.collectionId, dekWrapped: items.dekWrapped })
     .from(items)
     .where(and(scopeSite(items.siteId, deps.siteId), isNull(items.deletedAt), cursorClause))
     .orderBy(asc(items.id))
@@ -76,6 +77,23 @@ export async function rewrapBatch(
     nextCursor = row.id;
     const { name, encrypted } = await resolveColl(row.collectionId);
     if (!name || encrypted.length === 0) continue;
+
+    // Envelope-mode records: the field bodies are DEK-encrypted (not tagged
+    // with a KEK version), so KEK rotation rewraps the *wrapped DEK* instead.
+    // The wrapped DEK is itself a `{kekId}:` envelope, so the same active-key
+    // check applies uniformly.
+    if (row.dekWrapped) {
+      const { keyId, legacy } = parseEnvelope(row.dekWrapped);
+      if (!legacy && keyId === activeKeyId) continue;
+      const dek = await unwrapDek(deps.keyProvider, row.dekWrapped, deps.siteId, row.id);
+      const rewrappedDek = await wrapDek(deps.keyProvider, dek, deps.siteId, row.id);
+      await deps.db
+        .update(items)
+        .set({ dekWrapped: rewrappedDek })
+        .where(and(scopeSite(items.siteId, deps.siteId), eq(items.id, row.id)));
+      rewrapped += 1;
+      continue;
+    }
 
     const data = (row.data ?? {}) as Record<string, unknown>;
     let changed = false;
