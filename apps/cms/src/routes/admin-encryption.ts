@@ -18,10 +18,19 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
-import { encryptionKeys, scopeSite } from '@lumibase/database';
+import { encryptionKeys, scopeSite, users } from '@lumibase/database';
 import type { AppEnv } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
 import { runRewrap } from '../services/rewrap-worker';
+import { verifyPassword } from '../services/auth/password';
+import {
+  readEnvelopeSetting,
+  writeEnvelopeSetting,
+} from '../services/crypto/envelope-settings';
+import {
+  ENVELOPE_MIGRATION_QUEUE,
+  runEnvelopeMigration,
+} from '../services/envelope-migration-worker';
 
 export const adminEncryptionRouter = new Hono<AppEnv>();
 
@@ -135,6 +144,129 @@ adminEncryptionRouter.post('/keys/rewrap', async (c) => {
   if (forbidden) return forbidden;
   const runtime = c.get('runtime');
   const result = await runRewrap(
+    { db: c.get('db'), siteId: c.get('siteId'), keyProvider: runtime.keys },
+    { batchSize: 100, maxBatches: 50 },
+  );
+  return c.json({ data: result });
+});
+
+/**
+ * Re-verify the acting admin's password (step-up auth) for a sensitive change.
+ * Returns null on success, or a JSON error response to short-circuit.
+ */
+async function stepUp(c: Context<AppEnv>, password: string) {
+  const db = c.get('db');
+  const auth = c.get('auth');
+  const userId = typeof auth?.userId === 'string' ? auth.userId : null;
+  if (!userId) {
+    return c.json({ errors: [{ code: 'STEP_UP_REQUIRED', message: 'A user session is required.' }] }, 401);
+  }
+  const [user] = await db
+    .select({ passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  const ok = user?.passwordHash ? await verifyPassword(password, user.passwordHash) : false;
+  if (!ok) {
+    return c.json({ errors: [{ code: 'INVALID_CREDENTIALS', message: 'Password verification failed.' }] }, 401);
+  }
+  return null;
+}
+
+const envelopeSchema = z.object({
+  enabled: z.boolean(),
+  /** Step-up: the acting admin re-enters their password to confirm. */
+  password: z.string().min(1),
+});
+
+/** Current envelope mode + migration progress for this site. */
+adminEncryptionRouter.get('/envelope', async (c) => {
+  const forbidden = requireAdmin(c);
+  if (forbidden) return forbidden;
+  const setting = await readEnvelopeSetting(c.get('db'), c.get('siteId'));
+  return c.json({ data: setting });
+});
+
+/**
+ * Toggle envelope (per-record DEK) mode for the site (Req 4.5). Requires
+ * step-up auth. On change, records a background migration to the target mode
+ * and kicks it: enqueued to the runtime queue when available (Docker/CF), with
+ * a bounded inline drain so small datasets finish immediately. Audited.
+ */
+adminEncryptionRouter.post('/envelope', async (c) => {
+  const forbidden = requireAdmin(c);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Body must be valid JSON.' }] }, 400);
+  }
+  const parsed = envelopeSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(
+      { errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) },
+      400,
+    );
+  }
+
+  const stepUpError = await stepUp(c, parsed.data.password);
+  if (stepUpError) return stepUpError;
+
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const runtime = c.get('runtime');
+  const { enabled } = parsed.data;
+
+  const current = await readEnvelopeSetting(db, siteId);
+  // No-op when the mode is unchanged and no migration is mid-flight.
+  if (current.enabled === enabled && current.migration.status !== 'running') {
+    return c.json({ data: current });
+  }
+
+  const direction = enabled ? 'to_envelope' : 'to_shared';
+  const now = new Date().toISOString();
+  await writeEnvelopeSetting(db, siteId, {
+    enabled,
+    migration: { direction, status: 'running', cursor: null, processed: 0, startedAt: now, updatedAt: now },
+  });
+
+  const auth = c.get('auth');
+  await new AuditLogger({ db, siteId }).write({
+    event: 'envelope_mode_changed',
+    actorEmail: typeof auth?.email === 'string' ? auth.email : null,
+    ip: c.get('ip') ?? null,
+    userAgent: c.get('userAgent') ?? null,
+    requestId: null,
+    metadata: { siteId, enabled, direction },
+  });
+
+  // Hand the long tail to the background queue (best-effort), then drain a
+  // bounded set of batches inline so small sites complete synchronously.
+  try {
+    await runtime.queue?.enqueue(ENVELOPE_MIGRATION_QUEUE, 'migrate', { siteId });
+  } catch {
+    // Queue is best-effort; the inline drain + resumable cursor cover the rest.
+  }
+  const result = await runEnvelopeMigration(
+    { db, siteId, keyProvider: runtime.keys },
+    { batchSize: 100, maxBatches: 25 },
+  );
+
+  const setting = await readEnvelopeSetting(db, siteId);
+  return c.json({ data: { setting, migration: result } });
+});
+
+/**
+ * Drain more migration batches (resumable). For large datasets a scheduler or
+ * the operator can poll this until `done`.
+ */
+adminEncryptionRouter.post('/envelope/migrate', async (c) => {
+  const forbidden = requireAdmin(c);
+  if (forbidden) return forbidden;
+  const runtime = c.get('runtime');
+  const result = await runEnvelopeMigration(
     { db: c.get('db'), siteId: c.get('siteId'), keyProvider: runtime.keys },
     { batchSize: 100, maxBatches: 50 },
   );
