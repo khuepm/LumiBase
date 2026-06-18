@@ -89,6 +89,20 @@
       },
       {
         "type": "category",
+        "label": "Compliance & User Rights",
+        "items": [
+          "compliance/README",
+          "compliance/user-rights-catalog",
+          "compliance/market-eu-gdpr",
+          "compliance/market-us",
+          "compliance/market-vietnam",
+          "compliance/provider-google-apple",
+          "compliance/gap-analysis",
+          "compliance/implementation-checklist"
+        ]
+      },
+      {
+        "type": "category",
         "label": "Roadmap",
         "items": [
           "roadmap/tasks",

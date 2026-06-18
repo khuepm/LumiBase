@@ -1,0 +1,76 @@
+# Phân tích khoảng trống — Quyền ↔ Tính năng LumiBase
+
+> Ánh xạ mỗi quyền/nghĩa vụ của người dùng vào hiện trạng triển khai của LumiBase,
+> kèm bằng chứng đường dẫn file và phần việc cần làm để lấp.
+>
+> Chú giải trạng thái: ✅ đã có · ⚠️ một phần · ❌ thiếu.
+>
+> **⚠️ Đây không phải tư vấn pháp lý.** Đây là đánh giá mức độ sẵn sàng về kỹ thuật.
+> Việc có một nguyên thuỷ kỹ thuật không tự nó chứng minh tuân thủ pháp lý.
+
+## 1. Bảng tóm tắt
+
+| Quyền / nghĩa vụ | Trạng thái | Bằng chứng (đường dẫn) | Việc cần làm để lấp |
+|------------------|:----------:|------------------------|---------------------|
+| Xoá / quyền được lãng quên | ⚠️ | `packages/database/src/schema/cms.ts` (`items.deletedAt`, dòng 201); `apps/cms/src/routes/users.ts` (chỉ xoá khỏi `userSites`) | Quy trình xoá tài khoản toàn cục cascade/ẩn danh hoá xuyên `users` và tham chiếu; audit event; thời gian ân hạn. |
+| Truy cập / quyền được biết | ⚠️ | `apps/cms/src/modules/audit/routes.ts` (xuất audit); `apps/cms/src/services/access-export.ts` (xuất RBAC) | Báo cáo "chúng tôi giữ gì về bạn" hướng người dùng (hồ sơ, hoạt động, revisions, hội thoại). |
+| Di chuyển dữ liệu (portability) | ❌ | — | Endpoint "Tải dữ liệu của tôi" tạo JSON/CSV có cấu trúc của dữ liệu chính người dùng. |
+| Chỉnh sửa (rectification) | ✅ | `apps/cms/src/routes/users.ts` (cập nhật user); sửa hồ sơ | Không cần cho hồ sơ; đảm bảo mọi trường PII người dùng sửa được. |
+| Hạn chế xử lý | ❌ | — | Cờ trạng thái "restricted"/"đóng băng" và thực thi. |
+| Phản đối / opt-out (bán/chia sẻ) | ❌ | — | Lưu cờ opt-out + xử lý "Do Not Sell or Share"; tôn trọng tín hiệu tuỳ chọn. |
+| Đồng ý + rút lại | ❌ | `users.preferences` JSONB có (`core.ts:62`) nhưng không có ngữ nghĩa đồng ý | Bảng `user_consents` (loại, giá trị, timestamp, withdrawn_at) + API + audit. |
+| Đồng ý cookie / theo dõi | ❌ | — | Ghi nhận đồng ý cho cookie/theo dõi không thiết yếu (chủ yếu frontend + bản ghi backend). |
+| Huỷ đăng ký email | ❌ | `email_templates`, `flows` gửi mail được; chưa có suppression | Liên kết unsubscribe, trung tâm tuỳ chọn, danh sách chặn kiểm tra trước khi gửi. |
+| Xoá tài khoản (in-app/web) | ❌ | — | Endpoint xoá tự phục vụ (phục vụ Apple 5.1.1(v) / yêu cầu URL web của Google). |
+| Minh bạch / thông báo quyền riêng tư | ⚠️ | Trang privacy tại `apps/landing/src/app/privacy/page.tsx` (chung chung) | Bản đồ dữ liệu để khai báo "data safety"/nhãn chính xác; thông báo theo từng triển khai. |
+| Thông báo vi phạm | ⚠️ | `apps/cms/src/modules/audit/` cung cấp dấu vết phát hiện; `modules/anomaly` | Quy trình ứng phó sự cố + thông báo cơ quan trong 72h (mức tổ chức). |
+| Chuyển dữ liệu xuyên biên giới / nội địa hoá | ⚠️ | Runtime edge; `apps/cms/src/middleware/rls.ts` cô lập tenant | Cấu hình ghim vùng / data-residency + tài liệu. |
+| Quyết định tự động / con người xem xét | ⚠️ | Provenance trong `revisions` (authorType, model, sources, confidence); HITL qua `ai_approvals` | Hiển thị lối con người xem xét cho hành động agent ảnh hưởng người dùng. |
+| Biện pháp an ninh (mã hoá/truy cập) | ✅ | `apps/cms/src/services/crypto-service.ts` (AES-256-GCM); `fields.encrypted` (`cms.ts:124`); `middleware/rls.ts`; RBAC `schema/access.ts` | Duy trì; tài liệu hoá quản lý khoá. |
+| Retention / tự động dọn | ⚠️ | `apps/cms/src/modules/audit/rotator.ts` (`LUMIBASE_AUDIT_RETENTION_DAYS`, mặc định 90) — **chỉ audit** | Chính sách retention tổng quát cho bảng chứa PII (users, items, conversations). |
+
+## 2. Những điều LumiBase đã làm tốt
+
+Các nguyên thuỷ này là thật và tái sử dụng được khi xây tính năng tuân thủ:
+
+- **Audit & provenance.** `apps/cms/src/modules/audit/logger.ts` ghi sự kiện
+  append-only, che bí mật; `routes.ts` cho truy vấn phân trang cursor và xuất NDJSON;
+  `rotator.ts` dọn theo mốc cấu hình được. Hỗ trợ mạnh bằng chứng GDPR Điều 30/32 và
+  dấu vết phát hiện vi phạm.
+- **Cô lập đa tenant.** `apps/cms/src/middleware/rls.ts` thực thi row-level security
+  qua `SET LOCAL app.site_id`, bổ sung cho lọc `site_id` mức ứng dụng — phòng thủ
+  nhiều lớp chống rò rỉ liên tenant.
+- **Mã hoá.** `apps/cms/src/services/crypto-service.ts` cung cấp AES-256-GCM; field có
+  thể đánh dấu `encrypted` (`packages/database/src/schema/cms.ts:124`).
+- **Kiểm soát truy cập chi tiết.** `packages/database/src/schema/access.ts` định nghĩa
+  role, policy, permission (mức row + field), API key, và share.
+- **Soft delete.** `items.deletedAt` (`packages/database/src/schema/cms.ts:201`) với
+  index một phần lọc `deleted_at is null` — cửa sổ phục hồi trước khi dọn.
+
+## 3. Các khoảng trống lớn nhất (và vì sao quan trọng)
+
+1. **Xoá tài khoản toàn cục (quyền được lãng quên).** `DELETE` user hiện chỉ xoá một
+   dòng thành viên `userSites` — bản ghi `users` và PII vẫn còn. Bắt buộc bởi GDPR
+   Điều 17, CCPA delete, PDPD, và cả hai store. **Ưu tiên cao nhất.**
+2. **Xuất dữ liệu cá nhân ("download my data").** Chưa có endpoint gom dữ liệu chính
+   người dùng thành file di chuyển được. Bắt buộc bởi GDPR Điều 20; cần cho yêu cầu
+   truy cập.
+3. **Quản lý đồng ý.** `users.preferences` (`core.ts:62`) là blob JSONB tự do, không
+   có ngữ nghĩa đồng ý, không log rút lại, không audit. Cần cho GDPR Điều 7 và đồng ý
+   PDPD.
+4. **Huỷ đăng ký email / trung tâm tuỳ chọn.** Đường gửi email (`email_templates`,
+   `flows`) không có liên kết opt-out hay kiểm tra suppression. Bắt buộc bởi CAN-SPAM.
+5. **Retention dữ liệu tổng quát.** Chỉ dữ liệu audit/login tự động dọn; các bảng PII
+   khác chưa có chính sách retention.
+
+## 4. Ghi chú về vai trò
+
+`[Inference]` Phần lớn triển khai LumiBase là **self-host**, khiến đơn vị vận hành trở
+thành **bên kiểm soát dữ liệu** và do đó là bên chịu trách nhiệm pháp lý đáp ứng các
+quyền này. Nhiệm vụ của LumiBase là cung cấp **năng lực** (endpoint, lưu trữ, audit) để
+đơn vị vận hành tuân thủ. Checklist tiếp cận phần việc từ góc đó.
+
+---
+
+**Tiếp theo:** xem [implementation-checklist.md](./implementation-checklist.md) cho
+backlog ưu tiên.
