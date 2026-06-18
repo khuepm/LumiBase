@@ -49,6 +49,7 @@ const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then(
 const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
+const EncryptionSettingsPage = lazy(() => import('./modules/settings/encryption-page').then((m) => ({ default: m.EncryptionSettingsPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
 const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
@@ -633,6 +634,12 @@ const activityRoute = createRoute({
   component: withSuspense(ActivityPage),
 });
 
+const encryptionSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'encryption',
+  component: withSuspense(EncryptionSettingsPage),
+});
+
 const extensionsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'extensions',
@@ -1125,6 +1132,7 @@ const routeTree = rootRoute.addChildren([
       materializeSettingsRoute,
       translationMemoryRoute,
       activityRoute,
+      encryptionSettingsRoute,
       extensionsRoute,
       marketplaceRoute,
       updatesRoute,
