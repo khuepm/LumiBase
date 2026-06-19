@@ -9,6 +9,62 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Added
+
+- **Regulated / sensitive content readiness.** A generic, opt-in capability set
+  for serving regulated/sensitive content (PHI/PII) on the existing CMS —
+  defaults off, so Tier 1 behavior is unchanged. Spec:
+  `.kiro/specs/regulated-content-readiness`.
+  - **Field encryption hardening.** `decrypt` is now **fail-closed** (throws +
+    audits `decryption_failed`, never a placeholder); AES-GCM ciphertext is
+    AAD-bound to `siteId|collection|field|recordId`; ciphertext is key-versioned
+    (`{keyId}:{body}`) with rotation + a resumable **rewrap worker**; a
+    `KeyProvider`/KMS abstraction in `@lumibase/runtime` (Cloudflare Secrets/KV
+    + Docker env/`*_FILE`) keeps key material out of business logic. Legacy
+    unprefixed ciphertext still decrypts as `v0` (no-AAD).
+  - **Envelope (per-record DEK) mode.** Optional per-record Data Encryption Key
+    wrapped by the KEK (`items.dek_wrapped`), enabling **crypto-shredding** for
+    GDPR erasure. Controlled by an operator **setting** (`encryption.envelope`),
+    not a raw env var; changing it requires **step-up password auth** and runs a
+    batched, resumable, idempotent **background migration**. Reads are
+    self-describing from `dek_wrapped`, so records keep decrypting after the
+    mode toggles (as long as the KEK remains).
+  - **Field data classification.** New `fields.classification`
+    (`none`/`internal`/`pii`/`phi`); `pii`/`phi` must be encrypted and are
+    masked + gated by `read_decrypted`, with every decrypted read recorded in
+    `field_access_log`.
+  - **Content scheduling.** `items.publish_at`/`unpublish_at` + an idempotent
+    reconcile worker; the delivery API respects the publish window.
+  - **Editorial review → publish.** A human `content_reviews` workflow
+    (`draft → in_review → approved → published`/`rejected`) with separate-reviewer
+    sign-off, per-collection toggle, and audit — distinct from the AI veto-window.
+  - **GDPR erasure / retention / SAR.** `erasure_requests` with dual-control and
+    crypto-shred/hard-delete that **preserves** the tamper-evident `data_erased`
+    audit (no cascade); a retention sweep; and a Subject Access Request export.
+  - **Structured SEO/AIO delivery.** A `_seo` block (OpenGraph + JSON-LD), an SDK
+    helper for Next.js `generateMetadata`, and a Tier 2 reference example.
+  - **Studio.** Scheduling controls + a review queue, and a **Settings →
+    Encryption** page to toggle envelope mode (step-up password + live migration
+    status).
+- New endpoints under `/api/v1/admin/encryption` (keys + envelope),
+  `/api/v1/editorial`, `/api/v1/admin/erasure`, `/api/v1/admin/field-access-log`,
+  and `/api/v1/admin/sar/export`. See `docs/en/api/hono-api-spec.md` §10b.
+
+### Migrations
+
+- **1 new schema migration (`0031_regulated_content_readiness.sql`)**: new tables
+  `encryption_keys`, `field_access_log`, `content_reviews`, `erasure_requests`;
+  new columns `items.publish_at`/`unpublish_at`/`editorial_state`/`dek_wrapped`
+  and `fields.classification`.
+- Additive and idempotent: new columns are nullable or defaulted and the
+  migration is `IF NOT EXISTS`/duplicate-object guarded, so it re-runs safely and
+  needs **no backfill**. Existing ciphertext reads unchanged via the `v0` path.
+
+### Changed
+
+- Envelope mode is governed by the `encryption.envelope` setting; the
+  `LUMIBASE_ENVELOPE_ENCRYPTION` env var is no longer the hot-path control.
+
 ## [0.7.0] - 2026-06-16
 
 ### Version
