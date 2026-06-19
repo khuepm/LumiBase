@@ -31,6 +31,8 @@ const argsArb = fc.dictionary(
 function isDangerousSkill(skillName: string): boolean {
   const skill = CORE_SKILLS[skillName];
   if (!skill) return false;
+  // Governed namespaces (access:*, intents:*, flows:*) opt in explicitly.
+  if (skill.dangerous) return true;
   if (skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read')) return true;
   if (skillName.startsWith('delete')) return true;
   return false;

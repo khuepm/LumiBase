@@ -9,6 +9,31 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-19
+
+### Version
+
+- `v0.9.0`
+
+### Date
+
+- `2026-06-19`
+
+### Highlights
+
+- **MCP is now the base surface for every feature.** The Model Context Protocol coverage was expanded from collections/fields/items to the **entire** LumiBase Content OS, across both MCP surfaces:
+  - **Standalone server (`@lumibase/mcp-server`)** — the published `lumibase-mcp` stdio server now exposes ~80 tools spanning relations, RBAC (roles, policies, permissions, API keys, bulk access export/import), users & teams, content intents, flows, webhooks, presets, settings, translations + translation memory, search, media (metadata), site activity/health/metrics, backup/restore, materialized collections, extensions, and the marketplace. Every destructive tool (`delete_*`, `revoke_*`, `remove_*`, `detach_*`, `restore_backup`, `rotate_api_key`, `apply_access_import`) requires an explicit `confirm: true`.
+  - **Governed endpoint (`/api/v1/mcp`)** — new HITL/autonomy-gated skills for relations, roles, policies, content intents, and flows, executed through the existing `AISecureHarness` (kill switch → capability → autonomy L0–L4 → veto window → approval). RBAC/intent/flow writes are forced dangerous; `deleteRole`, `deletePolicy`, `deleteRelation`, `revokeApiKey`, and `removeUser` are hard-capped at L2 (never autopilot).
+
+### Added
+
+- **MCP (standalone):** new tool modules — `relations`, `access` (roles/policies + bulk export/import/conflict checks), `api-keys`, `users-teams`, `content-config` (presets/settings/translations), `translation-memory`, `webhooks`, `agent` (intents/flows), `search-media`, `ops`, `admin` (backup/restore + materialize), `extensions` (+ marketplace). Shared `crudModule` factory + helpers; `tools/index.ts` aggregator; client gained generic `delete<T>`, root-text (`/health`, `/metrics`) and raw NDJSON (`backup`/`restore`) helpers; vitest test suite.
+- **MCP (governed):** governed skills `listRelations`/`createRelation`/`deleteRelation`, `listRoles`/`createRole`/`deleteRole`, `listPolicies`/`createPolicy`/`deletePolicy`, `listIntents`/`createIntent`/`deleteIntent`, `listFlows`/`createFlow`/`deleteFlow`/`runFlow`. New thin `AccessService`; `AISecureHarness` accepts `accessService`/`intentService`/`db`/`siteId`; per-skill `dangerous` risk flag honoured by `evaluateRisk` + `ToolRegistryService`. Skill metadata mirrored in `@lumibase/ai-skills` with a registry-sync test.
+
+### Changed
+
+- `SkillDefinition` gained an optional `dangerous` flag and `service` now includes `access`/`intents`/`flows`. `IRREVERSIBLE_SKILLS` extended with the new irreversible RBAC/identity skills.
+
 ## [0.8.0] - 2026-06-18
 
 ### Version

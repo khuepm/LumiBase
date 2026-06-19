@@ -1,8 +1,11 @@
-import { agentApprovals, aiApprovals } from '@lumibase/database';
+import { agentApprovals, aiApprovals, flowRuns, flows } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
+import type { AccessService } from './access-service';
+import type { IntentService } from './intent-service';
+import { runFlow, type FlowGraph } from './flow-service';
 import type { ConfiguredLLM } from './llm-provider';
 import type { QueueProvider } from '@lumibase/runtime';
 import { agentAutonomousOpsTotal } from './agent-metrics';
@@ -25,11 +28,19 @@ export interface SkillDefinition {
   description: string;
   requiredCapabilities: string[];
   /** Service this skill connects to (for documentation/tracing). */
-  service: 'schema' | 'items' | 'ai';
+  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows';
   handler: (args: Record<string, unknown>) => Promise<unknown>;
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
   owner?: string;
+  /**
+   * Forces the skill to be classified dangerous (HITL/autonomy gated) even when
+   * its capabilities/name don't match the auto rules. Used for governed
+   * namespaces (`access:*`, `intents:*`, `flows:*`, …) whose write/delete ops
+   * must never execute without the trust gradient. Item CRUD stays unflagged so
+   * its existing autonomy behaviour is unchanged.
+   */
+  dangerous?: boolean;
 }
 
 /**
@@ -69,6 +80,10 @@ export interface AISecureHarnessConfig {
   llm?: ConfiguredLLM | null;
   /** Queue provider for veto-window commit jobs and dead letters. */
   queue?: QueueProvider;
+  /** AccessService for governed RBAC skills (roles/policies). */
+  accessService?: AccessService;
+  /** IntentService for governed content-intent (SLO) skills. */
+  intentService?: IntentService;
   /** Enables first-class agent_goals/runs/tool_calls audit for tests or non-service callers. */
   enableAgentHarnessAudit?: boolean;
 }
@@ -84,6 +99,13 @@ export interface AISecureHarnessConfig {
 interface SkillServices {
   schemaService?: SchemaService;
   itemService?: ItemService;
+  /** Governed RBAC service (roles/policies). */
+  accessService?: AccessService;
+  /** Governed content-intent (SLO) service. */
+  intentService?: IntentService;
+  /** Tenant-scoped DB handle for governed skills with no dedicated service (flows). */
+  db?: Database;
+  siteId?: string;
   /**
    * Configured LLM for generation skills.
    * - key absent: offline deterministic handlers (shared CORE_SKILLS test registry).
@@ -146,7 +168,15 @@ function isWriteSkill(tool: { requiredCapabilities?: unknown }): boolean {
  * loses data). The autonomy resolver hard-caps them at L2 — they never
  * stage into the veto window or run on autopilot (Req 12.7).
  */
-const IRREVERSIBLE_SKILLS = new Set(['deleteCollection', 'deleteField']);
+const IRREVERSIBLE_SKILLS = new Set([
+  'deleteCollection',
+  'deleteField',
+  'deleteRole',
+  'deletePolicy',
+  'deleteRelation',
+  'revokeApiKey',
+  'removeUser',
+]);
 
 /** The capability whose autonomy grant governs a dangerous skill. */
 function primaryDangerousCapability(
@@ -345,7 +375,7 @@ function openApiType(fieldType: string): string {
  * indicating the service is not configured.
  */
 function buildCoreSkills(services: SkillServices): Record<string, SkillDefinition> {
-  const { schemaService, itemService } = services;
+  const { schemaService, itemService, accessService, intentService, db, siteId } = services;
   /** Distinguishes "offline test registry" from "environment has no LLM". */
   const llmResolved = 'llm' in services;
   const llm = services.llm ?? null;
@@ -823,6 +853,253 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         };
       },
     },
+
+    // ── Governed surface skills (Content OS) ─────────────────────────────────
+    // Reads are safe; writes/deletes are forced dangerous so RBAC/intent/flow
+    // mutations always run through HITL + the autonomy gradient (Req 4 / 10–13).
+
+    listRelations: {
+      name: 'listRelations',
+      description: 'List all relations configured in the schema.',
+      requiredCapabilities: ['schema:read'],
+      service: 'schema',
+      handler: async () => {
+        if (!schemaService) return { relations: [] };
+        return { relations: await schemaService.listRelations() };
+      },
+    },
+
+    createRelation: {
+      name: 'createRelation',
+      description: 'Create a relation between two collections (m2o, o2m, m2m, m2a).',
+      requiredCapabilities: ['schema:create'],
+      service: 'schema',
+      handler: async (args) => {
+        if (!schemaService) return { created: true };
+        const relation = await schemaService.createRelation(args as never);
+        return { created: true, relation };
+      },
+    },
+
+    deleteRelation: {
+      name: 'deleteRelation',
+      description: 'Delete a relation by id.',
+      requiredCapabilities: ['schema:delete'],
+      service: 'schema',
+      handler: async (args) => {
+        if (!schemaService) return { deleted: true };
+        await schemaService.deleteRelation(args['id'] as string);
+        return { deleted: true, id: args['id'] };
+      },
+    },
+
+    listRoles: {
+      name: 'listRoles',
+      description: 'List RBAC roles for the current site.',
+      requiredCapabilities: ['access:read'],
+      service: 'access',
+      handler: async () => {
+        if (!accessService) return { roles: [] };
+        return { roles: await accessService.listRoles() };
+      },
+    },
+
+    createRole: {
+      name: 'createRole',
+      description: 'Create a new RBAC role.',
+      requiredCapabilities: ['access:create'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { created: true };
+        const role = await accessService.createRole({
+          name: args['name'] as string,
+          key: args['key'] as string | undefined,
+          description: args['description'] as string | undefined,
+          icon: args['icon'] as string | undefined,
+          parentId: (args['parentId'] as string | null | undefined) ?? undefined,
+          adminAccess: args['adminAccess'] as boolean | undefined,
+          appAccess: args['appAccess'] as boolean | undefined,
+        });
+        return { created: true, role };
+      },
+    },
+
+    deleteRole: {
+      name: 'deleteRole',
+      description: 'Delete an RBAC role and its bindings.',
+      requiredCapabilities: ['access:delete'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { deleted: true };
+        return accessService.deleteRole(args['id'] as string);
+      },
+    },
+
+    listPolicies: {
+      name: 'listPolicies',
+      description: 'List reusable access policies for the current site.',
+      requiredCapabilities: ['access:read'],
+      service: 'access',
+      handler: async () => {
+        if (!accessService) return { policies: [] };
+        return { policies: await accessService.listPolicies() };
+      },
+    },
+
+    createPolicy: {
+      name: 'createPolicy',
+      description: 'Create a new reusable access policy.',
+      requiredCapabilities: ['access:create'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { created: true };
+        const policy = await accessService.createPolicy({
+          name: args['name'] as string,
+          key: args['key'] as string | undefined,
+          description: args['description'] as string | undefined,
+          icon: args['icon'] as string | undefined,
+          adminAccess: args['adminAccess'] as boolean | undefined,
+          appAccess: args['appAccess'] as boolean | undefined,
+          rules: args['rules'] as Record<string, unknown> | undefined,
+        });
+        return { created: true, policy };
+      },
+    },
+
+    deletePolicy: {
+      name: 'deletePolicy',
+      description: 'Delete a reusable access policy.',
+      requiredCapabilities: ['access:delete'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { deleted: true };
+        return accessService.deletePolicy(args['id'] as string);
+      },
+    },
+
+    listIntents: {
+      name: 'listIntents',
+      description: 'List content intents (SLOs) for the current site.',
+      requiredCapabilities: ['intents:read'],
+      service: 'intents',
+      handler: async () => {
+        if (!intentService) return { intents: [] };
+        return { intents: await intentService.list() };
+      },
+    },
+
+    createIntent: {
+      name: 'createIntent',
+      description: 'Create a content intent (declarative SLO) for a collection.',
+      requiredCapabilities: ['intents:write'],
+      service: 'intents',
+      dangerous: true,
+      handler: async (args) => {
+        if (!intentService) return { created: true };
+        const intent = await intentService.create(args as never);
+        return { created: true, intent };
+      },
+    },
+
+    deleteIntent: {
+      name: 'deleteIntent',
+      description: 'Delete a content intent by id.',
+      requiredCapabilities: ['intents:write'],
+      service: 'intents',
+      dangerous: true,
+      handler: async (args) => {
+        if (!intentService) return { deleted: true };
+        return intentService.remove(args['id'] as string);
+      },
+    },
+
+    listFlows: {
+      name: 'listFlows',
+      description: 'List automation flows for the current site.',
+      requiredCapabilities: ['flows:read'],
+      service: 'flows',
+      handler: async () => {
+        if (!db || !siteId) return { flows: [] };
+        const rows = await db.select().from(flows).where(eq(flows.siteId, siteId));
+        return { flows: rows };
+      },
+    },
+
+    createFlow: {
+      name: 'createFlow',
+      description: 'Create an automation flow (trigger + operation graph).',
+      requiredCapabilities: ['flows:write'],
+      service: 'flows',
+      dangerous: true,
+      handler: async (args) => {
+        if (!db || !siteId) return { created: true };
+        const [row] = await db
+          .insert(flows)
+          .values({
+            siteId,
+            name: args['name'] as string,
+            description: args['description'] as string | undefined,
+            status: (args['status'] as 'active' | 'inactive' | 'draft' | undefined) ?? 'draft',
+            triggerType: args['triggerType'] as 'webhook' | 'event' | 'schedule' | 'manual',
+            triggerOptions: (args['triggerOptions'] as Record<string, unknown>) ?? {},
+            graph: (args['graph'] as Record<string, unknown>) ?? { nodes: [] },
+          })
+          .returning();
+        return { created: true, flow: row };
+      },
+    },
+
+    deleteFlow: {
+      name: 'deleteFlow',
+      description: 'Delete an automation flow by id.',
+      requiredCapabilities: ['flows:write'],
+      service: 'flows',
+      dangerous: true,
+      handler: async (args) => {
+        if (!db || !siteId) return { deleted: true };
+        await db
+          .delete(flows)
+          .where(and(eq(flows.id, args['id'] as string), eq(flows.siteId, siteId)));
+        return { deleted: true, id: args['id'] };
+      },
+    },
+
+    runFlow: {
+      name: 'runFlow',
+      description: 'Trigger a manual run of an automation flow.',
+      requiredCapabilities: ['flows:run'],
+      service: 'flows',
+      dangerous: true,
+      handler: async (args) => {
+        if (!db || !siteId) return { skipped: true };
+        const id = args['id'] as string;
+        const [flow] = await db
+          .select()
+          .from(flows)
+          .where(and(eq(flows.id, id), eq(flows.siteId, siteId)));
+        if (!flow) throw new Error('FLOW_NOT_FOUND: no flow with that id');
+        const input = (args['input'] as Record<string, unknown>) ?? {};
+        const [run] = await db
+          .insert(flowRuns)
+          .values({ siteId, flowId: id, status: 'running', input })
+          .returning();
+        const result = await runFlow(flow.graph as FlowGraph, input, { db, siteId });
+        await db
+          .update(flowRuns)
+          .set({
+            status: result.status,
+            steps: result.steps,
+            error: result.error ?? null,
+            finishedAt: new Date(),
+          })
+          .where(eq(flowRuns.id, run!.id));
+        return { runId: run!.id, ...result };
+      },
+    },
   };
 }
 
@@ -871,15 +1148,22 @@ export class AISecureHarness {
     this.siteId = config.siteId;
     this.itemService = config.itemService;
     this.queue = config.queue;
-    this.agentHarnessEnabled = config.enableAgentHarnessAudit ?? Boolean(config.schemaService || config.itemService);
+    const hasService = Boolean(
+      config.schemaService || config.itemService || config.accessService || config.intentService,
+    );
+    this.agentHarnessEnabled = config.enableAgentHarnessAudit ?? hasService;
 
     // When services are provided, build fresh skills wired to real services.
     // When no services are provided, use the shared CORE_SKILLS object
     // (allows tests to mutate handlers directly on the exported object).
-    if (config.schemaService || config.itemService) {
+    if (hasService) {
       this.skills = buildCoreSkills({
         schemaService: config.schemaService,
         itemService: config.itemService,
+        accessService: config.accessService,
+        intentService: config.intentService,
+        db: config.db,
+        siteId: config.siteId,
         // Preserve the "offline registry" mode when callers never resolved
         // an LLM; forward null/instance when they did (Req 2.1/2.2).
         ...('llm' in config ? { llm: config.llm ?? null } : {}),
@@ -937,6 +1221,9 @@ export class AISecureHarness {
    * @returns true if the skill is classified as dangerous, false otherwise.
    */
   evaluateRisk(skill: SkillDefinition, skillName: string): boolean {
+    if (skill.dangerous) {
+      return true;
+    }
     if (skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read')) {
       return true;
     }

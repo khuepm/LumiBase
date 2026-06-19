@@ -306,4 +306,189 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     },
     requiredCapabilities: ['items:write'],
   },
+
+  // ── Governed surface skills (Content OS) ───────────────────────────────────
+  // Mirrors the service-wired registry in apps/cms/src/services/ai-harness.ts.
+  // Writes/deletes here are HITL/autonomy-gated by the harness.
+
+  listRelations: {
+    name: 'listRelations',
+    description: 'List all relations configured in the schema.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['schema:read'],
+  },
+
+  createRelation: {
+    name: 'createRelation',
+    description: 'Create a relation between two collections (m2o, o2m, m2m, m2a).',
+    parameters: {
+      type: 'object',
+      properties: {
+        manyCollection: { type: 'string', description: 'Collection holding the foreign key.' },
+        manyField: { type: 'string', description: 'Field on manyCollection storing the relation.' },
+        oneCollection: { type: 'string', description: 'Related collection.' },
+        type: { type: 'string', enum: ['m2o', 'o2m', 'm2m', 'm2a'] },
+      },
+      required: ['manyCollection', 'manyField', 'oneCollection'],
+    },
+    requiredCapabilities: ['schema:create'],
+  },
+
+  deleteRelation: {
+    name: 'deleteRelation',
+    description: 'Delete a relation by id.',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Relation id.' } },
+      required: ['id'],
+    },
+    requiredCapabilities: ['schema:delete'],
+  },
+
+  listRoles: {
+    name: 'listRoles',
+    description: 'List RBAC roles for the current site.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['access:read'],
+  },
+
+  createRole: {
+    name: 'createRole',
+    description: 'Create a new RBAC role.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Display name.' },
+        key: { type: 'string', description: 'Optional stable key.' },
+        description: { type: 'string' },
+      },
+      required: ['name'],
+    },
+    requiredCapabilities: ['access:create'],
+  },
+
+  deleteRole: {
+    name: 'deleteRole',
+    description: 'Delete an RBAC role and its bindings.',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Role id.' } },
+      required: ['id'],
+    },
+    requiredCapabilities: ['access:delete'],
+  },
+
+  listPolicies: {
+    name: 'listPolicies',
+    description: 'List reusable access policies for the current site.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['access:read'],
+  },
+
+  createPolicy: {
+    name: 'createPolicy',
+    description: 'Create a new reusable access policy.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Display name.' },
+        key: { type: 'string', description: 'Optional stable key.' },
+        description: { type: 'string' },
+      },
+      required: ['name'],
+    },
+    requiredCapabilities: ['access:create'],
+  },
+
+  deletePolicy: {
+    name: 'deletePolicy',
+    description: 'Delete a reusable access policy.',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Policy id.' } },
+      required: ['id'],
+    },
+    requiredCapabilities: ['access:delete'],
+  },
+
+  listIntents: {
+    name: 'listIntents',
+    description: 'List content intents (SLOs) for the current site.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['intents:read'],
+  },
+
+  createIntent: {
+    name: 'createIntent',
+    description: 'Create a content intent (declarative SLO) for a collection.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        collection: { type: 'string' },
+        rules: { type: 'array', items: { type: 'object' }, description: 'SLO rules.' },
+        schedule: { type: 'string', description: '5-field cron expression.' },
+      },
+      required: ['name', 'collection', 'rules', 'schedule'],
+    },
+    requiredCapabilities: ['intents:write'],
+  },
+
+  deleteIntent: {
+    name: 'deleteIntent',
+    description: 'Delete a content intent by id.',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Intent id.' } },
+      required: ['id'],
+    },
+    requiredCapabilities: ['intents:write'],
+  },
+
+  listFlows: {
+    name: 'listFlows',
+    description: 'List automation flows for the current site.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['flows:read'],
+  },
+
+  createFlow: {
+    name: 'createFlow',
+    description: 'Create an automation flow (trigger + operation graph).',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        triggerType: { type: 'string', enum: ['webhook', 'event', 'schedule', 'manual'] },
+        graph: { type: 'object', description: 'Operation graph { entry?, nodes[] }.' },
+      },
+      required: ['name', 'triggerType', 'graph'],
+    },
+    requiredCapabilities: ['flows:write'],
+  },
+
+  deleteFlow: {
+    name: 'deleteFlow',
+    description: 'Delete an automation flow by id.',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Flow id.' } },
+      required: ['id'],
+    },
+    requiredCapabilities: ['flows:write'],
+  },
+
+  runFlow: {
+    name: 'runFlow',
+    description: 'Trigger a manual run of an automation flow.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Flow id.' },
+        input: { type: 'object', description: 'Initial context passed to the flow.' },
+      },
+      required: ['id'],
+    },
+    requiredCapabilities: ['flows:run'],
+  },
 };
