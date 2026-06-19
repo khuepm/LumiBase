@@ -19,7 +19,7 @@ Each task is one or more commits.
 - [x] **T4 — Session management.** `GET /api/v1/me/sessions`,
   `DELETE /api/v1/me/sessions/:id`, `DELETE /api/v1/me/sessions` (revoke
   others) over the now-tracked refresh tokens.
-- [ ] **T5 — Refresh-flow DB integration test.** Real-Postgres test
+- [x] **T5 — Refresh-flow DB integration test.** Real-Postgres test
   (skipped without `DATABASE_URL`, mirroring existing `*.db.integration`).
 
 ## Deferred (out of scope for this backend pass — tracked, not done)
