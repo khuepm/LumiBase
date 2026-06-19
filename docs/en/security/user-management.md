@@ -84,11 +84,20 @@ api_keys → api_key_roles/policies  ← integration principals, scoped per site
 Custom JWTs carry an `aud` claim pinned at sign time
 (`services/auth/token-audience.ts`):
 
-| `aud` | Meaning | Can reach Studio? |
-|-------|---------|-------------------|
-| `studio` | bootstrap admin or a role with `appAccess` | ✅ (still subject to `appAccess`/TFA) |
-| `frontend` | subscribers / appAccess-less roles | ❌ **hard-rejected by `withStudioAccess`** |
-| `email-verify` | one-shot registration link token | n/a (not a session token) |
+| `aud` | Meaning | Can reach Studio? | Session TTL |
+|-------|---------|-------------------|-------------|
+| `studio` | bootstrap admin or a role with `appAccess` | ✅ (still subject to `appAccess`/TFA) | `12h` (env `STUDIO_SESSION_TTL`) |
+| `frontend` | subscribers / appAccess-less roles | ❌ **hard-rejected by `withStudioAccess`** | `30d` (env `FRONTEND_SESSION_TTL`) |
+| `email-verify` | one-shot registration link token | n/a (not a session token) | 24h (link, not session) |
+| `password-reset` | one-shot password-reset link token | n/a (not a session token) | 1h (link, not session) |
+
+**Per-realm session TTL** (`sessionTtlFor`): the two realms no longer share
+one lifetime — staff sessions are short (higher-value target, cheap to
+re-auth), subscriber sessions are long (better UX, low risk). Overrides
+accept a compact duration (`12h`, `30d`) or a number of seconds; a
+malformed value falls back to the default so a typo can't break login.
+These are plain session TTLs (no refresh token yet), so the value is the
+forced re-login interval for that realm.
 
 The audience wall is **defense-in-depth**: even if a role were
 misconfigured to grant `appAccess`, a `frontend` token is rejected before
@@ -146,7 +155,8 @@ Visitor (Next.js)            CMS                              Email
 
 | Env | Purpose |
 |-----|---------|
-| `JWT_SECRET` | Signs Custom JWTs **and** email-verify tokens. Required. |
+| `JWT_SECRET` | Signs Custom JWTs **and** email-verify/reset tokens. Required. |
+| `STUDIO_SESSION_TTL`, `FRONTEND_SESSION_TTL` | Optional per-realm session lifetime (defaults `12h` / `30d`). |
 | `LUMIBASE_SMTP_URL`, `LUMIBASE_MAIL_FROM` | Outbound verification email. Without it, the user stays `invited` (no link sent). |
 | `CORS_ALLOWED_ORIGINS` | Must include your Next.js origin. |
 | site `siteUrl` | Builds the `…/verify-email?token=` link in the email. |

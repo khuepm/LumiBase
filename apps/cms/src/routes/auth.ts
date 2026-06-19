@@ -6,7 +6,7 @@ import { roles, systemState, users, userSites } from '@lumibase/database';
 import type { AppEnv } from '../env';
 import { hashPassword, verifyPassword } from '../services/auth/password';
 import { ensureSubscriberRole } from '../services/auth/frontend-role';
-import { TOKEN_AUDIENCE } from '../services/auth/token-audience';
+import { TOKEN_AUDIENCE, sessionTtlFor } from '../services/auth/token-audience';
 import {
   signVerificationToken,
   verifyVerificationToken,
@@ -140,6 +140,8 @@ async function signCustomJwt(
   payload: any,
   secret: string,
   audience: string,
+  /** Session lifetime, per realm — see {@link sessionTtlFor}. */
+  ttl: string,
 ): Promise<string> {
   const encoder = new TextEncoder();
   const secretKey = encoder.encode(secret);
@@ -147,7 +149,7 @@ async function signCustomJwt(
     .setProtectedHeader({ alg: 'HS256' })
     .setAudience(audience)
     .setIssuedAt()
-    .setExpirationTime('24h')
+    .setExpirationTime(ttl)
     .sign(secretKey);
 }
 
@@ -1018,6 +1020,7 @@ authRouter.post('/login', async (c) => {
     },
     jwtSecret,
     audience,
+    sessionTtlFor(audience, c.env),
   );
 
   // Workers runtime: keep any queued notification (e.g. an

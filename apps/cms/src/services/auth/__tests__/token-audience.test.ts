@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_SESSION_TTL,
   TOKEN_AUDIENCE,
   audienceValues,
   isFrontendAudience,
+  sessionTtlFor,
 } from '../token-audience';
 
 describe('token-audience helpers', () => {
@@ -25,5 +27,37 @@ describe('token-audience helpers', () => {
   it('keeps the three audiences distinct', () => {
     const values = Object.values(TOKEN_AUDIENCE);
     expect(new Set(values).size).toBe(values.length);
+  });
+});
+
+describe('sessionTtlFor', () => {
+  it('uses per-realm defaults when no override is set', () => {
+    expect(sessionTtlFor(TOKEN_AUDIENCE.studio)).toBe(DEFAULT_SESSION_TTL.studio);
+    expect(sessionTtlFor(TOKEN_AUDIENCE.frontend)).toBe(DEFAULT_SESSION_TTL.frontend);
+    // Any non-frontend audience is treated as the (stricter) studio realm.
+    expect(sessionTtlFor('anything-else')).toBe(DEFAULT_SESSION_TTL.studio);
+  });
+
+  it('honours valid env overrides per realm', () => {
+    const env = { STUDIO_SESSION_TTL: '4h', FRONTEND_SESSION_TTL: '90d' };
+    expect(sessionTtlFor(TOKEN_AUDIENCE.studio, env)).toBe('4h');
+    expect(sessionTtlFor(TOKEN_AUDIENCE.frontend, env)).toBe('90d');
+  });
+
+  it('accepts a bare number of seconds', () => {
+    expect(sessionTtlFor(TOKEN_AUDIENCE.studio, { STUDIO_SESSION_TTL: '3600' })).toBe('3600');
+  });
+
+  it('falls back to the default on a malformed or empty override', () => {
+    for (const bad of ['', '   ', 'abc', '12 hours', '10x', 'h12']) {
+      expect(sessionTtlFor(TOKEN_AUDIENCE.studio, { STUDIO_SESSION_TTL: bad })).toBe(
+        DEFAULT_SESSION_TTL.studio,
+      );
+    }
+  });
+
+  it('does not cross realms (frontend override never affects studio)', () => {
+    const env = { FRONTEND_SESSION_TTL: '90d' };
+    expect(sessionTtlFor(TOKEN_AUDIENCE.studio, env)).toBe(DEFAULT_SESSION_TTL.studio);
   });
 });

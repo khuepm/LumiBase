@@ -46,6 +46,18 @@ export interface Bindings {
   CF_ACCESS_AUDIENCE?: string;
   /** Secret key for signing internal Custom JWTs (for frontend users) */
   JWT_SECRET?: string;
+  /**
+   * Session-token TTL for the `studio` realm (staff/CMS). Accepts a
+   * compact duration (`12h`, `30m`, `7d`) or a number of seconds.
+   * Defaults to `12h`. Invalid values fall back to the default.
+   */
+  STUDIO_SESSION_TTL?: string;
+  /**
+   * Session-token TTL for the `frontend` realm (subscribers). Accepts a
+   * compact duration (`30d`, `12h`) or a number of seconds. Defaults to
+   * `30d`. Invalid values fall back to the default.
+   */
+  FRONTEND_SESSION_TTL?: string;
   /** When set to `"true"`, withAuth allows dev tokens (skip JWKS verify). */
   LUMIBASE_DEV_AUTH?: string;
   /** Secret key for AES-GCM per-field encryption (base64 encoded). */

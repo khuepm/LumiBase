@@ -53,3 +53,41 @@ export function audienceValues(aud: unknown): string[] {
 export function isFrontendAudience(aud: unknown): boolean {
   return audienceValues(aud).includes(TOKEN_AUDIENCE.frontend);
 }
+
+/**
+ * Per-realm session-token lifetimes. The two realms have different risk and
+ * UX profiles, so they no longer share one TTL:
+ *
+ *   - `studio` (staff/CMS) — short by default; a stolen staff token is the
+ *     higher-value target, and staff re-auth within a working day is cheap.
+ *   - `frontend` (subscribers) — long by default; forcing visitors to log
+ *     in daily is bad UX and brings little security benefit.
+ *
+ * Operators override via `STUDIO_SESSION_TTL` / `FRONTEND_SESSION_TTL`.
+ * These are plain session TTLs (no refresh token yet), so the value is the
+ * forced re-login interval.
+ */
+export const DEFAULT_SESSION_TTL = {
+  studio: '12h',
+  frontend: '30d',
+} as const;
+
+/** Accepts `<number>` (seconds) or `<number><unit>` where unit ∈ s/m/h/d/w/y. */
+const TTL_PATTERN = /^\d+(\.\d+)?\s*(s|m|h|d|w|y)?$/i;
+
+/**
+ * Resolve the session TTL string (for `jose`'s `setExpirationTime`) for a
+ * given login audience, honouring the env overrides. An absent or
+ * malformed override falls back to the realm default so a typo in the
+ * environment can never break login.
+ */
+export function sessionTtlFor(
+  audience: string,
+  env?: { STUDIO_SESSION_TTL?: string; FRONTEND_SESSION_TTL?: string },
+): string {
+  const isFrontend = audience === TOKEN_AUDIENCE.frontend;
+  const fallback = isFrontend ? DEFAULT_SESSION_TTL.frontend : DEFAULT_SESSION_TTL.studio;
+  const raw = (isFrontend ? env?.FRONTEND_SESSION_TTL : env?.STUDIO_SESSION_TTL)?.trim();
+  if (!raw || !TTL_PATTERN.test(raw)) return fallback;
+  return raw;
+}
