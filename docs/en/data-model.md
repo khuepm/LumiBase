@@ -9,7 +9,7 @@ Schema files are split by domain:
 | File | Bảng |
 |------|------|
 | `core.ts` | `sites`, `users`, `user_sites`, `teams`, `team_members`, `notifications` |
-| `access.ts` | `roles`, `policies`, `role_policies`, `user_policies`, `permissions` |
+| `access.ts` | `roles`, `policies`, `role_policies`, `user_policies`, `permissions`, `refresh_tokens` |
 | `cms.ts` | `pages`, `collections`, `fields`, `relations`, `items`, `revisions`, `activity`, `flows`, `flow_runs`, `operations`, `materialized_collections` |
 | `platform.ts` | `folders`, `files`, `presets`, `translations`, `settings`, `webhooks`, `extensions`, `translation_memory`, `glossary` |
 | `ai.ts` | `ai_approvals` |
@@ -195,6 +195,10 @@ SDK generation uses this manifest to emit base collection interfaces and `Collec
 
 ### `permissions`
 - `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (row-level rule DSL), `validation jsonb`, `presets jsonb`, `fields text[]` (field-level allow list, `*` = all).
+
+### `refresh_tokens` (migration `0031`)
+- `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — plaintext never stored), `familyId` (rotation chain), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
+- Rotating, revocable session-renewal tokens. Reuse of a revoked row revokes the whole `familyId` (theft detection). Swept on the hourly cron once expired. See [`security/user-management.md`](./security/user-management.md) §4d.
 
 ### System collections seed permissions
 

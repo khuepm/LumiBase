@@ -9,6 +9,19 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Added
+
+- **Self-service auth realms.** Subscriber registration (`/auth/register`) with email verification (`/auth/verify-email`, `/auth/resend-verification`), password recovery (`/auth/forgot-password`, `/auth/reset-password`), and an admin primitive to grant subscribers `read` on collections (`/api/v1/users/subscriber-access`). Tokens carry a per-realm `aud` (`studio`/`frontend`); `withStudioAccess` hard-rejects frontend tokens.
+- **Per-realm session TTLs.** Separate access-token lifetimes for staff vs subscribers (`STUDIO_SESSION_TTL` `12h` / `FRONTEND_SESSION_TTL` `30d`).
+- **Rotating refresh tokens** (new table `refresh_tokens`, migration `0031`). Silent renewal via `/auth/refresh`, `/auth/logout`; one-time-use rotation with family-wide reuse detection; tokens stored only as sha256. Per-realm refresh TTL (`STUDIO_REFRESH_TTL` `30d` / `FRONTEND_REFRESH_TTL` `90d`). Delivered as an `httpOnly` cookie **and** in the body.
+- **Cross-domain refresh cookie** config (`REFRESH_COOKIE_SAMESITE`/`REFRESH_COOKIE_DOMAIN`/`REFRESH_COOKIE_SECURE`) with a CSRF brake (`X-LumiBase-Refresh` header required for cookie-sourced refresh/logout).
+- **Authenticated account self-service:** `POST /api/v1/me/change-password` and session management (`GET`/`DELETE /api/v1/me/sessions[/:id]`).
+- **Hourly prune** of expired refresh tokens on the existing audit-rotation cron (Workers `scheduled` + Node `node-cron`).
+
+### Notes
+
+- Run `pnpm -F @lumibase/database migrate` to apply migration `0031` (adds `refresh_tokens`). No backfill required.
+
 ## [0.8.0] - 2026-06-18
 
 ### Version
