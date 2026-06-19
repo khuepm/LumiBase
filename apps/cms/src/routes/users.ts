@@ -6,6 +6,11 @@ import { nanoid } from 'nanoid';
 import type { AppEnv } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
 import { sendTeammateInvite } from '../modules/email/invite';
+import {
+  grantSubscriberRead,
+  revokeSubscriberRead,
+  listSubscriberRead,
+} from '../services/auth/subscriber-access';
 
 export const usersRouter = new Hono<AppEnv>();
 usersRouter.use('*', requireSiteAdmin());
@@ -32,6 +37,42 @@ usersRouter.get('/', async (c) => {
     .where(eq(userSites.siteId, siteId));
 
   return c.json({ data });
+});
+
+// ── Subscriber content access ───────────────────────────────────────────
+// Grant/revoke what self-service frontend subscribers can READ. The
+// `subscriber` role is empty by default (ADR-010); these endpoints attach
+// `read` permissions to it via the shared subscriber policy. Registered
+// before `/:id` so the static path isn't captured by the param route.
+
+// List collections subscribers can currently read.
+usersRouter.get('/subscriber-access', async (c) => {
+  const data = await listSubscriberRead(c.get('db'), c.get('siteId'));
+  return c.json({ data });
+});
+
+const subscriberAccessSchema = z.object({
+  collection: z.string().min(1),
+  publishedOnly: z.boolean().optional(),
+  fields: z.array(z.string()).optional(),
+});
+
+// Grant (or update) subscriber read on a collection.
+usersRouter.post('/subscriber-access', async (c) => {
+  const body = await c.req.json();
+  const input = subscriberAccessSchema.parse(body);
+  const grant = await grantSubscriberRead(c.get('db'), c.get('siteId'), input);
+  return c.json({ data: grant });
+});
+
+// Revoke subscriber read on a collection.
+usersRouter.delete('/subscriber-access/:collection', async (c) => {
+  const collection = c.req.param('collection');
+  const removed = await revokeSubscriberRead(c.get('db'), c.get('siteId'), collection);
+  if (!removed) {
+    return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+  }
+  return c.json({ data: { collection, removed: true } });
 });
 
 // Get a specific user in the active site

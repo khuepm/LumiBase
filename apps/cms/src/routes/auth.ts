@@ -11,9 +11,16 @@ import {
   signVerificationToken,
   verifyVerificationToken,
 } from '../services/auth/email-verification';
+import {
+  signPasswordResetToken,
+  verifyPasswordResetToken,
+} from '../services/auth/password-reset';
 import { sendVerificationEmail } from '../modules/email/verify-email';
+import { sendPasswordResetEmail } from '../modules/email/password-reset';
 import {
   checkRegistrationRate,
+  checkIpRateLimit,
+  DEFAULT_REGISTRATION_RATE_LIMIT,
 } from '../modules/auth/registration-guard';
 import {
   loginGuardMiddleware,
@@ -154,6 +161,15 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string(),
+});
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(6),
 });
 
 /**
@@ -368,6 +384,165 @@ authRouter.post('/verify-email', async (c) => {
   });
 
   return c.json({ data: { status: 'verified' } });
+});
+
+/**
+ * Public "forgot password" endpoint for self-service end-users.
+ *
+ * Anti-enumeration: always returns the same generic `202` regardless of
+ * whether the email exists or is eligible. Only an existing, active,
+ * password-based account actually gets a reset email. Per-IP rate-limited.
+ * Bypassed by `withAuth` / `withStudioAccess` like the other public auth
+ * routes.
+ */
+authRouter.post('/forgot-password', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const ip = extractClientIp(c);
+  const userAgent = c.req.header('user-agent') ?? null;
+
+  const rate = await checkIpRateLimit(
+    c.get('runtime').cache,
+    'forgot-rate',
+    siteId,
+    ip,
+    DEFAULT_REGISTRATION_RATE_LIMIT,
+  );
+  if (!rate.allowed) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'RATE_LIMITED',
+            message: 'Too many requests. Please try again later.',
+            retryAfterSeconds: rate.retryAfterSeconds,
+          },
+        ],
+      },
+      429,
+    );
+  }
+
+  const body = await c.req.json();
+  const input = forgotPasswordSchema.parse(body);
+  const emailLower = normalizeEmail(input.email);
+
+  const [user] = await db
+    .select({ id: users.id, status: users.status, passwordHash: users.passwordHash, email: users.email })
+    .from(users)
+    .where(sql`lower(${users.email}) = ${emailLower}`)
+    .limit(1);
+
+  // Only mint + email for an eligible account. A non-existent, inactive, or
+  // passwordless (SSO/CF Access) account silently falls through to the same
+  // generic response — no enumeration, no reset for accounts that don't use
+  // password auth.
+  if (user && user.status === 'active' && user.passwordHash) {
+    const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+    if (jwtSecret) {
+      const token = await signPasswordResetToken({ userId: user.id, siteId }, jwtSecret);
+      const sendMail = sendPasswordResetEmail({
+        db,
+        siteId,
+        env: c.env,
+        email: user.email,
+        token,
+      });
+      if (c.executionCtx?.waitUntil) {
+        c.executionCtx.waitUntil(sendMail);
+      } else {
+        void sendMail;
+      }
+      await new AuditLogger({ db, siteId }).write({
+        event: 'password_reset_requested',
+        actorEmail: user.email,
+        ip,
+        userAgent,
+        requestId: c.get('requestId') ?? null,
+        metadata: { userId: user.id, siteId },
+      });
+    }
+  }
+
+  return c.json(
+    {
+      data: {
+        status: 'reset_requested',
+        message: 'If an account exists for this email, a reset link has been sent.',
+      },
+    },
+    202,
+  );
+});
+
+/**
+ * Public "reset password" endpoint. Consumes a stateless `password-reset`
+ * token ({@link signPasswordResetToken}) and sets the new password hash.
+ * Bypassed by `withAuth` / `withStudioAccess` like the other public auth
+ * routes.
+ */
+authRouter.post('/reset-password', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const ip = extractClientIp(c);
+  const userAgent = c.req.header('user-agent') ?? null;
+
+  const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return c.json(
+      { errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET configuration missing.' }] },
+      500,
+    );
+  }
+
+  const body = await c.req.json();
+  const input = resetPasswordSchema.parse(body);
+
+  const claims = await verifyPasswordResetToken(input.token, jwtSecret);
+  // Reject expired / tampered / wrong-audience / cross-tenant tokens with
+  // one generic code.
+  if (!claims || claims.siteId !== siteId) {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Reset link is invalid or has expired.' }] },
+      400,
+    );
+  }
+
+  const [user] = await db
+    .select({ id: users.id, status: users.status, email: users.email })
+    .from(users)
+    .where(eq(users.id, claims.userId))
+    .limit(1);
+
+  if (!user) {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Reset link is invalid or has expired.' }] },
+      400,
+    );
+  }
+  if (user.status === 'suspended') {
+    return c.json(
+      { errors: [{ code: 'ACCOUNT_DISABLED', message: 'This account is not active.' }] },
+      403,
+    );
+  }
+
+  const passwordHash = await hashPassword(input.password);
+  await db
+    .update(users)
+    .set({ passwordHash, updatedAt: new Date() })
+    .where(eq(users.id, user.id));
+
+  await new AuditLogger({ db, siteId }).write({
+    event: 'password_reset_completed',
+    actorEmail: user.email,
+    ip,
+    userAgent,
+    requestId: c.get('requestId') ?? null,
+    metadata: { userId: user.id, siteId },
+  });
+
+  return c.json({ data: { status: 'reset' } });
 });
 
 // Login Guard middleware (admin-setup-wizard task 6.1; Req 7.3, 8.3;

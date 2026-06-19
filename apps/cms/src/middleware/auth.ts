@@ -81,6 +81,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   if (
     path === '/api/v1/auth/register' ||
     path === '/api/v1/auth/verify-email' ||
+    path === '/api/v1/auth/forgot-password' ||
+    path === '/api/v1/auth/reset-password' ||
     path === '/api/v1/auth/login' ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/')

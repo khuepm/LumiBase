@@ -3,6 +3,7 @@ import type { CacheProvider } from '@lumibase/runtime';
 import {
   DEFAULT_REGISTRATION_RATE_LIMIT,
   checkRegistrationRate,
+  checkIpRateLimit,
 } from '../registration-guard';
 
 function memoryCache(initial: Record<string, string> = {}): CacheProvider {
@@ -66,6 +67,22 @@ describe('checkRegistrationRate', () => {
     };
     const verdict = await checkRegistrationRate(cache, 'site-1', '1.2.3.4');
     expect(verdict.allowed).toBe(true);
+  });
+
+  it('namespaces counters by scope (registration vs forgot-password)', async () => {
+    const cache = memoryCache();
+    await checkIpRateLimit(cache, 'forgot-rate', 'site-1', '1.2.3.4', {
+      maxPerWindow: 3,
+      windowSeconds: 60,
+    });
+    expect(cache.set).toHaveBeenCalledWith('forgot-rate:site-1:1.2.3.4', '1', { ttl: 60 });
+    // A different scope for the same site+IP is an independent bucket.
+    await checkRegistrationRate(cache, 'site-1', '1.2.3.4');
+    expect(cache.set).toHaveBeenCalledWith(
+      'reg-rate:site-1:1.2.3.4',
+      '1',
+      { ttl: DEFAULT_REGISTRATION_RATE_LIMIT.windowSeconds },
+    );
   });
 
   it('honours a custom limit', async () => {

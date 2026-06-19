@@ -40,23 +40,25 @@ export interface RateLimitVerdict {
 }
 
 /**
- * Check (and increment) the per-IP registration counter. Returns
- * `allowed: false` once the IP has exceeded `maxPerWindow` within the
- * window. A missing/unknown IP is allowed (we cannot key it) — the
- * upstream tenant/IP middleware resolves the canonical IP.
+ * Generic best-effort per-IP fixed-window rate limit over the runtime
+ * cache. `scope` namespaces the counter so different unauthenticated
+ * flows (registration, forgot-password, …) don't share a bucket. A
+ * missing/unknown IP is allowed (we cannot key it). Fails open on cache
+ * error.
  */
-export async function checkRegistrationRate(
+export async function checkIpRateLimit(
   cache: CacheProvider,
+  scope: string,
   siteId: string,
   ip: string | undefined,
-  limit: RegistrationRateLimit = DEFAULT_REGISTRATION_RATE_LIMIT,
+  limit: RegistrationRateLimit,
 ): Promise<RateLimitVerdict> {
   const trimmedIp = (ip ?? '').trim();
   if (trimmedIp.length === 0) {
     return { allowed: true, retryAfterSeconds: 0 };
   }
 
-  const key = `reg-rate:${siteId}:${trimmedIp}`;
+  const key = `${scope}:${siteId}:${trimmedIp}`;
   try {
     const raw = await cache.get(key);
     const current = raw ? Number.parseInt(raw, 10) : 0;
@@ -71,7 +73,20 @@ export async function checkRegistrationRate(
     await cache.set(key, String(count + 1), { ttl: limit.windowSeconds });
     return { allowed: true, retryAfterSeconds: 0 };
   } catch {
-    // Fail open — a cache outage must not break registration.
+    // Fail open — a cache outage must not break the flow it guards.
     return { allowed: true, retryAfterSeconds: 0 };
   }
+}
+
+/**
+ * Per-IP registration rate limit. Thin wrapper over
+ * {@link checkIpRateLimit} kept for call-site clarity and back-compat.
+ */
+export function checkRegistrationRate(
+  cache: CacheProvider,
+  siteId: string,
+  ip: string | undefined,
+  limit: RegistrationRateLimit = DEFAULT_REGISTRATION_RATE_LIMIT,
+): Promise<RateLimitVerdict> {
+  return checkIpRateLimit(cache, 'reg-rate', siteId, ip, limit);
 }

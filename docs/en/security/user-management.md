@@ -127,6 +127,8 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/register` | public | Creates `subscriber`, `status=invited`. Per-IP rate-limited. Returns generic `202` (no enumeration). |
 | `POST /api/v1/auth/verify-email` | public | Body `{token}` (or `?token=`). Flips `invited`→`active`. Idempotent (`already_verified`). |
 | `POST /api/v1/auth/login` | public | Issues `frontend`/`studio` JWT. Gated on `status='active'`, LoginGuard, anomaly detector. |
+| `POST /api/v1/auth/forgot-password` | public | Body `{email}`. Per-IP rate-limited. Generic `202` (no enumeration); emails a reset link only for an active, password-based account. |
+| `POST /api/v1/auth/reset-password` | public | Body `{token,password}`. Consumes a stateless `password-reset` token (1h TTL) and sets the new password hash. |
 | `GET /api/v1/auth/me` | bearer | Current principal incl. `isFrontendUser`. |
 
 ### Guardrails baked in
@@ -149,6 +151,50 @@ Visitor (Next.js)            CMS                              Email
 | site `siteUrl` | Builds the `…/verify-email?token=` link in the email. |
 
 ---
+
+## 4b. Granting subscribers read access to content
+
+A freshly registered subscriber can log in but **sees nothing** — the
+`subscriber` role is empty by design. Grant content read explicitly
+(admin-only, `requireSiteAdmin`):
+
+```
+# Subscribers can read PUBLISHED articles (default publishedOnly=true)
+POST /api/v1/users/subscriber-access
+  { "collection": "articles" }
+
+# All rows, only some fields:
+POST /api/v1/users/subscriber-access
+  { "collection": "pages", "publishedOnly": false, "fields": ["title","body"] }
+
+GET    /api/v1/users/subscriber-access            # list current grants
+DELETE /api/v1/users/subscriber-access/articles   # revoke
+```
+
+This attaches `read` permissions (Policy DSL) to a shared `subscriber`
+policy bound to the role — `publishedOnly: true` compiles to the row-level
+filter `{ status: { _eq: 'published' } }`. Grants take effect within ~60s
+for already-authenticated subscribers (PermissionService bundle cache TTL).
+
+> Use this instead of hand-editing policies in Studio when you just want
+> "subscribers can read published X" — it is the minimal, audited primitive.
+
+## 4c. Forgot / reset password (end-users)
+
+Self-service password recovery (distinct from the admin backup-code
+recovery in the Setup Wizard):
+
+```
+POST /auth/forgot-password { email }      → generic 202; emails a 1h reset link
+   (link → frontend /reset-password?token=…)
+POST /auth/reset-password  { token, password }  → sets new password hash
+```
+
+The reset token is a stateless `password-reset` JWT (same pattern as
+email verification). Trade-off: no per-token revocation and the link stays
+valid for its 1h TTL; rotate `JWT_SECRET` to invalidate all outstanding
+links. Stateless reset does not force-expire existing sessions — acceptable
+for the current 24h session TTL.
 
 ## 5. Staff onboarding (do NOT use self-service)
 
@@ -251,12 +297,14 @@ never become an agent tool.
 
 | Concern | File |
 |---------|------|
-| Register / verify-email / login | `apps/cms/src/routes/auth.ts` |
+| Register / verify-email / login / forgot+reset password | `apps/cms/src/routes/auth.ts` |
+| Subscriber content access endpoints | `apps/cms/src/routes/users.ts` |
 | Auth methods + audience parsing | `apps/cms/src/middleware/auth.ts` |
 | Studio access + frontend wall | `apps/cms/src/middleware/studio-access.ts` |
 | Subscriber role provisioning | `apps/cms/src/services/auth/frontend-role.ts` |
+| Subscriber content-read grants | `apps/cms/src/services/auth/subscriber-access.ts` |
 | Token audiences | `apps/cms/src/services/auth/token-audience.ts` |
-| Email-verify tokens | `apps/cms/src/services/auth/email-verification.ts` |
-| Registration rate limit | `apps/cms/src/modules/auth/registration-guard.ts` |
-| Verification email | `apps/cms/src/modules/email/verify-email.ts` |
+| Email-verify / password-reset tokens | `apps/cms/src/services/auth/{email-verification,password-reset}.ts` |
+| Per-IP rate limit (register/forgot) | `apps/cms/src/modules/auth/registration-guard.ts` |
+| Verification / reset emails | `apps/cms/src/modules/email/{verify-email,password-reset}.ts` |
 | Decision record | `docs/en/architecture/decisions/adr-010-user-management-realms.md` |

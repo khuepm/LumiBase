@@ -33,6 +33,8 @@ export const TOKEN_AUDIENCE = {
   frontend: 'frontend',
   /** Single-purpose email-verification link token (not a session token). */
   emailVerify: 'email-verify',
+  /** Single-purpose password-reset link token (not a session token). */
+  passwordReset: 'password-reset',
 } as const;
 
 export type TokenAudience = (typeof TOKEN_AUDIENCE)[keyof typeof TOKEN_AUDIENCE];
