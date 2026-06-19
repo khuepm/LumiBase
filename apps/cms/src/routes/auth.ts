@@ -167,6 +167,10 @@ const forgotPasswordSchema = z.object({
   email: z.string().email(),
 });
 
+const resendVerificationSchema = z.object({
+  email: z.string().email(),
+});
+
 const resetPasswordSchema = z.object({
   token: z.string().min(1),
   password: z.string().min(6),
@@ -384,6 +388,95 @@ authRouter.post('/verify-email', async (c) => {
   });
 
   return c.json({ data: { status: 'verified' } });
+});
+
+/**
+ * Public "resend verification" endpoint — re-issues the activation email
+ * when the original was lost. Same guardrails as forgot-password:
+ * per-IP rate-limited and a generic `202` regardless of outcome (no
+ * enumeration). Only an existing, NOT-yet-active, password-based account
+ * (i.e. a self-service registrant still at `invited`) is re-emailed; an
+ * already-active or non-password (SSO/staff-invite) account silently falls
+ * through. Bypassed by `withAuth` / `withStudioAccess` like the other
+ * public auth routes.
+ */
+authRouter.post('/resend-verification', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const ip = extractClientIp(c);
+  const userAgent = c.req.header('user-agent') ?? null;
+
+  const rate = await checkIpRateLimit(
+    c.get('runtime').cache,
+    'resend-rate',
+    siteId,
+    ip,
+    DEFAULT_REGISTRATION_RATE_LIMIT,
+  );
+  if (!rate.allowed) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'RATE_LIMITED',
+            message: 'Too many requests. Please try again later.',
+            retryAfterSeconds: rate.retryAfterSeconds,
+          },
+        ],
+      },
+      429,
+    );
+  }
+
+  const body = await c.req.json();
+  const input = resendVerificationSchema.parse(body);
+  const emailLower = normalizeEmail(input.email);
+
+  const [user] = await db
+    .select({ id: users.id, status: users.status, passwordHash: users.passwordHash, email: users.email })
+    .from(users)
+    .where(sql`lower(${users.email}) = ${emailLower}`)
+    .limit(1);
+
+  // Eligible = exists, not yet activated, and password-based (a self-service
+  // registrant). Active accounts have nothing to verify; passwordless
+  // accounts (SSO / staff invite) use a different onboarding path.
+  if (user && user.status !== 'active' && user.passwordHash) {
+    const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+    if (jwtSecret) {
+      const token = await signVerificationToken({ userId: user.id, siteId }, jwtSecret);
+      const sendMail = sendVerificationEmail({
+        db,
+        siteId,
+        env: c.env,
+        email: user.email,
+        token,
+      });
+      if (c.executionCtx?.waitUntil) {
+        c.executionCtx.waitUntil(sendMail);
+      } else {
+        void sendMail;
+      }
+      await new AuditLogger({ db, siteId }).write({
+        event: 'verification_resent',
+        actorEmail: user.email,
+        ip,
+        userAgent,
+        requestId: c.get('requestId') ?? null,
+        metadata: { userId: user.id, siteId },
+      });
+    }
+  }
+
+  return c.json(
+    {
+      data: {
+        status: 'verification_resent',
+        message: 'If this email needs verification, a new link has been sent.',
+      },
+    },
+    202,
+  );
 });
 
 /**

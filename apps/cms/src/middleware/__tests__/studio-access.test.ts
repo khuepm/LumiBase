@@ -111,6 +111,38 @@ describe('withStudioAccess', () => {
     expect(bundleMock).not.toHaveBeenCalled();
   });
 
+  it('lets public auth paths through the Studio wall even for a frontend-audience session', async () => {
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('auth', principal({ aud: 'frontend' }));
+      c.set('siteId', 'site-1');
+      c.set('db', {} as AppEnv['Variables']['db']);
+      c.set('runtime', { cache: {} } as AppEnv['Variables']['runtime']);
+      await next();
+    });
+    app.use('*', withStudioAccess());
+    for (const p of [
+      '/api/v1/auth/login',
+      '/api/v1/auth/register',
+      '/api/v1/auth/verify-email',
+      '/api/v1/auth/resend-verification',
+      '/api/v1/auth/forgot-password',
+      '/api/v1/auth/reset-password',
+    ]) {
+      app.post(p, (c) => c.json({ ok: true }));
+    }
+
+    for (const p of [
+      '/api/v1/auth/resend-verification',
+      '/api/v1/auth/forgot-password',
+      '/api/v1/auth/reset-password',
+    ]) {
+      const res = await app.request(p, { method: 'POST', body: '{}' });
+      expect(res.status, p).toBe(200);
+    }
+    expect(bundleMock).not.toHaveBeenCalled();
+  });
+
   it('continues to leave unmarked content API calls to downstream permission checks', async () => {
     const res = await createApp().request('/api/v1/items/articles', {
       method: 'POST',

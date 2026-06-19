@@ -127,6 +127,7 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/register` | public | Creates `subscriber`, `status=invited`. Per-IP rate-limited. Returns generic `202` (no enumeration). |
 | `POST /api/v1/auth/verify-email` | public | Body `{token}` (or `?token=`). Flips `invited`→`active`. Idempotent (`already_verified`). |
 | `POST /api/v1/auth/login` | public | Issues `frontend`/`studio` JWT. Gated on `status='active'`, LoginGuard, anomaly detector. |
+| `POST /api/v1/auth/resend-verification` | public | Body `{email}`. Per-IP rate-limited. Generic `202`; re-emails the activation link only for a not-yet-active, password-based account (lost-email recovery). |
 | `POST /api/v1/auth/forgot-password` | public | Body `{email}`. Per-IP rate-limited. Generic `202` (no enumeration); emails a reset link only for an active, password-based account. |
 | `POST /api/v1/auth/reset-password` | public | Body `{token,password}`. Consumes a stateless `password-reset` token (1h TTL) and sets the new password hash. |
 | `GET /api/v1/auth/me` | bearer | Current principal incl. `isFrontendUser`. |
@@ -178,6 +179,20 @@ for already-authenticated subscribers (PermissionService bundle cache TTL).
 
 > Use this instead of hand-editing policies in Studio when you just want
 > "subscribers can read published X" — it is the minimal, audited primitive.
+
+### Email templates
+
+The verification, resend, and reset emails render a site DB template when
+one exists (and is enabled), else a built-in inline fallback — so the flows
+work out of the box. To customize, add an enabled email template with key:
+
+| Key | Used by | Vars |
+| --- | --- | --- |
+| `email_verification` | register + resend-verification | `email`, `siteName`, `siteUrl`, `verifyUrl`, `token` |
+| `password_reset` | forgot-password | `email`, `siteName`, `siteUrl`, `resetUrl`, `token` |
+
+`verifyUrl`/`resetUrl` are empty when the site has no `siteUrl`; the link is
+otherwise `${siteUrl}/verify-email?token=…` / `${siteUrl}/reset-password?token=…`.
 
 ## 4c. Forgot / reset password (end-users)
 
@@ -297,7 +312,7 @@ never become an agent tool.
 
 | Concern | File |
 |---------|------|
-| Register / verify-email / login / forgot+reset password | `apps/cms/src/routes/auth.ts` |
+| Register / verify-email / resend-verification / login / forgot+reset password | `apps/cms/src/routes/auth.ts` |
 | Subscriber content access endpoints | `apps/cms/src/routes/users.ts` |
 | Auth methods + audience parsing | `apps/cms/src/middleware/auth.ts` |
 | Studio access + frontend wall | `apps/cms/src/middleware/studio-access.ts` |
@@ -305,6 +320,6 @@ never become an agent tool.
 | Subscriber content-read grants | `apps/cms/src/services/auth/subscriber-access.ts` |
 | Token audiences | `apps/cms/src/services/auth/token-audience.ts` |
 | Email-verify / password-reset tokens | `apps/cms/src/services/auth/{email-verification,password-reset}.ts` |
-| Per-IP rate limit (register/forgot) | `apps/cms/src/modules/auth/registration-guard.ts` |
+| Per-IP rate limit (register/resend/forgot) | `apps/cms/src/modules/auth/registration-guard.ts` |
 | Verification / reset emails | `apps/cms/src/modules/email/{verify-email,password-reset}.ts` |
 | Decision record | `docs/en/architecture/decisions/adr-010-user-management-realms.md` |
