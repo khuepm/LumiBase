@@ -7,6 +7,7 @@ import {
   revokeRefreshToken,
   revokeAllRefreshTokens,
   refreshCookieSettings,
+  refreshCsrfOk,
 } from '../refresh-token';
 
 /**
@@ -164,6 +165,19 @@ describe('refreshCookieSettings (cross-domain)', () => {
   it('accepts Strict and ignores an unknown value (falls back to Lax)', () => {
     expect(refreshCookieSettings({ REFRESH_COOKIE_SAMESITE: 'Strict' }).sameSite).toBe('Strict');
     expect(refreshCookieSettings({ REFRESH_COOKIE_SAMESITE: 'bogus' }).sameSite).toBe('Lax');
+  });
+});
+
+describe('refreshCsrfOk', () => {
+  it('exempts body-token and absent-token callers', () => {
+    expect(refreshCsrfOk('body', undefined)).toBe(true);
+    expect(refreshCsrfOk('none', undefined)).toBe(true);
+  });
+
+  it('requires a non-empty custom header for the cookie path', () => {
+    expect(refreshCsrfOk('cookie', undefined)).toBe(false);
+    expect(refreshCsrfOk('cookie', '   ')).toBe(false);
+    expect(refreshCsrfOk('cookie', '1')).toBe(true);
   });
 });
 

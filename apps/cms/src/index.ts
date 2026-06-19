@@ -82,7 +82,7 @@ app.use(
   cors({
     origin: (origin, c) => resolveCorsOrigin(origin, c.env),
     credentials: true,
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh'],
     exposeHeaders: ['X-Request-Id'],
   }),
 );

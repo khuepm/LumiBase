@@ -19,6 +19,8 @@ import {
   revokeRefreshToken,
   revokeAllRefreshTokens,
   refreshCookieSettings,
+  refreshCsrfOk,
+  REFRESH_CSRF_HEADER,
 } from '../services/auth/refresh-token';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import {
@@ -185,10 +187,27 @@ function clearRefreshCookie(c: Context<AppEnv>): void {
   deleteCookie(c, REFRESH_COOKIE, { path, ...(domain ? { domain } : {}) });
 }
 
-/** Refresh token from the request body (`refreshToken`) or the cookie. */
-function readRefreshToken(c: Context<AppEnv>, body?: { refreshToken?: unknown }): string {
+/**
+ * Refresh token from the request body (`refreshToken`) or the cookie, with
+ * its source. The source drives CSRF handling: a cookie is an *ambient*
+ * credential the browser attaches automatically (CSRF-reachable under
+ * `SameSite=None`), whereas a body token is supplied explicitly by the
+ * caller and cannot be sent by a cross-site simple request.
+ */
+function readRefreshToken(
+  c: Context<AppEnv>,
+  body?: { refreshToken?: unknown },
+): { token: string; source: 'body' | 'cookie' | 'none' } {
   const fromBody = typeof body?.refreshToken === 'string' ? body.refreshToken.trim() : '';
-  return fromBody || getCookie(c, REFRESH_COOKIE) || '';
+  if (fromBody) return { token: fromBody, source: 'body' };
+  const fromCookie = getCookie(c, REFRESH_COOKIE) || '';
+  if (fromCookie) return { token: fromCookie, source: 'cookie' };
+  return { token: '', source: 'none' };
+}
+
+/** True when the request satisfies the cookie-path CSRF requirement. */
+function cookieCsrfOk(c: Context<AppEnv>, source: 'body' | 'cookie' | 'none'): boolean {
+  return refreshCsrfOk(source, c.req.header(REFRESH_CSRF_HEADER));
 }
 
 async function signCustomJwt(
@@ -1140,14 +1159,24 @@ authRouter.post('/refresh', async (c) => {
     body = undefined;
   }
   const presented = readRefreshToken(c, body);
-  if (!presented) {
+  if (!presented.token) {
     return c.json(
       { errors: [{ code: 'NO_REFRESH_TOKEN', message: 'No refresh token provided.' }] },
       401,
     );
   }
+  if (!cookieCsrfOk(c, presented.source)) {
+    return c.json(
+      {
+        errors: [
+          { code: 'CSRF_REQUIRED', message: `Missing ${REFRESH_CSRF_HEADER} header for cookie-based refresh.` },
+        ],
+      },
+      403,
+    );
+  }
 
-  const outcome = await rotateRefreshToken(db, { rawToken: presented, siteId, ip, userAgent }, c.env);
+  const outcome = await rotateRefreshToken(db, { rawToken: presented.token, siteId, ip, userAgent }, c.env);
   if (!outcome.ok) {
     clearRefreshCookie(c);
     if (outcome.reason === 'reuse') {
@@ -1219,8 +1248,18 @@ authRouter.post('/logout', async (c) => {
     body = undefined;
   }
   const presented = readRefreshToken(c, body);
-  if (presented) {
-    await revokeRefreshToken(db, presented, siteId);
+  if (!cookieCsrfOk(c, presented.source)) {
+    return c.json(
+      {
+        errors: [
+          { code: 'CSRF_REQUIRED', message: `Missing ${REFRESH_CSRF_HEADER} header for cookie-based logout.` },
+        ],
+      },
+      403,
+    );
+  }
+  if (presented.token) {
+    await revokeRefreshToken(db, presented.token, siteId);
   }
   clearRefreshCookie(c);
   return c.json({ data: { status: 'logged_out' } });

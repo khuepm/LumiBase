@@ -6,7 +6,7 @@ Each task is one or more commits.
 
 ## Implemented here
 
-- [ ] **T1 — CSRF guard for cookie-based refresh/logout.** When the refresh
+- [x] **T1 — CSRF guard for cookie-based refresh/logout.** When the refresh
   token is taken from the cookie (ambient credential), require a custom
   header (`X-LumiBase-Refresh`) that a cross-site simple request cannot set.
   Body-token callers are exempt (the token isn't ambient). Closes the

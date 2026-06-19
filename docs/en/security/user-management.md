@@ -264,10 +264,15 @@ Cookie attributes are env-configurable for cross-domain setups
 
 For a cross-site browser frontend you must also: serve both over HTTPS, set
 `CORS_ALLOWED_ORIGINS` to the exact frontend origin (no `*`), and have the
-client send `credentials: 'include'`. ⚠️ With `SameSite=None` the cookie is
-attached cross-site, so a cookie-only `/refresh`/`/logout` is CSRF-reachable
-— prefer the **body** token for cross-site clients, or add a CSRF token
-(see "remaining work").
+client send `credentials: 'include'`.
+
+**CSRF:** because the cookie is ambient (auto-sent under `SameSite=None`),
+`/refresh` and `/logout` require a custom **`X-LumiBase-Refresh`** header
+when the token comes from the cookie. A cross-site simple request cannot set
+a custom header (and doing so from JS triggers a CORS preflight the server
+gates), so this neutralises CSRF for the cookie path. Body-token callers are
+exempt. The header is allow-listed in CORS; cross-site clients must send it
+(any non-empty value).
 
 ## 5. Staff onboarding (do NOT use self-service)
 

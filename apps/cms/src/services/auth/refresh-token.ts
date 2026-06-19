@@ -53,6 +53,23 @@ export interface RefreshTtlEnv {
   FRONTEND_REFRESH_TTL?: string;
 }
 
+/** Header a client echoes to drive cookie-based refresh/logout (CSRF brake). */
+export const REFRESH_CSRF_HEADER = 'x-lumibase-refresh';
+
+/**
+ * CSRF decision for the refresh/logout endpoints. A cookie is an ambient
+ * credential (CSRF-reachable under `SameSite=None`), so it additionally
+ * requires a custom header that a cross-site simple request cannot set. A
+ * body-supplied token is explicit and exempt.
+ */
+export function refreshCsrfOk(
+  source: 'body' | 'cookie' | 'none',
+  headerValue: string | undefined,
+): boolean {
+  if (source !== 'cookie') return true;
+  return (headerValue ?? '').trim().length > 0;
+}
+
 export interface RefreshCookieEnv {
   /** `Lax` (default) | `Strict` | `None`. `None` is required for cross-site. */
   REFRESH_COOKIE_SAMESITE?: string;
