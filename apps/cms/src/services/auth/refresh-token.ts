@@ -20,7 +20,7 @@
  */
 
 import { refreshTokens, type Database } from '@lumibase/database';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, lt } from 'drizzle-orm';
 import { refreshTtlFor, ttlToSeconds } from './token-audience';
 
 /** Entropy of the raw refresh secret. 32 bytes = 256 bits. */
@@ -283,4 +283,37 @@ export async function revokeAllRefreshTokens(
         isNull(refreshTokens.revokedAt),
       ),
     );
+}
+
+/**
+ * Delete refresh-token rows that have passed their natural expiry. Revoked
+ * rows keep their original `expiresAt`, so they linger until then — which
+ * preserves reuse-detection for a token's whole intended lifetime, then are
+ * swept here. Returns the deleted count. Best-effort by the caller.
+ */
+export async function pruneRefreshTokens(
+  db: Database,
+  before: Date = new Date(),
+): Promise<number> {
+  const deleted = await db
+    .delete(refreshTokens)
+    .where(lt(refreshTokens.expiresAt, before))
+    .returning({ id: refreshTokens.id });
+  return deleted.length;
+}
+
+/**
+ * Scheduled-cron wrapper for {@link pruneRefreshTokens} — mirrors the audit
+ * rotator glue. NEVER throws: a cron tick (or Workers `scheduled` handler)
+ * must not surface a runtime error.
+ */
+export async function runScheduledRefreshTokenPrune(db: Database): Promise<{ deleted: number }> {
+  try {
+    const deleted = await pruneRefreshTokens(db);
+    console.log(`[lumibase-cms] refresh-token prune removed ${deleted} expired row(s).`);
+    return { deleted };
+  } catch (err) {
+    console.error('[lumibase-cms] refresh-token prune failed:', err);
+    return { deleted: 0 };
+  }
 }

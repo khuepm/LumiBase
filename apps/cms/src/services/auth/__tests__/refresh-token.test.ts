@@ -8,6 +8,8 @@ import {
   revokeAllRefreshTokens,
   refreshCookieSettings,
   refreshCsrfOk,
+  pruneRefreshTokens,
+  runScheduledRefreshTokenPrune,
 } from '../refresh-token';
 
 /**
@@ -35,6 +37,7 @@ function fakeDb(opts: {
       return builder;
     },
     update: () => builder,
+    delete: () => builder,
     set: (s: any) => {
       calls.updates.push(s);
       return builder;
@@ -165,6 +168,25 @@ describe('refreshCookieSettings (cross-domain)', () => {
   it('accepts Strict and ignores an unknown value (falls back to Lax)', () => {
     expect(refreshCookieSettings({ REFRESH_COOKIE_SAMESITE: 'Strict' }).sameSite).toBe('Strict');
     expect(refreshCookieSettings({ REFRESH_COOKIE_SAMESITE: 'bogus' }).sameSite).toBe('Lax');
+  });
+});
+
+describe('pruneRefreshTokens', () => {
+  it('returns the number of swept rows', async () => {
+    const { db } = fakeDb({ updateReturning: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] });
+    expect(await pruneRefreshTokens(db)).toBe(3);
+  });
+
+  it('runScheduledRefreshTokenPrune never throws and reports the count', async () => {
+    const { db } = fakeDb({ updateReturning: [{ id: 'a' }] });
+    expect(await runScheduledRefreshTokenPrune(db)).toEqual({ deleted: 1 });
+
+    const throwing = {
+      delete: () => {
+        throw new Error('db down');
+      },
+    } as unknown as import('@lumibase/database').Database;
+    expect(await runScheduledRefreshTokenPrune(throwing)).toEqual({ deleted: 0 });
   });
 });
 

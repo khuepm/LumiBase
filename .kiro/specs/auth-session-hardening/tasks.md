@@ -11,7 +11,7 @@ Each task is one or more commits.
   header (`X-LumiBase-Refresh`) that a cross-site simple request cannot set.
   Body-token callers are exempt (the token isn't ambient). Closes the
   `SameSite=None` CSRF gap.
-- [ ] **T2 — Refresh-token pruning (scheduled).** Delete expired + long-ago
+- [x] **T2 — Refresh-token pruning (scheduled).** Delete expired + long-ago
   revoked `refresh_tokens` rows on the existing hourly cron (Workers
   `scheduled` + Node `node-cron`), mirroring the audit rotator wiring.
 - [ ] **T3 — Authenticated change-password.** `POST /api/v1/me/change-password`

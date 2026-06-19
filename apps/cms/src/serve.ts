@@ -5,6 +5,7 @@ import { schema } from '@lumibase/database';
 import cron from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
+import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
 import { bootstrapNodeObservability } from './observability/node';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { createPressureLimiter } from './pressure-limiter';
@@ -77,6 +78,8 @@ async function main() {
   // ticks.
   const rotationTask = cron.schedule('0 * * * *', () => {
     void runScheduledRotation(rotatorDb);
+    // Sweep expired refresh-token rows on the same hourly tick (best-effort).
+    void runScheduledRefreshTokenPrune(rotatorDb);
   });
 
   // ── Load-aware autonomy (content-os task 9; Req 9.4/9.5) ─────────────────
