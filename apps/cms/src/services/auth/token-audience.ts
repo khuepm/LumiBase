@@ -91,3 +91,48 @@ export function sessionTtlFor(
   if (!raw || !TTL_PATTERN.test(raw)) return fallback;
   return raw;
 }
+
+/**
+ * Per-realm REFRESH-token lifetimes — the real "stay logged in" window.
+ * Longer than the access TTL above: the access JWT is the short working
+ * credential, the refresh token (rotating, revocable) silently renews it
+ * up to this horizon. Overridable via `STUDIO_REFRESH_TTL` /
+ * `FRONTEND_REFRESH_TTL`.
+ */
+export const DEFAULT_REFRESH_TTL = {
+  studio: '30d',
+  frontend: '90d',
+} as const;
+
+/** Resolve the refresh-token TTL string for a realm, with env override. */
+export function refreshTtlFor(
+  audience: string,
+  env?: { STUDIO_REFRESH_TTL?: string; FRONTEND_REFRESH_TTL?: string },
+): string {
+  const isFrontend = audience === TOKEN_AUDIENCE.frontend;
+  const fallback = isFrontend ? DEFAULT_REFRESH_TTL.frontend : DEFAULT_REFRESH_TTL.studio;
+  const raw = (isFrontend ? env?.FRONTEND_REFRESH_TTL : env?.STUDIO_REFRESH_TTL)?.trim();
+  if (!raw || !TTL_PATTERN.test(raw)) return fallback;
+  return raw;
+}
+
+const UNIT_SECONDS: Record<string, number> = {
+  s: 1,
+  m: 60,
+  h: 3600,
+  d: 86400,
+  w: 604800,
+  y: 31536000,
+};
+
+/**
+ * Convert a TTL string (`30d`, `12h`, or a bare number of seconds) into
+ * seconds. Returns 0 for an unparseable value (callers fall back to a
+ * default before calling, so this is just a guard).
+ */
+export function ttlToSeconds(ttl: string): number {
+  const m = ttl.trim().match(/^(\d+(?:\.\d+)?)\s*(s|m|h|d|w|y)?$/i);
+  if (!m || !m[1]) return 0;
+  const unit = (m[2] ?? 's').toLowerCase();
+  return Math.floor(parseFloat(m[1]) * (UNIT_SECONDS[unit] ?? 1));
+}

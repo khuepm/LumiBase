@@ -84,6 +84,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     path === '/api/v1/auth/resend-verification' ||
     path === '/api/v1/auth/forgot-password' ||
     path === '/api/v1/auth/reset-password' ||
+    path === '/api/v1/auth/refresh' ||
+    path === '/api/v1/auth/logout' ||
     path === '/api/v1/auth/login' ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/')

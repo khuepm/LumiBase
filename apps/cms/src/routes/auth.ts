@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { z } from 'zod';
 import { SignJWT } from 'jose';
 import { and, eq, sql } from 'drizzle-orm';
@@ -6,7 +7,19 @@ import { roles, systemState, users, userSites } from '@lumibase/database';
 import type { AppEnv } from '../env';
 import { hashPassword, verifyPassword } from '../services/auth/password';
 import { ensureSubscriberRole } from '../services/auth/frontend-role';
-import { TOKEN_AUDIENCE, sessionTtlFor } from '../services/auth/token-audience';
+import {
+  TOKEN_AUDIENCE,
+  sessionTtlFor,
+  refreshTtlFor,
+  ttlToSeconds,
+} from '../services/auth/token-audience';
+import {
+  issueRefreshToken,
+  rotateRefreshToken,
+  revokeRefreshToken,
+  revokeAllRefreshTokens,
+} from '../services/auth/refresh-token';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import {
   signVerificationToken,
   verifyVerificationToken,
@@ -136,6 +149,32 @@ meRouter.get('/admin-path', async (c) => {
 // subscriber token can never be replayed against the management surface
 // even if a policy were misconfigured (defense-in-depth). See
 // `services/auth/token-audience.ts`.
+/**
+ * httpOnly cookie carrying the refresh token. Scoped to the auth routes so
+ * it is only ever sent to `/refresh` and `/logout`. We ALSO return the
+ * token in the response body (the chosen "both" transport), so SPA/SDK
+ * clients on a different origin — where the cookie may be dropped — can
+ * still drive refresh explicitly.
+ */
+const REFRESH_COOKIE = 'lumibase_refresh';
+const REFRESH_COOKIE_PATH = '/api/v1/auth';
+
+function setRefreshCookie(c: Context<AppEnv>, token: string, audience: string): void {
+  setCookie(c, REFRESH_COOKIE, token, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'Lax',
+    path: REFRESH_COOKIE_PATH,
+    maxAge: ttlToSeconds(refreshTtlFor(audience, c.env)),
+  });
+}
+
+/** Refresh token from the request body (`refreshToken`) or the cookie. */
+function readRefreshToken(c: Context<AppEnv>, body?: { refreshToken?: unknown }): string {
+  const fromBody = typeof body?.refreshToken === 'string' ? body.refreshToken.trim() : '';
+  return fromBody || getCookie(c, REFRESH_COOKIE) || '';
+}
+
 async function signCustomJwt(
   payload: any,
   secret: string,
@@ -628,6 +667,10 @@ authRouter.post('/reset-password', async (c) => {
     .set({ passwordHash, updatedAt: new Date() })
     .where(eq(users.id, user.id));
 
+  // Revoke all refresh tokens so a stolen session cannot be silently
+  // renewed after the owner resets their password.
+  await revokeAllRefreshTokens(db, siteId, user.id);
+
   await new AuditLogger({ db, siteId }).write({
     event: 'password_reset_completed',
     actorEmail: user.email,
@@ -1023,6 +1066,15 @@ authRouter.post('/login', async (c) => {
     sessionTtlFor(audience, c.env),
   );
 
+  // Mint the rotating refresh token (new family) that silently renews the
+  // short access token above. Delivered via httpOnly cookie AND the body.
+  const refresh = await issueRefreshToken(
+    db,
+    { siteId, userId: user.id, audience, ip, userAgent },
+    c.env,
+  );
+  setRefreshCookie(c, refresh.token, audience);
+
   // Workers runtime: keep any queued notification (e.g. an
   // anomaly_triggered from the notify_only path) alive past the
   // response via ctx.waitUntil (task 9.6). No-op on Node / tests.
@@ -1031,6 +1083,8 @@ authRouter.post('/login', async (c) => {
   return c.json({
     data: {
       token,
+      refreshToken: refresh.token,
+      refreshTokenExpiresAt: refresh.expiresAt.toISOString(),
       user: {
         id: user.id,
         email: user.email,
@@ -1040,6 +1094,120 @@ authRouter.post('/login', async (c) => {
       },
     },
   });
+});
+
+/**
+ * Silent session renewal. Verifies + rotates the presented refresh token
+ * (cookie or body) and returns a fresh access JWT plus the rotated refresh
+ * token. Public (the refresh token itself is the credential). Reuse of a
+ * revoked token revokes the whole family and clears the cookie.
+ */
+authRouter.post('/refresh', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const ip = extractClientIp(c);
+  const userAgent = c.req.header('user-agent') ?? null;
+
+  const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return c.json(
+      { errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET configuration missing.' }] },
+      500,
+    );
+  }
+
+  // Body is optional — the token may arrive only via the cookie.
+  let body: { refreshToken?: unknown } | undefined;
+  try {
+    body = await c.req.json();
+  } catch {
+    body = undefined;
+  }
+  const presented = readRefreshToken(c, body);
+  if (!presented) {
+    return c.json(
+      { errors: [{ code: 'NO_REFRESH_TOKEN', message: 'No refresh token provided.' }] },
+      401,
+    );
+  }
+
+  const outcome = await rotateRefreshToken(db, { rawToken: presented, siteId, ip, userAgent }, c.env);
+  if (!outcome.ok) {
+    deleteCookie(c, REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
+    if (outcome.reason === 'reuse') {
+      await new AuditLogger({ db, siteId }).write({
+        event: 'refresh_token_reuse_detected',
+        ip,
+        userAgent,
+        requestId: c.get('requestId') ?? null,
+        metadata: { siteId },
+      });
+    }
+    return c.json(
+      { errors: [{ code: 'INVALID_REFRESH_TOKEN', message: 'Refresh token is invalid or expired.' }] },
+      401,
+    );
+  }
+
+  // Re-resolve the user so the new access token reflects current state
+  // (e.g. a now-suspended account cannot keep renewing).
+  const [user] = await db
+    .select({ id: users.id, email: users.email, status: users.status })
+    .from(users)
+    .where(eq(users.id, outcome.userId))
+    .limit(1);
+  if (!user || user.status !== 'active') {
+    await revokeAllRefreshTokens(db, siteId, outcome.userId);
+    deleteCookie(c, REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
+    return c.json(
+      { errors: [{ code: 'ACCOUNT_DISABLED', message: 'This account is not active.' }] },
+      403,
+    );
+  }
+
+  const [membership] = await db
+    .select({ roleId: userSites.roleId })
+    .from(userSites)
+    .where(and(eq(userSites.userId, user.id), eq(userSites.siteId, siteId)))
+    .limit(1);
+  const tokenRoles = [membership?.roleId ?? 'member'];
+
+  const token = await signCustomJwt(
+    { userId: user.id, email: user.email, roles: tokenRoles, siteId },
+    jwtSecret,
+    outcome.audience,
+    sessionTtlFor(outcome.audience, c.env),
+  );
+  setRefreshCookie(c, outcome.token, outcome.audience);
+
+  return c.json({
+    data: {
+      token,
+      refreshToken: outcome.token,
+      refreshTokenExpiresAt: outcome.expiresAt.toISOString(),
+    },
+  });
+});
+
+/**
+ * Logout — revoke the presented refresh token's whole family and clear the
+ * cookie. Public + idempotent (a missing/已-revoked token still returns ok).
+ */
+authRouter.post('/logout', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  let body: { refreshToken?: unknown } | undefined;
+  try {
+    body = await c.req.json();
+  } catch {
+    body = undefined;
+  }
+  const presented = readRefreshToken(c, body);
+  if (presented) {
+    await revokeRefreshToken(db, presented, siteId);
+  }
+  deleteCookie(c, REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
+  return c.json({ data: { status: 'logged_out' } });
 });
 
 /**

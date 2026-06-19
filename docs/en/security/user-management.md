@@ -84,20 +84,20 @@ api_keys → api_key_roles/policies  ← integration principals, scoped per site
 Custom JWTs carry an `aud` claim pinned at sign time
 (`services/auth/token-audience.ts`):
 
-| `aud` | Meaning | Can reach Studio? | Session TTL |
-|-------|---------|-------------------|-------------|
-| `studio` | bootstrap admin or a role with `appAccess` | ✅ (still subject to `appAccess`/TFA) | `12h` (env `STUDIO_SESSION_TTL`) |
-| `frontend` | subscribers / appAccess-less roles | ❌ **hard-rejected by `withStudioAccess`** | `30d` (env `FRONTEND_SESSION_TTL`) |
-| `email-verify` | one-shot registration link token | n/a (not a session token) | 24h (link, not session) |
-| `password-reset` | one-shot password-reset link token | n/a (not a session token) | 1h (link, not session) |
+| `aud` | Meaning | Can reach Studio? | Access TTL | Refresh TTL |
+|-------|---------|-------------------|-----------|-------------|
+| `studio` | bootstrap admin or a role with `appAccess` | ✅ (still subject to `appAccess`/TFA) | `12h` (`STUDIO_SESSION_TTL`) | `30d` (`STUDIO_REFRESH_TTL`) |
+| `frontend` | subscribers / appAccess-less roles | ❌ **hard-rejected by `withStudioAccess`** | `30d` (`FRONTEND_SESSION_TTL`) | `90d` (`FRONTEND_REFRESH_TTL`) |
+| `email-verify` | one-shot registration link token | n/a (not a session token) | 24h (link) | — |
+| `password-reset` | one-shot password-reset link token | n/a (not a session token) | 1h (link) | — |
 
-**Per-realm session TTL** (`sessionTtlFor`): the two realms no longer share
-one lifetime — staff sessions are short (higher-value target, cheap to
-re-auth), subscriber sessions are long (better UX, low risk). Overrides
-accept a compact duration (`12h`, `30d`) or a number of seconds; a
-malformed value falls back to the default so a typo can't break login.
-These are plain session TTLs (no refresh token yet), so the value is the
-forced re-login interval for that realm.
+**Per-realm TTL** (`sessionTtlFor` / `refreshTtlFor`): the two realms no
+longer share one lifetime — staff sessions are short (higher-value target,
+cheap to re-auth), subscriber sessions are long (better UX, low risk). The
+access JWT is the working credential; the refresh token (§4d) silently
+renews it up to the refresh horizon. Overrides accept a compact duration
+(`12h`, `30d`) or a number of seconds; a malformed value falls back to the
+default so a typo can't break login.
 
 The audience wall is **defense-in-depth**: even if a role were
 misconfigured to grant `appAccess`, a `frontend` token is rejected before
@@ -138,7 +138,9 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/login` | public | Issues `frontend`/`studio` JWT. Gated on `status='active'`, LoginGuard, anomaly detector. |
 | `POST /api/v1/auth/resend-verification` | public | Body `{email}`. Per-IP rate-limited. Generic `202`; re-emails the activation link only for a not-yet-active, password-based account (lost-email recovery). |
 | `POST /api/v1/auth/forgot-password` | public | Body `{email}`. Per-IP rate-limited. Generic `202` (no enumeration); emails a reset link only for an active, password-based account. |
-| `POST /api/v1/auth/reset-password` | public | Body `{token,password}`. Consumes a stateless `password-reset` token (1h TTL) and sets the new password hash. |
+| `POST /api/v1/auth/reset-password` | public | Body `{token,password}`. Consumes a stateless `password-reset` token (1h TTL), sets the new password hash, and revokes all refresh tokens. |
+| `POST /api/v1/auth/refresh` | public | Rotates the presented refresh token (cookie or body `{refreshToken}`) → fresh access JWT + rotated refresh token. Reuse of a revoked token revokes the whole family. |
+| `POST /api/v1/auth/logout` | public | Revokes the presented refresh token's family and clears the cookie. Idempotent. |
 | `GET /api/v1/auth/me` | bearer | Current principal incl. `isFrontendUser`. |
 
 ### Guardrails baked in
@@ -156,7 +158,8 @@ Visitor (Next.js)            CMS                              Email
 | Env | Purpose |
 |-----|---------|
 | `JWT_SECRET` | Signs Custom JWTs **and** email-verify/reset tokens. Required. |
-| `STUDIO_SESSION_TTL`, `FRONTEND_SESSION_TTL` | Optional per-realm session lifetime (defaults `12h` / `30d`). |
+| `STUDIO_SESSION_TTL`, `FRONTEND_SESSION_TTL` | Optional per-realm access-token TTL (defaults `12h` / `30d`). |
+| `STUDIO_REFRESH_TTL`, `FRONTEND_REFRESH_TTL` | Optional per-realm refresh-token TTL / login horizon (defaults `30d` / `90d`). |
 | `LUMIBASE_SMTP_URL`, `LUMIBASE_MAIL_FROM` | Outbound verification email. Without it, the user stays `invited` (no link sent). |
 | `CORS_ALLOWED_ORIGINS` | Must include your Next.js origin. |
 | site `siteUrl` | Builds the `…/verify-email?token=` link in the email. |
@@ -218,8 +221,38 @@ POST /auth/reset-password  { token, password }  → sets new password hash
 The reset token is a stateless `password-reset` JWT (same pattern as
 email verification). Trade-off: no per-token revocation and the link stays
 valid for its 1h TTL; rotate `JWT_SECRET` to invalidate all outstanding
-links. Stateless reset does not force-expire existing sessions — acceptable
-for the current 24h session TTL.
+links. A successful reset **revokes all refresh tokens** for the user, so
+existing sessions can no longer be silently renewed (any still-valid access
+JWT survives only until its short TTL expires).
+
+## 4d. Silent session renewal (refresh tokens)
+
+The access JWT (`12h`/`30d`) is a short(er) working credential; a rotating,
+server-tracked **refresh token** renews it without re-entering credentials,
+up to the realm's refresh horizon (default `studio` 30d / `frontend` 90d,
+env `STUDIO_REFRESH_TTL` / `FRONTEND_REFRESH_TTL`).
+
+```
+POST /auth/login    → { token, refreshToken, refreshTokenExpiresAt }  (+ httpOnly cookie)
+POST /auth/refresh  → { token, refreshToken, refreshTokenExpiresAt }  (rotates; cookie or body)
+POST /auth/logout   → revokes the family + clears the cookie
+```
+
+Security model (`services/auth/refresh-token.ts`, table `refresh_tokens`):
+
+- **Hashed at rest** — only `sha256(plaintext)` is stored; plaintext is
+  returned once per login/refresh.
+- **Rotation** — every refresh revokes the presented row and issues a
+  successor in the same `familyId` (one-time use).
+- **Reuse detection** — presenting an already-revoked token (theft signal)
+  revokes the entire family, forcing a fresh login. A benign double-submit
+  trips this too — the accepted cost of strict rotation.
+
+**Transport — both:** the token is set as an `httpOnly`+`Secure`+`SameSite=Lax`
+cookie (path-scoped to `/api/v1/auth`) **and** returned in the body. Cookie
+suits same-site browser apps; the body value suits cross-origin SPAs/SDKs
+where the cookie may be dropped. Over plain `http` (local dev) the `Secure`
+cookie won't stick — use the body token.
 
 ## 5. Staff onboarding (do NOT use self-service)
 
@@ -328,7 +361,8 @@ never become an agent tool.
 | Studio access + frontend wall | `apps/cms/src/middleware/studio-access.ts` |
 | Subscriber role provisioning | `apps/cms/src/services/auth/frontend-role.ts` |
 | Subscriber content-read grants | `apps/cms/src/services/auth/subscriber-access.ts` |
-| Token audiences | `apps/cms/src/services/auth/token-audience.ts` |
+| Token audiences + access/refresh TTL helpers | `apps/cms/src/services/auth/token-audience.ts` |
+| Rotating refresh tokens (issue/rotate/revoke) | `apps/cms/src/services/auth/refresh-token.ts` (table `refresh_tokens`) |
 | Email-verify / password-reset tokens | `apps/cms/src/services/auth/{email-verification,password-reset}.ts` |
 | Per-IP rate limit (register/resend/forgot) | `apps/cms/src/modules/auth/registration-guard.ts` |
 | Verification / reset emails | `apps/cms/src/modules/email/{verify-email,password-reset}.ts` |

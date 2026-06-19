@@ -58,6 +58,14 @@ export interface Bindings {
    * `30d`. Invalid values fall back to the default.
    */
   FRONTEND_SESSION_TTL?: string;
+  /**
+   * Refresh-token TTL for the `studio` realm — the "stay logged in"
+   * horizon over which a short access token is silently renewed. Defaults
+   * to `30d`. Invalid values fall back to the default.
+   */
+  STUDIO_REFRESH_TTL?: string;
+  /** Refresh-token TTL for the `frontend` realm. Defaults to `90d`. */
+  FRONTEND_REFRESH_TTL?: string;
   /** When set to `"true"`, withAuth allows dev tokens (skip JWKS verify). */
   LUMIBASE_DEV_AUTH?: string;
   /** Secret key for AES-GCM per-field encryption (base64 encoded). */

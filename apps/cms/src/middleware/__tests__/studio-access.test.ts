@@ -128,6 +128,8 @@ describe('withStudioAccess', () => {
       '/api/v1/auth/resend-verification',
       '/api/v1/auth/forgot-password',
       '/api/v1/auth/reset-password',
+      '/api/v1/auth/refresh',
+      '/api/v1/auth/logout',
     ]) {
       app.post(p, (c) => c.json({ ok: true }));
     }
@@ -136,6 +138,8 @@ describe('withStudioAccess', () => {
       '/api/v1/auth/resend-verification',
       '/api/v1/auth/forgot-password',
       '/api/v1/auth/reset-password',
+      '/api/v1/auth/refresh',
+      '/api/v1/auth/logout',
     ]) {
       const res = await app.request(p, { method: 'POST', body: '{}' });
       expect(res.status, p).toBe(200);
