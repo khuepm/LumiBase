@@ -10,6 +10,8 @@ import {
   refreshCsrfOk,
   pruneRefreshTokens,
   runScheduledRefreshTokenPrune,
+  listUserSessions,
+  revokeSessionById,
 } from '../refresh-token';
 
 /**
@@ -51,8 +53,10 @@ function fakeDb(opts: {
       return Promise.resolve(opts.updateReturning ?? []);
     },
     transaction: (cb: (tx: any) => unknown) => cb(builder),
-    // awaitable for update-without-returning
-    then: (resolve: (v: unknown) => void) => resolve(undefined),
+    // Awaitable terminal for queries that end at `.where(...)` (no `.limit()`
+    // / `.returning()`), e.g. listUserSessions. Resolves the configured rows;
+    // update-without-returning awaits this too but ignores the value.
+    then: (resolve: (v: unknown) => void) => resolve(opts.selectRows ?? []),
   };
   return { db: builder as Database, calls };
 }
@@ -168,6 +172,25 @@ describe('refreshCookieSettings (cross-domain)', () => {
   it('accepts Strict and ignores an unknown value (falls back to Lax)', () => {
     expect(refreshCookieSettings({ REFRESH_COOKIE_SAMESITE: 'Strict' }).sameSite).toBe('Strict');
     expect(refreshCookieSettings({ REFRESH_COOKIE_SAMESITE: 'bogus' }).sameSite).toBe('Lax');
+  });
+});
+
+describe('listUserSessions / revokeSessionById', () => {
+  it('returns sessions newest-first without any token hash', async () => {
+    const rows = [
+      { id: 'a', audience: 'studio', createdAt: new Date(1000), expiresAt: new Date(9e12), lastIp: '1.1.1.1', lastUserAgent: 'x' },
+      { id: 'b', audience: 'studio', createdAt: new Date(3000), expiresAt: new Date(9e12), lastIp: null, lastUserAgent: null },
+      { id: 'c', audience: 'studio', createdAt: new Date(2000), expiresAt: new Date(9e12), lastIp: null, lastUserAgent: null },
+    ];
+    const { db } = fakeDb({ selectRows: rows });
+    const out = await listUserSessions(db, 's1', 'u1');
+    expect(out.map((s) => s.id)).toEqual(['b', 'c', 'a']);
+    expect(JSON.stringify(out)).not.toContain('tokenHash');
+  });
+
+  it('revokeSessionById is true on a match, false otherwise', async () => {
+    expect(await revokeSessionById(fakeDb({ updateReturning: [{ id: 'a' }] }).db, 's', 'u', 'a')).toBe(true);
+    expect(await revokeSessionById(fakeDb({ updateReturning: [] }).db, 's', 'u', 'a')).toBe(false);
   });
 });
 

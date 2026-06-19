@@ -20,7 +20,7 @@
  */
 
 import { refreshTokens, type Database } from '@lumibase/database';
-import { and, eq, isNull, lt } from 'drizzle-orm';
+import { and, eq, gt, isNull, lt } from 'drizzle-orm';
 import { refreshTtlFor, ttlToSeconds } from './token-audience';
 
 /** Entropy of the raw refresh secret. 32 bytes = 256 bits. */
@@ -283,6 +283,70 @@ export async function revokeAllRefreshTokens(
         isNull(refreshTokens.revokedAt),
       ),
     );
+}
+
+export interface SessionSummary {
+  id: string;
+  audience: string;
+  createdAt: Date;
+  expiresAt: Date;
+  lastIp: string | null;
+  lastUserAgent: string | null;
+}
+
+/**
+ * List a user's active sessions (live refresh tokens) on a site, newest
+ * first. Never exposes the token hash — only safe display metadata.
+ */
+export async function listUserSessions(
+  db: Database,
+  siteId: string,
+  userId: string,
+): Promise<SessionSummary[]> {
+  const rows = await db
+    .select({
+      id: refreshTokens.id,
+      audience: refreshTokens.audience,
+      createdAt: refreshTokens.createdAt,
+      expiresAt: refreshTokens.expiresAt,
+      lastIp: refreshTokens.lastIp,
+      lastUserAgent: refreshTokens.lastUserAgent,
+    })
+    .from(refreshTokens)
+    .where(
+      and(
+        eq(refreshTokens.siteId, siteId),
+        eq(refreshTokens.userId, userId),
+        isNull(refreshTokens.revokedAt),
+        gt(refreshTokens.expiresAt, new Date()),
+      ),
+    );
+  return rows.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+}
+
+/**
+ * Revoke one of a user's sessions by row id (scoped to site + user so a
+ * caller can only revoke their own). Returns true when a live row matched.
+ */
+export async function revokeSessionById(
+  db: Database,
+  siteId: string,
+  userId: string,
+  sessionId: string,
+): Promise<boolean> {
+  const revoked = await db
+    .update(refreshTokens)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(refreshTokens.id, sessionId),
+        eq(refreshTokens.siteId, siteId),
+        eq(refreshTokens.userId, userId),
+        isNull(refreshTokens.revokedAt),
+      ),
+    )
+    .returning({ id: refreshTokens.id });
+  return revoked.length > 0;
 }
 
 /**

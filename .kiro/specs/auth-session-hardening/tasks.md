@@ -14,9 +14,9 @@ Each task is one or more commits.
 - [x] **T2 — Refresh-token pruning (scheduled).** Delete expired + long-ago
   revoked `refresh_tokens` rows on the existing hourly cron (Workers
   `scheduled` + Node `node-cron`), mirroring the audit rotator wiring.
-- [ ] **T3 — Authenticated change-password.** `POST /api/v1/me/change-password`
+- [x] **T3 — Authenticated change-password.** `POST /api/v1/me/change-password`
   — verify current password, set new hash, revoke all refresh tokens.
-- [ ] **T4 — Session management.** `GET /api/v1/me/sessions`,
+- [x] **T4 — Session management.** `GET /api/v1/me/sessions`,
   `DELETE /api/v1/me/sessions/:id`, `DELETE /api/v1/me/sessions` (revoke
   others) over the now-tracked refresh tokens.
 - [ ] **T5 — Refresh-flow DB integration test.** Real-Postgres test

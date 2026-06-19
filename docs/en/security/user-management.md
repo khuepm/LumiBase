@@ -141,6 +141,10 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/reset-password` | public | Body `{token,password}`. Consumes a stateless `password-reset` token (1h TTL), sets the new password hash, and revokes all refresh tokens. |
 | `POST /api/v1/auth/refresh` | public | Rotates the presented refresh token (cookie or body `{refreshToken}`) → fresh access JWT + rotated refresh token. Reuse of a revoked token revokes the whole family. |
 | `POST /api/v1/auth/logout` | public | Revokes the presented refresh token's family and clears the cookie. Idempotent. |
+| `POST /api/v1/me/change-password` | bearer | Body `{currentPassword,newPassword}`. Verifies current password, sets new hash, revokes all refresh tokens. |
+| `GET /api/v1/me/sessions` | bearer | The caller's active sessions (live refresh tokens), redacted. |
+| `DELETE /api/v1/me/sessions/:id` | bearer | Revoke one of the caller's own sessions. |
+| `DELETE /api/v1/me/sessions` | bearer | Revoke ALL of the caller's sessions (logout everywhere). |
 | `GET /api/v1/auth/me` | bearer | Current principal incl. `isFrontendUser`. |
 
 ### Guardrails baked in
@@ -273,6 +277,20 @@ a custom header (and doing so from JS triggers a CORS preflight the server
 gates), so this neutralises CSRF for the cookie path. Body-token callers are
 exempt. The header is allow-listed in CORS; cross-site clients must send it
 (any non-empty value).
+
+## 4e. Account self-service (authenticated)
+
+For a logged-in user (`bearer`, under `/api/v1/me`):
+
+- **Change password** — `POST /me/change-password` verifies the current
+  password, sets the new hash, and revokes all refresh tokens so other
+  sessions can't be silently renewed. SSO/passwordless accounts get
+  `NO_PASSWORD`.
+- **Session management** — now that refresh tokens are tracked, `GET
+  /me/sessions` lists the caller's active sessions (no token material),
+  `DELETE /me/sessions/:id` revokes one, and `DELETE /me/sessions` revokes
+  all (logout everywhere). Expired/revoked rows are swept by the hourly
+  prune (§4d).
 
 ## 5. Staff onboarding (do NOT use self-service)
 

@@ -21,6 +21,8 @@ import {
   refreshCookieSettings,
   refreshCsrfOk,
   REFRESH_CSRF_HEADER,
+  listUserSessions,
+  revokeSessionById,
 } from '../services/auth/refresh-token';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import {
@@ -142,6 +144,104 @@ meRouter.get('/admin-path', async (c) => {
   }
 
   return c.json({ data: { adminPath } });
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(6),
+});
+
+/**
+ * `POST /api/v1/me/change-password` — authenticated self-service password
+ * change. Verifies the current password, sets the new hash, and revokes all
+ * refresh tokens so other sessions cannot be silently renewed (the caller's
+ * current access JWT survives until its short TTL; re-login refreshes it).
+ */
+meRouter.post('/change-password', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  const userId = auth.userId;
+  if (!userId) {
+    return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
+  }
+
+  const input = changePasswordSchema.parse(await c.req.json());
+
+  const [user] = await db
+    .select({ id: users.id, email: users.email, passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  // Accounts without a local password (SSO / CF Access) can't change one here.
+  if (!user || !user.passwordHash) {
+    return c.json(
+      { errors: [{ code: 'NO_PASSWORD', message: 'This account does not use a password.' }] },
+      400,
+    );
+  }
+
+  if (!(await verifyPassword(input.currentPassword, user.passwordHash))) {
+    return c.json(
+      { errors: [{ code: 'INVALID_CREDENTIALS', message: 'Current password is incorrect.' }] },
+      401,
+    );
+  }
+
+  const passwordHash = await hashPassword(input.newPassword);
+  await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, user.id));
+  await revokeAllRefreshTokens(db, siteId, user.id);
+
+  await new AuditLogger({ db, siteId }).write({
+    event: 'password_changed',
+    actorEmail: user.email,
+    ip: extractClientIp(c),
+    userAgent: c.req.header('user-agent') ?? null,
+    requestId: c.get('requestId') ?? null,
+    metadata: { userId: user.id, siteId, selfService: true },
+  });
+
+  return c.json({ data: { status: 'password_changed' } });
+});
+
+/** `GET /api/v1/me/sessions` — the caller's active sessions (live refresh tokens). */
+meRouter.get('/sessions', async (c) => {
+  const auth = c.get('auth');
+  if (!auth.userId) {
+    return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
+  }
+  const data = await listUserSessions(c.get('db'), c.get('siteId'), auth.userId);
+  return c.json({ data });
+});
+
+/** `DELETE /api/v1/me/sessions/:id` — revoke one of the caller's own sessions. */
+meRouter.delete('/sessions/:id', async (c) => {
+  const auth = c.get('auth');
+  if (!auth.userId) {
+    return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
+  }
+  const removed = await revokeSessionById(
+    c.get('db'),
+    c.get('siteId'),
+    auth.userId,
+    c.req.param('id'),
+  );
+  if (!removed) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Session not found.' }] }, 404);
+  }
+  return c.json({ data: { id: c.req.param('id'), revoked: true } });
+});
+
+/** `DELETE /api/v1/me/sessions` — revoke ALL of the caller's sessions (logout everywhere). */
+meRouter.delete('/sessions', async (c) => {
+  const auth = c.get('auth');
+  if (!auth.userId) {
+    return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
+  }
+  await revokeAllRefreshTokens(c.get('db'), c.get('siteId'), auth.userId);
+  clearRefreshCookie(c);
+  return c.json({ data: { status: 'all_sessions_revoked' } });
 });
 
 // Helper to sign Custom JWT (HS256).
