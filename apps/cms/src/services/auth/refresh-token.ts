@@ -53,6 +53,41 @@ export interface RefreshTtlEnv {
   FRONTEND_REFRESH_TTL?: string;
 }
 
+export interface RefreshCookieEnv {
+  /** `Lax` (default) | `Strict` | `None`. `None` is required for cross-site. */
+  REFRESH_COOKIE_SAMESITE?: string;
+  /** Cookie `Domain`, e.g. `.example.com` to share across subdomains. */
+  REFRESH_COOKIE_DOMAIN?: string;
+  /** `"false"` allows the cookie over plain http (local dev only). */
+  REFRESH_COOKIE_SECURE?: string;
+}
+
+export interface RefreshCookieSettings {
+  sameSite: 'Lax' | 'Strict' | 'None';
+  secure: boolean;
+  domain?: string;
+}
+
+/**
+ * Resolve the cross-domain cookie attributes from env. Defaults to the
+ * safe same-site posture (`Lax`, `Secure`, no explicit domain). Browsers
+ * reject `SameSite=None` without `Secure`, so `None` always forces
+ * `secure: true` regardless of the override.
+ */
+export function refreshCookieSettings(env?: RefreshCookieEnv): RefreshCookieSettings {
+  const raw = env?.REFRESH_COOKIE_SAMESITE?.trim().toLowerCase();
+  const sameSite: RefreshCookieSettings['sameSite'] =
+    raw === 'none' ? 'None' : raw === 'strict' ? 'Strict' : 'Lax';
+
+  // Default secure=true; only an explicit "false" (dev over http) disables
+  // it — but SameSite=None mandates Secure, so it wins.
+  let secure = env?.REFRESH_COOKIE_SECURE?.trim().toLowerCase() !== 'false';
+  if (sameSite === 'None') secure = true;
+
+  const domain = env?.REFRESH_COOKIE_DOMAIN?.trim();
+  return { sameSite, secure, ...(domain ? { domain } : {}) };
+}
+
 export interface IssuedRefreshToken {
   /** Row id of the inserted token. */
   id: string;

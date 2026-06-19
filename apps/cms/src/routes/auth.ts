@@ -18,6 +18,7 @@ import {
   rotateRefreshToken,
   revokeRefreshToken,
   revokeAllRefreshTokens,
+  refreshCookieSettings,
 } from '../services/auth/refresh-token';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import {
@@ -159,14 +160,29 @@ meRouter.get('/admin-path', async (c) => {
 const REFRESH_COOKIE = 'lumibase_refresh';
 const REFRESH_COOKIE_PATH = '/api/v1/auth';
 
+/** Shared cookie attributes (path + cross-domain settings) for set/delete. */
+function refreshCookieBase(c: Context<AppEnv>) {
+  const { sameSite, secure, domain } = refreshCookieSettings(c.env);
+  return {
+    httpOnly: true,
+    secure,
+    sameSite,
+    path: REFRESH_COOKIE_PATH,
+    ...(domain ? { domain } : {}),
+  } as const;
+}
+
 function setRefreshCookie(c: Context<AppEnv>, token: string, audience: string): void {
   setCookie(c, REFRESH_COOKIE, token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'Lax',
-    path: REFRESH_COOKIE_PATH,
+    ...refreshCookieBase(c),
     maxAge: ttlToSeconds(refreshTtlFor(audience, c.env)),
   });
+}
+
+/** Clear the refresh cookie using the same path/domain it was set with. */
+function clearRefreshCookie(c: Context<AppEnv>): void {
+  const { path, domain } = refreshCookieBase(c);
+  deleteCookie(c, REFRESH_COOKIE, { path, ...(domain ? { domain } : {}) });
 }
 
 /** Refresh token from the request body (`refreshToken`) or the cookie. */
@@ -1133,7 +1149,7 @@ authRouter.post('/refresh', async (c) => {
 
   const outcome = await rotateRefreshToken(db, { rawToken: presented, siteId, ip, userAgent }, c.env);
   if (!outcome.ok) {
-    deleteCookie(c, REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
+    clearRefreshCookie(c);
     if (outcome.reason === 'reuse') {
       await new AuditLogger({ db, siteId }).write({
         event: 'refresh_token_reuse_detected',
@@ -1158,7 +1174,7 @@ authRouter.post('/refresh', async (c) => {
     .limit(1);
   if (!user || user.status !== 'active') {
     await revokeAllRefreshTokens(db, siteId, outcome.userId);
-    deleteCookie(c, REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
+    clearRefreshCookie(c);
     return c.json(
       { errors: [{ code: 'ACCOUNT_DISABLED', message: 'This account is not active.' }] },
       403,
@@ -1206,7 +1222,7 @@ authRouter.post('/logout', async (c) => {
   if (presented) {
     await revokeRefreshToken(db, presented, siteId);
   }
-  deleteCookie(c, REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
+  clearRefreshCookie(c);
   return c.json({ data: { status: 'logged_out' } });
 });
 

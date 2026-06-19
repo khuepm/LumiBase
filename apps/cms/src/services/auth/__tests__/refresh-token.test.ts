@@ -6,6 +6,7 @@ import {
   rotateRefreshToken,
   revokeRefreshToken,
   revokeAllRefreshTokens,
+  refreshCookieSettings,
 } from '../refresh-token';
 
 /**
@@ -132,6 +133,37 @@ describe('rotateRefreshToken', () => {
     expect(calls.updates).toHaveLength(1);
     expect(calls.updates[0]).toHaveProperty('revokedAt');
     expect(calls.updates[0]).toHaveProperty('replacedBy');
+  });
+});
+
+describe('refreshCookieSettings (cross-domain)', () => {
+  it('defaults to the safe same-site posture', () => {
+    expect(refreshCookieSettings()).toEqual({ sameSite: 'Lax', secure: true });
+    expect(refreshCookieSettings({})).toEqual({ sameSite: 'Lax', secure: true });
+  });
+
+  it('enables cross-site cookies with SameSite=None (case-insensitive) + Domain', () => {
+    expect(
+      refreshCookieSettings({ REFRESH_COOKIE_SAMESITE: 'none', REFRESH_COOKIE_DOMAIN: '.example.com' }),
+    ).toEqual({ sameSite: 'None', secure: true, domain: '.example.com' });
+  });
+
+  it('forces Secure when SameSite=None even if secure is disabled', () => {
+    expect(
+      refreshCookieSettings({ REFRESH_COOKIE_SAMESITE: 'None', REFRESH_COOKIE_SECURE: 'false' }),
+    ).toEqual({ sameSite: 'None', secure: true });
+  });
+
+  it('allows insecure cookies for local http dev (Lax + secure=false)', () => {
+    expect(refreshCookieSettings({ REFRESH_COOKIE_SECURE: 'false' })).toEqual({
+      sameSite: 'Lax',
+      secure: false,
+    });
+  });
+
+  it('accepts Strict and ignores an unknown value (falls back to Lax)', () => {
+    expect(refreshCookieSettings({ REFRESH_COOKIE_SAMESITE: 'Strict' }).sameSite).toBe('Strict');
+    expect(refreshCookieSettings({ REFRESH_COOKIE_SAMESITE: 'bogus' }).sameSite).toBe('Lax');
   });
 });
 

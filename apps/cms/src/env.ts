@@ -66,6 +66,16 @@ export interface Bindings {
   STUDIO_REFRESH_TTL?: string;
   /** Refresh-token TTL for the `frontend` realm. Defaults to `90d`. */
   FRONTEND_REFRESH_TTL?: string;
+  /**
+   * Refresh cookie `SameSite`: `Lax` (default) | `Strict` | `None`. Use
+   * `None` when the frontend is on a different site/domain than the API
+   * (cross-site) — browsers then also require `Secure`, which is forced.
+   */
+  REFRESH_COOKIE_SAMESITE?: string;
+  /** Refresh cookie `Domain`, e.g. `.example.com` to share across subdomains. */
+  REFRESH_COOKIE_DOMAIN?: string;
+  /** `"false"` allows the refresh cookie over plain http (local dev only). */
+  REFRESH_COOKIE_SECURE?: string;
   /** When set to `"true"`, withAuth allows dev tokens (skip JWKS verify). */
   LUMIBASE_DEV_AUTH?: string;
   /** Secret key for AES-GCM per-field encryption (base64 encoded). */

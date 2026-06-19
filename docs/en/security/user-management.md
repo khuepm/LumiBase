@@ -160,6 +160,7 @@ Visitor (Next.js)            CMS                              Email
 | `JWT_SECRET` | Signs Custom JWTs **and** email-verify/reset tokens. Required. |
 | `STUDIO_SESSION_TTL`, `FRONTEND_SESSION_TTL` | Optional per-realm access-token TTL (defaults `12h` / `30d`). |
 | `STUDIO_REFRESH_TTL`, `FRONTEND_REFRESH_TTL` | Optional per-realm refresh-token TTL / login horizon (defaults `30d` / `90d`). |
+| `REFRESH_COOKIE_SAMESITE`, `REFRESH_COOKIE_DOMAIN`, `REFRESH_COOKIE_SECURE` | Optional cross-domain refresh-cookie attributes (see §4d). |
 | `LUMIBASE_SMTP_URL`, `LUMIBASE_MAIL_FROM` | Outbound verification email. Without it, the user stays `invited` (no link sent). |
 | `CORS_ALLOWED_ORIGINS` | Must include your Next.js origin. |
 | site `siteUrl` | Builds the `…/verify-email?token=` link in the email. |
@@ -248,11 +249,25 @@ Security model (`services/auth/refresh-token.ts`, table `refresh_tokens`):
   revokes the entire family, forcing a fresh login. A benign double-submit
   trips this too — the accepted cost of strict rotation.
 
-**Transport — both:** the token is set as an `httpOnly`+`Secure`+`SameSite=Lax`
-cookie (path-scoped to `/api/v1/auth`) **and** returned in the body. Cookie
-suits same-site browser apps; the body value suits cross-origin SPAs/SDKs
-where the cookie may be dropped. Over plain `http` (local dev) the `Secure`
-cookie won't stick — use the body token.
+**Transport — both:** the token is set as an `httpOnly` cookie (path-scoped
+to `/api/v1/auth`) **and** returned in the body. Cookie suits browser apps;
+the body value suits cross-origin SPAs/SDKs where the cookie may be dropped.
+
+Cookie attributes are env-configurable for cross-domain setups
+(`refreshCookieSettings`):
+
+| Env | Default | Notes |
+| --- | --- | --- |
+| `REFRESH_COOKIE_SAMESITE` | `Lax` | Set `None` when the frontend is on a **different site** than the API (cross-site). `None` forces `Secure`. `Strict` also accepted. |
+| `REFRESH_COOKIE_DOMAIN` | _(host-only)_ | e.g. `.example.com` to share the cookie across subdomains (`app.` ↔ `api.`). |
+| `REFRESH_COOKIE_SECURE` | `true` | Set `false` only for local `http` dev. Ignored (forced `true`) when SameSite=`None`. |
+
+For a cross-site browser frontend you must also: serve both over HTTPS, set
+`CORS_ALLOWED_ORIGINS` to the exact frontend origin (no `*`), and have the
+client send `credentials: 'include'`. ⚠️ With `SameSite=None` the cookie is
+attached cross-site, so a cookie-only `/refresh`/`/logout` is CSRF-reachable
+— prefer the **body** token for cross-site clients, or add a CSRF token
+(see "remaining work").
 
 ## 5. Staff onboarding (do NOT use self-service)
 
