@@ -1,5 +1,10 @@
 import { MeiliSearch } from 'meilisearch';
-import type { SearchProvider, SearchResult, SearchOptions } from '../../interfaces';
+import type {
+  SearchProvider,
+  SearchResult,
+  SearchOptions,
+  SearchIndexSettings,
+} from '../../interfaces';
 
 export class MeiliSearchProvider implements SearchProvider {
   private client: MeiliSearch;
@@ -37,5 +42,10 @@ export class MeiliSearchProvider implements SearchProvider {
   async getIndex(collection: string): Promise<{ numberOfDocuments: number }> {
     const stats = await this.client.index(collection).getStats();
     return { numberOfDocuments: stats.numberOfDocuments };
+  }
+
+  async configureIndex(collection: string, settings: SearchIndexSettings): Promise<void> {
+    const index = this.client.index(collection);
+    await index.updateSettings(settings);
   }
 }

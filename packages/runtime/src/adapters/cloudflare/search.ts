@@ -1,4 +1,9 @@
-import type { SearchProvider, SearchResult, SearchOptions } from '../../interfaces';
+import type {
+  SearchProvider,
+  SearchResult,
+  SearchOptions,
+  SearchIndexSettings,
+} from '../../interfaces';
 
 /**
  * MeiliSearch Cloud-backed SearchProvider for Cloudflare Workers.
@@ -106,6 +111,22 @@ export class CloudflareSearchProvider implements SearchProvider {
 
     const stats = (await response.json()) as { numberOfDocuments: number };
     return { numberOfDocuments: stats.numberOfDocuments };
+  }
+
+  async configureIndex(collection: string, settings: SearchIndexSettings): Promise<void> {
+    const response = await fetch(
+      `${this.host}/indexes/${encodeURIComponent(collection)}/settings`,
+      {
+        method: 'PATCH',
+        headers: this.headers(),
+        body: JSON.stringify(settings),
+      },
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`MeiliSearch configureIndex error (${response.status}): ${error}`);
+    }
   }
 
   private headers(): Record<string, string> {
