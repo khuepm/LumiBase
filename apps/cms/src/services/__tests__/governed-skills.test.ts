@@ -48,8 +48,42 @@ describe('governed risk classification', () => {
     'createFlow',
     'deleteFlow',
     'runFlow',
+    'createApiKey',
+    'rotateApiKey',
+    'revokeApiKey',
+    'inviteUser',
+    'updateUser',
+    'removeUser',
+    'createTeam',
+    'deleteTeam',
+    'addTeamMember',
+    'removeTeamMember',
+    'upsertSetting',
+    'deleteSetting',
+    'createTranslation',
+    'updateTranslation',
+    'deleteTranslation',
+    'createWebhook',
+    'updateWebhook',
+    'deleteWebhook',
+    'installExtension',
+    'updateExtension',
+    'uninstallExtension',
   ];
-  const SAFE = ['listRelations', 'listRoles', 'listPolicies', 'listIntents', 'listFlows'];
+  const SAFE = [
+    'listRelations',
+    'listRoles',
+    'listPolicies',
+    'listIntents',
+    'listFlows',
+    'listApiKeys',
+    'listUsers',
+    'listTeams',
+    'listSettings',
+    'listTranslations',
+    'listWebhooks',
+    'listExtensions',
+  ];
 
   it('classifies every governed write/delete skill as dangerous (HITL-gated)', () => {
     for (const name of DANGEROUS) {

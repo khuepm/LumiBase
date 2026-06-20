@@ -9,7 +9,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-06-19
+## [0.9.0] - 2026-06-20
 
 ### Version
 
@@ -17,7 +17,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Date
 
-- `2026-06-19`
+- `2026-06-20`
 
 ### Highlights
 
@@ -28,7 +28,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ### Added
 
 - **MCP (standalone):** new tool modules — `relations`, `access` (roles/policies + bulk export/import/conflict checks), `api-keys`, `users-teams`, `content-config` (presets/settings/translations), `translation-memory`, `webhooks`, `agent` (intents/flows), `search-media`, `ops`, `admin` (backup/restore + materialize), `extensions` (+ marketplace). Shared `crudModule` factory + helpers; `tools/index.ts` aggregator; client gained generic `delete<T>`, root-text (`/health`, `/metrics`) and raw NDJSON (`backup`/`restore`) helpers; vitest test suite.
-- **MCP (governed):** governed skills `listRelations`/`createRelation`/`deleteRelation`, `listRoles`/`createRole`/`deleteRole`, `listPolicies`/`createPolicy`/`deletePolicy`, `listIntents`/`createIntent`/`deleteIntent`, `listFlows`/`createFlow`/`deleteFlow`/`runFlow`. New thin `AccessService`; `AISecureHarness` accepts `accessService`/`intentService`/`db`/`siteId`; per-skill `dangerous` risk flag honoured by `evaluateRisk` + `ToolRegistryService`. Skill metadata mirrored in `@lumibase/ai-skills` with a registry-sync test.
+- **MCP (governed):** governed skills for relations, RBAC roles/policies, content intents and flows, plus identity & config — API keys (`listApiKeys`/`createApiKey`/`rotateApiKey`/`revokeApiKey`), users (`listUsers`/`inviteUser`/`updateUser`/`removeUser`), teams (`listTeams`/`createTeam`/`deleteTeam`/`addTeamMember`/`removeTeamMember`), config (settings/translations/webhooks list+CRUD), and extensions (`listExtensions`/`installExtension`/`updateExtension`/`uninstallExtension`). New thin `AccessService`/`ConfigService`/`ExtensionsService` and an extracted `api-key-token` util (reused by the REST route); `AISecureHarness` accepts `accessService`/`intentService`/`configService`/`extensionsService`/`db`/`siteId`; per-skill `dangerous` risk flag honoured by `evaluateRisk` + `ToolRegistryService`. Skill metadata mirrored in `@lumibase/ai-skills` with a registry-sync test.
+- **MCP docs/release:** `README.md` Release policy updated to `v0.9.0` (preserving the 0.5.0 Content OS foundation note).
+
+### Notes
+
+- NDJSON backup/restore, marketplace install/publish, and binary media remain **standalone-server-only** (`@lumibase/mcp-server`) — their bespoke crypto/SSRF/NDJSON logic is not duplicated into the governed harness. They are still fully usable via the standalone surface (RBAC enforced server-side).
 
 ### Changed
 

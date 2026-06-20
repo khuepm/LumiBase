@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { AccessService } from '../services/access-service';
 import { AISecureHarness, CORE_SKILLS } from '../services/ai-harness';
+import { ConfigService } from '../services/config-service';
+import { ExtensionsService } from '../services/extensions-service';
 import { getContentOsFlags } from '../services/feature-flags';
 import { IntentService } from '../services/intent-service';
 import { ItemService } from '../services/item-service';
@@ -47,8 +49,10 @@ mcpRouter.post('/', async (c) => {
       search: runtime.search,
       queue: runtime.queue,
     }),
-    accessService: new AccessService({ db, siteId }),
+    accessService: new AccessService({ db, siteId, userId: auth.userId ?? null }),
     intentService: new IntentService({ db, siteId, userId: auth.userId ?? null, llm }),
+    configService: new ConfigService({ db, siteId }),
+    extensionsService: new ExtensionsService({ db, siteId, userId: auth.userId ?? null }),
     llm,
     queue: runtime.queue,
   });

@@ -198,8 +198,20 @@ The `dangerous` flag is honoured by both `AISecureHarness.evaluateRisk` and `Too
 | `createIntent` / `deleteIntent` | intents | `intents:write` | **DANGEROUS** | Real → IntentService |
 | `listFlows` | flows | `flows:read` | SAFE | Real → DB (tenant-scoped) |
 | `createFlow` / `deleteFlow` / `runFlow` | flows | `flows:write` / `flows:run` | **DANGEROUS** | Real → DB + `runFlow` |
+| `listApiKeys` | access | `api-keys:read` | SAFE | Real → AccessService |
+| `createApiKey` / `rotateApiKey` / `revokeApiKey` | access | `api-keys:create` / `:write` / `:delete` | **DANGEROUS** (`revoke` irreversible) | Real → AccessService (token returned once) |
+| `listUsers` | access | `users:read` | SAFE | Real → AccessService |
+| `inviteUser` / `updateUser` / `removeUser` | access | `users:write` / `:delete` | **DANGEROUS** (`remove` irreversible) | Real → AccessService |
+| `listTeams` | access | `teams:read` | SAFE | Real → AccessService |
+| `createTeam` / `deleteTeam` / `addTeamMember` / `removeTeamMember` | access | `teams:write` / `:delete` | **DANGEROUS** | Real → AccessService |
+| `listSettings` / `listTranslations` / `listWebhooks` | access | `config:read` | SAFE | Real → ConfigService |
+| `upsertSetting` / `deleteSetting` / `create*`/`update*`/`delete*` translation & webhook | access | `config:write` / `:delete` | **DANGEROUS** | Real → ConfigService |
+| `listExtensions` | access | `extensions:read` | SAFE | Real → ExtensionsService |
+| `installExtension` / `updateExtension` / `uninstallExtension` | access | `extensions:write` / `:delete` | **DANGEROUS** | Real → ExtensionsService |
 
 > Irreversible skills (hard-capped at autonomy **L2**): `deleteCollection`, `deleteField`, `deleteRole`, `deletePolicy`, `deleteRelation`, `revokeApiKey`, `removeUser`.
+>
+> Standalone-only (not on the governed endpoint): NDJSON `export_backup`/`restore_backup`, marketplace `install_marketplace_extension`/`publish_extension`, and binary media — these stay on the `@lumibase/mcp-server` REST passthrough where their bespoke crypto/SSRF/NDJSON logic already lives.
 
 Skills can be overridden per-site via the `agent_tools` database table without redeploying.
 

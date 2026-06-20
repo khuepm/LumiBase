@@ -4,6 +4,8 @@ import { and, eq } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
 import type { AccessService } from './access-service';
+import type { ConfigService } from './config-service';
+import type { ExtensionsService } from './extensions-service';
 import type { IntentService } from './intent-service';
 import { runFlow, type FlowGraph } from './flow-service';
 import type { ConfiguredLLM } from './llm-provider';
@@ -80,10 +82,14 @@ export interface AISecureHarnessConfig {
   llm?: ConfiguredLLM | null;
   /** Queue provider for veto-window commit jobs and dead letters. */
   queue?: QueueProvider;
-  /** AccessService for governed RBAC skills (roles/policies). */
+  /** AccessService for governed RBAC + identity skills (roles/policies/api-keys/users/teams). */
   accessService?: AccessService;
   /** IntentService for governed content-intent (SLO) skills. */
   intentService?: IntentService;
+  /** ConfigService for governed config skills (settings/translations/webhooks). */
+  configService?: ConfigService;
+  /** ExtensionsService for governed extension skills. */
+  extensionsService?: ExtensionsService;
   /** Enables first-class agent_goals/runs/tool_calls audit for tests or non-service callers. */
   enableAgentHarnessAudit?: boolean;
 }
@@ -99,10 +105,14 @@ export interface AISecureHarnessConfig {
 interface SkillServices {
   schemaService?: SchemaService;
   itemService?: ItemService;
-  /** Governed RBAC service (roles/policies). */
+  /** Governed RBAC + identity service (roles/policies/api-keys/users/teams). */
   accessService?: AccessService;
   /** Governed content-intent (SLO) service. */
   intentService?: IntentService;
+  /** Governed config service (settings/translations/webhooks). */
+  configService?: ConfigService;
+  /** Governed extensions service. */
+  extensionsService?: ExtensionsService;
   /** Tenant-scoped DB handle for governed skills with no dedicated service (flows). */
   db?: Database;
   siteId?: string;
@@ -375,7 +385,7 @@ function openApiType(fieldType: string): string {
  * indicating the service is not configured.
  */
 function buildCoreSkills(services: SkillServices): Record<string, SkillDefinition> {
-  const { schemaService, itemService, accessService, intentService, db, siteId } = services;
+  const { schemaService, itemService, accessService, intentService, configService, extensionsService, db, siteId } = services;
   /** Distinguishes "offline test registry" from "environment has no LLM". */
   const llmResolved = 'llm' in services;
   const llm = services.llm ?? null;
@@ -1100,6 +1110,393 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         return { runId: run!.id, ...result };
       },
     },
+
+    // ── Identity & access (api-keys / users / teams) ─────────────────────────
+    listApiKeys: {
+      name: 'listApiKeys',
+      description: 'List API keys for the current site (token values are never returned).',
+      requiredCapabilities: ['api-keys:read'],
+      service: 'access',
+      handler: async () => {
+        if (!accessService) return { apiKeys: [] };
+        return { apiKeys: await accessService.listApiKeys() };
+      },
+    },
+
+    createApiKey: {
+      name: 'createApiKey',
+      description: 'Create an API key. The plaintext token is returned exactly once.',
+      requiredCapabilities: ['api-keys:create'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { created: true };
+        return accessService.createApiKey({
+          name: args['name'] as string,
+          description: args['description'] as string | undefined,
+          expiresAt: (args['expiresAt'] as string | null | undefined) ?? undefined,
+          metadata: args['metadata'] as Record<string, unknown> | undefined,
+        });
+      },
+    },
+
+    rotateApiKey: {
+      name: 'rotateApiKey',
+      description: 'Rotate an API key — issues a new token (returned once) and invalidates the old one.',
+      requiredCapabilities: ['api-keys:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { rotated: true };
+        return accessService.rotateApiKey(args['id'] as string, args['expiresAt'] as string | null | undefined);
+      },
+    },
+
+    revokeApiKey: {
+      name: 'revokeApiKey',
+      description: 'Revoke an API key permanently.',
+      requiredCapabilities: ['api-keys:delete'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { revoked: true };
+        return accessService.revokeApiKey(args['id'] as string);
+      },
+    },
+
+    listUsers: {
+      name: 'listUsers',
+      description: 'List users belonging to the current site.',
+      requiredCapabilities: ['users:read'],
+      service: 'access',
+      handler: async () => {
+        if (!accessService) return { users: [] };
+        return { users: await accessService.listUsers() };
+      },
+    },
+
+    inviteUser: {
+      name: 'inviteUser',
+      description: 'Invite a user by email and bind them to the site, optionally with a role.',
+      requiredCapabilities: ['users:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { invited: true };
+        const user = await accessService.inviteUser({
+          email: args['email'] as string,
+          roleId: args['roleId'] as string | undefined,
+        });
+        return { invited: true, user };
+      },
+    },
+
+    updateUser: {
+      name: 'updateUser',
+      description: "Update a user's site membership (role and/or status).",
+      requiredCapabilities: ['users:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { updated: true };
+        return accessService.updateUser(args['id'] as string, {
+          roleId: (args['roleId'] as string | null | undefined),
+          status: args['status'] as string | undefined,
+        });
+      },
+    },
+
+    removeUser: {
+      name: 'removeUser',
+      description: 'Remove a user from the site.',
+      requiredCapabilities: ['users:delete'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { removed: true };
+        return accessService.removeUser(args['id'] as string);
+      },
+    },
+
+    listTeams: {
+      name: 'listTeams',
+      description: 'List teams in the current site.',
+      requiredCapabilities: ['teams:read'],
+      service: 'access',
+      handler: async () => {
+        if (!accessService) return { teams: [] };
+        return { teams: await accessService.listTeams() };
+      },
+    },
+
+    createTeam: {
+      name: 'createTeam',
+      description: 'Create a team.',
+      requiredCapabilities: ['teams:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { created: true };
+        const team = await accessService.createTeam({
+          name: args['name'] as string,
+          description: (args['description'] as string | null | undefined) ?? undefined,
+        });
+        return { created: true, team };
+      },
+    },
+
+    deleteTeam: {
+      name: 'deleteTeam',
+      description: 'Delete a team.',
+      requiredCapabilities: ['teams:delete'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { deleted: true };
+        return accessService.deleteTeam(args['id'] as string);
+      },
+    },
+
+    addTeamMember: {
+      name: 'addTeamMember',
+      description: 'Add a user to a team.',
+      requiredCapabilities: ['teams:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { added: true };
+        return accessService.addTeamMember(args['teamId'] as string, args['userId'] as string);
+      },
+    },
+
+    removeTeamMember: {
+      name: 'removeTeamMember',
+      description: 'Remove a user from a team.',
+      requiredCapabilities: ['teams:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!accessService) return { removed: true };
+        return accessService.removeTeamMember(args['teamId'] as string, args['userId'] as string);
+      },
+    },
+
+    // ── Config (settings / translations / webhooks) ──────────────────────────
+    listSettings: {
+      name: 'listSettings',
+      description: 'List site settings, optionally filtered by scope.',
+      requiredCapabilities: ['config:read'],
+      service: 'access',
+      handler: async (args) => {
+        if (!configService) return { settings: [] };
+        return { settings: await configService.listSettings(args['scope'] as string | undefined) };
+      },
+    },
+
+    upsertSetting: {
+      name: 'upsertSetting',
+      description: 'Create or update a site setting (upsert by key).',
+      requiredCapabilities: ['config:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!configService) return { upserted: true };
+        const setting = await configService.upsertSetting({
+          key: args['key'] as string,
+          value: (args['value'] as Record<string, unknown>) ?? {},
+          scope: args['scope'] as string | undefined,
+        });
+        return { upserted: true, setting };
+      },
+    },
+
+    deleteSetting: {
+      name: 'deleteSetting',
+      description: 'Delete a site setting by key.',
+      requiredCapabilities: ['config:delete'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!configService) return { deleted: true };
+        return configService.deleteSetting(args['key'] as string);
+      },
+    },
+
+    listTranslations: {
+      name: 'listTranslations',
+      description: 'List i18n translation strings, optionally filtered by namespace/language.',
+      requiredCapabilities: ['config:read'],
+      service: 'access',
+      handler: async (args) => {
+        if (!configService) return { translations: [] };
+        return {
+          translations: await configService.listTranslations({
+            namespace: args['namespace'] as string | undefined,
+            language: args['language'] as string | undefined,
+          }),
+        };
+      },
+    },
+
+    createTranslation: {
+      name: 'createTranslation',
+      description: 'Create a translation string.',
+      requiredCapabilities: ['config:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!configService) return { created: true };
+        const translation = await configService.createTranslation({
+          language: args['language'] as string,
+          namespace: args['namespace'] as string,
+          key: args['key'] as string,
+          value: args['value'] as string,
+          status: args['status'] as string | undefined,
+        });
+        return { created: true, translation };
+      },
+    },
+
+    updateTranslation: {
+      name: 'updateTranslation',
+      description: 'Update a translation string by id.',
+      requiredCapabilities: ['config:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!configService) return { updated: true };
+        const { id, ...patch } = args as Record<string, string>;
+        return configService.updateTranslation(String(id), patch);
+      },
+    },
+
+    deleteTranslation: {
+      name: 'deleteTranslation',
+      description: 'Delete a translation string by id.',
+      requiredCapabilities: ['config:delete'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!configService) return { deleted: true };
+        return configService.deleteTranslation(args['id'] as string);
+      },
+    },
+
+    listWebhooks: {
+      name: 'listWebhooks',
+      description: 'List outbound webhooks for the current site.',
+      requiredCapabilities: ['config:read'],
+      service: 'access',
+      handler: async () => {
+        if (!configService) return { webhooks: [] };
+        return { webhooks: await configService.listWebhooks() };
+      },
+    },
+
+    createWebhook: {
+      name: 'createWebhook',
+      description: 'Create an outbound webhook on item events.',
+      requiredCapabilities: ['config:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!configService) return { created: true };
+        const webhook = await configService.createWebhook({
+          name: args['name'] as string,
+          url: args['url'] as string,
+          actions: args['actions'] as string[] | undefined,
+          collections: args['collections'] as string[] | undefined,
+          headers: args['headers'] as Record<string, string> | undefined,
+          status: args['status'] as 'active' | 'inactive' | undefined,
+          secret: args['secret'] as string | null | undefined,
+        });
+        return { created: true, webhook };
+      },
+    },
+
+    updateWebhook: {
+      name: 'updateWebhook',
+      description: 'Update an outbound webhook by id.',
+      requiredCapabilities: ['config:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!configService) return { updated: true };
+        const { id, ...patch } = args as Record<string, unknown>;
+        return configService.updateWebhook(id as string, patch);
+      },
+    },
+
+    deleteWebhook: {
+      name: 'deleteWebhook',
+      description: 'Delete an outbound webhook by id.',
+      requiredCapabilities: ['config:delete'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!configService) return { deleted: true };
+        return configService.deleteWebhook(args['id'] as string);
+      },
+    },
+
+    // ── Extensions ───────────────────────────────────────────────────────────
+    listExtensions: {
+      name: 'listExtensions',
+      description: 'List extensions installed on the current site.',
+      requiredCapabilities: ['extensions:read'],
+      service: 'access',
+      handler: async () => {
+        if (!extensionsService) return { extensions: [] };
+        return { extensions: await extensionsService.listExtensions() };
+      },
+    },
+
+    installExtension: {
+      name: 'installExtension',
+      description: 'Install (register) an extension on the site from a bundle URL.',
+      requiredCapabilities: ['extensions:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!extensionsService) return { installed: true };
+        const extension = await extensionsService.installExtension({
+          key: args['key'] as string | undefined,
+          name: args['name'] as string,
+          version: args['version'] as string,
+          type: args['type'] as string,
+          enabled: args['enabled'] as boolean | undefined,
+          bundleUrl: args['bundleUrl'] as string,
+          manifest: args['manifest'] as Record<string, string> | undefined,
+          capabilities: args['capabilities'] as string[] | undefined,
+        });
+        return { installed: true, extension };
+      },
+    },
+
+    updateExtension: {
+      name: 'updateExtension',
+      description: 'Update an installed extension (enable/disable, version, config).',
+      requiredCapabilities: ['extensions:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!extensionsService) return { updated: true };
+        const { id, ...patch } = args as Record<string, unknown>;
+        return extensionsService.updateExtension(id as string, patch);
+      },
+    },
+
+    uninstallExtension: {
+      name: 'uninstallExtension',
+      description: 'Uninstall an extension from the site.',
+      requiredCapabilities: ['extensions:delete'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!extensionsService) return { uninstalled: true };
+        return extensionsService.uninstallExtension(args['id'] as string);
+      },
+    },
   };
 }
 
@@ -1149,7 +1546,12 @@ export class AISecureHarness {
     this.itemService = config.itemService;
     this.queue = config.queue;
     const hasService = Boolean(
-      config.schemaService || config.itemService || config.accessService || config.intentService,
+      config.schemaService ||
+        config.itemService ||
+        config.accessService ||
+        config.intentService ||
+        config.configService ||
+        config.extensionsService,
     );
     this.agentHarnessEnabled = config.enableAgentHarnessAudit ?? hasService;
 
@@ -1162,6 +1564,8 @@ export class AISecureHarness {
         itemService: config.itemService,
         accessService: config.accessService,
         intentService: config.intentService,
+        configService: config.configService,
+        extensionsService: config.extensionsService,
         db: config.db,
         siteId: config.siteId,
         // Preserve the "offline registry" mode when callers never resolved
