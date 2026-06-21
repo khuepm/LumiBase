@@ -36,6 +36,7 @@ const TestSandboxPage = lazy(() => import('./modules/access/test-sandbox').then(
 const ContentIndexPage = lazy(() => import('./modules/content/index-page').then((m) => ({ default: m.ContentIndexPage })));
 const ItemDetailPage = lazy(() => import('./modules/content/item-detail').then((m) => ({ default: m.ItemDetailPage })));
 const ItemsListPage = lazy(() => import('./modules/content/items-list').then((m) => ({ default: m.ItemsListPage })));
+const ReviewQueuePage = lazy(() => import('./modules/editorial/review-queue').then((m) => ({ default: m.ReviewQueuePage })));
 const CollectionsListPage = lazy(() => import('./modules/data-model/list').then((m) => ({ default: m.CollectionsListPage })));
 const CollectionDetailPage = lazy(() => import('./modules/data-model/detail').then((m) => ({ default: m.CollectionDetailPage })));
 const CollectionWizardPage = lazy(() => import('./modules/data-model/wizard').then((m) => ({ default: m.CollectionWizardPage })));
@@ -48,6 +49,7 @@ const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then(
 const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
+const EncryptionSettingsPage = lazy(() => import('./modules/settings/encryption-page').then((m) => ({ default: m.EncryptionSettingsPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
 const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
@@ -479,6 +481,13 @@ const contentCollectionRoute = createRoute({
   component: withSuspense(ItemsListPage),
 });
 
+// Static `reviews` segment is matched before the `$id` param route.
+const contentReviewsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/content/$collection/reviews',
+  component: withSuspense(ReviewQueuePage),
+});
+
 const contentItemRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/content/$collection/$id',
@@ -489,6 +498,12 @@ const adminPathContentCollectionRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/content/$collection',
   component: withSuspense(ItemsListPage),
+});
+
+const adminPathContentReviewsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/content/$collection/reviews',
+  component: withSuspense(ReviewQueuePage),
 });
 
 const adminPathContentItemRoute = createRoute({
@@ -617,6 +632,12 @@ const activityRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'activity',
   component: withSuspense(ActivityPage),
+});
+
+const encryptionSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'encryption',
+  component: withSuspense(EncryptionSettingsPage),
 });
 
 const extensionsRoute = createRoute({
@@ -1095,6 +1116,7 @@ const routeTree = rootRoute.addChildren([
   adminLayoutRoute.addChildren([
     indexRoute,
     contentCollectionRoute,
+    contentReviewsRoute,
     contentItemRoute,
     dataModelRoute,
     dataModelNewRoute,
@@ -1110,6 +1132,7 @@ const routeTree = rootRoute.addChildren([
       materializeSettingsRoute,
       translationMemoryRoute,
       activityRoute,
+      encryptionSettingsRoute,
       extensionsRoute,
       marketplaceRoute,
       updatesRoute,
@@ -1151,6 +1174,7 @@ const routeTree = rootRoute.addChildren([
     ]),
     adminPathIndexRoute,
     adminPathContentCollectionRoute,
+    adminPathContentReviewsRoute,
     adminPathContentItemRoute,
     adminPathDataModelRoute,
     adminPathDataModelNewRoute,

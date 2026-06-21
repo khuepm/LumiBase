@@ -122,6 +122,12 @@ export const fields = pgTable(
     readonly: boolean('readonly').default(false).notNull(),
     hidden: boolean('hidden').default(false).notNull(),
     encrypted: boolean('encrypted').default(false).notNull(),
+    /**
+     * Data sensitivity classification (Req 5): `none|internal|pii|phi`.
+     * `pii|phi` require `encrypted=true`, are masked by default unless the
+     * caller has `read_decrypted`, and their decrypted reads are audited.
+     */
+    classification: text('classification').default('none').notNull(),
     versioned: boolean('versioned').default(false).notNull(),
     rawEnabled: boolean('raw_enabled').default(true).notNull(),
     /** `half` | `full` | `fill` */
@@ -194,6 +200,24 @@ export const items = pgTable(
      */
     pinnedFields: jsonb('pinned_fields').default([]).notNull(),
     sort: integer('sort').default(0).notNull(),
+    /**
+     * Content scheduling window (Req 7). When set, the Scheduler publishes at
+     * `publishAt` and unpublishes at `unpublishAt`; delivery filters to the
+     * current Publish_Window. Both nullable → default behaviour unchanged.
+     */
+    publishAt: timestamp('publish_at'),
+    unpublishAt: timestamp('unpublish_at'),
+    /**
+     * Editorial workflow state (Req 8). Null = use `status` only (no workflow);
+     * preserves Tier 1 behaviour for collections without `editorialWorkflow`.
+     */
+    editorialState: text('editorial_state'),
+    /**
+     * Per-record wrapped DEK for envelope encryption (Req 4.5). Null unless
+     * `LUMIBASE_ENVELOPE_ENCRYPTION` is enabled; deleting it crypto-shreds the
+     * record (Req 11.2).
+     */
+    dekWrapped: text('dek_wrapped'),
     userCreated: text('user_created').references(() => users.id),
     userUpdated: text('user_updated').references(() => users.id),
     createdAt: createdAt(),
@@ -211,6 +235,9 @@ export const items = pgTable(
       .using('gin', t.data)
       .where(sql`${t.deletedAt} is null`),
     siteIdx: index('items_site_idx').on(t.siteId),
+    /** Scheduler scans for items due to publish/unpublish (Req 7.3, 7.4). */
+    publishDueIdx: index('items_publish_due_idx').on(t.siteId, t.status, t.publishAt),
+    unpublishDueIdx: index('items_unpublish_due_idx').on(t.siteId, t.status, t.unpublishAt),
   }),
 );
 
