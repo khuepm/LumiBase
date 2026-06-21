@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "landing-preview",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["-y", "serve@latest", "apps/landing/out", "-l", "4311"],
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4311", "--directory", "apps/landing/out"],
       "port": 4311
     },
     {
