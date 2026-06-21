@@ -46,6 +46,11 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
+          # The scripts run on plain `node` (only node builtins + local .mjs);
+          # no install is needed. Disable auto pnpm cache, which would otherwise
+          # try to invoke pnpm (not on PATH) and fail Setup Node. Matches the
+          # convention in ci.yml / release.yml.
+          package-manager-cache: false
 
       - name: Run detection (plan mode)
         run: node scripts/docs-i18n/sync.mjs
@@ -81,6 +86,11 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
+          # The scripts run on plain `node` (only node builtins + local .mjs);
+          # no install is needed. Disable auto pnpm cache, which would otherwise
+          # try to invoke pnpm (not on PATH) and fail Setup Node. Matches the
+          # convention in ci.yml / release.yml.
+          package-manager-cache: false
 
       - name: Run sync (apply mode)
         env:
