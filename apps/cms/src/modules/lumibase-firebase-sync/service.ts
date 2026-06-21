@@ -19,7 +19,7 @@ import {
 } from '@lumibase/database';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { and, desc, eq } from 'drizzle-orm';
-import { CryptoService } from '../../services/crypto-service';
+import { CryptoService, type CryptoContext } from '../../services/crypto-service';
 import {
   createFirebaseConnector,
   type FirebaseCredentials,
@@ -100,8 +100,17 @@ export class FirebaseSyncService {
   constructor(deps: FirebaseSyncDeps) {
     this.db = deps.db;
     this.siteId = deps.siteId;
-    this.crypto = new CryptoService(deps.encryptionKey);
+    this.crypto = CryptoService.fromKey(deps.encryptionKey);
     this.now = deps.now ?? (() => Date.now());
+  }
+
+  /**
+   * AAD context for the credential blob. Bound to the site (not a content
+   * record) so a ciphertext cannot be replayed across tenants; the field is a
+   * synthetic config location, not a real collection/field.
+   */
+  private credCtx(): CryptoContext {
+    return { siteId: this.siteId, collection: '_firebase_sync', field: 'credentials', recordId: this.siteId };
   }
 
   // ── registry CRUD ─────────────────────────────────────────────────────
@@ -128,7 +137,7 @@ export class FirebaseSyncService {
   }
 
   async create(input: PipelineInput): Promise<PipelineView> {
-    const credentialsEncrypted = await this.crypto.encrypt(input.credentials);
+    const credentialsEncrypted = await this.crypto.encrypt(input.credentials, this.credCtx());
     const [row] = await this.db
       .insert(lumibaseFirebaseSyncPipelines)
       .values({
@@ -156,7 +165,7 @@ export class FirebaseSyncService {
     if (input.target !== undefined) patch.target = input.target;
     if (input.projectId !== undefined) patch.projectId = input.projectId;
     if (input.credentials !== undefined) {
-      patch.credentialsEncrypted = await this.crypto.encrypt(input.credentials);
+      patch.credentialsEncrypted = await this.crypto.encrypt(input.credentials, this.credCtx());
     }
     if (input.collections !== undefined) patch.collections = input.collections;
     if (input.targetPath !== undefined) patch.targetPath = input.targetPath;
@@ -264,7 +273,7 @@ export class FirebaseSyncService {
   ): Promise<boolean> {
     const start = this.now();
     try {
-      const credentials = (await this.crypto.decrypt(row.credentialsEncrypted)) as FirebaseCredentials;
+      const credentials = (await this.crypto.decrypt(row.credentialsEncrypted, this.credCtx())) as FirebaseCredentials;
       const connector = createFirebaseConnector(row.target as FirebaseTarget, credentials, this.now);
       const path = this.buildPath(row.targetPath, params.collection, params.itemId);
 

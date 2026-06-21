@@ -151,6 +151,10 @@ name = "lumibase-cms-production"
 
 [env.production.vars]
 LUMIBASE_ENV = "production"
+# Selects the Cloudflare runtime adapter (KV/R2/Hyperdrive) instead of the
+# default Docker adapter (Redis/MinIO/Postgres). Without this the Worker tries
+# to reach local Docker services and every /health probe reports unhealthy.
+LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_VERSION = "unknown"
 LUMIBASE_GIT_SHA = "unknown"
 LUMIBASE_BUILD_TIME = "unknown"
@@ -182,17 +186,21 @@ class_name = "SiteRoom"
 tag = "v1"
 new_sqlite_classes = ["SiteRoom"]
 
-# [[env.production.hyperdrive]]
-# binding = "HYPERDRIVE"
-# id = "REPLACE_WITH_PRODUCTION_HYPERDRIVE_ID"
+[[env.production.hyperdrive]]
+binding = "HYPERDRIVE"
+id = "6ab50691143d4cfaa338d103125b77f3"
 
-# [[env.production.kv_namespaces]]
-# binding = "CONFIG_CACHE"
-# id = "REPLACE_WITH_PRODUCTION_KV_ID"
+[[env.production.kv_namespaces]]
+binding = "CONFIG_CACHE"
+id = "c303408c8d134b75b957926c9457b9e0"
 
-# [[env.production.r2_buckets]]
-# binding = "MEDIA"
-# bucket_name = "lumibase-media"
+[[env.production.r2_buckets]]
+binding = "MEDIA"
+bucket_name = "lumibase-media"
+
+[[env.production.queues.producers]]
+binding = "REALTIME_QUEUE"
+queue = "lumibase-realtime"
 
 [env.production.triggers]
 crons = ["0 * * * *"]

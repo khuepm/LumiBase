@@ -8,6 +8,7 @@ import {
   revisions,
   scopeSite,
   materializedCollections,
+  fieldAccessLog,
   type Database,
 } from '@lumibase/database';
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
@@ -24,7 +25,21 @@ import { buildSearchDocument } from './search-document';
 import { PermissionService, type CompiledPermission, type PermissionAction } from './permission-service';
 import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
 import type { PolicyRule } from '@lumibase/shared';
-import { CryptoService } from './crypto-service';
+import { CryptoService, DecryptionError, SingleKeyProvider, type CryptoContext } from './crypto-service';
+import {
+  newEnvelopeRecordCipher,
+  openEnvelopeRecordCipher,
+  sharedRecordCipher,
+  type RecordCipher,
+} from './crypto/record-cipher';
+import { readEnvelopeSetting } from './crypto/envelope-settings';
+import {
+  assertEditorialGate,
+  editorialStateFromStatus,
+  type EditorialState,
+} from './editorial-service';
+import type { KeyProvider } from '@lumibase/runtime';
+import { nanoid } from 'nanoid';
 import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
 import { AuditLogger } from '../modules/audit/logger';
@@ -97,6 +112,18 @@ export interface DeepRelationOptions {
 
 export type DeepQuery = Record<string, DeepRelationOptions>;
 
+/**
+ * Per-record crypto threading for {@link ItemService.processCrypto}.
+ * - `dekWrapped` (read): the record's stored wrapped DEK; non-null selects the
+ *   envelope cipher for that record.
+ * - `wrappedDek` (write, out): set by an encrypt pass to the wrapped DEK to
+ *   persist on the row (envelope mode), or null in shared-key mode.
+ */
+interface CryptoRecordOpts {
+  dekWrapped?: string | null;
+  wrappedDek?: string | null;
+}
+
 export class ItemServiceError extends Error {
   constructor(public code: string, message: string, public status = 400) {
     super(message);
@@ -146,8 +173,13 @@ export interface ItemServiceDeps {
   userId?: string | null;
   /** Optional MagicContext to enable permission filtering (Phase C). */
   permissionCtx?: MagicContext;
-  /** Optional base64 AES-GCM key for field encryption. */
+  /** Optional base64 AES-GCM key for field encryption (legacy single-key path). */
   encryptionKey?: string;
+  /**
+   * Optional runtime KeyProvider enabling key versioning/rotation. When
+   * provided it takes precedence over `encryptionKey`.
+   */
+  keyProvider?: KeyProvider;
   /**
    * SiteRoom Durable Object namespace (Cloudflare Workers only).
    * When provided, item mutations are published to connected WebSocket clients.
@@ -287,9 +319,13 @@ export class ItemService {
   private readonly schemaService: SchemaService;
   private readonly permissions: PermissionService | null;
   private readonly cryptoService: CryptoService | null;
+  /** KEK provider for envelope mode (wrap/unwrap per-record DEKs). */
+  private readonly keyProvider: KeyProvider | null;
   private hookDispatcher: HookDispatcher | null = null;
   private provenance: ItemProvenance;
   private writeCoalescer: WriteCoalescer | null = null;
+  /** Memoized per-site envelope-write decision (resolved at most once). */
+  private envelopeWritePromise: Promise<boolean> | null = null;
 
   constructor(private readonly deps: ItemServiceDeps) {
     this.provenance = deps.provenance ?? { authorType: 'human' };
@@ -301,7 +337,26 @@ export class ItemService {
     this.permissions = deps.permissionCtx
       ? new PermissionService({ db: deps.db, cache: deps.cache, ctx: deps.permissionCtx })
       : null;
-    this.cryptoService = deps.encryptionKey ? new CryptoService(deps.encryptionKey) : null;
+    this.keyProvider = deps.keyProvider
+      ? deps.keyProvider
+      : deps.encryptionKey
+        ? new SingleKeyProvider(deps.encryptionKey)
+        : null;
+    this.cryptoService = this.keyProvider ? new CryptoService(this.keyProvider) : null;
+  }
+
+  /**
+   * Whether new writes for this site should use envelope (per-record DEK) mode.
+   * Driven by the `encryption.envelope` setting (operator-controlled, not a raw
+   * env flag); memoized so a batch write reads the setting at most once.
+   */
+  private envelopeWriteEnabled(): Promise<boolean> {
+    if (!this.envelopeWritePromise) {
+      this.envelopeWritePromise = readEnvelopeSetting(this.deps.db, this.deps.siteId)
+        .then((s) => s.enabled)
+        .catch(() => false);
+    }
+    return this.envelopeWritePromise;
   }
 
   /**
@@ -437,9 +492,19 @@ export class ItemService {
       ? rows.map((r) => this.permissions!.maskItem(perm, r as ItemRow, knownFields))
       : rows;
 
+    const degraded = this.degradedReadEnabled(coll);
     const decrypted: ItemRow[] = [];
     for (const r of masked) {
-      r.data = await this.processCrypto(collectionName, r.data as Record<string, unknown>, 'decrypt', false);
+      r.data = await this.processCrypto(
+        collectionName,
+        r.data as Record<string, unknown>,
+        'decrypt',
+        (r as ItemRow).id,
+        false,
+        degraded,
+        undefined,
+        { dekWrapped: (r as Record<string, unknown>).dekWrapped as string | null },
+      );
       decrypted.push(r as ItemRow);
     }
     const expanded = params.fields || params.deep
@@ -473,13 +538,22 @@ export class ItemService {
     if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
     const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
     const masked = perm && this.permissions ? this.permissions.maskItem(perm, row as ItemRow, knownFields) : row;
-    masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', false);
+    masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', (masked as ItemRow).id, false, false, undefined, { dekWrapped: (masked as Record<string, unknown>).dekWrapped as string | null });
     if (!fields && !deep) return masked;
     const [expanded] = await this.expandRelationFields(collectionName, [masked as ItemRow], fields ?? [], deep);
     return fields ? projectFields(expanded ?? masked as ItemRow, fields) : expanded ?? masked;
   }
 
-  async create(collectionName: string, payload: { data: Record<string, unknown>; status?: string; sort?: number }) {
+  async create(
+    collectionName: string,
+    payload: {
+      data: Record<string, unknown>;
+      status?: string;
+      sort?: number;
+      publishAt?: string | Date | null;
+      unpublishAt?: string | Date | null;
+    },
+  ) {
     const coll = await this.resolveCollection(collectionName);
     const primaryKey = resolvePrimaryKey({
       field: coll.primaryKeyField,
@@ -528,19 +602,27 @@ export class ItemService {
       throw new ItemServiceError('FORBIDDEN', 'Item violates create rule.', 403);
     }
     this.assertPermissionValidation(perm, finalCreateSnapshot);
-    const encryptedData = await this.processCrypto(collectionName, data, 'encrypt', true);
+    // Allocate the record id up front so AAD-bound encryption can reference it
+    // before the row is flushed (Req 2.3). Matches the schema's nanoid default.
+    const recordId = primaryKey.id ?? nanoid();
+    const { publishAt, unpublishAt } = normalizePublishWindow(payload.publishAt, payload.unpublishAt);
+    const cryptoOut: CryptoRecordOpts = {};
+    const encryptedData = await this.processCrypto(collectionName, data, 'encrypt', recordId, true, false, undefined, cryptoOut);
     if (primaryKey.id) {
       await this.assertItemIdAvailable(coll.id, primaryKey.id);
     }
     const [row] = await this.deps.db
       .insert(items)
       .values({
-        ...(primaryKey.id ? { id: primaryKey.id } : {}),
+        id: recordId,
         siteId: this.deps.siteId,
         collectionId: coll.id,
         data: encryptedData,
         status,
         sort,
+        publishAt,
+        unpublishAt,
+        dekWrapped: cryptoOut.wrappedDek ?? null,
         userCreated: this.deps.userId ?? null,
         userUpdated: this.deps.userId ?? null,
       })
@@ -548,7 +630,7 @@ export class ItemService {
     if (!row) throw new ItemServiceError('CREATE_FAILED', 'Failed to insert item.');
     await this.writeRevision(coll.id, row.id, encryptedData, null);
     await this.writeActivity('create', coll.name, row.id, { data: payload.data });
-    row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', false);
+    row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     await this.dispatchFirebaseSync(collectionName, 'create', row.id, row.data as Record<string, unknown>);
@@ -558,7 +640,17 @@ export class ItemService {
     return row;
   }
 
-  async patch(collectionName: string, id: string, patch: Partial<{ data: Record<string, unknown>; status: string; sort: number }>) {
+  async patch(
+    collectionName: string,
+    id: string,
+    patch: Partial<{
+      data: Record<string, unknown>;
+      status: string;
+      sort: number;
+      publishAt: string | Date | null;
+      unpublishAt: string | Date | null;
+    }>,
+  ) {
     const coll = await this.resolveCollection(collectionName);
     const perm = await this.perm(collectionName, 'update');
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
@@ -602,7 +694,7 @@ export class ItemService {
       }
     }
 
-    const currentData = await this.processCrypto(collectionName, rawRow.data as Record<string, unknown>, 'decrypt', true);
+    const currentData = await this.processCrypto(collectionName, rawRow.data as Record<string, unknown>, 'decrypt', id, true, false, undefined, { dekWrapped: (rawRow as Record<string, unknown>).dekWrapped as string | null });
 
     const merged: Record<string, unknown> = patch.data
       ? { ...currentData, ...patch.data }
@@ -628,6 +720,26 @@ export class ItemService {
     const finalData = hookPatch ? { ...merged, ...hookPatch } : merged;
     const finalStatus = patch.status ?? rawRow.status;
     const finalSort = patch.sort ?? rawRow.sort;
+    // Editorial gate (Req 8.2): on collections with editorialWorkflow=true, an
+    // item may only reach `published` via the approved/scheduled state. A
+    // direct draft→published through patch is rejected.
+    if (
+      finalStatus === 'published' &&
+      rawRow.status !== 'published' &&
+      (coll.meta as Record<string, unknown> | null)?.editorialWorkflow === true
+    ) {
+      const current =
+        (rawRow.editorialState as EditorialState | null) ?? editorialStateFromStatus('draft');
+      try {
+        assertEditorialGate(current, 'published');
+      } catch {
+        throw new ItemServiceError(
+          'EDITORIAL_GATE_REQUIRED',
+          'Item must be approved before it can be published.',
+          409,
+        );
+      }
+    }
     this.assertPermissionValidation(perm, buildPermissionSnapshot({
       id: rawRow.id,
       data: finalData,
@@ -638,7 +750,16 @@ export class ItemService {
       createdAt: rawRow.createdAt,
       updatedAt: new Date(),
     }));
-    const encryptedFinal = await this.processCrypto(collectionName, finalData, 'encrypt', true);
+    // Validate the resulting Publish_Window against existing values (Req 7.2).
+    const hasSchedulePatch = patch.publishAt !== undefined || patch.unpublishAt !== undefined;
+    const effectiveWindow = hasSchedulePatch
+      ? normalizePublishWindow(
+          patch.publishAt !== undefined ? patch.publishAt : rawRow.publishAt,
+          patch.unpublishAt !== undefined ? patch.unpublishAt : rawRow.unpublishAt,
+        )
+      : null;
+    const cryptoOut: CryptoRecordOpts = {};
+    const encryptedFinal = await this.processCrypto(collectionName, finalData, 'encrypt', id, true, false, undefined, cryptoOut);
 
     // Law Zero: human edits on intent-governed collections pin the fields
     // they touched so the reconciler never argues with a person.
@@ -658,6 +779,12 @@ export class ItemService {
         status: finalStatus,
         sort: finalSort,
         pinnedFields: nextPinned,
+        // A write re-encrypts every encrypted field under one cipher, so the
+        // record's mode (and its wrapped DEK) is rewritten wholesale.
+        dekWrapped: cryptoOut.wrappedDek ?? null,
+        ...(effectiveWindow
+          ? { publishAt: effectiveWindow.publishAt, unpublishAt: effectiveWindow.unpublishAt }
+          : {}),
         userUpdated: this.deps.userId ?? null,
         updatedAt: new Date(),
       })
@@ -681,7 +808,7 @@ export class ItemService {
       await this.writeActivity('pin', coll.name, id, { fields: addedPins });
     }
     
-    row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', false);
+    row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     await this.dispatchFirebaseSync(collectionName, 'update', row.id, row.data as Record<string, unknown>);
@@ -764,6 +891,96 @@ export class ItemService {
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
     return { ok: true } as const;
+  }
+
+  /**
+   * Collect and decrypt every item matching a subject filter for a SAR export
+   * (Req 13). Decrypts internally (admin scope) but forces field-access
+   * auditing of pii/phi reads (Req 13.2), and includes latest-revision
+   * provenance (Req 13.3). Site-scoped (Req 13.4).
+   */
+  async exportSubject(
+    collectionName: string,
+    filter: Record<string, unknown>,
+  ): Promise<{ records: Array<Record<string, unknown>>; count: number }> {
+    const coll = await this.resolveCollection(collectionName);
+    const rows = await this.deps.db
+      .select()
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          isNull(items.deletedAt),
+          sql`${items.data} @> ${JSON.stringify(filter)}::jsonb`,
+        ),
+      );
+
+    const records: Array<Record<string, unknown>> = [];
+    for (const row of rows) {
+      const data = await this.processCrypto(
+        collectionName,
+        row.data as Record<string, unknown>,
+        'decrypt',
+        row.id,
+        true, // internal: bypass the read_decrypted perm gate (admin SAR)
+        false,
+        true, // force field-access audit (Req 13.2)
+        { dekWrapped: (row as Record<string, unknown>).dekWrapped as string | null },
+      );
+      const [rev] = await this.deps.db
+        .select({
+          authorType: revisions.authorType,
+          model: revisions.model,
+          sources: revisions.sources,
+          createdAt: revisions.createdAt,
+        })
+        .from(revisions)
+        .where(and(scopeSite(revisions.siteId, this.deps.siteId), eq(revisions.itemId, row.id)))
+        .orderBy(desc(revisions.createdAt))
+        .limit(1);
+      records.push({
+        id: row.id,
+        collection: collectionName,
+        status: row.status,
+        data,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        provenance: rev ?? null,
+      });
+    }
+    return { records, count: records.length };
+  }
+
+  /**
+   * Permanently remove an item and (via FK cascade) its revisions (Req 11.2).
+   * Used by erasure/retention — bypasses soft-delete. Audit trails in
+   * `audit_log` / `field_access_log` are intentionally NOT cascaded (Req 11.3).
+   * Returns true when a row was removed.
+   */
+  async hardDelete(collectionName: string, id: string): Promise<boolean> {
+    const coll = await this.resolveCollection(collectionName);
+    const deleted = await this.deps.db
+      .delete(items)
+      .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, coll.id), eq(items.id, id)))
+      .returning({ id: items.id });
+    if (deleted.length === 0) return false;
+    await this.deindexItem(collectionName, id);
+    return true;
+  }
+
+  /**
+   * Crypto-shred a record by destroying its wrapped DEK (Req 11.2, envelope
+   * mode). The row remains but its ciphertext becomes unrecoverable.
+   */
+  async cryptoShred(collectionName: string, id: string): Promise<boolean> {
+    const coll = await this.resolveCollection(collectionName);
+    const updated = await this.deps.db
+      .update(items)
+      .set({ dekWrapped: null, updatedAt: new Date() })
+      .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, coll.id), eq(items.id, id)))
+      .returning({ id: items.id });
+    return updated.length > 0;
   }
 
   async bulk(
@@ -1009,7 +1226,7 @@ export class ItemService {
       const masked = perm && this.permissions
         ? this.permissions.maskItem(perm, row, knownFields)
         : row;
-      masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', false);
+      masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', masked.id, false, false, undefined, { dekWrapped: (masked as unknown as Record<string, unknown>).dekWrapped as string | null });
       byId.set(masked.id, projectRelatedRow(masked, fields));
     }
     return byId;
@@ -1161,41 +1378,189 @@ export class ItemService {
     collectionName: string,
     data: Record<string, unknown>,
     mode: 'encrypt' | 'decrypt',
+    recordId: string,
     internal = false,
+    degraded = false,
+    auditAccess?: boolean,
+    opts?: CryptoRecordOpts,
   ): Promise<Record<string, unknown>> {
-    if (!this.cryptoService) return data;
+    if (!this.cryptoService || !this.keyProvider) return data;
     if (!data) return data;
     const compiled = await this.schemaService.getCompiled(collectionName);
     if (!compiled) return data;
-    
+
     const encryptedFields = compiled.fields.filter((f) => f.encrypted).map((f) => f.name);
     if (encryptedFields.length === 0) return data;
+
+    // pii/phi fields whose decrypted reads must be audited (Req 6.1).
+    const sensitiveFields = new Set(
+      compiled.fields
+        .filter((f) => f.classification === 'pii' || f.classification === 'phi')
+        .map((f) => f.name),
+    );
 
     let canDecrypt = internal;
     if (mode === 'decrypt' && !internal) {
       try {
         const perm = await this.perm(collectionName, 'read_decrypted');
         canDecrypt = !!perm;
-      } catch (e) {
+      } catch {
         canDecrypt = false;
       }
     }
 
+    // Resolve one cipher per record (Req 4.5). Writes follow the per-site
+    // setting; reads are self-describing — the record's stored wrapped DEK is
+    // the single source of truth, so a row keeps decrypting after the site
+    // toggles modes. A missing KEK on an envelope read fails closed.
     const out = { ...data };
+    let cipher: RecordCipher;
+    if (mode === 'encrypt') {
+      cipher = (await this.envelopeWriteEnabled())
+        ? await newEnvelopeRecordCipher(this.keyProvider, this.deps.siteId, recordId)
+        : sharedRecordCipher(this.cryptoService);
+      if (opts) opts.wrappedDek = cipher.wrappedDek;
+    } else if (opts?.dekWrapped) {
+      try {
+        cipher = await openEnvelopeRecordCipher(
+          this.keyProvider,
+          this.deps.siteId,
+          recordId,
+          opts.dekWrapped,
+        );
+      } catch (err) {
+        // Unwrap failed (KEK rotated away / crypto-shredded). Fail closed for
+        // every encrypted field, mirroring the per-field handling below.
+        if (canDecrypt) {
+          for (const f of encryptedFields) {
+            if (out[f] === undefined || out[f] === null) continue;
+            await this.auditDecryptionFailure(collectionName, f, recordId, err);
+            if (degraded) {
+              out[f] = null;
+              (out as Record<string, unknown>)._decryptError = true;
+            } else {
+              throw new ItemServiceError('DECRYPTION_FAILED', `Failed to decrypt field "${f}".`, 500);
+            }
+          }
+        } else {
+          for (const f of encryptedFields) if (out[f] != null) out[f] = '***';
+        }
+        return out;
+      }
+    } else {
+      cipher = sharedRecordCipher(this.cryptoService);
+    }
+
+    const accessedSensitive: string[] = [];
     for (const f of encryptedFields) {
-      if (out[f] !== undefined && out[f] !== null) {
-        if (mode === 'encrypt') {
-          out[f] = await this.cryptoService.encrypt(out[f]);
-        } else if (mode === 'decrypt') {
-          if (canDecrypt) {
-            out[f] = await this.cryptoService.decrypt(out[f] as string);
+      const value = out[f];
+      if (value === undefined || value === null) continue;
+      const ctx: CryptoContext = {
+        siteId: this.deps.siteId,
+        collection: collectionName,
+        field: f,
+        recordId,
+      };
+      if (mode === 'encrypt') {
+        out[f] = await cipher.encrypt(value, ctx);
+      } else if (canDecrypt) {
+        try {
+          out[f] = await cipher.decrypt(value as string, ctx);
+          if (sensitiveFields.has(f)) accessedSensitive.push(f);
+        } catch (err) {
+          // Fail-closed (Req 1): never substitute a placeholder for a real
+          // decryption failure. Audit, then either propagate (single-item) or
+          // degrade the single field (list reads with the opt-in flag).
+          await this.auditDecryptionFailure(collectionName, f, recordId, err);
+          if (degraded) {
+            out[f] = null;
+            (out as Record<string, unknown>)._decryptError = true;
+          } else if (err instanceof DecryptionError) {
+            throw new ItemServiceError(
+              'DECRYPTION_FAILED',
+              `Failed to decrypt field "${f}".`,
+              500,
+            );
           } else {
-            out[f] = '***';
+            throw err;
           }
         }
+      } else {
+        out[f] = '***';
       }
     }
+    // Audit successful decrypted reads of pii/phi fields (Req 6.1, 6.2). Only
+    // for non-internal reads — internal decrypts (e.g. read-modify-write) are
+    // not "access" by an actor. Flushed before the response returns.
+    // Audit decrypted pii/phi reads. Defaults to actor reads (!internal); SAR
+    // forces it on even for internal decrypts (Req 13.2).
+    const doAudit = auditAccess ?? !internal;
+    if (mode === 'decrypt' && doAudit && accessedSensitive.length > 0) {
+      await this.writeFieldAccessLog(collectionName, [recordId], accessedSensitive);
+    }
     return out;
+  }
+
+  /**
+   * Append a Field_Access_Log entry for decrypted pii/phi reads (Req 6).
+   * Never records decrypted values. Best-effort: a logging failure must not
+   * break the read, but the write is awaited so single-item reads flush first.
+   */
+  private async writeFieldAccessLog(
+    collection: string,
+    recordIds: string[],
+    fields: string[],
+  ): Promise<void> {
+    try {
+      const actor =
+        (typeof this.deps.permissionCtx?.user?.email === 'string'
+          ? this.deps.permissionCtx.user.email
+          : null) ??
+        this.deps.userId ??
+        null;
+      await this.deps.db.insert(fieldAccessLog).values({
+        siteId: this.deps.siteId,
+        collection,
+        recordIds,
+        fields,
+        actor,
+        action: 'read_decrypted',
+        requestId: null,
+      });
+    } catch (err) {
+      console.error('[item-service] field access log write failed', formatSafeError(err));
+    }
+  }
+
+  /**
+   * Records a `decryption_failed` audit entry. Never includes ciphertext, key
+   * material, or plaintext (Req 1.2, 1.3).
+   */
+  private async auditDecryptionFailure(
+    collection: string,
+    field: string,
+    recordId: string,
+    err: unknown,
+  ): Promise<void> {
+    const keyId = err instanceof DecryptionError ? err.keyId : undefined;
+    const actorEmail =
+      typeof this.deps.permissionCtx?.user?.email === 'string'
+        ? this.deps.permissionCtx.user.email
+        : null;
+    await new AuditLogger({ db: this.deps.db, siteId: this.deps.siteId }).write({
+      event: 'decryption_failed',
+      actorEmail,
+      ip: this.deps.permissionCtx?.ip ?? null,
+      userAgent: this.deps.permissionCtx?.headers?.['user-agent'] ?? null,
+      requestId: null,
+      metadata: { siteId: this.deps.siteId, collection, field, recordId, keyId },
+    });
+  }
+
+  /** Whether a collection opts into degraded reads on decryption failure (Req 1.4). */
+  private degradedReadEnabled(coll: { meta?: unknown }): boolean {
+    const meta = coll.meta as Record<string, unknown> | null | undefined;
+    return meta?.degradedReadOnFailure === true;
   }
 
   /**
@@ -1423,6 +1788,35 @@ export function assertWritablePermissionFields(
       403,
     );
   }
+}
+
+/**
+ * Coerce and validate a scheduling window (Req 7.2). Returns Date|null for each
+ * bound and throws INVALID_PUBLISH_WINDOW (422) when both are set and
+ * `unpublishAt <= publishAt`.
+ */
+export function normalizePublishWindow(
+  publishAt: string | Date | null | undefined,
+  unpublishAt: string | Date | null | undefined,
+): { publishAt: Date | null; unpublishAt: Date | null } {
+  const toDate = (v: string | Date | null | undefined): Date | null => {
+    if (v === null || v === undefined) return null;
+    const d = v instanceof Date ? v : new Date(v);
+    if (Number.isNaN(d.getTime())) {
+      throw new ItemServiceError('INVALID_PUBLISH_WINDOW', 'Invalid publish/unpublish date.', 422);
+    }
+    return d;
+  };
+  const p = toDate(publishAt);
+  const u = toDate(unpublishAt);
+  if (p && u && u.getTime() <= p.getTime()) {
+    throw new ItemServiceError(
+      'INVALID_PUBLISH_WINDOW',
+      'unpublishAt must be after publishAt.',
+      422,
+    );
+  }
+  return { publishAt: p, unpublishAt: u };
 }
 
 export function resolvePrimaryKey(

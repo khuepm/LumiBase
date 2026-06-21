@@ -14,13 +14,20 @@ export class CloudflareSearchProvider implements SearchProvider {
   private apiKey: string;
 
   constructor(host: string, apiKey: string) {
+    // Search is optional: when MEILISEARCH_HOST/_API_KEY are unset the binding
+    // values arrive as undefined. Tolerate that here rather than throwing in
+    // the constructor — otherwise createCloudflareRuntime() crashes and every
+    // request (including /health) 500s, taking down database/cache/storage
+    // along with search. An empty host leaves every call to fail at fetch
+    // time, which the health probe correctly reports as "unhealthy".
+    const safeHost = host ?? '';
     // Strip trailing slashes without a regex: `/\/+$/` backtracks
     // polynomially on adversarial input like "http://h/////…". A linear
     // scan from the end is ReDoS-proof.
-    let end = host.length;
-    while (end > 0 && host.charCodeAt(end - 1) === 47 /* '/' */) end--;
-    this.host = host.slice(0, end);
-    this.apiKey = apiKey;
+    let end = safeHost.length;
+    while (end > 0 && safeHost.charCodeAt(end - 1) === 47 /* '/' */) end--;
+    this.host = safeHost.slice(0, end);
+    this.apiKey = apiKey ?? '';
   }
 
   async index(collection: string, documents: Record<string, unknown>[]): Promise<void> {

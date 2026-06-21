@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/docs",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "description": "LumiBase Docs Viewer — browse project documentation (React + Vite).",
   "type": "module",
@@ -19,7 +19,7 @@
     "@lumibase/shared": "workspace:*",
     "@lumibase/ui": "workspace:*",
     "@shikijs/rehype": "^4.0.2",
-    "dompurify": "^3.4.8",
+    "dompurify": "^3.4.11",
     "gray-matter": "^4.0.3",
     "lucide-react": "^0.452.0",
     "minisearch": "^7.1.0",

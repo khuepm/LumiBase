@@ -10,4 +10,5 @@ export {
 } from './search-config';
 export type { JobOptions, Job, QueueProvider } from './queue';
 export type { TransformOptions, MediaProcessor } from './media';
+export type { KeyStatus, KeyMeta, ResolvedKey, KeyProvider } from './keys';
 export type { RuntimeContext } from './runtime';

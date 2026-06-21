@@ -143,6 +143,35 @@ async function main() {
     });
   });
 
+  // ── Content scheduler (regulated-content-readiness task 7; Req 7.3/7.4) ──
+  //
+  // A 1-minute tick applies due publish/unpublish transitions. Each flip is a
+  // guarded conditional update so catch-up runs after downtime never
+  // double-fire side-effects (Req 7.6).
+  const { registerSchedulerWorker, runSchedulerTick, sweepRetention } = await import(
+    './services/scheduler-worker'
+  );
+  const schedulerDeps = { db: rotatorDb, queue: runtime.queue };
+  registerSchedulerWorker(schedulerDeps);
+  const schedulerTask = cron.schedule('* * * * *', () => {
+    void runSchedulerTick(schedulerDeps).catch((err) => {
+      console.error('[content-scheduler] tick failed', formatSafeError(err));
+    });
+  });
+  // Retention sweep runs hourly (Req 12.2) — heavier than the publish tick.
+  const retentionTask = cron.schedule('17 * * * *', () => {
+    void sweepRetention(schedulerDeps).catch((err) => {
+      console.error('[retention-sweep] failed', formatSafeError(err));
+    });
+  });
+
+  // ── Envelope migration consumer (regulated-content-readiness task 3.6) ──
+  //
+  // Drains background migrations enqueued when an operator toggles
+  // `encryption.envelope`. Batched, resumable, idempotent — safe to re-run.
+  const { registerEnvelopeMigrationWorker } = await import('./services/envelope-migration-worker');
+  registerEnvelopeMigrationWorker({ db: rotatorDb, keyProvider: runtime.keys, queue: runtime.queue });
+
   // Graceful shutdown with 10s timeout
   process.on('SIGTERM', () => {
     console.log('[lumibase-cms] SIGTERM received, shutting down...');
@@ -151,6 +180,8 @@ async function main() {
     // can't keep the event loop alive past the server close (task 11.4).
     rotationTask.stop();
     vetoSweepTask.stop();
+    schedulerTask.stop();
+    retentionTask.stop();
     pressureLimiter.stop();
     clearInterval(loadGuardTimer);
 

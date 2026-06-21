@@ -47,9 +47,12 @@ async function withTimeout<T>(
   }
 }
 
-async function probeService(check: () => Promise<boolean>): Promise<ServiceStatus> {
+async function probeService(
+  check: () => Promise<boolean>,
+  timeoutMs = HEALTH_PROBE_TIMEOUT_MS,
+): Promise<ServiceStatus> {
   try {
-    return (await withTimeout(check())) ? 'healthy' : 'unhealthy';
+    return (await withTimeout(check(), timeoutMs)) ? 'healthy' : 'unhealthy';
   } catch {
     return 'unhealthy';
   }
@@ -64,11 +67,16 @@ async function collectHealth(c: Context<AppEnv>): Promise<HealthResponse> {
       const sql = runtime.database.getConnection() as any;
       await sql`SELECT 1`;
       return true;
-    }),
+      // A cold Hyperdrive connection to a distant Postgres can exceed the
+      // default 750ms probe budget, so give the DB probe extra headroom.
+    }, 3000),
 
     cache: probeService(async () => {
       const healthKey = '__lumibase_health_check__';
-      await runtime.cache.set(healthKey, JSON.stringify('ok'), { ttl: 10 });
+      // Cloudflare KV enforces a 60s minimum expirationTtl; anything lower
+      // (the old 10s) makes kv.put throw and the probe report unhealthy even
+      // though KV is reachable.
+      await runtime.cache.set(healthKey, JSON.stringify('ok'), { ttl: 60 });
       const val = await runtime.cache.get(healthKey);
       return val !== null;
     }),
@@ -99,7 +107,8 @@ async function collectHealth(c: Context<AppEnv>): Promise<HealthResponse> {
         { attempts: 1 },
       );
       return Boolean(jobId);
-    }),
+      // First enqueue after a cold start can exceed the default 750ms budget.
+    }, 3000),
   };
 
   const entries = await Promise.all(
