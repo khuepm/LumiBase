@@ -98,6 +98,14 @@ Format: `type(scope): description`
 
 Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`
 
+### Dependency overrides & patches
+
+Security pins and source patches for transitive dependencies live under the `pnpm` key in
+the root `package.json` (`overrides` and `patchedDependencies`). Every entry **must** be
+documented in [Dependency Overrides & Patches](../security/dependency-overrides.md) with
+its rationale and the condition for removal. If you add, change, or remove an override or
+patch, update that registry in the same PR.
+
 ### PR checklist
 
 Before opening a PR, verify:
@@ -110,6 +118,7 @@ Before opening a PR, verify:
 - [ ] Database migrations are backward-compatible for at least one release window: add nullable/defaults first, backfill separately, and defer destructive drops to a later cleanup release
 - [ ] PR title follows Conventional Commits format
 - [ ] `docs/en/data-model.md` updated if schema changed
+- [ ] `docs/en/security/dependency-overrides.md` updated if a `pnpm` override or patch changed
 - [ ] ADR added if a significant architectural decision was made
 
 ---
