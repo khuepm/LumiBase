@@ -7,7 +7,7 @@ settings:
 overrides:
   '@types/react': 18.3.3
   '@types/react-dom': 18.3.0
-  dompurify: ^3.4.0
+  dompurify: ^3.4.11
   esbuild: ^0.28.1
   form-data: ^4.0.6
   postcss: ^8.5.14
@@ -178,7 +178,7 @@ importers:
         specifier: ^4.0.2
         version: 4.0.2
       dompurify:
-        specifier: ^3.4.0
+        specifier: ^3.4.11
         version: 3.4.11
       gray-matter:
         specifier: ^4.0.3
@@ -388,7 +388,7 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       dompurify:
-        specifier: ^3.4.0
+        specifier: ^3.4.11
         version: 3.4.11
       i18next:
         specifier: ^26.2.0
@@ -5527,8 +5527,8 @@ packages:
     resolution: {integrity: sha512-Dhxzh5HZuiHQhbvTW9AMetFfBHDMYpo23Uo9btPXgdYP+3T5S+p+jgNy7spra+veYhBP2dCSgxR/i2Y02h5/6w==}
     engines: {node: '>=0.10.0'}
 
-  vscode-textmate@git+https://git@github.com:octref/vscode-textmate.git#e65aabe2227febda7beaad31dd0fca1228c5ddf3:
-    resolution: {commit: e65aabe2227febda7beaad31dd0fca1228c5ddf3, repo: git@github.com:octref/vscode-textmate.git, type: git}
+  vscode-textmate@https://codeload.github.com/octref/vscode-textmate/tar.gz/e65aabe2227febda7beaad31dd0fca1228c5ddf3:
+    resolution: {tarball: https://codeload.github.com/octref/vscode-textmate/tar.gz/e65aabe2227febda7beaad31dd0fca1228c5ddf3}
     version: 4.0.1
     peerDependencies:
       onigasm: ^2.1.0
@@ -10758,7 +10758,7 @@ snapshots:
 
   shiki-languages@0.1.6(onigasm@2.2.5)(oniguruma@7.2.3):
     dependencies:
-      vscode-textmate: git+https://git@github.com:octref/vscode-textmate.git#e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3)
+      vscode-textmate: https://codeload.github.com/octref/vscode-textmate/tar.gz/e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3)
     transitivePeerDependencies:
       - onigasm
       - oniguruma
@@ -10766,7 +10766,7 @@ snapshots:
   shiki-themes@0.1.7(onigasm@2.2.5)(oniguruma@7.2.3):
     dependencies:
       json5: 2.2.3
-      vscode-textmate: git+https://git@github.com:octref/vscode-textmate.git#e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3)
+      vscode-textmate: https://codeload.github.com/octref/vscode-textmate/tar.gz/e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3)
     transitivePeerDependencies:
       - onigasm
       - oniguruma
@@ -10776,7 +10776,7 @@ snapshots:
       onigasm: 2.2.5
       shiki-languages: 0.1.6(onigasm@2.2.5)(oniguruma@7.2.3)
       shiki-themes: 0.1.7(onigasm@2.2.5)(oniguruma@7.2.3)
-      vscode-textmate: git+https://git@github.com:octref/vscode-textmate.git#e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3)
+      vscode-textmate: https://codeload.github.com/octref/vscode-textmate/tar.gz/e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3)
     transitivePeerDependencies:
       - oniguruma
 
@@ -11480,7 +11480,7 @@ snapshots:
 
   void-elements@3.1.0: {}
 
-  vscode-textmate@git+https://git@github.com:octref/vscode-textmate.git#e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3):
+  vscode-textmate@https://codeload.github.com/octref/vscode-textmate/tar.gz/e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3):
     dependencies:
       onigasm: 2.2.5
       oniguruma: 7.2.3
