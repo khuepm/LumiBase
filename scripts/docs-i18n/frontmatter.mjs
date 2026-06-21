@@ -77,5 +77,8 @@ function unquote(v) {
 function quoteIfNeeded(v) {
   // Quote values containing YAML-significant characters.
   if (/^[\w.\-/+:T Z]+$/.test(v) && !/^[\s]|[\s]$/.test(v)) return v;
-  return `"${v.replace(/"/g, '\\"')}"`;
+  // Escape backslashes before quotes, else a trailing `\` or an embedded `\`
+  // would corrupt the double-quoted YAML scalar.
+  const escaped = v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `"${escaped}"`;
 }
