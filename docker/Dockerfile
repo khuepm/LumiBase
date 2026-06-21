@@ -3,6 +3,8 @@ FROM node:22-slim AS builder
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+# pnpm.patchedDependencies references files under patches/ — required by --frozen-lockfile
+COPY patches/ ./patches/
 COPY scripts/ ./scripts/
 COPY packages/ ./packages/
 COPY apps/cms/ ./apps/cms/

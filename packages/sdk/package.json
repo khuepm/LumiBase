@@ -1,7 +1,6 @@
 {
   "name": "@lumibase/sdk",
   "version": "0.10.0",
-  "private": true,
   "description": "LumiBase JS SDK (REST + WebSocket) + typegen core. Isomorphic ESM.",
   "type": "module",
   "main": "./src/index.ts",
