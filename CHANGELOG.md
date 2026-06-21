@@ -65,6 +65,41 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - Envelope mode is governed by the `encryption.envelope` setting; the
   `LUMIBASE_ENVELOPE_ENCRYPTION` env var is no longer the hot-path control.
 
+## [0.8.0] - 2026-06-18
+
+### Version
+
+- `v0.8.0`
+
+### Date
+
+- `2026-06-18`
+
+### Highlights
+
+- **GraphQL API surface.** New GraphQL Yoga endpoint for content items with nested m2o/o2m relation fields, subscriptions over the SiteRoom realtime channel, and production hardening (query depth limit + introspection guard).
+- **Email module.** Generic `EmailService` with a render engine and template store, an email module API, a Studio settings UI, and teammate-invite emails.
+- **Firebase sync module.** `lumibase-firebase-sync` mirrors item create/update/delete to Firestore + RTDB (new tables via migration `0029`).
+- **Sentry error monitoring** wired into the Workers build.
+- **Shared-domain environments.** New dev/staging/demo Worker environments, with branch/dispatch deploys routed to the matching env.
+- **Production API reachable at `api.lumibase.dev`.** The production CMS Worker now binds the hostname via `custom_domain = true`, so `wrangler deploy --env production` creates and manages the proxied DNS record automatically — fixing the `v0.7.0` deploy that left `api.lumibase.dev` unresolvable (`NXDOMAIN`).
+
+### Added
+
+- **GraphQL:** Yoga surface for content items, nested m2o/o2m relations, subscriptions, depth limit + introspection guard.
+- **Email:** `EmailService`, render engine, template store, module API, Studio settings UI, invite email.
+- **Firebase sync:** `lumibase-firebase-sync` module + dispatch on item mutations; migration `0029`.
+- **CMS:** Sentry error monitoring; dev/staging/demo shared-domain environments.
+- **Studio:** auto-detect source extensions in dev; GitHub bug report template + Studio link.
+
+### Fixed
+
+- **CMS production routing.** Bind the production Worker to `api.lumibase.dev` via `custom_domain` so the API is served on its own origin, split from `studio.lumibase.dev`.
+- **Pages custom domains** are now auto-attached by the deploy workflow.
+- **GraphQL/types:** resolve TS lib-skew typecheck errors; loosen mock typing in schema-builder test.
+- **Studio:** unbreak the production build of the dev-extensions vite plugin.
+- **Email:** harden `htmlToText` against incomplete strip + double-unescape (char scanner instead of regex, per CodeQL).
+
 ## [0.7.0] - 2026-06-16
 
 ### Version
