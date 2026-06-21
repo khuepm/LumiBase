@@ -9,6 +9,96 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [0.9.0] - 2026-06-21
+
+### Version
+
+- `v0.9.0`
+
+### Date
+
+- `2026-06-21`
+
+### Highlights
+
+- **Regulated / sensitive content readiness.** A generic, opt-in capability set
+  for serving regulated/sensitive content (PHI/PII) on the existing CMS —
+  defaults off, so Tier 1 behavior is unchanged. Field encryption is now
+  **fail-closed** with AAD-bound, key-versioned ciphertext and a resumable rewrap
+  worker; optional **envelope (per-record DEK) mode** enables crypto-shredding
+  for GDPR erasure; new **field data classification** masks/gates `pii`/`phi`;
+  plus **content scheduling**, an **editorial review → publish** workflow, **GDPR
+  erasure / retention / SAR**, and **structured SEO/AIO delivery**.
+- **Cloudflare production hardening.** The production CMS Worker now binds its
+  real bindings (Hyperdrive, KV, R2, Queue); health probes are corrected for
+  Cloudflare KV and cold connections; and the runtime tolerates missing search
+  config and flat queue bindings on CF.
+- **Security dependency bumps.** `@babel/core`, `dompurify`, `undici`, and
+  `form-data` are pinned/overridden to resolve published GHSA advisories.
+
+### Breaking changes
+
+- None. New capabilities are additive and default off.
+
+### Migrations
+
+- **1 new schema migration (`0031_regulated_content_readiness.sql`)**: new tables
+  `encryption_keys`, `field_access_log`, `content_reviews`, `erasure_requests`;
+  new columns `items.publish_at`/`unpublish_at`/`editorial_state`/`dek_wrapped`
+  and `fields.classification`.
+- Additive and idempotent: new columns are nullable or defaulted and the
+  migration is `IF NOT EXISTS`/duplicate-object guarded, so it re-runs safely and
+  needs **no backfill**. Existing ciphertext reads unchanged via the `v0` path.
+- Compatible DB/schema: `v0.8.0` schema state upgraded through
+  `0031_regulated_content_readiness.sql`.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
+### Upgrade steps
+
+1. Review the breaking changes and migrations above.
+2. Confirm the target Docker image tag exists: `ghcr.io/khuepm/lumibase-cms:0.9.0`.
+3. Take a backup (see Backup guidance — required for this schema migration).
+4. Apply migrations: `pnpm -F @lumibase/database db:migrate`.
+5. Deploy the `v0.9.0` image or Cloudflare Worker release.
+6. Verify `/health` and `/ready`, the new `/api/v1/admin/encryption`,
+   `/api/v1/editorial`, `/api/v1/admin/erasure`, `/api/v1/admin/field-access-log`,
+   and `/api/v1/admin/sar/export` endpoints, the Studio **Settings → Encryption**
+   page, and critical CMS workflows after deployment.
+7. Regulated-content features ship **off**. Opt in per site by setting field
+   `classification`, toggling `encryption.envelope` (step-up password), and
+   enabling the editorial review workflow per collection.
+
+### Rollback notes
+
+- Roll back the application by redeploying the previously known-good CMS image
+  tag (`v0.8.0`).
+- The new tables/columns are additive; rolling back the app does not require
+  dropping them. Records written under envelope mode remain decryptable as long
+  as the KEK is retained. If you must reverse the schema, restore from the
+  pre-migration backup.
+
+### Docker image tags
+
+- CMS: `ghcr.io/khuepm/lumibase-cms:0.9.0`
+- Optional immutable digest: `ghcr.io/khuepm/lumibase-cms@sha256:<digest>`
+
+### Compatibility DB/schema
+
+- Compatible DB/schema: `v0.9.0` schema state (migration `0031` applied).
+- Minimum supported database engine/version: use the version supported by the
+  target deployment environment.
+
+### Backup guidance
+
+- **Backup required: Yes.** This release applies 1 additive schema migration and
+  introduces field encryption / crypto-shred capabilities.
+- Backup scope: database.
+- Reason: new regulated-content tables and columns are added; a pre-migration
+  backup is the supported rollback path, and the supported recovery path for
+  envelope-mode key material.
+
 ### Added
 
 - **Regulated / sensitive content readiness.** A generic, opt-in capability set
@@ -50,20 +140,31 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `/api/v1/editorial`, `/api/v1/admin/erasure`, `/api/v1/admin/field-access-log`,
   and `/api/v1/admin/sar/export`. See `docs/en/api/hono-api-spec.md` §10b.
 
-### Migrations
-
-- **1 new schema migration (`0031_regulated_content_readiness.sql`)**: new tables
-  `encryption_keys`, `field_access_log`, `content_reviews`, `erasure_requests`;
-  new columns `items.publish_at`/`unpublish_at`/`editorial_state`/`dek_wrapped`
-  and `fields.classification`.
-- Additive and idempotent: new columns are nullable or defaulted and the
-  migration is `IF NOT EXISTS`/duplicate-object guarded, so it re-runs safely and
-  needs **no backfill**. Existing ciphertext reads unchanged via the `v0` path.
-
 ### Changed
 
 - Envelope mode is governed by the `encryption.envelope` setting; the
   `LUMIBASE_ENVELOPE_ENCRYPTION` env var is no longer the hot-path control.
+- **CMS:** wire production Cloudflare bindings (Hyperdrive, KV, R2, Queue) on the
+  production Worker.
+- Bumped all workspace package versions `0.8.0` → `0.9.0`.
+
+### Fixed
+
+- **CMS:** correct health probes for Cloudflare KV and cold connections.
+- **Runtime:** tolerate missing search config and flat queue bindings on
+  Cloudflare.
+- **Landing:** inline CSS to remove a render-blocking stylesheet (`perf`); serve
+  the static export preview via `python http.server`.
+
+### Security
+
+- **Dependency advisories resolved.** `@babel/core` bumped to `7.29.7`,
+  `dompurify` to `>=3.4.11` (GHSA `ALLOWED_ATTR` prototype pollution), `undici`
+  overridden to `^7.28.0`, and `form-data` pinned to `^4.0.6`.
+
+### CI
+
+- `ci(release)`: install with `--ignore-scripts` to avoid a native-build hang.
 
 ## [0.8.0] - 2026-06-18
 
@@ -1131,6 +1232,13 @@ changelog and the published GitHub Release notes:
 
 Initial tagged release.
 
+[0.9.0]: https://github.com/khuepm/lumibase/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/khuepm/lumibase/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/khuepm/lumibase/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/khuepm/lumibase/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/khuepm/lumibase/compare/v0.4.7...v0.5.0
+[0.4.7]: https://github.com/khuepm/lumibase/compare/v0.4.6...v0.4.7
+[0.4.6]: https://github.com/khuepm/lumibase/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/khuepm/lumibase/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/khuepm/lumibase/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/khuepm/lumibase/compare/v0.4.2...v0.4.3
