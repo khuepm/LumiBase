@@ -222,15 +222,22 @@
     {
       "idx": 31,
       "version": "7",
-      "when": 1781773380003,
-      "tag": "0031_insights_dashboards",
+      "when": 1781773320004,
+      "tag": "0031_regulated_content_readiness",
       "breakpoints": true
     },
     {
       "idx": 32,
       "version": "7",
-      "when": 1781773440003,
-      "tag": "0032_content_versions",
+      "when": 1781773380004,
+      "tag": "0033_insights_dashboards",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781773440004,
+      "tag": "0034_content_versions",
       "breakpoints": true
     }
   ]

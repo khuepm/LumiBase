@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/extensions",
-  "version": "0.7.0",
+  "version": "0.9.0",
   "private": true,
   "description": "Extension discovery + loading for LumiBase. Scans source folders, validates manifests, and resolves entrypoints (Directus-style). No bundling — works on source.",
   "type": "module",

@@ -21,6 +21,11 @@ import { accessRouter } from './routes/access';
 import { adminRouter } from './routes/admin';
 import { authRouter, meRouter } from './routes/auth';
 import { adminSecurityRouter } from './routes/admin-security';
+import { adminEncryptionRouter } from './routes/admin-encryption';
+import { editorialRouter } from './routes/editorial';
+import { adminErasureRouter } from './routes/admin-erasure';
+import { adminFieldAccessRouter } from './routes/admin-field-access';
+import { adminSarRouter } from './routes/admin-sar';
 import { apiKeysRouter } from './routes/api-keys';
 import { collectionsRouter } from './routes/collections';
 import { deliverRouter } from './routes/deliver';
@@ -170,6 +175,7 @@ api.route('/me', meRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/items', itemsRouter);
+api.route('/editorial', editorialRouter);
 // GraphQL surface (Yoga). Mounted inside the authenticated `api` sub-app so
 // it inherits the full tenant → db → auth → RLS chain; `all` covers POST
 // (operations) and GET (GraphiQL / introspection in non-prod).
@@ -203,6 +209,16 @@ api.route('/admin', adminRouter);
 // being populated. Sibling to `/admin` rather than nested so future
 // recovery routes (task 10.7) can mount alongside without reshuffling.
 api.route('/admin/security', adminSecurityRouter);
+// Admin Encryption surface (regulated-content-readiness task 3.4; Req 3.5).
+// Sibling to `/admin/security`, also under `withAuth` with an in-router
+// admin-role gate. Handles key-rotation metadata + key listing.
+api.route('/admin/encryption', adminEncryptionRouter);
+// Admin Erasure surface (regulated-content-readiness task 9.4; Req 11).
+api.route('/admin/erasure', adminErasureRouter);
+// Field Access Log query (regulated-content-readiness task 5.3; Req 6.3).
+api.route('/admin/field-access-log', adminFieldAccessRouter);
+// Subject Access Request export (regulated-content-readiness task 10.3; Req 13).
+api.route('/admin/sar', adminSarRouter);
 // Audit-log QUERY + EXPORT surface (admin-setup-wizard task 12.3; Req
 // 15.4, 15.6; design §4.9, §4.10, §10.3, §10.4). SIBLING mount alongside
 // `adminSecurityRouter` above, both under `withAuth`. The admin-role gate

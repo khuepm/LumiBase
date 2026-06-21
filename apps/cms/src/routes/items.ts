@@ -26,16 +26,23 @@ const listQuerySchema = z.object({
   search: z.string().optional(),
 });
 
+const scheduleSchema = {
+  publishAt: z.string().datetime().nullable().optional(),
+  unpublishAt: z.string().datetime().nullable().optional(),
+};
+
 const createSchema = z.object({
   data: z.record(z.unknown()),
   status: z.string().optional(),
   sort: z.number().int().optional(),
+  ...scheduleSchema,
 });
 
 const patchSchema = z.object({
   data: z.record(z.unknown()).optional(),
   status: z.string().optional(),
   sort: z.number().int().optional(),
+  ...scheduleSchema,
 });
 
 const bulkSchema = z.object({
@@ -71,6 +78,7 @@ const buildService = (c: Context<AppEnv>) => {
       headers,
       apiKey: auth?.apiKey ?? null,
     },
+    keyProvider: runtime.keys,
     encryptionKey: c.env.ENCRYPTION_KEY || (typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : undefined),
   });
 };
