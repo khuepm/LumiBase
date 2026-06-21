@@ -83,8 +83,8 @@ importers:
         specifier: ^3.0.3
         version: 3.0.3
       nodemailer:
-        specifier: 8.0.10
-        version: 8.0.10
+        specifier: 9.0.1
+        version: 9.0.1
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
@@ -4450,8 +4450,8 @@ packages:
   node-releases@2.0.44:
     resolution: {integrity: sha512-5WUyunoPMsvvEhS8AxHtRzP+oA8UCkJ7YRxatWKjngndhDGLiqEVAQKWjFAiAiuL8zMRGzGSJxFnLetoa43qGQ==}
 
-  nodemailer@8.0.10:
-    resolution: {integrity: sha512-BLFuSth7QtHOkBzyqTehWWyub0NTRDuK2Q2SQfnGLsrJnzyU+Yeh4WpV1eZGuARFj1xQJHIdnTuJZLP+b9R1GQ==}
+  nodemailer@9.0.1:
+    resolution: {integrity: sha512-Gwv8SQewT616ZM/URn0H54b8PWo/Wum7md3EW2aWy1lO27+WZCX+Xyak3J+NlmHUjDh5ME+uesJUDRbR3Ye8Bw==}
     engines: {node: '>=6.0.0'}
 
   normalize-path@3.0.0:
@@ -5536,8 +5536,8 @@ packages:
     resolution: {integrity: sha512-Dhxzh5HZuiHQhbvTW9AMetFfBHDMYpo23Uo9btPXgdYP+3T5S+p+jgNy7spra+veYhBP2dCSgxR/i2Y02h5/6w==}
     engines: {node: '>=0.10.0'}
 
-  vscode-textmate@https://codeload.github.com/octref/vscode-textmate/tar.gz/e65aabe2227febda7beaad31dd0fca1228c5ddf3:
-    resolution: {tarball: https://codeload.github.com/octref/vscode-textmate/tar.gz/e65aabe2227febda7beaad31dd0fca1228c5ddf3}
+  vscode-textmate@git+https://git@github.com:octref/vscode-textmate.git#e65aabe2227febda7beaad31dd0fca1228c5ddf3:
+    resolution: {commit: e65aabe2227febda7beaad31dd0fca1228c5ddf3, repo: git@github.com:octref/vscode-textmate.git, type: git}
     version: 4.0.1
     peerDependencies:
       onigasm: ^2.1.0
@@ -8296,7 +8296,7 @@ snapshots:
       eslint: 9.39.4(jiti@2.7.0)
       eslint-import-resolver-node: 0.3.10
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0))
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.7.0))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.39.4(jiti@2.7.0))
       eslint-plugin-react: 7.37.5(eslint@9.39.4(jiti@2.7.0))
       eslint-plugin-react-hooks: 7.1.1(eslint@9.39.4(jiti@2.7.0))
@@ -8329,7 +8329,7 @@ snapshots:
       tinyglobby: 0.2.16
       unrs-resolver: 1.11.1
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.7.0))
     transitivePeerDependencies:
       - supports-color
 
@@ -8399,7 +8399,7 @@ snapshots:
       - eslint-import-resolver-webpack
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.7.0)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
@@ -10088,7 +10088,7 @@ snapshots:
 
   node-releases@2.0.44: {}
 
-  nodemailer@8.0.10: {}
+  nodemailer@9.0.1: {}
 
   normalize-path@3.0.0: {}
 
@@ -10772,7 +10772,7 @@ snapshots:
 
   shiki-languages@0.1.6(onigasm@2.2.5)(oniguruma@7.2.3):
     dependencies:
-      vscode-textmate: https://codeload.github.com/octref/vscode-textmate/tar.gz/e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3)
+      vscode-textmate: git+https://git@github.com:octref/vscode-textmate.git#e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3)
     transitivePeerDependencies:
       - onigasm
       - oniguruma
@@ -10780,7 +10780,7 @@ snapshots:
   shiki-themes@0.1.7(onigasm@2.2.5)(oniguruma@7.2.3):
     dependencies:
       json5: 2.2.3
-      vscode-textmate: https://codeload.github.com/octref/vscode-textmate/tar.gz/e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3)
+      vscode-textmate: git+https://git@github.com:octref/vscode-textmate.git#e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3)
     transitivePeerDependencies:
       - onigasm
       - oniguruma
@@ -10790,7 +10790,7 @@ snapshots:
       onigasm: 2.2.5
       shiki-languages: 0.1.6(onigasm@2.2.5)(oniguruma@7.2.3)
       shiki-themes: 0.1.7(onigasm@2.2.5)(oniguruma@7.2.3)
-      vscode-textmate: https://codeload.github.com/octref/vscode-textmate/tar.gz/e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3)
+      vscode-textmate: git+https://git@github.com:octref/vscode-textmate.git#e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3)
     transitivePeerDependencies:
       - oniguruma
 
@@ -11494,7 +11494,7 @@ snapshots:
 
   void-elements@3.1.0: {}
 
-  vscode-textmate@https://codeload.github.com/octref/vscode-textmate/tar.gz/e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3):
+  vscode-textmate@git+https://git@github.com:octref/vscode-textmate.git#e65aabe2227febda7beaad31dd0fca1228c5ddf3(onigasm@2.2.5)(oniguruma@7.2.3):
     dependencies:
       onigasm: 2.2.5
       oniguruma: 7.2.3
