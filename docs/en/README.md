@@ -10,6 +10,11 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 
 - [getting-started.md](./getting-started.md) — Khởi tạo dự án LumiBase mới bằng `npm create lumibase@latest` (CLI `create-lumibase`), từ thư mục trống đến server chạy được (Docker hoặc Cloudflare Workers).
 
+## Tutorials (hướng dẫn thực hành)
+
+- [tutorials/index.md](./tutorials/index.md) — Danh mục các tutorial end-to-end cho người mới.
+- [tutorials/nextjs-quickstart.md](./tutorials/nextjs-quickstart.md) — **Hiển thị nội dung LumiBase trên app Next.js**: chạy CMS local, tạo collection `posts`, rồi fetch & render bằng `fetch` thuần hoặc `@lumibase/sdk`.
+
 ## Agent Setup (cho AI agent)
 
 - [agent-setup/index.md](./agent-setup/index.md) — Trang tổng hợp thiết lập AI agent cho LumiBase.

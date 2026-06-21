@@ -5,7 +5,7 @@
 > **Base URL:** `https://api.<your-site>.lumibase.dev` (or `http://localhost:1989` in local dev)
 >
 > All endpoints are versioned under `/api/v1`. Every request must include:
-> - `Authorization: Bearer <access_token>` — JWT from Logto or local auth
+> - `Authorization: Bearer <token>` — login `token`, or an API key (`lbk_…`)
 > - `X-Lumi-Site: <siteId>` — site identifier (or resolved via subdomain routing)
 
 ---
@@ -62,7 +62,7 @@ Error response:
 | Parameter | Example | Description |
 |-----------|---------|-------------|
 | `fields` | `fields=id,title,author.name` | Select specific fields + nested relations |
-| `filter` | `filter[status][_eq]=published` | Filter using rule operators |
+| `filter` | `filter[status][_eq]=published` _or_ `filter={"status":{"_eq":"published"}}` | Filter using rule operators — see [Filter forms](#filter-forms) |
 | `sort` | `sort=-updated_at,title` | Comma-separated, `-` prefix for DESC |
 | `page` | `page=2` | Page number (1-indexed) |
 | `limit` | `limit=25` | Items per page (max 200) |
@@ -85,13 +85,41 @@ Error response:
 | `_between` | Range (two-element array) |
 | `_and`, `_or` | Logical grouping |
 
+### Filter forms
+
+List endpoints accept the `filter` query parameter in **two equivalent forms** — use
+whichever is more convenient. Both produce the same filter object server-side.
+
+**1. Bracket form** — ergonomic for hand-written URLs and HTML forms:
+
+```
+GET /api/v1/items/articles?filter[status][_eq]=published&filter[views][_gte]=100
+```
+
+- Nesting maps directly: `filter[field][_op]=value`.
+- Values are coerced: `true`/`false` → boolean, `null` → null, clean integers/decimals →
+  number (leading-zero strings like `007` stay strings), everything else → string.
+- Array operators (`_in`, `_nin`, `_between`) accept comma-separated values:
+  `filter[status][_in]=published,scheduled`.
+- Logical groups use an index segment: `filter[_and][0][status][_eq]=published`.
+
+**2. JSON form** — better for complex/programmatic filters and the SDK:
+
+```
+GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
+```
+
+> If **both** are supplied on the same request, the **JSON form wins**. A malformed JSON
+> `filter` returns `400 VALIDATION`; a malformed bracket key is ignored rather than
+> failing the whole request.
+
 ---
 
 ## 1. Auth
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/v1/auth/login` | Exchange Logto auth code or username/password for access + refresh tokens |
+| `POST` | `/api/v1/auth/login` | Exchange username/password (or Logto auth code) for a bearer token |
 | `POST` | `/api/v1/auth/refresh` | Refresh expired access token |
 | `POST` | `/api/v1/auth/logout` | Revoke tokens |
 | `GET` | `/api/v1/auth/me` | Get current user profile |
@@ -104,21 +132,26 @@ Error response:
 }
 ```
 
-**Login response:**
+**Login response:** a single bearer `token` plus the user profile. Send the token as
+`Authorization: Bearer <token>` on subsequent requests.
+
 ```json
 {
   "data": {
-    "access_token": "eyJ...",
-    "refresh_token": "...",
-    "expires_in": 3600,
+    "token": "eyJ...",
     "user": {
       "id": "usr_abc123",
       "email": "admin@example.com",
-      "role": "administrator"
+      "firstName": "Admin",
+      "lastName": "User",
+      "avatar": null
     }
   }
 }
 ```
+
+> For long-lived server-to-server access, create an API key
+> (`POST /api/v1/api-keys`, token prefix `lbk_`) instead of using a login token.
 
 ---
 
