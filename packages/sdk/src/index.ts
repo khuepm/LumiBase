@@ -4,3 +4,4 @@ export * from "./rest";
 export * from "./graphql";
 export * from "./typegen";
 export * from "./realtime";
+export * from "./seo";

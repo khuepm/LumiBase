@@ -10,7 +10,7 @@ function field(name: string, type: string): CompiledField {
     defaultValue: null, nullable: true, unique: false, indexed: false, searchable: false,
     length: null, precision: null, scale: null, special: [], translations: {}, options: {},
     displayOptions: {}, validation: {}, conditions: [], required: false, readonly: false,
-    hidden: false, encrypted: false, versioned: false, rawEnabled: false, width: 'full',
+    hidden: false, encrypted: false, classification: 'none', versioned: false, rawEnabled: false, width: 'full',
     group: null, sortOrder: 0,
   };
 }

@@ -5,6 +5,7 @@ import { CloudflareDatabaseProvider, type Hyperdrive } from './database';
 import { CloudflareSearchProvider } from './search';
 import { CloudflareQueueProvider, type CloudflareQueue } from './queue';
 import { CloudflareMediaProcessor } from './media';
+import { createCloudflareKeyProvider } from './keys';
 
 export { CloudflareCacheProvider } from './cache';
 export { CloudflareStorageProvider } from './storage';
@@ -12,6 +13,7 @@ export { CloudflareDatabaseProvider } from './database';
 export { CloudflareSearchProvider } from './search';
 export { CloudflareQueueProvider } from './queue';
 export { CloudflareMediaProcessor } from './media';
+export { createCloudflareKeyProvider } from './keys';
 
 /**
  * Expected Cloudflare Worker environment bindings.
@@ -76,6 +78,7 @@ export function createCloudflareRuntime(env: Record<string, unknown>): RuntimeCo
     ),
     queue: new CloudflareQueueProvider(collectQueues(env)),
     media: new CloudflareMediaProcessor(cfEnv.MEDIA_BASE_URL ?? ''),
+    keys: createCloudflareKeyProvider(env),
     runtime: 'cloudflare',
   };
 }

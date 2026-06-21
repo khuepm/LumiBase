@@ -429,6 +429,63 @@ language overrides (resolved client-side) take precedence.
 
 ---
 
+## 10b. Regulated / sensitive content (admin)
+
+Opt-in capability set (spec: `regulated-content-readiness`). All admin routes
+require the `admin` role; field-level decryption additionally requires the
+`read_decrypted` permission. Sensitive `pii`/`phi` field reads are recorded in
+`field_access_log`; decrypt failures fail closed (`500 DECRYPTION_FAILED`) and
+are audited — never a placeholder.
+
+### Encryption — keys & envelope mode
+
+Key **material** lives only in the runtime `KeyProvider` (Workers Secrets /
+env: `ENCRYPTION_KEY_<id>` + `ENCRYPTION_ACTIVE_KEY_ID`); these surfaces record
+metadata + audit and drive migrations.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/v1/admin/encryption/keys` | List configured key metadata (id/status/algo). |
+| `POST` | `/api/v1/admin/encryption/keys/rotate` | Promote a provisioned key to active; retires the previous. Body `{ keyId }`. Audits `encryption_key_rotated`. `422 KEY_NOT_PROVISIONED` if the bytes are absent. |
+| `POST` | `/api/v1/admin/encryption/keys/rewrap` | Re-encrypt retired-key ciphertext (and re-wrap per-record DEKs) onto the active key. Idempotent, resumable, bounded per call. |
+| `GET`  | `/api/v1/admin/encryption/envelope` | Current envelope-mode setting + migration progress. |
+| `POST` | `/api/v1/admin/encryption/envelope` | Toggle envelope (per-record DEK) mode. Body `{ enabled, password }` — **step-up auth** re-verifies the admin password (`401 INVALID_CREDENTIALS` on mismatch). Records `encryption.envelope`, audits `envelope_mode_changed`, enqueues the background migration and drains a bounded inline batch. |
+| `POST` | `/api/v1/admin/encryption/envelope/migrate` | Drain more migration batches (resumable). Poll until `{ done: true }`. |
+
+### Editorial review → publish
+
+Mounted at `/api/v1/editorial`. Per-collection toggle via collection
+`meta.editorialWorkflow`; `meta.requireSeparateReviewer` enforces a different
+reviewer than the author. Transitions audit `editorial_transition`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/v1/editorial/reviews` | List review requests (filter by status/assignee). |
+| `POST` | `/api/v1/editorial/:collection/:id/submit-review` | Move `draft → in_review`; assign a reviewer. |
+| `POST` | `/api/v1/editorial/:collection/:id/approve` | `in_review → approved` (→ publish per workflow). |
+| `POST` | `/api/v1/editorial/:collection/:id/reject` | `in_review → rejected`. Body `{ reason }`. |
+
+### GDPR erasure (dual-control)
+
+Mounted at `/api/v1/admin/erasure`. Crypto-shreds (drops per-record DEK) or
+hard-deletes `items` + `revisions` while **preserving** the tamper-evident
+`data_erased` audit (no cascade). Dual-control via `erasureDualControl` setting.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/admin/erasure` | Create an erasure request. Body `{ collection, filter }` + reason. Stores a subject hash, never plaintext. |
+| `POST` | `/api/v1/admin/erasure/:id/confirm` | Second-admin confirmation (dual-control). |
+| `POST` | `/api/v1/admin/erasure/:id/execute` | Execute the confirmed erasure; audits `data_erased` with `recordCount`. |
+
+### Field access log & Subject Access Request
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/v1/admin/field-access-log` | Query decrypted-read audit of `pii`/`phi` fields (never values). |
+| `POST` | `/api/v1/admin/sar/export` | Subject Access Request: export one subject's decrypted records + provenance. Forces a `field_access_log` entry (Req 13.2). |
+
+---
+
 ## 11. Extensions
 
 | Method | Path | Description |
