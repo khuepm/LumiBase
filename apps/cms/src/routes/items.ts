@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ItemService, ItemServiceError, parseDeepQueryParams, parseFilterQueryParams } from '../services/item-service';
+import { ContentVersionError, ContentVersionService } from '../services/content-version-service';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
@@ -83,7 +84,7 @@ const buildService = (c: Context<AppEnv>) => {
 };
 
 const toError = (err: unknown) => {
-  if (err instanceof ItemServiceError) {
+  if (err instanceof ItemServiceError || err instanceof ContentVersionError) {
     return { status: err.status, body: { errors: [{ code: err.code, message: err.message }] } };
   }
   console.error('[items] unexpected error', formatSafeError(err));
@@ -254,6 +255,127 @@ itemsRouter.delete('/:collection/:id/pins/:field', async (c) => {
       c.req.param('field'),
     );
     return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+// ── Content versions — named parallel draft branches of an item. ──────────────
+
+const buildVersionService = (c: Context<AppEnv>) =>
+  new ContentVersionService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    userId: c.get('auth')?.userId ?? null,
+    items: buildService(c),
+  });
+
+const versionCreateSchema = z.object({ key: z.string().min(1), name: z.string().min(1) });
+const versionPatchSchema = z.object({
+  data: z.record(z.unknown()).optional(),
+  name: z.string().min(1).optional(),
+});
+
+itemsRouter.get('/:collection/:id/versions', async (c) => {
+  try {
+    const data = await buildVersionService(c).list(c.req.param('collection'), c.req.param('id'));
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.post('/:collection/:id/versions', async (c) => {
+  const parsed = versionCreateSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
+  }
+  try {
+    const data = await buildVersionService(c).create(
+      c.req.param('collection'),
+      c.req.param('id'),
+      parsed.data.key,
+      parsed.data.name,
+    );
+    return c.json({ data }, 201);
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.get('/:collection/:id/versions/:key', async (c) => {
+  try {
+    const data = await buildVersionService(c).get(
+      c.req.param('collection'),
+      c.req.param('id'),
+      c.req.param('key'),
+    );
+    if (!data) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Version not found' }] }, 404);
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.patch('/:collection/:id/versions/:key', async (c) => {
+  const parsed = versionPatchSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
+  }
+  try {
+    const data = await buildVersionService(c).update(
+      c.req.param('collection'),
+      c.req.param('id'),
+      c.req.param('key'),
+      parsed.data,
+    );
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.delete('/:collection/:id/versions/:key', async (c) => {
+  try {
+    await buildVersionService(c).remove(
+      c.req.param('collection'),
+      c.req.param('id'),
+      c.req.param('key'),
+    );
+    return c.json({ data: null });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.get('/:collection/:id/versions/:key/compare', async (c) => {
+  try {
+    const data = await buildVersionService(c).compare(
+      c.req.param('collection'),
+      c.req.param('id'),
+      c.req.param('key'),
+    );
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.post('/:collection/:id/versions/:key/promote', async (c) => {
+  try {
+    const { item, mainDiverged } = await buildVersionService(c).promote(
+      c.req.param('collection'),
+      c.req.param('id'),
+      c.req.param('key'),
+    );
+    return c.json({ data: item, meta: { mainDiverged } });
   } catch (err) {
     const { status, body } = toError(err);
     return c.json(body, status as 400);

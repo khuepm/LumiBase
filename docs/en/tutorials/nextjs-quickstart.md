@@ -7,7 +7,7 @@ title: Next.js Quickstart — Display LumiBase Content
   │ TUTORIAL VERSIONING — read before editing                                  │
   │                                                                            │
   │ applies_to_min: 0.9.0   ← lowest LumiBase version this tutorial is valid   │
-  │ verified_on:    0.9.0   ← version it was last actually tested against      │
+  │ verified_on:    0.10.0  ← version it was last actually tested against      │
   │                                                                            │
   │ This tutorial is intentionally version-pinned. Do NOT clone it per         │
   │ release. Only bump `verified_on` (and, if a breaking change forces it,     │
@@ -24,7 +24,7 @@ title: Next.js Quickstart — Display LumiBase Content
 <p><strong>Go from a clean machine to a Next.js page rendering content from LumiBase.</strong></p>
 
 <p>
-  <img alt="LumiBase version" src="https://img.shields.io/badge/LumiBase-0.9.0-F5A623?style=for-the-badge">
+  <img alt="LumiBase version" src="https://img.shields.io/badge/LumiBase-%E2%89%A5%200.9.0%20%C2%B7%20verified%200.10.0-F5A623?style=for-the-badge">
   <img alt="Level" src="https://img.shields.io/badge/Level-Beginner-3DDC97?style=for-the-badge">
   <img alt="Time" src="https://img.shields.io/badge/Time-~20%20min-4A90E2?style=for-the-badge">
   <img alt="Stack" src="https://img.shields.io/badge/Next.js-App%20Router-black?style=for-the-badge&logo=next.js">
@@ -33,7 +33,8 @@ title: Next.js Quickstart — Display LumiBase Content
 </div>
 
 > [!NOTE]
-> **Which LumiBase version is this for?** This tutorial targets **LumiBase `0.9.0`**.
+> **Which LumiBase version is this for?** Valid from **LumiBase `0.9.0`** onward (last
+> verified on `0.10.0`).
 > It stays valid for any newer release **until** one of the API contracts in the
 > [Compatibility](#compatibility) table changes — see that section to pick the right
 > version, with the newest on top.
@@ -404,7 +405,7 @@ contract it relies on actually changes. Pick the row matching your LumiBase vers
 <table>
 <thead><tr><th>LumiBase version</th><th>This tutorial</th><th>Notes</th></tr></thead>
 <tbody>
-<tr><td><strong>0.9.0 → latest</strong></td><td>✅ This page (verified on <code>0.9.0</code>)</td><td>Login returns <code>{ data: { token } }</code>; API keys via <code>POST /api/v1/api-keys</code> (<code>lbk_</code> prefix); items filter accepts JSON <em>and</em> bracket form; default site <code>__default__</code>.</td></tr>
+<tr><td><strong>0.9.0 → latest</strong></td><td>✅ This page (verified on <code>0.10.0</code>)</td><td>Login returns <code>{ data: { token } }</code>; API keys via <code>POST /api/v1/api-keys</code> (<code>lbk_</code> prefix); items filter accepts JSON <em>and</em> bracket form; default site <code>__default__</code>.</td></tr>
 <tr><td>&lt; 0.9.0</td><td>⚠️ Not covered</td><td>Earlier releases predate the contracts above. Upgrade to ≥ 0.9.0, or adapt the auth/filter calls to your version.</td></tr>
 </tbody>
 </table>

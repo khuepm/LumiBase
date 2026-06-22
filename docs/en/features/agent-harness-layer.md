@@ -165,9 +165,12 @@ Skills are defined in two synchronized locations:
 - **Public registry** (`packages/ai-skills/src/skills.ts`) — LLM tool definitions exposed via `getAISkillsAsTools()`
 - **Harness handlers** (`apps/cms/src/services/ai-harness.ts` → `buildCoreSkills()`) — actual execution logic
 
-A skill classified as **DANGEROUS** (requires HITL approval) when:
-1. Its `requiredCapabilities` includes any `schema:*` except `schema:read`, OR
-2. Its name starts with `delete`
+A skill is classified as **DANGEROUS** (requires HITL approval) when:
+1. It sets the explicit `dangerous` flag (governed namespaces `access:*`, `intents:*`, `flows:*`), OR
+2. Its `requiredCapabilities` includes any `schema:*` except `schema:read`, OR
+3. Its name starts with `delete`
+
+The `dangerous` flag is honoured by both `AISecureHarness.evaluateRisk` and `ToolRegistryService.coreTool`, so item CRUD keeps its existing (non-dangerous) classification while new governed write/delete skills are always gated.
 
 | Skill | Service | Required Capability | Risk | Handler |
 |---|---|---|---|---|
@@ -185,6 +188,30 @@ A skill classified as **DANGEROUS** (requires HITL approval) when:
 | `generateAppSpec` | ai | `schema:read`, `items:read` | SAFE | Real → LLM + live schema introspection; sections must declare `source` bindings |
 | `generateApiDocs` | ai | `schema:read` | SAFE | Real → deterministic OpenAPI 3.1 from live schema (no LLM needed) |
 | `generateSeedData` | ai | `items:write` | SAFE | Real → LLM rows matching real field definitions |
+| `listRelations` | schema | `schema:read` | SAFE | Real → SchemaService |
+| `createRelation` | schema | `schema:create` | **DANGEROUS** | Real → SchemaService |
+| `deleteRelation` | schema | `schema:delete` | **DANGEROUS** · irreversible | Real → SchemaService |
+| `listRoles` / `listPolicies` | access | `access:read` | SAFE | Real → AccessService |
+| `createRole` / `createPolicy` | access | `access:create` | **DANGEROUS** | Real → AccessService |
+| `deleteRole` / `deletePolicy` | access | `access:delete` | **DANGEROUS** · irreversible | Real → AccessService |
+| `listIntents` | intents | `intents:read` | SAFE | Real → IntentService |
+| `createIntent` / `deleteIntent` | intents | `intents:write` | **DANGEROUS** | Real → IntentService |
+| `listFlows` | flows | `flows:read` | SAFE | Real → DB (tenant-scoped) |
+| `createFlow` / `deleteFlow` / `runFlow` | flows | `flows:write` / `flows:run` | **DANGEROUS** | Real → DB + `runFlow` |
+| `listApiKeys` | access | `api-keys:read` | SAFE | Real → AccessService |
+| `createApiKey` / `rotateApiKey` / `revokeApiKey` | access | `api-keys:create` / `:write` / `:delete` | **DANGEROUS** (`revoke` irreversible) | Real → AccessService (token returned once) |
+| `listUsers` | access | `users:read` | SAFE | Real → AccessService |
+| `inviteUser` / `updateUser` / `removeUser` | access | `users:write` / `:delete` | **DANGEROUS** (`remove` irreversible) | Real → AccessService |
+| `listTeams` | access | `teams:read` | SAFE | Real → AccessService |
+| `createTeam` / `deleteTeam` / `addTeamMember` / `removeTeamMember` | access | `teams:write` / `:delete` | **DANGEROUS** | Real → AccessService |
+| `listSettings` / `listTranslations` / `listWebhooks` | access | `config:read` | SAFE | Real → ConfigService |
+| `upsertSetting` / `deleteSetting` / `create*`/`update*`/`delete*` translation & webhook | access | `config:write` / `:delete` | **DANGEROUS** | Real → ConfigService |
+| `listExtensions` | access | `extensions:read` | SAFE | Real → ExtensionsService |
+| `installExtension` / `updateExtension` / `uninstallExtension` | access | `extensions:write` / `:delete` | **DANGEROUS** | Real → ExtensionsService |
+
+> Irreversible skills (hard-capped at autonomy **L2**): `deleteCollection`, `deleteField`, `deleteRole`, `deletePolicy`, `deleteRelation`, `revokeApiKey`, `removeUser`.
+>
+> Standalone-only (not on the governed endpoint): NDJSON `export_backup`/`restore_backup`, marketplace `install_marketplace_extension`/`publish_extension`, and binary media — these stay on the `@lumibase/mcp-server` REST passthrough where their bespoke crypto/SSRF/NDJSON logic already lives.
 
 Skills can be overridden per-site via the `agent_tools` database table without redeploying.
 

@@ -1,6 +1,6 @@
 {
   "name": "lumibase",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "description": "Lumibase - Edge-native Headless CMS (Turborepo monorepo)",
   "packageManager": "pnpm@9.12.0",
@@ -43,10 +43,7 @@
     "version:check": "node scripts/sync-version.mjs --check",
     "db:migrate:preflight": "pnpm --filter @lumibase/database migrate:preflight",
     "db:migrate:dry-run": "pnpm --filter @lumibase/database migrate:dry-run",
-    "db:migrate:version": "pnpm --filter @lumibase/database migrate:version",
-    "npm:publish": "node scripts/publish-npm.mjs",
-    "npm:publish:plan": "node scripts/publish-npm.mjs --plan",
-    "npm:release-notes": "node scripts/publish-npm.mjs --notes"
+    "db:migrate:version": "pnpm --filter @lumibase/database migrate:version"
   },
   "devDependencies": {
     "glob": "^13.0.6",
@@ -62,10 +59,14 @@
       "dompurify": "^3.4.11",
       "esbuild": "^0.28.1",
       "form-data": "^4.0.6",
+      "js-yaml": "^4.2.0",
       "postcss": "^8.5.14",
       "undici": "^7.28.0",
       "uuid": "^11.1.1",
       "vite": "^7.3.5"
+    },
+    "patchedDependencies": {
+      "gray-matter@4.0.3": "patches/gray-matter@4.0.3.patch"
     }
   }
 }

@@ -7,7 +7,7 @@ title: Next.js Quickstart — Hiển thị nội dung LumiBase
   │ TUTORIAL VERSIONING — đọc trước khi sửa                                     │
   │                                                                            │
   │ applies_to_min: 0.9.0   ← phiên bản LumiBase thấp nhất tutorial còn đúng   │
-  │ verified_on:    0.9.0   ← phiên bản đã thực sự test lần gần nhất           │
+  │ verified_on:    0.10.0  ← phiên bản đã thực sự test lần gần nhất           │
   │                                                                            │
   │ Tutorial này cố tình pin theo version. KHÔNG clone tut này theo từng       │
   │ release. Chỉ bump `verified_on` (và `applies_to_min` nếu có breaking       │
@@ -24,7 +24,7 @@ title: Next.js Quickstart — Hiển thị nội dung LumiBase
 <p><strong>Đi từ máy trống đến một trang Next.js render nội dung từ LumiBase.</strong></p>
 
 <p>
-  <img alt="LumiBase version" src="https://img.shields.io/badge/LumiBase-0.9.0-F5A623?style=for-the-badge">
+  <img alt="LumiBase version" src="https://img.shields.io/badge/LumiBase-%E2%89%A5%200.9.0%20%C2%B7%20verified%200.10.0-F5A623?style=for-the-badge">
   <img alt="Level" src="https://img.shields.io/badge/C%E1%BA%A5p%20%C4%91%E1%BB%99-C%C6%A1%20b%E1%BA%A3n-3DDC97?style=for-the-badge">
   <img alt="Time" src="https://img.shields.io/badge/Th%E1%BB%9Di%20gian-~20%20ph%C3%BAt-4A90E2?style=for-the-badge">
   <img alt="Stack" src="https://img.shields.io/badge/Next.js-App%20Router-black?style=for-the-badge&logo=next.js">
@@ -33,7 +33,8 @@ title: Next.js Quickstart — Hiển thị nội dung LumiBase
 </div>
 
 > [!NOTE]
-> **Tutorial này cho phiên bản nào?** Nhắm tới **LumiBase `0.9.0`**. Vẫn đúng cho các bản
+> **Tutorial này cho phiên bản nào?** Đúng từ **LumiBase `0.9.0`** trở lên (verify gần nhất
+> trên `0.10.0`). Vẫn đúng cho các bản
 > mới hơn **cho tới khi** một trong các API contract ở bảng [Tương thích](#tương-thích)
 > thay đổi — xem bảng đó để chọn đúng version, **mới nhất ở trên cùng**.
 
@@ -400,7 +401,7 @@ contract nó dựa vào thực sự thay đổi. Chọn dòng khớp với phiê
 <table>
 <thead><tr><th>Phiên bản LumiBase</th><th>Tutorial này</th><th>Ghi chú</th></tr></thead>
 <tbody>
-<tr><td><strong>0.9.0 → mới nhất</strong></td><td>✅ Trang này (verify trên <code>0.9.0</code>)</td><td>Login trả <code>{ data: { token } }</code>; API key qua <code>POST /api/v1/api-keys</code> (prefix <code>lbk_</code>); filter items chấp nhận JSON <em>và</em> ngoặc vuông; site mặc định <code>__default__</code>.</td></tr>
+<tr><td><strong>0.9.0 → mới nhất</strong></td><td>✅ Trang này (verify trên <code>0.10.0</code>)</td><td>Login trả <code>{ data: { token } }</code>; API key qua <code>POST /api/v1/api-keys</code> (prefix <code>lbk_</code>); filter items chấp nhận JSON <em>và</em> ngoặc vuông; site mặc định <code>__default__</code>.</td></tr>
 <tr><td>&lt; 0.9.0</td><td>⚠️ Không bao gồm</td><td>Các bản cũ hơn có trước những contract trên. Nâng lên ≥ 0.9.0, hoặc tự chỉnh phần auth/filter cho version của bạn.</td></tr>
 </tbody>
 </table>

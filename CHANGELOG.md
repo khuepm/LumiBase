@@ -11,6 +11,39 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [0.10.0] - 2026-06-22
+
+### Version
+
+- `v0.10.0`
+
+### Date
+
+- `2026-06-22`
+
+### Highlights
+
+- **MCP is now the base surface for every feature.** Model Context Protocol coverage was expanded from collections/fields/items to the **entire** LumiBase Content OS, across both MCP surfaces:
+  - **Standalone server (`@lumibase/mcp-server`)** — the published `lumibase-mcp` stdio server now exposes ~80 tools spanning relations, RBAC (roles, policies, permissions, API keys, bulk access export/import), users & teams, content intents, flows, webhooks, presets, settings, translations + translation memory, search, media (metadata), site activity/health/metrics, backup/restore, materialized collections, extensions, and the marketplace. Every destructive tool (`delete_*`, `revoke_*`, `remove_*`, `detach_*`, `restore_backup`, `rotate_api_key`, `apply_access_import`) requires an explicit `confirm: true`.
+  - **Governed endpoint (`/api/v1/mcp`)** — new HITL/autonomy-gated skills for relations, RBAC roles/policies, content intents, flows, plus identity & config (API keys, users, teams, settings/translations/webhooks, extensions), executed through the existing `AISecureHarness` (kill switch → capability → autonomy L0–L4 → veto window → approval). Writes/deletes are forced dangerous; `deleteRole`, `deletePolicy`, `deleteRelation`, `revokeApiKey`, and `removeUser` are hard-capped at L2 (never autopilot).
+
+### Added
+
+- **MCP (standalone):** new tool modules — `relations`, `access` (roles/policies + bulk export/import/conflict checks), `api-keys`, `users-teams`, `content-config` (presets/settings/translations), `translation-memory`, `webhooks`, `agent` (intents/flows), `search-media`, `ops`, `admin` (backup/restore + materialize), `extensions` (+ marketplace). Shared `crudModule` factory + helpers; `tools/index.ts` aggregator; client gained generic `delete<T>`, root-text (`/health`, `/metrics`) and raw NDJSON (`backup`/`restore`) helpers; vitest test suite.
+- **MCP (governed):** governed skills for relations, RBAC roles/policies, content intents and flows, plus identity & config — API keys (`listApiKeys`/`createApiKey`/`rotateApiKey`/`revokeApiKey`), users (`listUsers`/`inviteUser`/`updateUser`/`removeUser`), teams (`listTeams`/`createTeam`/`deleteTeam`/`addTeamMember`/`removeTeamMember`), config (settings/translations/webhooks list+CRUD), and extensions (`listExtensions`/`installExtension`/`updateExtension`/`uninstallExtension`). New thin `AccessService`/`ConfigService`/`ExtensionsService` and an extracted `api-key-token` util (reused by the REST route); `AISecureHarness` accepts `accessService`/`intentService`/`configService`/`extensionsService`/`db`/`siteId`; per-skill `dangerous` risk flag honoured by `evaluateRisk` + `ToolRegistryService`. Skill metadata mirrored in `@lumibase/ai-skills` with a registry-sync test.
+
+- **npm distribution:** `@lumibase/sdk`, `@lumibase/extension-sdk`, `@lumibase/mcp-server`, and `create-lumibase` are now published to the public npm registry by the release pipeline (gated by the `PUBLISH_NPM_PACKAGES` repository variable and `NPM_TOKEN`). The `lumibase-mcp` CLI ships a `#!/usr/bin/env node` shebang so it runs via `npx`.
+
+### Changed
+
+- `SkillDefinition` gained an optional `dangerous` flag and `service` now includes `access`/`intents`/`flows`. `IRREVERSIBLE_SKILLS` extended with `deleteRole`/`deletePolicy`/`deleteRelation`/`revokeApiKey`/`removeUser`.
+- Trimmed published package tarballs: `@lumibase/mcp-server` no longer ships source maps, and `create-lumibase` no longer ships a duplicate top-level `templates/` copy (templates resolve from `dist/templates/`).
+
+### Notes
+
+- NDJSON backup/restore, marketplace install/publish, and binary media remain **standalone-server-only** (`@lumibase/mcp-server`) — their bespoke crypto/SSRF/NDJSON logic is not duplicated into the governed harness. They are still fully usable via the standalone surface (RBAC enforced server-side).
+- No schema migrations. Builds on `v0.9.0` (regulated/sensitive content readiness) and the `v0.5.0` Content OS foundation.
+
 ## [0.9.0] - 2026-06-21
 
 ### Version

@@ -59,15 +59,23 @@ Every top-level section has its own `llms.txt` — a page index sized to fit in 
 
 ## What agents can do with LumiBase
 
-Once set up, your agent can:
+Once set up, your agent can drive the **entire Content OS** over MCP. The
+standalone MCP server (`@lumibase/mcp-server`) now exposes ~80 tools across every
+domain; every destructive tool requires an explicit `confirm: true`:
 
 - **Read and write collections** — `GET/POST/PATCH/DELETE /api/v1/items/:collection`
 - **Manage schema** — create collections, add fields, configure relations via CMS API
+- **Administer RBAC** — roles, policies, permission rows, API keys, bulk access export/import & conflict checks
+- **Manage users & teams** — invite/update/remove members, team membership
+- **Govern content** — content intents (SLOs), drift scans, and reconciliation
 - **Trigger and monitor Flows** — `POST /api/v1/flows/:id/run`, `GET /api/v1/flows/:id/runs`
+- **Configure delivery** — presets, settings, translations + translation memory, webhooks, search
+- **Operate the site** — activity log, health, metrics, NDJSON backup/restore, materialized collections, extensions & marketplace
 - **Query the AI Copilot** — `POST /api/v1/ai/chat` with natural-language instructions
-- **Upload assets** — `POST /api/v1/files` (R2/local storage via runtime abstraction)
-- **Manage users and roles** — `GET/POST /api/v1/users`, roles, permissions, policies
 - **Use WebSocket realtime** — subscribe to collection changes, presence, collaborative cursors
+
+For governed, HITL/autonomy-gated execution, agents can instead call the
+in-process MCP endpoint `POST /api/v1/mcp` (enable the per-site `contentOs.mcp` flag).
 
 All endpoints require a valid access token (`Authorization: Bearer <token>`) scoped to the site (`X-Site-Id` header or subdomain routing). See [`api/hono-api-spec.md`](../api/hono-api-spec.md) for the full REST/WS reference.
 
