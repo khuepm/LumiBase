@@ -1,9 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { LumiBaseClient, configFromEnv } from './client.js';
-import { registerCollectionTools } from './tools/collections.js';
-import { registerFieldTools } from './tools/fields.js';
-import { registerItemTools } from './tools/items.js';
+import { registerAllTools } from './tools/index.js';
 
 async function main() {
   const config = configFromEnv();
@@ -11,12 +9,10 @@ async function main() {
 
   const server = new McpServer({
     name: 'lumibase',
-    version: '0.4.4',
+    version: '0.9.0',
   });
 
-  registerCollectionTools(server, client);
-  registerFieldTools(server, client);
-  registerItemTools(server, client);
+  registerAllTools(server, client);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
