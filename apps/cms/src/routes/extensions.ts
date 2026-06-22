@@ -191,7 +191,7 @@ extensionsRouter.delete('/:id', adminOnly, async (c) => {
  * The extension bundle is loaded lazily via ExtensionSandbox and cached.
  * If the extension does not exist, is not enabled, or has no handler, 404 is returned.
  */
-extensionsRouter.all('/:name/*', async (c) => {
+extensionsRouter.all('/:name/*', adminOnly, async (c) => {
   const denied = await requireExtensionPermission(c, 'execute');
   if (denied) return denied;
 
