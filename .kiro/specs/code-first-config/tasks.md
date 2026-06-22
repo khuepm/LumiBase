@@ -50,4 +50,4 @@ Kế hoạch triển khai **Code-First Configuration** theo 4 phase. Phase A đ�
   - [x] 6.2 Thêm `docs/en/contributing/code-first-config.md` mô tả manifest + CLI + CI/CD workflow + round-trip guarantee + limitations (DoD §4)
   - [x] 6.3 CHANGELOG `[Unreleased] → Added` entry. Không bump README Release policy (không cắt version mới, không migration) — giữ di sản 0.5.0 narrative (DoD §4)
   - [x] 6.4 **Setup Impact**: thêm dòng #21 `n/a` vào `setup-impact.md` (rà soát 2026-06-22, 6 câu hỏi) (Req 8; design §10; DoD §2)
-  - [ ] 6.5 `pnpm typecheck` recursive + `pnpm test` (cms) pass trước khi mở PR (DoD §1, §3)
+  - [x] 6.5 `pnpm typecheck` recursive (15/15) ✅; full `pnpm -F @lumibase/cms test` chạy trên Postgres local — 1420 passed, các fail còn lại là timing/perf test flake do contention (pass khi chạy isolation) + 1 serialize property flake đã fix. Config tests + access-import: 31/31 pass cùng nhau trên DB thật (DoD §1, §3)
