@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Check, ChevronLeft, Copy, Lock, Pin, Save, Share2, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, Copy, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
+import type { SaveAction } from '@lumibase/shared/schemas';
+import { useSaveAction, saveActionLabel } from './use-save-action';
 import { useEffect, useMemo, useState } from 'react';
 import type { FieldResource, ItemRow, RevisionRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
@@ -26,6 +28,10 @@ export function ItemDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const perms = usePermissions();
+  const saveAction = useSaveAction();
+  // The action a one-off save click requested; null → use the effective default.
+  const [pendingAction, setPendingAction] = useState<SaveAction | null>(null);
+  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
 
   const [tab, setTab] = useState<Tab>('fields');
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
@@ -149,6 +155,15 @@ export function ItemDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['item', collection, id] });
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
       queryClient.invalidateQueries({ queryKey: ['revisions', collection, id] });
+      // Navigate per the save action (one-off override, else effective default).
+      const action = pendingAction ?? saveAction.effective;
+      setPendingAction(null);
+      if (action === 'return') {
+        navigate({ to: '/content/$collection', params: { collection } });
+      } else if (action === 'create_new') {
+        navigate({ to: '/content/$collection/$id', params: { collection, id: 'new' } });
+      }
+      // 'stay' → remain on the form (current behavior).
     },
   });
 
@@ -265,21 +280,78 @@ export function ItemDetailPage() {
             {canDelete ? <Trash2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
             Delete
           </button>
-          <button
-            type="button"
-            onClick={() => saveMutation.mutate()}
-            disabled={!isDirty || saveMutation.isPending || !canUpdate}
-            title={canUpdate ? undefined : 'You do not have update permission on this collection.'}
-            className={cn(
-              'inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-medium',
-              isDirty && canUpdate
-                ? 'bg-primary text-primary-foreground hover:opacity-90'
-                : 'bg-muted text-muted-foreground',
+          <div className="relative inline-flex">
+            <button
+              type="button"
+              onClick={() => {
+                setPendingAction(null); // use effective default
+                saveMutation.mutate();
+              }}
+              disabled={!isDirty || saveMutation.isPending || !canUpdate}
+              title={canUpdate ? saveActionLabel(saveAction.effective) : 'You do not have update permission on this collection.'}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-l-md px-3 py-1 text-xs font-medium',
+                isDirty && canUpdate
+                  ? 'bg-primary text-primary-foreground hover:opacity-90'
+                  : 'bg-muted text-muted-foreground',
+              )}
+            >
+              {canUpdate ? <Save className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+              {saveMutation.isPending
+                ? 'Saving…'
+                : isDirty
+                  ? saveActionLabel(saveAction.effective)
+                  : 'Saved'}
+            </button>
+            <button
+              type="button"
+              aria-label="Save options"
+              onClick={() => setSaveMenuOpen((v) => !v)}
+              disabled={saveMutation.isPending || !canUpdate}
+              className={cn(
+                'inline-flex items-center rounded-r-md border-l border-primary-foreground/20 px-1.5 py-1',
+                canUpdate ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-muted text-muted-foreground',
+              )}
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+            {saveMenuOpen && (
+              <div
+                className="absolute right-0 top-full z-20 mt-1 w-52 rounded-md border border-border bg-background py-1 text-xs shadow-md"
+                onMouseLeave={() => setSaveMenuOpen(false)}
+              >
+                {(['stay', 'return', 'create_new'] as const).map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    disabled={!isDirty || !canUpdate}
+                    onClick={() => {
+                      setSaveMenuOpen(false);
+                      setPendingAction(a);
+                      saveMutation.mutate();
+                    }}
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-muted disabled:opacity-50"
+                  >
+                    {saveActionLabel(a)}
+                    {saveAction.effective === a && <Check className="h-3 w-3" />}
+                  </button>
+                ))}
+                <div className="my-1 border-t border-border" />
+                <button
+                  type="button"
+                  disabled={saveAction.isSettingDefault}
+                  onClick={() => {
+                    setSaveMenuOpen(false);
+                    saveAction.setDefault(saveAction.effective);
+                  }}
+                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-muted-foreground hover:bg-muted"
+                >
+                  <Star className="h-3 w-3" />
+                  Set “{saveActionLabel(saveAction.effective)}” as default
+                </button>
+              </div>
             )}
-          >
-            {canUpdate ? <Save className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-            {saveMutation.isPending ? 'Saving…' : isDirty ? 'Save changes' : 'Saved'}
-          </button>
+          </div>
         </div>
       </header>
 
