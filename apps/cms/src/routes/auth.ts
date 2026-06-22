@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { SignJWT } from 'jose';
 import { and, eq, sql } from 'drizzle-orm';
 import { systemState, users, userSites } from '@lumibase/database';
+import { PreferencesUpdateSchema } from '@lumibase/shared/schemas';
 import type { AppEnv } from '../env';
 import { hashPassword, verifyPassword } from '../services/auth/password';
 import {
@@ -622,6 +623,21 @@ authRouter.get('/me', async (c) => {
   const auth = c.get('auth');
   const siteId = c.get('siteId');
 
+  // Surface the user's stored preferences (incl. saveAction) so Studio can
+  // read them in the same round-trip it already makes for the profile.
+  let preferences: Record<string, unknown> = {};
+  if (auth.userId) {
+    const [row] = await c
+      .get('db')
+      .select({ preferences: users.preferences })
+      .from(users)
+      .where(eq(users.id, auth.userId))
+      .limit(1);
+    if (row?.preferences && typeof row.preferences === 'object') {
+      preferences = row.preferences as Record<string, unknown>;
+    }
+  }
+
   return c.json({
     data: {
       logtoId: auth.externalId ?? auth.userId ?? 'anon', // Alias for backward compatibility
@@ -631,7 +647,51 @@ authRouter.get('/me', async (c) => {
       roles: auth.roles ?? [],
       isFrontendUser: auth.isFrontendUser ?? false,
       siteId,
+      preferences,
       permissions: null,
     },
   });
+});
+
+// Self-service preference update (save-default-preference Req 1, 2).
+// Shallow-merges into users.preferences so other keys (language/theme/…)
+// are preserved; `saveAction: null` clears the override → user falls back to
+// the site default. Scoped to the authenticated user only.
+authRouter.patch('/me/preferences', async (c) => {
+  const auth = c.get('auth');
+  if (!auth.userId) {
+    return c.json({ errors: [{ code: 'UNAUTHORIZED', message: 'Authentication required.' }] }, 401);
+  }
+  const parsed = PreferencesUpdateSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION_ERROR', message: parsed.error.issues[0]?.message ?? 'Invalid preferences.' }] },
+      422,
+    );
+  }
+
+  const [current] = await c
+    .get('db')
+    .select({ preferences: users.preferences })
+    .from(users)
+    .where(eq(users.id, auth.userId))
+    .limit(1);
+  const base = (current?.preferences && typeof current.preferences === 'object'
+    ? (current.preferences as Record<string, unknown>)
+    : {}) as Record<string, unknown>;
+
+  const patch = parsed.data as Record<string, unknown>;
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) delete merged[key]; // null clears the key (e.g. "use site default")
+    else merged[key] = value;
+  }
+
+  await c
+    .get('db')
+    .update(users)
+    .set({ preferences: merged, updatedAt: new Date() })
+    .where(eq(users.id, auth.userId));
+
+  return c.json({ data: merged });
 });
