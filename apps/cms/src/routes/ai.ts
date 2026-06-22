@@ -1,13 +1,14 @@
 import { aiApprovals, aiConversations, aiMessages } from '@lumibase/database';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import type { AppEnv } from '../env';
+import type { AppEnv, AuthPrincipal } from '../env';
 import { AISecureHarness } from '../services/ai-harness';
 import { SchemaService } from '../services/schema-service';
 import { ItemService } from '../services/item-service';
 import { createLLMProvider, type LLMMessage } from '../services/llm-provider';
 import { formatSafeError } from '@lumibase/shared/utils';
+import type { MagicContext } from '../services/permission-dsl';
 
 // ---------------------------------------------------------------------------
 // Zod Schemas
@@ -32,6 +33,69 @@ export const decideSchema = z.object({
 
 /** Max messages to load from conversation history as LLM context. */
 const MAX_CONTEXT_MESSAGES = 20;
+
+function collectRequestHeaders(c: Context<AppEnv>): Record<string, string> {
+  const headers: Record<string, string> = {};
+  c.req.raw.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value;
+  });
+  return headers;
+}
+
+export function buildAiItemPermissionContext({
+  auth,
+  siteId,
+  headers,
+  ip,
+}: {
+  auth: AuthPrincipal;
+  siteId: string;
+  headers: Record<string, string>;
+  ip: string | null;
+}): MagicContext {
+  return {
+    userId: auth.userId ?? null,
+    siteId,
+    roleId: null,
+    user: {
+      id: auth.userId ?? null,
+      email: auth.email ?? null,
+      roles: auth.roles ?? [],
+      ...(auth.raw ?? {}),
+    },
+    ip,
+    headers,
+    apiKey: auth.apiKey ?? null,
+  };
+}
+
+function buildAiItemService(c: Context<AppEnv>): ItemService {
+  const auth = c.get('auth');
+  const runtime = c.get('runtime');
+  const headers = collectRequestHeaders(c);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const realtimeNamespace = (c.env as unknown as Record<string, any>)['SITE_ROOM'] as DurableObjectNamespace | undefined;
+  const siteId = c.get('siteId');
+
+  return new ItemService({
+    db: c.get('db'),
+    siteId,
+    userId: auth.userId ?? null,
+    cache: runtime.cache,
+    search: runtime.search,
+    queue: runtime.queue,
+    realtimeNamespace,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    extensionEnv: c.env as unknown as Record<string, unknown>,
+    permissionCtx: buildAiItemPermissionContext({
+      auth,
+      siteId,
+      headers,
+      ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+    }),
+    encryptionKey: c.env.ENCRYPTION_KEY || (typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : undefined),
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Router
@@ -168,14 +232,7 @@ aiRouter.post('/chat', async (c) => {
       siteId,
       cache: runtime.cache,
     });
-    const itemService = new ItemService({
-      db,
-      siteId,
-      userId: auth.userId ?? null,
-      cache: runtime.cache,
-      search: runtime.search,
-      queue: runtime.queue,
-    });
+    const itemService = buildAiItemService(c);
 
     const harness = new AISecureHarness({ db, siteId, schemaService, itemService });
     const result = await harness.execute(
@@ -382,14 +439,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
     siteId,
     cache: runtime.cache,
   });
-  const itemService = new ItemService({
-    db,
-    siteId,
-    userId: auth.userId ?? null,
-    cache: runtime.cache,
-    search: runtime.search,
-    queue: runtime.queue,
-  });
+  const itemService = buildAiItemService(c);
 
   const harness = new AISecureHarness({ db, siteId, schemaService, itemService });
 
