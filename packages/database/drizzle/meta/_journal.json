@@ -225,6 +225,13 @@
       "when": 1781773320004,
       "tag": "0031_regulated_content_readiness",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1781773320005,
+      "tag": "0032_content_releases",
+      "breakpoints": true
     }
   ]
 }
