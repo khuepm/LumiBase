@@ -1,7 +1,7 @@
 {
   "name": "@lumibase/mcp-server",
-  "version": "0.9.0",
-  "description": "LumiBase MCP server — lets AI assistants create and manage collections, fields, and items.",
+  "version": "0.10.0",
+  "description": "LumiBase MCP server — lets AI assistants manage the full LumiBase Content OS: collections, fields, items, relations, RBAC (roles/policies/permissions/API keys), users & teams, intents, flows, webhooks, translations, search, media, extensions, and site administration.",
   "type": "module",
   "bin": {
     "lumibase-mcp": "./dist/index.cjs"
@@ -23,6 +23,7 @@
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
     "dev": "tsup src/index.ts --format cjs --watch",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
@@ -32,7 +33,8 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsup": "^8.5.1",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "vitest": "^3.2.6"
   },
   "files": [
     "dist"

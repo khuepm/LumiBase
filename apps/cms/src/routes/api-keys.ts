@@ -4,6 +4,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
+import { createPlaintextToken } from '../services/api-key-token';
 import { buildAccessConflictReport } from '../services/access-conflict-report';
 
 export const apiKeysRouter = new Hono<AppEnv>();
@@ -83,29 +84,6 @@ function requireUserPrincipal(c: Context<AppEnv>): (AuthPrincipal & { userId: st
     return null;
   }
   return auth as AuthPrincipal & { userId: string };
-}
-
-async function createPlaintextToken(): Promise<{ token: string; prefix: string; tokenHash: string }> {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  const secret = base64Url(bytes);
-  const token = `lbk_${secret}`;
-  return {
-    token,
-    prefix: token.slice(0, 16),
-    tokenHash: await sha256Hex(token),
-  };
-}
-
-function base64Url(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function writeApiKeyAudit(
