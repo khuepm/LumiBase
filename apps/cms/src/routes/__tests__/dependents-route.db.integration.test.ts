@@ -24,7 +24,7 @@ describe('items dependents routes — DB integration', () => {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
     // buildService reads c.env (e.g. SITE_ROOM for realtime); give it an object.
-    (c as { env: Record<string, unknown> }).env = {};
+    (c as unknown as { env: Record<string, unknown> }).env = {};
     c.set('db', db);
     c.set('siteId', SITE);
     c.set('auth', { userId: 'usr_admin', email: 'a@x.dev', roles: ['admin'], raw: { dev: true } } as AppEnv['Variables']['auth']);
