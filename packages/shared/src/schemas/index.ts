@@ -39,3 +39,15 @@ export {
   type Branding,
   type ThemeOverrides,
 } from './site-config';
+
+export {
+  EXTERNAL_JWT_ALGORITHMS,
+  ExternalJwtAlgorithmSchema,
+  ExternalIssuerConfigSchema,
+  ExternalIssuerUpdateSchema,
+  makeExternalIssuerConfigSchema,
+  makeExternalIssuerUpdateSchema,
+  type ExternalIssuerConfig,
+  type ExternalIssuerClaimMapping,
+  type ExternalIssuerRoleMapping,
+} from './external-issuer';

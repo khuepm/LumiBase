@@ -225,6 +225,13 @@
       "when": 1781773320004,
       "tag": "0031_regulated_content_readiness",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1781773320007,
+      "tag": "0034_auth_external_issuers",
+      "breakpoints": true
     }
   ]
 }
