@@ -1,47 +1,73 @@
 #!/usr/bin/env tsx
 /// <reference types="node" />
 /**
- * config-cli.ts — LumiBase config export / import / diff CLI.
+ * config-cli.ts — LumiBase Code-First Configuration CLI.
+ *
+ * Talks to a running CMS instance's unified Config Manifest endpoints
+ * (`/api/v1/config/export`, `/api/v1/config/import`). The manifest is a single
+ * versioned JSON file (`lumibase.config@v1`) covering collections, fields,
+ * relations, settings and webhooks — commit it to git and gate PRs on `diff`.
  *
  * Sub-commands:
- *   export  Pull settings + schema + access config as JSON files.
- *   import  Push JSON config back to a running CMS instance.
- *   diff    Compare two exported config directories or JSON files.
+ *   export   Pull the config manifest to a file (or stdout).
+ *   diff     Compare a manifest file against the live instance.
+ *            Exit 0 = no changes, 1 = changes (use as a CI gate).
+ *   apply    Apply a manifest file to the live instance.
  *
  * Usage:
- *   pnpm --filter @lumibase/cms config export --site <siteId> --out ./config-export/
- *   pnpm --filter @lumibase/cms config import --site <siteId> --dir ./config-export/
- *   pnpm --filter @lumibase/cms config diff   --a ./config-a/ --b ./config-b/
+ *   pnpm --filter @lumibase/cms config export --site <id> [--scope all|schema|settings|webhooks] [--out config.json]
+ *   pnpm --filter @lumibase/cms config diff   --site <id> config.json
+ *   pnpm --filter @lumibase/cms config apply  --site <id> config.json [--mode merge|replace-managed|replace-all] [--allow-destructive] [--dry-run]
  *
  * Environment:
  *   LUMIBASE_API_URL   CMS base URL      (default: http://localhost:1989)
- *   LUMIBASE_TOKEN     Bearer auth token
+ *   LUMIBASE_TOKEN     Bearer auth token (admin)
  */
 
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-
-// ── CLI helpers ────────────────────────────────────────────────────────────
+import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 const args = process.argv.slice(2);
-const command = args[0]; // 'export' | 'import' | 'diff'
+const command = args[0]; // 'export' | 'diff' | 'apply'
 
 function getArg(flag: string): string | undefined {
   const idx = args.indexOf(flag);
   return idx >= 0 ? args[idx + 1] : undefined;
 }
+function hasFlag(flag: string): boolean {
+  return args.includes(flag);
+}
+/** Flags that consume the following arg as their value. */
+const VALUE_FLAGS = new Set(['--site', '-s', '--scope', '--out', '-o', '--mode']);
+/** First non-flag positional after the command (e.g. the manifest file path). */
+function positional(): string | undefined {
+  for (let i = 1; i < args.length; i++) {
+    const a = args[i]!;
+    if (a.startsWith('-')) continue; // a flag
+    if (VALUE_FLAGS.has(args[i - 1] ?? '')) continue; // a flag's value
+    return a;
+  }
+  return undefined;
+}
 
 const API_URL = process.env['LUMIBASE_API_URL'] ?? 'http://localhost:1989';
-const TOKEN   = process.env['LUMIBASE_TOKEN'] ?? '';
+const TOKEN = process.env['LUMIBASE_TOKEN'] ?? '';
 const SITE_ID = getArg('--site') ?? getArg('-s') ?? '';
 
 function buildHeaders(): Record<string, string> {
-  const h: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Lumi-Site': SITE_ID,
-  };
+  const h: Record<string, string> = { 'Content-Type': 'application/json', 'X-Lumi-Site': SITE_ID };
   if (TOKEN) h['Authorization'] = `Bearer ${TOKEN}`;
   return h;
+}
+
+/** Resolve a user path and reject traversal outside the working directory. */
+function safeResolve(p: string): string {
+  const resolved = resolve(process.cwd(), p);
+  if (!resolved.startsWith(process.cwd())) {
+    console.error('Error: Access Denied: Path Traversal detected');
+    process.exit(1);
+  }
+  return resolved;
 }
 
 async function apiGet(path: string): Promise<unknown> {
@@ -49,265 +75,139 @@ async function apiGet(path: string): Promise<unknown> {
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}: ${await res.text()}`);
   return res.json();
 }
-
-async function apiPut(path: string, body: unknown): Promise<unknown> {
-  const res = await fetch(`${API_URL}${path}`, {
-    method: 'PUT',
-    headers: buildHeaders(),
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`PUT ${path} → ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
-async function apiPost(path: string, body: unknown): Promise<unknown> {
+async function apiPost(path: string, body: unknown): Promise<{ status: number; json: unknown }> {
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`POST ${path} → ${res.status}: ${await res.text()}`);
-  return res.json();
+  return { status: res.status, json: await res.json().catch(() => ({})) };
 }
 
-// ── Resources to export / import ──────────────────────────────────────────
-
-const RESOURCES = [
-  { key: 'settings',    path: '/api/v1/settings',    file: 'settings.json' },
-  { key: 'collections', path: '/api/v1/collections',  file: 'collections.json' },
-  { key: 'fields',      path: '/api/v1/fields',       file: 'fields.json' },
-  { key: 'relations',   path: '/api/v1/relations',    file: 'relations.json' },
-  { key: 'roles',       path: '/api/v1/roles',        file: 'roles.json' },
-  { key: 'policies',    path: '/api/v1/policies',     file: 'policies.json' },
-  { key: 'webhooks',    path: '/api/v1/webhooks',     file: 'webhooks.json' },
-] as const;
-
-// ── export command ─────────────────────────────────────────────────────────
+// ── export ───────────────────────────────────────────────────────────────────
 
 async function runExport(): Promise<void> {
   if (!SITE_ID) { console.error('--site <siteId> is required'); process.exit(1); }
+  const scope = getArg('--scope') ?? 'all';
+  const out = getArg('--out') ?? getArg('-o');
 
-  const outDir = getArg('--out') ?? getArg('-o') ?? `./lumibase-config-${SITE_ID}`;
-  const resolvedOutDir = resolve(process.cwd(), outDir);
-  if (!resolvedOutDir.startsWith(process.cwd())) {
-    console.error('Error: Access Denied: Path Traversal detected');
-    process.exit(1);
+  const body = (await apiGet(`/api/v1/config/export?scope=${encodeURIComponent(scope)}`)) as { data: unknown };
+  const json = JSON.stringify(body.data, null, 2);
+
+  if (out) {
+    writeFileSync(safeResolve(out), json + '\n', 'utf-8');
+    console.log(`✅ Exported config manifest → ${out}`);
+  } else {
+    process.stdout.write(json + '\n');
   }
-  mkdirSync(resolvedOutDir, { recursive: true });
-
-  console.log(`⏳ Exporting config for site "${SITE_ID}" → ${resolvedOutDir}/`);
-
-  let collectionsList: any[] = [];
-
-  for (const { path, file, key } of RESOURCES) {
-    try {
-      let data: any;
-      if (key === 'fields') {
-        const allFields: any[] = [];
-        for (const col of collectionsList) {
-          try {
-            const colFieldsRes = await apiGet(`/api/v1/collections/${col.name}/fields`) as { data: any[] };
-            if (colFieldsRes && Array.isArray(colFieldsRes.data)) {
-              allFields.push(...colFieldsRes.data.map((f: any) => ({ ...f, collection: col.name })));
-            }
-          } catch (e) {
-            console.warn(`    ⚠ Failed to get fields for collection ${col.name}: ${(e as Error).message}`);
-          }
-        }
-        data = { data: allFields };
-      } else {
-        data = await apiGet(path);
-        if (key === 'collections' && data && Array.isArray(data.data)) {
-          collectionsList = data.data;
-        }
-      }
-      writeFileSync(join(resolvedOutDir, file), JSON.stringify(data, null, 2), 'utf-8');
-      console.log(`  ✓ ${key}`);
-    } catch (err) {
-      console.warn(`  ⚠ ${key}: ${(err as Error).message}`);
-    }
-  }
-
-  // Write meta file.
-  writeFileSync(
-    join(resolvedOutDir, '_meta.json'),
-    JSON.stringify({ siteId: SITE_ID, exportedAt: new Date().toISOString(), version: '1' }, null, 2),
-  );
-
-  console.log(`✅ Export complete: ${resolvedOutDir}/`);
 }
 
-// ── import command ─────────────────────────────────────────────────────────
+// ── diff ───────────────────────────────────────────────────────────────────
 
-async function runImport(): Promise<void> {
-  if (!SITE_ID) { console.error('--site <siteId> is required'); process.exit(1); }
-
-  const inDir = getArg('--dir') ?? getArg('-d');
-  if (!inDir) { console.error('--dir <path> is required for import'); process.exit(1); }
-
-  const resolvedInDir = resolve(process.cwd(), inDir);
-  if (!resolvedInDir.startsWith(process.cwd())) {
-    console.error('Error: Access Denied: Path Traversal detected');
-    process.exit(1);
-  }
-
-  console.log(`⏳ Importing config for site "${SITE_ID}" from ${resolvedInDir}/`);
-
-  const files = readdirSync(resolvedInDir).filter((f) => f.endsWith('.json') && f !== '_meta.json');
-
-  for (const file of files) {
-    const resource = RESOURCES.find((r) => r.file === file);
-    if (!resource) { console.log(`  - Skipping unknown file: ${file}`); continue; }
-
-    try {
-      const raw = JSON.parse(readFileSync(join(resolvedInDir, file), 'utf-8')) as { data?: unknown[] };
-      const rows: any[] = Array.isArray(raw) ? raw : Array.isArray(raw.data) ? raw.data : [];
-
-      let ok = 0;
-      for (const row of rows) {
-        try {
-          if (resource.key === 'fields') {
-            const colName = row.collection;
-            const fieldName = row.name;
-            if (!colName) {
-              console.warn(`    ⚠ Field ${fieldName} is missing "collection" property.`);
-              continue;
-            }
-            await apiPut(`/api/v1/collections/${colName}/fields/${fieldName}`, row);
-          } else if (resource.key === 'collections') {
-            // Check if collection already exists
-            let exists = false;
-            try {
-              await apiGet(`/api/v1/collections/${row.name}`);
-              exists = true;
-            } catch {
-              // Not found
-            }
-            if (exists) {
-              await apiPut(`/api/v1/collections/${row.name}/schema`, row);
-            } else {
-              await apiPost(resource.path, row);
-            }
-          } else {
-            await apiPost(resource.path, row);
-          }
-          ok++;
-        } catch (err) {
-          // Log errors to console so we can troubleshoot failing imports.
-          const cause = (err as any).cause;
-          const causeStr = cause ? ` (Cause: ${cause.message || cause})` : '';
-          console.error(`    ⚠ Failed to import ${resource.key} (${row.name || row.key || row.id || 'unknown'}): ${(err as Error).message}${causeStr}`);
-        }
-      }
-      console.log(`  ✓ ${resource.key}: ${ok}/${rows.length} records`);
-    } catch (err) {
-      console.warn(`  ⚠ ${resource.key}: ${(err as Error).message}`);
-    }
-  }
-
-  console.log('✅ Import complete.');
+interface ResourceDiff { create: number; update: number; unchanged: number; delete: number }
+interface ConfigDiff {
+  collections: ResourceDiff; fields: ResourceDiff; relations: ResourceDiff;
+  webhooks: ResourceDiff; settings: ResourceDiff; risk: string; clean: boolean;
 }
 
-// ── diff command ───────────────────────────────────────────────────────────
-
-function diffObjects(
-  a: Record<string, unknown>,
-  b: Record<string, unknown>,
-  path = '',
-): string[] {
-  const diffs: string[] = [];
-  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
-
-  for (const key of allKeys) {
-    const fullPath = path ? `${path}.${key}` : key;
-    if (!(key in a)) {
-      diffs.push(`+ ${fullPath}: ${JSON.stringify(b[key])}`);
-    } else if (!(key in b)) {
-      diffs.push(`- ${fullPath}: ${JSON.stringify(a[key])}`);
-    } else if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) {
-      if (typeof a[key] === 'object' && typeof b[key] === 'object' && a[key] !== null && b[key] !== null) {
-        diffs.push(...diffObjects(
-          a[key] as Record<string, unknown>,
-          b[key] as Record<string, unknown>,
-          fullPath,
-        ));
-      } else {
-        diffs.push(`~ ${fullPath}:\n  < ${JSON.stringify(a[key])}\n  > ${JSON.stringify(b[key])}`);
-      }
-    }
+function printDiff(diff: ConfigDiff): void {
+  const rows: Array<[string, ResourceDiff]> = [
+    ['collections', diff.collections], ['fields', diff.fields], ['relations', diff.relations],
+    ['webhooks', diff.webhooks], ['settings', diff.settings],
+  ];
+  console.log('  resource     + create  ~ update   = same   - delete');
+  for (const [name, r] of rows) {
+    console.log(`  ${name.padEnd(12)} ${String(r.create).padStart(6)}   ${String(r.update).padStart(6)}  ${String(r.unchanged).padStart(6)}   ${String(r.delete).padStart(6)}`);
   }
+  console.log(`  risk: ${diff.risk}`);
+}
 
-  return diffs;
+function loadManifest(file: string): unknown {
+  return JSON.parse(readFileSync(safeResolve(file), 'utf-8'));
 }
 
 async function runDiff(): Promise<void> {
-  const dirA = getArg('--a') ?? getArg('-a');
-  const dirB = getArg('--b') ?? getArg('-b');
+  if (!SITE_ID) { console.error('--site <siteId> is required'); process.exit(1); }
+  const file = positional();
+  if (!file) { console.error('Usage: config diff --site <id> <manifest.json>'); process.exit(1); }
+  const mode = getArg('--mode') ?? 'replace-all';
 
-  if (!dirA || !dirB) {
-    console.error('Usage: config diff --a <dir-or-file> --b <dir-or-file>');
-    process.exit(1);
+  const manifest = loadManifest(file);
+  const { status, json } = await apiPost(`/api/v1/config/import?dryRun=true&mode=${mode}`, manifest);
+  const data = (json as { data?: { valid: boolean; errors?: Array<{ code: string; message: string }>; diff: ConfigDiff | null } }).data;
+
+  if (!data || status >= 400 || !data.valid) {
+    console.error('❌ Manifest invalid:');
+    for (const e of data?.errors ?? []) console.error(`  - ${e.code}: ${e.message}`);
+    process.exit(2);
   }
 
-  const resolvedDirA = resolve(process.cwd(), dirA);
-  if (!resolvedDirA.startsWith(process.cwd())) {
-    console.error('Error: Access Denied: Path Traversal detected');
-    process.exit(1);
+  printDiff(data.diff!);
+  if (data.diff!.clean) {
+    console.log('✅ No changes.');
+    process.exit(0);
   }
-  const resolvedDirB = resolve(process.cwd(), dirB);
-  if (!resolvedDirB.startsWith(process.cwd())) {
-    console.error('Error: Access Denied: Path Traversal detected');
-    process.exit(1);
-  }
-
-  console.log(`⏳ Diffing ${resolvedDirA} ↔ ${resolvedDirB}\n`);
-
-  let hasDiff = false;
-
-  for (const { file, key } of RESOURCES) {
-    let rawA: unknown, rawB: unknown;
-    try { rawA = JSON.parse(readFileSync(join(resolvedDirA, file), 'utf-8')); } catch { continue; }
-    try { rawB = JSON.parse(readFileSync(join(resolvedDirB, file), 'utf-8')); } catch { continue; }
-
-    const strA = JSON.stringify(rawA, null, 2);
-    const strB = JSON.stringify(rawB, null, 2);
-
-    if (strA !== strB) {
-      hasDiff = true;
-      console.log(`--- ${key} ---`);
-      const diffs = diffObjects(
-        rawA as Record<string, unknown>,
-        rawB as Record<string, unknown>,
-      );
-      diffs.slice(0, 50).forEach((d) => console.log(d));
-      if (diffs.length > 50) console.log(`  ... and ${diffs.length - 50} more differences`);
-      console.log('');
-    }
-  }
-
-  if (!hasDiff) console.log('✅ No differences found.');
-  else console.log('⚠ Differences exist between configs.');
+  console.log('⚠ Changes pending (exit 1).');
+  process.exit(1);
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────
+// ── apply ───────────────────────────────────────────────────────────────────
+
+async function runApply(): Promise<void> {
+  if (!SITE_ID) { console.error('--site <siteId> is required'); process.exit(1); }
+  const file = positional();
+  if (!file) { console.error('Usage: config apply --site <id> <manifest.json>'); process.exit(1); }
+  const mode = getArg('--mode') ?? 'merge';
+  const allowDestructive = hasFlag('--allow-destructive');
+  const dryRun = hasFlag('--dry-run');
+
+  const manifest = loadManifest(file);
+  const qs = new URLSearchParams({ mode });
+  if (dryRun) qs.set('dryRun', 'true');
+  if (allowDestructive) qs.set('allowDestructive', 'true');
+
+  const { status, json } = await apiPost(`/api/v1/config/import?${qs.toString()}`, manifest);
+  const data = (json as { data?: { valid: boolean; errors?: Array<{ code: string; message: string }>; diff: ConfigDiff | null; applied?: { created: number; updated: number; deleted: number } } }).data;
+
+  if (dryRun) {
+    if (data?.diff) printDiff(data.diff);
+    console.log('ℹ Dry-run only; nothing written.');
+    process.exit(0);
+  }
+
+  if (!data || status >= 400 || !data.valid) {
+    console.error(`❌ Apply failed (${status}):`);
+    for (const e of data?.errors ?? []) console.error(`  - ${e.code}: ${e.message}`);
+    if ((data?.errors ?? []).some((e) => e.code === 'DESTRUCTIVE_BLOCKED')) {
+      console.error('  Re-run with --allow-destructive if these deletions are intended.');
+    }
+    process.exit(2);
+  }
+
+  const a = data.applied ?? { created: 0, updated: 0, deleted: 0 };
+  console.log(`✅ Applied: ${a.created} created, ${a.updated} updated, ${a.deleted} deleted.`);
+}
+
+// ── main ───────────────────────────────────────────────────────────────────
 
 const HELP = `
-LumiBase Config CLI
+LumiBase Config CLI — Code-First Configuration (lumibase.config@v1)
 
 Sub-commands:
-  export  --site <id> [--out <dir>]
-  import  --site <id> --dir <dir>
-  diff    --a <dir>   --b <dir>
+  export  --site <id> [--scope all|schema|settings|webhooks] [--out file]
+  diff    --site <id> <manifest.json>            # exit 1 if changes (CI gate)
+  apply   --site <id> <manifest.json> [--mode merge|replace-managed|replace-all]
+                                       [--allow-destructive] [--dry-run]
 
 Env vars:
   LUMIBASE_API_URL   CMS base URL (default: http://localhost:1989)
-  LUMIBASE_TOKEN     Bearer auth token
+  LUMIBASE_TOKEN     Bearer auth token (admin)
 `;
 
 switch (command) {
   case 'export': await runExport(); break;
-  case 'import': await runImport(); break;
   case 'diff':   await runDiff();   break;
+  case 'apply':  await runApply();  break;
   default:
     console.log(HELP);
     process.exit(0);
