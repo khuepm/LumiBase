@@ -39,3 +39,16 @@ export {
   type Branding,
   type ThemeOverrides,
 } from './site-config';
+
+export {
+  SAVE_ACTIONS,
+  SaveActionSchema,
+  DEFAULT_SAVE_ACTION,
+  isSaveAction,
+  resolveSaveAction,
+  UserPreferencesSchema,
+  PreferencesUpdateSchema,
+  type SaveAction,
+  type UserPreferences,
+  type PreferencesUpdate,
+} from './user-preferences';

@@ -225,6 +225,13 @@
       "when": 1781773320004,
       "tag": "0031_regulated_content_readiness",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781773320006,
+      "tag": "0033_save_default_preference",
+      "breakpoints": true
     }
   ]
 }
