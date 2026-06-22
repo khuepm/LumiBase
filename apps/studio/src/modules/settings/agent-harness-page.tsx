@@ -61,6 +61,7 @@ async function agentRequest<T>(path: string, init: RequestInit = {}): Promise<T>
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(site ? { 'X-Lumi-Site': site } : {}),
       ...init.headers,
+      'X-Lumi-Client': 'studio',
     },
   });
   if (!res.ok) {
