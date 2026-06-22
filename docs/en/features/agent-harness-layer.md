@@ -251,6 +251,26 @@ The harness records the raw fields needed for:
 
 These fields can be aggregated by the observability layer described in [`observability.md`](./observability.md).
 
+## Push notifications
+
+The harness accepts an optional `notify` sink (`AISecureHarnessConfig.notify`,
+type `AgentNotifier`) — this is an out-of-band operator signal only; it does not
+change any skill, handler, capability, or risk classification. When a
+request-context caller wires it (`buildAgentNotifier(c)`), the harness and the
+services it drives push a notification at the moment of the event:
+
+- **approval** — a HITL approval was created (a reviewer is needed).
+- **veto** — a write was staged into an L3 veto window (auto-commit deadline).
+- **incident** — an `agent_incidents` row was recorded (severity ≥ warning).
+- **run** — an agent run succeeded or failed.
+- **goal** — a parent goal settled to completed/failed.
+
+Delivery is best-effort over two transports — the per-site `SiteRoom` realtime
+WebSocket (in-app) and Web Push (VAPID, even with the tab closed) — and never
+blocks or fails execution. Background callers (reconciler/cron) omit the sink
+and rely on the Mission-Control inbox poll, so no event is lost; only its
+latency changes. See [`push-notifications.md`](./push-notifications.md).
+
 ## Relationship to AI Copilot
 
 The existing AI Copilot remains the human-facing chat entry point. The Agent Harness Layer is the governance and execution substrate underneath it.

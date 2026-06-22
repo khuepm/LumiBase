@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
+import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { AISecureHarness, CORE_SKILLS } from '../services/ai-harness';
 import { getContentOsFlags } from '../services/feature-flags';
 import { ItemService } from '../services/item-service';
@@ -46,6 +47,7 @@ mcpRouter.post('/', async (c) => {
     }),
     llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
     queue: runtime.queue,
+    notify: buildAgentNotifier(c),
   });
 
   const port: McpHarnessPort = {

@@ -41,7 +41,7 @@ DECLARE
     'items', 'revisions', 'activity',
     'files', 'folders', 'presets', 'translations',
     'settings', 'webhooks', 'extensions',
-    'email_layouts', 'email_templates',
+    'email_layouts', 'email_templates', 'push_subscriptions',
     'roles', 'policies', 'user_policies',
     'permissions', 'audit_log',
     -- Regulated / sensitive content readiness (site-isolated).

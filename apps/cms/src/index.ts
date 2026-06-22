@@ -37,6 +37,7 @@ import { handleGraphQL } from './graphql';
 import { permissionsRouter } from './routes/permissions';
 import { policiesRouter } from './routes/policies';
 import { presetsRouter } from './routes/presets';
+import { pushRouter } from './routes/push';
 import { realtimeRouter } from './routes/realtime';
 import { relationsRouter } from './routes/relations';
 import { rolesRouter } from './routes/roles';
@@ -200,6 +201,7 @@ api.route('/webhooks', webhooksRouter);
 api.route('/email', emailRouter);
 api.route('/activity', activityRouter);
 api.route('/realtime', realtimeRouter);
+api.route('/push', pushRouter);
 api.route('/extensions', extensionsRouter);
 api.route('/admin', adminRouter);
 // Admin Security surface (admin-setup-wizard task 6.4; Req 7.6, 7.7,

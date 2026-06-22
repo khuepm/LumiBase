@@ -38,6 +38,13 @@ export interface Bindings {
   LUMIBASE_MAIL_ENABLED?: string;
   /** Comma-separated cc list for security notifications (legacy name kept). */
   LUMIBASE_SECURITY_RECIPIENTS?: string;
+  // ── Web Push / VAPID (push-noti feature) ────────────────────────────────
+  /** VAPID application server public key (base64url, raw 65-byte P-256 point). */
+  VAPID_PUBLIC_KEY?: string;
+  /** VAPID application server private scalar `d` (base64url, 32 bytes). */
+  VAPID_PRIVATE_KEY?: string;
+  /** VAPID contact `sub` claim — a `mailto:` or `https:` URI. */
+  VAPID_SUBJECT?: string;
   /** Direct Postgres connection string (used in local development). */
   DATABASE_URL?: string;
   /** Cloudflare Access Certificates URL (JWKS format) */
