@@ -68,6 +68,20 @@ Kế hoạch triển khai **Content Releases** theo 5 phase. Phase A đặt nề
   - [ ] 9.3 CHANGELOG entry cho Content Releases + cập nhật **README Release policy** mô tả manual vs scheduled publish và ngữ nghĩa atomicity (DoD §4)
   - [ ] 9.4 Trang docs ngắn mô tả workflow: tạo Release → add items xuyên-collection + pin revision → schedule/publish → outcome per item; nêu open questions (rollback v1 chưa hỗ trợ, late-binding race) (DoD §4; design §11)
 
-- [ ] 10. Setup Impact & DoD
-  - [ ] 10.1 **Setup Impact**: thêm một dòng vào `.kiro/specs/admin-setup-wizard/setup-impact.md` — kết quả `n/a` cho seed/settings/wizard/capability/backfill, ghi chú duy nhất là **migration thêm 2 bảng** (hand-written, 0012+); kèm ngày rà soát + lý do (Req 14.1, 14.2; design §10)
-  - [ ] 10.2 `pnpm typecheck` recursive (turbo run typecheck) + `pnpm test` toàn bộ pass; tick các task done trong file này (DoD §1, §3)
+- [x] 10. Setup Impact & DoD
+  - [x] 10.1 **Setup Impact**: dòng #22 `n/a` thêm vào `setup-impact.md` (rà soát 2026-06-22; ghi chú migration thêm 2 bảng hand-written 0032) (Req 14.1, 14.2; design §10)
+  - [x] 10.2 `pnpm typecheck` recursive (15/15) ✅; targeted tests trên Postgres local: release-service (8) + releases-route (4) + scheduler-worker (5) pass (DoD §1, §3)
+
+---
+
+## Implementation status (2026-06-22)
+
+**Done — Phases A–E** (commits split per task; author Javier; PR riêng).
+
+- **Phase A** ✅ Hai bảng `releases`/`release_items` trong `cms.ts`; migration **0032 hand-written** + journal; applied sạch trên Postgres local. **Deviation (task 2):** KHÔNG tạo Zod schema ở `packages/shared/src/schemas/release.ts` — validate bằng inline Zod trong `routes/releases.ts`. Shared schema chỉ cần khi Studio/SDK tiêu thụ → hoãn sang khi build Studio UI.
+- **Phase B** ✅ `ReleaseService` create/list/get/patch(add/remove + revision pin, RELEASE_IMMUTABLE)/delete; scoped `site_id`.
+- **Phase C** ✅ publish + atomicity. **Deviation (task 5.1, 6.2):** `ItemService.patch` KHÔNG nhận `tx` (nó sở hữu hooks/search side-effects) — open question §11.2 chốt theo hướng **`all_or_nothing` = pre-flight publishability pass** (kiểm mọi item trước, không publish gì nếu có blocker) thay vì một DB transaction rollback xuyên `patch`. `best_effort` per-item outcome. Revision pin materialize `revisions.delta.after` (như `revertRevision`).
+- **Phase D** ✅ `sweepDueReleases` nối vào `runSchedulerTick` (cùng queue `content-scheduler`); idempotent + maintenance-window; circuit-breaker (business fail → `failed` không retry, transient → giữ `scheduled`). Audit `release_published`/`_partially_published`/`_publish_failed` ở route.
+- **Phase E** ✅ API spec §3b, data-model (`releases`/`release_items`), CHANGELOG `[Unreleased]` + migration note, `docs/en/features/content-releases.md`, Setup Impact #22.
+
+**Verified:** 8 DB-integration tests trên Postgres thật (create, cross-collection publish, empty/double-publish guards, best_effort skipped-on-deleted, revision pin, idempotent sweep, delete cascade) + 4 route + 5 scheduler tests; recursive typecheck 15/15.
