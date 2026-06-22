@@ -1,0 +1,20 @@
+diff --git a/lib/engines.js b/lib/engines.js
+index 38f993db06cf364191ac635a6590c2d29303297d..44e429ef613849a89c1e46128e71334b1aeb1261 100644
+--- a/lib/engines.js
++++ b/lib/engines.js
+@@ -13,8 +13,13 @@ const engines = exports = module.exports;
+  */
+ 
+ engines.yaml = {
+-  parse: yaml.safeLoad.bind(yaml),
+-  stringify: yaml.safeDump.bind(yaml)
++  // js-yaml 4.x removed safeLoad/safeDump; load/dump are now safe by default.
++  // The pnpm override pins js-yaml >=4.2.0 tree-wide, so load/dump always exist
++  // and are the safe path. (On 4.x, yaml.safeLoad is a stub that THROWS, so we
++  // must call load/dump directly rather than feature-detecting on safeLoad.)
++  // See CVE-2026-53550 (GHSA-h67p-54hq-rp68).
++  parse: yaml.load.bind(yaml),
++  stringify: yaml.dump.bind(yaml)
+ };
+ 
+ /**

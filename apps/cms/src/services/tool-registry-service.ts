@@ -60,7 +60,7 @@ export class ToolRegistryService {
   coreTool(name: string, skill: SkillDefinition): AgentToolDefinition {
     const mutatesSchema = skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read');
     const deletes = name.startsWith('delete');
-    const level: AgentRiskLevel = mutatesSchema || deletes ? 'dangerous' : 'safe';
+    const level: AgentRiskLevel = skill.dangerous || mutatesSchema || deletes ? 'dangerous' : 'safe';
 
     return {
       ...skill,
