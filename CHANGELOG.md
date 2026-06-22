@@ -32,9 +32,12 @@ _No unreleased changes yet._
 - **MCP (standalone):** new tool modules — `relations`, `access` (roles/policies + bulk export/import/conflict checks), `api-keys`, `users-teams`, `content-config` (presets/settings/translations), `translation-memory`, `webhooks`, `agent` (intents/flows), `search-media`, `ops`, `admin` (backup/restore + materialize), `extensions` (+ marketplace). Shared `crudModule` factory + helpers; `tools/index.ts` aggregator; client gained generic `delete<T>`, root-text (`/health`, `/metrics`) and raw NDJSON (`backup`/`restore`) helpers; vitest test suite.
 - **MCP (governed):** governed skills for relations, RBAC roles/policies, content intents and flows, plus identity & config — API keys (`listApiKeys`/`createApiKey`/`rotateApiKey`/`revokeApiKey`), users (`listUsers`/`inviteUser`/`updateUser`/`removeUser`), teams (`listTeams`/`createTeam`/`deleteTeam`/`addTeamMember`/`removeTeamMember`), config (settings/translations/webhooks list+CRUD), and extensions (`listExtensions`/`installExtension`/`updateExtension`/`uninstallExtension`). New thin `AccessService`/`ConfigService`/`ExtensionsService` and an extracted `api-key-token` util (reused by the REST route); `AISecureHarness` accepts `accessService`/`intentService`/`configService`/`extensionsService`/`db`/`siteId`; per-skill `dangerous` risk flag honoured by `evaluateRisk` + `ToolRegistryService`. Skill metadata mirrored in `@lumibase/ai-skills` with a registry-sync test.
 
+- **npm distribution:** `@lumibase/sdk`, `@lumibase/extension-sdk`, `@lumibase/mcp-server`, and `create-lumibase` are now published to the public npm registry by the release pipeline (gated by the `PUBLISH_NPM_PACKAGES` repository variable and `NPM_TOKEN`). The `lumibase-mcp` CLI ships a `#!/usr/bin/env node` shebang so it runs via `npx`.
+
 ### Changed
 
 - `SkillDefinition` gained an optional `dangerous` flag and `service` now includes `access`/`intents`/`flows`. `IRREVERSIBLE_SKILLS` extended with `deleteRole`/`deletePolicy`/`deleteRelation`/`revokeApiKey`/`removeUser`.
+- Trimmed published package tarballs: `@lumibase/mcp-server` no longer ships source maps, and `create-lumibase` no longer ships a duplicate top-level `templates/` copy (templates resolve from `dist/templates/`).
 
 ### Notes
 

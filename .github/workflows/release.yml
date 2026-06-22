@@ -311,9 +311,9 @@ jobs:
           const cp = require('node:child_process');
           const packages = fs.readdirSync('packages', { withFileTypes: true })
             .filter((entry) => entry.isDirectory())
-            .map((entry) => `packages/${entry.name}/package.json`)
-            .filter((path) => fs.existsSync(path))
-            .map((path) => ({ path, manifest: JSON.parse(fs.readFileSync(path, 'utf8')) }))
+            .map((entry) => ({ dir: `packages/${entry.name}`, path: `packages/${entry.name}/package.json` }))
+            .filter(({ path }) => fs.existsSync(path))
+            .map(({ dir, path }) => ({ dir, manifest: JSON.parse(fs.readFileSync(path, 'utf8')) }))
             .filter(({ manifest }) => manifest.private !== true);
 
           if (packages.length === 0) {
@@ -321,12 +321,40 @@ jobs:
             process.exit(0);
           }
 
-          for (const { path, manifest } of packages) {
-            console.log(`Publishing ${manifest.name} from ${path}...`);
-            cp.execFileSync('pnpm', ['--dir', path.replace('/package.json', ''), 'publish', '--access', 'public', '--no-git-checks'], {
-              stdio: 'inherit',
+          const failures = [];
+          for (const { dir, manifest } of packages) {
+            const id = `${manifest.name}@${manifest.version}`;
+            console.log(`Publishing ${id} from ${dir}...`);
+            // Run from the package dir: `pnpm --dir <path> publish` is broken on pnpm 9.x.
+            // --provenance emits a signed attestation (the job has id-token: write).
+            // Capture output so one package's failure does not abort the rest.
+            const result = cp.spawnSync('pnpm', ['publish', '--access', 'public', '--no-git-checks', '--provenance'], {
+              cwd: dir,
+              encoding: 'utf8',
               env: process.env,
             });
+            process.stdout.write(result.stdout || '');
+            process.stderr.write(result.stderr || '');
+
+            if (result.status === 0) {
+              console.log(`✓ Published ${id}`);
+              continue;
+            }
+
+            // Idempotent re-run: the version is already on the registry.
+            const output = `${result.stdout || ''}${result.stderr || ''}`;
+            if (/cannot publish over|previously published version|EPUBLISHCONFLICT/i.test(output)) {
+              console.log(`• Skipping ${id} (already published).`);
+              continue;
+            }
+
+            console.error(`✗ Failed to publish ${id}`);
+            failures.push(manifest.name);
+          }
+
+          if (failures.length > 0) {
+            console.error(`npm publish failed for: ${failures.join(', ')}`);
+            process.exit(1);
           }
           NODE
         env:

@@ -11,7 +11,8 @@
  */
 
 import { glossary, translationMemory } from '@lumibase/database';
-import { and, eq } from 'drizzle-orm';
+import { TM_DEFAULT_THRESHOLD } from '@lumibase/shared';
+import { and, count, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
@@ -56,18 +57,25 @@ tmRouter.get('/', async (c) => {
 
   const sourceLang = c.req.query('source');
   const targetLang = c.req.query('target');
+  const entrySource = c.req.query('entrySource'); // human | mt | imported
+
+  const limit = Math.min(Math.max(Number(c.req.query('limit')) || 50, 1), 200);
+  const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
 
   const conds = [eq(translationMemory.siteId, siteId)];
   if (sourceLang) conds.push(eq(translationMemory.sourceLang, sourceLang));
   if (targetLang) conds.push(eq(translationMemory.targetLang, targetLang));
+  if (entrySource) conds.push(eq(translationMemory.source, entrySource));
 
-  const rows = await db
-    .select()
-    .from(translationMemory)
-    .where(and(...conds))
-    .limit(200);
+  const where = and(...conds);
 
-  return c.json({ data: rows });
+  const [rows, totalRow] = await Promise.all([
+    db.select().from(translationMemory).where(where).limit(limit).offset(offset),
+    db.select({ value: count() }).from(translationMemory).where(where),
+  ]);
+
+  const total = totalRow[0]?.value ?? 0;
+  return c.json({ data: rows, meta: { total, limit, offset } });
 });
 
 // ── POST /tm  (upsert entry) ───────────────────────────────────────────────
@@ -101,6 +109,58 @@ tmRouter.post('/', async (c) => {
     .returning();
 
   return c.json({ data: inserted[0] }, 201);
+});
+
+// ── PATCH /tm/:id  (edit entry) ─────────────────────────────────────────────
+
+const patchSchema = z.object({
+  targetText: z.string().min(1).optional(),
+  quality: z.number().min(0).max(100).optional(),
+  context: z.string().nullable().optional(),
+  source: z.enum(['human', 'mt', 'imported']).optional(),
+});
+
+tmRouter.patch('/:id', async (c) => {
+  const siteId = c.get('siteId');
+  const db = c.get('db');
+  const id = c.req.param('id');
+
+  const parsed = patchSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json(
+      { errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) },
+      400,
+    );
+  }
+
+  const updated = await db
+    .update(translationMemory)
+    .set({ ...parsed.data, updatedAt: new Date() })
+    .where(and(eq(translationMemory.siteId, siteId), eq(translationMemory.id, id)))
+    .returning();
+
+  if (updated.length === 0) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'TM entry not found' }] }, 404);
+  }
+  return c.json({ data: updated[0] });
+});
+
+// ── DELETE /tm/:id ──────────────────────────────────────────────────────────
+
+tmRouter.delete('/:id', async (c) => {
+  const siteId = c.get('siteId');
+  const db = c.get('db');
+  const id = c.req.param('id');
+
+  const deleted = await db
+    .delete(translationMemory)
+    .where(and(eq(translationMemory.siteId, siteId), eq(translationMemory.id, id)))
+    .returning();
+
+  if (deleted.length === 0) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'TM entry not found' }] }, 404);
+  }
+  return c.json({ data: { id } });
 });
 
 // ── POST /tm/lookup  (fuzzy match) ─────────────────────────────────────────
@@ -143,7 +203,7 @@ tmRouter.post('/lookup', async (c) => {
     context: r.context,
   }));
 
-  const match = bestMatch(parsed.data.query, candidates, parsed.data.threshold ?? 75);
+  const match = bestMatch(parsed.data.query, candidates, parsed.data.threshold ?? TM_DEFAULT_THRESHOLD);
   return c.json({ data: { match } });
 });
 
@@ -195,7 +255,7 @@ tmRouter.post('/translate', async (c) => {
   const providers = buildProviders(c.env);
   const service = new TranslationMemoryService(providers, {
     defaultProvider: providers.has('workers-ai') ? 'workers-ai' : 'echo',
-    tmThreshold: 80,
+    tmThreshold: TM_DEFAULT_THRESHOLD,
   });
 
   const result = await service.translate({
