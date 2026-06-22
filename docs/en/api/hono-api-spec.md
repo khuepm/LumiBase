@@ -94,7 +94,15 @@ Error response:
 | `POST` | `/api/v1/auth/login` | Exchange Logto auth code or username/password for access + refresh tokens |
 | `POST` | `/api/v1/auth/refresh` | Refresh expired access token |
 | `POST` | `/api/v1/auth/logout` | Revoke tokens |
-| `GET` | `/api/v1/auth/me` | Get current user profile |
+| `GET` | `/api/v1/auth/me` | Get current user profile (includes `preferences`) |
+| `PATCH` | `/api/v1/auth/me/preferences` | Update own preferences (shallow-merge) |
+
+**`PATCH /api/v1/auth/me/preferences`** — self-service, scoped to the
+authenticated user. Shallow-merges into `users.preferences` (other keys like
+`language`/`theme` are preserved). Send `{ "saveAction": "stay" | "return" |
+"create_new" }` to set the Studio editor's post-save navigation; send
+`{ "saveAction": null }` to clear it and fall back to the site default. Invalid
+enum → 422 `VALIDATION_ERROR`; unauthenticated → 401.
 
 **Login request:**
 ```json
@@ -419,7 +427,9 @@ row (not the key/value `settings` table). Scoped to the active tenant via the
 
 `PATCH /api/v1/site` accepts any subset of: `name`, `displayTitle`, `siteUrl`,
 `descriptor`, `domain`, `defaultLanguage`, `defaultAppearance`
-(`auto`\|`light`\|`dark`), `branding` (`{ logoUrl, faviconUrl, brandColor }`),
+(`auto`\|`light`\|`dark`), `defaultSaveAction`
+(`stay`\|`return`\|`create_new` — the site-wide default save action a user's
+personal preference overrides), `branding` (`{ logoUrl, faviconUrl, brandColor }`),
 `themeOverrides` (`{ light, dark }` maps of whitelisted CSS tokens → `H S% L%`
 values), and `customCss`. An empty string clears a nullable field. A duplicate
 `domain` returns `409 { errors: [{ code: 'DOMAIN_TAKEN' }] }`.

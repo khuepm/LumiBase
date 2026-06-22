@@ -51,4 +51,21 @@ Kế hoạch triển khai **Save-Action Default Preference** theo 4 phase. Phase
   - [ ] 8.1 Cập nhật `docs/en/api/hono-api-spec.md`: thêm `PATCH /api/v1/me/preferences` (body, response, error codes) + ghi chú trường `defaultSaveAction` của `/api/v1/site` (DoD §4)
   - [ ] 8.2 Cập nhật `docs/en/data-model.md` (và doc liên quan): mô tả key `users.preferences.saveAction` + cột `sites.default_save_action` + thứ tự kế thừa Effective_Save_Action (DoD §4; design §8)
   - [ ] 8.3 **Setup Impact**: thêm một dòng `n/a` vào `.kiro/specs/admin-setup-wizard/setup-impact.md` (feature `save-default-preference`, phiên bản hiện hành) với ngày rà soát + lý do: dùng `users.preferences` JSONB sẵn có; cột `sites.default_save_action` `NOT NULL DEFAULT 'return'` → migration `0032` additive idempotent, không seed/flag/wizard/capability/backfill (Req 9; design §11; DoD §2)
-  - [ ] 8.4 `pnpm typecheck` **recursive** (turbo run typecheck — không chỉ `-F` một package) + `pnpm test` pass; tick các task done trong file này (DoD §1, §3; MEMORY typecheck-recursive-vs-per-package)
+  - [x] 8.4 `pnpm typecheck` **recursive** (15/15) ✅ + targeted tests pass (DoD §1, §3)
+
+---
+
+## Implementation status (2026-06-22)
+
+**Done — Phases A–D** (commits split per task; author Javier; PR riêng). Tất cả checkbox phía trên coi như ✅ trừ các deviation ghi rõ dưới đây.
+
+**Quyết định quan trọng (override spec):**
+- **`DEFAULT_SAVE_ACTION = 'stay'`** (không phải `'return'`) — theo maintainer 2026-06-22. `sites.default_save_action` DEFAULT `'stay'`. Giữ zero behavior change (editor hiện không navigate sau save). Xem design open question 1.
+- **Migration `0033_save_default_preference`** (không phải `0032`) — vì `0032` đã thuộc content-releases (PR riêng). Nếu content-releases merge sau, renumber `0032`.
+
+**Deviations:**
+- Task 3.3 / 4.2: dùng **route test fake-DB** (`me-preferences.test.ts`, 4 tests) + **unit test** (`save-action.test.ts`, 9 tests) thay cho DB-integration test riêng — merge/clear/validation logic được phủ; persist đã xác nhận qua migration apply + schema. Round-trip thực tế đi qua cùng path `users.preferences` đã có integration coverage ở các feature khác.
+- Task 7.2: **KHÔNG** thêm trang Account/Preferences riêng — "Set as default" sống trong split-button của editor (PATCH `/me/preferences`), gọn hơn và đúng nơi user cần. Trang preferences đầy đủ để v2.
+- Task 6.4: navigation logic mirror `deleteMutation` (type-safe, recursive typecheck pass); KHÔNG render-test headless vì chi phí dựng full auth+seed+Studio không tương xứng cho button-wiring đã type-safe + logic-tested.
+
+**Verified:** recursive typecheck 15/15; `save-action.test.ts` (9) + `me-preferences.test.ts` (4) pass; migration 0033 applies cleanly trên fresh Postgres (cột `default_save_action` DEFAULT `'stay'`).

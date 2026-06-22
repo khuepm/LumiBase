@@ -9,7 +9,24 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **Configurable default save action.** The Studio content editor's post-save
+  behavior is now configurable — `stay` (remain on the form), `return` (back to
+  the list), or `create_new` — as a **per-user preference**
+  (`users.preferences.saveAction`, set via the editor's split-button or
+  `PATCH /api/v1/auth/me/preferences`) that overrides a **site-wide default**
+  (`sites.default_save_action`, set in Settings → Site). `GET /api/v1/auth/me`
+  now returns `preferences`. The hardcoded fallback is `stay`, matching the
+  editor's previous behavior, so existing instances are unchanged until someone
+  opts into another action.
+
+### Migrations
+
+- `0033_save_default_preference` — adds `sites.default_save_action`
+  (`NOT NULL DEFAULT 'stay'`). Additive and idempotent (`ADD COLUMN IF NOT
+  EXISTS`); existing instances need **no backfill**. Run
+  `pnpm -F @lumibase/database migrate` on upgrade.
 
 ## [0.10.0] - 2026-06-22
 
