@@ -6,6 +6,7 @@ const CONTROL_PLANE_PATHS = [
   '/api/v1/access',
   '/api/v1/api-keys',
   '/api/v1/admin',
+  '/api/v1/agent',
   '/api/v1/cdc',
   '/api/v1/permissions',
   '/api/v1/policies',
