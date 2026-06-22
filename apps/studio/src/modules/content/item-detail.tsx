@@ -12,6 +12,7 @@ import { RawToggle } from './interfaces/raw-toggle';
 import { ProvenanceBadge } from './provenance-badge';
 import { RevisionsPanel } from './revisions-panel';
 import { RawJsonPanel } from './raw-json-panel';
+import { DependentRecordsDialog, type DependentGroup } from './dependent-records-dialog';
 
 type Tab = 'fields' | 'revisions' | 'raw';
 
@@ -33,6 +34,7 @@ export function ItemDetailPage() {
   const [publishAt, setPublishAt] = useState<string | null>(null);
   const [unpublishAt, setUnpublishAt] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [dependentGroups, setDependentGroups] = useState<DependentGroup[] | null>(null);
   const [shareRoleId, setShareRoleId] = useState('');
   const [sharePassword, setSharePassword] = useState('');
   const [shareValidUntil, setShareValidUntil] = useState('');
@@ -157,8 +159,16 @@ export function ItemDetailPage() {
       await client.items(collection as never).delete(id);
     },
     onSuccess: () => {
+      setDependentGroups(null);
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
       navigate({ to: '/content/$collection', params: { collection } });
+    },
+    onError: (err: unknown) => {
+      // 409 DEPENDENT_RECORDS_EXIST → open the resolution dialog with the groups.
+      const e = err as { status?: number; body?: { errors?: Array<{ code?: string; dependents?: DependentGroup[] }> } };
+      if (e?.status === 409 && e.body?.errors?.[0]?.code === 'DEPENDENT_RECORDS_EXIST') {
+        setDependentGroups(e.body.errors[0].dependents ?? []);
+      }
     },
   });
 
@@ -287,6 +297,16 @@ export function ItemDetailPage() {
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
           Save failed.
         </div>
+      )}
+
+      {dependentGroups && (
+        <DependentRecordsDialog
+          collection={collection}
+          itemId={id}
+          groups={dependentGroups}
+          onClose={() => setDependentGroups(null)}
+          onAllResolved={() => deleteMutation.mutate()}
+        />
       )}
 
       {shareOpen && (
