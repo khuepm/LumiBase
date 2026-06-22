@@ -311,9 +311,9 @@ jobs:
           const cp = require('node:child_process');
           const packages = fs.readdirSync('packages', { withFileTypes: true })
             .filter((entry) => entry.isDirectory())
-            .map((entry) => `packages/${entry.name}/package.json`)
-            .filter((path) => fs.existsSync(path))
-            .map((path) => ({ path, manifest: JSON.parse(fs.readFileSync(path, 'utf8')) }))
+            .map((entry) => ({ dir: `packages/${entry.name}`, path: `packages/${entry.name}/package.json` }))
+            .filter(({ path }) => fs.existsSync(path))
+            .map(({ dir, path }) => ({ dir, manifest: JSON.parse(fs.readFileSync(path, 'utf8')) }))
             .filter(({ manifest }) => manifest.private !== true);
 
           if (packages.length === 0) {
@@ -321,9 +321,12 @@ jobs:
             process.exit(0);
           }
 
-          for (const { path, manifest } of packages) {
-            console.log(`Publishing ${manifest.name} from ${path}...`);
-            cp.execFileSync('pnpm', ['--dir', path.replace('/package.json', ''), 'publish', '--access', 'public', '--no-git-checks'], {
+          for (const { dir, manifest } of packages) {
+            console.log(`Publishing ${manifest.name} from ${dir}...`);
+            // Run from the package dir: `pnpm --dir <path> publish` is broken on pnpm 9.x.
+            // --provenance emits a signed attestation (the job has id-token: write).
+            cp.execFileSync('pnpm', ['publish', '--access', 'public', '--no-git-checks', '--provenance'], {
+              cwd: dir,
               stdio: 'inherit',
               env: process.env,
             });

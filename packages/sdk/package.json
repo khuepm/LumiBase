@@ -3,6 +3,11 @@
   "version": "0.10.0",
   "description": "LumiBase JS SDK (REST + WebSocket) + typegen core. Isomorphic ESM.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khuepm/lumibase.git",
+    "directory": "packages/sdk"
+  },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
