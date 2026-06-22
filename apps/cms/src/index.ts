@@ -21,6 +21,7 @@ import { accessRouter } from './routes/access';
 import { adminRouter } from './routes/admin';
 import { authRouter, meRouter } from './routes/auth';
 import { adminSecurityRouter } from './routes/admin-security';
+import { adminAuthIssuersRouter } from './routes/admin-auth-issuers';
 import { adminEncryptionRouter } from './routes/admin-encryption';
 import { editorialRouter } from './routes/editorial';
 import { adminErasureRouter } from './routes/admin-erasure';
@@ -218,6 +219,8 @@ api.route('/admin/erasure', adminErasureRouter);
 api.route('/admin/field-access-log', adminFieldAccessRouter);
 // Subject Access Request export (regulated-content-readiness task 10.3; Req 13).
 api.route('/admin/sar', adminSarRouter);
+// Trusted external JWT issuers (external-jwt-auth §5). Admin-only CRUD.
+api.route('/admin/auth/issuers', adminAuthIssuersRouter);
 // Audit-log QUERY + EXPORT surface (admin-setup-wizard task 12.3; Req
 // 15.4, 15.6; design §4.9, §4.10, §10.3, §10.4). SIBLING mount alongside
 // `adminSecurityRouter` above, both under `withAuth`. The admin-role gate
