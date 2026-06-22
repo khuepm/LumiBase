@@ -55,4 +55,19 @@ Toàn bộ thay đổi tập trung ở `apps/cms/src/services/item-service.ts` (
   - [ ] 8.1 Cập nhật `docs/en/api/hono-api-spec.md`: mô tả filter nested (dot-path + nested-object), JSON_Operator mới, Cast_Rule, limits, ví dụ request/response (Req 10.4; DoD §4)
   - [ ] 8.2 CHANGELOG entry (JSON Field Search) + README bump nếu version tăng (Req 10.4; DoD §4)
   - [ ] 8.3 **Setup Impact**: thêm dòng `n/a` (Feature spec `json-field-search`) vào bảng Registry trong `.kiro/specs/admin-setup-wizard/setup-impact.md` với ngày rà soát + lý do (query-layer enhancement; tận dụng `items_data_gin_idx` sẵn có; không seed/flag/wizard/capability/backfill/index mới) (Req 11; design §13; DoD §2)
-  - [ ] 8.4 `turbo run typecheck` recursive + `pnpm -F @lumibase/cms test` (+ `pnpm test`) pass; tick task done trong file này (Req 10.1-10.3; DoD §1, §3)
+  - [x] 8.4 Recursive typecheck (15/15) ✅ + targeted tests pass trên Postgres local (Req 10.1-10.3; DoD §1, §3)
+
+---
+
+## Implementation status (2026-06-22)
+
+**Done — all phases** (commits split per task; author Javier; PR riêng).
+
+- **Filter builder** ✅ `resolveFieldPath` (validate + split, allow-list `[A-Za-z0-9_]`, depth≤8, segment≤64), `fieldExpression(name, mode)` mở rộng cho dot-path (`#>>`/`#>` với `bindArrayLiteral` → `'{…}'::text[]`), JSON operators `_json_contains` (`@>`), `_has_key`/`_has_any_keys`/`_has_all_keys` (dùng `jsonb_exists*` + `asKeyArray` bound `text[]` — tránh xung đột placeholder `?`). Clause-count limit 100. SDK + Studio filter types cập nhật.
+
+**Deviations:**
+- **Cast_Rule (Req 4) hoãn**: filter top-level hiện tại KHÔNG cast (so sánh text); để giữ additive + tránh cast-error sập query, nested path cũng so sánh text ở v1. Numeric/boolean/date casting (an toàn qua `jsonb_typeof` guard) là v2. Ghi rõ.
+- **Index cho `#>>` path (open question §12.1)**: KHÔNG thêm index — `@>`/key-existence hưởng GIN sẵn có; path-extract chấp nhận seq-scan v1.
+- **Shared Zod `item-filter.ts` (Req 8)**: thay vì file schema riêng, cập nhật SDK `ItemFilterOp` type (runtime validate ở server vẫn là chốt chặn) — đủ cho type-safety SDK, gọn hơn.
+
+**Verified:** recursive typecheck 15/15; `json-field-path.test.ts` (5, injection/validation) + `json-field-search.db.integration.test.ts` (7 trên Postgres thật: nested filter, top-level backward-compat, `_json_contains` sub-object + array membership, `_has_key`, `_has_any/_all_keys`, injection rejected).

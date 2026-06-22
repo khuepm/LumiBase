@@ -84,6 +84,17 @@ Error response:
 | `_starts_with`, `_ends_with` | String prefix/suffix |
 | `_between` | Range (two-element array) |
 | `_and`, `_or` | Logical grouping |
+| `_json_contains` | JSONB `@>` — value/sub-object/array-membership containment |
+| `_has_key` | The JSON object has this key |
+| `_has_any_keys`, `_has_all_keys` | The JSON object has any / all of these keys (string array) |
+
+**Searching inside JSON.** A filter field key may be a **dotted path** into a
+nested JSON/JSONB field — e.g. `filter={"metadata.author.country":{"_eq":"VN"}}`
+compiles to a `data #>> '{metadata,author,country}'` lookup. Path segments are
+restricted to `[A-Za-z0-9_]` and bound as parameters (injection-safe); depth is
+capped at 8. The `_json_contains` / `_has_*` operators run against the JSONB and
+use the existing GIN index. Top-level keys and structural fields behave exactly
+as before.
 
 ---
 
