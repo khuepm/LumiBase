@@ -9,7 +9,21 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **Code-First Configuration (Config Manifest).** Export / diff / apply a site's
+  schema configuration — collections, fields, relations, settings and webhooks —
+  as a single declarative, version-controllable JSON manifest
+  (`lumibase.config@v1`) for CI/CD and environment sync. New admin-only endpoints
+  `GET /api/v1/config/export` and `POST /api/v1/config/import` (with `dryRun`,
+  `mode=merge|replace-managed|replace-all`, and an `allowDestructive` guard), plus
+  a reworked `pnpm --filter @lumibase/cms config export|diff|apply` CLI (`diff`
+  exits 1 when changes are pending, for use as a PR gate). Apply is transactional
+  (all-or-nothing) and delegates schema mutation to the existing `SchemaService`;
+  merge never deletes, replace-all is a full sync. Manifests carry no
+  id/siteId/timestamps/secrets and round-trip losslessly. No schema migration —
+  reuses existing tables. See
+  [`docs/en/contributing/code-first-config.md`](docs/en/contributing/code-first-config.md).
 
 ## [0.9.0] - 2026-06-21
 
