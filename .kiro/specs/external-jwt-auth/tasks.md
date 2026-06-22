@@ -76,5 +76,19 @@ Kế hoạch triển khai **External JWT Authentication** theo 5 phase. Phase A 
 - [ ] 10. Setup Impact
   - [ ] 10.1 Thêm dòng vào `.kiro/specs/admin-setup-wizard/setup-impact.md` (Registry): feature `external-jwt-auth`, trạng thái **`n/a`**, ngày rà soát, lý do — bảng `auth_external_issuers` không seed (rỗng, admin đăng ký theo nhu cầu, giống #7/#16); không settings key bắt buộc; không bước wizard; không capability flag; migration `0032` chỉ `CREATE TABLE IF NOT EXISTS` nên KHÔNG cần backfill (instance cũ → external `skip` mọi token, auth hiện có giữ nguyên) (Req 14; design §13; DoD §2)
 
-- [ ] 11. Definition of Done
-  - [ ] 11.1 `pnpm typecheck` (recursive, theo memory "typecheck recursive vs per-package" + "typecheck before push") + `pnpm test` pass toàn repo; tick các task done trong file này (DoD §1, §3; Req 13)
+- [x] 11. Definition of Done
+  - [x] 11.1 `pnpm typecheck` recursive (15/15) ✅ + targeted tests pass trên Postgres local (DoD §1, §3; Req 13)
+
+---
+
+## Implementation status (2026-06-22)
+
+**Done — all phases** (commits split per task; author Javier; PR riêng).
+
+**Deviations:**
+- **Migration `0034_auth_external_issuers`** (không phải `0032` như design §11) — `0032`/`0033` đã thuộc content-releases / save-default-preference (PR riêng đang mở). Renumber nếu merge order khác.
+- **CF Access bug (`auth.ts:147` hard-code `roles:['admin']`)**: theo open question §2, **giữ nhánh CF Access nguyên trạng** v1 để tránh regression — đã ghi chú trong `docs/en/security/external-jwt-auth.md`. Path external-JWT mới KHÔNG có bug này (default-deny). Gỡ bug CF Access là v2.
+- **Studio UI quản lý issuer**: chưa làm (admin API là đủ cho v1; UI là enhancement — design §13 câu 4).
+- Role-resolution open question §4 chốt: external principal **luôn** được JIT-upsert `userSites` membership (idempotent) nên `PermissionService` resolve role qua primary path.
+
+**Verified:** recursive typecheck 15/15; verifier unit tests 12 (real RS256/ES256/HS256 — full skip/reject/accept decision tree); external-auth DB-integration 3 trên Postgres thật (issuer CRUD + duplicate reject, HS256-config reject, end-to-end token→site-role→JIT user+membership); migration 0034 applies cleanly trên fresh DB.

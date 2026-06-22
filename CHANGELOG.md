@@ -9,7 +9,30 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **External JWT authentication.** A site can trust JWTs issued by an external
+  IdP (Okta, Entra, Auth0, Logto, Keycloak, Cloudflare Access…), verified against
+  the issuer's public JWKS. New `auth_external_issuers` table + admin CRUD at
+  `/api/v1/admin/auth/issuers`. The auth chain matches the token's `iss` to a
+  trusted issuer for the site, verifies the signature + standard claims with the
+  issuer's asymmetric-only algorithm allowlist, maps role claims to LumiBase
+  roles (**default-deny** — never implicit admin), enforces a `siteId`-claim ==
+  request-site gate, and optionally JIT-provisions the user. Fail-closed once an
+  issuer matches; a token for an unknown issuer falls through to internal auth.
+
+### Migrations
+
+- `0034_auth_external_issuers` — adds the per-site trusted-issuer table (public
+  config only, no secrets). Additive and idempotent; existing instances have no
+  issuers so the external-JWT branch is a no-op and current auth is unchanged.
+  No backfill. Run `pnpm -F @lumibase/database migrate` on upgrade.
+
+### Security
+
+- See [docs/en/security/external-jwt-auth.md](docs/en/security/external-jwt-auth.md)
+  for the threat model. `HS*`/`none` algorithms are rejected for external issuers
+  (alg-confusion); raw tokens are never logged.
 
 ## [0.10.0] - 2026-06-22
 
