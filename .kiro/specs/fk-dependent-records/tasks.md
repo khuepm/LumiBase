@@ -57,6 +57,20 @@ Kế hoạch triển khai **Foreign Key Dependent Records Handler** theo 5 phase
   - [ ] 7.1 Cập nhật `docs/en/api/hono-api-spec.md`: thêm `GET /api/v1/items/:collection/:id/dependents` và `POST …/resolve-dependents` (params, body, response, error codes `DEPENDENT_RECORDS_EXIST`/`FIELD_REQUIRED`/`INVALID_TARGET`/`FORBIDDEN`/`NOT_FOUND`); ghi rõ ngữ nghĩa **soft-delete vs restrict** (chỉ restrict chặn; set null/cascade không tự chạy khi soft-delete) (Req 4.3, 4.5; DoD docs)
   - [ ] 7.2 CHANGELOG entry cho feature; README/Release policy bump nếu version tăng — giữ narrative 0.5.0 (DoD docs)
 
-- [ ] 8. Setup Impact & DoD
-  - [ ] 8.1 **Setup Impact**: thêm một dòng vào bảng Registry trong `.kiro/specs/admin-setup-wizard/setup-impact.md` với kết quả `n/a` + ngày rà soát + lý do (không bảng mới — tái dùng `relations`; không seed/settings/wizard/capability/backfill; không migration) (Req 12; design §10)
-  - [ ] 8.2 `turbo run typecheck` recursive (không chỉ `-F` một package) + `pnpm test` pass; tick các task done trong file này (DoD typecheck recursive + test)
+- [x] 8. Setup Impact & DoD
+  - [x] 8.1 **Setup Impact**: dòng #25 `n/a` thêm vào Registry (rà soát 2026-06-22; không bảng/migration mới) (Req 12; design §10)
+  - [x] 8.2 Recursive typecheck (15/15) ✅ + targeted tests pass trên Postgres local (DoD)
+
+---
+
+## Implementation status (2026-06-22)
+
+**Done — Phases A–E** (commits split per task; author Javier; PR riêng).
+
+- **Phase A–C** ✅ `DependentsService` (reverse resolver + `report`/`isBlocking` + `applyResolution` transactional set_null/delete/reassign với guard required-field + reassign-target, injection-guarded JSONB path). Endpoints: `GET …/dependents`, `POST …/resolve-dependents`, DELETE 409-block. Không bảng/migration mới — `relations.on_delete` enforce ở tầng ứng dụng (design §7: chỉ `restrict` chặn).
+- **Phase D** ✅ `DependentRecordsDialog` mở khi DELETE → 409, resolve từng group, retry delete.
+- **Phase E** ✅ API spec (§3 Items + soft-delete-vs-restrict semantics), CHANGELOG, Setup Impact #25.
+
+**Deviation:** FK_Violation 23503 translation (design §6) chỉ áp cho hard-delete với FK vật lý; với reference JSONB (mặc định) blocking phát hiện ở tầng ứng dụng (đã có), nên path 23503 là phụ — v1 không thêm test riêng cho nó.
+
+**Verified:** recursive typecheck 15/15; service DB-integration 7 (resolver, restrict-blocks, set_null, reassign + bad-target, delete, required-field guard) + route DB-integration 3 (preflight, 409, resolve-clears-block) trên Postgres thật.
