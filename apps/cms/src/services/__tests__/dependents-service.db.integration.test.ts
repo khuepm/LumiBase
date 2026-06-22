@@ -43,8 +43,8 @@ describe('DependentsService — DB integration', () => {
     if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.insert(sites).values({ id: SITE, name: 'Deps IT' });
-    [{ id: articlesId }] = await db.insert(collections).values({ siteId: SITE, name: 'articles', label: 'Articles' }).returning({ id: collections.id });
-    [{ id: commentsId }] = await db.insert(collections).values({ siteId: SITE, name: 'comments', label: 'Comments' }).returning({ id: collections.id });
+    articlesId = (await db.insert(collections).values({ siteId: SITE, name: 'articles', label: 'Articles' }).returning({ id: collections.id }))[0]!.id;
+    commentsId = (await db.insert(collections).values({ siteId: SITE, name: 'comments', label: 'Comments' }).returning({ id: collections.id }))[0]!.id;
     await db.insert(fields).values([
       { siteId: SITE, collectionId: articlesId, name: 'title', type: 'string', interface: 'input' },
       { siteId: SITE, collectionId: commentsId, name: 'body', type: 'string', interface: 'input' },
