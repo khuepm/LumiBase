@@ -1,5 +1,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { and, eq } from 'drizzle-orm';
+import { collections, scopeSite } from '@lumibase/database';
+import { searchIndexName } from '@lumibase/runtime';
 import type { AppEnv } from '../env';
 import { formatSafeError } from '@lumibase/shared/utils';
 
@@ -8,6 +11,12 @@ import { formatSafeError } from '@lumibase/shared/utils';
  *
  * Accepts query parameters and returns ranked results from MeiliSearch
  * (or whichever search backend is configured via the runtime adapter).
+ *
+ * Tenant isolation: search indexes are shared infrastructure, so the physical
+ * index name is always `{siteId}__{collection}` (see `searchIndexName`). The
+ * `collection` parameter is also validated against the caller's own
+ * collections table before it is used, so a tenant can neither name nor reach
+ * another tenant's index.
  */
 
 const searchQuerySchema = z.object({
@@ -42,6 +51,8 @@ searchRouter.get('/', async (c) => {
 
   const runtime = c.get('runtime');
   const search = runtime.search;
+  const siteId = c.get('siteId');
+  const db = c.get('db');
 
   if (!search) {
     return c.json(
@@ -54,34 +65,8 @@ searchRouter.get('/', async (c) => {
     );
   }
 
-  try {
-    const options = {
-      filter: filter || undefined,
-      sort: sort ? sort.split(',') : undefined,
-      limit,
-      offset,
-    };
-
-    if (collection) {
-      // Search a specific collection
-      const result = await search.search(collection, q, options);
-      return c.json({
-        data: result.hits,
-        meta: {
-          totalHits: result.totalHits,
-          processingTimeMs: result.processingTimeMs,
-          collection,
-          query: q,
-          limit,
-          offset,
-        },
-      });
-    }
-
-    // Search all collections — not directly supported by SearchProvider's
-    // single-collection interface, so we return an error guiding the caller
-    // to specify a collection. In a future iteration this could fan out
-    // across known collections.
+  // Cross-collection search is not supported by the single-index interface yet.
+  if (!collection) {
     return c.json(
       {
         errors: [
@@ -94,6 +79,45 @@ searchRouter.get('/', async (c) => {
       },
       400,
     );
+  }
+
+  // Tenant isolation: the requested collection MUST belong to the caller's
+  // site. Without this a caller could pass an arbitrary collection name and
+  // (combined with index naming) probe other tenants' data.
+  const [coll] = await db
+    .select({ name: collections.name })
+    .from(collections)
+    .where(and(scopeSite(collections.siteId, siteId), eq(collections.name, collection)))
+    .limit(1);
+  if (!coll) {
+    return c.json(
+      {
+        errors: [
+          { code: 'NOT_FOUND', message: `Collection "${collection}" not found.` },
+        ],
+      },
+      404,
+    );
+  }
+
+  try {
+    const result = await search.search(searchIndexName(siteId, collection), q, {
+      filter: filter || undefined,
+      sort: sort ? sort.split(',') : undefined,
+      limit,
+      offset,
+    });
+    return c.json({
+      data: result.hits,
+      meta: {
+        totalHits: result.totalHits,
+        processingTimeMs: result.processingTimeMs,
+        collection,
+        query: q,
+        limit,
+        offset,
+      },
+    });
   } catch (err) {
     console.error('[search] error', formatSafeError(err));
     return c.json(
