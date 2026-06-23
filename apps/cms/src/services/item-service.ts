@@ -15,7 +15,13 @@ import { refreshPhysicalTable, type MaterializeConfig } from './materialize-serv
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
 import { validateItem } from './validation';
-import type { CacheProvider, SearchProvider, QueueProvider } from '@lumibase/runtime';
+import {
+  searchIndexName,
+  type CacheProvider,
+  type SearchProvider,
+  type QueueProvider,
+} from '@lumibase/runtime';
+import { buildSearchDocument } from './search-document';
 import { PermissionService, type CompiledPermission, type PermissionAction } from './permission-service';
 import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
 import type { PolicyRule } from '@lumibase/shared';
@@ -1257,17 +1263,23 @@ export class ItemService {
    * Uses QueueProvider to enqueue a `search:index` job on the `content-indexing` queue.
    * Falls back to direct SearchProvider.index() if queue is unavailable.
    * Errors are logged but never block the main operation.
+   *
+   * The queue payload carries `siteId` so the worker can scope the physical
+   * index name (`{siteId}__{collection}`); the direct fallback scopes it here.
    */
   private async indexItem(collectionName: string, id: string, data: Record<string, unknown>): Promise<void> {
     try {
       if (this.deps.queue) {
         await this.deps.queue.enqueue('content-indexing', 'search:index', {
+          siteId: this.deps.siteId,
           collection: collectionName,
           id,
           data,
         });
       } else if (this.deps.search) {
-        await this.deps.search.index(collectionName, [{ id, ...data }]);
+        await this.deps.search.index(searchIndexName(this.deps.siteId, collectionName), [
+          buildSearchDocument(collectionName, id, data),
+        ]);
       }
     } catch (err) {
       // Search indexing is non-critical — log and continue.
@@ -1285,11 +1297,12 @@ export class ItemService {
     try {
       if (this.deps.queue) {
         await this.deps.queue.enqueue('content-indexing', 'search:remove', {
+          siteId: this.deps.siteId,
           collection: collectionName,
           id,
         });
       } else if (this.deps.search) {
-        await this.deps.search.delete(collectionName, [id]);
+        await this.deps.search.delete(searchIndexName(this.deps.siteId, collectionName), [id]);
       }
     } catch (err) {
       // Search de-indexing is non-critical — log and continue.

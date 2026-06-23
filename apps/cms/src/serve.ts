@@ -108,6 +108,19 @@ async function main() {
     env: process.env as Record<string, string | undefined>,
   });
 
+  // ── Content indexing (search) ────────────────────────────────────────────
+  //
+  // Consumes the `content-indexing` queue so create/update/delete keep the
+  // search index in sync. Without this consumer the jobs ItemService enqueues
+  // never run and search results go stale.
+  const { registerContentIndexingWorker } = await import(
+    './services/content-indexing-worker'
+  );
+  registerContentIndexingWorker({
+    search: runtime.search,
+    queue: runtime.queue,
+  });
+
   // ── Veto-window commits (content-os task 14; Req 13.3/13.5) ─────────────
   //
   // Primary path: delayed queue jobs fire at each staging's autoCommitAt.
