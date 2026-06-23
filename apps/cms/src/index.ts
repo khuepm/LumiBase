@@ -9,6 +9,7 @@ import { withLogger } from './middleware/logger';
 import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
+import { withSiteMembership } from './middleware/site-membership';
 import { withStudioAccess } from './middleware/studio-access';
 import { withTenant } from './middleware/tenant';
 import { activityRouter } from './routes/activity';
@@ -141,7 +142,7 @@ app.route('/scim/v2', scimRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withDb(), withAuth(), requireSetupComplete(), withStudioAccess(), withRls());
+api.use('*', withTenant(), withDb(), withAuth(), withSiteMembership(), requireSetupComplete(), withStudioAccess(), withRls());
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).

@@ -1,14 +1,14 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { requireSchemaAdmin } from '../middleware/schema-admin';
 import { SchemaService, SchemaServiceError } from '../services/schema-service';
 
 /**
  * /collections, /fields, /relations — Phase A schema admin surface.
  *
- * Permission enforcement is intentionally a stub: any authenticated user
- * can manage schema until Phase C wires PermissionService. The endpoints
- * already use site-scoped queries so multi-tenancy holds.
+ * Schema administration requires a site-bound admin principal. The endpoints
+ * still use site-scoped queries so multi-tenancy holds at the data layer too.
  */
 
 const collectionInputSchema = z.object({
@@ -81,6 +81,8 @@ const toError = (err: unknown) => {
 };
 
 export const collectionsRouter = new Hono<AppEnv>();
+
+collectionsRouter.use('*', requireSchemaAdmin());
 
 collectionsRouter.get('/', async (c) => {
   try {

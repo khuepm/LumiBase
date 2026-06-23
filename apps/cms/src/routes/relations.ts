@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { requireSchemaAdmin } from '../middleware/schema-admin';
 import { SchemaService, SchemaServiceError } from '../services/schema-service';
 
 const relationInputSchema = z.object({
@@ -33,6 +34,8 @@ const toError = (err: unknown) => {
 };
 
 export const relationsRouter = new Hono<AppEnv>();
+
+relationsRouter.use('*', requireSchemaAdmin());
 
 relationsRouter.get('/', async (c) => {
   try {
