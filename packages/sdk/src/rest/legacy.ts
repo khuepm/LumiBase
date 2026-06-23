@@ -229,7 +229,6 @@ export function legacyRest() {
         if (params.offset !== undefined)
           qs.set("offset", String(params.offset));
         if (params.status) qs.set("status", params.status);
-        if (params.search) qs.set("search", params.search);
         const s = qs.toString();
         return s ? `?${s}` : "";
       }

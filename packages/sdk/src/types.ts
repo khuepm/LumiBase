@@ -444,7 +444,46 @@ export interface ListItemsParams {
   limit?: number;
   offset?: number;
   status?: string | null;
-  search?: string;
+}
+
+/** Reserved metadata attributes present on every search hit. */
+export interface SearchHitMeta {
+  /** Which collection the hit belongs to. */
+  _collection?: string;
+  /** Human-readable display title derived at index time. */
+  _title?: string;
+  /** Item update timestamp, if available. */
+  _updatedAt?: string | number;
+}
+
+export type SearchHit = SearchHitMeta & Record<string, unknown>;
+
+export interface SearchParams {
+  /** Restrict to one collection. Omit for cross-collection (global) search. */
+  collection?: string;
+  /** MeiliSearch filter expression. */
+  filter?: string;
+  /** Sort directives, e.g. `["_updatedAt:desc"]`. */
+  sort?: string[];
+  limit?: number;
+  offset?: number;
+}
+
+export interface SearchResponse {
+  data: SearchHit[];
+  meta: {
+    query: string;
+    limit: number;
+    offset: number;
+    totalHits?: number;
+    processingTimeMs?: number;
+    /** Single-collection search: the collection searched. */
+    collection?: string;
+    /** Cross-collection search: the collections fanned out over. */
+    collections?: string[];
+    /** Cross-collection search: true when the collection set was capped. */
+    truncated?: boolean;
+  };
 }
 
 export interface ItemRow<
