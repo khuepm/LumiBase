@@ -1,6 +1,6 @@
 {
   "name": "create-lumibase",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Scaffold a new LumiBase project — Edge-native Headless CMS",
   "type": "module",
   "bin": {

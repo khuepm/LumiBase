@@ -11,6 +11,57 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [0.11.0] - 2026-06-22
+
+### Version
+
+- `v0.11.0`
+
+### Date
+
+- `2026-06-22`
+
+### Highlights
+
+- **Insights dashboards.** New `dashboards` + `panels` model and `/api/v1/insights` API with a Studio UI to compose metric/query panels per site.
+- **Content versioning.** Named, parallel draft branches of an item (`content_versions`) with a content-version service and Studio management UI — diff/compare and promote without touching the live record.
+- **Translation Memory management.** Backend + shared schemas + Studio UI to curate TM entries (review/edit/lookup) on top of the existing `/api/v1/tm` pipeline.
+- **Tenant-scoped search.** Search is now isolated per tenant (per-site index names), the indexing queue is processed by a dedicated worker, and runtime exposes an index-settings API — closing cross-tenant search leakage.
+- **Visual flow builder groundwork.** Shared `flow-graph` schema for the upcoming Studio flow builder.
+- **Docs i18n.** EN/VI documentation sync tooling + CI workflow and MT engine.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Migrations
+
+- **2 new schema migrations (additive, idempotent):** `0033_insights_dashboards.sql` (`dashboards`, `panels`) and `0034_content_versions.sql` (`content_versions`). New tables only — no data migration; `CREATE TABLE IF NOT EXISTS` + duplicate-object guards let them re-run safely. Back up your database before upgrading as a precaution.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
+### Added
+
+- **CMS:** `/api/v1/insights` (dashboards + panels), insights service; content-version service; tenant-scoped search (`search-document`, `content-indexing-worker`) + index settings API in `@lumibase/runtime`.
+- **Shared:** `insights`, `translation`, `flow-graph`, and `diff` Zod schemas.
+- **Studio:** UI for insights dashboards, content versions, and Translation Memory management.
+- **Tooling:** EN/VI docs sync (`scripts/docs-i18n/*`) + `docs-i18n-sync` workflow; npm-publish enabled for `@lumibase/mcp-server`, `@lumibase/sdk`, `@lumibase/extension-sdk`.
+
+### Changed
+
+- Search index names are tenant-scoped; the indexing queue is drained by a worker rather than inline.
+
+### Upgrade steps
+
+1. Review the migrations above and back up your database.
+2. Apply migrations: `pnpm -F @lumibase/database db:migrate`.
+3. Deploy the `v0.11.0` image or Cloudflare Worker release.
+4. Verify `/health`, the new `/api/v1/insights` endpoint, content-version + TM Studio pages, and that search returns only the active site's results.
+
+### Rollback notes
+
+- Roll back the application by redeploying the previously known-good CMS image tag (`v0.10.0`).
+- The new tables are additive; rolling back the app does not require dropping them. Restore from the pre-migration backup only if you must reverse the schema.
+
 ## [0.10.0] - 2026-06-22
 
 ### Version
