@@ -84,10 +84,26 @@ describe('GET /search', () => {
     expect(res.status).toBe(400);
   });
 
-  it('400s when collection is omitted (cross-collection unsupported)', async () => {
-    const app = buildApp({ search: makeSearch() });
-    const res = await app.request('/api/v1/search?q=hello');
-    expect(res.status).toBe(400);
+  it('fans out across the site collections when collection is omitted', async () => {
+    const search = makeSearch();
+    const app = buildApp({
+      siteId: 'site_A',
+      collectionRows: [{ name: 'articles' }, { name: 'pages' }],
+      search,
+    });
+
+    const res = await app.request('/api/v1/search?q=ha+noi');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: unknown[]; meta: Record<string, unknown> };
+
+    // One scoped search per site collection.
+    expect(search.search).toHaveBeenCalledTimes(2);
+    const indexNames = search.search.mock.calls.map((c) => c[0]);
+    expect(indexNames).toContain(searchIndexName('site_A', 'articles'));
+    expect(indexNames).toContain(searchIndexName('site_A', 'pages'));
+    // Hits are tagged with their collection.
+    expect(body.meta.collections).toEqual(['articles', 'pages']);
+    expect((body.data[0] as { _collection?: string })._collection).toBeDefined();
   });
 
   it('503s when no search provider is configured', async () => {
