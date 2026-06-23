@@ -680,10 +680,11 @@ export class ItemService {
         await this.deps.queue.enqueue('content-indexing', 'search:index', {
           collection: collectionName,
           id,
+          siteId: this.deps.siteId,
           data,
         });
       } else if (this.deps.search) {
-        await this.deps.search.index(collectionName, [{ id, ...data }]);
+        await this.deps.search.index(collectionName, [{ id, siteId: this.deps.siteId, ...data }]);
       }
     } catch (err) {
       // Search indexing is non-critical — log and continue.

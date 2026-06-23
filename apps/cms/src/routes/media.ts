@@ -14,6 +14,48 @@ const listQuerySchema = z.object({
   prefix: z.string().optional(),
 });
 
+const mediaKeyPrefix = (siteId: string) => `sites/${encodeURIComponent(siteId)}/media/`;
+
+function normalizeMediaKey(input: string): string | null {
+  const decoded = safeDecodeURIComponent(input);
+  const normalized = decoded.replace(/\\+/g, '/').replace(/^\/+/g, '');
+  const parts = normalized.split('/');
+  if (
+    parts.some((part) => part === '' || part === '.' || part === '..') ||
+    normalized.length === 0
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function scopedMediaKey(siteId: string, key: string): string | null {
+  const normalized = normalizeMediaKey(key);
+  return normalized ? `${mediaKeyPrefix(siteId)}${normalized}` : null;
+}
+
+function scopedMediaPrefix(siteId: string, prefix?: string): string | null {
+  if (!prefix) return mediaKeyPrefix(siteId);
+  const trimmed = prefix.replace(/\\+/g, '/').replace(/\/+$|^\/+/g, '');
+  if (!trimmed) return mediaKeyPrefix(siteId);
+  const normalized = normalizeMediaKey(trimmed);
+  if (!normalized) return null;
+  return `${mediaKeyPrefix(siteId)}${normalized}/`;
+}
+
+function unscopedMediaKey(siteId: string, key: string): string {
+  const prefix = mediaKeyPrefix(siteId);
+  return key.startsWith(prefix) ? key.slice(prefix.length) : key;
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export const mediaRouter = new Hono<AppEnv>();
 
 /**
@@ -40,8 +82,16 @@ mediaRouter.get('/', async (c) => {
   }
 
   try {
-    const result = await storage.list(parsed.data.prefix);
-    return c.json({ data: result.keys });
+    const prefix = scopedMediaPrefix(c.get('siteId'), parsed.data.prefix);
+    if (!prefix) {
+      return c.json(
+        { errors: [{ code: 'VALIDATION', message: 'Media prefix must be a relative path within this site.' }] },
+        400,
+      );
+    }
+
+    const result = await storage.list(prefix);
+    return c.json({ data: result.keys.map((key) => unscopedMediaKey(c.get('siteId'), key)) });
   } catch (err) {
     console.error('[media] list error', err);
     return c.json(
@@ -56,7 +106,13 @@ mediaRouter.get('/', async (c) => {
  * Download a media asset by key.
  */
 mediaRouter.get('/:key{.+}', async (c) => {
-  const key = c.req.param('key');
+  const key = scopedMediaKey(c.get('siteId'), c.req.param('key'));
+  if (!key) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: 'Media key must be a relative path within this site.' }] },
+      400,
+    );
+  }
 
   const storage = c.get('runtime').storage;
   if (!storage) {
@@ -98,7 +154,13 @@ mediaRouter.get('/:key{.+}', async (c) => {
  * to produce predefined sizes (150x150, 300x300, 600x600).
  */
 mediaRouter.post('/:key{.+}', async (c) => {
-  const key = c.req.param('key');
+  const key = scopedMediaKey(c.get('siteId'), c.req.param('key'));
+  if (!key) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: 'Media key must be a relative path within this site.' }] },
+      400,
+    );
+  }
 
   const storage = c.get('runtime').storage;
   if (!storage) {
@@ -137,7 +199,9 @@ mediaRouter.post('/:key{.+}', async (c) => {
       }
     }
 
-    return c.json({ data: { key, size: data.byteLength, contentType } }, 201);
+    return c.json({
+      data: { key: unscopedMediaKey(c.get('siteId'), key), size: data.byteLength, contentType },
+    }, 201);
   } catch (err) {
     console.error('[media] upload error', err);
     return c.json(
@@ -152,7 +216,13 @@ mediaRouter.post('/:key{.+}', async (c) => {
  * Delete a media asset by key.
  */
 mediaRouter.delete('/:key{.+}', async (c) => {
-  const key = c.req.param('key');
+  const key = scopedMediaKey(c.get('siteId'), c.req.param('key'));
+  if (!key) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: 'Media key must be a relative path within this site.' }] },
+      400,
+    );
+  }
 
   const storage = c.get('runtime').storage;
   if (!storage) {

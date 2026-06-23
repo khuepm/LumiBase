@@ -1,6 +1,7 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import type { AppEnv } from '../env';
+import type { AppEnv, AuthPrincipal } from '../env';
+import { PermissionService, type CompiledPermission } from '../services/permission-service';
 
 /**
  * /search — full-text search endpoint powered by the SearchProvider.
@@ -19,6 +20,47 @@ const searchQuerySchema = z.object({
 });
 
 export const searchRouter = new Hono<AppEnv>();
+
+const escapeSearchFilterValue = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+const siteFilter = (siteId: string) => `siteId = "${escapeSearchFilterValue(siteId)}"`;
+
+const combineFilters = (siteId: string, callerFilter?: string) => {
+  const enforced = siteFilter(siteId);
+  return callerFilter ? `(${enforced}) AND (${callerFilter})` : enforced;
+};
+
+const principalUser = (auth?: AuthPrincipal) => auth
+  ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) }
+  : null;
+
+function maskSearchHit(hit: Record<string, unknown>, permission: CompiledPermission) {
+  if (permission.fields.length === 1 && permission.fields[0] === '*') return hit;
+  const allowed = new Set(['id', 'siteId', ...permission.fields]);
+  return Object.fromEntries(Object.entries(hit).filter(([key]) => allowed.has(key)));
+}
+
+function buildPermissionService(c: Context<AppEnv>) {
+  const auth = c.get('auth');
+  const headers: Record<string, string> = {};
+  c.req.raw.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value;
+  });
+
+  return new PermissionService({
+    db: c.get('db'),
+    cache: c.get('runtime').cache,
+    ctx: {
+      userId: auth?.userId ?? null,
+      siteId: c.get('siteId'),
+      roleId: null,
+      user: principalUser(auth),
+      ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+      headers,
+      apiKey: auth?.apiKey ?? null,
+    },
+  });
+}
 
 searchRouter.get('/', async (c) => {
   const parsed = searchQuerySchema.safeParse(
@@ -54,18 +96,32 @@ searchRouter.get('/', async (c) => {
   }
 
   try {
-    const options = {
-      filter: filter || undefined,
-      sort: sort ? sort.split(',') : undefined,
-      limit,
-      offset,
-    };
-
     if (collection) {
-      // Search a specific collection
+      const permissionService = buildPermissionService(c);
+      const permission = await permissionService.canAccess(collection, 'read');
+      if (!permission) {
+        return c.json(
+          { errors: [{ code: 'FORBIDDEN', message: `Action \"read\" on \"${collection}\" is not allowed.` }] },
+          403,
+        );
+      }
+
+      const options = {
+        filter: combineFilters(c.get('siteId'), filter),
+        sort: sort ? sort.split(',') : undefined,
+        limit,
+        offset,
+      };
+
+      // Search a specific collection, enforcing the active site in the backend filter.
       const result = await search.search(collection, q, options);
       return c.json({
-        data: result.hits,
+        data: result.hits
+          .filter((hit) => {
+            const record = hit as Record<string, unknown>;
+            return record.siteId === c.get('siteId') && permissionService.matches(permission, record);
+          })
+          .map((hit) => maskSearchHit(hit as Record<string, unknown>, permission)),
         meta: {
           totalHits: result.totalHits,
           processingTimeMs: result.processingTimeMs,
