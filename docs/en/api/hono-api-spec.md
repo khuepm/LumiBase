@@ -95,6 +95,25 @@ Error response:
 | `POST` | `/api/v1/auth/refresh` | Refresh expired access token |
 | `POST` | `/api/v1/auth/logout` | Revoke tokens |
 | `GET` | `/api/v1/auth/me` | Get current user profile |
+| `GET` | `/api/v1/me/consents` | List the current user's consent decisions |
+| `PUT` | `/api/v1/me/consents/:type` | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
+
+**Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional`):
+
+```jsonc
+// PUT /api/v1/me/consents/marketing
+{ "granted": true, "source": "preference_center", "version": "v1" }
+
+// Response
+{ "data": { "consentType": "marketing", "granted": true,
+            "grantedAt": "2026-06-24T10:00:00.000Z", "withdrawnAt": null,
+            "source": "preference_center", "version": "v1",
+            "updatedAt": "2026-06-24T10:00:00.000Z" } }
+```
+
+Each change writes a `consent_granted` / `consent_withdrawn` audit event. Only user
+principals (not API keys) can manage consent. Current state is stored per
+`(site_id, user_id, consent_type)` in `user_consents`; full history lives in the audit log.
 
 **Login request:**
 ```json

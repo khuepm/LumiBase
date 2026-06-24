@@ -18,8 +18,8 @@
 | Rectification | ✅ | `apps/cms/src/routes/users.ts` (user update); profile editing | None for profile; ensure all PII fields are user-editable. |
 | Restriction of processing | ❌ | — | A "frozen"/"restricted" state flag and enforcement. |
 | Objection / opt-out (sale/share) | ❌ | — | Opt-out flag storage + "Do Not Sell or Share" handling; honor preference signals. |
-| Consent + withdrawal | ❌ | `users.preferences` JSONB exists (`core.ts:62`) but no consent semantics | A `user_consents` table (type, value, timestamp, withdrawn_at) + API + audit. |
-| Cookie / tracking consent | ❌ | — | Consent capture for non-essential cookies/tracking (largely a frontend concern + backend record). |
+| Consent + withdrawal | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Extend to opt-out-of-sale (P1.1); add preference-center UI. |
+| Cookie / tracking consent | ⚠️ | Backend record store exists (`user_consents`, type `analytics`/`functional`); no frontend capture | Frontend consent banner + capture for non-essential cookies/tracking, recorded via `/me/consents`. |
 | Email unsubscribe | ❌ | `email_templates`, `flows` can send mail; no suppression | Unsubscribe link, preference center, suppression list checked before sending. |
 | Account deletion (in-app/web) | ❌ | — | Self-service deletion endpoint (powers Apple 5.1.1(v) / Google web-URL requirement). |
 | Transparency / privacy notice | ⚠️ | Privacy page at `apps/landing/src/app/privacy/page.tsx` (generic) | Data map to back accurate store "data safety"/labels; per-deployment notice. |
@@ -54,9 +54,12 @@ These primitives are real and reusable when building compliance features:
    Required by GDPR Art. 17, CCPA delete, PDPD, and both stores. **Highest priority.**
 2. **Personal-data export ("download my data").** No endpoint assembles a user's own
    data into a portable file. Required by GDPR Art. 20; expected by access requests.
-3. **Consent management.** `users.preferences` (`core.ts:62`) is a free-form JSONB
-   blob with no consent semantics, no withdrawal log, no audit. Needed for GDPR
-   Art. 7 and PDPD consent.
+3. **Consent management.** ✅ *Implemented (v0.8.x).* The `user_consents` table
+   (`packages/database/src/schema/consent.ts`) records the current decision per
+   `(site_id, user_id, type)` with grant/withdraw timestamps; `ConsentService` +
+   `GET`/`PUT /api/v1/me/consents` expose self-service management; every change is
+   audited (`consent_granted`/`consent_withdrawn`). Satisfies the storage + API +
+   audit primitive for GDPR Art. 7 / PDPD. Still open: a frontend preference center.
 4. **Email unsubscribe / preference center.** Email-sending paths (`email_templates`,
    `flows`) have no opt-out link or suppression check. Required by CAN-SPAM.
 5. **General data retention.** Only audit/login data auto-purges; other PII tables

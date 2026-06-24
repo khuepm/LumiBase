@@ -43,7 +43,8 @@ DECLARE
     'settings', 'webhooks', 'extensions',
     'email_layouts', 'email_templates',
     'roles', 'policies', 'user_policies',
-    'permissions', 'audit_log'
+    'permissions', 'audit_log',
+    'user_consents'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

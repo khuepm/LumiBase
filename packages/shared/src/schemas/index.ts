@@ -12,6 +12,15 @@ export {
 } from './cdc';
 
 export {
+  CONSENT_TYPES,
+  ConsentTypeSchema,
+  ConsentSetSchema,
+  type ConsentType,
+  type ConsentSetInput,
+  type ConsentRecord,
+} from './consent';
+
+export {
   ExtensionTypeSchema,
   ExtensionConfigOptionSchema,
   ExtensionAuthorSchema,

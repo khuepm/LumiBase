@@ -36,15 +36,21 @@
 - **Touch points:** new service mirroring the streaming pattern in
   `apps/cms/src/modules/audit/routes.ts` and `apps/cms/src/services/access-export.ts`.
 
-### P0.3 Consent management
+### P0.3 Consent management — ✅ Done (v0.8.x)
 - **Why:** GDPR Art. 7, PDPD.
 - **What:** A `user_consents` table — `id` (nanoid), `site_id`, `user_id`,
-  `consent_type` (marketing, analytics, personalization, …), `granted` (bool),
+  `consent_type` (marketing, analytics, personalization, functional), `granted` (bool),
   `granted_at`, `withdrawn_at`, `source`/`version`. API to read/update; audit every
-  change. Do **not** overload the free-form `users.preferences` JSONB
-  (`core.ts:62`) for legally significant consent.
-- **Touch points:** new schema file under `packages/database/src/schema/`, new route
-  + service, audit logging.
+  change. Consent is **not** stored in the free-form `users.preferences` JSONB.
+- **Delivered:**
+  - Schema `packages/database/src/schema/consent.ts` (+ migration
+    `drizzle/0031_user_consents.sql`, RLS in `migrations/rls-policies.sql`).
+  - DTOs `packages/shared/src/schemas/consent.ts` (`CONSENT_TYPES`, `ConsentSetSchema`).
+  - `ConsentService` (`apps/cms/src/modules/consent/service.ts`) — upsert on the
+    `(site,user,type)` unique index.
+  - Routes `apps/cms/src/routes/consent.ts` — `GET /api/v1/me/consents`,
+    `PUT /api/v1/me/consents/:type`; audits `consent_granted`/`consent_withdrawn`.
+- **Follow-up:** a Studio/frontend preference center; reuse this store for P0.4 and P1.1.
 
 ### P0.4 Email unsubscribe + suppression
 - **Why:** CAN-SPAM (mandatory), ePrivacy.

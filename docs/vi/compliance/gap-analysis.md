@@ -18,8 +18,8 @@
 | Chỉnh sửa (rectification) | ✅ | `apps/cms/src/routes/users.ts` (cập nhật user); sửa hồ sơ | Không cần cho hồ sơ; đảm bảo mọi trường PII người dùng sửa được. |
 | Hạn chế xử lý | ❌ | — | Cờ trạng thái "restricted"/"đóng băng" và thực thi. |
 | Phản đối / opt-out (bán/chia sẻ) | ❌ | — | Lưu cờ opt-out + xử lý "Do Not Sell or Share"; tôn trọng tín hiệu tuỳ chọn. |
-| Đồng ý + rút lại | ❌ | `users.preferences` JSONB có (`core.ts:62`) nhưng không có ngữ nghĩa đồng ý | Bảng `user_consents` (loại, giá trị, timestamp, withdrawn_at) + API + audit. |
-| Đồng ý cookie / theo dõi | ❌ | — | Ghi nhận đồng ý cho cookie/theo dõi không thiết yếu (chủ yếu frontend + bản ghi backend). |
+| Đồng ý + rút lại | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Mở rộng cho opt-out bán/chia sẻ (P1.1); thêm UI preference center. |
+| Đồng ý cookie / theo dõi | ⚠️ | Đã có store backend (`user_consents`, loại `analytics`/`functional`); chưa có thu thập ở frontend | Banner đồng ý + thu thập cho cookie/theo dõi không thiết yếu, ghi qua `/me/consents`. |
 | Huỷ đăng ký email | ❌ | `email_templates`, `flows` gửi mail được; chưa có suppression | Liên kết unsubscribe, trung tâm tuỳ chọn, danh sách chặn kiểm tra trước khi gửi. |
 | Xoá tài khoản (in-app/web) | ❌ | — | Endpoint xoá tự phục vụ (phục vụ Apple 5.1.1(v) / yêu cầu URL web của Google). |
 | Minh bạch / thông báo quyền riêng tư | ⚠️ | Trang privacy tại `apps/landing/src/app/privacy/page.tsx` (chung chung) | Bản đồ dữ liệu để khai báo "data safety"/nhãn chính xác; thông báo theo từng triển khai. |
@@ -55,9 +55,12 @@ Các nguyên thuỷ này là thật và tái sử dụng được khi xây tính
 2. **Xuất dữ liệu cá nhân ("download my data").** Chưa có endpoint gom dữ liệu chính
    người dùng thành file di chuyển được. Bắt buộc bởi GDPR Điều 20; cần cho yêu cầu
    truy cập.
-3. **Quản lý đồng ý.** `users.preferences` (`core.ts:62`) là blob JSONB tự do, không
-   có ngữ nghĩa đồng ý, không log rút lại, không audit. Cần cho GDPR Điều 7 và đồng ý
-   PDPD.
+3. **Quản lý đồng ý.** ✅ *Đã triển khai (v0.8.x).* Bảng `user_consents`
+   (`packages/database/src/schema/consent.ts`) lưu quyết định hiện tại theo
+   `(site_id, user_id, type)` kèm mốc thời gian grant/withdraw; `ConsentService` +
+   `GET`/`PUT /api/v1/me/consents` cho phép tự quản lý; mọi thay đổi đều được audit
+   (`consent_granted`/`consent_withdrawn`). Thoả nguyên thuỷ storage + API + audit cho
+   GDPR Điều 7 / PDPD. Còn lại: preference center ở frontend.
 4. **Huỷ đăng ký email / trung tâm tuỳ chọn.** Đường gửi email (`email_templates`,
    `flows`) không có liên kết opt-out hay kiểm tra suppression. Bắt buộc bởi CAN-SPAM.
 5. **Retention dữ liệu tổng quát.** Chỉ dữ liệu audit/login tự động dọn; các bảng PII

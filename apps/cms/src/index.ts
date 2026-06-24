@@ -23,6 +23,7 @@ import { authRouter, meRouter } from './routes/auth';
 import { adminSecurityRouter } from './routes/admin-security';
 import { apiKeysRouter } from './routes/api-keys';
 import { collectionsRouter } from './routes/collections';
+import { consentRouter } from './routes/consent';
 import { deliverRouter } from './routes/deliver';
 import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
@@ -166,6 +167,10 @@ api.route('/auth', authRouter);
 // Mounted on the authenticated `api` Hono so `withAuth` already enforces
 // that the caller has a valid session before the handler runs.
 api.route('/me', meRouter);
+// `/me/consents` — self-service consent management (GDPR Art. 7, PDPD).
+// Separate router from `meRouter`; mounted under the same authenticated `api`
+// chain so the caller can only read/write their own consent.
+api.route('/me/consents', consentRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/items', itemsRouter);
