@@ -1,4 +1,4 @@
-import { Link, useRouterState } from '@tanstack/react-router';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   Database,
   FileText,
@@ -12,14 +12,19 @@ import {
   Radar,
   BarChart3,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/cn';
 import { NotificationsPanel } from '@/components/notifications-panel';
 import { ReleaseUpdateNotice } from '@/components/release-update-notice';
-import { clearActiveToken } from '@/lib/api';
+import { CommandPalette } from '@/components/command-palette';
+import { clearActiveToken, getApiClient, hasActiveToken } from '@/lib/api';
 import { VersionInfoFooter } from '@/components/version-info-footer';
 import { getAdminBase } from '@/lib/admin-base';
 import { useInboxData } from '@/modules/mission-control/use-inbox';
+import { useGlobalShortcuts } from '@/lib/keybindings/use-keybindings';
+import { useKeybindingsStore } from '@/lib/keybindings/store';
+import { withAdminBase } from '@/lib/keybindings/commands';
 
 interface ModuleDef {
   id: string;
@@ -78,7 +83,53 @@ interface AppShellProps {
  */
 export function AppShell({ children }: AppShellProps) {
   const { location } = useRouterState();
+  const navigate = useNavigate();
   const adminBase = getAdminBase(location.pathname);
+
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const resolvedKeymap = useKeybindingsStore((s) => s.resolvedKeymap);
+  const runSave = useKeybindingsStore((s) => s.runSave);
+  const setOverrides = useKeybindingsStore((s) => s.setOverrides);
+  const setLoaded = useKeybindingsStore((s) => s.setLoaded);
+
+  // Load the user's stored keybindings once, then merge over defaults. The
+  // dispatcher reads `resolvedKeymap` from the store, so it picks these up.
+  const prefsQuery = useQuery({
+    queryKey: ['me', 'preferences'],
+    queryFn: () => getApiClient().me.getPreferences(),
+    enabled: hasActiveToken(),
+    staleTime: 5 * 60_000,
+  });
+  useEffect(() => {
+    if (!prefsQuery.data) return;
+    const keybindings = (prefsQuery.data.data?.keybindings ?? {}) as Record<string, string>;
+    setOverrides(keybindings);
+    setLoaded(true);
+  }, [prefsQuery.data, setOverrides, setLoaded]);
+
+  const onAction = useCallback(
+    (actionId: string) => {
+      switch (actionId) {
+        case 'editor.save':
+          runSave();
+          break;
+        case 'palette.open':
+        case 'palette.openAlt':
+          setPaletteOpen((o) => !o);
+          break;
+        case 'nav.settings':
+          navigate({ to: withAdminBase(adminBase, '/settings') as never });
+          break;
+        case 'help.shortcuts':
+          navigate({ to: withAdminBase(adminBase, '/settings/keyboard') as never });
+          break;
+      }
+    },
+    [navigate, adminBase, runSave],
+  );
+
+  useGlobalShortcuts(resolvedKeymap, onAction);
   const appPath = adminBase && location.pathname.startsWith(adminBase)
     ? location.pathname.slice(adminBase.length) || '/'
     : location.pathname;
@@ -184,6 +235,12 @@ export function AppShell({ children }: AppShellProps) {
         </main>
         <VersionInfoFooter />
       </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        adminBase={adminBase}
+      />
     </div>
   );
 }

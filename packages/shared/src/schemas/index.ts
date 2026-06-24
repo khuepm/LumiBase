@@ -40,6 +40,18 @@ export {
   type ThemeOverrides,
 } from './site-config';
 
+export {
+  CHORD_MODIFIERS,
+  ChordSchema,
+  KeybindingMapSchema,
+  UserPreferencesSchema,
+  UserPreferencesUpdateSchema,
+  type ChordModifier,
+  type KeybindingMap,
+  type UserPreferences,
+  type UserPreferencesUpdate,
+} from './user-preferences';
+
 export { TM_DEFAULT_THRESHOLD } from './translation';
 
 export { diffFields, type Change, type ChangeState } from './diff';
