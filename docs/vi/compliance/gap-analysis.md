@@ -16,7 +16,7 @@
 | Truy cập / quyền được biết | ✅ | `apps/cms/src/modules/data-rights/export-service.ts`; `GET /api/v1/me/data-export` (hồ sơ, consents, hoạt động, revisions tự viết, thông báo) | Mở rộng khi thêm bảng chứa PII mới. |
 | Di chuyển dữ liệu (portability) | ✅ | `apps/cms/src/routes/data-export.ts` — JSON có cấu trúc của dữ liệu chính người dùng, kèm header tải `Content-Disposition` | Bổ sung biến thể CSV nếu cần; tái dùng cho preview erasure. |
 | Chỉnh sửa (rectification) | ✅ | `apps/cms/src/routes/users.ts` (cập nhật user); sửa hồ sơ | Không cần cho hồ sơ; đảm bảo mọi trường PII người dùng sửa được. |
-| Hạn chế xử lý | ❌ | — | Cờ trạng thái "restricted"/"đóng băng" và thực thi. |
+| Hạn chế xử lý | ✅ | `apps/cms/src/modules/data-rights/restriction-service.ts`; bảng `processing_restrictions`; tự phục vụ `GET`/`PUT /api/v1/me/restriction`; helper `isRestricted` cho service | Gắn `isRestricted` vào agent run + marketing làm điểm thực thi. |
 | Phản đối / opt-out (bán/chia sẻ) | ✅ | Loại consent `sale_share` qua `PUT /api/v1/me/consents/sale_share` (`packages/shared/src/schemas/consent.ts`) | Gắn link "Do Not Sell or Share" + tín hiệu Global Privacy Control ở frontend. |
 | Đồng ý + rút lại | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Thêm UI preference center. |
 | Đồng ý cookie / theo dõi | ⚠️ | Đã có store backend (`user_consents`, loại `analytics`/`functional`); chưa có thu thập ở frontend | Banner đồng ý + thu thập cho cookie/theo dõi không thiết yếu, ghi qua `/me/consents`. |

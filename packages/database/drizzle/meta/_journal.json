@@ -239,6 +239,13 @@
       "when": 1781773320006,
       "tag": "0033_erasure_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1781773320007,
+      "tag": "0034_processing_restrictions",
+      "breakpoints": true
     }
   ]
 }

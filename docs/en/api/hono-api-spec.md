@@ -101,6 +101,8 @@ Error response:
 | `GET` | `/api/v1/me/erasure` | Current erasure-request status |
 | `POST` | `/api/v1/me/erasure` | Request account erasure (GDPR Art. 17); opens a grace period |
 | `DELETE` | `/api/v1/me/erasure` | Cancel a pending erasure request |
+| `GET` | `/api/v1/me/restriction` | Current restriction-of-processing state (GDPR Art. 18) |
+| `PUT` | `/api/v1/me/restriction` | Set restriction of processing (`{ restricted, reason? }`) |
 | `POST` | `/api/v1/erasure/:userId` | Admin: force-erase a user now |
 | `POST` | `/api/v1/erasure/process-due` | Admin: anonymize all requests past their grace period |
 | `GET` | `/api/v1/retention` | Admin: report configured retention horizons |

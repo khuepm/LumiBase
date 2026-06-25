@@ -1,4 +1,4 @@
-import { index, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, index, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 import { sites, users } from './core';
 
@@ -11,6 +11,9 @@ import { sites, users } from './core';
  * - `erasure_requests` — right-to-be-forgotten (GDPR Art. 17) tracking. A
  *   pending request records the grace-period deadline; a background processor
  *   anonymizes the account when `scheduled_at` passes.
+ * - `processing_restrictions` — restriction of processing (GDPR Art. 18). When
+ *   a user is restricted, services must stop processing their data beyond mere
+ *   storage (e.g. no marketing, agents skip their content).
  */
 
 const id = () => text('id').$defaultFn(() => nanoid()).primaryKey();
@@ -69,5 +72,28 @@ export const erasureRequests = pgTable(
     userUnique: uniqueIndex('erasure_requests_site_user_unique').on(t.siteId, t.userId),
     siteStatusIdx: index('erasure_requests_site_status_idx').on(t.siteId, t.status),
     scheduledIdx: index('erasure_requests_scheduled_idx').on(t.status, t.scheduledAt),
+  }),
+);
+
+export const processingRestrictions = pgTable(
+  'processing_restrictions',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Whether processing is currently restricted for this user. */
+    restricted: boolean('restricted').default(false).notNull(),
+    /** Free-form reason supplied with the request. */
+    reason: text('reason'),
+    updatedAt: updatedAt(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    userUnique: uniqueIndex('processing_restrictions_site_user_unique').on(t.siteId, t.userId),
+    siteIdx: index('processing_restrictions_site_idx').on(t.siteId),
   }),
 );

@@ -100,8 +100,10 @@
 
 ## P2 — Mức trưởng thành / nên có
 
-- **P2.1 Trạng thái hạn chế xử lý** — ⬜ Chưa làm. Sẽ thêm cờ "restricted" được service
-  tôn trọng.
+- **P2.1 Trạng thái hạn chế xử lý** — ✅ Đã làm (v0.8.x). Bảng `processing_restrictions`
+  + `RestrictionService` + tự phục vụ `GET`/`PUT /api/v1/me/restriction`; audit
+  `processing_restricted`/`processing_unrestricted`. Helper `isRestricted` là hook thực
+  thi cho service (agent run, marketing); gắn các call site đó là bước tích hợp còn lại.
 - **P2.2 Lối con người xem xét cho hành động agent** — ⬜ Chưa làm. Provenance đã có
   (`revisions.authorType/model/sources`) + HITL `ai_approvals`; hiển thị cho người dùng
   bị ảnh hưởng (GDPR Điều 22) là việc tương lai.

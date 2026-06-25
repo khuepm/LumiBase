@@ -16,7 +16,7 @@
 | Access / right to know | ✅ | `apps/cms/src/modules/data-rights/export-service.ts`; `GET /api/v1/me/data-export` (profile, consents, activity, revisions authored, notifications) | Extend coverage as new PII-bearing tables are added. |
 | Data portability | ✅ | `apps/cms/src/routes/data-export.ts` — structured JSON of the user's own data, with `Content-Disposition` download header | Offer a CSV variant if required; reuse for the erasure preview. |
 | Rectification | ✅ | `apps/cms/src/routes/users.ts` (user update); profile editing | None for profile; ensure all PII fields are user-editable. |
-| Restriction of processing | ❌ | — | A "frozen"/"restricted" state flag and enforcement. |
+| Restriction of processing | ✅ | `apps/cms/src/modules/data-rights/restriction-service.ts`; `processing_restrictions` table; self-service `GET`/`PUT /api/v1/me/restriction`; `isRestricted` helper for services | Wire `isRestricted` into agent runs + marketing as enforcement points. |
 | Objection / opt-out (sale/share) | ✅ | `sale_share` consent type via `PUT /api/v1/me/consents/sale_share` (`packages/shared/src/schemas/consent.ts`) | Wire a "Do Not Sell or Share" link + Global Privacy Control signal in the frontend. |
 | Consent + withdrawal | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Add preference-center UI. |
 | Cookie / tracking consent | ⚠️ | Backend record store exists (`user_consents`, type `analytics`/`functional`); no frontend capture | Frontend consent banner + capture for non-essential cookies/tracking, recorded via `/me/consents`. |

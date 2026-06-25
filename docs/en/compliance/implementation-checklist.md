@@ -102,8 +102,11 @@
 
 ## P2 — Maturity / nice-to-have
 
-- **P2.1 Restriction-of-processing state** — ⬜ Not implemented. Would add a
-  "restricted" flag honored by services.
+- **P2.1 Restriction-of-processing state** — ✅ Done (v0.8.x). `processing_restrictions`
+  table + `RestrictionService` + self-service `GET`/`PUT /api/v1/me/restriction`; audits
+  `processing_restricted`/`processing_unrestricted`. The `isRestricted` helper is the
+  enforcement hook for services (agent runs, marketing); wiring those call sites is the
+  remaining integration step.
 - **P2.2 Human-review path for agent actions** — ⬜ Not implemented. Provenance
   exists (`revisions.authorType/model/sources`) + HITL `ai_approvals`; surfacing it to
   affected users (GDPR Art. 22) is future work.
