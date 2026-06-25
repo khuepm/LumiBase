@@ -24,7 +24,7 @@ Each task is one or more commits.
 
 ## Deferred (out of scope for this backend pass — tracked, not done)
 
-- [ ] **T6 — SDK auto-refresh.** `@lumibase/sdk` should call `/auth/refresh`
+- [x] **T6 — SDK auto-refresh.** `@lumibase/sdk` should call `/auth/refresh`
   on a 401 and retry. Cross-package; needs SDK API design.
 - [ ] **T7 — Studio/frontend wiring.** Store tokens, refresh before expiry,
   logout button (`apps/studio`). UI work, not unit-verifiable here.
