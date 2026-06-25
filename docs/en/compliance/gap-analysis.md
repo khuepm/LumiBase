@@ -20,7 +20,7 @@
 | Objection / opt-out (sale/share) | ✅ | `sale_share` consent type via `PUT /api/v1/me/consents/sale_share` (`packages/shared/src/schemas/consent.ts`) | Wire a "Do Not Sell or Share" link + Global Privacy Control signal in the frontend. |
 | Consent + withdrawal | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Add preference-center UI. |
 | Cookie / tracking consent | ⚠️ | Backend record store exists (`user_consents`, type `analytics`/`functional`); no frontend capture | Frontend consent banner + capture for non-essential cookies/tracking, recorded via `/me/consents`. |
-| Email unsubscribe | ❌ | `email_templates`, `flows` can send mail; no suppression | Unsubscribe link, preference center, suppression list checked before sending. |
+| Email unsubscribe | ✅ | `packages/database/src/schema/compliance.ts` (`email_suppressions`); `apps/cms/src/modules/email/suppression.ts`; public `GET`/`POST /api/v1/email/unsubscribe`; send path filters marketing recipients | Add the `List-Unsubscribe` SMTP header (RFC 8058) once `OutboundEmail` supports custom headers. |
 | Account deletion (in-app/web) | ❌ | — | Self-service deletion endpoint (powers Apple 5.1.1(v) / Google web-URL requirement). |
 | Transparency / privacy notice | ⚠️ | Privacy page at `apps/landing/src/app/privacy/page.tsx` (generic) | Data map to back accurate store "data safety"/labels; per-deployment notice. |
 | Breach notification | ⚠️ | `apps/cms/src/modules/audit/` provides detection trail; `modules/anomaly` | Incident-response runbook + 72h regulator notification process (organizational). |
@@ -60,8 +60,12 @@ These primitives are real and reusable when building compliance features:
    `GET`/`PUT /api/v1/me/consents` expose self-service management; every change is
    audited (`consent_granted`/`consent_withdrawn`). Satisfies the storage + API +
    audit primitive for GDPR Art. 7 / PDPD. Still open: a frontend preference center.
-4. **Email unsubscribe / preference center.** Email-sending paths (`email_templates`,
-   `flows`) have no opt-out link or suppression check. Required by CAN-SPAM.
+4. **Email unsubscribe / preference center.** ✅ *Implemented (v0.8.x).* A site-scoped
+   `email_suppressions` list (`packages/database/src/schema/compliance.ts`), a public
+   one-click unsubscribe endpoint (`GET`/`POST /api/v1/email/unsubscribe`) backed by a
+   signed stateless token, and a send-path filter that strips suppressed recipients
+   from `marketing` sends (`apps/cms/src/modules/email/suppression.ts`). Satisfies the
+   CAN-SPAM mechanism; the `List-Unsubscribe` header remains a follow-up.
 5. **General data retention.** Only audit/login data auto-purges; other PII tables
    have no retention policy.
 

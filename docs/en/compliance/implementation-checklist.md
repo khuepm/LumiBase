@@ -52,13 +52,21 @@
     `PUT /api/v1/me/consents/:type`; audits `consent_granted`/`consent_withdrawn`.
 - **Follow-up:** a Studio/frontend preference center; reuse this store for P0.4 and P1.1.
 
-### P0.4 Email unsubscribe + suppression
+### P0.4 Email unsubscribe + suppression — ✅ Done (v0.8.x)
 - **Why:** CAN-SPAM (mandatory), ePrivacy.
-- **What:** Unsubscribe link/token in every commercial email; a suppression list
-  checked before any send; honor opt-out promptly; include sender identity +
-  physical address in templates.
-- **Touch points:** `email_templates`/`email_layouts`, the `flows` send path, and
-  the new `user_consents`/suppression store.
+- **Delivered:**
+  - `email_suppressions` table (`packages/database/src/schema/compliance.ts`) +
+    migration `0032_email_suppressions.sql` + RLS.
+  - `SuppressionService` (`apps/cms/src/modules/email/suppression.ts`) with
+    `isSuppressed`/`filter`/`suppress`/`unsuppress`/`list` and stateless signed
+    unsubscribe tokens (`createUnsubscribeToken`/`verifyUnsubscribeToken`).
+  - Public one-click endpoint `GET`/`POST /api/v1/email/unsubscribe`
+    (`apps/cms/src/routes/email-public.ts`); audits `email_unsubscribed`.
+  - Admin management `GET`/`POST`/`DELETE /api/v1/email/suppressions`.
+  - Send path: `EmailModuleService.send({ category: 'marketing' })` filters
+    suppressed recipients before dispatch.
+- **Follow-up:** add the `List-Unsubscribe` SMTP header (needs `OutboundEmail` to
+  carry custom headers); include sender postal address in marketing templates.
 
 ## P1 — Strongly recommended
 

@@ -20,7 +20,7 @@
 | Phản đối / opt-out (bán/chia sẻ) | ✅ | Loại consent `sale_share` qua `PUT /api/v1/me/consents/sale_share` (`packages/shared/src/schemas/consent.ts`) | Gắn link "Do Not Sell or Share" + tín hiệu Global Privacy Control ở frontend. |
 | Đồng ý + rút lại | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Thêm UI preference center. |
 | Đồng ý cookie / theo dõi | ⚠️ | Đã có store backend (`user_consents`, loại `analytics`/`functional`); chưa có thu thập ở frontend | Banner đồng ý + thu thập cho cookie/theo dõi không thiết yếu, ghi qua `/me/consents`. |
-| Huỷ đăng ký email | ❌ | `email_templates`, `flows` gửi mail được; chưa có suppression | Liên kết unsubscribe, trung tâm tuỳ chọn, danh sách chặn kiểm tra trước khi gửi. |
+| Huỷ đăng ký email | ✅ | `packages/database/src/schema/compliance.ts` (`email_suppressions`); `apps/cms/src/modules/email/suppression.ts`; public `GET`/`POST /api/v1/email/unsubscribe`; send path lọc người nhận marketing | Thêm header SMTP `List-Unsubscribe` (RFC 8058) khi `OutboundEmail` hỗ trợ custom header. |
 | Xoá tài khoản (in-app/web) | ❌ | — | Endpoint xoá tự phục vụ (phục vụ Apple 5.1.1(v) / yêu cầu URL web của Google). |
 | Minh bạch / thông báo quyền riêng tư | ⚠️ | Trang privacy tại `apps/landing/src/app/privacy/page.tsx` (chung chung) | Bản đồ dữ liệu để khai báo "data safety"/nhãn chính xác; thông báo theo từng triển khai. |
 | Thông báo vi phạm | ⚠️ | `apps/cms/src/modules/audit/` cung cấp dấu vết phát hiện; `modules/anomaly` | Quy trình ứng phó sự cố + thông báo cơ quan trong 72h (mức tổ chức). |
@@ -61,8 +61,12 @@ Các nguyên thuỷ này là thật và tái sử dụng được khi xây tính
    `GET`/`PUT /api/v1/me/consents` cho phép tự quản lý; mọi thay đổi đều được audit
    (`consent_granted`/`consent_withdrawn`). Thoả nguyên thuỷ storage + API + audit cho
    GDPR Điều 7 / PDPD. Còn lại: preference center ở frontend.
-4. **Huỷ đăng ký email / trung tâm tuỳ chọn.** Đường gửi email (`email_templates`,
-   `flows`) không có liên kết opt-out hay kiểm tra suppression. Bắt buộc bởi CAN-SPAM.
+4. **Huỷ đăng ký email / trung tâm tuỳ chọn.** ✅ *Đã triển khai (v0.8.x).* Danh sách
+   `email_suppressions` per-site (`packages/database/src/schema/compliance.ts`), endpoint
+   one-click công khai (`GET`/`POST /api/v1/email/unsubscribe`) dùng token ký không trạng
+   thái, và bộ lọc ở send path loại bỏ người nhận đã opt-out cho email `marketing`
+   (`apps/cms/src/modules/email/suppression.ts`). Thoả cơ chế CAN-SPAM; header
+   `List-Unsubscribe` còn là follow-up.
 5. **Retention dữ liệu tổng quát.** Chỉ dữ liệu audit/login tự động dọn; các bảng PII
    khác chưa có chính sách retention.
 

@@ -44,7 +44,7 @@ DECLARE
     'email_layouts', 'email_templates',
     'roles', 'policies', 'user_policies',
     'permissions', 'audit_log',
-    'user_consents'
+    'user_consents', 'email_suppressions'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

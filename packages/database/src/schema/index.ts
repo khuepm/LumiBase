@@ -6,6 +6,7 @@
 export * from './core';
 export * from './access';
 export * from './consent';
+export * from './compliance';
 export * from './cms';
 export * from './platform';
 export * from './ai';

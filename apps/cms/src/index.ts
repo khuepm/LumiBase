@@ -24,6 +24,7 @@ import { adminSecurityRouter } from './routes/admin-security';
 import { apiKeysRouter } from './routes/api-keys';
 import { collectionsRouter } from './routes/collections';
 import { consentRouter } from './routes/consent';
+import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
 import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
@@ -255,6 +256,13 @@ api.route('/firebase-sync', lumibaseFirebaseSyncRouter);
 // Share links are public. The opaque token resolves the site and share role.
 app.use('/api/v1/shares/*', withDb());
 app.route('/api/v1/shares', sharePublicRouter);
+
+// Email unsubscribe is public (CAN-SPAM one-click). The signed token resolves
+// the site, so no session/tenant header is required. Registered before the
+// authenticated `api` mount so `/email/unsubscribe` wins; all other `/email/*`
+// paths fall through to the authenticated `emailRouter`.
+app.use('/api/v1/email/unsubscribe', withDb());
+app.route('/api/v1/email', emailPublicRouter);
 
 app.route('/api/v1', api);
 

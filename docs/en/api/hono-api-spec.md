@@ -115,6 +115,21 @@ Each change writes a `consent_granted` / `consent_withdrawn` audit event. Only u
 principals (not API keys) can manage consent. Current state is stored per
 `(site_id, user_id, consent_type)` in `user_consents`; full history lives in the audit log.
 
+**Email unsubscribe & suppression** (CAN-SPAM):
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/email/unsubscribe?token=…` | public | One-click unsubscribe (renders HTML confirmation) |
+| `POST` | `/api/v1/email/unsubscribe` | public | RFC 8058 one-click (token in query or form body) |
+| `GET` | `/api/v1/email/suppressions` | admin | List suppressed addresses |
+| `POST` | `/api/v1/email/suppressions` | admin | Add an address (`{ email, reason? }`) |
+| `DELETE` | `/api/v1/email/suppressions/:email` | admin | Remove an address (re-subscribe) |
+
+The unsubscribe token is a stateless HS256 JWT (`{ siteId, email }`, no expiry) signed
+with `JWT_SECRET`. Marketing sends (`EmailModuleService.send({ category: 'marketing' })`)
+filter recipients against `email_suppressions` before dispatch. Unsubscribe/suppression
+changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
+
 **Login request:**
 ```json
 {

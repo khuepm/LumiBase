@@ -52,13 +52,21 @@
     `PUT /api/v1/me/consents/:type`; audit `consent_granted`/`consent_withdrawn`.
 - **Tiếp theo:** preference center ở Studio/frontend; tái dùng store này cho P0.4 và P1.1.
 
-### P0.4 Huỷ đăng ký email + suppression
+### P0.4 Huỷ đăng ký email + suppression — ✅ Đã làm (v0.8.x)
 - **Vì sao:** CAN-SPAM (bắt buộc), ePrivacy.
-- **Làm gì:** Liên kết/token unsubscribe trong mọi email thương mại; danh sách
-  suppression kiểm tra trước mỗi lần gửi; xử lý opt-out kịp thời; gồm danh tính người
-  gửi + địa chỉ bưu chính trong template.
-- **Điểm chạm:** `email_templates`/`email_layouts`, đường gửi của `flows`, và kho
-  `user_consents`/suppression mới.
+- **Đã giao:**
+  - Bảng `email_suppressions` (`packages/database/src/schema/compliance.ts`) +
+    migration `0032_email_suppressions.sql` + RLS.
+  - `SuppressionService` (`apps/cms/src/modules/email/suppression.ts`):
+    `isSuppressed`/`filter`/`suppress`/`unsuppress`/`list` + token unsubscribe ký
+    không trạng thái (`createUnsubscribeToken`/`verifyUnsubscribeToken`).
+  - Endpoint one-click công khai `GET`/`POST /api/v1/email/unsubscribe`
+    (`apps/cms/src/routes/email-public.ts`); audit `email_unsubscribed`.
+  - Quản trị `GET`/`POST`/`DELETE /api/v1/email/suppressions`.
+  - Send path: `EmailModuleService.send({ category: 'marketing' })` lọc người nhận
+    đã opt-out trước khi gửi.
+- **Tiếp theo:** thêm header SMTP `List-Unsubscribe` (cần `OutboundEmail` mang custom
+  header); gồm địa chỉ bưu chính người gửi trong template marketing.
 
 ## P1 — Nên làm sớm
 

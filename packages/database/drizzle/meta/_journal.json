@@ -225,6 +225,13 @@
       "when": 1781773320004,
       "tag": "0031_user_consents",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1781773320005,
+      "tag": "0032_email_suppressions",
+      "breakpoints": true
     }
   ]
 }
