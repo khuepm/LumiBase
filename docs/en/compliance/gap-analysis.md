@@ -27,7 +27,7 @@
 | Cross-border transfer / localization | ⚠️ | Edge runtime; `apps/cms/src/middleware/rls.ts` isolates tenants | Region-pinning / data-residency configuration + documentation. |
 | Automated decisions / human review | ⚠️ | Provenance in `revisions` (authorType, model, sources, confidence); HITL via `ai_approvals` | Surface human-review path for user-affecting agent actions. |
 | Security measures (encryption/access) | ✅ | `apps/cms/src/services/crypto-service.ts` (AES-256-GCM); `fields.encrypted` (`cms.ts:124`); `middleware/rls.ts`; RBAC `schema/access.ts` | Maintain; document key management. |
-| Retention / auto-purge | ⚠️ | `apps/cms/src/modules/audit/rotator.ts` (`LUMIBASE_AUDIT_RETENTION_DAYS`, default 90) — **audit only** | General retention policies for PII-bearing tables (users, items, conversations). |
+| Retention / auto-purge | ✅ | Audit: `apps/cms/src/modules/audit/rotator.ts`; general: `apps/cms/src/modules/data-rights/retention-service.ts` (activity + read/archived notifications) via `POST /api/v1/retention/run` | Extend horizons to more PII tables; schedule on the rotation cron. |
 
 ## 2. What LumiBase already does well
 
@@ -72,8 +72,11 @@ These primitives are real and reusable when building compliance features:
    signed stateless token, and a send-path filter that strips suppressed recipients
    from `marketing` sends (`apps/cms/src/modules/email/suppression.ts`). Satisfies the
    CAN-SPAM mechanism; the `List-Unsubscribe` header remains a follow-up.
-5. **General data retention.** Only audit/login data auto-purges; other PII tables
-   have no retention policy.
+5. **General data retention.** ✅ *Implemented (v0.8.x).* `RetentionService`
+   (`apps/cms/src/modules/data-rights/retention-service.ts`) prunes the `activity` log
+   and handled `notifications` past operator-configured horizons
+   (`LUMIBASE_ACTIVITY_RETENTION_DAYS` / `LUMIBASE_NOTIFICATION_RETENTION_DAYS`,
+   `0`/unset = disabled), exposed via `POST /api/v1/retention/run`.
 
 ## 4. Notes on roles
 

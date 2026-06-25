@@ -103,6 +103,8 @@ Error response:
 | `DELETE` | `/api/v1/me/erasure` | Cancel a pending erasure request |
 | `POST` | `/api/v1/erasure/:userId` | Admin: force-erase a user now |
 | `POST` | `/api/v1/erasure/process-due` | Admin: anonymize all requests past their grace period |
+| `GET` | `/api/v1/retention` | Admin: report configured retention horizons |
+| `POST` | `/api/v1/retention/run` | Admin: prune `activity` + handled `notifications` past their horizons |
 
 **Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 

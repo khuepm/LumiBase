@@ -27,7 +27,7 @@
 | Chuyển dữ liệu xuyên biên giới / nội địa hoá | ⚠️ | Runtime edge; `apps/cms/src/middleware/rls.ts` cô lập tenant | Cấu hình ghim vùng / data-residency + tài liệu. |
 | Quyết định tự động / con người xem xét | ⚠️ | Provenance trong `revisions` (authorType, model, sources, confidence); HITL qua `ai_approvals` | Hiển thị lối con người xem xét cho hành động agent ảnh hưởng người dùng. |
 | Biện pháp an ninh (mã hoá/truy cập) | ✅ | `apps/cms/src/services/crypto-service.ts` (AES-256-GCM); `fields.encrypted` (`cms.ts:124`); `middleware/rls.ts`; RBAC `schema/access.ts` | Duy trì; tài liệu hoá quản lý khoá. |
-| Retention / tự động dọn | ⚠️ | `apps/cms/src/modules/audit/rotator.ts` (`LUMIBASE_AUDIT_RETENTION_DAYS`, mặc định 90) — **chỉ audit** | Chính sách retention tổng quát cho bảng chứa PII (users, items, conversations). |
+| Retention / tự động dọn | ✅ | Audit: `apps/cms/src/modules/audit/rotator.ts`; tổng quát: `apps/cms/src/modules/data-rights/retention-service.ts` (activity + notifications đã đọc/lưu) qua `POST /api/v1/retention/run` | Mở rộng mốc cho nhiều bảng PII; lên lịch trên cron rotation. |
 
 ## 2. Những điều LumiBase đã làm tốt
 
@@ -71,8 +71,11 @@ Các nguyên thuỷ này là thật và tái sử dụng được khi xây tính
    thái, và bộ lọc ở send path loại bỏ người nhận đã opt-out cho email `marketing`
    (`apps/cms/src/modules/email/suppression.ts`). Thoả cơ chế CAN-SPAM; header
    `List-Unsubscribe` còn là follow-up.
-5. **Retention dữ liệu tổng quát.** Chỉ dữ liệu audit/login tự động dọn; các bảng PII
-   khác chưa có chính sách retention.
+5. **Retention dữ liệu tổng quát.** ✅ *Đã triển khai (v0.8.x).* `RetentionService`
+   (`apps/cms/src/modules/data-rights/retention-service.ts`) dọn log `activity` và
+   `notifications` đã xử lý quá mốc do operator cấu hình
+   (`LUMIBASE_ACTIVITY_RETENTION_DAYS` / `LUMIBASE_NOTIFICATION_RETENTION_DAYS`,
+   `0`/không đặt = tắt), qua `POST /api/v1/retention/run`.
 
 ## 4. Ghi chú về vai trò
 

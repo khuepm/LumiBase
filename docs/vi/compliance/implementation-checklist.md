@@ -79,10 +79,14 @@
 - **Tiếp theo:** hiển thị link "Do Not Sell or Share" bắt buộc và tôn trọng tín hiệu
   Global Privacy Control của trình duyệt ở frontend.
 
-### P1.2 Chính sách retention dữ liệu tổng quát
-- Mở rộng khái niệm retention của `rotator.ts` (`LUMIBASE_AUDIT_RETENTION_DAYS`) sang
-  các bảng chứa PII khác (item cũ, hội thoại AI cũ) với mốc cấu hình được và lịch trình
-  tài liệu hoá.
+### P1.2 Chính sách retention dữ liệu tổng quát — ✅ Đã làm (v0.8.x)
+- **Đã giao:** `RetentionService` (`apps/cms/src/modules/data-rights/retention-service.ts`)
+  dọn log `activity` và `notifications` đã đọc/lưu quá mốc do operator cấu hình
+  (`LUMIBASE_ACTIVITY_RETENTION_DAYS` / `LUMIBASE_NOTIFICATION_RETENTION_DAYS`;
+  `0`/không đặt = tắt). Trigger admin `GET`/`POST /api/v1/retention/run`
+  (`apps/cms/src/routes/retention.ts`); audit `retention_pruned`.
+- **Tiếp theo:** mở rộng mốc cho nhiều bảng PII (hội thoại AI); lên lịch trên cron
+  rotation sẵn có thay vì trigger thủ công.
 
 ### P1.3 Bản đồ dữ liệu cho minh bạch / nhãn store
 - Duy trì bản kiểm kê dữ liệu cá nhân mỗi tính năng thu thập và chia sẻ, để khai báo

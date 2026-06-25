@@ -54,6 +54,10 @@ export interface Bindings {
   EXTENSION_BUNDLE_ORIGINS?: string;
   /** Comma-separated frontend origins allowed by CORS. */
   CORS_ALLOWED_ORIGINS?: string;
+  /** Data-retention horizon (days) for the `activity` log. 0/unset = disabled. */
+  LUMIBASE_ACTIVITY_RETENTION_DAYS?: string;
+  /** Data-retention horizon (days) for read/archived `notifications`. 0/unset = disabled. */
+  LUMIBASE_NOTIFICATION_RETENTION_DAYS?: string;
   /** Maximum bytes accepted by the file upload policy. Defaults to 10 MiB. */
   FILE_UPLOAD_MAX_BYTES?: string;
   /** Comma-separated MIME allowlist accepted by the file upload policy. */

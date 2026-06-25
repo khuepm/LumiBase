@@ -26,6 +26,7 @@ import { collectionsRouter } from './routes/collections';
 import { consentRouter } from './routes/consent';
 import { dataExportRouter } from './routes/data-export';
 import { meErasureRouter, adminErasureRouter } from './routes/erasure';
+import { retentionRouter } from './routes/retention';
 import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
 import { extensionsRouter } from './routes/extensions';
@@ -180,6 +181,8 @@ api.route('/me/data-export', dataExportRouter);
 api.route('/me/erasure', meErasureRouter);
 // `/erasure` — admin force-erase + grace-period processor (site-admin only).
 api.route('/erasure', adminErasureRouter);
+// `/retention` — admin general data-retention pruning (site-admin only).
+api.route('/retention', retentionRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/items', itemsRouter);

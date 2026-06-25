@@ -79,10 +79,14 @@
 - **Follow-up:** surface the required "Do Not Sell or Share" link and honor the
   Global Privacy Control browser signal in the frontend.
 
-### P1.2 General data-retention policies
-- Extend the audit `rotator.ts` retention concept (`LUMIBASE_AUDIT_RETENTION_DAYS`)
-  to other PII-bearing tables (e.g., stale items, old AI conversations) with
-  configurable horizons and a documented schedule.
+### P1.2 General data-retention policies — ✅ Done (v0.8.x)
+- **Delivered:** `RetentionService` (`apps/cms/src/modules/data-rights/retention-service.ts`)
+  prunes the `activity` log and read/archived `notifications` past operator-configured
+  horizons (`LUMIBASE_ACTIVITY_RETENTION_DAYS` / `LUMIBASE_NOTIFICATION_RETENTION_DAYS`;
+  `0`/unset disables). Admin trigger `GET`/`POST /api/v1/retention/run`
+  (`apps/cms/src/routes/retention.ts`); audits `retention_pruned`.
+- **Follow-up:** extend horizons to more PII tables (e.g. AI conversations); schedule
+  on the existing rotation cron instead of a manual trigger.
 
 ### P1.3 Data map for transparency / store labels
 - Maintain an inventory of what personal data each feature collects and shares, to
