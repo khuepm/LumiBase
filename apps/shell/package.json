@@ -1,0 +1,32 @@
+{
+  "name": "@lumibase/shell",
+  "version": "0.11.0",
+  "private": true,
+  "description": "LumiBase Shell — unified Tauri 2 desktop + mobile app wrapping the Studio SPA.",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build",
+    "ios:init": "tauri ios init",
+    "ios:dev": "tauri ios dev",
+    "ios:build": "tauri ios build",
+    "tauri": "tauri",
+    "typecheck": "echo \"(no app TS — frontend is @lumibase/studio)\" && exit 0",
+    "lint": "echo \"(lint not configured)\" && exit 0",
+    "test": "echo \"(no tests yet)\" && exit 0",
+    "clean": "rm -rf .turbo dist src-tauri/target src-tauri/gen"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/plugin-dialog": "^2.4.0",
+    "@tauri-apps/plugin-process": "^2.3.0",
+    "@tauri-apps/plugin-updater": "^2.10.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.1",
+    "typescript": "^5.6.2"
+  }
+}
