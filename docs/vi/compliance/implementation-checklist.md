@@ -28,13 +28,14 @@
 - **URL web:** cung cấp luồng yêu cầu xoá truy cập công khai (yêu cầu Google Play),
   tách biệt với lối trong ứng dụng.
 
-### P0.2 Xuất dữ liệu cá nhân ("download my data")
-- **Vì sao:** GDPR Điều 20, yêu cầu truy cập.
-- **Làm gì:** Endpoint gom dữ liệu chính người dùng yêu cầu (hồ sơ, preferences, hoạt
-  động, revisions đã tạo, notifications, hội thoại AI) thành JSON/CSV có cấu trúc (có
-  thể nén ZIP).
-- **Điểm chạm:** service mới phản chiếu mẫu streaming trong
-  `apps/cms/src/modules/audit/routes.ts` và `apps/cms/src/services/access-export.ts`.
+### P0.2 Xuất dữ liệu cá nhân ("download my data") — ✅ Đã làm (v0.8.x)
+- **Vì sao:** GDPR Điều 15/20, yêu cầu truy cập.
+- **Đã giao:** `DataExportService` (`apps/cms/src/modules/data-rights/export-service.ts`)
+  gom hồ sơ, consents, hoạt động, revisions tự viết và thông báo của người gọi (loại trừ
+  secret, mỗi mục giới hạn kèm cờ `truncated`); `GET /api/v1/me/data-export`
+  (`apps/cms/src/routes/data-export.ts`) trả JSON có cấu trúc kèm header tải
+  `Content-Disposition`; audit `data_exported`.
+- **Tiếp theo:** biến thể CSV/zip; thêm hội thoại AI khi bảng đó vào phạm vi.
 
 ### P0.3 Quản lý đồng ý — ✅ Đã làm (v0.8.x)
 - **Vì sao:** GDPR Điều 7, PDPD.

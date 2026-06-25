@@ -13,8 +13,8 @@
 | Quyền / nghĩa vụ | Trạng thái | Bằng chứng (đường dẫn) | Việc cần làm để lấp |
 |------------------|:----------:|------------------------|---------------------|
 | Xoá / quyền được lãng quên | ⚠️ | `packages/database/src/schema/cms.ts` (`items.deletedAt`, dòng 201); `apps/cms/src/routes/users.ts` (chỉ xoá khỏi `userSites`) | Quy trình xoá tài khoản toàn cục cascade/ẩn danh hoá xuyên `users` và tham chiếu; audit event; thời gian ân hạn. |
-| Truy cập / quyền được biết | ⚠️ | `apps/cms/src/modules/audit/routes.ts` (xuất audit); `apps/cms/src/services/access-export.ts` (xuất RBAC) | Báo cáo "chúng tôi giữ gì về bạn" hướng người dùng (hồ sơ, hoạt động, revisions, hội thoại). |
-| Di chuyển dữ liệu (portability) | ❌ | — | Endpoint "Tải dữ liệu của tôi" tạo JSON/CSV có cấu trúc của dữ liệu chính người dùng. |
+| Truy cập / quyền được biết | ✅ | `apps/cms/src/modules/data-rights/export-service.ts`; `GET /api/v1/me/data-export` (hồ sơ, consents, hoạt động, revisions tự viết, thông báo) | Mở rộng khi thêm bảng chứa PII mới. |
+| Di chuyển dữ liệu (portability) | ✅ | `apps/cms/src/routes/data-export.ts` — JSON có cấu trúc của dữ liệu chính người dùng, kèm header tải `Content-Disposition` | Bổ sung biến thể CSV nếu cần; tái dùng cho preview erasure. |
 | Chỉnh sửa (rectification) | ✅ | `apps/cms/src/routes/users.ts` (cập nhật user); sửa hồ sơ | Không cần cho hồ sơ; đảm bảo mọi trường PII người dùng sửa được. |
 | Hạn chế xử lý | ❌ | — | Cờ trạng thái "restricted"/"đóng băng" và thực thi. |
 | Phản đối / opt-out (bán/chia sẻ) | ✅ | Loại consent `sale_share` qua `PUT /api/v1/me/consents/sale_share` (`packages/shared/src/schemas/consent.ts`) | Gắn link "Do Not Sell or Share" + tín hiệu Global Privacy Control ở frontend. |
@@ -52,9 +52,10 @@ Các nguyên thuỷ này là thật và tái sử dụng được khi xây tính
 1. **Xoá tài khoản toàn cục (quyền được lãng quên).** `DELETE` user hiện chỉ xoá một
    dòng thành viên `userSites` — bản ghi `users` và PII vẫn còn. Bắt buộc bởi GDPR
    Điều 17, CCPA delete, PDPD, và cả hai store. **Ưu tiên cao nhất.**
-2. **Xuất dữ liệu cá nhân ("download my data").** Chưa có endpoint gom dữ liệu chính
-   người dùng thành file di chuyển được. Bắt buộc bởi GDPR Điều 20; cần cho yêu cầu
-   truy cập.
+2. **Xuất dữ liệu cá nhân ("download my data").** ✅ *Đã triển khai (v0.8.x).*
+   `GET /api/v1/me/data-export` (`apps/cms/src/modules/data-rights/export-service.ts`)
+   gom hồ sơ, consents, hoạt động, revisions tự viết và thông báo của chính người gọi
+   thành JSON tải về có cấu trúc (loại trừ secret). Thoả GDPR Điều 15/20.
 3. **Quản lý đồng ý.** ✅ *Đã triển khai (v0.8.x).* Bảng `user_consents`
    (`packages/database/src/schema/consent.ts`) lưu quyết định hiện tại theo
    `(site_id, user_id, type)` kèm mốc thời gian grant/withdraw; `ConsentService` +

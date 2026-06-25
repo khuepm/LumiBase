@@ -13,8 +13,8 @@
 | Right / obligation | Status | Evidence (file path) | Work needed to close |
 |--------------------|:------:|----------------------|----------------------|
 | Erasure / right to be forgotten | ⚠️ | `packages/database/src/schema/cms.ts` (`items.deletedAt`, line 201); `apps/cms/src/routes/users.ts` (removes from `userSites` only) | Global account-erasure workflow that cascades/anonymizes across `users` and references; audit event; grace period. |
-| Access / right to know | ⚠️ | `apps/cms/src/modules/audit/routes.ts` (audit export); `apps/cms/src/services/access-export.ts` (RBAC export) | A user-facing "what we hold about you" report (profile, activity, revisions, conversations). |
-| Data portability | ❌ | — | "Download my data" endpoint producing structured JSON/CSV of the user's own data. |
+| Access / right to know | ✅ | `apps/cms/src/modules/data-rights/export-service.ts`; `GET /api/v1/me/data-export` (profile, consents, activity, revisions authored, notifications) | Extend coverage as new PII-bearing tables are added. |
+| Data portability | ✅ | `apps/cms/src/routes/data-export.ts` — structured JSON of the user's own data, with `Content-Disposition` download header | Offer a CSV variant if required; reuse for the erasure preview. |
 | Rectification | ✅ | `apps/cms/src/routes/users.ts` (user update); profile editing | None for profile; ensure all PII fields are user-editable. |
 | Restriction of processing | ❌ | — | A "frozen"/"restricted" state flag and enforcement. |
 | Objection / opt-out (sale/share) | ✅ | `sale_share` consent type via `PUT /api/v1/me/consents/sale_share` (`packages/shared/src/schemas/consent.ts`) | Wire a "Do Not Sell or Share" link + Global Privacy Control signal in the frontend. |
@@ -52,8 +52,11 @@ These primitives are real and reusable when building compliance features:
 1. **Global account erasure (right to be forgotten).** `DELETE` on users today only
    removes a `userSites` membership row — the `users` record and PII persist.
    Required by GDPR Art. 17, CCPA delete, PDPD, and both stores. **Highest priority.**
-2. **Personal-data export ("download my data").** No endpoint assembles a user's own
-   data into a portable file. Required by GDPR Art. 20; expected by access requests.
+2. **Personal-data export ("download my data").** ✅ *Implemented (v0.8.x).*
+   `GET /api/v1/me/data-export` (`apps/cms/src/modules/data-rights/export-service.ts`)
+   assembles the caller's profile, consents, activity, authored revisions and
+   notifications into a structured JSON download (secrets excluded). Satisfies GDPR
+   Art. 15/20.
 3. **Consent management.** ✅ *Implemented (v0.8.x).* The `user_consents` table
    (`packages/database/src/schema/consent.ts`) records the current decision per
    `(site_id, user_id, type)` with grant/withdraw timestamps; `ConsentService` +

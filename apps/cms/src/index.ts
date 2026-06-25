@@ -24,6 +24,7 @@ import { adminSecurityRouter } from './routes/admin-security';
 import { apiKeysRouter } from './routes/api-keys';
 import { collectionsRouter } from './routes/collections';
 import { consentRouter } from './routes/consent';
+import { dataExportRouter } from './routes/data-export';
 import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
 import { extensionsRouter } from './routes/extensions';
@@ -172,6 +173,8 @@ api.route('/me', meRouter);
 // Separate router from `meRouter`; mounted under the same authenticated `api`
 // chain so the caller can only read/write their own consent.
 api.route('/me/consents', consentRouter);
+// `/me/data-export` — self-service "download my data" (GDPR Art. 15/20).
+api.route('/me/data-export', dataExportRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/items', itemsRouter);

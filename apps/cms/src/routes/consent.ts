@@ -1,9 +1,8 @@
-import { Hono, type Context } from 'hono';
-import { eq } from 'drizzle-orm';
-import { users } from '@lumibase/database';
+import { Hono } from 'hono';
 import { ConsentSetSchema, ConsentTypeSchema } from '@lumibase/shared/schemas';
 import type { AppEnv } from '../env';
 import { ConsentService } from '../modules/consent/service';
+import { resolveCurrentUserId } from '../modules/data-rights/resolve-user';
 import { AuditLogger } from '../modules/audit/logger';
 
 /**
@@ -14,30 +13,9 @@ import { AuditLogger } from '../modules/audit/logger';
  */
 export const consentRouter = new Hono<AppEnv>();
 
-/**
- * Resolve the current user's `users.id`. Frontend (custom JWT) principals
- * carry `userId` directly; Cloudflare Access / dev admins only carry
- * `externalId`, so fall back to a lookup. API-key principals have neither and
- * get `null` (a key is not a person who can hold consent).
- */
-async function resolveUserId(c: Context<AppEnv>): Promise<string | null> {
-  const auth = c.get('auth');
-  if (auth?.userId) return auth.userId;
-  if (auth?.externalId) {
-    const [row] = await c
-      .get('db')
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.externalId, auth.externalId))
-      .limit(1);
-    return row?.id ?? null;
-  }
-  return null;
-}
-
 // GET /api/v1/me/consents — list the current user's consent decisions.
 consentRouter.get('/', async (c) => {
-  const userId = await resolveUserId(c);
+  const userId = await resolveCurrentUserId(c);
   if (!userId) {
     return c.json(
       { errors: [{ code: 'USER_CONTEXT_REQUIRED', message: 'Consent is only available to user principals.' }] },
@@ -72,7 +50,7 @@ consentRouter.put('/:type', async (c) => {
     );
   }
 
-  const userId = await resolveUserId(c);
+  const userId = await resolveCurrentUserId(c);
   if (!userId) {
     return c.json(
       { errors: [{ code: 'USER_CONTEXT_REQUIRED', message: 'Consent is only available to user principals.' }] },

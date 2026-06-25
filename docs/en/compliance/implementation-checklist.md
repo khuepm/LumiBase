@@ -28,13 +28,14 @@
 - **Web URL:** expose a publicly reachable deletion-request flow (Google Play
   requirement) distinct from the in-app path.
 
-### P0.2 Personal-data export ("download my data")
-- **Why:** GDPR Art. 20, access requests.
-- **What:** Endpoint that assembles the requesting user's own data (profile,
-  preferences, activity, revisions authored, notifications, AI conversations) into
-  structured JSON/CSV (optionally zipped).
-- **Touch points:** new service mirroring the streaming pattern in
-  `apps/cms/src/modules/audit/routes.ts` and `apps/cms/src/services/access-export.ts`.
+### P0.2 Personal-data export ("download my data") — ✅ Done (v0.8.x)
+- **Why:** GDPR Art. 15/20, access requests.
+- **Delivered:** `DataExportService` (`apps/cms/src/modules/data-rights/export-service.ts`)
+  assembles the caller's profile, consents, activity, authored revisions and
+  notifications (secrets excluded, each section bounded with a `truncated` flag);
+  `GET /api/v1/me/data-export` (`apps/cms/src/routes/data-export.ts`) returns structured
+  JSON with a `Content-Disposition` download header; audits `data_exported`.
+- **Follow-up:** a CSV/zip variant; include AI conversations once that table is in scope.
 
 ### P0.3 Consent management — ✅ Done (v0.8.x)
 - **Why:** GDPR Art. 7, PDPD.

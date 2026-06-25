@@ -97,6 +97,7 @@ Error response:
 | `GET` | `/api/v1/auth/me` | Get current user profile |
 | `GET` | `/api/v1/me/consents` | List the current user's consent decisions |
 | `PUT` | `/api/v1/me/consents/:type` | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
+| `GET` | `/api/v1/me/data-export` | Download the current user's personal data (GDPR Art. 15/20) |
 
 **Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 
