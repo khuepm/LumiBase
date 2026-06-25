@@ -87,6 +87,7 @@ export interface CompiledField {
   readonly: boolean;
   hidden: boolean;
   encrypted: boolean;
+  classification: 'none' | 'pii' | 'sensitive';
   versioned: boolean;
   rawEnabled: boolean;
   width: 'half' | 'full' | 'fill';
@@ -156,6 +157,7 @@ export interface FieldInput {
   readonly?: boolean;
   hidden?: boolean;
   encrypted?: boolean;
+  classification?: 'none' | 'pii' | 'sensitive';
   versioned?: boolean;
   rawEnabled?: boolean;
   width?: 'half' | 'full' | 'fill';
@@ -1155,6 +1157,7 @@ function systemField(input: {
     readonly: input.readonly,
     hidden: input.hidden,
     encrypted: false,
+    classification: 'none',
     versioned: false,
     rawEnabled: false,
     width: 'half',
@@ -1193,6 +1196,7 @@ export function compileField(f: FieldRow): CompiledField {
     readonly: f.readonly,
     hidden: f.hidden,
     encrypted: f.encrypted,
+    classification: (f.classification as 'none' | 'pii' | 'sensitive') ?? 'none',
     versioned: f.versioned,
     rawEnabled: f.rawEnabled,
     width: f.width as 'half' | 'full' | 'fill',
@@ -1426,6 +1430,7 @@ const FIELD_DIFF_KEYS = [
   'readonly',
   'hidden',
   'encrypted',
+  'classification',
   'versioned',
   'rawEnabled',
   'width',

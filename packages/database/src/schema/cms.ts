@@ -122,6 +122,8 @@ export const fields = pgTable(
     readonly: boolean('readonly').default(false).notNull(),
     hidden: boolean('hidden').default(false).notNull(),
     encrypted: boolean('encrypted').default(false).notNull(),
+    /** Data classification for privacy tooling: `none` | `pii` | `sensitive`. */
+    classification: text('classification').default('none').notNull(),
     versioned: boolean('versioned').default(false).notNull(),
     rawEnabled: boolean('raw_enabled').default(true).notNull(),
     /** `half` | `full` | `fill` */

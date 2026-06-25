@@ -33,6 +33,7 @@ function field(name: string, type: string): CompiledField {
     readonly: false,
     hidden: false,
     encrypted: false,
+    classification: 'none',
     versioned: false,
     rawEnabled: false,
     width: 'full',

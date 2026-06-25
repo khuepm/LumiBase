@@ -107,10 +107,14 @@
 - **P2.2 Lối con người xem xét cho hành động agent** — ⬜ Chưa làm. Provenance đã có
   (`revisions.authorType/model/sources`) + HITL `ai_approvals`; hiển thị cho người dùng
   bị ảnh hưởng (GDPR Điều 22) là việc tương lai.
-- **P2.3 Che field khi xuất** — ⚠️ Một phần. Export đã loại trừ secret credential
-  (`passwordHash`, `tfa`); che theo field tuỳ biến nhạy cảm là việc tương lai (phụ thuộc P2.4).
-- **P2.4 Phân loại dữ liệu** — ⬜ Chưa làm. Sẽ gắn nhãn field PII/nhạy cảm để điều khiển
-  retention, che khi xuất, và bản đồ dữ liệu.
+- **P2.3 Che field khi xuất** — ✅ Đã làm (v0.8.x). `redactByClassification`
+  (`apps/cms/src/modules/data-rights/redaction.ts`) che giá trị field `pii`/`sensitive`;
+  export dữ liệu cá nhân cũng loại trừ secret credential (`passwordHash`, `tfa`). Gắn
+  utility vào bất kỳ content export/support view nào không được hiển thị PII thô.
+- **P2.4 Phân loại dữ liệu** — ✅ Đã làm (v0.8.x). `fields.classification`
+  (`none`/`pii`/`sensitive`, migration `0035`) expose qua API tạo/sửa field
+  (`apps/cms/src/routes/collections.ts`) và trong `CompiledField`; điều khiển redaction
+  P2.3 và bản đồ dữ liệu.
 - **P2.5 Mẫu DPA** — ✅ Đã làm (v0.8.x, doc). Xem [dpa-template.md](./dpa-template.md).
 
 ## Gợi ý trình tự

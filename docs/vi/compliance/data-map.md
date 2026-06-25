@@ -51,7 +51,14 @@ hoạt động, revisions tự viết và thông báo. Xem [gap-analysis.md](./g
 nội dung được giữ nhưng trỏ tới user đã ẩn danh — xem
 [user-rights-catalog.md](./user-rights-catalog.md).
 
-## 6. Bên xử lý thứ ba
+## 6. Phân loại field
+
+Field nội dung tuỳ biến có thể gắn nhãn qua `fields.classification` (`none` / `pii` /
+`sensitive`) khi tạo/sửa. Utility `redactByClassification`
+(`apps/cms/src/modules/data-rights/redaction.ts`) dùng nhãn này để che giá trị nhạy cảm
+trong mọi view/export đã redact.
+
+## 7. Bên xử lý thứ ba
 
 `[Inference]` Tuỳ triển khai. Thường gặp: host database (Postgres/Neon/Supabase),
 host edge/runtime (Cloudflare/Docker), transport SMTP/email, và sink CDC (ClickHouse)

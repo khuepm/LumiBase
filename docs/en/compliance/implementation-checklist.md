@@ -110,11 +110,14 @@
 - **P2.2 Human-review path for agent actions** — ⬜ Not implemented. Provenance
   exists (`revisions.authorType/model/sources`) + HITL `ai_approvals`; surfacing it to
   affected users (GDPR Art. 22) is future work.
-- **P2.3 Field-level redaction on export** — ⚠️ Partial. The export already excludes
-  credential secrets (`passwordHash`, `tfa`); per-field redaction of custom sensitive
-  fields is future work (depends on P2.4).
-- **P2.4 Data classification** — ⬜ Not implemented. Would tag fields as PII/sensitive
-  to drive retention, export redaction, and the data map.
+- **P2.3 Field-level redaction on export** — ✅ Done (v0.8.x). `redactByClassification`
+  (`apps/cms/src/modules/data-rights/redaction.ts`) masks `pii`/`sensitive` field values;
+  the personal-data export also excludes credential secrets (`passwordHash`, `tfa`). Wire
+  the utility into any content export/support view that must not show raw PII.
+- **P2.4 Data classification** — ✅ Done (v0.8.x). `fields.classification`
+  (`none`/`pii`/`sensitive`, migration `0035`) exposed via the field create/update API
+  (`apps/cms/src/routes/collections.ts`) and surfaced in `CompiledField`; drives P2.3
+  redaction and the data map.
 - **P2.5 DPA template** — ✅ Done (v0.8.x, doc). See [dpa-template.md](./dpa-template.md).
 
 ## Sequencing suggestion

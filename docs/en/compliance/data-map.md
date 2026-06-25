@@ -52,7 +52,14 @@ consents, activity, authored revisions, and notifications. See
 email. Content authorship references survive but point to an anonymized user —
 see [user-rights-catalog.md](./user-rights-catalog.md).
 
-## 6. Third-party processors
+## 6. Field classification
+
+Custom content fields can be tagged via `fields.classification` (`none` / `pii` /
+`sensitive`) on create/update. The `redactByClassification` utility
+(`apps/cms/src/modules/data-rights/redaction.ts`) uses these tags to mask sensitive
+values in any redacted view/export.
+
+## 7. Third-party processors
 
 `[Inference]` Depends on deployment. Common: the database host (Postgres/Neon/
 Supabase), the edge/runtime host (Cloudflare/Docker host), the SMTP/email
