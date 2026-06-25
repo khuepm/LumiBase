@@ -17,6 +17,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **Cross-domain refresh cookie** config (`REFRESH_COOKIE_SAMESITE`/`REFRESH_COOKIE_DOMAIN`/`REFRESH_COOKIE_SECURE`) with a CSRF brake (`X-LumiBase-Refresh` header required for cookie-sourced refresh/logout).
 - **Authenticated account self-service:** `POST /api/v1/me/change-password` and session management (`GET`/`DELETE /api/v1/me/sessions[/:id]`).
 - **Hourly prune** of expired refresh tokens on the existing audit-rotation cron (Workers `scheduled` + Node `node-cron`).
+- **SDK silent auto-refresh.** `createLumiClient` accepts `refreshToken` + `onTokensRefreshed`; a 401 transparently refreshes and retries once (parallel 401s coalesce into one refresh). Studio wires this end to end (login persists the refresh token, logout revokes it server-side).
 
 ### Notes
 

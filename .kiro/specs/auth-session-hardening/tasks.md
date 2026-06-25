@@ -26,7 +26,7 @@ Each task is one or more commits.
 
 - [x] **T6 — SDK auto-refresh.** `@lumibase/sdk` should call `/auth/refresh`
   on a 401 and retry. Cross-package; needs SDK API design.
-- [ ] **T7 — Studio/frontend wiring.** Store tokens, refresh before expiry,
+- [x] **T7 — Studio/frontend wiring.** Store tokens, refresh before expiry,
   logout button (`apps/studio`). UI work, not unit-verifiable here.
 - [ ] **T8 — Drizzle snapshot drift.** Pre-existing: `drizzle-kit generate`
   re-emits existing tables because the committed snapshots lag the schema.
