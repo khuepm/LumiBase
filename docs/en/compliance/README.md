@@ -22,6 +22,9 @@
 | [market-vietnam.md](./market-vietnam.md) | Vietnam: PDPD (Decree 13/2023), cybersecurity & data localization, content publishing licensing. |
 | [provider-google-apple.md](./provider-google-apple.md) | Distributor policy: Google Play Data safety + Apple Privacy Labels & account deletion. |
 | [gap-analysis.md](./gap-analysis.md) | Right ↔ LumiBase feature mapping with status (✅/⚠️/❌) and file-path evidence. |
+| [data-map.md](./data-map.md) | Inventory of where personal data lives, to back privacy notices and store labels. |
+| [data-residency.md](./data-residency.md) | Region pinning & cross-border transfer guidance (EU SCCs, VN Decree 53). |
+| [dpa-template.md](./dpa-template.md) | Skeleton Data Processing Agreement (GDPR Art. 28) for managed offerings. |
 | [implementation-checklist.md](./implementation-checklist.md) | Prioritized backlog (P0/P1/P2) to close the gaps. |
 
 A Vietnamese mirror of this section lives in `docs/vi/compliance/`.

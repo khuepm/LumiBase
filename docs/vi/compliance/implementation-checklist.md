@@ -88,25 +88,28 @@
 - **Tiếp theo:** mở rộng mốc cho nhiều bảng PII (hội thoại AI); lên lịch trên cron
   rotation sẵn có thay vì trigger thủ công.
 
-### P1.3 Bản đồ dữ liệu cho minh bạch / nhãn store
-- Duy trì bản kiểm kê dữ liệu cá nhân mỗi tính năng thu thập và chia sẻ, để khai báo
-  Google Data-safety và nhãn Apple chính xác cùng thông báo quyền riêng tư.
-  `[Inference]` Có thể là một artifact sinh từ metadata schema.
+### P1.3 Bản đồ dữ liệu cho minh bạch / nhãn store — ✅ Đã làm (v0.8.x, doc)
+- Tài liệu hoá ở [data-map.md](./data-map.md): kiểm kê cấp field dữ liệu cá nhân theo
+  bảng, export gồm gì, erasure xoá gì, và sub-processor thường gặp. `[Inference]`
+  Artifact sinh từ schema vẫn là cải tiến tương lai.
 
-### P1.4 Nhận thức chuyển dữ liệu xuyên biên giới / data-residency
-- Tài liệu hoá và, khi cần, ghim vùng lưu trữ trên hạ tầng edge; hiển thị cấu hình
-  data-residency cho nghĩa vụ nội địa hoá (PDPD/Nghị định 53).
+### P1.4 Nhận thức chuyển dữ liệu xuyên biên giới / data-residency — ✅ Đã làm (v0.8.x, doc)
+- Tài liệu hoá ở [data-residency.md](./data-residency.md): dữ liệu ở đâu, cách ghim khu
+  vực (ưu tiên database), cơ chế chuyển (SCCs), và lưu ý NĐ 53 của VN. Chưa có routing
+  khu vực theo bản ghi; đa khu vực = triển khai riêng.
 
 ## P2 — Mức trưởng thành / nên có
 
-- **P2.1 Trạng thái hạn chế xử lý** — cờ "restricted" được service tôn trọng.
-- **P2.2 Lối con người xem xét cho hành động agent** — hiển thị provenance sẵn có
-  (`revisions.authorType/model/sources`) và HITL `ai_approvals` cho người dùng bị ảnh
-  hưởng bởi quyết định tự động (GDPR Điều 22).
-- **P2.3 Che field khi xuất** — ẩn các trường nhạy cảm trong bản xuất.
-- **P2.4 Phân loại dữ liệu** — gắn nhãn field là PII/nhạy cảm để điều khiển retention,
-  che khi xuất, và bản đồ dữ liệu.
-- **P2.5 Mẫu DPA** — cho bất kỳ bản host/quản lý nào (Điều 28).
+- **P2.1 Trạng thái hạn chế xử lý** — ⬜ Chưa làm. Sẽ thêm cờ "restricted" được service
+  tôn trọng.
+- **P2.2 Lối con người xem xét cho hành động agent** — ⬜ Chưa làm. Provenance đã có
+  (`revisions.authorType/model/sources`) + HITL `ai_approvals`; hiển thị cho người dùng
+  bị ảnh hưởng (GDPR Điều 22) là việc tương lai.
+- **P2.3 Che field khi xuất** — ⚠️ Một phần. Export đã loại trừ secret credential
+  (`passwordHash`, `tfa`); che theo field tuỳ biến nhạy cảm là việc tương lai (phụ thuộc P2.4).
+- **P2.4 Phân loại dữ liệu** — ⬜ Chưa làm. Sẽ gắn nhãn field PII/nhạy cảm để điều khiển
+  retention, che khi xuất, và bản đồ dữ liệu.
+- **P2.5 Mẫu DPA** — ✅ Đã làm (v0.8.x, doc). Xem [dpa-template.md](./dpa-template.md).
 
 ## Gợi ý trình tự
 

@@ -98,6 +98,9 @@
           "compliance/market-vietnam",
           "compliance/provider-google-apple",
           "compliance/gap-analysis",
+          "compliance/data-map",
+          "compliance/data-residency",
+          "compliance/dpa-template",
           "compliance/implementation-checklist"
         ]
       },

@@ -88,25 +88,31 @@
 - **Follow-up:** extend horizons to more PII tables (e.g. AI conversations); schedule
   on the existing rotation cron instead of a manual trigger.
 
-### P1.3 Data map for transparency / store labels
-- Maintain an inventory of what personal data each feature collects and shares, to
-  back accurate Google Data-safety and Apple Privacy-label disclosures and the
-  privacy notice. `[Inference]` Could be a generated artifact from schema metadata.
+### P1.3 Data map for transparency / store labels — ✅ Done (v0.8.x, doc)
+- Documented in [data-map.md](./data-map.md): a field-level inventory of personal
+  data per table, what the export includes, what erasure removes, and likely
+  sub-processors. `[Inference]` A generated-from-schema artifact remains a future
+  enhancement.
 
-### P1.4 Cross-border / data-residency awareness
-- Document and, where required, pin storage regions on edge infrastructure; surface
-  data-residency configuration for localization obligations (PDPD/Decree 53).
+### P1.4 Cross-border / data-residency awareness — ✅ Done (v0.8.x, doc)
+- Documented in [data-residency.md](./data-residency.md): where data lives, how to
+  pin a region (database-first), transfer mechanisms (SCCs), and the VN Decree 53
+  caveat. Built-in per-record region routing is **not** implemented; multi-region =
+  separate deployments.
 
 ## P2 — Maturity / nice-to-have
 
-- **P2.1 Restriction-of-processing state** — a "restricted" flag honored by services.
-- **P2.2 Human-review path for agent actions** — surface the existing provenance
-  (`revisions.authorType/model/sources`) and HITL `ai_approvals` to users affected by
-  automated decisions (GDPR Art. 22).
-- **P2.3 Field-level redaction on export** — mask sensitive fields in exports.
-- **P2.4 Data classification** — tag fields as PII/sensitive to drive retention,
-  export redaction, and the data map.
-- **P2.5 DPA template** — for any managed/hosted offering (Art. 28).
+- **P2.1 Restriction-of-processing state** — ⬜ Not implemented. Would add a
+  "restricted" flag honored by services.
+- **P2.2 Human-review path for agent actions** — ⬜ Not implemented. Provenance
+  exists (`revisions.authorType/model/sources`) + HITL `ai_approvals`; surfacing it to
+  affected users (GDPR Art. 22) is future work.
+- **P2.3 Field-level redaction on export** — ⚠️ Partial. The export already excludes
+  credential secrets (`passwordHash`, `tfa`); per-field redaction of custom sensitive
+  fields is future work (depends on P2.4).
+- **P2.4 Data classification** — ⬜ Not implemented. Would tag fields as PII/sensitive
+  to drive retention, export redaction, and the data map.
+- **P2.5 DPA template** — ✅ Done (v0.8.x, doc). See [dpa-template.md](./dpa-template.md).
 
 ## Sequencing suggestion
 

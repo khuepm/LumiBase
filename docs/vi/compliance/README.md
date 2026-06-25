@@ -22,6 +22,9 @@
 | [market-vietnam.md](./market-vietnam.md) | Việt Nam: PDPD (Nghị định 13/2023), an ninh mạng & nội địa hoá, giấy phép xuất bản nội dung. |
 | [provider-google-apple.md](./provider-google-apple.md) | Chính sách nền tảng: Google Play Data safety + nhãn quyền riêng tư & xoá tài khoản của Apple. |
 | [gap-analysis.md](./gap-analysis.md) | Ánh xạ Quyền ↔ tính năng LumiBase, kèm trạng thái (✅/⚠️/❌) và bằng chứng file. |
+| [data-map.md](./data-map.md) | Kiểm kê nơi dữ liệu cá nhân tồn tại, làm cơ sở cho thông báo riêng tư và nhãn store. |
+| [data-residency.md](./data-residency.md) | Hướng dẫn ghim khu vực & chuyển dữ liệu xuyên biên giới (EU SCCs, VN NĐ 53). |
+| [dpa-template.md](./dpa-template.md) | Khung Thoả thuận xử lý dữ liệu (GDPR Điều 28) cho dịch vụ hosted. |
 | [implementation-checklist.md](./implementation-checklist.md) | Backlog ưu tiên (P0/P1/P2) để lấp khoảng trống. |
 
 Bản tiếng Anh nằm ở `docs/en/compliance/`.
