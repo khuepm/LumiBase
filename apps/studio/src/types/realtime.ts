@@ -26,7 +26,7 @@ export interface RealtimeEvent {
  */
 export interface AgentNotification {
   id: string;
-  kind: 'approval' | 'veto' | 'incident' | 'goal' | 'run';
+  kind: 'approval' | 'veto' | 'incident' | 'goal' | 'run' | 'test';
   severity: 'info' | 'warning' | 'critical';
   title: string;
   body: string;

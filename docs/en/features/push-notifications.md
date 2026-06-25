@@ -44,8 +44,10 @@ entityId, ts }` — identical on both transports for client-side dedupe.
   `endpoint`, `p256dh`, `auth`), one row per browser per site. Endpoints the
   push service reports as gone (404/410) are pruned on the next fan-out.
 - **Studio** — `public/sw.js` (service worker), `src/lib/push.ts` (enrolment),
-  and the bell in `src/components/notifications-panel.tsx` (in-app feed +
-  enable/disable toggle).
+  the bell in `src/components/notifications-panel.tsx` (in-app feed +
+  enable/disable toggle), and **Settings → Notifications**
+  (`src/modules/settings/notifications-page.tsx`) — a per-tenant check / verify /
+  guide page.
 
 ## API
 
@@ -53,9 +55,53 @@ All under the authenticated, tenant-scoped `/api/v1`:
 
 - `GET /api/v1/push/vapid-public-key` — returns `{ data: { publicKey } }`, or
   `404 PUSH_NOT_CONFIGURED` when VAPID keys are unset.
+- `GET /api/v1/push/status` — `{ data: { vapidConfigured, realtimeAvailable,
+  subscriptions } }` for the active site (drives the Settings check panel).
+- `POST /api/v1/push/test` — dispatches a one-off `test` notification to the
+  active site over both transports; returns a dispatch summary. Strictly
+  site-scoped.
 - `POST /api/v1/push/subscriptions` — body `{ endpoint, keys: { p256dh, auth } }`;
   upserts the caller's subscription for the active site.
 - `DELETE /api/v1/push/subscriptions` — body `{ endpoint }`; removes it.
+
+## Multi-tenancy
+
+Push has exactly one **shared, deployment-level resource** and isolates
+everything else per tenant:
+
+- **Shared — the VAPID key pair** (`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` /
+  `VAPID_SUBJECT`). VAPID identifies the *application server* to the push
+  service (FCM/Mozilla/…), not the tenant, so one pair serves every site.
+  Per-tenant VAPID keys would add secret-management overhead with **no**
+  isolation benefit — delivery is already scoped by each subscription's unique
+  endpoint + `p256dh`/`auth`. `GET /vapid-public-key` therefore returns the same
+  key to every tenant by design.
+- **Isolated per tenant — subscriptions and delivery.**
+  `push_subscriptions` carries `site_id` and is protected by the
+  `site_isolation` RLS policy (`rls-policies.sql`). The broadcaster fans out with
+  `WHERE site_id = <siteId>`; the SiteRoom Durable Object is one instance per
+  `siteId`. A tenant can only ever enrol, list, test, or receive **its own**
+  notifications — there is no cross-tenant path, and `POST /push/test` only
+  reaches the calling site's subscriptions.
+
+So the *code* (the `web-push` crypto, the broadcaster, the routes, the VAPID
+identity) is shared infrastructure; the *data and the delivery fan-out* are
+tenant-scoped. This is the intended model.
+
+## Testing the connection
+
+- **Studio** — Settings → Notifications: the *Server check* panel shows VAPID /
+  realtime / subscription status for the current tenant; *Send test
+  notification* dispatches a `test` event you should see in the bell and (if
+  enrolled) as an OS notification.
+- **CLI / CI** — `apps/cms/scripts/push-test.mjs` checks status and dispatches a
+  test for a given tenant without opening Studio:
+
+  ```bash
+  LUMIBASE_URL=https://api.example.com \
+  LUMIBASE_TOKEN=<bearer> LUMIBASE_SITE=<siteId> \
+  node apps/cms/scripts/push-test.mjs
+  ```
 
 ## Configuration
 

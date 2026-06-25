@@ -17,6 +17,16 @@ const SW_URL = '/sw.js';
 
 export type PushState = 'unsupported' | 'denied' | 'subscribed' | 'unsubscribed';
 
+/** Per-tenant server-side push status (Studio Settings → Notifications). */
+export interface PushServerStatus {
+  /** VAPID keys configured on the deployment (shared across all tenants). */
+  vapidConfigured: boolean;
+  /** SiteRoom Durable Object bound (in-app realtime available). */
+  realtimeAvailable: boolean;
+  /** Enrolled Web Push subscriptions for THIS tenant. */
+  subscriptions: number;
+}
+
 export function isPushSupported(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -107,6 +117,36 @@ export async function enablePush(): Promise<{ state: PushState; reason?: string 
     return { state: 'unsubscribed', reason: 'Failed to register subscription with the server' };
   }
   return { state: 'subscribed' };
+}
+
+/** Fetch the per-tenant push status used by the Settings check panel. */
+export async function getPushStatus(): Promise<PushServerStatus> {
+  const res = await fetch(`${getApiBaseUrl()}/api/v1/push/status`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to load push status (${res.status})`);
+  const body = (await res.json().catch(() => ({}))) as { data?: PushServerStatus };
+  return (
+    body.data ?? { vapidConfigured: false, realtimeAvailable: false, subscriptions: 0 }
+  );
+}
+
+/**
+ * Ask the server to dispatch a one-off test notification to this tenant
+ * (in-app + Web Push). Returns the server's dispatch summary.
+ */
+export async function sendTestPush(): Promise<{
+  dispatched: boolean;
+  vapidConfigured: boolean;
+  realtimeAvailable: boolean;
+  subscriptions: number;
+}> {
+  const res = await fetch(`${getApiBaseUrl()}/api/v1/push/test`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: '{}',
+  });
+  if (!res.ok) throw new Error(`Failed to send test notification (${res.status})`);
+  const body = (await res.json().catch(() => ({}))) as { data?: Record<string, unknown> };
+  return body.data as never;
 }
 
 /** Unsubscribe locally and tell the CMS to drop the row. Idempotent. */

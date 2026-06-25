@@ -91,6 +91,7 @@ const AGENT_ICONS = {
   incident: { icon: AlertTriangle, cls: 'text-destructive' },
   goal: { icon: CheckCheck, cls: 'text-emerald-600' },
   run: { icon: AlertCircle, cls: 'text-muted-foreground' },
+  test: { icon: BellRing, cls: 'text-primary' },
 } as const;
 
 function actionIcon(action: 'create' | 'update' | 'delete') {

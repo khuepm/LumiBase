@@ -45,6 +45,7 @@ const DeveloperTypesPage = lazy(() => import('./modules/settings/types-page').th
 const TranslationsPage = lazy(() => import('./modules/translations').then((m) => ({ default: m.TranslationsPage })));
 const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
 const EmailSettingsPage = lazy(() => import('./modules/settings/email-page').then((m) => ({ default: m.EmailSettingsPage })));
+const NotificationsSettingsPage = lazy(() => import('./modules/settings/notifications-page').then((m) => ({ default: m.NotificationsSettingsPage })));
 const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then((m) => ({ default: m.SiteSettingsPage })));
 const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
@@ -612,6 +613,12 @@ const emailSettingsRoute = createRoute({
   component: withSuspense(EmailSettingsPage),
 });
 
+const notificationsSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'notifications',
+  component: withSuspense(NotificationsSettingsPage),
+});
+
 const siteSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'site',
@@ -709,6 +716,12 @@ const adminPathEmailSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'email',
   component: withSuspense(EmailSettingsPage),
+});
+
+const adminPathNotificationsSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'notifications',
+  component: withSuspense(NotificationsSettingsPage),
 });
 
 const adminPathSiteSettingsRoute = createRoute({
@@ -1156,6 +1169,7 @@ const routeTree = rootRoute.addChildren([
       siteSettingsRoute,
       webhooksRoute,
       emailSettingsRoute,
+      notificationsSettingsRoute,
       materializeSettingsRoute,
       translationMemoryRoute,
       activityRoute,
@@ -1218,6 +1232,7 @@ const routeTree = rootRoute.addChildren([
       adminPathSiteSettingsRoute,
       adminPathWebhooksRoute,
       adminPathEmailSettingsRoute,
+      adminPathNotificationsSettingsRoute,
       adminPathMaterializeSettingsRoute,
       adminPathTranslationMemoryRoute,
       adminPathActivityRoute,

@@ -25,7 +25,7 @@ import { and, eq } from 'drizzle-orm';
 import { readVapidKeys, sendWebPush, type VapidKeys } from './web-push';
 
 /** The operational event classes that produce a notification. */
-export type AgentNotificationKind = 'approval' | 'veto' | 'incident' | 'goal' | 'run';
+export type AgentNotificationKind = 'approval' | 'veto' | 'incident' | 'goal' | 'run' | 'test';
 
 export type AgentNotificationSeverity = 'info' | 'warning' | 'critical';
 

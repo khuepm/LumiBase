@@ -12,18 +12,34 @@
  */
 
 import { pushSubscriptions } from '@lumibase/database';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { emitAgentNotification } from '../modules/notifications/agent-notifications';
 
 export const pushRouter = new Hono<AppEnv>();
 
-function vapidPublicKey(c: { env: Record<string, unknown> }): string | undefined {
+function vapidPublicKey(c: { env?: Record<string, unknown> }): string | undefined {
   return (
-    (c.env.VAPID_PUBLIC_KEY as string | undefined) ||
+    (c.env?.VAPID_PUBLIC_KEY as string | undefined) ||
     (typeof process !== 'undefined' ? process.env.VAPID_PUBLIC_KEY : undefined)
   );
+}
+
+function realtimeAvailable(c: { env?: Record<string, unknown> }): boolean {
+  return Boolean(c.env?.SITE_ROOM);
+}
+
+async function siteSubscriptionCount(
+  db: AppEnv['Variables']['db'],
+  siteId: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(pushSubscriptions)
+    .where(eq(pushSubscriptions.siteId, siteId));
+  return row?.n ?? 0;
 }
 
 pushRouter.get('/vapid-public-key', async (c) => {
@@ -35,6 +51,64 @@ pushRouter.get('/vapid-public-key', async (c) => {
     );
   }
   return c.json({ data: { publicKey } });
+});
+
+/**
+ * Per-tenant push status — drives the Studio Settings → Notifications "check"
+ * panel. Everything reported is scoped to the active site: the VAPID key is a
+ * deployment-wide shared resource (same for every tenant), but the
+ * subscription count and realtime availability describe this tenant only.
+ */
+pushRouter.get('/status', async (c) => {
+  const siteId = c.get('siteId');
+  const db = c.get('db');
+  return c.json({
+    data: {
+      vapidConfigured: Boolean(vapidPublicKey(c as never)),
+      realtimeAvailable: realtimeAvailable(c as never),
+      subscriptions: await siteSubscriptionCount(db, siteId),
+    },
+  });
+});
+
+/**
+ * Verify delivery for the current tenant: fan a one-off `test` notification out
+ * over both transports (in-app SiteRoom + Web Push to this site's enrolled
+ * browsers). The operator sees it land; the response reports what was attempted.
+ * Strictly site-scoped — never touches another tenant's subscriptions.
+ */
+pushRouter.post('/test', async (c) => {
+  const siteId = c.get('siteId');
+  const db = c.get('db');
+  const envBag = (c.env ?? {}) as unknown as Record<string, unknown>;
+  const doNamespace = envBag['SITE_ROOM'] as DurableObjectNamespace | undefined;
+  const env = {
+    ...(typeof process !== 'undefined' ? process.env : {}),
+    ...(envBag as Record<string, string | undefined>),
+  };
+
+  const subscriptions = await siteSubscriptionCount(db, siteId);
+
+  await emitAgentNotification(
+    { db, siteId, doNamespace, env },
+    {
+      kind: 'test',
+      severity: 'info',
+      title: 'Test notification',
+      body: 'Push notifications are working for this site.',
+      deepLink: '/settings/notifications',
+      entityId: `test-${siteId}`,
+    },
+  );
+
+  return c.json({
+    data: {
+      dispatched: true,
+      vapidConfigured: Boolean(vapidPublicKey(c as never)),
+      realtimeAvailable: realtimeAvailable(c as never),
+      subscriptions,
+    },
+  });
 });
 
 const subscriptionSchema = z.object({
