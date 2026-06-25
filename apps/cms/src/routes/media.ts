@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import type { Context } from 'hono';
 import type { AppEnv } from '../env';
+import { PermissionService, type PermissionAction } from '../services/permission-service';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
@@ -21,11 +23,61 @@ function isInvalidKey(key: string): boolean {
   return key.includes('..') || key.startsWith('/');
 }
 
+function tenantPrefix(siteId: string): string {
+  return `sites/${siteId}/media/`;
+}
+
+function storageKey(siteId: string, key: string): string {
+  return `${tenantPrefix(siteId)}${key}`;
+}
+
+function publicKey(siteId: string, key: string): string {
+  const prefix = tenantPrefix(siteId);
+  return key.startsWith(prefix) ? key.slice(prefix.length) : key;
+}
+
+function permissionCtx(c: Context<AppEnv>) {
+  const auth = c.get('auth');
+  const headers: Record<string, string> = {};
+  c.req.raw.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value;
+  });
+  return {
+    userId: auth?.userId ?? null,
+    siteId: c.get('siteId'),
+    roleId: null,
+    user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
+    ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+    headers,
+    apiKey: auth?.apiKey ?? null,
+  };
+}
+
+async function requireMediaPermission(
+  c: Context<AppEnv>,
+  action: Extract<PermissionAction, 'create' | 'read' | 'delete'>,
+): Promise<Response | null> {
+  const perm = await new PermissionService({
+    db: c.get('db'),
+    cache: c.get('runtime').cache,
+    ctx: permissionCtx(c),
+  }).canAccess('media', action);
+
+  if (perm) return null;
+  return c.json(
+    { errors: [{ code: 'FORBIDDEN', message: `Action "media:${action}" is not allowed.` }] },
+    403,
+  );
+}
+
 /**
  * GET /media
  * List media assets, optionally filtered by prefix.
  */
 mediaRouter.get('/', async (c) => {
+  const forbidden = await requireMediaPermission(c, 'read');
+  if (forbidden) return forbidden;
+
   const parsed = listQuerySchema.safeParse(
     Object.fromEntries(new URL(c.req.url).searchParams),
   );
@@ -52,8 +104,10 @@ mediaRouter.get('/', async (c) => {
   }
 
   try {
-    const result = await storage.list(parsed.data.prefix);
-    return c.json({ data: result.keys });
+    const siteId = c.get('siteId');
+    const prefix = storageKey(siteId, parsed.data.prefix ?? '');
+    const result = await storage.list(prefix);
+    return c.json({ data: result.keys.map((key) => publicKey(siteId, key)) });
   } catch (err) {
     console.error('[media] list error', formatSafeError(err));
     return c.json(
@@ -68,6 +122,9 @@ mediaRouter.get('/', async (c) => {
  * Download a media asset by key.
  */
 mediaRouter.get('/:key{.+}', async (c) => {
+  const forbidden = await requireMediaPermission(c, 'read');
+  if (forbidden) return forbidden;
+
   const key = c.req.param('key');
 
   if (isInvalidKey(key)) {
@@ -86,7 +143,7 @@ mediaRouter.get('/:key{.+}', async (c) => {
   }
 
   try {
-    const obj = await storage.get(key);
+    const obj = await storage.get(storageKey(c.get('siteId'), key));
     if (!obj) {
       return c.json(
         { errors: [{ code: 'NOT_FOUND', message: 'Media asset not found.' }] },
@@ -117,6 +174,9 @@ mediaRouter.get('/:key{.+}', async (c) => {
  * to produce predefined sizes (150x150, 300x300, 600x600).
  */
 mediaRouter.post('/:key{.+}', async (c) => {
+  const forbidden = await requireMediaPermission(c, 'create');
+  if (forbidden) return forbidden;
+
   const key = c.req.param('key');
 
   if (isInvalidKey(key)) {
@@ -138,9 +198,10 @@ mediaRouter.post('/:key{.+}', async (c) => {
     const contentType = c.req.header('content-type') ?? 'application/octet-stream';
     const body = await c.req.arrayBuffer();
     const data = Buffer.from(body);
+    const scopedKey = storageKey(c.get('siteId'), key);
 
     const metadata: Record<string, string> = { contentType };
-    await storage.put(key, data, metadata);
+    await storage.put(scopedKey, data, metadata);
 
     // Fire-and-forget: enqueue thumbnail generation for image uploads
     if (contentType.startsWith('image/')) {
@@ -148,7 +209,7 @@ mediaRouter.post('/:key{.+}', async (c) => {
         const queue = c.get('runtime').queue;
         if (queue) {
           queue.enqueue('media-processing', 'generate-thumbnails', {
-            key,
+            key: scopedKey,
             sizes: [
               { width: 150, height: 150 },
               { width: 300, height: 300 },
@@ -178,6 +239,9 @@ mediaRouter.post('/:key{.+}', async (c) => {
  * Delete a media asset by key.
  */
 mediaRouter.delete('/:key{.+}', async (c) => {
+  const forbidden = await requireMediaPermission(c, 'delete');
+  if (forbidden) return forbidden;
+
   const key = c.req.param('key');
 
   if (isInvalidKey(key)) {
@@ -196,7 +260,7 @@ mediaRouter.delete('/:key{.+}', async (c) => {
   }
 
   try {
-    await storage.delete(key);
+    await storage.delete(storageKey(c.get('siteId'), key));
     return c.body(null, 204);
   } catch (err) {
     console.error('[media] delete error', formatSafeError(err));
