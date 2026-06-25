@@ -107,9 +107,12 @@
   `processing_restricted`/`processing_unrestricted`. The `isRestricted` helper is the
   enforcement hook for services (agent runs, marketing); wiring those call sites is the
   remaining integration step.
-- **P2.2 Human-review path for agent actions** — ⬜ Not implemented. Provenance
-  exists (`revisions.authorType/model/sources`) + HITL `ai_approvals`; surfacing it to
-  affected users (GDPR Art. 22) is future work.
+- **P2.2 Human-review path for agent actions** — ✅ Done (v0.8.x).
+  `GET /api/v1/me/automated-decisions`
+  (`apps/cms/src/modules/data-rights/automated-decisions-service.ts`) surfaces
+  agent-authored revisions on the user's content with provenance (model, sources,
+  confidence), satisfying GDPR Art. 22 transparency. A user-initiated "request human
+  review" action (creating an `ai_approvals` entry) is the remaining enhancement.
 - **P2.3 Field-level redaction on export** — ✅ Done (v0.8.x). `redactByClassification`
   (`apps/cms/src/modules/data-rights/redaction.ts`) masks `pii`/`sensitive` field values;
   the personal-data export also excludes credential secrets (`passwordHash`, `tfa`). Wire

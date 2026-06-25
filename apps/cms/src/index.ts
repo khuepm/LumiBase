@@ -23,6 +23,7 @@ import { authRouter, meRouter } from './routes/auth';
 import { adminSecurityRouter } from './routes/admin-security';
 import { apiKeysRouter } from './routes/api-keys';
 import { collectionsRouter } from './routes/collections';
+import { automatedDecisionsRouter } from './routes/automated-decisions';
 import { consentRouter } from './routes/consent';
 import { dataExportRouter } from './routes/data-export';
 import { meErasureRouter, adminErasureRouter } from './routes/erasure';
@@ -182,6 +183,8 @@ api.route('/me/data-export', dataExportRouter);
 api.route('/me/erasure', meErasureRouter);
 // `/me/restriction` — self-service restriction of processing (GDPR Art. 18).
 api.route('/me/restriction', restrictionRouter);
+// `/me/automated-decisions` — transparency over agent processing (GDPR Art. 22).
+api.route('/me/automated-decisions', automatedDecisionsRouter);
 // `/erasure` — admin force-erase + grace-period processor (site-admin only).
 api.route('/erasure', adminErasureRouter);
 // `/retention` — admin general data-retention pruning (site-admin only).

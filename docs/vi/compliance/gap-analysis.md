@@ -25,7 +25,7 @@
 | Minh bạch / thông báo quyền riêng tư | ⚠️ | Trang privacy tại `apps/landing/src/app/privacy/page.tsx` (chung chung) | Bản đồ dữ liệu để khai báo "data safety"/nhãn chính xác; thông báo theo từng triển khai. |
 | Thông báo vi phạm | ⚠️ | `apps/cms/src/modules/audit/` cung cấp dấu vết phát hiện; `modules/anomaly` | Quy trình ứng phó sự cố + thông báo cơ quan trong 72h (mức tổ chức). |
 | Chuyển dữ liệu xuyên biên giới / nội địa hoá | ⚠️ | Runtime edge; `apps/cms/src/middleware/rls.ts` cô lập tenant | Cấu hình ghim vùng / data-residency + tài liệu. |
-| Quyết định tự động / con người xem xét | ⚠️ | Provenance trong `revisions` (authorType, model, sources, confidence); HITL qua `ai_approvals` | Hiển thị lối con người xem xét cho hành động agent ảnh hưởng người dùng. |
+| Quyết định tự động / con người xem xét | ✅ | `apps/cms/src/modules/data-rights/automated-decisions-service.ts`; `GET /api/v1/me/automated-decisions` hiển thị revisions agent trên nội dung của user kèm provenance; HITL qua `ai_approvals` | Thêm hành động "yêu cầu con người xem xét" do user khởi tạo. |
 | Biện pháp an ninh (mã hoá/truy cập) | ✅ | `apps/cms/src/services/crypto-service.ts` (AES-256-GCM); `fields.encrypted` (`cms.ts:124`); `middleware/rls.ts`; RBAC `schema/access.ts` | Duy trì; tài liệu hoá quản lý khoá. |
 | Retention / tự động dọn | ✅ | Audit: `apps/cms/src/modules/audit/rotator.ts`; tổng quát: `apps/cms/src/modules/data-rights/retention-service.ts` (activity + notifications đã đọc/lưu) qua `POST /api/v1/retention/run` | Mở rộng mốc cho nhiều bảng PII; lên lịch trên cron rotation. |
 

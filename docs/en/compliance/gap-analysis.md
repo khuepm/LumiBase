@@ -25,7 +25,7 @@
 | Transparency / privacy notice | ⚠️ | Privacy page at `apps/landing/src/app/privacy/page.tsx` (generic) | Data map to back accurate store "data safety"/labels; per-deployment notice. |
 | Breach notification | ⚠️ | `apps/cms/src/modules/audit/` provides detection trail; `modules/anomaly` | Incident-response runbook + 72h regulator notification process (organizational). |
 | Cross-border transfer / localization | ⚠️ | Edge runtime; `apps/cms/src/middleware/rls.ts` isolates tenants | Region-pinning / data-residency configuration + documentation. |
-| Automated decisions / human review | ⚠️ | Provenance in `revisions` (authorType, model, sources, confidence); HITL via `ai_approvals` | Surface human-review path for user-affecting agent actions. |
+| Automated decisions / human review | ✅ | `apps/cms/src/modules/data-rights/automated-decisions-service.ts`; `GET /api/v1/me/automated-decisions` surfaces agent revisions on the user's content with provenance; HITL via `ai_approvals` | Add a user-initiated "request human review" action. |
 | Security measures (encryption/access) | ✅ | `apps/cms/src/services/crypto-service.ts` (AES-256-GCM); `fields.encrypted` (`cms.ts:124`); `middleware/rls.ts`; RBAC `schema/access.ts` | Maintain; document key management. |
 | Retention / auto-purge | ✅ | Audit: `apps/cms/src/modules/audit/rotator.ts`; general: `apps/cms/src/modules/data-rights/retention-service.ts` (activity + read/archived notifications) via `POST /api/v1/retention/run` | Extend horizons to more PII tables; schedule on the rotation cron. |
 

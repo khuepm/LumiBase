@@ -104,9 +104,12 @@
   + `RestrictionService` + tự phục vụ `GET`/`PUT /api/v1/me/restriction`; audit
   `processing_restricted`/`processing_unrestricted`. Helper `isRestricted` là hook thực
   thi cho service (agent run, marketing); gắn các call site đó là bước tích hợp còn lại.
-- **P2.2 Lối con người xem xét cho hành động agent** — ⬜ Chưa làm. Provenance đã có
-  (`revisions.authorType/model/sources`) + HITL `ai_approvals`; hiển thị cho người dùng
-  bị ảnh hưởng (GDPR Điều 22) là việc tương lai.
+- **P2.2 Lối con người xem xét cho hành động agent** — ✅ Đã làm (v0.8.x).
+  `GET /api/v1/me/automated-decisions`
+  (`apps/cms/src/modules/data-rights/automated-decisions-service.ts`) hiển thị revisions
+  do agent tạo trên nội dung của user kèm provenance (model, sources, confidence), thoả
+  minh bạch GDPR Điều 22. Hành động "yêu cầu con người xem xét" do user khởi tạo (tạo
+  bản ghi `ai_approvals`) là cải tiến còn lại.
 - **P2.3 Che field khi xuất** — ✅ Đã làm (v0.8.x). `redactByClassification`
   (`apps/cms/src/modules/data-rights/redaction.ts`) che giá trị field `pii`/`sensitive`;
   export dữ liệu cá nhân cũng loại trừ secret credential (`passwordHash`, `tfa`). Gắn
