@@ -260,6 +260,13 @@
       "when": 1781773620004,
       "tag": "0037_processing_restrictions",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1781773680004,
+      "tag": "0038_deployment_integrations",
+      "breakpoints": true
     }
   ]
 }
