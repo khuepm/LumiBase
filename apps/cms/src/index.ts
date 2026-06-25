@@ -25,6 +25,7 @@ import { apiKeysRouter } from './routes/api-keys';
 import { collectionsRouter } from './routes/collections';
 import { consentRouter } from './routes/consent';
 import { dataExportRouter } from './routes/data-export';
+import { meErasureRouter, adminErasureRouter } from './routes/erasure';
 import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
 import { extensionsRouter } from './routes/extensions';
@@ -175,6 +176,10 @@ api.route('/me', meRouter);
 api.route('/me/consents', consentRouter);
 // `/me/data-export` — self-service "download my data" (GDPR Art. 15/20).
 api.route('/me/data-export', dataExportRouter);
+// `/me/erasure` — self-service right-to-be-forgotten (GDPR Art. 17).
+api.route('/me/erasure', meErasureRouter);
+// `/erasure` — admin force-erase + grace-period processor (site-admin only).
+api.route('/erasure', adminErasureRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/items', itemsRouter);

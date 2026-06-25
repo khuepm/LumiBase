@@ -12,7 +12,7 @@
 
 | Right / obligation | Status | Evidence (file path) | Work needed to close |
 |--------------------|:------:|----------------------|----------------------|
-| Erasure / right to be forgotten | ⚠️ | `packages/database/src/schema/cms.ts` (`items.deletedAt`, line 201); `apps/cms/src/routes/users.ts` (removes from `userSites` only) | Global account-erasure workflow that cascades/anonymizes across `users` and references; audit event; grace period. |
+| Erasure / right to be forgotten | ✅ | `apps/cms/src/modules/data-rights/erasure-service.ts`; `erasure_requests` table; self-service `/api/v1/me/erasure` + admin `/api/v1/erasure`; grace period + processor; anonymizes PII in place | Wire the processor to the scheduled-rotation cron alongside audit rotation. |
 | Access / right to know | ✅ | `apps/cms/src/modules/data-rights/export-service.ts`; `GET /api/v1/me/data-export` (profile, consents, activity, revisions authored, notifications) | Extend coverage as new PII-bearing tables are added. |
 | Data portability | ✅ | `apps/cms/src/routes/data-export.ts` — structured JSON of the user's own data, with `Content-Disposition` download header | Offer a CSV variant if required; reuse for the erasure preview. |
 | Rectification | ✅ | `apps/cms/src/routes/users.ts` (user update); profile editing | None for profile; ensure all PII fields are user-editable. |
@@ -21,7 +21,7 @@
 | Consent + withdrawal | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Add preference-center UI. |
 | Cookie / tracking consent | ⚠️ | Backend record store exists (`user_consents`, type `analytics`/`functional`); no frontend capture | Frontend consent banner + capture for non-essential cookies/tracking, recorded via `/me/consents`. |
 | Email unsubscribe | ✅ | `packages/database/src/schema/compliance.ts` (`email_suppressions`); `apps/cms/src/modules/email/suppression.ts`; public `GET`/`POST /api/v1/email/unsubscribe`; send path filters marketing recipients | Add the `List-Unsubscribe` SMTP header (RFC 8058) once `OutboundEmail` supports custom headers. |
-| Account deletion (in-app/web) | ❌ | — | Self-service deletion endpoint (powers Apple 5.1.1(v) / Google web-URL requirement). |
+| Account deletion (in-app/web) | ✅ | Self-service `POST /api/v1/me/erasure` (`apps/cms/src/routes/erasure.ts`) | Expose a publicly reachable deletion-request URL for the Google Play store listing. |
 | Transparency / privacy notice | ⚠️ | Privacy page at `apps/landing/src/app/privacy/page.tsx` (generic) | Data map to back accurate store "data safety"/labels; per-deployment notice. |
 | Breach notification | ⚠️ | `apps/cms/src/modules/audit/` provides detection trail; `modules/anomaly` | Incident-response runbook + 72h regulator notification process (organizational). |
 | Cross-border transfer / localization | ⚠️ | Edge runtime; `apps/cms/src/middleware/rls.ts` isolates tenants | Region-pinning / data-residency configuration + documentation. |
@@ -49,9 +49,12 @@ These primitives are real and reusable when building compliance features:
 
 ## 3. The biggest gaps (and why they matter)
 
-1. **Global account erasure (right to be forgotten).** `DELETE` on users today only
-   removes a `userSites` membership row — the `users` record and PII persist.
-   Required by GDPR Art. 17, CCPA delete, PDPD, and both stores. **Highest priority.**
+1. **Global account erasure (right to be forgotten).** ✅ *Implemented (v0.8.x).*
+   `ErasureService` (`apps/cms/src/modules/data-rights/erasure-service.ts`) anonymizes
+   the `users` row in place, drops all memberships/credentials, suppresses the email,
+   and tracks the request in `erasure_requests` with a grace period + a `processDue`
+   processor. Self-service `/api/v1/me/erasure`; admin force-erase `/api/v1/erasure`.
+   Satisfies GDPR Art. 17, CCPA delete, PDPD, Apple 5.1.1(v), Google.
 2. **Personal-data export ("download my data").** ✅ *Implemented (v0.8.x).*
    `GET /api/v1/me/data-export` (`apps/cms/src/modules/data-rights/export-service.ts`)
    assembles the caller's profile, consents, activity, authored revisions and

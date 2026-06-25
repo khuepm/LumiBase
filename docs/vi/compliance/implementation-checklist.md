@@ -11,22 +11,23 @@
 
 ## P0 — Bắt buộc cho tuân thủ pháp lý + store cơ bản
 
-### P0.1 Xoá tài khoản / quyền được lãng quên
+### P0.1 Xoá tài khoản / quyền được lãng quên — ✅ Đã làm (v0.8.x)
 - **Vì sao:** GDPR Điều 17, CCPA delete, PDPD, Apple 5.1.1(v), Google data deletion.
-- **Làm gì:** Endpoint tự phục vụ (và bản admin tương ứng) thực hiện xoá đầy đủ tài
-  khoản + dữ liệu cá nhân — không chỉ xoá `userSites` như `apps/cms/src/routes/users.ts`
-  hiện tại.
-- **Điểm chạm:**
-  - Cascade/ẩn danh hoá xuyên `users` và các bảng con trong
-    `packages/database/src/schema/core.ts` và `access.ts` (user_roles, user_policies,
-    api_keys created_by, v.v.).
-  - Ẩn danh hoá tham chiếu phải tồn tại (ví dụ `items.userCreated`,
-    `revisions.userId`) thay vì để mồ côi.
-  - Phát một audit event riêng qua `apps/cms/src/modules/audit/logger.ts`.
-  - Cân nhắc **thời gian ân hạn** (cờ soft, rồi dọn) tái dùng mẫu soft-delete
-    (`items.deletedAt`).
-- **URL web:** cung cấp luồng yêu cầu xoá truy cập công khai (yêu cầu Google Play),
-  tách biệt với lối trong ứng dụng.
+- **Đã giao:**
+  - Bảng `erasure_requests` (`packages/database/src/schema/compliance.ts`) +
+    migration `0033_erasure_requests.sql` + RLS.
+  - `ErasureService` (`apps/cms/src/modules/data-rights/erasure-service.ts`):
+    `request` (ân hạn), `cancel`, `getStatus`, `eraseNow` (ẩn danh hoá tại chỗ trong
+    transaction: null PII, xoá membership/credential, suppress email), và `processDue`
+    (processor ân hạn).
+  - Tự phục vụ `GET`/`POST`/`DELETE /api/v1/me/erasure`; admin force-erase
+    `POST /api/v1/erasure/:userId` + `POST /api/v1/erasure/process-due`
+    (`apps/cms/src/routes/erasure.ts`). Audit `erasure_requested`/`erasure_cancelled`/
+    `account_erased`.
+  - **Ẩn danh chứ không xoá:** dòng `users` được giữ để provenance nội dung
+    (`items.userCreated`, `revisions.userId`) còn nguyên trong khi PII bị loại bỏ.
+- **Tiếp theo:** lên lịch `processDue` trên cron rotation sẵn có; cung cấp URL yêu cầu
+  xoá công khai cho listing Google Play.
 
 ### P0.2 Xuất dữ liệu cá nhân ("download my data") — ✅ Đã làm (v0.8.x)
 - **Vì sao:** GDPR Điều 15/20, yêu cầu truy cập.

@@ -11,22 +11,23 @@
 
 ## P0 — Must-have for basic legal + store compliance
 
-### P0.1 Account erasure / right to be forgotten
+### P0.1 Account erasure / right to be forgotten — ✅ Done (v0.8.x)
 - **Why:** GDPR Art. 17, CCPA delete, PDPD, Apple 5.1.1(v), Google data deletion.
-- **What:** A self-service endpoint (and admin counterpart) that performs full
-  account + personal-data deletion — not just `userSites` removal as
-  `apps/cms/src/routes/users.ts` does today.
-- **Touch points:**
-  - Cascade/anonymize across `users` and child tables in
-    `packages/database/src/schema/core.ts` and `access.ts` (user_roles,
-    user_policies, api_keys created_by, etc.).
-  - Anonymize references that must survive (e.g., `items.userCreated`,
-    `revisions.userId`) rather than orphaning them.
-  - Emit a dedicated audit event via `apps/cms/src/modules/audit/logger.ts`.
-  - Consider a **grace period** (soft-flag, then purge) reusing the soft-delete
-    pattern (`items.deletedAt`).
-- **Web URL:** expose a publicly reachable deletion-request flow (Google Play
-  requirement) distinct from the in-app path.
+- **Delivered:**
+  - `erasure_requests` table (`packages/database/src/schema/compliance.ts`) +
+    migration `0033_erasure_requests.sql` + RLS.
+  - `ErasureService` (`apps/cms/src/modules/data-rights/erasure-service.ts`):
+    `request` (grace period), `cancel`, `getStatus`, `eraseNow` (transactional
+    anonymize-in-place: nulls PII, drops memberships/credentials, suppresses the
+    email), and `processDue` (grace-period processor).
+  - Self-service `GET`/`POST`/`DELETE /api/v1/me/erasure`; admin force-erase
+    `POST /api/v1/erasure/:userId` + `POST /api/v1/erasure/process-due`
+    (`apps/cms/src/routes/erasure.ts`). Audits `erasure_requested`/
+    `erasure_cancelled`/`account_erased`.
+  - **Anonymize, not delete:** the `users` row survives so content provenance
+    (`items.userCreated`, `revisions.userId`) stays intact while PII is removed.
+- **Follow-up:** schedule `processDue` on the existing rotation cron; expose a
+  public deletion-request URL for the Google Play listing.
 
 ### P0.2 Personal-data export ("download my data") — ✅ Done (v0.8.x)
 - **Why:** GDPR Art. 15/20, access requests.
