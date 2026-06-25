@@ -1,0 +1,15 @@
+-- Snapshot-baseline realignment (no-op migration).
+--
+-- The committed drizzle snapshots stopped at `0011`, while migrations
+-- `0012`–`0031` were authored by hand and never refreshed the snapshot.
+-- As a result `drizzle-kit generate` diffed the live schema (71 tables)
+-- against the stale `0011` snapshot (48 tables) and tried to re-`CREATE`
+-- ~23 already-existing tables on every run.
+--
+-- This migration carries an accurate full-schema snapshot
+-- (`meta/0032_snapshot.json`) so future `generate` runs diff against
+-- reality and emit only genuine changes. It intentionally executes NO DDL:
+-- every table the snapshot describes was already created by migrations
+-- `0012`–`0031`, which run before this one on both fresh and existing
+-- databases. Applying CREATE statements here would fail on existing DBs.
+SELECT 1;

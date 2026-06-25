@@ -19,9 +19,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **Hourly prune** of expired refresh tokens on the existing audit-rotation cron (Workers `scheduled` + Node `node-cron`).
 - **SDK silent auto-refresh.** `createLumiClient` accepts `refreshToken` + `onTokensRefreshed`; a 401 transparently refreshes and retries once (parallel 401s coalesce into one refresh). Studio wires this end to end (login persists the refresh token, logout revokes it server-side).
 
+### Fixed
+
+- **Drizzle snapshot drift.** Committed snapshots had lagged at `0011`, so `drizzle-kit generate` kept re-emitting already-migrated tables. Realigned the baseline with a no-op migration (`0032_realign_snapshot_baseline`) carrying an accurate full-schema snapshot; `generate` is usable again.
+
 ### Notes
 
-- Run `pnpm -F @lumibase/database migrate` to apply migration `0031` (adds `refresh_tokens`). No backfill required.
+- Run `pnpm -F @lumibase/database migrate` to apply migrations `0031` (adds `refresh_tokens`) and `0032` (no-op snapshot realignment). No backfill required.
 
 ## [0.8.0] - 2026-06-18
 

@@ -22,13 +22,15 @@ Each task is one or more commits.
 - [x] **T5 — Refresh-flow DB integration test.** Real-Postgres test
   (skipped without `DATABASE_URL`, mirroring existing `*.db.integration`).
 
-## Deferred (out of scope for this backend pass — tracked, not done)
+## Follow-ups (now also done)
 
 - [x] **T6 — SDK auto-refresh.** `@lumibase/sdk` should call `/auth/refresh`
   on a 401 and retry. Cross-package; needs SDK API design.
 - [x] **T7 — Studio/frontend wiring.** Store tokens, refresh before expiry,
   logout button (`apps/studio`). UI work, not unit-verifiable here.
-- [ ] **T8 — Drizzle snapshot drift.** Pre-existing: `drizzle-kit generate`
-  re-emits existing tables because the committed snapshots lag the schema.
-  Migration 0031 was hand-written to avoid it; the snapshots should be
-  rebuilt so `generate` works again.
+- [x] **T8 — Drizzle snapshot drift.** Committed snapshots stopped at `0011`
+  (48 tables) while hand-written `0012`–`0031` reached 71, so `generate`
+  re-emitted ~23 existing tables. Fixed by regenerating an accurate
+  full-schema snapshot carried by a no-op realignment migration
+  (`0032_realign_snapshot_baseline`); `generate` now reports "No schema
+  changes". Future migrations can use `generate` normally again.
