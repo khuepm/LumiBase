@@ -98,7 +98,7 @@ Error response:
 | `GET` | `/api/v1/me/consents` | List the current user's consent decisions |
 | `PUT` | `/api/v1/me/consents/:type` | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
 
-**Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional`):
+**Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 
 ```jsonc
 // PUT /api/v1/me/consents/marketing

@@ -62,9 +62,12 @@
 
 ## P1 — Nên làm sớm
 
-### P1.1 Opt-out bán/chia sẻ ("Do Not Sell or Share")
-- Lưu cờ opt-out (mở rộng `user_consents`); tôn trọng tín hiệu tuỳ chọn (Global
-  Privacy Control); hiển thị liên kết/thông báo bắt buộc.
+### P1.1 Opt-out bán/chia sẻ ("Do Not Sell or Share") — ✅ Đã làm (v0.8.x)
+- Triển khai bằng loại consent `sale_share` (`packages/shared/src/schemas/consent.ts`),
+  ghi qua `PUT /api/v1/me/consents/sale_share`. Ngữ nghĩa: `granted: false` (hoặc không
+  có bản ghi) = đã opt-out — mặc định an toàn theo CCPA.
+- **Tiếp theo:** hiển thị link "Do Not Sell or Share" bắt buộc và tôn trọng tín hiệu
+  Global Privacy Control của trình duyệt ở frontend.
 
 ### P1.2 Chính sách retention dữ liệu tổng quát
 - Mở rộng khái niệm retention của `rotator.ts` (`LUMIBASE_AUDIT_RETENTION_DAYS`) sang

@@ -62,9 +62,12 @@
 
 ## P1 — Strongly recommended
 
-### P1.1 Opt-out of sale/share ("Do Not Sell or Share")
-- Store an opt-out flag (extend `user_consents`); honor preference signals (e.g.,
-  Global Privacy Control); surface the required link/notice.
+### P1.1 Opt-out of sale/share ("Do Not Sell or Share") — ✅ Done (v0.8.x)
+- Implemented as the `sale_share` consent type (`packages/shared/src/schemas/consent.ts`),
+  recorded via `PUT /api/v1/me/consents/sale_share`. Semantics: `granted: false` (or
+  no record) = opted out — the safe CCPA default.
+- **Follow-up:** surface the required "Do Not Sell or Share" link and honor the
+  Global Privacy Control browser signal in the frontend.
 
 ### P1.2 General data-retention policies
 - Extend the audit `rotator.ts` retention concept (`LUMIBASE_AUDIT_RETENTION_DAYS`)

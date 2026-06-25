@@ -28,7 +28,7 @@ export const userConsents = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    /** `marketing` | `analytics` | `personalization` | `functional` */
+    /** `marketing` | `analytics` | `personalization` | `functional` | `sale_share` */
     consentType: text('consent_type').notNull(),
     /** Current decision. `true` = granted, `false` = withdrawn/denied. */
     granted: boolean('granted').default(false).notNull(),

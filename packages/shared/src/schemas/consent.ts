@@ -14,6 +14,10 @@ export const CONSENT_TYPES = [
   'analytics',
   'personalization',
   'functional',
+  // CCPA/CPRA "Do Not Sell or Share". Semantics: `granted: true` = the user
+  // consents to sale/sharing; `granted: false` (or no record) = opted out. The
+  // safe default (absent) is therefore "opted out".
+  'sale_share',
 ] as const;
 
 export type ConsentType = (typeof CONSENT_TYPES)[number];

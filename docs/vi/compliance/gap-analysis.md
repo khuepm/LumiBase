@@ -17,8 +17,8 @@
 | Di chuyển dữ liệu (portability) | ❌ | — | Endpoint "Tải dữ liệu của tôi" tạo JSON/CSV có cấu trúc của dữ liệu chính người dùng. |
 | Chỉnh sửa (rectification) | ✅ | `apps/cms/src/routes/users.ts` (cập nhật user); sửa hồ sơ | Không cần cho hồ sơ; đảm bảo mọi trường PII người dùng sửa được. |
 | Hạn chế xử lý | ❌ | — | Cờ trạng thái "restricted"/"đóng băng" và thực thi. |
-| Phản đối / opt-out (bán/chia sẻ) | ❌ | — | Lưu cờ opt-out + xử lý "Do Not Sell or Share"; tôn trọng tín hiệu tuỳ chọn. |
-| Đồng ý + rút lại | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Mở rộng cho opt-out bán/chia sẻ (P1.1); thêm UI preference center. |
+| Phản đối / opt-out (bán/chia sẻ) | ✅ | Loại consent `sale_share` qua `PUT /api/v1/me/consents/sale_share` (`packages/shared/src/schemas/consent.ts`) | Gắn link "Do Not Sell or Share" + tín hiệu Global Privacy Control ở frontend. |
+| Đồng ý + rút lại | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Thêm UI preference center. |
 | Đồng ý cookie / theo dõi | ⚠️ | Đã có store backend (`user_consents`, loại `analytics`/`functional`); chưa có thu thập ở frontend | Banner đồng ý + thu thập cho cookie/theo dõi không thiết yếu, ghi qua `/me/consents`. |
 | Huỷ đăng ký email | ❌ | `email_templates`, `flows` gửi mail được; chưa có suppression | Liên kết unsubscribe, trung tâm tuỳ chọn, danh sách chặn kiểm tra trước khi gửi. |
 | Xoá tài khoản (in-app/web) | ❌ | — | Endpoint xoá tự phục vụ (phục vụ Apple 5.1.1(v) / yêu cầu URL web của Google). |

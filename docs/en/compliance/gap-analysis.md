@@ -17,8 +17,8 @@
 | Data portability | ❌ | — | "Download my data" endpoint producing structured JSON/CSV of the user's own data. |
 | Rectification | ✅ | `apps/cms/src/routes/users.ts` (user update); profile editing | None for profile; ensure all PII fields are user-editable. |
 | Restriction of processing | ❌ | — | A "frozen"/"restricted" state flag and enforcement. |
-| Objection / opt-out (sale/share) | ❌ | — | Opt-out flag storage + "Do Not Sell or Share" handling; honor preference signals. |
-| Consent + withdrawal | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Extend to opt-out-of-sale (P1.1); add preference-center UI. |
+| Objection / opt-out (sale/share) | ✅ | `sale_share` consent type via `PUT /api/v1/me/consents/sale_share` (`packages/shared/src/schemas/consent.ts`) | Wire a "Do Not Sell or Share" link + Global Privacy Control signal in the frontend. |
+| Consent + withdrawal | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Add preference-center UI. |
 | Cookie / tracking consent | ⚠️ | Backend record store exists (`user_consents`, type `analytics`/`functional`); no frontend capture | Frontend consent banner + capture for non-essential cookies/tracking, recorded via `/me/consents`. |
 | Email unsubscribe | ❌ | `email_templates`, `flows` can send mail; no suppression | Unsubscribe link, preference center, suppression list checked before sending. |
 | Account deletion (in-app/web) | ❌ | — | Self-service deletion endpoint (powers Apple 5.1.1(v) / Google web-URL requirement). |

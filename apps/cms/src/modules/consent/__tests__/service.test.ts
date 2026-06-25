@@ -9,8 +9,8 @@ import type { Database } from '@lumibase/database';
 // ---------------------------------------------------------------------------
 
 describe('consent Zod schemas', () => {
-  it('accepts the four canonical consent types and rejects others', () => {
-    for (const t of ['marketing', 'analytics', 'personalization', 'functional']) {
+  it('accepts the canonical consent types and rejects others', () => {
+    for (const t of ['marketing', 'analytics', 'personalization', 'functional', 'sale_share']) {
       expect(ConsentTypeSchema.safeParse(t).success).toBe(true);
     }
     expect(ConsentTypeSchema.safeParse('tracking').success).toBe(false);
