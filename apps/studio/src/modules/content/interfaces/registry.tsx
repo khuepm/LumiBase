@@ -15,6 +15,11 @@ import { RelationManyInterface } from './relation-many';
 import { RepeaterInterface } from './repeater';
 import { SeoInterface } from './seo';
 import { SelectDropdownInterface } from './select';
+import { SelectMultipleCheckbox, SelectMultipleDropdown } from './select-multiple';
+import { SelectRadioInterface } from './select-radio';
+import { SelectCheckboxTreeInterface } from './select-checkbox-tree';
+import { SelectIconInterface } from './select-icon';
+import { SliderInterface } from './slider';
 import { SlugInterface } from './slug';
 import { TagsInterface } from './tags';
 import { TextInterface, TextMultilineInterface } from './text';
@@ -48,6 +53,14 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   color: ColorInterface,
   rating: RatingInterface,
   tags: TagsInterface,
+
+  // Selection interfaces (Directus parity).
+  'select-multiple-dropdown': SelectMultipleDropdown,
+  'select-multiple-checkbox': SelectMultipleCheckbox,
+  'select-multiple-checkbox-tree': SelectCheckboxTreeInterface,
+  'select-radio': SelectRadioInterface,
+  'select-icon': SelectIconInterface,
+  slider: SliderInterface,
 
   // Phase B FE slice 4 additions.
   'relation-m2o': RelationM2OInterface,
