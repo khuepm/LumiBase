@@ -45,6 +45,7 @@ import {
   Rows3,
   PanelTopOpen,
   FolderTree,
+  Map as MapIcon,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -85,7 +86,9 @@ const IFACE_ICONS: Record<string, LucideIcon> = {
   'relation-o2m': ArrowLeft,
   'relation-m2m': LayoutGrid,
   'relation-m2a': Network,
+  'relation-o2m-tree-view': ListTree,
   'collection-item-dropdown': Boxes,
+  'map': MapIcon,
   'file': Paperclip,
   'files': FolderOpen,
   'seo': Search,

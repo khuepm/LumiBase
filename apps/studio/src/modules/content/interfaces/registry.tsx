@@ -9,8 +9,10 @@ import { FilesInterface } from './files';
 import { InputAutocompleteApiInterface } from './input-autocomplete-api';
 import { InputHashInterface } from './input-hash';
 import { JsonRawInterface } from './json-raw';
+import { MapInterface } from './map';
 import { MarkdownInterface } from './markdown';
 import { NumberInterface } from './number';
+import { RelationTreeViewInterface } from './relation-o2m-tree-view';
 import {
   PresentationHeaderInterface,
   PresentationInterface,
@@ -75,7 +77,9 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   'relation-o2m': RelationManyInterface,
   'relation-m2m': RelationManyInterface,
   'relation-m2a': RelationM2AInterface,
+  'relation-o2m-tree-view': RelationTreeViewInterface,
   'collection-item-dropdown': CollectionItemDropdownInterface,
+  map: MapInterface,
   code: CodeInterface,
   wysiwyg: WysiwygInterface,
   markdown: MarkdownInterface,
