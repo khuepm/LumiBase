@@ -42,6 +42,9 @@ import {
   ExternalLink,
   Network,
   Boxes,
+  Rows3,
+  PanelTopOpen,
+  FolderTree,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -95,6 +98,9 @@ const IFACE_ICONS: Record<string, LucideIcon> = {
   'presentation-links': ExternalLink,
   'input-hash': KeyRound,
   'input-autocomplete-api': TextSearch,
+  'group-raw': Rows3,
+  'group-detail': FolderTree,
+  'group-accordion': PanelTopOpen,
 };
 
 export interface FieldFormState {

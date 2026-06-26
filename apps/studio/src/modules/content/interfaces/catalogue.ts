@@ -227,6 +227,9 @@ export const INTERFACE_CATALOGUE: InterfaceCatalogueItem[] = [
   { id: 'presentation-notice', label: 'Presentation: notice', description: 'Inline editorial notice.', type: 'alias', group: 'Special' },
   { id: 'presentation-header', label: 'Presentation: header', description: 'Section heading with subtitle.', type: 'alias', group: 'Special' },
   { id: 'presentation-links', label: 'Presentation: links', description: 'Row of link buttons.', type: 'alias', group: 'Special', defaultOptions: { links: [] } },
+  { id: 'group-raw', label: 'Group: raw', description: 'Group fields with no visual chrome.', type: 'alias', group: 'Special' },
+  { id: 'group-detail', label: 'Group: detail', description: 'Group fields inside a bordered fieldset.', type: 'alias', group: 'Special' },
+  { id: 'group-accordion', label: 'Group: accordion', description: 'Collapsible group of fields.', type: 'alias', group: 'Special', defaultOptions: { start: 'open' } },
 ];
 
 export function findInterfaceCatalogueItem(id: string): InterfaceCatalogueItem | undefined {
