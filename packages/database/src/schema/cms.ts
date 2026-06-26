@@ -122,6 +122,12 @@ export const fields = pgTable(
     readonly: boolean('readonly').default(false).notNull(),
     hidden: boolean('hidden').default(false).notNull(),
     encrypted: boolean('encrypted').default(false).notNull(),
+    /**
+     * Data sensitivity classification (Req 5): `none|internal|pii|phi`.
+     * `pii|phi` require `encrypted=true`, are masked by default unless the
+     * caller has `read_decrypted`, and their decrypted reads are audited.
+     */
+    classification: text('classification').default('none').notNull(),
     versioned: boolean('versioned').default(false).notNull(),
     rawEnabled: boolean('raw_enabled').default(true).notNull(),
     /** `half` | `full` | `fill` */
@@ -194,6 +200,24 @@ export const items = pgTable(
      */
     pinnedFields: jsonb('pinned_fields').default([]).notNull(),
     sort: integer('sort').default(0).notNull(),
+    /**
+     * Content scheduling window (Req 7). When set, the Scheduler publishes at
+     * `publishAt` and unpublishes at `unpublishAt`; delivery filters to the
+     * current Publish_Window. Both nullable → default behaviour unchanged.
+     */
+    publishAt: timestamp('publish_at'),
+    unpublishAt: timestamp('unpublish_at'),
+    /**
+     * Editorial workflow state (Req 8). Null = use `status` only (no workflow);
+     * preserves Tier 1 behaviour for collections without `editorialWorkflow`.
+     */
+    editorialState: text('editorial_state'),
+    /**
+     * Per-record wrapped DEK for envelope encryption (Req 4.5). Null unless
+     * `LUMIBASE_ENVELOPE_ENCRYPTION` is enabled; deleting it crypto-shreds the
+     * record (Req 11.2).
+     */
+    dekWrapped: text('dek_wrapped'),
     userCreated: text('user_created').references(() => users.id),
     userUpdated: text('user_updated').references(() => users.id),
     createdAt: createdAt(),
@@ -211,6 +235,9 @@ export const items = pgTable(
       .using('gin', t.data)
       .where(sql`${t.deletedAt} is null`),
     siteIdx: index('items_site_idx').on(t.siteId),
+    /** Scheduler scans for items due to publish/unpublish (Req 7.3, 7.4). */
+    publishDueIdx: index('items_publish_due_idx').on(t.siteId, t.status, t.publishAt),
+    unpublishDueIdx: index('items_unpublish_due_idx').on(t.siteId, t.status, t.unpublishAt),
   }),
 );
 
@@ -417,5 +444,100 @@ export const materializedCollections = pgTable(
       t.collection,
       t.target,
     ),
+  }),
+);
+
+/**
+ * Insights dashboards — a named container of panels, per site.
+ * See `.kiro/specs/insights-dashboard`.
+ */
+export const dashboards = pgTable(
+  'dashboards',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    icon: text('icon'),
+    color: text('color'),
+    note: text('note'),
+    createdBy: text('created_by'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteIdx: index('dashboards_site_idx').on(t.siteId),
+  }),
+);
+
+/**
+ * Insights panels — one visualization on a dashboard. `query` is a
+ * `PanelQuery` (see `@lumibase/shared`); `position` is the grid placement.
+ */
+export const panels = pgTable(
+  'panels',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    dashboardId: text('dashboard_id')
+      .notNull()
+      .references(() => dashboards.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** `metric` | `timeSeries` | `bar` | `pie` | `list` | `table` */
+    type: text('type').notNull(),
+    /** Grid placement `{ x, y, w, h }`. */
+    position: jsonb('position').default({ x: 0, y: 0, w: 4, h: 4 }).notNull(),
+    /** A `PanelQuery` object. */
+    query: jsonb('query').notNull(),
+    /** Display options (refetch interval, formatting, etc.). */
+    options: jsonb('options').default({}).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteDashboardIdx: index('panels_site_dashboard_idx').on(t.siteId, t.dashboardId),
+  }),
+);
+
+/**
+ * Content versions — named, parallel draft branches of an item, distinct from
+ * the linear `revisions` history. A version snapshots item data off the live
+ * record; promoting applies it to main via ItemService (which writes a
+ * revision). See `.kiro/specs/content-versioning`.
+ */
+export const contentVersions = pgTable(
+  'content_versions',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    itemId: text('item_id').notNull(),
+    collectionId: text('collection_id')
+      .notNull()
+      .references(() => collections.id, { onDelete: 'cascade' }),
+    /** Stable slug, unique per item. */
+    key: text('key').notNull(),
+    /** Human-readable label. */
+    name: text('name').notNull(),
+    /** Snapshot of the item data for this branch. */
+    data: jsonb('data').default({}).notNull(),
+    /** Hash of main at snapshot time → detects divergence before promote. */
+    hash: text('hash').notNull(),
+    createdBy: text('created_by').references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    keyUnique: uniqueIndex('content_versions_key_unique').on(
+      t.siteId,
+      t.collectionId,
+      t.itemId,
+      t.key,
+    ),
+    itemIdx: index('content_versions_item_idx').on(t.siteId, t.itemId),
   }),
 );

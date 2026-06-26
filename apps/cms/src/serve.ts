@@ -111,6 +111,19 @@ async function main() {
     env: process.env as Record<string, string | undefined>,
   });
 
+  // ── Content indexing (search) ────────────────────────────────────────────
+  //
+  // Consumes the `content-indexing` queue so create/update/delete keep the
+  // search index in sync. Without this consumer the jobs ItemService enqueues
+  // never run and search results go stale.
+  const { registerContentIndexingWorker } = await import(
+    './services/content-indexing-worker'
+  );
+  registerContentIndexingWorker({
+    search: runtime.search,
+    queue: runtime.queue,
+  });
+
   // ── Veto-window commits (content-os task 14; Req 13.3/13.5) ─────────────
   //
   // Primary path: delayed queue jobs fire at each staging's autoCommitAt.
@@ -133,6 +146,35 @@ async function main() {
     });
   });
 
+  // ── Content scheduler (regulated-content-readiness task 7; Req 7.3/7.4) ──
+  //
+  // A 1-minute tick applies due publish/unpublish transitions. Each flip is a
+  // guarded conditional update so catch-up runs after downtime never
+  // double-fire side-effects (Req 7.6).
+  const { registerSchedulerWorker, runSchedulerTick, sweepRetention } = await import(
+    './services/scheduler-worker'
+  );
+  const schedulerDeps = { db: rotatorDb, queue: runtime.queue };
+  registerSchedulerWorker(schedulerDeps);
+  const schedulerTask = cron.schedule('* * * * *', () => {
+    void runSchedulerTick(schedulerDeps).catch((err) => {
+      console.error('[content-scheduler] tick failed', formatSafeError(err));
+    });
+  });
+  // Retention sweep runs hourly (Req 12.2) — heavier than the publish tick.
+  const retentionTask = cron.schedule('17 * * * *', () => {
+    void sweepRetention(schedulerDeps).catch((err) => {
+      console.error('[retention-sweep] failed', formatSafeError(err));
+    });
+  });
+
+  // ── Envelope migration consumer (regulated-content-readiness task 3.6) ──
+  //
+  // Drains background migrations enqueued when an operator toggles
+  // `encryption.envelope`. Batched, resumable, idempotent — safe to re-run.
+  const { registerEnvelopeMigrationWorker } = await import('./services/envelope-migration-worker');
+  registerEnvelopeMigrationWorker({ db: rotatorDb, keyProvider: runtime.keys, queue: runtime.queue });
+
   // Graceful shutdown with 10s timeout
   process.on('SIGTERM', () => {
     console.log('[lumibase-cms] SIGTERM received, shutting down...');
@@ -141,6 +183,8 @@ async function main() {
     // can't keep the event loop alive past the server close (task 11.4).
     rotationTask.stop();
     vetoSweepTask.stop();
+    schedulerTask.stop();
+    retentionTask.stop();
     pressureLimiter.stop();
     clearInterval(loadGuardTimer);
 

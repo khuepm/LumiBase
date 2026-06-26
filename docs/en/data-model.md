@@ -96,6 +96,7 @@ Storage modes are intentionally explicit:
 | `display` | text | display formatter key |
 | `options`, `displayOptions`, `validation`, `conditions`, `translations` | jsonb |
 | `required`, `readonly`, `hidden`, `encrypted`, `versioned`, `rawEnabled` | boolean |
+| `classification` | text | Data sensitivity (Req 5): `none`/`internal`/`pii`/`phi`. `pii`/`phi` must be `encrypted=true`; drives default masking, `read_decrypted` gating, and `field_access_log` audit. |
 | `sortOrder` | integer |
 | `width`, `group` | text |
 
@@ -126,10 +127,13 @@ Compiled schemas expose generated system fields in addition to user-defined rows
 | `data` | jsonb | values keyed by field.name |
 | `sort` | integer |
 | `userCreated`, `userUpdated` | text FK users |
+| `publishAt`, `unpublishAt` | timestamp nullable | Scheduling window (Req 7); the reconcile worker flips status, delivery filters to the window. |
+| `editorialState` | text nullable | Human review state (Req 9): `draft`/`in_review`/`approved`/`published`/`rejected`. Distinct from the AI veto-window. |
+| `dekWrapped` | text nullable | Envelope mode (Req 4.5): the per-record DEK wrapped by the KEK. Non-null ⇒ this record's encrypted fields use a per-record DEK; null ⇒ shared-key mode. Reads are self-describing from this column. |
 | `createdAt`, `updatedAt` | timestamp |
 | `deletedAt` | timestamp nullable |
 
-Indexes: `(siteId, collectionId, status)`, GIN on `data`.
+Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publishAt)`, `(siteId, status, unpublishAt)`.
 
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
@@ -332,6 +336,14 @@ Content OS columns on existing tables:
 - `agent_goals`: `parentGoalId` (goal tree), `origin` (`user/reconciler/planner/flow`), `intentId`, `driftFingerprint`, `agentRole`.
 - `agent_approvals`: `kind` (`approval`/`veto`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`.
 
+### Directus-inspired tables (`cms.ts`)
+
+| Collection | Purpose |
+|---|---|
+| `content_versions` | Named parallel draft branches of an item, distinct from linear `revisions`. Snapshots item `data` + a `hash` of main at snapshot time (divergence detection). Promote applies a version to main via ItemService (writes a revision). Unique `(siteId, collectionId, itemId, key)`. See `.kiro/specs/content-versioning`. |
+| `dashboards` | Insights dashboard container per site (name/icon/color/note). |
+| `panels` | One visualization on a dashboard: `type` (metric/timeSeries/bar/pie/list/table), `position` (`{x,y,w,h}`), `query` (a `PanelQuery`), `options`. Aggregates run safely (field whitelist + siteId scope). See `.kiro/specs/insights-dashboard`. |
+
 ## 11. Firebase Sync (`firebase-sync.ts`)
 
 Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0029_lumibase_firebase_sync`.
@@ -366,6 +378,67 @@ Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0029_l
 | `errorMessage` | text | nullable |
 | `durationMs` | integer | round-trip gọi Firebase REST |
 | `recordedAt` | timestamp | index `(pipelineId, recordedAt)` |
+
+---
+
+## 11b. Regulated / sensitive content (`regulated.ts`)
+
+Opt-in, additive tables for the regulated-content-readiness capability set. Default Tier 1 installations never write to them. ID convention: `nanoid` for all (domain + audit-grade), matching the existing `audit_log` PK.
+
+### `encryption_keys`
+Metadata **only** for key versioning/rotation (Req 3.3) — never stores key material; the bytes live in the runtime `KeyProvider` (Workers Secrets / env).
+| Column | Type | Note |
+|---|---|---|
+| `id` | text PK | nanoid |
+| `siteId` | text FK nullable | null ⇒ global key |
+| `keyId` | text | version id embedded in the ciphertext envelope (e.g. `v1`) |
+| `status` | text | `active` (encrypt new) / `retired` (decrypt only) |
+| `algo` | text | default `AES-GCM` |
+| `createdAt`, `retiredAt` | timestamp |
+Unique: `(siteId, keyId)`.
+
+### `field_access_log`
+Audit of every decrypted read of a `pii`/`phi` field (Req 6). Never stores the decrypted value; written in batches, site-isolated by RLS.
+| Column | Type | Note |
+|---|---|---|
+| `id` | text PK | nanoid |
+| `siteId` | text FK |
+| `collection` | text |
+| `recordIds` | jsonb | affected record ids (aggregate for list reads) |
+| `fields` | jsonb | field names decrypted |
+| `actor`, `action`, `requestId` | text |
+| `timestamp` | timestamp |
+Indexes: `(siteId, timestamp)`, `(actor, timestamp)`.
+
+### `content_reviews`
+Human editorial sign-off records (Req 9). `itemId` is `onDelete: set null` so review history survives erasure (Req 11.3).
+| Column | Type | Note |
+|---|---|---|
+| `id` | text PK | nanoid |
+| `siteId` | text FK |
+| `itemId` | text FK nullable | set null on item delete |
+| `revisionId` | text |
+| `requestedBy`, `decidedBy` | text FK users (set null) |
+| `assignedTo` | text | user id or role token |
+| `status` | text | `pending`/`approved`/`rejected` |
+| `reason` | text |
+| `decidedAt`, `createdAt` | timestamp |
+Indexes: `(siteId, status)`, `(siteId, assignedTo)`.
+
+### `erasure_requests`
+GDPR right-to-erasure lifecycle (Req 11). Stores a **hash** of the subject identifier, never plaintext; supports dual-control.
+| Column | Type | Note |
+|---|---|---|
+| `id` | text PK | nanoid |
+| `siteId` | text FK |
+| `scope` | jsonb | `{ collection, filter }` |
+| `subjectHash` | text | hash of subject id (never plaintext) |
+| `reason` | text |
+| `requestedBy`, `confirmedBy` | text FK users (set null) | `confirmedBy` = second admin (dual-control, Req 11.4) |
+| `status` | text | `pending`/`confirmed`/`executing`/`completed`/`failed` |
+| `recordCount` | integer |
+| `createdAt`, `completedAt` | timestamp |
+Index: `(siteId, status)`.
 
 ---
 

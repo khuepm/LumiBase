@@ -94,6 +94,7 @@ function buildItemService(c: Context<AppEnv>): ItemService {
       headers,
       apiKey: auth.apiKey ?? null,
     },
+    keyProvider: runtime.keys,
     encryptionKey: c.env.ENCRYPTION_KEY,
   });
 }

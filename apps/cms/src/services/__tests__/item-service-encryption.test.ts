@@ -5,13 +5,18 @@ import { CryptoService } from '../crypto-service';
 
 const ENCRYPTION_KEY = 'v8/w2R+g2g/v8/w2R+g2g/v8/w2R+g2g/v8/w2R+g2g=';
 const siteId = 'test-site';
+const RECORD_ID = 'rec-1';
 
-// Instead of trying to mock the entire Drizzle builder which is complex, we will test the internal method:
-// ItemService.prototype['processCrypto'] which does the heavy lifting.
-// Since it's private, we can bypass TypeScript privacy by casting to `any`.
-// This is perfectly valid in unit/integration testing of complex services.
+// Build the AAD context matching what processCrypto derives for `secret_field`.
+const ctxFor = (recordId: string) => ({
+  siteId,
+  collection: 'secure_table',
+  field: 'secret_field',
+  recordId,
+});
 
-// We need a minimal mock of SchemaService first to provide the schema compile info.
+// We exercise the private processCrypto directly (cast to any) with a mocked
+// SchemaService, so no Postgres is needed.
 vi.mock('../schema-service', () => {
   return {
     SchemaService: vi.fn().mockImplementation(() => {
@@ -22,118 +27,157 @@ vi.mock('../schema-service', () => {
               fields: [
                 { name: 'id', type: 'uuid' },
                 { name: 'public_field', type: 'string' },
-                { name: 'secret_field', type: 'string', encrypted: true }
-              ]
+                { name: 'secret_field', type: 'string', encrypted: true },
+              ],
             };
           }
           return { fields: [] };
-        })
+        }),
       };
-    })
+    }),
   };
 });
 
 describe('ItemService Encryption (Integration with CryptoService)', () => {
-
   it('should encrypt sensitive fields defined in schema', async () => {
-    // We only provide a dummy DB since we're calling processCrypto directly
     const mockDb = {} as Database;
     const service = new ItemService({ db: mockDb, siteId, encryptionKey: ENCRYPTION_KEY });
 
-    const inputData = {
-      public_field: 'visible_data',
-      secret_field: 'hidden_data'
-    };
-
-    // internal = true (for encrypt before saving)
-    const processed = await (service as any).processCrypto('secure_table', inputData, 'encrypt', true);
+    const inputData = { public_field: 'visible_data', secret_field: 'hidden_data' };
+    const processed = await (service as any).processCrypto(
+      'secure_table',
+      inputData,
+      'encrypt',
+      RECORD_ID,
+      true,
+    );
 
     expect(processed.public_field).toBe('visible_data');
     expect(processed.secret_field).not.toBe('hidden_data');
     expect(typeof processed.secret_field).toBe('string');
+    expect(processed.secret_field.startsWith('v0:')).toBe(true);
   });
 
-  it('should decrypt sensitive fields when internal = true (e.g. evaluating before update)', async () => {
+  it('should decrypt sensitive fields when internal = true', async () => {
     const mockDb = {} as Database;
     const service = new ItemService({ db: mockDb, siteId, encryptionKey: ENCRYPTION_KEY });
-    const cryptoService = new CryptoService(ENCRYPTION_KEY);
-    const encryptedSecret = await cryptoService.encrypt('hidden_data');
+    const crypto = CryptoService.fromKey(ENCRYPTION_KEY);
+    const encryptedSecret = await crypto.encrypt('hidden_data', ctxFor(RECORD_ID));
 
-    const dbRowData = {
-      public_field: 'visible_data',
-      secret_field: encryptedSecret
-    };
-
-    const processed = await (service as any).processCrypto('secure_table', dbRowData, 'decrypt', true);
+    const dbRowData = { public_field: 'visible_data', secret_field: encryptedSecret };
+    const processed = await (service as any).processCrypto(
+      'secure_table',
+      dbRowData,
+      'decrypt',
+      RECORD_ID,
+      true,
+    );
 
     expect(processed.public_field).toBe('visible_data');
     expect(processed.secret_field).toBe('hidden_data');
   });
 
-  it('should decrypt sensitive fields when internal = false AND user has read_decrypted perm', async () => {
+  it('should decrypt when internal = false AND user has read_decrypted perm', async () => {
     const mockDb = {} as Database;
     const service = new ItemService({ db: mockDb, siteId, encryptionKey: ENCRYPTION_KEY });
-
-    // Mock perm() to allow read_decrypted
     vi.spyOn(service as any, 'perm').mockResolvedValue({ fields: ['*'], validation: {} });
 
-    const cryptoService = new CryptoService(ENCRYPTION_KEY);
-    const encryptedSecret = await cryptoService.encrypt('top_secret_info');
+    const crypto = CryptoService.fromKey(ENCRYPTION_KEY);
+    const encryptedSecret = await crypto.encrypt('top_secret_info', ctxFor(RECORD_ID));
 
-    const dbRowData = {
-      public_field: 'visible_data',
-      secret_field: encryptedSecret
-    };
+    const dbRowData = { public_field: 'visible_data', secret_field: encryptedSecret };
+    const processed = await (service as any).processCrypto(
+      'secure_table',
+      dbRowData,
+      'decrypt',
+      RECORD_ID,
+      false,
+    );
 
-    const processed = await (service as any).processCrypto('secure_table', dbRowData, 'decrypt', false);
-
-    expect(processed.public_field).toBe('visible_data');
     expect(processed.secret_field).toBe('top_secret_info');
   });
 
-  it('should mask sensitive fields with *** when internal = false AND user lacks read_decrypted perm', async () => {
+  it('should mask with *** when user lacks read_decrypted perm', async () => {
     const mockDb = {} as Database;
     const service = new ItemService({ db: mockDb, siteId, encryptionKey: ENCRYPTION_KEY });
-
-    // Mock perm() to return null (deny) for read_decrypted
-    vi.spyOn(service as any, 'perm').mockImplementation(async (collection, action) => {
-       if (action === 'read_decrypted') return null; // denied
-       return { fields: ['*'], validation: {} };
+    vi.spyOn(service as any, 'perm').mockImplementation(async (_collection, action) => {
+      if (action === 'read_decrypted') return null;
+      return { fields: ['*'], validation: {} };
     });
 
-    const cryptoService = new CryptoService(ENCRYPTION_KEY);
-    const encryptedSecret = await cryptoService.encrypt('top_secret_info');
+    const crypto = CryptoService.fromKey(ENCRYPTION_KEY);
+    const encryptedSecret = await crypto.encrypt('top_secret_info', ctxFor(RECORD_ID));
 
-    const dbRowData = {
-      public_field: 'visible_data',
-      secret_field: encryptedSecret
-    };
+    const dbRowData = { public_field: 'visible_data', secret_field: encryptedSecret };
+    const processed = await (service as any).processCrypto(
+      'secure_table',
+      dbRowData,
+      'decrypt',
+      RECORD_ID,
+      false,
+    );
 
-    const processed = await (service as any).processCrypto('secure_table', dbRowData, 'decrypt', false);
-
-    expect(processed.public_field).toBe('visible_data');
     expect(processed.secret_field).toBe('***');
   });
 
-  it('should mask sensitive fields with *** when perm check throws an error (e.g. forbidden)', async () => {
+  it('should mask with *** when perm check throws', async () => {
     const mockDb = {} as Database;
     const service = new ItemService({ db: mockDb, siteId, encryptionKey: ENCRYPTION_KEY });
-
     vi.spyOn(service as any, 'perm').mockImplementation(async () => {
-       throw new Error('Forbidden');
+      throw new Error('Forbidden');
     });
 
-    const cryptoService = new CryptoService(ENCRYPTION_KEY);
-    const encryptedSecret = await cryptoService.encrypt('top_secret_info');
+    const crypto = CryptoService.fromKey(ENCRYPTION_KEY);
+    const encryptedSecret = await crypto.encrypt('top_secret_info', ctxFor(RECORD_ID));
 
-    const dbRowData = {
-      public_field: 'visible_data',
-      secret_field: encryptedSecret
-    };
+    const dbRowData = { public_field: 'visible_data', secret_field: encryptedSecret };
+    const processed = await (service as any).processCrypto(
+      'secure_table',
+      dbRowData,
+      'decrypt',
+      RECORD_ID,
+      false,
+    );
 
-    const processed = await (service as any).processCrypto('secure_table', dbRowData, 'decrypt', false);
-
-    expect(processed.public_field).toBe('visible_data');
     expect(processed.secret_field).toBe('***');
+  });
+
+  it('fail-closed: single-item decrypt with wrong AAD throws DECRYPTION_FAILED (500)', async () => {
+    const mockDb = {} as Database;
+    const service = new ItemService({ db: mockDb, siteId, encryptionKey: ENCRYPTION_KEY });
+    // Audit write is fire-and-forget against a mock db — stub it out.
+    vi.spyOn(service as any, 'auditDecryptionFailure').mockResolvedValue(undefined);
+
+    const crypto = CryptoService.fromKey(ENCRYPTION_KEY);
+    // Encrypt bound to a DIFFERENT record id → AAD mismatch on decrypt.
+    const encryptedSecret = await crypto.encrypt('top_secret_info', ctxFor('other-rec'));
+    const dbRowData = { public_field: 'visible_data', secret_field: encryptedSecret };
+
+    await expect(
+      (service as any).processCrypto('secure_table', dbRowData, 'decrypt', RECORD_ID, true),
+    ).rejects.toMatchObject({ code: 'DECRYPTION_FAILED', status: 500 });
+  });
+
+  it('degraded read nulls the failed field and flags _decryptError', async () => {
+    const mockDb = {} as Database;
+    const service = new ItemService({ db: mockDb, siteId, encryptionKey: ENCRYPTION_KEY });
+    vi.spyOn(service as any, 'auditDecryptionFailure').mockResolvedValue(undefined);
+
+    const crypto = CryptoService.fromKey(ENCRYPTION_KEY);
+    const encryptedSecret = await crypto.encrypt('top_secret_info', ctxFor('other-rec'));
+    const dbRowData = { public_field: 'visible_data', secret_field: encryptedSecret };
+
+    const processed = await (service as any).processCrypto(
+      'secure_table',
+      dbRowData,
+      'decrypt',
+      RECORD_ID,
+      true,
+      true, // degraded
+    );
+
+    expect(processed.secret_field).toBeNull();
+    expect(processed._decryptError).toBe(true);
+    expect(processed.public_field).toBe('visible_data');
   });
 });

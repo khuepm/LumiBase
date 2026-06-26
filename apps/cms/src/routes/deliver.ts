@@ -1,7 +1,8 @@
 import { schema } from '@lumibase/database';
-import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { AppEnv, Variables } from '../env';
+import { buildSeo } from '../services/seo-builder';
 
 /**
  * Delivery API — implements the "1-Roundtrip Rule" (Strict Rule #3).
@@ -30,6 +31,8 @@ interface SectionConfig {
     orderBy?: string;
     /** Public delivery defaults to published items. */
     status?: string;
+    /** Emit a normalised `_seo` block per item (Req 14.1). */
+    seo?: boolean | { jsonLdType?: string };
   };
 }
 
@@ -80,13 +83,30 @@ function buildSort(orderBy?: string) {
   return direction === 'desc' ? [desc(expression)] : [asc(expression)];
 }
 
-function serializeItem(row: DeliveryItemRow): Record<string, unknown> {
+/**
+ * SQL predicate restricting results to the current Publish_Window (Req 7.5):
+ * `publishAt` is unset or in the past AND `unpublishAt` is unset or in the
+ * future. Items with a future `publishAt` or an elapsed `unpublishAt` are
+ * excluded even when `status='published'`.
+ */
+function publishWindowClause(): SQL | undefined {
+  const now = new Date();
+  return and(
+    or(isNull(schema.items.publishAt), lte(schema.items.publishAt, now)),
+    or(isNull(schema.items.unpublishAt), gt(schema.items.unpublishAt, now)),
+  );
+}
+
+function serializeItem(
+  row: DeliveryItemRow,
+  seo?: { jsonLdType?: string },
+): Record<string, unknown> {
   const data =
     row.data && typeof row.data === 'object' && !Array.isArray(row.data)
       ? (row.data as Record<string, unknown>)
       : {};
 
-  return {
+  const out: Record<string, unknown> = {
     ...data,
     id: row.id,
     status: row.status,
@@ -94,6 +114,13 @@ function serializeItem(row: DeliveryItemRow): Record<string, unknown> {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+
+  if (seo) {
+    const block = buildSeo(out, { jsonLdType: seo.jsonLdType });
+    if (block) out._seo = block;
+  }
+
+  return out;
 }
 
 /**
@@ -206,12 +233,17 @@ async function hydrateSection(
         eq(schema.items.collectionId, collection.id),
         eq(schema.items.status, section.source.status ?? 'published'),
         isNull(schema.items.deletedAt),
+        // Publish_Window filter (Req 7.5): only items currently in window.
+        publishWindowClause(),
       ),
     )
     .orderBy(...buildSort(section.source.orderBy))
     .limit(clampLimit(section.source.limit));
 
-  const items = rows.map((row) => serializeItem(row as DeliveryItemRow));
+  const seoOption = section.source.seo
+    ? { jsonLdType: typeof section.source.seo === 'object' ? section.source.seo.jsonLdType : undefined }
+    : undefined;
+  const items = rows.map((row) => serializeItem(row as DeliveryItemRow, seoOption));
 
   if (withProvenance) {
     const provenance = await loadProvenance(

@@ -10,6 +10,7 @@ import {
   GitBranch,
   LogOut,
   Radar,
+  BarChart3,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
@@ -35,6 +36,7 @@ const MODULES: ModuleDef[] = [
   { id: 'data-model', label: 'Data model', icon: Database, to: '/data-model' },
   { id: 'automation', label: 'Automation', icon: Workflow, to: '/automation/flows' },
   { id: 'mission-control', label: 'Mission Control', icon: Radar, to: '/mission-control' },
+  { id: 'insights', label: 'Insights', icon: BarChart3, to: '/insights' },
   { id: 'cdc', label: 'CDC', icon: GitBranch, to: '/cdc' },
   { id: 'settings', label: 'Settings', icon: Settings, to: '/settings' },
 ];
