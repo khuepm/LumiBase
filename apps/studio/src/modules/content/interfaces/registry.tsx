@@ -1,6 +1,7 @@
 import type { FieldResource } from '@lumibase/sdk';
 import { AioInterface } from './aio';
 import { CodeInterface } from './code';
+import { CollectionItemDropdownInterface } from './collection-item-dropdown';
 import { ColorInterface } from './color';
 import { DatetimeInterface } from './datetime';
 import { FileInterface } from './file';
@@ -16,6 +17,7 @@ import {
   PresentationLinksInterface,
 } from './presentation';
 import { RatingInterface } from './rating';
+import { RelationM2AInterface } from './relation-m2a';
 import { RelationM2OInterface } from './relation-m2o';
 import { RelationManyInterface } from './relation-many';
 import { RepeaterInterface } from './repeater';
@@ -72,6 +74,8 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   'relation-m2o': RelationM2OInterface,
   'relation-o2m': RelationManyInterface,
   'relation-m2m': RelationManyInterface,
+  'relation-m2a': RelationM2AInterface,
+  'collection-item-dropdown': CollectionItemDropdownInterface,
   code: CodeInterface,
   wysiwyg: WysiwygInterface,
   markdown: MarkdownInterface,

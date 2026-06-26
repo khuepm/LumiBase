@@ -40,6 +40,8 @@ import {
   TextSearch,
   Heading,
   ExternalLink,
+  Network,
+  Boxes,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -79,6 +81,8 @@ const IFACE_ICONS: Record<string, LucideIcon> = {
   'relation-m2o': ArrowRight,
   'relation-o2m': ArrowLeft,
   'relation-m2m': LayoutGrid,
+  'relation-m2a': Network,
+  'collection-item-dropdown': Boxes,
   'file': Paperclip,
   'files': FolderOpen,
   'seo': Search,
