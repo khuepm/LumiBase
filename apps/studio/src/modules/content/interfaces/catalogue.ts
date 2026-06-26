@@ -54,6 +54,15 @@ export const INTERFACE_CATALOGUE: InterfaceCatalogueItem[] = [
   { id: 'wysiwyg', label: 'WYSIWYG', description: 'Rich HTML editor.', type: 'text', group: 'Text' },
   { id: 'markdown', label: 'Markdown', description: 'Markdown editor.', type: 'text', group: 'Text' },
   { id: 'code', label: 'Code', description: 'Monospace code editor.', type: 'text', group: 'Text' },
+  { id: 'input-hash', label: 'Hash', description: 'Secret input hashed on save.', type: 'string', group: 'Text', defaultSpecial: ['hash'] },
+  {
+    id: 'input-autocomplete-api',
+    label: 'Autocomplete (API)',
+    description: 'Text input with suggestions fetched from an API.',
+    type: 'string',
+    group: 'Text',
+    defaultOptions: { url: '', resultsPath: '', valuePath: '', textPath: '' },
+  },
   {
     id: 'slug',
     label: 'Slug',
@@ -198,6 +207,8 @@ export const INTERFACE_CATALOGUE: InterfaceCatalogueItem[] = [
   { id: 'repeater', label: 'Repeater', description: 'Repeat nested field groups.', type: 'json', group: 'Special' },
   { id: 'presentation-divider', label: 'Presentation: divider', description: 'Visual divider only.', type: 'alias', group: 'Special' },
   { id: 'presentation-notice', label: 'Presentation: notice', description: 'Inline editorial notice.', type: 'alias', group: 'Special' },
+  { id: 'presentation-header', label: 'Presentation: header', description: 'Section heading with subtitle.', type: 'alias', group: 'Special' },
+  { id: 'presentation-links', label: 'Presentation: links', description: 'Row of link buttons.', type: 'alias', group: 'Special', defaultOptions: { links: [] } },
 ];
 
 export function findInterfaceCatalogueItem(id: string): InterfaceCatalogueItem | undefined {

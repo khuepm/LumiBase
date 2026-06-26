@@ -5,10 +5,16 @@ import { ColorInterface } from './color';
 import { DatetimeInterface } from './datetime';
 import { FileInterface } from './file';
 import { FilesInterface } from './files';
+import { InputAutocompleteApiInterface } from './input-autocomplete-api';
+import { InputHashInterface } from './input-hash';
 import { JsonRawInterface } from './json-raw';
 import { MarkdownInterface } from './markdown';
 import { NumberInterface } from './number';
-import { PresentationInterface } from './presentation';
+import {
+  PresentationHeaderInterface,
+  PresentationInterface,
+  PresentationLinksInterface,
+} from './presentation';
 import { RatingInterface } from './rating';
 import { RelationM2OInterface } from './relation-m2o';
 import { RelationManyInterface } from './relation-many';
@@ -74,6 +80,10 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   repeater: RepeaterInterface,
   'presentation-divider': PresentationInterface,
   'presentation-notice': PresentationInterface,
+  'presentation-header': PresentationHeaderInterface,
+  'presentation-links': PresentationLinksInterface,
+  'input-hash': InputHashInterface,
+  'input-autocomplete-api': InputAutocompleteApiInterface,
   'translatable-text': TranslatableText,
   seo: SeoInterface,
   aio: AioInterface,

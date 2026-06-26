@@ -36,6 +36,10 @@ import {
   ListTree,
   Smile,
   SlidersHorizontal,
+  KeyRound,
+  TextSearch,
+  Heading,
+  ExternalLink,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -83,6 +87,10 @@ const IFACE_ICONS: Record<string, LucideIcon> = {
   'repeater': Repeat,
   'presentation-divider': SeparatorHorizontal,
   'presentation-notice': Info,
+  'presentation-header': Heading,
+  'presentation-links': ExternalLink,
+  'input-hash': KeyRound,
+  'input-autocomplete-api': TextSearch,
 };
 
 export interface FieldFormState {
