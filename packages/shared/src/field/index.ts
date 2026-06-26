@@ -25,6 +25,13 @@ export type FieldType =
 
 export type FieldWidth = 'half' | 'full' | 'fill';
 
+/**
+ * Data sensitivity classification (Req 5). `pii|phi` require `encrypted=true`,
+ * are masked by default unless the caller has `read_decrypted`, and their
+ * decrypted reads are audited to `field_access_log`.
+ */
+export type FieldClassification = 'none' | 'internal' | 'pii' | 'phi';
+
 export interface FieldDefinition<TOptions = unknown> {
   name: string;
   type: FieldType;
@@ -39,6 +46,8 @@ export interface FieldDefinition<TOptions = unknown> {
   readonly?: boolean;
   hidden?: boolean;
   encrypted?: boolean;
+  /** Data sensitivity classification (defaults to `none`). */
+  classification?: FieldClassification;
   versioned?: boolean;
   rawEnabled?: boolean;
   width?: FieldWidth;

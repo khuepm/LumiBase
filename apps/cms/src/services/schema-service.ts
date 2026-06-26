@@ -10,6 +10,8 @@ import {
 } from '@lumibase/database';
 import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import type { CacheProvider } from '@lumibase/runtime';
+import type { FieldClassification } from '@lumibase/shared';
+import { AuditLogger } from '../modules/audit/logger';
 
 /**
  * SchemaService — owns the no-code collection/field/relation lifecycle.
@@ -87,7 +89,8 @@ export interface CompiledField {
   readonly: boolean;
   hidden: boolean;
   encrypted: boolean;
-  classification: 'none' | 'pii' | 'sensitive';
+  /** Data sensitivity classification (Req 5.3). */
+  classification: FieldClassification;
   versioned: boolean;
   rawEnabled: boolean;
   width: 'half' | 'full' | 'fill';
@@ -157,7 +160,7 @@ export interface FieldInput {
   readonly?: boolean;
   hidden?: boolean;
   encrypted?: boolean;
-  classification?: 'none' | 'pii' | 'sensitive';
+  classification?: FieldClassification;
   versioned?: boolean;
   rawEnabled?: boolean;
   width?: 'half' | 'full' | 'fill';
@@ -256,6 +259,23 @@ export class SchemaServiceError extends Error {
   constructor(public code: string, message: string, public status = 400) {
     super(message);
     this.name = 'SchemaServiceError';
+  }
+}
+
+/**
+ * Enforce that `pii|phi` fields are encrypted (Req 5.2). Throws
+ * CLASSIFICATION_REQUIRES_ENCRYPTION (HTTP 422) otherwise.
+ */
+export function assertClassificationEncryptable(
+  classification: FieldClassification | undefined,
+  encrypted: boolean | undefined,
+): void {
+  if ((classification === 'pii' || classification === 'phi') && encrypted !== true) {
+    throw new SchemaServiceError(
+      'CLASSIFICATION_REQUIRES_ENCRYPTION',
+      `Fields classified "${classification}" must be encrypted.`,
+      422,
+    );
   }
 }
 
@@ -413,6 +433,7 @@ export class SchemaService {
 
   async createField(collectionName: string, input: FieldInput) {
     ensureName(input.name, 'field');
+    assertClassificationEncryptable(input.classification, input.encrypted);
     const collection = await this.getCollection(collectionName);
     if (!collection) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
@@ -421,6 +442,9 @@ export class SchemaService {
       .insert(fields)
       .values({ ...toFieldDbInput(input), collectionId: collection.id, siteId: this.deps.siteId })
       .returning();
+    if (input.classification && input.classification !== 'none') {
+      await this.auditClassificationChange(collectionName, input.name, null, input.classification);
+    }
     await this.invalidate(collection.name);
     return row;
   }
@@ -442,6 +466,11 @@ export class SchemaService {
     if (nextName !== fieldName) {
       return this.renameField(collectionName, fieldName, { ...input, name: nextName } as FieldInput);
     }
+    const existingClassification = ((existing as { classification?: string }).classification ??
+      'none') as FieldClassification;
+    const nextClassification = input.classification ?? existingClassification;
+    const nextEncrypted = input.encrypted ?? existing.encrypted;
+    assertClassificationEncryptable(nextClassification, nextEncrypted);
     const populatedRows = await this.countFieldDataRows(collection.id, fieldName);
     assertFieldMutationAllowed(
       existing,
@@ -457,8 +486,30 @@ export class SchemaService {
       .set({ ...toFieldDbInput({ ...input, name: fieldName }), updatedAt: new Date() })
       .where(eq(fields.id, existing.id))
       .returning();
+    if (nextClassification !== existingClassification) {
+      await this.auditClassificationChange(
+        collectionName,
+        fieldName,
+        existingClassification,
+        nextClassification,
+      );
+    }
     await this.invalidate(collection.name);
     return row;
+  }
+
+  /** Audit a field classification change (Req 5.5). Best-effort, never throws. */
+  private async auditClassificationChange(
+    collection: string,
+    field: string,
+    from: FieldClassification | null,
+    to: FieldClassification,
+  ): Promise<void> {
+    await new AuditLogger({ db: this.deps.db, siteId: this.deps.siteId }).write({
+      event: 'field_classification_changed',
+      requestId: null,
+      metadata: { siteId: this.deps.siteId, collection, field, from, to },
+    });
   }
 
   async renameField(collectionName: string, fieldName: string, input: FieldInput) {
@@ -1196,7 +1247,7 @@ export function compileField(f: FieldRow): CompiledField {
     readonly: f.readonly,
     hidden: f.hidden,
     encrypted: f.encrypted,
-    classification: (f.classification as 'none' | 'pii' | 'sensitive') ?? 'none',
+    classification: ((f as { classification?: string }).classification as FieldClassification) ?? 'none',
     versioned: f.versioned,
     rawEnabled: f.rawEnabled,
     width: f.width as 'half' | 'full' | 'fill',
@@ -1430,7 +1481,6 @@ const FIELD_DIFF_KEYS = [
   'readonly',
   'hidden',
   'encrypted',
-  'classification',
   'versioned',
   'rawEnabled',
   'width',

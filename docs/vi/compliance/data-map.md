@@ -46,17 +46,18 @@ hoạt động, revisions tự viết và thông báo. Xem [gap-analysis.md](./g
 
 ## 5. Erasure xoá gì
 
-`POST /api/v1/me/erasure` (hoặc admin `/api/v1/erasure/:userId`) ẩn danh hoá dòng
-`users` (null PII), xoá membership + credential, suppress email. Tham chiếu tác giả
-nội dung được giữ nhưng trỏ tới user đã ẩn danh — xem
+Account erasure do feature regulated-content-readiness xử lý qua admin
+`POST /api/v1/admin/erasure` (và Subject Access Request qua `/api/v1/admin/sar`),
+dựa trên `erasure_requests` (`schema/regulated.ts`) và
+`apps/cms/src/services/erasure-service.ts`. Xem
 [user-rights-catalog.md](./user-rights-catalog.md).
 
 ## 6. Phân loại field
 
-Field nội dung tuỳ biến có thể gắn nhãn qua `fields.classification` (`none` / `pii` /
-`sensitive`) khi tạo/sửa. Utility `redactByClassification`
-(`apps/cms/src/modules/data-rights/redaction.ts`) dùng nhãn này để che giá trị nhạy cảm
-trong mọi view/export đã redact.
+Field nội dung tuỳ biến có thể gắn nhãn qua `fields.classification` (`none` / `internal` /
+`pii` / `phi`). Field phân loại `pii`/`phi` bắt buộc mã hoá và bị mask mặc định trừ khi
+caller có `read_decrypted`; đọc giải mã được audit (`field_access_log`). Cung cấp bởi
+feature regulated-content-readiness.
 
 ## 7. Bên xử lý thứ ba
 

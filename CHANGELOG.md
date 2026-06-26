@@ -9,6 +9,247 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [0.11.0] - 2026-06-22
+
+### Version
+
+- `v0.11.0`
+
+### Date
+
+- `2026-06-22`
+
+### Highlights
+
+- **Insights dashboards.** New `dashboards` + `panels` model and `/api/v1/insights` API with a Studio UI to compose metric/query panels per site.
+- **Content versioning.** Named, parallel draft branches of an item (`content_versions`) with a content-version service and Studio management UI — diff/compare and promote without touching the live record.
+- **Translation Memory management.** Backend + shared schemas + Studio UI to curate TM entries (review/edit/lookup) on top of the existing `/api/v1/tm` pipeline.
+- **Tenant-scoped search.** Search is now isolated per tenant (per-site index names), the indexing queue is processed by a dedicated worker, and runtime exposes an index-settings API — closing cross-tenant search leakage.
+- **Visual flow builder groundwork.** Shared `flow-graph` schema for the upcoming Studio flow builder.
+- **Docs i18n.** EN/VI documentation sync tooling + CI workflow and MT engine.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Migrations
+
+- **2 new schema migrations (additive, idempotent):** `0033_insights_dashboards.sql` (`dashboards`, `panels`) and `0034_content_versions.sql` (`content_versions`). New tables only — no data migration; `CREATE TABLE IF NOT EXISTS` + duplicate-object guards let them re-run safely. Back up your database before upgrading as a precaution.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
+### Added
+
+- **CMS:** `/api/v1/insights` (dashboards + panels), insights service; content-version service; tenant-scoped search (`search-document`, `content-indexing-worker`) + index settings API in `@lumibase/runtime`.
+- **Shared:** `insights`, `translation`, `flow-graph`, and `diff` Zod schemas.
+- **Studio:** UI for insights dashboards, content versions, and Translation Memory management.
+- **Tooling:** EN/VI docs sync (`scripts/docs-i18n/*`) + `docs-i18n-sync` workflow; npm-publish enabled for `@lumibase/mcp-server`, `@lumibase/sdk`, `@lumibase/extension-sdk`.
+
+### Changed
+
+- Search index names are tenant-scoped; the indexing queue is drained by a worker rather than inline.
+
+### Upgrade steps
+
+1. Review the migrations above and back up your database.
+2. Apply migrations: `pnpm -F @lumibase/database db:migrate`.
+3. Deploy the `v0.11.0` image or Cloudflare Worker release.
+4. Verify `/health`, the new `/api/v1/insights` endpoint, content-version + TM Studio pages, and that search returns only the active site's results.
+
+### Rollback notes
+
+- Roll back the application by redeploying the previously known-good CMS image tag (`v0.10.0`).
+- The new tables are additive; rolling back the app does not require dropping them. Restore from the pre-migration backup only if you must reverse the schema.
+
+## [0.10.0] - 2026-06-22
+
+### Version
+
+- `v0.10.0`
+
+### Date
+
+- `2026-06-22`
+
+### Highlights
+
+- **MCP is now the base surface for every feature.** Model Context Protocol coverage was expanded from collections/fields/items to the **entire** LumiBase Content OS, across both MCP surfaces:
+  - **Standalone server (`@lumibase/mcp-server`)** — the published `lumibase-mcp` stdio server now exposes ~80 tools spanning relations, RBAC (roles, policies, permissions, API keys, bulk access export/import), users & teams, content intents, flows, webhooks, presets, settings, translations + translation memory, search, media (metadata), site activity/health/metrics, backup/restore, materialized collections, extensions, and the marketplace. Every destructive tool (`delete_*`, `revoke_*`, `remove_*`, `detach_*`, `restore_backup`, `rotate_api_key`, `apply_access_import`) requires an explicit `confirm: true`.
+  - **Governed endpoint (`/api/v1/mcp`)** — new HITL/autonomy-gated skills for relations, RBAC roles/policies, content intents, flows, plus identity & config (API keys, users, teams, settings/translations/webhooks, extensions), executed through the existing `AISecureHarness` (kill switch → capability → autonomy L0–L4 → veto window → approval). Writes/deletes are forced dangerous; `deleteRole`, `deletePolicy`, `deleteRelation`, `revokeApiKey`, and `removeUser` are hard-capped at L2 (never autopilot).
+
+### Added
+
+- **MCP (standalone):** new tool modules — `relations`, `access` (roles/policies + bulk export/import/conflict checks), `api-keys`, `users-teams`, `content-config` (presets/settings/translations), `translation-memory`, `webhooks`, `agent` (intents/flows), `search-media`, `ops`, `admin` (backup/restore + materialize), `extensions` (+ marketplace). Shared `crudModule` factory + helpers; `tools/index.ts` aggregator; client gained generic `delete<T>`, root-text (`/health`, `/metrics`) and raw NDJSON (`backup`/`restore`) helpers; vitest test suite.
+- **MCP (governed):** governed skills for relations, RBAC roles/policies, content intents and flows, plus identity & config — API keys (`listApiKeys`/`createApiKey`/`rotateApiKey`/`revokeApiKey`), users (`listUsers`/`inviteUser`/`updateUser`/`removeUser`), teams (`listTeams`/`createTeam`/`deleteTeam`/`addTeamMember`/`removeTeamMember`), config (settings/translations/webhooks list+CRUD), and extensions (`listExtensions`/`installExtension`/`updateExtension`/`uninstallExtension`). New thin `AccessService`/`ConfigService`/`ExtensionsService` and an extracted `api-key-token` util (reused by the REST route); `AISecureHarness` accepts `accessService`/`intentService`/`configService`/`extensionsService`/`db`/`siteId`; per-skill `dangerous` risk flag honoured by `evaluateRisk` + `ToolRegistryService`. Skill metadata mirrored in `@lumibase/ai-skills` with a registry-sync test.
+
+- **npm distribution:** `@lumibase/sdk`, `@lumibase/extension-sdk`, `@lumibase/mcp-server`, and `create-lumibase` are now published to the public npm registry by the release pipeline (gated by the `PUBLISH_NPM_PACKAGES` repository variable and `NPM_TOKEN`). The `lumibase-mcp` CLI ships a `#!/usr/bin/env node` shebang so it runs via `npx`.
+
+### Changed
+
+- `SkillDefinition` gained an optional `dangerous` flag and `service` now includes `access`/`intents`/`flows`. `IRREVERSIBLE_SKILLS` extended with `deleteRole`/`deletePolicy`/`deleteRelation`/`revokeApiKey`/`removeUser`.
+- Trimmed published package tarballs: `@lumibase/mcp-server` no longer ships source maps, and `create-lumibase` no longer ships a duplicate top-level `templates/` copy (templates resolve from `dist/templates/`).
+
+### Notes
+
+- NDJSON backup/restore, marketplace install/publish, and binary media remain **standalone-server-only** (`@lumibase/mcp-server`) — their bespoke crypto/SSRF/NDJSON logic is not duplicated into the governed harness. They are still fully usable via the standalone surface (RBAC enforced server-side).
+- No schema migrations. Builds on `v0.9.0` (regulated/sensitive content readiness) and the `v0.5.0` Content OS foundation.
+
+## [0.9.0] - 2026-06-21
+
+### Version
+
+- `v0.9.0`
+
+### Date
+
+- `2026-06-21`
+
+### Highlights
+
+- **Regulated / sensitive content readiness.** A generic, opt-in capability set
+  for serving regulated/sensitive content (PHI/PII) on the existing CMS —
+  defaults off, so Tier 1 behavior is unchanged. Field encryption is now
+  **fail-closed** with AAD-bound, key-versioned ciphertext and a resumable rewrap
+  worker; optional **envelope (per-record DEK) mode** enables crypto-shredding
+  for GDPR erasure; new **field data classification** masks/gates `pii`/`phi`;
+  plus **content scheduling**, an **editorial review → publish** workflow, **GDPR
+  erasure / retention / SAR**, and **structured SEO/AIO delivery**.
+- **Cloudflare production hardening.** The production CMS Worker now binds its
+  real bindings (Hyperdrive, KV, R2, Queue); health probes are corrected for
+  Cloudflare KV and cold connections; and the runtime tolerates missing search
+  config and flat queue bindings on CF.
+- **Security dependency bumps.** `@babel/core`, `dompurify`, `undici`, and
+  `form-data` are pinned/overridden to resolve published GHSA advisories.
+
+### Breaking changes
+
+- None. New capabilities are additive and default off.
+
+### Migrations
+
+- **1 new schema migration (`0031_regulated_content_readiness.sql`)**: new tables
+  `encryption_keys`, `field_access_log`, `content_reviews`, `erasure_requests`;
+  new columns `items.publish_at`/`unpublish_at`/`editorial_state`/`dek_wrapped`
+  and `fields.classification`.
+- Additive and idempotent: new columns are nullable or defaulted and the
+  migration is `IF NOT EXISTS`/duplicate-object guarded, so it re-runs safely and
+  needs **no backfill**. Existing ciphertext reads unchanged via the `v0` path.
+- Compatible DB/schema: `v0.8.0` schema state upgraded through
+  `0031_regulated_content_readiness.sql`.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
+### Upgrade steps
+
+1. Review the breaking changes and migrations above.
+2. Confirm the target Docker image tag exists: `ghcr.io/khuepm/lumibase-cms:0.9.0`.
+3. Take a backup (see Backup guidance — required for this schema migration).
+4. Apply migrations: `pnpm -F @lumibase/database db:migrate`.
+5. Deploy the `v0.9.0` image or Cloudflare Worker release.
+6. Verify `/health` and `/ready`, the new `/api/v1/admin/encryption`,
+   `/api/v1/editorial`, `/api/v1/admin/erasure`, `/api/v1/admin/field-access-log`,
+   and `/api/v1/admin/sar/export` endpoints, the Studio **Settings → Encryption**
+   page, and critical CMS workflows after deployment.
+7. Regulated-content features ship **off**. Opt in per site by setting field
+   `classification`, toggling `encryption.envelope` (step-up password), and
+   enabling the editorial review workflow per collection.
+
+### Rollback notes
+
+- Roll back the application by redeploying the previously known-good CMS image
+  tag (`v0.8.0`).
+- The new tables/columns are additive; rolling back the app does not require
+  dropping them. Records written under envelope mode remain decryptable as long
+  as the KEK is retained. If you must reverse the schema, restore from the
+  pre-migration backup.
+
+### Docker image tags
+
+- CMS: `ghcr.io/khuepm/lumibase-cms:0.9.0`
+- Optional immutable digest: `ghcr.io/khuepm/lumibase-cms@sha256:<digest>`
+
+### Compatibility DB/schema
+
+- Compatible DB/schema: `v0.9.0` schema state (migration `0031` applied).
+- Minimum supported database engine/version: use the version supported by the
+  target deployment environment.
+
+### Backup guidance
+
+- **Backup required: Yes.** This release applies 1 additive schema migration and
+  introduces field encryption / crypto-shred capabilities.
+- Backup scope: database.
+- Reason: new regulated-content tables and columns are added; a pre-migration
+  backup is the supported rollback path, and the supported recovery path for
+  envelope-mode key material.
+
+### Added
+
+- **Regulated / sensitive content readiness.** A generic, opt-in capability set
+  for serving regulated/sensitive content (PHI/PII) on the existing CMS —
+  defaults off, so Tier 1 behavior is unchanged. Spec:
+  `.kiro/specs/regulated-content-readiness`.
+  - **Field encryption hardening.** `decrypt` is now **fail-closed** (throws +
+    audits `decryption_failed`, never a placeholder); AES-GCM ciphertext is
+    AAD-bound to `siteId|collection|field|recordId`; ciphertext is key-versioned
+    (`{keyId}:{body}`) with rotation + a resumable **rewrap worker**; a
+    `KeyProvider`/KMS abstraction in `@lumibase/runtime` (Cloudflare Secrets/KV
+    + Docker env/`*_FILE`) keeps key material out of business logic. Legacy
+    unprefixed ciphertext still decrypts as `v0` (no-AAD).
+  - **Envelope (per-record DEK) mode.** Optional per-record Data Encryption Key
+    wrapped by the KEK (`items.dek_wrapped`), enabling **crypto-shredding** for
+    GDPR erasure. Controlled by an operator **setting** (`encryption.envelope`),
+    not a raw env var; changing it requires **step-up password auth** and runs a
+    batched, resumable, idempotent **background migration**. Reads are
+    self-describing from `dek_wrapped`, so records keep decrypting after the
+    mode toggles (as long as the KEK remains).
+  - **Field data classification.** New `fields.classification`
+    (`none`/`internal`/`pii`/`phi`); `pii`/`phi` must be encrypted and are
+    masked + gated by `read_decrypted`, with every decrypted read recorded in
+    `field_access_log`.
+  - **Content scheduling.** `items.publish_at`/`unpublish_at` + an idempotent
+    reconcile worker; the delivery API respects the publish window.
+  - **Editorial review → publish.** A human `content_reviews` workflow
+    (`draft → in_review → approved → published`/`rejected`) with separate-reviewer
+    sign-off, per-collection toggle, and audit — distinct from the AI veto-window.
+  - **GDPR erasure / retention / SAR.** `erasure_requests` with dual-control and
+    crypto-shred/hard-delete that **preserves** the tamper-evident `data_erased`
+    audit (no cascade); a retention sweep; and a Subject Access Request export.
+  - **Structured SEO/AIO delivery.** A `_seo` block (OpenGraph + JSON-LD), an SDK
+    helper for Next.js `generateMetadata`, and a Tier 2 reference example.
+  - **Studio.** Scheduling controls + a review queue, and a **Settings →
+    Encryption** page to toggle envelope mode (step-up password + live migration
+    status).
+- New endpoints under `/api/v1/admin/encryption` (keys + envelope),
+  `/api/v1/editorial`, `/api/v1/admin/erasure`, `/api/v1/admin/field-access-log`,
+  and `/api/v1/admin/sar/export`. See `docs/en/api/hono-api-spec.md` §10b.
+
+### Changed
+
+- Envelope mode is governed by the `encryption.envelope` setting; the
+  `LUMIBASE_ENVELOPE_ENCRYPTION` env var is no longer the hot-path control.
+- **CMS:** wire production Cloudflare bindings (Hyperdrive, KV, R2, Queue) on the
+  production Worker.
+- Bumped all workspace package versions `0.8.0` → `0.9.0`.
+
+### Fixed
+
+- **CMS:** correct health probes for Cloudflare KV and cold connections.
+- **Runtime:** tolerate missing search config and flat queue bindings on
+  Cloudflare.
+- **Landing:** inline CSS to remove a render-blocking stylesheet (`perf`); serve
+  the static export preview via `python http.server`.
+
+### Security
+
+- **Dependency advisories resolved.** `@babel/core` bumped to `7.29.7`,
+  `dompurify` to `>=3.4.11` (GHSA `ALLOWED_ATTR` prototype pollution), `undici`
+  overridden to `^7.28.0`, and `form-data` pinned to `^4.0.6`.
+
+### CI
+
+- `ci(release)`: install with `--ignore-scripts` to avoid a native-build hang.
+
 ## [0.8.0] - 2026-06-18
 
 ### Version
@@ -1075,6 +1316,13 @@ changelog and the published GitHub Release notes:
 
 Initial tagged release.
 
+[0.9.0]: https://github.com/khuepm/lumibase/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/khuepm/lumibase/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/khuepm/lumibase/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/khuepm/lumibase/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/khuepm/lumibase/compare/v0.4.7...v0.5.0
+[0.4.7]: https://github.com/khuepm/lumibase/compare/v0.4.6...v0.4.7
+[0.4.6]: https://github.com/khuepm/lumibase/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/khuepm/lumibase/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/khuepm/lumibase/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/khuepm/lumibase/compare/v0.4.2...v0.4.3

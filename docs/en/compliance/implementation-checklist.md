@@ -11,23 +11,15 @@
 
 ## P0 — Must-have for basic legal + store compliance
 
-### P0.1 Account erasure / right to be forgotten — ✅ Done (v0.8.x)
+### P0.1 Account erasure / right to be forgotten — ✅ Done (regulated-content-readiness)
 - **Why:** GDPR Art. 17, CCPA delete, PDPD, Apple 5.1.1(v), Google data deletion.
-- **Delivered:**
-  - `erasure_requests` table (`packages/database/src/schema/compliance.ts`) +
-    migration `0033_erasure_requests.sql` + RLS.
-  - `ErasureService` (`apps/cms/src/modules/data-rights/erasure-service.ts`):
-    `request` (grace period), `cancel`, `getStatus`, `eraseNow` (transactional
-    anonymize-in-place: nulls PII, drops memberships/credentials, suppresses the
-    email), and `processDue` (grace-period processor).
-  - Self-service `GET`/`POST`/`DELETE /api/v1/me/erasure`; admin force-erase
-    `POST /api/v1/erasure/:userId` + `POST /api/v1/erasure/process-due`
-    (`apps/cms/src/routes/erasure.ts`). Audits `erasure_requested`/
-    `erasure_cancelled`/`account_erased`.
-  - **Anonymize, not delete:** the `users` row survives so content provenance
-    (`items.userCreated`, `revisions.userId`) stays intact while PII is removed.
-- **Follow-up:** schedule `processDue` on the existing rotation cron; expose a
-  public deletion-request URL for the Google Play listing.
+- **Delivered (by the regulated-content-readiness feature):**
+  - `erasure_requests` table (`packages/database/src/schema/regulated.ts`).
+  - `apps/cms/src/services/erasure-service.ts` (erasure + retention sweep).
+  - Admin `/api/v1/admin/erasure` and Subject Access Request `/api/v1/admin/sar`
+    (`apps/cms/src/routes/admin-erasure.ts`, `admin-sar.ts`).
+- **Follow-up:** add a self-service `/me/erasure` request flow + a publicly reachable
+  deletion-request URL for the Google Play listing on top of the admin service.
 
 ### P0.2 Personal-data export ("download my data") — ✅ Done (v0.8.x)
 - **Why:** GDPR Art. 15/20, access requests.
@@ -113,14 +105,14 @@
   agent-authored revisions on the user's content with provenance (model, sources,
   confidence), satisfying GDPR Art. 22 transparency. A user-initiated "request human
   review" action (creating an `ai_approvals` entry) is the remaining enhancement.
-- **P2.3 Field-level redaction on export** — ✅ Done (v0.8.x). `redactByClassification`
-  (`apps/cms/src/modules/data-rights/redaction.ts`) masks `pii`/`sensitive` field values;
-  the personal-data export also excludes credential secrets (`passwordHash`, `tfa`). Wire
-  the utility into any content export/support view that must not show raw PII.
-- **P2.4 Data classification** — ✅ Done (v0.8.x). `fields.classification`
-  (`none`/`pii`/`sensitive`, migration `0035`) exposed via the field create/update API
-  (`apps/cms/src/routes/collections.ts`) and surfaced in `CompiledField`; drives P2.3
-  redaction and the data map.
+- **P2.3 Field-level redaction on export** — ✅ Done (regulated-content-readiness).
+  Fields classified `pii`/`phi` are masked by default unless the caller has
+  `read_decrypted`, and decrypted reads are audited (`field_access_log`). The
+  personal-data export also excludes credential secrets (`passwordHash`, `tfa`).
+- **P2.4 Data classification** — ✅ Done (regulated-content-readiness).
+  `fields.classification` (`none`/`internal`/`pii`/`phi`) with `pii`/`phi` requiring
+  `encrypted=true` (`assertClassificationEncryptable` in `schema-service.ts`); also
+  accepted on the field create/update API (`apps/cms/src/routes/collections.ts`).
 - **P2.5 DPA template** — ✅ Done (v0.8.x, doc). See [dpa-template.md](./dpa-template.md).
 
 ## Sequencing suggestion

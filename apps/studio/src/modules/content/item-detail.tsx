@@ -12,8 +12,9 @@ import { RawToggle } from './interfaces/raw-toggle';
 import { ProvenanceBadge } from './provenance-badge';
 import { RevisionsPanel } from './revisions-panel';
 import { RawJsonPanel } from './raw-json-panel';
+import { VersionPanel } from './version-panel';
 
-type Tab = 'fields' | 'revisions' | 'raw';
+type Tab = 'fields' | 'revisions' | 'versions' | 'raw';
 
 /**
  * Content module detail editor.
@@ -29,6 +30,9 @@ export function ItemDetailPage() {
 
   const [tab, setTab] = useState<Tab>('fields');
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
+  // Content scheduling (Publish_Window) — datetime-local strings, '' = unset.
+  const [publishAt, setPublishAt] = useState<string | null>(null);
+  const [unpublishAt, setUnpublishAt] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareRoleId, setShareRoleId] = useState('');
   const [sharePassword, setSharePassword] = useState('');
@@ -107,6 +111,8 @@ export function ItemDetailPage() {
   useEffect(() => {
     if (itemQuery.data && draft === null) {
       setDraft({ ...(itemQuery.data.data as Record<string, unknown>) });
+      setPublishAt(isoToLocalInput(itemQuery.data.publishAt));
+      setUnpublishAt(isoToLocalInput(itemQuery.data.unpublishAt));
     }
   }, [itemQuery.data, draft]);
 
@@ -123,13 +129,21 @@ export function ItemDetailPage() {
 
   const isDirty = useMemo(() => {
     if (!itemQuery.data || draft === null) return false;
-    return JSON.stringify(draft) !== JSON.stringify(itemQuery.data.data ?? {});
-  }, [draft, itemQuery.data]);
+    if (JSON.stringify(draft) !== JSON.stringify(itemQuery.data.data ?? {})) return true;
+    return (
+      publishAt !== isoToLocalInput(itemQuery.data.publishAt) ||
+      unpublishAt !== isoToLocalInput(itemQuery.data.unpublishAt)
+    );
+  }, [draft, itemQuery.data, publishAt, unpublishAt]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!draft) return null;
-      const res = await client.items(collection as never).patch(id, { data: draft });
+      const res = await client.items(collection as never).patch(id, {
+        data: draft,
+        publishAt: localInputToIso(publishAt),
+        unpublishAt: localInputToIso(unpublishAt),
+      });
       return res.data as ItemRow;
     },
     onSuccess: () => {
@@ -409,6 +423,7 @@ export function ItemDetailPage() {
               }}
             />
           )}
+          {tab === 'versions' && <VersionPanel collection={collection} itemId={id} />}
           {tab === 'raw' && (
             <RawJsonPanel
               value={draft}
@@ -422,18 +437,63 @@ export function ItemDetailPage() {
           <ul className="space-y-1 text-sm">
             <TabButton current={tab} value="fields" onClick={setTab}>Fields</TabButton>
             <TabButton current={tab} value="revisions" onClick={setTab}>Revisions</TabButton>
+            <TabButton current={tab} value="versions" onClick={setTab}>Versions</TabButton>
             <TabButton current={tab} value="raw" onClick={setTab}>Raw JSON</TabButton>
           </ul>
           <dl className="mt-4 space-y-1 border-t pt-3 text-xs text-muted-foreground">
             <Meta label="Status" value={itemQuery.data.status} />
             <Meta label="Sort" value={String(itemQuery.data.sort ?? 0)} />
+            {itemQuery.data.editorialState ? (
+              <Meta label="Editorial" value={itemQuery.data.editorialState} />
+            ) : null}
             <Meta label="Updated" value={new Date(itemQuery.data.updatedAt).toLocaleString()} />
             <Meta label="Created" value={new Date(itemQuery.data.createdAt).toLocaleString()} />
           </dl>
+          {/* Content scheduling (Req 10.1). Empty = unset; the Delivery API
+              only serves items inside the current Publish_Window. */}
+          <div className="mt-4 space-y-2 border-t pt-3">
+            <h2 className="text-xs font-semibold uppercase text-muted-foreground">Scheduling</h2>
+            <label className="block text-xs text-muted-foreground">
+              Publish at
+              <input
+                type="datetime-local"
+                className="mt-1 w-full rounded border px-2 py-1 text-sm"
+                value={publishAt ?? ''}
+                disabled={!canUpdate}
+                onChange={(e) => setPublishAt(e.target.value || null)}
+              />
+            </label>
+            <label className="block text-xs text-muted-foreground">
+              Unpublish at
+              <input
+                type="datetime-local"
+                className="mt-1 w-full rounded border px-2 py-1 text-sm"
+                value={unpublishAt ?? ''}
+                disabled={!canUpdate}
+                onChange={(e) => setUnpublishAt(e.target.value || null)}
+              />
+            </label>
+          </div>
         </aside>
       </div>
     </div>
   );
+}
+
+/** ISO timestamp → `datetime-local` input value (local time), or '' when unset. */
+function isoToLocalInput(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** `datetime-local` value → ISO string, or null when empty. */
+function localInputToIso(local: string | null): string | null {
+  if (!local) return null;
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 function TabButton({

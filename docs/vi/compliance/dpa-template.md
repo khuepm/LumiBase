@@ -47,7 +47,7 @@ audit log append-only có mask secret, và kiểm soát retention. Bổ sung mã
 
 ## 8. Hỗ trợ quyền chủ thể dữ liệu
 Processor hỗ trợ Controller đáp ứng yêu cầu truy cập, xoá, di chuyển, chỉnh sửa, phản
-đối, dùng các endpoint sẵn có (`/me/data-export`, `/me/erasure`, `/me/consents`).
+đối, dùng các endpoint sẵn có (`/me/data-export`, `/admin/erasure`, `/me/consents`).
 
 ## 9. Vi phạm dữ liệu cá nhân
 Processor thông báo cho Controller không chậm trễ sau khi biết về vi phạm, kèm thông

@@ -251,6 +251,9 @@ export function legacyRest() {
           data: Partial<Row["data"]>;
           status?: string;
           sort?: number;
+          /** ISO timestamps for content scheduling (Publish_Window). */
+          publishAt?: string | null;
+          unpublishAt?: string | null;
         }) =>
           client.rawRequest<Row>(base, {
             method: "POST",
@@ -262,6 +265,9 @@ export function legacyRest() {
             data?: Partial<Row["data"]>;
             status?: string;
             sort?: number;
+            /** ISO timestamps for content scheduling (Publish_Window). */
+            publishAt?: string | null;
+            unpublishAt?: string | null;
           },
         ) =>
           client.rawRequest<Row>(`${base}/${id}`, {

@@ -98,16 +98,15 @@ Error response:
 | `GET` | `/api/v1/me/consents` | List the current user's consent decisions |
 | `PUT` | `/api/v1/me/consents/:type` | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
 | `GET` | `/api/v1/me/data-export` | Download the current user's personal data (GDPR Art. 15/20) |
-| `GET` | `/api/v1/me/erasure` | Current erasure-request status |
-| `POST` | `/api/v1/me/erasure` | Request account erasure (GDPR Art. 17); opens a grace period |
-| `DELETE` | `/api/v1/me/erasure` | Cancel a pending erasure request |
 | `GET` | `/api/v1/me/restriction` | Current restriction-of-processing state (GDPR Art. 18) |
 | `PUT` | `/api/v1/me/restriction` | Set restriction of processing (`{ restricted, reason? }`) |
 | `GET` | `/api/v1/me/automated-decisions` | Agent-authored revisions on the user's content (GDPR Art. 22) |
-| `POST` | `/api/v1/erasure/:userId` | Admin: force-erase a user now |
-| `POST` | `/api/v1/erasure/process-due` | Admin: anonymize all requests past their grace period |
 | `GET` | `/api/v1/retention` | Admin: report configured retention horizons |
 | `POST` | `/api/v1/retention/run` | Admin: prune `activity` + handled `notifications` past their horizons |
+
+> Account erasure (GDPR Art. 17) and Subject Access Requests are served by the
+> regulated-content-readiness feature at `/api/v1/admin/erasure` and
+> `/api/v1/admin/sar`.
 
 **Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 
@@ -241,6 +240,13 @@ changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 | `DELETE` | `/api/v1/items/:collection/:id` | Delete item (or array bulk) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Revert to revision |
+| `GET` | `/api/v1/items/:collection/:id/versions` | List named draft versions (each has a `mainChanged` flag) |
+| `POST` | `/api/v1/items/:collection/:id/versions` | Create a version `{ key, name }` (snapshots current main) |
+| `GET` | `/api/v1/items/:collection/:id/versions/:key` | Get a version |
+| `PATCH` | `/api/v1/items/:collection/:id/versions/:key` | Update a version `{ data?, name? }` (does not touch main) |
+| `DELETE` | `/api/v1/items/:collection/:id/versions/:key` | Delete a version |
+| `GET` | `/api/v1/items/:collection/:id/versions/:key/compare` | Field diff vs main → `{ main, version, changes }` |
+| `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Apply version to main (writes a revision); `meta.mainDiverged` |
 
 **Optional headers:**
 - `X-Lumi-Draft: true` — fetch draft version
@@ -474,6 +480,63 @@ language overrides (resolved client-side) take precedence.
 
 ---
 
+## 10b. Regulated / sensitive content (admin)
+
+Opt-in capability set (spec: `regulated-content-readiness`). All admin routes
+require the `admin` role; field-level decryption additionally requires the
+`read_decrypted` permission. Sensitive `pii`/`phi` field reads are recorded in
+`field_access_log`; decrypt failures fail closed (`500 DECRYPTION_FAILED`) and
+are audited — never a placeholder.
+
+### Encryption — keys & envelope mode
+
+Key **material** lives only in the runtime `KeyProvider` (Workers Secrets /
+env: `ENCRYPTION_KEY_<id>` + `ENCRYPTION_ACTIVE_KEY_ID`); these surfaces record
+metadata + audit and drive migrations.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/v1/admin/encryption/keys` | List configured key metadata (id/status/algo). |
+| `POST` | `/api/v1/admin/encryption/keys/rotate` | Promote a provisioned key to active; retires the previous. Body `{ keyId }`. Audits `encryption_key_rotated`. `422 KEY_NOT_PROVISIONED` if the bytes are absent. |
+| `POST` | `/api/v1/admin/encryption/keys/rewrap` | Re-encrypt retired-key ciphertext (and re-wrap per-record DEKs) onto the active key. Idempotent, resumable, bounded per call. |
+| `GET`  | `/api/v1/admin/encryption/envelope` | Current envelope-mode setting + migration progress. |
+| `POST` | `/api/v1/admin/encryption/envelope` | Toggle envelope (per-record DEK) mode. Body `{ enabled, password }` — **step-up auth** re-verifies the admin password (`401 INVALID_CREDENTIALS` on mismatch). Records `encryption.envelope`, audits `envelope_mode_changed`, enqueues the background migration and drains a bounded inline batch. |
+| `POST` | `/api/v1/admin/encryption/envelope/migrate` | Drain more migration batches (resumable). Poll until `{ done: true }`. |
+
+### Editorial review → publish
+
+Mounted at `/api/v1/editorial`. Per-collection toggle via collection
+`meta.editorialWorkflow`; `meta.requireSeparateReviewer` enforces a different
+reviewer than the author. Transitions audit `editorial_transition`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/v1/editorial/reviews` | List review requests (filter by status/assignee). |
+| `POST` | `/api/v1/editorial/:collection/:id/submit-review` | Move `draft → in_review`; assign a reviewer. |
+| `POST` | `/api/v1/editorial/:collection/:id/approve` | `in_review → approved` (→ publish per workflow). |
+| `POST` | `/api/v1/editorial/:collection/:id/reject` | `in_review → rejected`. Body `{ reason }`. |
+
+### GDPR erasure (dual-control)
+
+Mounted at `/api/v1/admin/erasure`. Crypto-shreds (drops per-record DEK) or
+hard-deletes `items` + `revisions` while **preserving** the tamper-evident
+`data_erased` audit (no cascade). Dual-control via `erasureDualControl` setting.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/admin/erasure` | Create an erasure request. Body `{ collection, filter }` + reason. Stores a subject hash, never plaintext. |
+| `POST` | `/api/v1/admin/erasure/:id/confirm` | Second-admin confirmation (dual-control). |
+| `POST` | `/api/v1/admin/erasure/:id/execute` | Execute the confirmed erasure; audits `data_erased` with `recordCount`. |
+
+### Field access log & Subject Access Request
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/v1/admin/field-access-log` | Query decrypted-read audit of `pii`/`phi` fields (never values). |
+| `POST` | `/api/v1/admin/sar/export` | Subject Access Request: export one subject's decrypted records + provenance. Forces a `field_access_log` entry (Req 13.2). |
+
+---
+
 ## 11. Extensions
 
 | Method | Path | Description |
@@ -583,6 +646,49 @@ For `target: "rtdb"`, `credentials` is `{ "databaseUrl": "https://<project>.fire
 ```
 
 Error codes specific to this section: `ENCRYPTION_KEY_REQUIRED` (400 — `ENCRYPTION_KEY` not configured, cannot encrypt credentials), `VALIDATION_ERROR` (400 — body / credential shape does not match the selected `target`).
+
+---
+
+## 12a. Translation Memory
+
+Reusable translations feeding the MT pipeline (TM → glossary → provider).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/tm` | List entries; filters `?source=&target=&entrySource=`; paginated `?limit=&offset=` → `{ data, meta: { total, limit, offset } }` |
+| `POST` | `/api/v1/tm` | Upsert a TM entry |
+| `PATCH` | `/api/v1/tm/:id` | Update `targetText`/`quality`/`context`/`source` |
+| `DELETE` | `/api/v1/tm/:id` | Delete an entry |
+| `POST` | `/api/v1/tm/lookup` | Fuzzy match (threshold default 75, shared `TM_DEFAULT_THRESHOLD`) |
+| `POST` | `/api/v1/tm/translate` | Full pipeline (TM → glossary → MT provider) |
+
+---
+
+## 12b. Insights (Dashboards)
+
+User-built dashboards of aggregate panels over collections. Panel queries are
+executed safely: every referenced field must be in the collection's field
+whitelist and the query is scoped to the active site — no user input reaches SQL
+identifiers.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/dashboards` | List dashboards |
+| `POST` | `/api/v1/dashboards` | Create dashboard `{ name, icon?, color?, note? }` |
+| `GET` | `/api/v1/dashboards/:id` | Get dashboard |
+| `PATCH` | `/api/v1/dashboards/:id` | Update dashboard |
+| `DELETE` | `/api/v1/dashboards/:id` | Delete dashboard |
+| `GET` | `/api/v1/dashboards/:id/panels` | List panels |
+| `POST` | `/api/v1/dashboards/:id/panels` | Create panel `{ name, type, position, query }` |
+| `PATCH` | `/api/v1/dashboards/:id/panels/:panelId` | Update panel (incl. `position` for layout) |
+| `DELETE` | `/api/v1/dashboards/:id/panels/:panelId` | Delete panel |
+| `POST` | `/api/v1/dashboards/:id/panels/:panelId/data` | Run a panel → `{ data, meta: { executedAt, rowCount, durationMs } }` |
+| `POST` | `/api/v1/dashboards/:id/panels/preview` | Dry-run a `PanelQuery` (editor preview) |
+
+`PanelQuery` (shared contract `@lumibase/shared`): `{ collection, aggregate
+(count|sum|avg|min|max), field?, groupBy?, filter? (condition rule), dateRange?,
+limit? }`. `field` is required for non-`count` aggregates. A field outside the
+collection whitelist returns `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
 
 ---
 

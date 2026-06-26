@@ -12,7 +12,7 @@
 
 | Quyền / nghĩa vụ | Trạng thái | Bằng chứng (đường dẫn) | Việc cần làm để lấp |
 |------------------|:----------:|------------------------|---------------------|
-| Xoá / quyền được lãng quên | ✅ | `apps/cms/src/modules/data-rights/erasure-service.ts`; bảng `erasure_requests`; tự phục vụ `/api/v1/me/erasure` + admin `/api/v1/erasure`; ân hạn + processor; ẩn danh hoá PII tại chỗ | Gắn processor vào cron scheduled-rotation cùng audit rotation. |
+| Xoá / quyền được lãng quên | ✅ | `apps/cms/src/services/erasure-service.ts`; bảng `erasure_requests` (`schema/regulated.ts`); admin `/api/v1/admin/erasure` + `/api/v1/admin/sar` (regulated-content-readiness) | Thêm luồng tự phục vụ `/me/erasure` chồng lên service erasure admin. |
 | Truy cập / quyền được biết | ✅ | `apps/cms/src/modules/data-rights/export-service.ts`; `GET /api/v1/me/data-export` (hồ sơ, consents, hoạt động, revisions tự viết, thông báo) | Mở rộng khi thêm bảng chứa PII mới. |
 | Di chuyển dữ liệu (portability) | ✅ | `apps/cms/src/routes/data-export.ts` — JSON có cấu trúc của dữ liệu chính người dùng, kèm header tải `Content-Disposition` | Bổ sung biến thể CSV nếu cần; tái dùng cho preview erasure. |
 | Chỉnh sửa (rectification) | ✅ | `apps/cms/src/routes/users.ts` (cập nhật user); sửa hồ sơ | Không cần cho hồ sơ; đảm bảo mọi trường PII người dùng sửa được. |
@@ -21,7 +21,7 @@
 | Đồng ý + rút lại | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Thêm UI preference center. |
 | Đồng ý cookie / theo dõi | ⚠️ | Đã có store backend (`user_consents`, loại `analytics`/`functional`); chưa có thu thập ở frontend | Banner đồng ý + thu thập cho cookie/theo dõi không thiết yếu, ghi qua `/me/consents`. |
 | Huỷ đăng ký email | ✅ | `packages/database/src/schema/compliance.ts` (`email_suppressions`); `apps/cms/src/modules/email/suppression.ts`; public `GET`/`POST /api/v1/email/unsubscribe`; send path lọc người nhận marketing | Thêm header SMTP `List-Unsubscribe` (RFC 8058) khi `OutboundEmail` hỗ trợ custom header. |
-| Xoá tài khoản (in-app/web) | ✅ | Tự phục vụ `POST /api/v1/me/erasure` (`apps/cms/src/routes/erasure.ts`) | Cung cấp URL yêu cầu xoá công khai cho listing Google Play. |
+| Xoá tài khoản (in-app/web) | ⚠️ | Erasure do admin `/api/v1/admin/erasure` + SAR `/api/v1/admin/sar` (regulated) | Thêm luồng tự phục vụ + URL yêu cầu xoá công khai (Apple 5.1.1(v) / Google Play). |
 | Minh bạch / thông báo quyền riêng tư | ⚠️ | Trang privacy tại `apps/landing/src/app/privacy/page.tsx` (chung chung) | Bản đồ dữ liệu để khai báo "data safety"/nhãn chính xác; thông báo theo từng triển khai. |
 | Thông báo vi phạm | ⚠️ | `apps/cms/src/modules/audit/` cung cấp dấu vết phát hiện; `modules/anomaly` | Quy trình ứng phó sự cố + thông báo cơ quan trong 72h (mức tổ chức). |
 | Chuyển dữ liệu xuyên biên giới / nội địa hoá | ⚠️ | Runtime edge; `apps/cms/src/middleware/rls.ts` cô lập tenant | Cấu hình ghim vùng / data-residency + tài liệu. |
@@ -49,12 +49,11 @@ Các nguyên thuỷ này là thật và tái sử dụng được khi xây tính
 
 ## 3. Các khoảng trống lớn nhất (và vì sao quan trọng)
 
-1. **Xoá tài khoản toàn cục (quyền được lãng quên).** ✅ *Đã triển khai (v0.8.x).*
-   `ErasureService` (`apps/cms/src/modules/data-rights/erasure-service.ts`) ẩn danh hoá
-   dòng `users` tại chỗ, xoá mọi membership/credential, suppress email, và theo dõi yêu
-   cầu trong `erasure_requests` với thời gian ân hạn + processor `processDue`. Tự phục vụ
-   `/api/v1/me/erasure`; admin force-erase `/api/v1/erasure`. Thoả GDPR Điều 17, CCPA
-   delete, PDPD, Apple 5.1.1(v), Google.
+1. **Xoá tài khoản toàn cục (quyền được lãng quên).** ✅ *Đã triển khai* bởi feature
+   regulated-content-readiness: `apps/cms/src/services/erasure-service.ts` +
+   `erasure_requests` (`schema/regulated.ts`), expose qua admin `/api/v1/admin/erasure`
+   và SAR `/api/v1/admin/sar`. Thoả GDPR Điều 17, CCPA delete, PDPD. Luồng tự phục vụ
+   `/me/erasure` chồng lên là follow-up.
 2. **Xuất dữ liệu cá nhân ("download my data").** ✅ *Đã triển khai (v0.8.x).*
    `GET /api/v1/me/data-export` (`apps/cms/src/modules/data-rights/export-service.ts`)
    gom hồ sơ, consents, hoạt động, revisions tự viết và thông báo của chính người gọi

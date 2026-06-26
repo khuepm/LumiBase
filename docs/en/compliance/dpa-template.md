@@ -48,7 +48,7 @@ retention controls. Add transport encryption (TLS) and host hardening.
 ## 8. Data-subject rights assistance
 The Processor assists the Controller in responding to access, erasure,
 portability, rectification, and objection requests, using the built-in
-endpoints (`/me/data-export`, `/me/erasure`, `/me/consents`).
+endpoints (`/me/data-export`, `/admin/erasure`, `/me/consents`).
 
 ## 9. Personal-data breach
 The Processor notifies the Controller without undue delay after becoming aware

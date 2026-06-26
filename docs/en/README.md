@@ -75,6 +75,9 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [sdk/typegen.md](./sdk/typegen.md) — Sinh TypeScript types từ schema live.
 - **API**
   - [api/hono-api-spec.md](./api/hono-api-spec.md) — REST/WS endpoints chuẩn hoá với đầy đủ request/response examples.
+- **MCP (Model Context Protocol)** (`mcp/`)
+  - [mcp/index.md](./mcp/index.md) — Nguồn docs tập trung: HTTP endpoint `POST /api/v1/mcp` (Streamable HTTP JSON-RPC) + standalone `@lumibase/mcp-server` (stdio), tool registry, MCP parity.
+  - [mcp/mcp-application-analysis.md](./mcp/mcp-application-analysis.md) — Phân tích ứng dụng MCP cho các spec Directus-inspired (ưu tiên, tool đề xuất, rủi ro).
 - **UI Studio**
   - [ui/README.md](../ui/README.md) — Spec for the redesigned Lumibase Studio and detailed screen specifications.
   - [en/ui/studio-ui-spec.md](./ui/studio-ui-spec.md) — Original page structure, modules, layouts, components, and state.

@@ -11,23 +11,15 @@
 
 ## P0 — Bắt buộc cho tuân thủ pháp lý + store cơ bản
 
-### P0.1 Xoá tài khoản / quyền được lãng quên — ✅ Đã làm (v0.8.x)
+### P0.1 Xoá tài khoản / quyền được lãng quên — ✅ Đã làm (regulated-content-readiness)
 - **Vì sao:** GDPR Điều 17, CCPA delete, PDPD, Apple 5.1.1(v), Google data deletion.
-- **Đã giao:**
-  - Bảng `erasure_requests` (`packages/database/src/schema/compliance.ts`) +
-    migration `0033_erasure_requests.sql` + RLS.
-  - `ErasureService` (`apps/cms/src/modules/data-rights/erasure-service.ts`):
-    `request` (ân hạn), `cancel`, `getStatus`, `eraseNow` (ẩn danh hoá tại chỗ trong
-    transaction: null PII, xoá membership/credential, suppress email), và `processDue`
-    (processor ân hạn).
-  - Tự phục vụ `GET`/`POST`/`DELETE /api/v1/me/erasure`; admin force-erase
-    `POST /api/v1/erasure/:userId` + `POST /api/v1/erasure/process-due`
-    (`apps/cms/src/routes/erasure.ts`). Audit `erasure_requested`/`erasure_cancelled`/
-    `account_erased`.
-  - **Ẩn danh chứ không xoá:** dòng `users` được giữ để provenance nội dung
-    (`items.userCreated`, `revisions.userId`) còn nguyên trong khi PII bị loại bỏ.
-- **Tiếp theo:** lên lịch `processDue` trên cron rotation sẵn có; cung cấp URL yêu cầu
-  xoá công khai cho listing Google Play.
+- **Đã giao (bởi feature regulated-content-readiness):**
+  - Bảng `erasure_requests` (`packages/database/src/schema/regulated.ts`).
+  - `apps/cms/src/services/erasure-service.ts` (erasure + retention sweep).
+  - Admin `/api/v1/admin/erasure` và Subject Access Request `/api/v1/admin/sar`
+    (`apps/cms/src/routes/admin-erasure.ts`, `admin-sar.ts`).
+- **Tiếp theo:** thêm luồng tự phục vụ `/me/erasure` + URL yêu cầu xoá công khai cho
+  listing Google Play, chồng lên service erasure admin.
 
 ### P0.2 Xuất dữ liệu cá nhân ("download my data") — ✅ Đã làm (v0.8.x)
 - **Vì sao:** GDPR Điều 15/20, yêu cầu truy cập.
@@ -110,14 +102,14 @@
   do agent tạo trên nội dung của user kèm provenance (model, sources, confidence), thoả
   minh bạch GDPR Điều 22. Hành động "yêu cầu con người xem xét" do user khởi tạo (tạo
   bản ghi `ai_approvals`) là cải tiến còn lại.
-- **P2.3 Che field khi xuất** — ✅ Đã làm (v0.8.x). `redactByClassification`
-  (`apps/cms/src/modules/data-rights/redaction.ts`) che giá trị field `pii`/`sensitive`;
-  export dữ liệu cá nhân cũng loại trừ secret credential (`passwordHash`, `tfa`). Gắn
-  utility vào bất kỳ content export/support view nào không được hiển thị PII thô.
-- **P2.4 Phân loại dữ liệu** — ✅ Đã làm (v0.8.x). `fields.classification`
-  (`none`/`pii`/`sensitive`, migration `0035`) expose qua API tạo/sửa field
-  (`apps/cms/src/routes/collections.ts`) và trong `CompiledField`; điều khiển redaction
-  P2.3 và bản đồ dữ liệu.
+- **P2.3 Che field khi xuất** — ✅ Đã làm (regulated-content-readiness). Field phân loại
+  `pii`/`phi` bị mask mặc định trừ khi caller có `read_decrypted`, và đọc giải mã được
+  audit (`field_access_log`). Export dữ liệu cá nhân cũng loại trừ secret credential
+  (`passwordHash`, `tfa`).
+- **P2.4 Phân loại dữ liệu** — ✅ Đã làm (regulated-content-readiness).
+  `fields.classification` (`none`/`internal`/`pii`/`phi`); `pii`/`phi` bắt buộc
+  `encrypted=true` (`assertClassificationEncryptable` trong `schema-service.ts`); cũng
+  nhận qua API tạo/sửa field (`apps/cms/src/routes/collections.ts`).
 - **P2.5 Mẫu DPA** — ✅ Đã làm (v0.8.x, doc). Xem [dpa-template.md](./dpa-template.md).
 
 ## Gợi ý trình tự

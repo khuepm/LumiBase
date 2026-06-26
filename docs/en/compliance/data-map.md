@@ -47,17 +47,18 @@ consents, activity, authored revisions, and notifications. See
 
 ## 5. What erasure removes
 
-`POST /api/v1/me/erasure` (or admin `/api/v1/erasure/:userId`) anonymizes the
-`users` row (PII nulled), drops memberships + credentials, and suppresses the
-email. Content authorship references survive but point to an anonymized user —
-see [user-rights-catalog.md](./user-rights-catalog.md).
+Account erasure is handled by the regulated-content-readiness feature via admin
+`POST /api/v1/admin/erasure` (and Subject Access Requests via `/api/v1/admin/sar`),
+backed by `erasure_requests` (`schema/regulated.ts`) and
+`apps/cms/src/services/erasure-service.ts`. See
+[user-rights-catalog.md](./user-rights-catalog.md).
 
 ## 6. Field classification
 
-Custom content fields can be tagged via `fields.classification` (`none` / `pii` /
-`sensitive`) on create/update. The `redactByClassification` utility
-(`apps/cms/src/modules/data-rights/redaction.ts`) uses these tags to mask sensitive
-values in any redacted view/export.
+Custom content fields can be tagged via `fields.classification` (`none` / `internal` /
+`pii` / `phi`). Fields classified `pii`/`phi` must be encrypted and are masked by
+default unless the caller has `read_decrypted`; decrypted reads are audited
+(`field_access_log`). Provided by the regulated-content-readiness feature.
 
 ## 7. Third-party processors
 
