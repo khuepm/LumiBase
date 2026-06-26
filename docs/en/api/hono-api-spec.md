@@ -95,6 +95,50 @@ Error response:
 | `POST` | `/api/v1/auth/refresh` | Refresh expired access token |
 | `POST` | `/api/v1/auth/logout` | Revoke tokens |
 | `GET` | `/api/v1/auth/me` | Get current user profile |
+| `GET` | `/api/v1/me/consents` | List the current user's consent decisions |
+| `PUT` | `/api/v1/me/consents/:type` | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
+| `GET` | `/api/v1/me/data-export` | Download the current user's personal data (GDPR Art. 15/20) |
+| `GET` | `/api/v1/me/restriction` | Current restriction-of-processing state (GDPR Art. 18) |
+| `PUT` | `/api/v1/me/restriction` | Set restriction of processing (`{ restricted, reason? }`) |
+| `GET` | `/api/v1/me/automated-decisions` | Agent-authored revisions on the user's content (GDPR Art. 22) |
+| `GET` | `/api/v1/retention` | Admin: report configured retention horizons |
+| `POST` | `/api/v1/retention/run` | Admin: prune `activity` + handled `notifications` past their horizons |
+
+> Account erasure (GDPR Art. 17) and Subject Access Requests are served by the
+> regulated-content-readiness feature at `/api/v1/admin/erasure` and
+> `/api/v1/admin/sar`.
+
+**Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
+
+```jsonc
+// PUT /api/v1/me/consents/marketing
+{ "granted": true, "source": "preference_center", "version": "v1" }
+
+// Response
+{ "data": { "consentType": "marketing", "granted": true,
+            "grantedAt": "2026-06-24T10:00:00.000Z", "withdrawnAt": null,
+            "source": "preference_center", "version": "v1",
+            "updatedAt": "2026-06-24T10:00:00.000Z" } }
+```
+
+Each change writes a `consent_granted` / `consent_withdrawn` audit event. Only user
+principals (not API keys) can manage consent. Current state is stored per
+`(site_id, user_id, consent_type)` in `user_consents`; full history lives in the audit log.
+
+**Email unsubscribe & suppression** (CAN-SPAM):
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/email/unsubscribe?token=…` | public | One-click unsubscribe (renders HTML confirmation) |
+| `POST` | `/api/v1/email/unsubscribe` | public | RFC 8058 one-click (token in query or form body) |
+| `GET` | `/api/v1/email/suppressions` | admin | List suppressed addresses |
+| `POST` | `/api/v1/email/suppressions` | admin | Add an address (`{ email, reason? }`) |
+| `DELETE` | `/api/v1/email/suppressions/:email` | admin | Remove an address (re-subscribe) |
+
+The unsubscribe token is a stateless HS256 JWT (`{ siteId, email }`, no expiry) signed
+with `JWT_SECRET`. Marketing sends (`EmailModuleService.send({ category: 'marketing' })`)
+filter recipients against `email_suppressions` before dispatch. Unsubscribe/suppression
+changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 
 **Login request:**
 ```json

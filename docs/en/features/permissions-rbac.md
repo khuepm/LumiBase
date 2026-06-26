@@ -113,3 +113,9 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
 - Mọi denial log vào `activity` với action `permission_denied` + lý do (rule path).
 
 ## 11. Tasks: Phase MVP-C, C2.
+
+## 12. Compliance & user rights
+
+This RBAC/audit machinery underpins several regulatory obligations (access control,
+provenance, breach detection). For how it maps to user data-subject rights and where
+gaps remain, see [Compliance — gap analysis](../compliance/gap-analysis.md).

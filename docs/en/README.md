@@ -90,6 +90,11 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [deployment/local-development.md](./deployment/local-development.md) — Quy trình local dev và kiểm tra trước deploy.
 - **Operations** (`operations/`)
   - [operations/upgrades.md](./operations/upgrades.md) — Fixed-version upgrade policy, Cloudflare/Docker flows, backup, migrations, and rollback limits.
+- **Compliance & User Rights** (`compliance/`)
+  - [compliance/README.md](./compliance/README.md) — Overview + rights × market matrix (EU/US/VN, Google/Apple) mapped to LumiBase. **Not legal advice.**
+  - [compliance/user-rights-catalog.md](./compliance/user-rights-catalog.md) — Plain-language catalog of each right (right to be forgotten, access, portability, consent, unsubscribe, account deletion…).
+  - Per-market: [EU GDPR/ePrivacy](./compliance/market-eu-gdpr.md) · [US CCPA/CPRA & CAN-SPAM](./compliance/market-us.md) · [Vietnam PDPD & content licensing](./compliance/market-vietnam.md) · [Google & Apple store policy](./compliance/provider-google-apple.md).
+  - [compliance/gap-analysis.md](./compliance/gap-analysis.md) — Right ↔ LumiBase feature mapping (✅/⚠️/❌) + [implementation-checklist.md](./compliance/implementation-checklist.md).
 - **Đóng góp** (`contributing/`)
   - [contributing/index.md](./contributing/index.md) — Setup, branching, commit conventions, PR checklist.
   - [contributing/code-style.md](./contributing/code-style.md) — TypeScript, naming, service patterns.

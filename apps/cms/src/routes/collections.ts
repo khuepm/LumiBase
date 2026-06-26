@@ -76,6 +76,7 @@ const fieldInputSchema = z.object({
   readonly: z.boolean().optional(),
   hidden: z.boolean().optional(),
   encrypted: z.boolean().optional(),
+  classification: z.enum(['none', 'internal', 'pii', 'phi']).optional(),
   versioned: z.boolean().optional(),
   rawEnabled: z.boolean().optional(),
   width: z.enum(['half', 'full', 'fill']).optional(),

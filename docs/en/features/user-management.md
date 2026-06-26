@@ -44,3 +44,11 @@
 - Module **Teams**: list + drag-drop user vào team.
 
 ## 7. Tasks: Phase MVP-D.
+
+## 8. Compliance & user rights
+
+User accounts carry personal data subject to GDPR / CCPA / PDPD and app-store
+policy. For the legal rights users are entitled to (erasure, access, portability,
+consent, account deletion) and how they map to current user-management features,
+see [Compliance & User Rights](../compliance/README.md) — in particular the
+[gap-analysis](../compliance/gap-analysis.md).

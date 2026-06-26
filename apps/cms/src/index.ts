@@ -28,6 +28,12 @@ import { adminFieldAccessRouter } from './routes/admin-field-access';
 import { adminSarRouter } from './routes/admin-sar';
 import { apiKeysRouter } from './routes/api-keys';
 import { collectionsRouter } from './routes/collections';
+import { automatedDecisionsRouter } from './routes/automated-decisions';
+import { consentRouter } from './routes/consent';
+import { dataExportRouter } from './routes/data-export';
+import { restrictionRouter } from './routes/restriction';
+import { retentionRouter } from './routes/retention';
+import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
 import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
@@ -172,6 +178,18 @@ api.route('/auth', authRouter);
 // Mounted on the authenticated `api` Hono so `withAuth` already enforces
 // that the caller has a valid session before the handler runs.
 api.route('/me', meRouter);
+// `/me/consents` — self-service consent management (GDPR Art. 7, PDPD).
+// Separate router from `meRouter`; mounted under the same authenticated `api`
+// chain so the caller can only read/write their own consent.
+api.route('/me/consents', consentRouter);
+// `/me/data-export` — self-service "download my data" (GDPR Art. 15/20).
+api.route('/me/data-export', dataExportRouter);
+// `/me/restriction` — self-service restriction of processing (GDPR Art. 18).
+api.route('/me/restriction', restrictionRouter);
+// `/me/automated-decisions` — transparency over agent processing (GDPR Art. 22).
+api.route('/me/automated-decisions', automatedDecisionsRouter);
+// `/retention` — admin general data-retention pruning (site-admin only).
+api.route('/retention', retentionRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/items', itemsRouter);
@@ -268,6 +286,13 @@ api.route('/firebase-sync', lumibaseFirebaseSyncRouter);
 // Share links are public. The opaque token resolves the site and share role.
 app.use('/api/v1/shares/*', withDb());
 app.route('/api/v1/shares', sharePublicRouter);
+
+// Email unsubscribe is public (CAN-SPAM one-click). The signed token resolves
+// the site, so no session/tenant header is required. Registered before the
+// authenticated `api` mount so `/email/unsubscribe` wins; all other `/email/*`
+// paths fall through to the authenticated `emailRouter`.
+app.use('/api/v1/email/unsubscribe', withDb());
+app.route('/api/v1/email', emailPublicRouter);
 
 app.route('/api/v1', api);
 

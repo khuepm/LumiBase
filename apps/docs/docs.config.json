@@ -89,6 +89,23 @@
       },
       {
         "type": "category",
+        "label": "Compliance & User Rights",
+        "items": [
+          "compliance/README",
+          "compliance/user-rights-catalog",
+          "compliance/market-eu-gdpr",
+          "compliance/market-us",
+          "compliance/market-vietnam",
+          "compliance/provider-google-apple",
+          "compliance/gap-analysis",
+          "compliance/data-map",
+          "compliance/data-residency",
+          "compliance/dpa-template",
+          "compliance/implementation-checklist"
+        ]
+      },
+      {
+        "type": "category",
         "label": "Roadmap",
         "items": [
           "roadmap/tasks",
