@@ -55,6 +55,7 @@ import {
 } from '@/modules/content/interfaces/catalogue';
 import { DISPLAY_CATALOGUE } from '@/modules/content/displays/registry';
 import { MustacheTemplateEditor } from '@/modules/content/mustache-template-editor';
+import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
 
@@ -190,6 +191,25 @@ export function FieldInspector({
     translationsJson.ok &&
     defaultValueJson.ok;
   const canEditStorage = !form.locked;
+  const canSubmit = valid && jsonValid && !isSubmitting;
+
+  // Shared by the Save button and the Cmd/Ctrl+S "save and stay" shortcut.
+  const submit = () =>
+    onSubmit({
+      ...form,
+      defaultValue: defaultValueJson.value,
+      special: specialDraft
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+      options: optionsJson.value,
+      displayOptions: displayOptionsJson.value,
+      validation: validationJson.value,
+      conditions: conditionsJson.value,
+      translations: translationsJson.value,
+    });
+
+  useSaveHandler(submit, canSubmit);
 
   const isRelation = form.interface?.startsWith('relation-') || form.interface === 'files';
   const isMustache = form.display === 'mustache' || form.display === 'mustache-template';
@@ -388,22 +408,8 @@ export function FieldInspector({
           </button>
           <button
             type="button"
-            disabled={!valid || !jsonValid || isSubmitting}
-            onClick={() =>
-              onSubmit({
-                ...form,
-                defaultValue: defaultValueJson.value,
-                special: specialDraft
-                  .split(',')
-                  .map((s) => s.trim())
-                  .filter(Boolean),
-                options: optionsJson.value,
-                displayOptions: displayOptionsJson.value,
-                validation: validationJson.value,
-                conditions: conditionsJson.value,
-                translations: translationsJson.value,
-              })
-            }
+            disabled={!canSubmit}
+            onClick={submit}
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
           >
             {isSubmitting ? 'Saving…' : 'Save field'}

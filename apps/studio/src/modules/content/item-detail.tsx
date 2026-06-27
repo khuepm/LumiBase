@@ -6,6 +6,7 @@ import type { FieldResource, ItemRow, RevisionRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePermissions, type PermissionHelpers } from '@/lib/use-permissions';
+import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 import { PresenceChip } from '@/components/presence-chip';
 import { resolveInterface } from './interfaces/registry';
 import { GroupContainer, type GroupVariant } from './interfaces/group';
@@ -153,6 +154,12 @@ export function ItemDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['revisions', collection, id] });
     },
   });
+
+  // Cmd/Ctrl+S → save and stay. Mirrors the Save button's gating exactly.
+  useSaveHandler(
+    () => saveMutation.mutate(),
+    isDirty && canUpdate && !saveMutation.isPending,
+  );
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
