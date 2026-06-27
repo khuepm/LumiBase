@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-26T09:56:21.027Z",
+  "generatedAt": "2026-06-27T03:31:57.080Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "deepl",
@@ -21,7 +21,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/README.md.2026-06-26T09-56-21-123Z.bak.md",
+      "preservedTo": ".i18n/preserved/README.md.2026-06-27T03-31-57-185Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -117,7 +117,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/ai-native-vision.md.2026-06-26T09-56-21-123Z.bak.md",
+      "preservedTo": ".i18n/preserved/ai-native-vision.md.2026-06-27T03-31-57-185Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -309,7 +309,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/architecture/overview.md.2026-06-26T09-56-21-123Z.bak.md",
+      "preservedTo": ".i18n/preserved/architecture/overview.md.2026-06-27T03-31-57-185Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -801,7 +801,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/ai-copilot.md.2026-06-26T09-56-21-123Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/ai-copilot.md.2026-06-27T03-31-57-185Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -885,7 +885,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/email-service.md.2026-06-26T09-56-21-123Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/email-service.md.2026-06-27T03-31-57-185Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -897,7 +897,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/extensions-system.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/extensions-system.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -921,7 +921,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/firebase-sync.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/firebase-sync.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -933,7 +933,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/flows-automation.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/flows-automation.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -957,7 +957,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/marketplace.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/marketplace.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -981,7 +981,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/observability.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/observability.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1017,7 +1017,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/permissions-rbac.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/permissions-rbac.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1053,7 +1053,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/runtime-abstraction.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/runtime-abstraction.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1101,7 +1101,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/system-config.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/system-config.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1149,7 +1149,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1185,7 +1185,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/mcp/index.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/mcp/index.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1197,7 +1197,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/mcp/mcp-application-analysis.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/mcp/mcp-application-analysis.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1245,7 +1245,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/roadmap/consumer-sdk.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/roadmap/consumer-sdk.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1293,7 +1293,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/roadmap/tasks.md.2026-06-26T09-56-21-124Z.bak.md",
+      "preservedTo": ".i18n/preserved/roadmap/tasks.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1389,7 +1389,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/vision-and-positioning.md.2026-06-26T09-56-21-125Z.bak.md",
+      "preservedTo": ".i18n/preserved/vision-and-positioning.md.2026-06-27T03-31-57-186Z.bak.md",
       "missingPlaceholders": 0
     }
   ]
