@@ -1,9 +1,10 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { collections, scopeSite } from '@lumibase/database';
-import { searchIndexName } from '@lumibase/runtime';
-import type { AppEnv } from '../env';
+import { searchIndexName, SEARCH_META_ATTRS } from '@lumibase/runtime';
+import type { AppEnv, AuthPrincipal } from '../env';
+import { PermissionService, type CompiledPermission } from '../services/permission-service';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
@@ -18,10 +19,15 @@ import { formatSafeError } from '@lumibase/shared/utils';
  * collections table before it is used, so a tenant can neither name nor reach
  * another tenant's index.
  *
+ * Authorization: on top of physical-index isolation, the caller must hold a
+ * `read` permission on the collection. Hits are then filtered by the row-level
+ * permission rule and masked down to the permitted field whitelist, so search
+ * can never surface rows or fields the caller could not read via the items API.
+ *
  * Cross-collection search: when `collection` is omitted the query fans out
  * across every collection of the caller's site (one scoped search each), and
  * the hits are merged — each tagged with its `_collection`. This powers the
- * Studio global command palette. Fan-out is capped to keep the request bounded.
+ * Studio global search palette. Fan-out is capped to keep the request bounded.
  */
 
 /** Max collections fanned out in a single cross-collection search. */
@@ -37,6 +43,50 @@ const searchQuerySchema = z.object({
 });
 
 export const searchRouter = new Hono<AppEnv>();
+
+/** Reserved meta attributes the Studio UI relies on; always preserved when masking. */
+const SEARCH_META_KEYS: readonly string[] = [
+  SEARCH_META_ATTRS.collection,
+  SEARCH_META_ATTRS.title,
+  SEARCH_META_ATTRS.updatedAt,
+];
+
+const principalUser = (auth?: AuthPrincipal) => auth
+  ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) }
+  : null;
+
+/**
+ * Mask a search hit down to the fields the caller may read. `id` and the
+ * reserved `_collection` / `_title` / `_updatedAt` meta attributes are always
+ * kept so the result list stays renderable; everything else must be whitelisted.
+ */
+function maskSearchHit(hit: Record<string, unknown>, permission: CompiledPermission) {
+  if (permission.fields.length === 1 && permission.fields[0] === '*') return hit;
+  const allowed = new Set<string>(['id', ...SEARCH_META_KEYS, ...permission.fields]);
+  return Object.fromEntries(Object.entries(hit).filter(([key]) => allowed.has(key)));
+}
+
+function buildPermissionService(c: Context<AppEnv>) {
+  const auth = c.get('auth');
+  const headers: Record<string, string> = {};
+  c.req.raw.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value;
+  });
+
+  return new PermissionService({
+    db: c.get('db'),
+    cache: c.get('runtime').cache,
+    ctx: {
+      userId: auth?.userId ?? null,
+      siteId: c.get('siteId'),
+      roleId: null,
+      user: principalUser(auth),
+      ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+      headers,
+      apiKey: auth?.apiKey ?? null,
+    },
+  });
+}
 
 searchRouter.get('/', async (c) => {
   const parsed = searchQuerySchema.safeParse(
@@ -80,8 +130,15 @@ searchRouter.get('/', async (c) => {
     offset,
   };
 
+  const permissionService = buildPermissionService(c);
+
   try {
     // ── Cross-collection: fan out across every collection of the site ──────
+    //
+    // Authorization is enforced PER collection: only collections the caller can
+    // `read` are searched, and each collection's hits are filtered by its
+    // row-level rule and masked to its field whitelist. A collection the caller
+    // cannot read is silently skipped (it must not even reveal its existence).
     if (!collection) {
       const siteCollections = await db
         .select({ name: collections.name })
@@ -92,13 +149,20 @@ searchRouter.get('/', async (c) => {
       const truncated = siteCollections.length > CROSS_COLLECTION_CAP;
       const names = siteCollections.slice(0, CROSS_COLLECTION_CAP).map((r) => r.name);
 
+      const searched: string[] = [];
       const perCollection = await Promise.all(
         names.map(async (name) => {
+          const perm = await permissionService.canAccess(name, 'read');
+          if (!perm) return []; // caller can't read this collection — skip it
+          searched.push(name);
           try {
             const r = await search.search(searchIndexName(siteId, name), q, searchOptions);
-            // Each hit already carries `_collection` from indexing; tag
-            // defensively so the caller can always group by collection.
-            return r.hits.map((h) => ({ _collection: name, ...(h as object) }));
+            return r.hits
+              .filter((hit) => permissionService.matches(perm, hit as Record<string, unknown>))
+              .map((hit) => ({
+                _collection: name,
+                ...maskSearchHit(hit as Record<string, unknown>, perm),
+              }));
           } catch {
             // A missing/un-indexed collection must not fail the whole query.
             return [];
@@ -118,7 +182,7 @@ searchRouter.get('/', async (c) => {
         meta: {
           totalHits: merged.length,
           query: q,
-          collections: names,
+          collections: searched,
           truncated,
           limit,
           offset,
@@ -127,6 +191,15 @@ searchRouter.get('/', async (c) => {
     }
 
     // ── Single collection ──────────────────────────────────────────────────
+    // Authorization: require collection `read` permission for the caller.
+    const permission = await permissionService.canAccess(collection, 'read');
+    if (!permission) {
+      return c.json(
+        { errors: [{ code: 'FORBIDDEN', message: `Action "read" on "${collection}" is not allowed.` }] },
+        403,
+      );
+    }
+
     // Tenant isolation: the requested collection MUST belong to the caller's
     // site. Without this a caller could pass an arbitrary collection name and
     // (combined with index naming) probe other tenants' data.
@@ -146,7 +219,10 @@ searchRouter.get('/', async (c) => {
 
     const result = await search.search(searchIndexName(siteId, collection), q, searchOptions);
     return c.json({
-      data: result.hits,
+      // Enforce the row-level permission rule, then strip non-readable fields.
+      data: result.hits
+        .filter((hit) => permissionService.matches(permission, hit as Record<string, unknown>))
+        .map((hit) => maskSearchHit(hit as Record<string, unknown>, permission)),
       meta: {
         totalHits: result.totalHits,
         processingTimeMs: result.processingTimeMs,
