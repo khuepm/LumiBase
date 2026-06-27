@@ -1,173 +1,113 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
-import { useTranslation } from 'react-i18next';
-import { Search as SearchIcon, Loader2 } from 'lucide-react';
-import { search, type SearchHit } from '@lumibase/sdk';
-import { getApiClient } from '@/lib/api';
-import { getAdminBase } from '@/lib/admin-base';
+import { useEffect, useMemo, useState } from 'react';
+import { Command } from 'cmdk';
+import { useNavigate } from '@tanstack/react-router';
+import { Search } from 'lucide-react';
 import { cn } from '@/lib/cn';
-
-/**
- * Global command palette (⌘K / Ctrl+K). Runs a cross-collection search against
- * `GET /api/v1/search` and lets the operator jump straight to an item editor.
- *
- * Search is diacritics-insensitive for Vietnamese (handled server-side), so
- * typing "ha noi" matches "Hà Nội" without any client-side normalization.
- */
-
-const DEBOUNCE_MS = 300;
-const RESULT_LIMIT = 20;
+import { NAV_COMMANDS, withAdminBase, type NavCommand } from '@/lib/keybindings/commands';
 
 interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
+  /** Active admin-path prefix ('' when served at root) for building targets. */
+  adminBase: string;
 }
 
-export function CommandPalette({ open, onClose }: CommandPaletteProps) {
-  const { t } = useTranslation('ui');
+/**
+ * VSCode-style quick-open (Cmd/Ctrl+K). A controlled overlay built on `cmdk`
+ * (fuzzy filtering, keyboard navigation, a11y) wrapped in the Studio's
+ * existing Tailwind modal pattern. Open state is owned by `AppShell`; this
+ * component only renders + navigates.
+ */
+export function CommandPalette({ open, onClose, adminBase }: CommandPaletteProps) {
   const navigate = useNavigate();
-  const { location } = useRouterState();
-  const adminBase = getAdminBase(location.pathname);
+  const [search, setSearch] = useState('');
 
-  const [query, setQuery] = useState('');
-  const [debounced, setDebounced] = useState('');
-  const [activeIndex, setActiveIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Reset + focus when opened.
+  // Reset the query each time the palette opens so it never reopens stale.
   useEffect(() => {
-    if (open) {
-      setQuery('');
-      setDebounced('');
-      setActiveIndex(0);
-      // Defer focus until the input is mounted.
-      const id = window.setTimeout(() => inputRef.current?.focus(), 0);
-      return () => window.clearTimeout(id);
-    }
-    return undefined;
+    if (open) setSearch('');
   }, [open]);
 
-  // Debounce the query feeding the search request.
+  // Esc closes. (Cmd+K toggling is handled by the global dispatcher in AppShell.)
   useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(query.trim()), DEBOUNCE_MS);
-    return () => window.clearTimeout(id);
-  }, [query]);
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [open, onClose]);
 
-  const { data, isFetching, isError } = useQuery({
-    queryKey: ['command-palette-search', debounced],
-    enabled: open && debounced.length > 0,
-    queryFn: async () =>
-      getApiClient().request(search(debounced, { limit: RESULT_LIMIT })),
-    // Keep showing the previous results while the next query is in flight.
-    placeholderData: (prev) => prev,
-  });
-
-  const hits: SearchHit[] = useMemo(() => data?.data ?? [], [data]);
-
-  // Keep the active row in range as results change.
-  useEffect(() => {
-    setActiveIndex((i) => (hits.length === 0 ? 0 : Math.min(i, hits.length - 1)));
-  }, [hits.length]);
+  const groups = useMemo(() => {
+    const byGroup = new Map<string, NavCommand[]>();
+    for (const cmd of NAV_COMMANDS) {
+      const list = byGroup.get(cmd.group) ?? [];
+      list.push(cmd);
+      byGroup.set(cmd.group, list);
+    }
+    return [...byGroup.entries()];
+  }, []);
 
   if (!open) return null;
 
-  const go = (hit: SearchHit) => {
-    const collection = hit._collection;
-    const id = typeof hit.id === 'string' ? hit.id : String(hit.id ?? '');
-    if (!collection || !id) return;
+  const run = (to: string) => {
     onClose();
-    navigate({ to: `${adminBase}/content/${collection}/${id}` });
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      onClose();
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveIndex((i) => Math.min(i + 1, Math.max(hits.length - 1, 0)));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveIndex((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      const hit = hits[activeIndex];
-      if (hit) go(hit);
-    }
+    navigate({ to: withAdminBase(adminBase, to) as never });
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-[12vh]"
-      onMouseDown={(e) => {
-        // Close when clicking the backdrop (not the panel).
-        if (e.target === e.currentTarget) onClose();
-      }}
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 p-4 pt-[12vh]"
+      role="presentation"
+      onClick={onClose}
     >
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('search_title', 'Search')}
-        className="w-full max-w-xl overflow-hidden rounded-lg border border-border bg-background shadow-2xl"
-        onKeyDown={onKeyDown}
+        className="w-full max-w-xl overflow-hidden rounded-lg border bg-background shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b px-3">
-          <SearchIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('search_placeholder', 'Search content…')}
-            aria-label={t('search_placeholder', 'Search content…')}
-            className="h-12 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          />
-          {isFetching && (
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
-          )}
-        </div>
-
-        <div className="max-h-[50vh] overflow-auto py-1" role="listbox">
-          {debounced.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-              {t('search_hint', 'Type to search across all content')}
-            </p>
-          ) : isError ? (
-            <p className="px-4 py-6 text-center text-sm text-destructive">
-              {t('search_error', 'Search is unavailable right now.')}
-            </p>
-          ) : hits.length === 0 && !isFetching ? (
-            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-              {t('search_no_results', 'No results found')}
-            </p>
-          ) : (
-            hits.map((hit, i) => {
-              const id = typeof hit.id === 'string' ? hit.id : String(hit.id ?? '');
-              return (
-                <button
-                  key={`${hit._collection}:${id}`}
-                  type="button"
-                  role="option"
-                  aria-selected={i === activeIndex}
-                  onMouseEnter={() => setActiveIndex(i)}
-                  onClick={() => go(hit)}
-                  className={cn(
-                    'flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm',
-                    i === activeIndex ? 'bg-accent' : 'hover:bg-accent/50',
-                  )}
-                >
-                  <span className="truncate">{hit._title || id}</span>
-                  {hit._collection && (
-                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                      {hit._collection}
-                    </span>
-                  )}
-                </button>
-              );
-            })
-          )}
-        </div>
+        <Command label="Command palette" loop>
+          <div className="flex items-center gap-2 border-b px-3">
+            <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <Command.Input
+              autoFocus
+              value={search}
+              onValueChange={setSearch}
+              placeholder="Jump to a screen…"
+              className="h-11 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              Esc
+            </kbd>
+          </div>
+          <Command.List className="max-h-80 overflow-y-auto p-2">
+            <Command.Empty className="px-2 py-6 text-center text-sm text-muted-foreground">
+              No matching screens.
+            </Command.Empty>
+            {groups.map(([groupName, items]) => (
+              <Command.Group
+                key={groupName}
+                heading={groupName}
+                className="px-1 py-1 text-xs font-medium text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1"
+              >
+                {items.map((item) => (
+                  <Command.Item
+                    key={item.id}
+                    value={`${item.title} ${(item.keywords ?? []).join(' ')}`}
+                    onSelect={() => run(item.to)}
+                    className={cn(
+                      'flex cursor-pointer items-center rounded-md px-2 py-2 text-sm text-foreground',
+                      'aria-selected:bg-accent aria-selected:text-accent-foreground',
+                    )}
+                  >
+                    {item.title}
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            ))}
+          </Command.List>
+        </Command>
       </div>
     </div>
   );

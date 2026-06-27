@@ -6,8 +6,10 @@ import type { FieldResource, ItemRow, RevisionRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePermissions, type PermissionHelpers } from '@/lib/use-permissions';
+import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 import { PresenceChip } from '@/components/presence-chip';
 import { resolveInterface } from './interfaces/registry';
+import { GroupContainer, type GroupVariant } from './interfaces/group';
 import { RawToggle } from './interfaces/raw-toggle';
 import { ProvenanceBadge } from './provenance-badge';
 import { RevisionsPanel } from './revisions-panel';
@@ -152,6 +154,12 @@ export function ItemDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['revisions', collection, id] });
     },
   });
+
+  // Cmd/Ctrl+S → save and stay. Mirrors the Save button's gating exactly.
+  useSaveHandler(
+    () => saveMutation.mutate(),
+    isDirty && canUpdate && !saveMutation.isPending,
+  );
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
@@ -563,56 +571,82 @@ function FieldsTab({
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">No editable fields.</p>;
   }
-  return (
-    <div className="space-y-4">
-      {fields.map((f) => {
-        const Interface = resolveInterface(f);
-        const cellValue = value?.[f.name];
-        const writable = perms.fieldAllowed(collection, 'update', f.name);
-        const pinned = pinnedFields.includes(f.name);
-        const setCell = (next: unknown) => {
-          if (!writable) return;
-          onChange({ ...value, [f.name]: next });
-        };
-        return (
-          <div key={f.id}>
-            <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
-              <span>{f.name}</span>
-              {f.required && <span className="text-destructive">*</span>}
-              <span className="text-[10px] uppercase">{f.interface || f.type}</span>
-              {pinned && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
-                  title="Pinned by a human edit — agents cannot overwrite this field."
-                >
-                  <Pin className="h-3 w-3" /> Pinned
-                  {onReleasePin && (
-                    <button
-                      type="button"
-                      onClick={() => onReleasePin(f.name)}
-                      className="ml-0.5 rounded-full px-1 hover:bg-sky-100"
-                      aria-label={`Release pin on ${f.name}`}
-                      title="Release pin — allow agents to write this field again."
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </button>
-                  )}
-                </span>
-              )}
-              {!writable && (
-                <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
-                  <Lock className="h-3 w-3" /> read-only
-                </span>
-              )}
-            </label>
-            <div className={cn(!writable && 'pointer-events-none opacity-70')}>
-              <RawToggle value={cellValue} onChange={setCell}>
-                <Interface field={f} value={cellValue} onChange={setCell} />
-              </RawToggle>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+
+  // Group fields (interface `group-*`) act as containers; their `name` is the
+  // key that child fields reference via `field.group`.
+  const groupFieldNames = new Set(
+    fields.filter((f) => f.interface?.startsWith('group-')).map((f) => f.name),
   );
+  const bySort = (a: FieldResource, b: FieldResource) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+  const widthClass = (w?: FieldResource['width']) =>
+    w === 'half' ? 'sm:col-span-1' : 'col-span-1 sm:col-span-2';
+
+  const renderField = (f: FieldResource): React.ReactNode => {
+    // Group container — render its children in a nested grid.
+    if (f.interface?.startsWith('group-')) {
+      const variant = f.interface.replace('group-', '') as GroupVariant;
+      const children = fields.filter((c) => c.group === f.name).sort(bySort);
+      return (
+        <div key={f.id} className="col-span-1 sm:col-span-2">
+          <GroupContainer variant={variant} field={f}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children.map(renderField)}</div>
+          </GroupContainer>
+        </div>
+      );
+    }
+
+    const Interface = resolveInterface(f);
+    const cellValue = value?.[f.name];
+    const writable = perms.fieldAllowed(collection, 'update', f.name);
+    const pinned = pinnedFields.includes(f.name);
+    const setCell = (next: unknown) => {
+      if (!writable) return;
+      onChange({ ...value, [f.name]: next });
+    };
+    return (
+      <div key={f.id} className={widthClass(f.width)}>
+        <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+          <span>{f.name}</span>
+          {f.required && <span className="text-destructive">*</span>}
+          <span className="text-[10px] uppercase">{f.interface || f.type}</span>
+          {pinned && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
+              title="Pinned by a human edit — agents cannot overwrite this field."
+            >
+              <Pin className="h-3 w-3" /> Pinned
+              {onReleasePin && (
+                <button
+                  type="button"
+                  onClick={() => onReleasePin(f.name)}
+                  className="ml-0.5 rounded-full px-1 hover:bg-sky-100"
+                  aria-label={`Release pin on ${f.name}`}
+                  title="Release pin — allow agents to write this field again."
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              )}
+            </span>
+          )}
+          {!writable && (
+            <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
+              <Lock className="h-3 w-3" /> read-only
+            </span>
+          )}
+        </label>
+        <div className={cn(!writable && 'pointer-events-none opacity-70')}>
+          <RawToggle value={cellValue} onChange={setCell}>
+            <Interface field={f} value={cellValue} onChange={setCell} />
+          </RawToggle>
+        </div>
+      </div>
+    );
+  };
+
+  // Top-level fields = everything not nested inside a group container.
+  const topLevel = fields
+    .filter((f) => !f.group || !groupFieldNames.has(f.group))
+    .sort(bySort);
+
+  return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{topLevel.map(renderField)}</div>;
 }

@@ -58,6 +58,20 @@ import {
   ExtensionResource,
 } from "../types";
 
+/**
+ * Loose shape for `users.preferences`. The CMS validates the strict schema
+ * (`@lumibase/shared/schemas#UserPreferences`); the SDK stays decoupled and
+ * passes the blob through, so callers keep full type-safety on the Studio side
+ * where the shared schema is imported.
+ */
+export interface UserPreferencesPayload {
+  language?: string;
+  theme?: "auto" | "light" | "dark";
+  timezone?: string;
+  keybindings?: Record<string, string>;
+  [key: string]: unknown;
+}
+
 function withQuery(path: string, params: Record<string, unknown> = {}) {
   const qs = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -688,6 +702,21 @@ export function legacyRest() {
         }),
     };
 
+    /**
+     * Current-user surface. `preferences` is the identity-global JSONB blob
+     * (`users.preferences`) — keybindings, language, theme. `update` shallow-
+     * merges server-side, so callers can PATCH a single section.
+     */
+    const me = {
+      getPreferences: () =>
+        client.rawRequest<UserPreferencesPayload>("/api/v1/me/preferences"),
+      updatePreferences: (patch: UserPreferencesPayload) =>
+        client.rawRequest<UserPreferencesPayload>("/api/v1/me/preferences", {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        }),
+    };
+
     return {
       schema,
       items,
@@ -696,6 +725,7 @@ export function legacyRest() {
       access,
       apiKeys,
       shares,
+      me,
       permissions,
       presets,
       translations,
