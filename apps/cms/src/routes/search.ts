@@ -1,9 +1,10 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { collections, scopeSite } from '@lumibase/database';
-import { searchIndexName } from '@lumibase/runtime';
-import type { AppEnv } from '../env';
+import { searchIndexName, SEARCH_META_ATTRS } from '@lumibase/runtime';
+import type { AppEnv, AuthPrincipal } from '../env';
+import { PermissionService, type CompiledPermission } from '../services/permission-service';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
@@ -17,6 +18,11 @@ import { formatSafeError } from '@lumibase/shared/utils';
  * `collection` parameter is also validated against the caller's own
  * collections table before it is used, so a tenant can neither name nor reach
  * another tenant's index.
+ *
+ * Authorization: on top of physical-index isolation, the caller must hold a
+ * `read` permission on the collection. Hits are then filtered by the row-level
+ * permission rule and masked down to the permitted field whitelist, so search
+ * can never surface rows or fields the caller could not read via the items API.
  */
 
 const searchQuerySchema = z.object({
@@ -29,6 +35,50 @@ const searchQuerySchema = z.object({
 });
 
 export const searchRouter = new Hono<AppEnv>();
+
+/** Reserved meta attributes the Studio UI relies on; always preserved when masking. */
+const SEARCH_META_KEYS: readonly string[] = [
+  SEARCH_META_ATTRS.collection,
+  SEARCH_META_ATTRS.title,
+  SEARCH_META_ATTRS.updatedAt,
+];
+
+const principalUser = (auth?: AuthPrincipal) => auth
+  ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) }
+  : null;
+
+/**
+ * Mask a search hit down to the fields the caller may read. `id` and the
+ * reserved `_collection` / `_title` / `_updatedAt` meta attributes are always
+ * kept so the result list stays renderable; everything else must be whitelisted.
+ */
+function maskSearchHit(hit: Record<string, unknown>, permission: CompiledPermission) {
+  if (permission.fields.length === 1 && permission.fields[0] === '*') return hit;
+  const allowed = new Set<string>(['id', ...SEARCH_META_KEYS, ...permission.fields]);
+  return Object.fromEntries(Object.entries(hit).filter(([key]) => allowed.has(key)));
+}
+
+function buildPermissionService(c: Context<AppEnv>) {
+  const auth = c.get('auth');
+  const headers: Record<string, string> = {};
+  c.req.raw.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value;
+  });
+
+  return new PermissionService({
+    db: c.get('db'),
+    cache: c.get('runtime').cache,
+    ctx: {
+      userId: auth?.userId ?? null,
+      siteId: c.get('siteId'),
+      roleId: null,
+      user: principalUser(auth),
+      ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+      headers,
+      apiKey: auth?.apiKey ?? null,
+    },
+  });
+}
 
 searchRouter.get('/', async (c) => {
   const parsed = searchQuerySchema.safeParse(
@@ -100,6 +150,16 @@ searchRouter.get('/', async (c) => {
     );
   }
 
+  // Authorization: require collection `read` permission for the caller.
+  const permissionService = buildPermissionService(c);
+  const permission = await permissionService.canAccess(collection, 'read');
+  if (!permission) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: `Action "read" on "${collection}" is not allowed.` }] },
+      403,
+    );
+  }
+
   try {
     const result = await search.search(searchIndexName(siteId, collection), q, {
       filter: filter || undefined,
@@ -108,7 +168,10 @@ searchRouter.get('/', async (c) => {
       offset,
     });
     return c.json({
-      data: result.hits,
+      // Enforce the row-level permission rule, then strip non-readable fields.
+      data: result.hits
+        .filter((hit) => permissionService.matches(permission, hit as Record<string, unknown>))
+        .map((hit) => maskSearchHit(hit as Record<string, unknown>, permission)),
       meta: {
         totalHits: result.totalHits,
         processingTimeMs: result.processingTimeMs,
