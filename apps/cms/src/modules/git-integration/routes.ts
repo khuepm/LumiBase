@@ -40,6 +40,7 @@ import { getOrFetchLog } from './ci-log-store';
 import { validatePullRequest } from './validation';
 import { queryProvenance } from './provenance';
 import { syncFromRepo } from './gitops';
+import { ensureGitSyncAutonomyBaseline } from './autonomy';
 import { handleWebhook } from './webhook/handler';
 
 const OAUTH_STATE_TTL_SECONDS = 600;
@@ -145,6 +146,12 @@ gitRouter.post('/', async (c) => {
       provider: resource.provider,
       repo: resource.repoFullName,
     });
+    // Seed conservative L1 autonomy for git-sync on first connect (best-effort).
+    try {
+      await ensureGitSyncAutonomyBaseline(c.get('db'), c.get('siteId'));
+    } catch {
+      // non-fatal
+    }
     return c.json({ data: resource }, 201);
   } catch (e) {
     if (e instanceof GitIntegrationConflictError) {
