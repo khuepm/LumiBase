@@ -39,6 +39,7 @@ import { parseRepoFullName } from './providers/types';
 import { getOrFetchLog } from './ci-log-store';
 import { validatePullRequest } from './validation';
 import { queryProvenance } from './provenance';
+import { syncFromRepo } from './gitops';
 import { handleWebhook } from './webhook/handler';
 
 const OAUTH_STATE_TTL_SECONDS = 600;
@@ -410,6 +411,40 @@ gitRouter.post('/:id/pull-requests/:number/validate', async (c) => {
     posted,
   });
   return c.json({ data: { ...result, statusPosted: posted } });
+});
+
+gitRouter.post('/:id/gitops/sync', async (c) => {
+  const svc = service(c, c.get('siteId'));
+  if (!svc) return notConfigured(c);
+  const row = await svc.getRow(c.req.param('id'));
+  if (!row) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+  let provider;
+  try {
+    provider = await getProvider(row, providerDeps(c));
+  } catch (e) {
+    return c.json(
+      { errors: [{ code: 'PROVIDER_ERROR', message: (e as Error).message }] },
+      502,
+    );
+  }
+  const ref = c.req.query('ref') || undefined;
+  const result = await syncFromRepo(
+    provider,
+    parseRepoFullName(row.repoFullName),
+    {
+      db: c.get('db'),
+      siteId: c.get('siteId'),
+      integrationId: row.id,
+      userId: c.get('auth')?.userId ?? null,
+    },
+    ref,
+  );
+  await audit(c, 'git_gitops_synced', row.id, {
+    found: result.found,
+    applied: result.applied.length,
+    goalsCreated: result.goalsCreated,
+  });
+  return c.json({ data: result });
 });
 
 gitRouter.get('/:id/provenance', async (c) => {
