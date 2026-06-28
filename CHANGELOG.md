@@ -11,6 +11,59 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [0.12.0] - 2026-06-28
+
+### Version
+
+- `v0.12.0`
+
+### Date
+
+- `2026-06-28`
+
+### Highlights
+
+- **Privacy & compliance suite.** A new data-rights toolkit covering consent management (GDPR Art. 7 / PDPD), a CCPA "Do-Not-Sell" `sale_share` consent type, personal-data export (GDPR Art. 15/20), account erasure / right-to-be-forgotten (GDPR Art. 17), data-retention pruning, restriction of processing (GDPR Art. 18), field-level data classification + redaction, and automated-decision transparency (GDPR Art. 22).
+- **Email compliance.** One-click unsubscribe + a site-scoped suppression list (CAN-SPAM / ePrivacy) so suppressed recipients never receive commercial mail.
+- **Directus-style Studio interfaces.** A broad set of new field interfaces — selection, hash, API autocomplete, presentation, relational drawer (create-new / add-existing), M2A builder, collection-item, field grouping with width layout, and map + tree-view interfaces.
+- **Keyboard shortcuts.** A cross-platform keyboard-shortcuts system in Studio, plus Cmd/Ctrl+S save-and-stay in the webhook, email-template, and layout editors.
+- **Tenant isolation hardening.** Media storage, search, and audit logs are now strictly scoped per tenant, closing cross-tenant exposure paths.
+- **RBAC & security hardening.** Hardened permission evaluator, site-scoped CDC admin access, and secured CDC compose port bindings.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **CMS / data-rights:** consent management, `sale_share` (CCPA Do-Not-Sell) consent type, personal-data export, account erasure, data-retention pruning, restriction of processing, field data classification + redaction, and automated-decision transparency.
+- **CMS / email:** unsubscribe endpoint + suppression list.
+- **Studio:** Directus-style selection/hash/API-autocomplete/presentation interfaces, relational drawer, M2A builder, collection-item, field grouping + width layout + group interfaces, map and tree-view interfaces, API keys access page, cross-platform keyboard shortcuts, and Cmd/Ctrl+S save-and-stay editors.
+- **Docs:** bilingual (EN/VI) user-rights & compliance documentation; data-map, data-residency, and DPA template; EN/VI i18n sync.
+
+### Changed
+
+- **RBAC:** hardened permission evaluator (added access-conflict property tests).
+- **CI:** SPA deep-link 404 regressions are now caught at the Pages deploy gate.
+
+### Fixed
+
+- **Multi-tenancy:** scope media storage, search, and audit logs by tenant (cross-tenant exposure).
+- **CDC:** bind CDC admin access to the selected site; secure CDC compose port bindings.
+- **Auth:** initialize lazy GeoIP lookup before availability degradation in login anomaly checks.
+
+### Migrations
+
+- **3 new schema migrations (additive, idempotent):** `0035_user_consents.sql` (`user_consents`), `0036_email_suppressions.sql` (`email_suppressions`), and `0037_processing_restrictions.sql` (`processing_restrictions`), plus RLS policies for the new tables. New tables only — no data migration; `CREATE TABLE IF NOT EXISTS` lets them re-run safely. Back up your database before upgrading as a precaution.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
+### Upgrade steps
+
+1. Review the migrations above and back up your database.
+2. Apply migrations: `pnpm -F @lumibase/database db:migrate`.
+3. Deploy the `v0.12.0` image or Cloudflare Worker release.
+4. Verify `/health`, the new data-rights/consent endpoints, the email unsubscribe flow, and that media, search, and audit logs return only the active site's data.
+
 ## [0.11.0] - 2026-06-22
 
 ### Version
