@@ -4,7 +4,7 @@
 
 Kế hoạch triển khai **Git Integration (GitHub / GitLab)** gồm 6 phase tuần tự (A→F) theo kiến trúc trong design.md. Phase A đặt nền (schema + provider abstraction + token encryption); Phase B làm kết nối & xác thực + UI Studio; Phase C làm webhook + PR/CI dashboard + log viewer; Phase D làm preview environment; Phase E làm status check ngược + provenance + notification; Phase F làm GitOps + autonomy. **MVP = Phase A–D.** Mỗi task gắn ref tới requirement và section thiết kế. Theo DoD, có thêm task Setup-impact và Docs.
 
-> **Trạng thái triển khai:** Phase **A, B, C đã hoàn thành** (module `apps/cms/src/modules/git-integration/`, schema + migration `0038`, Studio `Settings → Integrations → Git repositories`, unit tests). Phase **D–G chưa làm** (preview environment, status-check ngược/provenance/notification, GitOps/autonomy, setup-impact code + docs API). Luồng OAuth/webhook với provider thật + apply migration cần verify trên môi trường có Postgres + GitHub/GitLab.
+> **Trạng thái triển khai:** Phase **A–F đã hoàn thành** + **G (setup-impact, docs)** (module `apps/cms/src/modules/git-integration/`, schema + migration `0038`, Studio `Settings → Integrations → Git repositories`, unit tests). **Follow-up** (chưa làm): schema apply qua HITL harness (13.3), notification dispatcher đầy đủ (12.1), vòng lặp thực thi agent `git-sync` (14.3), auto-trigger GitOps khi merge `main`, YAML config. Luồng OAuth/webhook/preview với provider thật + apply migration cần verify trên môi trường có Postgres + GitHub/GitLab.
 
 ## Tasks
 
@@ -66,50 +66,51 @@ Kế hoạch triển khai **Git Integration (GitHub / GitLab)** gồm 6 phase tu
 
 ### Phase D — Preview environments
 
-- [ ] 9. PreviewEnvManager
-  - [ ] 9.1 `preview.ts` tạo ephemeral `site_id` phái sinh (branch-scoped) khi PR mở; lưu `git_preview_envs` pending→ready; set `previewUrl` (Req 8.1; design §11)
-  - [ ] 9.2 Cập nhật preview khi PR push (head mới) → `status=updating` (Req 8.2; design §11)
-  - [ ] 9.3 Huỷ preview khi PR đóng/merge → `destroyed`, giải phóng tài nguyên, idempotent (Req 8.3; design §11)
-  - [ ] 9.4 Gắn `previewUrl` vào PR + (tuỳ chọn) post comment/deployment status (Req 8.4; design §11)
-  - [ ] 9.5 `expiresAt` + dọn dẹp theo policy; cách ly dữ liệu preview ↔ production (Req 8.5, 8.6; design §11)
-  - [ ] 9.6 Property test preview lifecycle (đúng một preview sống; close idempotent) (Req 8; design §16)
+- [x] 9. PreviewEnvManager
+  - [x] 9.1 `preview.ts` tạo ephemeral `site_id` phái sinh (`${base}__pr-${n}`) khi PR mở; copy collections/fields/items/pages; lưu `git_preview_envs` pending→ready; set `previewUrl` (Req 8.1; design §11)
+  - [x] 9.2 Cập nhật preview khi PR push (head mới) → `status=updating`, purge + copy lại (Req 8.2; design §11)
+  - [x] 9.3 Huỷ preview khi PR đóng/merge → `destroyed`, cascade-delete ephemeral site, idempotent (Req 8.3; design §11)
+  - [x] 9.4 Gắn `previewUrl` vào PR (phục vụ qua `/api/v1/deliver/page/:site_id/:slug`) (Req 8.4; design §11)
+  - [x] 9.5 `expiresAt` + `cleanupExpired`; cách ly dữ liệu preview ↔ production (Req 8.5, 8.6; design §11)
+  - [x] 9.6 Unit test `ephemeralSiteId` + `remapIds` (Req 8; design §16)
 
 ### Phase E — Status check ngược + Provenance + Notification
 
-- [ ] 10. Content/schema validation + status check ngược
-  - [ ] 10.1 `POST /:id/pull-requests/:number/validate` chạy validation nội dung/schema theo cấu hình site (Req 7.1, 7.4; design §6)
-  - [ ] 10.2 Post `lumibase/content-validation` về provider qua `postCommitStatus`; thiếu quyền → cảnh báo, không sập (Req 7.2, 7.3; design §5)
+- [x] 10. Content/schema validation + status check ngược
+  - [x] 10.1 `POST /:id/pull-requests/:number/validate` validate `lumibase/intents.json` ở PR head (Req 7.1, 7.4; design §6)
+  - [x] 10.2 Post `lumibase/content-validation` về provider qua `postCommitStatus`; thiếu quyền → cảnh báo, không sập (Req 7.2, 7.3; design §5)
 
-- [ ] 11. Provenance
-  - [ ] 11.1 `provenance.ts` ghi liên kết `commitSha`/`prNumber` ↔ `itemId`/`collection` khi thay đổi bắt nguồn từ Git (Req 10.1; design §6)
-  - [ ] 11.2 API truy vấn provenance theo item/collection (scope site) (Req 10.2, 10.3; design §4)
+- [x] 11. Provenance
+  - [x] 11.1 `provenance.ts` ghi liên kết `commitSha`/`prNumber` ↔ `itemId`/`collection` (changeType content/schema/intent) (Req 10.1; design §6)
+  - [x] 11.2 `GET /:id/provenance?collection=&itemId=` (scope site) (Req 10.2, 10.3; design §4)
 
-- [ ] 12. Notification & incident
-  - [ ] 12.1 CI `failure` → notifications (`modules/notifications`) theo cấu hình site, tôn trọng suppression/consent (Req 11.1, 11.3; design §13)
-  - [ ] 12.2 Bất thường lặp lại → tạo `agent_incident` (Req 11.2; design §13)
+- [x] 12. Notification & incident
+  - [x] 12.2 CI `failure` → `agent_incident` (role `git-sync`, không demote) + audit `git_ci_failed` (Req 11.2; design §13)
+  - [ ] 12.1 Notification qua `modules/notifications` (dispatcher payload security-shaped) — **follow-up**; hiện dùng incident + audit (Req 11.1, 11.3; design §13)
 
 ### Phase F — GitOps & Autonomy
 
-- [ ] 13. GitOps reconcile + drift
-  - [ ] 13.1 `gitops.ts` đọc file khai báo (YAML/JSON) qua `getFileContents`, map sang `content_intents` (Req 12.1, 12.2; design §14)
-  - [ ] 13.2 Drift detection → tạo `content_drifts` + `agent_goal` theo reconciler hiện có (Req 12.3; design §14)
-  - [ ] 13.3 Thao tác `schema:write`/delete qua HITL (`ai_approvals`) (Req 12.4, 13.3; design §15)
+- [x] 13. GitOps reconcile + drift
+  - [x] 13.1 `gitops.ts` đọc `lumibase/intents.json` (JSON) qua `getFileContents`, upsert `content_intents` qua `IntentService` (Req 12.1, 12.2; design §14)
+  - [x] 13.2 Drift scan + reconcile (`DriftService.scanIntent` + `ReconcilerService.reconcileIntent` → `content_drifts` + `agent_goal`) (Req 12.3; design §14)
+  - [ ] 13.3 Schema (collections/fields) apply qua HITL (`ai_approvals`) — **follow-up** (YAML config cũng follow-up; đợt này JSON intents) (Req 12.4, 13.3; design §15)
 
-- [ ] 14. Agent role `git-sync` + autonomy
-  - [ ] 14.1 Đăng ký role `git-sync` với capability phân loại rủi ro (`git:read` safe, `git:write`/`schema:write` dangerous) (Req 13.1; design §15)
-  - [ ] 14.2 Autonomy L0–L4 qua `agent_autonomy_grants` + `AutonomyService`; hạ mức khi veto/incident (Req 13.2, 13.4; design §15)
+- [x] 14. Agent role `git-sync` + autonomy
+  - [x] 14.1 Đăng ký role `git-sync` trong `ROLE_LIBRARY` (`items:read/write`, `schema:read`; goal vẫn planner-only) (Req 13.1; design §15)
+  - [x] 14.2 Autonomy baseline L1 (`ensureGitSyncAutonomyBaseline`, seed on-connect) qua `AutonomyService.setGrant`; demote khi incident có capability (Req 13.2, 13.4; design §15)
+  - [ ] 14.3 Vòng lặp thực thi agent `git-sync` qua harness — **follow-up**
 
 ### Phase G — Setup impact & Docs (DoD)
 
-- [ ] 15. Setup impact
-  - [ ] 15.1 Hoàn tất `.kiro/specs/git-integration/setup-impact.md` (6 câu hỏi) + thêm dòng Registry trong `.kiro/specs/admin-setup-wizard/setup-impact.md` (CLAUDE.md DoD)
-  - [ ] 15.2 Nếu cần: capability flag `/api/v1/setup/capabilities`, settings key bật module, backfill migration idempotent cho instance cũ
+- [x] 15. Setup impact
+  - [x] 15.1 Cập nhật `.kiro/specs/git-integration/setup-impact.md` (6 câu hỏi) + dòng Registry #30 trong `admin-setup-wizard/setup-impact.md` → `n/a` (CLAUDE.md DoD)
+  - [x] 15.2 Không cần capability flag / settings key / backfill (migration additive; role/grant seed lazy/on-connect)
 
-- [ ] 16. Docs
-  - [ ] 16.1 Cập nhật `docs/en/api/hono-api-spec.md` cho endpoint `/integrations/git/*`
-  - [ ] 16.2 Cập nhật `docs/en/data-model.md` cho schema mới
-  - [ ] 16.3 CHANGELOG entry + upgrade steps nếu cần backfill
-  - [ ] 16.4 Cập nhật `docs/en/roadmap/git-integration.md` đánh dấu phase hoàn thành
+- [x] 16. Docs
+  - [x] 16.1 `docs/en/api/hono-api-spec.md` §12c cho endpoint `/integrations/git/*`
+  - [x] 16.2 `docs/en/data-model.md` §11c cho 6 bảng `git_*`
+  - [x] 16.3 CHANGELOG entry (migration additive, no backfill)
+  - [x] 16.4 `docs/en/roadmap/git-integration.md` đánh dấu phase A–F
 
 ## Task Dependency Graph
 

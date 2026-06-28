@@ -9,7 +9,21 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **Git integration (GitHub / GitLab).** Per-site repository connections with
+  GitHub App / GitLab App or OAuth/PAT auth (tokens encrypted at rest). Tracks
+  pull requests + CI, stores CI logs for replay, posts a
+  `lumibase/content-validation` commit status, runs GitOps reconcile of
+  `lumibase/intents.json` into content intents, records commit↔content
+  provenance, and provisions opt-in ephemeral preview environments per PR. New
+  `git-sync` agent role with conservative L1 autonomy. Studio: **Settings →
+  Integrations → Git repositories**. Migration `0038_git_integration` is additive
+  (`CREATE TABLE IF NOT EXISTS`) — no backfill needed.
+
+  Optional env: `GITHUB_CLIENT_ID/SECRET`, `GITHUB_APP_ID/PRIVATE_KEY` (PKCS#8),
+  `GITLAB_CLIENT_ID/SECRET`, `LUMIBASE_PUBLIC_URL`. Requires existing
+  `ENCRYPTION_KEY` to manage integrations.
 
 ## [0.12.0] - 2026-06-28
 

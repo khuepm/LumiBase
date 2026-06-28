@@ -19,35 +19,36 @@
 
 ## Phase Breakdown
 
-> Trạng thái: ⬜ chưa làm · 🟦 đang làm · ✅ xong. **MVP = Phase A–D.**
+> Trạng thái: ⬜ chưa làm · 🟦 đang làm · ✅ xong. **MVP = Phase A–D (đã xong).**
 
-### Phase A — Foundation ⬜
+### Phase A — Foundation ✅
 - Schema `packages/database/src/schema/git-integration.ts` (6 bảng `git_*`) + migration + RLS.
 - Interface `GitProvider` + adapter GitHub/GitLab + factory.
 - Token encryption wiring (`CryptoService`, AAD `{ siteId, integrationId }`).
 
-### Phase B — Connect & Auth ⬜
+### Phase B — Connect & Auth ✅
 - `GitIntegrationService` + routes CRUD `/api/v1/integrations/git/*`.
 - OAuth flow + App connect (installation token refresh) + rotate secret.
 - Studio: trang **Settings → Integrations / Git** (model theo `webhooks-page.tsx`), nút Authorize, hiển thị scope.
 
-### Phase C — Webhook & PR/CI ⬜
+### Phase C — Webhook & PR/CI ✅
 - Webhook endpoint công khai `POST /webhook/:provider` + verify chữ ký (GitHub HMAC-SHA256 / GitLab token) + idempotency.
 - `git_webhook_events` log + async processor cập nhật PR/CI cache.
 - PR dashboard + CI status & log viewer (kéo + lưu log, highlight lỗi).
 
-### Phase D — Preview Environments ⬜
+### Phase D — Preview Environments ✅
 - `PreviewEnvManager`: tạo ephemeral site theo PR, cập nhật khi push, huỷ khi đóng/merge, `expiresAt`, cách ly dữ liệu.
 - Gắn `previewUrl` vào PR + (tuỳ chọn) comment/deployment status.
 
-### Phase E — Status Check ngược + Provenance + Notification ⬜
+### Phase E — Status Check ngược + Provenance + Notification ✅
 - Validation nội dung/schema trong PR → post `lumibase/content-validation` về provider.
 - Provenance map `commit_sha`/`pr_number` ↔ `item_id`/`collection`.
 - Notification khi CI fail; `agent_incident` khi bất thường lặp lại.
 
-### Phase F — GitOps & Autonomy ⬜
-- `GitOpsReconciler`: đọc file khai báo (YAML/JSON) → `content_intents`; drift → `content_drifts` + `agent_goal`.
-- Agent role `git-sync` + autonomy L0–L4; HITL (`ai_approvals`) cho `schema:write`/delete.
+### Phase F — GitOps & Autonomy ✅ (một phần)
+- `syncFromRepo`: đọc `lumibase/intents.json` → `content_intents` (upsert) → drift scan + reconcile (`content_drifts` + `agent_goal`). Route `POST /:id/gitops/sync`.
+- Agent role `git-sync` thêm vào `ROLE_LIBRARY` + autonomy baseline L1 (seed on-connect).
+- **Follow-up:** schema (collections/fields) apply qua HITL harness; vòng lặp thực thi agent `git-sync`; auto-trigger khi merge `main`; YAML config.
 
 ## Kịch bản kết hợp với GitHub/GitLab log
 
