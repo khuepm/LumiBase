@@ -35,6 +35,7 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'integrations',
     label: 'Integrations',
     items: [
+      { id: 'git', label: 'Git repositories', to: '/settings/integrations/git' },
       { id: 'webhooks', label: 'Webhooks', to: '/settings/webhooks' },
       { id: 'email', label: 'Email', to: '/settings/email' },
       { id: 'extensions', label: 'Extensions', to: '/settings/extensions' },

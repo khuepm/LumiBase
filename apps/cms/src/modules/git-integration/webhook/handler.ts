@@ -1,0 +1,158 @@
+/**
+ * Public webhook receiver: `POST /api/v1/integrations/git/webhook/:provider/:siteId/:integrationId`.
+ *
+ * The route is un-authenticated (providers can't carry a session) but the
+ * per-integration secret signature is the authenticity gate. siteId +
+ * integrationId in the path let this un-tenanted handler scope its lookup; we
+ * set the RLS session var to the path's siteId before reading (mirroring
+ * `withRls`), so it can only ever touch that one site's rows.
+ */
+import type { Context } from 'hono';
+import { and, eq } from 'drizzle-orm';
+import { gitIntegrations, gitWebhookEvents } from '@lumibase/database';
+import { formatSafeError } from '@lumibase/shared/utils';
+import type { AppEnv } from '../../../env';
+import { decryptSecretValue } from '../crypto';
+import { getGitConfig } from '../config';
+import { processEvent } from './processor';
+import {
+  extractRepoFullName,
+  isWebhookProvider,
+  normalizeHeaders,
+  verifyWebhookSignature,
+} from './verify';
+
+export async function handleWebhook(c: Context<AppEnv>): Promise<Response> {
+  const provider = c.req.param('provider');
+  const siteId = c.req.param('siteId');
+  const integrationId = c.req.param('integrationId');
+
+  if (!provider || !isWebhookProvider(provider)) {
+    return c.json({ errors: [{ code: 'UNKNOWN_PROVIDER' }] }, 404);
+  }
+  if (!siteId || !integrationId) {
+    return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+  }
+
+  // Scope RLS to the path's site before reading (defence-in-depth; signature
+  // is the real gate). Best-effort, like `withRls`.
+  const isDev =
+    c.env.LUMIBASE_ENV === 'development' ||
+    process.env.LUMIBASE_ENV === 'development';
+  if (!isDev) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sql = c.get('runtime').database.getConnection() as any;
+      await sql`SELECT set_config('app.site_id', ${siteId}, true)`;
+    } catch (err) {
+      console.warn('[git-webhook] failed to set app.site_id', {
+        err: formatSafeError(err),
+      });
+    }
+  }
+
+  const db = c.get('db');
+  const [integration] = await db
+    .select()
+    .from(gitIntegrations)
+    .where(
+      and(
+        eq(gitIntegrations.siteId, siteId),
+        eq(gitIntegrations.id, integrationId),
+        eq(gitIntegrations.provider, provider),
+      ),
+    )
+    .limit(1);
+
+  if (!integration || !integration.webhookSecretEnc) {
+    return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+  }
+
+  const cfg = getGitConfig(c);
+  if (!cfg.encryptionKey) {
+    return c.json({ errors: [{ code: 'ENCRYPTION_NOT_CONFIGURED' }] }, 500);
+  }
+
+  let secret: string;
+  try {
+    secret = await decryptSecretValue(
+      cfg.encryptionKey,
+      integration.webhookSecretEnc,
+      { siteId, integrationId },
+      'webhook_secret',
+    );
+  } catch {
+    return c.json({ errors: [{ code: 'SECRET_UNAVAILABLE' }] }, 500);
+  }
+
+  const rawBody = await c.req.text();
+  const headers = normalizeHeaders(c.req.raw.headers);
+  const result = await verifyWebhookSignature(provider, {
+    rawBody,
+    headers,
+    secret,
+  });
+  if (!result.valid) {
+    return c.json({ errors: [{ code: 'INVALID_SIGNATURE' }] }, 401);
+  }
+
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = JSON.parse(rawBody) as Record<string, unknown>;
+  } catch {
+    // keep empty payload; still log the raw event below
+  }
+
+  // Confirm the payload targets this integration's repository (when present).
+  const repo = extractRepoFullName(provider, payload);
+  if (repo && repo !== integration.repoFullName) {
+    return c.json({ errors: [{ code: 'REPO_MISMATCH' }] }, 400);
+  }
+
+  // Persist the raw event idempotently by (provider, delivery_id).
+  const inserted = await db
+    .insert(gitWebhookEvents)
+    .values({
+      siteId,
+      integrationId,
+      provider,
+      deliveryId: result.deliveryId,
+      event: result.event ?? 'unknown',
+      payload,
+      processed: false,
+    })
+    .onConflictDoNothing({
+      target: [gitWebhookEvents.provider, gitWebhookEvents.deliveryId],
+    })
+    .returning({ id: gitWebhookEvents.id });
+
+  // Duplicate delivery → already handled.
+  if (inserted.length === 0) {
+    return c.json({ data: { duplicate: true } });
+  }
+  const eventRowId = inserted[0]!.id;
+
+  try {
+    await processEvent({
+      db,
+      siteId,
+      integrationId,
+      provider,
+      event: result.event ?? 'unknown',
+      payload,
+    });
+    await db
+      .update(gitWebhookEvents)
+      .set({ processed: true, processedAt: new Date() })
+      .where(eq(gitWebhookEvents.id, eventRowId));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await db
+      .update(gitWebhookEvents)
+      .set({ error: message.slice(0, 1000) })
+      .where(eq(gitWebhookEvents.id, eventRowId));
+    // 200 so the provider doesn't hammer retries; the row is kept for replay.
+  }
+
+  return c.json({ data: { received: true } });
+}

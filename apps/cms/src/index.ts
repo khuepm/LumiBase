@@ -77,6 +77,10 @@ import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
 import { lumibaseFirebaseSyncRouter } from './modules/lumibase-firebase-sync';
+import {
+  gitRouter,
+  gitPublicRouter,
+} from './modules/git-integration/routes';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 const app = new Hono<AppEnv>();
@@ -168,6 +172,15 @@ app.route('/api/v1/admin/security', recoveryRouter);
 // Needs withDb() so it can write to the users/teams tables.
 app.use('/scim/v2/*', withDb());
 app.route('/scim/v2', scimRouter);
+
+// Git integration public surface — OAuth callback + signature-verified webhook
+// receiver. PUBLIC on purpose: providers and OAuth redirects cannot carry a
+// session. The router applies only `withDb()` internally (like `setupRouter`).
+// Mounted BEFORE the authenticated `api` so its leaf paths
+// (`/oauth/:provider/callback`, `/webhook/:provider/:siteId/:integrationId`)
+// win; all other `/integrations/git/*` paths fall through to the authenticated
+// `gitRouter` below.
+app.route('/api/v1/integrations/git', gitPublicRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
@@ -282,6 +295,12 @@ api.route('/cdc', cdcRouter);
 // Same auth posture as CDC: upstream tenant/auth/db/rls + the router's own
 // site-scoped admin gate. Yields `/api/v1/firebase-sync/*`.
 api.route('/firebase-sync', lumibaseFirebaseSyncRouter);
+
+// Git integration (GitHub / GitLab) authenticated surface — `/api/v1/integrations/git/*`.
+// Same posture as CDC: upstream tenant/auth/db/rls + the router's own
+// `requireSiteAdmin()` gate. The public OAuth-callback + webhook routes are
+// mounted above on the top-level `app` and win for their disjoint leaf paths.
+api.route('/integrations/git', gitRouter);
 
 // Share links are public. The opaque token resolves the site and share role.
 app.use('/api/v1/shares/*', withDb());
