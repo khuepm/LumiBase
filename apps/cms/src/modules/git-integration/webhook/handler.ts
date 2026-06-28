@@ -13,10 +13,13 @@ import { gitIntegrations, gitWebhookEvents } from '@lumibase/database';
 import { formatSafeError } from '@lumibase/shared/utils';
 import type { AppEnv } from '../../../env';
 import type { Database } from '@lumibase/database';
+import { AuditLogger } from '../../audit/logger';
+import { AutonomyService } from '../../../services/autonomy-service';
 import { decryptSecretValue } from '../crypto';
 import { getGitConfig } from '../config';
 import { PreviewEnvManager } from '../preview';
 import { processEvent, type ProcessEventResult } from './processor';
+import type { WebhookProvider } from './verify';
 import {
   extractRepoFullName,
   isWebhookProvider,
@@ -153,6 +156,14 @@ export async function handleWebhook(c: Context<AppEnv>): Promise<Response> {
         (integration.syncConfig as Record<string, unknown> | null)?.preview ===
         true,
     });
+    await runCiSideEffects({
+      db,
+      siteId,
+      integrationId,
+      provider,
+      outcome,
+      requestId: c.get('requestId') ?? null,
+    });
     await db
       .update(gitWebhookEvents)
       .set({ processed: true, processedAt: new Date() })
@@ -167,6 +178,51 @@ export async function handleWebhook(c: Context<AppEnv>): Promise<Response> {
   }
 
   return c.json({ data: { received: true } });
+}
+
+/**
+ * On a failed CI run, record an agent incident (no capability → no autonomy
+ * demotion, since a red build is not the agent's fault) and an audit entry.
+ * Best-effort.
+ */
+async function runCiSideEffects(args: {
+  db: Database;
+  siteId: string;
+  integrationId: string;
+  provider: WebhookProvider;
+  outcome: ProcessEventResult;
+  requestId: string | null;
+}): Promise<void> {
+  const ci = args.outcome.ci;
+  if (!ci || ci.status !== 'failure') return;
+  try {
+    await new AutonomyService({ db: args.db, siteId: args.siteId }).recordIncident({
+      agentRole: 'git-sync',
+      source: 'runtime_error',
+      severity: 'medium',
+      detail: {
+        source: 'ci_failure',
+        provider: args.provider,
+        integrationId: args.integrationId,
+        providerRunId: ci.providerRunId,
+      },
+    });
+  } catch {
+    // incidents are advisory; never block the webhook
+  }
+  try {
+    await new AuditLogger({ db: args.db, siteId: args.siteId }).write({
+      event: 'git_ci_failed',
+      requestId: args.requestId,
+      metadata: {
+        integrationId: args.integrationId,
+        provider: args.provider,
+        providerRunId: ci.providerRunId,
+      },
+    });
+  } catch {
+    // audit is best-effort
+  }
 }
 
 const CLOSED_ACTIONS = new Set(['closed', 'close', 'merge', 'merged']);
