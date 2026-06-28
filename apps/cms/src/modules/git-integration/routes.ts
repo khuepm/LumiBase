@@ -37,6 +37,7 @@ import {
 import { getProvider, type ProviderDeps } from './providers/factory';
 import { parseRepoFullName } from './providers/types';
 import { getOrFetchLog } from './ci-log-store';
+import { validatePullRequest } from './validation';
 import { handleWebhook } from './webhook/handler';
 
 const OAUTH_STATE_TTL_SECONDS = 600;
@@ -360,6 +361,54 @@ gitRouter.get('/:id/ci-runs/:runId/logs', async (c) => {
       502,
     );
   }
+});
+
+gitRouter.post('/:id/pull-requests/:number/validate', async (c) => {
+  const svc = service(c, c.get('siteId'));
+  if (!svc) return notConfigured(c);
+  const row = await svc.getRow(c.req.param('id'));
+  if (!row) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+  const number = Number(c.req.param('number'));
+
+  let provider;
+  try {
+    provider = await getProvider(row, providerDeps(c));
+  } catch (e) {
+    return c.json(
+      { errors: [{ code: 'PROVIDER_ERROR', message: (e as Error).message }] },
+      502,
+    );
+  }
+  const repo = parseRepoFullName(row.repoFullName);
+  let pr;
+  try {
+    pr = await provider.getPullRequest(repo, number);
+  } catch (e) {
+    return c.json(
+      { errors: [{ code: 'PROVIDER_ERROR', message: (e as Error).message }] },
+      502,
+    );
+  }
+
+  const result = await validatePullRequest(provider, repo, pr.headSha);
+
+  // Post the result back as a commit status; tolerate missing write scope.
+  let posted = true;
+  try {
+    await provider.postCommitStatus(repo, pr.headSha, {
+      state: result.state,
+      context: 'lumibase/content-validation',
+      description: result.summary.slice(0, 140),
+    });
+  } catch {
+    posted = false;
+  }
+  await audit(c, 'git_pr_validated', row.id, {
+    number,
+    state: result.state,
+    posted,
+  });
+  return c.json({ data: { ...result, statusPosted: posted } });
 });
 
 async function audit(

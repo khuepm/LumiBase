@@ -356,6 +356,18 @@ function PullRequestsDrawer({
 
   const prs = prsQuery.data ?? [];
 
+  const validate = async (prNumber: number) => {
+    try {
+      const r = await gitApi.validate(integration.id, prNumber);
+      alert(
+        `Validation ${r.state}: ${r.summary}` +
+          (r.statusPosted ? '' : '\n(commit status not posted — missing write scope)'),
+      );
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
+
   const viewLogs = async (prNumber: number) => {
     try {
       const runs = await gitApi.listCi(integration.id, prNumber);
@@ -428,6 +440,12 @@ function PullRequestsDrawer({
                   {pr.state} · {pr.author ?? 'unknown'}
                 </span>
                 <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => validate(pr.number)}
+                    className="text-primary hover:underline"
+                  >
+                    Validate
+                  </button>
                   <button
                     onClick={() => viewLogs(pr.number)}
                     className="text-primary hover:underline"

@@ -68,4 +68,9 @@ export const gitApi = {
     request<CiRunResource[]>(`/${id}/pull-requests/${number}/ci`),
   fetchLog: (id: string, runId: string) =>
     request<{ log: string }>(`/${id}/ci-runs/${runId}/logs`),
+  validate: (id: string, number: number) =>
+    request<{ state: string; summary: string; statusPosted: boolean }>(
+      `/${id}/pull-requests/${number}/validate`,
+      { method: 'POST' },
+    ),
 };
