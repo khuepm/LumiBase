@@ -38,6 +38,7 @@ import { getProvider, type ProviderDeps } from './providers/factory';
 import { parseRepoFullName } from './providers/types';
 import { getOrFetchLog } from './ci-log-store';
 import { validatePullRequest } from './validation';
+import { queryProvenance } from './provenance';
 import { handleWebhook } from './webhook/handler';
 
 const OAUTH_STATE_TTL_SECONDS = 600;
@@ -409,6 +410,20 @@ gitRouter.post('/:id/pull-requests/:number/validate', async (c) => {
     posted,
   });
   return c.json({ data: { ...result, statusPosted: posted } });
+});
+
+gitRouter.get('/:id/provenance', async (c) => {
+  const svc = service(c, c.get('siteId'));
+  if (!svc) return notConfigured(c);
+  const integration = await svc.get(c.req.param('id'));
+  if (!integration) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+  const rows = await queryProvenance(c.get('db'), {
+    siteId: c.get('siteId'),
+    integrationId: integration.id,
+    collection: c.req.query('collection') || undefined,
+    itemId: c.req.query('itemId') || undefined,
+  });
+  return c.json({ data: rows });
 });
 
 async function audit(
