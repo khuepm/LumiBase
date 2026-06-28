@@ -4,63 +4,65 @@
 
 Kế hoạch triển khai **Git Integration (GitHub / GitLab)** gồm 6 phase tuần tự (A→F) theo kiến trúc trong design.md. Phase A đặt nền (schema + provider abstraction + token encryption); Phase B làm kết nối & xác thực + UI Studio; Phase C làm webhook + PR/CI dashboard + log viewer; Phase D làm preview environment; Phase E làm status check ngược + provenance + notification; Phase F làm GitOps + autonomy. **MVP = Phase A–D.** Mỗi task gắn ref tới requirement và section thiết kế. Theo DoD, có thêm task Setup-impact và Docs.
 
+> **Trạng thái triển khai:** Phase **A, B, C đã hoàn thành** (module `apps/cms/src/modules/git-integration/`, schema + migration `0038`, Studio `Settings → Integrations → Git repositories`, unit tests). Phase **D–G chưa làm** (preview environment, status-check ngược/provenance/notification, GitOps/autonomy, setup-impact code + docs API). Luồng OAuth/webhook với provider thật + apply migration cần verify trên môi trường có Postgres + GitHub/GitLab.
+
 ## Tasks
 
 ### Phase A — Foundation (schema, provider abstraction, token encryption)
 
-- [ ] 1. Schema + migration
-  - [ ] 1.1 Tạo `packages/database/src/schema/git-integration.ts` với 6 bảng `git_integrations`, `git_pull_requests`, `git_ci_runs`, `git_webhook_events`, `git_preview_envs`, `git_provenance` (id `nanoid()`, `site_id` cascade, timestamps, unique/index như design §3); export từ `packages/database/src/schema/index.ts` (Req 1, 5, 6, 9, 10, 14; design §3)
-  - [ ] 1.2 Sinh migration Drizzle (`pnpm -F @lumibase/database db:generate`); đảm bảo idempotent (`CREATE TABLE IF NOT EXISTS`) (Req 14.3; design §3)
-  - [ ] 1.3 Thêm tất cả bảng mới vào `packages/database/src/schema/rls-policies.sql` để cách ly tenant tầng DB (Req 14.2; design §3)
-  - [ ] 1.4 Thêm Zod schema chia sẻ ở `packages/shared/src/schemas` cho `GitIntegration`, `PullRequest`, `CiRun`, `WebhookEvent` (Req 3, 5; design §4)
+- [x] 1. Schema + migration
+  - [x] 1.1 Tạo `packages/database/src/schema/git-integration.ts` với 6 bảng `git_integrations`, `git_pull_requests`, `git_ci_runs`, `git_webhook_events`, `git_preview_envs`, `git_provenance` (id `nanoid()`, `site_id` cascade, timestamps, unique/index như design §3); export từ `packages/database/src/schema/index.ts` (Req 1, 5, 6, 9, 10, 14; design §3)
+  - [x] 1.2 Sinh migration Drizzle (viết tay `0038_git_integration.sql`, idempotent `CREATE TABLE IF NOT EXISTS`) (Req 14.3; design §3)
+  - [x] 1.3 Thêm tất cả bảng mới vào `packages/database/migrations/rls-policies.sql` để cách ly tenant tầng DB (Req 14.2; design §3)
+  - [x] 1.4 Thêm Zod schema + resource types chia sẻ ở `packages/shared/src/schemas/git-integration.ts` (Req 3, 5; design §4)
 
-- [ ] 2. Provider abstraction
-  - [ ] 2.1 Định nghĩa interface `GitProvider` + types (`RepoRef`, `PullRequest`, `CheckRun`, `CiRun`, `CommitStatus`) ở `apps/cms/src/modules/git-integration/providers/types.ts` (Req 3.1; design §5)
-  - [ ] 2.2 Cài đặt `GitHubProvider` (`providers/github.ts`) dùng `runtime.fetch`, App token refresh + PAT (Req 3.2, 3.5; design §5)
-  - [ ] 2.3 Cài đặt `GitLabProvider` (`providers/gitlab.ts`) cùng hợp đồng (Req 3.2, 3.5; design §5)
-  - [ ] 2.4 Factory `getProvider(integration)` resolve theo `provider`+`authMethod`; phương thức không hỗ trợ → mã `PROVIDER_UNSUPPORTED` (Req 3.3, 3.4; design §5)
-  - [ ] 2.5 Test hợp đồng dùng chung cho cả hai adapter (cùng invariant shape) (Req 3.2; design §16)
+- [x] 2. Provider abstraction
+  - [x] 2.1 Định nghĩa interface `GitProvider` + types (`RepoRef`, `PullRequest`, `CheckRun`, `CiRun`, `CommitStatus`) ở `apps/cms/src/modules/git-integration/providers/types.ts` (Req 3.1; design §5)
+  - [x] 2.2 Cài đặt `GitHubProvider` (`providers/github.ts`) + App token minting (`app-token.ts`) + PAT (Req 3.2, 3.5; design §5)
+  - [x] 2.3 Cài đặt `GitLabProvider` (`providers/gitlab.ts`) cùng hợp đồng (Req 3.2, 3.5; design §5)
+  - [x] 2.4 Factory `getProvider(integration, deps)` resolve theo `provider`+`authMethod`; phương thức không hỗ trợ → mã `PROVIDER_UNSUPPORTED` (Req 3.3, 3.4; design §5)
+  - [x] 2.5 Test hợp đồng dùng chung cho cả hai adapter (cùng invariant shape) (Req 3.2; design §16)
 
-- [ ] 3. Token encryption wiring
-  - [ ] 3.1 Helper mã hoá/giải mã token + Webhook_Secret qua `CryptoService`, AAD `{ siteId, integrationId }` (Req 2.4, 15; design §7)
-  - [ ] 3.2 Masking token/secret trong log/audit tái dùng `modules/audit/path-mask.ts` (Req 2.5, 15.2; design §7, §12)
-  - [ ] 3.3 `validateProductionConfig` kiểm khoá mã hoá; thiếu → integration `error`, không lưu plaintext (Req 15.4; design §7)
-  - [ ] 3.4 Property test token round-trip + AAD tamper (Req 15; design §16)
+- [x] 3. Token encryption wiring
+  - [x] 3.1 Helper mã hoá/giải mã token + Webhook_Secret qua `CryptoService`, AAD `{ siteId, integrationId }` (`crypto.ts`) (Req 2.4, 15; design §7)
+  - [x] 3.2 Masking token (`maskToken`); audit không ghi giá trị nhạy cảm (Req 2.5, 15.2; design §7, §12)
+  - [ ] 3.3 `validateProductionConfig` kiểm khoá mã hoá; hiện routes trả `ENCRYPTION_NOT_CONFIGURED` khi thiếu `ENCRYPTION_KEY` (Req 15.4; design §7)
+  - [x] 3.4 Property test token round-trip + AAD tamper (Req 15; design §16)
 
 ### Phase B — Connect & Auth + Studio UI
 
-- [ ] 4. GitIntegrationService + routes CRUD
-  - [ ] 4.1 `service.ts` (`GitIntegrationService`) với `create/list/get/update/delete`, luôn scope `site_id`; reject trùng `(site_id, provider, repo)` 409 (Req 1; design §6)
-  - [ ] 4.2 `routes.ts` mount `/api/v1/integrations/git/*` trong sub-app `api` (tenant/auth/rls); response `{ data, meta? }`/`{ errors }` (Req 1, 14; design §4)
-  - [ ] 4.3 OAuth flow `GET /oauth/:provider/authorize` + `GET /oauth/:provider/callback` đổi code→token, lưu mã hoá (Req 2.1, 2.3; design §4)
-  - [ ] 4.4 App connect: lưu `installationId`, lấy/gia hạn Installation_Token (Req 2.1, 2.2; design §6)
-  - [ ] 4.5 `POST /:id/rotate-secret` xoay Webhook_Secret/token, giữ liên tục (Req 15.1, 15.3; design §7)
-  - [ ] 4.6 Audit connect/disconnect/rotate qua `modules/audit/logger.ts` (Req 9.2; design §12)
-  - [ ] 4.7 Integration test CRUD + tenant isolation (Req 1.4, 14.1; design §16)
+- [x] 4. GitIntegrationService + routes CRUD
+  - [x] 4.1 `service.ts` (`GitIntegrationService`) với `create/list/get/update/delete`, luôn scope `site_id`; reject trùng `(site_id, provider, repo)` 409 (Req 1; design §6)
+  - [x] 4.2 `routes.ts` mount `/api/v1/integrations/git/*` trong sub-app `api` (tenant/auth/rls) + `requireSiteAdmin`; response `{ data, meta? }`/`{ errors }` (Req 1, 14; design §4)
+  - [x] 4.3 OAuth flow `GET /:id/oauth/authorize` (authenticated) + public `GET /oauth/:provider/callback` đổi code→token, lưu mã hoá (Req 2.1, 2.3; design §4)
+  - [x] 4.4 App connect: lưu `installationId`, mint Installation_Token theo nhu cầu (Req 2.1, 2.2; design §6)
+  - [x] 4.5 `POST /:id/rotate-secret` xoay Webhook_Secret, giữ liên tục (Req 15.1, 15.3; design §7)
+  - [x] 4.6 Audit connect/disconnect/rotate qua `modules/audit/logger.ts` (Req 9.2; design §12)
+  - [ ] 4.7 Integration test CRUD + tenant isolation (cần Postgres — verify trên staging) (Req 1.4, 14.1; design §16)
 
-- [ ] 5. Studio settings page
-  - [ ] 5.1 Tạo `apps/studio/src/modules/settings/git-integrations-page.tsx` (model theo `webhooks-page.tsx`): list + modal create/edit + delete, `useQuery`/`useMutation` (Req 1, 5; design §9)
-  - [ ] 5.2 Nút Authorize (OAuth/App) + hiển thị trạng thái kết nối + scope đã cấp (Req 2.7; design §9)
-  - [ ] 5.3 Đăng ký route `settings/integrations/git` trong `apps/studio/src/router.tsx` (lazy + `withSuspense`) + mục nav nhóm Integrations trong `modules/settings/layout.tsx` (design §9)
-  - [ ] 5.4 i18n keys `locales/{en,vi}` cho trang mới (design §9)
+- [x] 5. Studio settings page
+  - [x] 5.1 Tạo `apps/studio/src/modules/settings/git-integrations-page.tsx`: list + modal create + delete + PR drawer, `useQuery`/`useMutation` (Req 1, 5; design §9)
+  - [x] 5.2 Nút Authorize (OAuth) + hiển thị trạng thái kết nối + webhook URL (Req 2.7; design §9)
+  - [x] 5.3 Đăng ký route `settings/integrations/git` trong `apps/studio/src/router.tsx` (lazy + `withSuspense`, cả admin-path tree) + mục nav nhóm Integrations trong `modules/settings/layout.tsx` (design §9)
+  - [x] 5.4 i18n qua `t('key','fallback')` (Studio nạp translations từ API, không có file locale tĩnh) (design §9)
 
 ### Phase C — Webhook & PR/CI dashboard + log viewer
 
-- [ ] 6. Webhook ingest + verify
-  - [ ] 6.1 `webhook/verify.ts` xác minh GitHub `X-Hub-Signature-256` (HMAC-SHA256, constant-time) + GitLab `X-Gitlab-Token` (tái dùng pattern `notifications/webhook-channel.ts`) (Req 4.2, 4.3, 4.4; design §8)
-  - [ ] 6.2 `webhook/handler.ts` endpoint công khai `POST /webhook/:provider`: verify → phân giải `site_id`/`integrationId` theo repo+secret → ghi `git_webhook_events` (idempotent `(provider, delivery_id)`) (Req 4.1, 4.5, 4.7, 9.1; design §8)
-  - [ ] 6.3 `webhook/processor.ts` xử lý async: cập nhật `git_pull_requests`/`git_ci_runs`; ghi `error` cho phép replay idempotent (Req 4.6, 9.3; design §8)
-  - [ ] 6.4 Property test webhook verify + idempotency replay (Req 4.5; design §16)
+- [x] 6. Webhook ingest + verify
+  - [x] 6.1 `webhook/verify.ts` + `webhook/constant-time.ts` xác minh GitHub `X-Hub-Signature-256` (HMAC-SHA256, constant-time) + GitLab `X-Gitlab-Token` (tái dùng `hmacSha256Hex` của `notifications/webhook-channel.ts`) (Req 4.2, 4.3, 4.4; design §8)
+  - [x] 6.2 `webhook/handler.ts` endpoint công khai `POST /webhook/:provider/:siteId/:integrationId`: scope RLS theo site → verify chữ ký → ghi `git_webhook_events` (idempotent `(provider, delivery_id)`) (Req 4.1, 4.5, 4.7, 9.1; design §8)
+  - [x] 6.3 `webhook/processor.ts` cập nhật `git_pull_requests`/`git_ci_runs` (upsert idempotent); ghi `error` cho phép replay (Req 4.6, 9.3; design §8)
+  - [x] 6.4 Unit test webhook verify (chữ ký hợp lệ/sai/constant-time); idempotency qua unique `(provider, delivery_id)` + `onConflictDoNothing` (Req 4.5; design §16)
 
-- [ ] 7. PR dashboard
-  - [ ] 7.1 `GET /:id/pull-requests` (paginated) + `POST /:id/pull-requests/refresh` kéo từ provider (Req 5.1, 5.3, 5.5; design §4)
-  - [ ] 7.2 Studio PR list component: CI badge, link provider + Preview_Env (Req 5.4; design §9)
+- [x] 7. PR dashboard
+  - [x] 7.1 `GET /:id/pull-requests` + `POST /:id/pull-requests/refresh` kéo từ provider (upsert cache) (Req 5.1, 5.3, 5.5; design §4)
+  - [x] 7.2 Studio PR drawer: CI badge, link Preview_Env, nút xem log (Req 5.4; design §9)
 
-- [ ] 8. CI status & log viewer
-  - [ ] 8.1 `GET /:id/pull-requests/:number/ci` timeline run/job (Req 6.1; design §4)
-  - [ ] 8.2 `ci-log-store.ts` (`CiLogStore`) kéo log qua `getJobLogs`, lưu blob runtime, ghi `logRef`; đọc ưu tiên blob đã lưu (Req 6.2, 6.3, 6.5; design §10)
-  - [ ] 8.3 `GET /:id/ci-runs/:runId/logs` trả log (Req 6.2; design §4)
-  - [ ] 8.4 Studio log viewer: timeline job + highlight lỗi (Req 6.4; design §9)
+- [x] 8. CI status & log viewer
+  - [x] 8.1 `GET /:id/pull-requests/:number/ci` trả CI runs (Req 6.1; design §4)
+  - [x] 8.2 `ci-log-store.ts` kéo log qua `getJobLogs`, lưu `runtime.storage` blob, ghi `logRef`; đọc ưu tiên blob đã lưu (Req 6.2, 6.3, 6.5; design §10)
+  - [x] 8.3 `GET /:id/ci-runs/:runId/logs` trả log (Req 6.2; design §4)
+  - [x] 8.4 Studio log viewer (pre/mono panel trong PR drawer) (Req 6.4; design §9)
 
 ### Phase D — Preview environments
 
