@@ -47,7 +47,10 @@ DECLARE
     -- Regulated / sensitive content readiness (site-isolated).
     'field_access_log', 'content_reviews', 'erasure_requests', 'encryption_keys',
     -- Privacy / data-subject rights (site-isolated).
-    'user_consents', 'email_suppressions', 'processing_restrictions'
+    'user_consents', 'email_suppressions', 'processing_restrictions',
+    -- Git integration (GitHub / GitLab) — site-isolated.
+    'git_integrations', 'git_pull_requests', 'git_ci_runs',
+    'git_webhook_events', 'git_preview_envs', 'git_provenance'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
