@@ -17,6 +17,12 @@ export interface ProcessEventArgs {
   payload: Record<string, unknown>;
 }
 
+/** What the event touched, so the caller can drive preview / incident side-effects. */
+export interface ProcessEventResult {
+  pr?: { id: string; number: number; state: string; action: string };
+  ci?: { providerRunId: string; status: string };
+}
+
 function ghPrState(pr: Record<string, unknown>): string {
   if (pr.merged_at) return 'merged';
   return pr.state === 'open' ? 'open' : 'closed';
@@ -27,70 +33,80 @@ function glMrState(state: string): string {
   return state === 'opened' ? 'open' : 'closed';
 }
 
-/** Apply one verified event. Returns true when it touched a cache row. */
-export async function processEvent(args: ProcessEventArgs): Promise<boolean> {
+/** Apply one verified event. Returns a descriptor of what it touched. */
+export async function processEvent(
+  args: ProcessEventArgs,
+): Promise<ProcessEventResult> {
   const { db, siteId, integrationId, provider, event, payload } = args;
 
   if (provider === 'github') {
     if (event === 'pull_request') {
       const pr = payload.pull_request as Record<string, unknown> | undefined;
-      if (!pr) return false;
-      await upsertPr(db, {
+      if (!pr) return {};
+      const state = ghPrState(pr);
+      const id = await upsertPr(db, {
         siteId,
         integrationId,
         number: Number(pr.number),
         title: String(pr.title ?? ''),
-        state: ghPrState(pr),
+        state,
         headSha: String((pr.head as Record<string, unknown>)?.sha ?? ''),
         author: ((pr.user as Record<string, unknown>)?.login as string) ?? null,
         raw: pr,
       });
-      return true;
+      return {
+        pr: { id, number: Number(pr.number), state, action: String(payload.action ?? '') },
+      };
     }
     if (event === 'workflow_run') {
       const run = payload.workflow_run as Record<string, unknown> | undefined;
-      if (!run) return false;
+      if (!run) return {};
+      const status = mapGhRun(String(run.status), run.conclusion as string | null);
       await upsertCiRun(db, {
         siteId,
         integrationId,
         providerRunId: String(run.id),
-        status: mapGhRun(String(run.status), run.conclusion as string | null),
+        status,
       });
-      return true;
+      return { ci: { providerRunId: String(run.id), status } };
     }
-    return false;
+    return {};
   }
 
   // GitLab
   if (event.toLowerCase().includes('merge request')) {
     const attrs = payload.object_attributes as Record<string, unknown> | undefined;
-    if (!attrs) return false;
-    await upsertPr(db, {
+    if (!attrs) return {};
+    const state = glMrState(String(attrs.state ?? ''));
+    const id = await upsertPr(db, {
       siteId,
       integrationId,
       number: Number(attrs.iid),
       title: String(attrs.title ?? ''),
-      state: glMrState(String(attrs.state ?? '')),
+      state,
       headSha: String(
         (attrs.last_commit as Record<string, unknown>)?.id ?? attrs.sha ?? '',
       ),
       author: null,
       raw: attrs,
     });
-    return true;
+    return {
+      pr: { id, number: Number(attrs.iid), state, action: String(attrs.action ?? '') },
+    };
   }
   if (event.toLowerCase().includes('pipeline')) {
     const attrs = payload.object_attributes as Record<string, unknown> | undefined;
-    if (!attrs) return false;
+    if (!attrs) return {};
+    const status = mapGlPipeline(String(attrs.status ?? ''));
     await upsertCiRun(db, {
       siteId,
       integrationId,
       providerRunId: String(attrs.id),
-      status: mapGlPipeline(String(attrs.status ?? '')),
+      status,
     });
-    return true;
+    return { ci: { providerRunId: String(attrs.id), status } };
   }
-  return false;
+  return {};
 }
 
 async function upsertPr(
@@ -105,8 +121,8 @@ async function upsertPr(
     author: string | null;
     raw: Record<string, unknown>;
   },
-): Promise<void> {
-  await db
+): Promise<string> {
+  const [out] = await db
     .insert(gitPullRequests)
     .values({
       siteId: row.siteId,
@@ -128,7 +144,9 @@ async function upsertPr(
         raw: row.raw,
         updatedAt: sql`now()`,
       },
-    });
+    })
+    .returning({ id: gitPullRequests.id });
+  return out!.id;
 }
 
 async function upsertCiRun(

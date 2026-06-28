@@ -12,9 +12,11 @@ import { and, eq } from 'drizzle-orm';
 import { gitIntegrations, gitWebhookEvents } from '@lumibase/database';
 import { formatSafeError } from '@lumibase/shared/utils';
 import type { AppEnv } from '../../../env';
+import type { Database } from '@lumibase/database';
 import { decryptSecretValue } from '../crypto';
 import { getGitConfig } from '../config';
-import { processEvent } from './processor';
+import { PreviewEnvManager } from '../preview';
+import { processEvent, type ProcessEventResult } from './processor';
 import {
   extractRepoFullName,
   isWebhookProvider,
@@ -133,13 +135,23 @@ export async function handleWebhook(c: Context<AppEnv>): Promise<Response> {
   const eventRowId = inserted[0]!.id;
 
   try {
-    await processEvent({
+    const outcome = await processEvent({
       db,
       siteId,
       integrationId,
       provider,
       event: result.event ?? 'unknown',
       payload,
+    });
+    await runPreviewSideEffects(c, {
+      db,
+      siteId,
+      integrationId,
+      isDev,
+      outcome,
+      previewEnabled:
+        (integration.syncConfig as Record<string, unknown> | null)?.preview ===
+        true,
     });
     await db
       .update(gitWebhookEvents)
@@ -155,4 +167,50 @@ export async function handleWebhook(c: Context<AppEnv>): Promise<Response> {
   }
 
   return c.json({ data: { received: true } });
+}
+
+const CLOSED_ACTIONS = new Set(['closed', 'close', 'merge', 'merged']);
+
+/**
+ * Drive preview-environment provisioning from a processed PR event. Opt-in via
+ * `integration.syncConfig.preview === true`. Best-effort: errors are swallowed
+ * so the webhook still acknowledges (the event row is already persisted).
+ */
+async function runPreviewSideEffects(
+  c: Context<AppEnv>,
+  args: {
+    db: Database;
+    siteId: string;
+    integrationId: string;
+    isDev: boolean;
+    outcome: ProcessEventResult;
+    previewEnabled: boolean;
+  },
+): Promise<void> {
+  if (!args.previewEnabled || !args.outcome.pr) return;
+  const cfg = getGitConfig(c);
+  const manager = new PreviewEnvManager({
+    db: args.db,
+    runtime: c.get('runtime'),
+    siteId: args.siteId,
+    integrationId: args.integrationId,
+    publicBaseUrl: cfg.publicBaseUrl,
+    isDev: args.isDev,
+  });
+  const pr = args.outcome.pr;
+  try {
+    if (CLOSED_ACTIONS.has(pr.action) || pr.state === 'closed' || pr.state === 'merged') {
+      await manager.destroy(pr.id);
+    } else {
+      await manager.ensureForPullRequest({
+        prId: pr.id,
+        number: pr.number,
+        state: pr.state,
+      });
+    }
+  } catch (err) {
+    console.warn('[git-preview] side-effect failed', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
