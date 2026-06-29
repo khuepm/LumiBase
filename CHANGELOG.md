@@ -11,6 +11,51 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [0.13.0] - 2026-06-30
+
+### Version
+
+- `v0.13.0`
+
+### Date
+
+- `2026-06-30`
+
+### Highlights
+
+- **Deployment integrations.** Connect a site to Vercel, Netlify, or any HTTP deploy hook, then trigger and monitor deploys from Studio. Provider tokens are stored encrypted via the runtime `KeyProvider` (never plaintext), deploy targets and deployments are site-isolated with RLS, and incoming provider webhooks are signature-verified. Reuses the Flows/queue infrastructure with a status poller for in-flight deploys.
+- **Cross-collection search.** Search now spans collections in a single query, with a reindex CLI, an SDK `search()` command (`SearchHit` / `SearchResponse` types), and a Vietnamese-aware analyzer. Studio gains a global command palette (Cmd/Ctrl+K).
+- **Bracket-form filter params.** The items list route accepts bracket-form filter query params (e.g. `filter[field][_eq]=...`) end-to-end.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **CMS / deployments:** deployment-integrations service with Vercel, Netlify, and HTTP providers; encrypted token vault; status poller; webhook signature verification; two site-isolated tables with RLS.
+- **CMS / search:** cross-collection search and a reindex CLI.
+- **CMS / items:** accept bracket-form filter query params on the items list route.
+- **SDK:** `search()` command plus `SearchHit` / `SearchResponse` types.
+- **Studio:** Deployments settings page and a global command palette (Cmd/Ctrl+K) search.
+- **AI skills:** deployment skills registered in the skill registry.
+- **Docs:** deployment endpoints added to the OpenAPI spec; deployment-integrations feature guide; Next.js quickstart tutorial; EN/VI i18n CI workflow, contributing guide, and translation via Claude.
+
+### Changed
+
+- **Docs i18n:** translate with Claude instead of a third-party MT engine; sync EN/VI sources with version front matter.
+
+### Fixed
+
+- **Security / deployments:** verify provider webhook signatures and enable RLS on deployment tables.
+- **Security / CMS:** guard agent-harness control-plane endpoints.
+- **Security / Studio:** assert the studio client signal on agent API calls.
+
+### Migrations
+
+- **1 new schema migration (additive, idempotent):** `0038_deployment_integrations.sql` adds two site-isolated tables — `deployment_targets` and `deployments` — guarded with `CREATE TABLE IF NOT EXISTS` so it re-runs safely and leaves existing installs untouched. RLS for both tables is applied via `packages/database/migrations/rls-policies.sql`. No data migration. Back up your database before upgrading as a precaution.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
 ## [0.12.0] - 2026-06-28
 
 ### Version
