@@ -57,8 +57,13 @@ export interface DeploymentProvider {
   getStatus(token: string, target: ProviderTarget, providerDeploymentId: string): Promise<DeploymentRef>;
   /** Build log (for debug). */
   getLogs(token: string, target: ProviderTarget, providerDeploymentId: string): Promise<string>;
-  /** Verify an inbound status-webhook signature. */
-  verifyWebhook(req: InboundRequest, secret: string): boolean;
+  /**
+   * Verify an inbound status-webhook signature against `secret` (the per-site
+   * configured webhook secret). Performs real HMAC/JWS verification over the
+   * raw body via Web Crypto, so it is async. A missing/invalid signature or an
+   * empty secret returns `false`.
+   */
+  verifyWebhook(req: InboundRequest, secret: string): Promise<boolean>;
   /** Parse an inbound status-webhook payload into a normalized ref. */
   parseWebhook(rawBody: string): DeploymentRef | null;
 }

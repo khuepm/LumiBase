@@ -5,7 +5,7 @@ import type {
   InboundRequest,
   TriggerOptions,
 } from './provider';
-import { bearer, guardedFetch } from './http';
+import { bearer, guardedFetch, verifyJwsHs256 } from './http';
 
 const API = 'https://api.netlify.com/api/v1';
 
@@ -110,12 +110,12 @@ export const netlifyProvider: DeploymentProvider = {
     return res.text();
   },
 
-  verifyWebhook(req: InboundRequest, secret: string) {
-    // Netlify signs outgoing notifications with a JWS in `x-webhook-signature`.
-    // Presence + configured-secret guard here; the service layer performs the
-    // full JWS verification asynchronously. A missing signature is rejected.
+  async verifyWebhook(req: InboundRequest, secret: string) {
+    // Netlify signs outgoing notifications with a compact JWS (HS256) in
+    // `x-webhook-signature`, keyed by the per-site configured secret. Verify
+    // the signature fully. An empty secret or missing/invalid JWS is rejected.
     const sig = req.headers['x-webhook-signature'];
-    return Boolean(secret) && Boolean(sig);
+    return verifyJwsHs256(sig ?? '', secret);
   },
 
   parseWebhook(rawBody: string) {

@@ -6,7 +6,7 @@ import type {
   ProviderTarget,
   TriggerOptions,
 } from './provider';
-import { bearer, guardedFetch } from './http';
+import { bearer, guardedFetch, hmacHex, timingSafeEqual } from './http';
 
 const API = 'https://api.vercel.com';
 
@@ -110,13 +110,16 @@ export const vercelProvider: DeploymentProvider = {
       .join('\n');
   },
 
-  verifyWebhook(req: InboundRequest, secret: string) {
-    // Vercel signs webhooks with an HMAC SHA1 in `x-vercel-signature`.
-    // The full HMAC verification is performed in the service layer where the
-    // crypto subtle API is awaited; here we do a presence + secret guard so
-    // adapters stay synchronous. A missing signature is always rejected.
+  async verifyWebhook(req: InboundRequest, secret: string) {
+    // Vercel signs webhooks with HMAC-SHA1 over the raw body, sent as lowercase
+    // hex in `x-vercel-signature`. Recompute and compare in constant time.
+    // An empty secret (inbound webhooks not configured) or missing signature
+    // is always rejected.
+    if (!secret) return false;
     const sig = req.headers['x-vercel-signature'];
-    return Boolean(secret) && Boolean(sig);
+    if (!sig) return false;
+    const expected = await hmacHex(secret, req.rawBody, 'SHA-1');
+    return timingSafeEqual(sig.toLowerCase(), expected);
   },
 
   parseWebhook(rawBody: string) {

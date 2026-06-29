@@ -3,6 +3,10 @@
 -- with IF NOT EXISTS so re-running is safe and existing installations are
 -- unaffected. Provider tokens live in `deployment_targets.token_ciphertext`
 -- encrypted via the runtime KeyProvider — never plaintext.
+--
+-- RLS is NOT applied here. Per project convention, site-level RLS is enabled by
+-- `packages/database/migrations/rls-policies.sql` where `deployment_targets`
+-- and `deployments` are listed.
 
 CREATE TABLE IF NOT EXISTS "deployment_targets" (
 	"id" text PRIMARY KEY NOT NULL,

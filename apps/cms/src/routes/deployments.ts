@@ -9,6 +9,7 @@ import type { AppEnv } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
 import { DeploymentError, DeploymentService } from '../services/deployment/deployment-service';
 import { getProvider } from '../services/deployment/providers';
+import { ConfigService } from '../services/config-service';
 
 /**
  * Deployment integrations API (spec: deployment-integrations, design §7).
@@ -26,6 +27,19 @@ function service(c: Context<AppEnv>): DeploymentService {
     siteId: c.get('siteId'),
     keys: c.get('runtime').keys,
   });
+}
+
+/**
+ * Per-site inbound-webhook secret for a provider, stored under the settings key
+ * `deployment.webhook.<provider>` (value `{ secret: string }`). Returns '' when
+ * not configured, which makes `verifyWebhook` reject every request.
+ */
+async function webhookSecret(c: Context<AppEnv>, providerKey: string): Promise<string> {
+  const config = new ConfigService({ db: c.get('db'), siteId: c.get('siteId') });
+  const rows = await config.listSettings();
+  const row = rows.find((r) => r.key === `deployment.webhook.${providerKey}`);
+  const value = row?.value as { secret?: unknown } | undefined;
+  return typeof value?.secret === 'string' ? value.secret : '';
 }
 
 function fail(c: Context<AppEnv>, err: unknown) {
@@ -151,10 +165,12 @@ deploymentsWebhookRouter.post('/:provider', async (c) => {
   const headers: Record<string, string> = {};
   c.req.raw.headers.forEach((v, k) => (headers[k] = v));
 
-  // Secret comes from per-site settings; absence means inbound webhooks are
-  // not configured for this provider and the request is rejected.
-  const secret = c.req.header('x-lumibase-webhook-secret') ?? '';
-  if (!provider.verifyWebhook({ headers, rawBody }, secret)) {
+  // Secret comes from per-site settings (key `deployment.webhook.<provider>`),
+  // NOT from a request header — the provider proves authenticity by signing the
+  // body with this shared secret. Absence means inbound webhooks are not
+  // configured for this provider, so every request is rejected.
+  const secret = await webhookSecret(c, providerKey);
+  if (!(await provider.verifyWebhook({ headers, rawBody }, secret))) {
     return c.json({ errors: [{ code: 'INVALID_SIGNATURE' }] }, 401);
   }
 

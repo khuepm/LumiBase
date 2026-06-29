@@ -43,7 +43,7 @@ Provider API tokens are **never stored in plaintext**. On create, the token is e
 Two complementary paths keep a deployment's status current:
 
 - **Status poller** — a 30s cron (`apps/cms/src/services/deployment/status-poller.ts`, registered in `serve.ts`) sweeps every non-terminal deployment and syncs it from the provider. Each sync is a guarded conditional update (only flips `queued`/`building`) and a single provider error never aborts the sweep — re-running is a no-op.
-- **Inbound webhook** — `POST /api/v1/deployments/webhook/:provider` (public, pre-auth) receives provider-pushed status events. It is intentionally outside the authenticated surface because the provider authenticates by request signature, not a bearer token; it still runs `withTenant` + `withDb`.
+- **Inbound webhook** — `POST /api/v1/deployments/webhook/:provider` (public, pre-auth) receives provider-pushed status events. It is intentionally outside the authenticated surface because the provider authenticates by **signing the request body**, not a bearer token; it still runs `withTenant` + `withDb`. The signature is verified for real over the raw body via Web Crypto: **Vercel** uses HMAC-SHA1 (`x-vercel-signature`), **Netlify** a JWS/HS256 (`x-webhook-signature`), compared in constant time. The shared secret is read from the per-site setting `deployment.webhook.<provider>` (value `{ "secret": "…" }`) — **never** from a request header. If no secret is configured, every webhook request is rejected (`401 INVALID_SIGNATURE`); status still syncs via the poller.
 
 ## 5. REST API
 
@@ -80,7 +80,9 @@ A **Settings → Deployments** page (`apps/studio/src/modules/settings/deploymen
 
 ## 8. Setup notes
 
-- **Capabilities:** adds `deployments:read` / `deployments:write` — grant them to the admin role on upgrade.
+- **Capabilities:** adds `deployments:read` / `deployments:write` — grant them to the admin role on upgrade. (No default agent role carries `deployments:write`, so the `triggerDeployment` skill only runs for callers explicitly granted it — deploy is never auto-available to ordinary agents.)
 - **No seed:** targets are created by an admin after setup; there are no defaults.
+- **RLS:** `deployment_targets` and `deployments` are site-isolated via `packages/database/migrations/rls-policies.sql` (per project convention, not in the table migration).
+- **Inbound webhooks (optional):** to receive provider-pushed status, set the per-site setting `deployment.webhook.<provider>` to `{ "secret": "<shared secret>" }` and configure the same secret on the provider's webhook. Without it, status syncs via the 30s poller only.
 - **Migration `0038_deployment_integrations`:** additive and idempotent (`CREATE TABLE IF NOT EXISTS`) — existing installations receive two empty tables.
 - See the spec under `.kiro/specs/deployment-integrations/` for the full requirements and design.
