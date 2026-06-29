@@ -8,6 +8,9 @@ describe('control-plane access guard helpers', () => {
     expect(isControlPlanePath('/api/v1/roles')).toBe(true);
     expect(isControlPlanePath('/api/v1/roles/role-1/users')).toBe(true);
     expect(isControlPlanePath('/api/v1/materialize/mat_1/refresh')).toBe(true);
+    expect(isControlPlanePath('/api/v1/agent')).toBe(true);
+    expect(isControlPlanePath('/api/v1/agent/goals')).toBe(true);
+    expect(isControlPlanePath('/api/v1/agent/intents')).toBe(true);
     expect(isControlPlanePath('/api/v1/items/posts')).toBe(false);
   });
 
@@ -43,6 +46,30 @@ describe('control-plane access guard middleware', () => {
       siteId: 'site_1',
       requestId: 'req_1',
       metadata: expect.objectContaining({ reason: 'non_admin_control_plane_route' }),
+    }));
+  });
+
+  it('blocks non-admin access to agent harness routes', async () => {
+    const app = new Hono<AppEnv>();
+    const values = vi.fn().mockResolvedValue(undefined);
+    const db = { insert: vi.fn().mockReturnValue({ values }) };
+    app.use('*', async (c, next) => {
+      c.set('auth', { email: 'member@example.com', roles: ['member'], raw: {} });
+      c.set('db', db as never);
+      c.set('siteId', 'site_1');
+      c.set('requestId', 'req_agent');
+      await next();
+    });
+    app.use('*', withControlPlaneAccessGuard());
+    app.post('/api/v1/agent/goals', (c) => c.json({ ok: true }, 201));
+
+    const res = await app.request('/api/v1/agent/goals', { method: 'POST' });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ errors: [{ code: 'CONTROL_PLANE_FORBIDDEN' }] });
+    expect(values).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'control_plane_access_denied',
+      metadata: expect.objectContaining({ path: '/api/v1/agent/goals' }),
     }));
   });
 
