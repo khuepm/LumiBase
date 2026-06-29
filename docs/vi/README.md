@@ -4,6 +4,11 @@ Tài liệu kỹ thuật cho LumiBase — Headless CMS Edge-native lấy cảm h
 
 > Mục tiêu: vượt Directus ở các mảng **No-code Collection Builder**, **Permissions theo field/JSON policy**, **Raw editor cho mọi field**, **Extension SDK an toàn**, **Display Templates**, **Realtime WebSocket**, **AI-First Copilot (HITL)** và **Agent Harness Layer** — đồng thời giữ DNA Edge-native, Multi-tenant nhưng cho phép tự host trên Docker khi cần.
 
+## Tutorials (hướng dẫn thực hành)
+
+- [tutorials/index.md](./tutorials/index.md) — Danh mục các tutorial end-to-end cho người mới.
+- [tutorials/nextjs-quickstart.md](./tutorials/nextjs-quickstart.md) — **Hiển thị nội dung LumiBase trên app Next.js**: chạy CMS local, tạo collection `posts`, rồi fetch & render bằng `fetch` thuần hoặc `@lumibase/sdk`.
+
 ## Cấu trúc tài liệu
 
 - **Tầm nhìn & Định vị**

@@ -2001,6 +2001,93 @@ export function parseDeepQueryParams(searchParams: URLSearchParams): DeepQuery |
   return Object.keys(deep).length > 0 ? deep : undefined;
 }
 
+/**
+ * Resolve the list `filter` from query params, supporting two equivalent forms:
+ *
+ *   1. JSON string  — `?filter={"status":{"_eq":"published"}}`
+ *   2. Bracket form  — `?filter[status][_eq]=published`
+ *
+ * If a JSON `filter` param is present it wins (backward-compatible). Otherwise
+ * any `filter[...]` keys are folded into a nested object. Returns `undefined`
+ * when no filter is supplied. Throws `SyntaxError` only for malformed JSON in
+ * form (1) — callers translate that into a 400.
+ *
+ * Bracket values are coerced from their string form: `true`/`false` → boolean,
+ * numeric strings → number, and comma-separated values under array operators
+ * (`_in`, `_nin`, `_between`) → string array. Everything else stays a string.
+ */
+export function parseFilterQueryParams(
+  searchParams: URLSearchParams,
+  jsonFilter?: string,
+): Record<string, unknown> | undefined {
+  // Form (1): explicit JSON filter takes precedence (backward compatible).
+  if (jsonFilter !== undefined && jsonFilter !== '') {
+    return JSON.parse(jsonFilter) as Record<string, unknown>;
+  }
+
+  // Form (2): collect bracketed `filter[a][b]...=value` keys into a nested object.
+  const root: Record<string, unknown> = {};
+  let matched = false;
+
+  for (const [key, value] of searchParams.entries()) {
+    if (!key.startsWith('filter[')) continue;
+    const path = parseBracketPath(key);
+    if (!path) continue; // ignore a malformed key rather than 400 the whole request
+    matched = true;
+    setNested(root, path, coerceFilterValue(path[path.length - 1]!, value));
+  }
+
+  return matched ? root : undefined;
+}
+
+/** `filter[status][_eq]` → `['status', '_eq']`; returns null if not well-formed. */
+function parseBracketPath(key: string): string[] | null {
+  if (!key.startsWith('filter[')) return null;
+  const segments: string[] = [];
+  const re = /\[([^\]]*)\]/g;
+  let m: RegExpExecArray | null;
+  let lastIndex = 'filter'.length;
+  while ((m = re.exec(key)) !== null) {
+    if (m.index !== lastIndex) return null; // gap/garbage between segments
+    if (m[1] === '') return null; // empty bracket `[]`
+    segments.push(m[1]!);
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex !== key.length) return null; // trailing garbage
+  return segments.length > 0 ? segments : null;
+}
+
+function setNested(root: Record<string, unknown>, path: string[], value: unknown): void {
+  let cur = root;
+  for (let i = 0; i < path.length - 1; i++) {
+    const seg = path[i]!;
+    if (typeof cur[seg] !== 'object' || cur[seg] === null) cur[seg] = {};
+    cur = cur[seg] as Record<string, unknown>;
+  }
+  cur[path[path.length - 1]!] = value;
+}
+
+const ARRAY_OPERATORS = new Set(['_in', '_nin', '_between']);
+
+function coerceFilterValue(operator: string, raw: string): unknown {
+  if (ARRAY_OPERATORS.has(operator)) {
+    return raw.split(',').map((v) => coerceScalar(v.trim()));
+  }
+  return coerceScalar(raw);
+}
+
+function coerceScalar(raw: string): unknown {
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  if (raw === 'null') return null;
+  // Keep leading-zero / overflow-ish strings as strings; only coerce clean numbers.
+  if (raw !== '' && /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(raw)) {
+    const n = Number(raw);
+    if (Number.isFinite(n)) return n;
+  }
+  return raw;
+}
+
 export function projectRelatedRow(row: ItemRow, fields: string[]): Record<string, unknown> {
   if (fields.includes('*')) {
     return {
