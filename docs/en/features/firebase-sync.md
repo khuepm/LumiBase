@@ -1,38 +1,48 @@
+---
+version: 1
+lastUpdated: 2026-06-23T09:48:37.000Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: 66736ba66e39afe3
+mtEngine: claude
+syncStatus: machine-translated
+---
+
 # LumiBase Firebase Sync
 
-> Extension đồng bộ content (`items`) từ LumiBase sang **Firebase** — Cloud Firestore hoặc Realtime Database — theo thời gian thực, mỗi khi item được tạo/sửa/xoá.
+> An extension that syncs content (`items`) from LumiBase to **Firebase** — Cloud Firestore or Realtime Database — in real time, every time an item is created/updated/deleted.
 
-Module: `apps/cms/src/modules/lumibase-firebase-sync/` · Mounted tại `/api/v1/firebase-sync`.
+Module: `apps/cms/src/modules/lumibase-firebase-sync/` · Mounted at `/api/v1/firebase-sync`.
 
-## 1. Mục tiêu & mô hình
+## 1. Goal & model
 
-Mỗi **pipeline** cấu hình một đích Firebase cho một site. Khi một item trong các collection được chọn thay đổi, LumiBase đẩy thay đổi đó sang Firebase (upsert hoặc delete). Một pipeline = một (site, đích Firebase, bộ collection, bộ action).
+Each **pipeline** configures one Firebase destination for one site. When an item in the selected collections changes, LumiBase pushes that change to Firebase (upsert or delete). One pipeline = one (site, Firebase destination, set of collections, set of actions).
 
-- **Edge-native:** connector chỉ dùng `fetch` + Web Crypto (REST), **không** dùng `firebase-admin` SDK (không tương thích Cloudflare Workers).
-- **Real-time:** sync được kích hoạt từ `ItemService` ngay sau khi ghi (cạnh `publishRealtimeEvent`), theo kiểu fire-and-forget — lỗi Firebase **không** làm fail request CMS.
-- **Backfill:** đẩy toàn bộ item hiện có của collection lên Firebase qua một endpoint riêng.
-- **Multi-tenant:** mọi query scope theo `siteId`.
+- **Edge-native:** the connector uses only `fetch` + Web Crypto (REST); it does **not** use the `firebase-admin` SDK (incompatible with Cloudflare Workers).
+- **Real-time:** the sync is triggered from `ItemService` right after a write (alongside `publishRealtimeEvent`), fire-and-forget — a Firebase error does **not** fail the CMS request.
+- **Backfill:** push all existing items of a collection to Firebase via a dedicated endpoint.
+- **Multi-tenant:** every query is scoped by `siteId`.
 
-## 2. Hai đích Firebase
+## 2. Two Firebase destinations
 
-| Đích | `target` | Ghi | Xác thực |
+| Destination | `target` | Write | Authentication |
 |---|---|---|---|
-| Cloud Firestore | `firestore` | Mỗi item → 1 document, `PATCH` (upsert) | Service-account JSON → JWT RS256 → OAuth2 access token (cache theo TTL) |
-| Realtime Database | `rtdb` | Mỗi item → 1 ref JSON, `PUT` (upsert) | Legacy database secret nối qua `?auth=` |
+| Cloud Firestore | `firestore` | Each item → 1 document, `PATCH` (upsert) | Service-account JSON → JWT RS256 → OAuth2 access token (cached by TTL) |
+| Realtime Database | `rtdb` | Each item → 1 JSON ref, `PUT` (upsert) | Legacy database secret appended via `?auth=` |
 
-Delete coi `404` của Firestore là thành công (idempotent).
+Delete treats a Firestore `404` as success (idempotent).
 
-## 3. Credentials & bảo mật
+## 3. Credentials & security
 
-- Credentials Firebase được **mã hoá at-rest** (AES-GCM qua `CryptoService`) bằng biến môi trường `ENCRYPTION_KEY`, lưu trong cột `credentials_encrypted`.
-- Credentials là **write-only**: nhập lúc tạo/cập nhật pipeline; **không** endpoint đọc nào trả về.
-- Tất cả endpoint yêu cầu **site-scoped admin** (`requireSiteAdmin`).
-- Real-time sync hook chỉ chạy khi `ENCRYPTION_KEY` được cấu hình (credentials phải giải mã được). Nếu thiếu key, `POST /pipelines` trả `400 ENCRYPTION_KEY_REQUIRED`.
+- Firebase credentials are **encrypted at rest** (AES-GCM via `CryptoService`) using the `ENCRYPTION_KEY` environment variable, stored in the `credentials_encrypted` column.
+- Credentials are **write-only**: entered when creating/updating a pipeline; **no** read endpoint ever returns them.
+- All endpoints require **site-scoped admin** (`requireSiteAdmin`).
+- The real-time sync hook only runs when `ENCRYPTION_KEY` is configured (credentials must be decryptable). If the key is missing, `POST /pipelines` returns `400 ENCRYPTION_KEY_REQUIRED`.
 
-Hình dạng credential blob:
+Credential blob shape:
 
 ```jsonc
-// target = "firestore" — service-account JSON (các field thực sự dùng)
+// target = "firestore" — service-account JSON (the fields actually used)
 { "project_id": "...", "client_email": "...", "private_key": "-----BEGIN PRIVATE KEY-----\n..." }
 
 // target = "rtdb"
@@ -41,60 +51,60 @@ Hình dạng credential blob:
 
 ## 4. Target path
 
-Trường `targetPath` là template, mặc định `{collection}`. Placeholder được nội suy lúc sync:
+The `targetPath` field is a template, defaulting to `{collection}`. Placeholders are interpolated at sync time:
 
-- `{collection}` → machine-name của collection.
-- `{itemId}` → id của item.
+- `{collection}` → the collection's machine-name.
+- `{itemId}` → the item's id.
 
-Nếu template **không** chứa `{itemId}`, item id được nối làm segment cuối. Ví dụ:
+If the template does **not** contain `{itemId}`, the item id is appended as the last segment. Examples:
 
-| `targetPath` | collection=`articles`, itemId=`a1` | Kết quả |
+| `targetPath` | collection=`articles`, itemId=`a1` | Result |
 |---|---|---|
 | `{collection}` | | `articles/a1` |
 | `content/{collection}` | | `content/articles/a1` |
 | `content/{collection}/{itemId}` | | `content/articles/a1` |
 
-> Mỗi document/ref được ghi kèm field `_lumibaseItemId` để truy vết ngược về item nguồn.
+> Each document/ref is written with a `_lumibaseItemId` field to trace back to the source item.
 
 ## 5. API
 
-Xem chi tiết request/response trong [hono-api-spec.md §12](../api/hono-api-spec.md). Tóm tắt:
+See full request/response details in [hono-api-spec.md §12](../api/hono-api-spec.md). Summary:
 
-| Method | Path | Mô tả |
+| Method | Path | Description |
 |--------|------|-------|
-| `POST` | `/api/v1/firebase-sync/pipelines` | Tạo pipeline |
-| `GET` | `/api/v1/firebase-sync/pipelines` | Liệt kê pipeline của site |
-| `GET` | `/api/v1/firebase-sync/pipelines/:id` | Chi tiết (không trả credentials) |
-| `PATCH` | `/api/v1/firebase-sync/pipelines/:id` | Cập nhật config / xoay credentials |
-| `DELETE` | `/api/v1/firebase-sync/pipelines/:id` | Xoá pipeline (cascade log) |
-| `GET` | `/api/v1/firebase-sync/pipelines/:id/log` | Log các lần sync gần đây |
-| `POST` | `/api/v1/firebase-sync/pipelines/:id/backfill` | Đẩy toàn bộ item khớp lên Firebase |
+| `POST` | `/api/v1/firebase-sync/pipelines` | Create a pipeline |
+| `GET` | `/api/v1/firebase-sync/pipelines` | List the site's pipelines |
+| `GET` | `/api/v1/firebase-sync/pipelines/:id` | Details (does not return credentials) |
+| `PATCH` | `/api/v1/firebase-sync/pipelines/:id` | Update config / rotate credentials |
+| `DELETE` | `/api/v1/firebase-sync/pipelines/:id` | Delete a pipeline (cascade log) |
+| `GET` | `/api/v1/firebase-sync/pipelines/:id/log` | Recent sync runs log |
+| `POST` | `/api/v1/firebase-sync/pipelines/:id/backfill` | Push all matching items to Firebase |
 
-## 6. Khớp pipeline với thay đổi
+## 6. Matching a pipeline to a change
 
-Một thay đổi item được sync tới pipeline khi **tất cả** đúng:
+An item change is synced to a pipeline when **all** of the following hold:
 
-1. Pipeline `status = 'active'`.
-2. `collections` rỗng (mọi collection) **hoặc** chứa machine-name của collection.
-3. Action được bật: `syncOnCreate` / `syncOnUpdate` / `syncOnDelete`.
+1. The pipeline has `status = 'active'`.
+2. `collections` is empty (every collection) **or** contains the collection's machine-name.
+3. The action is enabled: `syncOnCreate` / `syncOnUpdate` / `syncOnDelete`.
 
-Sync là best-effort theo từng pipeline: một pipeline lỗi được ghi log và chuyển `status='error'` + `statusMessage`, các pipeline khác vẫn chạy.
+Sync is best-effort per pipeline: a failing pipeline is logged and switched to `status='error'` + `statusMessage`, while the other pipelines still run.
 
 ## 7. Backfill
 
-`POST /pipelines/:id/backfill?limit=N` quét item chưa xoá (`deleted_at IS NULL`) của site, lọc theo collection của pipeline, và upsert lên Firebase. `limit` mặc định 500, tối đa 2000 mỗi lần gọi để nằm trong giới hạn CPU/thời gian của Worker; phân trang bằng các lần gọi lặp lại (response trả `truncated: true` khi chạm `limit`).
+`POST /pipelines/:id/backfill?limit=N` scans the site's non-deleted items (`deleted_at IS NULL`), filters by the pipeline's collections, and upserts them to Firebase. `limit` defaults to 500, with a maximum of 2000 per call to stay within the Worker's CPU/time limits; paginate with repeated calls (the response returns `truncated: true` when it hits `limit`).
 
-## 8. Lưu trữ
+## 8. Storage
 
-| Bảng | Mô tả |
+| Table | Description |
 |---|---|
-| `lumibase_firebase_sync_pipelines` | Cấu hình pipeline + credentials mã hoá + `lastSyncAt`/`lastSyncItemCount` |
-| `lumibase_firebase_sync_log` | Append-only: mỗi lần sync (collection, itemId, action, result, errorMessage, durationMs) |
+| `lumibase_firebase_sync_pipelines` | Pipeline config + encrypted credentials + `lastSyncAt`/`lastSyncItemCount` |
+| `lumibase_firebase_sync_log` | Append-only: each sync (collection, itemId, action, result, errorMessage, durationMs) |
 
-Migration: `packages/database/drizzle/0029_lumibase_firebase_sync.sql` (idempotent, chỉ `CREATE TABLE IF NOT EXISTS`). Xem thêm [data-model.md](../data-model.md).
+Migration: `packages/database/drizzle/0029_lumibase_firebase_sync.sql` (idempotent, only `CREATE TABLE IF NOT EXISTS`). See also [data-model.md](../data-model.md).
 
-## 9. Liên quan
+## 9. Related
 
-- [Webhooks](../api/hono-api-spec.md) — push event HTTP thuần (khác: Firebase Sync mirror nguyên item lên data store).
-- [ClickHouse CDC](../cdc/README.md) — replicate sang OLAP store (khác: CDC cho analytics, cần hạ tầng riêng; Firebase Sync nhẹ, per-pipeline qua API).
-- [Extension System](./extensions-system.md) — extension sandbox của cộng đồng.
+- [Webhooks](../api/hono-api-spec.md) — plain HTTP event push (difference: Firebase Sync mirrors the whole item into a data store).
+- [ClickHouse CDC](../cdc/README.md) — replication to an OLAP store (difference: CDC is for analytics and needs its own infrastructure; Firebase Sync is lightweight, per-pipeline via the API).
+- [Extension System](./extensions-system.md) — the community extension sandbox.

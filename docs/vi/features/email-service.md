@@ -1,8 +1,8 @@
 ---
 version: 1
-lastUpdated: 2026-06-22T11:37:06.122Z
+lastUpdated: 2026-06-23T09:48:37.000Z
 sourceLang: vi
-contentHash: 10c2a365a38fa9a2
+contentHash: edbefcc42100e9b8
 ---
 
 # Email Service

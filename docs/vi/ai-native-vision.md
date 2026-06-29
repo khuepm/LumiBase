@@ -1,8 +1,8 @@
 ---
 version: 1
-lastUpdated: 2026-06-22T11:37:06.122Z
+lastUpdated: 2026-06-23T09:48:37.000Z
 sourceLang: vi
-contentHash: 34a3085fca7cb92e
+contentHash: 576e46902420aee8
 ---
 
 # LumiBase AI-Native Vision — Tái định nghĩa CMS cho kỷ nguyên AI

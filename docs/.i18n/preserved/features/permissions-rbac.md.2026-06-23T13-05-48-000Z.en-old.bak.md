@@ -1,19 +1,10 @@
----
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
-sourceLang: vi
-contentHash: ad255fa4351bf7f9
----
-
 # Permissions, Roles & Policies
 
 > Mục tiêu: hệ phân quyền **mạnh nhất** trong nhóm OSS headless CMS. Hỗ trợ field-level, row-level, time-bound, IP-bound, attribute-based và composable policies.
 >
-> Xem thêm bản điều tra/blueprint chi tiết: [permission-builder-directus-investigation.md](./permission-builder-directus-investigation.md).
+> Current implementation audit: [permission-service-compose-audit.md](./permission-service-compose-audit.md).
 >
-> Audit implementation hiện tại: [permission-service-compose-audit.md](./permission-service-compose-audit.md).
->
-> Migration role flags sang policy flags: [role-policy-flag-migration.md](./role-policy-flag-migration.md).
+> Role flag migration strategy: [role-policy-flag-migration.md](./role-policy-flag-migration.md).
 
 ## 1. Mô hình
 
@@ -27,7 +18,7 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
 - **Policy**: đơn vị có thể tái sử dụng, gắn vào nhiều role/user, có thứ tự ưu tiên (`priority` thấp = chạy trước, sau cao override).
 - **Permission**: rule cụ thể `(collection, action)` với `permissions`, `validation`, `presets`, `fields`.
 
-> Ghi chú thiết kế 2026-06-03: Directus v11 đã chuyển `admin_access`, `app_access`, `enforce_tfa`, `ip_access` khỏi role và đặt trên policy. LumiBase hiện còn `roles.adminAccess/appAccess`; nên coi đây là compatibility layer và migrate về policy flags để role chỉ còn là grouping. Strategy chi tiết xem [Migration role flags sang policy flags](./role-policy-flag-migration.md).
+> Design note 2026-06-03: LumiBase still has `roles.adminAccess/appAccess` for compatibility. Treat these as legacy fallback and migrate to policy flags; see [Role Flag to Policy Flag Migration](./role-policy-flag-migration.md).
 
 ## 2. Permission record (JSON DSL)
 
@@ -58,8 +49,8 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
 - So sánh: `_eq`, `_neq`, `_lt`, `_lte`, `_gt`, `_gte`, `_in`, `_nin`, `_contains`, `_starts_with`, `_ends_with`, `_between`.
 - Date: `_dynamic` ví dụ `$NOW(-7 days)`.
 - Magic: `$CURRENT_USER`, `$CURRENT_ROLE`, `$CURRENT_SITE`, `$NOW`, `$IP`, `$HEADERS.x-foo`.
-- Magic mở rộng: `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$CURRENT_API_KEY`, `$CURRENT_USER.email`, `$CURRENT_USER.preferences.locale`, `$NOW(+2 hours)`, `$NOW(-7 days)`.
-- Unknown magic vars fail-closed; rule dùng biến không hỗ trợ sẽ không match.
+- Extended magic: `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$CURRENT_API_KEY`, `$CURRENT_USER.email`, `$CURRENT_USER.preferences.locale`, `$NOW(+2 hours)`, `$NOW(-7 days)`.
+- Unknown magic variables fail closed; rules using unsupported variables do not match.
 
 ## 3. Field-level
 
@@ -81,17 +72,15 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
 { "activeWindow": { "from": "2025-01-01T00:00:00Z", "to": "2025-12-31T23:59:59Z" }, "allowIps": ["10.0.0.0/8"], "denyIps": [] }
 ```
 - Đánh giá trước rules; reject sớm nếu ngoài cửa sổ.
-- Nên hỗ trợ IPv4, IPv6, CIDR và IP range. `ipDeny` thắng `ipAllow`.
-- Nếu policy không pass IP/time, loại policy đó khỏi chain thay vì deny toàn bộ principal.
 
 ## 5.1. App access, admin access, enforce TFA
 
-- `adminAccess=true` là bypass toàn bộ permission checks; policy admin không cần seed permission rows.
-- `appAccess=true` cho phép principal dùng Studio, không đồng nghĩa với quyền API. API-only user vẫn có thể gọi API nếu có permission rows nhưng bị chặn khỏi Studio.
-- Studio client phải gửi `X-Lumi-Client: studio`; backend dùng effective `appAccess` để gate các request này.
-- API key không bao giờ được dùng Studio dù policy có app access.
-- `enforceTfa=true` bắt buộc user đã enroll và session đã pass 2FA trước khi Studio request được dùng.
-- Không đặt các flag này trên user; user chỉ giữ identity/status/TFA enrollment.
+- `adminAccess=true` is full permission bypass for App and API; admin policies do not need permission rows.
+- `appAccess=true` allows the principal to use Studio. It is not an API permission.
+- Studio clients send `X-Lumi-Client: studio`; the backend gates those requests with effective `appAccess`.
+- API keys must never enter Studio, even if an attached policy has app access.
+- `enforceTfa=true` requires a user with enrolled TFA and a TFA-verified session before Studio requests can proceed.
+- Do not place these flags on users; users hold identity/status/TFA enrollment metadata only.
 
 ## 6. Composition & precedence
 
@@ -100,14 +89,6 @@ Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per
   - `permissions` rule: nối bằng `_or` (cấp quyền cộng dồn).
   - `validation`/`presets`: merge bằng `_and` / object spread theo `priority`.
 - Role `adminAccess=true` → bypass.
-
-Khuyến nghị mới: không âm thầm OR/union khi attach policy qua Studio. Backend cần conflict checker:
-
-- Block nếu một policy grant `{}` nhưng policy khác restrict cùng collection/action.
-- Block nếu một policy grant `["*"]` nhưng policy khác whitelist fields.
-- Block nếu `validation` hoặc `presets` cùng field nhưng khác value.
-- Warning nếu chỉ mở rộng field hoặc OR thêm rule có điều kiện; admin phải xác nhận và audit.
-- DB nên có unique `(policyId, collection, action)` để một policy không có nhiều permission rows trùng key.
 
 ## 7. API
 
@@ -121,14 +102,6 @@ Khuyến nghị mới: không âm thầm OR/union khi attach policy qua Studio. 
   - Page Policies: list + JSON editor + GUI builder (form per row).
   - Page Permission Matrix: bảng grid `collection × action`, click ô để mở chi tiết (fields, rules, presets, validation).
   - Page Test sandbox: simulate user → xem field mask, allowed rows.
-  - Page API Keys: tạo key, rotate/revoke, attach roles/policies, preview effective permissions.
-  - Role/Key attach flow: preview conflict trước khi lưu.
-
-## 8.1. Import / Export
-
-- `GET /access/export` xuất roles, policies, permission rows, role-policy bindings và API key metadata dưới dạng JSON versioned.
-- `POST /access/import?dryRun=true` trả diff/conflict, không ghi DB.
-- Import thật chạy transaction, dùng stable keys, audit đầy đủ, không bao giờ import/export plaintext API key.
 
 ## 9. Caching & invalidation
 
