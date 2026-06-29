@@ -31,9 +31,32 @@ import {
   AgentMemoryWriteInput,
   AgentRunResource,
   AgentToolResource,
+  SearchParams,
+  SearchResponse,
 } from "../types";
 
 export * from "./legacy";
+
+/**
+ * Full-text search via `GET /api/v1/search`. Omit `params.collection` for a
+ * cross-collection (global) search that fans out over every collection of the
+ * current site; pass it to scope to one collection. Diacritics-insensitive
+ * matching (e.g. "ha noi" → "Hà Nội") is handled server-side by MeiliSearch.
+ */
+export function search<Schema extends DefaultSchema>(query: string, params?: SearchParams) {
+  return async (client: LumiClient<Schema>): Promise<SearchResponse> => {
+    const qs = new URLSearchParams();
+    qs.set("q", query);
+    if (params?.collection) qs.set("collection", params.collection);
+    if (params?.filter) qs.set("filter", params.filter);
+    if (params?.sort?.length) qs.set("sort", params.sort.join(","));
+    if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params?.offset !== undefined) qs.set("offset", String(params.offset));
+
+    const res = await client.rawRequest<unknown>(`/api/v1/search?${qs.toString()}`);
+    return res as unknown as SearchResponse;
+  };
+}
 
 export function readItems<
   Schema extends DefaultSchema,
@@ -49,8 +72,7 @@ export function readItems<
     if (params?.limit !== undefined) qs.set("limit", String(params.limit));
     if (params?.offset !== undefined) qs.set("offset", String(params.offset));
     if (params?.status) qs.set("status", params.status);
-    if (params?.search) qs.set("search", params.search);
-    
+
     const s = qs.toString();
     const query = s ? `?${s}` : "";
 

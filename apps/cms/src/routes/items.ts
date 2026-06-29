@@ -23,7 +23,6 @@ const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
   status: z.string().optional(),
-  search: z.string().optional(),
 });
 
 const scheduleSchema = {
@@ -121,7 +120,6 @@ itemsRouter.get('/:collection', async (c) => {
       limit: parsed.data.limit,
       offset: parsed.data.offset,
       status: parsed.data.status,
-      search: parsed.data.search,
     });
     return c.json(result);
   } catch (err) {

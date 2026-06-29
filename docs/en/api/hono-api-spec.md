@@ -66,10 +66,14 @@ Error response:
 | `sort` | `sort=-updated_at,title` | Comma-separated, `-` prefix for DESC |
 | `page` | `page=2` | Page number (1-indexed) |
 | `limit` | `limit=25` | Items per page (max 200) |
-| `search` | `search=lumibase` | Full-text search on searchable fields |
 | `aggregate[count]` | `aggregate[count]=*` | Aggregate functions |
 | `groupBy` | `groupBy=status` | Group aggregation results |
 | `deep` | `deep[author][fields]=name,avatar` | Nested relation query params |
+
+> Full-text search is a **separate endpoint**, `GET /api/v1/search` (MeiliSearch),
+> not a list-endpoint parameter. It supports single-collection and
+> cross-collection (omit `collection`) queries and is diacritics-insensitive for
+> Vietnamese. See [features/search.md](../features/search.md).
 
 ### Filter operators
 

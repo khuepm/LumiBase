@@ -140,10 +140,52 @@ describe('GET /search', () => {
     expect(res.status).toBe(400);
   });
 
-  it('400s when collection is omitted (cross-collection unsupported)', async () => {
-    const app = buildApp({ search: makeSearch() });
-    const res = await app.request('/api/v1/search?q=hello');
-    expect(res.status).toBe(400);
+  it('fans out across readable site collections when collection is omitted', async () => {
+    // Per-collection authorization: both collections readable here.
+    vi.spyOn(PermissionService.prototype, 'canAccess').mockResolvedValue(allowAll);
+    vi.spyOn(PermissionService.prototype, 'matches').mockReturnValue(true);
+    const search = makeSearch();
+    const app = buildApp({
+      siteId: 'site_A',
+      collectionRows: [{ name: 'articles' }, { name: 'pages' }],
+      search,
+    });
+
+    const res = await app.request('/api/v1/search?q=ha+noi');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: unknown[]; meta: Record<string, unknown> };
+
+    // One scoped search per readable site collection.
+    expect(search.search).toHaveBeenCalledTimes(2);
+    const indexNames = search.search.mock.calls.map((c) => c[0]);
+    expect(indexNames).toContain(searchIndexName('site_A', 'articles'));
+    expect(indexNames).toContain(searchIndexName('site_A', 'pages'));
+    // Hits are tagged with their collection.
+    expect(body.meta.collections).toEqual(['articles', 'pages']);
+    expect((body.data[0] as { _collection?: string })._collection).toBeDefined();
+  });
+
+  it('skips collections the caller cannot read in cross-collection search', async () => {
+    // 'articles' readable, 'pages' not.
+    vi.spyOn(PermissionService.prototype, 'canAccess').mockImplementation(
+      async (collection?: string) => (collection === 'articles' ? allowAll : null),
+    );
+    vi.spyOn(PermissionService.prototype, 'matches').mockReturnValue(true);
+    const search = makeSearch();
+    const app = buildApp({
+      siteId: 'site_A',
+      collectionRows: [{ name: 'articles' }, { name: 'pages' }],
+      search,
+    });
+
+    const res = await app.request('/api/v1/search?q=ha+noi');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { meta: Record<string, unknown> };
+
+    // Only the readable collection is searched and reported.
+    expect(search.search).toHaveBeenCalledTimes(1);
+    expect(search.search.mock.calls[0]?.[0]).toBe(searchIndexName('site_A', 'articles'));
+    expect(body.meta.collections).toEqual(['articles']);
   });
 
   it('503s when no search provider is configured', async () => {

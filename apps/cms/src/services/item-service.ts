@@ -63,7 +63,6 @@ export interface ListItemsParams {
   limit?: number;
   offset?: number;
   status?: string | null;
-  search?: string;
 }
 
 export type ItemFilterOp =
