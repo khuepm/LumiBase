@@ -15,3 +15,4 @@ export * from './cdc';
 export * from './content-os';
 export * from './firebase-sync';
 export * from './regulated';
+export * from './deployments';

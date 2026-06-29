@@ -35,6 +35,7 @@ import { restrictionRouter } from './routes/restriction';
 import { retentionRouter } from './routes/retention';
 import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
+import { deploymentsRouter, deploymentsWebhookRouter } from './routes/deployments';
 import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
 import { flowsRouter } from './routes/flows';
@@ -169,6 +170,13 @@ app.route('/api/v1/admin/security', recoveryRouter);
 app.use('/scim/v2/*', withDb());
 app.route('/scim/v2', scimRouter);
 
+// Inbound deployment status webhook. PUBLIC / pre-auth on purpose: the
+// provider (Vercel/Netlify) authenticates via request signature, not a bearer
+// token. Needs `withTenant` (X-Lumi-Site → siteId) + `withDb` to update the
+// `deployments` row; `withRuntime` already ran globally for the KeyProvider.
+app.use('/api/v1/deployments/webhook/*', withTenant(), withDb());
+app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
+
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
 api.use('*', withTenant(), withDb(), withAuth(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
@@ -216,6 +224,7 @@ api.route('/users', usersRouter);
 api.route('/teams', teamsRouter);
 api.route('/files', filesRouter);
 api.route('/webhooks', webhooksRouter);
+api.route('/deployments', deploymentsRouter);
 api.route('/email', emailRouter);
 api.route('/activity', activityRouter);
 api.route('/realtime', realtimeRouter);
