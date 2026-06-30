@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { confirmDescription, okText, run } from './_shared.js';
+import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 const materializeSchema = z.object({
   collection: z.string().min(1).describe('Source collection name.'),
@@ -59,29 +60,29 @@ export function registerAdminTools(server: McpServer, client: LumiBaseClient) {
     'refresh_materialization',
     {
       description: 'Refresh a materialized collection (truncate + re-insert from source).',
-      inputSchema: { id: z.string().min(1) },
+      inputSchema: { id: idPathSegmentSchema },
     },
-    async ({ id }) => run(() => client.post<unknown>(`/materialize/${id}/refresh`, {})),
+    async ({ id }) => run(() => client.post<unknown>(`/materialize/${encodePathSegment(id)}/refresh`, {})),
   );
 
   server.registerTool(
     'query_materialization',
     {
       description: 'Query the physical table of a materialized collection directly.',
-      inputSchema: { id: z.string().min(1) },
+      inputSchema: { id: idPathSegmentSchema },
     },
-    async ({ id }) => run(() => client.get<unknown>(`/materialize/${id}/data`)),
+    async ({ id }) => run(() => client.get<unknown>(`/materialize/${encodePathSegment(id)}/data`)),
   );
 
   server.registerTool(
     'drop_materialization',
     {
       description: 'Drop a materialized collection (physical table + metadata). DESTRUCTIVE — pass confirm=true.',
-      inputSchema: { id: z.string().min(1), confirm: z.literal(true).describe(confirmDescription) },
+      inputSchema: { id: idPathSegmentSchema, confirm: z.literal(true).describe(confirmDescription) },
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/materialize/${id}`);
+        await client.delete(`/materialize/${encodePathSegment(id)}`);
         return okText(`Materialization "${id}" dropped.`);
       }),
   );

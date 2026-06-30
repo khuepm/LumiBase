@@ -23,3 +23,24 @@ export const idPathSegmentSchema = z
 export function encodePathSegment(segment: string): string {
   return encodeURIComponent(segment);
 }
+
+/**
+ * Storage keys are multi-segment (`folder/sub/asset.png`), so unlike opaque ids
+ * they may legitimately contain `/`. Mirror the server-side guard
+ * (`apps/cms/src/routes/media.ts` → `isInvalidKey`): reject `..` traversal,
+ * leading `/`, and backslashes, while preserving internal `/`.
+ */
+export const mediaKeySchema = z
+  .string()
+  .min(1)
+  .refine((value) => !value.includes('..'), 'Must not contain ".."')
+  .refine((value) => !value.startsWith('/'), 'Must not start with "/"')
+  .refine((value) => !value.includes('\\'), 'Must not contain backslashes');
+
+/** Percent-encode each `/`-delimited segment of a storage key, preserving separators. */
+export function encodeMediaKey(key: string): string {
+  return key
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
