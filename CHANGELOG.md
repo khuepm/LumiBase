@@ -9,7 +9,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **CMS / deployments:** Flow operations `deploy:trigger` and `deploy:status`,
+  completing the auto-deploy-on-content-change path promised by deployment
+  integrations (Req 5). A Flow with an `event` trigger can now deploy a target
+  via `deploy:trigger` (`triggerSource='auto'`, linked to the flow run for
+  provenance) and branch on `deploy:status`. Both reuse the shared
+  `DeploymentService` — same encrypted-token, SSRF and audit guards as the
+  manual API — and receive `db`/`siteId`/`keys`/`runId` from the flow run
+  environment.
 
 ## [0.13.0] - 2026-06-30
 
