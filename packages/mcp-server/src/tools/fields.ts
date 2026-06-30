@@ -1,8 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { type LumiBaseClient, LumiBaseApiError } from '../client.js';
-
-const namePattern = /^[a-z][a-z0-9_]{0,62}$/;
+import { collectionNameSchema, encodePathSegment, fieldNameSchema } from './path.js';
 
 const fieldInputSchema = z.object({
   type: z.string().min(1).describe(
@@ -36,9 +35,7 @@ const fieldInputSchema = z.object({
   width: z.enum(['half', 'full', 'fill']).optional().default('full'),
   group: z.string().optional(),
   sortOrder: z.number().int().optional(),
-  renameFrom: z
-    .string()
-    .regex(namePattern)
+  renameFrom: fieldNameSchema
     .optional()
     .describe('Previous field name if this is a rename operation'),
   confirmRiskyChange: z
@@ -60,12 +57,12 @@ export function registerFieldTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'List all fields in a collection, including system fields.',
       inputSchema: {
-        collection: z.string().min(1),
+        collection: collectionNameSchema,
       },
     },
     async ({ collection }) => {
       try {
-        const data = await client.get<unknown[]>(`/collections/${collection}/fields`);
+        const data = await client.get<unknown[]>(`/collections/${encodePathSegment(collection)}/fields`);
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };
@@ -82,18 +79,15 @@ export function registerFieldTools(server: McpServer, client: LumiBaseClient) {
         'Common types: string (varchar), text (longtext), integer, boolean, dateTime, json, uuid. ' +
         'Common interfaces: input, textarea, datetime, toggle, select, file, markdown.',
       inputSchema: {
-        collection: z.string().min(1),
-        field_name: z
-          .string()
-          .regex(namePattern, 'Must be lowercase snake_case, start with a letter')
-          .describe('Machine name of the field'),
+        collection: collectionNameSchema,
+        field_name: fieldNameSchema.describe('Machine name of the field'),
         ...fieldInputSchema.shape,
       },
     },
     async ({ collection, field_name, ...fieldInput }) => {
       try {
         const data = await client.put<unknown>(
-          `/collections/${collection}/fields/${field_name}`,
+          `/collections/${encodePathSegment(collection)}/fields/${encodePathSegment(field_name)}`,
           fieldInput,
         );
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
@@ -111,8 +105,8 @@ export function registerFieldTools(server: McpServer, client: LumiBaseClient) {
         'Data stored in this field will be lost. ' +
         'Pass confirm=true to confirm the destructive operation.',
       inputSchema: {
-        collection: z.string().min(1),
-        field_name: z.string().min(1),
+        collection: collectionNameSchema,
+        field_name: fieldNameSchema,
         confirm: z.literal(true).describe('Must be true to confirm destructive operation'),
         force: z.boolean().optional().describe('Force deletion even if risky (foreign keys, etc.)'),
       },
@@ -120,7 +114,9 @@ export function registerFieldTools(server: McpServer, client: LumiBaseClient) {
     async ({ collection, field_name, force }) => {
       try {
         const qs = force ? '?force=true' : '';
-        await client.delete(`/collections/${collection}/fields/${field_name}${qs}`);
+        await client.delete(
+          `/collections/${encodePathSegment(collection)}/fields/${encodePathSegment(field_name)}${qs}`,
+        );
         return {
           content: [{ type: 'text', text: `Field "${field_name}" deleted from "${collection}".` }],
         };
