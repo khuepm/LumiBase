@@ -195,4 +195,14 @@ describe('path-parameter hardening', () => {
     await tools.get('delete_media')!.handler({ key: 'folder/a b.png', confirm: true });
     expect(calls).toContainEqual({ method: 'DELETE', path: '/media/folder/a%20b.png', body: undefined });
   });
+
+  it('setting keys allow dots but reject traversal', () => {
+    const { server, tools } = fakeServer();
+    const { client } = fakeClient();
+    registerAllTools(server as never, client);
+    const keySchema = tools.get('get_setting')!.config.inputSchema!['key']!;
+    expect(keySchema.safeParse('contentOs.mcp').success).toBe(true);
+    expect(keySchema.safeParse('..').success).toBe(false);
+    expect(keySchema.safeParse('a/b').success).toBe(false);
+  });
 });
