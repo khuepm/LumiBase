@@ -189,6 +189,31 @@ function isWriteSkill(tool: { requiredCapabilities?: unknown }): boolean {
 }
 
 /**
+ * Pure classifier: is this skill a control-plane / dangerous operation?
+ *
+ * Mirrors {@link AISecureHarness.evaluateRisk} exactly so callers outside the
+ * harness (e.g. the MCP route's admin backstop) agree byte-for-byte on which
+ * skills are control-plane. A skill is control-plane when it is explicitly
+ * flagged `dangerous`, requires a mutating `schema:*` capability, or its name
+ * starts with `delete` (covers `deleteCollection`, `deleteRole`, …). Keep this
+ * and `evaluateRisk` in lockstep.
+ */
+export function isControlPlaneSkill(
+  skill: Pick<SkillDefinition, 'requiredCapabilities' | 'dangerous'>,
+  skillName: string,
+): boolean {
+  if (skill.dangerous) return true;
+  if (
+    skill.requiredCapabilities.some(
+      (capability) => capability.startsWith('schema:') && capability !== 'schema:read',
+    )
+  ) {
+    return true;
+  }
+  return skillName.startsWith('delete');
+}
+
+/**
  * Skills whose effects cannot be reverted from revisions (dropped schema
  * loses data). The autonomy resolver hard-caps them at L2 — they never
  * stage into the veto window or run on autopilot (Req 12.7).
@@ -1722,16 +1747,7 @@ export class AISecureHarness {
    * @returns true if the skill is classified as dangerous, false otherwise.
    */
   evaluateRisk(skill: SkillDefinition, skillName: string): boolean {
-    if (skill.dangerous) {
-      return true;
-    }
-    if (skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read')) {
-      return true;
-    }
-    if (skillName.startsWith('delete')) {
-      return true;
-    }
-    return false;
+    return isControlPlaneSkill(skill, skillName);
   }
 
   // ---------- Execution ----------
