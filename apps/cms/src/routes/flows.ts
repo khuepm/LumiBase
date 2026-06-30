@@ -131,9 +131,15 @@ flowsRouter.post('/:id/run', async (c) => {
     .values({ siteId, flowId: id, status: 'running', input })
     .returning();
 
-  // `db`/`siteId` in env let runtime-bound operations (drift-scan…) execute
-  // tenant-scoped without widening the operation options surface.
-  const result = await runFlow(flow.graph as FlowGraph, input, { db, siteId });
+  // `db`/`siteId`/`keys`/`runId` in env let runtime-bound operations
+  // (drift-scan, deploy:trigger…) execute tenant-scoped with access to the
+  // KeyProvider, without widening the operation options surface.
+  const result = await runFlow(flow.graph as FlowGraph, input, {
+    db,
+    siteId,
+    keys: c.get('runtime').keys,
+    runId: run!.id,
+  });
 
   await db
     .update(flowRuns)
