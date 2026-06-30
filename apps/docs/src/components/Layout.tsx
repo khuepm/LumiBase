@@ -94,6 +94,15 @@ export function Layout() {
           </button>
           <span className="ml-3 text-sm font-semibold md:hidden">{siteConfig.title} Docs</span>
           <span className="hidden text-sm font-semibold md:inline">{siteConfig.title} Docs</span>
+          <a
+            href={`https://github.com/khuepm/lumibase/releases/tag/v${__APP_VERSION__}`}
+            target="_blank"
+            rel="noreferrer"
+            title={t('version.badge-tooltip')}
+            className="ml-2 inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+          >
+            v{__APP_VERSION__}
+          </a>
           <nav aria-label="Primary" className="ml-6 hidden items-center gap-4 md:flex">
             {siteConfig.navbar.items
               .filter((item) => item.position !== 'right')

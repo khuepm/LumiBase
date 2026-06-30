@@ -1,8 +1,14 @@
 import path from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
+import pkg from './package.json';
 
 export default defineConfig({
+  // Mirror the build-time constant so components reading `__APP_VERSION__`
+  // render correctly under the test environment.
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [react()],
   resolve: {
     alias: {
