@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -247,6 +249,8 @@ export const shares = pgTable(
     siteCollectionItemIdx: index('shares_site_collection_item_idx').on(t.siteId, t.collection, t.itemId),
     siteRoleIdx: index('shares_site_role_idx').on(t.siteId, t.roleId),
     siteRevokedIdx: index('shares_site_revoked_idx').on(t.siteId, t.revokedAt),
+    maxUsesPositive: check('shares_max_uses_positive', sql`${t.maxUses} is null or ${t.maxUses} >= 1`),
+    usedCountNonNegative: check('shares_used_count_non_negative', sql`${t.usedCount} >= 0`),
   }),
 );
 

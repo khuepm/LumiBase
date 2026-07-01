@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { boolean, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
@@ -342,6 +343,9 @@ export const agentApprovals = pgTable(
     siteStatusIdx: index('agent_approvals_site_status_idx').on(t.siteId, t.status),
     runCreatedIdx: index('agent_approvals_run_created_idx').on(t.runId, t.createdAt),
     subjectIdx: index('agent_approvals_subject_idx').on(t.subjectType, t.subjectId),
+    vetoDueIdx: index('agent_approvals_veto_due_idx')
+      .on(t.siteId, t.autoCommitAt)
+      .where(sql`${t.kind} = 'veto' and ${t.status} = 'pending'`),
   }),
 );
 

@@ -6,9 +6,9 @@
 -- primary gate; RLS is a safety net if those checks are ever bypassed.
 --
 -- Prerequisites:
---   1. Run this migration AFTER all table-creation migrations
---      (including 0039_lumibase_prefix, which renames every system table
---      to the `lumibase_` namespace — these policies target the new names).
+--   1. Run this migration AFTER the schema migration (0000_lumibase_init),
+--      which creates every system table in the `lumibase_` namespace — these
+--      policies target those names.
 --   2. The Postgres role used by Hyperdrive must NOT be a superuser.
 --      Use a dedicated `lumibase_app` role with GRANT on all tables.
 --   3. Declare the custom setting in postgresql.conf or via ALTER DATABASE:

@@ -4,10 +4,10 @@ This document describes the tables declared in `packages/database/src/schema/`. 
 
 Every tenant-scoped domain table has `site_id`.
 
-> **Physical table names carry a `lumibase_` prefix.** As of migration
-> `0039_lumibase_prefix`, every LumiBase system table is physically named
-> `lumibase_<name>` (e.g. the logical `users` table is physically
-> `lumibase_users`). This reserves the `lumibase_` namespace for the platform,
+> **Physical table names carry a `lumibase_` prefix.** Every LumiBase system table
+> is physically named `lumibase_<name>` (e.g. the logical `users` table is physically
+> `lumibase_users`), created by the `0000_lumibase_init` migration. This reserves the
+> `lumibase_` namespace for the platform,
 > so any table WITHOUT that prefix is unambiguously user-created (or a `mat_*`
 > materialization). See [ADR-010](./architecture/decisions/adr-010-lumibase-table-prefix.md).
 > The section headings below use the short logical name for readability; the

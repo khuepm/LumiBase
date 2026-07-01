@@ -11,11 +11,15 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Changed
 
-- **All system tables now carry a `lumibase_` prefix.** Every built-in table was
-  renamed (e.g. `users` → `lumibase_users`, `agent_runs` → `lumibase_agent_runs`)
-  so the `lumibase_` namespace is reserved for the platform and any table without
-  it is unambiguously user-created. Drizzle ORM code is unaffected (table `const`
-  exports keep their names). See [ADR-010](docs/en/architecture/decisions/adr-010-lumibase-table-prefix.md).
+- **All system tables now carry a `lumibase_` prefix.** Every built-in table is
+  named `lumibase_<name>` (e.g. `lumibase_users`, `lumibase_agent_runs`) so the
+  `lumibase_` namespace is reserved for the platform and any table without it is
+  unambiguously user-created. Drizzle ORM code is unaffected (table `const` exports
+  keep their names). See [ADR-010](docs/en/architecture/decisions/adr-010-lumibase-table-prefix.md).
+- **Migration history squashed.** The legacy migrations were collapsed into a single
+  `0000_lumibase_init` generated from the schema; the schema now fully expresses the
+  `shares` CHECK constraints and the `agent_approvals_veto_due_idx` partial index, and
+  the Drizzle snapshots were regenerated clean (no drift).
 
 ### Fixed
 
@@ -25,11 +29,10 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Migrations
 
-- **Back up your database before upgrading.** Run migration `0039_lumibase_prefix`
-  (`pnpm -F @lumibase/database migrate`) — it renames tables in place with
-  `ALTER TABLE … RENAME TO`, preserving all rows, foreign keys and indexes — then
-  **re-apply** `packages/database/migrations/rls-policies.sql`, which now targets
-  the `lumibase_*` names.
+- **Breaking, fresh-install only — no upgrade path from a pre-prefix database.**
+  Create the schema from scratch: `pnpm -F @lumibase/database migrate` (applies
+  `0000_lumibase_init`), then apply `packages/database/migrations/rls-policies.sql`.
+  An existing pre-prefix database must be dropped and recreated.
 
 ## [0.13.0] - 2026-06-30
 
