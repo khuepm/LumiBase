@@ -23,7 +23,7 @@ const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
 export const folders = pgTable(
-  'folders',
+  'lumibase_folders',
   {
     id: id(),
     siteId: text('site_id')
@@ -39,7 +39,7 @@ export const folders = pgTable(
 );
 
 export const files = pgTable(
-  'files',
+  'lumibase_files',
   {
     id: id(),
     siteId: text('site_id')
@@ -65,7 +65,7 @@ export const files = pgTable(
 );
 
 export const presets = pgTable(
-  'presets',
+  'lumibase_presets',
   {
     id: id(),
     siteId: text('site_id')
@@ -95,7 +95,7 @@ export const presets = pgTable(
 );
 
 export const translations = pgTable(
-  'translations',
+  'lumibase_translations',
   {
     id: id(),
     siteId: text('site_id')
@@ -121,7 +121,7 @@ export const translations = pgTable(
 );
 
 export const settings = pgTable(
-  'settings',
+  'lumibase_settings',
   {
     id: id(),
     siteId: text('site_id')
@@ -139,7 +139,7 @@ export const settings = pgTable(
 );
 
 export const webhooks = pgTable(
-  'webhooks',
+  'lumibase_webhooks',
   {
     id: id(),
     siteId: text('site_id')
@@ -161,7 +161,7 @@ export const webhooks = pgTable(
 );
 
 export const extensions = pgTable(
-  'extensions',
+  'lumibase_extensions',
   {
     id: id(),
     /** Null = globally available; otherwise scoped to a single site. */
@@ -216,7 +216,7 @@ export const extensions = pgTable(
  * one place and templates stay focused on their message.
  */
 export const emailLayouts = pgTable(
-  'email_layouts',
+  'lumibase_email_layouts',
   {
     id: id(),
     siteId: text('site_id')
@@ -243,7 +243,7 @@ export const emailLayouts = pgTable(
  * engine for missing-variable warnings.
  */
 export const emailTemplates = pgTable(
-  'email_templates',
+  'lumibase_email_templates',
   {
     id: id(),
     siteId: text('site_id')
@@ -281,7 +281,7 @@ export const emailTemplates = pgTable(
  * during translation work and as a corpus to fine-tune MT output.
  */
 export const translationMemory = pgTable(
-  'translation_memory',
+  'lumibase_translation_memory',
   {
     id: id(),
     siteId: text('site_id')
@@ -315,7 +315,7 @@ export const translationMemory = pgTable(
  * (or kept verbatim). Higher priority than fuzzy TM matches.
  */
 export const glossary = pgTable(
-  'glossary',
+  'lumibase_glossary',
   {
     id: id(),
     siteId: text('site_id')

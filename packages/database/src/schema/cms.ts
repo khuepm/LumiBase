@@ -26,7 +26,7 @@ const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
 /** Page-builder pages (kept from initial scaffold; consumed by /deliver). */
 export const pages = pgTable(
-  'pages',
+  'lumibase_pages',
   {
     id: id(),
     siteId: text('site_id')
@@ -45,7 +45,7 @@ export const pages = pgTable(
 );
 
 export const collections = pgTable(
-  'collections',
+  'lumibase_collections',
   {
     id: id(),
     siteId: text('site_id')
@@ -86,7 +86,7 @@ export const collections = pgTable(
 );
 
 export const fields = pgTable(
-  'fields',
+  'lumibase_fields',
   {
     id: id(),
     siteId: text('site_id')
@@ -147,7 +147,7 @@ export const fields = pgTable(
 );
 
 export const relations = pgTable(
-  'relations',
+  'lumibase_relations',
   {
     id: id(),
     siteId: text('site_id')
@@ -182,7 +182,7 @@ export const relations = pgTable(
  * a Phase-2 optimization.
  */
 export const items = pgTable(
-  'items',
+  'lumibase_items',
   {
     id: id(),
     siteId: text('site_id')
@@ -242,7 +242,7 @@ export const items = pgTable(
 );
 
 export const revisions = pgTable(
-  'revisions',
+  'lumibase_revisions',
   {
     id: id(),
     siteId: text('site_id')
@@ -286,7 +286,7 @@ export const revisions = pgTable(
 );
 
 export const activity = pgTable(
-  'activity',
+  'lumibase_activity',
   {
     id: id(),
     siteId: text('site_id')
@@ -319,7 +319,7 @@ export const activity = pgTable(
 // ---------------------------------------------------------------------------
 
 export const flows = pgTable(
-  'flows',
+  'lumibase_flows',
   {
     id: id(),
     siteId: text('site_id')
@@ -348,7 +348,7 @@ export const flows = pgTable(
 );
 
 export const flowRuns = pgTable(
-  'flow_runs',
+  'lumibase_flow_runs',
   {
     id: id(),
     siteId: text('site_id')
@@ -376,7 +376,7 @@ export const flowRuns = pgTable(
 );
 
 export const operations = pgTable(
-  'operations',
+  'lumibase_operations',
   {
     id: id(),
     siteId: text('site_id')
@@ -410,7 +410,7 @@ export const operations = pgTable(
 // ---------------------------------------------------------------------------
 
 export const materializedCollections = pgTable(
-  'materialized_collections',
+  'lumibase_materialized_collections',
   {
     id: id(),
     siteId: text('site_id')
@@ -452,7 +452,7 @@ export const materializedCollections = pgTable(
  * See `.kiro/specs/insights-dashboard`.
  */
 export const dashboards = pgTable(
-  'dashboards',
+  'lumibase_dashboards',
   {
     id: id(),
     siteId: text('site_id')
@@ -476,7 +476,7 @@ export const dashboards = pgTable(
  * `PanelQuery` (see `@lumibase/shared`); `position` is the grid placement.
  */
 export const panels = pgTable(
-  'panels',
+  'lumibase_panels',
   {
     id: id(),
     siteId: text('site_id')
@@ -509,7 +509,7 @@ export const panels = pgTable(
  * revision). See `.kiro/specs/content-versioning`.
  */
 export const contentVersions = pgTable(
-  'content_versions',
+  'lumibase_content_versions',
   {
     id: id(),
     siteId: text('site_id')

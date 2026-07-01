@@ -9,7 +9,27 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Changed
+
+- **All system tables now carry a `lumibase_` prefix.** Every built-in table was
+  renamed (e.g. `users` → `lumibase_users`, `agent_runs` → `lumibase_agent_runs`)
+  so the `lumibase_` namespace is reserved for the platform and any table without
+  it is unambiguously user-created. Drizzle ORM code is unaffected (table `const`
+  exports keep their names). See [ADR-010](docs/en/architecture/decisions/adr-010-lumibase-table-prefix.md).
+
+### Fixed
+
+- `rls-policies.sql`: fixed a pre-existing nested `$$` dollar-quote bug in the RLS
+  `DO` block (the inner `CREATE POLICY` string now uses a `$pol$` tag) so the script
+  applies via `psql` without a syntax error.
+
+### Migrations
+
+- **Back up your database before upgrading.** Run migration `0039_lumibase_prefix`
+  (`pnpm -F @lumibase/database migrate`) — it renames tables in place with
+  `ALTER TABLE … RENAME TO`, preserving all rows, foreign keys and indexes — then
+  **re-apply** `packages/database/migrations/rls-policies.sql`, which now targets
+  the `lumibase_*` names.
 
 ## [0.13.0] - 2026-06-30
 

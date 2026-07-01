@@ -161,7 +161,7 @@ export async function refreshPhysicalTable(
   await db.execute(sql.raw(`
     INSERT INTO ${tableName} (id, site_id, collection_id, status, data, sort, user_created, user_updated, created_at, updated_at)
     SELECT i.id, i.site_id, i.collection_id, i.status, ${dataProjection}, i.sort, i.user_created, i.user_updated, i.created_at, i.updated_at
-    FROM items i
+    FROM lumibase_items i
     WHERE i.site_id = '${config.siteId.replace(/'/g, "''")}'
       AND i.collection_id = '${coll.id.replace(/'/g, "''")}'
       AND i.deleted_at IS NULL
@@ -243,9 +243,9 @@ export async function installAutoRefreshTrigger(
 
   // Create the trigger
   await db.execute(sql.raw(`
-    DROP TRIGGER IF EXISTS ${triggerName} ON items;
+    DROP TRIGGER IF EXISTS ${triggerName} ON lumibase_items;
     CREATE TRIGGER ${triggerName}
-    AFTER INSERT OR UPDATE OR DELETE ON items
+    AFTER INSERT OR UPDATE OR DELETE ON lumibase_items
     FOR EACH ROW
     WHEN (NEW.collection_id = '${coll.id}' OR OLD.collection_id = '${coll.id}')
     EXECUTE FUNCTION ${triggerName}_fn()
@@ -265,7 +265,7 @@ export async function removeAutoRefreshTrigger(
   )}`;
 
   await db.execute(sql.raw(`
-    DROP TRIGGER IF EXISTS ${triggerName} ON items;
+    DROP TRIGGER IF EXISTS ${triggerName} ON lumibase_items;
     DROP FUNCTION IF EXISTS ${triggerName}_fn();
   `));
 }
