@@ -1,21 +1,33 @@
 import Link from "next/link";
-import { Github, Twitter, Terminal } from "lucide-react";
 
 const columns = [
   {
     title: "Product",
     links: [
-      { label: "Documentation", href: "https://docs.lumibase.dev", external: true },
-      { label: "Content OS vision", href: "https://docs.lumibase.dev/en/ai-native-vision.md", external: true },
-      { label: "GitHub", href: "https://github.com/khuepm/lumibase", external: true },
+      { label: "AI Harness", href: "/#ai-harness", external: false },
+      { label: "Content OS", href: "/#content-os", external: false },
+      { label: "Studio", href: "/#studio", external: false },
+      { label: "Runtime", href: "/#runtime", external: false },
       { label: "Pricing", href: "/pricing", external: false },
+    ],
+  },
+  {
+    title: "Developers",
+    links: [
+      { label: "Docs", href: "https://docs.lumibase.dev", external: true },
+      {
+        label: "Content OS vision",
+        href: "https://docs.lumibase.dev/en/ai-native-vision.md",
+        external: true,
+      },
+      { label: "GitHub", href: "https://github.com/khuepm/lumibase", external: true },
     ],
   },
   {
     title: "Legal",
     links: [
-      { label: "Terms of Service", href: "/tos", external: false },
-      { label: "Privacy Policy", href: "/privacy", external: false },
+      { label: "Privacy", href: "/privacy", external: false },
+      { label: "Terms", href: "/tos", external: false },
       { label: "License (MIT)", href: "/license", external: false },
     ],
   },
@@ -23,77 +35,109 @@ const columns = [
 
 export default function Footer() {
   return (
-    <footer className="border-t border-ink-700 bg-ink-950">
-      <div className="mx-auto max-w-6xl px-6 py-14">
-        <div className="grid gap-10 md:grid-cols-4">
-          {/* Brand */}
-          <div className="md:col-span-2 space-y-4">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md border border-signal-500/40 bg-signal-500/10 text-signal-400">
-                <Terminal className="h-4 w-4" />
-              </div>
-              <span className="font-mono text-lg font-semibold text-foreground">
-                Lumi<span className="text-signal-400">Base</span>
-              </span>
-            </div>
-            <p className="max-w-sm text-sm leading-6 text-gray-500">
-              The Content Operating System. Declare intent, let governed agents
-              converge your content, keep the veto. Edge-native, AI-native,
-              open source under MIT.
-            </p>
-            <div className="flex gap-3 pt-1">
-              <Link
-                href="https://github.com/khuepm/lumibase"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-gray-500 transition-colors hover:text-signal-400"
-                aria-label="GitHub"
-              >
-                <Github className="h-5 w-5" />
-              </Link>
-              <Link
-                href="https://twitter.com/lumibase"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-gray-500 transition-colors hover:text-signal-400"
-                aria-label="Twitter"
-              >
-                <Twitter className="h-5 w-5" />
-              </Link>
-            </div>
+    <footer className="mx-auto w-full max-w-[1200px] px-5 pb-14 pt-[100px] md:pt-[140px]">
+      <div className="flex flex-col justify-between gap-12 md:flex-row">
+        {/* Brand */}
+        <div className="max-w-[280px]">
+          <div className="mb-3.5 flex items-center gap-2.5">
+            <span className="sphere-logo h-[22px] w-[22px]" />
+            <span
+              className="text-white"
+              style={{ font: "700 18px/1 var(--font-sans, inherit)", letterSpacing: "-0.4px" }}
+            >
+              LumiBase
+            </span>
           </div>
+          <p
+            className="mb-[18px] mt-0"
+            style={{
+              font: "500 14px/22px var(--font-sans, inherit)",
+              color: "var(--color-text-muted)",
+            }}
+          >
+            The Content Operating System for the AI era. Open source under MIT.
+          </p>
+          <Link
+            href="https://github.com/khuepm/lumibase"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-pill btn-solid h-10 px-[18px] text-[13px]"
+          >
+            <span>Start building</span>
+          </Link>
+        </div>
 
+        {/* Link columns */}
+        <div className="flex flex-wrap gap-x-16 gap-y-10">
           {columns.map((col) => (
             <div key={col.title}>
-              <h3 className="mb-4 font-mono text-xs font-semibold uppercase tracking-widest text-gray-500">
+              <div
+                className="mb-4 text-white"
+                style={{ font: "600 13px/1 var(--font-sans, inherit)" }}
+              >
                 {col.title}
-              </h3>
-              <ul className="space-y-2.5">
+              </div>
+              <div className="flex flex-col gap-3">
                 {col.links.map((link) => (
-                  <li key={link.label}>
-                    <Link
-                      href={link.href}
-                      {...(link.external
-                        ? { target: "_blank", rel: "noopener noreferrer" }
-                        : {})}
-                      className="text-sm text-gray-400 transition-colors hover:text-signal-400"
-                    >
-                      {link.label}
-                    </Link>
-                  </li>
+                  <Link
+                    key={link.label}
+                    href={link.href}
+                    {...(link.external
+                      ? { target: "_blank", rel: "noopener noreferrer" }
+                      : {})}
+                    className="transition-colors hover:text-white"
+                    style={{
+                      font: "500 14px/1 var(--font-sans, inherit)",
+                      color: "var(--color-text-muted)",
+                      textDecoration: "none",
+                    }}
+                  >
+                    {link.label}
+                  </Link>
                 ))}
-              </ul>
+              </div>
             </div>
           ))}
         </div>
+      </div>
 
-        <div className="mt-12 flex flex-col items-center justify-between gap-2 border-t border-ink-700 pt-8 text-sm text-gray-500 sm:flex-row">
-          <p className="font-mono text-xs">
-            © {new Date().getFullYear()} LumiBase · MIT
-          </p>
-          <p className="font-mono text-xs text-gray-600">
-            built at the edge · operated by agents
-          </p>
+      <div
+        className="mt-16 flex flex-col items-center justify-between gap-3 pt-6 sm:flex-row"
+        style={{
+          borderTop: "1px solid var(--color-border)",
+          font: "500 13px/1 var(--font-sans, inherit)",
+          color: "var(--color-text-muted)",
+        }}
+      >
+        <span>© {new Date().getFullYear()} LumiBase · MIT</span>
+        <div className="flex gap-[18px]">
+          <Link
+            href="https://twitter.com/lumibase"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="transition-colors hover:text-white"
+            style={{ color: "inherit", textDecoration: "none" }}
+          >
+            Twitter
+          </Link>
+          <Link
+            href="https://github.com/khuepm/lumibase/discussions"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="transition-colors hover:text-white"
+            style={{ color: "inherit", textDecoration: "none" }}
+          >
+            Community
+          </Link>
+          <Link
+            href="https://github.com/khuepm/lumibase"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="transition-colors hover:text-white"
+            style={{ color: "inherit", textDecoration: "none" }}
+          >
+            GitHub
+          </Link>
         </div>
       </div>
     </footer>

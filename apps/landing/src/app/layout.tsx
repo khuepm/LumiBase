@@ -93,10 +93,12 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteJsonLd) }}
         />
       </head>
-      <body className={`${inter.className} bg-ink-950 text-foreground antialiased`}>
-        <Header />
-        <main className="min-h-screen">{children}</main>
-        <Footer />
+      <body className={`${inter.className} text-foreground antialiased`}>
+        <div className="relative z-[1]">
+          <Header />
+          <main className="min-h-screen">{children}</main>
+          <Footer />
+        </div>
       </body>
     </html>
   );
