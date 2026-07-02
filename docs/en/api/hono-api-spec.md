@@ -479,7 +479,29 @@ wss://...realtime?token=<access_token>&site=<siteId>
 { "type": "event", "collection": "articles", "event": "update", "data": { "id": "art_001", "title": "Updated title" } }
 ```
 
+**Server notification frame** (push-noti feature) — broadcast to every session
+for the site (not collection-scoped):
+```json
+{ "type": "notification", "notification": { "id": "…", "kind": "approval", "severity": "info", "title": "…", "body": "…", "deepLink": "/mission-control/inbox?entry=approval:…", "entityId": "…", "ts": "2026-06-23T01:00:00Z" } }
+```
+
 See [features/websockets-realtime.md](../features/websockets-realtime.md) for full protocol reference.
+
+---
+
+## 9b. Push notifications
+
+Web Push (VAPID) + in-app realtime for agent events. Tenant-scoped; the VAPID
+key is a shared deployment resource. See
+[features/push-notifications.md](../features/push-notifications.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/push/vapid-public-key` | Application-server public key (`404 PUSH_NOT_CONFIGURED` when unset). Same key for every tenant. |
+| `GET` | `/api/v1/push/status` | `{ vapidConfigured, realtimeAvailable, subscriptions }` for the active site. |
+| `POST` | `/api/v1/push/test` | Dispatch a one-off `test` notification to the active site (both transports). |
+| `POST` | `/api/v1/push/subscriptions` | Upsert a browser subscription: `{ endpoint, keys: { p256dh, auth } }`. |
+| `DELETE` | `/api/v1/push/subscriptions` | Remove a subscription by `{ endpoint }`. |
 
 ---
 

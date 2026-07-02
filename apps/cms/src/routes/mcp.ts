@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
+import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { AccessService } from '../services/access-service';
 import { AISecureHarness, CORE_SKILLS } from '../services/ai-harness';
 import { ConfigService } from '../services/config-service';
@@ -55,6 +56,7 @@ mcpRouter.post('/', async (c) => {
     extensionsService: new ExtensionsService({ db, siteId, userId: auth.userId ?? null }),
     llm,
     queue: runtime.queue,
+    notify: buildAgentNotifier(c),
   });
 
   const port: McpHarnessPort = {
