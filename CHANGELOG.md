@@ -11,6 +11,47 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [0.14.0] - 2026-07-02
+
+### Version
+
+- `v0.14.0`
+
+### Date
+
+- `2026-07-02`
+
+### Highlights
+
+- **Push notifications.** Operational agent events (HITL approvals, L3 veto-window stagings, agent incidents, run/goal status changes) now reach Studio operators over two transports: in-app realtime via the per-site `SiteRoom` Durable Object, and Web Push (VAPID, RFC 8291/8292) so operators are reached even with the tab closed. Both are best-effort and non-blocking; the Mission Control inbox poll remains the fallback. Includes a Settings → Notifications page (status, per-browser enable/disable, send-test) and a CLI connection tester.
+- **Docs version badge.** The docs site header now shows the current release version, linking to that release's GitHub notes.
+- **Path-traversal hardening.** Extends the prior items/collections/fields path-segment validation to every MCP tool that interpolates a dynamic segment into an API path — closing the same path-traversal / confused-deputy class across the shared CRUD factory, users/teams, API keys, access, agent, admin, relations, extensions, and settings tools.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **CMS / push notifications:** runtime-agnostic Web Push crypto (Web Crypto, no Node-only `web-push` dep); central `agent-notifications` broadcaster (in-app DO + Web Push fanout, prunes 404/410 endpoints); `SiteRoom` `notification` frame + publish path; `GET /api/v1/push/vapid-public-key`, `POST`/`DELETE /api/v1/push/subscriptions`, `GET /api/v1/push/status`, `POST /api/v1/push/test`; `push_subscriptions` table (migration `0039`) with RLS.
+- **Studio:** push service worker + enrollment lib; notifications panel with realtime updates and enable/disable toggle; Settings → Notifications page (server status, per-browser controls, connect guide, send-test).
+- **Tooling:** `apps/cms/scripts/push-test.mjs` CLI to verify a tenant's push connectivity without opening Studio; VAPID key generator script.
+- **Docs:** version badge in the docs header (`__APP_VERSION__` build-time define); `features/push-notifications.md` guide with a Multi-tenancy section; `definition-of-done.md` gained a mandatory multi-tenant isolation checklist for new features.
+
+### Changed
+
+- **MCP server:** `registerCrud` and explicit endpoints across users-teams, api-keys, access, agent, admin, relations, extensions, and settings tools now validate ids/keys with `idPathSegmentSchema` and encode path segments; added `mediaKeySchema`/`encodeMediaKey` for multi-segment storage keys.
+
+### Fixed
+
+- **Security / mcp-server:** hardened tool path parameters and extended path hardening from items/collections/fields to all CRUD and explicit-endpoint tools (path-traversal / confused-deputy).
+- **Security / mcp-server:** settings tools (`get_setting`, `upsert_setting`, `delete_setting`) switched from `encodeURIComponent` to `idPathSegmentSchema`, closing a residual traversal gap where `.`/`..` were not neutralized.
+
+### Migrations
+
+- **1 new schema migration (additive, idempotent):** `0039_push_subscriptions.sql` adds the site-isolated `push_subscriptions` table, guarded with `CREATE TABLE IF NOT EXISTS` so it re-runs safely and leaves existing installs untouched. RLS is applied via `packages/database/migrations/rls-policies.sql`. No data migration.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
 ## [0.13.0] - 2026-06-30
 
 ### Version
