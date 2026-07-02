@@ -75,8 +75,7 @@ export function categoryLabel(slug: string): string {
     .split("-")
     .map((part) => (part.length <= 3 ? part.toUpperCase() : part[0].toUpperCase() + part.slice(1)))
     .join(" ")
-    .replace("E Commerce", "E-Commerce")
-    .replace("SEO", "SEO");
+    .replace("E Commerce", "E-Commerce");
 }
 
 /** Trust level required to run an extension, derived from its category. */
