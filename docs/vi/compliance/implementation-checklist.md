@@ -38,7 +38,7 @@
   đổi. **Không** nhồi consent có ý nghĩa pháp lý vào JSONB tự do `users.preferences`.
 - **Đã giao:**
   - Schema `packages/database/src/schema/consent.ts` (+ migration
-    `drizzle/0031_user_consents.sql`, RLS trong `migrations/rls-policies.sql`).
+    `drizzle/0000_lumibase_init.sql` (đã gộp), RLS trong `migrations/rls-policies.sql`).
   - DTO `packages/shared/src/schemas/consent.ts` (`CONSENT_TYPES`, `ConsentSetSchema`).
   - `ConsentService` (`apps/cms/src/modules/consent/service.ts`) — upsert theo unique
     index `(site,user,type)`.
@@ -50,7 +50,7 @@
 - **Vì sao:** CAN-SPAM (bắt buộc), ePrivacy.
 - **Đã giao:**
   - Bảng `email_suppressions` (`packages/database/src/schema/compliance.ts`) +
-    migration `0032_email_suppressions.sql` + RLS.
+    migration `0000_lumibase_init.sql` (đã gộp) + RLS.
   - `SuppressionService` (`apps/cms/src/modules/email/suppression.ts`):
     `isSuppressed`/`filter`/`suppress`/`unsuppress`/`list` + token unsubscribe ký
     không trạng thái (`createUnsubscribeToken`/`verifyUnsubscribeToken`).

@@ -54,6 +54,12 @@ the prefix since `drizzle-kit` derives them from the (prefixed) table names.
   names from the start — no separate rename step. This is a **fresh-install-only**
   change: there is **no upgrade path** from a pre-prefix database; an existing DB
   must be dropped and recreated. (Chosen because no instance had been deployed yet.)
+  The migrate runner guards this: it compares the hashes in
+  `drizzle.__drizzle_migrations` against the local journal and refuses to apply onto
+  a database carrying the pre-squash history (`FORCE_MIGRATE=true` bypasses).
+- **Reserved names enforced at the API.** Collection names starting with `lumibase_`
+  or `mat_` are rejected (Zod refine in `routes/collections.ts` + `RESERVED_NAME`
+  error in `SchemaService.ensureName`), keeping the namespace invariant intact.
 - **Schema is now the complete source of truth.** Three DDL artifacts that were
   previously hand-written in migrations only — the `shares` CHECK constraints
   (`max_uses`, `used_count`) and the `agent_approvals_veto_due_idx` partial index —

@@ -32,7 +32,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **Breaking, fresh-install only — no upgrade path from a pre-prefix database.**
   Create the schema from scratch: `pnpm -F @lumibase/database migrate` (applies
   `0000_lumibase_init`), then apply `packages/database/migrations/rls-policies.sql`.
-  An existing pre-prefix database must be dropped and recreated.
+  An existing pre-prefix database must be dropped and recreated. For the Docker
+  dev stack that means destroying the `pgdata` volume first:
+  `docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d`.
+  The migrate runner now detects a database carrying the pre-squash migration
+  history and refuses to apply (bypass with `FORCE_MIGRATE=true` at your own risk;
+  `SKIP_MIGRATIONS=true` skips the boot-time migrate in Docker).
 
 ## [0.13.0] - 2026-06-30
 

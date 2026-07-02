@@ -279,12 +279,28 @@ export function assertClassificationEncryptable(
   }
 }
 
+/**
+ * Physical-namespace prefixes reserved by the platform: `lumibase_` is every
+ * system table (ADR-010) and `mat_` is materialized collection tables.
+ */
+const RESERVED_COLLECTION_PREFIXES = ['lumibase_', 'mat_'] as const;
+
 const ensureName = (name: string, kind: 'collection' | 'field') => {
   if (!NAME_PATTERN.test(name)) {
     throw new SchemaServiceError(
       'INVALID_NAME',
       `${kind} name must match ${NAME_PATTERN}; received "${name}".`,
     );
+  }
+  if (kind === 'collection') {
+    const reserved = RESERVED_COLLECTION_PREFIXES.find((prefix) => name.startsWith(prefix));
+    if (reserved) {
+      throw new SchemaServiceError(
+        'RESERVED_NAME',
+        `Collection names starting with "${reserved}" are reserved for system tables.`,
+        422,
+      );
+    }
   }
 };
 

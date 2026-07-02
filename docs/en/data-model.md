@@ -351,7 +351,7 @@ Content OS columns on existing tables:
 
 ## 11. Firebase Sync (`firebase-sync.ts`)
 
-Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0029_lumibase_firebase_sync`.
+Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0000_lumibase_init` (consolidated).
 
 ### `lumibase_firebase_sync_pipelines`
 | Column | Type | Note |
