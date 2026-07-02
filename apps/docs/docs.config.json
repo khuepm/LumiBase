@@ -140,7 +140,7 @@
     "copyright": "Copyright (c) 2025 LumiBase."
   },
   "themeConfig": {
-    "colorMode": { "defaultMode": "light", "respectPrefersColorScheme": true },
+    "colorMode": { "defaultMode": "dark", "respectPrefersColorScheme": true },
     "prism": { "theme": "github-light", "darkTheme": "github-dark" }
   }
 }

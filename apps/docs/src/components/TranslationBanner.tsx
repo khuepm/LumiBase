@@ -27,7 +27,7 @@ export function TranslationBanner({ filePath }: TranslationBannerProps) {
   return (
     <div
       role="status"
-      className="mb-6 rounded-md border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950 dark:text-yellow-200"
+      className="mb-6 rounded-2xl bg-[rgba(123,97,255,0.10)] px-5 py-3.5 text-sm font-medium text-[#d6ccff] shadow-[inset_0_0_0_1px_rgba(123,97,255,0.30)]"
     >
       <p>
         {t('banner.translation-pending', { default: defaultLocaleName })}
@@ -36,7 +36,7 @@ export function TranslationBanner({ filePath }: TranslationBannerProps) {
           href={contributeUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-medium underline hover:text-yellow-700 dark:hover:text-yellow-100"
+          className="font-semibold text-white underline underline-offset-2 transition-colors hover:text-[#c9bcff]"
         >
           {t('banner.contribute')}
         </a>
