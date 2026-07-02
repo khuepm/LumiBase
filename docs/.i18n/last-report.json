@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-29T16:16:44.819Z",
+  "generatedAt": "2026-07-02T01:08:12.465Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -9,7 +9,7 @@
     "preserved": 0,
     "conflicts": 1,
     "upToDate": 15,
-    "planned": 102
+    "planned": 103
   },
   "actions": [
     {
@@ -1033,6 +1033,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/push-notifications.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/raw-data-editing.md",
       "type": "translate",
       "reason": "en duplicates vi content; replace en with English translation",
@@ -1161,7 +1173,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-06-29T16-16-44-932Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-02T01-08-12-576Z.bak.md",
       "missingPlaceholders": 0
     },
     {
