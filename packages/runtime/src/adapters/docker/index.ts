@@ -7,7 +7,13 @@ import { MeiliSearchProvider } from './search';
 import { BullMQProvider } from './queue';
 import { ImgproxyMediaProcessor } from './media';
 import { createDockerKeyProvider } from './keys';
+import { DockerRealtimeProvider, getSharedRealtimeHub } from './realtime';
 
+export {
+  DockerRealtimeProvider,
+  InProcessRealtimeHub,
+  getSharedRealtimeHub,
+} from './realtime';
 export { RedisCacheProvider } from './cache';
 export { S3StorageProvider } from './storage';
 export { PostgresDatabaseProvider } from './database';
@@ -67,6 +73,7 @@ export function createDockerRuntime(env: Record<string, unknown>): RuntimeContex
       `${s3Endpoint}/${s3Bucket}`,
     ),
     keys: createDockerKeyProvider(env),
+    realtime: new DockerRealtimeProvider(getSharedRealtimeHub()),
     runtime: 'docker',
   };
 }

@@ -1,7 +1,7 @@
 import { agentApprovals, type Database } from '@lumibase/database';
 import { and, asc, eq, lte } from 'drizzle-orm';
 import type { CacheProvider, QueueProvider, SearchProvider } from '@lumibase/runtime';
-import { ItemService } from './item-service';
+import { itemServiceForSystem } from './item-service-factory';
 import { VETO_COMMIT_MAX_ATTEMPTS, VetoService } from './veto-service';
 
 /**
@@ -41,13 +41,18 @@ export async function processVetoCommitJob(
 ): Promise<void> {
   const attempt = payload.attempt ?? 1;
   const veto = new VetoService({ db: deps.db, siteId: payload.siteId });
-  const itemService = new ItemService({
-    db: deps.db,
-    siteId: payload.siteId,
-    cache: deps.cache,
-    search: deps.search,
-    queue: deps.queue,
-  });
+  // System context: the veto window already captured the human authorization
+  // decision; committing an approved change runs with system privileges.
+  const itemService = itemServiceForSystem(
+    {
+      db: deps.db,
+      siteId: payload.siteId,
+      cache: deps.cache,
+      search: deps.search,
+      queue: deps.queue,
+    },
+    'background-worker',
+  );
 
   try {
     const result = await veto.commit(payload.approvalId, itemService);

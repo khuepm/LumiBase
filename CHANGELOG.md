@@ -27,6 +27,92 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 - Run `pnpm -F @lumibase/database migrate` to apply migrations `0040` (adds `refresh_tokens`) and `0041` (no-op snapshot realignment). No backfill required.
 
+## [0.15.0] - 2026-07-02
+
+### Version
+
+- `v0.15.0`
+
+### Date
+
+- `2026-07-02`
+
+### Highlights
+
+- **Realtime audience plane.** Realtime is now split into two planes: the existing admin/Studio plane and a new **audience plane** for end-user frontends. Frontends connect with short-lived audience tickets over a plane-aware WebSocket upgrade, subscribe to subject/channel addresses, and receive targeted fan-out from a plane-aware `SiteRoom`. A per-subject connection cap and audience shard resolver keep tenants isolated under load. A new `@lumibase/sdk` `AudienceClient` gives frontend apps a typed entry point, and a Node WebSocket hub backs the audience plane under the Docker dual deployment.
+- **Cosmic design system.** The landing, marketplace, and docs surfaces adopt a shared cosmic design system — an orbital hero and product sections on landing, refreshed browse/detail pages on marketplace, and a cosmic dark theme for the docs viewer.
+- **Security hardening.** `ItemService` construction is now funnelled through an RBAC-explicit factory so no call site can bypass permission context, and schema-admin routes are guarded against missing permission checks.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **Realtime / audience plane:** shared `audience-channels` protocol; runtime realtime provider abstraction (ADR-002); plane-aware `SiteRoom` with targeted fan-out; audience tickets + plane-aware WS upgrade; targeted publish via provider + notification inbox; Node WebSocket hub for the Docker dual deployment; per-subject connection cap + audience shard resolver.
+- **SDK:** `AudienceClient` for frontend end-user realtime.
+- **CMS:** admin backstop for control-plane skills on the MCP endpoint.
+
+### Changed
+
+- **Landing / marketplace / docs:** applied the cosmic design system — orbital hero and product sections (landing), browse and detail pages (marketplace), cosmic dark theme (docs viewer).
+- **CMS:** `ItemService` construction routed through an RBAC-explicit factory.
+
+### Fixed
+
+- **CMS:** schema-admin routes now guarded against a missing permission check (regression test added).
+- **Marketplace:** removed a no-op SEO self-replacement in `categoryLabel`.
+- **SDK:** fixed strict-null handling in the `AudienceClient` test helper.
+
+### Notes
+
+- **Docs:** documented the audience plane and logged it in the Setup Impact registry; added English + Vietnamese runtime security guards reference docs (EN/VI parity); logged the `ItemService` RBAC guard as reviewed (n/a) in the Setup Impact registry.
+
+### Migrations
+
+- None
+
+## [0.14.0] - 2026-07-02
+
+### Version
+
+- `v0.14.0`
+
+### Date
+
+- `2026-07-02`
+
+### Highlights
+
+- **Push notifications.** Operational agent events (HITL approvals, L3 veto-window stagings, agent incidents, run/goal status changes) now reach Studio operators over two transports: in-app realtime via the per-site `SiteRoom` Durable Object, and Web Push (VAPID, RFC 8291/8292) so operators are reached even with the tab closed. Both are best-effort and non-blocking; the Mission Control inbox poll remains the fallback. Includes a Settings → Notifications page (status, per-browser enable/disable, send-test) and a CLI connection tester.
+- **Docs version badge.** The docs site header now shows the current release version, linking to that release's GitHub notes.
+- **Path-traversal hardening.** Extends the prior items/collections/fields path-segment validation to every MCP tool that interpolates a dynamic segment into an API path — closing the same path-traversal / confused-deputy class across the shared CRUD factory, users/teams, API keys, access, agent, admin, relations, extensions, and settings tools.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **CMS / push notifications:** runtime-agnostic Web Push crypto (Web Crypto, no Node-only `web-push` dep); central `agent-notifications` broadcaster (in-app DO + Web Push fanout, prunes 404/410 endpoints); `SiteRoom` `notification` frame + publish path; `GET /api/v1/push/vapid-public-key`, `POST`/`DELETE /api/v1/push/subscriptions`, `GET /api/v1/push/status`, `POST /api/v1/push/test`; `push_subscriptions` table (migration `0039`) with RLS.
+- **Studio:** push service worker + enrollment lib; notifications panel with realtime updates and enable/disable toggle; Settings → Notifications page (server status, per-browser controls, connect guide, send-test).
+- **Tooling:** `apps/cms/scripts/push-test.mjs` CLI to verify a tenant's push connectivity without opening Studio; VAPID key generator script.
+- **Docs:** version badge in the docs header (`__APP_VERSION__` build-time define); `features/push-notifications.md` guide with a Multi-tenancy section; `definition-of-done.md` gained a mandatory multi-tenant isolation checklist for new features.
+
+### Changed
+
+- **MCP server:** `registerCrud` and explicit endpoints across users-teams, api-keys, access, agent, admin, relations, extensions, and settings tools now validate ids/keys with `idPathSegmentSchema` and encode path segments; added `mediaKeySchema`/`encodeMediaKey` for multi-segment storage keys.
+
+### Fixed
+
+- **Security / mcp-server:** hardened tool path parameters and extended path hardening from items/collections/fields to all CRUD and explicit-endpoint tools (path-traversal / confused-deputy).
+- **Security / mcp-server:** settings tools (`get_setting`, `upsert_setting`, `delete_setting`) switched from `encodeURIComponent` to `idPathSegmentSchema`, closing a residual traversal gap where `.`/`..` were not neutralized.
+
+### Migrations
+
+- **1 new schema migration (additive, idempotent):** `0039_push_subscriptions.sql` adds the site-isolated `push_subscriptions` table, guarded with `CREATE TABLE IF NOT EXISTS` so it re-runs safely and leaves existing installs untouched. RLS is applied via `packages/database/migrations/rls-policies.sql`. No data migration.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
 ## [0.13.0] - 2026-06-30
 
 ### Version
