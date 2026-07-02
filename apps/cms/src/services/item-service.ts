@@ -20,6 +20,7 @@ import {
   type CacheProvider,
   type SearchProvider,
   type QueueProvider,
+  type RealtimeProvider,
 } from '@lumibase/runtime';
 import { buildSearchDocument } from './search-document';
 import { PermissionService, type CompiledPermission, type PermissionAction } from './permission-service';
@@ -182,9 +183,17 @@ export interface ItemServiceDeps {
   keyProvider?: KeyProvider;
   /**
    * SiteRoom Durable Object namespace (Cloudflare Workers only).
-   * When provided, item mutations are published to connected WebSocket clients.
+   * @deprecated Prefer `realtime` (RealtimeProvider) for runtime-agnostic
+   * fan-out (ADR-002). Kept for the GraphQL subscription bridge which still
+   * connects to the DO directly.
    */
   realtimeNamespace?: DurableObjectNamespace;
+  /**
+   * Runtime realtime provider (ADR-002). When provided, item mutations are
+   * published through it (Cloudflare DO or Docker hub). Takes precedence over
+   * `realtimeNamespace`.
+   */
+  realtime?: RealtimeProvider;
   /**
    * Environment bindings passed to ExtensionSandbox for capability-gated access.
    * When omitted, extension hooks are skipped.
@@ -1320,27 +1329,34 @@ export class ItemService {
     itemId: string,
     payload: unknown,
   ): Promise<void> {
-    if (!this.deps.realtimeNamespace) return;
+    const event = {
+      type: 'event' as const,
+      plane: 'studio' as const,
+      collection,
+      action,
+      itemId,
+      payload,
+      actorUserId: this.deps.userId ?? undefined,
+    };
     try {
-      const id = this.deps.realtimeNamespace.idFromName(this.deps.siteId);
-      const stub = this.deps.realtimeNamespace.get(id);
-      // Call the SiteRoom's publish() method via a synthetic HTTP request.
-      // SiteRoom exposes publish() as a durable object method; we invoke it
-      // via the DO's fetch() with a special internal path.
-      await stub.fetch(
-        new Request('https://internal/publish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'event',
-            collection,
-            action,
-            itemId,
-            payload,
-            actorUserId: this.deps.userId ?? undefined,
+      // Preferred path (ADR-002): runtime-agnostic provider.
+      if (this.deps.realtime) {
+        await this.deps.realtime.publish(this.deps.siteId, event);
+        return;
+      }
+      // Legacy path: direct SiteRoom DO stub (Cloudflare only). Kept so callers
+      // that only wire `realtimeNamespace` (e.g. the GraphQL bridge) still work.
+      if (this.deps.realtimeNamespace) {
+        const id = this.deps.realtimeNamespace.idFromName(this.deps.siteId);
+        const stub = this.deps.realtimeNamespace.get(id);
+        await stub.fetch(
+          new Request('https://internal/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(event),
           }),
-        }),
-      );
+        );
+      }
     } catch (err) {
       // Realtime fan-out is non-critical — log and continue.
       console.error('[item-service] realtime publish failed', { collection, itemId, err: formatSafeError(err) });
