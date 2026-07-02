@@ -43,3 +43,14 @@ Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, ba
 - [ ] CHANGELOG có entry, kèm upgrade steps nếu cần backfill
 - [ ] `README.md` cập nhật thông tin phiên bản mới ở mục **Release policy**: dòng `Current release`, ngày phát hành, lệnh `LUMIBASE_VERSION=...`, phạm vi migration (nếu có)
   - ⚠️ **Cập nhật vừa đủ — giữ di sản bản 0.5.0:** chỉ chỉnh số phiên bản / ngày / migration / điểm mới của bản hiện tại. KHÔNG viết lại narrative "Content OS" của 0.5.0, KHÔNG xoá mô tả các trụ cột đã ship ở 0.5.0 (intents/SLO, control loop reconciliation, trust ledger L0–L4, veto window, four-scope kill switch, tenant constitution, provenance-first revisions, multi-agent newsroom, Studio Mission Control). 0.5.0 là mốc nền — phiên bản mới bổ sung lên trên, không thay thế.
+
+## 5. Tutorial impact — RÀ SOÁT khi đổi API/SDK/luồng setup
+
+> Tutorial trong `docs/{en,vi}/tutorials/` được **pin theo version tối thiểu**, KHÔNG clone lại theo từng release. Mục tiêu: tránh phải viết lại tutorial mỗi bản nếu không có thay đổi thực sự (vd 0.9 → 0.15 mà các contract còn nguyên thì giữ y như cũ).
+
+Với mỗi tutorial hiện có, rà mục **"Compatibility / Tương thích"** ở cuối file (liệt kê các contract nó phụ thuộc) và đối chiếu với feature của bạn:
+
+- [ ] Feature này có **thay đổi/loại bỏ một contract** mà tutorial đang dựa vào không? (endpoint path, request/response shape, header `X-Lumi-Site`, default site id, query param `filter`/`sort`, chữ ký `@lumibase/sdk`, biến môi trường, lệnh CLI)
+- [ ] **Nếu CÓ:** cập nhật **đúng tutorial bị ảnh hưởng** — sửa contract + bump bảng version (thêm dòng `phiên-bản-mới → latest` ở **trên cùng**, hạ dòng cũ xuống), cập nhật comment `verified_on` (và `applies_to_min` nếu là breaking), rồi verify lại bằng tay. KHÔNG tạo bản sao tutorial mới theo version.
+- [ ] **Nếu KHÔNG:** không cần đụng tutorial — contract giữ nguyên thì badge version tối thiểu vẫn đúng cho bản mới.
+- [ ] Tính năng đủ lớn cần hướng dẫn tận tay (frontend mới, luồng auth mới, SDK surface mới) → cân nhắc **thêm tutorial mới** vào `docs/{en,vi}/tutorials/`, đăng ký vào `apps/docs/docs.config.json` (sidebar + navbar) và link từ `docs/{en,vi}/README.md`.

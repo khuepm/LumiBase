@@ -12,6 +12,15 @@ export {
 } from './cdc';
 
 export {
+  CONSENT_TYPES,
+  ConsentTypeSchema,
+  ConsentSetSchema,
+  type ConsentType,
+  type ConsentSetInput,
+  type ConsentRecord,
+} from './consent';
+
+export {
   ExtensionTypeSchema,
   ExtensionConfigOptionSchema,
   ExtensionAuthorSchema,
@@ -39,6 +48,18 @@ export {
   type Branding,
   type ThemeOverrides,
 } from './site-config';
+
+export {
+  CHORD_MODIFIERS,
+  ChordSchema,
+  KeybindingMapSchema,
+  UserPreferencesSchema,
+  UserPreferencesUpdateSchema,
+  type ChordModifier,
+  type KeybindingMap,
+  type UserPreferences,
+  type UserPreferencesUpdate,
+} from './user-preferences';
 
 export { TM_DEFAULT_THRESHOLD } from './translation';
 
@@ -76,3 +97,15 @@ export {
   type DashboardCreateInput,
   type PanelResult,
 } from './insights';
+export {
+  DeploymentProviderSchema,
+  DeploymentStatusSchema,
+  DeploymentTargetCreateSchema,
+  DeploymentTargetUpdateSchema,
+  DeployTriggerSchema,
+  type DeploymentProviderKey,
+  type DeploymentStatusValue,
+  type DeploymentTargetCreateInput,
+  type DeploymentTargetUpdateInput,
+  type DeployTriggerInput,
+} from './deployment';

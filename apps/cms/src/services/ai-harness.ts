@@ -9,7 +9,7 @@ import type { ExtensionsService } from './extensions-service';
 import type { IntentService } from './intent-service';
 import { runFlow, type FlowGraph } from './flow-service';
 import type { ConfiguredLLM } from './llm-provider';
-import type { QueueProvider } from '@lumibase/runtime';
+import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentAutonomousOpsTotal } from './agent-metrics';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
@@ -31,7 +31,7 @@ export interface SkillDefinition {
   description: string;
   requiredCapabilities: string[];
   /** Service this skill connects to (for documentation/tracing). */
-  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows';
+  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows' | 'deployments';
   handler: (args: Record<string, unknown>) => Promise<unknown>;
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
@@ -83,6 +83,12 @@ export interface AISecureHarnessConfig {
   llm?: ConfiguredLLM | null;
   /** Queue provider for veto-window commit jobs and dead letters. */
   queue?: QueueProvider;
+  /**
+   * KeyProvider for deployment skills — decrypts/encrypts Provider tokens.
+   * When omitted, deployment skills fall back to a clear error instead of
+   * stubbing (they have no meaningful offline behaviour).
+   */
+  keys?: KeyProvider;
   /** AccessService for governed RBAC + identity skills (roles/policies/api-keys/users/teams). */
   accessService?: AccessService;
   /** IntentService for governed content-intent (SLO) skills. */
@@ -123,6 +129,8 @@ interface SkillServices {
   /** Tenant-scoped DB handle for governed skills with no dedicated service (flows). */
   db?: Database;
   siteId?: string;
+  /** KeyProvider for deployment token encryption/decryption. */
+  keys?: KeyProvider;
   /**
    * Configured LLM for generation skills.
    * - key absent: offline deterministic handlers (shared CORE_SKILLS test registry).
@@ -396,6 +404,20 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
   /** Distinguishes "offline test registry" from "environment has no LLM". */
   const llmResolved = 'llm' in services;
   const llm = services.llm ?? null;
+
+  /**
+   * Lazily construct a site-scoped DeploymentService for deployment skills.
+   * Requires db/siteId/keys; without them (offline registry) the skill fails
+   * with a clear error instead of stubbing.
+   */
+  const deploymentService = async () => {
+    if (!services.db || !services.siteId || !services.keys) {
+      throw new Error('DEPLOYMENTS_NOT_CONFIGURED: deployment skills require a runtime KeyProvider');
+    }
+    // Lazy import keeps the harness decoupled from the deployment module.
+    const { DeploymentService } = await import('./deployment/deployment-service');
+    return new DeploymentService({ db: services.db, siteId: services.siteId, keys: services.keys });
+  };
 
   return {
     listCollections: {
@@ -1504,6 +1526,69 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         return extensionsService.uninstallExtension(args['id'] as string);
       },
     },
+
+    // ── Deployment integrations (spec: deployment-integrations, Req 6) ───────
+    // Handlers build a site-scoped DeploymentService from db/siteId/keys; with
+    // no tenant context (offline test registry) they fail with a clear error
+    // rather than stubbing, since deploy has no meaningful offline behaviour.
+
+    listDeploymentTargets: {
+      name: 'listDeploymentTargets',
+      description: 'List the configured deployment targets (Vercel/Netlify) for the site.',
+      requiredCapabilities: ['deployments:read'],
+      service: 'deployments',
+      handler: async () => {
+        const service = await deploymentService();
+        return { targets: await service.listTargets() };
+      },
+    },
+
+    listDeployments: {
+      name: 'listDeployments',
+      description: 'List recent deployments, optionally filtered by target or status.',
+      requiredCapabilities: ['deployments:read'],
+      service: 'deployments',
+      handler: async (args) => {
+        const service = await deploymentService();
+        const deploymentsList = await service.listDeployments({
+          targetId: args['targetId'] ? String(args['targetId']) : undefined,
+          status: args['status'] ? String(args['status']) : undefined,
+        });
+        return { deployments: deploymentsList };
+      },
+    },
+
+    getDeploymentStatus: {
+      name: 'getDeploymentStatus',
+      description: 'Get the current status and details of a single deployment by id.',
+      requiredCapabilities: ['deployments:read'],
+      service: 'deployments',
+      handler: async (args) => {
+        const service = await deploymentService();
+        const row = await service.getDeployment(String(args['deploymentId'] ?? ''));
+        if (!row) throw new Error('Deployment not found');
+        return row;
+      },
+    },
+
+    triggerDeployment: {
+      name: 'triggerDeployment',
+      description:
+        'Trigger a build/deploy on a deployment target. High-risk: gated by HITL approval below autopilot autonomy.',
+      requiredCapabilities: ['deployments:write'],
+      service: 'deployments',
+      dangerous: true,
+      handler: async (args) => {
+        const service = await deploymentService();
+        const row = await service.trigger(String(args['targetId'] ?? ''), {
+          branch: args['branch'] ? String(args['branch']) : undefined,
+          reason: args['reason'] ? String(args['reason']) : 'agent deployment',
+          source: 'agent',
+          triggeredBy: args['__runId'] ? String(args['__runId']) : undefined,
+        });
+        return { deploymentId: row.id, status: row.status, provider: row.provider };
+      },
+    },
   };
 }
 
@@ -1560,7 +1645,8 @@ export class AISecureHarness {
         config.accessService ||
         config.intentService ||
         config.configService ||
-        config.extensionsService,
+        config.extensionsService ||
+        config.keys,
     );
     this.agentHarnessEnabled = config.enableAgentHarnessAudit ?? hasService;
 
@@ -1577,6 +1663,8 @@ export class AISecureHarness {
         extensionsService: config.extensionsService,
         db: config.db,
         siteId: config.siteId,
+        // Tenant context + KeyProvider enable the deployment skills.
+        keys: config.keys,
         // Preserve the "offline registry" mode when callers never resolved
         // an LLM; forward null/instance when they did (Req 2.1/2.2).
         ...('llm' in config ? { llm: config.llm ?? null } : {}),

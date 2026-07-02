@@ -1,76 +1,86 @@
-# LumiBase AI-Native Vision — Tái định nghĩa CMS cho kỷ nguyên AI
+---
+version: 1
+lastUpdated: 2026-06-23T09:48:37.000Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: 576e46902420aee8
+mtEngine: claude
+syncStatus: machine-translated
+---
 
-> **Trạng thái:** Proposal / định hướng sản phẩm. Tài liệu này mô tả tầm nhìn và kế hoạch — chưa phải hành vi hiện tại của hệ thống. Hiện trạng đã triển khai được đánh dấu rõ ở mục [Gap analysis](#7-gap-analysis--hiện-trạng-so-với-đích).
+# LumiBase AI-Native Vision — Redefining the CMS for the AI era
+
+> **Status:** Proposal / product direction. This document describes a vision and a plan — not the current behavior of the system. What is already implemented is clearly marked in the [Gap analysis](#7-gap-analysis--current-state-vs-target) section.
 >
-> **Tiền đề kỹ thuật:** [agent-harness-layer.md](./features/agent-harness-layer.md) · [ai-copilot.md](./features/ai-copilot.md) · [flows-automation.md](./features/flows-automation.md) · [ADR-003 HITL](./architecture/decisions/adr-003-hitl-for-dangerous-ai-skills.md)
+> **Technical premises:** [agent-harness-layer.md](./features/agent-harness-layer.md) · [ai-copilot.md](./features/ai-copilot.md) · [flows-automation.md](./features/flows-automation.md) · [ADR-003 HITL](./architecture/decisions/adr-003-hitl-for-dangerous-ai-skills.md)
 
 ---
 
-## 1. Luận điểm trung tâm
+## 1. The central thesis
 
-**CMS truyền thống là công cụ để con người thao tác trên nội dung. LumiBase là hệ điều hành để AI vận hành nội dung — con người giữ vai trò đặt ý định, định gu, và chịu trách nhiệm cuối.**
+**A traditional CMS is a tool for humans to operate on content. LumiBase is an operating system for AI to operate content — humans take on the role of setting intent, defining taste, and holding ultimate accountability.**
 
-Tên gọi mới cho phạm trù: **Content Operating System (Content OS)** — không còn là *Content Management System*.
+A new name for the category: **Content Operating System (Content OS)** — no longer a *Content Management System*.
 
-Ba sự dịch chuyển nền tảng:
+Three foundational shifts:
 
-| | CMS truyền thống | LumiBase Content OS |
+| | Traditional CMS | LumiBase Content OS |
 |---|---|---|
-| **Đơn vị công việc** | Thao tác (create item, edit field, publish) | **Ý định** (goal: "duy trì catalog luôn đủ ảnh + mô tả 2 ngôn ngữ") |
-| **Người vận hành** | Editor/admin thao tác qua UI | **Agent** thực thi trong harness; con người duyệt ngoại lệ |
-| **Trạng thái nội dung** | Tĩnh — đúng tại thời điểm ai đó sửa lần cuối | **Sống** — được reconcile liên tục về desired state |
+| **Unit of work** | An operation (create item, edit field, publish) | An **intent** (goal: "keep the catalog always stocked with images + descriptions in 2 languages") |
+| **Operator** | An editor/admin acting through the UI | An **agent** executing in a harness; humans review exceptions |
+| **Content state** | Static — correct as of whenever someone last edited it | **Live** — continuously reconciled toward a desired state |
 
-"Thay thế con người" ở đây có nghĩa chính xác: **thay thế lao động vận hành** (data entry, dịch, tagging, SEO chỉnh tay, dọn dữ liệu, viết mô tả). Con người dịch chuyển lên tầng trên: intent, taste, policy, accountability. Đây không phải khẩu hiệu an toàn — đây là thiết kế: hệ thống chỉ tự trị được khi trách nhiệm có địa chỉ và mọi hành động revert được.
+"Replacing humans" here has a precise meaning: **replacing operational labor** (data entry, translation, tagging, manual SEO, data cleanup, writing descriptions). Humans move up a layer: intent, taste, policy, accountability. This is not a safety slogan — it is design: the system can only become autonomous when responsibility has an address and every action is reversible.
 
 ---
 
-## 2. Bảy nguyên lý thiết kế (Deep principles)
+## 2. Seven deep design principles
 
-### P1. Intent thay cho thao tác (Intent-driven, not operation-driven)
+### P1. Intent over operations (Intent-driven, not operation-driven)
 
-API bậc nhất của CMS không còn là `POST /items` mà là `POST /agent/goals`. Một goal là một câu khai báo kết quả mong muốn + ràng buộc + budget. Harness phân rã goal thành plan, plan thành tool calls. `agent_goals` đã tồn tại — nguyên lý này nâng nó từ "log của copilot" thành **giao diện vận hành chính** của sản phẩm.
+The CMS's first-class API is no longer `POST /items` but `POST /agent/goals`. A goal is a declarative statement of a desired outcome + constraints + budget. The harness decomposes a goal into a plan, and the plan into tool calls. `agent_goals` already exists — this principle elevates it from "a log of the copilot" into the **primary operating interface** of the product.
 
-Hệ quả thiết kế: mọi tính năng mới phải trả lời "agent gọi nó thế nào?" trước khi trả lời "UI hiển thị nó thế nào?". UI là projection của agent surface, không phải ngược lại.
+Design consequence: every new feature must answer "how does an agent call it?" before it answers "how does the UI display it?". The UI is a projection of the agent surface, not the other way around.
 
-### P2. Desired state & reconciliation (học từ Kubernetes, áp vào nội dung)
+### P2. Desired state & reconciliation (learned from Kubernetes, applied to content)
 
-Nội dung có **SLO** khai báo được: *"mọi `product` published phải có ≥1 ảnh, mô tả 50–200 từ, bản dịch `vi`+`en`, không broken link, cập nhật giá trong 24h"*. Một **reconciliation loop** chạy định kỳ: phát hiện drift → sinh goal → agent sửa trong budget → ghi artifact + provenance. Con người không "quản lý nội dung"; con người **khai báo trạng thái mong muốn** và hệ tự hội tụ về đó.
+Content has declarable **SLOs**: *"every published `product` must have ≥1 image, a 50–200 word description, `vi`+`en` translations, no broken links, and a price updated within 24h"*. A **reconciliation loop** runs periodically: detect drift → generate a goal → the agent fixes it within budget → record the artifact + provenance. Humans do not "manage content"; humans **declare the desired state** and the system converges toward it on its own.
 
-Đây là điểm tái định nghĩa sâu nhất: CMS hiện tại là *write-time tool*; Content OS là *control loop* — nội dung sai SLO là một sự cố được tự xử lý, như pod crash được restart.
+This is the deepest redefinition: today's CMS is a *write-time tool*; the Content OS is a *control loop* — content that violates its SLO is an incident that is auto-handled, like a crashed pod being restarted.
 
-### P3. Trust gradient — autonomy là thứ kiếm được, không phải cấp phát
+### P3. Trust gradient — autonomy is earned, not granted
 
-HITL nhị phân (safe → chạy, dangerous → chờ duyệt) là đúng cho ngày đầu nhưng không scale: con người thành nút cổ chai và "approve mỏi tay" làm việc duyệt mất giá trị. Thay bằng **5 mức tự trị per (site, agent, capability)**:
+Binary HITL (safe → run, dangerous → wait for approval) is correct on day one but does not scale: humans become a bottleneck and "approval fatigue" strips approval of its value. Replace it with **5 levels of autonomy per (site, agent, capability)**:
 
-| Mức | Tên | Hành vi |
+| Level | Name | Behavior |
 |---|---|---|
-| **L0** | Shadow | Agent chạy, output chỉ ghi vào artifact — không đề xuất, không tác động. Dùng để đánh giá. |
-| **L1** | Propose | Mọi hành động tạo approval chờ duyệt (HITL toàn phần). |
-| **L2** | Co-sign | Safe action tự chạy, dangerous action chờ duyệt. *(= hành vi harness hiện tại)* |
-| **L3** | Veto-window | Dangerous action **tự thực thi vào revision staging, commit sau T giờ nếu không ai veto**. Con người chuyển từ pre-approval sang post-veto (HOTL — human-on-the-loop). |
-| **L4** | Autopilot | Tự thực thi trong phạm vi capability + budget; kill switch luôn sẵn. |
+| **L0** | Shadow | The agent runs, output is only recorded into artifacts — no proposals, no impact. Used for evaluation. |
+| **L1** | Propose | Every action creates a pending approval (full HITL). |
+| **L2** | Co-sign | Safe actions run automatically, dangerous actions wait for approval. *(= current harness behavior)* |
+| **L3** | Veto-window | A dangerous action **executes into a staging revision and commits after T hours unless someone vetoes**. Humans shift from pre-approval to post-veto (HOTL — human-on-the-loop). |
+| **L4** | Autopilot | Executes within the capability + budget; a kill switch is always available. |
 
-**Promotion là dữ liệu, không phải cảm tính:** lên mức khi đạt N runs liên tiếp pass evaluation + approval-rate ≥ ngưỡng + zero incident trong window. **Demotion tự động** khi có incident, rejection, hoặc evaluation fail. Toàn bộ là một *trust ledger* audit được — chính `agent_evaluations` + `agent_approvals` hiện có là nguồn dữ liệu.
+**Promotion is data, not gut feeling:** level up after N consecutive runs pass evaluation + approval-rate ≥ threshold + zero incidents within the window. **Demotion is automatic** on an incident, rejection, or evaluation failure. The whole thing is an auditable *trust ledger* — the existing `agent_evaluations` + `agent_approvals` are the data source.
 
-L3 (veto-window) là phát kiến quan trọng nhất của thang này: nó đảo chiều gánh nặng — im lặng nghĩa là đồng ý — nhưng vẫn giữ quyền phủ quyết tuyệt đối và rollback. Đa số tổ chức sẽ sống lâu dài ở L3, không phải L4.
+L3 (veto-window) is the most important invention of this scale: it reverses the burden — silence means consent — while still retaining an absolute veto right and rollback. Most organizations will live long-term at L3, not L4.
 
-### P4. Hiến pháp nội dung (Tenant Constitution) — gu biên tập trở thành máy-kiểm-được
+### P4. Content constitution (Tenant Constitution) — editorial taste becomes machine-checkable
 
-Cái con người giỏi nhất — brand voice, tông giọng, ranh giới pháp lý, taxonomy, "thế nào là bài tốt" — phải được mã hoá thành **constitution per tenant**: tập evaluator (rule DSL + LLM-judge prompt) có version, có hash. Mọi `agent_run` pin vào `constitutionHash` (mở rộng `policySnapshotHash` hiện có). Artifact không pass constitution thì không được publish, bất kể autonomy level.
+What humans are best at — brand voice, tone, legal boundaries, taxonomy, "what makes a good article" — must be encoded into a **constitution per tenant**: a set of evaluators (rule DSL + LLM-judge prompt) that is versioned and hashed. Every `agent_run` pins to a `constitutionHash` (extending the existing `policySnapshotHash`). An artifact that does not pass the constitution cannot be published, regardless of autonomy level.
 
-Hệ quả: "biên tập viên" trong kỷ nguyên AI là người **viết và tinh chỉnh hiến pháp**, không phải người sửa từng bài. Sửa một evaluator = sửa hành vi của mọi agent từ đó về sau — đòn bẩy 1→N thay vì 1→1.
+Consequence: the "editor" of the AI era is the person who **writes and refines the constitution**, not the person who edits each article. Editing one evaluator = changing the behavior of every agent from then on — a 1→N lever instead of 1→1.
 
-### P5. Provenance-first — mọi byte nội dung có lai lịch
+### P5. Provenance-first — every byte of content has a lineage
 
-Trong kỷ nguyên nội dung do máy sinh, **lai lịch là tính năng phân phối, không phải metadata phụ**. Mọi revision ghi: agent/run/model tạo ra nó, nguồn tham chiếu, constitution hash, evaluation kết quả, con người nào duyệt (nếu có), confidence. Provenance expose qua Delivery API (lấy cảm hứng C2PA) — site downstream chứng minh được nội dung của họ sạch. Đây là USP thương mại: CMS khác không trả lời được câu hỏi *"đoạn văn này từ đâu ra và ai chịu trách nhiệm?"*.
+In the era of machine-generated content, **lineage is a distribution feature, not auxiliary metadata**. Every revision records: the agent/run/model that produced it, the referenced sources, the constitution hash, the evaluation result, which human approved it (if any), and a confidence score. Provenance is exposed via the Delivery API (inspired by C2PA) — downstream sites can prove their content is clean. This is the commercial USP: other CMSs cannot answer the question *"where did this paragraph come from and who is responsible for it?"*.
 
-### P6. Toà soạn agent (multi-agent organization, không phải one-big-agent)
+### P6. An agent newsroom (multi-agent organization, not one-big-agent)
 
-Một agent vạn năng là anti-pattern: context phình, trách nhiệm nhoè, eval không cô lập được lỗi. Thay vào đó là **sơ đồ tổ chức của agent** — mô phỏng toà soạn:
+An omnipotent agent is an anti-pattern: context balloons, responsibility blurs, and evaluation cannot isolate faults. Instead, an **org chart of agents** — modeling a newsroom:
 
 ```
                     ┌────────────────────┐
-   intent ───────► │  Planner / Chief    │  phân rã goal → sub-goals
+   intent ───────► │  Planner / Chief    │  decompose goal → sub-goals
                     └─────┬──────────────┘
         ┌────────────┬────┴───────┬─────────────┐
         ▼            ▼            ▼             ▼
@@ -80,111 +90,111 @@ Một agent vạn năng là anti-pattern: context phình, trách nhiệm nhoè, 
         └────────────┴─────┬──────┴─────────────┘
                            ▼
                     ┌────────────────────┐
-                    │  Reviewer / Fact-  │  agent-as-reviewer cho rủi ro thấp,
-                    │  checker agent     │  escalate con người cho rủi ro cao
+                    │  Reviewer / Fact-  │  agent-as-reviewer for low risk,
+                    │  checker agent     │  escalate to humans for high risk
                     └────────────────────┘
 ```
 
-Cơ chế: sub-goal là `agent_goals` có `parentGoalId`; mỗi role agent có capability grant hẹp riêng trong `agent_permissions`; **review chéo giữa agent** là một loại approval (approver là agent có capability `review:*`) — con người chỉ nhận escalation. Phân quyền hẹp per-role chính là defense-in-depth: Writer không bao giờ có `schema:*`, nên một writer bị prompt-inject cũng không sửa được schema.
+Mechanism: a sub-goal is an `agent_goals` with a `parentGoalId`; each role agent has its own narrow capability grant in `agent_permissions`; **cross-review between agents** is a kind of approval (the approver is an agent with the `review:*` capability) — humans only receive escalations. Narrow per-role permissions are defense-in-depth: a Writer never has `schema:*`, so a prompt-injected writer still cannot modify the schema.
 
-### P7. Giao diện kép — Studio là Mission Control, API/MCP là cửa chính
+### P7. A dual interface — Studio is Mission Control, API/MCP is the front door
 
-- **Cho agent (cửa chính):** toàn bộ skill registry expose như **MCP server** chuẩn, để agent bên ngoài (Claude Code, agent của khách hàng) thao tác CMS như citizen hạng nhất, vẫn đi qua harness/capability/risk như agent nội bộ. Kèm `llms.txt` per site cho content delivery — vì **người tiêu thụ nội dung cũng ngày càng là agent**.
-- **Cho người (cửa giám sát):** Studio tiến hoá từ *editing surface* thành *mission control*: exception inbox, diff review, trust ledger, kill switch, constitution editor. Form sửa item vẫn còn, nhưng là lối thoát hiểm, không phải workflow chính.
-
----
-
-## 3. Mô hình vận hành đích (một ngày của Content OS)
-
-```
-06:00  Reconciler quét SLO: 14 product thiếu bản dịch vi, 3 bài blog stale,
-       2 broken links → sinh 3 goals, gán cho Translator/Writer/Librarian agents.
-06:05  Translator agent (L4) dịch 14 mô tả, eval pass constitution → publish thẳng,
-       provenance ghi đầy đủ.
-06:10  Writer agent (L3) viết lại 3 bài stale → commit vào staging revision,
-       veto window 4h, notify kênh #content.
-08:30  Biên tập viên mở mission control: thấy 3 diff chờ veto — đọc lướt, veto 1 bài
-       (sai tông), 2 bài còn lại tự commit lúc 10:10. Bài bị veto → demotion signal
-       cho Writer agent trên capability đó.
-09:00  Khách hàng gõ vào chat: "tháng sau ra dòng sản phẩm mới, chuẩn bị landing page"
-       → goal mới → Planner phân rã: schema diff (cần approve - L2), page spec,
-       seed content, SEO plan → artifacts chờ review.
-```
-
-Con người trong bức tranh này làm 3 việc: **đặt intent**, **veto/duyệt ngoại lệ**, **tinh chỉnh hiến pháp**. Không ai gõ form `create item` cả ngày nữa.
+- **For agents (the front door):** the entire skill registry is exposed as a standard **MCP server**, so external agents (Claude Code, a customer's agent) can operate the CMS as first-class citizens, still going through the harness/capability/risk just like internal agents. Plus a per-site `llms.txt` for content delivery — because **content consumers are increasingly agents too**.
+- **For humans (the oversight door):** Studio evolves from an *editing surface* into a *mission control*: an exception inbox, diff review, the trust ledger, the kill switch, the constitution editor. The item-edit form still exists, but as an emergency exit, not the main workflow.
 
 ---
 
-## 4. Quyền kiểm soát của con người (Human Control Plane)
+## 3. The target operating model (a day in the Content OS)
 
-Tự trị không có nghĩa là vuột khỏi tay. Đây vẫn là **công cụ** — và "công cụ phải theo ý người" được mã hoá thành luật bất biến của hệ thống, không phải lời hứa trong tài liệu.
+```
+06:00  The reconciler scans SLOs: 14 products missing vi translations, 3 blog posts stale,
+       2 broken links → generates 3 goals, assigned to Translator/Writer/Librarian agents.
+06:05  The Translator agent (L4) translates 14 descriptions, evals pass the constitution → publish directly,
+       provenance fully recorded.
+06:10  The Writer agent (L3) rewrites 3 stale posts → commit into a staging revision,
+       4h veto window, notify the #content channel.
+08:30  An editor opens mission control: sees 3 diffs awaiting veto — skims them, vetoes 1 post
+       (wrong tone), the other 2 auto-commit at 10:10. The vetoed post → a demotion signal
+       for the Writer agent on that capability.
+09:00  A customer types into chat: "next month we're launching a new product line, prepare the landing page"
+       → a new goal → the Planner decomposes: schema diff (needs approval - L2), page spec,
+       seed content, SEO plan → artifacts awaiting review.
+```
 
-### Luật số 0 — Human override is law
+Humans in this picture do three things: **set intent**, **veto/approve exceptions**, and **refine the constitution**. Nobody types `create item` forms all day anymore.
 
-**Mọi sửa tay của con người thắng tuyệt đối. Agent/reconciler không bao giờ ghi đè một human edit.** Đây là bài học từ GitOps: controller "cãi người" (revert manual change về desired state) là cách nhanh nhất để mất niềm tin. Cơ chế:
+---
 
-- Mỗi revision có `authorType: human | agent`. Khi con người sửa nội dung mà một SLO/agent đang quản, hệ hỏi đúng một câu: *"Đây là **ngoại lệ một lần** (pin lại, agent không đụng nữa) hay **luật mới** (cập nhật desired state / constitution)?"* — mặc định an toàn là **pin**.
-- Pin ở mức **field**: con người sửa headline thì headline bị pin, agent vẫn được cập nhật giá/tồn kho trên cùng item.
-- Pin hiển thị được và gỡ được — con người "thả" lại quyền cho agent khi muốn.
+## 4. The Human Control Plane
 
-Mỗi human edit như vậy đồng thời là **tín hiệu dạy hệ thống**: pattern các pin và veto chính là dữ liệu để tinh chỉnh constitution (mục P4) — ý người thấm dần vào luật thay vì phải sửa tay mãi.
+Autonomy does not mean slipping out of human hands. This is still a **tool** — and "the tool must obey the human" is encoded as an immutable law of the system, not a promise in the docs.
 
-### Bốn quyền can thiệp — mỗi quyền có surface và cơ chế cụ thể
+### Law Zero — Human override is law
 
-| Quyền | Câu hỏi của người dùng | Surface | Cơ chế |
+**Every human manual edit wins absolutely. An agent/reconciler never overwrites a human edit.** This is the lesson from GitOps: a controller that "argues with humans" (reverting a manual change back to the desired state) is the fastest way to lose trust. Mechanism:
+
+- Each revision has an `authorType: human | agent`. When a human edits content that an SLO/agent is managing, the system asks exactly one question: *"Is this a **one-time exception** (pin it, the agent won't touch it again) or a **new rule** (update the desired state / constitution)?"* — the safe default is **pin**.
+- Pinning is at the **field** level: if a human edits the headline, the headline is pinned, while the agent may still update the price/inventory on the same item.
+- Pins are visible and removable — the human "releases" control back to the agent when they wish.
+
+Each such human edit is also a **signal that teaches the system**: the pattern of pins and vetoes is the data used to refine the constitution (section P4) — human intent seeps into the law instead of requiring endless manual edits.
+
+### Four powers of intervention — each with a concrete surface and mechanism
+
+| Power | The user's question | Surface | Mechanism |
 |---|---|---|---|
-| **Observe** — theo dõi | "Hệ đang làm gì? Tại sao nó làm thế?" | Mission control: SLO health per collection, run timeline, provenance trên từng revision, trust ledger | Bảng harness + Prometheus metrics đã có; notify chủ động qua notifications module / email / webhook (Slack…) |
-| **Steer** — bẻ lái | "Làm, nhưng làm khác đi" | Intent composer, constitution editor, autonomy grants | Sửa goal/SLO/evaluator → mọi run sau pin theo version mới; không cần đụng từng item |
-| **Override** — tự làm | "Tránh ra, tôi tự làm" | Form editing (vẫn tồn tại), veto trong window, sửa artifact trước publish | Luật số 0; veto = auto-rollback + incident + demotion signal cho agent |
-| **Stop** — dừng | "Dừng lại ngay" | Kill switch | 4 mức granularity: cancel **run** → pause **intent** → freeze **role** → freeze **site**; freeze chặn cả run đang chạy tại tool-call boundary |
+| **Observe** — monitor | "What is the system doing? Why is it doing that?" | Mission control: SLO health per collection, run timeline, provenance on each revision, the trust ledger | The existing harness tables + Prometheus metrics; proactive notifications via the notifications module / email / webhook (Slack…) |
+| **Steer** — redirect | "Do it, but do it differently" | Intent composer, constitution editor, autonomy grants | Edit the goal/SLO/evaluator → every subsequent run pins to the new version; no need to touch each item |
+| **Override** — do it yourself | "Step aside, I'll do it myself" | Form editing (still exists), veto within the window, edit the artifact before publish | Law Zero; veto = auto-rollback + incident + demotion signal for the agent |
+| **Stop** — halt | "Stop right now" | Kill switch | 4 levels of granularity: cancel a **run** → pause an **intent** → freeze a **role** → freeze the **site**; a freeze halts even a running run at the tool-call boundary |
 
-### Escalation ngược — máy chủ động gọi người
+### Reverse escalation — the machine proactively calls the human
 
-Can thiệp không chỉ là người đi tuần. Agent **phải** escalate khi: confidence thấp, evaluation borderline, budget sắp cạn, hành động chạm ranh không-revert-được, hoặc hai agent review bất đồng. Mọi escalation đính kèm deep-link đến diff + nút hành động ngay trong notification — người quyết trong 10 giây, không phải đào log.
+Intervention is not just a human on patrol. The agent **must** escalate when: confidence is low, an evaluation is borderline, the budget is nearly exhausted, an action touches an irreversible boundary, or two reviewing agents disagree. Every escalation includes a deep-link to the diff + action buttons right in the notification — a person decides in 10 seconds, not by digging through logs.
 
-### Ai được can thiệp ở mức nào
+### Who may intervene at what level
 
-Không phát minh mô hình quyền mới: quyền veto, approve, sửa constitution, gỡ pin, bấm kill switch đều là **permission trong RBAC hiện có**. Admin site phân quyền can thiệp cho từng role người y như phân quyền dữ liệu — một ngôn ngữ phân quyền duy nhất cho cả người và máy (xem 5.2).
+No new permission model is invented: the rights to veto, approve, edit the constitution, remove a pin, and hit the kill switch are all **permissions in the existing RBAC**. A site admin assigns intervention rights per human role exactly like assigning data permissions — a single permission language for both humans and machines (see 5.2).
 
 ---
 
-## 5. Hai mặt phẳng công việc thực tế
+## 5. The two real planes of work
 
-Công việc vận hành CMS trong thực tế gồm hai mặt phẳng. Tầm nhìn này phải phục vụ cả hai, kèm các vấn đề vận hành phát sinh (cache, quá tải, DB ghi liên tục).
+Operating a CMS in practice consists of two planes. This vision must serve both, including the operational problems that arise (cache, overload, continuous DB writes).
 
-### 5.1 Experience plane — cấu hình website
+### 5.1 Experience plane — configuring the website
 
-Phạm vi: sitemap, pages, sections, layout, filters, forms, cá nhân hoá, và các luồng dữ liệu đổ vào CMS (ingestion).
+Scope: sitemap, pages, sections, layout, filters, forms, personalization, and the data flows feeding the CMS (ingestion).
 
-**Cách agent vận hành plane này — config là code, không phải chuỗi click:**
+**How an agent operates this plane — config is code, not a chain of clicks:**
 
-- Toàn bộ cấu hình UI là **config-as-code artifact**: một intent *"thêm landing page X: hero + grid sản phẩm lọc theo tag + form đăng ký"* → agent sinh page spec / sitemap diff / form spec như artifact → review diff như review PR → veto-window → publish. Không ai click dựng từng section nữa; con người duyệt **diff của trải nghiệm**, không thao tác từng bước.
-- Cá nhân hoá = segment + rule do agent đề xuất từ dữ liệu hành vi, bị constitution kiểm (không dark-pattern, tuân privacy policy của tenant) và đo bằng experiment artifact trước khi áp toàn bộ traffic.
-- Ingestion flows = Flows + CDC; agent giám sát chính các flow này (failure rate, schema drift của nguồn ngoài) — luồng dữ liệu hỏng cũng là một loại drift được reconcile.
+- The entire UI configuration is a **config-as-code artifact**: an intent *"add landing page X: hero + a product grid filtered by tag + a sign-up form"* → the agent generates a page spec / sitemap diff / form spec as an artifact → review the diff like a PR → veto-window → publish. Nobody clicks to build each section anymore; humans review the **diff of the experience**, not each step.
+- Personalization = segments + rules proposed by the agent from behavioral data, checked by the constitution (no dark patterns, complying with the tenant's privacy policy) and measured with an experiment artifact before being applied to all traffic.
+- Ingestion flows = Flows + CDC; the agent monitors these very flows (failure rate, schema drift of external sources) — a broken data flow is also a kind of drift to be reconciled.
 
-**Vấn đề vận hành cố hữu của plane này và lời giải:**
+**The inherent operational problems of this plane and their solutions:**
 
-| Vấn đề thực tế | Nền có sẵn | Bổ sung trong kế hoạch |
+| Real problem | Existing foundation | Addition in the plan |
 |---|---|---|
-| Config UI rồi gọi lần nữa lấy data (2-roundtrip) | Hydration BFF `/deliver/page/:slug` gộp page config + data thành 1 JSON ([page-hydration.md](./architecture/page-hydration.md)) | Agent sinh page spec phải khai báo `source` cho section để luôn đi qua hydration path; evaluator chặn spec nào ép client gọi rời |
-| Cache churn khi cấu hình/nội dung đổi liên tục | Tag-based invalidation ([ADR-004](./architecture/decisions/adr-004-tag-based-cache-invalidation.md)) | Agent write **batch + coalesce** per run per collection → invalidate theo tag **một lần**, không N lần |
-| Quá tải lượt truy cập / hot read path | Edge cache + materialized collections ([materialized-collections.md](./features/materialized-collections.md)) | Agent tự đề xuất materialized collection khi thấy pattern query nóng từ metrics — tối ưu hạ tầng đọc cũng là drift được reconcile |
-| DB bị ghi liên tục | CDC + anomaly module | **Load-aware autonomy** (dưới đây) |
+| Configure the UI then call again to fetch data (2 round-trips) | The hydration BFF `/deliver/page/:slug` merges page config + data into 1 JSON ([page-hydration.md](./architecture/page-hydration.md)) | An agent-generated page spec must declare a `source` per section so it always goes through the hydration path; the evaluator rejects any spec that forces the client to make separate calls |
+| Cache churn when config/content changes constantly | Tag-based invalidation ([ADR-004](./architecture/decisions/adr-004-tag-based-cache-invalidation.md)) | The agent writes **batch + coalesce** per run per collection → invalidate by tag **once**, not N times |
+| Traffic overload / hot read path | Edge cache + materialized collections ([materialized-collections.md](./features/materialized-collections.md)) | The agent itself proposes a materialized collection when it sees a hot query pattern from metrics — optimizing the read infrastructure is also drift to be reconciled |
+| The DB being written to continuously | CDC + anomaly module | **Load-aware autonomy** (below) |
 
-**Load-aware autonomy — hệ tạo tải thì phải tự cảm nhận tải.** Đây là guardrail vận hành sâu nhất: khi agent chạy reconciliation liên tục, chính nó trở thành nguồn tải mới. Vì vậy:
+**Load-aware autonomy — a system that creates load must sense load.** This is the deepest operational guardrail: when an agent runs reconciliation continuously, it itself becomes a new source of load. Therefore:
 
-- Mỗi intent có **maintenance window** (mặc định off-peak) và **rate budget riêng cho write** (writes/phút), tách khỏi budget tool-call.
-- **Backpressure feedback loop**: anomaly module (RPS spike, DB latency tăng, cache hit-rate tụt) phát signal cho harness → reconciler tự hạ tốc hoặc pause + mở incident. Autonomy không chỉ bị chặn bởi budget tĩnh mà bởi **sức khoẻ runtime thời gian thực** — máy phải nhường đường cho traffic của người dùng thật.
+- Each intent has a **maintenance window** (off-peak by default) and a **separate rate budget for writes** (writes/minute), distinct from the tool-call budget.
+- A **backpressure feedback loop**: the anomaly module (RPS spike, rising DB latency, dropping cache hit-rate) emits a signal to the harness → the reconciler slows down or pauses itself + opens an incident. Autonomy is not just bounded by a static budget but by **real-time runtime health** — the machine must yield to the traffic of real users.
 
-### 5.2 Content plane — biên tập, xử lý dữ liệu, phân quyền
+### 5.2 Content plane — editing, data processing, permissions
 
-- **Luồng biên tập riêng cho từng tổ chức**: editorial workflow là một Flows graph trong đó mỗi trạm là **human station** (chờ duyệt/sửa) hoặc **agent station** (writer, translator, fact-checker — mục P6) — cùng một engine, trộn người và máy tuỳ mức trust. Tổ chức muốn người duyệt 100% thì để mọi trạm dangerous ở L1; muốn tự động dần thì nâng từng trạm theo trust ledger.
-- **Xử lý dữ liệu** (dedupe, normalize, enrich, classify, migrate) là drift detector + skill chạy nền — volume lớn, artifact-first: agent đưa ra batch diff "chuẩn hoá 2.300 records" để duyệt một lần, không 2.300 lần.
-- **Một ngôn ngữ phân quyền cho cả người và máy**: agent role dùng đúng policy DSL / capability của RBAC hiện có ([permissions-rbac.md](./features/permissions-rbac.md)) qua `agent_permissions`. Admin phân quyền agent y như phân quyền user — không học mô hình mới; và quyền can thiệp của người (veto/approve/constitution) cũng nằm trong cùng hệ đó (mục 4).
+- **An editorial flow tailored to each organization**: an editorial workflow is a Flows graph in which each station is either a **human station** (await approval/edit) or an **agent station** (writer, translator, fact-checker — section P6) — the same engine, mixing humans and machines by trust level. An organization that wants 100% human review keeps every dangerous station at L1; one that wants gradual automation promotes each station per the trust ledger.
+- **Data processing** (dedupe, normalize, enrich, classify, migrate) is a drift detector + a skill running in the background — high volume, artifact-first: the agent presents a batch diff "normalize 2,300 records" to approve once, not 2,300 times.
+- **One permission language for both humans and machines**: an agent role uses the very policy DSL / capability of the existing RBAC ([permissions-rbac.md](./features/permissions-rbac.md)) via `agent_permissions`. An admin assigns agent permissions just like user permissions — no new model to learn; and the human's intervention rights (veto/approve/constitution) live in that same system (section 4).
 
 ---
 
-## 6. Kiến trúc đích
+## 6. The target architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -193,14 +203,14 @@ Phạm vi: sitemap, pages, sections, layout, filters, forms, cá nhân hoá, và
 │  ORCHESTRATION LAYER   planner · multi-agent delegation ·       │
 │                        reconciliation loops (Flows + queue)     │
 ├─────────────────────────────────────────────────────────────────┤
-│  HARNESS LAYER (đã có) runs · tools · capability check · risk · │
+│  HARNESS LAYER (exists) runs · tools · capability check · risk ·│
 │                        budget · approvals · artifacts · evals ·  │
 │                        memory                  + autonomy ledger │
 ├─────────────────────────────────────────────────────────────────┤
 │  TRUST LAYER           provenance · trust ledger · veto window · │
 │                        kill switch · incident → demotion         │
 ├─────────────────────────────────────────────────────────────────┤
-│  DATA LAYER (đã có)    collections · items · revisions · RLS ·  │
+│  DATA LAYER (exists)   collections · items · revisions · RLS ·  │
 │                        multi-tenant · embeddings                 │
 ├─────────────────────────────────────────────────────────────────┤
 │  SURFACES              MCP server · Agent API · Delivery API +   │
@@ -208,132 +218,132 @@ Phạm vi: sitemap, pages, sections, layout, filters, forms, cá nhân hoá, và
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Bất biến kế thừa nguyên vẹn từ harness hiện tại (không thương lượng):
+Invariants inherited intact from the current harness (non-negotiable):
 
-1. Prompt text không bao giờ cấp được capability — chỉ policy snapshot và grant.
-2. Mọi bảng agent scope theo `siteId`.
-3. Mọi hành động tự trị phải revert được (revisions) — hành động không revert được (hard delete, gửi email ra ngoài) không bao giờ vượt quá L2.
-4. Budget (tool calls, cost, time, artifact size) chặn cứng mọi run.
-5. Audit không bị ghi đè — retry là run mới link run cũ.
+1. Prompt text can never grant a capability — only the policy snapshot and grants can.
+2. Every agent table is scoped by `siteId`.
+3. Every autonomous action must be reversible (revisions) — an irreversible action (hard delete, sending email externally) never exceeds L2.
+4. Budgets (tool calls, cost, time, artifact size) hard-cap every run.
+5. The audit is never overwritten — a retry is a new run linked to the old one.
 
 ---
 
-## 7. Gap analysis — hiện trạng so với đích
+## 7. Gap analysis — current state vs target
 
-Đã có (theo docs + code trong `apps/cms/src/services/`):
+Already present (per the docs + code in `apps/cms/src/services/`):
 
-- ✅ Harness đầy đủ: `agent_goals/runs/plans/tools/permissions/tool_calls/approvals/artifacts/evaluations/memory`, budget, risk policy, audit, metrics, dead-letter queue.
-- ✅ HITL 2 mức (= L1/L2 của thang autonomy), capability check, policy snapshot hash.
-- ✅ LLM provider đa nhà cung cấp + embedding service + RAG skills.
-- ✅ Flows engine (trigger webhook/event/schedule/manual) — nền cho reconciler.
+- ✅ A complete harness: `agent_goals/runs/plans/tools/permissions/tool_calls/approvals/artifacts/evaluations/memory`, budget, risk policy, audit, metrics, dead-letter queue.
+- ✅ 2-level HITL (= L1/L2 of the autonomy scale), capability check, policy snapshot hash.
+- ✅ A multi-provider LLM layer + embedding service + RAG skills.
+- ✅ The Flows engine (webhook/event/schedule/manual triggers) — the foundation for the reconciler.
 - ✅ Artifact-first app generation MVP + evaluation gates.
 
-Đã đóng các khoảng cách (Content OS spec — xem [`.kiro/specs/content-os/tasks.md`](../../.kiro/specs/content-os/tasks.md)):
+Gaps already closed (the Content OS spec — see [`.kiro/specs/content-os/tasks.md`](../../.kiro/specs/content-os/tasks.md)):
 
-- ✅ 5 core skills nối LLM thật, lỗi provider trả lỗi tường minh (không fallback stub).
-- ✅ SLO/desired-state: `content_intents` + drift detection + reconciliation loop trên Flows.
-- ✅ Trust ledger L0–L4: grants, promotion human-gated, demotion tự động, veto-window (L3), kill switch 4 mức.
-- ✅ Constitution per tenant: versioned evaluators (rule DSL + llm_judge), pin hash vào run, publish gate.
-- ✅ Provenance trên revisions (`authorType`, `createdByRunId`, `model`, `constitutionHash`, …) + `?provenance=true` trên Delivery.
-- ✅ Multi-agent delegation: `parentGoalId`, role library (role ∩ grant), agent-as-reviewer (cấm self-review).
-- ✅ MCP server `/api/v1/mcp` (Streamable HTTP) + llms.txt public per site.
-- ✅ Run dài chạy qua queue (`queued/cancelled`, resume không chạy lại tool call đã xong).
-- ✅ Mission Control trong Studio: exception inbox, SLO health, trust ledger, constitution editor, intent composer, kill switch UI.
+- ✅ The 5 core skills wired to a real LLM, with provider errors surfaced explicitly (no fallback stub).
+- ✅ SLO/desired-state: `content_intents` + drift detection + a reconciliation loop on Flows.
+- ✅ The L0–L4 trust ledger: grants, human-gated promotion, automatic demotion, veto-window (L3), a 4-level kill switch.
+- ✅ A constitution per tenant: versioned evaluators (rule DSL + llm_judge), pinning the hash into the run, a publish gate.
+- ✅ Provenance on revisions (`authorType`, `createdByRunId`, `model`, `constitutionHash`, …) + `?provenance=true` on Delivery.
+- ✅ Multi-agent delegation: `parentGoalId`, a role library (role ∩ grant), agent-as-reviewer (self-review forbidden).
+- ✅ An MCP server at `/api/v1/mcp` (Streamable HTTP) + a public llms.txt per site.
+- ✅ Long-running runs via a queue (`queued/cancelled`, resume without re-running already-completed tool calls).
+- ✅ Mission Control in Studio: exception inbox, SLO health, trust ledger, constitution editor, intent composer, kill switch UI.
 
-Rollout: bốn flag per site `contentOs.reconciler / vetoWindow / agentReview / mcp` — mặc định **off**; mọi flag off ⇒ hành vi giống hệt pre-Content-OS.
+Rollout: four per-site flags `contentOs.reconciler / vetoWindow / agentReview / mcp` — **off** by default; with every flag off ⇒ behavior is identical to pre-Content-OS.
 
 ---
 
-## 8. Lộ trình 5 phase
+## 8. The 5-phase roadmap
 
-> **Spec triển khai chi tiết** (requirements EARS, design, task checklist): [`.kiro/specs/content-os/`](../../.kiro/specs/content-os/requirements.md)
+> **Detailed implementation spec** (EARS requirements, design, task checklist): [`.kiro/specs/content-os/`](../../.kiro/specs/content-os/requirements.md)
 
-Mỗi phase ship được độc lập, phase sau xây trên phase trước. Quy ước nhãn theo [roadmap/tasks.md](./roadmap/tasks.md).
+Each phase ships independently, with later phases building on earlier ones. Label conventions follow [roadmap/tasks.md](./roadmap/tasks.md).
 
-### Phase A — Thật hoá nền móng (Make it real)
+### Phase A — Make the foundation real (Make it real)
 
-*Mục tiêu: không còn stub; agent ngoài kết nối được; run dài chạy được.*
+*Goal: no more stubs; external agents can connect; long-running runs work.*
 
-- `[BE]` Nối 5 stub skills vào LLM provider thật + embedding context (RAG từ items/schema hiện có).
-- `[BE]` Đẩy run vượt request-limit qua `QueueProvider` (đã có abstraction) — run state machine: `queued → running → awaiting_approval → done/failed`.
-- `[BE]` **MCP server** mount tại `/api/v1/mcp`: expose `agent_tools` registry như MCP tools; auth = token có capability; mọi call đi qua harness y như nội bộ. *(Một codepath, hai cửa.)*
-- `[BE]` `llms.txt` + semantic delivery per site cho content consumer là agent.
-- `[DB]` Cột provenance trên revisions: `createdByRunId`, `model`, `constitutionHash`, `sources jsonb`, `confidence` — kèm `authorType: human | agent` và `pinnedFields jsonb` làm nền cho Luật số 0 (mục 4).
+- `[BE]` Wire the 5 stub skills to a real LLM provider + embedding context (RAG from existing items/schema).
+- `[BE]` Push runs that exceed the request limit through `QueueProvider` (the abstraction already exists) — run state machine: `queued → running → awaiting_approval → done/failed`.
+- `[BE]` An **MCP server** mounted at `/api/v1/mcp`: expose the `agent_tools` registry as MCP tools; auth = a token with a capability; every call goes through the harness just like internal ones. *(One codepath, two doors.)*
+- `[BE]` `llms.txt` + semantic delivery per site for content consumers that are agents.
+- `[DB]` Provenance columns on revisions: `createdByRunId`, `model`, `constitutionHash`, `sources jsonb`, `confidence` — plus `authorType: human | agent` and `pinnedFields jsonb` as the foundation for Law Zero (section 4).
 
-### Phase B — Content như hệ thống sống (Reconciliation)
+### Phase B — Content as a living system (Reconciliation)
 
-*Mục tiêu: nội dung tự hội tụ về desired state.*
+*Goal: content converges to the desired state on its own.*
 
-- `[DB]` Bảng `content_intents` (SLO): `siteId, collection, rules jsonb, schedule, budget, autonomyCap, status`.
-- `[BE]` **Drift detectors** (chạy như Flows scheduled): stale content, thiếu field bắt buộc theo SLO, thiếu bản dịch (tận dụng translation memory), broken link, SEO score, lệch glossary.
-- `[BE]` Reconciler: drift → `agent_goals` tự sinh (idempotent, dedupe theo drift fingerprint) → harness thực thi trong `autonomyCap` của intent.
-- `[BE]` **Override-is-law semantics**: reconciler đọc `authorType`/`pinnedFields` — không bao giờ ghi đè human edit; prompt "ngoại lệ hay luật mới?" khi human sửa nội dung do SLO quản.
-- `[BE]` **Load-aware autonomy**: maintenance window + write rate budget per intent; write batching/coalescing + single tag-invalidation per run; backpressure signal từ anomaly module → hạ tốc/pause reconciler + incident.
-- `[FE]` Studio: màn hình SLO — khai báo intent bằng natural language, LLM compile thành rules jsonb, hiển thị "content health" per collection.
+- `[DB]` A `content_intents` table (SLO): `siteId, collection, rules jsonb, schedule, budget, autonomyCap, status`.
+- `[BE]` **Drift detectors** (running as scheduled Flows): stale content, missing SLO-required fields, missing translations (leveraging translation memory), broken links, SEO score, glossary deviation.
+- `[BE]` The reconciler: drift → auto-generated `agent_goals` (idempotent, deduped by drift fingerprint) → the harness executes within the intent's `autonomyCap`.
+- `[BE]` **Override-is-law semantics**: the reconciler reads `authorType`/`pinnedFields` — never overwrites a human edit; the "exception or new rule?" prompt when a human edits SLO-managed content.
+- `[BE]` **Load-aware autonomy**: a maintenance window + a write rate budget per intent; write batching/coalescing + a single tag-invalidation per run; a backpressure signal from the anomaly module → slow down/pause the reconciler + an incident.
+- `[FE]` Studio: the SLO screen — declare an intent in natural language, the LLM compiles it into rules jsonb, displays "content health" per collection.
 
-### Phase C — Toà soạn agent (Multi-agent org)
+### Phase C — The agent newsroom (Multi-agent org)
 
-*Mục tiêu: phân rã và review chéo giữa agent; con người chỉ nhận escalation.*
+*Goal: decomposition and cross-review between agents; humans only receive escalations.*
 
-- `[DB]` `agent_goals.parentGoalId`; bảng `agent_roles` (name, systemPrompt ref, capability grants, model).
-- `[BE]` Planner agent: goal → sub-goals gán theo role; mỗi role chạy capability hẹp riêng (Writer không bao giờ có `schema:*`).
-- `[BE]` Agent-as-reviewer: approval có `approverType: human | agent`; rủi ro thấp do Reviewer agent (capability `review:*`) quyết, kèm lý do ghi audit; rủi ro cao escalate người. Ngưỡng escalation là policy, không hardcode.
-- `[AI]` Role library mặc định: Writer, Translator, Taxonomist, SEO, Fact-checker, Librarian (archive/cleanup).
+- `[DB]` `agent_goals.parentGoalId`; an `agent_roles` table (name, systemPrompt ref, capability grants, model).
+- `[BE]` The Planner agent: goal → sub-goals assigned by role; each role runs its own narrow capability (a Writer never has `schema:*`).
+- `[BE]` Agent-as-reviewer: an approval has an `approverType: human | agent`; low risk is decided by the Reviewer agent (capability `review:*`), with a reason recorded in the audit; high risk escalates to a human. The escalation threshold is policy, not hardcoded.
+- `[AI]` A default role library: Writer, Translator, Taxonomist, SEO, Fact-checker, Librarian (archive/cleanup).
 
-### Phase D — Autonomy kiếm được (Trust ledger)
+### Phase D — Earned autonomy (Trust ledger)
 
-*Mục tiêu: thang L0–L4 vận hành bằng dữ liệu.*
+*Goal: the L0–L4 scale operates on data.*
 
-- `[DB]` Bảng `agent_autonomy_grants`: `siteId, agentRole, capability, level (0-4), evidence jsonb, grantedBy, expiresAt`. Bảng `agent_incidents`: nguồn demotion.
-- `[BE]` Promotion engine: tính từ `agent_evaluations` + `agent_approvals` + incident history; promotion cần con người xác nhận (chính nó là một approval), **demotion thì tự động và tức thì**.
-- `[BE]` **Veto window (L3)**: dangerous op ghi vào staging revision + `agent_approvals` dạng `auto_commit_at`; commit job qua queue; veto = reject + auto-rollback + incident.
-- `[BE]` Kill switch per site/per role: `agent_runtime: active | paused | frozen` — frozen chặn cả run đang chạy ở tool-call boundary.
-- `[FE]` Trust ledger UI: level hiện tại, evidence, lịch sử promote/demote per role × capability.
+- `[DB]` An `agent_autonomy_grants` table: `siteId, agentRole, capability, level (0-4), evidence jsonb, grantedBy, expiresAt`. An `agent_incidents` table: the source of demotions.
+- `[BE]` A promotion engine: computed from `agent_evaluations` + `agent_approvals` + incident history; promotion requires human confirmation (itself an approval), while **demotion is automatic and immediate**.
+- `[BE]` **Veto window (L3)**: a dangerous op writes into a staging revision + an `agent_approvals` of the `auto_commit_at` kind; a commit job via the queue; veto = reject + auto-rollback + incident.
+- `[BE]` Kill switch per site/per role: `agent_runtime: active | paused | frozen` — frozen halts even a running run at the tool-call boundary.
+- `[FE]` Trust ledger UI: the current level, the evidence, the promote/demote history per role × capability.
 
-### Phase E — Đảo ngược giao diện (Mission Control)
+### Phase E — Inverting the interface (Mission Control)
 
-*Mục tiêu: Studio mặc định là giám sát, không phải nhập liệu.*
+*Goal: Studio defaults to monitoring, not data entry.*
 
-- `[FE]` **Exception inbox** thành màn hình mặc định: veto queue (diff view), escalations, incidents, SLO violations chưa tự xử được.
-- `[FE]` **Constitution editor**: viết/edit evaluator bằng natural language + test chạy thử trên content thật (eval-driven editing); version + diff hiến pháp.
-- `[FE]` Intent composer: thay "Create item" bằng "Describe what you want" làm primary CTA; form editing vẫn còn như secondary path.
-- `[DOC]` Tái định vị messaging: LumiBase = Content OS; cập nhật [vision-and-positioning.md](./vision-and-positioning.md).
+- `[FE]` The **exception inbox** becomes the default screen: the veto queue (diff view), escalations, incidents, SLO violations not yet auto-handled.
+- `[FE]` The **constitution editor**: write/edit an evaluator in natural language + test it on real content (eval-driven editing); versioning + a constitution diff.
+- `[FE]` The intent composer: replace "Create item" with "Describe what you want" as the primary CTA; form editing remains as a secondary path.
+- `[DOC]` Reposition the messaging: LumiBase = Content OS; update [vision-and-positioning.md](./vision-and-positioning.md).
 
 ---
 
 ## 9. North-star metrics
 
-| Metric | Định nghĩa | Đích trưởng thành |
+| Metric | Definition | Maturity target |
 |---|---|---|
-| **Autonomous operation rate** | % thao tác ghi do agent thực thi không cần human touch | > 90% |
-| **Human-touch per published item** | Số tương tác người / item publish | < 0.1 |
-| **Intent-to-live latency** | Từ lúc đặt goal đến nội dung live | Phút, không phải ngày |
-| **Veto rate (L3)** | % staging commit bị veto | < 5% và giảm dần |
-| **Incident rate** | Sự cố / 1.000 autonomous ops | Giảm đơn điệu theo thời gian |
-| **Constitution leverage** | Số hành vi agent thay đổi / 1 lần sửa evaluator | Tăng |
-| **Override-respect rate** | % human edit/pin được agent tôn trọng tuyệt đối | 100% — bất biến, không phải mục tiêu |
-| **Coalescing ratio** | Số write của agent / số lần invalidate cache theo tag | Tăng (batch hiệu quả) |
-| **Backpressure activations** | Số lần reconciler tự hạ tốc do tải runtime | Hiện diện và được review — chứng minh load-aware hoạt động |
+| **Autonomous operation rate** | % of write operations executed by an agent without a human touch | > 90% |
+| **Human-touch per published item** | Number of human interactions / published item | < 0.1 |
+| **Intent-to-live latency** | From setting a goal to content going live | Minutes, not days |
+| **Veto rate (L3)** | % of staging commits that get vetoed | < 5% and declining |
+| **Incident rate** | Incidents / 1,000 autonomous ops | Monotonically decreasing over time |
+| **Constitution leverage** | Number of agent behaviors changed / 1 evaluator edit | Increasing |
+| **Override-respect rate** | % of human edits/pins respected absolutely by the agent | 100% — an invariant, not a target |
+| **Coalescing ratio** | Number of agent writes / number of tag-based cache invalidations | Increasing (efficient batching) |
+| **Backpressure activations** | Number of times the reconciler slows itself down due to runtime load | Present and reviewed — proving load-awareness works |
 
-Toàn bộ đo được từ bảng harness hiện có + Prometheus metrics đã mô tả trong [observability.md](./features/observability.md).
+All of these are measurable from the existing harness tables + the Prometheus metrics described in [observability.md](./features/observability.md).
 
 ---
 
-## 10. Rủi ro & guardrails
+## 10. Risks & guardrails
 
-| Rủi ro | Guardrail |
+| Risk | Guardrail |
 |---|---|
-| Prompt injection từ content/web khiến agent leo thang | Bất biến #1 (prompt không cấp quyền) + capability hẹp per role + outbound URL guard/SSRF guard đã có |
-| Drift chất lượng âm thầm ở L4 | Sampling: x% output L4 luôn rơi về human review; constitution eval chạy trên mọi publish |
-| Approve-mỏi-tay làm review vô nghĩa | Chính là lý do tồn tại của L3 veto-window + agent-as-reviewer — giảm khối lượng review của người xuống chỉ còn ngoại lệ |
-| Vòng lặp reconcile chạy điên (goal storm) | Dedupe theo drift fingerprint + budget per intent + circuit breaker (N fail liên tiếp → pause intent + incident) |
-| Hành động không revert được | Không bao giờ vượt L2; hard delete vẫn là soft delete + retention như hiện tại |
-| Máy "cãi người" — reconciler revert sửa tay | Luật số 0: `authorType` + field-level pin; reconciler không bao giờ ghi đè human edit |
-| Agent tự gây quá tải hạ tầng (cache churn, DB write storm) | Load-aware autonomy: write batching + single tag-invalidation, maintenance window, write rate budget, backpressure từ anomaly module |
-| Mất niềm tin của khách | Provenance public + audit trail đầy đủ + kill switch một nút |
+| Prompt injection from content/web escalating an agent | Invariant #1 (a prompt grants no rights) + narrow per-role capability + the existing outbound URL guard/SSRF guard |
+| Silent quality drift at L4 | Sampling: x% of L4 output always falls back to human review; constitution eval runs on every publish |
+| Approval fatigue making review meaningless | This is the very reason L3 veto-window + agent-as-reviewer exist — reducing the human's review load down to only exceptions |
+| A reconcile loop running wild (goal storm) | Dedupe by drift fingerprint + a budget per intent + a circuit breaker (N consecutive failures → pause the intent + an incident) |
+| Irreversible actions | Never exceed L2; hard delete is still a soft delete + retention as today |
+| The machine "arguing with humans" — the reconciler reverting a manual edit | Law Zero: `authorType` + field-level pins; the reconciler never overwrites a human edit |
+| The agent overloading the infrastructure itself (cache churn, DB write storm) | Load-aware autonomy: write batching + a single tag-invalidation, a maintenance window, a write rate budget, backpressure from the anomaly module |
+| Losing the customer's trust | Public provenance + a complete audit trail + a one-button kill switch |
 
 ---
 
-## 11. Tóm tắt một đoạn
+## 11. One-paragraph summary
 
-LumiBase đã có bộ xương đúng: harness quản trị agent với goals, runs, tools, approvals, artifacts, evaluations, memory. Kế hoạch này biến bộ xương thành cơ thể sống theo 5 bước: **(A)** thật hoá skill + mở MCP, **(B)** biến nội dung thành hệ thống tự hội tụ qua SLO + reconciliation, **(C)** tổ chức agent thành toà soạn có phân vai và review chéo, **(D)** thay HITL nhị phân bằng thang tự trị kiếm-được với veto-window, **(E)** đảo Studio thành mission control. Kết quả là một phạm trù sản phẩm mới — **Content Operating System** — nơi AI là lực lượng vận hành chính trên cả hai mặt phẳng (cấu hình trải nghiệm và quản lý nội dung), còn con người giữ bốn quyền không thương lượng — observe, steer, override, stop — với Luật số 0 bảo đảm máy không bao giờ cãi người, và load-aware autonomy bảo đảm máy không bao giờ đè bẹp hạ tầng phục vụ người dùng thật.
+LumiBase already has the right skeleton: a harness governing agents with goals, runs, tools, approvals, artifacts, evaluations, and memory. This plan turns the skeleton into a living body in 5 steps: **(A)** make the skills real + open the MCP, **(B)** turn content into a self-converging system via SLOs + reconciliation, **(C)** organize agents into a newsroom with role assignment and cross-review, **(D)** replace binary HITL with an earned autonomy scale featuring a veto-window, **(E)** invert Studio into mission control. The result is a new product category — the **Content Operating System** — where AI is the primary operating workforce across both planes (configuring the experience and managing the content), while humans retain four non-negotiable powers — observe, steer, override, stop — with Law Zero ensuring the machine never argues with the human, and load-aware autonomy ensuring the machine never crushes the infrastructure that serves real users.

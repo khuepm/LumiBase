@@ -1,42 +1,67 @@
+---
+version: 1
+lastUpdated: 2026-06-23T13:05:48.000Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: d3a62a6ea64bb371
+mtEngine: claude
+syncStatus: machine-translated
+---
+
 # AI Copilot (HITL)
 
-LumiBase Studio đi kèm một AI Copilot có thể nhận lệnh ngôn ngữ tự nhiên từ admin và thực thi các skill đã được khai báo trên CMS. Mọi hành động nguy hiểm (đụng schema hoặc xoá dữ liệu) đều phải qua **Human-in-the-Loop (HITL)**: AI tạo `ai_approvals` row chờ admin duyệt thay vì execute trực tiếp.
+LumiBase Studio ships with an AI Copilot that can take natural-language commands from an admin and execute the skills declared on the CMS. This is the seed of the **Agent Harness Layer**: the agent receives goal/context/permissions through the harness, calls tools per the registry, is risk-evaluated, and leaves an audit trail. Every dangerous action (touching the schema or deleting data) must go through **Human-in-the-Loop (HITL)**: the AI creates an `ai_approvals` row awaiting admin approval rather than executing directly.
 
-> Tài liệu lịch sử của giai đoạn triển khai (chia 4 module cho AI agent) nằm ở [`ai-first-specification.md`](./ai-first-specification.md). File này tập trung vào hành vi end-user và contract API.
+> The historical documentation of the implementation phase (split into 4 modules for the AI agent) is in [`ai-first-specification.md`](./ai-first-specification.md). The strategic blueprint for expanding the Copilot into a control plane for agents is in [`agent-harness-layer.md`](./agent-harness-layer.md). This file focuses on end-user behavior and the API contract.
 
-## Kiến trúc 4 module
+## The 4-module architecture
 
-| Module | File chính | Trách nhiệm |
+| Module | Main file | Responsibility |
 |--------|-----------|-------------|
-| **A. Schema** | `packages/database/src/schema/ai.ts` (`ai_approvals`) | Lưu trạng thái phê duyệt |
-| **B. Harness** | `apps/cms/src/services/ai-harness.ts` (`AISecureHarness`) | Validate skill, check capability, evaluate risk, execute hoặc gate qua HITL |
+| **A. Schema** | `packages/database/src/schema/ai.ts` (`ai_approvals`) | Store the approval state |
+| **B. Harness** | `apps/cms/src/services/ai-harness.ts` (`AISecureHarness`) | Validate the skill, check capability, evaluate risk, execute or gate via HITL |
 | **C. Routes** | `apps/cms/src/routes/ai.ts` (`aiRouter`) | `/api/v1/ai/chat`, `/api/v1/ai/approvals`, `/api/v1/ai/approvals/:id/decide` |
 | **D. Studio UI** | `apps/studio/src/components/ai-assistant.tsx`, `apps/studio/src/modules/settings/ai-approvals.tsx` | Floating chat panel + Approvals dashboard |
 
+## Relationship to the Agent Harness Layer
+
+The current AI Copilot handles a short loop: chat → choose a skill → risk/capability check → execute or create an approval. The Agent Harness Layer extends this same principle to a longer loop:
+
+```text
+Goal → Run → Plan → Tool calls → Evaluation → Approval → Artifact commit → Memory update
+```
+
+So the existing tables are seen as seeds:
+
+- `ai_approvals` → the precursor to a general approval gate for plan/tool/artifact.
+- `ai_conversations` + `ai_messages` → short-term context memory.
+- `ai_embeddings` → the RAG knowledge base by site/collection/item.
+- `CORE_SKILLS` → the precursor to a tool registry with an input schema, capability, rate limit, and risk policy.
+
 ## CORE_SKILLS registry
 
-Skills được khai báo tập trung trong `packages/ai-skills/src/skills.ts`. Mỗi skill chứa:
+Skills are declared centrally in `packages/ai-skills/src/skills.ts`. Each skill contains:
 
-- `name`, `description` (description dùng cho LLM tool calling).
-- `parameters` — JSON Schema OpenAI-compatible.
-- `requiredCapabilities` — phải thỏa mãn so với capability của session.
+- `name`, `description` (the description is used for LLM tool calling).
+- `parameters` — OpenAI-compatible JSON Schema.
+- `requiredCapabilities` — must be satisfied against the session's capabilities.
 
-Skills hiện có: `listCollections`, `createCollection`, `deleteCollection`, `createField`, `deleteField`, `listItems`, `createItem`, `updateItem`, `deleteItem`.
+Current skills: `listCollections`, `createCollection`, `deleteCollection`, `createField`, `deleteField`, `listItems`, `createItem`, `updateItem`, `deleteItem`.
 
-Helper `getAISkillsAsTools()` trả về dạng OpenAI function-calling tool list — dùng khi tích hợp LLM thật.
+The `getAISkillsAsTools()` helper returns an OpenAI function-calling tool list — used when integrating a real LLM.
 
 ## Risk evaluation rules
 
-Một skill được phân loại **dangerous** (cần HITL) nếu:
+A skill is classified as **dangerous** (requires HITL) if:
 
-- Yêu cầu capability `'schema:write'`, **hoặc**
-- Tên skill bắt đầu bằng `'delete'`.
+- It requires the `'schema:write'` capability, **or**
+- The skill name starts with `'delete'`.
 
-Ngược lại là **safe** → execute trực tiếp.
+Otherwise it is **safe** → execute directly.
 
-Wildcard `'*'` trong user capabilities thoả mãn mọi yêu cầu.
+A wildcard `'*'` in the user's capabilities satisfies every requirement.
 
-## Luồng end-to-end
+## End-to-end flow
 
 ```
 ┌──────────────┐  POST /api/v1/ai/chat
@@ -78,7 +103,7 @@ Wildcard `'*'` trong user capabilities thoả mãn mọi yêu cầu.
 
 ### `POST /api/v1/ai/chat`
 
-Request: `{ "message": string }` (1-2000 chars sau trim).
+Request: `{ "message": string }` (1-2000 chars after trim).
 
 Response 200: `{ "data": { "status": "executed" | "pending_approval" | "denied", "data"?, "approvalId"?, "message"? } }`.
 
@@ -86,65 +111,65 @@ Response 400: validation error.
 
 ### `GET /api/v1/ai/approvals`
 
-Trả về tối đa 100 approval có `status='pending'` trong site hiện tại, sắp xếp `createdAt DESC`.
+Returns up to 100 approvals with `status='pending'` in the current site, sorted `createdAt DESC`.
 
 ### `POST /api/v1/ai/approvals/:id/decide`
 
 Body: `{ "decision": "approved" | "rejected" }`.
 
-- `"approved"` → harness execute skill với arguments đã lưu, cập nhật status thành `approved` (nếu execute thành công). Nếu skill thất bại, giữ status `pending` để admin retry.
-- `"rejected"` → cập nhật status `rejected`.
+- `"approved"` → the harness executes the skill with the saved arguments and updates the status to `approved` (if execution succeeds). If the skill fails, the status stays `pending` so the admin can retry.
+- `"rejected"` → updates the status to `rejected`.
 
-Mọi truy vấn đều scope `siteId` — request từ site B không bao giờ thấy bản ghi của site A (HTTP 403, không tiết lộ existence).
+Every query is scoped by `siteId` — a request from site B never sees site A's records (HTTP 403, without revealing existence).
 
 ## Studio UI
 
 ### AI Assistant panel
 
-- Floating button 48×48px ở `bottom: 24px, right: 24px`.
-- Click mở panel 320×480px, glassmorphism (backdrop-blur).
-- Phân biệt vai trò `user` vs `assistant`.
-- Hiển thị badge `pending_approval` khi áp dụng.
-- History tối đa 50 messages, reset khi reload trang.
+- A 48×48px floating button at `bottom: 24px, right: 24px`.
+- Clicking opens a 320×480px panel, glassmorphism (backdrop-blur).
+- Distinguishes the `user` vs `assistant` roles.
+- Shows a `pending_approval` badge when applicable.
+- History up to 50 messages, reset on page reload.
 
 ### Approvals Dashboard
 
 - `apps/studio/src/modules/settings/ai-approvals.tsx`.
-- Card view, mỗi card: `skillName`, `arguments` (JSON pretty 2 spaces), `context`.
-- Hai nút **Approve** / **Reject** với loading state — disable cả 2 khi đang xử lý.
-- Empty state khi không có pending.
+- Card view; each card: `skillName`, `arguments` (JSON pretty 2 spaces), `context`.
+- Two buttons **Approve** / **Reject** with a loading state — both disabled while processing.
+- An empty state when there is nothing pending.
 
 ## Multi-tenancy
 
-- Mọi insert/select/update bảng `ai_approvals` đều `WHERE siteId = currentSiteId`.
-- Cross-site access → 403, không cho biết bản ghi có tồn tại ở site khác hay không.
-- Tenant middleware (`withTenant`) bắt buộc resolve `siteId` trước khi router AI hoạt động.
+- Every insert/select/update on the `ai_approvals` table is `WHERE siteId = currentSiteId`.
+- Cross-site access → 403, without revealing whether the record exists in another site.
+- The tenant middleware (`withTenant`) requires resolving `siteId` before the AI router operates.
 
-## Tích hợp LLM thật & Context Memory (RAG)
+## Real LLM integration & Context Memory (RAG)
 
-LumiBase Copilot đã tích hợp hoàn chỉnh với các mô hình ngôn ngữ lớn (LLM) và hệ thống lưu trữ vector/lịch sử trò chuyện:
+The LumiBase Copilot is fully integrated with large language models (LLMs) and a vector/chat-history store:
 
 ### 1. LLM Providers
-Hệ thống hỗ trợ nhiều LLM providers (cấu hình qua `LLM_PROVIDER` env, model qua `LLM_MODEL`):
-- **OpenAI**: Sử dụng Chat Completions tool calling (ví dụ `gpt-4.1-nano`, default `gpt-4o-mini`).
-- **Anthropic / Claude**: Sử dụng dòng mô hình Claude thông qua native `tool_use`.
-- **Gemini**: Sử dụng Gemini REST `generateContent` với function declarations.
-- **Workers AI**: Chạy trực tiếp tại edge trên hạ tầng Cloudflare Workers AI (mặc định sử dụng `@cf/meta/llama-3.1-8b-instruct`).
-- **Echo**: Bộ khớp từ khóa (fallback mock) dùng cho môi trường test hoặc khi thiếu API credentials.
+The system supports multiple LLM providers (configured via the `LLM_PROVIDER` env, model via `LLM_MODEL`):
+- **OpenAI**: Uses Chat Completions tool calling (e.g. `gpt-4.1-nano`, default `gpt-4o-mini`).
+- **Anthropic / Claude**: Uses the Claude model family via native `tool_use`.
+- **Gemini**: Uses the Gemini REST `generateContent` with function declarations.
+- **Workers AI**: Runs directly at the edge on Cloudflare Workers AI (defaults to `@cf/meta/llama-3.1-8b-instruct`).
+- **Echo**: A keyword matcher (fallback mock) for test environments or when API credentials are missing.
 
-### 2. Context Memory (Lịch sử hội thoại)
-Bảng `ai_conversations` và `ai_messages` được dùng để lưu trữ trạng thái các luồng trò chuyện:
-- Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM.
-- Hỗ trợ đầy đủ các API quản lý: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
+### 2. Context Memory (Conversation history)
+The `ai_conversations` and `ai_messages` tables store the state of conversation threads:
+- Whenever a message is sent to `/api/v1/ai/chat`, the system loads up to the **20 most recent messages** as the context window passed to the LLM.
+- Full management APIs are supported: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
 
-### 3. RAG Skills (`aiSuggestField` và `aiContentAssist`)
-Tích hợp dịch vụ sinh vector embeddings (`embedding-service.ts`) hỗ trợ OpenAI `text-embedding-3-small` và Workers AI `@cf/baai/bge-base-en-v1.5`:
-- **`aiSuggestField`**: Phân tích schema hiện tại và mô tả của admin, truy xuất vector tương tự từ database thông qua cosine similarity để gợi ý cấu hình field tối ưu.
-- **`aiContentAssist`**: Hỗ trợ sinh hoặc hiệu chỉnh nội dung field dựa trên RAG context từ các item đã lưu trong hệ thống.
+### 3. RAG Skills (`aiSuggestField` and `aiContentAssist`)
+Integrates a vector-embedding service (`embedding-service.ts`) supporting OpenAI `text-embedding-3-small` and Workers AI `@cf/baai/bge-base-en-v1.5`:
+- **`aiSuggestField`**: Analyzes the current schema and the admin's description, retrieves similar vectors from the database via cosine similarity to suggest an optimal field configuration.
+- **`aiContentAssist`**: Helps generate or revise field content based on RAG context from items already stored in the system.
 
 ## Property-based testing
 
-Hệ thống có 15 property tests (fast-check, ≥100 iterations) được liệt kê đầy đủ trong `.kiro/specs/ai-first-cms-engine/design.md` mục "Correctness Properties". Các test ở:
+The system has 15 property tests (fast-check, ≥100 iterations) fully listed in `.kiro/specs/ai-first-cms-engine/design.md` under "Correctness Properties". The tests are in:
 
 - `apps/cms/src/services/__tests__/ai-harness-*.property.test.ts` — Properties 1-8 (Module B).
 - `apps/cms/src/routes/__tests__/ai-*.property.test.ts` — Properties 9-12 (Module C).

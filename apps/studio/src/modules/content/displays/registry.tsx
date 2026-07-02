@@ -10,6 +10,7 @@ import { MustacheDisplay } from './mustache';
 import { RatingStarsDisplay } from './rating-stars';
 import { RawDisplay } from './raw';
 import { RelationDisplay } from './relation';
+import { RelationM2ADisplay } from './relation-m2a';
 import { TagsPillsDisplay } from './tags-pills';
 import { TextDisplay } from './text';
 import { ComponentTemplateDisplay } from './component-template';
@@ -27,6 +28,7 @@ const REGISTRY: Record<string, DisplayComponent<any>> = {
   badge: BadgeDisplay,
   'boolean-icon': BooleanIconDisplay,
   relation: RelationDisplay,
+  'relation-m2a': RelationM2ADisplay,
   'formatted-date': FormattedDateDisplay,
   'color-swatch': ColorSwatchDisplay,
   'rating-stars': RatingStarsDisplay,
@@ -55,6 +57,7 @@ const INTERFACE_TO_DISPLAY: Record<string, string> = {
   rating: 'rating-stars',
   tags: 'tags-pills',
   'relation-m2o': 'relation',
+  'relation-m2a': 'relation-m2a',
 };
 
 const TYPE_TO_DISPLAY: Record<string, string> = {
@@ -91,6 +94,7 @@ export const DISPLAY_CATALOGUE: Array<{ id: string; label: string; hint: string 
   { id: 'labels', label: 'Labels', hint: 'Pills with per-value tone mapping.' },
   { id: 'image', label: 'Image', hint: 'Thumbnail for file/url values.' },
   { id: 'relation', label: 'Relation', hint: 'Resolve id → related collection field.' },
+  { id: 'relation-m2a', label: 'Relation (M2A)', hint: 'Summarise links across multiple collections.' },
   { id: 'mustache-template', label: 'Mustache template', hint: 'Compose a row template like `{{title}} ({{slug}})`.' },
   { id: 'component-template', label: 'Component template', hint: 'Visual block-based template (Phase F).' },
 ];

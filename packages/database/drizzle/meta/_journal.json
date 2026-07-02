@@ -244,7 +244,35 @@
       "idx": 34,
       "version": "7",
       "when": 1781773500004,
-      "tag": "0035_push_subscriptions",
+      "tag": "0035_user_consents",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1781773560004,
+      "tag": "0036_email_suppressions",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1781773620004,
+      "tag": "0037_processing_restrictions",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1781773680004,
+      "tag": "0038_deployment_integrations",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1781773740004,
+      "tag": "0039_push_subscriptions",
       "breakpoints": true
     }
   ]

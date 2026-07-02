@@ -20,6 +20,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Configuration',
     items: [
       { id: 'site', label: 'Site', to: '/settings/site' },
+      { id: 'keyboard', label: 'Keyboard shortcuts', to: '/settings/keyboard' },
     ],
   },
   {

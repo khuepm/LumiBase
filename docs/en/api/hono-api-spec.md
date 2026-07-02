@@ -5,7 +5,7 @@
 > **Base URL:** `https://api.<your-site>.lumibase.dev` (or `http://localhost:1989` in local dev)
 >
 > All endpoints are versioned under `/api/v1`. Every request must include:
-> - `Authorization: Bearer <access_token>` — JWT from Logto or local auth
+> - `Authorization: Bearer <token>` — login `token`, or an API key (`lbk_…`)
 > - `X-Lumi-Site: <siteId>` — site identifier (or resolved via subdomain routing)
 
 ---
@@ -62,14 +62,18 @@ Error response:
 | Parameter | Example | Description |
 |-----------|---------|-------------|
 | `fields` | `fields=id,title,author.name` | Select specific fields + nested relations |
-| `filter` | `filter[status][_eq]=published` | Filter using rule operators |
+| `filter` | `filter[status][_eq]=published` _or_ `filter={"status":{"_eq":"published"}}` | Filter using rule operators — see [Filter forms](#filter-forms) |
 | `sort` | `sort=-updated_at,title` | Comma-separated, `-` prefix for DESC |
 | `page` | `page=2` | Page number (1-indexed) |
 | `limit` | `limit=25` | Items per page (max 200) |
-| `search` | `search=lumibase` | Full-text search on searchable fields |
 | `aggregate[count]` | `aggregate[count]=*` | Aggregate functions |
 | `groupBy` | `groupBy=status` | Group aggregation results |
 | `deep` | `deep[author][fields]=name,avatar` | Nested relation query params |
+
+> Full-text search is a **separate endpoint**, `GET /api/v1/search` (MeiliSearch),
+> not a list-endpoint parameter. It supports single-collection and
+> cross-collection (omit `collection`) queries and is diacritics-insensitive for
+> Vietnamese. See [features/search.md](../features/search.md).
 
 ### Filter operators
 
@@ -85,16 +89,88 @@ Error response:
 | `_between` | Range (two-element array) |
 | `_and`, `_or` | Logical grouping |
 
+### Filter forms
+
+List endpoints accept the `filter` query parameter in **two equivalent forms** — use
+whichever is more convenient. Both produce the same filter object server-side.
+
+**1. Bracket form** — ergonomic for hand-written URLs and HTML forms:
+
+```
+GET /api/v1/items/articles?filter[status][_eq]=published&filter[views][_gte]=100
+```
+
+- Nesting maps directly: `filter[field][_op]=value`.
+- Values are coerced: `true`/`false` → boolean, `null` → null, clean integers/decimals →
+  number (leading-zero strings like `007` stay strings), everything else → string.
+- Array operators (`_in`, `_nin`, `_between`) accept comma-separated values:
+  `filter[status][_in]=published,scheduled`.
+- Logical groups use an index segment: `filter[_and][0][status][_eq]=published`.
+
+**2. JSON form** — better for complex/programmatic filters and the SDK:
+
+```
+GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
+```
+
+> If **both** are supplied on the same request, the **JSON form wins**. A malformed JSON
+> `filter` returns `400 VALIDATION`; a malformed bracket key is ignored rather than
+> failing the whole request.
+
 ---
 
 ## 1. Auth
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/v1/auth/login` | Exchange Logto auth code or username/password for access + refresh tokens |
+| `POST` | `/api/v1/auth/login` | Exchange username/password (or Logto auth code) for a bearer token |
 | `POST` | `/api/v1/auth/refresh` | Refresh expired access token |
 | `POST` | `/api/v1/auth/logout` | Revoke tokens |
 | `GET` | `/api/v1/auth/me` | Get current user profile |
+| `GET` | `/api/v1/me/consents` | List the current user's consent decisions |
+| `PUT` | `/api/v1/me/consents/:type` | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
+| `GET` | `/api/v1/me/data-export` | Download the current user's personal data (GDPR Art. 15/20) |
+| `GET` | `/api/v1/me/restriction` | Current restriction-of-processing state (GDPR Art. 18) |
+| `PUT` | `/api/v1/me/restriction` | Set restriction of processing (`{ restricted, reason? }`) |
+| `GET` | `/api/v1/me/automated-decisions` | Agent-authored revisions on the user's content (GDPR Art. 22) |
+| `GET` | `/api/v1/retention` | Admin: report configured retention horizons |
+| `POST` | `/api/v1/retention/run` | Admin: prune `activity` + handled `notifications` past their horizons |
+
+> Account erasure (GDPR Art. 17) and Subject Access Requests are served by the
+> regulated-content-readiness feature at `/api/v1/admin/erasure` and
+> `/api/v1/admin/sar`.
+
+**Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
+
+```jsonc
+// PUT /api/v1/me/consents/marketing
+{ "granted": true, "source": "preference_center", "version": "v1" }
+
+// Response
+{ "data": { "consentType": "marketing", "granted": true,
+            "grantedAt": "2026-06-24T10:00:00.000Z", "withdrawnAt": null,
+            "source": "preference_center", "version": "v1",
+            "updatedAt": "2026-06-24T10:00:00.000Z" } }
+```
+
+Each change writes a `consent_granted` / `consent_withdrawn` audit event. Only user
+principals (not API keys) can manage consent. Current state is stored per
+`(site_id, user_id, consent_type)` in `user_consents`; full history lives in the audit log.
+
+**Email unsubscribe & suppression** (CAN-SPAM):
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/email/unsubscribe?token=…` | public | One-click unsubscribe (renders HTML confirmation) |
+| `POST` | `/api/v1/email/unsubscribe` | public | RFC 8058 one-click (token in query or form body) |
+| `GET` | `/api/v1/email/suppressions` | admin | List suppressed addresses |
+| `POST` | `/api/v1/email/suppressions` | admin | Add an address (`{ email, reason? }`) |
+| `DELETE` | `/api/v1/email/suppressions/:email` | admin | Remove an address (re-subscribe) |
+
+The unsubscribe token is a stateless HS256 JWT (`{ siteId, email }`, no expiry) signed
+with `JWT_SECRET`. Marketing sends (`EmailModuleService.send({ category: 'marketing' })`)
+filter recipients against `email_suppressions` before dispatch. Unsubscribe/suppression
+changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 
 **Login request:**
 ```json
@@ -104,21 +180,26 @@ Error response:
 }
 ```
 
-**Login response:**
+**Login response:** a single bearer `token` plus the user profile. Send the token as
+`Authorization: Bearer <token>` on subsequent requests.
+
 ```json
 {
   "data": {
-    "access_token": "eyJ...",
-    "refresh_token": "...",
-    "expires_in": 3600,
+    "token": "eyJ...",
     "user": {
       "id": "usr_abc123",
       "email": "admin@example.com",
-      "role": "administrator"
+      "firstName": "Admin",
+      "lastName": "User",
+      "avatar": null
     }
   }
 }
 ```
+
+> For long-lived server-to-server access, create an API key
+> (`POST /api/v1/api-keys`, token prefix `lbk_`) instead of using a login token.
 
 ---
 
