@@ -45,6 +45,11 @@ export interface Bindings {
   VAPID_PRIVATE_KEY?: string;
   /** VAPID contact `sub` claim — a `mailto:` or `https:` URI. */
   VAPID_SUBJECT?: string;
+  /**
+   * Max concurrent audience (public-plane) realtime sessions per subject on the
+   * Node WebSocket hub. `0`/unset disables the cap. (realtime-audience-channels)
+   */
+  LUMIBASE_REALTIME_MAX_CONNECTIONS_PER_SUBJECT?: string;
   /** Direct Postgres connection string (used in local development). */
   DATABASE_URL?: string;
   /** Cloudflare Access Certificates URL (JWKS format) */
