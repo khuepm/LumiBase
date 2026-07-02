@@ -1,57 +1,59 @@
 /**
  * SiteRoom — Cloudflare Durable Object implementing the per-site realtime hub.
  *
- * One SiteRoom instance per siteId. All Studio users on the same site share
- * a single DO instance, which:
- *   - Upgrades incoming HTTP requests to WebSocket connections.
- *   - Maintains a session registry (userId → WebSocket + subscriptions + presence).
- *   - Routes published item events to subscribed sessions (with permission IDs).
- *   - Sends heartbeat pings every 30 s and disconnects idle sessions.
- *   - Enforces per-session rate limiting (max 20 inbound messages / second).
+ * A room is addressed per site and per plane:
+ *   - studio room  (`{siteId}` / `{siteId}:{region}`) — admin users (`users` table).
+ *   - audience room (`{siteId}:aud[:bucket]`)         — end-users (app-owned table),
+ *                                                       addressed by subject / channel.
+ * Both planes reuse this one class; sessions carry a `principal.plane` and
+ * fan-out is strictly isolated across planes.
  *
- * Protocol (client → server):
- *   { type: 'subscribe',   collection: string }
- *   { type: 'unsubscribe', collection: string }
- *   { type: 'presence',    collection?: string, itemId?: string, meta?: object }
- *   { type: 'pong' }
+ * Responsibilities:
+ *   - Upgrade incoming HTTP requests to WebSocket connections.
+ *   - Maintain a session registry (principal + subscriptions + channels + presence).
+ *   - Route published events to sessions by plane → target → collection.
+ *   - Heartbeat pings every 30 s; disconnect idle sessions after 90 s.
+ *   - Per-session rate limiting (max 20 inbound messages / second).
  *
- * Protocol (server → client):
- *   { type: 'ping' }
- *   { type: 'event',    collection, action, itemId, payload }
- *   { type: 'presence', users: PresenceEntry[] }
- *   { type: 'error',    code, message }
- *   { type: 'welcome',  sessionId }
+ * Protocol — see `@lumibase/shared` (`realtime/protocol.ts`) for the canonical
+ * Zod definitions shared with every client.
+ *   client → server: subscribe | unsubscribe | presence | join | leave | pong
+ *   server → client: welcome | ack | joined | left | event | notification |
+ *                     presence | error | ping | pong
  */
 
 import { DurableObject } from 'cloudflare:workers';
 import { nanoid } from 'nanoid';
+import { parseClientMessage, type RealtimeEvent } from '@lumibase/shared';
+import { shouldDeliver, toWireMessage } from './fan-out';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface RealtimeEvent {
-  type: 'event';
-  collection: string;
-  action: 'create' | 'update' | 'delete';
-  itemId: string;
-  payload: unknown;
-  /** userId that triggered the mutation — used to skip echo. */
-  actorUserId?: string;
-}
+export type { RealtimeEvent } from '@lumibase/shared';
 
 export interface PresenceEntry {
   sessionId: string;
-  userId: string;
+  userId?: string;
+  subjectId?: string;
   collection?: string;
   itemId?: string;
   meta?: Record<string, unknown>;
   lastSeen: string; // ISO timestamp
 }
 
+interface SessionPrincipal {
+  plane: 'studio' | 'public';
+  userId?: string;
+  subjectId?: string;
+}
+
 interface SessionMeta {
   ws: WebSocket;
   sessionId: string;
-  userId: string;
-  subscriptions: Set<string>; // collection names
+  principal: SessionPrincipal;
+  subscriptions: Set<string>; // collection names (studio)
+  channels: Set<string>; // joined channels (audience)
+  allowedChannels: Set<string>; // channel allowlist from the ticket
   presence: Omit<PresenceEntry, 'sessionId' | 'lastSeen'>;
   lastActivity: number; // Date.now()
   msgCount: number; // rolling 1-second counter
@@ -82,7 +84,7 @@ export class SiteRoom extends DurableObject<any> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
-    // Internal publish path — called by ItemService to fan-out mutation events.
+    // Internal publish path — called by the realtime provider to fan-out events.
     if (url.pathname === '/publish' && request.method === 'POST') {
       try {
         const event = (await request.json()) as RealtimeEvent;
@@ -98,7 +100,13 @@ export class SiteRoom extends DurableObject<any> {
       return new Response('Expected Upgrade: websocket', { status: 426 });
     }
 
-    const userId = url.searchParams.get('userId') ?? 'anon';
+    // Principal is derived by the WS upgrade route from a verified ticket and
+    // forwarded via query params. The DO trusts these — it never reads identity
+    // from client messages.
+    const plane = url.searchParams.get('plane') === 'public' ? 'public' : 'studio';
+    const userId = url.searchParams.get('userId') ?? undefined;
+    const subjectId = url.searchParams.get('subjectId') ?? undefined;
+    const allowedChannels = parseChannelList(url.searchParams.get('channels'));
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
@@ -110,9 +118,11 @@ export class SiteRoom extends DurableObject<any> {
     const session: SessionMeta = {
       ws: server,
       sessionId,
-      userId,
+      principal: { plane, userId, subjectId },
       subscriptions: new Set(),
-      presence: { userId },
+      channels: new Set(),
+      allowedChannels,
+      presence: { userId, subjectId },
       lastActivity: now,
       msgCount: 0,
       msgWindowStart: now,
@@ -120,7 +130,7 @@ export class SiteRoom extends DurableObject<any> {
     };
     this.sessions.set(sessionId, session);
 
-    this.send(server, { type: 'welcome', sessionId });
+    this.send(server, { type: 'welcome', sessionId, plane });
 
     // These listeners are useful in non-hibernating runtimes. Cloudflare's
     // Durable Object WebSocket hibernation path dispatches to the
@@ -164,7 +174,7 @@ export class SiteRoom extends DurableObject<any> {
           /* already closed */
         }
         this.sessions.delete(sessionId);
-        this.broadcastPresence();
+        this.broadcastPresence(session.principal.plane);
         continue;
       }
 
@@ -173,7 +183,7 @@ export class SiteRoom extends DurableObject<any> {
         this.send(session.ws, { type: 'ping' });
       } catch {
         this.sessions.delete(sessionId);
-        this.broadcastPresence();
+        this.broadcastPresence(session.principal.plane);
       }
     }
 
@@ -186,15 +196,27 @@ export class SiteRoom extends DurableObject<any> {
   // ─── External publish ─────────────────────────────────────────────────────
 
   /**
-   * Called by the CMS worker (via DO stub) to publish an item mutation event.
-   * Broadcasts to all sessions subscribed to the given collection, except the
-   * actor themselves (to avoid echo).
+   * Fan-out an event to matching sessions. Matching order:
+   *   1. plane must match the event's plane (strict isolation);
+   *   2. if the event has a `target`, match userId OR subjectId OR joined channel;
+   *   3. otherwise (no target) match a collection subscription (legacy studio).
+   * Skip-echo applies to the studio plane only.
    */
   async publish(event: RealtimeEvent): Promise<void> {
-    const payload = JSON.stringify(event);
+    const payload = JSON.stringify(toWireMessage(event));
+
     for (const session of this.sessions.values()) {
-      if (!session.subscriptions.has(event.collection)) continue;
-      if (session.userId === event.actorUserId) continue;
+      if (
+        !shouldDeliver(event, {
+          plane: session.principal.plane,
+          userId: session.principal.userId,
+          subjectId: session.principal.subjectId,
+          subscriptions: session.subscriptions,
+          channels: session.channels,
+        })
+      ) {
+        continue;
+      }
       try {
         session.ws.send(payload);
       } catch {
@@ -223,33 +245,58 @@ export class SiteRoom extends DurableObject<any> {
 
     session.lastActivity = now;
 
-    let msg: Record<string, unknown>;
+    let raw: unknown;
     try {
-      msg = JSON.parse(typeof event.data === 'string' ? event.data : '') as Record<string, unknown>;
+      raw = JSON.parse(typeof event.data === 'string' ? event.data : '');
     } catch {
       this.send(session.ws, { type: 'error', code: 'INVALID_JSON', message: 'Invalid JSON' });
       return;
     }
 
+    const msg = parseClientMessage(raw);
+    if (!msg) {
+      this.send(session.ws, { type: 'error', code: 'INVALID_MESSAGE', message: 'Unknown message' });
+      return;
+    }
+
     switch (msg.type) {
       case 'subscribe': {
-        const collection = msg.collection as string;
-        if (collection) session.subscriptions.add(collection);
+        session.subscriptions.add(msg.collection);
         break;
       }
       case 'unsubscribe': {
-        const collection = msg.collection as string;
-        if (collection) session.subscriptions.delete(collection);
+        session.subscriptions.delete(msg.collection);
+        break;
+      }
+      case 'join': {
+        // Channel authz is enforced from the ticket allowlist, never trusted
+        // from the client. A subject can only join channels it was granted.
+        if (!session.allowedChannels.has(msg.channel)) {
+          this.send(session.ws, {
+            type: 'error',
+            code: 'CHANNEL_FORBIDDEN',
+            message: `Not allowed to join channel: ${msg.channel}`,
+          });
+          break;
+        }
+        session.channels.add(msg.channel);
+        this.send(session.ws, { type: 'joined', channel: msg.channel });
+        break;
+      }
+      case 'leave': {
+        session.channels.delete(msg.channel);
+        this.send(session.ws, { type: 'left', channel: msg.channel });
         break;
       }
       case 'presence': {
         session.presence = {
-          userId: session.userId,
-          collection: msg.collection as string | undefined,
-          itemId: msg.itemId as string | undefined,
-          meta: msg.meta as Record<string, unknown> | undefined,
+          userId: session.principal.userId,
+          subjectId: session.principal.subjectId,
+          collection: msg.collection,
+          itemId: msg.itemId,
+          meta: msg.meta,
         };
-        this.broadcastPresence();
+        this.broadcastPresence(session.principal.plane);
         break;
       }
       case 'pong': {
@@ -260,8 +307,9 @@ export class SiteRoom extends DurableObject<any> {
   }
 
   private onClose(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
     this.sessions.delete(sessionId);
-    this.broadcastPresence();
+    if (session) this.broadcastPresence(session.principal.plane);
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -273,15 +321,17 @@ export class SiteRoom extends DurableObject<any> {
     return null;
   }
 
-  private broadcastPresence(): void {
+  /** Presence is scoped per plane — studio peers never see audience presence. */
+  private broadcastPresence(plane: 'studio' | 'public'): void {
     const now = new Date().toISOString();
-    const users: PresenceEntry[] = Array.from(this.sessions.values()).map((s) => ({
-      sessionId: s.sessionId,
-      ...s.presence,
-      lastSeen: now,
-    }));
+    const users: PresenceEntry[] = [];
+    for (const s of this.sessions.values()) {
+      if (s.principal.plane !== plane) continue;
+      users.push({ sessionId: s.sessionId, ...s.presence, lastSeen: now });
+    }
     const payload = JSON.stringify({ type: 'presence', users });
     for (const session of this.sessions.values()) {
+      if (session.principal.plane !== plane) continue;
       try {
         session.ws.send(payload);
       } catch {
@@ -297,4 +347,17 @@ export class SiteRoom extends DurableObject<any> {
       /* already closed */
     }
   }
+}
+
+// ─── Module helpers ───────────────────────────────────────────────────────────
+
+/** Parse a comma-separated channel allowlist from a query param. */
+function parseChannelList(value: string | null): Set<string> {
+  if (!value) return new Set();
+  return new Set(
+    value
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean),
+  );
 }
