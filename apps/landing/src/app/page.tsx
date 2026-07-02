@@ -11,8 +11,8 @@ import {
   ProvenanceViz,
   RunsViz,
   SchemaViz,
-  TrustViz,
 } from "@/components/SectionVisuals";
+import TrustViz from "@/components/TrustViz";
 import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
 
 const softwareApplicationJsonLd = {
