@@ -11,6 +11,51 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [0.15.0] - 2026-07-02
+
+### Version
+
+- `v0.15.0`
+
+### Date
+
+- `2026-07-02`
+
+### Highlights
+
+- **Realtime audience plane.** Realtime is now split into two planes: the existing admin/Studio plane and a new **audience plane** for end-user frontends. Frontends connect with short-lived audience tickets over a plane-aware WebSocket upgrade, subscribe to subject/channel addresses, and receive targeted fan-out from a plane-aware `SiteRoom`. A per-subject connection cap and audience shard resolver keep tenants isolated under load. A new `@lumibase/sdk` `AudienceClient` gives frontend apps a typed entry point, and a Node WebSocket hub backs the audience plane under the Docker dual deployment.
+- **Cosmic design system.** The landing, marketplace, and docs surfaces adopt a shared cosmic design system — an orbital hero and product sections on landing, refreshed browse/detail pages on marketplace, and a cosmic dark theme for the docs viewer.
+- **Security hardening.** `ItemService` construction is now funnelled through an RBAC-explicit factory so no call site can bypass permission context, and schema-admin routes are guarded against missing permission checks.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **Realtime / audience plane:** shared `audience-channels` protocol; runtime realtime provider abstraction (ADR-002); plane-aware `SiteRoom` with targeted fan-out; audience tickets + plane-aware WS upgrade; targeted publish via provider + notification inbox; Node WebSocket hub for the Docker dual deployment; per-subject connection cap + audience shard resolver.
+- **SDK:** `AudienceClient` for frontend end-user realtime.
+- **CMS:** admin backstop for control-plane skills on the MCP endpoint.
+
+### Changed
+
+- **Landing / marketplace / docs:** applied the cosmic design system — orbital hero and product sections (landing), browse and detail pages (marketplace), cosmic dark theme (docs viewer).
+- **CMS:** `ItemService` construction routed through an RBAC-explicit factory.
+
+### Fixed
+
+- **CMS:** schema-admin routes now guarded against a missing permission check (regression test added).
+- **Marketplace:** removed a no-op SEO self-replacement in `categoryLabel`.
+- **SDK:** fixed strict-null handling in the `AudienceClient` test helper.
+
+### Notes
+
+- **Docs:** documented the audience plane and logged it in the Setup Impact registry; added English + Vietnamese runtime security guards reference docs (EN/VI parity); logged the `ItemService` RBAC guard as reviewed (n/a) in the Setup Impact registry.
+
+### Migrations
+
+- None
+
 ## [0.14.0] - 2026-07-02
 
 ### Version
