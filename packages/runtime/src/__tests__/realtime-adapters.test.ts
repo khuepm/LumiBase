@@ -38,7 +38,9 @@ describe('CloudflareRealtimeProvider', () => {
     const { namespace, fetch, idFromName } = makeNamespace();
     await new CloudflareRealtimeProvider(namespace).publish('site-1', studioEvent);
     expect(idFromName).toHaveBeenCalledWith('site-1');
-    const [, init] = fetch.mock.calls[0];
+    const call = fetch.mock.calls[0];
+    expect(call).toBeDefined();
+    const init = call![1];
     expect(JSON.parse(init.body)).toMatchObject({ plane: 'studio', collection: 'posts' });
   });
 
