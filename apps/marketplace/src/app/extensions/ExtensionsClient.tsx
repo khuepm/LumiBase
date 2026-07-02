@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { listExtensions } from "@/lib/api";
+import { listExtensions, CATEGORIES } from "@/lib/api";
 import type { Extension } from "@/lib/types";
 import ExtensionCard from "@/components/ExtensionCard";
 import FilterSidebar from "@/components/FilterSidebar";
@@ -42,42 +42,40 @@ export default function ExtensionsClient() {
   };
 
   const activeCategory = category
-    ? category.charAt(0).toUpperCase() + category.slice(1)
+    ? CATEGORIES.find((c) => c.slug === category)?.label ??
+      category.charAt(0).toUpperCase() + category.slice(1)
     : null;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1140px] px-6 py-10">
       {/* Page header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-100">
-          {activeCategory ? `${activeCategory} Extensions` : "All Extensions"}
+      <div className="mb-7 flex flex-wrap items-baseline justify-between gap-2">
+        <h1 className="text-[26px] font-bold tracking-[-0.3px] text-white">
+          {activeCategory ? `${activeCategory} extensions` : "All extensions"}
         </h1>
         {!loading && (
-          <p className="mt-1 text-sm text-gray-500">
-            {total} extension{total !== 1 ? "s" : ""} found
+          <span className="text-sm font-medium text-txt-faint">
+            {total} extension{total !== 1 ? "s" : ""}
             {q ? ` for "${q}"` : ""}
-          </p>
+          </span>
         )}
       </div>
 
       {/* Search bar */}
-      <div className="mb-8">
-        <SearchBar className="max-w-xl" />
+      <div className="mb-9">
+        <SearchBar className="max-w-[560px]" />
       </div>
 
-      <div className="flex gap-8">
+      <div className="flex flex-col gap-10 lg:flex-row">
         {/* Sidebar */}
         <FilterSidebar />
 
         {/* Grid */}
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           {loading ? (
-            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: PER_PAGE }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-56 animate-pulse rounded-xl border border-surface-600 bg-surface-800"
-                />
+                <div key={i} className="surface-card h-56 animate-pulse" />
               ))}
             </div>
           ) : extensions.length === 0 ? (
@@ -91,7 +89,7 @@ export default function ExtensionsClient() {
             />
           ) : (
             <>
-              <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 animate-fade-in">
+              <div className="animate-fade-in grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {extensions.map((ext) => (
                   <ExtensionCard key={ext.id} extension={ext} />
                 ))}
@@ -105,10 +103,10 @@ export default function ExtensionsClient() {
                     id="pagination-prev"
                     aria-label="Previous page"
                     aria-disabled={page <= 1}
-                    className={`flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${
+                    className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
                       page <= 1
-                        ? "pointer-events-none border-surface-700 text-gray-700"
-                        : "border-surface-600 text-gray-400 hover:border-surface-500 hover:text-gray-200"
+                        ? "pointer-events-none text-white/20"
+                        : "bg-surface-3 text-txt-secondary ring-glass hover:text-white"
                     }`}
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -122,10 +120,10 @@ export default function ExtensionsClient() {
                         id={`pagination-page-${p}`}
                         aria-label={`Page ${p}`}
                         aria-current={p === page ? "page" : undefined}
-                        className={`flex h-9 w-9 items-center justify-center rounded-lg border text-sm font-medium transition-colors ${
+                        className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
                           p === page
-                            ? "border-brand-700 bg-brand-900/60 text-brand-300"
-                            : "border-surface-600 text-gray-400 hover:border-surface-500 hover:text-gray-200"
+                            ? "bg-accent-violet text-white shadow-[0_8px_24px_-8px_rgba(123,97,255,0.7)]"
+                            : "bg-surface-3 text-txt-secondary ring-glass hover:text-white"
                         }`}
                       >
                         {p}
@@ -138,10 +136,10 @@ export default function ExtensionsClient() {
                     id="pagination-next"
                     aria-label="Next page"
                     aria-disabled={page >= totalPages}
-                    className={`flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${
+                    className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
                       page >= totalPages
-                        ? "pointer-events-none border-surface-700 text-gray-700"
-                        : "border-surface-600 text-gray-400 hover:border-surface-500 hover:text-gray-200"
+                        ? "pointer-events-none text-white/20"
+                        : "bg-surface-3 text-txt-secondary ring-glass hover:text-white"
                     }`}
                   >
                     <ChevronRight className="h-4 w-4" />

@@ -1,19 +1,20 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { getExtension, getAllSlugs } from "@/lib/api";
-import TagBadge from "@/components/TagBadge";
+import { getExtension, getAllSlugs, listExtensions } from "@/lib/api";
+import type { Extension } from "@/lib/types";
+import {
+  categoryAccent,
+  categoryLabel,
+  formatInstalls,
+  trustLevel,
+} from "@/lib/design";
+import Badge from "@/components/Badge";
+import TagChip from "@/components/TagChip";
+import PlanetIcon from "@/components/PlanetIcon";
 import VersionHistory from "@/components/VersionHistory";
 import InstallSlug from "@/components/InstallSlug";
-import {
-  ChevronLeft,
-  Download,
-  Star,
-  ExternalLink,
-  Github,
-  Calendar,
-  Scale,
-} from "lucide-react";
+import AddToWorkspace from "@/components/AddToWorkspace";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -36,11 +37,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-function formatNumber(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
-}
-
 function formatDate(iso: string | null) {
   if (!iso) return "Unknown";
   return new Date(iso).toLocaleDateString("en-US", {
@@ -48,6 +44,10 @@ function formatDate(iso: string | null) {
     month: "long",
     day: "numeric",
   });
+}
+
+function ratingStars(rating: number): string {
+  return "★".repeat(Math.round(rating)) + "☆".repeat(5 - Math.round(rating));
 }
 
 /** Render a subset of Markdown to HTML spans. Very lightweight — not a full parser. */
@@ -66,6 +66,25 @@ function renderSimpleMarkdown(md: string): React.ReactNode[] {
   });
 }
 
+async function getRelated(ext: Extension): Promise<Extension[]> {
+  const sameCategory = await listExtensions({
+    category: ext.category,
+    sort: "popular",
+    perPage: 4,
+  });
+  const related = sameCategory.data.filter((e) => e.slug !== ext.slug);
+  if (related.length >= 3) return related.slice(0, 3);
+  // Fill with most-installed extensions from other categories.
+  const popular = await listExtensions({ sort: "popular", perPage: 6 });
+  for (const e of popular.data) {
+    if (related.length >= 3) break;
+    if (e.slug !== ext.slug && !related.some((r) => r.slug === e.slug)) {
+      related.push(e);
+    }
+  }
+  return related.slice(0, 3);
+}
+
 export default async function ExtensionDetailPage({ params }: PageProps) {
   const { slug } = await params;
   const ext = await getExtension(slug);
@@ -82,157 +101,209 @@ export default async function ExtensionDetailPage({ params }: PageProps) {
     latestVersion,
     rating,
     ratingCount,
-    publishedAt,
     updatedAt,
     repositoryUrl,
-    documentationUrl,
     licenseType,
     versions,
   } = ext;
 
+  const accent = categoryAccent(category);
+  const trust = trustLevel(category);
+  const related = await getRelated(ext);
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="pb-4">
       {/* Breadcrumb */}
-      <nav aria-label="Breadcrumb" className="mb-8">
-        <Link
-          href="/extensions/"
-          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-300 transition-colors"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Back to Extensions
+      <nav
+        aria-label="Breadcrumb"
+        className="mx-auto flex max-w-[1140px] items-center gap-2 px-6 pt-7 text-[13px] font-medium text-[rgb(150,150,156)]"
+      >
+        <Link href="/" className="transition-colors hover:text-white">
+          Marketplace
         </Link>
+        <span className="text-[rgb(90,90,96)]">/</span>
+        <Link
+          href={`/categories/${category}/`}
+          className="transition-colors hover:text-white"
+        >
+          {categoryLabel(category)}
+        </Link>
+        <span className="text-[rgb(90,90,96)]">/</span>
+        <span className="text-[rgb(205,205,210)]">{name}</span>
       </nav>
 
-      <div className="grid gap-10 lg:grid-cols-3">
-        {/* ── Main content ──────────────────────────────────────────────── */}
-        <div className="lg:col-span-2 space-y-8">
-          {/* Header */}
-          <div className="flex items-start gap-5">
-            <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl bg-brand-900/60 border border-brand-800/50 text-2xl font-bold text-brand-300">
-              {name[0]}
-            </div>
-            <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-bold text-gray-50">{name}</h1>
-              <p className="mt-1 text-sm text-gray-500">
-                by <span className="text-gray-400">{publisherName}</span>
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <TagBadge label={category} variant="category" size="md" />
-                {tags.map((tag) => (
-                  <TagBadge key={tag} label={tag} size="md" />
-                ))}
-              </div>
-            </div>
+      {/* Identity header */}
+      <header className="mx-auto flex max-w-[1140px] flex-col items-start gap-6 px-6 pt-7 md:flex-row">
+        <PlanetIcon
+          accent={accent}
+          size={88}
+          radius={22}
+          glow={50}
+          className="shadow-[0_20px_44px_rgba(0,0,0,.5)]"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-[30px] font-bold tracking-[-0.5px] text-white md:text-[38px]">
+              {name}
+            </h1>
+            <Badge tone={accent} dot>
+              {categoryLabel(category)}
+            </Badge>
           </div>
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-[18px] gap-y-1.5 text-sm font-medium text-[rgb(175,175,182)]">
+            <span className="flex items-center gap-[7px]">
+              <span
+                aria-hidden
+                className="h-4 w-4 rounded-full"
+                style={{ background: "linear-gradient(180deg,#fff,#cfcfcf)" }}
+              />
+              by {publisherName}
+            </span>
+            {rating != null && ratingCount != null && ratingCount > 0 && (
+              <span className="text-gold">
+                {ratingStars(rating)}{" "}
+                <span className="text-[rgb(175,175,182)]">
+                  {rating.toFixed(1)} ({ratingCount.toLocaleString("en-US")})
+                </span>
+              </span>
+            )}
+            <span>{formatInstalls(ext.totalDownloads)}</span>
+          </div>
+          <p className="mt-4 max-w-[620px] text-base font-medium leading-[26px] text-[rgb(195,195,200)]">
+            {description}
+          </p>
+        </div>
+        <div className="flex flex-shrink-0 flex-row gap-2.5 md:flex-col">
+          <AddToWorkspace slug={slug} />
+          {repositoryUrl && (
+            <a
+              href={repositoryUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              id={`ext-repo-${slug}`}
+              className="btn-pill btn-glass btn-md w-[180px]"
+            >
+              <span>View source</span>
+            </a>
+          )}
+        </div>
+      </header>
 
-          {/* Description */}
-          <p className="text-gray-300 leading-relaxed text-base">{description}</p>
-
-          {/* README */}
-          <div>
-            <h2 className="mb-4 text-lg font-semibold text-gray-100">Documentation</h2>
-            <div className="prose-dark rounded-xl border border-surface-600 bg-surface-800/60 p-6">
+      {/* Body grid */}
+      <div className="mx-auto grid max-w-[1140px] gap-10 px-6 pt-11 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <main className="min-w-0">
+          {/* About / readme */}
+          <section>
+            <h2 className="text-2xl font-bold tracking-[-0.3px] text-white">
+              About this extension
+            </h2>
+            <div className="prose-dark mt-3.5 max-w-[620px]">
               {renderSimpleMarkdown(readme)}
             </div>
-          </div>
+          </section>
 
-          {/* Version history */}
-          <VersionHistory versions={versions} />
-        </div>
+          {/* What's new */}
+          <section className="mt-10">
+            <h2 className="mb-4 text-2xl font-bold tracking-[-0.3px] text-white">
+              What&apos;s new · v{latestVersion}
+            </h2>
+            <VersionHistory versions={versions} />
+          </section>
+        </main>
 
-        {/* ── Sidebar ───────────────────────────────────────────────────── */}
+        {/* Sidebar */}
         <aside className="space-y-5">
-          {/* Install */}
-          <InstallSlug slug={slug} />
-
-          {/* Stats */}
-          <div className="rounded-xl border border-surface-600 bg-surface-800 divide-y divide-surface-700">
-            <div className="px-5 py-3.5">
-              <h3 className="text-sm font-semibold text-gray-200">Details</h3>
+          <div className="flex flex-col gap-4 rounded-[18px] bg-surface-1 p-[22px] ring-glass lg:sticky lg:top-6">
+            <div className="flex justify-between text-sm font-medium">
+              <span className="text-[rgb(150,150,156)]">Publisher</span>
+              <span className="text-white">{publisherName}</span>
             </div>
-            <div className="px-5 py-3 flex items-center justify-between text-sm">
-              <span className="text-gray-500">Latest version</span>
-              <span className="font-mono text-gray-200">v{latestVersion}</span>
+            <div className="h-px bg-white/[.07]" />
+            <div className="flex justify-between text-sm font-medium">
+              <span className="text-[rgb(150,150,156)]">Version</span>
+              <span className="text-white">{latestVersion}</span>
             </div>
-            {ext.totalDownloads ? (
-              <div className="px-5 py-3 flex items-center justify-between text-sm">
-                <span className="flex items-center gap-1.5 text-gray-500">
-                  <Download className="h-3.5 w-3.5" />
-                  Downloads
-                </span>
-                <span className="text-gray-200">{formatNumber(ext.totalDownloads)}</span>
-              </div>
-            ) : null}
-            {rating != null && ratingCount != null && ratingCount > 0 && (
-              <div className="px-5 py-3 flex items-center justify-between text-sm">
-                <span className="flex items-center gap-1.5 text-gray-500">
-                  <Star className="h-3.5 w-3.5" />
-                  Rating
-                </span>
-                <span className="text-gray-200">
-                  {rating.toFixed(1)}
-                  <span className="text-gray-600 ml-1">({ratingCount})</span>
-                </span>
-              </div>
-            )}
+            <div className="flex justify-between text-sm font-medium">
+              <span className="text-[rgb(150,150,156)]">Updated</span>
+              <span className="text-white">{formatDate(updatedAt)}</span>
+            </div>
             {licenseType && (
-              <div className="px-5 py-3 flex items-center justify-between text-sm">
-                <span className="flex items-center gap-1.5 text-gray-500">
-                  <Scale className="h-3.5 w-3.5" />
-                  License
-                </span>
-                <span className="text-gray-200">{licenseType}</span>
+              <div className="flex justify-between text-sm font-medium">
+                <span className="text-[rgb(150,150,156)]">License</span>
+                <span className="text-white">{licenseType}</span>
               </div>
             )}
-            <div className="px-5 py-3 flex items-center justify-between text-sm">
-              <span className="flex items-center gap-1.5 text-gray-500">
-                <Calendar className="h-3.5 w-3.5" />
-                Published
-              </span>
-              <span className="text-gray-400 text-xs">{formatDate(publishedAt)}</span>
+            <div className="h-px bg-white/[.07]" />
+            <div>
+              <div className="mb-2.5 text-xs font-semibold uppercase tracking-[.6px] text-[rgb(130,130,138)]">
+                Trust level required
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-lg bg-[rgba(123,97,255,.16)] px-2.5 py-[5px] text-xs font-semibold text-[#c9bcff] shadow-[inset_0_0_0_1px_rgba(123,97,255,.30)]">
+                  {trust.level}
+                </span>
+                <span className="text-xs font-medium text-[rgb(150,150,156)]">
+                  {trust.note}
+                </span>
+              </div>
             </div>
-            <div className="px-5 py-3 flex items-center justify-between text-sm">
-              <span className="text-gray-500">Updated</span>
-              <span className="text-gray-400 text-xs">{formatDate(updatedAt)}</span>
-            </div>
+            {tags.length > 0 && (
+              <>
+                <div className="h-px bg-white/[.07]" />
+                <div>
+                  <div className="mb-2.5 text-xs font-semibold uppercase tracking-[.6px] text-[rgb(130,130,138)]">
+                    Works with
+                  </div>
+                  <div className="flex flex-wrap gap-[7px]">
+                    {tags.map((tag) => (
+                      <TagChip key={tag}>{tag}</TagChip>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Links */}
-          {(repositoryUrl || documentationUrl) && (
-            <div className="rounded-xl border border-surface-600 bg-surface-800 divide-y divide-surface-700">
-              <div className="px-5 py-3.5">
-                <h3 className="text-sm font-semibold text-gray-200">Links</h3>
-              </div>
-              {repositoryUrl && (
-                <a
-                  href={repositoryUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  id={`ext-repo-${slug}`}
-                  className="flex items-center gap-2 px-5 py-3 text-sm text-gray-400 hover:text-gray-200 hover:bg-surface-700 transition-colors"
-                >
-                  <Github className="h-4 w-4" />
-                  Source Code
-                  <ExternalLink className="ml-auto h-3.5 w-3.5 text-gray-600" />
-                </a>
-              )}
-              {documentationUrl && (
-                <a
-                  href={documentationUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  id={`ext-docs-${slug}`}
-                  className="flex items-center gap-2 px-5 py-3 text-sm text-gray-400 hover:text-gray-200 hover:bg-surface-700 transition-colors"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Documentation
-                  <ExternalLink className="ml-auto h-3.5 w-3.5 text-gray-600" />
-                </a>
-              )}
-            </div>
-          )}
+          <InstallSlug slug={slug} />
         </aside>
       </div>
+
+      {/* Related extensions */}
+      {related.length > 0 && (
+        <section className="mx-auto max-w-[1140px] px-6 pt-[72px]">
+          <h2 className="mb-6 text-2xl font-bold tracking-[-0.3px] text-white">
+            Related extensions
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {related.map((rel) => (
+              <Link
+                key={rel.slug}
+                href={`/extensions/${rel.slug}/`}
+                id={`related-${rel.slug}`}
+                className="flex items-start gap-3.5 rounded-[20px] bg-surface-1 p-5 ring-glass transition-transform duration-300 hover:-translate-y-0.5"
+              >
+                <PlanetIcon
+                  accent={categoryAccent(rel.category)}
+                  size={42}
+                  radius={13}
+                  glow={26}
+                />
+                <div className="min-w-0">
+                  <div className="text-[15px] font-semibold text-white">
+                    {rel.name}
+                  </div>
+                  <p className="mt-[5px] line-clamp-2 text-[12.5px] font-medium leading-5 text-[rgb(170,170,178)]">
+                    {rel.description}
+                  </p>
+                  <div className="mt-2 text-xs font-medium text-[rgb(150,150,156)]">
+                    {formatInstalls(rel.totalDownloads)}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

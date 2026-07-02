@@ -1,168 +1,127 @@
-import Link from "next/link";
-import { ArrowRight, Puzzle, TrendingUp, Zap } from "lucide-react";
-import { getFeaturedExtensions, getMarketplaceStats, CATEGORIES } from "@/lib/api";
+import { Search } from "lucide-react";
+import { listExtensions, CATEGORIES } from "@/lib/api";
 import ExtensionCard from "@/components/ExtensionCard";
+import TagChip from "@/components/TagChip";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "LumiBase Marketplace — Discover Extensions",
+  title: "LumiBase Marketplace — Extend your Content OS",
 };
 
+const PUBLISH_URL = "https://docs.lumibase.dev/extensions/create";
+
 export default async function HomePage() {
-  const [featured, stats] = await Promise.all([
-    getFeaturedExtensions(),
-    getMarketplaceStats(),
-  ]);
+  const featured = await listExtensions({ sort: "popular", perPage: 6 });
 
   return (
     <div className="flex flex-col">
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden px-6 pt-20 pb-16 md:pt-28 md:pb-20 hero-grid">
-        {/* Glow */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 bg-hero-glow"
-        />
-        <div className="relative mx-auto max-w-4xl text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-brand-800/60 bg-brand-950/60 px-4 py-1.5 text-xs font-medium text-brand-400 mb-6 backdrop-blur-sm">
-            <Puzzle className="h-3.5 w-3.5" />
-            Extension Marketplace
-          </div>
+      <section className="px-5 pb-5 pt-16 text-center md:pt-20">
+        <h1 className="mx-auto text-[40px] font-bold leading-[48px] tracking-[-0.4px] text-white md:text-[60px] md:leading-[70px]">
+          Extend your Content OS.
+        </h1>
+        <p className="mx-auto mt-5 max-w-[480px] text-[19px] font-medium leading-[31px] text-txt-secondary">
+          Browse, install, and publish extensions that give your agents new
+          skills.
+        </p>
 
-          <h1 className="text-4xl font-extrabold tracking-tight text-gray-50 sm:text-5xl md:text-6xl text-balance">
-            Extend LumiBase with{" "}
-            <span className="bg-gradient-to-r from-brand-400 to-indigo-400 bg-clip-text text-transparent">
-              Powerful Plugins
-            </span>
-          </h1>
+        {/* Glass search pill */}
+        <form
+          action="/extensions/"
+          method="get"
+          role="search"
+          className="glass-pill mx-auto mt-[34px] flex max-w-[560px] items-center gap-2.5 py-2 pl-5 pr-2"
+        >
+          <Search
+            className="h-[18px] w-[18px] flex-shrink-0 text-txt-faint"
+            aria-hidden
+          />
+          <input
+            type="text"
+            name="q"
+            id="hero-search"
+            placeholder="Search extensions and skills"
+            aria-label="Search extensions"
+            className="h-10 min-w-0 flex-1 border-none bg-transparent text-[15px] font-medium text-white outline-none placeholder:text-txt-faint"
+          />
+          <button type="submit" className="btn-pill btn-primary btn-sm h-10">
+            <span>Search</span>
+          </button>
+        </form>
 
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-gray-400 leading-relaxed text-balance">
-            Browse community and official extensions to add SEO, analytics,
-            media optimization, e-commerce, and more to your headless CMS in
-            seconds.
-          </p>
-
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-            <Link
-              href="/extensions/"
-              id="hero-browse"
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-brand-900/30 hover:bg-brand-500 hover:-translate-y-0.5 transition-all active:translate-y-0"
+        {/* Category chips */}
+        <div className="mx-auto mt-[30px] flex max-w-[720px] flex-wrap justify-center gap-[9px]">
+          <TagChip href="/extensions/" active id="home-cat-all">
+            All
+          </TagChip>
+          {CATEGORIES.map((cat) => (
+            <TagChip
+              key={cat.slug}
+              href={`/categories/${cat.slug}/`}
+              id={`home-cat-${cat.slug}`}
             >
-              Browse Extensions
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-            <a
-              href="https://docs.lumibase.dev/extensions/create"
-              target="_blank"
-              rel="noopener noreferrer"
-              id="hero-publish"
-              className="inline-flex items-center gap-2 rounded-xl border border-surface-600 px-6 py-3 text-sm font-semibold text-gray-300 hover:border-surface-500 hover:text-gray-100 hover:-translate-y-0.5 transition-all"
-            >
-              Publish an Extension
-            </a>
-          </div>
-
-          {/* Stats */}
-          <div className="mt-14 flex flex-wrap items-center justify-center gap-8 text-center">
-            {[
-              { label: "Extensions", value: String(stats.totalExtensions), icon: Puzzle },
-              { label: "Verified bundles", value: "Signed", icon: TrendingUp },
-              { label: "Categories", value: String(stats.totalCategories), icon: Zap },
-            ].map(({ label, value, icon: Icon }) => (
-              <div key={label} className="flex flex-col items-center gap-1">
-                <div className="flex items-center gap-1.5 text-2xl font-bold text-gray-100">
-                  <Icon className="h-5 w-5 text-brand-400" />
-                  {value}
-                </div>
-                <span className="text-xs text-gray-500">{label}</span>
-              </div>
-            ))}
-          </div>
+              {cat.label}
+            </TagChip>
+          ))}
         </div>
       </section>
 
-      {/* ── Featured Extensions ───────────────────────────────────────────── */}
-      <section className="px-6 py-16 md:py-20">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-8 flex items-end justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-100">
-                Featured Extensions
-              </h2>
-              <p className="mt-1 text-sm text-gray-500">
-                Top picks from the community
-              </p>
-            </div>
-            <Link
-              href="/extensions/"
-              id="featured-view-all"
-              className="flex items-center gap-1 text-sm text-brand-400 hover:text-brand-300 transition-colors"
-            >
-              View all <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {featured.map((ext) => (
-              <ExtensionCard key={ext.id} extension={ext} featured />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Categories ───────────────────────────────────────────────────── */}
-      <section className="px-6 py-16 md:py-20 border-t border-surface-800">
-        <div className="mx-auto max-w-7xl">
-          <h2 className="mb-8 text-2xl font-bold text-gray-100">
-            Browse by Category
+      {/* ── Featured extensions ───────────────────────────────────────────── */}
+      <section className="mx-auto w-full max-w-[1140px] px-6 pt-14">
+        <div className="mb-7 flex items-baseline justify-between">
+          <h2 className="text-[26px] font-bold tracking-[-0.3px] text-white">
+            Featured extensions
           </h2>
-          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-            {CATEGORIES.map((cat) => (
-              <Link
-                key={cat.slug}
-                href={`/categories/${cat.slug}/`}
-                id={`home-cat-${cat.slug}`}
-                className="group flex flex-col items-center gap-3 rounded-xl border border-surface-600 bg-surface-800 p-5 text-center hover:border-brand-700/60 hover:bg-surface-700 transition-all hover:-translate-y-0.5"
-              >
-                <div className="h-10 w-10 rounded-xl bg-brand-900/60 border border-brand-800/40 flex items-center justify-center text-brand-400 font-bold text-lg group-hover:bg-brand-800/60 transition-colors">
-                  {cat.label[0]}
-                </div>
-                <span className="text-sm font-medium text-gray-300 group-hover:text-gray-100 transition-colors">
-                  {cat.label}
-                </span>
-              </Link>
-            ))}
-          </div>
+          <span className="text-sm font-medium text-txt-faint">
+            {featured.total} total
+          </span>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {featured.data.map((ext) => (
+            <ExtensionCard key={ext.id} extension={ext} />
+          ))}
         </div>
       </section>
 
-      {/* ── CTA ──────────────────────────────────────────────────────────── */}
-      <section className="px-6 py-16 md:py-20">
-        <div className="mx-auto max-w-4xl rounded-2xl border border-brand-800/40 bg-gradient-to-br from-brand-950 via-surface-800 to-surface-900 p-10 text-center relative overflow-hidden">
+      {/* ── Publish CTA ──────────────────────────────────────────────────── */}
+      <section className="mx-auto mt-28 w-full max-w-[1140px] px-6">
+        <div
+          className="relative flex flex-col items-start gap-8 overflow-hidden rounded-[28px] p-8 shadow-[inset_0_0_0_1px_rgba(255,255,255,.10)] md:flex-row md:items-center md:justify-between md:px-12 md:py-[52px]"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(123,97,255,.16), rgba(24,160,251,.08))",
+          }}
+        >
+          {/* Decorative planet sphere */}
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 bg-hero-glow opacity-40"
+            className="absolute -right-10 -top-10 h-[220px] w-[220px] rounded-full opacity-50"
+            style={{
+              background:
+                "radial-gradient(circle at 34% 30%, #fff 0%, #7B61FF 58%, #26204a 100%)",
+              boxShadow: "0 0 80px rgba(123,97,255,.4)",
+            }}
           />
-          <div className="relative">
-            <h2 className="text-2xl font-bold text-gray-50 sm:text-3xl">
-              Build and publish your own extension
+          <div className="relative max-w-[560px]">
+            <h2 className="text-[28px] font-bold tracking-[-0.4px] text-white md:text-[34px]">
+              Publish your extension.
             </h2>
-            <p className="mt-3 text-gray-400">
-              Share your work with the community. Extensions are open-source
-              and reviewed by the LumiBase team.
+            <p className="mt-3 text-base font-medium leading-[26px] text-[rgb(205,205,210)]">
+              Ship a skill to every agent on the platform. Provenance,
+              versioning and review are handled — you write the logic.
             </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-              <a
-                href="https://docs.lumibase.dev/extensions/create"
-                target="_blank"
-                rel="noopener noreferrer"
-                id="cta-create-ext"
-                className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-brand-900/30 hover:bg-brand-500 hover:-translate-y-0.5 transition-all"
-              >
-                Get Started
-                <ArrowRight className="h-4 w-4" />
-              </a>
-            </div>
+          </div>
+          <div className="relative flex-shrink-0">
+            <a
+              href={PUBLISH_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              id="cta-create-ext"
+              className="btn-pill btn-primary btn-md"
+            >
+              <span>Start building</span>
+            </a>
           </div>
         </div>
       </section>
