@@ -8,6 +8,18 @@
       "port": 4311
     },
     {
+      "name": "landing",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-F", "@lumibase/landing", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "marketplace",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-F", "@lumibase/marketplace", "dev"],
+      "port": 3002
+    },
+    {
       "name": "studio",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-F", "@lumibase/studio", "dev"],

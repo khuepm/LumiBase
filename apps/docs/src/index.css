@@ -1,8 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* shadcn/ui design tokens — consistent with apps/studio */
+/*
+ * Design tokens.
+ * - shadcn/ui HSL tokens (light kept for theme-toggle compatibility,
+ *   `.dark` mapped to the LumiBase "dark cosmic" palette — shipped default).
+ * - Raw cosmic custom properties from the LumiBase design system spec.
+ */
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -19,24 +26,150 @@
     --input: 240 5.9% 90%;
     --ring: 240 5.9% 10%;
     --radius: 0.5rem;
+
+    /* LumiBase cosmic design-system tokens */
+    --color-bg-top: rgb(30, 30, 32);
+    --color-bg-bottom: rgb(14, 14, 17);
+    --gradient-page: linear-gradient(135deg, rgb(30, 30, 32) 0%, rgb(14, 14, 17) 32%);
+    --color-surface-1: rgb(29, 28, 32);
+    --color-surface-2: rgb(36, 35, 37);
+    --color-surface-3: rgb(41, 41, 43);
+    --color-surface-4: rgb(52, 50, 54);
+    --color-surface-sunken: rgb(23, 22, 25);
+    --color-glass: rgba(255, 255, 255, 0.08);
+    --color-glass-hover: rgba(255, 255, 255, 0.14);
+    --color-text: #fff;
+    --color-text-secondary: rgb(189, 189, 192);
+    --color-text-muted: rgb(169, 169, 169);
+    --color-violet: rgb(123, 97, 255);
+    --color-blue: rgb(24, 160, 251);
+    --color-green: rgb(46, 196, 124);
+    --color-red: rgb(232, 86, 86);
+    --color-border: rgba(255, 255, 255, 0.08);
+    --color-border-strong: rgba(255, 255, 255, 0.16);
+    --radius-pill: 32px;
+    --radius-card: 24px;
+    --radius-lg: 20px;
+    --radius-md: 16px;
+    --radius-sm: 12px;
+    --radius-xs: 8px;
+    --ring-glass: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    --ring-glass-strong: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.32);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.8);
+    --glow-violet: 0 0 80px rgba(123, 97, 255, 0.45);
+    --glow-blue: 0 0 80px rgba(24, 160, 251, 0.4);
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --duration: 240ms;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    /* shadcn tokens mapped to the cosmic palette */
+    --background: 240 10% 6%; /* near-black rgb(14,14,17) */
+    --foreground: 0 0% 100%;
+    --primary: 250 100% 69%; /* violet rgb(123,97,255) */
+    --primary-foreground: 0 0% 100%;
+    --muted: 270 3% 14%; /* surface-2 rgb(36,35,37) */
+    --muted-foreground: 0 0% 66%; /* rgb(169,169,169) */
+    --accent: 240 2% 16%; /* surface-3 rgb(41,41,43) */
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 61% 62%; /* rgb(232,86,86) */
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 4% 14%; /* opaque equivalent of white@8% on near-black */
+    --input: 240 4% 14%;
+    --ring: 250 100% 69%;
   }
 
-  * { @apply border-border; }
-  body { @apply bg-background text-foreground; }
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family:
+      'Inter',
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      Roboto,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Cosmic page shell: 135deg near-black gradient, fixed attachment */
+  .dark body {
+    background: var(--gradient-page);
+    background-attachment: fixed;
+  }
+
+  /* Fixed starfield overlay */
+  .dark body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      radial-gradient(1.4px 1.4px at 12% 18%, rgba(255, 255, 255, 0.7), transparent),
+      radial-gradient(1.2px 1.2px at 34% 62%, rgba(255, 255, 255, 0.5), transparent),
+      radial-gradient(1.6px 1.6px at 58% 28%, rgba(255, 255, 255, 0.6), transparent),
+      radial-gradient(1px 1px at 72% 76%, rgba(255, 255, 255, 0.5), transparent),
+      radial-gradient(1.3px 1.3px at 88% 42%, rgba(255, 255, 255, 0.6), transparent),
+      radial-gradient(1.5px 1.5px at 46% 8%, rgba(255, 255, 255, 0.55), transparent);
+    background-repeat: repeat;
+    background-size: 100% 900px;
+  }
+
+  /* Content sits above the starfield */
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+@layer components {
+  /* Reusable cosmic helpers */
+  .ring-glass {
+    box-shadow: var(--ring-glass);
+  }
+  .ring-glass-strong {
+    box-shadow: var(--ring-glass-strong);
+  }
+  .glass-chip {
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* ---- Article typography extras (MarkdownRenderer) ---- */
+
+/* Lead paragraph — first paragraph of the article body */
+.prose-docs > p:first-of-type {
+  font-size: 18px;
+  line-height: 30px;
+  font-weight: 500;
+  color: rgb(195, 195, 200);
+}
+
+/* Note-callout inner text (blockquote override renders the shell) */
+.prose-docs blockquote p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 23px;
+  font-weight: 500;
+  color: rgb(205, 220, 235);
+}
+.prose-docs blockquote strong {
+  color: #fff;
+}
+
+/* ---- Shiki dual-theme support: activate the dark theme under `.dark` ---- */
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark, inherit) !important;
+  font-style: var(--shiki-dark-font-style, inherit) !important;
+  font-weight: var(--shiki-dark-font-weight, inherit) !important;
+  text-decoration: var(--shiki-dark-text-decoration, inherit) !important;
 }
