@@ -46,6 +46,12 @@ export interface NodeHubOptions {
   server: HttpServer;
   hub: InProcessRealtimeHub;
   jwtSecret: string;
+  /**
+   * Max concurrent sessions per public subject (multi-tab/device cap). A subject
+   * exceeding this is rejected with WS close 1013 ("try again later"). 0 or
+   * undefined disables the cap. Studio sessions are not limited here.
+   */
+  maxConnectionsPerSubject?: number;
 }
 
 /**
@@ -54,9 +60,19 @@ export interface NodeHubOptions {
  */
 export function attachNodeRealtime(opts: NodeHubOptions): { close: () => void } {
   const { server, hub, jwtSecret } = opts;
+  const maxPerSubject = opts.maxConnectionsPerSubject ?? 0;
   const secretKey = new TextEncoder().encode(jwtSecret);
   const wss = new WebSocketServer({ noServer: true });
   const sessions = new Set<NodeSession>();
+
+  /** Count live public sessions for a subject (per-site). */
+  function subjectConnectionCount(siteId: string, subjectId: string): number {
+    let n = 0;
+    for (const s of sessions) {
+      if (s.plane === 'public' && s.siteId === siteId && s.subjectId === subjectId) n++;
+    }
+    return n;
+  }
 
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '', 'http://localhost');
@@ -87,6 +103,22 @@ export function attachNodeRealtime(opts: NodeHubOptions): { close: () => void } 
   });
 
   function acceptSession(ws: WebSocket, principal: TicketPrincipal): void {
+    // Enforce the per-subject connection cap (public plane only).
+    if (
+      maxPerSubject > 0 &&
+      principal.plane === 'public' &&
+      principal.subjectId &&
+      subjectConnectionCount(principal.siteId, principal.subjectId) >= maxPerSubject
+    ) {
+      send(ws, { type: 'error', code: 'TOO_MANY_CONNECTIONS', message: 'Connection limit reached' });
+      try {
+        ws.close(1013, 'too many connections');
+      } catch {
+        /* already closed */
+      }
+      return;
+    }
+
     const session: NodeSession = {
       ws,
       siteId: principal.siteId,

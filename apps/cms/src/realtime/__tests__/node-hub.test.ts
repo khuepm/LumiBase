@@ -44,12 +44,16 @@ function waitFor(ws: WebSocket, match: (m: any) => boolean, ms = 1000): Promise<
   });
 }
 
-beforeEach(async () => {
+async function startHub(maxConnectionsPerSubject = 0) {
   hub = new InProcessRealtimeHub();
   server = createServer();
-  close = attachNodeRealtime({ server, hub, jwtSecret: JWT_SECRET }).close;
+  close = attachNodeRealtime({ server, hub, jwtSecret: JWT_SECRET, maxConnectionsPerSubject }).close;
   await new Promise<void>((r) => server.listen(0, r));
   port = (server.address() as AddressInfo).port;
+}
+
+beforeEach(async () => {
+  await startHub();
 });
 
 afterEach(async () => {
@@ -130,5 +134,28 @@ describe('attachNodeRealtime', () => {
     await new Promise((r) => setTimeout(r, 150));
     expect(received).toBe(false);
     ws.close();
+  });
+
+  it('enforces maxConnectionsPerSubject', async () => {
+    // Restart the hub with a cap of 1 connection per subject.
+    close();
+    await new Promise<void>((r) => server.close(() => r()));
+    await startHub(1);
+
+    const t = await ticket({ plane: 'public', subjectId: 's-cap', channels: [], siteId: 'site-1' });
+    const ws1 = await connect(t);
+    // Let the first session register server-side before opening the second.
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Second connection for the same subject is rejected.
+    const ws2 = new WebSocket(`ws://127.0.0.1:${port}/api/v1/realtime?ticket=${encodeURIComponent(t)}`);
+    const err = await new Promise<any>((resolve) => {
+      ws2.on('message', (d) => {
+        const m = JSON.parse(d.toString());
+        if (m.type === 'error') resolve(m);
+      });
+    });
+    expect(err.code).toBe('TOO_MANY_CONNECTIONS');
+    ws1.close();
   });
 });

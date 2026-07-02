@@ -51,10 +51,12 @@ async function main() {
   const jwtSecret = process.env.JWT_SECRET;
   if (jwtSecret) {
     const { attachNodeRealtime } = await import('./realtime/node-hub');
+    const maxPerSubject = parseInt(process.env.LUMIBASE_REALTIME_MAX_CONNECTIONS_PER_SUBJECT || '0', 10);
     attachNodeRealtime({
       server: server as unknown as HttpServer,
       hub: getSharedRealtimeHub(),
       jwtSecret,
+      maxConnectionsPerSubject: Number.isFinite(maxPerSubject) ? maxPerSubject : 0,
     });
     console.log('[lumibase-cms] Realtime WebSocket server attached at /api/v1/realtime');
   } else {
