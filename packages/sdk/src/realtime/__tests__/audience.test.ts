@@ -60,7 +60,11 @@ function makeClient(channels: string[] = []) {
     },
     fetchImpl,
   });
-  const latest = () => sockets[sockets.length - 1];
+  const latest = (): FakeWebSocket => {
+    const ws = sockets[sockets.length - 1];
+    if (!ws) throw new Error('no socket opened yet');
+    return ws;
+  };
   return { client, fetchImpl, sockets, latest };
 }
 
