@@ -9,7 +9,7 @@ import { ConfigService } from '../services/config-service';
 import { ExtensionsService } from '../services/extensions-service';
 import { getContentOsFlags } from '../services/feature-flags';
 import { IntentService } from '../services/intent-service';
-import { ItemService } from '../services/item-service';
+import { itemServiceForRequest } from '../services/item-service-factory';
 import { createConfiguredLLMProvider } from '../services/llm-provider';
 import { McpService, type McpHarnessPort } from '../services/mcp-service';
 import { SchemaService } from '../services/schema-service';
@@ -44,14 +44,12 @@ mcpRouter.post('/', async (c) => {
     db,
     siteId,
     schemaService: new SchemaService({ db, siteId, cache: runtime.cache }),
-    itemService: new ItemService({
-      db,
-      siteId,
-      userId: auth.userId ?? null,
-      cache: runtime.cache,
-      search: runtime.search,
-      queue: runtime.queue,
-    }),
+    // Request-scoped ItemService so MCP-driven skills enforce the same
+    // row/field RBAC as the bearer token would via the Agent API — matching
+    // this router's contract that an MCP client "can never do more than the
+    // same token could via the Agent API". Previously built without a
+    // permissionCtx, which silently bypassed RBAC.
+    itemService: itemServiceForRequest(c),
     accessService: new AccessService({ db, siteId, userId: auth.userId ?? null }),
     intentService: new IntentService({ db, siteId, userId: auth.userId ?? null, llm }),
     configService: new ConfigService({ db, siteId }),
