@@ -1,12 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { type LumiBaseClient, LumiBaseApiError } from '../client.js';
-
-const collectionNameSchema = z
-  .string()
-  .min(1)
-  .max(63)
-  .regex(/^[a-z][a-z0-9_]{0,62}$/, 'Must be lowercase, start with a letter, only a-z0-9_');
+import { collectionNameSchema, encodePathSegment, fieldNameSchema } from './path.js';
 
 const collectionInputSchema = z.object({
   name: collectionNameSchema,
@@ -30,7 +25,7 @@ const collectionInputSchema = z.object({
 });
 
 const fieldInputSchema = z.object({
-  name: collectionNameSchema,
+  name: fieldNameSchema,
   type: z.string().min(1),
   interface: z.string().min(1),
   display: z.string().optional(),
@@ -78,11 +73,11 @@ export function registerCollectionTools(server: McpServer, client: LumiBaseClien
     'get_collection',
     {
       description: 'Get a collection with its compiled schema (all fields, system fields, meta).',
-      inputSchema: { name: z.string().min(1) },
+      inputSchema: { name: collectionNameSchema },
     },
     async ({ name }) => {
       try {
-        const data = await client.get<unknown>(`/collections/${name}/compiled`);
+        const data = await client.get<unknown>(`/collections/${encodePathSegment(name)}/compiled`);
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };
@@ -114,13 +109,13 @@ export function registerCollectionTools(server: McpServer, client: LumiBaseClien
     {
       description: 'Update metadata on an existing collection (label, icon, note, accountability, etc.).',
       inputSchema: {
-        name: z.string().min(1),
+        name: collectionNameSchema,
         patch: collectionInputSchema.omit({ name: true }).partial(),
       },
     },
     async ({ name, patch }) => {
       try {
-        const data = await client.patch<unknown>(`/collections/${name}`, patch);
+        const data = await client.patch<unknown>(`/collections/${encodePathSegment(name)}`, patch);
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };
@@ -135,13 +130,13 @@ export function registerCollectionTools(server: McpServer, client: LumiBaseClien
         'Delete a collection and all its items. DESTRUCTIVE — cannot be undone. ' +
         'You MUST pass confirm=true explicitly after warning the user.',
       inputSchema: {
-        name: z.string().min(1),
+        name: collectionNameSchema,
         confirm: z.literal(true).describe('Must be true to confirm destructive operation'),
       },
     },
     async ({ name, confirm: _ }) => {
       try {
-        await client.delete(`/collections/${name}`);
+        await client.delete(`/collections/${encodePathSegment(name)}`);
         return { content: [{ type: 'text', text: `Collection "${name}" deleted.` }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };
@@ -157,7 +152,7 @@ export function registerCollectionTools(server: McpServer, client: LumiBaseClien
         'Returns added/modified/removed fields and any risky changes. ' +
         'Always call this before apply_schema to check for breaking changes.',
       inputSchema: {
-        name: z.string().min(1),
+        name: collectionNameSchema,
         fields: z.array(fieldInputSchema).optional(),
         label: z.string().optional(),
         note: z.string().optional(),
@@ -180,10 +175,10 @@ export function registerCollectionTools(server: McpServer, client: LumiBaseClien
         'Atomically apply a schema migration to a collection (add/update/remove fields and relations). ' +
         'Call diff_schema first to preview changes. Pass confirmRiskyChange=true on field inputs that have risky changes.',
       inputSchema: {
-        name: z.string().min(1),
+        name: collectionNameSchema,
         fields: z.array(
           fieldInputSchema.extend({
-            renameFrom: z.string().optional(),
+            renameFrom: fieldNameSchema.optional(),
             confirmRiskyChange: z.boolean().optional(),
           }),
         ).optional(),
@@ -196,7 +191,10 @@ export function registerCollectionTools(server: McpServer, client: LumiBaseClien
     async (input) => {
       try {
         const { name, ...rest } = input;
-        const data = await client.put<unknown>(`/collections/${name}/schema`, rest);
+        const data = await client.put<unknown>(
+          `/collections/${encodePathSegment(name)}/schema`,
+          rest,
+        );
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };

@@ -38,6 +38,13 @@ export interface Bindings {
   LUMIBASE_MAIL_ENABLED?: string;
   /** Comma-separated cc list for security notifications (legacy name kept). */
   LUMIBASE_SECURITY_RECIPIENTS?: string;
+  // ── Web Push / VAPID (push-noti feature) ────────────────────────────────
+  /** VAPID application server public key (base64url, raw 65-byte P-256 point). */
+  VAPID_PUBLIC_KEY?: string;
+  /** VAPID application server private scalar `d` (base64url, 32 bytes). */
+  VAPID_PRIVATE_KEY?: string;
+  /** VAPID contact `sub` claim — a `mailto:` or `https:` URI. */
+  VAPID_SUBJECT?: string;
   /** Direct Postgres connection string (used in local development). */
   DATABASE_URL?: string;
   /** Cloudflare Access Certificates URL (JWKS format) */
@@ -84,6 +91,10 @@ export interface Bindings {
   EXTENSION_BUNDLE_ORIGINS?: string;
   /** Comma-separated frontend origins allowed by CORS. */
   CORS_ALLOWED_ORIGINS?: string;
+  /** Data-retention horizon (days) for the `activity` log. 0/unset = disabled. */
+  LUMIBASE_ACTIVITY_RETENTION_DAYS?: string;
+  /** Data-retention horizon (days) for read/archived `notifications`. 0/unset = disabled. */
+  LUMIBASE_NOTIFICATION_RETENTION_DAYS?: string;
   /** Maximum bytes accepted by the file upload policy. Defaults to 10 MiB. */
   FILE_UPLOAD_MAX_BYTES?: string;
   /** Comma-separated MIME allowlist accepted by the file upload policy. */

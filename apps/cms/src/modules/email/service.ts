@@ -17,6 +17,7 @@ import { and, eq } from 'drizzle-orm';
 import type { DeliveryResult } from '../notifications/types';
 import { EmailService, type OutboundEmail } from '../../services/email/email-service';
 import { renderTemplate, type RenderedEmail, type TemplateVars } from '../../services/email/render';
+import { SuppressionService } from './suppression';
 
 export interface EmailModuleDeps {
   db: Database;
@@ -36,6 +37,13 @@ export class EmailNotConfiguredError extends Error {
   constructor() {
     super('email service is not configured on this runtime');
     this.name = 'EmailNotConfiguredError';
+  }
+}
+
+export class AllRecipientsSuppressedError extends Error {
+  constructor() {
+    super('all recipients are on the suppression list');
+    this.name = 'AllRecipientsSuppressedError';
   }
 }
 
@@ -186,9 +194,24 @@ export class EmailModuleService {
     templateKey?: string;
     inline?: { subject: string; html?: string; text?: string };
     variables: TemplateVars;
+    /**
+     * `marketing` sends are filtered against the suppression list (CAN-SPAM);
+     * `transactional` (default) are always delivered.
+     */
+    category?: 'transactional' | 'marketing';
   }): Promise<{ result: DeliveryResult; rendered: { subject: string; html?: string; text?: string } }> {
     const svc = this.deps.emailService;
     if (!svc) throw new EmailNotConfiguredError();
+
+    // Commercial mail must skip suppressed (unsubscribed) recipients.
+    let recipients: readonly string[] = input.to;
+    if (input.category === 'marketing') {
+      recipients = await new SuppressionService({ db: this.deps.db }).filter({
+        siteId: this.deps.siteId,
+        emails: input.to,
+      });
+      if (recipients.length === 0) throw new AllRecipientsSuppressedError();
+    }
 
     let message: OutboundEmail;
     let rendered: { subject: string; html?: string; text?: string };
@@ -197,7 +220,7 @@ export class EmailModuleService {
       const r = await this.render(input.templateKey, input.variables);
       rendered = { subject: r.subject, html: r.html, text: r.text };
       message = {
-        to: input.to,
+        to: recipients,
         cc: input.cc,
         replyTo: input.replyTo,
         subject: r.subject,
@@ -208,7 +231,7 @@ export class EmailModuleService {
       const inline = input.inline!;
       rendered = { subject: inline.subject, html: inline.html, text: inline.text };
       message = {
-        to: input.to,
+        to: recipients,
         cc: input.cc,
         replyTo: input.replyTo,
         subject: inline.subject,

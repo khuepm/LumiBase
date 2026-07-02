@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-06-23T13:05:48.000Z
+sourceLang: vi
+contentHash: bd0ba5b5bf9cfe5f
+---
+
 # Tầm nhìn & Định vị LumiBase so với Directus
 
 ## 1. Tóm tắt định vị

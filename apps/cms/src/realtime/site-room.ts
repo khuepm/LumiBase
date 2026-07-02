@@ -17,10 +17,11 @@
  *
  * Protocol (server → client):
  *   { type: 'ping' }
- *   { type: 'event',    collection, action, itemId, payload }
- *   { type: 'presence', users: PresenceEntry[] }
- *   { type: 'error',    code, message }
- *   { type: 'welcome',  sessionId }
+ *   { type: 'event',        collection, action, itemId, payload }
+ *   { type: 'notification', notification: AgentNotification }
+ *   { type: 'presence',     users: PresenceEntry[] }
+ *   { type: 'error',        code, message }
+ *   { type: 'welcome',      sessionId }
  */
 
 import { DurableObject } from 'cloudflare:workers';
@@ -87,6 +88,19 @@ export class SiteRoom extends DurableObject<any> {
       try {
         const event = (await request.json()) as RealtimeEvent;
         await this.publish(event);
+      } catch {
+        /* malformed — ignore */
+      }
+      return new Response(null, { status: 204 });
+    }
+
+    // Internal publish path — called by the notification broadcaster to fan-out
+    // operational notifications (approvals, veto, incidents, goal/run status) to
+    // every connected session for this site, regardless of collection subs.
+    if (url.pathname === '/publish-notification' && request.method === 'POST') {
+      try {
+        const frame = (await request.json()) as { notification: unknown };
+        this.publishNotification(frame.notification);
       } catch {
         /* malformed — ignore */
       }
@@ -195,6 +209,22 @@ export class SiteRoom extends DurableObject<any> {
     for (const session of this.sessions.values()) {
       if (!session.subscriptions.has(event.collection)) continue;
       if (session.userId === event.actorUserId) continue;
+      try {
+        session.ws.send(payload);
+      } catch {
+        /* disconnected */
+      }
+    }
+  }
+
+  /**
+   * Broadcast an operational notification to every session for this site.
+   * Unlike {@link publish}, notifications are not collection-scoped and are
+   * not echo-suppressed — they are site-wide signals for human operators.
+   */
+  publishNotification(notification: unknown): void {
+    const payload = JSON.stringify({ type: 'notification', notification });
+    for (const session of this.sessions.values()) {
       try {
         session.ws.send(payload);
       } catch {

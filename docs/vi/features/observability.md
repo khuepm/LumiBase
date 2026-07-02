@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-06-23T13:05:48.000Z
+sourceLang: vi
+contentHash: d668bbc29e7fdaba
+---
+
 # Observability — Metrics, Logs, Dashboards, Tracing
 
 ## Endpoints

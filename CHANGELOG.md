@@ -13,7 +13,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 - **Self-service auth realms.** Subscriber registration (`/auth/register`) with email verification (`/auth/verify-email`, `/auth/resend-verification`), password recovery (`/auth/forgot-password`, `/auth/reset-password`), and an admin primitive to grant subscribers `read` on collections (`/api/v1/users/subscriber-access`). Tokens carry a per-realm `aud` (`studio`/`frontend`); `withStudioAccess` hard-rejects frontend tokens.
 - **Per-realm session TTLs.** Separate access-token lifetimes for staff vs subscribers (`STUDIO_SESSION_TTL` `12h` / `FRONTEND_SESSION_TTL` `30d`).
-- **Rotating refresh tokens** (new table `refresh_tokens`, migration `0035`). Silent renewal via `/auth/refresh`, `/auth/logout`; one-time-use rotation with family-wide reuse detection; tokens stored only as sha256. Per-realm refresh TTL (`STUDIO_REFRESH_TTL` `30d` / `FRONTEND_REFRESH_TTL` `90d`). Delivered as an `httpOnly` cookie **and** in the body.
+- **Rotating refresh tokens** (new table `refresh_tokens`, migration `0040`). Silent renewal via `/auth/refresh`, `/auth/logout`; one-time-use rotation with family-wide reuse detection; tokens stored only as sha256. Per-realm refresh TTL (`STUDIO_REFRESH_TTL` `30d` / `FRONTEND_REFRESH_TTL` `90d`). Delivered as an `httpOnly` cookie **and** in the body.
 - **Cross-domain refresh cookie** config (`REFRESH_COOKIE_SAMESITE`/`REFRESH_COOKIE_DOMAIN`/`REFRESH_COOKIE_SECURE`) with a CSRF brake (`X-LumiBase-Refresh` header required for cookie-sourced refresh/logout).
 - **Authenticated account self-service:** `POST /api/v1/me/change-password` and session management (`GET`/`DELETE /api/v1/me/sessions[/:id]`).
 - **Hourly prune** of expired refresh tokens on the existing audit-rotation cron (Workers `scheduled` + Node `node-cron`).
@@ -21,11 +21,109 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
-- **Drizzle snapshot drift.** Committed snapshots had lagged at `0011`, so `drizzle-kit generate` kept re-emitting already-migrated tables. Realigned the baseline with a no-op migration (`0036_realign_snapshot_baseline`) carrying an accurate full-schema snapshot; `generate` is usable again.
+- **Drizzle snapshot drift.** Committed snapshots had lagged at `0011`, so `drizzle-kit generate` kept re-emitting already-migrated tables. Realigned the baseline with a no-op migration (`0041_realign_snapshot_baseline`) carrying an accurate full-schema snapshot; `generate` is usable again.
 
 ### Notes
 
-- Run `pnpm -F @lumibase/database migrate` to apply migrations `0035` (adds `refresh_tokens`) and `0036` (no-op snapshot realignment). No backfill required.
+- Run `pnpm -F @lumibase/database migrate` to apply migrations `0040` (adds `refresh_tokens`) and `0041` (no-op snapshot realignment). No backfill required.
+
+## [0.13.0] - 2026-06-30
+
+### Version
+
+- `v0.13.0`
+
+### Date
+
+- `2026-06-30`
+
+### Highlights
+
+- **Deployment integrations.** Connect a site to Vercel, Netlify, or any HTTP deploy hook, then trigger and monitor deploys from Studio. Provider tokens are stored encrypted via the runtime `KeyProvider` (never plaintext), deploy targets and deployments are site-isolated with RLS, and incoming provider webhooks are signature-verified. Reuses the Flows/queue infrastructure with a status poller for in-flight deploys.
+- **Cross-collection search.** Search now spans collections in a single query, with a reindex CLI, an SDK `search()` command (`SearchHit` / `SearchResponse` types), and a Vietnamese-aware analyzer. Studio gains a global command palette (Cmd/Ctrl+K).
+- **Bracket-form filter params.** The items list route accepts bracket-form filter query params (e.g. `filter[field][_eq]=...`) end-to-end.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **CMS / deployments:** deployment-integrations service with Vercel, Netlify, and HTTP providers; encrypted token vault; status poller; webhook signature verification; two site-isolated tables with RLS.
+- **CMS / search:** cross-collection search and a reindex CLI.
+- **CMS / items:** accept bracket-form filter query params on the items list route.
+- **SDK:** `search()` command plus `SearchHit` / `SearchResponse` types.
+- **Studio:** Deployments settings page and a global command palette (Cmd/Ctrl+K) search.
+- **AI skills:** deployment skills registered in the skill registry.
+- **Docs:** deployment endpoints added to the OpenAPI spec; deployment-integrations feature guide; Next.js quickstart tutorial; EN/VI i18n CI workflow, contributing guide, and translation via Claude.
+
+### Changed
+
+- **Docs i18n:** translate with Claude instead of a third-party MT engine; sync EN/VI sources with version front matter.
+
+### Fixed
+
+- **Security / deployments:** verify provider webhook signatures and enable RLS on deployment tables.
+- **Security / CMS:** guard agent-harness control-plane endpoints.
+- **Security / Studio:** assert the studio client signal on agent API calls.
+
+### Migrations
+
+- **1 new schema migration (additive, idempotent):** `0038_deployment_integrations.sql` adds two site-isolated tables — `deployment_targets` and `deployments` — guarded with `CREATE TABLE IF NOT EXISTS` so it re-runs safely and leaves existing installs untouched. RLS for both tables is applied via `packages/database/migrations/rls-policies.sql`. No data migration. Back up your database before upgrading as a precaution.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
+## [0.12.0] - 2026-06-28
+
+### Version
+
+- `v0.12.0`
+
+### Date
+
+- `2026-06-28`
+
+### Highlights
+
+- **Privacy & compliance suite.** A new data-rights toolkit covering consent management (GDPR Art. 7 / PDPD), a CCPA "Do-Not-Sell" `sale_share` consent type, personal-data export (GDPR Art. 15/20), account erasure / right-to-be-forgotten (GDPR Art. 17), data-retention pruning, restriction of processing (GDPR Art. 18), field-level data classification + redaction, and automated-decision transparency (GDPR Art. 22).
+- **Email compliance.** One-click unsubscribe + a site-scoped suppression list (CAN-SPAM / ePrivacy) so suppressed recipients never receive commercial mail.
+- **Directus-style Studio interfaces.** A broad set of new field interfaces — selection, hash, API autocomplete, presentation, relational drawer (create-new / add-existing), M2A builder, collection-item, field grouping with width layout, and map + tree-view interfaces.
+- **Keyboard shortcuts.** A cross-platform keyboard-shortcuts system in Studio, plus Cmd/Ctrl+S save-and-stay in the webhook, email-template, and layout editors.
+- **Tenant isolation hardening.** Media storage, search, and audit logs are now strictly scoped per tenant, closing cross-tenant exposure paths.
+- **RBAC & security hardening.** Hardened permission evaluator, site-scoped CDC admin access, and secured CDC compose port bindings.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **CMS / data-rights:** consent management, `sale_share` (CCPA Do-Not-Sell) consent type, personal-data export, account erasure, data-retention pruning, restriction of processing, field data classification + redaction, and automated-decision transparency.
+- **CMS / email:** unsubscribe endpoint + suppression list.
+- **Studio:** Directus-style selection/hash/API-autocomplete/presentation interfaces, relational drawer, M2A builder, collection-item, field grouping + width layout + group interfaces, map and tree-view interfaces, API keys access page, cross-platform keyboard shortcuts, and Cmd/Ctrl+S save-and-stay editors.
+- **Docs:** bilingual (EN/VI) user-rights & compliance documentation; data-map, data-residency, and DPA template; EN/VI i18n sync.
+
+### Changed
+
+- **RBAC:** hardened permission evaluator (added access-conflict property tests).
+- **CI:** SPA deep-link 404 regressions are now caught at the Pages deploy gate.
+
+### Fixed
+
+- **Multi-tenancy:** scope media storage, search, and audit logs by tenant (cross-tenant exposure).
+- **CDC:** bind CDC admin access to the selected site; secure CDC compose port bindings.
+- **Auth:** initialize lazy GeoIP lookup before availability degradation in login anomaly checks.
+
+### Migrations
+
+- **3 new schema migrations (additive, idempotent):** `0035_user_consents.sql` (`user_consents`), `0036_email_suppressions.sql` (`email_suppressions`), and `0037_processing_restrictions.sql` (`processing_restrictions`), plus RLS policies for the new tables. New tables only — no data migration; `CREATE TABLE IF NOT EXISTS` lets them re-run safely. Back up your database before upgrading as a precaution.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
+### Upgrade steps
+
+1. Review the migrations above and back up your database.
+2. Apply migrations: `pnpm -F @lumibase/database db:migrate`.
+3. Deploy the `v0.12.0` image or Cloudflare Worker release.
+4. Verify `/health`, the new data-rights/consent endpoints, the email unsubscribe flow, and that media, search, and audit logs return only the active site's data.
 
 ## [0.11.0] - 2026-06-22
 

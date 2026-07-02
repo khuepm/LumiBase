@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-06-23T13:03:22.000Z
+sourceLang: vi
+contentHash: 9ec3924addf5c76e
+---
+
 # Runtime Abstraction Layer (`@lumibase/runtime`)
 
 LumiBase có thể chạy trên hai runtime hoàn toàn khác nhau:
@@ -154,6 +161,22 @@ LUMIBASE_RUNTIME=docker
 ```
 
 Xem `apps/docs/content/deployment/environment-variables.md` để biết danh sách env vars đầy đủ.
+
+## CDC runtime split
+
+ClickHouse CDC uses the same runtime abstraction for the API/control-plane
+surface, but the stateful replication workers are intentionally not executed
+inside Cloudflare Workers:
+
+- **Cloudflare Workers** may host the authenticated CDC API routes and Redis/KV
+  cache invalidation edge components.
+- **Docker / managed services** host Debezium/Kafka, ClickHouse materialized
+  replication, Airbyte, health polling, and long-running deployment steps.
+
+The CDC deployment target is explicit in API payloads via
+`target: "docker_compose" | "cloudflare_workers"`. Runtime-specific services
+must keep this target explicit instead of silently starting a stateful connector
+inside the Workers isolate.
 
 ## Test strategy
 

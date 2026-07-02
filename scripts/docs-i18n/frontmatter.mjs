@@ -58,9 +58,15 @@ export function buildFile(fmRaw, body) {
   return `${fence}\n${trimmedBody}`;
 }
 
-/** SHA-256 of content, used to detect when a source doc changed since last sync. */
+/**
+ * Stable SHA-256 of a doc body, used to detect when a source doc changed since
+ * the last sync. The body is normalized first (CRLF→LF, trim leading/trailing
+ * blank lines) so that front-matter round-tripping — which can add or drop a
+ * blank line around the body — does not change the hash.
+ */
 export function contentHash(text) {
-  return crypto.createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16);
+  const normalized = String(text).replace(/\r\n/g, '\n').replace(/^\n+/, '').replace(/\s+$/, '');
+  return crypto.createHash('sha256').update(normalized, 'utf8').digest('hex').slice(0, 16);
 }
 
 function escapeRe(s) {

@@ -972,6 +972,50 @@ components:
           items: { type: object, additionalProperties: true }
         completedAt: { type: string, format: date-time }
         error: { type: object, additionalProperties: true, nullable: true }
+    DeploymentTarget:
+      type: object
+      description: A configured connection to one project on one provider. The provider token is never returned.
+      properties:
+        id: { type: string }
+        provider: { type: string, enum: [vercel, netlify] }
+        name: { type: string }
+        projectId: { type: string }
+        defaultBranch: { type: string, nullable: true }
+        productionUrl: { type: string, nullable: true }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    DeploymentTargetCreate:
+      type: object
+      required: [provider, name, projectId, token]
+      properties:
+        provider: { type: string, enum: [vercel, netlify] }
+        name: { type: string }
+        projectId: { type: string }
+        token: { type: string, description: Provider API token. Write-only; stored encrypted via the runtime KeyProvider and never returned. }
+        defaultBranch: { type: string, nullable: true }
+        productionUrl: { type: string, nullable: true }
+    Deployment:
+      type: object
+      description: One build/deploy run on a provider, with a LumiBase-normalized status.
+      properties:
+        id: { type: string }
+        siteId: { type: string }
+        targetId: { type: string }
+        provider: { type: string }
+        providerDeploymentId: { type: string, nullable: true }
+        status: { type: string, enum: [queued, building, ready, error, canceled] }
+        branch: { type: string, nullable: true }
+        commitSha: { type: string, nullable: true }
+        commitMessage: { type: string, nullable: true }
+        url: { type: string, nullable: true }
+        triggeredBy: { type: string, nullable: true }
+        triggerSource: { type: string, enum: [manual, auto, agent] }
+        errorMessage: { type: string, nullable: true }
+        logExcerpt: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
 
 
 paths:
@@ -3074,6 +3118,188 @@ paths:
                   data: { $ref: '#/components/schemas/SCIMTokenRotated' }
         '404':
           description: Active token not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /deployments/targets:
+    get:
+      summary: List deployment targets (provider token omitted)
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/DeploymentTarget' }
+    post:
+      summary: Create a deployment target (token encrypted on write)
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeploymentTargetCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/DeploymentTarget' }
+  /deployments/targets/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/SiteHeader' }
+      - { name: id, in: path, required: true, schema: { type: string } }
+    patch:
+      summary: Update a deployment target
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeploymentTargetCreate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/DeploymentTarget' }
+    delete:
+      summary: Delete a deployment target
+      responses:
+        '200':
+          description: Deleted
+  /deployments/targets/{id}/deploy:
+    post:
+      summary: Trigger a build/deploy on a target
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                branch: { type: string }
+                reason: { type: string }
+      responses:
+        '200':
+          description: Deployment triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Deployment' }
+        '502':
+          description: Provider rejected the trigger
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /deployments:
+    get:
+      summary: List deployments (filterable)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: targetId, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [queued, building, ready, error, canceled] } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Deployment' }
+  /deployments/{id}:
+    get:
+      summary: Get a single deployment
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Deployment' }
+        '404':
+          description: Deployment not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /deployments/{id}/logs:
+    get:
+      summary: Fetch build logs for a deployment
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      log: { type: string }
+  /deployments/{id}/refresh:
+    post:
+      summary: Force a status sync from the provider
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Deployment' }
+  /deployments/webhook/{provider}:
+    post:
+      summary: Inbound provider status webhook (public, signature-verified)
+      description: |
+        Public, pre-auth endpoint. Authenticated by the provider's request
+        signature over the raw body (Vercel HMAC-SHA1, Netlify JWS/HS256), not a
+        bearer token. The shared secret is the per-site setting
+        `deployment.webhook.<provider>`. Requires the `X-Lumi-Site` header.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [vercel, netlify] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Accepted (ref applied or ignored)
+        '401':
+          description: Invalid or missing signature
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

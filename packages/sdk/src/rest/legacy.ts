@@ -56,7 +56,23 @@ import {
   WebhookResource,
   ActivityResource,
   ExtensionResource,
+  DeploymentTargetResource,
+  DeploymentResource,
 } from "../types";
+
+/**
+ * Loose shape for `users.preferences`. The CMS validates the strict schema
+ * (`@lumibase/shared/schemas#UserPreferences`); the SDK stays decoupled and
+ * passes the blob through, so callers keep full type-safety on the Studio side
+ * where the shared schema is imported.
+ */
+export interface UserPreferencesPayload {
+  language?: string;
+  theme?: "auto" | "light" | "dark";
+  timezone?: string;
+  keybindings?: Record<string, string>;
+  [key: string]: unknown;
+}
 
 function withQuery(path: string, params: Record<string, unknown> = {}) {
   const qs = new URLSearchParams();
@@ -229,7 +245,6 @@ export function legacyRest() {
         if (params.offset !== undefined)
           qs.set("offset", String(params.offset));
         if (params.status) qs.set("status", params.status);
-        if (params.search) qs.set("search", params.search);
         const s = qs.toString();
         return s ? `?${s}` : "";
       }
@@ -689,6 +704,58 @@ export function legacyRest() {
         }),
     };
 
+    /**
+     * Current-user surface. `preferences` is the identity-global JSONB blob
+     * (`users.preferences`) — keybindings, language, theme. `update` shallow-
+     * merges server-side, so callers can PATCH a single section.
+     */
+    const me = {
+      getPreferences: () =>
+        client.rawRequest<UserPreferencesPayload>("/api/v1/me/preferences"),
+      updatePreferences: (patch: UserPreferencesPayload) =>
+        client.rawRequest<UserPreferencesPayload>("/api/v1/me/preferences", {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        }),
+    };
+
+    // Deployment integrations (spec: deployment-integrations).
+    const deployments = {
+      targets: {
+        list: () =>
+          client.rawRequest<DeploymentTargetResource[]>("/api/v1/deployments/targets"),
+        create: (input: Record<string, unknown>) =>
+          client.rawRequest<DeploymentTargetResource>("/api/v1/deployments/targets", {
+            method: "POST",
+            body: JSON.stringify(input),
+          }),
+        update: (id: string, patch: Record<string, unknown>) =>
+          client.rawRequest<DeploymentTargetResource>(`/api/v1/deployments/targets/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify(patch),
+          }),
+        delete: (id: string) =>
+          client.rawRequest<null>(`/api/v1/deployments/targets/${id}`, { method: "DELETE" }),
+        deploy: (id: string, input: { branch?: string; reason?: string } = {}) =>
+          client.rawRequest<DeploymentResource>(`/api/v1/deployments/targets/${id}/deploy`, {
+            method: "POST",
+            body: JSON.stringify(input),
+          }),
+      },
+      list: (params?: { targetId?: string; status?: string }) => {
+        const qs = new URLSearchParams();
+        if (params?.targetId) qs.set("targetId", params.targetId);
+        if (params?.status) qs.set("status", params.status);
+        const suffix = qs.toString() ? `?${qs.toString()}` : "";
+        return client.rawRequest<DeploymentResource[]>(`/api/v1/deployments${suffix}`);
+      },
+      get: (id: string) => client.rawRequest<DeploymentResource>(`/api/v1/deployments/${id}`),
+      logs: (id: string) =>
+        client.rawRequest<{ log: string }>(`/api/v1/deployments/${id}/logs`),
+      refresh: (id: string) =>
+        client.rawRequest<DeploymentResource>(`/api/v1/deployments/${id}/refresh`, { method: "POST" }),
+    };
+
     return {
       schema,
       items,
@@ -697,6 +764,7 @@ export function legacyRest() {
       access,
       apiKeys,
       shares,
+      me,
       permissions,
       presets,
       translations,
@@ -709,6 +777,7 @@ export function legacyRest() {
       webhooks,
       activity,
       extensions,
+      deployments,
       realtime: {
         /**
          * Create a RealtimeClient for the current site.

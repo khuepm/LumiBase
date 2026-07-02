@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
+import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 
 /**
  * Email templates & layouts manager (email-service feature).
@@ -310,6 +311,12 @@ function LayoutEditor({ layout, onClose }: { layout: LayoutRow | null; onClose: 
     },
   });
 
+  // Cmd/Ctrl+S → save this layout (mirrors the Save button's gating).
+  useSaveHandler(
+    () => save.mutate(),
+    !save.isPending && !!key && !!name && html.includes('{{content}}'),
+  );
+
   return (
     <Modal title={layout ? 'Edit layout' : 'New layout'} onClose={onClose}>
       <Field label="Key">
@@ -383,6 +390,12 @@ function TemplateEditor({
       onClose();
     },
   });
+
+  // Cmd/Ctrl+S → save this template (mirrors the Save button's gating).
+  useSaveHandler(
+    () => save.mutate(),
+    !save.isPending && !!key && !!name && !!subject && !!bodyHtml,
+  );
 
   const runPreview = useMutation({
     mutationFn: async () => {

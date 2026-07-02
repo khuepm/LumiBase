@@ -19,6 +19,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import {
   Bell,
+  BellOff,
+  BellRing,
   X,
   CheckCheck,
   AlertCircle,
@@ -30,16 +32,18 @@ import {
   Trash2,
 } from 'lucide-react';
 import { FillIcon } from '@/components/fill-icon';
+import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getAdminBase } from '@/lib/admin-base';
 import { getApiBaseUrl } from '@/lib/api-base';
 import { cn } from '@/lib/cn';
+import { disablePush, enablePush, getPushState, type PushState } from '@/lib/push';
 import {
   diffNewEntries,
   entryLabel,
   useInboxData,
   type InboxEntry,
 } from '@/modules/mission-control/use-inbox';
-import type { RealtimeEvent } from '@/types/realtime';
+import type { AgentNotification, RealtimeEvent } from '@/types/realtime';
 
 type Notification =
   | {
@@ -59,6 +63,17 @@ type Notification =
       label: string;
       timestamp: Date;
       read: boolean;
+    }
+  | {
+      source: 'agent';
+      id: string;
+      kind: AgentNotification['kind'];
+      severity: AgentNotification['severity'];
+      title: string;
+      body: string;
+      deepLink?: string;
+      timestamp: Date;
+      read: boolean;
     };
 
 const MAX_NOTIFICATIONS = 50;
@@ -68,6 +83,15 @@ const EXCEPTION_ICONS = {
   approval: { icon: ShieldAlert, cls: 'text-sky-600' },
   incident: { icon: AlertTriangle, cls: 'text-destructive' },
   intent_error: { icon: AlertTriangle, cls: 'text-destructive' },
+} as const;
+
+const AGENT_ICONS = {
+  approval: { icon: ShieldAlert, cls: 'text-sky-600' },
+  veto: { icon: Clock, cls: 'text-amber-600' },
+  incident: { icon: AlertTriangle, cls: 'text-destructive' },
+  goal: { icon: CheckCheck, cls: 'text-emerald-600' },
+  run: { icon: AlertCircle, cls: 'text-muted-foreground' },
+  test: { icon: BellRing, cls: 'text-primary' },
 } as const;
 
 function actionIcon(action: 'create' | 'update' | 'delete') {
@@ -146,11 +170,30 @@ export function NotificationsPanel() {
     });
   }, []);
 
+  const handleNotification = useCallback((n: AgentNotification) => {
+    setNotifications((prev) => {
+      // Dedupe against the inbox-poll source: same entity arriving via both
+      // transports should not double up in the feed.
+      if (prev.some((x) => x.id === `agent-${n.id}`)) return prev;
+      const next: Notification = {
+        source: 'agent',
+        id: `agent-${n.id}`,
+        kind: n.kind,
+        severity: n.severity,
+        title: n.title,
+        body: n.body,
+        deepLink: n.deepLink,
+        timestamp: n.ts ? new Date(n.ts) : new Date(),
+        read: false,
+      };
+      return [next, ...prev].slice(0, MAX_NOTIFICATIONS);
+    });
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
-    const storage = typeof localStorage !== 'undefined' ? localStorage : null;
-    const token = storage?.getItem('lumibase_dev_token') ?? '';
-    const siteId = storage?.getItem('lumibase_site_id') ?? '';
+    const token = getActiveToken();
+    const siteId = getActiveSite();
     const baseUrl = getApiBaseUrl();
 
     const connect = async () => {
@@ -181,9 +224,19 @@ export function NotificationsPanel() {
 
         ws.onmessage = (evt) => {
           try {
-            const msg = JSON.parse(evt.data as string) as { type: string; collection?: string; action?: string; itemId?: string; payload?: unknown };
+            const msg = JSON.parse(evt.data as string) as {
+              type: string;
+              collection?: string;
+              action?: string;
+              itemId?: string;
+              payload?: unknown;
+              notification?: AgentNotification;
+            };
             if (msg.type === 'event' && msg.collection && msg.action && msg.itemId) {
               handleEvent(msg as unknown as RealtimeEvent);
+            }
+            if (msg.type === 'notification' && msg.notification) {
+              handleNotification(msg.notification);
             }
             if (msg.type === 'ping') ws.send(JSON.stringify({ type: 'pong' }));
           } catch {
@@ -208,7 +261,30 @@ export function NotificationsPanel() {
         ws.close(1000, 'notifications panel unmount');
       }
     };
-  }, [handleEvent]);
+  }, [handleEvent, handleNotification]);
+
+  // ── Web Push enrolment toggle (push-noti feature) ────────────────────────
+  const [pushState, setPushState] = useState<PushState>('unsupported');
+  const [pushBusy, setPushBusy] = useState(false);
+
+  useEffect(() => {
+    void getPushState().then(setPushState);
+  }, []);
+
+  const togglePush = useCallback(async () => {
+    setPushBusy(true);
+    try {
+      if (pushState === 'subscribed') {
+        await disablePush();
+        setPushState('unsubscribed');
+      } else {
+        const { state } = await enablePush();
+        setPushState(state);
+      }
+    } finally {
+      setPushBusy(false);
+    }
+  }, [pushState]);
 
   // ── Close on outside click ────────────────────────────────────────────────
 
@@ -270,6 +346,30 @@ export function NotificationsPanel() {
           <div className="flex items-center justify-between border-b px-3 py-2">
             <span className="text-sm font-semibold">Notifications</span>
             <div className="flex items-center gap-1">
+              {pushState !== 'unsupported' && (
+                <button
+                  type="button"
+                  onClick={togglePush}
+                  disabled={pushBusy || pushState === 'denied'}
+                  title={
+                    pushState === 'denied'
+                      ? 'Push blocked in browser settings'
+                      : pushState === 'subscribed'
+                        ? 'Disable push notifications'
+                        : 'Enable push notifications'
+                  }
+                  className={cn(
+                    'inline-flex h-6 w-6 items-center justify-center rounded hover:bg-muted disabled:opacity-50',
+                    pushState === 'subscribed' ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {pushState === 'subscribed' ? (
+                    <BellRing className="h-3.5 w-3.5" />
+                  ) : (
+                    <BellOff className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              )}
               {notifications.length > 0 && (
                 <>
                   <button
@@ -319,6 +419,29 @@ export function NotificationsPanel() {
                         </code>{' '}
                         {actionLabel(n.action)} in{' '}
                         <span className="font-medium">{n.collection}</span>
+                      </span>
+                    </>
+                  ) : n.source === 'agent' ? (
+                    <>
+                      <span className="mt-0.5 flex-shrink-0">
+                        <FillIcon
+                          icon={AGENT_ICONS[n.kind].icon}
+                          className={cn('h-3.5 w-3.5', AGENT_ICONS[n.kind].cls)}
+                        />
+                      </span>
+                      <span className="flex-1 leading-relaxed">
+                        <span className="font-medium">{n.title}</span>
+                        <span className="block text-muted-foreground">{n.body}</span>
+                        {n.deepLink && (
+                          <Link
+                            to={`${adminBase}${n.deepLink.split('?')[0]}` as never}
+                            search={Object.fromEntries(new URLSearchParams(n.deepLink.split('?')[1] ?? '')) as never}
+                            onClick={() => setOpen(false)}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            Open →
+                          </Link>
+                        )}
                       </span>
                     </>
                   ) : (

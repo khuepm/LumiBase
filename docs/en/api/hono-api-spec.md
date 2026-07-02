@@ -5,7 +5,7 @@
 > **Base URL:** `https://api.<your-site>.lumibase.dev` (or `http://localhost:1989` in local dev)
 >
 > All endpoints are versioned under `/api/v1`. Every request must include:
-> - `Authorization: Bearer <access_token>` — JWT from Logto or local auth
+> - `Authorization: Bearer <token>` — login `token`, or an API key (`lbk_…`)
 > - `X-Lumi-Site: <siteId>` — site identifier (or resolved via subdomain routing)
 
 ---
@@ -62,14 +62,18 @@ Error response:
 | Parameter | Example | Description |
 |-----------|---------|-------------|
 | `fields` | `fields=id,title,author.name` | Select specific fields + nested relations |
-| `filter` | `filter[status][_eq]=published` | Filter using rule operators |
+| `filter` | `filter[status][_eq]=published` _or_ `filter={"status":{"_eq":"published"}}` | Filter using rule operators — see [Filter forms](#filter-forms) |
 | `sort` | `sort=-updated_at,title` | Comma-separated, `-` prefix for DESC |
 | `page` | `page=2` | Page number (1-indexed) |
 | `limit` | `limit=25` | Items per page (max 200) |
-| `search` | `search=lumibase` | Full-text search on searchable fields |
 | `aggregate[count]` | `aggregate[count]=*` | Aggregate functions |
 | `groupBy` | `groupBy=status` | Group aggregation results |
 | `deep` | `deep[author][fields]=name,avatar` | Nested relation query params |
+
+> Full-text search is a **separate endpoint**, `GET /api/v1/search` (MeiliSearch),
+> not a list-endpoint parameter. It supports single-collection and
+> cross-collection (omit `collection`) queries and is diacritics-insensitive for
+> Vietnamese. See [features/search.md](../features/search.md).
 
 ### Filter operators
 
@@ -84,6 +88,34 @@ Error response:
 | `_starts_with`, `_ends_with` | String prefix/suffix |
 | `_between` | Range (two-element array) |
 | `_and`, `_or` | Logical grouping |
+
+### Filter forms
+
+List endpoints accept the `filter` query parameter in **two equivalent forms** — use
+whichever is more convenient. Both produce the same filter object server-side.
+
+**1. Bracket form** — ergonomic for hand-written URLs and HTML forms:
+
+```
+GET /api/v1/items/articles?filter[status][_eq]=published&filter[views][_gte]=100
+```
+
+- Nesting maps directly: `filter[field][_op]=value`.
+- Values are coerced: `true`/`false` → boolean, `null` → null, clean integers/decimals →
+  number (leading-zero strings like `007` stay strings), everything else → string.
+- Array operators (`_in`, `_nin`, `_between`) accept comma-separated values:
+  `filter[status][_in]=published,scheduled`.
+- Logical groups use an index segment: `filter[_and][0][status][_eq]=published`.
+
+**2. JSON form** — better for complex/programmatic filters and the SDK:
+
+```
+GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
+```
+
+> If **both** are supplied on the same request, the **JSON form wins**. A malformed JSON
+> `filter` returns `400 VALIDATION`; a malformed bracket key is ignored rather than
+> failing the whole request.
 
 ---
 
@@ -106,12 +138,58 @@ Error response:
 | `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Grant subscribers `read` on a collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | List / revoke subscriber read grants |
+| `GET` | `/api/v1/me/preferences` | bearer | Current user's preferences blob (identity-global) |
+| `PATCH` | `/api/v1/me/preferences` | bearer | Shallow-merge a preferences patch |
+| `GET` | `/api/v1/me/consents` | bearer | List the current user's consent decisions |
+| `PUT` | `/api/v1/me/consents/:type` | bearer | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
+| `GET` | `/api/v1/me/data-export` | bearer | Download the current user's personal data (GDPR Art. 15/20) |
+| `GET` | `/api/v1/me/restriction` | bearer | Current restriction-of-processing state (GDPR Art. 18) |
+| `PUT` | `/api/v1/me/restriction` | bearer | Set restriction of processing (`{ restricted, reason? }`) |
+| `GET` | `/api/v1/me/automated-decisions` | bearer | Agent-authored revisions on the user's content (GDPR Art. 22) |
+| `GET` | `/api/v1/retention` | admin | Report configured retention horizons |
+| `POST` | `/api/v1/retention/run` | admin | Prune `activity` + handled `notifications` past horizons |
 
 Cookie-sourced `/auth/refresh` + `/auth/logout` require the
 `X-LumiBase-Refresh` header (CSRF brake). Refresh tokens are delivered both
 as an `httpOnly` cookie and in the response body; see
 `docs/en/security/user-management.md` §4d for per-realm TTLs and the
 cross-domain cookie env (`REFRESH_COOKIE_SAMESITE`/`_DOMAIN`/`_SECURE`).
+
+> Account erasure (GDPR Art. 17) and Subject Access Requests are served by the
+> regulated-content-readiness feature at `/api/v1/admin/erasure` and
+> `/api/v1/admin/sar`.
+
+**Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
+
+```jsonc
+// PUT /api/v1/me/consents/marketing
+{ "granted": true, "source": "preference_center", "version": "v1" }
+
+// Response
+{ "data": { "consentType": "marketing", "granted": true,
+            "grantedAt": "2026-06-24T10:00:00.000Z", "withdrawnAt": null,
+            "source": "preference_center", "version": "v1",
+            "updatedAt": "2026-06-24T10:00:00.000Z" } }
+```
+
+Each change writes a `consent_granted` / `consent_withdrawn` audit event. Only user
+principals (not API keys) can manage consent. Current state is stored per
+`(site_id, user_id, consent_type)` in `user_consents`; full history lives in the audit log.
+
+**Email unsubscribe & suppression** (CAN-SPAM):
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/email/unsubscribe?token=…` | public | One-click unsubscribe (renders HTML confirmation) |
+| `POST` | `/api/v1/email/unsubscribe` | public | RFC 8058 one-click (token in query or form body) |
+| `GET` | `/api/v1/email/suppressions` | admin | List suppressed addresses |
+| `POST` | `/api/v1/email/suppressions` | admin | Add an address (`{ email, reason? }`) |
+| `DELETE` | `/api/v1/email/suppressions/:email` | admin | Remove an address (re-subscribe) |
+
+The unsubscribe token is a stateless HS256 JWT (`{ siteId, email }`, no expiry) signed
+with `JWT_SECRET`. Marketing sends (`EmailModuleService.send({ category: 'marketing' })`)
+filter recipients against `email_suppressions` before dispatch. Unsubscribe/suppression
+changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 
 **Login request:**
 ```json
@@ -121,21 +199,26 @@ cross-domain cookie env (`REFRESH_COOKIE_SAMESITE`/`_DOMAIN`/`_SECURE`).
 }
 ```
 
-**Login response:**
+**Login response:** a single bearer `token` plus the user profile. Send the token as
+`Authorization: Bearer <token>` on subsequent requests.
+
 ```json
 {
   "data": {
-    "access_token": "eyJ...",
-    "refresh_token": "...",
-    "expires_in": 3600,
+    "token": "eyJ...",
     "user": {
       "id": "usr_abc123",
       "email": "admin@example.com",
-      "role": "administrator"
+      "firstName": "Admin",
+      "lastName": "User",
+      "avatar": null
     }
   }
 }
 ```
+
+> For long-lived server-to-server access, create an API key
+> (`POST /api/v1/api-keys`, token prefix `lbk_`) instead of using a login token.
 
 ---
 
@@ -415,7 +498,29 @@ wss://...realtime?token=<access_token>&site=<siteId>
 { "type": "event", "collection": "articles", "event": "update", "data": { "id": "art_001", "title": "Updated title" } }
 ```
 
+**Server notification frame** (push-noti feature) — broadcast to every session
+for the site (not collection-scoped):
+```json
+{ "type": "notification", "notification": { "id": "…", "kind": "approval", "severity": "info", "title": "…", "body": "…", "deepLink": "/mission-control/inbox?entry=approval:…", "entityId": "…", "ts": "2026-06-23T01:00:00Z" } }
+```
+
 See [features/websockets-realtime.md](../features/websockets-realtime.md) for full protocol reference.
+
+---
+
+## 9b. Push notifications
+
+Web Push (VAPID) + in-app realtime for agent events. Tenant-scoped; the VAPID
+key is a shared deployment resource. See
+[features/push-notifications.md](../features/push-notifications.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/push/vapid-public-key` | Application-server public key (`404 PUSH_NOT_CONFIGURED` when unset). Same key for every tenant. |
+| `GET` | `/api/v1/push/status` | `{ vapidConfigured, realtimeAvailable, subscriptions }` for the active site. |
+| `POST` | `/api/v1/push/test` | Dispatch a one-off `test` notification to the active site (both transports). |
+| `POST` | `/api/v1/push/subscriptions` | Upsert a browser subscription: `{ endpoint, keys: { p256dh, auth } }`. |
+| `DELETE` | `/api/v1/push/subscriptions` | Remove a subscription by `{ endpoint }`. |
 
 ---
 

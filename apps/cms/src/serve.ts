@@ -168,6 +168,21 @@ async function main() {
     });
   });
 
+  // ── Deployment status poller (deployment-integrations task 9; Req 3.4) ──
+  //
+  // A 30-second sweep syncs every non-terminal deployment from its Provider.
+  // Each sync is a guarded conditional update (only flips queued/building),
+  // and a single provider error never aborts the sweep, so re-running is a
+  // no-op (idempotent).
+  const { registerStatusPoller, sweepAllSites } = await import('./services/deployment/status-poller');
+  const deployPollerDeps = { db: rotatorDb, keys: runtime.keys, queue: runtime.queue };
+  registerStatusPoller(deployPollerDeps);
+  const deploymentPollTask = cron.schedule('*/30 * * * * *', () => {
+    void sweepAllSites(deployPollerDeps).catch((err) => {
+      console.error('[deployment-poll] sweep failed', formatSafeError(err));
+    });
+  });
+
   // ── Envelope migration consumer (regulated-content-readiness task 3.6) ──
   //
   // Drains background migrations enqueued when an operator toggles
@@ -185,6 +200,7 @@ async function main() {
     vetoSweepTask.stop();
     schedulerTask.stop();
     retentionTask.stop();
+    deploymentPollTask.stop();
     pressureLimiter.stop();
     clearInterval(loadGuardTimer);
 

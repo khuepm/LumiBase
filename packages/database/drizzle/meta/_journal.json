@@ -244,14 +244,49 @@
       "idx": 34,
       "version": "7",
       "when": 1781773500004,
-      "tag": "0035_refresh_tokens",
+      "tag": "0035_user_consents",
       "breakpoints": true
     },
     {
       "idx": 35,
       "version": "7",
-      "when": 1782434331902,
-      "tag": "0036_realign_snapshot_baseline",
+      "when": 1781773560004,
+      "tag": "0036_email_suppressions",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1781773620004,
+      "tag": "0037_processing_restrictions",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1781773680004,
+      "tag": "0038_deployment_integrations",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1781773740004,
+      "tag": "0039_push_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1781773800004,
+      "tag": "0040_refresh_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1782993741628,
+      "tag": "0041_realign_snapshot_baseline",
       "breakpoints": true
     }
   ]

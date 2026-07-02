@@ -66,6 +66,7 @@ import { getSecurityNotificationDispatcher, scheduleWorkersDrain } from '../modu
 import type { NotificationDeps } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';
 import { formatSafeError } from '@lumibase/shared/utils';
+import { UserPreferencesUpdateSchema } from '@lumibase/shared/schemas';
 
 export const authRouter = new Hono<AppEnv>();
 
@@ -203,6 +204,87 @@ meRouter.post('/change-password', async (c) => {
   });
 
   return c.json({ data: { status: 'password_changed' } });
+});
+
+/**
+ * `GET /api/v1/me/preferences` — the authenticated user's preferences blob
+ * (`users.preferences`). Identity-global (not per-site): a user's keybindings,
+ * language, etc. follow them across every site they belong to.
+ *
+ * Returns `{}` when the row is missing or has no preferences yet, so the
+ * Studio can merge cleanly over its built-in defaults without special-casing
+ * a 404.
+ */
+meRouter.get('/preferences', async (c) => {
+  const db = c.get('db');
+  const auth = c.get('auth');
+  const userId = auth.userId;
+  if (!userId) {
+    return c.json(
+      { errors: [{ code: 'UNAUTHENTICATED', message: 'No authenticated user.' }] },
+      401,
+    );
+  }
+
+  const [row] = await db
+    .select({ preferences: users.preferences })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return c.json({ data: row?.preferences ?? {} });
+});
+
+/**
+ * `PATCH /api/v1/me/preferences` — shallow-merge a validated patch into the
+ * existing preferences blob (sparse update, like `PATCH /site`). Top-level
+ * sections the patch omits are preserved; sections it includes (e.g.
+ * `keybindings`) replace their previous value wholesale — the Studio sends the
+ * complete override map, so this is predictable and avoids orphaned entries.
+ */
+meRouter.patch('/preferences', async (c) => {
+  const db = c.get('db');
+  const auth = c.get('auth');
+  const userId = auth.userId;
+  if (!userId) {
+    return c.json(
+      { errors: [{ code: 'UNAUTHENTICATED', message: 'No authenticated user.' }] },
+      401,
+    );
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = UserPreferencesUpdateSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: parsed.error.message, issues: parsed.error.issues }] },
+      400,
+    );
+  }
+  const patch = parsed.data;
+
+  const [row] = await db
+    .select({ preferences: users.preferences })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (!row) {
+    return c.json(
+      { errors: [{ code: 'USER_NOT_FOUND', message: 'Current user not found.' }] },
+      404,
+    );
+  }
+
+  const current = (row.preferences ?? {}) as Record<string, unknown>;
+  const merged = { ...current, ...patch };
+
+  await db
+    .update(users)
+    .set({ preferences: merged, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+
+  return c.json({ data: merged });
 });
 
 /** `GET /api/v1/me/sessions` — the caller's active sessions (live refresh tokens). */
