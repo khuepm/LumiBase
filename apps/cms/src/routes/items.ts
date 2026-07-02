@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { ItemService, ItemServiceError, parseDeepQueryParams } from '../services/item-service';
+import { ItemService, ItemServiceError, parseDeepQueryParams, parseFilterQueryParams } from '../services/item-service';
 import { ContentVersionError, ContentVersionService } from '../services/content-version-service';
 import { formatSafeError } from '@lumibase/shared/utils';
 
@@ -23,7 +23,6 @@ const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
   status: z.string().optional(),
-  search: z.string().optional(),
 });
 
 const scheduleSchema = {
@@ -103,8 +102,14 @@ itemsRouter.get('/:collection', async (c) => {
   if (!parsed.success) {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
+  let filter: never | undefined;
   try {
-    const filter = parsed.data.filter ? (JSON.parse(parsed.data.filter) as never) : undefined;
+    // Accepts both `?filter={json}` and `?filter[field][_op]=value` forms.
+    filter = parseFilterQueryParams(searchParams, parsed.data.filter) as never | undefined;
+  } catch {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Invalid filter: expected JSON or filter[field][_op]=value syntax.' }] }, 400);
+  }
+  try {
     const fields = parsed.data.fields ? parsed.data.fields.split(',') : undefined;
     const deep = parseDeepQueryParams(searchParams);
     const sort = parsed.data.sort ? parsed.data.sort.split(',') : undefined;
@@ -116,7 +121,6 @@ itemsRouter.get('/:collection', async (c) => {
       limit: parsed.data.limit,
       offset: parsed.data.offset,
       status: parsed.data.status,
-      search: parsed.data.search,
     });
     return c.json(result);
   } catch (err) {

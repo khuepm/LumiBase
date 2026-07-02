@@ -2,7 +2,8 @@
 
 <div align="center">
 <img width="1024" height="434" alt="Image" src="https://github.com/user-attachments/assets/a11def9c-f238-4a6d-9816-7f7c4f718ea9" />
-**⚡ The Content Operating System — Edge-Native, AI-Native, Agent-Operated**
+
+  **⚡ The Content Operating System — Edge-Native, AI-Native, Agent-Operated**
 
 [![GitHub Stars](https://img.shields.io/github/stars/khuepm/lumibase?style=social)](https://github.com/khuepm/lumibase)
 <!-- [![GitHub Sponsors](https://img.shields.io/github/sponsors/khuepm)](https://github.com/sponsors/khuepm) -->
@@ -91,10 +92,10 @@ The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire
 
 Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
-Current release: `v0.11.0` (`2026-06-22`) — **Insights, content versioning & tenant-scoped search**. This release adds **Insights dashboards** (`dashboards`/`panels` + `/api/v1/insights` + Studio UI), **content versioning** (named parallel draft branches of an item, with diff/compare and a Studio UI), **Translation Memory management** (backend + Studio UI over the existing `/api/v1/tm` pipeline), **tenant-scoped search** (per-site index names + a dedicated indexing-queue worker, closing cross-tenant leakage), and groundwork for the **visual flow builder** — plus EN/VI docs sync tooling. It ships **2 additive schema migrations** (`0033`, `0034`) — **back up your database before upgrading**. It builds on **`v0.10.0`** (MCP everywhere), **`v0.9.0`** (regulated/sensitive content readiness), and the **`v0.5.0` Content OS foundation** — which remain the baseline this release builds upon, not replaces.
+Current release: `v0.14.0` (`2026-07-02`) — **Push notifications & MCP path-traversal hardening**. This release adds **push notifications** (operational agent events reach Studio operators via in-app realtime and Web Push (VAPID, RFC 8291/8292), with a per-tenant Settings → Notifications page and a CLI connection tester), a **docs version badge**, and extends **path-traversal hardening** from items/collections/fields to every MCP tool that interpolates a dynamic path segment. It ships **1 additive schema migration** (`0039`) — **back up your database before upgrading**. It builds on **`v0.13.0`** (deployment integrations & cross-collection search), **`v0.12.0`** (privacy & compliance suite, Directus-style interfaces & tenant isolation hardening), **`v0.11.0`** (Insights, content versioning & tenant-scoped search), **`v0.10.0`** (MCP everywhere), **`v0.9.0`** (regulated/sensitive content readiness), and the **`v0.5.0` Content OS foundation** — which remain the baseline this release builds upon, not replaces.
 
 ```bash
-LUMIBASE_VERSION=0.11.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=0.14.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.

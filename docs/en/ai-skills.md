@@ -86,6 +86,7 @@ Skills run through the **governed endpoint** `POST /api/v1/mcp` (gated by the pe
 | `listTeams` / `createTeam` / `deleteTeam` / `addTeamMember` / `removeTeamMember` | `teams:read`/`write`/`delete` | safe / dangerous |
 | `listSettings`/`listTranslations`/`listWebhooks` + their create/update/delete | `config:read`/`write`/`delete` | safe / dangerous |
 | `listExtensions` / `installExtension` / `updateExtension` / `uninstallExtension` | `extensions:read`/`write`/`delete` | safe / dangerous |
+| `listDeploymentTargets` / `listDeployments` / `getDeploymentStatus` / `triggerDeployment` | `deployments:read` / `deployments:write` | safe / dangerous (`trigger` gated by HITL below autopilot) |
 
 **Standalone MCP server (`@lumibase/mcp-server`, `lumibase-mcp`).** A separate stdio server that wraps the REST API as ~80 MCP tools covering the full surface (content, RBAC, users/teams, intents/flows, webhooks, translations, search, media, ops, backup/restore, materialize, extensions, marketplace). It is an ungoverned passthrough — RBAC/tenancy are enforced server-side for the bearer token. Destructive tools require `confirm: true`. See `docs/en/agent-setup/`.
 

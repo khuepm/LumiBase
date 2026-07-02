@@ -95,6 +95,19 @@ export class SiteRoom extends DurableObject<any> {
       return new Response(null, { status: 204 });
     }
 
+    // Internal publish path — called by the notification broadcaster to fan-out
+    // operational notifications (approvals, veto, incidents, goal/run status) to
+    // every connected session for this site, regardless of collection subs.
+    if (url.pathname === '/publish-notification' && request.method === 'POST') {
+      try {
+        const frame = (await request.json()) as { notification: unknown };
+        this.publishNotification(frame.notification);
+      } catch {
+        /* malformed — ignore */
+      }
+      return new Response(null, { status: 204 });
+    }
+
     const upgradeHeader = request.headers.get('Upgrade');
     if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
       return new Response('Expected Upgrade: websocket', { status: 426 });
@@ -217,6 +230,27 @@ export class SiteRoom extends DurableObject<any> {
       ) {
         continue;
       }
+      try {
+        session.ws.send(payload);
+      } catch {
+        /* disconnected */
+      }
+    }
+  }
+
+  /**
+   * Broadcast an operational (agent) notification to every STUDIO session for
+   * this site. Unlike {@link publish}, these are not collection-scoped and not
+   * echo-suppressed — they are site-wide signals for human operators.
+   *
+   * Scoped to the studio plane: these are admin ops alerts (approvals, veto,
+   * incidents, goal/run status) and must never leak to public/audience
+   * (end-user) sessions, which live on the same DO but a different plane.
+   */
+  publishNotification(notification: unknown): void {
+    const payload = JSON.stringify({ type: 'notification', notification });
+    for (const session of this.sessions.values()) {
+      if (session.principal.plane !== 'studio') continue;
       try {
         session.ws.send(payload);
       } catch {

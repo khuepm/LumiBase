@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { registerAllTools } from '../tools/index.js';
+import {
+  encodeMediaKey,
+  encodePathSegment,
+  idPathSegmentSchema,
+  mediaKeySchema,
+} from '../tools/path.js';
 
 interface CapturedTool {
   config: { description?: string; inputSchema?: Record<string, z.ZodTypeAny> };
@@ -133,5 +139,70 @@ describe('tool handlers call the right endpoints', () => {
     registerAllTools(server as never, client);
     await tools.get('export_backup')!.handler({});
     expect(calls).toContainEqual({ method: 'GET_TEXT', path: '/admin/backup' });
+  });
+});
+
+describe('path-parameter hardening', () => {
+  describe('idPathSegmentSchema', () => {
+    it('accepts opaque ids', () => {
+      for (const id of ['r1', 'nano_id-123', '0191f2e8-7b3a-7c1d-9f0e-abcdef012345']) {
+        expect(idPathSegmentSchema.safeParse(id).success, id).toBe(true);
+      }
+    });
+
+    it('rejects traversal and path separators', () => {
+      for (const bad of ['.', '..', '../roles', 'a/b', 'a\\b', '']) {
+        expect(idPathSegmentSchema.safeParse(bad).success, bad).toBe(false);
+      }
+    });
+  });
+
+  describe('mediaKeySchema', () => {
+    it('accepts multi-segment storage keys', () => {
+      for (const key of ['asset.txt', 'folder/sub/file.png']) {
+        expect(mediaKeySchema.safeParse(key).success, key).toBe(true);
+      }
+    });
+
+    it('rejects traversal, absolute, and backslash keys', () => {
+      for (const bad of ['../secret', 'a/../b', '/abs/path', 'a\\b', '']) {
+        expect(mediaKeySchema.safeParse(bad).success, bad).toBe(false);
+      }
+    });
+  });
+
+  it('encodePathSegment percent-encodes the whole segment', () => {
+    expect(encodePathSegment('a b')).toBe('a%20b');
+    expect(encodePathSegment('a/b')).toBe('a%2Fb');
+  });
+
+  it('encodeMediaKey encodes each segment but preserves separators', () => {
+    expect(encodeMediaKey('folder/a b.png')).toBe('folder/a%20b.png');
+  });
+
+  it('id path segments are encoded before reaching the client', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('delete_role')!.handler({ id: 'a b', confirm: true });
+    expect(calls).toContainEqual({ method: 'DELETE', path: '/roles/a%20b', body: undefined });
+  });
+
+  it('media keys are encoded per segment before reaching the client', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('delete_media')!.handler({ key: 'folder/a b.png', confirm: true });
+    expect(calls).toContainEqual({ method: 'DELETE', path: '/media/folder/a%20b.png', body: undefined });
+  });
+
+  it('setting keys allow dots but reject traversal', () => {
+    const { server, tools } = fakeServer();
+    const { client } = fakeClient();
+    registerAllTools(server as never, client);
+    const keySchema = tools.get('get_setting')!.config.inputSchema!['key']!;
+    expect(keySchema.safeParse('contentOs.mcp').success).toBe(true);
+    expect(keySchema.safeParse('..').success).toBe(false);
+    expect(keySchema.safeParse('a/b').success).toBe(false);
   });
 });

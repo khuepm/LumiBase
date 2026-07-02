@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-06-23T13:13:36.000Z
+sourceLang: vi
+contentHash: 75a34bb34c05772c
+---
+
 # Roadmap & Task Breakdown
 
 > **Scope:** Roadmap này dành cho **LumiBase Studio** — admin panel để quản lý data, collections, permissions, v.v. — và **LumiBase CMS API** chạy được trên cả Cloudflare Workers và Docker.

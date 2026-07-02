@@ -3,6 +3,7 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { AISecureHarness } from '../services/ai-harness';
 import { SchemaService } from '../services/schema-service';
 import { ItemService } from '../services/item-service';
@@ -237,6 +238,7 @@ aiRouter.post('/chat', async (c) => {
       itemService,
       llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
       queue: runtime.queue,
+      notify: buildAgentNotifier(c),
     });
     const result = await harness.execute(
       toolCall.name,
@@ -499,6 +501,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
       itemService,
       llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
       queue: runtime.queue,
+      notify: buildAgentNotifier(c),
     });
     const result = await authorizedHarness.executeApproved(
       approvalId,
