@@ -16,7 +16,8 @@
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { collections, fields, items, relations, scopeSite, type Database } from '@lumibase/database';
-import { ItemService } from './item-service';
+import type { ItemService } from './item-service';
+import { itemServiceForSystem } from './item-service-factory';
 
 export class DependentsError extends Error {
   constructor(public code: string, message: string, public status = 400) {
@@ -56,7 +57,16 @@ export class DependentsService {
 
   private itemService(db: Database = this.deps.db): ItemService {
     if (this.deps.itemServiceFactory) return this.deps.itemServiceFactory(db);
-    return new ItemService({ db, siteId: this.deps.siteId, userId: this.deps.userId ?? null });
+    // Batch dependent-deletes run inside applyResolution's transaction, so the
+    // service must be re-bound to the tx handle — which the request factory
+    // (itemServiceForRequest) cannot do. The caller is already authenticated at
+    // the route layer and this service enforces site scoping + relation
+    // validity itself; per-collection row RBAC on dependents is a documented
+    // follow-up (spec Req 9 deviation).
+    return itemServiceForSystem(
+      { db, siteId: this.deps.siteId, userId: this.deps.userId ?? null },
+      'background-worker',
+    );
   }
 
   private async collectionIdByName(name: string): Promise<string | null> {
