@@ -16,34 +16,35 @@ export function saveActionLabel(action: SaveAction): string {
 
 /**
  * Resolve the effective Studio save action and expose a "set as default"
- * mutation. Reads the per-user preference from `/me` and the site default from
- * the site config, then applies the precedence
+ * mutation. Reads the per-user preference from `GET /api/v1/me/preferences`
+ * (the shared preferences endpoint — same blob as keybindings/language) and
+ * the site default from the site config, then applies the precedence
  * user → site → 'stay' (see resolveSaveAction). Save-default-preference Req 4–7.
  */
 export function useSaveAction() {
   const client = getApiClient();
   const qc = useQueryClient();
 
-  const meQuery = useQuery({
-    queryKey: ['me'],
-    queryFn: async () => (await client.rawRequest<{ preferences?: { saveAction?: string } }>('/api/v1/auth/me')).data,
+  const prefsQuery = useQuery({
+    queryKey: ['me-preferences'],
+    queryFn: async () => (await client.rawRequest<{ saveAction?: string | null }>('/api/v1/me/preferences')).data,
   });
   const siteQuery = useQuery({
     queryKey: ['site-config'],
     queryFn: async () => (await client.rawRequest<{ defaultSaveAction?: string }>('/api/v1/site')).data,
   });
 
-  const userPref = meQuery.data?.preferences?.saveAction;
+  const userPref = prefsQuery.data?.saveAction;
   const siteDefault = siteQuery.data?.defaultSaveAction;
   const effective = resolveSaveAction(userPref, siteDefault);
 
   const setDefaultMutation = useMutation({
     mutationFn: async (action: SaveAction | null) =>
-      client.rawRequest('/api/v1/auth/me/preferences', {
+      client.rawRequest('/api/v1/me/preferences', {
         method: 'PATCH',
         body: JSON.stringify({ saveAction: action }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me-preferences'] }),
   });
 
   return {

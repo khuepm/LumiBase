@@ -54,13 +54,16 @@ export function Sidebar({ tree, activeSlug, onNavigate, locale }: SidebarProps) 
   if (tree.length === 0) {
     return (
       <div className="p-4">
-        <p className="text-sm text-muted-foreground">{t('sidebar.empty')}</p>
+        <p className="text-sm text-[rgb(150,150,156)]">{t('sidebar.empty')}</p>
       </div>
     );
   }
 
   return (
-    <nav className="flex flex-col gap-0.5 p-2" aria-label="Documentation navigation">
+    <nav
+      className="flex flex-col gap-0.5 px-3 pb-20 pt-6"
+      aria-label="Documentation navigation"
+    >
       {tree.map((node) => (
         <SidebarNode
           key={node.type === 'file' ? node.slug : node.name}

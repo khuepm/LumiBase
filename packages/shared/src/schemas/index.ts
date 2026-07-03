@@ -12,6 +12,15 @@ export {
 } from './cdc';
 
 export {
+  CONSENT_TYPES,
+  ConsentTypeSchema,
+  ConsentSetSchema,
+  type ConsentType,
+  type ConsentSetInput,
+  type ConsentRecord,
+} from './consent';
+
+export {
   ExtensionTypeSchema,
   ExtensionConfigOptionSchema,
   ExtensionAuthorSchema,
@@ -41,14 +50,68 @@ export {
 } from './site-config';
 
 export {
+  CHORD_MODIFIERS,
+  ChordSchema,
+  KeybindingMapSchema,
   SAVE_ACTIONS,
   SaveActionSchema,
   DEFAULT_SAVE_ACTION,
   isSaveAction,
   resolveSaveAction,
   UserPreferencesSchema,
-  PreferencesUpdateSchema,
+  UserPreferencesUpdateSchema,
+  type ChordModifier,
+  type KeybindingMap,
   type SaveAction,
   type UserPreferences,
-  type PreferencesUpdate,
+  type UserPreferencesUpdate,
 } from './user-preferences';
+
+export { TM_DEFAULT_THRESHOLD } from './translation';
+
+export { diffFields, type Change, type ChangeState } from './diff';
+
+export {
+  feToCanonical,
+  canonicalToFe,
+  validateGraph,
+  type FlowGraph,
+  type FlowNode,
+  type FeGraph,
+  type FeNode,
+  type FeEdge,
+  type GraphError,
+  type GraphErrorCode,
+} from './flow-graph';
+
+export {
+  PANEL_TYPES,
+  AGGREGATES,
+  PANEL_DEFAULT_LIMIT,
+  PANEL_MAX_LIMIT,
+  conditionRuleSchema,
+  gridPositionSchema,
+  dateRangeSchema,
+  panelQuerySchema,
+  panelCreateSchema,
+  dashboardCreateSchema,
+  type PanelType,
+  type Aggregate,
+  type GridPosition,
+  type PanelQuery,
+  type PanelCreateInput,
+  type DashboardCreateInput,
+  type PanelResult,
+} from './insights';
+export {
+  DeploymentProviderSchema,
+  DeploymentStatusSchema,
+  DeploymentTargetCreateSchema,
+  DeploymentTargetUpdateSchema,
+  DeployTriggerSchema,
+  type DeploymentProviderKey,
+  type DeploymentStatusValue,
+  type DeploymentTargetCreateInput,
+  type DeploymentTargetUpdateInput,
+  type DeployTriggerInput,
+} from './deployment';

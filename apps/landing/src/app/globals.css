@@ -3,18 +3,89 @@
 @tailwind utilities;
 
 :root {
-  /* Control-room dark is the canonical palette */
-  --background: #05070a;
-  --foreground: #e6edf3;
+  /* LumiBase cosmic palette — extracted from the design system */
+  --background: rgb(14, 14, 17);
+  --foreground: #ffffff;
+
+  --gradient-page: linear-gradient(135deg, rgb(30, 30, 32) 0%, rgb(14, 14, 17) 32%);
+
+  --color-surface-1: rgb(29, 28, 32);
+  --color-surface-2: rgb(36, 35, 37);
+  --color-surface-3: rgb(41, 41, 43);
+  --color-surface-4: rgb(52, 50, 54);
+  --color-surface-sunken: rgb(23, 22, 25);
+
+  --color-glass: rgba(255, 255, 255, 0.08);
+  --color-glass-hover: rgba(255, 255, 255, 0.14);
+
+  --color-text-secondary: rgb(189, 189, 192);
+  --color-text-muted: rgb(169, 169, 169);
+
+  --color-violet: rgb(123, 97, 255);
+  --color-blue: rgb(24, 160, 251);
+  --color-green: rgb(46, 196, 124);
+  --color-red: rgb(232, 86, 86);
+
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+
+  --radius-pill: 32px;
+  --radius-card: 24px;
+
+  --ring-glass: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --ring-glass-strong: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+
+  --shadow-sm: 0px 2px 4px 0px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0px 8px 24px 0px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0px 24px 64px 0px rgba(0, 0, 0, 0.8);
+
+  --glow-violet: 0px 0px 80px 0px rgba(123, 97, 255, 0.45);
+  --glow-blue: 0px 0px 80px 0px rgba(24, 160, 251, 0.4);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html {
   scroll-behavior: smooth;
 }
 
+html {
+  background: var(--background);
+}
+
 body {
   color: var(--foreground);
-  background: var(--background);
+  background: var(--color-bg, rgb(20, 19, 22));
+}
+
+/* Viewport-fixed cosmic gradient (avoids background-attachment quirks) */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background: var(--gradient-page);
+}
+
+/* Faint starfield over the cosmic gradient */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(1.4px 1.4px at 12% 18%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1.2px 1.2px at 34% 62%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1.6px 1.6px at 58% 28%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 72% 76%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1.3px 1.3px at 88% 42%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 22% 88%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1.5px 1.5px at 46% 8%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1px 1px at 64% 54%, rgba(255, 255, 255, 0.4), transparent);
+  background-repeat: repeat;
+  background-size: 100% 1100px;
 }
 
 @layer utilities {
@@ -22,22 +93,153 @@ body {
     text-wrap: balance;
   }
 
-  /* Faint blueprint grid for the control-room backdrop */
-  .bg-grid {
-    background-image:
-      linear-gradient(to right, rgba(74, 222, 128, 0.06) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(74, 222, 128, 0.06) 1px, transparent 1px);
-    background-size: 44px 44px;
+  /* Hairline ring drawn as inset shadow over glass surfaces */
+  .ring-glass {
+    box-shadow: var(--ring-glass);
+  }
+  .ring-glass-strong {
+    box-shadow: var(--ring-glass-strong);
   }
 
-  /* Radial mask so the grid fades toward the edges */
+  /* Legacy control-room utilities kept for the pricing/legal pages */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
   .mask-radial {
     -webkit-mask-image: radial-gradient(ellipse 60% 60% at 50% 40%, #000 40%, transparent 100%);
     mask-image: radial-gradient(ellipse 60% 60% at 50% 40%, #000 40%, transparent 100%);
   }
-
   .text-signal-glow {
-    text-shadow: 0 0 24px rgba(34, 197, 94, 0.35);
+    text-shadow: 0 0 24px rgba(123, 97, 255, 0.45);
+  }
+}
+
+@layer components {
+  /* ── Glass pill button (brand default) ─────────────────── */
+  .btn-pill {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: none;
+    border-radius: 999px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+    cursor: pointer;
+    text-decoration: none;
+    transition:
+      filter 240ms var(--ease-out),
+      transform 380ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      background 240ms var(--ease-out);
+  }
+  .btn-pill:hover {
+    filter: brightness(1.14);
+    transform: translateY(-1px);
+  }
+  .btn-pill:active {
+    transform: translateY(0) scale(0.96);
+  }
+
+  .btn-glass {
+    background: rgba(24, 23, 28, 0.55);
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+      inset 0 -7px 14px rgba(0, 0, 0, 0.28),
+      0 7px 20px -4px rgba(0, 0, 0, 0.55);
+  }
+  .btn-glass::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%);
+    -webkit-backdrop-filter: blur(5px) saturate(185%);
+    backdrop-filter: blur(5px) saturate(185%);
+  }
+  .btn-glass > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .btn-solid {
+    background: var(--color-violet);
+    color: #fff;
+    box-shadow: 0 8px 24px -8px rgba(123, 97, 255, 0.7);
+  }
+
+  .btn-sm {
+    height: 34px;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+  .btn-md {
+    height: 46px;
+    padding: 0 22px;
+    font-size: 14px;
+  }
+  .btn-lg {
+    height: 54px;
+    padding: 0 28px;
+    font-size: 16px;
+  }
+
+  /* ── Surface card ──────────────────────────────────────── */
+  .card-cosmic {
+    position: relative;
+    border-radius: var(--radius-card);
+    background: var(--color-surface-1);
+    box-shadow: var(--ring-glass);
+    overflow: hidden;
+  }
+
+  /* ── Glossy white sphere (brand logo mark) ─────────────── */
+  .sphere-logo {
+    display: inline-block;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #fff 0%, #cfcfcf 100%);
+    box-shadow: 0 0 18px rgba(123, 97, 255, 0.6), var(--shadow-sm);
+    flex-shrink: 0;
+  }
+}
+
+@keyframes orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Orbital hero stage — fixed 980px canvas scaled per breakpoint ── */
+.orbit-wrap {
+  --orbit-scale: 1;
+  height: calc(980px * var(--orbit-scale));
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+}
+.orbit-stage {
+  position: relative;
+  width: 980px;
+  height: 980px;
+  flex-shrink: 0;
+  transform: scale(var(--orbit-scale));
+  transform-origin: top center;
+}
+@media (max-width: 1100px) {
+  .orbit-wrap {
+    --orbit-scale: 0.72;
+  }
+}
+@media (max-width: 640px) {
+  .orbit-wrap {
+    --orbit-scale: 0.42;
   }
 }
 

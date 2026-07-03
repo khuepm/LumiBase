@@ -1,8 +1,13 @@
 {
   "name": "@lumibase/extension-sdk",
-  "version": "0.10.0",
+  "version": "0.15.0",
   "description": "Types + helpers for building LumiBase extensions (hooks, endpoints, UI).",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khuepm/lumibase.git",
+    "directory": "packages/extension-sdk"
+  },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {

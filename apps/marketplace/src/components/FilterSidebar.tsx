@@ -3,11 +3,11 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 import { CATEGORIES } from "@/lib/api";
-import { Filter } from "lucide-react";
+import TagChip from "./TagChip";
 
 const SORT_OPTIONS = [
-  { value: "popular", label: "Most Popular" },
-  { value: "latest", label: "Recently Updated" },
+  { value: "popular", label: "Most installed" },
+  { value: "latest", label: "Recently updated" },
   { value: "name", label: "Name (A–Z)" },
 ];
 
@@ -44,13 +44,12 @@ export default function FilterSidebar() {
 
   return (
     <aside
-      className="w-full space-y-6 lg:w-56 xl:w-64"
+      className="w-full space-y-7 lg:w-56 xl:w-64"
       aria-label="Filter extensions"
     >
       {/* Sort */}
       <div>
-        <h3 className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
-          <Filter className="h-3.5 w-3.5" />
+        <h3 className="mb-3 text-xs font-semibold uppercase tracking-[.6px] text-[rgb(130,130,138)]">
           Sort by
         </h3>
         <div className="space-y-1">
@@ -59,10 +58,10 @@ export default function FilterSidebar() {
               key={opt.value}
               id={`sort-${opt.value}`}
               onClick={() => setParam("sort", opt.value)}
-              className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+              className={`w-full rounded-[10px] px-3 py-[7px] text-left text-sm transition-colors ${
                 activeSort === opt.value
-                  ? "bg-brand-900/60 text-brand-300 font-medium"
-                  : "text-gray-400 hover:bg-surface-700 hover:text-gray-200"
+                  ? "bg-[rgba(123,97,255,.16)] font-semibold text-white shadow-[inset_0_0_0_1px_rgba(123,97,255,.30)]"
+                  : "font-medium text-[rgb(170,170,176)] hover:text-white"
               }`}
             >
               {opt.label}
@@ -73,23 +72,19 @@ export default function FilterSidebar() {
 
       {/* Categories */}
       <div>
-        <h3 className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
+        <h3 className="mb-3 text-xs font-semibold uppercase tracking-[.6px] text-[rgb(130,130,138)]">
           Category
         </h3>
-        <div className="space-y-1">
+        <div className="flex flex-wrap gap-2">
           {CATEGORIES.map((cat) => (
-            <button
+            <TagChip
               key={cat.slug}
               id={`filter-cat-${cat.slug}`}
+              active={activeCategory === cat.slug}
               onClick={() => toggleCategory(cat.slug)}
-              className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                activeCategory === cat.slug
-                  ? "bg-brand-900/60 text-brand-300 font-medium"
-                  : "text-gray-400 hover:bg-surface-700 hover:text-gray-200"
-              }`}
             >
               {cat.label}
-            </button>
+            </TagChip>
           ))}
         </div>
       </div>
@@ -99,9 +94,9 @@ export default function FilterSidebar() {
         <button
           id="clear-filters"
           onClick={clearAll}
-          className="w-full rounded-lg border border-surface-600 py-2 text-sm text-gray-400 hover:border-surface-500 hover:text-gray-200 transition-colors"
+          className="btn-pill btn-glass btn-sm w-full"
         >
-          Clear filters
+          <span>Clear filters</span>
         </button>
       )}
     </aside>

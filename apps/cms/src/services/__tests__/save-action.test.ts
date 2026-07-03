@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SAVE_ACTION,
-  PreferencesUpdateSchema,
+  UserPreferencesUpdateSchema,
   resolveSaveAction,
   SAVE_ACTIONS,
 } from '@lumibase/shared/schemas';
@@ -41,22 +41,22 @@ describe('resolveSaveAction', () => {
   });
 });
 
-describe('PreferencesUpdateSchema', () => {
+describe('UserPreferencesUpdateSchema', () => {
   it('accepts a valid saveAction (Req 2.1)', () => {
-    expect(PreferencesUpdateSchema.safeParse({ saveAction: 'stay' }).success).toBe(true);
+    expect(UserPreferencesUpdateSchema.safeParse({ saveAction: 'stay' }).success).toBe(true);
   });
 
   it('rejects an invalid saveAction enum (Req 2.2)', () => {
-    expect(PreferencesUpdateSchema.safeParse({ saveAction: 'nope' }).success).toBe(false);
+    expect(UserPreferencesUpdateSchema.safeParse({ saveAction: 'nope' }).success).toBe(false);
   });
 
   it('accepts saveAction: null to clear the override (Req 7.2)', () => {
-    const parsed = PreferencesUpdateSchema.safeParse({ saveAction: null });
+    const parsed = UserPreferencesUpdateSchema.safeParse({ saveAction: null });
     expect(parsed.success).toBe(true);
   });
 
   it('passes through unknown keys (forward compat, Req 8.4)', () => {
-    const parsed = PreferencesUpdateSchema.safeParse({ saveAction: 'return', futureKey: 1 });
+    const parsed = UserPreferencesUpdateSchema.safeParse({ saveAction: 'return', futureKey: 1 });
     expect(parsed.success).toBe(true);
     if (parsed.success) expect((parsed.data as { futureKey?: number }).futureKey).toBe(1);
   });

@@ -28,10 +28,13 @@ import { requireSiteAdmin } from '../../middleware/site-admin';
 import { AuditLogger } from '../audit/logger';
 import { EmailService } from '../../services/email/email-service';
 import {
+  AllRecipientsSuppressedError,
   EmailModuleService,
   EmailNotConfiguredError,
   TemplateNotFoundError,
 } from './service';
+import { SuppressionService } from './suppression';
+import { normalizeEmail } from '../login-guard/email-normalize';
 import {
   layoutCreateSchema,
   layoutUpdateSchema,
@@ -159,6 +162,62 @@ emailRouter.post('/test', async (c) => {
   });
 });
 
+// ── Suppression list (unsubscribe / opt-out) ─────────────────────────────
+
+emailRouter.get('/suppressions', async (c) => {
+  const rows = await new SuppressionService({ db: c.get('db') }).list({
+    siteId: c.get('siteId'),
+  });
+  return c.json({ data: rows });
+});
+
+emailRouter.post('/suppressions', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    email?: unknown;
+    reason?: unknown;
+  };
+  const email = normalizeEmail(typeof body.email === 'string' ? body.email : '');
+  if (!email || !email.includes('@')) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'A valid email is required.' }] }, 400);
+  }
+  const reason = typeof body.reason === 'string' ? body.reason : 'manual';
+  await new SuppressionService({ db: c.get('db') }).suppress({
+    siteId: c.get('siteId'),
+    email,
+    reason,
+    source: 'admin',
+  });
+  await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
+    event: 'email_suppressed',
+    actorEmail: c.get('auth')?.email ?? null,
+    targetEmail: email,
+    ip: c.get('ip') ?? null,
+    userAgent: c.get('userAgent') ?? null,
+    requestId: c.get('requestId') ?? null,
+    metadata: { reason, source: 'admin' },
+  });
+  return c.json({ data: { email, suppressed: true } }, 201);
+});
+
+emailRouter.delete('/suppressions/:email', async (c) => {
+  const email = normalizeEmail(decodeURIComponent(c.req.param('email')));
+  const removed = await new SuppressionService({ db: c.get('db') }).unsuppress({
+    siteId: c.get('siteId'),
+    email,
+  });
+  if (!removed) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+  await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
+    event: 'email_unsuppressed',
+    actorEmail: c.get('auth')?.email ?? null,
+    targetEmail: email,
+    ip: c.get('ip') ?? null,
+    userAgent: c.get('userAgent') ?? null,
+    requestId: c.get('requestId') ?? null,
+    metadata: { source: 'admin' },
+  });
+  return c.json({ data: null });
+});
+
 // ── Shared send handler (render + send + audit) ──────────────────────────
 
 async function handleSend(
@@ -203,6 +262,9 @@ async function handleSend(
   } catch (err) {
     if (err instanceof EmailNotConfiguredError) {
       return c.json({ errors: [{ code: 'EMAIL_NOT_CONFIGURED', message: err.message }] }, 503);
+    }
+    if (err instanceof AllRecipientsSuppressedError) {
+      return c.json({ errors: [{ code: 'ALL_RECIPIENTS_SUPPRESSED', message: err.message }] }, 409);
     }
     if (err instanceof TemplateNotFoundError) {
       return c.json({ errors: [{ code: 'NOT_FOUND', message: err.message }] }, 404);
