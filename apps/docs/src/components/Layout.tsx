@@ -199,7 +199,10 @@ export function Layout() {
                 ))}
               </div>
               <p className="mt-8 border-t border-border pt-5 text-center text-[13px] font-medium text-muted-foreground">
-                {siteConfig.footer.copyright.split('LumiBase').map((part, i, arr) =>
+                {siteConfig.footer.copyright
+                  .replace('{year}', String(new Date().getFullYear()))
+                  .split('LumiBase')
+                  .map((part, i, arr) =>
                   i < arr.length - 1 ? (
                     <span key={i}>
                       {part}
