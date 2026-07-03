@@ -11,7 +11,8 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { ItemService, ItemServiceError } from '../services/item-service';
+import { ItemServiceError } from '../services/item-service';
+import { itemServiceForRequest } from '../services/item-service-factory';
 import { AuditLogger } from '../modules/audit/logger';
 
 export const adminSarRouter = new Hono<AppEnv>();
@@ -46,29 +47,10 @@ adminSarRouter.post('/export', async (c) => {
   }
 
   const auth = c.get('auth');
-  const runtime = c.get('runtime');
   const siteId = c.get('siteId');
   const db = c.get('db');
 
-  const headers: Record<string, string> = {};
-  c.req.raw.headers.forEach((v, k) => (headers[k.toLowerCase()] = v));
-
-  const service = new ItemService({
-    db,
-    siteId,
-    userId: auth?.userId ?? null,
-    keyProvider: runtime.keys,
-    encryptionKey: c.env.ENCRYPTION_KEY,
-    permissionCtx: {
-      userId: auth?.userId ?? null,
-      siteId,
-      roleId: null,
-      user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [] } : null,
-      ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-      headers,
-      apiKey: auth?.apiKey ?? null,
-    },
-  });
+  const service = itemServiceForRequest(c);
 
   try {
     const { records, count } = await service.exportSubject(collection, filter);

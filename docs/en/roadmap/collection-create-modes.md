@@ -60,7 +60,7 @@ Phase 4: collection-create-modes — DB_View_Mode + Flexible_View_Mode (cần mi
 
 ## Definition of Done
 
-Đã ghi 3 dòng (#28–#30) vào Setup Impact Registry [`.kiro/specs/admin-setup-wizard/setup-impact.md`](../../../.kiro/specs/admin-setup-wizard/setup-impact.md) theo [`.kiro/steering/definition-of-done.md`](../../../.kiro/steering/definition-of-done.md).
+Đã ghi 3 dòng (#33–#35) vào Setup Impact Registry [`.kiro/specs/admin-setup-wizard/setup-impact.md`](../../../.kiro/specs/admin-setup-wizard/setup-impact.md) theo [`.kiro/steering/definition-of-done.md`](../../../.kiro/steering/definition-of-done.md).
 
 ## Tham chiếu ngoài
 

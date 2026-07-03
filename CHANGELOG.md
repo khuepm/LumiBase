@@ -9,7 +9,184 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Security
+
+- **Flows are control-plane again:** `/api/v1/flows` is now in `CONTROL_PLANE_PATHS`
+  so the admin-only backstop runs even if a flows route forgets its own guard —
+  the same gap class as the historical `/api/v1/agent` omission, now that flow
+  operations (`deploy:trigger`/`deploy:status`) mutate external deploy state. A
+  tripwire assertion in `security-guards.wiring.test.ts` locks it.
+
+### Changed
+
+- **Definition of Done gains section 6 (DoD evolution):** a mandatory
+  retrospective step — a bug fix must ask whether it should lock the whole error
+  *class* with a tripwire, and a feature must ask whether it opens a new
+  failure-mode/attack-surface warranting a new DoD rule; DoD changes land in the
+  same PR. Makes the "learn from a bug, add a guard" loop (which produced 2b/2c)
+  explicit instead of relying on reviewer memory.
+
+### Added
+
+- **CMS / deployments:** Flow operations `deploy:trigger` and `deploy:status`,
+  completing the auto-deploy-on-content-change path promised by deployment
+  integrations (Req 5). A Flow with an `event` trigger can now deploy a target
+  via `deploy:trigger` (`triggerSource='auto'`, linked to the flow run for
+  provenance) and branch on `deploy:status`. Both reuse the shared
+  `DeploymentService` — same encrypted-token, SSRF and audit guards as the
+  manual API — and receive `db`/`siteId`/`keys`/`runId` from the flow run
+  environment.
+- **Code-First Configuration (Config Manifest).** Export / diff / apply a site's
+  schema configuration — collections, fields, relations, settings and webhooks —
+  as a single declarative, version-controllable JSON manifest
+  (`lumibase.config@v1`) for CI/CD and environment sync. New admin-only endpoints
+  `GET /api/v1/config/export` and `POST /api/v1/config/import` (with `dryRun`,
+  `mode=merge|replace-managed|replace-all`, and an `allowDestructive` guard), plus
+  a reworked `pnpm --filter @lumibase/cms config export|diff|apply` CLI (`diff`
+  exits 1 when changes are pending, for use as a PR gate). Apply is transactional
+  (all-or-nothing) and delegates schema mutation to the existing `SchemaService`;
+  merge never deletes, replace-all is a full sync. Manifests carry no
+  id/siteId/timestamps/secrets and round-trip losslessly. No schema migration —
+  reuses existing tables. See
+  [`docs/en/contributing/code-first-config.md`](docs/en/contributing/code-first-config.md).
+
+### Security
+
+- **Tenant membership enforcement** (ports open PR #184): new `withSiteMembership` middleware between `withAuth` and route handlers — a user principal must hold a `user_sites` membership for the site selected via `X-Lumi-Site`, closing cross-tenant access for authenticated principals. API keys stay site-matched by `withAuth`; local dev tokens, bootstrap users, and the Cloudflare Access admin flow keep their existing carve-outs.
+- **Dynamic extension dispatch is admin-gated again** (ports open PR #152): restores the `adminOnly` guard on `extensionsRouter.all('/:name/*')` that a refactor had dropped, so non-admin principals can no longer execute endpoint extension bundles.
+- **`POST /auth/register` fixed and fail-closed** (bug portion of open PR #130): the path was on the `withAuth` bypass list while the handler read the principal, so the route always crashed with 500; it now runs through the full auth chain, requires an admin principal (403 otherwise, even with no principal), and binds new users to the site's seeded `member` role id instead of the invalid literal `'member'` (an FK violation).
+- **Recurrence prevention:** source-level tripwire suite `apps/cms/src/__tests__/security-guards.wiring.test.ts` locks the guard-chain wiring, bypass lists, extension admin gate, and control-plane path coverage; new guide `docs/en/security/route-guards.md`; Definition of Done gains section 2c (route-guard security checklist).
+
+## [0.15.0] - 2026-07-02
+
+### Version
+
+- `v0.15.0`
+
+### Date
+
+- `2026-07-02`
+
+### Highlights
+
+- **Realtime audience plane.** Realtime is now split into two planes: the existing admin/Studio plane and a new **audience plane** for end-user frontends. Frontends connect with short-lived audience tickets over a plane-aware WebSocket upgrade, subscribe to subject/channel addresses, and receive targeted fan-out from a plane-aware `SiteRoom`. A per-subject connection cap and audience shard resolver keep tenants isolated under load. A new `@lumibase/sdk` `AudienceClient` gives frontend apps a typed entry point, and a Node WebSocket hub backs the audience plane under the Docker dual deployment.
+- **Cosmic design system.** The landing, marketplace, and docs surfaces adopt a shared cosmic design system — an orbital hero and product sections on landing, refreshed browse/detail pages on marketplace, and a cosmic dark theme for the docs viewer.
+- **Security hardening.** `ItemService` construction is now funnelled through an RBAC-explicit factory so no call site can bypass permission context, and schema-admin routes are guarded against missing permission checks.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **Realtime / audience plane:** shared `audience-channels` protocol; runtime realtime provider abstraction (ADR-002); plane-aware `SiteRoom` with targeted fan-out; audience tickets + plane-aware WS upgrade; targeted publish via provider + notification inbox; Node WebSocket hub for the Docker dual deployment; per-subject connection cap + audience shard resolver.
+- **SDK:** `AudienceClient` for frontend end-user realtime.
+- **CMS:** admin backstop for control-plane skills on the MCP endpoint.
+
+### Changed
+
+- **Landing / marketplace / docs:** applied the cosmic design system — orbital hero and product sections (landing), browse and detail pages (marketplace), cosmic dark theme (docs viewer).
+- **CMS:** `ItemService` construction routed through an RBAC-explicit factory.
+
+### Fixed
+
+- **CMS:** schema-admin routes now guarded against a missing permission check (regression test added).
+- **Marketplace:** removed a no-op SEO self-replacement in `categoryLabel`.
+- **SDK:** fixed strict-null handling in the `AudienceClient` test helper.
+
+### Notes
+
+- **Docs:** documented the audience plane and logged it in the Setup Impact registry; added English + Vietnamese runtime security guards reference docs (EN/VI parity); logged the `ItemService` RBAC guard as reviewed (n/a) in the Setup Impact registry.
+
+### Migrations
+
+- None
+
+## [0.14.0] - 2026-07-02
+
+### Version
+
+- `v0.14.0`
+
+### Date
+
+- `2026-07-02`
+
+### Highlights
+
+- **Push notifications.** Operational agent events (HITL approvals, L3 veto-window stagings, agent incidents, run/goal status changes) now reach Studio operators over two transports: in-app realtime via the per-site `SiteRoom` Durable Object, and Web Push (VAPID, RFC 8291/8292) so operators are reached even with the tab closed. Both are best-effort and non-blocking; the Mission Control inbox poll remains the fallback. Includes a Settings → Notifications page (status, per-browser enable/disable, send-test) and a CLI connection tester.
+- **Docs version badge.** The docs site header now shows the current release version, linking to that release's GitHub notes.
+- **Path-traversal hardening.** Extends the prior items/collections/fields path-segment validation to every MCP tool that interpolates a dynamic segment into an API path — closing the same path-traversal / confused-deputy class across the shared CRUD factory, users/teams, API keys, access, agent, admin, relations, extensions, and settings tools.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **CMS / push notifications:** runtime-agnostic Web Push crypto (Web Crypto, no Node-only `web-push` dep); central `agent-notifications` broadcaster (in-app DO + Web Push fanout, prunes 404/410 endpoints); `SiteRoom` `notification` frame + publish path; `GET /api/v1/push/vapid-public-key`, `POST`/`DELETE /api/v1/push/subscriptions`, `GET /api/v1/push/status`, `POST /api/v1/push/test`; `push_subscriptions` table (migration `0039`) with RLS.
+- **Studio:** push service worker + enrollment lib; notifications panel with realtime updates and enable/disable toggle; Settings → Notifications page (server status, per-browser controls, connect guide, send-test).
+- **Tooling:** `apps/cms/scripts/push-test.mjs` CLI to verify a tenant's push connectivity without opening Studio; VAPID key generator script.
+- **Docs:** version badge in the docs header (`__APP_VERSION__` build-time define); `features/push-notifications.md` guide with a Multi-tenancy section; `definition-of-done.md` gained a mandatory multi-tenant isolation checklist for new features.
+
+### Changed
+
+- **MCP server:** `registerCrud` and explicit endpoints across users-teams, api-keys, access, agent, admin, relations, extensions, and settings tools now validate ids/keys with `idPathSegmentSchema` and encode path segments; added `mediaKeySchema`/`encodeMediaKey` for multi-segment storage keys.
+
+### Fixed
+
+- **Security / mcp-server:** hardened tool path parameters and extended path hardening from items/collections/fields to all CRUD and explicit-endpoint tools (path-traversal / confused-deputy).
+- **Security / mcp-server:** settings tools (`get_setting`, `upsert_setting`, `delete_setting`) switched from `encodeURIComponent` to `idPathSegmentSchema`, closing a residual traversal gap where `.`/`..` were not neutralized.
+
+### Migrations
+
+- **1 new schema migration (additive, idempotent):** `0039_push_subscriptions.sql` adds the site-isolated `push_subscriptions` table, guarded with `CREATE TABLE IF NOT EXISTS` so it re-runs safely and leaves existing installs untouched. RLS is applied via `packages/database/migrations/rls-policies.sql`. No data migration.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
+## [0.13.0] - 2026-06-30
+
+### Version
+
+- `v0.13.0`
+
+### Date
+
+- `2026-06-30`
+
+### Highlights
+
+- **Deployment integrations.** Connect a site to Vercel, Netlify, or any HTTP deploy hook, then trigger and monitor deploys from Studio. Provider tokens are stored encrypted via the runtime `KeyProvider` (never plaintext), deploy targets and deployments are site-isolated with RLS, and incoming provider webhooks are signature-verified. Reuses the Flows/queue infrastructure with a status poller for in-flight deploys.
+- **Cross-collection search.** Search now spans collections in a single query, with a reindex CLI, an SDK `search()` command (`SearchHit` / `SearchResponse` types), and a Vietnamese-aware analyzer. Studio gains a global command palette (Cmd/Ctrl+K).
+- **Bracket-form filter params.** The items list route accepts bracket-form filter query params (e.g. `filter[field][_eq]=...`) end-to-end.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **CMS / deployments:** deployment-integrations service with Vercel, Netlify, and HTTP providers; encrypted token vault; status poller; webhook signature verification; two site-isolated tables with RLS.
+- **CMS / search:** cross-collection search and a reindex CLI.
+- **CMS / items:** accept bracket-form filter query params on the items list route.
+- **SDK:** `search()` command plus `SearchHit` / `SearchResponse` types.
+- **Studio:** Deployments settings page and a global command palette (Cmd/Ctrl+K) search.
+- **AI skills:** deployment skills registered in the skill registry.
+- **Docs:** deployment endpoints added to the OpenAPI spec; deployment-integrations feature guide; Next.js quickstart tutorial; EN/VI i18n CI workflow, contributing guide, and translation via Claude.
+
+### Changed
+
+- **Docs i18n:** translate with Claude instead of a third-party MT engine; sync EN/VI sources with version front matter.
+
+### Fixed
+
+- **Security / deployments:** verify provider webhook signatures and enable RLS on deployment tables.
+- **Security / CMS:** guard agent-harness control-plane endpoints.
+- **Security / Studio:** assert the studio client signal on agent API calls.
+
+### Migrations
+
+- **1 new schema migration (additive, idempotent):** `0038_deployment_integrations.sql` adds two site-isolated tables — `deployment_targets` and `deployments` — guarded with `CREATE TABLE IF NOT EXISTS` so it re-runs safely and leaves existing installs untouched. RLS for both tables is applied via `packages/database/migrations/rls-policies.sql`. No data migration. Back up your database before upgrading as a precaution.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
 
 ## [0.12.0] - 2026-06-28
 

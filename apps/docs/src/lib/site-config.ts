@@ -40,6 +40,17 @@ export interface I18nConfig {
   localeNames: Record<string, string>;
 }
 
+export interface ThemeConfig {
+  colorMode?: {
+    defaultMode?: 'light' | 'dark';
+    respectPrefersColorScheme?: boolean;
+  };
+  prism?: {
+    theme?: string;
+    darkTheme?: string;
+  };
+}
+
 export interface SiteConfig {
   title: string;
   tagline: string;
@@ -57,6 +68,7 @@ export interface SiteConfig {
     links: FooterColumn[];
     copyright: string;
   };
+  themeConfig?: ThemeConfig;
 }
 
 /**

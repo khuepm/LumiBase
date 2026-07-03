@@ -75,6 +75,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [translation-memory.md](./features/translation-memory.md) — Translation Memory + glossary + MT providers.
   - [materialized-collections.md](./features/materialized-collections.md) — Materialized read tables for the hot path.
   - [firebase-sync.md](./features/firebase-sync.md) — Sync content (`items`) to Firebase Firestore/RTDB in real time.
+  - [deployment-integrations.md](./features/deployment-integrations.md) — Trigger, monitor, and debug Vercel/Netlify/HTTP deployments from Studio.
   - [observability.md](./features/observability.md) — Metrics, logs, dashboards (Prometheus/Grafana/Loki).
   - [ai-first-specification.md](./features/ai-first-specification.md) — The original specification for AI agents to implement (historical).
 - **ClickHouse CDC** (`cdc/`)

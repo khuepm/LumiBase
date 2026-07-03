@@ -1364,3 +1364,36 @@ export interface CreateSCIMTokenParams {
   /** Number of days until expiry. Default: 90. Max: 365. */
   lifespanDays?: number;
 }
+
+/** Deployment integrations (spec: deployment-integrations). Token never serialized. */
+export interface DeploymentTargetResource {
+  id: string;
+  provider: "vercel" | "netlify";
+  name: string;
+  projectId: string;
+  defaultBranch: string | null;
+  productionUrl: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DeploymentResource {
+  id: string;
+  siteId: string;
+  targetId: string;
+  provider: string;
+  providerDeploymentId: string | null;
+  status: "queued" | "building" | "ready" | "error" | "canceled";
+  branch: string | null;
+  commitSha: string | null;
+  commitMessage: string | null;
+  url: string | null;
+  triggeredBy: string | null;
+  triggerSource: "manual" | "auto" | "agent";
+  errorMessage: string | null;
+  logExcerpt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}

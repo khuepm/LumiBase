@@ -263,6 +263,52 @@ changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 | `PATCH` | `/api/v1/relations/:id` | Update relation |
 | `DELETE` | `/api/v1/relations/:id` | Remove relation |
 
+### Code-First Configuration (Config Manifest)
+
+Export / diff / apply a site's **schema configuration** — collections, fields,
+relations, settings and webhooks — as a single declarative, version-controllable
+JSON manifest (`lumibase.config@v1`). Built for CI/CD and environment sync (à la
+Directus schema snapshot/apply). **Admin-only.** Does **not** include content
+items, secrets, or access control (use `/api/v1/access/*` for the latter).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/config/export?scope=all\|schema\|settings\|webhooks` | Export the config manifest |
+| `POST` | `/api/v1/config/import?dryRun=true&mode=<mode>` | Validate + diff a manifest (no write) |
+| `POST` | `/api/v1/config/import?mode=<mode>&allowDestructive=true` | Apply a manifest in one transaction |
+
+`mode` ∈ `merge` (create/update only — never deletes), `replace-managed` (also
+deletes resources within the manifest's `managedScopes`), `replace-all` (full
+sync — deletes anything absent from the manifest). High-risk destructive changes
+(dropping a collection/field with data, changing a field type, widening a
+relation's `onDelete` to `cascade`) are rejected unless `allowDestructive=true`.
+
+**Export response** (`{ data: ConfigManifest }`):
+```json
+{
+  "data": {
+    "version": "lumibase.config@v1",
+    "exportedAt": "2026-06-22T00:00:00.000Z",
+    "collections": [{ "name": "articles", "label": "Articles", "versioning": true }],
+    "fields": [{ "collection": "articles", "field": "title", "type": "string", "interface": "input" }],
+    "relations": [],
+    "webhooks": [],
+    "settings": [{ "key": "login_security_policy", "value": { } }],
+    "managedScopes": ["articles"]
+  }
+}
+```
+
+**Dry-run / apply response** (`{ data: { valid, errors, diff, applied? } }`): the
+`diff` lists per-resource `create | update | unchanged | delete` counts and a
+top-level `risk` (`low | medium | high`). On apply, `applied` reports
+`{ created, updated, deleted }`. Validation errors use codes
+`UNSUPPORTED_MANIFEST_VERSION`, `DANGLING_REFERENCE`, `DUPLICATE_KEY`; a blocked
+destructive apply returns HTTP 409 `DESTRUCTIVE_BLOCKED`.
+
+CLI: `pnpm --filter @lumibase/cms config export|diff|apply` — see
+[`docs/en/contributing/code-first-config.md`](../contributing/code-first-config.md).
+
 ---
 
 ## 3. Items (Generic CRUD)
@@ -479,7 +525,29 @@ wss://...realtime?token=<access_token>&site=<siteId>
 { "type": "event", "collection": "articles", "event": "update", "data": { "id": "art_001", "title": "Updated title" } }
 ```
 
+**Server notification frame** (push-noti feature) — broadcast to every session
+for the site (not collection-scoped):
+```json
+{ "type": "notification", "notification": { "id": "…", "kind": "approval", "severity": "info", "title": "…", "body": "…", "deepLink": "/mission-control/inbox?entry=approval:…", "entityId": "…", "ts": "2026-06-23T01:00:00Z" } }
+```
+
 See [features/websockets-realtime.md](../features/websockets-realtime.md) for full protocol reference.
+
+---
+
+## 9b. Push notifications
+
+Web Push (VAPID) + in-app realtime for agent events. Tenant-scoped; the VAPID
+key is a shared deployment resource. See
+[features/push-notifications.md](../features/push-notifications.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/push/vapid-public-key` | Application-server public key (`404 PUSH_NOT_CONFIGURED` when unset). Same key for every tenant. |
+| `GET` | `/api/v1/push/status` | `{ vapidConfigured, realtimeAvailable, subscriptions }` for the active site. |
+| `POST` | `/api/v1/push/test` | Dispatch a one-off `test` notification to the active site (both transports). |
+| `POST` | `/api/v1/push/subscriptions` | Upsert a browser subscription: `{ endpoint, keys: { p256dh, auth } }`. |
+| `DELETE` | `/api/v1/push/subscriptions` | Remove a subscription by `{ endpoint }`. |
 
 ---
 

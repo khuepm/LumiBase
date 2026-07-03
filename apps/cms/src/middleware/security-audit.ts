@@ -2,7 +2,10 @@ import type { MiddlewareHandler } from 'hono';
 import type { AppEnv } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
 
-type SecurityGuardEvent = 'control_plane_access_denied' | 'file_upload_policy_denied';
+type SecurityGuardEvent =
+  | 'control_plane_access_denied'
+  | 'file_upload_policy_denied'
+  | 'mcp_control_plane_skill_denied';
 
 export async function auditSecurityGuardDenied(
   c: Parameters<MiddlewareHandler<AppEnv>>[0],
