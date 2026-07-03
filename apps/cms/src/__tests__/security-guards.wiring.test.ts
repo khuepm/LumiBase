@@ -85,6 +85,7 @@ describe('security guard wiring — control-plane path coverage', () => {
     '/api/v1/admin',
     '/api/v1/agent',
     '/api/v1/cdc',
+    '/api/v1/flows',
     '/api/v1/permissions',
     '/api/v1/policies',
     '/api/v1/roles',
