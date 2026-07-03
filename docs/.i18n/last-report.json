@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-03T13:21:11.139Z",
+  "generatedAt": "2026-07-03T17:36:16.217Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -9,7 +9,7 @@
     "preserved": 0,
     "conflicts": 1,
     "upToDate": 15,
-    "planned": 106
+    "planned": 107
   },
   "actions": [
     {
@@ -877,6 +877,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/content-releases.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/deployment-integrations.md",
       "type": "translate",
       "reason": "missing vi translation",
@@ -1197,7 +1209,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-03T13-21-11-250Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-03T17-36-16-328Z.bak.md",
       "missingPlaceholders": 0
     },
     {
