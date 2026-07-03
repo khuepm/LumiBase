@@ -97,13 +97,13 @@ function CodeBlock({
   const language = dataLanguage ?? extractLanguage(children) ?? 'code';
 
   return (
-    <div className="my-[18px] overflow-hidden rounded-[14px] bg-[rgb(18,17,21)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
-      <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-2.5">
-        <span className="text-xs font-medium text-[rgb(140,140,148)]">{language}</span>
+    <div className="my-[18px] overflow-hidden rounded-[14px] bg-[var(--color-surface-sunken)] ring-glass">
+      <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+        <span className="text-xs font-medium text-muted-foreground">{language}</span>
         <button
           type="button"
           onClick={handleCopy}
-          className="text-xs font-medium text-[rgb(140,140,148)] transition-colors hover:text-white"
+          className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           aria-label="Copy code to clipboard"
         >
           {copied ? 'Copied ✓' : 'Copy'}
@@ -111,7 +111,7 @@ function CodeBlock({
       </div>
       <pre
         ref={preRef}
-        className={`${className ?? ''} m-0 overflow-x-auto bg-transparent p-4 font-mono text-[13.5px] leading-[22px] text-[rgb(210,210,216)]`}
+        className={`${className ?? ''} m-0 overflow-x-auto bg-transparent p-4 font-mono text-[13.5px] leading-[22px] text-foreground`}
         {...props}
       >
         {children}
@@ -165,7 +165,7 @@ const components: Components = {
   ),
   h6: ({ children, ...props }: HTMLAttributes<HTMLHeadingElement>) => (
     <h6
-      className="mb-1 mt-5 text-sm font-semibold text-[rgb(150,150,156)]"
+      className="mb-1 mt-5 text-sm font-semibold text-muted-foreground"
       {...props}
     >
       {children}
@@ -175,7 +175,7 @@ const components: Components = {
   // Paragraphs
   p: ({ children, ...props }: HTMLAttributes<HTMLParagraphElement>) => (
     <p
-      className="my-3.5 text-[16px] font-medium leading-[27px] text-[rgb(185,185,192)]"
+      className="my-3.5 text-[16px] font-medium leading-[27px] text-[var(--color-text-secondary)]"
       {...props}
     >
       {children}
@@ -185,12 +185,12 @@ const components: Components = {
   // Blockquotes — rendered as the design system's note callout
   blockquote: ({ children, ...props }: HTMLAttributes<HTMLQuoteElement>) => (
     <blockquote
-      className="my-6 flex gap-3.5 rounded-2xl bg-[rgba(24,160,251,0.09)] px-5 py-[18px] shadow-[inset_0_0_0_1px_rgba(24,160,251,0.28)]"
+      className="my-6 flex gap-3.5 rounded-2xl bg-[color-mix(in_srgb,var(--color-blue)_10%,transparent)] px-5 py-[18px] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-blue)_32%,transparent)]"
       {...props}
     >
       <span
         aria-hidden="true"
-        className="mt-0.5 h-5 w-5 shrink-0 rounded-full bg-[#18A0FB] shadow-[0_0_16px_rgba(24,160,251,0.5)]"
+        className="mt-0.5 h-5 w-5 shrink-0 rounded-full bg-[var(--color-blue)] shadow-[0_0_16px_color-mix(in_srgb,var(--color-blue)_50%,transparent)]"
       />
       <div className="min-w-0 flex-1">{children}</div>
     </blockquote>
@@ -199,7 +199,7 @@ const components: Components = {
   // Lists
   ul: ({ children, ...props }: HTMLAttributes<HTMLUListElement>) => (
     <ul
-      className="my-3.5 ml-6 list-disc space-y-1.5 text-[rgb(185,185,192)] marker:text-[rgb(120,120,128)]"
+      className="my-3.5 ml-6 list-disc space-y-1.5 text-[var(--color-text-secondary)] marker:text-muted-foreground"
       {...props}
     >
       {children}
@@ -207,7 +207,7 @@ const components: Components = {
   ),
   ol: ({ children, ...props }: HTMLAttributes<HTMLOListElement>) => (
     <ol
-      className="my-3.5 ml-6 list-decimal space-y-1.5 text-[rgb(185,185,192)] marker:text-[rgb(120,120,128)]"
+      className="my-3.5 ml-6 list-decimal space-y-1.5 text-[var(--color-text-secondary)] marker:text-muted-foreground"
       {...props}
     >
       {children}
@@ -228,7 +228,7 @@ const components: Components = {
     </div>
   ),
   thead: ({ children, ...props }: HTMLAttributes<HTMLTableSectionElement>) => (
-    <thead className="bg-white/[0.04]" {...props}>
+    <thead className="bg-[var(--color-glass)]" {...props}>
       {children}
     </thead>
   ),
@@ -236,13 +236,13 @@ const components: Components = {
     <tbody {...props}>{children}</tbody>
   ),
   tr: ({ children, ...props }: HTMLAttributes<HTMLTableRowElement>) => (
-    <tr className="border-b border-white/[0.07] even:bg-white/[0.02]" {...props}>
+    <tr className="border-b border-border even:bg-[color-mix(in_srgb,var(--color-glass)_40%,transparent)]" {...props}>
       {children}
     </tr>
   ),
   th: ({ children, ...props }: HTMLAttributes<HTMLTableCellElement>) => (
     <th
-      className="border border-white/[0.08] px-3 py-2 text-left font-semibold text-foreground"
+      className="border border-border px-3 py-2 text-left font-semibold text-foreground"
       {...props}
     >
       {children}
@@ -250,7 +250,7 @@ const components: Components = {
   ),
   td: ({ children, ...props }: HTMLAttributes<HTMLTableCellElement>) => (
     <td
-      className="border border-white/[0.08] px-3 py-2 font-medium text-[rgb(185,185,192)]"
+      className="border border-border px-3 py-2 font-medium text-[var(--color-text-secondary)]"
       {...props}
     >
       {children}
@@ -275,7 +275,7 @@ const components: Components = {
     // Inline code
     return (
       <code
-        className="rounded-md bg-white/[0.08] px-1.5 py-0.5 font-mono text-[0.85em] text-foreground"
+        className="rounded-md bg-[var(--color-glass)] px-1.5 py-0.5 font-mono text-[0.85em] text-foreground"
         {...props}
       >
         {children}
@@ -288,7 +288,7 @@ const components: Components = {
 
   // Horizontal rules
   hr: ({ ...props }: HTMLAttributes<HTMLHRElement>) => (
-    <hr className="my-8 border-t border-white/[0.07]" {...props} />
+    <hr className="my-8 border-t border-border" {...props} />
   ),
 
   // Strong / Bold
