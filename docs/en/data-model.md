@@ -333,6 +333,14 @@ Content OS columns on existing tables:
 - `agent_goals`: `parentGoalId` (goal tree), `origin` (`user/reconciler/planner/flow`), `intentId`, `driftFingerprint`, `agentRole`.
 - `agent_approvals`: `kind` (`approval`/`veto`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`.
 
+### Directus-inspired tables (`cms.ts`)
+
+| Collection | Purpose |
+|---|---|
+| `content_versions` | Named parallel draft branches of an item, distinct from linear `revisions`. Snapshots item `data` + a `hash` of main at snapshot time (divergence detection). Promote applies a version to main via ItemService (writes a revision). Unique `(siteId, collectionId, itemId, key)`. See `.kiro/specs/content-versioning`. |
+| `dashboards` | Insights dashboard container per site (name/icon/color/note). |
+| `panels` | One visualization on a dashboard: `type` (metric/timeSeries/bar/pie/list/table), `position` (`{x,y,w,h}`), `query` (a `PanelQuery`), `options`. Aggregates run safely (field whitelist + siteId scope). See `.kiro/specs/insights-dashboard`. |
+
 ## 11. Firebase Sync (`firebase-sync.ts`)
 
 Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0029_lumibase_firebase_sync`.
@@ -341,7 +349,7 @@ Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0029_l
 
 ### `auth_external_issuers`
 - Per-site trusted external JWT issuer. **Public config only — no secrets** (signatures verify against the issuer's JWKS). `id`, `siteId` (FK sites, cascade), `issuer` (matches the `iss` claim), `jwksUri`/`discoveryUrl` (one required), `audience` (jsonb: string|string[]), `algorithms` (jsonb: asymmetric allowlist), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
-- Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0034_auth_external_issuers`. See [security/external-jwt-auth.md](./security/external-jwt-auth.md).
+- Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0042_auth_external_issuers`. See [security/external-jwt-auth.md](./security/external-jwt-auth.md).
 
 ### `lumibase_firebase_sync_pipelines`
 | Column | Type | Note |

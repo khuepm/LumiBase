@@ -86,9 +86,9 @@ Kế hoạch triển khai **External JWT Authentication** theo 5 phase. Phase A 
 **Done — all phases** (commits split per task; author Javier; PR riêng).
 
 **Deviations:**
-- **Migration `0034_auth_external_issuers`** (không phải `0032` như design §11) — `0032`/`0033` đã thuộc content-releases / save-default-preference (PR riêng đang mở). Renumber nếu merge order khác.
+- **Migration `0042_auth_external_issuers`** (renumber 0034→0042 khi merge main v0.15) — `0032`/`0033` đã thuộc content-releases / save-default-preference (PR riêng đang mở). Renumber nếu merge order khác.
 - **CF Access bug (`auth.ts:147` hard-code `roles:['admin']`)**: theo open question §2, **giữ nhánh CF Access nguyên trạng** v1 để tránh regression — đã ghi chú trong `docs/en/security/external-jwt-auth.md`. Path external-JWT mới KHÔNG có bug này (default-deny). Gỡ bug CF Access là v2.
 - **Studio UI quản lý issuer**: chưa làm (admin API là đủ cho v1; UI là enhancement — design §13 câu 4).
 - Role-resolution open question §4 chốt: external principal **luôn** được JIT-upsert `userSites` membership (idempotent) nên `PermissionService` resolve role qua primary path.
 
-**Verified:** recursive typecheck 15/15; verifier unit tests 12 (real RS256/ES256/HS256 — full skip/reject/accept decision tree); external-auth DB-integration 3 trên Postgres thật (issuer CRUD + duplicate reject, HS256-config reject, end-to-end token→site-role→JIT user+membership); migration 0034 applies cleanly trên fresh DB.
+**Verified:** recursive typecheck 15/15; verifier unit tests 12 (real RS256/ES256/HS256 — full skip/reject/accept decision tree); external-auth DB-integration 3 trên Postgres thật (issuer CRUD + duplicate reject, HS256-config reject, end-to-end token→site-role→JIT user+membership); migration 0042 applies cleanly trên fresh DB.

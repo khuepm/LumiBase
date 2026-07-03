@@ -15,7 +15,14 @@ import { refreshPhysicalTable, type MaterializeConfig } from './materialize-serv
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
 import { validateItem } from './validation';
-import type { CacheProvider, SearchProvider, QueueProvider } from '@lumibase/runtime';
+import {
+  searchIndexName,
+  type CacheProvider,
+  type SearchProvider,
+  type QueueProvider,
+  type RealtimeProvider,
+} from '@lumibase/runtime';
+import { buildSearchDocument } from './search-document';
 import { PermissionService, type CompiledPermission, type PermissionAction } from './permission-service';
 import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
 import type { PolicyRule } from '@lumibase/shared';
@@ -57,7 +64,6 @@ export interface ListItemsParams {
   limit?: number;
   offset?: number;
   status?: string | null;
-  search?: string;
 }
 
 export type ItemFilterOp =
@@ -176,9 +182,17 @@ export interface ItemServiceDeps {
   keyProvider?: KeyProvider;
   /**
    * SiteRoom Durable Object namespace (Cloudflare Workers only).
-   * When provided, item mutations are published to connected WebSocket clients.
+   * @deprecated Prefer `realtime` (RealtimeProvider) for runtime-agnostic
+   * fan-out (ADR-002). Kept for the GraphQL subscription bridge which still
+   * connects to the DO directly.
    */
   realtimeNamespace?: DurableObjectNamespace;
+  /**
+   * Runtime realtime provider (ADR-002). When provided, item mutations are
+   * published through it (Cloudflare DO or Docker hub). Takes precedence over
+   * `realtimeNamespace`.
+   */
+  realtime?: RealtimeProvider;
   /**
    * Environment bindings passed to ExtensionSandbox for capability-gated access.
    * When omitted, extension hooks are skipped.
@@ -1257,17 +1271,23 @@ export class ItemService {
    * Uses QueueProvider to enqueue a `search:index` job on the `content-indexing` queue.
    * Falls back to direct SearchProvider.index() if queue is unavailable.
    * Errors are logged but never block the main operation.
+   *
+   * The queue payload carries `siteId` so the worker can scope the physical
+   * index name (`{siteId}__{collection}`); the direct fallback scopes it here.
    */
   private async indexItem(collectionName: string, id: string, data: Record<string, unknown>): Promise<void> {
     try {
       if (this.deps.queue) {
         await this.deps.queue.enqueue('content-indexing', 'search:index', {
+          siteId: this.deps.siteId,
           collection: collectionName,
           id,
           data,
         });
       } else if (this.deps.search) {
-        await this.deps.search.index(collectionName, [{ id, ...data }]);
+        await this.deps.search.index(searchIndexName(this.deps.siteId, collectionName), [
+          buildSearchDocument(collectionName, id, data),
+        ]);
       }
     } catch (err) {
       // Search indexing is non-critical — log and continue.
@@ -1285,11 +1305,12 @@ export class ItemService {
     try {
       if (this.deps.queue) {
         await this.deps.queue.enqueue('content-indexing', 'search:remove', {
+          siteId: this.deps.siteId,
           collection: collectionName,
           id,
         });
       } else if (this.deps.search) {
-        await this.deps.search.delete(collectionName, [id]);
+        await this.deps.search.delete(searchIndexName(this.deps.siteId, collectionName), [id]);
       }
     } catch (err) {
       // Search de-indexing is non-critical — log and continue.
@@ -1307,27 +1328,34 @@ export class ItemService {
     itemId: string,
     payload: unknown,
   ): Promise<void> {
-    if (!this.deps.realtimeNamespace) return;
+    const event = {
+      type: 'event' as const,
+      plane: 'studio' as const,
+      collection,
+      action,
+      itemId,
+      payload,
+      actorUserId: this.deps.userId ?? undefined,
+    };
     try {
-      const id = this.deps.realtimeNamespace.idFromName(this.deps.siteId);
-      const stub = this.deps.realtimeNamespace.get(id);
-      // Call the SiteRoom's publish() method via a synthetic HTTP request.
-      // SiteRoom exposes publish() as a durable object method; we invoke it
-      // via the DO's fetch() with a special internal path.
-      await stub.fetch(
-        new Request('https://internal/publish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'event',
-            collection,
-            action,
-            itemId,
-            payload,
-            actorUserId: this.deps.userId ?? undefined,
+      // Preferred path (ADR-002): runtime-agnostic provider.
+      if (this.deps.realtime) {
+        await this.deps.realtime.publish(this.deps.siteId, event);
+        return;
+      }
+      // Legacy path: direct SiteRoom DO stub (Cloudflare only). Kept so callers
+      // that only wire `realtimeNamespace` (e.g. the GraphQL bridge) still work.
+      if (this.deps.realtimeNamespace) {
+        const id = this.deps.realtimeNamespace.idFromName(this.deps.siteId);
+        const stub = this.deps.realtimeNamespace.get(id);
+        await stub.fetch(
+          new Request('https://internal/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(event),
           }),
-        }),
-      );
+        );
+      }
     } catch (err) {
       // Realtime fan-out is non-critical — log and continue.
       console.error('[item-service] realtime publish failed', { collection, itemId, err: formatSafeError(err) });
@@ -1986,6 +2014,93 @@ export function parseDeepQueryParams(searchParams: URLSearchParams): DeepQuery |
     deep[alias] = current;
   }
   return Object.keys(deep).length > 0 ? deep : undefined;
+}
+
+/**
+ * Resolve the list `filter` from query params, supporting two equivalent forms:
+ *
+ *   1. JSON string  — `?filter={"status":{"_eq":"published"}}`
+ *   2. Bracket form  — `?filter[status][_eq]=published`
+ *
+ * If a JSON `filter` param is present it wins (backward-compatible). Otherwise
+ * any `filter[...]` keys are folded into a nested object. Returns `undefined`
+ * when no filter is supplied. Throws `SyntaxError` only for malformed JSON in
+ * form (1) — callers translate that into a 400.
+ *
+ * Bracket values are coerced from their string form: `true`/`false` → boolean,
+ * numeric strings → number, and comma-separated values under array operators
+ * (`_in`, `_nin`, `_between`) → string array. Everything else stays a string.
+ */
+export function parseFilterQueryParams(
+  searchParams: URLSearchParams,
+  jsonFilter?: string,
+): Record<string, unknown> | undefined {
+  // Form (1): explicit JSON filter takes precedence (backward compatible).
+  if (jsonFilter !== undefined && jsonFilter !== '') {
+    return JSON.parse(jsonFilter) as Record<string, unknown>;
+  }
+
+  // Form (2): collect bracketed `filter[a][b]...=value` keys into a nested object.
+  const root: Record<string, unknown> = {};
+  let matched = false;
+
+  for (const [key, value] of searchParams.entries()) {
+    if (!key.startsWith('filter[')) continue;
+    const path = parseBracketPath(key);
+    if (!path) continue; // ignore a malformed key rather than 400 the whole request
+    matched = true;
+    setNested(root, path, coerceFilterValue(path[path.length - 1]!, value));
+  }
+
+  return matched ? root : undefined;
+}
+
+/** `filter[status][_eq]` → `['status', '_eq']`; returns null if not well-formed. */
+function parseBracketPath(key: string): string[] | null {
+  if (!key.startsWith('filter[')) return null;
+  const segments: string[] = [];
+  const re = /\[([^\]]*)\]/g;
+  let m: RegExpExecArray | null;
+  let lastIndex = 'filter'.length;
+  while ((m = re.exec(key)) !== null) {
+    if (m.index !== lastIndex) return null; // gap/garbage between segments
+    if (m[1] === '') return null; // empty bracket `[]`
+    segments.push(m[1]!);
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex !== key.length) return null; // trailing garbage
+  return segments.length > 0 ? segments : null;
+}
+
+function setNested(root: Record<string, unknown>, path: string[], value: unknown): void {
+  let cur = root;
+  for (let i = 0; i < path.length - 1; i++) {
+    const seg = path[i]!;
+    if (typeof cur[seg] !== 'object' || cur[seg] === null) cur[seg] = {};
+    cur = cur[seg] as Record<string, unknown>;
+  }
+  cur[path[path.length - 1]!] = value;
+}
+
+const ARRAY_OPERATORS = new Set(['_in', '_nin', '_between']);
+
+function coerceFilterValue(operator: string, raw: string): unknown {
+  if (ARRAY_OPERATORS.has(operator)) {
+    return raw.split(',').map((v) => coerceScalar(v.trim()));
+  }
+  return coerceScalar(raw);
+}
+
+function coerceScalar(raw: string): unknown {
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  if (raw === 'null') return null;
+  // Keep leading-zero / overflow-ish strings as strings; only coerce clean numbers.
+  if (raw !== '' && /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(raw)) {
+    const n = Number(raw);
+    if (Number.isFinite(n)) return n;
+  }
+  return raw;
 }
 
 export function projectRelatedRow(row: ItemRow, fields: string[]): Record<string, unknown> {

@@ -1,0 +1,111 @@
+name: Docs i18n Sync
+
+# Keeps docs/en and docs/vi in sync. On pull requests it only reports language
+# detection + planned actions (no writes). On push to main it preserves any
+# mislabelled content, machine-translates stale/missing targets, stamps version +
+# lastUpdated front matter, and commits the result back.
+
+on:
+  pull_request:
+    paths:
+      - 'docs/en/**'
+      - 'docs/vi/**'
+      - 'scripts/docs-i18n/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/en/**'
+      - 'docs/vi/**'
+      - 'scripts/docs-i18n/**'
+
+concurrency:
+  group: docs-i18n-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # PR: detect-only. Never writes; uploads the report so reviewers can see what
+  # a sync would do (mismatches, conflicts, pending translations).
+  # ---------------------------------------------------------------------------
+  detect:
+    name: Detect language drift (report only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          # The scripts run on plain `node` (only node builtins + local .mjs);
+          # no install is needed. Disable auto pnpm cache, which would otherwise
+          # try to invoke pnpm (not on PATH) and fail Setup Node. Matches the
+          # convention in ci.yml / release.yml.
+          package-manager-cache: false
+
+      - name: Run detection (plan mode)
+        run: node scripts/docs-i18n/sync.mjs
+
+      - name: Upload sync report
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-i18n-report
+          path: |
+            docs/.i18n/last-report.json
+            docs/i18n-sync-log.md
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # main: full sync. Preserves Vietnamese content, translates with Claude,
+  # versions, and commits back. Requires the ANTHROPIC_API_KEY secret.
+  # If no key is configured the run degrades to preservation + versioning only.
+  # ---------------------------------------------------------------------------
+  sync:
+    name: Sync and translate
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          # The scripts run on plain `node` (only node builtins + local .mjs);
+          # no install is needed. Disable auto pnpm cache, which would otherwise
+          # try to invoke pnpm (not on PATH) and fail Setup Node. Matches the
+          # convention in ci.yml / release.yml.
+          package-manager-cache: false
+
+      - name: Run sync (apply mode)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
+        run: node scripts/docs-i18n/sync.mjs --apply
+
+      - name: Commit synced docs
+        run: |
+          git config user.name "Javier"
+          git config user.email "javier@genuis.app"
+          if [ -z "$(git status --porcelain docs)" ]; then
+            echo "No documentation changes to commit."
+            exit 0
+          fi
+          git add docs
+          git commit -m "docs(i18n): sync en/vi translations and bump versions [skip ci]"
+          git push

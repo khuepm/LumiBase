@@ -1,5 +1,5 @@
 import type { ExtensionVersion } from "@/lib/types";
-import { Calendar, Shield } from "lucide-react";
+import Badge from "./Badge";
 
 interface VersionHistoryProps {
   versions: ExtensionVersion[];
@@ -14,56 +14,68 @@ function formatDate(iso: string | null) {
   });
 }
 
+/**
+ * "What's new" changelog — latest release as a highlighted card (green badge),
+ * older releases as compact hairline-divided rows below.
+ */
 export default function VersionHistory({ versions }: VersionHistoryProps) {
+  if (versions.length === 0) return null;
+  const [latest, ...older] = versions;
+
   return (
-    <div className="rounded-xl border border-surface-600 bg-surface-800 overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-surface-700 px-5 py-3.5">
-        <Shield className="h-4 w-4 text-brand-400" />
-        <h3 className="text-sm font-semibold text-gray-200">Version History</h3>
+    <div className="space-y-3">
+      {/* Latest release */}
+      <div className="rounded-2xl bg-surface-1 px-[22px] py-5 ring-glass">
+        <div className="mb-3 flex items-center gap-2.5">
+          <Badge tone="green" dot>
+            v{latest.version}
+          </Badge>
+          <span className="text-[13px] font-medium text-txt-faint">
+            Released {formatDate(latest.publishedAt)}
+          </span>
+          {latest.sha256 && (
+            <code className="ml-auto hidden rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-[10px] text-txt-faint sm:inline">
+              {latest.sha256.slice(0, 8)}…
+            </code>
+          )}
+        </div>
+        {latest.changelog && (
+          <p className="text-sm font-medium leading-[25px] text-[rgb(185,185,192)]">
+            {latest.changelog}
+          </p>
+        )}
       </div>
-      <div className="divide-y divide-surface-700">
-        {versions.map((v, i) => (
-          <div key={v.id} className="px-5 py-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                    i === 0
-                      ? "bg-brand-900/60 text-brand-300 border border-brand-700/40"
-                      : "bg-surface-700 text-gray-400 border border-surface-600"
-                  }`}
-                >
+
+      {/* Older releases */}
+      {older.length > 0 && (
+        <div className="rounded-2xl bg-surface-1 ring-glass">
+          {older.map((v, i) => (
+            <div
+              key={v.id}
+              className={`px-[22px] py-4 ${i > 0 ? "border-t border-hairline" : ""}`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Badge tone="neutral" dot={false}>
                   v{v.version}
-                  {i === 0 && (
-                    <span className="ml-1.5 text-[10px] text-brand-400">
-                      latest
-                    </span>
-                  )}
+                </Badge>
+                <span className="text-xs font-medium text-txt-faint">
+                  {formatDate(v.publishedAt)}
                 </span>
+                {v.sha256 && (
+                  <code className="ml-auto hidden rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-[10px] text-txt-faint sm:inline">
+                    {v.sha256.slice(0, 8)}…
+                  </code>
+                )}
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-gray-500 flex-shrink-0">
-                <Calendar className="h-3.5 w-3.5" />
-                {formatDate(v.publishedAt)}
-              </div>
+              {v.changelog && (
+                <p className="mt-2 text-[13px] font-medium leading-[21px] text-[rgb(170,170,178)]">
+                  {v.changelog}
+                </p>
+              )}
             </div>
-            {v.changelog && (
-              <p className="mt-2 text-xs text-gray-400 leading-relaxed">
-                {v.changelog}
-              </p>
-            )}
-            {v.sha256 && (
-              <div className="mt-2 flex items-center gap-1.5">
-                <span className="text-[10px] text-gray-600 font-mono">
-                  SHA256:
-                </span>
-                <code className="rounded bg-surface-950 px-1.5 py-0.5 font-mono text-[10px] text-gray-500">
-                  {v.sha256.slice(0, 8)}…
-                </code>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

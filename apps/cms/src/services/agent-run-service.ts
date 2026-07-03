@@ -6,6 +6,7 @@ import {
 } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
 import { and, desc, eq } from 'drizzle-orm';
+import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import {
   agentDeadLettersTotal,
   agentRunsTotal,
@@ -84,6 +85,11 @@ export class AgentRunService {
     private readonly db: Database,
     private readonly siteId: string,
     private readonly queue?: QueueProvider,
+    /**
+     * Optional push-notification sink (push-noti feature). When provided, run
+     * completion/failure is pushed in-app / via Web Push. Best-effort.
+     */
+    private readonly notify?: AgentNotifier,
   ) {}
 
   async ensureRun(envelope: AgentRunEnvelope = {}): Promise<AgentRunContext> {
@@ -213,6 +219,14 @@ export class AgentRunService {
       status: 'succeeded',
       stop_reason: String(metrics['stopReason'] ?? 'completed'),
     });
+    this.notify?.({
+      kind: 'run',
+      severity: 'info',
+      title: 'Agent run succeeded',
+      body: `${run?.agentName ?? 'agent'} run completed`,
+      deepLink: `/mission-control/runs`,
+      entityId: runId,
+    });
   }
 
   async failRun(runId: string, error: string, metrics: Record<string, unknown> = {}): Promise<void> {
@@ -233,6 +247,14 @@ export class AgentRunService {
     if (run) {
       await this.enqueueDeadLetterIfRepeatedFailure(run, error, stopReason);
     }
+    this.notify?.({
+      kind: 'run',
+      severity: 'warning',
+      title: 'Agent run failed',
+      body: `${run?.agentName ?? 'agent'} run failed: ${error}`.slice(0, 240),
+      deepLink: `/mission-control/runs`,
+      entityId: runId,
+    });
   }
 
   async getRun(runId: string) {
