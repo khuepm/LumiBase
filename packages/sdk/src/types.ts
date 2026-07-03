@@ -934,6 +934,8 @@ export interface SiteResource {
   descriptor: string | null;
   defaultLanguage: string;
   defaultAppearance: string;
+  /** Default Studio save action: `stay` | `return` | `create_new`. */
+  defaultSaveAction: string;
   branding: { logoUrl?: string; faviconUrl?: string; brandColor?: string };
   themeOverrides: {
     light?: Record<string, string>;

@@ -14,6 +14,7 @@ Schema files are split by domain:
 | `platform.ts` | `folders`, `files`, `presets`, `translations`, `settings`, `webhooks`, `extensions`, `translation_memory`, `glossary` |
 | `ai.ts` | `ai_approvals` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
+| `external-auth.ts` | `auth_external_issuers` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
 
@@ -22,7 +23,7 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 ## 1. Core tenancy & identity (`core.ts`)
 
 ### `sites`
-- `id`, `name`, `domain`, `createdAt`.
+- `id`, `name`, `domain`, `createdAt`, plus identity/branding/theme columns and `defaultLanguage`, `defaultAppearance`, and `defaultSaveAction` (`stay`|`return`|`create_new`, default `stay` — the site-wide default Studio save action; per-user override lives in `users.preferences.saveAction`).
 
 ### `users`
 | Column | Type | Note |
@@ -32,6 +33,7 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 | `email`, `firstName`, `lastName`, `avatar` | text |
 | `status` | text | `active`/`invited`/`suspended` |
 | `language`, `theme`, `tfa` | jsonb | preferences |
+| `preferences` | jsonb | per-user UI prefs: `{ language, theme, timezone, defaultPresets, saveAction }`. `saveAction` (`stay`/`return`/`create_new`) overrides `sites.default_save_action`. |
 | `lastSeenAt` | timestamp |
 | `createdAt`, `updatedAt` | timestamp |
 
@@ -351,6 +353,12 @@ Content OS columns on existing tables:
 ## 11. Firebase Sync (`firebase-sync.ts`)
 
 Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0029_lumibase_firebase_sync`.
+
+## 11c. External JWT auth (`external-auth.ts`)
+
+### `auth_external_issuers`
+- Per-site trusted external JWT issuer. **Public config only — no secrets** (signatures verify against the issuer's JWKS). `id`, `siteId` (FK sites, cascade), `issuer` (matches the `iss` claim), `jwksUri`/`discoveryUrl` (one required), `audience` (jsonb: string|string[]), `algorithms` (jsonb: asymmetric allowlist), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
+- Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0042_auth_external_issuers`. See [security/external-jwt-auth.md](./security/external-jwt-auth.md).
 
 ### `lumibase_firebase_sync_pipelines`
 | Column | Type | Note |

@@ -138,6 +138,8 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/auth/refresh` | Refresh expired access token |
 | `POST` | `/api/v1/auth/logout` | Revoke tokens |
 | `GET` | `/api/v1/auth/me` | Get current user profile |
+| `GET` | `/api/v1/me/preferences` | The current user's preferences blob (`users.preferences`) |
+| `PATCH` | `/api/v1/me/preferences` | Shallow-merge a validated preferences patch |
 | `GET` | `/api/v1/me/consents` | List the current user's consent decisions |
 | `PUT` | `/api/v1/me/consents/:type` | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
 | `GET` | `/api/v1/me/data-export` | Download the current user's personal data (GDPR Art. 15/20) |
@@ -182,6 +184,43 @@ The unsubscribe token is a stateless HS256 JWT (`{ siteId, email }`, no expiry) 
 with `JWT_SECRET`. Marketing sends (`EmailModuleService.send({ category: 'marketing' })`)
 filter recipients against `email_suppressions` before dispatch. Unsubscribe/suppression
 changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
+
+**Preferences & save action.** `PATCH /api/v1/me/preferences` shallow-merges a
+validated patch into `users.preferences` (other sections like `language` /
+`keybindings` are preserved). Send `{ "saveAction": "stay" | "return" |
+"create_new" }` to set the Studio editor's post-save navigation; send
+`{ "saveAction": null }` to fall back to the site default
+(`sites.default_save_action`, set via `PATCH /api/v1/site`). Invalid enum → 400.
+
+### External JWT authentication
+
+A site can trust JWTs issued by an external IdP (Okta, Entra, Auth0, Logto,
+Keycloak, Cloudflare Access…). Present the token as `Authorization: Bearer
+<jwt>` with `X-Lumi-Site`. The auth chain verifies it against the issuer's
+**public JWKS** (between the API-key and internal-JWT branches): it matches the
+token's `iss` to a trusted issuer registered for that site, verifies the
+signature + `aud`/`exp`/`nbf` with the issuer's allowed (asymmetric-only)
+algorithms, maps role claims to LumiBase roles (**default-deny** — no mapping
+means 403, never implicit admin), enforces that any `siteId` claim equals the
+request site, and optionally JIT-provisions the user. A token whose `iss` isn't
+trusted is ignored (falls through to internal auth); once an issuer matches,
+verification is fail-closed.
+
+Admin CRUD for trusted issuers (admin-only):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/admin/auth/issuers` | List trusted external issuers |
+| `POST` | `/api/v1/admin/auth/issuers` | Register an issuer |
+| `GET` | `/api/v1/admin/auth/issuers/:id` | Get one |
+| `PATCH` | `/api/v1/admin/auth/issuers/:id` | Update |
+| `DELETE` | `/api/v1/admin/auth/issuers/:id` | Remove |
+
+**Issuer config:** `{ issuer, jwksUri | discoveryUrl, audience, algorithms
+(RS*/ES* only), claimMapping: { email, roles, siteId?, externalId? }, roleMapping:
+{ "<claim role>": { roleId | systemKey } }, defaultRoleId?, jitProvisioning,
+clockSkewSeconds (≤300), enabled }`. Errors: `VALIDATION_FAILED` (422, incl. an
+HS*/`none` algorithm), `ISSUER_ALREADY_EXISTS` (409), `NOT_FOUND` (404).
 
 **Login request:**
 ```json
@@ -637,7 +676,9 @@ row (not the key/value `settings` table). Scoped to the active tenant via the
 
 `PATCH /api/v1/site` accepts any subset of: `name`, `displayTitle`, `siteUrl`,
 `descriptor`, `domain`, `defaultLanguage`, `defaultAppearance`
-(`auto`\|`light`\|`dark`), `branding` (`{ logoUrl, faviconUrl, brandColor }`),
+(`auto`\|`light`\|`dark`), `defaultSaveAction`
+(`stay`\|`return`\|`create_new` — the site-wide default save action a user's
+personal preference overrides), `branding` (`{ logoUrl, faviconUrl, brandColor }`),
 `themeOverrides` (`{ light, dark }` maps of whitelisted CSS tokens → `H S% L%`
 values), and `customCss`. An empty string clears a nullable field. A duplicate
 `domain` returns `409 { errors: [{ code: 'DOMAIN_TAKEN' }] }`.
