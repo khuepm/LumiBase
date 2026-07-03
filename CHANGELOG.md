@@ -9,6 +9,23 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Security
+
+- **Flows are control-plane again:** `/api/v1/flows` is now in `CONTROL_PLANE_PATHS`
+  so the admin-only backstop runs even if a flows route forgets its own guard —
+  the same gap class as the historical `/api/v1/agent` omission, now that flow
+  operations (`deploy:trigger`/`deploy:status`) mutate external deploy state. A
+  tripwire assertion in `security-guards.wiring.test.ts` locks it.
+
+### Changed
+
+- **Definition of Done gains section 6 (DoD evolution):** a mandatory
+  retrospective step — a bug fix must ask whether it should lock the whole error
+  *class* with a tripwire, and a feature must ask whether it opens a new
+  failure-mode/attack-surface warranting a new DoD rule; DoD changes land in the
+  same PR. Makes the "learn from a bug, add a guard" loop (which produced 2b/2c)
+  explicit instead of relying on reviewer memory.
+
 ### Added
 
 - **Self-service auth realms.** Subscriber registration (`/auth/register`) with email verification (`/auth/verify-email`, `/auth/resend-verification`), password recovery (`/auth/forgot-password`, `/auth/reset-password`), and an admin primitive to grant subscribers `read` on collections (`/api/v1/users/subscriber-access`). Tokens carry a per-realm `aud` (`studio`/`frontend`); `withStudioAccess` hard-rejects frontend tokens.
@@ -18,6 +35,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **Authenticated account self-service:** `POST /api/v1/me/change-password` and session management (`GET`/`DELETE /api/v1/me/sessions[/:id]`).
 - **Hourly prune** of expired refresh tokens on the existing audit-rotation cron (Workers `scheduled` + Node `node-cron`).
 - **SDK silent auto-refresh.** `createLumiClient` accepts `refreshToken` + `onTokensRefreshed`; a 401 transparently refreshes and retries once (parallel 401s coalesce into one refresh). Studio wires this end to end (login persists the refresh token, logout revokes it server-side).
+- **CMS / deployments:** Flow operations `deploy:trigger` and `deploy:status`,
+  completing the auto-deploy-on-content-change path promised by deployment
+  integrations (Req 5). A Flow with an `event` trigger can now deploy a target
+  via `deploy:trigger` (`triggerSource='auto'`, linked to the flow run for
+  provenance) and branch on `deploy:status`. Both reuse the shared
+  `DeploymentService` — same encrypted-token, SSRF and audit guards as the
+  manual API — and receive `db`/`siteId`/`keys`/`runId` from the flow run
+  environment.
 - **Code-First Configuration (Config Manifest).** Export / diff / apply a site's
   schema configuration — collections, fields, relations, settings and webhooks —
   as a single declarative, version-controllable JSON manifest
