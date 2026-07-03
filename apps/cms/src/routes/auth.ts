@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { SignJWT } from 'jose';
 import { and, eq, sql } from 'drizzle-orm';
-import { systemState, users, userSites } from '@lumibase/database';
+import { roles, systemState, users, userSites } from '@lumibase/database';
 import type { AppEnv } from '../env';
 import { hashPassword, verifyPassword } from '../services/auth/password';
 import {
@@ -220,8 +220,11 @@ const loginSchema = z.object({
 authRouter.post('/register', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
+  // Defensive optional chaining: if this path is ever re-added to the
+  // `withAuth` bypass list the principal is absent, and the route must fail
+  // closed (403) instead of throwing a 500.
   const auth = c.get('auth');
-  if (!auth.roles?.includes('admin')) {
+  if (!auth?.roles?.includes('admin')) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Only administrators can register users for a site.' }] },
       403,
@@ -245,6 +248,23 @@ authRouter.post('/register', async (c) => {
     );
   }
 
+  // Resolve the site's seeded "member" role BEFORE creating the user so a
+  // misconfigured site fails cleanly instead of leaving an orphan user.
+  // `user_sites.role_id` is a nanoid FK into `roles` — a literal key like
+  // 'member' violates the FK and aborts the insert.
+  const [memberRole] = await db
+    .select({ id: roles.id })
+    .from(roles)
+    .where(and(eq(roles.siteId, siteId), eq(roles.systemKey, 'member')))
+    .limit(1);
+
+  if (!memberRole) {
+    return c.json(
+      { errors: [{ code: 'ROLE_NOT_FOUND', message: 'Default member role is not provisioned for this site.' }] },
+      500,
+    );
+  }
+
   const passwordHash = await hashPassword(input.password);
 
   // Insert user
@@ -263,13 +283,13 @@ authRouter.post('/register', async (c) => {
     return c.json({ errors: [{ code: 'REGISTRATION_FAILED', message: 'Failed to create user.' }] }, 500);
   }
 
-  // Bind new user to the current site (default 'member' role)
+  // Bind new user to the current site (seeded member role)
   await db
     .insert(userSites)
     .values({
       userId: newUser.id,
       siteId,
-      roleId: 'member',
+      roleId: memberRole.id,
     })
     .onConflictDoNothing();
 
@@ -717,3 +737,7 @@ authRouter.get('/me', async (c) => {
     },
   });
 });
+
+// Preference reads/writes live on `meRouter` (`GET/PATCH /api/v1/me/preferences`
+// above) — the save-default-preference `saveAction` key is validated there via
+// UserPreferencesSchema, alongside keybindings/language/theme.

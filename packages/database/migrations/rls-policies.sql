@@ -43,7 +43,7 @@ DECLARE
     'lumibase_items', 'lumibase_revisions', 'lumibase_activity',
     'lumibase_files', 'lumibase_folders', 'lumibase_presets', 'lumibase_translations',
     'lumibase_settings', 'lumibase_webhooks', 'lumibase_extensions',
-    'lumibase_email_layouts', 'lumibase_email_templates',
+    'lumibase_email_layouts', 'lumibase_email_templates', 'lumibase_push_subscriptions',
     'lumibase_roles', 'lumibase_policies', 'lumibase_user_policies',
     'lumibase_permissions', 'lumibase_audit_log',
     -- Regulated / sensitive content readiness (site-isolated).

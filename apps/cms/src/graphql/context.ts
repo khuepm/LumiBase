@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
-import { ItemService } from '../services/item-service';
+import type { ItemService } from '../services/item-service';
+import { itemServiceForRequest } from '../services/item-service-factory';
 import { SchemaService } from '../services/schema-service';
 
 /**
@@ -29,41 +30,7 @@ export interface GraphQLContext {
  * encryption key, realtime namespace).
  */
 export function buildItemService(c: Context<AppEnv>): ItemService {
-  const auth = c.get('auth');
-  const runtime = c.get('runtime');
-  const headers: Record<string, string> = {};
-  c.req.raw.headers.forEach((value, key) => {
-    headers[key.toLowerCase()] = value;
-  });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const realtimeNamespace = (c.env as unknown as Record<string, any>)['SITE_ROOM'] as
-    | DurableObjectNamespace
-    | undefined;
-
-  return new ItemService({
-    db: c.get('db'),
-    siteId: c.get('siteId'),
-    userId: auth?.userId ?? null,
-    cache: runtime.cache,
-    search: runtime.search,
-    queue: runtime.queue,
-    realtimeNamespace,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    extensionEnv: c.env as unknown as Record<string, unknown>,
-    permissionCtx: {
-      userId: auth?.userId ?? null,
-      siteId: c.get('siteId'),
-      roleId: null,
-      user: auth
-        ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) }
-        : null,
-      ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-      headers,
-      apiKey: auth?.apiKey ?? null,
-    },
-    encryptionKey:
-      c.env.ENCRYPTION_KEY || (typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : undefined),
-  });
+  return itemServiceForRequest(c);
 }
 
 /** Builds the full per-request GraphQL context from a Hono context. */

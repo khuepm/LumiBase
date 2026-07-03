@@ -137,10 +137,10 @@
         "items": [{ "label": "GitHub", "href": "https://github.com/khuepm/lumibase" }]
       }
     ],
-    "copyright": "Copyright (c) 2025 LumiBase."
+    "copyright": "Copyright (c) {year} LumiBase."
   },
   "themeConfig": {
-    "colorMode": { "defaultMode": "light", "respectPrefersColorScheme": true },
+    "colorMode": { "defaultMode": "dark", "respectPrefersColorScheme": true },
     "prism": { "theme": "github-light", "darkTheme": "github-dark" }
   }
 }

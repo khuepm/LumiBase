@@ -14,8 +14,10 @@ export default function ExtensionsPage() {
       fallback={
         <div className="flex min-h-[60vh] items-center justify-center">
           <div className="flex flex-col items-center gap-3">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" />
-            <span className="text-sm text-gray-500">Loading extensions…</span>
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-violet border-t-transparent" />
+            <span className="text-sm font-medium text-txt-faint">
+              Loading extensions…
+            </span>
           </div>
         </div>
       }

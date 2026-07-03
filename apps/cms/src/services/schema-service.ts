@@ -24,6 +24,10 @@ import { AuditLogger } from '../modules/audit/logger';
  */
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
+// Physical-namespace prefixes reserved by the platform: `lumibase_` is every
+// system table (ADR-010) and `mat_` is materialized collection tables.
+// User- and AI-created collections must never claim them.
+const RESERVED_COLLECTION_PREFIXES: ReadonlyArray<string> = ['lumibase_', 'mat_'];
 const SYSTEM_FIELD_NAMES = new Set([
   'id',
   'status',
@@ -279,12 +283,6 @@ export function assertClassificationEncryptable(
   }
 }
 
-/**
- * Physical-namespace prefixes reserved by the platform: `lumibase_` is every
- * system table (ADR-010) and `mat_` is materialized collection tables.
- */
-const RESERVED_COLLECTION_PREFIXES = ['lumibase_', 'mat_'] as const;
-
 const ensureName = (name: string, kind: 'collection' | 'field') => {
   if (!NAME_PATTERN.test(name)) {
     throw new SchemaServiceError(
@@ -362,6 +360,9 @@ export class SchemaService {
   }
 
   async updateCollection(name: string, patch: Partial<CollectionInput>) {
+    if (patch.name !== undefined && patch.name !== name) {
+      ensureName(patch.name, 'collection');
+    }
     const current = await this.getCollection(name);
     if (!current) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);

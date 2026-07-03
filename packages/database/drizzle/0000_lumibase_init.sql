@@ -21,6 +21,7 @@ CREATE TABLE "lumibase_sites" (
 	"descriptor" text,
 	"default_language" text DEFAULT 'en' NOT NULL,
 	"default_appearance" text DEFAULT 'auto' NOT NULL,
+	"default_save_action" text DEFAULT 'stay' NOT NULL,
 	"branding" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"theme_overrides" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"custom_css" text,
@@ -469,6 +470,35 @@ CREATE TABLE "lumibase_relations" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "lumibase_release_items" (
+	"id" text PRIMARY KEY NOT NULL,
+	"site_id" text NOT NULL,
+	"release_id" text NOT NULL,
+	"collection" text NOT NULL,
+	"item_id" text NOT NULL,
+	"target_status" text DEFAULT 'published' NOT NULL,
+	"revision_id" text,
+	"outcome" text,
+	"outcome_reason" text,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "lumibase_releases" (
+	"id" text PRIMARY KEY NOT NULL,
+	"site_id" text NOT NULL,
+	"name" text NOT NULL,
+	"description" text,
+	"status" text DEFAULT 'draft' NOT NULL,
+	"atomicity_mode" text DEFAULT 'all_or_nothing' NOT NULL,
+	"publish_at" timestamp,
+	"published_at" timestamp,
+	"maintenance_window" jsonb,
+	"status_reason" text,
+	"created_by" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "lumibase_revisions" (
 	"id" text PRIMARY KEY NOT NULL,
 	"site_id" text NOT NULL,
@@ -588,6 +618,18 @@ CREATE TABLE "lumibase_presets" (
 	"color" text,
 	"refresh_interval" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "lumibase_push_subscriptions" (
+	"id" text PRIMARY KEY NOT NULL,
+	"site_id" text NOT NULL,
+	"user_id" text,
+	"endpoint" text NOT NULL,
+	"p256dh" text NOT NULL,
+	"auth" text NOT NULL,
+	"user_agent" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "lumibase_settings" (
@@ -1172,6 +1214,24 @@ CREATE TABLE "lumibase_deployments" (
 	"completed_at" timestamp
 );
 --> statement-breakpoint
+CREATE TABLE "lumibase_auth_external_issuers" (
+	"id" text PRIMARY KEY NOT NULL,
+	"site_id" text NOT NULL,
+	"issuer" text NOT NULL,
+	"jwks_uri" text,
+	"discovery_url" text,
+	"audience" jsonb NOT NULL,
+	"algorithms" jsonb NOT NULL,
+	"claim_mapping" jsonb NOT NULL,
+	"role_mapping" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"default_role_id" text,
+	"jit_provisioning" boolean DEFAULT false NOT NULL,
+	"clock_skew_seconds" integer DEFAULT 60 NOT NULL,
+	"enabled" boolean DEFAULT true NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 ALTER TABLE "lumibase_notifications" ADD CONSTRAINT "lumibase_notifications_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_notifications" ADD CONSTRAINT "lumibase_notifications_recipient_lumibase_users_id_fk" FOREIGN KEY ("recipient") REFERENCES "public"."lumibase_users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_notifications" ADD CONSTRAINT "lumibase_notifications_sender_lumibase_users_id_fk" FOREIGN KEY ("sender") REFERENCES "public"."lumibase_users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -1235,6 +1295,12 @@ ALTER TABLE "lumibase_pages" ADD CONSTRAINT "lumibase_pages_site_id_lumibase_sit
 ALTER TABLE "lumibase_panels" ADD CONSTRAINT "lumibase_panels_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_panels" ADD CONSTRAINT "lumibase_panels_dashboard_id_lumibase_dashboards_id_fk" FOREIGN KEY ("dashboard_id") REFERENCES "public"."lumibase_dashboards"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_relations" ADD CONSTRAINT "lumibase_relations_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lumibase_release_items" ADD CONSTRAINT "lumibase_release_items_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lumibase_release_items" ADD CONSTRAINT "lumibase_release_items_release_id_lumibase_releases_id_fk" FOREIGN KEY ("release_id") REFERENCES "public"."lumibase_releases"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lumibase_release_items" ADD CONSTRAINT "lumibase_release_items_item_id_lumibase_items_id_fk" FOREIGN KEY ("item_id") REFERENCES "public"."lumibase_items"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lumibase_release_items" ADD CONSTRAINT "lumibase_release_items_revision_id_lumibase_revisions_id_fk" FOREIGN KEY ("revision_id") REFERENCES "public"."lumibase_revisions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lumibase_releases" ADD CONSTRAINT "lumibase_releases_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lumibase_releases" ADD CONSTRAINT "lumibase_releases_created_by_lumibase_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."lumibase_users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_revisions" ADD CONSTRAINT "lumibase_revisions_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_revisions" ADD CONSTRAINT "lumibase_revisions_item_id_lumibase_items_id_fk" FOREIGN KEY ("item_id") REFERENCES "public"."lumibase_items"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_revisions" ADD CONSTRAINT "lumibase_revisions_collection_id_lumibase_collections_id_fk" FOREIGN KEY ("collection_id") REFERENCES "public"."lumibase_collections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1252,6 +1318,8 @@ ALTER TABLE "lumibase_folders" ADD CONSTRAINT "lumibase_folders_site_id_lumibase
 ALTER TABLE "lumibase_glossary" ADD CONSTRAINT "lumibase_glossary_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_presets" ADD CONSTRAINT "lumibase_presets_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_presets" ADD CONSTRAINT "lumibase_presets_user_id_lumibase_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."lumibase_users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lumibase_push_subscriptions" ADD CONSTRAINT "lumibase_push_subscriptions_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lumibase_push_subscriptions" ADD CONSTRAINT "lumibase_push_subscriptions_user_id_lumibase_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."lumibase_users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_settings" ADD CONSTRAINT "lumibase_settings_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_translation_memory" ADD CONSTRAINT "lumibase_translation_memory_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_translations" ADD CONSTRAINT "lumibase_translations_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1323,6 +1391,7 @@ ALTER TABLE "lumibase_field_access_log" ADD CONSTRAINT "lumibase_field_access_lo
 ALTER TABLE "lumibase_deployment_targets" ADD CONSTRAINT "lumibase_deployment_targets_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_deployments" ADD CONSTRAINT "lumibase_deployments_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lumibase_deployments" ADD CONSTRAINT "lumibase_deployments_target_id_lumibase_deployment_targets_id_fk" FOREIGN KEY ("target_id") REFERENCES "public"."lumibase_deployment_targets"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lumibase_auth_external_issuers" ADD CONSTRAINT "lumibase_auth_external_issuers_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "notifications_recipient_idx" ON "lumibase_notifications" USING btree ("recipient","status");--> statement-breakpoint
 CREATE INDEX "notifications_site_idx" ON "lumibase_notifications" USING btree ("site_id");--> statement-breakpoint
 CREATE INDEX "teams_site_idx" ON "lumibase_teams" USING btree ("site_id");--> statement-breakpoint
@@ -1380,6 +1449,10 @@ CREATE UNIQUE INDEX "pages_site_slug_unique" ON "lumibase_pages" USING btree ("s
 CREATE INDEX "panels_site_dashboard_idx" ON "lumibase_panels" USING btree ("site_id","dashboard_id");--> statement-breakpoint
 CREATE INDEX "relations_site_idx" ON "lumibase_relations" USING btree ("site_id");--> statement-breakpoint
 CREATE INDEX "relations_many_idx" ON "lumibase_relations" USING btree ("many_collection","many_field");--> statement-breakpoint
+CREATE UNIQUE INDEX "release_items_release_item_unique" ON "lumibase_release_items" USING btree ("release_id","collection","item_id");--> statement-breakpoint
+CREATE INDEX "release_items_release_idx" ON "lumibase_release_items" USING btree ("site_id","release_id");--> statement-breakpoint
+CREATE INDEX "releases_site_status_idx" ON "lumibase_releases" USING btree ("site_id","status");--> statement-breakpoint
+CREATE INDEX "releases_publish_due_idx" ON "lumibase_releases" USING btree ("site_id","status","publish_at");--> statement-breakpoint
 CREATE INDEX "revisions_item_idx" ON "lumibase_revisions" USING btree ("item_id","created_at");--> statement-breakpoint
 CREATE INDEX "revisions_staged_idx" ON "lumibase_revisions" USING btree ("site_id","auto_commit_at") WHERE "lumibase_revisions"."staged" = true;--> statement-breakpoint
 CREATE UNIQUE INDEX "email_layouts_site_key_unique" ON "lumibase_email_layouts" USING btree ("site_id","key");--> statement-breakpoint
@@ -1394,6 +1467,8 @@ CREATE INDEX "glossary_site_pair_idx" ON "lumibase_glossary" USING btree ("site_
 CREATE INDEX "glossary_term_idx" ON "lumibase_glossary" USING btree ("site_id","term");--> statement-breakpoint
 CREATE INDEX "presets_site_collection_idx" ON "lumibase_presets" USING btree ("site_id","collection");--> statement-breakpoint
 CREATE INDEX "presets_scope_idx" ON "lumibase_presets" USING btree ("user_id","role_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "push_subscriptions_site_endpoint_idx" ON "lumibase_push_subscriptions" USING btree ("site_id","endpoint");--> statement-breakpoint
+CREATE INDEX "push_subscriptions_site_user_idx" ON "lumibase_push_subscriptions" USING btree ("site_id","user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "settings_site_key_unique" ON "lumibase_settings" USING btree ("site_id","key");--> statement-breakpoint
 CREATE INDEX "tm_site_pair_idx" ON "lumibase_translation_memory" USING btree ("site_id","source_lang","target_lang");--> statement-breakpoint
 CREATE INDEX "tm_context_idx" ON "lumibase_translation_memory" USING btree ("site_id","context");--> statement-breakpoint
@@ -1474,4 +1549,6 @@ CREATE INDEX "deployment_targets_site_idx" ON "lumibase_deployment_targets" USIN
 CREATE INDEX "deployment_targets_site_provider_idx" ON "lumibase_deployment_targets" USING btree ("site_id","provider");--> statement-breakpoint
 CREATE INDEX "deployments_site_target_idx" ON "lumibase_deployments" USING btree ("site_id","target_id");--> statement-breakpoint
 CREATE INDEX "deployments_site_status_idx" ON "lumibase_deployments" USING btree ("site_id","status");--> statement-breakpoint
-CREATE INDEX "deployments_provider_deploy_idx" ON "lumibase_deployments" USING btree ("provider_deployment_id");
+CREATE INDEX "deployments_provider_deploy_idx" ON "lumibase_deployments" USING btree ("provider_deployment_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "auth_external_issuers_site_issuer_unique" ON "lumibase_auth_external_issuers" USING btree ("site_id","issuer");--> statement-breakpoint
+CREATE INDEX "auth_external_issuers_site_enabled_idx" ON "lumibase_auth_external_issuers" USING btree ("site_id","enabled");

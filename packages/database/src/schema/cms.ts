@@ -541,3 +541,79 @@ export const contentVersions = pgTable(
     itemIdx: index('content_versions_item_idx').on(t.siteId, t.itemId),
   }),
 );
+
+// ---------------------------------------------------------------------------
+// Content Releases (spec: .kiro/specs/content-releases)
+// A Release collates specific item revisions across collections into a named
+// bundle, published all at once (manual) or scheduled for a date/time. Reuses
+// the items/revisions model and the content-scheduler queue; only these two
+// junction tables are new.
+// ---------------------------------------------------------------------------
+
+/** A cross-collection publish bundle. */
+export const releases = pgTable(
+  'lumibase_releases',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    /** `draft` | `scheduled` | `published` | `failed` | `partially_failed` */
+    status: text('status').default('draft').notNull(),
+    /** `all_or_nothing` | `best_effort` — publish atomicity strategy. */
+    atomicityMode: text('atomicity_mode').default('all_or_nothing').notNull(),
+    /** When a scheduled release should publish (null for manual-only). */
+    publishAt: timestamp('publish_at'),
+    /** Set once the release reaches `published`. */
+    publishedAt: timestamp('published_at'),
+    /** `{ tz, windows: [{ dow, start, end }] }` — borrowed from contentIntents. */
+    maintenanceWindow: jsonb('maintenance_window'),
+    /** Circuit-breaker detail when status is `failed`/`partially_failed`. */
+    statusReason: text('status_reason'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteStatusIdx: index('releases_site_status_idx').on(t.siteId, t.status),
+    // Release sweep scan: due scheduled releases per site (mirrors items.publishDueIdx).
+    publishDueIdx: index('releases_publish_due_idx').on(t.siteId, t.status, t.publishAt),
+  }),
+);
+
+/** Junction: a release ↔ a specific item, optionally pinned to one revision. */
+export const releaseItems = pgTable(
+  'lumibase_release_items',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    releaseId: text('release_id')
+      .notNull()
+      .references(() => releases.id, { onDelete: 'cascade' }),
+    /** Collection name (releases span collections). */
+    collection: text('collection').notNull(),
+    itemId: text('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    /** Target `items.status` to set on publish (`published` default). */
+    targetStatus: text('target_status').default('published').notNull(),
+    /** Revision pin; null → publish the item's live state at publish time. */
+    revisionId: text('revision_id').references(() => revisions.id, { onDelete: 'set null' }),
+    /** Publish outcome: null until publish; `published` | `skipped` | `failed`. */
+    outcome: text('outcome'),
+    outcomeReason: text('outcome_reason'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    releaseItemUnique: uniqueIndex('release_items_release_item_unique').on(
+      t.releaseId,
+      t.collection,
+      t.itemId,
+    ),
+    releaseIdx: index('release_items_release_idx').on(t.siteId, t.releaseId),
+  }),
+);

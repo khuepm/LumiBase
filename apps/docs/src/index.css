@@ -1,42 +1,216 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* shadcn/ui design tokens — consistent with apps/studio */
+/*
+ * Design tokens.
+ * - shadcn/ui HSL tokens: `:root` = light, `.dark` = the LumiBase "dark cosmic"
+ *   palette (both shipped; the active one follows the `dark` class on <html>,
+ *   set by the no-flash bootstrap in index.html + the useTheme hook).
+ * - Raw cosmic custom properties: values that differ per theme are declared in
+ *   BOTH blocks so glass/gradient/text helpers flip automatically. Light mode
+ *   is a "light cosmic" reading — black-tinted glass, light gradient, no stars.
+ */
 @layer base {
   :root {
     --background: 0 0% 100%;
     --foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
+    --primary: 250 84% 54%; /* violet, darkened for contrast on light */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
     --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
+    --muted-foreground: 240 3.8% 40%;
     --accent: 240 4.8% 95.9%;
     --accent-foreground: 240 5.9% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     --border: 240 5.9% 90%;
     --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
+    --ring: 250 84% 54%;
+    --link: 250 72% 48%; /* readable violet link on light bg */
     --radius: 0.5rem;
+
+    /* LumiBase cosmic design-system tokens — LIGHT reading */
+    --color-bg-top: rgb(250, 250, 252);
+    --color-bg-bottom: rgb(238, 238, 244);
+    --gradient-page: linear-gradient(135deg, rgb(250, 250, 252) 0%, rgb(236, 236, 243) 100%);
+    --color-surface-1: rgb(255, 255, 255);
+    --color-surface-2: rgb(248, 248, 250);
+    --color-surface-3: rgb(242, 242, 245);
+    --color-surface-4: rgb(236, 236, 240);
+    --color-surface-sunken: rgb(244, 244, 247);
+    --color-glass: rgba(20, 18, 30, 0.05);
+    --color-glass-hover: rgba(20, 18, 30, 0.09);
+    --color-text: rgb(17, 17, 20);
+    --color-text-secondary: rgb(80, 80, 92);
+    --color-text-muted: rgb(110, 110, 122);
+    --color-violet: rgb(108, 82, 235);
+    --color-blue: rgb(20, 130, 220);
+    --color-green: rgb(30, 160, 100);
+    --color-red: rgb(210, 60, 60);
+    --color-border: rgba(20, 18, 30, 0.1);
+    --color-border-strong: rgba(20, 18, 30, 0.18);
+    --radius-pill: 32px;
+    --radius-card: 24px;
+    --radius-lg: 20px;
+    --radius-md: 16px;
+    --radius-sm: 12px;
+    --radius-xs: 8px;
+    --ring-glass: inset 0 0 0 1px rgba(20, 18, 30, 0.1);
+    --ring-glass-strong: inset 0 0 0 1px rgba(20, 18, 30, 0.18);
+    --shadow-sm: 0 2px 4px rgba(20, 18, 30, 0.08);
+    --shadow-md: 0 8px 24px rgba(20, 18, 30, 0.12);
+    --shadow-lg: 0 24px 64px rgba(20, 18, 30, 0.18);
+    --glow-violet: 0 0 60px rgba(123, 97, 255, 0.25);
+    --glow-blue: 0 0 60px rgba(24, 160, 251, 0.22);
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --duration: 240ms;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    /* shadcn tokens mapped to the cosmic palette */
+    --background: 240 10% 6%; /* near-black rgb(14,14,17) */
+    --foreground: 0 0% 100%;
+    --primary: 250 100% 69%; /* violet rgb(123,97,255) */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 270 3% 14%; /* surface-2 rgb(36,35,37) */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 270 3% 14%; /* surface-2 rgb(36,35,37) */
+    --muted-foreground: 0 0% 66%; /* rgb(169,169,169) */
+    --accent: 240 2% 16%; /* surface-3 rgb(41,41,43) */
+    --accent-foreground: 0 0% 100%;
+    --popover: 260 8% 10%; /* rgb(24,23,28) */
+    --popover-foreground: 0 0% 100%;
+    --destructive: 0 61% 62%; /* rgb(232,86,86) */
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 4% 14%; /* opaque equivalent of white@8% on near-black */
+    --input: 240 4% 14%;
+    --ring: 250 100% 69%;
+    --link: 250 100% 81%; /* lavender rgb(169,155,255) */
+
+    /* LumiBase cosmic design-system tokens — DARK reading (shipped default) */
+    --color-bg-top: rgb(30, 30, 32);
+    --color-bg-bottom: rgb(14, 14, 17);
+    --gradient-page: linear-gradient(135deg, rgb(30, 30, 32) 0%, rgb(14, 14, 17) 32%);
+    --color-surface-1: rgb(29, 28, 32);
+    --color-surface-2: rgb(36, 35, 37);
+    --color-surface-3: rgb(41, 41, 43);
+    --color-surface-4: rgb(52, 50, 54);
+    --color-surface-sunken: rgb(23, 22, 25);
+    --color-glass: rgba(255, 255, 255, 0.08);
+    --color-glass-hover: rgba(255, 255, 255, 0.14);
+    --color-text: #fff;
+    --color-text-secondary: rgb(189, 189, 192);
+    --color-text-muted: rgb(169, 169, 169);
+    --color-violet: rgb(123, 97, 255);
+    --color-blue: rgb(24, 160, 251);
+    --color-green: rgb(46, 196, 124);
+    --color-red: rgb(232, 86, 86);
+    --color-border: rgba(255, 255, 255, 0.08);
+    --color-border-strong: rgba(255, 255, 255, 0.16);
+    --ring-glass: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    --ring-glass-strong: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.32);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.8);
+    --glow-violet: 0 0 80px rgba(123, 97, 255, 0.45);
+    --glow-blue: 0 0 80px rgba(24, 160, 251, 0.4);
   }
 
-  * { @apply border-border; }
-  body { @apply bg-background text-foreground; }
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    /* Cosmic page shell: 135deg gradient, fixed attachment (both themes) */
+    background: var(--gradient-page);
+    background-attachment: fixed;
+    font-family:
+      'Inter',
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      Roboto,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Fixed starfield overlay — dark theme only */
+  .dark body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      radial-gradient(1.4px 1.4px at 12% 18%, rgba(255, 255, 255, 0.7), transparent),
+      radial-gradient(1.2px 1.2px at 34% 62%, rgba(255, 255, 255, 0.5), transparent),
+      radial-gradient(1.6px 1.6px at 58% 28%, rgba(255, 255, 255, 0.6), transparent),
+      radial-gradient(1px 1px at 72% 76%, rgba(255, 255, 255, 0.5), transparent),
+      radial-gradient(1.3px 1.3px at 88% 42%, rgba(255, 255, 255, 0.6), transparent),
+      radial-gradient(1.5px 1.5px at 46% 8%, rgba(255, 255, 255, 0.55), transparent);
+    background-repeat: repeat;
+    background-size: 100% 900px;
+  }
+
+  /* Content sits above the starfield */
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+@layer components {
+  /* Reusable cosmic helpers — flip with the theme via the vars above */
+  .ring-glass {
+    box-shadow: var(--ring-glass);
+  }
+  .ring-glass-strong {
+    box-shadow: var(--ring-glass-strong);
+  }
+  .glass-chip {
+    background: var(--color-glass);
+    box-shadow: var(--ring-glass);
+  }
+  .glass-chip-hover:hover {
+    background: var(--color-glass-hover);
+  }
+}
+
+/* ---- Article typography extras (MarkdownRenderer) ---- */
+
+/* Lead paragraph — first paragraph of the article body */
+.prose-docs > p:first-of-type {
+  font-size: 18px;
+  line-height: 30px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+/* Note-callout inner text (blockquote override renders the shell) */
+.prose-docs blockquote p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 23px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+.prose-docs blockquote strong {
+  color: var(--color-text);
+}
+
+/* ---- Shiki dual-theme support: activate the dark theme under `.dark` ---- */
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark, inherit) !important;
+  font-style: var(--shiki-dark-font-style, inherit) !important;
+  font-weight: var(--shiki-dark-font-weight, inherit) !important;
+  text-decoration: var(--shiki-dark-text-decoration, inherit) !important;
 }

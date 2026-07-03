@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, FileText } from 'lucide-react';
+import { Search } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { search, type SearchResult } from '../lib/search';
 import { useLocale } from '../hooks/useLocale';
@@ -12,8 +12,28 @@ import { useT } from '../hooks/useT';
  * Displays a search input and a list of results with highlighted snippets.
  * Navigating to a result uses client-side routing (no full page reload).
  *
+ * Styled after the LumiBase "dark cosmic" design system: glass pill trigger,
+ * blurred overlay, dark panel with inset ring, planet-gradient result icons.
+ *
  * Requirements: 7.2, 7.3, 7.4, 7.6
  */
+
+/** Planet-gradient icon backgrounds (violet / blue / green), rotated deterministically. */
+const PLANET_GRADIENTS = [
+  'radial-gradient(circle at 32% 28%, #fff 0%, #7B61FF 60%, #26204a 100%)',
+  'radial-gradient(circle at 32% 28%, #fff 0%, #18A0FB 60%, #123a52 100%)',
+  'radial-gradient(circle at 32% 28%, #fff 0%, #2EC47C 60%, #12402c 100%)',
+] as const;
+
+/** Deterministically pick a planet gradient for a slug. */
+function planetFor(slug: string): string {
+  let sum = 0;
+  for (let i = 0; i < slug.length; i++) {
+    sum = (sum + slug.charCodeAt(i)) % PLANET_GRADIENTS.length;
+  }
+  return PLANET_GRADIENTS[sum]!;
+}
+
 export function SearchDialog() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -107,12 +127,12 @@ export function SearchDialog() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors"
+        className="glass-chip glass-chip-hover flex items-center gap-2 rounded-2xl px-3.5 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
         aria-label="Search documentation (Cmd+K)"
       >
-        <Search className="h-4 w-4" />
+        <Search className="h-[15px] w-[15px]" />
         <span className="hidden sm:inline">{t('search.placeholder')}</span>
-        <kbd className="hidden rounded border bg-muted px-1.5 py-0.5 text-xs font-mono sm:inline-block">
+        <kbd className="glass-chip hidden rounded-md px-1.5 py-0.5 font-sans text-[11px] text-muted-foreground sm:ml-2 sm:inline-block">
           ⌘K
         </kbd>
       </button>
@@ -121,23 +141,23 @@ export function SearchDialog() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[14vh]"
       role="dialog"
       aria-modal="true"
       aria-label="Search documentation"
     >
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/50"
+        className="fixed inset-0 bg-black/40 backdrop-blur-[6px] dark:bg-[rgba(8,8,11,0.62)]"
         onClick={closeDialog}
         aria-hidden="true"
       />
 
       {/* Dialog panel */}
-      <div className="relative z-10 w-full max-w-lg rounded-lg border bg-background shadow-lg">
+      <div className="relative z-10 w-[560px] max-w-[92vw] overflow-hidden rounded-[18px] bg-popover shadow-[var(--ring-glass-strong),0_32px_80px_-12px_rgba(0,0,0,0.35)] dark:shadow-[var(--ring-glass-strong),0_32px_80px_-12px_rgba(0,0,0,0.7)]">
         {/* Search input */}
-        <div className="flex items-center gap-2 border-b px-4 py-3">
-          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="flex items-center gap-3 border-b border-border px-[18px] py-4">
+          <Search className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
             type="text"
@@ -145,7 +165,7 @@ export function SearchDialog() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleInputKeyDown}
             placeholder={t('search.placeholder')}
-            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="flex-1 bg-transparent text-base font-medium text-foreground outline-none placeholder:text-muted-foreground"
             aria-label="Search query"
             aria-activedescendant={
               results.length > 0 ? `search-result-${selectedIndex}` : undefined
@@ -155,7 +175,10 @@ export function SearchDialog() {
             aria-controls="search-results-list"
             aria-autocomplete="list"
           />
-          <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
+          <kbd
+            onClick={closeDialog}
+            className="glass-chip cursor-pointer rounded-[7px] px-2 py-[3px] font-sans text-[11px] font-semibold text-muted-foreground"
+          >
             Esc
           </kbd>
         </div>
@@ -165,7 +188,7 @@ export function SearchDialog() {
           <ul
             id="search-results-list"
             role="listbox"
-            className="max-h-80 overflow-y-auto p-2"
+            className="max-h-80 overflow-y-auto p-2.5"
           >
             {results.map((result, index) => (
               <li
@@ -173,18 +196,23 @@ export function SearchDialog() {
                 id={`search-result-${index}`}
                 role="option"
                 aria-selected={index === selectedIndex}
-                className={`flex cursor-pointer items-start gap-3 rounded-md px-3 py-2 text-sm transition-colors ${index === selectedIndex
-                  ? 'bg-accent text-accent-foreground'
-                  : 'hover:bg-accent/50'
-                  }`}
+                className={`flex cursor-pointer items-center gap-3 rounded-[11px] px-3 py-[11px] transition-colors ${
+                  index === selectedIndex ? 'bg-[var(--color-glass)]' : ''
+                }`}
                 onClick={() => navigateToResult(result)}
                 onMouseEnter={() => setSelectedIndex(index)}
               >
-                <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div
+                  aria-hidden="true"
+                  className="h-7 w-7 shrink-0 rounded-[9px]"
+                  style={{ background: planetFor(result.slug) }}
+                />
                 <div className="min-w-0 flex-1">
-                  <div className="font-medium truncate">{result.title}</div>
+                  <div className="truncate text-sm font-semibold text-foreground">
+                    {result.title}
+                  </div>
                   <div
-                    className="mt-0.5 text-xs text-muted-foreground line-clamp-2 [&_mark]:bg-yellow-200 [&_mark]:text-foreground [&_mark]:rounded-sm [&_mark]:px-0.5"
+                    className="mt-0.5 line-clamp-2 text-xs font-medium text-muted-foreground [&_mark]:rounded-sm [&_mark]:bg-primary/30 [&_mark]:px-0.5 [&_mark]:text-foreground [&_mark]:dark:text-white"
                     dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(result.snippet) }}
                   />
                 </div>
@@ -195,14 +223,14 @@ export function SearchDialog() {
 
         {/* No results message */}
         {query.trim().length >= 2 && results.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+          <div className="px-4 py-8 text-center text-sm font-medium text-muted-foreground">
             {t('search.no-results', { q: query })}
           </div>
         )}
 
         {/* Empty state hint */}
         {query.trim().length < 2 && (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+          <div className="px-4 py-8 text-center text-sm font-medium text-muted-foreground">
             {t('search.min-chars')}
           </div>
         )}

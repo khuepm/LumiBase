@@ -3,7 +3,8 @@ import { collections, items, settings, scopeSite, type Database } from '@lumibas
 import type { QueueProvider } from '@lumibase/runtime';
 import { dispatchRevalidation, parseTargets } from './revalidation';
 import { AuditLogger } from '../modules/audit/logger';
-import { ItemService } from './item-service';
+import { itemServiceForSystem } from './item-service-factory';
+import { sweepDueReleases } from './release-service';
 
 /**
  * Content scheduler (regulated-content-readiness task 7; Req 7.3, 7.4, 7.6, 7.7).
@@ -28,6 +29,8 @@ export interface SchedulerDeps {
 export interface SchedulerTickResult {
   published: number;
   unpublished: number;
+  /** Scheduled Content Releases published this tick. */
+  releasesPublished: number;
 }
 
 /** Resolve a collection's unpublish target (`archived` default, or `draft`). */
@@ -161,7 +164,11 @@ export async function sweepDueUnpublish(deps: SchedulerDeps, now = new Date()): 
 export async function runSchedulerTick(deps: SchedulerDeps, now = new Date()): Promise<SchedulerTickResult> {
   const published = await sweepDuePublish(deps, now);
   const unpublished = await sweepDueUnpublish(deps, now);
-  return { published, unpublished };
+  // Content Releases: publish due scheduled releases on the same tick (shares
+  // the content-scheduler queue). Idempotent + batch-bounded like the sweeps
+  // above. See .kiro/specs/content-releases design §6.
+  const releasesPublished = await sweepDueReleases(deps, now);
+  return { published, unpublished, releasesPublished };
 }
 
 export type RetentionAction = 'archive' | 'hard_delete' | 'crypto_shred';
@@ -206,7 +213,9 @@ export async function sweepRetention(deps: SchedulerDeps, now = new Date()): Pro
   for (const row of rows) {
     const policies = parsePolicies(row.value);
     if (policies.length === 0) continue;
-    const svc = new ItemService({ db: deps.db, siteId: row.siteId });
+    // System context: retention sweep is a scheduled flow with no user
+    // principal; it runs with system privileges over the whole site.
+    const svc = itemServiceForSystem({ db: deps.db, siteId: row.siteId }, 'scheduler');
 
     for (const policy of policies) {
       const [coll] = await deps.db

@@ -56,7 +56,7 @@ const organizationJsonLd = {
     "LumiBase is a Content Operating System — an edge-native, AI-native headless CMS where governed agents operate content against declarative SLOs while humans set intent, taste, and accountability.",
   sameAs: [
     "https://github.com/khuepm/lumibase",
-    "https://twitter.com/lumibase",
+    "https://twitter.com/khuephamminh",
   ],
   contactPoint: {
     "@type": "ContactPoint",
@@ -93,10 +93,12 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteJsonLd) }}
         />
       </head>
-      <body className={`${inter.className} bg-ink-950 text-foreground antialiased`}>
-        <Header />
-        <main className="min-h-screen">{children}</main>
-        <Footer />
+      <body className={`${inter.className} text-foreground antialiased`}>
+        <div className="relative z-[1]">
+          <Header />
+          <main className="min-h-screen">{children}</main>
+          <Footer />
+        </div>
       </body>
     </html>
   );

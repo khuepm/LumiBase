@@ -50,13 +50,57 @@ export {
 } from './site-config';
 
 export {
+  EXTERNAL_JWT_ALGORITHMS,
+  ExternalJwtAlgorithmSchema,
+  ExternalIssuerConfigSchema,
+  ExternalIssuerUpdateSchema,
+  makeExternalIssuerConfigSchema,
+  makeExternalIssuerUpdateSchema,
+  type ExternalIssuerConfig,
+  type ExternalIssuerClaimMapping,
+  type ExternalIssuerRoleMapping,
+} from './external-issuer';
+
+export {
+  CONFIG_MANIFEST_VERSION,
+  PrimaryKeyTypeSchema,
+  StorageModeSchema,
+  OnDeleteSchema,
+  RelationTypeSchema,
+  CollectionConfigSchema,
+  FieldConfigSchema,
+  RelationConfigSchema,
+  WebhookConfigSchema,
+  SettingConfigSchema,
+  ConfigManifestSchema,
+  stableKey,
+  parseConfigManifest,
+  type PrimaryKeyType,
+  type StorageMode,
+  type OnDelete,
+  type RelationType,
+  type CollectionConfig,
+  type FieldConfig,
+  type RelationConfig,
+  type WebhookConfig,
+  type SettingConfig,
+  type ConfigManifest,
+} from './config-manifest';
+
+export {
   CHORD_MODIFIERS,
   ChordSchema,
   KeybindingMapSchema,
+  SAVE_ACTIONS,
+  SaveActionSchema,
+  DEFAULT_SAVE_ACTION,
+  isSaveAction,
+  resolveSaveAction,
   UserPreferencesSchema,
   UserPreferencesUpdateSchema,
   type ChordModifier,
   type KeybindingMap,
+  type SaveAction,
   type UserPreferences,
   type UserPreferencesUpdate,
 } from './user-preferences';

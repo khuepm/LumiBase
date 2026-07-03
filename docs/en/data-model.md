@@ -19,10 +19,11 @@ Schema files are split by domain:
 |------|------|
 | `core.ts` | `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions` |
-| `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary` |
+| `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
+| `external-auth.ts` | `lumibase_auth_external_issuers` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
 
@@ -31,7 +32,7 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 ## 1. Core tenancy & identity (`core.ts`)
 
 ### `sites`
-- `id`, `name`, `domain`, `createdAt`.
+- `id`, `name`, `domain`, `createdAt`, plus identity/branding/theme columns and `defaultLanguage`, `defaultAppearance`, and `defaultSaveAction` (`stay`|`return`|`create_new`, default `stay` — the site-wide default Studio save action; per-user override lives in `users.preferences.saveAction`).
 
 ### `users`
 | Column | Type | Note |
@@ -41,6 +42,7 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 | `email`, `firstName`, `lastName`, `avatar` | text |
 | `status` | text | `active`/`invited`/`suspended` |
 | `language`, `theme`, `tfa` | jsonb | preferences |
+| `preferences` | jsonb | per-user UI prefs: `{ language, theme, timezone, defaultPresets, saveAction }`. `saveAction` (`stay`/`return`/`create_new`) overrides `sites.default_save_action`. |
 | `lastSeenAt` | timestamp |
 | `createdAt`, `updatedAt` | timestamp |
 
@@ -146,6 +148,14 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publ
 
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
+
+### `releases` (Content Releases)
+- A cross-collection publish bundle. `id`, `siteId`, `name`, `description`, `status` (`draft`|`scheduled`|`published`|`failed`|`partially_failed`), `atomicityMode` (`all_or_nothing`|`best_effort`), `publishAt`, `publishedAt`, `maintenanceWindow jsonb`, `statusReason`, `createdBy → users.id (set null)`, `createdAt`, `updatedAt`.
+- Indexes: `releases_site_status_idx (siteId, status)`, `releases_publish_due_idx (siteId, status, publishAt)` (mirrors `items.publishDueIdx` for the scheduler sweep).
+
+### `release_items` (Content Releases)
+- Junction release ↔ item, optionally pinned to one revision. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `itemId → items.id (cascade)`, `targetStatus` (default `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
+- Unique `(releaseId, collection, itemId)` (upsert key); index `(siteId, releaseId)`.
 
 ### `activity`
 - `id`, `siteId`, `action`, `userId`, `collection`, `itemId`, `ip`, `userAgent`, `comment`, `payload jsonb`, `createdAt`.
@@ -352,6 +362,12 @@ Content OS columns on existing tables:
 ## 11. Firebase Sync (`firebase-sync.ts`)
 
 Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0000_lumibase_init` (consolidated).
+
+## 11c. External JWT auth (`external-auth.ts`)
+
+### `auth_external_issuers`
+- Per-site trusted external JWT issuer. **Public config only — no secrets** (signatures verify against the issuer's JWKS). `id`, `siteId` (FK sites, cascade), `issuer` (matches the `iss` claim), `jwksUri`/`discoveryUrl` (one required), `audience` (jsonb: string|string[]), `algorithms` (jsonb: asymmetric allowlist), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
+- Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0000_lumibase_init` (consolidated). See [security/external-jwt-auth.md](./security/external-jwt-auth.md).
 
 ### `lumibase_firebase_sync_pipelines`
 | Column | Type | Note |

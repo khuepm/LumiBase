@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
+import { tryExternalJwt } from '../modules/external-auth/adapter';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -77,8 +78,9 @@ async function auditApiKeyUseDenied(
  */
 export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const path = c.req.path;
+  // NOTE: `/api/v1/auth/register` is intentionally NOT bypassed — the route
+  // handler requires an admin principal, so it must run through withAuth.
   if (
-    path === '/api/v1/auth/register' ||
     path === '/api/v1/auth/login' ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/')
@@ -216,6 +218,31 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       c.set('auth', principal);
       return next();
     }
+
+    // 3b. External JWT (trusted issuer JWKS). Sits between API-key and the
+    // internal custom JWT. `skip` → the token isn't for any trusted issuer of
+    // this site, so fall through to the custom-JWT branch; `rejected` →
+    // fail-closed (the issuer matched but the token is invalid / unauthorized).
+    const ext = await tryExternalJwt(c, bearerToken);
+    if (ext.kind === 'authenticated') {
+      const principal: AuthPrincipal = {
+        type: 'user',
+        userId: ext.userId,
+        externalId: ext.externalId,
+        email: ext.email,
+        roles: ext.roleIds,
+        raw: ext.payload as Record<string, unknown>,
+      };
+      c.set('auth', principal);
+      return next();
+    }
+    if (ext.kind === 'rejected') {
+      // Generic outward code; the specific reason is for server logs only.
+      const outward = ext.status === 403 ? 'FORBIDDEN' : 'UNAUTHENTICATED';
+      console.warn('[withAuth] external JWT rejected:', ext.code, ext.reason);
+      return c.json({ errors: [{ code: outward, message: ext.status === 403 ? 'Access denied.' : 'Authentication required.' }] }, ext.status);
+    }
+    // ext.kind === 'skip' → continue to custom JWT below.
 
     // Fall back to process.env for Node.js / Docker serve mode.
     const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;

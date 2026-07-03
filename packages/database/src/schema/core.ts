@@ -36,6 +36,8 @@ export const sites = pgTable('lumibase_sites', {
   defaultLanguage: text('default_language').default('en').notNull(),
   /** Default appearance for new users: `auto` | `light` | `dark`. Per-user override lives in `users.preferences`. */
   defaultAppearance: text('default_appearance').default('auto').notNull(),
+  /** Default Studio save action: `stay` | `return` | `create_new`. Per-user override lives in `users.preferences.saveAction`. */
+  defaultSaveAction: text('default_save_action').default('stay').notNull(),
   /** `{ logoUrl, faviconUrl, brandColor }` — global branding for this site. */
   branding: jsonb('branding').default({}).notNull(),
   /** `{ light: { '--primary': 'H S% L%', … }, dark: { … } }` — CSS variable overrides. */

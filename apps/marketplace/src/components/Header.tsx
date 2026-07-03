@@ -2,98 +2,110 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Layers, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
+import PillNav, { type PillNavItem } from "./PillNav";
+
+const NAV_ITEMS: PillNavItem[] = [
+  { label: "Home", href: "/" },
+  { label: "Extensions", href: "/extensions/" },
+  { label: "Docs", href: "https://docs.lumibase.dev", external: true },
+  { label: "GitHub", href: "https://github.com/khuepm/lumibase", external: true },
+];
+
+const PUBLISH_URL = "https://docs.lumibase.dev/extensions/create";
 
 export default function Header() {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-surface-700/60 bg-surface-950/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+    <header className="relative z-40">
+      <div className="relative flex h-[72px] items-center justify-between px-5 sm:px-10">
         {/* Logo */}
         <Link
           href="/"
-          className="flex items-center gap-2 group"
+          className="flex items-center gap-2.5"
           aria-label="LumiBase Marketplace Home"
         >
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 shadow-lg shadow-brand-900/30 group-hover:shadow-brand-700/40 transition-shadow">
-            <Layers className="h-4 w-4 text-white" />
-          </div>
-          <div className="leading-none">
-            <span className="text-sm font-bold text-gray-100">LumiBase</span>
-            <span className="ml-1.5 text-xs text-brand-400 font-medium">
-              Marketplace
-            </span>
-          </div>
+          <span
+            aria-hidden
+            className="h-[22px] w-[22px] rounded-full"
+            style={{
+              background: "linear-gradient(180deg,#fff,#cfcfcf)",
+              boxShadow: "0 0 18px rgba(123,97,255,.6)",
+            }}
+          />
+          <span className="text-lg font-bold tracking-[-0.3px] text-white">
+            LumiBase
+          </span>
+          <span className="ml-1.5 border-l border-white/[.14] pl-3 text-[13px] font-semibold text-txt-faint">
+            Marketplace
+          </span>
         </Link>
 
-        {/* Desktop nav */}
-        <nav className="hidden items-center gap-1 sm:flex" aria-label="Main navigation">
-          <Link
-            href="/extensions/"
-            id="nav-extensions"
-            className="rounded-lg px-3 py-2 text-sm text-gray-400 hover:bg-surface-700 hover:text-gray-100 transition-colors"
-          >
-            Extensions
-          </Link>
-          <Link
-            href="https://docs.lumibase.dev"
-            target="_blank"
-            rel="noopener noreferrer"
-            id="nav-docs"
-            className="rounded-lg px-3 py-2 text-sm text-gray-400 hover:bg-surface-700 hover:text-gray-100 transition-colors"
-          >
-            Docs
-          </Link>
-          <a
-            href="https://github.com/khuepm/lumibase"
-            target="_blank"
-            rel="noopener noreferrer"
-            id="nav-github"
-            className="ml-2 rounded-lg border border-surface-600 bg-surface-800 px-3 py-1.5 text-sm text-gray-300 hover:border-surface-500 hover:text-gray-100 transition-colors"
-          >
-            GitHub
-          </a>
-        </nav>
+        {/* Centered liquid-glass pill nav */}
+        <div className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 lg:block">
+          <PillNav items={NAV_ITEMS} />
+        </div>
 
-        {/* Mobile menu toggle */}
-        <button
-          onClick={() => setOpen(!open)}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-surface-700 sm:hidden transition-colors"
-          aria-label={open ? "Close menu" : "Open menu"}
-          aria-expanded={open}
-        >
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        {/* Right actions */}
+        <div className="flex items-center gap-2.5">
+          <a
+            href={PUBLISH_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            id="nav-publish"
+            className="btn-pill btn-glass btn-sm hidden sm:inline-flex"
+          >
+            <span>Publish</span>
+          </a>
+
+          {/* Mobile menu toggle */}
+          <button
+            onClick={() => setOpen(!open)}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-txt-secondary transition-colors hover:bg-glass hover:text-white lg:hidden"
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+          >
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile menu */}
       {open && (
-        <div className="border-t border-surface-700 bg-surface-900 px-4 py-3 sm:hidden">
+        <div className="mx-4 mb-3 rounded-2xl bg-surface-1 px-3 py-3 ring-glass lg:hidden">
           <nav className="flex flex-col gap-1" aria-label="Mobile navigation">
-            <Link
-              href="/extensions/"
-              onClick={() => setOpen(false)}
-              className="rounded-lg px-3 py-2.5 text-sm text-gray-300 hover:bg-surface-700 hover:text-gray-100"
-            >
-              Extensions
-            </Link>
-            <Link
-              href="https://docs.lumibase.dev"
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setOpen(false)}
-              className="rounded-lg px-3 py-2.5 text-sm text-gray-300 hover:bg-surface-700 hover:text-gray-100"
-            >
-              Docs
-            </Link>
+            {NAV_ITEMS.map((item) =>
+              item.external ? (
+                <a
+                  key={item.label}
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setOpen(false)}
+                  className="rounded-xl px-3 py-2.5 text-sm font-medium text-txt-secondary transition-colors hover:bg-glass hover:text-white"
+                >
+                  {item.label}
+                </a>
+              ) : (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  onClick={() => setOpen(false)}
+                  className="rounded-xl px-3 py-2.5 text-sm font-medium text-txt-secondary transition-colors hover:bg-glass hover:text-white"
+                >
+                  {item.label}
+                </Link>
+              )
+            )}
             <a
-              href="https://github.com/khuepm/lumibase"
+              href={PUBLISH_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-lg px-3 py-2.5 text-sm text-gray-300 hover:bg-surface-700 hover:text-gray-100"
+              onClick={() => setOpen(false)}
+              className="rounded-xl px-3 py-2.5 text-sm font-medium text-txt-secondary transition-colors hover:bg-glass hover:text-white"
             >
-              GitHub
+              Publish
             </a>
           </nav>
         </div>

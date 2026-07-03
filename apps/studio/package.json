@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/studio",
-  "version": "0.13.0",
+  "version": "0.16.0",
   "private": true,
   "description": "LumiBase Studio — no-code admin SPA (React + Vite).",
   "type": "module",
