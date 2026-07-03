@@ -40,6 +40,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   request-site gate, and optionally JIT-provisions the user. Fail-closed once an
   issuer matches; a token for an unknown issuer falls through to internal auth.
 
+- **Foreign-key dependent-records handling.** Deleting an item that other records
+  still reference (via a `restrict` relation) is now blocked with a structured
+  **409 `DEPENDENT_RECORDS_EXIST`** instead of orphaning references. New
+  `GET /api/v1/items/:collection/:id/dependents` (what references this item) and
+  `POST …/resolve-dependents` (batch `set_null` / `delete` / `reassign`,
+  transactional). The Studio editor shows a dialog to resolve each dependency
+  group, then retries the delete. References live in JSONB so `onDelete` is
+  enforced in the application layer — only `restrict` blocks; `set null`/`cascade`
+  are never auto-applied on soft-delete. No schema migration (reuses `relations`).
+
 - **Search inside JSON fields.** Item filters can now query **into** nested
   JSON/JSONB content. A dotted field key (`metadata.author.country`) addresses a
   nested path (compiled to `data #>> '{…}'`), and new operators `_json_contains`

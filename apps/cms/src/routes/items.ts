@@ -4,6 +4,7 @@ import type { AppEnv } from '../env';
 import { ItemServiceError, parseDeepQueryParams, parseFilterQueryParams } from '../services/item-service';
 import { itemServiceForRequest } from '../services/item-service-factory';
 import { ContentVersionError, ContentVersionService } from '../services/content-version-service';
+import { DependentsError, DependentsService, type ResolveAction } from '../services/dependents-service';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
@@ -167,11 +168,70 @@ itemsRouter.put('/:collection/:id', async (c) => {
   }
 });
 
+function buildDependents(c: Context<AppEnv>): DependentsService {
+  const auth = c.get('auth');
+  // DependentsService's default itemServiceFactory constructs an ItemService
+  // bound to the given db/siteId/userId (tx-aware for batch deletes).
+  return new DependentsService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    userId: auth?.userId ?? null,
+  });
+}
+
 itemsRouter.delete('/:collection/:id', async (c) => {
+  const collection = c.req.param('collection');
+  const id = c.req.param('id');
   try {
-    await buildService(c).softDelete(c.req.param('collection'), c.req.param('id'));
+    // Block the delete if a `restrict` relation still has dependents (Req 3).
+    const report = await buildDependents(c).report(collection, id);
+    if (report.blocking) {
+      return c.json({ errors: [{ code: 'DEPENDENT_RECORDS_EXIST', dependents: report.dependents }] }, 409);
+    }
+    await buildService(c).softDelete(collection, id);
     return c.body(null, 204);
   } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+// Preflight: what references this item? (Req 2)
+itemsRouter.get('/:collection/:id/dependents', async (c) => {
+  try {
+    const report = await buildDependents(c).report(c.req.param('collection'), c.req.param('id'));
+    return c.json({ data: report });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+// Batch-resolve a relation's dependents before re-deleting. (Req 5-7)
+const resolveSchema = z.object({
+  action: z.enum(['set_null', 'delete', 'reassign']),
+  relation: z.string().min(1),
+  newTargetId: z.string().optional(),
+  hard: z.boolean().optional(),
+});
+itemsRouter.post('/:collection/:id/resolve-dependents', async (c) => {
+  const parsed = resolveSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ errors: [{ code: 'VALIDATION_FAILED', message: parsed.error.issues[0]?.message ?? 'Invalid body.' }] }, 422);
+  }
+  try {
+    const result = await buildDependents(c).applyResolution(
+      c.req.param('collection'),
+      c.req.param('id'),
+      parsed.data.action as ResolveAction,
+      parsed.data.relation,
+      { newTargetId: parsed.data.newTargetId, hard: parsed.data.hard },
+    );
+    return c.json({ data: result });
+  } catch (err) {
+    if (err instanceof DependentsError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
     const { status, body } = toError(err);
     return c.json(body, status as 400);
   }

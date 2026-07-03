@@ -370,7 +370,9 @@ CLI: `pnpm --filter @lumibase/cms config export|diff|apply` — see
 | `GET` | `/api/v1/items/:collection/:id` | Get single item |
 | `PATCH` | `/api/v1/items/:collection/:id` | Partial update |
 | `PUT` | `/api/v1/items/:collection/:id` | Full replace |
-| `DELETE` | `/api/v1/items/:collection/:id` | Delete item (or array bulk) |
+| `DELETE` | `/api/v1/items/:collection/:id` | Delete item — **409 if blocked by dependents** |
+| `GET` | `/api/v1/items/:collection/:id/dependents` | List records that reference this item |
+| `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Batch-resolve a relation's dependents |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Revert to revision |
 | `GET` | `/api/v1/items/:collection/:id/versions` | List named draft versions (each has a `mainChanged` flag) |
@@ -380,6 +382,20 @@ CLI: `pnpm --filter @lumibase/cms config export|diff|apply` — see
 | `DELETE` | `/api/v1/items/:collection/:id/versions/:key` | Delete a version |
 | `GET` | `/api/v1/items/:collection/:id/versions/:key/compare` | Field diff vs main → `{ main, version, changes }` |
 | `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Apply version to main (writes a revision); `meta.mainDiverged` |
+
+**Dependent records.** Because item references live in JSONB (not physical FK
+columns), a relation's `onDelete` is enforced in the application layer. On
+`DELETE`, if a relation declared `restrict` still has records pointing at the
+item, the delete is blocked with **409 `DEPENDENT_RECORDS_EXIST`** and a
+`dependents` array. (`set null`/`cascade` are **not** auto-applied on
+soft-delete — that would break soft-delete's recoverability; the editor clears
+them explicitly.) `GET …/dependents` returns
+`{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count,
+sample }] } }`. `POST …/resolve-dependents` takes
+`{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` and
+runs transactionally (delete delegates to the normal item-delete path).
+Errors: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null on a
+required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
 
 **Optional headers:**
 - `X-Lumi-Draft: true` — fetch draft version
