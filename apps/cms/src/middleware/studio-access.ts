@@ -7,9 +7,10 @@ import { PermissionService, type PermissionBundle } from '../services/permission
 const STUDIO_CLIENT_HEADER = 'x-lumi-client';
 const STUDIO_CLIENT_VALUE = 'studio';
 
+// `/api/v1/auth/register` is NOT public: it is admin-only and runs through
+// the full withAuth chain, so it gets no special treatment here.
 const PUBLIC_AUTH_PATHS = new Set([
   '/api/v1/auth/login',
-  '/api/v1/auth/register',
 ]);
 
 const STUDIO_ACCESS_PATH_PREFIXES = [

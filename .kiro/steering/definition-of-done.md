@@ -31,6 +31,15 @@ Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, ba
 - [ ] **Background/cron/queue context**: job chạy ngoài request vẫn resolve đúng `siteId` từ payload (không "rò" site của request gần nhất, không quét toàn bộ tenant ngoài ý muốn).
 - [ ] **Tài liệu**: mục Multi-tenancy trong `docs/en/features/<feature>.md` nêu rõ shared-vs-isolated + cách verify (xem `push-notifications.md` làm mẫu).
 
+## 2c. Route-guard security — BẮT BUỘC khi thêm/đổi route hoặc middleware
+
+> Các lỗ hổng đã từng xảy ra đều do "quên guard" chứ không do guard sai: refactor làm rơi `adminOnly` khỏi dynamic extension route, `/api/v1/agent` không nằm trong control-plane list, thiếu kiểm tra tenant membership sau `withAuth`. Xem `docs/en/security/route-guards.md`.
+
+- [ ] **Surface mới dưới `/api/v1` được phân loại**: content plane / Studio plane (`STUDIO_ACCESS_PATH_PREFIXES`) / control plane (`CONTROL_PLANE_PATHS`). Control-plane prefix PHẢI vào guard list — `adminOnly` per-route chỉ là lớp trong, không thay thế backstop.
+- [ ] **Không thêm path vào bypass/public list** (`withAuth`, `PUBLIC_AUTH_PATHS` của `site-membership`/`studio-access`) nếu không kèm test chứng minh handler an toàn khi `auth === undefined`.
+- [ ] **Route thực thi code động hoặc mutate agent state** (extensions, agent harness, flows) → control-plane, admin-only trước khi handler chạy.
+- [ ] Tripwire test `apps/cms/src/__tests__/security-guards.wiring.test.ts` vẫn pass; nếu tái cấu trúc guard thì cập nhật assertion CÙNG với behavioural test mới, không xoá.
+
 ## 3. Spec hygiene
 
 - [ ] `requirements.md`, `design.md`, `tasks.md` của spec phản ánh đúng trạng thái cuối (task done được tick, quyết định mở được chốt hoặc ghi rõ TODO có owner)

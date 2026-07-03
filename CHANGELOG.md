@@ -19,6 +19,19 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   (`sites.default_save_action`, set in Settings → Site). The hardcoded fallback is `stay`, matching the
   editor's previous behavior, so existing instances are unchanged until someone
   opts into another action.
+- **Code-First Configuration (Config Manifest).** Export / diff / apply a site's
+  schema configuration — collections, fields, relations, settings and webhooks —
+  as a single declarative, version-controllable JSON manifest
+  (`lumibase.config@v1`) for CI/CD and environment sync. New admin-only endpoints
+  `GET /api/v1/config/export` and `POST /api/v1/config/import` (with `dryRun`,
+  `mode=merge|replace-managed|replace-all`, and an `allowDestructive` guard), plus
+  a reworked `pnpm --filter @lumibase/cms config export|diff|apply` CLI (`diff`
+  exits 1 when changes are pending, for use as a PR gate). Apply is transactional
+  (all-or-nothing) and delegates schema mutation to the existing `SchemaService`;
+  merge never deletes, replace-all is a full sync. Manifests carry no
+  id/siteId/timestamps/secrets and round-trip losslessly. No schema migration —
+  reuses existing tables. See
+  [`docs/en/contributing/code-first-config.md`](docs/en/contributing/code-first-config.md).
 
 ### Migrations
 
@@ -26,6 +39,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   (`NOT NULL DEFAULT 'stay'`). Additive and idempotent (`ADD COLUMN IF NOT
   EXISTS`); existing instances need **no backfill**. Run
   `pnpm -F @lumibase/database migrate` on upgrade.
+
+### Security
+
+- **Tenant membership enforcement** (ports open PR #184): new `withSiteMembership` middleware between `withAuth` and route handlers — a user principal must hold a `user_sites` membership for the site selected via `X-Lumi-Site`, closing cross-tenant access for authenticated principals. API keys stay site-matched by `withAuth`; local dev tokens, bootstrap users, and the Cloudflare Access admin flow keep their existing carve-outs.
+- **Dynamic extension dispatch is admin-gated again** (ports open PR #152): restores the `adminOnly` guard on `extensionsRouter.all('/:name/*')` that a refactor had dropped, so non-admin principals can no longer execute endpoint extension bundles.
+- **`POST /auth/register` fixed and fail-closed** (bug portion of open PR #130): the path was on the `withAuth` bypass list while the handler read the principal, so the route always crashed with 500; it now runs through the full auth chain, requires an admin principal (403 otherwise, even with no principal), and binds new users to the site's seeded `member` role id instead of the invalid literal `'member'` (an FK violation).
+- **Recurrence prevention:** source-level tripwire suite `apps/cms/src/__tests__/security-guards.wiring.test.ts` locks the guard-chain wiring, bypass lists, extension admin gate, and control-plane path coverage; new guide `docs/en/security/route-guards.md`; Definition of Done gains section 2c (route-guard security checklist).
 
 ## [0.15.0] - 2026-07-02
 
