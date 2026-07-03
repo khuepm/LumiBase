@@ -26,7 +26,8 @@ import {
   scopeSite,
   type Database,
 } from '@lumibase/database';
-import { ItemService, ItemServiceError, type ItemServiceDeps } from './item-service';
+import { type ItemService, ItemServiceError } from './item-service';
+import { itemServiceForSystem } from './item-service-factory';
 
 export type ReleaseStatus = 'draft' | 'scheduled' | 'published' | 'failed' | 'partially_failed';
 export type AtomicityMode = 'all_or_nothing' | 'best_effort';
@@ -92,8 +93,14 @@ export class ReleaseService {
 
   private itemService(): ItemService {
     if (this.deps.itemServiceFactory) return this.deps.itemServiceFactory();
-    const itemDeps: ItemServiceDeps = { db: this.deps.db, siteId: this.deps.siteId, userId: this.deps.userId ?? null };
-    return new ItemService(itemDeps);
+    // No injected factory ⇒ system flow (scheduled publish via
+    // sweepDueReleases). Request paths inject itemServiceForRequest(c) from
+    // the route, so the fail-open posture here only applies to cron work
+    // whose authorization is the schedule itself.
+    return itemServiceForSystem(
+      { db: this.deps.db, siteId: this.deps.siteId, userId: this.deps.userId ?? null },
+      'scheduler',
+    );
   }
 
   // ── create (Req 1) ─────────────────────────────────────────────────────────

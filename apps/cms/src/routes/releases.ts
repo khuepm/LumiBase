@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { AuditLogger } from '../modules/audit/logger';
-import { ItemService } from '../services/item-service';
+import { itemServiceForRequest } from '../services/item-service-factory';
 import {
   ReleaseService,
   ReleaseServiceError,
@@ -46,38 +46,14 @@ const patchSchema = z.object({
 /** Build a ReleaseService whose publishes run through a configured ItemService. */
 function buildService(c: Context<AppEnv>): ReleaseService {
   const auth = c.get('auth');
-  const runtime = c.get('runtime');
-  const db = c.get('db');
-  const siteId = c.get('siteId');
-  const userId = auth?.userId ?? null;
-  const headers: Record<string, string> = {};
-  c.req.raw.headers.forEach((value, key) => {
-    headers[key.toLowerCase()] = value;
-  });
   return new ReleaseService({
-    db,
-    siteId,
-    userId,
-    itemServiceFactory: () =>
-      new ItemService({
-        db,
-        siteId,
-        userId,
-        cache: runtime?.cache,
-        search: runtime?.search,
-        queue: runtime?.queue,
-        permissionCtx: {
-          userId,
-          siteId,
-          roleId: null,
-          user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
-          ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-          headers,
-          apiKey: auth?.apiKey ?? null,
-        },
-        keyProvider: runtime?.keys,
-        encryptionKey: c.env?.ENCRYPTION_KEY || (typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : undefined),
-      }),
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    userId: auth?.userId ?? null,
+    // RBAC-enforcing, request-scoped ItemService (item-service-factory):
+    // publish honours the caller's permission context exactly like a normal
+    // item edit — never a system/fail-open service on the manual path.
+    itemServiceFactory: () => itemServiceForRequest(c),
   });
 }
 
