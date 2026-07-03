@@ -22,6 +22,10 @@ export const ui = {
   'banner.contribute': { en: 'Contribute translation', vi: 'Đóng góp bản dịch' },
   'sidebar.empty': { en: 'No documents found.', vi: 'Chưa có tài liệu.' },
   'locale-switcher.tooltip': { en: 'Switch language', vi: 'Chuyển ngôn ngữ' },
+  'version.badge-tooltip': {
+    en: 'Current LumiBase version — view release notes',
+    vi: 'Phiên bản LumiBase hiện tại — xem ghi chú phát hành',
+  },
 } satisfies Record<string, Record<string, string>>;
 
 export type UiKey = keyof typeof ui;

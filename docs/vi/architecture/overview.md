@@ -1,5 +1,8 @@
-  ---
-title: Tổng quan Kiến trúc
+---
+version: 1
+lastUpdated: 2026-06-23T13:05:48.000Z
+sourceLang: vi
+contentHash: b070858cd46928df
 ---
 
 # Tổng quan Kiến trúc

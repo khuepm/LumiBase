@@ -6,6 +6,7 @@ import { Globe, Palette, Code2, Save, Check, AlertTriangle } from 'lucide-react'
 import { useEffect, useId, useMemo, type ReactNode } from 'react';
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { getApiClient } from '@/lib/api';
+import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 
 /** The few theme tokens we surface as color pickers in the UI. */
 const EDITABLE_TOKENS: { token: string; label: string }[] = [
@@ -154,6 +155,9 @@ function SiteSettingsForm({ site, onSave, saving, saved, errorCode }: FormProps)
       customCss: values.customCss,
     });
   };
+
+  // Cmd/Ctrl+S → submit the form in place (save and stay).
+  useSaveHandler(() => void handleSubmit(onSubmit)(), isDirty && !saving);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="mx-auto max-w-3xl space-y-8 p-6">

@@ -3,7 +3,7 @@ import { collections, items, settings, scopeSite, type Database } from '@lumibas
 import type { QueueProvider } from '@lumibase/runtime';
 import { dispatchRevalidation, parseTargets } from './revalidation';
 import { AuditLogger } from '../modules/audit/logger';
-import { ItemService } from './item-service';
+import { itemServiceForSystem } from './item-service-factory';
 import { sweepDueReleases } from './release-service';
 
 /**
@@ -213,7 +213,9 @@ export async function sweepRetention(deps: SchedulerDeps, now = new Date()): Pro
   for (const row of rows) {
     const policies = parsePolicies(row.value);
     if (policies.length === 0) continue;
-    const svc = new ItemService({ db: deps.db, siteId: row.siteId });
+    // System context: retention sweep is a scheduled flow with no user
+    // principal; it runs with system privileges over the whole site.
+    const svc = itemServiceForSystem({ db: deps.db, siteId: row.siteId }, 'scheduler');
 
     for (const policy of policies) {
       const [coll] = await deps.db

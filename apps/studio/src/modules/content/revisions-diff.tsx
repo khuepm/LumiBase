@@ -1,3 +1,4 @@
+import { type Change, diffFields } from '@lumibase/shared';
 import { useMemo } from 'react';
 
 interface RevisionsDiffProps {
@@ -6,13 +7,6 @@ interface RevisionsDiffProps {
   /** Show fields whose before/after are equal (default: hidden). */
   showUnchanged?: boolean;
 }
-
-type Change = {
-  key: string;
-  state: 'added' | 'removed' | 'changed' | 'unchanged';
-  before: unknown;
-  after: unknown;
-};
 
 /**
  * Per-field diff between two `data` snapshots from a revision delta.
@@ -24,7 +18,7 @@ type Change = {
  * to raw JSON.
  */
 export function RevisionsDiff({ before, after, showUnchanged }: RevisionsDiffProps) {
-  const changes = useMemo(() => buildChanges(before, after), [before, after]);
+  const changes = useMemo(() => diffFields(before, after), [before, after]);
 
   const visible = showUnchanged ? changes : changes.filter((c) => c.state !== 'unchanged');
   if (visible.length === 0) {
@@ -103,26 +97,6 @@ function StateBadge({ state }: { state: Change['state'] }) {
   return (
     <span className={`rounded px-1.5 py-0.5 text-[10px] uppercase ${m.cls}`}>{m.label}</span>
   );
-}
-
-function buildChanges(
-  before: Record<string, unknown> | null | undefined,
-  after: Record<string, unknown> | null | undefined,
-): Change[] {
-  const b = before ?? {};
-  const a = after ?? {};
-  const keys = Array.from(new Set([...Object.keys(b), ...Object.keys(a)])).sort();
-  return keys.map((key): Change => {
-    const inB = key in b;
-    const inA = key in a;
-    const bv = (b as Record<string, unknown>)[key];
-    const av = (a as Record<string, unknown>)[key];
-    if (inB && !inA) return { key, state: 'removed', before: bv, after: undefined };
-    if (!inB && inA) return { key, state: 'added', before: undefined, after: av };
-    if (JSON.stringify(bv) === JSON.stringify(av))
-      return { key, state: 'unchanged', before: bv, after: av };
-    return { key, state: 'changed', before: bv, after: av };
-  });
 }
 
 function formatValue(v: unknown): string {

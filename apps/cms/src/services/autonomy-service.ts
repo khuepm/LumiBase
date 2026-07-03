@@ -1,5 +1,6 @@
 import { agentAutonomyGrants, agentIncidents, type Database } from '@lumibase/database';
 import { and, desc, eq, isNull } from 'drizzle-orm';
+import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 
 /**
  * AutonomyService — earned-autonomy trust ledger (L0-L4).
@@ -79,6 +80,11 @@ export function demotedLevel(current: number, severity: 'low' | 'medium' | 'high
 export interface AutonomyServiceDeps {
   db: Database;
   siteId: string;
+  /**
+   * Optional push-notification sink (push-noti feature). When provided,
+   * recorded incidents are pushed in-app / via Web Push. Best-effort.
+   */
+  notify?: AgentNotifier;
 }
 
 export interface IncidentInput {
@@ -220,6 +226,15 @@ export class AutonomyService {
         }
       }
     }
+    this.deps.notify?.({
+      kind: 'incident',
+      severity: severity === 'high' ? 'critical' : 'warning',
+      title: `Incident (${severity})`,
+      body: `${input.source} — ${input.agentRole}${input.capability ? `/${input.capability}` : ''}${demotedTo !== null ? ` · demoted to L${demotedTo}` : ''}`,
+      deepLink: `/mission-control/inbox?entry=incident:${incident!.id}`,
+      entityId: incident!.id,
+    });
+
     return { incidentId: incident!.id, demotedTo };
   }
 

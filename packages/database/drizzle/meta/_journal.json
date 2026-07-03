@@ -229,8 +229,57 @@
     {
       "idx": 32,
       "version": "7",
-      "when": 1781773320005,
-      "tag": "0032_content_releases",
+      "when": 1781773380004,
+      "tag": "0033_insights_dashboards",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781773440004,
+      "tag": "0034_content_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1781773500004,
+      "tag": "0035_user_consents",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1781773560004,
+      "tag": "0036_email_suppressions",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1781773620004,
+      "tag": "0037_processing_restrictions",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1781773680004,
+      "tag": "0038_deployment_integrations",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1781773740004,
+      "tag": "0039_push_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1781773740005,
+      "tag": "0040_content_releases",
       "breakpoints": true
     }
   ]
