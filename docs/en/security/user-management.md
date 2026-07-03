@@ -405,3 +405,58 @@ never become an agent tool.
 | Per-IP rate limit (register/resend/forgot) | `apps/cms/src/modules/auth/registration-guard.ts` |
 | Verification / reset emails | `apps/cms/src/modules/email/{verify-email,password-reset}.ts` |
 | Decision record | `docs/en/architecture/decisions/adr-010-user-management-realms.md` |
+
+---
+
+## 9. Hardening notes & known limitations
+
+Verified fixes shipped with this feature (see CHANGELOG):
+
+- **Single-use password-reset (H1).** `users.password_changed_at` (migration
+  `0042`) is stamped on every reset/change; a reset token whose `iat`
+  predates it is rejected (`isResetTokenStale`). A leaked or replayed link
+  cannot set a second password, and issuing a newer reset invalidates older
+  links.
+- **Global unique email (H3).** Unique index on `lower(email)` (migration
+  `0042`) is the DB backstop behind the check-then-insert in `/register`;
+  a lost registration race surfaces as the same generic `202`.
+- **Atomic refresh rotation (M1).** Rotation claims the row with a
+  conditional `UPDATE … WHERE revoked_at IS NULL`; a concurrent loser is
+  treated as reuse and the family is revoked.
+- **Audience-pinned session verify (M5).** `verifyCustomJwt` requires
+  `aud ∈ {studio, frontend}`; a single-purpose `email-verify`/`password-reset`
+  JWT can never be replayed as a session token. Tokens minted before
+  per-realm audiences existed are rejected → the holder re-authenticates.
+- **`/refresh` re-checks realm (M4).** Membership is re-verified and the
+  audience recomputed from the role's *current* `appAccess` on every renewal.
+
+Known limitations — **tracked follow-ups, not yet fixed** (accept or address
+before relying on them in a hostile deployment):
+
+- **H2 — IP-based rate limiting off Cloudflare.** `extractClientIp` trusts
+  `CF-Connecting-IP` and has no wired remote-address resolver on the Node
+  runtime, so on a bare Docker deployment an attacker can rotate the header
+  (bypass the limiter) or collapse all callers into one `unknown` bucket
+  (DoS registration/reset for the whole site). This is a pre-existing,
+  app-wide limitation shared with the login-guard. Mitigate by fronting the
+  API with Cloudflare (or a proxy that strips/sets the header) and setting
+  `LUMIBASE_TRUSTED_PROXIES`; a full fix wires runtime `getConnInfo` at the
+  auth call sites.
+- **M2 — no absolute session lifetime.** Refresh rotation grants a fresh TTL
+  every hop, so a chain that refreshes at least once per refresh-TTL window
+  lives indefinitely. Only a password change (which revokes all tokens) or
+  explicit logout/session-revoke ends it. Add a family-origin cap if an
+  absolute cap is required.
+- **L2 — refresh cookie is host-scoped across tenants.** The
+  `lumibase_refresh` cookie uses one name per host; on a shared-host
+  multi-tenant deployment, logging into site B overwrites site A's cookie
+  (a subsequent site-A cookie `/refresh` then 401s and clears). Body-token
+  transport is unaffected — cross-tenant SPAs should prefer it.
+
+Operational note — the `lower(email)` unique index (`0042`) fails to create
+if the `users` table already holds case-insensitive duplicate emails.
+De-duplicate first:
+
+```sql
+SELECT lower(email), count(*) FROM users GROUP BY 1 HAVING count(*) > 1;
+```

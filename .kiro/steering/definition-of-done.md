@@ -16,6 +16,8 @@ Checklist bắt buộc trước khi đánh dấu một feature spec là hoàn th
 - [ ] Nếu có yêu cầu khởi tạo: thêm dòng vào bảng Registry + task vào `admin-setup-wizard/tasks.md`
 - [ ] Nếu không: vẫn thêm dòng `n/a` kèm ngày rà soát — để biết feature đã được xem xét, không phải bị quên
 - [ ] Instance đã setup từ trước có cần backfill không? Nếu có → migration idempotent + upgrade note trong CHANGELOG
+- [ ] **Số thứ tự dòng Registry là DUY NHẤT**: đừng chỉ lấy "số kế tiếp" — nhánh song song hay chọn trùng (đã xảy ra: hai dòng #20/#31/#32). Trước khi merge, `grep '^| <n> |'` để chắc số chưa bị dùng; nếu trùng, cấp số mới lớn hơn max hiện có.
+- [ ] **Số migration không đụng `main`**: rebase/merge `main` trước, rồi `ls packages/database/drizzle/*.sql | tail` để lấy số kế tiếp thật. Migration sửa/thêm cột hay index PHẢI idempotent (`IF NOT EXISTS`/`duplicate_object` guard); nếu tạo **unique index/constraint** trên bảng có sẵn dữ liệu → ghi rõ điều kiện FAIL (vd dữ liệu trùng) + bước de-dup trong header migration **và** CHANGELOG (không phải mọi "thêm index" đều là backfill-free).
 
 ## 2b. Multi-tenant — BẮT BUỘC KIỂM TRA
 

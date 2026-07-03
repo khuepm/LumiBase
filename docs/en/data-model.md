@@ -33,7 +33,10 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 | `status` | text | `active`/`invited`/`suspended` |
 | `language`, `theme`, `tfa` | jsonb | preferences |
 | `lastSeenAt` | timestamp |
+| `passwordChangedAt` | timestamp | Set on every reset/change (migration `0042`). A password-reset token whose `iat` predates it is rejected → single-use reset links. |
 | `createdAt`, `updatedAt` | timestamp |
+
+Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), and `users_email_lower_unique` on `lower(email)` (migration `0042`) — email is identity-global, one account per address. ⚠️ Migrating an existing instance fails if it already holds case-insensitive duplicate emails; de-duplicate first.
 
 ### `user_sites` (membership N-N)
 - `userId`, `siteId`, `roleId`, `joinedAt`. PK composite.
