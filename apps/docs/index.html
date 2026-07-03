@@ -1,11 +1,34 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="llms-txt" href="/llms.txt" />
     <title>Lumibase Docs</title>
+    <!--
+      No-flash theme bootstrap. Runs synchronously before first paint so the
+      correct theme class is on <html> before any styles apply. Mirrors the
+      resolution logic in src/hooks/useTheme.ts:
+        stored "light"/"dark" → that theme
+        stored "auto" or unset → follow OS prefers-color-scheme
+      The client hook re-reads the same storage key on mount, so they agree.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('lumibase-docs:theme');
+          var prefersDark =
+            window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var isDark =
+            stored === 'dark' || ((stored === 'auto' || !stored) && prefersDark);
+          document.documentElement.classList.toggle('dark', isDark);
+        } catch (e) {
+          /* localStorage unavailable (private mode) — leave default (light) */
+        }
+      })();
+    </script>
   </head>
   <body class="bg-background text-foreground antialiased">
     <div id="root"></div>

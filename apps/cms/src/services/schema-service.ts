@@ -24,6 +24,9 @@ import { AuditLogger } from '../modules/audit/logger';
  */
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
+// Reserved name prefixes are owned by the platform (CDC/Firebase sync tables,
+// internal config). User- and AI-created collections must never claim them.
+const RESERVED_COLLECTION_PREFIXES: ReadonlyArray<string> = ['lumibase_'];
 const SYSTEM_FIELD_NAMES = new Set([
   'id',
   'status',
@@ -286,6 +289,16 @@ const ensureName = (name: string, kind: 'collection' | 'field') => {
       `${kind} name must match ${NAME_PATTERN}; received "${name}".`,
     );
   }
+  if (kind === 'collection') {
+    const reserved = RESERVED_COLLECTION_PREFIXES.find((prefix) => name.startsWith(prefix));
+    if (reserved) {
+      throw new SchemaServiceError(
+        'RESERVED_NAME',
+        `Collection name cannot start with reserved prefix "${reserved}".`,
+        422,
+      );
+    }
+  }
 };
 
 const cacheKey = (siteId: string, name: string) => `schema:${siteId}:${name}`;
@@ -346,6 +359,9 @@ export class SchemaService {
   }
 
   async updateCollection(name: string, patch: Partial<CollectionInput>) {
+    if (patch.name !== undefined && patch.name !== name) {
+      ensureName(patch.name, 'collection');
+    }
     const current = await this.getCollection(name);
     if (!current) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);

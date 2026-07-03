@@ -112,7 +112,7 @@ export default function Footer() {
         <span>© {new Date().getFullYear()} LumiBase · MIT</span>
         <div className="flex gap-[18px]">
           <Link
-            href="https://twitter.com/lumibase"
+            href="https://twitter.com/khuephamminh"
             target="_blank"
             rel="noopener noreferrer"
             className="transition-colors hover:text-white"

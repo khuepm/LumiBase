@@ -8,6 +8,7 @@ const CONTROL_PLANE_PATHS = [
   '/api/v1/admin',
   '/api/v1/agent',
   '/api/v1/cdc',
+  '/api/v1/flows',
   '/api/v1/materialize',
   '/api/v1/permissions',
   '/api/v1/policies',

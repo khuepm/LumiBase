@@ -26,6 +26,13 @@ export const ui = {
     en: 'Current LumiBase version — view release notes',
     vi: 'Phiên bản LumiBase hiện tại — xem ghi chú phát hành',
   },
+  'theme.light': { en: 'Light', vi: 'Sáng' },
+  'theme.dark': { en: 'Dark', vi: 'Tối' },
+  'theme.auto': { en: 'System', vi: 'Hệ thống' },
+  'theme.toggle-tooltip': {
+    en: 'Theme: {mode} — click to switch',
+    vi: 'Giao diện: {mode} — nhấn để chuyển',
+  },
 } satisfies Record<string, Record<string, string>>;
 
 export type UiKey = keyof typeof ui;
