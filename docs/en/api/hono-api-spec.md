@@ -366,6 +366,57 @@ required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
 
 ---
 
+## 3b. Content Releases
+
+A **Release** collates specific item revisions across collections into a named
+bundle that publishes all at once — manually or scheduled for a date/time
+(à la Directus Releases). Publish delegates to the item update path, so the
+editorial gate, validation, permissions and hooks all apply.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/releases` | Create a release (`draft`, or `scheduled` if `publishAt` set) |
+| `GET` | `/api/v1/releases` | List releases (`?status=&page=&limit=`) |
+| `GET` | `/api/v1/releases/:id` | Release detail + its items |
+| `PATCH` | `/api/v1/releases/:id` | Update meta, `addItems`/`removeItems`, set `publishAt` |
+| `POST` | `/api/v1/releases/:id/publish` | Publish now (manual) |
+| `DELETE` | `/api/v1/releases/:id` | Delete release (items cascade) |
+
+**Create / patch body:**
+```json
+{
+  "name": "Spring launch",
+  "atomicityMode": "all_or_nothing",
+  "publishAt": "2026-07-01T09:00:00Z",
+  "maintenanceWindow": { "windows": [{ "dow": 1, "start": "09:00", "end": "17:00" }] },
+  "addItems": [
+    { "collection": "articles", "itemId": "itm_1", "targetStatus": "published", "revisionId": "rev_3" }
+  ]
+}
+```
+
+`atomicityMode`: `all_or_nothing` (pre-flight checks every item is publishable —
+exists, not deleted, editorial gate satisfiable — and publishes nothing if any
+is blocked) or `best_effort` (publishes each independently, recording a per-item
+outcome). `revisionId` pins a specific revision's snapshot; omit it to publish
+the item's live state at publish time.
+
+**Publish response** (`{ data: { release, status, outcomes } }`): `status` is
+`published` | `partially_failed` | `failed`; each outcome is
+`{ collection, itemId, outcome: 'published'|'skipped'|'failed', reason? }`. A
+partial/failed publish still returns **HTTP 200** with the outcomes.
+
+**Error codes:** `EMPTY_RELEASE` (422), `ALREADY_PUBLISHED` (409),
+`RELEASE_IMMUTABLE` (409, editing a published release's items), `ITEM_NOT_FOUND`
+(404), `REVISION_STAGED` (409, pinning an uncommitted revision),
+`VALIDATION_FAILED` (422, incl. `publishAt` in the past). Per-item publish
+blockers surface as outcome reasons `EDITORIAL_GATE_REQUIRED` / `ITEM_DELETED`.
+
+Scheduled releases publish via the shared `content-scheduler` tick
+(`sweepDueReleases`) — idempotent and `maintenanceWindow`-aware.
+
+---
+
 ## 4. Permissions, Roles & Policies
 
 | Method | Path | Description |

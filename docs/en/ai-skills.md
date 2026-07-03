@@ -88,6 +88,8 @@ Skills run through the **governed endpoint** `POST /api/v1/mcp` (gated by the pe
 | `listExtensions` / `installExtension` / `updateExtension` / `uninstallExtension` | `extensions:read`/`write`/`delete` | safe / dangerous |
 | `listDeploymentTargets` / `listDeployments` / `getDeploymentStatus` / `triggerDeployment` | `deployments:read` / `deployments:write` | safe / dangerous (`trigger` gated by HITL below autopilot) |
 
+**Reserved collection names.** `createCollection` (and any rename via `updateCollection`) rejects names starting with the `lumibase_` prefix, which is owned by the platform (CDC/Firebase sync tables, internal config). The guard lives in `SchemaService.ensureName`, so it applies uniformly to the AI harness, the builder/Studio routes, and any other caller; violations raise `RESERVED_NAME` (HTTP 422).
+
 **Standalone MCP server (`@lumibase/mcp-server`, `lumibase-mcp`).** A separate stdio server that wraps the REST API as ~80 MCP tools covering the full surface (content, RBAC, users/teams, intents/flows, webhooks, translations, search, media, ops, backup/restore, materialize, extensions, marketplace). It is an ungoverned passthrough — RBAC/tenancy are enforced server-side for the bearer token. Destructive tools require `confirm: true`. See `docs/en/agent-setup/`.
 
 ---

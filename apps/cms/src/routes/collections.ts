@@ -17,7 +17,10 @@ const collectionInputSchema = z.object({
     .string()
     .min(1)
     .max(63)
-    .regex(/^[a-z][a-z0-9_]{0,62}$/),
+    .regex(/^[a-z][a-z0-9_]{0,62}$/)
+    .refine((value) => !value.startsWith('lumibase_'), {
+      message: 'Collection name cannot start with reserved prefix "lumibase_".',
+    }),
   label: z.string().nullable().optional(),
   pluralLabel: z.string().nullable().optional(),
   hidden: z.boolean().optional(),
