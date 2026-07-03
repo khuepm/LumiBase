@@ -1,6 +1,6 @@
 # Hono API Specification
 
-> Base URL: `https://api.lumibase.dev` (configurable). Tất cả endpoint phiên bản hoá dưới `/api/v1`. Yêu cầu header `Authorization: Bearer <jwt>` và `X-Lumi-Site: <siteId>` (hoặc subdomain mapping).
+> Base URL: `https://api.lumibase.dev` (configurable). Tất cả endpoint phiên bản hoá dưới `/api/v1`. Yêu cầu header `Authorization: Bearer <token>` (token từ login, hoặc API key `lbk_…`) và `X-Lumi-Site: <siteId>` (hoặc subdomain mapping).
 
 ## 1. Quy ước response
 
@@ -14,7 +14,7 @@ Lỗi:
 
 Query params chuẩn cho list:
 - `fields=a,b,relation.title`
-- `filter={"status":{"_eq":"published"}}` (JSON urlencoded) hoặc `filter[status][_eq]=published` (bracket)
+- `filter` — hai cách tương đương: `filter={"status":{"_eq":"published"}}` (JSON urlencoded) **hoặc** `filter[status][_eq]=published` (bracket). Nếu gửi cả hai trên cùng request thì **JSON thắng**. JSON sai cú pháp → `400 VALIDATION`; key bracket sai → bỏ qua, không fail cả request. Bracket coerce giá trị: `true`/`false` → boolean, `null` → null, số nguyên/thập phân sạch → number (chuỗi `007` giữ là string); toán tử mảng (`_in`, `_nin`, `_between`) nhận giá trị phân tách dấu phẩy.
 - `sort=-updated_at,title`
 - `page`, `limit` (≤200)
 - `search=keyword` (full-text trên fields đánh dấu searchable)
@@ -24,10 +24,16 @@ Query params chuẩn cho list:
 
 ## 2. Auth
 
-- `POST /auth/login` — proxy Logto (PKCE) hoặc local exchange code.
+- `POST /auth/login` — đổi email/mật khẩu (hoặc Logto auth code) lấy bearer token.
 - `POST /auth/refresh`
 - `POST /auth/logout`
 - `GET  /auth/me`
+
+`POST /auth/login` trả về một `token` duy nhất kèm hồ sơ user (không có `refresh_token`/`expires_in`). Gửi token qua header `Authorization: Bearer <token>` ở các request sau:
+```json
+{ "data": { "token": "eyJ...", "user": { "id": "usr_...", "email": "admin@example.com", "firstName": "Admin", "lastName": "User", "avatar": null } } }
+```
+> Cho truy cập server-to-server dài hạn: tạo API key (`POST /api/v1/api-keys`, prefix token `lbk_`) thay vì dùng token login.
 
 ## 3. Schema admin
 

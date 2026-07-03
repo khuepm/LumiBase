@@ -59,6 +59,39 @@ Copy the following sections into your AI assistant's system prompt or project RE
 
 ---
 
+## 3b. Runtime AI Skill Registry (MCP & Governed Harness)
+
+> These are the **runtime** skills agents can invoke — distinct from the developer prompts above. Source of truth: `apps/cms/src/services/ai-harness.ts` (`buildCoreSkills`) mirrored as metadata in `packages/ai-skills/src/skills.ts`. A registry-sync test asserts the two stay aligned.
+
+Skills run through the **governed endpoint** `POST /api/v1/mcp` (gated by the per-site `contentOs.mcp` flag) via `AISecureHarness.execute`, inheriting every guard: kill switch → capability check → autonomy L0–L4 → veto window → HITL approval → audit.
+
+**Risk classification.** A skill is dangerous (HITL/autonomy-gated) when it (a) sets the `dangerous` flag, (b) requires a mutating `schema:*` capability, or (c) is named `delete*`. Item CRUD stays non-dangerous. Irreversible skills (`deleteCollection`, `deleteField`, `deleteRole`, `deletePolicy`, `deleteRelation`, `revokeApiKey`, `removeUser`) are hard-capped at autonomy **L2** and never run on autopilot.
+
+| Skill | Capability | Risk |
+|-------|-----------|------|
+| `listCollections` / `listItems` | `schema:read` / `items:read` | safe |
+| `createCollection` / `createField` | `schema:create` / `schema:update` | dangerous |
+| `deleteCollection` / `deleteField` | `schema:delete` | dangerous · irreversible |
+| `createItem` / `updateItem` / `deleteItem` | `items:write`/`update`/`delete` | safe (delete via name) |
+| `aiSuggestField` · `aiContentAssist` · `generate*` | `schema:read` / `items:*` | safe |
+| `listRelations` | `schema:read` | safe |
+| `createRelation` / `deleteRelation` | `schema:create` / `schema:delete` | dangerous · (delete) irreversible |
+| `listRoles` / `listPolicies` | `access:read` | safe |
+| `createRole` / `createPolicy` | `access:create` | dangerous |
+| `deleteRole` / `deletePolicy` | `access:delete` | dangerous · irreversible |
+| `listIntents` / `createIntent` / `deleteIntent` | `intents:read` / `intents:write` | safe / dangerous |
+| `listFlows` / `createFlow` / `deleteFlow` / `runFlow` | `flows:read` / `flows:write` / `flows:run` | safe / dangerous |
+| `listApiKeys` / `createApiKey` / `rotateApiKey` / `revokeApiKey` | `api-keys:read`/`create`/`write`/`delete` | safe / dangerous (`revoke` irreversible) |
+| `listUsers` / `inviteUser` / `updateUser` / `removeUser` | `users:read`/`write`/`delete` | safe / dangerous (`remove` irreversible) |
+| `listTeams` / `createTeam` / `deleteTeam` / `addTeamMember` / `removeTeamMember` | `teams:read`/`write`/`delete` | safe / dangerous |
+| `listSettings`/`listTranslations`/`listWebhooks` + their create/update/delete | `config:read`/`write`/`delete` | safe / dangerous |
+| `listExtensions` / `installExtension` / `updateExtension` / `uninstallExtension` | `extensions:read`/`write`/`delete` | safe / dangerous |
+| `listDeploymentTargets` / `listDeployments` / `getDeploymentStatus` / `triggerDeployment` | `deployments:read` / `deployments:write` | safe / dangerous (`trigger` gated by HITL below autopilot) |
+
+**Standalone MCP server (`@lumibase/mcp-server`, `lumibase-mcp`).** A separate stdio server that wraps the REST API as ~80 MCP tools covering the full surface (content, RBAC, users/teams, intents/flows, webhooks, translations, search, media, ops, backup/restore, materialize, extensions, marketplace). It is an ungoverned passthrough — RBAC/tenancy are enforced server-side for the bearer token. Destructive tools require `confirm: true`. See `docs/en/agent-setup/`.
+
+---
+
 ## 4. Packaging for AI
 
 To enable AI to actually start "coding", organize your project directory as follows:

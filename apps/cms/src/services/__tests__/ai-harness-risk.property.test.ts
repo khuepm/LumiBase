@@ -14,8 +14,14 @@ import type { Database } from '@lumibase/database';
  * **Validates: Requirements 2.5, 2.6, 2.7**
  */
 
-// All valid skill names from CORE_SKILLS
-const validSkillNames = Object.keys(CORE_SKILLS);
+// All valid skill names from CORE_SKILLS. Deployment skills are excluded
+// because they have no offline behaviour: their handlers require a runtime
+// KeyProvider (absent in this harness) and deliberately error rather than
+// stub. They are covered by their own unit tests (deployment/__tests__),
+// including the dangerous→HITL classification of triggerDeployment.
+const validSkillNames = Object.keys(CORE_SKILLS).filter(
+  (name) => CORE_SKILLS[name]?.service !== 'deployments',
+);
 
 // Arbitrary: pick a valid skill name from CORE_SKILLS
 const validSkillNameArb = fc.constantFrom(...validSkillNames);
@@ -31,7 +37,10 @@ const argsArb = fc.dictionary(
 function isDangerousSkill(skillName: string): boolean {
   const skill = CORE_SKILLS[skillName];
   if (!skill) return false;
+  // Governed namespaces (access:*, intents:*, flows:*) opt in explicitly.
+  if (skill.dangerous) return true;
   if (skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read')) return true;
+  if (skill.requiredCapabilities.includes('deployments:write')) return true;
   if (skillName.startsWith('delete')) return true;
   return false;
 }

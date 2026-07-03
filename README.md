@@ -2,7 +2,8 @@
 
 <div align="center">
 <img width="1024" height="434" alt="Image" src="https://github.com/user-attachments/assets/a11def9c-f238-4a6d-9816-7f7c4f718ea9" />
-**⚡ The Content Operating System — Edge-Native, AI-Native, Agent-Operated**
+
+  **⚡ The Content Operating System — Edge-Native, AI-Native, Agent-Operated**
 
 [![GitHub Stars](https://img.shields.io/github/stars/khuepm/lumibase?style=social)](https://github.com/khuepm/lumibase)
 <!-- [![GitHub Sponsors](https://img.shields.io/github/sponsors/khuepm)](https://github.com/sponsors/khuepm) -->
@@ -91,10 +92,10 @@ The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire
 
 Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
-Current release: `v0.9.0` (`2026-06-21`) — **Regulated/sensitive content readiness**. This release adds an opt-in (default-off) capability set for serving regulated/sensitive content (PHI/PII): fail-closed, AAD-bound field encryption with a rewrap worker, optional envelope (per-record DEK) mode for GDPR crypto-shredding, field data classification, content scheduling, an editorial review → publish workflow, GDPR erasure/retention/SAR, and structured SEO/AIO delivery — plus Cloudflare production hardening. It ships 1 schema migration (`0031`) — **back up your database before upgrading**. Built on the **Content OS** foundation (`v0.5.0`): content intents (SLOs), the drift/reconciliation control loop, the earned-autonomy trust ledger (L0–L4) with the L3 veto window and a four-scope kill switch, the tenant constitution, provenance-first revisions, the multi-agent newsroom with agent-as-reviewer, and Studio Mission Control.
+Current release: `v0.15.0` (`2026-07-02`) — **Realtime audience plane & cosmic design system**. This release splits realtime into an admin/Studio plane and a new **audience plane** for end-user frontends — short-lived audience tickets, a plane-aware WebSocket upgrade, subject/channel subscriptions with targeted fan-out, a per-subject connection cap, and a new `@lumibase/sdk` `AudienceClient` — backed by a Node WebSocket hub under the Docker dual deployment. It also applies a **cosmic design system** across landing, marketplace, and docs, and hardens security by funnelling `ItemService` construction through an RBAC-explicit factory and guarding schema-admin routes. **No schema migrations** in this release. It builds on **`v0.14.0`** (push notifications & MCP path-traversal hardening), **`v0.13.0`** (deployment integrations & cross-collection search), **`v0.12.0`** (privacy & compliance suite, Directus-style interfaces & tenant isolation hardening), **`v0.11.0`** (Insights, content versioning & tenant-scoped search), **`v0.10.0`** (MCP everywhere), **`v0.9.0`** (regulated/sensitive content readiness), and the **`v0.5.0` Content OS foundation** — which remain the baseline this release builds upon, not replaces.
 
 ```bash
-LUMIBASE_VERSION=0.9.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=0.15.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.

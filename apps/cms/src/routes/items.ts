@@ -1,7 +1,9 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { ItemService, ItemServiceError, parseDeepQueryParams } from '../services/item-service';
+import { ItemServiceError, parseDeepQueryParams, parseFilterQueryParams } from '../services/item-service';
+import { itemServiceForRequest } from '../services/item-service-factory';
+import { ContentVersionError, ContentVersionService } from '../services/content-version-service';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
@@ -22,7 +24,6 @@ const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
   status: z.string().optional(),
-  search: z.string().optional(),
 });
 
 const scheduleSchema = {
@@ -49,41 +50,10 @@ const bulkSchema = z.object({
   items: z.array(z.record(z.unknown())),
 });
 
-const buildService = (c: Context<AppEnv>) => {
-  const auth = c.get('auth');
-  const runtime = c.get('runtime');
-  const headers: Record<string, string> = {};
-  c.req.raw.headers.forEach((value, key) => {
-    headers[key.toLowerCase()] = value;
-  });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const realtimeNamespace = (c.env as unknown as Record<string, any>)['SITE_ROOM'] as DurableObjectNamespace | undefined;
-  return new ItemService({
-    db: c.get('db'),
-    siteId: c.get('siteId'),
-    userId: auth?.userId ?? null,
-    cache: runtime.cache,
-    search: runtime.search,
-    queue: runtime.queue,
-    realtimeNamespace,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    extensionEnv: c.env as unknown as Record<string, unknown>,
-    permissionCtx: {
-      userId: auth?.userId ?? null,
-      siteId: c.get('siteId'),
-      roleId: null,
-      user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
-      ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-      headers,
-      apiKey: auth?.apiKey ?? null,
-    },
-    keyProvider: runtime.keys,
-    encryptionKey: c.env.ENCRYPTION_KEY || (typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : undefined),
-  });
-};
+const buildService = (c: Context<AppEnv>) => itemServiceForRequest(c);
 
 const toError = (err: unknown) => {
-  if (err instanceof ItemServiceError) {
+  if (err instanceof ItemServiceError || err instanceof ContentVersionError) {
     return { status: err.status, body: { errors: [{ code: err.code, message: err.message }] } };
   }
   console.error('[items] unexpected error', formatSafeError(err));
@@ -101,8 +71,14 @@ itemsRouter.get('/:collection', async (c) => {
   if (!parsed.success) {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
+  let filter: never | undefined;
   try {
-    const filter = parsed.data.filter ? (JSON.parse(parsed.data.filter) as never) : undefined;
+    // Accepts both `?filter={json}` and `?filter[field][_op]=value` forms.
+    filter = parseFilterQueryParams(searchParams, parsed.data.filter) as never | undefined;
+  } catch {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Invalid filter: expected JSON or filter[field][_op]=value syntax.' }] }, 400);
+  }
+  try {
     const fields = parsed.data.fields ? parsed.data.fields.split(',') : undefined;
     const deep = parseDeepQueryParams(searchParams);
     const sort = parsed.data.sort ? parsed.data.sort.split(',') : undefined;
@@ -114,7 +90,6 @@ itemsRouter.get('/:collection', async (c) => {
       limit: parsed.data.limit,
       offset: parsed.data.offset,
       status: parsed.data.status,
-      search: parsed.data.search,
     });
     return c.json(result);
   } catch (err) {
@@ -248,6 +223,127 @@ itemsRouter.delete('/:collection/:id/pins/:field', async (c) => {
       c.req.param('field'),
     );
     return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+// ── Content versions — named parallel draft branches of an item. ──────────────
+
+const buildVersionService = (c: Context<AppEnv>) =>
+  new ContentVersionService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    userId: c.get('auth')?.userId ?? null,
+    items: buildService(c),
+  });
+
+const versionCreateSchema = z.object({ key: z.string().min(1), name: z.string().min(1) });
+const versionPatchSchema = z.object({
+  data: z.record(z.unknown()).optional(),
+  name: z.string().min(1).optional(),
+});
+
+itemsRouter.get('/:collection/:id/versions', async (c) => {
+  try {
+    const data = await buildVersionService(c).list(c.req.param('collection'), c.req.param('id'));
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.post('/:collection/:id/versions', async (c) => {
+  const parsed = versionCreateSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
+  }
+  try {
+    const data = await buildVersionService(c).create(
+      c.req.param('collection'),
+      c.req.param('id'),
+      parsed.data.key,
+      parsed.data.name,
+    );
+    return c.json({ data }, 201);
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.get('/:collection/:id/versions/:key', async (c) => {
+  try {
+    const data = await buildVersionService(c).get(
+      c.req.param('collection'),
+      c.req.param('id'),
+      c.req.param('key'),
+    );
+    if (!data) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Version not found' }] }, 404);
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.patch('/:collection/:id/versions/:key', async (c) => {
+  const parsed = versionPatchSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
+  }
+  try {
+    const data = await buildVersionService(c).update(
+      c.req.param('collection'),
+      c.req.param('id'),
+      c.req.param('key'),
+      parsed.data,
+    );
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.delete('/:collection/:id/versions/:key', async (c) => {
+  try {
+    await buildVersionService(c).remove(
+      c.req.param('collection'),
+      c.req.param('id'),
+      c.req.param('key'),
+    );
+    return c.json({ data: null });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.get('/:collection/:id/versions/:key/compare', async (c) => {
+  try {
+    const data = await buildVersionService(c).compare(
+      c.req.param('collection'),
+      c.req.param('id'),
+      c.req.param('key'),
+    );
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.post('/:collection/:id/versions/:key/promote', async (c) => {
+  try {
+    const { item, mainDiverged } = await buildVersionService(c).promote(
+      c.req.param('collection'),
+      c.req.param('id'),
+      c.req.param('key'),
+    );
+    return c.json({ data: item, meta: { mainDiverged } });
   } catch (err) {
     const { status, body } = toError(err);
     return c.json(body, status as 400);

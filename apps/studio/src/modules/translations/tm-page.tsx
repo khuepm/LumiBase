@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 
@@ -220,6 +220,7 @@ function TranslatePanel() {
 }
 
 export function TranslationMemoryPage() {
+  const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [sourceFilter, setSourceFilter] = useState('');
   const [targetFilter, setTargetFilter] = useState('');
@@ -233,6 +234,11 @@ export function TranslationMemoryPage() {
       const qs = params.toString();
       return tmFetch<TmRow[]>(qs ? `?${qs}` : '');
     },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => tmFetch(`/${id}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tm-entries'] }),
   });
 
   const entries = entriesQuery.data ?? [];
@@ -300,6 +306,7 @@ export function TranslationMemoryPage() {
                 <th>Target</th>
                 <th>Quality</th>
                 <th>Origin</th>
+                <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -318,6 +325,16 @@ export function TranslationMemoryPage() {
                   <td className="py-2 text-xs">
                     {row.source}
                     {row.provider ? ` (${row.provider})` : ''}
+                  </td>
+                  <td className="py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => deleteMutation.mutate(row.id)}
+                      aria-label={`Delete TM entry ${row.id}`}
+                      className="rounded p-1 text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </td>
                 </tr>
               ))}

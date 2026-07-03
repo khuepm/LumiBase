@@ -109,12 +109,19 @@ export function discoverLocaleEntries(
       const { data: frontMatter, content } = matter(raw);
       const title = deriveTitle(frontMatter.title, relativeToLocale);
 
+      // Prefer the curated `lastUpdated` front-matter stamp (written by the docs
+      // i18n sync tooling) so the displayed date tracks content versions rather
+      // than incidental filesystem mtime. Fall back to mtime when absent.
       let lastModified: string | undefined;
-      try {
-        const stat = fs.statSync(safeAbsPath);
-        lastModified = stat.mtime.toISOString();
-      } catch {
-        // ignore stat errors
+      if (typeof frontMatter.lastUpdated === 'string' && frontMatter.lastUpdated.trim()) {
+        lastModified = frontMatter.lastUpdated;
+      } else {
+        try {
+          const stat = fs.statSync(safeAbsPath);
+          lastModified = stat.mtime.toISOString();
+        } catch {
+          // ignore stat errors
+        }
       }
 
       const entry: DocEntry = {
