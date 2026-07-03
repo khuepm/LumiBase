@@ -22,7 +22,7 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 ## 1. Core tenancy & identity (`core.ts`)
 
 ### `sites`
-- `id`, `name`, `domain`, `createdAt`.
+- `id`, `name`, `domain`, `createdAt`, plus identity/branding/theme columns and `defaultLanguage`, `defaultAppearance`, and `defaultSaveAction` (`stay`|`return`|`create_new`, default `stay` — the site-wide default Studio save action; per-user override lives in `users.preferences.saveAction`).
 
 ### `users`
 | Column | Type | Note |
@@ -32,6 +32,7 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 | `email`, `firstName`, `lastName`, `avatar` | text |
 | `status` | text | `active`/`invited`/`suspended` |
 | `language`, `theme`, `tfa` | jsonb | preferences |
+| `preferences` | jsonb | per-user UI prefs: `{ language, theme, timezone, defaultPresets, saveAction }`. `saveAction` (`stay`/`return`/`create_new`) overrides `sites.default_save_action`. |
 | `lastSeenAt` | timestamp |
 | `createdAt`, `updatedAt` | timestamp |
 

@@ -127,6 +127,8 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/auth/refresh` | Refresh expired access token |
 | `POST` | `/api/v1/auth/logout` | Revoke tokens |
 | `GET` | `/api/v1/auth/me` | Get current user profile |
+| `GET` | `/api/v1/me/preferences` | The current user's preferences blob (`users.preferences`) |
+| `PATCH` | `/api/v1/me/preferences` | Shallow-merge a validated preferences patch |
 | `GET` | `/api/v1/me/consents` | List the current user's consent decisions |
 | `PUT` | `/api/v1/me/consents/:type` | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
 | `GET` | `/api/v1/me/data-export` | Download the current user's personal data (GDPR Art. 15/20) |
@@ -171,6 +173,13 @@ The unsubscribe token is a stateless HS256 JWT (`{ siteId, email }`, no expiry) 
 with `JWT_SECRET`. Marketing sends (`EmailModuleService.send({ category: 'marketing' })`)
 filter recipients against `email_suppressions` before dispatch. Unsubscribe/suppression
 changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
+
+**Preferences & save action.** `PATCH /api/v1/me/preferences` shallow-merges a
+validated patch into `users.preferences` (other sections like `language` /
+`keybindings` are preserved). Send `{ "saveAction": "stay" | "return" |
+"create_new" }` to set the Studio editor's post-save navigation; send
+`{ "saveAction": null }` to fall back to the site default
+(`sites.default_save_action`, set via `PATCH /api/v1/site`). Invalid enum → 400.
 
 **Login request:**
 ```json
@@ -626,7 +635,9 @@ row (not the key/value `settings` table). Scoped to the active tenant via the
 
 `PATCH /api/v1/site` accepts any subset of: `name`, `displayTitle`, `siteUrl`,
 `descriptor`, `domain`, `defaultLanguage`, `defaultAppearance`
-(`auto`\|`light`\|`dark`), `branding` (`{ logoUrl, faviconUrl, brandColor }`),
+(`auto`\|`light`\|`dark`), `defaultSaveAction`
+(`stay`\|`return`\|`create_new` — the site-wide default save action a user's
+personal preference overrides), `branding` (`{ logoUrl, faviconUrl, brandColor }`),
 `themeOverrides` (`{ light, dark }` maps of whitelisted CSS tokens → `H S% L%`
 values), and `customCss`. An empty string clears a nullable field. A duplicate
 `domain` returns `409 { errors: [{ code: 'DOMAIN_TAKEN' }] }`.

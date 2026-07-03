@@ -737,3 +737,7 @@ authRouter.get('/me', async (c) => {
     },
   });
 });
+
+// Preference reads/writes live on `meRouter` (`GET/PATCH /api/v1/me/preferences`
+// above) — the save-default-preference `saveAction` key is validated there via
+// UserPreferencesSchema, alongside keybindings/language/theme.
