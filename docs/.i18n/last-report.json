@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T13:59:16.434Z",
+  "generatedAt": "2026-07-03T04:50:43.267Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -9,7 +9,7 @@
     "preserved": 0,
     "conflicts": 1,
     "upToDate": 15,
-    "planned": 103
+    "planned": 104
   },
   "actions": [
     {
@@ -1173,7 +1173,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-02T13-59-16-540Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-03T04-50-43-372Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1374,6 +1374,18 @@
       "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/route-guards.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
       "sourceLocale": "en",
       "targetLocale": "vi",
       "willTranslate": true,

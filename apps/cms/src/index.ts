@@ -10,6 +10,7 @@ import { withLogger } from './middleware/logger';
 import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
+import { withSiteMembership } from './middleware/site-membership';
 import { withStudioAccess } from './middleware/studio-access';
 import { withControlPlaneAccessGuard } from './middleware/control-plane-access-guard';
 import { withFileUploadPolicy } from './middleware/file-upload-policy';
@@ -181,7 +182,7 @@ app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withDb(), withAuth(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
+api.use('*', withTenant(), withDb(), withAuth(), withSiteMembership(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).
