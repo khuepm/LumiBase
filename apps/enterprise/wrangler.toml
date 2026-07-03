@@ -1,0 +1,15 @@
+name = "lumibase-enterprise"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Standalone enterprise Worker. It consumes @lumibase/* packages as libraries
+# but is deployed independently from the public CMS. Bindings are intentionally
+# minimal here — add Hyperdrive/KV/R2 per the private deployment's needs.
+
+[vars]
+LUMIBASE_RUNTIME = "cloudflare"
+LUMIBASE_EDITION = "enterprise"
+
+[env.production]
+vars = { LUMIBASE_RUNTIME = "cloudflare", LUMIBASE_EDITION = "enterprise" }
