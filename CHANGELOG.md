@@ -50,6 +50,15 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   enforced in the application layer — only `restrict` blocks; `set null`/`cascade`
   are never auto-applied on soft-delete. No schema migration (reuses `relations`).
 
+- **Search inside JSON fields.** Item filters can now query **into** nested
+  JSON/JSONB content. A dotted field key (`metadata.author.country`) addresses a
+  nested path (compiled to `data #>> '{…}'`), and new operators `_json_contains`
+  (`@>`), `_has_key`, `_has_any_keys`, `_has_all_keys` test JSON containment /
+  key existence against the existing GIN index. Path segments are allow-listed
+  (`[A-Za-z0-9_]`) and parameter-bound (injection-safe), with depth/clause
+  limits. Purely additive — top-level keys and structural fields are unchanged;
+  no schema migration. SDK `ItemFilterOp` exposes the new operators.
+
 ### Migrations
 
 - `0040_content_releases` — adds `releases` + `release_items`. Additive and
