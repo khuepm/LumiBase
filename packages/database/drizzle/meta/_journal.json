@@ -288,6 +288,13 @@
       "when": 1782993741628,
       "tag": "0041_realign_snapshot_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1783070060007,
+      "tag": "0042_password_changed_at_and_email_unique",
+      "breakpoints": true
     }
   ]
 }

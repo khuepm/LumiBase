@@ -125,8 +125,10 @@ describe('rotateRefreshToken', () => {
     expect(calls.inserts).toHaveLength(0);
   });
 
-  it('rotates a live token: issues a successor and retires the old row', async () => {
-    const { db, calls } = fakeDb({ selectRows: [live] });
+  it('rotates a live token: atomically claims it, issues a successor, records lineage', async () => {
+    // `updateReturning` drives the conditional claim UPDATE — one row back
+    // means this caller won the `revoked_at IS NULL` race.
+    const { db, calls } = fakeDb({ selectRows: [live], updateReturning: [{ id: 'r1' }] });
     const out = await rotateRefreshToken(db, { rawToken: 'x', siteId: 's1' }, undefined);
     expect(out.ok).toBe(true);
     if (out.ok) {
@@ -137,10 +139,23 @@ describe('rotateRefreshToken', () => {
     // Successor inserted in the same family...
     expect(calls.inserts).toHaveLength(1);
     expect(calls.inserts[0].familyId).toBe('fam1');
-    // ...and the presented row retired with a lineage pointer.
-    expect(calls.updates).toHaveLength(1);
+    // ...two updates: the atomic claim (revokedAt) then the lineage pointer.
+    expect(calls.updates).toHaveLength(2);
     expect(calls.updates[0]).toHaveProperty('revokedAt');
-    expect(calls.updates[0]).toHaveProperty('replacedBy');
+    expect(calls.updates[1]).toHaveProperty('replacedBy');
+  });
+
+  it('treats a lost claim race as reuse and revokes the family (M1)', async () => {
+    // The row looked live at SELECT time, but the conditional claim UPDATE
+    // matched zero rows — a concurrent /refresh already rotated it. That is
+    // a parallel use of one token: revoke the family, report reuse.
+    const { db, calls } = fakeDb({ selectRows: [live], updateReturning: [] });
+    const out = await rotateRefreshToken(db, { rawToken: 'x', siteId: 's1' }, undefined);
+    expect(out).toEqual({ ok: false, reason: 'reuse' });
+    // No successor minted; the family-wide revoke ran after the failed claim.
+    expect(calls.inserts).toHaveLength(0);
+    expect(calls.updates.length).toBeGreaterThanOrEqual(1);
+    expect(calls.updates.at(-1)).toHaveProperty('revokedAt');
   });
 });
 

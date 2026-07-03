@@ -35,4 +35,13 @@ describe('extensions router authorization', () => {
       errors: [{ code: 'FORBIDDEN', message: 'Admin role required.' }],
     });
   });
+
+  it('requires the admin role before dynamic endpoint extension routes can run', async () => {
+    const res = await testApp(['member']).request('/extensions/search/ping');
+
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toEqual({
+      errors: [{ code: 'FORBIDDEN', message: 'Admin role required.' }],
+    });
+  });
 });

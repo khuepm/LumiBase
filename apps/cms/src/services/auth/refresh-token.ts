@@ -156,6 +156,27 @@ export async function issueRefreshToken(
   return { id: row!.id, token, expiresAt, familyId };
 }
 
+/**
+ * Revoke every still-live token in a family. Shared by rotation's
+ * reuse-detection paths and {@link revokeRefreshToken}. Accepts a tx or db.
+ */
+async function revokeFamily(
+  db: Database,
+  siteId: string,
+  familyId: string,
+): Promise<void> {
+  await db
+    .update(refreshTokens)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(refreshTokens.siteId, siteId),
+        eq(refreshTokens.familyId, familyId),
+        isNull(refreshTokens.revokedAt),
+      ),
+    );
+}
+
 export type RefreshOutcome =
   | { ok: true; userId: string; audience: string; token: string; expiresAt: Date }
   | { ok: false; reason: 'invalid' | 'expired' | 'reuse' };
@@ -180,18 +201,10 @@ export async function rotateRefreshToken(
 
     if (!row) return { ok: false, reason: 'invalid' } as const;
 
-    // Reuse of a dead token → revoke the whole chain (theft response).
+    // Reuse of an already-dead token → revoke the whole chain (theft
+    // response).
     if (row.revokedAt) {
-      await tx
-        .update(refreshTokens)
-        .set({ revokedAt: new Date() })
-        .where(
-          and(
-            eq(refreshTokens.siteId, args.siteId),
-            eq(refreshTokens.familyId, row.familyId),
-            isNull(refreshTokens.revokedAt),
-          ),
-        );
+      await revokeFamily(tx, args.siteId, row.familyId);
       return { ok: false, reason: 'reuse' } as const;
     }
 
@@ -203,7 +216,25 @@ export async function rotateRefreshToken(
       return { ok: false, reason: 'expired' } as const;
     }
 
-    // Rotate: mint the successor in the same family, then retire this row.
+    // Atomically CLAIM this row (M1): the conditional `revoked_at IS NULL`
+    // makes rotation single-winner. Two concurrent `/refresh` calls with the
+    // same token both pass the SELECT above, but the second UPDATE blocks on
+    // the first's row lock and then matches zero rows once it commits — so
+    // only one caller rotates. The loser is a parallel use of a live token
+    // (the classic stolen-token-alongside-the-victim signal) → revoke the
+    // family and report reuse instead of minting a second live successor.
+    const claimed = await tx
+      .update(refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(refreshTokens.id, row.id), isNull(refreshTokens.revokedAt)))
+      .returning({ id: refreshTokens.id });
+
+    if (claimed.length === 0) {
+      await revokeFamily(tx, args.siteId, row.familyId);
+      return { ok: false, reason: 'reuse' } as const;
+    }
+
+    // Mint the successor in the same family and record the lineage.
     const next = await issueRefreshToken(
       tx as unknown as Database,
       {
@@ -219,7 +250,7 @@ export async function rotateRefreshToken(
 
     await tx
       .update(refreshTokens)
-      .set({ revokedAt: new Date(), replacedBy: next.id })
+      .set({ replacedBy: next.id })
       .where(eq(refreshTokens.id, row.id));
 
     return {

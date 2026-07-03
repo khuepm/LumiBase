@@ -18,12 +18,19 @@ const getJwks = (certsUrl: string) => {
   return jwks;
 };
 
-// Verify Custom JWT (HS256)
+// Verify Custom JWT (HS256).
+//
+// The `audience` is pinned to the two SESSION realms (M5): a single-purpose
+// `email-verify` / `password-reset` JWT — signed with the same JWT_SECRET —
+// therefore cannot be replayed as a session token even if its claim shape
+// later changes. Tokens with no `aud` (minted before per-realm audiences
+// existed) are rejected here and the holder simply re-authenticates.
 async function verifyCustomJwt(token: string, secret: string): Promise<any> {
   const encoder = new TextEncoder();
   const secretKey = encoder.encode(secret);
   const { payload } = await jwtVerify(token, secretKey, {
     algorithms: ['HS256'],
+    audience: [TOKEN_AUDIENCE.studio, TOKEN_AUDIENCE.frontend],
   });
   return payload;
 }
@@ -78,6 +85,12 @@ async function auditApiKeyUseDenied(
  */
 export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const path = c.req.path;
+  // Public, self-authenticating auth routes. These carry their own
+  // credential (login body, refresh token, or a single-purpose emailed
+  // JWT) and MUST NOT require a prior session — `withAuth` skips them.
+  // `/register` is public self-service (ADR-010): safe because the role is
+  // resolved server-side to a zero-privilege `subscriber` and the account
+  // starts `invited` until email verification. See `routes/auth.ts`.
   if (
     path === '/api/v1/auth/register' ||
     path === '/api/v1/auth/verify-email' ||

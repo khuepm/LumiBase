@@ -49,7 +49,9 @@ DECLARE
     -- Privacy / data-subject rights (site-isolated).
     'user_consents', 'email_suppressions', 'processing_restrictions',
     -- Deployment integrations (site-isolated).
-    'deployment_targets', 'deployments'
+    'deployment_targets', 'deployments',
+    -- Auth session store (site-isolated; holds session-equivalent secrets).
+    'refresh_tokens'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

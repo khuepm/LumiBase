@@ -8,6 +8,9 @@ import { isFrontendAudience } from '../services/auth/token-audience';
 const STUDIO_CLIENT_HEADER = 'x-lumi-client';
 const STUDIO_CLIENT_VALUE = 'studio';
 
+// Public, self-authenticating auth routes — never gated by the Studio
+// access wall. They carry their own credential and are used by the
+// frontend (subscriber) realm as well as staff login.
 const PUBLIC_AUTH_PATHS = new Set([
   '/api/v1/auth/login',
   '/api/v1/auth/register',

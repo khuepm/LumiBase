@@ -27,10 +27,16 @@ export interface PasswordResetClaims {
   userId: string;
   /** Site the reset belongs to (must match the request tenant). */
   siteId: string;
+  /**
+   * Issued-at (seconds since epoch). The consumer rejects the token when
+   * this predates `users.password_changed_at`, making the token single-use:
+   * once the password changes, this and every earlier link are stale.
+   */
+  issuedAt: number;
 }
 
 export async function signPasswordResetToken(
-  claims: PasswordResetClaims,
+  claims: Omit<PasswordResetClaims, 'issuedAt'>,
   secret: string,
 ): Promise<string> {
   const key = new TextEncoder().encode(secret);
@@ -41,6 +47,21 @@ export async function signPasswordResetToken(
     .setIssuedAt()
     .setExpirationTime(RESET_TOKEN_TTL)
     .sign(key);
+}
+
+/**
+ * Single-use guard (H1): a reset token is stale when it was issued before
+ * the account's last password change. Consuming a reset (or a self-service
+ * change) stamps `users.password_changed_at`, so a replayed link — or any
+ * older outstanding link — fails this check. `issuedAt` is the JWT `iat`
+ * (whole seconds); a null `passwordChangedAt` (never changed) is never stale.
+ */
+export function isResetTokenStale(
+  issuedAtSeconds: number,
+  passwordChangedAt: Date | null | undefined,
+): boolean {
+  if (!passwordChangedAt) return false;
+  return issuedAtSeconds * 1000 < passwordChangedAt.getTime();
 }
 
 /**
@@ -60,8 +81,9 @@ export async function verifyPasswordResetToken(
     });
     const userId = typeof payload.sub === 'string' ? payload.sub : null;
     const siteId = typeof payload.siteId === 'string' ? payload.siteId : null;
-    if (!userId || !siteId) return null;
-    return { userId, siteId };
+    const issuedAt = typeof payload.iat === 'number' ? payload.iat : null;
+    if (!userId || !siteId || issuedAt === null) return null;
+    return { userId, siteId, issuedAt };
   } catch {
     return null;
   }

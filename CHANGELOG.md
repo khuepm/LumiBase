@@ -19,13 +19,27 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **Hourly prune** of expired refresh tokens on the existing audit-rotation cron (Workers `scheduled` + Node `node-cron`).
 - **SDK silent auto-refresh.** `createLumiClient` accepts `refreshToken` + `onTokensRefreshed`; a 401 transparently refreshes and retries once (parallel 401s coalesce into one refresh). Studio wires this end to end (login persists the refresh token, logout revokes it server-side).
 
+### Security
+
+- **Tenant membership enforcement** (merged from PR #184 via #190): `withSiteMembership` middleware between `withAuth` and route handlers — a user principal must hold a `user_sites` membership for the site selected via `X-Lumi-Site`. Subscribers reach content APIs via their `user_sites` row; the frontend audience wall still blocks them from Studio.
+- **Dynamic extension dispatch is admin-gated again** (merged from PR #152 via #190): `adminOnly` restored on `extensionsRouter.all('/:name/*')`.
+- **Public `/auth/register` is safe by construction** (this PR, superseding the admin-only stopgap merged in #190): the endpoint is intentionally unauthenticated self-service, but the role is resolved **server-side** to a zero-privilege `subscriber` (`appAccess=false`, `adminAccess=false`) — the request body can never choose a role — and the account starts `invited` until email verification. Per-IP rate-limited and anti-enumeration (uniform `202`).
+- **Password-reset tokens are single-use** (fixes review finding H1): `users.password_changed_at` (migration `0042`) is stamped on every password change/reset; a reset token whose `iat` predates it is rejected, so a leaked/replayed link can no longer set a second password and issuing a newer reset invalidates older links.
+- **Global unique email** (fixes review finding H3): unique index on `lower(email)` (migration `0043`) closes the check-then-insert registration race that could create duplicate accounts for one email; registration maps the constraint violation to the same generic `202`.
+- **Atomic refresh-token rotation** (fixes review finding M1): rotation now claims the row with a conditional `UPDATE ... WHERE revoked_at IS NULL`, so two concurrent `/refresh` calls can no longer both succeed — the loser is treated as reuse and the family is revoked.
+- **Session Bearer verifier pins audience** (fixes review finding M5): `verifyCustomJwt` now requires `aud ∈ {studio, frontend}`, so a single-purpose `email-verify`/`password-reset` JWT can never be replayed as a session token even if its claim shape changes.
+- **`/auth/refresh` re-checks tenant membership + recomputes realm** (fixes review finding M4): a user removed from the site, or whose role lost `appAccess`, no longer keeps minting stale-audience access tokens.
+- **`refresh_tokens` under RLS** (fixes review finding M6): added to `rls-policies.sql` `site_isolation` alongside the other tenant tables.
+- **Recurrence prevention:** source-level tripwire suite `apps/cms/src/__tests__/security-guards.wiring.test.ts` (reconciled for public register), guide `docs/en/security/route-guards.md`, Definition of Done section 2c.
+
 ### Fixed
 
 - **Drizzle snapshot drift.** Committed snapshots had lagged at `0011`, so `drizzle-kit generate` kept re-emitting already-migrated tables. Realigned the baseline with a no-op migration (`0041_realign_snapshot_baseline`) carrying an accurate full-schema snapshot; `generate` is usable again.
 
 ### Notes
 
-- Run `pnpm -F @lumibase/database migrate` to apply migrations `0040` (adds `refresh_tokens`) and `0041` (no-op snapshot realignment). No backfill required.
+- Run `pnpm -F @lumibase/database migrate` to apply migrations `0040` (adds `refresh_tokens`), `0041` (no-op snapshot realignment), `0042` (adds `users.password_changed_at`), and `0043` (unique `lower(email)` index). Migration `0043` fails if the `users` table already contains case-insensitive duplicate emails — de-duplicate first; see the migration header. No other backfill required.
+- **Known limitations (tracked follow-ups, not fixed here):** per-IP rate limiting relies on `LUMIBASE_TRUSTED_PROXIES` being configured (and, off Cloudflare, a wired remote-address resolver) — the same limitation the login-guard already carries on `main` (review finding H2); refresh rotation grants a fresh TTL per hop with no absolute session cap (M2); the refresh cookie is one host-scoped name across tenants on a shared host (L2). See `docs/en/security/user-management.md`.
 
 ## [0.15.0] - 2026-07-02
 

@@ -32,6 +32,7 @@ import {
 import {
   signPasswordResetToken,
   verifyPasswordResetToken,
+  isResetTokenStale,
 } from '../services/auth/password-reset';
 import { sendVerificationEmail } from '../modules/email/verify-email';
 import { sendPasswordResetEmail } from '../modules/email/password-reset';
@@ -67,6 +68,18 @@ import type { NotificationDeps } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { UserPreferencesUpdateSchema } from '@lumibase/shared/schemas';
+
+/**
+ * True for a Postgres unique-constraint violation (SQLSTATE 23505),
+ * however the driver surfaces it (postgres-js sets `.code`; some layers
+ * nest it under `.cause`). Used by `/auth/register` to treat a lost
+ * insert race on `users_email_lower_unique` as "email already exists".
+ */
+function isUniqueViolation(err: unknown): boolean {
+  const code = (e: unknown): string | undefined =>
+    e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : undefined;
+  return code(err) === '23505' || code((err as { cause?: unknown })?.cause) === '23505';
+}
 
 export const authRouter = new Hono<AppEnv>();
 
@@ -191,7 +204,11 @@ meRouter.post('/change-password', async (c) => {
   }
 
   const passwordHash = await hashPassword(input.newPassword);
-  await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, user.id));
+  const now = new Date();
+  await db
+    .update(users)
+    .set({ passwordHash, passwordChangedAt: now, updatedAt: now })
+    .where(eq(users.id, user.id));
   await revokeAllRefreshTokens(db, siteId, user.id);
 
   await new AuditLogger({ db, siteId }).write({
@@ -499,17 +516,28 @@ authRouter.post('/register', async (c) => {
     // (1) Server-resolved least-privilege role. Never from the body.
     const subscriberRoleId = await ensureSubscriberRole(db, siteId);
 
-    const [newUser] = await db
-      .insert(users)
-      .values({
-        email: input.email,
-        passwordHash,
-        firstName: input.firstName,
-        lastName: input.lastName,
-        // (2) Inactive until email verification flips it to 'active'.
-        status: 'invited',
-      })
-      .returning({ id: users.id, email: users.email });
+    // The SELECT above is advisory; the `users_email_lower_unique` index
+    // (migration 0042) is the real guard. A concurrent registration for the
+    // same email loses the INSERT race with a unique violation — swallow it
+    // and fall through to the identical generic 202 so the outcome (and the
+    // response) is the same as "email already existed" (H3 + anti-enum).
+    let newUser: { id: string; email: string } | undefined;
+    try {
+      [newUser] = await db
+        .insert(users)
+        .values({
+          email: input.email,
+          passwordHash,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          // (2) Inactive until email verification flips it to 'active'.
+          status: 'invited',
+        })
+        .returning({ id: users.id, email: users.email });
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      newUser = undefined;
+    }
 
     if (newUser) {
       await db
@@ -860,7 +888,12 @@ authRouter.post('/reset-password', async (c) => {
   }
 
   const [user] = await db
-    .select({ id: users.id, status: users.status, email: users.email })
+    .select({
+      id: users.id,
+      status: users.status,
+      email: users.email,
+      passwordChangedAt: users.passwordChangedAt,
+    })
     .from(users)
     .where(eq(users.id, claims.userId))
     .limit(1);
@@ -878,10 +911,19 @@ authRouter.post('/reset-password', async (c) => {
     );
   }
 
+  // Single-use enforcement (H1) — see `isResetTokenStale`.
+  if (isResetTokenStale(claims.issuedAt, user.passwordChangedAt)) {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Reset link is invalid or has expired.' }] },
+      400,
+    );
+  }
+
   const passwordHash = await hashPassword(input.password);
+  const now = new Date();
   await db
     .update(users)
-    .set({ passwordHash, updatedAt: new Date() })
+    .set({ passwordHash, passwordChangedAt: now, updatedAt: now })
     .where(eq(users.id, user.id));
 
   // Revoke all refresh tokens so a stolen session cannot be silently
@@ -1379,7 +1421,7 @@ authRouter.post('/refresh', async (c) => {
   // Re-resolve the user so the new access token reflects current state
   // (e.g. a now-suspended account cannot keep renewing).
   const [user] = await db
-    .select({ id: users.id, email: users.email, status: users.status })
+    .select({ id: users.id, email: users.email, status: users.status, isBootstrap: users.isBootstrap })
     .from(users)
     .where(eq(users.id, outcome.userId))
     .limit(1);
@@ -1397,15 +1439,43 @@ authRouter.post('/refresh', async (c) => {
     .from(userSites)
     .where(and(eq(userSites.userId, user.id), eq(userSites.siteId, siteId)))
     .limit(1);
-  const tokenRoles = [membership?.roleId ?? 'member'];
+
+  // Re-check tenant membership on every renewal (M4): a user removed from
+  // the site must not keep minting access tokens for it. Bootstrap admin is
+  // exempt (it has no per-site membership row), mirroring login.
+  if (!membership && !user.isBootstrap) {
+    await revokeAllRefreshTokens(db, siteId, outcome.userId);
+    clearRefreshCookie(c);
+    return c.json(
+      { errors: [{ code: 'TENANT_ACCESS_DENIED', message: 'This account is not a member of the selected site.' }] },
+      403,
+    );
+  }
+
+  const tokenRoles = user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'];
+
+  // Recompute the realm from the role's CURRENT `appAccess` (M4) rather than
+  // trusting the audience frozen into the refresh row at login: a role
+  // demoted out of Studio since then must renew as a `frontend` token, and
+  // a promoted one as `studio`. Keeps the audience wall honest over time.
+  let appAccess = user.isBootstrap;
+  if (!appAccess && membership?.roleId) {
+    const [roleRow] = await db
+      .select({ appAccess: roles.appAccess })
+      .from(roles)
+      .where(and(eq(roles.id, membership.roleId), eq(roles.siteId, siteId)))
+      .limit(1);
+    appAccess = roleRow?.appAccess ?? false;
+  }
+  const audience = appAccess ? TOKEN_AUDIENCE.studio : TOKEN_AUDIENCE.frontend;
 
   const token = await signCustomJwt(
     { userId: user.id, email: user.email, roles: tokenRoles, siteId },
     jwtSecret,
-    outcome.audience,
-    sessionTtlFor(outcome.audience, c.env),
+    audience,
+    sessionTtlFor(audience, c.env),
   );
-  setRefreshCookie(c, outcome.token, outcome.audience);
+  setRefreshCookie(c, outcome.token, audience);
 
   return c.json({
     data: {

@@ -62,12 +62,19 @@ export async function ensureSubscriberRole(
       adminAccess: false,
       appAccess: false,
     })
-    .onConflictDoNothing()
+    // Target the system-key index explicitly so re-provisioning is a clean
+    // no-op. A collision on the *key* index instead (an operator manually
+    // created a role literally keyed `subscriber` with a different/absent
+    // system_key) is NOT swallowed — it surfaces as an error rather than
+    // silently binding new subscribers to that operator role, which could
+    // carry `appAccess`/`adminAccess` the subscriber realm must never get.
+    .onConflictDoNothing({ target: [roles.siteId, roles.systemKey] })
     .returning({ id: roles.id });
 
   if (inserted[0]?.id) return inserted[0].id;
 
-  // Conflict path: the role already exists for this site — read it back.
+  // Conflict path: the system role already exists for this site — read it
+  // back by the same system_key we conflicted on.
   const [existing] = await db
     .select({ id: roles.id })
     .from(roles)
