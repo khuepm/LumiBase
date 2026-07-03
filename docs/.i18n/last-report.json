@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-03T18:11:47.757Z",
+  "generatedAt": "2026-07-03T18:22:07.082Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -1209,7 +1209,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-03T18-11-47-870Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-03T18-22-07-192Z.bak.md",
       "missingPlaceholders": 0
     },
     {
