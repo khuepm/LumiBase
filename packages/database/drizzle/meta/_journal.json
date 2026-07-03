@@ -288,6 +288,13 @@
       "when": 1781773740006,
       "tag": "0041_save_default_preference",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1781773740007,
+      "tag": "0042_auth_external_issuers",
+      "breakpoints": true
     }
   ]
 }

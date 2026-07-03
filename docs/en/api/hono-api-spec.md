@@ -181,6 +181,36 @@ validated patch into `users.preferences` (other sections like `language` /
 `{ "saveAction": null }` to fall back to the site default
 (`sites.default_save_action`, set via `PATCH /api/v1/site`). Invalid enum → 400.
 
+### External JWT authentication
+
+A site can trust JWTs issued by an external IdP (Okta, Entra, Auth0, Logto,
+Keycloak, Cloudflare Access…). Present the token as `Authorization: Bearer
+<jwt>` with `X-Lumi-Site`. The auth chain verifies it against the issuer's
+**public JWKS** (between the API-key and internal-JWT branches): it matches the
+token's `iss` to a trusted issuer registered for that site, verifies the
+signature + `aud`/`exp`/`nbf` with the issuer's allowed (asymmetric-only)
+algorithms, maps role claims to LumiBase roles (**default-deny** — no mapping
+means 403, never implicit admin), enforces that any `siteId` claim equals the
+request site, and optionally JIT-provisions the user. A token whose `iss` isn't
+trusted is ignored (falls through to internal auth); once an issuer matches,
+verification is fail-closed.
+
+Admin CRUD for trusted issuers (admin-only):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/admin/auth/issuers` | List trusted external issuers |
+| `POST` | `/api/v1/admin/auth/issuers` | Register an issuer |
+| `GET` | `/api/v1/admin/auth/issuers/:id` | Get one |
+| `PATCH` | `/api/v1/admin/auth/issuers/:id` | Update |
+| `DELETE` | `/api/v1/admin/auth/issuers/:id` | Remove |
+
+**Issuer config:** `{ issuer, jwksUri | discoveryUrl, audience, algorithms
+(RS*/ES* only), claimMapping: { email, roles, siteId?, externalId? }, roleMapping:
+{ "<claim role>": { roleId | systemKey } }, defaultRoleId?, jitProvisioning,
+clockSkewSeconds (≤300), enabled }`. Errors: `VALIDATION_FAILED` (422, incl. an
+HS*/`none` algorithm), `ISSUER_ALREADY_EXISTS` (409), `NOT_FOUND` (404).
+
 **Login request:**
 ```json
 {

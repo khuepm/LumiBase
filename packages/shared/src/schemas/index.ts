@@ -50,6 +50,18 @@ export {
 } from './site-config';
 
 export {
+  EXTERNAL_JWT_ALGORITHMS,
+  ExternalJwtAlgorithmSchema,
+  ExternalIssuerConfigSchema,
+  ExternalIssuerUpdateSchema,
+  makeExternalIssuerConfigSchema,
+  makeExternalIssuerUpdateSchema,
+  type ExternalIssuerConfig,
+  type ExternalIssuerClaimMapping,
+  type ExternalIssuerRoleMapping,
+} from './external-issuer';
+
+export {
   CONFIG_MANIFEST_VERSION,
   PrimaryKeyTypeSchema,
   StorageModeSchema,
