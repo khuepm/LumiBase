@@ -16,3 +16,4 @@ export * from './content-os';
 export * from './firebase-sync';
 export * from './regulated';
 export * from './deployments';
+export * from './external-auth';

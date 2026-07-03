@@ -21,6 +21,24 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   is blocked) or `best_effort` (per-item outcomes). Scheduled releases publish
   via the shared `content-scheduler` tick (`sweepDueReleases`) — idempotent and
   `maintenanceWindow`-aware. Each `release_item` can pin a specific revision.
+- **Configurable default save action.** The Studio content editor's post-save
+  behavior is now configurable — `stay` (remain on the form), `return` (back to
+  the list), or `create_new` — as a **per-user preference**
+  (`users.preferences.saveAction`, set via the editor's split-button or
+  `PATCH /api/v1/me/preferences`) that overrides a **site-wide default**
+  (`sites.default_save_action`, set in Settings → Site). The hardcoded fallback
+  is `stay`, matching the editor's previous behavior, so existing instances are
+  unchanged until someone opts into another action.
+
+- **External JWT authentication.** A site can trust JWTs issued by an external
+  IdP (Okta, Entra, Auth0, Logto, Keycloak, Cloudflare Access…), verified against
+  the issuer's public JWKS. New `auth_external_issuers` table + admin CRUD at
+  `/api/v1/admin/auth/issuers`. The auth chain matches the token's `iss` to a
+  trusted issuer for the site, verifies the signature + standard claims with the
+  issuer's asymmetric-only algorithm allowlist, maps role claims to LumiBase
+  roles (**default-deny** — never implicit admin), enforces a `siteId`-claim ==
+  request-site gate, and optionally JIT-provisions the user. Fail-closed once an
+  issuer matches; a token for an unknown issuer falls through to internal auth.
 
 - **Foreign-key dependent-records handling.** Deleting an item that other records
   still reference (via a `restrict` relation) is now blocked with a structured
@@ -37,6 +55,21 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - `0040_content_releases` — adds `releases` + `release_items`. Additive and
   idempotent (`CREATE TABLE … IF NOT EXISTS`, guarded FKs); existing instances
   need **no backfill**. Run `pnpm -F @lumibase/database migrate` on upgrade.
+- `0041_save_default_preference` — adds `sites.default_save_action`
+  (`NOT NULL DEFAULT 'stay'`). Additive and idempotent (`ADD COLUMN IF NOT
+  EXISTS`); existing instances need **no backfill**. Run
+  `pnpm -F @lumibase/database migrate` on upgrade.
+- `0042_auth_external_issuers` — adds the per-site trusted-issuer table (public
+  config only, no secrets). Additive and idempotent; existing instances have no
+  issuers so the external-JWT branch is a no-op and current auth is unchanged.
+  No backfill. Run `pnpm -F @lumibase/database migrate` on upgrade.
+
+### Security
+
+- **External JWT hardening:** see
+  [docs/en/security/external-jwt-auth.md](docs/en/security/external-jwt-auth.md)
+  for the threat model. `HS*`/`none` algorithms are rejected for external issuers
+  (alg-confusion); raw tokens are never logged.
 
 ## [0.16.0] - 2026-07-03
 
