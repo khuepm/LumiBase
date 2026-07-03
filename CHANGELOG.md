@@ -9,7 +9,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Security
+
+- **Tenant membership enforcement** (ports open PR #184): new `withSiteMembership` middleware between `withAuth` and route handlers — a user principal must hold a `user_sites` membership for the site selected via `X-Lumi-Site`, closing cross-tenant access for authenticated principals. API keys stay site-matched by `withAuth`; local dev tokens, bootstrap users, and the Cloudflare Access admin flow keep their existing carve-outs.
+- **Dynamic extension dispatch is admin-gated again** (ports open PR #152): restores the `adminOnly` guard on `extensionsRouter.all('/:name/*')` that a refactor had dropped, so non-admin principals can no longer execute endpoint extension bundles.
+- **`POST /auth/register` fixed and fail-closed** (bug portion of open PR #130): the path was on the `withAuth` bypass list while the handler read the principal, so the route always crashed with 500; it now runs through the full auth chain, requires an admin principal (403 otherwise, even with no principal), and binds new users to the site's seeded `member` role id instead of the invalid literal `'member'` (an FK violation).
+- **Recurrence prevention:** source-level tripwire suite `apps/cms/src/__tests__/security-guards.wiring.test.ts` locks the guard-chain wiring, bypass lists, extension admin gate, and control-plane path coverage; new guide `docs/en/security/route-guards.md`; Definition of Done gains section 2c (route-guard security checklist).
 
 ## [0.15.0] - 2026-07-02
 
