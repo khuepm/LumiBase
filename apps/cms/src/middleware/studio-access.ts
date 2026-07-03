@@ -15,6 +15,7 @@ const PUBLIC_AUTH_PATHS = new Set([
 const STUDIO_ACCESS_PATH_PREFIXES = [
   '/api/v1/access',
   '/api/v1/admin',
+  '/api/v1/agent',
   '/api/v1/api-keys',
   '/api/v1/collections',
   '/api/v1/extensions',

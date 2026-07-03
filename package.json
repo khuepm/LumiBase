@@ -1,6 +1,6 @@
 {
   "name": "lumibase",
-  "version": "0.10.0",
+  "version": "0.15.0",
   "private": true,
   "description": "Lumibase - Edge-native Headless CMS (Turborepo monorepo)",
   "packageManager": "pnpm@9.12.0",
@@ -27,6 +27,9 @@
     "docs:dev": "pnpm --filter @lumibase/docs dev",
     "docs:build": "pnpm --filter @lumibase/docs build",
     "docs:preview": "pnpm --filter @lumibase/docs preview",
+    "docs:i18n:detect": "node scripts/docs-i18n/sync.mjs",
+    "docs:i18n:preserve": "node scripts/docs-i18n/sync.mjs --preserve-only",
+    "docs:i18n:sync": "node scripts/docs-i18n/sync.mjs --apply",
     "studio:dev": "pnpm --filter @lumibase/studio dev",
     "cms:dev": "pnpm --filter @lumibase/cms dev",
     "release:check": "node scripts/check-release-env.mjs --env production --config apps/cms/wrangler.toml",
@@ -43,10 +46,7 @@
     "version:check": "node scripts/sync-version.mjs --check",
     "db:migrate:preflight": "pnpm --filter @lumibase/database migrate:preflight",
     "db:migrate:dry-run": "pnpm --filter @lumibase/database migrate:dry-run",
-    "db:migrate:version": "pnpm --filter @lumibase/database migrate:version",
-    "npm:publish": "node scripts/publish-npm.mjs",
-    "npm:publish:plan": "node scripts/publish-npm.mjs --plan",
-    "npm:release-notes": "node scripts/publish-npm.mjs --notes"
+    "db:migrate:version": "pnpm --filter @lumibase/database migrate:version"
   },
   "devDependencies": {
     "glob": "^13.0.6",

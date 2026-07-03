@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { buildQs, confirmDescription, okText, run } from './_shared.js';
+import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 const EXTENSION_TYPES = ['interface', 'display', 'layout', 'panel', 'module', 'hook', 'endpoint'] as const;
 
@@ -37,20 +38,20 @@ export function registerExtensionTools(server: McpServer, client: LumiBaseClient
     'update_extension',
     {
       description: 'Update an installed extension (enable/disable, version, config). Partial PATCH.',
-      inputSchema: { id: z.string().min(1), ...extensionSchema.partial().shape },
+      inputSchema: { id: idPathSegmentSchema, ...extensionSchema.partial().shape },
     },
-    async ({ id, ...patch }) => run(() => client.patch<unknown>(`/extensions/${id}`, patch)),
+    async ({ id, ...patch }) => run(() => client.patch<unknown>(`/extensions/${encodePathSegment(id)}`, patch)),
   );
 
   server.registerTool(
     'uninstall_extension',
     {
       description: 'Uninstall an extension from the site. DESTRUCTIVE — pass confirm=true.',
-      inputSchema: { id: z.string().min(1), confirm: z.literal(true).describe(confirmDescription) },
+      inputSchema: { id: idPathSegmentSchema, confirm: z.literal(true).describe(confirmDescription) },
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/extensions/${id}`);
+        await client.delete(`/extensions/${encodePathSegment(id)}`);
         return okText(`Extension "${id}" uninstalled.`);
       }),
   );
@@ -81,9 +82,9 @@ export function registerExtensionTools(server: McpServer, client: LumiBaseClient
     'get_marketplace_extension',
     {
       description: 'Get a single marketplace extension by slug.',
-      inputSchema: { slug: z.string().min(1) },
+      inputSchema: { slug: idPathSegmentSchema },
     },
-    async ({ slug }) => run(() => client.get<unknown>(`/marketplace/extensions/${slug}`)),
+    async ({ slug }) => run(() => client.get<unknown>(`/marketplace/extensions/${encodePathSegment(slug)}`)),
   );
 
   server.registerTool(
@@ -96,9 +97,9 @@ export function registerExtensionTools(server: McpServer, client: LumiBaseClient
     'install_marketplace_extension',
     {
       description: 'Install a published marketplace extension onto the active site by slug.',
-      inputSchema: { slug: z.string().min(1) },
+      inputSchema: { slug: idPathSegmentSchema },
     },
-    async ({ slug }) => run(() => client.post<unknown>(`/marketplace/extensions/${slug}/install`, {})),
+    async ({ slug }) => run(() => client.post<unknown>(`/marketplace/extensions/${encodePathSegment(slug)}/install`, {})),
   );
 
   server.registerTool(

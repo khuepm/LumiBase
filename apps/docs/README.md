@@ -51,6 +51,17 @@ The build output (`dist/`) is a fully static site. The repository deploy script 
 
 Cloudflare Pages uses [`public/_redirects`](./public/_redirects) to route all direct page loads back to `index.html`, so React Router deep links such as `/en/docs/README` work after refresh.
 
+> **Refresh returns 404 on every page?** That symptom means the SPA fallback
+> isn't reaching Cloudflare — it is a deployment/config problem, not a code
+> problem (the fallback works in `wrangler pages dev dist`). Check that the
+> live Cloudflare Pages project serves the **`dist/` produced by
+> `pnpm docs:build`**: the build emits `dist/_redirects` (`/* /index.html 200`)
+> plus prerendered `*/index.html` files. If the project is wired through the
+> dashboard Git integration rather than the `wrangler pages deploy` workflow,
+> confirm its **build command** runs `pnpm docs:build` and its **output
+> directory** is `apps/docs/dist`; a stale deploy or a wrong output directory
+> drops `_redirects`, and then every direct load / refresh 404s.
+
 Wrangler does not support `account_id` inside a Pages `wrangler.toml`; pass the account through the environment when the local login cannot resolve it automatically.
 
 ```bash

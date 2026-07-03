@@ -16,6 +16,7 @@
     "logo": { "alt": "LumiBase logo", "src": "img/logo.svg" },
     "items": [
       { "label": "Docs", "to": "/docs/README", "position": "left" },
+      { "label": "Tutorials", "to": "/docs/tutorials/index", "position": "left" },
       { "label": "API", "to": "/docs/api", "position": "left" },
       { "label": "Roadmap", "to": "/docs/roadmap/tasks", "position": "left" },
       { "label": "GitHub", "href": "https://github.com/khuepm/lumibase", "position": "right" }
@@ -27,6 +28,11 @@
         "type": "category",
         "label": "Getting Started",
         "items": ["README", "vision-and-positioning", "data-model", "ai-skills"]
+      },
+      {
+        "type": "category",
+        "label": "Tutorials",
+        "items": ["tutorials/index", "tutorials/nextjs-quickstart"]
       },
       {
         "type": "category",
@@ -89,6 +95,23 @@
       },
       {
         "type": "category",
+        "label": "Compliance & User Rights",
+        "items": [
+          "compliance/README",
+          "compliance/user-rights-catalog",
+          "compliance/market-eu-gdpr",
+          "compliance/market-us",
+          "compliance/market-vietnam",
+          "compliance/provider-google-apple",
+          "compliance/gap-analysis",
+          "compliance/data-map",
+          "compliance/data-residency",
+          "compliance/dpa-template",
+          "compliance/implementation-checklist"
+        ]
+      },
+      {
+        "type": "category",
         "label": "Roadmap",
         "items": [
           "roadmap/tasks",
@@ -117,7 +140,7 @@
     "copyright": "Copyright (c) 2025 LumiBase."
   },
   "themeConfig": {
-    "colorMode": { "defaultMode": "light", "respectPrefersColorScheme": true },
+    "colorMode": { "defaultMode": "dark", "respectPrefersColorScheme": true },
     "prism": { "theme": "github-light", "darkTheme": "github-dark" }
   }
 }

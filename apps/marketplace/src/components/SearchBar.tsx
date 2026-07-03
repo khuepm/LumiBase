@@ -10,7 +10,7 @@ interface SearchBarProps {
 }
 
 export default function SearchBar({
-  placeholder = "Search extensions…",
+  placeholder = "Search extensions and skills",
   className = "",
 }: SearchBarProps) {
   const router = useRouter();
@@ -45,8 +45,13 @@ export default function SearchBar({
   };
 
   return (
-    <div className={`relative ${className}`}>
-      <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+    <div
+      className={`glass-pill flex items-center gap-2.5 py-2 pl-5 pr-2 ${className}`}
+    >
+      <Search
+        className="h-[18px] w-[18px] flex-shrink-0 text-txt-faint"
+        aria-hidden
+      />
       <input
         ref={inputRef}
         id="marketplace-search"
@@ -55,13 +60,13 @@ export default function SearchBar({
         onChange={handleChange}
         placeholder={placeholder}
         aria-label="Search extensions"
-        className="h-10 w-full rounded-xl border border-surface-600 bg-surface-800 pl-10 pr-9 text-sm text-gray-200 placeholder-gray-500 transition-all focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/20"
+        className="h-9 min-w-0 flex-1 border-none bg-transparent text-[15px] font-medium text-white outline-none placeholder:text-txt-faint [&::-webkit-search-cancel-button]:hidden"
       />
       {currentQ && (
         <button
           onClick={handleClear}
           aria-label="Clear search"
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-txt-faint transition-colors hover:text-white"
         >
           <X className="h-4 w-4" />
         </button>
