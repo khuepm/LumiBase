@@ -62,6 +62,32 @@ export {
 } from './external-issuer';
 
 export {
+  CONFIG_MANIFEST_VERSION,
+  PrimaryKeyTypeSchema,
+  StorageModeSchema,
+  OnDeleteSchema,
+  RelationTypeSchema,
+  CollectionConfigSchema,
+  FieldConfigSchema,
+  RelationConfigSchema,
+  WebhookConfigSchema,
+  SettingConfigSchema,
+  ConfigManifestSchema,
+  stableKey,
+  parseConfigManifest,
+  type PrimaryKeyType,
+  type StorageMode,
+  type OnDelete,
+  type RelationType,
+  type CollectionConfig,
+  type FieldConfig,
+  type RelationConfig,
+  type WebhookConfig,
+  type SettingConfig,
+  type ConfigManifest,
+} from './config-manifest';
+
+export {
   CHORD_MODIFIERS,
   ChordSchema,
   KeybindingMapSchema,
