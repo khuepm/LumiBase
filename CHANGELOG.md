@@ -11,6 +11,17 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
+- **Content Releases.** Collate specific item revisions across collections into
+  a named **Release** and publish them all at once — manually or scheduled for a
+  date/time (à la Directus Releases). New `releases` + `release_items` tables and
+  a `ReleaseService` exposed at `/api/v1/releases` (create / list / detail /
+  patch / `:id/publish` / delete). Publish delegates to the item update path, so
+  the editorial gate, validation, permissions and hooks all apply.
+  `atomicityMode` is `all_or_nothing` (pre-flight all items, publish none if any
+  is blocked) or `best_effort` (per-item outcomes). Scheduled releases publish
+  via the shared `content-scheduler` tick (`sweepDueReleases`) — idempotent and
+  `maintenanceWindow`-aware. Each `release_item` can pin a specific revision.
+
 - **Search inside JSON fields.** Item filters can now query **into** nested
   JSON/JSONB content. A dotted field key (`metadata.author.country`) addresses a
   nested path (compiled to `data #>> '{…}'`), and new operators `_json_contains`
@@ -19,6 +30,43 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   (`[A-Za-z0-9_]`) and parameter-bound (injection-safe), with depth/clause
   limits. Purely additive — top-level keys and structural fields are unchanged;
   no schema migration. SDK `ItemFilterOp` exposes the new operators.
+
+### Migrations
+
+- `0040_content_releases` — adds `releases` + `release_items`. Additive and
+  idempotent (`CREATE TABLE … IF NOT EXISTS`, guarded FKs); existing instances
+  need **no backfill**. Run `pnpm -F @lumibase/database migrate` on upgrade.
+
+## [0.16.0] - 2026-07-03
+
+### Version
+
+- `v0.16.0`
+
+### Date
+
+- `2026-07-03`
+
+### Highlights
+
+- **Code-First Configuration (Config Manifest).** A site's schema configuration — collections, fields, relations, settings and webhooks — can now be exported, diffed and applied as a single declarative, version-controllable JSON manifest (`lumibase.config@v1`), enabling CI/CD and environment sync.
+- **Auto-deploy from Flows.** New flow operations `deploy:trigger` and `deploy:status` complete the auto-deploy-on-content-change path promised by deployment integrations: an `event`-triggered Flow can deploy a target and branch on its status, with full provenance.
+- **Security hardening.** Tenant membership is now enforced by middleware for user principals, dynamic extension dispatch is admin-gated again, `POST /auth/register` is fixed and fail-closed, and `/api/v1/flows` joins the control-plane backstop — all locked by a source-level tripwire suite.
+
+### Breaking changes
+
+- None. Collection names starting with `lumibase_` are now reserved (see Added), which only affects new create/rename attempts.
+
+### Added
+
+- **CMS / deployments:** Flow operations `deploy:trigger` and `deploy:status`,
+  completing the auto-deploy-on-content-change path promised by deployment
+  integrations (Req 5). A Flow with an `event` trigger can now deploy a target
+  via `deploy:trigger` (`triggerSource='auto'`, linked to the flow run for
+  provenance) and branch on `deploy:status`. Both reuse the shared
+  `DeploymentService` — same encrypted-token, SSRF and audit guards as the
+  manual API — and receive `db`/`siteId`/`keys`/`runId` from the flow run
+  environment.
 - **Code-First Configuration (Config Manifest).** Export / diff / apply a site's
   schema configuration — collections, fields, relations, settings and webhooks —
   as a single declarative, version-controllable JSON manifest
@@ -32,13 +80,41 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   id/siteId/timestamps/secrets and round-trip losslessly. No schema migration —
   reuses existing tables. See
   [`docs/en/contributing/code-first-config.md`](docs/en/contributing/code-first-config.md).
+- **CMS / schema:** the `lumibase_` collection name prefix is reserved for
+  platform-owned tables (CDC/Firebase sync, internal config). Creating or
+  renaming a collection to a `lumibase_*` name is rejected with `RESERVED_NAME`
+  (HTTP 422). The guard lives in `SchemaService.ensureName`, so it applies
+  uniformly to the schema builder routes and the AI harness `createCollection`
+  skill; the collections route also validates early via Zod for client feedback.
+
+### Changed
+
+- **Definition of Done gains section 6 (DoD evolution):** a mandatory
+  retrospective step — a bug fix must ask whether it should lock the whole error
+  *class* with a tripwire, and a feature must ask whether it opens a new
+  failure-mode/attack-surface warranting a new DoD rule; DoD changes land in the
+  same PR. Makes the "learn from a bug, add a guard" loop (which produced 2b/2c)
+  explicit instead of relying on reviewer memory.
 
 ### Security
 
 - **Tenant membership enforcement** (ports open PR #184): new `withSiteMembership` middleware between `withAuth` and route handlers — a user principal must hold a `user_sites` membership for the site selected via `X-Lumi-Site`, closing cross-tenant access for authenticated principals. API keys stay site-matched by `withAuth`; local dev tokens, bootstrap users, and the Cloudflare Access admin flow keep their existing carve-outs.
 - **Dynamic extension dispatch is admin-gated again** (ports open PR #152): restores the `adminOnly` guard on `extensionsRouter.all('/:name/*')` that a refactor had dropped, so non-admin principals can no longer execute endpoint extension bundles.
 - **`POST /auth/register` fixed and fail-closed** (bug portion of open PR #130): the path was on the `withAuth` bypass list while the handler read the principal, so the route always crashed with 500; it now runs through the full auth chain, requires an admin principal (403 otherwise, even with no principal), and binds new users to the site's seeded `member` role id instead of the invalid literal `'member'` (an FK violation).
+- **Flows are control-plane again:** `/api/v1/flows` is now in `CONTROL_PLANE_PATHS`
+  so the admin-only backstop runs even if a flows route forgets its own guard —
+  the same gap class as the historical `/api/v1/agent` omission, now that flow
+  operations (`deploy:trigger`/`deploy:status`) mutate external deploy state. A
+  tripwire assertion in `security-guards.wiring.test.ts` locks it.
 - **Recurrence prevention:** source-level tripwire suite `apps/cms/src/__tests__/security-guards.wiring.test.ts` locks the guard-chain wiring, bypass lists, extension admin gate, and control-plane path coverage; new guide `docs/en/security/route-guards.md`; Definition of Done gains section 2c (route-guard security checklist).
+
+### Notes
+
+- **CI:** the Docker workflow now uses `env.NODE_VERSION` for `setup-node`, keeping the Node version consistent across CI workflows.
+
+### Migrations
+
+- None
 
 ## [0.15.0] - 2026-07-02
 

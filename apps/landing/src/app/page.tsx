@@ -11,8 +11,8 @@ import {
   ProvenanceViz,
   RunsViz,
   SchemaViz,
-  TrustViz,
 } from "@/components/SectionVisuals";
+import TrustViz from "@/components/TrustViz";
 import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
 
 const softwareApplicationJsonLd = {
@@ -24,7 +24,7 @@ const softwareApplicationJsonLd = {
   operatingSystem: "Cloudflare Workers, Docker, Node.js",
   description:
     "LumiBase is a Content Operating System: an edge-native, AI-native headless CMS where governed agents operate content against declarative SLOs while humans set intent, taste, and accountability.",
-  softwareVersion: "0.15.0",
+  softwareVersion: "0.16.0",
   codeRepository: "https://github.com/khuepm/lumibase",
   license: "https://lumibase.dev/license",
   isAccessibleForFree: true,
