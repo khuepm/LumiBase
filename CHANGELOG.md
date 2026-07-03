@@ -9,6 +9,30 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [0.17.0] - 2026-07-03
+
+### Version
+
+- `v0.17.0`
+
+### Date
+
+- `2026-07-03`
+
+### Highlights
+
+- **`lumibase_` table namespace (breaking, fresh-install only).** Every system
+  table is physically renamed to `lumibase_<name>` and the whole migration
+  history is squashed into a single `0000_lumibase_init` — any table without
+  the prefix is unambiguously user-created. The migrate runner refuses to run
+  on a database carrying the pre-squash history, and collection names starting
+  with `lumibase_`/`mat_` are rejected at the API.
+- **Content Releases, external JWT auth, FK dependent-records, JSON field
+  search, configurable save action** — the v0.14–v0.16 feature train lands on
+  the new schema (their tables are prefixed and folded into the init).
+
 ### Changed
 
 - **All system tables now carry a `lumibase_` prefix.** Every built-in table is
