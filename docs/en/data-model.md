@@ -10,7 +10,7 @@ Schema files are split by domain:
 |------|------|
 | `core.ts` | `sites`, `users`, `user_sites`, `teams`, `team_members`, `notifications` |
 | `access.ts` | `roles`, `policies`, `role_policies`, `user_policies`, `permissions` |
-| `cms.ts` | `pages`, `collections`, `fields`, `relations`, `items`, `revisions`, `activity`, `flows`, `flow_runs`, `operations`, `materialized_collections` |
+| `cms.ts` | `pages`, `collections`, `fields`, `relations`, `items`, `revisions`, `releases`, `release_items`, `activity`, `flows`, `flow_runs`, `operations`, `materialized_collections` |
 | `platform.ts` | `folders`, `files`, `presets`, `translations`, `settings`, `webhooks`, `extensions`, `translation_memory`, `glossary` |
 | `ai.ts` | `ai_approvals` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
@@ -137,6 +137,14 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publ
 
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
+
+### `releases` (Content Releases)
+- A cross-collection publish bundle. `id`, `siteId`, `name`, `description`, `status` (`draft`|`scheduled`|`published`|`failed`|`partially_failed`), `atomicityMode` (`all_or_nothing`|`best_effort`), `publishAt`, `publishedAt`, `maintenanceWindow jsonb`, `statusReason`, `createdBy → users.id (set null)`, `createdAt`, `updatedAt`.
+- Indexes: `releases_site_status_idx (siteId, status)`, `releases_publish_due_idx (siteId, status, publishAt)` (mirrors `items.publishDueIdx` for the scheduler sweep).
+
+### `release_items` (Content Releases)
+- Junction release ↔ item, optionally pinned to one revision. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `itemId → items.id (cascade)`, `targetStatus` (default `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
+- Unique `(releaseId, collection, itemId)` (upsert key); index `(siteId, releaseId)`.
 
 ### `activity`
 - `id`, `siteId`, `action`, `userId`, `collection`, `itemId`, `ip`, `userAgent`, `comment`, `payload jsonb`, `createdAt`.

@@ -9,7 +9,24 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **Content Releases.** Collate specific item revisions across collections into
+  a named **Release** and publish them all at once — manually or scheduled for a
+  date/time (à la Directus Releases). New `releases` + `release_items` tables and
+  a `ReleaseService` exposed at `/api/v1/releases` (create / list / detail /
+  patch / `:id/publish` / delete). Publish delegates to the item update path, so
+  the editorial gate, validation, permissions and hooks all apply.
+  `atomicityMode` is `all_or_nothing` (pre-flight all items, publish none if any
+  is blocked) or `best_effort` (per-item outcomes). Scheduled releases publish
+  via the shared `content-scheduler` tick (`sweepDueReleases`) — idempotent and
+  `maintenanceWindow`-aware. Each `release_item` can pin a specific revision.
+
+### Migrations
+
+- `0040_content_releases` — adds `releases` + `release_items`. Additive and
+  idempotent (`CREATE TABLE … IF NOT EXISTS`, guarded FKs); existing instances
+  need **no backfill**. Run `pnpm -F @lumibase/database migrate` on upgrade.
 
 ## [0.16.0] - 2026-07-03
 

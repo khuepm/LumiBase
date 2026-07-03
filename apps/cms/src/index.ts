@@ -49,6 +49,7 @@ import { presetsRouter } from './routes/presets';
 import { pushRouter } from './routes/push';
 import { realtimeRouter } from './routes/realtime';
 import { relationsRouter } from './routes/relations';
+import { releasesRouter } from './routes/releases';
 import { rolesRouter } from './routes/roles';
 import { healthRouter } from './routes/health';
 import { insightsRouter } from './routes/insights';
@@ -204,6 +205,7 @@ api.route('/retention', retentionRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/items', itemsRouter);
+api.route('/releases', releasesRouter);
 api.route('/editorial', editorialRouter);
 // GraphQL surface (Yoga). Mounted inside the authenticated `api` sub-app so
 // it inherits the full tenant → db → auth → RLS chain; `all` covers POST
