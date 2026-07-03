@@ -752,4 +752,78 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     requiredCapabilities: ['extensions:delete'],
   },
+
+  // ── Deployment integrations (spec: deployment-integrations, Req 6) ─────────
+
+  listDeploymentTargets: {
+    name: 'listDeploymentTargets',
+    description: 'List the configured deployment targets (Vercel/Netlify connections) for the site.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+    requiredCapabilities: ['deployments:read'],
+  },
+
+  listDeployments: {
+    name: 'listDeployments',
+    description: 'List recent deployments, optionally filtered by target or status.',
+    parameters: {
+      type: 'object',
+      properties: {
+        targetId: {
+          type: 'string',
+          description: 'Optional deployment target id to filter by.',
+        },
+        status: {
+          type: 'string',
+          description: 'Optional status filter: queued | building | ready | error | canceled.',
+        },
+      },
+      required: [],
+    },
+    requiredCapabilities: ['deployments:read'],
+  },
+
+  getDeploymentStatus: {
+    name: 'getDeploymentStatus',
+    description: 'Get the current status and details of a single deployment by id.',
+    parameters: {
+      type: 'object',
+      properties: {
+        deploymentId: {
+          type: 'string',
+          description: 'The deployment id to inspect.',
+        },
+      },
+      required: ['deploymentId'],
+    },
+    requiredCapabilities: ['deployments:read'],
+  },
+
+  triggerDeployment: {
+    name: 'triggerDeployment',
+    description:
+      'Trigger a build/deploy on a deployment target (Vercel/Netlify). High-risk: routed through human approval (HITL) when the agent autonomy level is below autopilot.',
+    parameters: {
+      type: 'object',
+      properties: {
+        targetId: {
+          type: 'string',
+          description: 'The deployment target id to deploy.',
+        },
+        branch: {
+          type: 'string',
+          description: 'Optional branch to deploy; defaults to the target default branch.',
+        },
+        reason: {
+          type: 'string',
+          description: 'Optional human-readable reason recorded in the audit trail.',
+        },
+      },
+      required: ['targetId'],
+    },
+    requiredCapabilities: ['deployments:write'],
+  },
 };

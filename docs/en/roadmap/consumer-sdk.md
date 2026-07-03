@@ -1,25 +1,35 @@
+---
+version: 1
+lastUpdated: 2026-06-23T12:59:56.000Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: b248c46ccbdab911
+mtEngine: claude
+syncStatus: machine-translated
+---
+
 # Consumer App & SDK Roadmap
 
-> **Scope:** Xây dựng SDK đa nền tảng và ứng dụng Consumer demo để kiểm thử, đảm bảo public API hoạt động trơn tru.
+> **Scope:** Build a cross-platform SDK and a demo Consumer app to test it, ensuring the public API works smoothly.
 
-## Mục tiêu
-1. **SDK Composable Architecture**: Lấy cảm hứng từ Directus SDK. SDK có thể mở rộng (`.with(rest())`, `.with(graphql())`), hỗ trợ Typegen.
+## Goals
+1. **SDK Composable Architecture**: Inspired by the Directus SDK. The SDK is extensible (`.with(rest())`, `.with(graphql())`) and supports Typegen.
 
-> **GraphQL (v1):** adapter `.with(graphql())` đã được triển khai (items: query + mutation). Xem [GraphQL API Spec](../api/graphql-api-spec.md) và [ADR-009](../architecture/decisions/adr-009-graphql-yoga.md).
-2. **NPM Package**: Xây dựng build system (tsup) để đóng gói thư viện với định dạng ESM, CJS, DTS chuẩn bị publish.
-3. **Consumer Demo**: Ứng dụng Next.js làm ví dụ hướng dẫn sử dụng SDK (fetch data, hiển thị).
+> **GraphQL (v1):** the `.with(graphql())` adapter has been implemented (items: query + mutation). See the [GraphQL API Spec](../api/graphql-api-spec.md) and [ADR-009](../architecture/decisions/adr-009-graphql-yoga.md).
+2. **NPM Package**: Build a build system (tsup) to package the library in ESM, CJS, and DTS formats, ready to publish.
+3. **Consumer Demo**: A Next.js app as a worked example of using the SDK (fetch data, render).
 
 ## Task Breakdown
 
 ### 1. Refactor `@lumibase/sdk`
-- [x] Chuyển đổi kiến trúc sang Composable Client (`createLumiClient().with(...)`).
-- [x] Tách Core Logic ra khỏi Rest Implementation (VD: `src/rest/readItems.ts`).
-- [x] Thiết lập tsup builder, update `package.json` để export các endpoints chuẩn.
+- [x] Convert the architecture to a Composable Client (`createLumiClient().with(...)`).
+- [x] Separate the Core Logic from the Rest Implementation (e.g. `src/rest/readItems.ts`).
+- [x] Set up the tsup builder, update `package.json` to export the standard endpoints.
 
 ### 2. Update Studio CMS
-- [x] Migrate toàn bộ usage của `createLumiClient` cũ sang syntax mới (trong `apps/studio`).
+- [x] Migrate all usages of the old `createLumiClient` to the new syntax (in `apps/studio`).
 
-### 3. Khởi tạo Consumer App (`apps/consumer`)
-- [x] Tạo Next.js App Router boilerplate.
-- [x] Tích hợp `@lumibase/sdk`.
-- [x] Demo tính năng fetch items từ một collection bất kỳ thông qua SDK và SSR/CSR.
+### 3. Bootstrap the Consumer App (`apps/consumer`)
+- [x] Create a Next.js App Router boilerplate.
+- [x] Integrate `@lumibase/sdk`.
+- [x] Demo fetching items from an arbitrary collection through the SDK with SSR/CSR.

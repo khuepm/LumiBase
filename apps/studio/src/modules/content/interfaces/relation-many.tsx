@@ -1,7 +1,25 @@
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, X } from 'lucide-react';
+import { GripVertical, Plus, Search, X } from 'lucide-react';
 import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
+import { RelationDrawer } from './relation-drawer';
 import { readOptions, type InterfaceComponent } from './types';
 
 interface RelationManyOptions {
@@ -10,9 +28,10 @@ interface RelationManyOptions {
 }
 
 /**
- * `relation-o2m` / `relation-m2m` — multi-id picker.
- * Stores an array of related ids. Junction-table writes for m2m are handled
- * server-side once the BE relation engine resolves the field.
+ * `relation-o2m` / `relation-m2m` — ordered multi-id picker.
+ * Stores an array of related ids. Offers "Create new" and "Add existing"
+ * actions (shared `RelationDrawer`) and drag-to-reorder. Junction writes for
+ * m2m are handled server-side once the relation engine resolves the field.
  */
 export const RelationManyInterface: InterfaceComponent<string[]> = ({
   value,
@@ -21,12 +40,16 @@ export const RelationManyInterface: InterfaceComponent<string[]> = ({
   onChange,
 }) => {
   const opts = readOptions<RelationManyOptions>(field);
-  const [adding, setAdding] = useState(false);
-  const [search, setSearch] = useState('');
+  const [drawer, setDrawer] = useState<null | 'existing' | 'new'>(null);
   const client = getApiClient();
   const collection = opts.collection;
-  const display = opts.displayField ?? 'id';
+  const display = opts.displayField ?? 'title';
   const ids = Array.isArray(value) ? value : [];
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   // Fetch display labels for already-selected ids.
   const labelsQuery = useQuery({
@@ -36,18 +59,6 @@ export const RelationManyInterface: InterfaceComponent<string[]> = ({
       client.items(collection as never).list({
         filter: { id: { _in: ids } },
         limit: ids.length,
-      }),
-  });
-
-  const pickerQuery = useQuery({
-    enabled: !!collection && adding,
-    queryKey: ['relation-many-picker', collection, search, display],
-    queryFn: async () =>
-      client.items(collection as never).list({
-        limit: 25,
-        filter: search
-          ? { [display]: { _contains: search } }
-          : undefined,
       }),
   });
 
@@ -64,73 +75,116 @@ export const RelationManyInterface: InterfaceComponent<string[]> = ({
     return row ? String(row.data?.[display] ?? id) : `${id.slice(0, 6)}…`;
   };
 
-  const add = (id: string) => {
-    if (ids.includes(id)) return;
-    onChange([...ids, id]);
+  const addIds = (next: string[]) => {
+    const merged = [...ids];
+    for (const id of next) if (!merged.includes(id)) merged.push(id);
+    onChange(merged);
   };
 
-  const remove = (id: string) => {
-    onChange(ids.filter((i) => i !== id));
+  const remove = (id: string) => onChange(ids.filter((i) => i !== id));
+
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from === -1 || to === -1) return;
+    onChange(arrayMove(ids, from, to));
   };
 
   return (
-    <div className="space-y-1">
-      <div className="flex flex-wrap items-center gap-1 rounded-md border bg-background px-2 py-1">
-        {ids.map((id) => (
-          <span
-            key={id}
-            className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs"
-          >
-            {labelFor(id)}
-            {!disabled && (
-              <button type="button" onClick={() => remove(id)} aria-label={`Remove ${id}`}>
-                <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-              </button>
-            )}
-          </span>
-        ))}
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => setAdding((v) => !v)}
-          className="inline-flex items-center gap-1 rounded border-dashed px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent"
-        >
-          <Plus className="h-3 w-3" />
-          Add
-        </button>
-      </div>
-
-      {adding && (
-        <div className="rounded-md border bg-background shadow-sm">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={`Search by ${display}…`}
-            className="w-full border-b bg-transparent px-2 py-1 text-xs focus:outline-none"
-          />
-          <ul className="max-h-48 overflow-y-auto py-1">
-            {pickerQuery.isLoading && (
-              <li className="px-2 py-1 text-xs text-muted-foreground">Loading…</li>
-            )}
-            {pickerQuery.data?.data
-              .filter((r) => !ids.includes(r.id))
-              .map((row) => (
-                <li key={row.id}>
-                  <button
-                    type="button"
-                    onClick={() => add(row.id)}
-                    className="w-full px-2 py-1 text-left text-xs hover:bg-accent"
-                  >
-                    <span className="font-mono text-muted-foreground">
-                      {row.id.slice(0, 6)}…
-                    </span>
-                    <span className="ml-2">{String(row.data?.[display] ?? '—')}</span>
-                  </button>
-                </li>
+    <div className="space-y-2">
+      {ids.length > 0 && (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+            <ul className="space-y-1">
+              {ids.map((id) => (
+                <SortableChip
+                  key={id}
+                  id={id}
+                  label={labelFor(id)}
+                  disabled={disabled}
+                  onRemove={() => remove(id)}
+                />
               ))}
-          </ul>
+            </ul>
+          </SortableContext>
+        </DndContext>
+      )}
+
+      {!disabled && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setDrawer('existing')}
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-accent"
+          >
+            <Search className="h-3 w-3" /> Add existing
+          </button>
+          <button
+            type="button"
+            onClick={() => setDrawer('new')}
+            className="inline-flex items-center gap-1 rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
+          >
+            <Plus className="h-3 w-3" /> Create new
+          </button>
         </div>
+      )}
+
+      {drawer && (
+        <RelationDrawer
+          collection={collection}
+          displayField={display}
+          excludeIds={ids}
+          initialMode={drawer}
+          onClose={() => setDrawer(null)}
+          onSelect={addIds}
+        />
       )}
     </div>
   );
 };
+
+function SortableChip({
+  id,
+  label,
+  disabled,
+  onRemove,
+}: {
+  id: string;
+  label: string;
+  disabled?: boolean;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  };
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 rounded-md border bg-background px-2 py-1 text-sm"
+    >
+      {!disabled && (
+        <button
+          type="button"
+          className="cursor-grab text-muted-foreground hover:text-foreground"
+          {...attributes}
+          {...listeners}
+          aria-label="Drag to reorder"
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <span className="flex-1 truncate">{label}</span>
+      {!disabled && (
+        <button type="button" onClick={onRemove} aria-label={`Remove ${id}`}>
+          <X className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+        </button>
+      )}
+    </li>
+  );
+}

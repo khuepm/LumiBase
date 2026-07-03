@@ -56,10 +56,10 @@ export function TocList({ entries, activeId }: TocProps) {
 
   return (
     <nav aria-label="Table of Contents">
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <h2 className="mb-3.5 text-[12px] font-semibold uppercase tracking-[0.6px] text-[rgb(130,130,138)]">
         On this page
       </h2>
-      <ul className="space-y-1">
+      <ul className="flex flex-col gap-2.5 border-l border-white/10 pl-3.5">
         {entries.map((entry) => (
           <li key={entry.id}>
             <a
@@ -72,11 +72,11 @@ export function TocList({ entries, activeId }: TocProps) {
                 }
               }}
               className={`
-                block text-sm leading-6 transition-colors
+                block text-[13px] font-medium leading-5 transition-colors
                 ${entry.level === 3 ? 'pl-3' : ''}
                 ${activeId === entry.id
-                  ? 'font-medium text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'text-white'
+                  : 'text-[rgb(150,150,156)] hover:text-[rgb(205,205,210)]'
                 }
               `}
             >

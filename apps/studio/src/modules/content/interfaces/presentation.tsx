@@ -1,12 +1,20 @@
-import { Info, Minus } from 'lucide-react';
+import { ExternalLink, Info, Minus } from 'lucide-react';
 import { readOptions, type InterfaceComponent } from './types';
+
+interface PresentationLink {
+  label: string;
+  href: string;
+}
 
 interface PresentationOptions {
   variant?: 'divider' | 'notice';
   title?: string;
+  subtitle?: string;
   text?: string;
   /** Tailwind color token, e.g. `amber`, `emerald`. */
   tone?: 'muted' | 'amber' | 'emerald' | 'destructive';
+  /** Links rendered by `presentation-links`. */
+  links?: PresentationLink[];
 }
 
 /**
@@ -42,6 +50,48 @@ export const PresentationInterface: InterfaceComponent<unknown> = ({ field }) =>
         {opts.title && <p className="mb-0.5 font-medium">{opts.title}</p>}
         {opts.text && <p className="text-xs leading-relaxed">{opts.text}</p>}
       </div>
+    </div>
+  );
+};
+
+/**
+ * `presentation-header` — section heading with optional subtitle. Stores no
+ * value; used to break long forms into labelled sections.
+ */
+export const PresentationHeaderInterface: InterfaceComponent<unknown> = ({ field }) => {
+  const opts = readOptions<PresentationOptions>(field);
+  return (
+    <div className="border-b pb-1.5 pt-2">
+      <h3 className="text-sm font-semibold">{opts.title ?? field.name}</h3>
+      {opts.subtitle && <p className="text-xs text-muted-foreground">{opts.subtitle}</p>}
+    </div>
+  );
+};
+
+/**
+ * `presentation-links` — a row of link buttons (e.g. external references or
+ * docs). Stores no value.
+ */
+export const PresentationLinksInterface: InterfaceComponent<unknown> = ({ field }) => {
+  const opts = readOptions<PresentationOptions>(field);
+  const links = opts.links ?? [];
+  if (links.length === 0) {
+    return <p className="text-xs text-muted-foreground">No links configured.</p>;
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {links.map((link, i) => (
+        <a
+          key={`${link.href}-${i}`}
+          href={link.href}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+        >
+          <ExternalLink className="h-3 w-3" />
+          {link.label || link.href}
+        </a>
+      ))}
     </div>
   );
 };

@@ -12,8 +12,8 @@ const MOCK_EXTENSIONS: Extension[] = [
     slug: "seo-toolkit",
     name: "SEO Toolkit",
     description:
-      "Comprehensive SEO management with sitemap generation, meta tags, and structured data support.",
-    readme: `# SEO Toolkit\n\nThe most complete SEO extension for Lumibase.\n\n## Features\n\n- Auto-generate XML sitemaps\n- Meta tags editor with preview\n- JSON-LD structured data\n- Open Graph & Twitter Cards\n- Canonical URL management\n\n## Installation\n\nSearch for \`seo-toolkit\` in the Studio Marketplace tab and click Install.`,
+      "Gives your agents an SEO skill. Sitemaps, meta tags, and structured data on every publish.",
+    readme: `# SEO Toolkit\n\nAn SEO skill for your agents. Every publish run carries the metadata it needs.\n\n## Features\n\n- Auto-generate XML sitemaps\n- Meta tags editor with preview\n- JSON-LD structured data\n- Open Graph & Twitter Cards\n- Canonical URL management\n\n## Installation\n\nSearch for \`seo-toolkit\` in the Studio Marketplace tab and click Install.`,
     category: "seo",
     tags: ["seo", "sitemap", "meta-tags", "structured-data"],
     publisherName: "LumiBase Team",
@@ -124,7 +124,7 @@ const MOCK_EXTENSIONS: Extension[] = [
     name: "Form Builder",
     description:
       "Drag-and-drop form creation with validation, file uploads, and webhook integrations.",
-    readme: `# Form Builder\n\nBuild powerful forms without code.\n\n## Features\n- Visual drag-and-drop editor\n- 20+ field types\n- Conditional logic\n- Webhook & email notifications`,
+    readme: `# Form Builder\n\nBuild forms without code. Each submission is a run you can inspect.\n\n## Features\n- Visual drag-and-drop editor\n- 20+ field types\n- Conditional logic\n- Webhook & email notifications`,
     category: "forms",
     tags: ["forms", "drag-drop", "validation", "webhooks"],
     publisherName: "FormCraft",
