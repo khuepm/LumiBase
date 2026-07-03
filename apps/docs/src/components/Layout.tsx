@@ -6,6 +6,7 @@ import { Sidebar } from './Sidebar';
 import { SearchDialog } from './SearchDialog';
 import { TableOfContents } from './TableOfContents';
 import { LocaleSwitcher } from './LocaleSwitcher';
+import { ThemeToggle } from './ThemeToggle';
 import { siteConfig, resolveLabel } from '../lib/site-config';
 import { useLocale } from '../hooks/useLocale';
 import { useCurrentSlug } from '../hooks/useCurrentSlug';
@@ -42,11 +43,11 @@ export function Layout() {
   return (
     <div className="relative flex h-screen w-screen flex-col overflow-hidden">
       {/* Top bar — sticky 72px cosmic glass header */}
-      <header className="z-40 flex h-[72px] shrink-0 items-center gap-4 border-b border-white/[0.07] bg-[rgba(16,16,19,0.72)] px-4 backdrop-blur-[12px] md:px-8">
+      <header className="z-40 flex h-[72px] shrink-0 items-center gap-4 border-b border-border bg-background/70 px-4 backdrop-blur-[12px] md:px-8">
         <button
           type="button"
           onClick={() => setSidebarOpen(true)}
-          className="rounded-md p-1 text-[rgb(155,155,160)] transition-colors hover:text-white md:hidden"
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground md:hidden"
           aria-label="Open sidebar"
         >
           <Menu className="h-5 w-5" />
@@ -56,12 +57,12 @@ export function Layout() {
         <div className="flex items-center gap-[9px]">
           <div
             aria-hidden="true"
-            className="h-[22px] w-[22px] rounded-full bg-[linear-gradient(180deg,#fff,#cfcfcf)] shadow-[0_0_18px_rgba(123,97,255,0.6)]"
+            className="h-[22px] w-[22px] rounded-full bg-[radial-gradient(circle_at_32%_28%,#fff,var(--color-violet))] shadow-[0_0_18px_rgba(123,97,255,0.45)] dark:bg-[linear-gradient(180deg,#fff,#cfcfcf)] dark:shadow-[0_0_18px_rgba(123,97,255,0.6)]"
           />
-          <span className="text-[18px] font-bold tracking-[-0.3px] text-white">
+          <span className="text-[18px] font-bold tracking-[-0.3px] text-foreground">
             {siteConfig.title}
           </span>
-          <span className="ml-1.5 border-l border-white/[0.14] pl-3 text-[13px] font-semibold text-[rgb(155,155,160)]">
+          <span className="ml-1.5 border-l border-[var(--color-border-strong)] pl-3 text-[13px] font-semibold text-muted-foreground">
             Docs
           </span>
         </div>
@@ -71,7 +72,7 @@ export function Layout() {
           target="_blank"
           rel="noreferrer"
           title={t('version.badge-tooltip')}
-          className="hidden items-center rounded-full bg-[rgba(123,97,255,0.16)] px-2.5 py-0.5 text-[11px] font-semibold text-[#c9bcff] shadow-[inset_0_0_0_1px_rgba(123,97,255,0.30)] transition-colors hover:bg-[rgba(123,97,255,0.26)] sm:inline-flex"
+          className="hidden items-center rounded-full bg-primary/15 px-2.5 py-0.5 text-[11px] font-semibold text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.3)] transition-colors hover:bg-primary/25 sm:inline-flex dark:text-[#c9bcff]"
         >
           v{__APP_VERSION__}
         </a>
@@ -85,7 +86,7 @@ export function Layout() {
                 <a
                   key={label}
                   href={item.href}
-                  className="text-[13px] font-medium text-[rgb(155,155,160)] transition-colors hover:text-white"
+                  className="text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -95,7 +96,7 @@ export function Layout() {
                 <a
                   key={label}
                   href={item.to}
-                  className="text-[13px] font-medium text-[rgb(155,155,160)] transition-colors hover:text-white"
+                  className="text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
                   {label}
                 </a>
@@ -105,6 +106,7 @@ export function Layout() {
 
         <div className="ml-auto flex items-center gap-2.5">
           <SearchDialog />
+          <ThemeToggle />
           <LocaleSwitcher />
           {siteConfig.navbar.items
             .filter((item) => item.position === 'right')
@@ -116,7 +118,7 @@ export function Layout() {
                   href={item.href ?? item.to}
                   target={item.href ? '_blank' : undefined}
                   rel={item.href ? 'noreferrer' : undefined}
-                  className="hidden text-[13px] font-medium text-[rgb(155,155,160)] transition-colors hover:text-white md:inline"
+                  className="hidden text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground md:inline"
                 >
                   {label}
                 </a>
@@ -138,18 +140,18 @@ export function Layout() {
         {/* Sidebar — left column */}
         <aside
           className={`
-            fixed inset-y-0 left-0 z-40 w-64 transform border-r border-white/[0.07] bg-[rgb(16,16,19)] transition-transform duration-200 ease-in-out
+            fixed inset-y-0 left-0 z-40 w-64 transform border-r border-border bg-background transition-transform duration-200 ease-in-out
             md:relative md:translate-x-0 md:bg-transparent
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
           `}
         >
           {/* Close button for mobile */}
-          <div className="flex h-14 items-center justify-between border-b border-white/[0.07] px-4 md:hidden">
-            <span className="text-sm font-semibold text-white">Navigation</span>
+          <div className="flex h-14 items-center justify-between border-b border-border px-4 md:hidden">
+            <span className="text-sm font-semibold text-foreground">Navigation</span>
             <button
               type="button"
               onClick={() => setSidebarOpen(false)}
-              className="rounded-md p-1 text-[rgb(155,155,160)] transition-colors hover:text-white"
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
               aria-label="Close sidebar"
             >
               <X className="h-5 w-5" />
@@ -172,18 +174,18 @@ export function Layout() {
           {/* Center column — page content */}
           <main ref={contentRef} className="flex flex-1 flex-col overflow-y-auto">
             <Outlet />
-            <footer className="mt-auto border-t border-white/[0.07] px-6 py-8 md:px-10">
+            <footer className="mt-auto border-t border-border px-6 py-8 md:px-10">
               <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
                 {siteConfig.footer.links.map((col, colIdx) => (
                   <div key={colIdx}>
-                    <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-[0.6px] text-[rgb(130,130,138)]">
+                    <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">
                       {resolveLabel(col.title, locale)}
                     </h3>
                     <ul className="space-y-2">
                       {col.items.map((item, itemIdx) => (
                         <li key={itemIdx}>
                           <a
-                            className="text-[13px] font-medium text-[rgb(150,150,156)] transition-colors hover:text-white"
+                            className="text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
                             href={item.href ?? item.to}
                             target={item.href ? '_blank' : undefined}
                             rel={item.href ? 'noreferrer' : undefined}
@@ -196,7 +198,7 @@ export function Layout() {
                   </div>
                 ))}
               </div>
-              <p className="mt-8 border-t border-white/[0.07] pt-5 text-center text-[13px] font-medium text-[rgb(150,150,156)]">
+              <p className="mt-8 border-t border-border pt-5 text-center text-[13px] font-medium text-muted-foreground">
                 {siteConfig.footer.copyright.split('LumiBase').map((part, i, arr) =>
                   i < arr.length - 1 ? (
                     <span key={i}>
@@ -205,7 +207,7 @@ export function Layout() {
                         href="https://lumibase.dev"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="transition-colors hover:text-white hover:underline"
+                        className="transition-colors hover:text-foreground hover:underline"
                       >
                         LumiBase
                       </a>

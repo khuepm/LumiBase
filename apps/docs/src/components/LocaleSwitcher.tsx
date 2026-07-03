@@ -18,7 +18,7 @@ export function LocaleSwitcher() {
       value={locale}
       onChange={(e) => setLocale(e.target.value, slug || undefined)}
       aria-label="Switch language"
-      className="rounded-2xl bg-white/[0.06] px-2.5 py-2 text-[13px] font-medium text-[rgb(155,155,160)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.10)] transition-colors hover:text-white focus:outline-none focus:shadow-[inset_0_0_0_1px_rgba(123,97,255,0.5)] [&>option]:bg-[rgb(24,23,28)] [&>option]:text-white"
+      className="glass-chip glass-chip-hover rounded-2xl px-2.5 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus:shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.5)] [&>option]:bg-popover [&>option]:text-popover-foreground"
     >
       {locales.map((loc) => (
         <option key={loc} value={loc}>
