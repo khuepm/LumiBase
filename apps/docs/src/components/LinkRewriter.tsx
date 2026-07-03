@@ -120,7 +120,7 @@ export function LinkRewriter({
 
   if (!href) {
     return (
-      <a className="text-[#a99bff] underline underline-offset-2 transition-colors hover:text-white" {...props}>
+      <a className="text-link underline underline-offset-2 transition-colors hover:text-foreground" {...props}>
         {children}
       </a>
     );
@@ -137,7 +137,7 @@ export function LinkRewriter({
         <a
           href={targetPath}
           onClick={(e) => handleInternalClick(e, targetPath)}
-          className="text-[#a99bff] underline underline-offset-2 transition-colors hover:text-white"
+          className="text-link underline underline-offset-2 transition-colors hover:text-foreground"
           {...props}
         >
           {children}
@@ -151,7 +151,7 @@ export function LinkRewriter({
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[#a99bff] underline underline-offset-2 transition-colors hover:text-white"
+          className="text-link underline underline-offset-2 transition-colors hover:text-foreground"
           {...props}
         >
           {children}
@@ -176,7 +176,7 @@ export function LinkRewriter({
       return (
         <a
           href={href}
-          className="text-[#a99bff] underline underline-offset-2 transition-colors hover:text-white"
+          className="text-link underline underline-offset-2 transition-colors hover:text-foreground"
           {...props}
         >
           {children}

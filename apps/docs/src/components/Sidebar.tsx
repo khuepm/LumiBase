@@ -54,7 +54,7 @@ export function Sidebar({ tree, activeSlug, onNavigate, locale }: SidebarProps) 
   if (tree.length === 0) {
     return (
       <div className="p-4">
-        <p className="text-sm text-[rgb(150,150,156)]">{t('sidebar.empty')}</p>
+        <p className="text-sm text-muted-foreground">{t('sidebar.empty')}</p>
       </div>
     );
   }
