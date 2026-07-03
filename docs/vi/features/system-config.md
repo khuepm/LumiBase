@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-06-23T12:59:56.000Z
+sourceLang: vi
+contentHash: 48ccd8b0c2aa4504
+---
+
 # System Configuration
 
 > LumiBase có **layered config**: `env` (Workers Secret) → `site` (`settings` table) → `user` (preferences).
@@ -10,7 +17,7 @@
 
 Resolver: `getSetting(key, { siteId, userId })` → trả về giá trị merge theo precedence.
 
-Realtime có thêm một lớp opt-in ở collection: env/binding xác định deploy có hỗ trợ WebSocket, `settings.realtime.enabled` bật/tắt theo site, và `collections.meta.realtime.enabled` chọn collection cụ thể được phép subscribe.
+Realtime adds one collection-level opt-in layer: env/bindings decide whether the deployment supports WebSocket, `settings.realtime.enabled` enables it for the site, and `collections.meta.realtime.enabled` selects the collections users may subscribe to.
 
 ## 2. Settings categories
 

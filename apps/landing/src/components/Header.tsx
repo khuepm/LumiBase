@@ -1,73 +1,145 @@
 "use client";
 
 import Link from "next/link";
-import { Github, Menu, X, Terminal } from "lucide-react";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { Github, Menu, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import PillNav from "@/components/cosmic/PillNav";
 
-const navLinks = [
-  { href: "https://docs.lumibase.dev/en/ai-native-vision.md", label: "Vision", external: true },
+const SECTIONS = [
+  { label: "AI Harness", slug: "ai-harness" },
+  { label: "Content OS", slug: "content-os" },
+  { label: "Studio", slug: "studio" },
+  { label: "Runtime", slug: "runtime" },
+];
+
+const textLinks = [
   { href: "https://docs.lumibase.dev", label: "Docs", external: true },
   { href: "/pricing", label: "Pricing", external: false },
 ];
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [active, setActive] = useState("AI Harness");
+  const pathname = usePathname();
+  const router = useRouter();
+  const isHome = pathname === "/";
+
+  // Scroll-spy: light up the pill of the section in view (home page only)
+  useEffect(() => {
+    if (!isHome) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const match = SECTIONS.find((s) => s.slug === entry.target.id);
+            if (match) setActive(match.label);
+          }
+        }
+      },
+      { rootMargin: "-30% 0px -55% 0px" }
+    );
+    for (const s of SECTIONS) {
+      const el = document.getElementById(s.slug);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [isHome]);
+
+  const onSelect = (label: string) => {
+    const section = SECTIONS.find((s) => s.label === label);
+    if (!section) return;
+    setActive(label);
+    if (isHome) {
+      const el = document.getElementById(section.slug);
+      if (el) window.scrollTo({ top: el.offsetTop - 90, behavior: "smooth" });
+    } else {
+      router.push(`/#${section.slug}`);
+    }
+  };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-ink-700 bg-ink-950/80 backdrop-blur-md">
-      <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md border border-signal-500/40 bg-signal-500/10 text-signal-400">
-            <Terminal className="h-4 w-4" />
-          </div>
-          <span className="font-mono text-lg font-semibold tracking-tight text-foreground">
-            Lumi<span className="text-signal-400">Base</span>
-          </span>
-        </Link>
-
-        {/* Desktop Navigation */}
-        <div className="hidden items-center gap-7 md:flex">
-          {navLinks.map((l) => (
-            <Link
-              key={l.label}
-              href={l.href}
-              {...(l.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-              className="text-sm font-medium text-gray-400 transition-colors hover:text-signal-400"
-            >
-              {l.label}
-            </Link>
-          ))}
-          <Link
-            href="https://github.com/khuepm/lumibase"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-md border border-ink-600 bg-ink-800 px-4 py-2 text-sm font-medium text-gray-200 transition-colors hover:border-signal-500/50 hover:text-signal-400"
-          >
-            <Github className="h-4 w-4" />
-            GitHub
-          </Link>
-        </div>
-
-        {/* Mobile Menu Button */}
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="text-gray-300 md:hidden"
-          aria-label="Toggle menu"
+    <header className="sticky top-0 z-50 flex h-[72px] w-full items-center justify-between px-5 md:px-10">
+      <Link href="/" className="flex items-center gap-2.5">
+        <span className="sphere-logo h-6 w-6" />
+        <span
+          className="text-white"
+          style={{ font: "700 19px/1 var(--font-sans, inherit)", letterSpacing: "-0.4px" }}
         >
-          {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-        </button>
-      </nav>
+          LumiBase
+        </span>
+      </Link>
 
-      {/* Mobile Navigation */}
+      {/* Center pill navigation */}
+      <div className="absolute left-1/2 hidden -translate-x-1/2 lg:block">
+        <PillNav
+          items={SECTIONS.map((s) => s.label)}
+          active={active}
+          onSelect={onSelect}
+        />
+      </div>
+
+      {/* Desktop right side */}
+      <div className="hidden items-center gap-5 md:flex">
+        {textLinks.map((l) => (
+          <Link
+            key={l.label}
+            href={l.href}
+            {...(l.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+            className="text-[13px] font-semibold tracking-[0.2px] text-white/65 transition-colors hover:text-white"
+          >
+            {l.label}
+          </Link>
+        ))}
+        <Link
+          href="https://github.com/khuepm/lumibase"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn-pill btn-glass h-[38px] px-[18px] text-[13px]"
+        >
+          <Github className="h-4 w-4" />
+          <span>GitHub</span>
+        </Link>
+      </div>
+
+      {/* Mobile menu button */}
+      <button
+        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        className="text-white md:hidden"
+        aria-label="Toggle menu"
+      >
+        {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+      </button>
+
+      {/* Mobile navigation */}
       {mobileMenuOpen && (
-        <div className="border-t border-ink-700 bg-ink-950 px-6 py-4 md:hidden">
+        <div
+          className="absolute left-0 right-0 top-[72px] px-6 py-5 md:hidden"
+          style={{
+            background: "rgba(16,16,19,0.92)",
+            backdropFilter: "blur(12px)",
+            borderBottom: "1px solid var(--color-border)",
+          }}
+        >
           <div className="flex flex-col gap-4">
-            {navLinks.map((l) => (
+            {SECTIONS.map((s) => (
+              <button
+                key={s.slug}
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onSelect(s.label);
+                }}
+                className="text-left text-sm font-semibold text-white/80 hover:text-white"
+              >
+                {s.label}
+              </button>
+            ))}
+            {textLinks.map((l) => (
               <Link
                 key={l.label}
                 href={l.href}
                 {...(l.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-                className="text-sm font-medium text-gray-300 hover:text-signal-400"
+                className="text-sm font-semibold text-white/60 hover:text-white"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 {l.label}
@@ -77,11 +149,11 @@ export default function Header() {
               href="https://github.com/khuepm/lumibase"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-md border border-ink-600 bg-ink-800 px-4 py-2 text-sm font-medium text-gray-200 hover:text-signal-400"
+              className="btn-pill btn-glass h-[38px] w-fit px-[18px] text-[13px]"
               onClick={() => setMobileMenuOpen(false)}
             >
               <Github className="h-4 w-4" />
-              GitHub
+              <span>GitHub</span>
             </Link>
           </div>
         </div>

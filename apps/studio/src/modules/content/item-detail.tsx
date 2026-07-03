@@ -6,14 +6,17 @@ import type { FieldResource, ItemRow, RevisionRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePermissions, type PermissionHelpers } from '@/lib/use-permissions';
+import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 import { PresenceChip } from '@/components/presence-chip';
 import { resolveInterface } from './interfaces/registry';
+import { GroupContainer, type GroupVariant } from './interfaces/group';
 import { RawToggle } from './interfaces/raw-toggle';
 import { ProvenanceBadge } from './provenance-badge';
 import { RevisionsPanel } from './revisions-panel';
 import { RawJsonPanel } from './raw-json-panel';
+import { VersionPanel } from './version-panel';
 
-type Tab = 'fields' | 'revisions' | 'raw';
+type Tab = 'fields' | 'revisions' | 'versions' | 'raw';
 
 /**
  * Content module detail editor.
@@ -29,6 +32,9 @@ export function ItemDetailPage() {
 
   const [tab, setTab] = useState<Tab>('fields');
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
+  // Content scheduling (Publish_Window) — datetime-local strings, '' = unset.
+  const [publishAt, setPublishAt] = useState<string | null>(null);
+  const [unpublishAt, setUnpublishAt] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareRoleId, setShareRoleId] = useState('');
   const [sharePassword, setSharePassword] = useState('');
@@ -107,6 +113,8 @@ export function ItemDetailPage() {
   useEffect(() => {
     if (itemQuery.data && draft === null) {
       setDraft({ ...(itemQuery.data.data as Record<string, unknown>) });
+      setPublishAt(isoToLocalInput(itemQuery.data.publishAt));
+      setUnpublishAt(isoToLocalInput(itemQuery.data.unpublishAt));
     }
   }, [itemQuery.data, draft]);
 
@@ -123,13 +131,21 @@ export function ItemDetailPage() {
 
   const isDirty = useMemo(() => {
     if (!itemQuery.data || draft === null) return false;
-    return JSON.stringify(draft) !== JSON.stringify(itemQuery.data.data ?? {});
-  }, [draft, itemQuery.data]);
+    if (JSON.stringify(draft) !== JSON.stringify(itemQuery.data.data ?? {})) return true;
+    return (
+      publishAt !== isoToLocalInput(itemQuery.data.publishAt) ||
+      unpublishAt !== isoToLocalInput(itemQuery.data.unpublishAt)
+    );
+  }, [draft, itemQuery.data, publishAt, unpublishAt]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!draft) return null;
-      const res = await client.items(collection as never).patch(id, { data: draft });
+      const res = await client.items(collection as never).patch(id, {
+        data: draft,
+        publishAt: localInputToIso(publishAt),
+        unpublishAt: localInputToIso(unpublishAt),
+      });
       return res.data as ItemRow;
     },
     onSuccess: () => {
@@ -138,6 +154,12 @@ export function ItemDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['revisions', collection, id] });
     },
   });
+
+  // Cmd/Ctrl+S → save and stay. Mirrors the Save button's gating exactly.
+  useSaveHandler(
+    () => saveMutation.mutate(),
+    isDirty && canUpdate && !saveMutation.isPending,
+  );
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
@@ -409,6 +431,7 @@ export function ItemDetailPage() {
               }}
             />
           )}
+          {tab === 'versions' && <VersionPanel collection={collection} itemId={id} />}
           {tab === 'raw' && (
             <RawJsonPanel
               value={draft}
@@ -422,18 +445,63 @@ export function ItemDetailPage() {
           <ul className="space-y-1 text-sm">
             <TabButton current={tab} value="fields" onClick={setTab}>Fields</TabButton>
             <TabButton current={tab} value="revisions" onClick={setTab}>Revisions</TabButton>
+            <TabButton current={tab} value="versions" onClick={setTab}>Versions</TabButton>
             <TabButton current={tab} value="raw" onClick={setTab}>Raw JSON</TabButton>
           </ul>
           <dl className="mt-4 space-y-1 border-t pt-3 text-xs text-muted-foreground">
             <Meta label="Status" value={itemQuery.data.status} />
             <Meta label="Sort" value={String(itemQuery.data.sort ?? 0)} />
+            {itemQuery.data.editorialState ? (
+              <Meta label="Editorial" value={itemQuery.data.editorialState} />
+            ) : null}
             <Meta label="Updated" value={new Date(itemQuery.data.updatedAt).toLocaleString()} />
             <Meta label="Created" value={new Date(itemQuery.data.createdAt).toLocaleString()} />
           </dl>
+          {/* Content scheduling (Req 10.1). Empty = unset; the Delivery API
+              only serves items inside the current Publish_Window. */}
+          <div className="mt-4 space-y-2 border-t pt-3">
+            <h2 className="text-xs font-semibold uppercase text-muted-foreground">Scheduling</h2>
+            <label className="block text-xs text-muted-foreground">
+              Publish at
+              <input
+                type="datetime-local"
+                className="mt-1 w-full rounded border px-2 py-1 text-sm"
+                value={publishAt ?? ''}
+                disabled={!canUpdate}
+                onChange={(e) => setPublishAt(e.target.value || null)}
+              />
+            </label>
+            <label className="block text-xs text-muted-foreground">
+              Unpublish at
+              <input
+                type="datetime-local"
+                className="mt-1 w-full rounded border px-2 py-1 text-sm"
+                value={unpublishAt ?? ''}
+                disabled={!canUpdate}
+                onChange={(e) => setUnpublishAt(e.target.value || null)}
+              />
+            </label>
+          </div>
         </aside>
       </div>
     </div>
   );
+}
+
+/** ISO timestamp → `datetime-local` input value (local time), or '' when unset. */
+function isoToLocalInput(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** `datetime-local` value → ISO string, or null when empty. */
+function localInputToIso(local: string | null): string | null {
+  if (!local) return null;
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 function TabButton({
@@ -503,56 +571,82 @@ function FieldsTab({
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">No editable fields.</p>;
   }
-  return (
-    <div className="space-y-4">
-      {fields.map((f) => {
-        const Interface = resolveInterface(f);
-        const cellValue = value?.[f.name];
-        const writable = perms.fieldAllowed(collection, 'update', f.name);
-        const pinned = pinnedFields.includes(f.name);
-        const setCell = (next: unknown) => {
-          if (!writable) return;
-          onChange({ ...value, [f.name]: next });
-        };
-        return (
-          <div key={f.id}>
-            <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
-              <span>{f.name}</span>
-              {f.required && <span className="text-destructive">*</span>}
-              <span className="text-[10px] uppercase">{f.interface || f.type}</span>
-              {pinned && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
-                  title="Pinned by a human edit — agents cannot overwrite this field."
-                >
-                  <Pin className="h-3 w-3" /> Pinned
-                  {onReleasePin && (
-                    <button
-                      type="button"
-                      onClick={() => onReleasePin(f.name)}
-                      className="ml-0.5 rounded-full px-1 hover:bg-sky-100"
-                      aria-label={`Release pin on ${f.name}`}
-                      title="Release pin — allow agents to write this field again."
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </button>
-                  )}
-                </span>
-              )}
-              {!writable && (
-                <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
-                  <Lock className="h-3 w-3" /> read-only
-                </span>
-              )}
-            </label>
-            <div className={cn(!writable && 'pointer-events-none opacity-70')}>
-              <RawToggle value={cellValue} onChange={setCell}>
-                <Interface field={f} value={cellValue} onChange={setCell} />
-              </RawToggle>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+
+  // Group fields (interface `group-*`) act as containers; their `name` is the
+  // key that child fields reference via `field.group`.
+  const groupFieldNames = new Set(
+    fields.filter((f) => f.interface?.startsWith('group-')).map((f) => f.name),
   );
+  const bySort = (a: FieldResource, b: FieldResource) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+  const widthClass = (w?: FieldResource['width']) =>
+    w === 'half' ? 'sm:col-span-1' : 'col-span-1 sm:col-span-2';
+
+  const renderField = (f: FieldResource): React.ReactNode => {
+    // Group container — render its children in a nested grid.
+    if (f.interface?.startsWith('group-')) {
+      const variant = f.interface.replace('group-', '') as GroupVariant;
+      const children = fields.filter((c) => c.group === f.name).sort(bySort);
+      return (
+        <div key={f.id} className="col-span-1 sm:col-span-2">
+          <GroupContainer variant={variant} field={f}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children.map(renderField)}</div>
+          </GroupContainer>
+        </div>
+      );
+    }
+
+    const Interface = resolveInterface(f);
+    const cellValue = value?.[f.name];
+    const writable = perms.fieldAllowed(collection, 'update', f.name);
+    const pinned = pinnedFields.includes(f.name);
+    const setCell = (next: unknown) => {
+      if (!writable) return;
+      onChange({ ...value, [f.name]: next });
+    };
+    return (
+      <div key={f.id} className={widthClass(f.width)}>
+        <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+          <span>{f.name}</span>
+          {f.required && <span className="text-destructive">*</span>}
+          <span className="text-[10px] uppercase">{f.interface || f.type}</span>
+          {pinned && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
+              title="Pinned by a human edit — agents cannot overwrite this field."
+            >
+              <Pin className="h-3 w-3" /> Pinned
+              {onReleasePin && (
+                <button
+                  type="button"
+                  onClick={() => onReleasePin(f.name)}
+                  className="ml-0.5 rounded-full px-1 hover:bg-sky-100"
+                  aria-label={`Release pin on ${f.name}`}
+                  title="Release pin — allow agents to write this field again."
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              )}
+            </span>
+          )}
+          {!writable && (
+            <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
+              <Lock className="h-3 w-3" /> read-only
+            </span>
+          )}
+        </label>
+        <div className={cn(!writable && 'pointer-events-none opacity-70')}>
+          <RawToggle value={cellValue} onChange={setCell}>
+            <Interface field={f} value={cellValue} onChange={setCell} />
+          </RawToggle>
+        </div>
+      </div>
+    );
+  };
+
+  // Top-level fields = everything not nested inside a group container.
+  const topLevel = fields
+    .filter((f) => !f.group || !groupFieldNames.has(f.group))
+    .sort(bySort);
+
+  return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{topLevel.map(renderField)}</div>;
 }

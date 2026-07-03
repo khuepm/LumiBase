@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Webhook, Plus, Trash2, Edit, Save, Activity } from 'lucide-react';
 import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
+import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 import type { WebhookResource } from '@lumibase/sdk';
 
 export function WebhooksPage() {
@@ -113,6 +114,9 @@ function WebhookEditorDialog({ hook, onClose }: { hook: WebhookResource | null; 
       onClose();
     },
   });
+
+  // Cmd/Ctrl+S → save this webhook (mirrors the Save button's gating).
+  useSaveHandler(() => mutation.mutate(), !mutation.isPending && !!name && !!url);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">

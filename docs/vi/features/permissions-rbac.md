@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-06-23T13:05:48.000Z
+sourceLang: vi
+contentHash: ad255fa4351bf7f9
+---
+
 # Permissions, Roles & Policies
 
 > Mục tiêu: hệ phân quyền **mạnh nhất** trong nhóm OSS headless CMS. Hỗ trợ field-level, row-level, time-bound, IP-bound, attribute-based và composable policies.

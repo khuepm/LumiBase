@@ -100,7 +100,17 @@ interface FieldInterface<TOptions> {
 }
 ```
 
-Current Studio interfaces include text inputs, multiline text, WYSIWYG, markdown, code, slug, color, number input, rating, dropdown choices, tags, toggle, date/datetime, relation editors, file, raw JSON, repeater, divider, and notice interfaces. The implementation source of truth is `apps/studio/src/modules/content/interfaces/registry.tsx`.
+Current Studio interfaces (Directus-parity set) include:
+
+- **Text & utility**: `input`, `input-multiline`, `wysiwyg`, `markdown`, `code`, `slug`, `color`, `input-hash` (secret hashed on save), `input-autocomplete-api` (API-driven suggestions).
+- **Number**: `input-number`, `rating`, `slider`.
+- **Choice**: `select-dropdown`, `select-multiple-dropdown`, `select-radio`, `select-multiple-checkbox`, `select-multiple-checkbox-tree`, `select-icon`, `tags`.
+- **Boolean / Date**: `toggle`, `datetime`.
+- **Relation**: `relation-m2o`, `relation-o2m`, `relation-m2m`, `relation-o2m-tree-view`, `relation-m2a` (the **Builder** — links across multiple collections), `collection-item-dropdown`, `file`, `files`.
+- **Presentation / Group**: `presentation-divider`, `presentation-notice`, `presentation-header`, `presentation-links`, `group-raw`, `group-detail`, `group-accordion`.
+- **Special**: `json-raw`, `repeater`, `map` (GeoJSON), `seo`, `aio`, `translatable-text`.
+
+Relational multi-item interfaces (`relation-o2m`, `relation-m2m`, `relation-m2a`) expose **Create new** and **Add existing** actions via the shared `RelationDrawer` (`apps/studio/src/modules/content/interfaces/relation-drawer.tsx`) and support drag-to-reorder. The M2A Builder stores `Array<{ collection, id }>` and lets the editor pick the target collection per linked record. The form honors `field.width` (`half`/`full`/`fill`) and nests fields under `group-*` containers via `field.group`. The implementation source of truth is `apps/studio/src/modules/content/interfaces/registry.tsx`.
 
 ## 5. Display Registry
 

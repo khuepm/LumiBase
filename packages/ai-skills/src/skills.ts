@@ -306,4 +306,524 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     },
     requiredCapabilities: ['items:write'],
   },
+
+  // ── Governed surface skills (Content OS) ───────────────────────────────────
+  // Mirrors the service-wired registry in apps/cms/src/services/ai-harness.ts.
+  // Writes/deletes here are HITL/autonomy-gated by the harness.
+
+  listRelations: {
+    name: 'listRelations',
+    description: 'List all relations configured in the schema.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['schema:read'],
+  },
+
+  createRelation: {
+    name: 'createRelation',
+    description: 'Create a relation between two collections (m2o, o2m, m2m, m2a).',
+    parameters: {
+      type: 'object',
+      properties: {
+        manyCollection: { type: 'string', description: 'Collection holding the foreign key.' },
+        manyField: { type: 'string', description: 'Field on manyCollection storing the relation.' },
+        oneCollection: { type: 'string', description: 'Related collection.' },
+        type: { type: 'string', enum: ['m2o', 'o2m', 'm2m', 'm2a'] },
+      },
+      required: ['manyCollection', 'manyField', 'oneCollection'],
+    },
+    requiredCapabilities: ['schema:create'],
+  },
+
+  deleteRelation: {
+    name: 'deleteRelation',
+    description: 'Delete a relation by id.',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Relation id.' } },
+      required: ['id'],
+    },
+    requiredCapabilities: ['schema:delete'],
+  },
+
+  listRoles: {
+    name: 'listRoles',
+    description: 'List RBAC roles for the current site.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['access:read'],
+  },
+
+  createRole: {
+    name: 'createRole',
+    description: 'Create a new RBAC role.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Display name.' },
+        key: { type: 'string', description: 'Optional stable key.' },
+        description: { type: 'string' },
+      },
+      required: ['name'],
+    },
+    requiredCapabilities: ['access:create'],
+  },
+
+  deleteRole: {
+    name: 'deleteRole',
+    description: 'Delete an RBAC role and its bindings.',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Role id.' } },
+      required: ['id'],
+    },
+    requiredCapabilities: ['access:delete'],
+  },
+
+  listPolicies: {
+    name: 'listPolicies',
+    description: 'List reusable access policies for the current site.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['access:read'],
+  },
+
+  createPolicy: {
+    name: 'createPolicy',
+    description: 'Create a new reusable access policy.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Display name.' },
+        key: { type: 'string', description: 'Optional stable key.' },
+        description: { type: 'string' },
+      },
+      required: ['name'],
+    },
+    requiredCapabilities: ['access:create'],
+  },
+
+  deletePolicy: {
+    name: 'deletePolicy',
+    description: 'Delete a reusable access policy.',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Policy id.' } },
+      required: ['id'],
+    },
+    requiredCapabilities: ['access:delete'],
+  },
+
+  listIntents: {
+    name: 'listIntents',
+    description: 'List content intents (SLOs) for the current site.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['intents:read'],
+  },
+
+  createIntent: {
+    name: 'createIntent',
+    description: 'Create a content intent (declarative SLO) for a collection.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        collection: { type: 'string' },
+        rules: { type: 'array', items: { type: 'object' }, description: 'SLO rules.' },
+        schedule: { type: 'string', description: '5-field cron expression.' },
+      },
+      required: ['name', 'collection', 'rules', 'schedule'],
+    },
+    requiredCapabilities: ['intents:write'],
+  },
+
+  deleteIntent: {
+    name: 'deleteIntent',
+    description: 'Delete a content intent by id.',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Intent id.' } },
+      required: ['id'],
+    },
+    requiredCapabilities: ['intents:write'],
+  },
+
+  listFlows: {
+    name: 'listFlows',
+    description: 'List automation flows for the current site.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['flows:read'],
+  },
+
+  createFlow: {
+    name: 'createFlow',
+    description: 'Create an automation flow (trigger + operation graph).',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        triggerType: { type: 'string', enum: ['webhook', 'event', 'schedule', 'manual'] },
+        graph: { type: 'object', description: 'Operation graph { entry?, nodes[] }.' },
+      },
+      required: ['name', 'triggerType', 'graph'],
+    },
+    requiredCapabilities: ['flows:write'],
+  },
+
+  deleteFlow: {
+    name: 'deleteFlow',
+    description: 'Delete an automation flow by id.',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Flow id.' } },
+      required: ['id'],
+    },
+    requiredCapabilities: ['flows:write'],
+  },
+
+  runFlow: {
+    name: 'runFlow',
+    description: 'Trigger a manual run of an automation flow.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Flow id.' },
+        input: { type: 'object', description: 'Initial context passed to the flow.' },
+      },
+      required: ['id'],
+    },
+    requiredCapabilities: ['flows:run'],
+  },
+
+  // ── Identity & access (api-keys / users / teams) ───────────────────────────
+  listApiKeys: {
+    name: 'listApiKeys',
+    description: 'List API keys for the current site (token values are never returned).',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['api-keys:read'],
+  },
+  createApiKey: {
+    name: 'createApiKey',
+    description: 'Create an API key. The plaintext token is returned exactly once.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        description: { type: 'string' },
+        expiresAt: { type: 'string', description: 'ISO datetime or null.' },
+        metadata: { type: 'object' },
+      },
+      required: ['name'],
+    },
+    requiredCapabilities: ['api-keys:create'],
+  },
+  rotateApiKey: {
+    name: 'rotateApiKey',
+    description: 'Rotate an API key — issues a new token (returned once) and invalidates the old one.',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string' }, expiresAt: { type: 'string' } },
+      required: ['id'],
+    },
+    requiredCapabilities: ['api-keys:write'],
+  },
+  revokeApiKey: {
+    name: 'revokeApiKey',
+    description: 'Revoke an API key permanently.',
+    parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    requiredCapabilities: ['api-keys:delete'],
+  },
+  listUsers: {
+    name: 'listUsers',
+    description: 'List users belonging to the current site.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['users:read'],
+  },
+  inviteUser: {
+    name: 'inviteUser',
+    description: 'Invite a user by email and bind them to the site, optionally with a role.',
+    parameters: {
+      type: 'object',
+      properties: { email: { type: 'string' }, roleId: { type: 'string' } },
+      required: ['email'],
+    },
+    requiredCapabilities: ['users:write'],
+  },
+  updateUser: {
+    name: 'updateUser',
+    description: "Update a user's site membership (role and/or status).",
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string' }, roleId: { type: 'string' }, status: { type: 'string' } },
+      required: ['id'],
+    },
+    requiredCapabilities: ['users:write'],
+  },
+  removeUser: {
+    name: 'removeUser',
+    description: 'Remove a user from the site.',
+    parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    requiredCapabilities: ['users:delete'],
+  },
+  listTeams: {
+    name: 'listTeams',
+    description: 'List teams in the current site.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['teams:read'],
+  },
+  createTeam: {
+    name: 'createTeam',
+    description: 'Create a team.',
+    parameters: {
+      type: 'object',
+      properties: { name: { type: 'string' }, description: { type: 'string' } },
+      required: ['name'],
+    },
+    requiredCapabilities: ['teams:write'],
+  },
+  deleteTeam: {
+    name: 'deleteTeam',
+    description: 'Delete a team.',
+    parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    requiredCapabilities: ['teams:delete'],
+  },
+  addTeamMember: {
+    name: 'addTeamMember',
+    description: 'Add a user to a team.',
+    parameters: {
+      type: 'object',
+      properties: { teamId: { type: 'string' }, userId: { type: 'string' } },
+      required: ['teamId', 'userId'],
+    },
+    requiredCapabilities: ['teams:write'],
+  },
+  removeTeamMember: {
+    name: 'removeTeamMember',
+    description: 'Remove a user from a team.',
+    parameters: {
+      type: 'object',
+      properties: { teamId: { type: 'string' }, userId: { type: 'string' } },
+      required: ['teamId', 'userId'],
+    },
+    requiredCapabilities: ['teams:write'],
+  },
+
+  // ── Config (settings / translations / webhooks) ────────────────────────────
+  listSettings: {
+    name: 'listSettings',
+    description: 'List site settings, optionally filtered by scope.',
+    parameters: { type: 'object', properties: { scope: { type: 'string' } }, required: [] },
+    requiredCapabilities: ['config:read'],
+  },
+  upsertSetting: {
+    name: 'upsertSetting',
+    description: 'Create or update a site setting (upsert by key).',
+    parameters: {
+      type: 'object',
+      properties: { key: { type: 'string' }, value: { type: 'object' }, scope: { type: 'string' } },
+      required: ['key', 'value'],
+    },
+    requiredCapabilities: ['config:write'],
+  },
+  deleteSetting: {
+    name: 'deleteSetting',
+    description: 'Delete a site setting by key.',
+    parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] },
+    requiredCapabilities: ['config:delete'],
+  },
+  listTranslations: {
+    name: 'listTranslations',
+    description: 'List i18n translation strings, optionally filtered by namespace/language.',
+    parameters: {
+      type: 'object',
+      properties: { namespace: { type: 'string' }, language: { type: 'string' } },
+      required: [],
+    },
+    requiredCapabilities: ['config:read'],
+  },
+  createTranslation: {
+    name: 'createTranslation',
+    description: 'Create a translation string.',
+    parameters: {
+      type: 'object',
+      properties: {
+        language: { type: 'string' },
+        namespace: { type: 'string' },
+        key: { type: 'string' },
+        value: { type: 'string' },
+        status: { type: 'string' },
+      },
+      required: ['language', 'namespace', 'key', 'value'],
+    },
+    requiredCapabilities: ['config:write'],
+  },
+  updateTranslation: {
+    name: 'updateTranslation',
+    description: 'Update a translation string by id.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        language: { type: 'string' },
+        namespace: { type: 'string' },
+        key: { type: 'string' },
+        value: { type: 'string' },
+        status: { type: 'string' },
+      },
+      required: ['id'],
+    },
+    requiredCapabilities: ['config:write'],
+  },
+  deleteTranslation: {
+    name: 'deleteTranslation',
+    description: 'Delete a translation string by id.',
+    parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    requiredCapabilities: ['config:delete'],
+  },
+  listWebhooks: {
+    name: 'listWebhooks',
+    description: 'List outbound webhooks for the current site.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['config:read'],
+  },
+  createWebhook: {
+    name: 'createWebhook',
+    description: 'Create an outbound webhook on item events.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        url: { type: 'string' },
+        actions: { type: 'array', items: { type: 'string' } },
+        collections: { type: 'array', items: { type: 'string' } },
+        headers: { type: 'object' },
+        status: { type: 'string', enum: ['active', 'inactive'] },
+        secret: { type: 'string' },
+      },
+      required: ['name', 'url'],
+    },
+    requiredCapabilities: ['config:write'],
+  },
+  updateWebhook: {
+    name: 'updateWebhook',
+    description: 'Update an outbound webhook by id.',
+    parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    requiredCapabilities: ['config:write'],
+  },
+  deleteWebhook: {
+    name: 'deleteWebhook',
+    description: 'Delete an outbound webhook by id.',
+    parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    requiredCapabilities: ['config:delete'],
+  },
+
+  // ── Extensions ─────────────────────────────────────────────────────────────
+  listExtensions: {
+    name: 'listExtensions',
+    description: 'List extensions installed on the current site.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['extensions:read'],
+  },
+  installExtension: {
+    name: 'installExtension',
+    description: 'Install (register) an extension on the site from a bundle URL.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        version: { type: 'string' },
+        type: { type: 'string' },
+        bundleUrl: { type: 'string' },
+        key: { type: 'string' },
+        enabled: { type: 'boolean' },
+        manifest: { type: 'object' },
+        capabilities: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['name', 'version', 'type', 'bundleUrl'],
+    },
+    requiredCapabilities: ['extensions:write'],
+  },
+  updateExtension: {
+    name: 'updateExtension',
+    description: 'Update an installed extension (enable/disable, version, config).',
+    parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    requiredCapabilities: ['extensions:write'],
+  },
+  uninstallExtension: {
+    name: 'uninstallExtension',
+    description: 'Uninstall an extension from the site.',
+    parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    requiredCapabilities: ['extensions:delete'],
+  },
+
+  // ── Deployment integrations (spec: deployment-integrations, Req 6) ─────────
+
+  listDeploymentTargets: {
+    name: 'listDeploymentTargets',
+    description: 'List the configured deployment targets (Vercel/Netlify connections) for the site.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+    requiredCapabilities: ['deployments:read'],
+  },
+
+  listDeployments: {
+    name: 'listDeployments',
+    description: 'List recent deployments, optionally filtered by target or status.',
+    parameters: {
+      type: 'object',
+      properties: {
+        targetId: {
+          type: 'string',
+          description: 'Optional deployment target id to filter by.',
+        },
+        status: {
+          type: 'string',
+          description: 'Optional status filter: queued | building | ready | error | canceled.',
+        },
+      },
+      required: [],
+    },
+    requiredCapabilities: ['deployments:read'],
+  },
+
+  getDeploymentStatus: {
+    name: 'getDeploymentStatus',
+    description: 'Get the current status and details of a single deployment by id.',
+    parameters: {
+      type: 'object',
+      properties: {
+        deploymentId: {
+          type: 'string',
+          description: 'The deployment id to inspect.',
+        },
+      },
+      required: ['deploymentId'],
+    },
+    requiredCapabilities: ['deployments:read'],
+  },
+
+  triggerDeployment: {
+    name: 'triggerDeployment',
+    description:
+      'Trigger a build/deploy on a deployment target (Vercel/Netlify). High-risk: routed through human approval (HITL) when the agent autonomy level is below autopilot.',
+    parameters: {
+      type: 'object',
+      properties: {
+        targetId: {
+          type: 'string',
+          description: 'The deployment target id to deploy.',
+        },
+        branch: {
+          type: 'string',
+          description: 'Optional branch to deploy; defaults to the target default branch.',
+        },
+        reason: {
+          type: 'string',
+          description: 'Optional human-readable reason recorded in the audit trail.',
+        },
+      },
+      required: ['targetId'],
+    },
+    requiredCapabilities: ['deployments:write'],
+  },
 };

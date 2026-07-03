@@ -20,6 +20,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Configuration',
     items: [
       { id: 'site', label: 'Site', to: '/settings/site' },
+      { id: 'keyboard', label: 'Keyboard shortcuts', to: '/settings/keyboard' },
     ],
   },
   {
@@ -36,6 +37,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'webhooks', label: 'Webhooks', to: '/settings/webhooks' },
       { id: 'email', label: 'Email', to: '/settings/email' },
+      { id: 'notifications', label: 'Notifications', to: '/settings/notifications' },
       { id: 'extensions', label: 'Extensions', to: '/settings/extensions' },
       { id: 'marketplace', label: 'Marketplace', to: '/settings/marketplace' },
     ],
@@ -54,6 +56,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'System',
     items: [
       { id: 'activity', label: 'Activity', to: '/settings/activity' },
+      { id: 'encryption', label: 'Encryption', to: '/settings/encryption' },
       { id: 'updates', label: 'Updates', to: '/settings/updates' },
     ],
   },

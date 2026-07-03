@@ -5,13 +5,17 @@ import { CloudflareDatabaseProvider, type Hyperdrive } from './database';
 import { CloudflareSearchProvider } from './search';
 import { CloudflareQueueProvider, type CloudflareQueue } from './queue';
 import { CloudflareMediaProcessor } from './media';
+import { createCloudflareKeyProvider } from './keys';
+import { CloudflareRealtimeProvider, type DurableObjectNamespaceLike } from './realtime';
 
+export { CloudflareRealtimeProvider } from './realtime';
 export { CloudflareCacheProvider } from './cache';
 export { CloudflareStorageProvider } from './storage';
 export { CloudflareDatabaseProvider } from './database';
 export { CloudflareSearchProvider } from './search';
 export { CloudflareQueueProvider } from './queue';
 export { CloudflareMediaProcessor } from './media';
+export { createCloudflareKeyProvider } from './keys';
 
 /**
  * Expected Cloudflare Worker environment bindings.
@@ -27,6 +31,8 @@ interface CloudflareEnv {
   QUEUES?: Record<string, CloudflareQueue>;
   REALTIME_QUEUE?: CloudflareQueue;
   MEDIA_BASE_URL?: string;
+  /** SiteRoom Durable Object namespace — realtime fan-out hub. */
+  SITE_ROOM?: DurableObjectNamespaceLike;
 }
 
 /**
@@ -76,6 +82,8 @@ export function createCloudflareRuntime(env: Record<string, unknown>): RuntimeCo
     ),
     queue: new CloudflareQueueProvider(collectQueues(env)),
     media: new CloudflareMediaProcessor(cfEnv.MEDIA_BASE_URL ?? ''),
+    keys: createCloudflareKeyProvider(env),
+    realtime: new CloudflareRealtimeProvider(cfEnv.SITE_ROOM),
     runtime: 'cloudflare',
   };
 }

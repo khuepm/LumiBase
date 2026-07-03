@@ -36,6 +36,7 @@ const TestSandboxPage = lazy(() => import('./modules/access/test-sandbox').then(
 const ContentIndexPage = lazy(() => import('./modules/content/index-page').then((m) => ({ default: m.ContentIndexPage })));
 const ItemDetailPage = lazy(() => import('./modules/content/item-detail').then((m) => ({ default: m.ItemDetailPage })));
 const ItemsListPage = lazy(() => import('./modules/content/items-list').then((m) => ({ default: m.ItemsListPage })));
+const ReviewQueuePage = lazy(() => import('./modules/editorial/review-queue').then((m) => ({ default: m.ReviewQueuePage })));
 const CollectionsListPage = lazy(() => import('./modules/data-model/list').then((m) => ({ default: m.CollectionsListPage })));
 const CollectionDetailPage = lazy(() => import('./modules/data-model/detail').then((m) => ({ default: m.CollectionDetailPage })));
 const CollectionWizardPage = lazy(() => import('./modules/data-model/wizard').then((m) => ({ default: m.CollectionWizardPage })));
@@ -44,10 +45,13 @@ const DeveloperTypesPage = lazy(() => import('./modules/settings/types-page').th
 const TranslationsPage = lazy(() => import('./modules/translations').then((m) => ({ default: m.TranslationsPage })));
 const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
 const EmailSettingsPage = lazy(() => import('./modules/settings/email-page').then((m) => ({ default: m.EmailSettingsPage })));
+const NotificationsSettingsPage = lazy(() => import('./modules/settings/notifications-page').then((m) => ({ default: m.NotificationsSettingsPage })));
 const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then((m) => ({ default: m.SiteSettingsPage })));
+const KeyboardSettingsPage = lazy(() => import('./modules/settings/keyboard-page').then((m) => ({ default: m.KeyboardSettingsPage })));
 const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
+const EncryptionSettingsPage = lazy(() => import('./modules/settings/encryption-page').then((m) => ({ default: m.EncryptionSettingsPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
 const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
@@ -60,6 +64,8 @@ const MissionControlGoalsPage = lazy(() => import('./modules/mission-control/goa
 const MissionControlAgentsPage = lazy(() => import('./modules/mission-control/agents-page').then((m) => ({ default: m.AgentsPage })));
 const MissionControlTrustPage = lazy(() => import('./modules/mission-control/trust-page').then((m) => ({ default: m.TrustPage })));
 const MissionControlConstitutionPage = lazy(() => import('./modules/mission-control/constitution-page').then((m) => ({ default: m.ConstitutionPage })));
+const InsightsListPage = lazy(() => import('./modules/insights/list-page').then((m) => ({ default: m.InsightsListPage })));
+const InsightsDashboardPage = lazy(() => import('./modules/insights/dashboard-page').then((m) => ({ default: m.DashboardViewPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
 const TeamsPage = lazy(() => import('./modules/users/teams-page').then((m) => ({ default: m.TeamsPage })));
 const UsersPage = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
@@ -479,6 +485,13 @@ const contentCollectionRoute = createRoute({
   component: withSuspense(ItemsListPage),
 });
 
+// Static `reviews` segment is matched before the `$id` param route.
+const contentReviewsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/content/$collection/reviews',
+  component: withSuspense(ReviewQueuePage),
+});
+
 const contentItemRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/content/$collection/$id',
@@ -489,6 +502,12 @@ const adminPathContentCollectionRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/content/$collection',
   component: withSuspense(ItemsListPage),
+});
+
+const adminPathContentReviewsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/content/$collection/reviews',
+  component: withSuspense(ReviewQueuePage),
 });
 
 const adminPathContentItemRoute = createRoute({
@@ -595,10 +614,22 @@ const emailSettingsRoute = createRoute({
   component: withSuspense(EmailSettingsPage),
 });
 
+const notificationsSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'notifications',
+  component: withSuspense(NotificationsSettingsPage),
+});
+
 const siteSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'site',
   component: withSuspense(SiteSettingsPage),
+});
+
+const keyboardSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'keyboard',
+  component: withSuspense(KeyboardSettingsPage),
 });
 
 const materializeSettingsRoute = createRoute({
@@ -617,6 +648,12 @@ const activityRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'activity',
   component: withSuspense(ActivityPage),
+});
+
+const encryptionSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'encryption',
+  component: withSuspense(EncryptionSettingsPage),
 });
 
 const extensionsRoute = createRoute({
@@ -688,10 +725,22 @@ const adminPathEmailSettingsRoute = createRoute({
   component: withSuspense(EmailSettingsPage),
 });
 
+const adminPathNotificationsSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'notifications',
+  component: withSuspense(NotificationsSettingsPage),
+});
+
 const adminPathSiteSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'site',
   component: withSuspense(SiteSettingsPage),
+});
+
+const adminPathKeyboardSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'keyboard',
+  component: withSuspense(KeyboardSettingsPage),
 });
 
 const adminPathMaterializeSettingsRoute = createRoute({
@@ -875,6 +924,31 @@ const adminPathMissionControlConstitutionRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/mission-control/constitution',
   component: withSuspense(MissionControlConstitutionPage),
+});
+
+// Insights — dashboards built from content (insights-dashboard spec).
+const insightsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/insights',
+  component: withSuspense(InsightsListPage),
+});
+
+const insightsDashboardRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/insights/$dashboardId',
+  component: withSuspense(InsightsDashboardPage),
+});
+
+const adminPathInsightsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/insights',
+  component: withSuspense(InsightsListPage),
+});
+
+const adminPathInsightsDashboardRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/insights/$dashboardId',
+  component: withSuspense(InsightsDashboardPage),
 });
 
 const cdcRoute = createRoute({
@@ -1095,6 +1169,7 @@ const routeTree = rootRoute.addChildren([
   adminLayoutRoute.addChildren([
     indexRoute,
     contentCollectionRoute,
+    contentReviewsRoute,
     contentItemRoute,
     dataModelRoute,
     dataModelNewRoute,
@@ -1105,11 +1180,14 @@ const routeTree = rootRoute.addChildren([
       settingsTypesRoute,
       translationsRoute,
       siteSettingsRoute,
+      keyboardSettingsRoute,
       webhooksRoute,
       emailSettingsRoute,
+      notificationsSettingsRoute,
       materializeSettingsRoute,
       translationMemoryRoute,
       activityRoute,
+      encryptionSettingsRoute,
       extensionsRoute,
       marketplaceRoute,
       updatesRoute,
@@ -1134,6 +1212,10 @@ const routeTree = rootRoute.addChildren([
     adminPathMissionControlAgentsRoute,
     adminPathMissionControlTrustRoute,
     adminPathMissionControlConstitutionRoute,
+    insightsRoute,
+    insightsDashboardRoute,
+    adminPathInsightsRoute,
+    adminPathInsightsDashboardRoute,
     cdcRoute,
     cdcNewRoute,
     cdcDetailRoute,
@@ -1151,6 +1233,7 @@ const routeTree = rootRoute.addChildren([
     ]),
     adminPathIndexRoute,
     adminPathContentCollectionRoute,
+    adminPathContentReviewsRoute,
     adminPathContentItemRoute,
     adminPathDataModelRoute,
     adminPathDataModelNewRoute,
@@ -1161,8 +1244,10 @@ const routeTree = rootRoute.addChildren([
       adminPathSettingsTypesRoute,
       adminPathTranslationsRoute,
       adminPathSiteSettingsRoute,
+      adminPathKeyboardSettingsRoute,
       adminPathWebhooksRoute,
       adminPathEmailSettingsRoute,
+      adminPathNotificationsSettingsRoute,
       adminPathMaterializeSettingsRoute,
       adminPathTranslationMemoryRoute,
       adminPathActivityRoute,

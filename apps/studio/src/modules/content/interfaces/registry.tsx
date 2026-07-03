@@ -1,20 +1,35 @@
 import type { FieldResource } from '@lumibase/sdk';
 import { AioInterface } from './aio';
 import { CodeInterface } from './code';
+import { CollectionItemDropdownInterface } from './collection-item-dropdown';
 import { ColorInterface } from './color';
 import { DatetimeInterface } from './datetime';
 import { FileInterface } from './file';
 import { FilesInterface } from './files';
+import { InputAutocompleteApiInterface } from './input-autocomplete-api';
+import { InputHashInterface } from './input-hash';
 import { JsonRawInterface } from './json-raw';
+import { MapInterface } from './map';
 import { MarkdownInterface } from './markdown';
 import { NumberInterface } from './number';
-import { PresentationInterface } from './presentation';
+import { RelationTreeViewInterface } from './relation-o2m-tree-view';
+import {
+  PresentationHeaderInterface,
+  PresentationInterface,
+  PresentationLinksInterface,
+} from './presentation';
 import { RatingInterface } from './rating';
+import { RelationM2AInterface } from './relation-m2a';
 import { RelationM2OInterface } from './relation-m2o';
 import { RelationManyInterface } from './relation-many';
 import { RepeaterInterface } from './repeater';
 import { SeoInterface } from './seo';
 import { SelectDropdownInterface } from './select';
+import { SelectMultipleCheckbox, SelectMultipleDropdown } from './select-multiple';
+import { SelectRadioInterface } from './select-radio';
+import { SelectCheckboxTreeInterface } from './select-checkbox-tree';
+import { SelectIconInterface } from './select-icon';
+import { SliderInterface } from './slider';
 import { SlugInterface } from './slug';
 import { TagsInterface } from './tags';
 import { TextInterface, TextMultilineInterface } from './text';
@@ -49,10 +64,22 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   rating: RatingInterface,
   tags: TagsInterface,
 
+  // Selection interfaces (Directus parity).
+  'select-multiple-dropdown': SelectMultipleDropdown,
+  'select-multiple-checkbox': SelectMultipleCheckbox,
+  'select-multiple-checkbox-tree': SelectCheckboxTreeInterface,
+  'select-radio': SelectRadioInterface,
+  'select-icon': SelectIconInterface,
+  slider: SliderInterface,
+
   // Phase B FE slice 4 additions.
   'relation-m2o': RelationM2OInterface,
   'relation-o2m': RelationManyInterface,
   'relation-m2m': RelationManyInterface,
+  'relation-m2a': RelationM2AInterface,
+  'relation-o2m-tree-view': RelationTreeViewInterface,
+  'collection-item-dropdown': CollectionItemDropdownInterface,
+  map: MapInterface,
   code: CodeInterface,
   wysiwyg: WysiwygInterface,
   markdown: MarkdownInterface,
@@ -61,6 +88,10 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   repeater: RepeaterInterface,
   'presentation-divider': PresentationInterface,
   'presentation-notice': PresentationInterface,
+  'presentation-header': PresentationHeaderInterface,
+  'presentation-links': PresentationLinksInterface,
+  'input-hash': InputHashInterface,
+  'input-autocomplete-api': InputAutocompleteApiInterface,
   'translatable-text': TranslatableText,
   seo: SeoInterface,
   aio: AioInterface,

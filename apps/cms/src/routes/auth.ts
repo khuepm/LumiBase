@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { SignJWT } from 'jose';
 import { and, eq, sql } from 'drizzle-orm';
-import { systemState, users, userSites } from '@lumibase/database';
+import { roles, systemState, users, userSites } from '@lumibase/database';
 import type { AppEnv } from '../env';
 import { hashPassword, verifyPassword } from '../services/auth/password';
 import {
@@ -31,6 +31,7 @@ import { getSecurityNotificationDispatcher, scheduleWorkersDrain } from '../modu
 import type { NotificationDeps } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';
 import { formatSafeError } from '@lumibase/shared/utils';
+import { UserPreferencesUpdateSchema } from '@lumibase/shared/schemas';
 
 export const authRouter = new Hono<AppEnv>();
 
@@ -111,6 +112,87 @@ meRouter.get('/admin-path', async (c) => {
   return c.json({ data: { adminPath } });
 });
 
+/**
+ * `GET /api/v1/me/preferences` — the authenticated user's preferences blob
+ * (`users.preferences`). Identity-global (not per-site): a user's keybindings,
+ * language, etc. follow them across every site they belong to.
+ *
+ * Returns `{}` when the row is missing or has no preferences yet, so the
+ * Studio can merge cleanly over its built-in defaults without special-casing
+ * a 404.
+ */
+meRouter.get('/preferences', async (c) => {
+  const db = c.get('db');
+  const auth = c.get('auth');
+  const userId = auth.userId;
+  if (!userId) {
+    return c.json(
+      { errors: [{ code: 'UNAUTHENTICATED', message: 'No authenticated user.' }] },
+      401,
+    );
+  }
+
+  const [row] = await db
+    .select({ preferences: users.preferences })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return c.json({ data: row?.preferences ?? {} });
+});
+
+/**
+ * `PATCH /api/v1/me/preferences` — shallow-merge a validated patch into the
+ * existing preferences blob (sparse update, like `PATCH /site`). Top-level
+ * sections the patch omits are preserved; sections it includes (e.g.
+ * `keybindings`) replace their previous value wholesale — the Studio sends the
+ * complete override map, so this is predictable and avoids orphaned entries.
+ */
+meRouter.patch('/preferences', async (c) => {
+  const db = c.get('db');
+  const auth = c.get('auth');
+  const userId = auth.userId;
+  if (!userId) {
+    return c.json(
+      { errors: [{ code: 'UNAUTHENTICATED', message: 'No authenticated user.' }] },
+      401,
+    );
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = UserPreferencesUpdateSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: parsed.error.message, issues: parsed.error.issues }] },
+      400,
+    );
+  }
+  const patch = parsed.data;
+
+  const [row] = await db
+    .select({ preferences: users.preferences })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (!row) {
+    return c.json(
+      { errors: [{ code: 'USER_NOT_FOUND', message: 'Current user not found.' }] },
+      404,
+    );
+  }
+
+  const current = (row.preferences ?? {}) as Record<string, unknown>;
+  const merged = { ...current, ...patch };
+
+  await db
+    .update(users)
+    .set({ preferences: merged, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+
+  return c.json({ data: merged });
+});
+
 // Helper to sign Custom JWT (HS256)
 async function signCustomJwt(payload: any, secret: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -138,8 +220,11 @@ const loginSchema = z.object({
 authRouter.post('/register', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
+  // Defensive optional chaining: if this path is ever re-added to the
+  // `withAuth` bypass list the principal is absent, and the route must fail
+  // closed (403) instead of throwing a 500.
   const auth = c.get('auth');
-  if (!auth.roles?.includes('admin')) {
+  if (!auth?.roles?.includes('admin')) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Only administrators can register users for a site.' }] },
       403,
@@ -163,6 +248,23 @@ authRouter.post('/register', async (c) => {
     );
   }
 
+  // Resolve the site's seeded "member" role BEFORE creating the user so a
+  // misconfigured site fails cleanly instead of leaving an orphan user.
+  // `user_sites.role_id` is a nanoid FK into `roles` — a literal key like
+  // 'member' violates the FK and aborts the insert.
+  const [memberRole] = await db
+    .select({ id: roles.id })
+    .from(roles)
+    .where(and(eq(roles.siteId, siteId), eq(roles.systemKey, 'member')))
+    .limit(1);
+
+  if (!memberRole) {
+    return c.json(
+      { errors: [{ code: 'ROLE_NOT_FOUND', message: 'Default member role is not provisioned for this site.' }] },
+      500,
+    );
+  }
+
   const passwordHash = await hashPassword(input.password);
 
   // Insert user
@@ -181,13 +283,13 @@ authRouter.post('/register', async (c) => {
     return c.json({ errors: [{ code: 'REGISTRATION_FAILED', message: 'Failed to create user.' }] }, 500);
   }
 
-  // Bind new user to the current site (default 'member' role)
+  // Bind new user to the current site (seeded member role)
   await db
     .insert(userSites)
     .values({
       userId: newUser.id,
       siteId,
-      roleId: 'member',
+      roleId: memberRole.id,
     })
     .onConflictDoNothing();
 

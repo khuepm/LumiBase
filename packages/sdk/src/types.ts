@@ -444,7 +444,46 @@ export interface ListItemsParams {
   limit?: number;
   offset?: number;
   status?: string | null;
-  search?: string;
+}
+
+/** Reserved metadata attributes present on every search hit. */
+export interface SearchHitMeta {
+  /** Which collection the hit belongs to. */
+  _collection?: string;
+  /** Human-readable display title derived at index time. */
+  _title?: string;
+  /** Item update timestamp, if available. */
+  _updatedAt?: string | number;
+}
+
+export type SearchHit = SearchHitMeta & Record<string, unknown>;
+
+export interface SearchParams {
+  /** Restrict to one collection. Omit for cross-collection (global) search. */
+  collection?: string;
+  /** MeiliSearch filter expression. */
+  filter?: string;
+  /** Sort directives, e.g. `["_updatedAt:desc"]`. */
+  sort?: string[];
+  limit?: number;
+  offset?: number;
+}
+
+export interface SearchResponse {
+  data: SearchHit[];
+  meta: {
+    query: string;
+    limit: number;
+    offset: number;
+    totalHits?: number;
+    processingTimeMs?: number;
+    /** Single-collection search: the collection searched. */
+    collection?: string;
+    /** Cross-collection search: the collections fanned out over. */
+    collections?: string[];
+    /** Cross-collection search: true when the collection set was capped. */
+    truncated?: boolean;
+  };
 }
 
 export interface ItemRow<
@@ -456,6 +495,11 @@ export interface ItemRow<
   status: string;
   data: TData;
   sort: number;
+  /** Content scheduling window (Publish_Window); null when not scheduled. */
+  publishAt?: string | null;
+  unpublishAt?: string | null;
+  /** Editorial workflow state; null when the workflow is not in use. */
+  editorialState?: string | null;
   userCreated: string | null;
   userUpdated: string | null;
   createdAt: string;
@@ -1319,4 +1363,37 @@ export interface CreateSCIMTokenParams {
   label: string;
   /** Number of days until expiry. Default: 90. Max: 365. */
   lifespanDays?: number;
+}
+
+/** Deployment integrations (spec: deployment-integrations). Token never serialized. */
+export interface DeploymentTargetResource {
+  id: string;
+  provider: "vercel" | "netlify";
+  name: string;
+  projectId: string;
+  defaultBranch: string | null;
+  productionUrl: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DeploymentResource {
+  id: string;
+  siteId: string;
+  targetId: string;
+  provider: string;
+  providerDeploymentId: string | null;
+  status: "queued" | "building" | "ready" | "error" | "canceled";
+  branch: string | null;
+  commitSha: string | null;
+  commitMessage: string | null;
+  url: string | null;
+  triggeredBy: string | null;
+  triggerSource: "manual" | "auto" | "agent";
+  errorMessage: string | null;
+  logExcerpt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
 }

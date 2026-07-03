@@ -3,9 +3,21 @@
   "configurations": [
     {
       "name": "landing-preview",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["-y", "serve@latest", "apps/landing/out", "-l", "4311"],
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4311", "--directory", "apps/landing/out"],
       "port": 4311
+    },
+    {
+      "name": "landing",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-F", "@lumibase/landing", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "marketplace",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-F", "@lumibase/marketplace", "dev"],
+      "port": 3002
     },
     {
       "name": "studio",
