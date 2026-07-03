@@ -169,6 +169,62 @@ registerHandler('trust-promote-check', async (ctx) => {
   return new TrustLedgerService({ db: db as any, siteId }).sweepPromotions();
 });
 
+registerHandler('deploy:trigger', async (ctx, options) => {
+  // Deployment integrations (deployment-integrations Req 5.2): auto-deploy on
+  // content events. Triggers a deploy for a target via the shared
+  // DeploymentService — the same path as the manual API trigger — so it reuses
+  // every guard (SSRF, encrypted token, audit). `db`/`siteId`/`keys` arrive via
+  // the run environment (see routes/flows.ts); `runId` links the deployment to
+  // the flow run for provenance.
+  const db = ctx.env['db'];
+  const siteId = ctx.env['siteId'];
+  const keys = ctx.env['keys'];
+  const targetId = String(options['targetId'] ?? ctx.input['targetId'] ?? '');
+  if (!db || typeof siteId !== 'string' || !keys) {
+    throw new Error('deploy:trigger requires env.db, env.siteId and env.keys');
+  }
+  if (!targetId) throw new Error('deploy:trigger requires a targetId option');
+
+  const { DeploymentService } = await import('./deployment/deployment-service');
+  const service = new DeploymentService({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    db: db as any,
+    siteId,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    keys: keys as any,
+  });
+  const row = await service.trigger(targetId, {
+    branch: options['branch'] ? String(options['branch']) : undefined,
+    reason: options['reason'] ? String(options['reason']) : 'flow auto-deploy',
+    source: 'auto',
+    triggeredBy: ctx.env['runId'] ? String(ctx.env['runId']) : undefined,
+  });
+  return { deploymentId: row.id, status: row.status, provider: row.provider };
+});
+
+registerHandler('deploy:status', async (ctx, options) => {
+  // Refresh and return one deployment's status so a flow can branch on it.
+  const db = ctx.env['db'];
+  const siteId = ctx.env['siteId'];
+  const keys = ctx.env['keys'];
+  const deploymentId = String(options['deploymentId'] ?? ctx.input['deploymentId'] ?? '');
+  if (!db || typeof siteId !== 'string' || !keys) {
+    throw new Error('deploy:status requires env.db, env.siteId and env.keys');
+  }
+  if (!deploymentId) throw new Error('deploy:status requires a deploymentId option');
+
+  const { DeploymentService } = await import('./deployment/deployment-service');
+  const service = new DeploymentService({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    db: db as any,
+    siteId,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    keys: keys as any,
+  });
+  const row = await service.syncDeployment(deploymentId);
+  return { deploymentId, status: row?.status ?? 'unknown' };
+});
+
 // ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
