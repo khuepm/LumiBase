@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { registerCrud } from './_crud.js';
 import { confirmDescription, okText, run } from './_shared.js';
+import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 const presetSchema = z.object({
   bookmark: z.string().nullable().optional(),
@@ -66,9 +67,9 @@ export function registerContentConfigTools(server: McpServer, client: LumiBaseCl
     'get_setting',
     {
       description: 'Get a single setting by key.',
-      inputSchema: { key: z.string().min(1) },
+      inputSchema: { key: idPathSegmentSchema },
     },
-    async ({ key }) => run(() => client.get<unknown>(`/settings/${encodeURIComponent(key)}`)),
+    async ({ key }) => run(() => client.get<unknown>(`/settings/${encodePathSegment(key)}`)),
   );
 
   server.registerTool(
@@ -76,7 +77,7 @@ export function registerContentConfigTools(server: McpServer, client: LumiBaseCl
     {
       description: 'Create or update a setting (upsert by key).',
       inputSchema: {
-        key: z.string().min(1),
+        key: idPathSegmentSchema,
         value: z.record(z.unknown()).describe('Arbitrary JSON value object for the setting.'),
         scope: z.string().optional(),
       },
@@ -89,13 +90,13 @@ export function registerContentConfigTools(server: McpServer, client: LumiBaseCl
     {
       description: 'Delete a setting by key. DESTRUCTIVE — warn the user first and pass confirm=true.',
       inputSchema: {
-        key: z.string().min(1),
+        key: idPathSegmentSchema,
         confirm: z.literal(true).describe(confirmDescription),
       },
     },
     async ({ key }) =>
       run(async () => {
-        await client.delete(`/settings/${encodeURIComponent(key)}`);
+        await client.delete(`/settings/${encodePathSegment(key)}`);
         return okText(`Setting "${key}" deleted.`);
       }),
   );

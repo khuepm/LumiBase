@@ -43,3 +43,61 @@ Chuẩn bị nền bảo mật runtime rõ ràng trước khi AI Harness đượ
 - Mọi response có CSP và các security headers nền tảng.
 - Outbound URL guard có test cho localhost, private IP, link-local metadata IP và protocol nguy hiểm.
 - Control-plane guard và file upload policy ghi audit event riêng khi request có DB context.
+
+## Guard: RBAC context cho ItemService (chống fail-open)
+
+### Vấn đề
+
+`ItemService` chỉ enforce row/field RBAC khi được khởi tạo kèm `permissionCtx`.
+Nếu vắng, `this.permissions = null` và **mọi** kiểm tra quyền short-circuit sang
+"cho phép" (fail-open). Thiết kế này cố ý — worker hệ thống chạy hợp lệ mà không
+có user principal — nhưng khiến một call site theo request nếu **quên**
+`permissionCtx` sẽ âm thầm bỏ qua phân quyền, trông y hệt system context cố ý.
+
+Lỗi này từng ship: skill AI `updateItem` chạy `ItemService.patch()` trên service
+thiếu `permissionCtx` → LLM sửa item bỏ qua RBAC (PR #151). Rà soát lại phát hiện
+endpoint MCP (`routes/mcp.ts`) dính đúng lỗi này dù comment của nó cam kết
+"MCP client không thể làm nhiều hơn token qua Agent API".
+
+### Cơ chế chặn hồi quy (đã triển khai)
+
+Mọi khởi tạo `ItemService` đi qua hai helper tường minh trong
+`apps/cms/src/services/item-service-factory.ts`:
+
+- **`itemServiceForRequest(c)`** — dùng cho MỌI service tạo khi xử lý HTTP request
+  (routes, GraphQL resolver, MCP). Luôn gắn `permissionCtx` từ Hono context;
+  `permissionCtx` áp cuối cùng nên `overrides` không thể vô tình gỡ enforcement.
+- **`itemServiceForSystem(deps, reason)`** — dùng cho flow hệ thống/nền. Bắt buộc
+  truyền `SystemContextReason` (`'scheduler'` | `'background-worker'` |
+  `'compliance-erasure'`) để tác giả phải **nêu lý do** tại sao fail-open an toàn.
+
+Test hồi quy `apps/cms/src/__tests__/item-service-rbac-context.test.ts` quét source
+và **fail CI** nếu có `new ItemService(...)` trực tiếp ngoài factory (trừ allowlist
+đã review). Người sửa sau không thể tái tạo lỗ hổng fail-open mà reviewer không thấy.
+
+### Bảng phân loại call site (audit)
+
+| Call site | Chế độ | Lý do |
+|-----------|--------|-------|
+| `routes/items.ts` | request | REST CRUD — enforce RBAC theo bearer token |
+| `routes/ai.ts` (`/chat`, `/approvals/:id/decide`) | request | skill AI enforce cùng RBAC như `/items` (PR #151) |
+| `routes/mcp.ts` | request | **đã vá** — trước đây thiếu `permissionCtx` (fail-open) |
+| `routes/admin-sar.ts` | request | SAR export — admin-gated + enforce RBAC |
+| `graphql/context.ts` | request | GraphQL kế thừa nguyên governance của REST |
+| `services/scheduler-worker.ts` | system `scheduler` | cron retention sweep, không có user principal |
+| `services/veto-commit-worker.ts` | system `background-worker` | commit sau khi veto window đã chốt quyết định human |
+| `services/agent-run-worker.ts` | system `background-worker` | governed agent run — HITL/autonomy gate ở harness, không phải RBAC user |
+| `services/erasure-service.ts` | system `compliance-erasure` | erasure/SAR gated admin + dual-control ở tầng service |
+
+### Checklist khi thêm ItemService mới
+
+- [ ] Call site nằm trong đường xử lý HTTP request (có `Context<AppEnv>`)? → dùng `itemServiceForRequest(c)`. TUYỆT ĐỐI không tự viết `permissionCtx` inline.
+- [ ] Call site là worker/cron/compliance chạy quyền hệ thống? → dùng `itemServiceForSystem(deps, reason)` và chọn `reason` đúng ngữ nghĩa.
+- [ ] Nếu buộc phải `new ItemService(...)` trực tiếp (hiếm) → thêm vào `ALLOWED_DIRECT_CONSTRUCTION` trong test guard kèm lý do, để reviewer thấy.
+- [ ] Đã cập nhật bảng phân loại phía trên khi thêm call site request/system mới.
+
+### Tiêu chí hoàn tất (guard này)
+
+- Không file production nào (ngoài factory + allowlist) gọi `new ItemService(...)` trực tiếp — bảo đảm bằng test source-scan.
+- Endpoint AI và MCP enforce row/field RBAC đúng như `/items` (skill LLM không leo quyền vượt token).
+- Mọi system context khai báo `reason` tường minh, greppable, có mặt trong bảng audit.

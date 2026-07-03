@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { type LumiBaseClient, LumiBaseApiError } from '../client.js';
+import { collectionNameSchema, encodePathSegment, idPathSegmentSchema } from './path.js';
 
 function formatError(err: unknown): string {
   if (err instanceof LumiBaseApiError) {
@@ -24,7 +25,7 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'List items from a collection with optional filtering, sorting, and pagination.',
       inputSchema: {
-        collection: z.string().min(1),
+        collection: collectionNameSchema,
         limit: z.number().int().min(1).max(200).optional().default(25),
         offset: z.number().int().min(0).optional().default(0),
         status: z.enum(['draft', 'published', 'archived']).optional(),
@@ -42,7 +43,7 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
     async ({ collection, ...params }) => {
       try {
         const qs = buildQs(params as Record<string, string | number | boolean | undefined>);
-        const data = await client.get<unknown>(`/items/${collection}${qs}`);
+        const data = await client.get<unknown>(`/items/${encodePathSegment(collection)}${qs}`);
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };
@@ -55,8 +56,8 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Get a single item by ID from a collection.',
       inputSchema: {
-        collection: z.string().min(1),
-        id: z.string().min(1),
+        collection: collectionNameSchema,
+        id: idPathSegmentSchema,
         fields: z
           .string()
           .optional()
@@ -66,7 +67,9 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
     async ({ collection, id, fields }) => {
       try {
         const qs = buildQs({ fields });
-        const data = await client.get<unknown>(`/items/${collection}/${id}${qs}`);
+        const data = await client.get<unknown>(
+          `/items/${encodePathSegment(collection)}/${encodePathSegment(id)}${qs}`,
+        );
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };
@@ -79,14 +82,14 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Create a new item in a collection.',
       inputSchema: {
-        collection: z.string().min(1),
+        collection: collectionNameSchema,
         data: z.record(z.unknown()).describe('Field values for the new item'),
         status: z.enum(['draft', 'published']).optional().default('draft'),
       },
     },
     async ({ collection, data: itemData, status }) => {
       try {
-        const data = await client.post<unknown>(`/items/${collection}`, {
+        const data = await client.post<unknown>(`/items/${encodePathSegment(collection)}`, {
           ...itemData,
           status,
         });
@@ -102,14 +105,17 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Partially update an item (PATCH — only provided fields are changed).',
       inputSchema: {
-        collection: z.string().min(1),
-        id: z.string().min(1),
+        collection: collectionNameSchema,
+        id: idPathSegmentSchema,
         data: z.record(z.unknown()).describe('Fields to update'),
       },
     },
     async ({ collection, id, data: itemData }) => {
       try {
-        const data = await client.patch<unknown>(`/items/${collection}/${id}`, itemData);
+        const data = await client.patch<unknown>(
+          `/items/${encodePathSegment(collection)}/${encodePathSegment(id)}`,
+          itemData,
+        );
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };
@@ -122,14 +128,14 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Soft-delete an item (sets deleted_at, recoverable). Pass confirm=true.',
       inputSchema: {
-        collection: z.string().min(1),
-        id: z.string().min(1),
+        collection: collectionNameSchema,
+        id: idPathSegmentSchema,
         confirm: z.literal(true).describe('Must be true to confirm deletion'),
       },
     },
     async ({ collection, id }) => {
       try {
-        await client.delete(`/items/${collection}/${id}`);
+        await client.delete(`/items/${encodePathSegment(collection)}/${encodePathSegment(id)}`);
         return { content: [{ type: 'text', text: `Item "${id}" deleted from "${collection}".` }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };

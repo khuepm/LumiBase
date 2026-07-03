@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
-import { createRuntime } from '@lumibase/runtime';
+import type { Server as HttpServer } from 'node:http';
+import { createRuntime, getSharedRealtimeHub } from '@lumibase/runtime';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { schema } from '@lumibase/database';
 import cron from 'node-cron';
@@ -42,6 +43,25 @@ async function main() {
     port,
   });
   console.log(`[lumibase-cms] Started in ${runtime.runtime} mode on port ${port}`);
+
+  // ── Realtime WebSocket server (realtime-audience-channels) ──────────────────
+  // On Node/Docker there is no Durable Object, so attach a `ws` server to the
+  // HTTP server. It shares the in-process hub with the runtime's realtime
+  // provider, so `runtime.realtime.publish()` reaches live WS sessions here.
+  const jwtSecret = process.env.JWT_SECRET;
+  if (jwtSecret) {
+    const { attachNodeRealtime } = await import('./realtime/node-hub');
+    const maxPerSubject = parseInt(process.env.LUMIBASE_REALTIME_MAX_CONNECTIONS_PER_SUBJECT || '0', 10);
+    attachNodeRealtime({
+      server: server as unknown as HttpServer,
+      hub: getSharedRealtimeHub(),
+      jwtSecret,
+      maxConnectionsPerSubject: Number.isFinite(maxPerSubject) ? maxPerSubject : 0,
+    });
+    console.log('[lumibase-cms] Realtime WebSocket server attached at /api/v1/realtime');
+  } else {
+    console.warn('[lumibase-cms] JWT_SECRET unset — realtime WebSocket server disabled');
+  }
 
   // ── Audit-log retention rotation (admin-setup-wizard task 11.4; Req 15.5;
   //    design §10.2) ─────────────────────────────────────────────────────────
