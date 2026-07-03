@@ -282,6 +282,52 @@ changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 | `PATCH` | `/api/v1/relations/:id` | Update relation |
 | `DELETE` | `/api/v1/relations/:id` | Remove relation |
 
+### Code-First Configuration (Config Manifest)
+
+Export / diff / apply a site's **schema configuration** — collections, fields,
+relations, settings and webhooks — as a single declarative, version-controllable
+JSON manifest (`lumibase.config@v1`). Built for CI/CD and environment sync (à la
+Directus schema snapshot/apply). **Admin-only.** Does **not** include content
+items, secrets, or access control (use `/api/v1/access/*` for the latter).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/config/export?scope=all\|schema\|settings\|webhooks` | Export the config manifest |
+| `POST` | `/api/v1/config/import?dryRun=true&mode=<mode>` | Validate + diff a manifest (no write) |
+| `POST` | `/api/v1/config/import?mode=<mode>&allowDestructive=true` | Apply a manifest in one transaction |
+
+`mode` ∈ `merge` (create/update only — never deletes), `replace-managed` (also
+deletes resources within the manifest's `managedScopes`), `replace-all` (full
+sync — deletes anything absent from the manifest). High-risk destructive changes
+(dropping a collection/field with data, changing a field type, widening a
+relation's `onDelete` to `cascade`) are rejected unless `allowDestructive=true`.
+
+**Export response** (`{ data: ConfigManifest }`):
+```json
+{
+  "data": {
+    "version": "lumibase.config@v1",
+    "exportedAt": "2026-06-22T00:00:00.000Z",
+    "collections": [{ "name": "articles", "label": "Articles", "versioning": true }],
+    "fields": [{ "collection": "articles", "field": "title", "type": "string", "interface": "input" }],
+    "relations": [],
+    "webhooks": [],
+    "settings": [{ "key": "login_security_policy", "value": { } }],
+    "managedScopes": ["articles"]
+  }
+}
+```
+
+**Dry-run / apply response** (`{ data: { valid, errors, diff, applied? } }`): the
+`diff` lists per-resource `create | update | unchanged | delete` counts and a
+top-level `risk` (`low | medium | high`). On apply, `applied` reports
+`{ created, updated, deleted }`. Validation errors use codes
+`UNSUPPORTED_MANIFEST_VERSION`, `DANGLING_REFERENCE`, `DUPLICATE_KEY`; a blocked
+destructive apply returns HTTP 409 `DESTRUCTIVE_BLOCKED`.
+
+CLI: `pnpm --filter @lumibase/cms config export|diff|apply` — see
+[`docs/en/contributing/code-first-config.md`](../contributing/code-first-config.md).
+
 ---
 
 ## 3. Items (Generic CRUD)
