@@ -76,6 +76,10 @@ export interface Bindings {
   FILE_UPLOAD_ALLOWED_MIME_TYPES?: string;
   /** Bearer token required to read Prometheus metrics in production. */
   METRICS_TOKEN?: string;
+  /** Delivery API shared-cache lifetime in seconds (`0` disables public caching). Default 60. */
+  LUMIBASE_DELIVER_SMAXAGE?: string;
+  /** Delivery API stale-while-revalidate window in seconds. Default 300. */
+  LUMIBASE_DELIVER_SWR?: string;
   /**
    * Sentry DSN for the Cloudflare Workers build. When unset, `withSentry`
    * in `cloudflare.ts` initializes with an empty DSN and Sentry becomes a

@@ -926,6 +926,24 @@ No `Authorization` header needed. Permission applied via `public` role.
 | `GET` | `/api/v1/deliver/items/:collection` | Public item list |
 | `GET` | `/api/v1/deliver/menu/:key` | Menu config |
 
+**HTTP caching** (`GET /deliver/page/:site_id/:slug`): responses without
+credentials are shared-cacheable so any CDN/proxy can absorb repeat reads.
+
+| Request | Response headers |
+|---------|------------------|
+| No credentials (default) | `Cache-Control: public, s-maxage=60, stale-while-revalidate=300` · `ETag: W/"…"` · `Vary: X-Lumi-Site` |
+| `Authorization` header present | `Cache-Control: private, no-store` (no shared `ETag`) |
+| Page not found | `404` + `Cache-Control: no-store` |
+
+Conditional requests: send `If-None-Match` with the last `ETag`; a match
+returns `304 Not Modified` with an empty body and skips section hydration
+entirely. The ETag is a site-level content fingerprint — any item write (or a
+scheduled publish/unpublish taking effect) rotates it, so a stale 304 is never
+served at the cost of a lower revalidation hit-rate.
+
+Tunables (env): `LUMIBASE_DELIVER_SMAXAGE` (seconds, default `60`, `0`
+disables public caching), `LUMIBASE_DELIVER_SWR` (seconds, default `300`).
+
 ---
 
 ## 14. Utility endpoints

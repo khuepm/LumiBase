@@ -2,6 +2,11 @@ import { schema } from '@lumibase/database';
 import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { AppEnv, Variables } from '../env';
+import {
+  etagMatches,
+  resolveDeliveryCachePolicy,
+  weakEtag,
+} from '../services/delivery-cache';
 import { buildSeo } from '../services/seo-builder';
 
 /**
@@ -342,9 +347,66 @@ deliverRouter.get('/llms.txt/:site_id', async (c) => {
   });
 });
 
+/** Hydrate every section of a page into the delivery payload. */
+async function buildPagePayload(
+  db: Variables['db'],
+  siteId: string,
+  page: { title: string; slug: string; layoutConfig: unknown },
+  withProvenance: boolean,
+) {
+  const layout = (page.layoutConfig ?? {}) as LayoutConfig;
+  const sections = layout.sections ?? [];
+  const resolved = await Promise.all(
+    sections.map((section) => hydrateSection(db, siteId, section, withProvenance)),
+  );
+  return {
+    page: {
+      title: page.title,
+      slug: page.slug,
+    },
+    sections: resolved,
+  };
+}
+
+/**
+ * Cheap site-level content fingerprint used as the ETag source
+ * (high-load-cache-readiness Req 1.2/1.3; design §3.2). One aggregate query
+ * instead of hydrating every section, so an `If-None-Match` revalidation can
+ * be answered with 304 without touching per-section item queries.
+ *
+ * Trade-offs (deliberate — correctness over hit-rate):
+ *  - `maxUpdatedAt` is site-wide, so ANY item write in the site rotates the
+ *    ETag of every page. Never stale, only a lower 304 hit-rate.
+ *  - `visibleCount` counts items currently inside their Publish_Window, so a
+ *    scheduled publish/unpublish (which changes visibility without touching
+ *    any row) also rotates the ETag. An item entering and another leaving the
+ *    window in the same instant cancels out; that residue is bounded by the
+ *    shared-cache `s-maxage` staleness budget.
+ */
+async function contentFingerprint(db: Variables['db'], siteId: string) {
+  const [row] = await db
+    .select({
+      maxUpdatedAt: sql<string | null>`max(${schema.items.updatedAt})`,
+      visibleCount: sql<number>`count(*) filter (where ${schema.items.status} = 'published' and ${schema.items.deletedAt} is null and (${schema.items.publishAt} is null or ${schema.items.publishAt} <= now()) and (${schema.items.unpublishAt} is null or ${schema.items.unpublishAt} > now()))::int`,
+    })
+    .from(schema.items)
+    .where(eq(schema.items.siteId, siteId));
+  return row ?? { maxUpdatedAt: null, visibleCount: 0 };
+}
+
 deliverRouter.get('/page/:site_id/:slug', async (c) => {
   const { site_id: siteId, slug } = c.req.param();
   const db = c.get('db');
+  const withProvenance = c.req.query('provenance') === 'true';
+
+  // Shared caches must never mix tenants: the site is in the URL here, but
+  // other API surfaces route on this header (design §15.4).
+  c.header('Vary', 'X-Lumi-Site');
+
+  const policy = resolveDeliveryCachePolicy({
+    hasCredentials: Boolean(c.req.header('authorization')),
+    env: c.env,
+  });
 
   const [page] = await db
     .select()
@@ -353,22 +415,30 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
     .limit(1);
 
   if (!page) {
+    c.header('Cache-Control', 'no-store');
     return c.json({ error: 'Page not found.' }, 404);
   }
 
-  const layout = (page.layoutConfig ?? {}) as LayoutConfig;
-  const sections = layout.sections ?? [];
-  const withProvenance = c.req.query('provenance') === 'true';
+  if (!policy.cacheable) {
+    c.header('Cache-Control', policy.cacheControl);
+    return c.json(await buildPagePayload(db, siteId, page, withProvenance));
+  }
 
-  const resolved = await Promise.all(
-    sections.map((section) => hydrateSection(db, siteId, section, withProvenance)),
-  );
+  const fingerprint = await contentFingerprint(db, siteId);
+  const etag = await weakEtag([
+    siteId,
+    slug,
+    withProvenance,
+    page.updatedAt,
+    fingerprint.maxUpdatedAt,
+    fingerprint.visibleCount,
+  ]);
 
-  return c.json({
-    page: {
-      title: page.title,
-      slug: page.slug,
-    },
-    sections: resolved,
-  });
+  c.header('ETag', etag);
+  c.header('Cache-Control', policy.cacheControl);
+  if (etagMatches(c.req.header('if-none-match'), etag)) {
+    return c.body(null, 304);
+  }
+
+  return c.json(await buildPagePayload(db, siteId, page, withProvenance));
 });

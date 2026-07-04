@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
 import { buildAccessConflictReport } from '../services/access-conflict-report';
+import { bumpPermissionVersion } from '../services/permission-invalidation';
 
 /**
  * /policies — reusable policies + their permission rows.
@@ -82,6 +83,7 @@ policiesRouter.post('/', async (c) => {
     .insert(policies)
     .values({ ...parsed.data, siteId: c.get('siteId'), rules: parsed.data.rules ?? {} })
     .returning();
+  await bumpPermissionVersion(c);
   return c.json({ data: row }, 201);
 });
 
@@ -118,6 +120,7 @@ policiesRouter.patch('/:id', async (c) => {
     .where(and(scopeSite(policies.siteId, c.get('siteId')), eq(policies.id, c.req.param('id'))))
     .returning();
   if (!row) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Policy not found.' }] }, 404);
+  await bumpPermissionVersion(c);
   return c.json({ data: row });
 });
 
@@ -126,6 +129,7 @@ policiesRouter.delete('/:id', async (c) => {
   await db
     .delete(policies)
     .where(and(scopeSite(policies.siteId, c.get('siteId')), eq(policies.id, c.req.param('id'))));
+  await bumpPermissionVersion(c);
   return c.body(null, 204);
 });
 
@@ -150,6 +154,7 @@ policiesRouter.post('/:id/permissions', async (c) => {
       fields: parsed.data.fields ?? ['*'],
     })
     .returning();
+  await bumpPermissionVersion(c);
   return c.json({ data: row }, 201);
 });
 
@@ -171,6 +176,7 @@ policiesRouter.patch('/:id/permissions/:permId', async (c) => {
     )
     .returning();
   if (!row) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Permission not found.' }] }, 404);
+  await bumpPermissionVersion(c);
   return c.json({ data: row });
 });
 
@@ -185,6 +191,7 @@ policiesRouter.delete('/:id/permissions/:permId', async (c) => {
         eq(permissionsTable.policyId, c.req.param('id')),
       ),
     );
+  await bumpPermissionVersion(c);
   return c.body(null, 204);
 });
 
@@ -239,6 +246,7 @@ policiesRouter.post('/:id/users', async (c) => {
       priority: parsed.data.priority ?? 100,
     })
     .returning();
+  await bumpPermissionVersion(c);
   return c.json({ data: row }, 201);
 });
 
@@ -253,5 +261,6 @@ policiesRouter.delete('/:id/users/:userId', async (c) => {
         eq(userPolicies.policyId, c.req.param('id')),
       ),
     );
+  await bumpPermissionVersion(c);
   return c.body(null, 204);
 });

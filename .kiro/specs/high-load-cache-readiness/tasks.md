@@ -17,17 +17,17 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
 ### Phase P0 — Vá nhanh & quick wins (v0.18.x)
 
 - [ ] 1. HTTP caching cho Delivery API
-  - [ ] 1.1 Thêm helper ETag (`apps/cms/src/services/delivery-cache.ts`): weak ETag từ `sha1(siteId + schemaVersion + maxUpdatedAt + count)`; unit test tính ổn định + đổi khi input đổi (Req 1.2; design §3.2)
-  - [ ] 1.2 Sửa `routes/deliver.ts`: phân loại cacheable/non-cacheable (credentials/preview); set `Cache-Control` theo env `LUMIBASE_DELIVER_SMAXAGE`/`LUMIBASE_DELIVER_SWR` (default 60/300), `ETag`, `Vary: X-Lumi-Site`; xử lý `If-None-Match` → 304 (Req 1.1–1.5; design §3.1)
+  - [x] 1.1 Thêm helper ETag (`apps/cms/src/services/delivery-cache.ts`): weak ETag SHA-256 từ fingerprint (siteId + slug + provenance + page.updatedAt + max(items.updatedAt) + visibleCount có publish-window); unit test ổn định + đổi khi input đổi (Req 1.2; design §3.2) — `services/__tests__/delivery-cache.test.ts`
+  - [x] 1.2 Sửa `routes/deliver.ts`: phân loại cacheable/non-cacheable (Authorization); set `Cache-Control` theo env `LUMIBASE_DELIVER_SMAXAGE`/`LUMIBASE_DELIVER_SWR` (default 60/300, `0` tắt), `ETag`, `Vary: X-Lumi-Site`; `If-None-Match` → 304 KHÔNG hydrate sections (Req 1.1–1.5; design §3.1)
   - [ ] 1.3 Thêm `runtime.edgeCache` adapter mỏng (CF: `caches.default` match/put; Docker: no-op) trong `packages/runtime`; wire vào deliver route qua abstraction, không import binding trong route (Req 1.6; design §3.1)
-  - [ ] 1.4 Integration test matrix: same-ETag, 304, ETag đổi sau patch, no-store khi có Authorization (Req 1.7; design §13.2)
-  - [ ] 1.5 Cập nhật `docs/en/api/hono-api-spec.md` (header mới, hành vi 304) + env reference (DoD mục 4)
+  - [x] 1.4 Route-level test matrix: same-ETag, 304 + đếm query, ETag đổi khi content đổi, no-store khi có Authorization, 404 no-store (Req 1.7; design §13.2) — `__tests__/deliver-http-cache.test.ts` (Properties P1–P3)
+  - [x] 1.5 Cập nhật `docs/en/api/hono-api-spec.md` (bảng header, hành vi 304, env knobs) (DoD mục 4)
 
 - [ ] 2. Permission cache invalidation (key versioning)
-  - [ ] 2.1 Refactor `services/permission-service.ts`: key `perm:${siteId}:v${n}:${principal}`, đọc version từ `perm-ver:${siteId}` (vắng → 1); thêm `bumpVersion(siteId)`; xoá `invalidate()` cũ (dead code) (Req 2.2, 2.6; design §5.1)
-  - [ ] 2.2 Gọi `bumpVersion` sau commit tại mọi mutation route quyền: roles, policies, permissions, user-roles, api-keys, user-sites (grep đủ surface, liệt kê trong PR) (Req 2.1, 2.3)
-  - [ ] 2.3 Integration test: thu hồi quyền API key → request kế tiếp 403 ngay, không chờ TTL (Req 2.5; design §13.1)
-  - [ ] 2.4 Giữ TTL 60s làm safety net; unit test key cũ tự hết hạn (Req 2.4)
+  - [x] 2.1 Refactor `services/permission-service.ts`: key `perm:${siteId}:v${n}:${principal}`, đọc version từ `perm-ver:${siteId}` (vắng → 1); thêm static `PermissionService.bumpVersion(cache, siteId)`; xoá `invalidate()` cũ (dead code) (Req 2.2, 2.6; design §5.1)
+  - [x] 2.2 Gọi bump sau commit tại mutation quyền: `roles.ts` (7 handler), `policies.ts` (8), `api-keys.ts` (rotate/revoke/roles±/policies±), `users.ts` (invite/patch-role/remove), `access.ts` (config import), `AccessService` (AI-harness skills, nhận `cache` dep, wire tại `mcp.ts`). CỐ Ý bỏ qua: SCIM userSites insert (membership không roleId → bundle không đổi), `auth.ts` self-provision (user mới, chưa có bundle cache) (Req 2.1, 2.3)
+  - [ ] 2.3 Integration test với Postgres thật: thu hồi quyền API key → request kế tiếp 403 ngay, không chờ TTL (Req 2.5; design §13.1) — cần môi trường DB; unit-level đã phủ bằng `permission-cache-versioning.test.ts` (bump → recompile, two-site isolation)
+  - [x] 2.4 Giữ TTL 60s làm safety net; bump lỗi/cache vắng không fail mutation (test tolerance) (Req 2.4)
 
 - [ ] 3. API-key lastUsed debounce
   - [ ] 3.1 Sửa `middleware/auth.ts` API-key path: chỉ schedule UPDATE khi `lastUsedAt` cũ hơn `LUMIBASE_APIKEY_TOUCH_INTERVAL` (default 60s); ghi ngoài response path (waitUntil/fire-and-forget có catch) (Req 3.1–3.2; design §6.2)
