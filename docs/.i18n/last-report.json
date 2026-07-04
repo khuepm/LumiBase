@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-07-03T18:40:47.776Z",
+  "generatedAt": "2026-07-04T07:01:20.001Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
-    "preserved": 1,
+    "preserved": 0,
     "conflicts": 1,
-    "upToDate": 15,
-    "planned": 109
+    "upToDate": 14,
+    "planned": 111
   },
   "actions": [
     {
@@ -290,6 +290,18 @@
     },
     {
       "rel": "architecture/decisions/adr-009-graphql-yoga.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "architecture/decisions/adr-010-lumibase-table-prefix.md",
       "type": "translate",
       "reason": "missing vi translation",
       "enLang": "en",
@@ -962,13 +974,13 @@
     },
     {
       "rel": "features/firebase-sync.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1209,7 +1221,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-03T18-40-47-895Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-04T07-01-20-110Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1298,10 +1310,10 @@
     },
     {
       "rel": "roadmap/collection-create-modes.md",
-      "type": "preserve-and-translate",
-      "reason": "en-file-is-vietnamese; no vi counterpart",
+      "type": "translate",
+      "reason": "en duplicates vi content; replace en with English translation",
       "enLang": "vi",
-      "viLang": null,
+      "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
       "willTranslate": true,
