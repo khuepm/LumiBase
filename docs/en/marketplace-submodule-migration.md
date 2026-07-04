@@ -44,7 +44,9 @@ The target repo already has commits on `main` — almost always the initial
 extracted subtree history is a separate root, so it can't fast-forward.
 
 - **Discard that scaffolding** (safe when `main` is just the auto-init commit):
-  re-run with `FORCE=1` — it pushes with `--force-with-lease`.
+  re-run with `FORCE=1` — it pushes with `--force` (a `--force-with-lease` can't
+  be used on an ad-hoc URL push: with no remote-tracking ref it always rejects
+  with "stale info").
 - **Keep the remote history**: push to a side branch and reconcile via PR:
   ```bash
   git push git@github.com:lumibase-ai/marketplace.git marketplace-export:import-app

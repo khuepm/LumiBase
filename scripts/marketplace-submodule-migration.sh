@@ -57,8 +57,11 @@ run git subtree split --prefix="$SUBTREE_PREFIX" -b marketplace-export
 #    fast-forward and the push is rejected. Set FORCE=1 to replace that
 #    scaffolding with the app history (safe when main is throwaway scaffold).
 echo "-- 2. Push extracted history to standalone repo --"
+# NOTE: plain --force, not --force-with-lease. A lease needs a remote-tracking
+# ref, which an ad-hoc URL push doesn't have, so --force-with-lease always
+# rejects with "stale info". main here is throwaway scaffold, so --force is safe.
 PUSH_ARGS=()
-[[ "${FORCE:-0}" == "1" ]] && PUSH_ARGS+=(--force-with-lease)
+[[ "${FORCE:-0}" == "1" ]] && PUSH_ARGS+=(--force)
 if [[ "$APPLY" == "1" ]]; then
   echo "+ git push ${PUSH_ARGS[*]} $REPO_URL marketplace-export:$BRANCH"
   if ! git push "${PUSH_ARGS[@]}" "$REPO_URL" "marketplace-export:$BRANCH"; then
