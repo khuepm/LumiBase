@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { getExtension, getAllSlugs, listExtensions } from "@/lib/api";
+import { getExtension, getAllSlugs, listExtensions, extensionDownloadUrl } from "@/lib/api";
 import type { Extension } from "@/lib/types";
 import {
   categoryAccent,
@@ -149,6 +149,11 @@ export default async function ExtensionDetailPage({ params }: PageProps) {
             <Badge tone={accent} dot>
               {categoryLabel(category)}
             </Badge>
+            {ext.verified && (
+              <span className="inline-flex items-center gap-1 rounded-lg bg-[rgba(52,199,123,.14)] px-2.5 py-[5px] text-xs font-semibold text-[#7ee0a8] shadow-[inset_0_0_0_1px_rgba(52,199,123,.30)]">
+                ✓ Verified publisher
+              </span>
+            )}
           </div>
           <div className="mt-2.5 flex flex-wrap items-center gap-x-[18px] gap-y-1.5 text-sm font-medium text-[rgb(175,175,182)]">
             <span className="flex items-center gap-[7px]">
@@ -168,6 +173,11 @@ export default async function ExtensionDetailPage({ params }: PageProps) {
               </span>
             )}
             <span>{formatInstalls(ext.totalDownloads)}</span>
+            {(ext.voteCount ?? 0) > 0 && (
+              <span className="flex items-center gap-[5px]">
+                ▲ {(ext.voteCount ?? 0).toLocaleString("en-US")} votes
+              </span>
+            )}
           </div>
           <p className="mt-4 max-w-[620px] text-base font-medium leading-[26px] text-[rgb(195,195,200)]">
             {description}
@@ -265,6 +275,15 @@ export default async function ExtensionDetailPage({ params }: PageProps) {
           </div>
 
           <InstallSlug slug={slug} />
+
+          <a
+            href={extensionDownloadUrl(slug)}
+            id={`ext-download-${slug}`}
+            className="btn-pill btn-glass btn-md w-full justify-center"
+            rel="noopener noreferrer"
+          >
+            <span>Download package</span>
+          </a>
         </aside>
       </div>
 

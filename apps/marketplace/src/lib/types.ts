@@ -24,6 +24,10 @@ export interface Extension {
   totalDownloads?: number;
   rating?: number | null;
   ratingCount?: number | null;
+  /** Community upvotes for the listing. */
+  voteCount?: number;
+  /** Signed by a registered publisher key and integrity-hashed. */
+  verified?: boolean;
   versions: ExtensionVersion[];
   publishedAt: string;
   updatedAt: string;

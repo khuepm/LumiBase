@@ -224,6 +224,11 @@ export const CATEGORIES = [
 const CMS_BASE_URL =
   process.env.NEXT_PUBLIC_CMS_API_URL ?? "https://api.lumibase.dev";
 const USE_REAL_API = process.env.NEXT_PUBLIC_USE_REAL_API === "true";
+
+/** Public "Download package" endpoint on the CMS (302s to the signed bundle). */
+export function extensionDownloadUrl(slug: string): string {
+  return `${CMS_BASE_URL}/api/v1/marketplace/extensions/${slug}/download`;
+}
 const ALLOW_MOCK_FALLBACK = process.env.NODE_ENV !== "production";
 const USE_STATIC_MOCK = !USE_REAL_API;
 
@@ -321,6 +326,8 @@ function normalizeExtension(input: unknown): Extension {
     totalDownloads: asNumber(row.totalDownloads, 0),
     rating: typeof row.rating === "number" ? row.rating : null,
     ratingCount: typeof row.ratingCount === "number" ? row.ratingCount : null,
+    voteCount: asNumber(row.voteCount, 0),
+    verified: row.verified === true,
     versions,
     publishedAt,
     updatedAt,
