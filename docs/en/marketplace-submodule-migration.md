@@ -30,9 +30,28 @@ runnable script — run it from a machine (or CI) that can push to
 
 # Execute for real:
 APPLY=1 ./scripts/marketplace-submodule-migration.sh
+
+# Execute, overwriting scaffolding (README/license) on the remote's main:
+FORCE=1 APPLY=1 ./scripts/marketplace-submodule-migration.sh
 ```
 
-Overridable env vars: `MARKETPLACE_REPO_URL`, `MARKETPLACE_BRANCH`.
+Overridable env vars: `MARKETPLACE_REPO_URL`, `MARKETPLACE_BRANCH`, `FORCE`.
+
+### If the push is rejected ("fetch first" / non-fast-forward)
+
+The target repo already has commits on `main` — almost always the initial
+`README`/license GitHub adds when you create a repo through the UI. The
+extracted subtree history is a separate root, so it can't fast-forward.
+
+- **Discard that scaffolding** (safe when `main` is just the auto-init commit):
+  re-run with `FORCE=1` — it pushes with `--force-with-lease`.
+- **Keep the remote history**: push to a side branch and reconcile via PR:
+  ```bash
+  git push git@github.com:lumibase-ai/marketplace.git marketplace-export:import-app
+  ```
+
+The script stops before touching the monorepo, so a rejected push leaves
+`apps/marketplace` intact — just resolve the push and re-run.
 
 ## What it does
 
