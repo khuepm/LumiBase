@@ -9,6 +9,51 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [0.17.0] - 2026-07-03
+
+### Version
+
+- `v0.17.0`
+
+### Date
+
+- `2026-07-03`
+
+### Highlights
+
+- **`lumibase_` table namespace (breaking, fresh-install only).** Every system
+  table is physically renamed to `lumibase_<name>` and the whole migration
+  history is squashed into a single `0000_lumibase_init` — any table without
+  the prefix is unambiguously user-created. The migrate runner refuses to run
+  on a database carrying the pre-squash history, and collection names starting
+  with `lumibase_`/`mat_` are rejected at the API.
+- **Content Releases, external JWT auth, FK dependent-records, JSON field
+  search, configurable save action** — the v0.14–v0.16 feature train lands on
+  the new schema (their tables are prefixed and folded into the init).
+
+### Changed
+
+- **All system tables now carry a `lumibase_` prefix.** Every built-in table is
+  named `lumibase_<name>` (e.g. `lumibase_users`, `lumibase_agent_runs`,
+  `lumibase_releases`, `lumibase_push_subscriptions`) so the `lumibase_` namespace
+  is reserved for the platform and any table without it is unambiguously
+  user-created. Drizzle ORM code is unaffected (table `const` exports keep their
+  names). See [ADR-010](docs/en/architecture/decisions/adr-010-lumibase-table-prefix.md).
+- **Migration history squashed.** All legacy migrations (including the v0.14–v0.16
+  additions: push subscriptions, content releases, save-default-preference,
+  external-auth issuers) were collapsed into a single `0000_lumibase_init`
+  generated from the schema; the schema now fully expresses the `shares` CHECK
+  constraints and the `agent_approvals_veto_due_idx` partial index, and the
+  Drizzle snapshots were regenerated clean (no drift).
+
+### Fixed
+
+- `rls-policies.sql`: fixed a pre-existing nested `$$` dollar-quote bug in the RLS
+  `DO` block (the inner `CREATE POLICY` string now uses a `$pol$` tag) so the script
+  applies via `psql` without a syntax error.
+
 ### Added
 
 - **Content Releases.** Collate specific item revisions across collections into
@@ -61,17 +106,19 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Migrations
 
-- `0040_content_releases` — adds `releases` + `release_items`. Additive and
-  idempotent (`CREATE TABLE … IF NOT EXISTS`, guarded FKs); existing instances
-  need **no backfill**. Run `pnpm -F @lumibase/database migrate` on upgrade.
-- `0041_save_default_preference` — adds `sites.default_save_action`
-  (`NOT NULL DEFAULT 'stay'`). Additive and idempotent (`ADD COLUMN IF NOT
-  EXISTS`); existing instances need **no backfill**. Run
-  `pnpm -F @lumibase/database migrate` on upgrade.
-- `0042_auth_external_issuers` — adds the per-site trusted-issuer table (public
-  config only, no secrets). Additive and idempotent; existing instances have no
-  issuers so the external-JWT branch is a no-op and current auth is unchanged.
-  No backfill. Run `pnpm -F @lumibase/database migrate` on upgrade.
+- **Breaking, fresh-install only — no upgrade path from a pre-prefix database.**
+  The whole migration history — including this release's additions
+  (`lumibase_releases` + `lumibase_release_items`, `lumibase_push_subscriptions`,
+  `sites.default_save_action`, `lumibase_auth_external_issuers`) — is consolidated
+  into the single `0000_lumibase_init`. Create the schema from scratch:
+  `pnpm -F @lumibase/database migrate`, then apply
+  `packages/database/migrations/rls-policies.sql`. An existing pre-prefix database
+  must be dropped and recreated; for the Docker dev stack destroy the `pgdata`
+  volume first:
+  `docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d`.
+  The migrate runner detects a database carrying the pre-squash migration history
+  and refuses to apply (bypass with `FORCE_MIGRATE=true` at your own risk;
+  `SKIP_MIGRATIONS=true` skips the boot-time migrate in Docker).
 
 ### Security
 

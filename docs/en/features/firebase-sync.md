@@ -101,7 +101,7 @@ Sync is best-effort per pipeline: a failing pipeline is logged and switched to `
 | `lumibase_firebase_sync_pipelines` | Pipeline config + encrypted credentials + `lastSyncAt`/`lastSyncItemCount` |
 | `lumibase_firebase_sync_log` | Append-only: each sync (collection, itemId, action, result, errorMessage, durationMs) |
 
-Migration: `packages/database/drizzle/0029_lumibase_firebase_sync.sql` (idempotent, only `CREATE TABLE IF NOT EXISTS`). See also [data-model.md](../data-model.md).
+Migration: tables are created by the consolidated `packages/database/drizzle/0000_lumibase_init.sql`. See also [data-model.md](../data-model.md).
 
 ## 9. Related
 

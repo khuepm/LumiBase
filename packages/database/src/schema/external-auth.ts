@@ -15,7 +15,7 @@ import { sites } from './core';
 const id = () => text('id').$defaultFn(() => nanoid()).primaryKey();
 
 export const authExternalIssuers = pgTable(
-  'auth_external_issuers',
+  'lumibase_auth_external_issuers',
   {
     id: id(),
     siteId: text('site_id')

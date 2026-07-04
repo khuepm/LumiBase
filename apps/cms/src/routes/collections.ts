@@ -18,8 +18,9 @@ const collectionInputSchema = z.object({
     .min(1)
     .max(63)
     .regex(/^[a-z][a-z0-9_]{0,62}$/)
-    .refine((value) => !value.startsWith('lumibase_'), {
-      message: 'Collection name cannot start with reserved prefix "lumibase_".',
+    // `lumibase_` = system tables (ADR-010); `mat_` = materialized tables.
+    .refine((name) => !name.startsWith('lumibase_') && !name.startsWith('mat_'), {
+      message: 'Names starting with "lumibase_" or "mat_" are reserved for system tables.',
     }),
   label: z.string().nullable().optional(),
   pluralLabel: z.string().nullable().optional(),

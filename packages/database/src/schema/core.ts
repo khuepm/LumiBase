@@ -22,7 +22,7 @@ const id = () => text('id').$defaultFn(() => nanoid()).primaryKey();
 const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
-export const sites = pgTable('sites', {
+export const sites = pgTable('lumibase_sites', {
   id: id(),
   name: text('name').notNull(),
   domain: text('domain').unique(),
@@ -49,7 +49,7 @@ export const sites = pgTable('sites', {
 });
 
 export const users = pgTable(
-  'users',
+  'lumibase_users',
   {
     id: id(),
     externalId: text('external_id'),
@@ -91,7 +91,7 @@ export const users = pgTable(
 );
 
 export const userSites = pgTable(
-  'user_sites',
+  'lumibase_user_sites',
   {
     userId: text('user_id')
       .notNull()
@@ -110,7 +110,7 @@ export const userSites = pgTable(
 );
 
 export const teams = pgTable(
-  'teams',
+  'lumibase_teams',
   {
     id: id(),
     siteId: text('site_id')
@@ -126,7 +126,7 @@ export const teams = pgTable(
 );
 
 export const teamMembers = pgTable(
-  'team_members',
+  'lumibase_team_members',
   {
     teamId: text('team_id')
       .notNull()
@@ -146,7 +146,7 @@ export const teamMembers = pgTable(
  * this table persists durable items (mentions, denial reasons, etc.).
  */
 export const notifications = pgTable(
-  'notifications',
+  'lumibase_notifications',
   {
     id: id(),
     siteId: text('site_id')

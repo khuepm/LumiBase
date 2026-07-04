@@ -24,9 +24,10 @@ import { AuditLogger } from '../modules/audit/logger';
  */
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
-// Reserved name prefixes are owned by the platform (CDC/Firebase sync tables,
-// internal config). User- and AI-created collections must never claim them.
-const RESERVED_COLLECTION_PREFIXES: ReadonlyArray<string> = ['lumibase_'];
+// Physical-namespace prefixes reserved by the platform: `lumibase_` is every
+// system table (ADR-010) and `mat_` is materialized collection tables.
+// User- and AI-created collections must never claim them.
+const RESERVED_COLLECTION_PREFIXES: ReadonlyArray<string> = ['lumibase_', 'mat_'];
 const SYSTEM_FIELD_NAMES = new Set([
   'id',
   'status',
@@ -294,7 +295,7 @@ const ensureName = (name: string, kind: 'collection' | 'field') => {
     if (reserved) {
       throw new SchemaServiceError(
         'RESERVED_NAME',
-        `Collection name cannot start with reserved prefix "${reserved}".`,
+        `Collection names starting with "${reserved}" are reserved for system tables.`,
         422,
       );
     }

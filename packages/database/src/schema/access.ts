@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -24,7 +26,7 @@ const id = () => text('id').$defaultFn(() => nanoid()).primaryKey();
 const createdAt = () => timestamp('created_at').defaultNow().notNull();
 
 export const roles = pgTable(
-  'roles',
+  'lumibase_roles',
   {
     id: id(),
     siteId: text('site_id')
@@ -53,7 +55,7 @@ export const roles = pgTable(
 );
 
 export const policies = pgTable(
-  'policies',
+  'lumibase_policies',
   {
     id: id(),
     siteId: text('site_id')
@@ -87,7 +89,7 @@ export const policies = pgTable(
 );
 
 export const rolePolicies = pgTable(
-  'role_policies',
+  'lumibase_role_policies',
   {
     roleId: text('role_id')
       .notNull()
@@ -104,7 +106,7 @@ export const rolePolicies = pgTable(
 );
 
 export const userPolicies = pgTable(
-  'user_policies',
+  'lumibase_user_policies',
   {
     userId: text('user_id')
       .notNull()
@@ -123,7 +125,7 @@ export const userPolicies = pgTable(
 );
 
 export const userRoles = pgTable(
-  'user_roles',
+  'lumibase_user_roles',
   {
     userId: text('user_id')
       .notNull()
@@ -143,7 +145,7 @@ export const userRoles = pgTable(
 );
 
 export const apiKeys = pgTable(
-  'api_keys',
+  'lumibase_api_keys',
   {
     id: id(),
     siteId: text('site_id')
@@ -176,7 +178,7 @@ export const apiKeys = pgTable(
 );
 
 export const apiKeyRoles = pgTable(
-  'api_key_roles',
+  'lumibase_api_key_roles',
   {
     apiKeyId: text('api_key_id')
       .notNull()
@@ -197,7 +199,7 @@ export const apiKeyRoles = pgTable(
 );
 
 export const apiKeyPolicies = pgTable(
-  'api_key_policies',
+  'lumibase_api_key_policies',
   {
     apiKeyId: text('api_key_id')
       .notNull()
@@ -218,7 +220,7 @@ export const apiKeyPolicies = pgTable(
 );
 
 export const shares = pgTable(
-  'shares',
+  'lumibase_shares',
   {
     id: id(),
     siteId: text('site_id')
@@ -247,11 +249,13 @@ export const shares = pgTable(
     siteCollectionItemIdx: index('shares_site_collection_item_idx').on(t.siteId, t.collection, t.itemId),
     siteRoleIdx: index('shares_site_role_idx').on(t.siteId, t.roleId),
     siteRevokedIdx: index('shares_site_revoked_idx').on(t.siteId, t.revokedAt),
+    maxUsesPositive: check('shares_max_uses_positive', sql`${t.maxUses} is null or ${t.maxUses} >= 1`),
+    usedCountNonNegative: check('shares_used_count_non_negative', sql`${t.usedCount} >= 0`),
   }),
 );
 
 export const permissions = pgTable(
-  'permissions',
+  'lumibase_permissions',
   {
     id: id(),
     siteId: text('site_id')
@@ -284,7 +288,7 @@ export const permissions = pgTable(
 );
 
 export const scimTokens = pgTable(
-  'scim_tokens',
+  'lumibase_scim_tokens',
   {
     id: id(),
     siteId: text('site_id')

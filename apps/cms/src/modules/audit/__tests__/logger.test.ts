@@ -220,7 +220,7 @@ describe('AuditLogger.write — success (Req 15.1, 15.2)', () => {
     await logger.write(makeEntry());
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.table).toBe('audit_log');
+    expect(rows[0]!.table).toBe('lumibase_audit_log');
 
     const row = rows[0]!.row;
     expect(row.event).toBe('setup_completed');

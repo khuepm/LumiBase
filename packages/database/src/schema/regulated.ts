@@ -31,7 +31,7 @@ const createdAt = () => timestamp('created_at').defaultNow().notNull();
  * (Workers Secrets / env). `siteId` null denotes a global key.
  */
 export const encryptionKeys = pgTable(
-  'encryption_keys',
+  'lumibase_encryption_keys',
   {
     id: id(),
     siteId: text('site_id').references(() => sites.id, { onDelete: 'cascade' }),
@@ -54,7 +54,7 @@ export const encryptionKeys = pgTable(
  * site-isolated by RLS.
  */
 export const fieldAccessLog = pgTable(
-  'field_access_log',
+  'lumibase_field_access_log',
   {
     id: id(),
     siteId: text('site_id')
@@ -81,7 +81,7 @@ export const fieldAccessLog = pgTable(
  * `onDelete: set null` so review history survives erasure (Req 11.3).
  */
 export const contentReviews = pgTable(
-  'content_reviews',
+  'lumibase_content_reviews',
   {
     id: id(),
     siteId: text('site_id')
@@ -110,7 +110,7 @@ export const contentReviews = pgTable(
  * of the subject identifier, never plaintext, and supports dual-control.
  */
 export const erasureRequests = pgTable(
-  'erasure_requests',
+  'lumibase_erasure_requests',
   {
     id: id(),
     siteId: text('site_id')

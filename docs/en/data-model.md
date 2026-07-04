@@ -4,17 +4,26 @@ This document describes the tables declared in `packages/database/src/schema/`. 
 
 Every tenant-scoped domain table has `site_id`.
 
+> **Physical table names carry a `lumibase_` prefix.** Every LumiBase system table
+> is physically named `lumibase_<name>` (e.g. the logical `users` table is physically
+> `lumibase_users`), created by the `0000_lumibase_init` migration. This reserves the
+> `lumibase_` namespace for the platform,
+> so any table WITHOUT that prefix is unambiguously user-created (or a `mat_*`
+> materialization). See [ADR-010](./architecture/decisions/adr-010-lumibase-table-prefix.md).
+> The section headings below use the short logical name for readability; the
+> summary table lists the physical names.
+
 Schema files are split by domain:
 
-| File | Bảng |
+| File | Bảng (physical) |
 |------|------|
-| `core.ts` | `sites`, `users`, `user_sites`, `teams`, `team_members`, `notifications` |
-| `access.ts` | `roles`, `policies`, `role_policies`, `user_policies`, `permissions` |
-| `cms.ts` | `pages`, `collections`, `fields`, `relations`, `items`, `revisions`, `releases`, `release_items`, `activity`, `flows`, `flow_runs`, `operations`, `materialized_collections` |
-| `platform.ts` | `folders`, `files`, `presets`, `translations`, `settings`, `webhooks`, `extensions`, `translation_memory`, `glossary` |
-| `ai.ts` | `ai_approvals` |
+| `core.ts` | `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
+| `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions` |
+| `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
-| `external-auth.ts` | `auth_external_issuers` |
+| `external-auth.ts` | `lumibase_auth_external_issuers` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
 
@@ -352,13 +361,13 @@ Content OS columns on existing tables:
 
 ## 11. Firebase Sync (`firebase-sync.ts`)
 
-Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0029_lumibase_firebase_sync`.
+Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0000_lumibase_init` (consolidated).
 
 ## 11c. External JWT auth (`external-auth.ts`)
 
 ### `auth_external_issuers`
 - Per-site trusted external JWT issuer. **Public config only — no secrets** (signatures verify against the issuer's JWKS). `id`, `siteId` (FK sites, cascade), `issuer` (matches the `iss` claim), `jwksUri`/`discoveryUrl` (one required), `audience` (jsonb: string|string[]), `algorithms` (jsonb: asymmetric allowlist), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
-- Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0042_auth_external_issuers`. See [security/external-jwt-auth.md](./security/external-jwt-auth.md).
+- Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0000_lumibase_init` (consolidated). See [security/external-jwt-auth.md](./security/external-jwt-auth.md).
 
 ### `lumibase_firebase_sync_pipelines`
 | Column | Type | Note |
