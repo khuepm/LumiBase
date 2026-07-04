@@ -14,15 +14,6 @@ const orbits = [
 export default function Hero() {
   return (
     <section className="relative px-5 pt-14 text-center md:pt-20">
-      <div className="mb-8 flex justify-center">
-        <Image
-          src="/assets/logo-moon.png"
-          alt="LumiBase Logo"
-          width={120}
-          height={120}
-          className="drop-shadow-lg"
-        />
-      </div>
       <h1
         className="m-0 text-white [font:700_44px/50px_var(--font-sans)] sm:[font:700_60px/70px_var(--font-sans)] md:[font:700_75px/86px_var(--font-sans)]"
         style={{ letterSpacing: "-0.2px" }}
@@ -114,16 +105,7 @@ export default function Hero() {
               background: "linear-gradient(180deg,#fff 0%,#cfcfcf 100%)",
               boxShadow: "0 0 80px rgba(123,97,255,0.35), var(--shadow-lg)",
             }}
-          >
-            <Image
-              src="/assets/d-cutout.png"
-              alt=""
-              width={72}
-              height={140}
-              className="absolute"
-              style={{ left: 92, top: 24 }}
-            />
-          </div>
+          />
         </div>
       </div>
     </section>
