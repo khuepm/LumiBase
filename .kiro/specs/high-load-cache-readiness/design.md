@@ -72,6 +72,8 @@ Thiết kế cho chương trình High-Load & Cache Readiness (xem `requirements.
 | 17 | CDC invalidator | §4.5 |
 | 18 | CI perf gate | §13.3 |
 
+Cross-cutting: §15 API contracts (Req 1, 5, 7, 12, 15) · §16 schema chi tiết (Req 15, 16) · §17 multi-tenancy review (DoD 2b) · §18 route-guard security (DoD 2c) · §19 env vars · §13.4 properties đánh số P1–P16.
+
 ## 3. Delivery cache stack (Req 1, 8)
 
 ### 3.1 Ba tầng cho `GET /deliver/*`
@@ -278,14 +280,171 @@ Caddyfile: `request_body max_size 10MB` global; matcher riêng cho `/api/v1/medi
 - `load-deliver.js` mới: hỗn hợp 90% GET page (zipf slug) + 10% khác; thresholds p95.
 - Baseline lưu `baseline/<date>-<config>.json`; CI nightly chạy smoke+load-deliver với thresholds = baseline×1.2.
 
-## 14. Rollout sketch
+### 13.4 Properties tổng hợp (đánh số để trace từ tasks)
+
+| # | Property | Req | Loại |
+|---|----------|-----|------|
+| P1 | Cùng nội dung → cùng ETag; nội dung đổi (item patch / schema apply) → ETag đổi | 1.2, 1.7 | integration |
+| P2 | Request `If-None-Match` khớp → 304, KHÔNG thực thi query items (assert qua query counter) | 1.3 | integration |
+| P3 | Request mang Authorization/preview → `private, no-store`, không ETag chia sẻ | 1.4 | integration |
+| P4 | Mọi cache tag literal trong codebase chứa `${siteId}` (source-scan tripwire) | 7.4 | tripwire |
+| P5 | set(tags) → invalidateByTag → get trả null — pass trên CẢ HAI adapter + LRU | 7.8 | contract |
+| P6 | Mutation site A không xoá entry cùng collection-name của site B | 8.6 | integration two-site |
+| P7 | 50 concurrent get trên key hết hạn → đúng 1 recompute | 9.3 | unit fake-timer |
+| P8 | Trong cửa sổ soft→hard: get trả giá trị stale ngay (không chờ compute); sau hard: blocking | 9.2 | unit fake-timer |
+| P9 | Thu hồi quyền → request kế tiếp 403 trong cùng giây (không chờ TTL 60s) | 2.5 | integration |
+| P10 | 2 instance chung Redis: tổng request được phép = limit, không phải limit×2 | 12.5 | integration |
+| P11 | 2 process role=all × 3 cron tick = đúng 3 side-effect | 14.5 | integration |
+| P12 | 100 mutation → đủ 100 audit row ≤5s; kill queue giữa chừng → 0 event mất (fallback sync) | 11.5 | integration |
+| P13 | Request content-plane authenticated điển hình ≤ 3 DB query (không tính cache miss) | 10.4 | integration |
+| P14 | 100 request/60s cùng API key → đúng 1 UPDATE `lastUsedAt` | 3.4 | unit |
+| P15 | Behavioural matrix (principal × route → status) cho kết quả giống nhau trước/sau refactor middleware | 10.3 | integration |
+| P16 | RLS còn hiệu lực bên trong transaction tường minh trên cả 3 connection path | 16.5 | spike/integration |
+
+## 15. API contracts (endpoint mới / thay đổi)
+
+Mọi response tuân thủ non-negotiable rule #5: `{ data: T, meta?: PaginationMeta }` hoặc `{ errors: [...] }`.
+
+### 15.1 `POST /api/v1/utils/cache/purge` (Req 7.5)
+
+- **Guard:** `withAuth` + control-plane backstop (prefix vào `CONTROL_PLANE_PATHS`) + `adminOnly` per-route (hai lớp, xem §18).
+- **Request:** `{ "tags"?: string[] (1..50), "keys"?: string[] (1..200) }` — ít nhất một trường; Zod validate.
+- **Scope enforcement:** server chuẩn hoá và từ chối mọi tag/key không thuộc namespace của `siteId` hiện hành (`items:${siteId}:…`, `deliver:${siteId}…`, `schema:${siteId}…`, `perm:${siteId}…`).
+- **200:** `{ "data": { "purged": { "tags": number, "keys": number } } }`
+- **Lỗi:** 400 `VALIDATION` (body rỗng/quá giới hạn) · 403 `TAG_OUT_OF_SCOPE` (kèm tag vi phạm đầu tiên, không echo toàn bộ) · 401/403 theo guard chuẩn.
+
+### 15.2 `GET /api/v1/items/:collection?meta=` (Req 5)
+
+- `meta=total_count` (default, giữ tương thích): `{ data, meta: { total, limit, offset } }`.
+- `meta=none`: `{ data, meta: { limit, offset } }` — không chạy `count(*)`.
+- Giá trị khác → 400 `VALIDATION`.
+
+### 15.3 Flow runs (Req 15)
+
+```
+POST /api/v1/flows/:id/run
+  → 202 { "data": { "runId": "<nanoid>", "status": "queued" } }        (async, có queue)
+  → 200 { "data": { "runId": "...", "status": "succeeded", "result": … } }  (sync fallback)
+  → 408 { "errors": [{ "code": "FLOW_SYNC_TIMEOUT", "message": "…enable a worker…" }] }
+
+GET /api/v1/flows/runs/:runId
+  → 200 { "data": { "id", "flowId", "status", "result"?, "error"?, "startedAt"?, "finishedAt"? } }
+  → 404 khi runId không tồn tại HOẶC thuộc site khác (không phân biệt được — không leak tồn tại)
+```
+
+### 15.4 Delivery response headers (Req 1) — ma trận
+
+| Điều kiện request | Cache-Control | ETag | Vary | 304 |
+|---|---|---|---|---|
+| Published, không credentials | `public, s-maxage=60, stale-while-revalidate=300` | `W/"…"` | `X-Lumi-Site` | có (`If-None-Match`) |
+| Có `Authorization` | `private, no-store` | không | `X-Lumi-Site` | không |
+| Preview/draft token | `private, no-store` | không | `X-Lumi-Site` | không |
+| Lỗi 4xx/5xx | `no-store` | không | — | không |
+
+### 15.5 Rate limit 429 (Req 12)
+
+```
+429
+Retry-After: <seconds>
+{ "errors": [{ "code": "RATE_LIMITED", "message": "Too many requests",
+               "meta": { "retryAfterSeconds": n, "limit": l, "windowSeconds": w } }] }
+```
+
+Không kèm thông tin về resource đích (không leak tồn tại qua limiter).
+
+## 16. Schema chi tiết (Req 15.2, 16)
+
+Bảng mới mang tiền tố `lumibase_` như toàn bộ schema (ADR-010, registry #36). ID `nanoid()` — rule #1.
+
+### 16.1 `flow_runs` (`packages/database/src/schema/cms.ts` hoặc file mới `flows.ts`)
+
+```ts
+export const flowRuns = pgTable('flow_runs', {
+  id: text('id').primaryKey(),                                   // nanoid()
+  siteId: text('site_id').notNull(),
+  flowId: text('flow_id').notNull(),
+  status: text('status', { enum: ['queued', 'running', 'succeeded', 'failed', 'cancelled'] })
+    .notNull().default('queued'),
+  triggeredBy: text('triggered_by').notNull(),                   // principal descriptor
+  input: jsonb('input'),
+  result: jsonb('result'),
+  error: text('error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+}, (t) => [
+  index('flow_runs_site_flow_idx').on(t.siteId, t.flowId, t.createdAt),
+  index('flow_runs_site_status_idx').on(t.siteId, t.status),
+])
+```
+
+Thêm policy `site_isolation` vào `rls-policies.sql` (DoD 2b). Retention: worker dọn row `finishedAt` cũ hơn 30 ngày trong retention sweep sẵn có.
+
+### 16.2 Index mới trên `items` (Req 16.1–16.3)
+
+```sql
+-- chốt cột cuối cùng sau EXPLAIN ANALYZE trên dataset seed (task 18.2)
+CREATE INDEX CONCURRENTLY items_site_coll_updated_idx
+  ON lumibase_items (site_id, collection_id, updated_at DESC);
+
+CREATE INDEX CONCURRENTLY items_deliver_idx
+  ON lumibase_items (site_id, collection_id, status, publish_at, unpublish_at)
+  WHERE deleted_at IS NULL;
+```
+
+Lưu ý migration: `CONCURRENTLY` không chạy được trong transaction — file SQL sinh từ Drizzle cần tách riêng + ghi chú trong CHANGELOG upgrade steps.
+
+## 17. Multi-tenancy review (DoD 2b — phân loại tài nguyên)
+
+| Tài nguyên | Phạm vi | Khoá / cơ chế | Lý do nếu shared | Verify |
+|---|---|---|---|---|
+| Cache entry schema/perm/deliver | Cô lập tenant | `schema:${siteId}:…`, `perm:${siteId}:v${n}:…`, `deliver:${siteId}:…` | — | P5, P6 |
+| Cache tag + tag-index | Cô lập tenant | tag luôn chứa `siteId` → key index `tag:items:${siteId}:…` cũng chứa | — | P4 (tripwire), P6 |
+| Edge/HTTP cache | Cô lập tenant | `Vary: X-Lumi-Site` + URL chứa `site_id` | — | test header matrix (P1–P3) |
+| Rate-limit key API | Cô lập tenant | `rl:${siteId}:${principal}` | — | P10 |
+| Rate-limit recovery/setup | **Shared theo IP** | `rl:recovery:${ip}` | Pre-auth: chưa xác định được tenant; chỉ chứa IP, không chứa dữ liệu tenant | review + unit test key shape |
+| Cron leader lock | **Shared deployment** | `lumi:cron-lock:${jobName}` | Job cấp deployment (audit rotation, retention…); job tự fan-out theo site từ DB — không "rò" site của request gần nhất | P11 + code review job payload |
+| Queue topic audit/revalidation/flow | **Topic shared, payload cô lập** | mọi payload bắt buộc mang `siteId`; worker resolve site từ payload, không từ context | Topic là hạ tầng; dữ liệu nằm trong payload đã gắn site | schema Zod payload có `siteId` required + test worker |
+| Bảng `flow_runs` | Cô lập tenant | cột `site_id NOT NULL` + RLS `site_isolation` + mọi query `.where(eq(siteId))` | — | RLS test + P16 |
+| Prometheus metrics | **Shared** (label không chứa siteId) | path normalize sẵn có | Metric vận hành, tránh cardinality explosion; KHÔNG đưa siteId vào label | review |
+
+Two-site smoke bắt buộc trước khi đóng mỗi phase: chạy P6 + kịch bản k6 `cross-site-leak.js` mở rộng thêm bước purge/tag.
+
+## 18. Route-guard security (DoD 2c — phân loại surface mới)
+
+| Surface | Plane | Guard |
+|---|---|---|
+| `POST /utils/cache/purge` | **Control plane** | prefix vào `CONTROL_PLANE_PATHS` (backstop) + `adminOnly` per-route (lớp trong) |
+| `GET /flows/runs/:runId` | Content/Studio plane (theo `/flows` hiện hành) | chuỗi auth chuẩn + query site-scoped; 404 đồng nhất cho cross-site |
+| `POST /flows/:id/run` (202 mode) | Không đổi plane so với hiện tại | giữ nguyên guard hiện hành |
+| Rate-limit middleware | — | đặt SAU `withAuth` (cần principal); không đổi thứ tự guard phía trước; không thêm path nào vào `PUBLIC_AUTH_PATHS`/bypass |
+| Cache/queue/lock | — | không expose endpoint mới nào ngoài purge; worker không nhận lệnh từ request context |
+
+Tripwire: `security-guards.wiring.test.ts` THÊM assertion cho `/utils/cache/purge` (không sửa/xoá assertion cũ). Middleware refactor (Req 10) chỉ merge sau khi behavioural matrix (P15) merge trước và pass trên code cũ.
+
+## 19. Env vars mới (tổng hợp — cập nhật docs env reference khi ship)
+
+| Biến | Default | Phase | Req | Ghi chú |
+|---|---|---|---|---|
+| `LUMIBASE_DELIVER_SMAXAGE` | `60` | P0 | 1.1 | giây; `0` = tắt public cache |
+| `LUMIBASE_DELIVER_SWR` | `300` | P0 | 1.1 | giây |
+| `LUMIBASE_APIKEY_TOUCH_INTERVAL` | `60` | P0 | 3.1 | giây |
+| `LUMIBASE_MAX_JSON_BODY` | `1048576` | P0 | 6.2 | bytes |
+| `LUMIBASE_API_RATE_LIMIT` | `600` | P1 | 12.3 | req/phút/(site,principal); `0` = tắt |
+| `LUMIBASE_PROCESS_ROLE` | `all` | P2 | 14.1 | `web`\|`worker`\|`all` |
+| `LUMIBASE_FLOW_SYNC_TIMEOUT` | `30000` | P2 | 15.3 | ms, chỉ áp cho sync fallback |
+| `LUMIBASE_BULK_MAX` | `500` | P2 | 16.4 | items/batch |
+
+Nguyên tắc: mọi knob là env (không settings row) → không đụng setup wizard (xem setup-impact trong `requirements.md`).
+
+## 20. Rollout sketch
 
 1. **P0** (Req 1–6): mỗi hạng mục một PR độc lập; delivery HTTP cache sau cùng trong P0 (cần test matrix đầy đủ nhất).
 2. **P1**: PR1 = Cache Provider v2 + contract tests (không caller mới) → PR2 = delivery app-cache + item invalidation + revalidation → PR3 = SWR/single-flight + perm versioning → PR4 = middleware consolidation (sau khi behavioural matrix test merge trước) → PR5 = audit queue → PR6 = rate limiter → PR7 = observability.
 3. **P2**: PR1 = role split + leader lock → PR2 = flow async → PR3 = index + transactional writes → PR4 = CDC remove/wire → PR5 = CI gate.
 4. Mỗi phase kết thúc: chạy k6, điền bảng roadmap §2, rà DoD (đặc biệt 2b two-site smoke + Setup Impact Registry).
 
-## 15. Open questions (chốt trước khi code phase liên quan)
+## 21. Open questions (chốt trước khi code phase liên quan)
 
 1. §4.5 phương án B (remove CDC invalidator) — cần maintainer xác nhận không có roadmap ghi-ngoài-API.
 2. §8 delivery có nằm trong rate limiter không (hiện: không) — xem lại sau baseline.

@@ -3,6 +3,8 @@
 > Trạng thái: **draft** · Phiên bản đích: v0.18.x → v0.20.x · Ngày lập: 2026-07-04
 >
 > Nguồn: audit codebase trên nhánh `claude/cms-high-load-evaluation-48fpij` (đọc trực tiếp source, có file:line cho mọi phát hiện). Các nhận định về hành vi dưới tải là [Inference] từ code path — cần xác nhận lại bằng k6 baseline (Phase 0, task đầu tiên) trước khi tối ưu.
+>
+> Bộ spec: `requirements.md` (Req 0–18, EARS) · `design.md` (kiến trúc, traceability, API contracts, properties P1–P16) · `tasks.md` (kế hoạch 4 phase) · `dod-review.md` (rà soát Definition of Done từng mục, rà lại khi đóng mỗi phase).
 
 ## 1. Bối cảnh — hiện trạng đã audit
 

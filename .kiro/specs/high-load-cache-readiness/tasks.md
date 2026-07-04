@@ -45,12 +45,12 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
 
 - [ ] 6. Proxy & body limits
   - [ ] 6.1 Caddyfile: `request_body max_size` global 10MB + matcher media dùng `FILE_UPLOAD_MAX_BYTES`; comment tuning (Req 6.1; design §11)
-  - [ ] 6.2 App-level JSON body limit middleware (`LUMIBASE_MAX_JSON_BODY` default 1MB, 413 envelope chuẩn) — chốt open question §15.3 (Caddy plugin hay app-level) trước khi làm phần rate limit Caddy (Req 6.2–6.3)
+  - [ ] 6.2 App-level JSON body limit middleware (`LUMIBASE_MAX_JSON_BODY` default 1MB, 413 envelope chuẩn) — chốt open question §21.3 (Caddy plugin hay app-level) trước khi làm phần rate limit Caddy (Req 6.2–6.3)
   - [ ] 6.3 Docs `docs/en/deployment/docker.md`: knob mới + khuyến nghị theo kích thước deploy (Req 6.4)
 
 - [ ] 7. Chốt phase P0
   - [ ] 7.1 Re-run k6 suite, điền bảng roadmap §2 cột "Sau P0" (Req 0.3)
-  - [ ] 7.2 Rà DoD: typecheck, test toàn workspace, Setup Impact Registry (dòng rà soát cho các thay đổi P0), CHANGELOG
+  - [ ] 7.2 Rà DoD theo `dod-review.md`: typecheck, test toàn workspace, Setup Impact Registry (dòng rà soát cho các thay đổi P0), tutorial impact (dod-review §5), CHANGELOG
 
 ### Phase P1 — Nền tảng cache (v0.19.x)
 
@@ -100,7 +100,8 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
 
 - [ ] 15. Chốt phase P1
   - [ ] 15.1 Re-run k6; kiểm origin offload delivery ≥90% trên `load-deliver.js`; điền roadmap §2
-  - [ ] 15.2 Rà DoD đầy đủ (2b two-site smoke cho toàn bộ cache/tag/rl key mới; Setup Impact Registry; CHANGELOG; docs)
+  - [ ] 15.2 Rà DoD đầy đủ theo `dod-review.md` (2b two-site smoke cho toàn bộ cache/tag/rl key mới; Setup Impact Registry; CHANGELOG; docs; viết mục Multi-tenancy trong `docs/en/features/caching.md`)
+  - [ ] 15.3 DoD evolution (dod-review §6): đề xuất thêm dòng checklist "ghi dữ liệu được cache theo tag → phải purge + test stale" vào DoD 2b trong cùng PR đóng phase, kèm blockquote sự cố invalidate-dead-code; maintainer chốt nhận hay ghi lý do từ chối
 
 ### Phase P2 — Scale-out (v0.20.x)
 
@@ -114,11 +115,11 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
   - [ ] 17.1 Migration bảng `flow_runs` (nanoid, siteId NOT NULL, status, result, error, timestamps; index `(siteId, flowId, createdAt)`; RLS site_isolation) (Req 15.2; design §10.3; DoD 2b)
   - [ ] 17.2 `POST /flows/:id/run` → 202 + enqueue khi có queue; worker consumer chạy engine, update row; `GET /flows/runs/:runId` site-scoped (Req 15.1–15.2)
   - [ ] 17.3 Sync fallback bọc `AbortSignal.timeout(LUMIBASE_FLOW_SYNC_TIMEOUT=30s)`; op `sleep`/`http` nhận signal (Req 15.3)
-  - [ ] 17.4 AI chat `Prefer: respond-async` (chốt open question §15.5: tái dùng flow_runs hay bảng riêng); HITL semantics không đổi — test approvals vẫn chặn (Req 15.4, 15.6)
+  - [ ] 17.4 AI chat `Prefer: respond-async` (chốt open question §21.5: tái dùng flow_runs hay bảng riêng); HITL semantics không đổi — test approvals vẫn chặn (Req 15.4, 15.6)
   - [ ] 17.5 Studio: flow builder + AI panel poll/SSE (Req 15.5)
 
 - [ ] 18. DB index + transactional writes
-  - [ ] 18.1 Spike xác nhận tương tác transaction tường minh ↔ `withRls` set_config trên cả 3 connection path (open question §15.4); test RLS-trong-tx (design §12)
+  - [ ] 18.1 Spike xác nhận tương tác transaction tường minh ↔ `withRls` set_config trên cả 3 connection path (open question §21.4); test RLS-trong-tx (design §12, Property 16)
   - [ ] 18.2 EXPLAIN ANALYZE trên dataset seed 100k (task 0.2) cho list default-sort và deliver publish-window; chốt cột index (Req 16.2)
   - [ ] 18.3 Migration: `items_site_coll_updated_idx` + `items_deliver_idx` (partial); ghi chú CONCURRENTLY trong CHANGELOG upgrade steps (Req 16.1–16.3)
   - [ ] 18.4 `bulk()`: transaction + multi-row insert chunk ≤100 + side-effect gom sau commit + `LUMIBASE_BULK_MAX=500` → 413 (Req 16.4)
@@ -126,7 +127,7 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
   - [ ] 18.6 Docs `docs/en/deployment/performance.md`: hướng dẫn operator tự tạo expression index cho `data->>field` nóng, kèm SQL mẫu (Req 16.6)
 
 - [ ] 19. CDC CacheInvalidator resolution
-  - [ ] 19.1 Xác nhận phương án B (remove) với maintainer — open question §15.1 (Req 17.1, 17.3)
+  - [ ] 19.1 Xác nhận phương án B (remove) với maintainer — open question §21.1 (Req 17.1, 17.3)
   - [ ] 19.2 Nếu B: xoá `cache-invalidator.ts` + property test + barrel export; ADR ngắn ghi lý do + điều kiện tái mở. Nếu A: viết lại key derive có siteId + wire vào pipeline + two-site test (Req 17.1–17.2)
 
 - [ ] 20. CI perf gate
@@ -135,4 +136,4 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
 
 - [ ] 21. Chốt chương trình
   - [ ] 21.1 Re-run toàn bộ k6, hoàn tất bảng roadmap §2; so sánh với target — chênh lệch ghi nhận công khai, không sửa số
-  - [ ] 21.2 Rà DoD lần cuối toàn chương trình; Setup Impact Registry dòng tổng (dự kiến `n/a` + ghi chú migration index); CHANGELOG + README release policy
+  - [ ] 21.2 Rà DoD lần cuối toàn chương trình theo `dod-review.md`; Setup Impact Registry dòng tổng (dự kiến `n/a` + ghi chú migration index); tutorial impact cho flow 202-contract (dod-review §5); CHANGELOG + README release policy
