@@ -14,15 +14,6 @@ const orbits = [
 export default function Hero() {
   return (
     <section className="relative px-5 pt-14 text-center md:pt-20">
-      <div className="mb-8 flex justify-center">
-        <Image
-          src="/assets/logo-moon.png"
-          alt="LumiBase Logo"
-          width={120}
-          height={120}
-          className="drop-shadow-lg"
-        />
-      </div>
       <h1
         className="m-0 text-white [font:700_44px/50px_var(--font-sans)] sm:[font:700_60px/70px_var(--font-sans)] md:[font:700_75px/86px_var(--font-sans)]"
         style={{ letterSpacing: "-0.2px" }}
