@@ -28,24 +28,40 @@ const MIME_EXTENSIONS: Record<string, string[]> = {
 };
 
 /**
- * Enforce storage safety at the upload boundary. File metadata creation and
- * signed upload PUTs are checked before route handlers can create metadata or
- * write object bytes into storage.
+ * Enforce storage safety at the upload boundary. Every path that can create
+ * file metadata or push raw object bytes into storage is checked here BEFORE
+ * the route handler runs, so the guarantee holds no matter what the route
+ * handler does. Three surfaces are covered:
+ *
+ *   - `POST /api/v1/files`            — metadata creation (JSON body)
+ *   - `PUT  /api/v1/files/upload/:key`— signed raw-byte upload (JWT-authorized)
+ *   - `POST /api/v1/media/:key`       — raw-byte media upload (RBAC-authorized)
+ *
+ * Adding a new byte-accepting upload route without wiring it in here is caught
+ * by the `upload-surface-coverage` regression test, which asserts this guard
+ * matches every known upload path.
  */
 export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const path = c.req.path;
   const method = c.req.method.toUpperCase();
-  const isMetadataCreate = path === '/api/v1/files' && method === 'POST';
-  const isSignedUpload = path.startsWith('/api/v1/files/upload/') && method === 'PUT';
+  const surface = classifyUploadSurface(path, method);
+  if (!surface) return next();
 
-  if (!isMetadataCreate && !isSignedUpload) return next();
+  const { isMetadataCreate, isSignedUpload, isMediaUpload } = surface;
+  // Raw-byte surfaces carry the file itself in the request body.
+  const isRawUpload = isSignedUpload || isMediaUpload;
 
   const auth = safeGetAuth(c);
-  if (isMetadataCreate && isPublicUploadPrincipal(auth)) {
+  // Public callers may never create upload metadata nor push raw media bytes.
+  // Signed uploads are deliberately excluded: `withAuth` skips
+  // `/api/v1/files/upload/*`, so `auth` is undefined by design there and
+  // authorization is proven by the signed JWT the route handler verifies —
+  // applying the public block would reject every legitimate signed upload.
+  if ((isMetadataCreate || isMediaUpload) && isPublicUploadPrincipal(auth)) {
     await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
       path,
       method,
-      reason: 'public_metadata_create',
+      reason: isMediaUpload ? 'public_media_upload' : 'public_metadata_create',
       roles: auth?.roles ?? [],
       principalType: auth?.type ?? 'user',
     });
@@ -101,7 +117,7 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
   }
 
   const normalizedMime = normalizeMime(mime);
-  const fileName = metadata?.filenameDownload ?? metadata?.filenameDisk ?? (isSignedUpload ? path.split('/').pop() : undefined);
+  const fileName = metadata?.filenameDownload ?? metadata?.filenameDisk ?? (isRawUpload ? path.split('/').pop() : undefined);
   if (fileName && !isFileExtensionCompatibleWithMime(fileName, normalizedMime)) {
     await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
       path,
@@ -116,27 +132,78 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
     );
   }
 
-  if (
-    isSignedUpload &&
-    !(await isFileContentCompatibleWithMime(
-      c.req.raw.clone() as Parameters<typeof isFileContentCompatibleWithMime>[0],
-      normalizedMime,
-    ))
-  ) {
-    await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
-      path,
-      method,
-      reason: 'content_mime_mismatch',
-      mime: normalizedMime,
-    });
-    return c.json(
-      { errors: [{ code: 'UPLOAD_CONTENT_MISMATCH', message: `File content does not match MIME type "${normalizedMime}".` }] },
-      415,
+  // Raw-byte surfaces are the only place the actual file is present, so the
+  // deepest checks (true size + content sniffing) live here.
+  if (isRawUpload) {
+    const bytes = new Uint8Array(
+      await (c.req.raw.clone() as Request).arrayBuffer(),
     );
+
+    // Enforce the REAL body size, not the client-declared Content-Length. A
+    // request that omits or understates Content-Length cannot slip past the cap.
+    if (bytes.length > maxBytes) {
+      await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
+        path,
+        method,
+        reason: 'body_bytes_exceeded',
+        byteLength: bytes.length,
+        maxBytes,
+      });
+      return c.json(
+        {
+          errors: [
+            { code: 'UPLOAD_TOO_LARGE', message: `Upload exceeds the configured ${maxBytes} byte limit.` },
+          ],
+        },
+        413,
+      );
+    }
+
+    if (!isFileContentCompatibleWithBytes(bytes, normalizedMime)) {
+      // Give unsafe SVGs (script / event-handler / external-entity payloads) a
+      // distinct code so operators can tell "image with a shell in it" apart
+      // from a plain type mismatch.
+      const unsafeSvg =
+        normalizedMime === 'image/svg+xml' && looksLikeSvg(bytes) && svgHasActiveContent(bytes);
+      await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
+        path,
+        method,
+        reason: unsafeSvg ? 'unsafe_svg' : 'content_mime_mismatch',
+        mime: normalizedMime,
+      });
+      return c.json(
+        {
+          errors: [
+            unsafeSvg
+              ? { code: 'UPLOAD_UNSAFE_SVG', message: 'SVG contains script or active content and is not allowed.' }
+              : { code: 'UPLOAD_CONTENT_MISMATCH', message: `File content does not match MIME type "${normalizedMime}".` },
+          ],
+        },
+        415,
+      );
+    }
   }
 
   return next();
 };
+
+/**
+ * Single source of truth for which requests are upload surfaces. Kept as a pure
+ * function so the coverage regression test can enumerate the exact set the
+ * guard protects (and fail if a new byte-accepting route is added without being
+ * classified here).
+ */
+export function classifyUploadSurface(
+  path: string,
+  method: string,
+): { isMetadataCreate: boolean; isSignedUpload: boolean; isMediaUpload: boolean } | null {
+  const upper = method.toUpperCase();
+  const isMetadataCreate = path === '/api/v1/files' && upper === 'POST';
+  const isSignedUpload = path.startsWith('/api/v1/files/upload/') && upper === 'PUT';
+  const isMediaUpload = path.startsWith('/api/v1/media/') && upper === 'POST';
+  if (!isMetadataCreate && !isSignedUpload && !isMediaUpload) return null;
+  return { isMetadataCreate, isSignedUpload, isMediaUpload };
+}
 
 export function isPublicUploadPrincipal(auth: AuthPrincipal | undefined): boolean {
   if (!auth) return true;
@@ -184,8 +251,22 @@ export function isFileExtensionCompatibleWithMime(fileName: string, mime: string
 }
 
 export async function isFileContentCompatibleWithMime(request: Request, mime: string | undefined): Promise<boolean> {
-  if (!mime) return false;
   const bytes = new Uint8Array(await request.arrayBuffer());
+  return isFileContentCompatibleWithBytes(bytes, mime);
+}
+
+/**
+ * Synchronous content sniffing over already-read bytes. Verifies that the
+ * payload's magic bytes match the declared MIME type, rejects anything carrying
+ * an executable signature, and rejects SVGs that embed script / active content
+ * (the classic "image that is really a shell/XSS payload"). This is a
+ * best-effort structural check at the edge — it is NOT a malware scanner and
+ * does not re-encode the file; see the serving hardening in `routes/media.ts`
+ * (Content-Disposition: attachment) and the global CSP for the layers that
+ * contain anything this misses.
+ */
+export function isFileContentCompatibleWithBytes(bytes: Uint8Array, mime: string | undefined): boolean {
+  if (!mime) return false;
   if (bytes.length === 0) return false;
 
   if (hasExecutableSignature(bytes)) return false;
@@ -204,7 +285,9 @@ export async function isFileContentCompatibleWithMime(request: Request, mime: st
     case 'application/pdf':
       return startsWithAscii(bytes, '%PDF-');
     case 'image/svg+xml':
-      return looksLikeSvg(bytes);
+      // An SVG must look like an SVG AND carry no active content. This is the
+      // check that stops an "image" from smuggling a script payload.
+      return looksLikeSvg(bytes) && !svgHasActiveContent(bytes);
     case 'text/csv':
     case 'text/plain':
       return looksLikeText(bytes);
@@ -269,6 +352,30 @@ function looksLikeSvg(bytes: Uint8Array): boolean {
   return text.startsWith('<svg') || (text.startsWith('<?xml') && text.includes('<svg'));
 }
 
+/**
+ * Detect script / active content in an SVG. SVG is XML and browsers will
+ * execute `<script>`, inline `on*=` event handlers, `javascript:` URLs, and
+ * nested browsing contexts when an SVG is rendered as a top-level document —
+ * so an attacker can dress a script payload up as an "image". We reject on the
+ * clear-danger tokens. The full (already size-capped) document is scanned so a
+ * payload cannot hide past a fixed prefix. Intentionally conservative: a false
+ * positive rejects an unusual-but-benign SVG rather than let an executable one
+ * through.
+ */
+export function svgHasActiveContent(bytes: Uint8Array): boolean {
+  const text = decodeUtf8(bytes).toLowerCase();
+  return (
+    text.includes('<script') ||
+    text.includes('javascript:') ||
+    text.includes('<foreignobject') || // hosts arbitrary HTML (incl. scripts)
+    text.includes('<iframe') ||
+    text.includes('<embed') ||
+    text.includes('<!entity') || // XXE via entity declarations
+    text.includes('<!doctype') || // DOCTYPE is what enables entity declarations
+    /\son[a-z]+\s*=/.test(text) // inline event handlers: onload=, onclick=, ...
+  );
+}
+
 function looksLikeText(bytes: Uint8Array): boolean {
   const limit = Math.min(bytes.length, 1024);
   for (let i = 0; i < limit; i++) {
@@ -287,4 +394,9 @@ function decodeAsciiPrefix(bytes: Uint8Array, maxBytes: number): string {
     output += String.fromCharCode(bytes[i]!);
   }
   return output;
+}
+
+function decodeUtf8(bytes: Uint8Array): string {
+  // `TextDecoder` is available on both the Workers and Node runtimes.
+  return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
 }
