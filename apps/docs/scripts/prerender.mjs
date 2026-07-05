@@ -209,6 +209,17 @@ async function main() {
     }
   }
 
+  // 404.html — Cloudflare Pages serves this (with a 404 status) for any request
+  // that does not match a prerendered static asset. It carries the unmodified
+  // SPA shell (empty #root) so the client router boots, resolves the requested
+  // URL, and renders either the real doc (client-side) or the NotFoundPage.
+  //
+  // This replaces the previous `/* /index.html 200` catch-all in _redirects,
+  // which rewrote EVERY request to the empty index shell and thereby shadowed
+  // the prerendered pages — breaking hard navigation / F5 on every doc URL.
+  fs.writeFileSync(path.join(distDir, '404.html'), template, 'utf-8');
+  written++;
+
   // sitemap.xml at the dist root, listing every prerendered HTML route.
   fs.writeFileSync(
     path.join(distDir, 'sitemap.xml'),
@@ -217,7 +228,7 @@ async function main() {
   );
 
   console.log(
-    `[prerender] Wrote ${written} static HTML pages + sitemap.xml (${sitemapEntries.length} urls) to dist/`,
+    `[prerender] Wrote ${written} static HTML pages (incl. 404.html) + sitemap.xml (${sitemapEntries.length} urls) to dist/`,
   );
 }
 
