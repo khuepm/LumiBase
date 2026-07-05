@@ -515,10 +515,31 @@ Scheduled releases publish via the shared `content-scheduler` tick
 | `PATCH` | `/api/v1/files/:id` | Update metadata (title, tags, folder) |
 | `DELETE` | `/api/v1/files/:id` | Delete file |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
+| `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
+| `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`) |
+| `DELETE` | `/api/v1/media/:key` | Delete media object |
+| `GET` | `/api/v1/uploads/config` | Effective upload policy + type catalogue (any member) |
+| `PUT` | `/api/v1/uploads/config` | Update allowlist / size cap (site admin) |
 
 **Image transform params for `/api/v1/assets/:id`:**
 ```
 ?width=800&height=600&format=webp&quality=80&fit=cover
+```
+
+**Upload policy (`/api/v1/uploads/config`).** Enforced by the `file-upload-policy`
+guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`,
+`POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
+its true byte length; the declared MIME must be in the allowlist and match the
+filename extension; raw bytes are content-sniffed (magic bytes) and executables /
+active-content SVGs are rejected. The allowlist + cap resolve `per-site DB
+(settings key upload_policy) → env (FILE_UPLOAD_*) → default`.
+
+```
+GET  /api/v1/uploads/config
+→ { data: { maxBytes, allowedMimeTypes[], allowedExtensions[], catalogue[] } }
+
+PUT  /api/v1/uploads/config           # site admin only
+{ "maxBytes": 5242880, "allowedMimeTypes": ["image/png","image/jpeg"] }
 ```
 
 ---

@@ -36,6 +36,25 @@ function publicKey(siteId: string, key: string): string {
   return key.startsWith(prefix) ? key.slice(prefix.length) : key;
 }
 
+/**
+ * Derive a safe `filename` for the Content-Disposition header from a storage
+ * key. Strips any directory prefix and removes characters that could break out
+ * of the quoted header value (CR/LF, quotes, backslash, control chars).
+ */
+function sanitizeDownloadFilename(key: string): string {
+  const base = key.split('/').pop() ?? 'download';
+  // Replace control chars (incl. CR/LF), double-quotes, and backslash so the
+  // value cannot break out of the quoted Content-Disposition filename. Filtered
+  // by char code rather than a regex with control-char escapes.
+  let cleaned = '';
+  for (const ch of base) {
+    const code = ch.charCodeAt(0);
+    cleaned += code < 0x20 || ch === '"' || ch === '\\' ? '_' : ch;
+  }
+  cleaned = cleaned.trim();
+  return cleaned.length > 0 ? cleaned : 'download';
+}
+
 function permissionCtx(c: Context<AppEnv>) {
   const auth = c.get('auth');
   const headers: Record<string, string> = {};
@@ -152,8 +171,19 @@ mediaRouter.get('/:key{.+}', async (c) => {
     }
 
     const headers: Record<string, string> = {};
-    if (obj.contentType) headers['Content-Type'] = obj.contentType;
+    // `obj.contentType` is the native storage content-type; fall back to the
+    // custom metadata copy for objects written before the adapters mapped it
+    // onto the native field (older uploads store it only in metadata).
+    const contentType = obj.contentType ?? obj.metadata?.contentType;
+    if (contentType) headers['Content-Type'] = contentType;
     if (obj.size != null) headers['Content-Length'] = String(obj.size);
+    // Serve user-uploaded bytes as a download, never as an inline document.
+    // Combined with the global `X-Content-Type-Options: nosniff` + CSP, this
+    // stops a stored HTML/SVG payload from being rendered (and its script
+    // executed) under this origin when opened top-level. `<img>`/`<video>`
+    // embedding of legitimate media is unaffected by Content-Disposition.
+    headers['Content-Disposition'] = `attachment; filename="${sanitizeDownloadFilename(key)}"`;
+    headers['X-Content-Type-Options'] = 'nosniff';
 
     return new Response(obj.body as BodyInit, { status: 200, headers });
   } catch (err) {

@@ -53,6 +53,7 @@ const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page'
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const EncryptionSettingsPage = lazy(() => import('./modules/settings/encryption-page').then((m) => ({ default: m.EncryptionSettingsPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
+const UploadsSettingsPage = lazy(() => import('./modules/settings/uploads-page').then((m) => ({ default: m.UploadsSettingsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
 const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
 const AgentHarnessPage = lazy(() => import('./modules/settings/agent-harness-page').then((m) => ({ default: m.AgentHarnessPage })));
@@ -662,6 +663,12 @@ const extensionsRoute = createRoute({
   component: withSuspense(ExtensionsPage),
 });
 
+const uploadsSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'uploads',
+  component: withSuspense(UploadsSettingsPage),
+});
+
 const marketplaceRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'marketplace',
@@ -771,6 +778,12 @@ const adminPathMarketplaceRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'marketplace',
   component: withSuspense(MarketplacePage),
+});
+
+const adminPathUploadsSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'uploads',
+  component: withSuspense(UploadsSettingsPage),
 });
 
 const adminPathUpdatesRoute = createRoute({
@@ -1189,6 +1202,7 @@ const routeTree = rootRoute.addChildren([
       activityRoute,
       encryptionSettingsRoute,
       extensionsRoute,
+      uploadsSettingsRoute,
       marketplaceRoute,
       updatesRoute,
       agentHarnessRoute,
@@ -1252,6 +1266,7 @@ const routeTree = rootRoute.addChildren([
       adminPathTranslationMemoryRoute,
       adminPathActivityRoute,
       adminPathExtensionsRoute,
+      adminPathUploadsSettingsRoute,
       adminPathMarketplaceRoute,
       adminPathUpdatesRoute,
       adminPathAgentHarnessRoute,

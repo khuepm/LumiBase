@@ -1133,6 +1133,24 @@ export interface FileResource {
   createdAt: string;
 }
 
+export interface UploadTypeCatalogueEntry {
+  mime: string;
+  extensions: string[];
+  label: string;
+  note?: string;
+}
+
+export interface UploadConfigResource {
+  /** Maximum accepted upload size, in bytes. */
+  maxBytes: number;
+  /** Allowed MIME types (the enforced allowlist). */
+  allowedMimeTypes: string[];
+  /** Extensions derived from the allowlist, for the file picker `accept`. */
+  allowedExtensions: string[];
+  /** Full catalogue of selectable types (label + extensions per MIME). */
+  catalogue: UploadTypeCatalogueEntry[];
+}
+
 export interface WebhookResource {
   id: string;
   siteId: string;
