@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T06:24:49.665Z
+sourceLang: en
+contentHash: df9b6310ba01bc9c
+---
+
 # SDK Reference
 
 > **For AI agents:** See `docs/en/llms.txt` for the full docs index.

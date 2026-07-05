@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T10:56:36.955Z
+sourceLang: en
+contentHash: fa73f811c20a5c31
+---
+
 # Architecture Decision Records (ADR)
 
 LumiBase follows the [ADR pattern](https://adr.github.io/) to document significant architectural decisions. Each ADR captures the context, decision, and consequences in a lightweight format.
