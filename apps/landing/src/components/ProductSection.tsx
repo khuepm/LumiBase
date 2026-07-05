@@ -45,14 +45,26 @@ export default function ProductSection({
   return (
     <section id={id} className="mx-auto max-w-[1200px] px-5 pt-[90px] md:pt-[120px]">
       <Reveal className="flex flex-col items-center text-center">
-        <Image
-          src={planet}
-          alt=""
-          width={96}
-          height={96}
-          className="mb-6"
-          style={{ filter: `drop-shadow(0 0 44px ${glow})` }}
-        />
+        {/*
+         * Glow is rendered as a decoupled radial-gradient halo behind the
+         * planet rather than via `filter: drop-shadow()` on the <Image>.
+         * The planet PNGs are indexed-color with tRNS (palette) transparency,
+         * and some mobile GPUs mis-resolve that alpha during the drop-shadow
+         * SourceAlpha pass when the element is on its own composited layer
+         * (promoted here by the Reveal transform) with no clipping ancestor —
+         * painting the whole bounding box as an opaque black square. The
+         * in-card planets escape it only because they sit inside overflow-hidden
+         * cards. A gradient halo doesn't touch the image alpha, so it renders
+         * consistently across desktop and mobile.
+         */}
+        <div className="relative mb-6 flex items-center justify-center">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-1/2 h-[150px] w-[150px] -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{ background: `radial-gradient(circle, ${glow} 0%, transparent 70%)` }}
+          />
+          <Image src={planet} alt="" width={96} height={96} className="relative" />
+        </div>
         <h2
           className="m-0 text-white [font:700_34px/40px_var(--font-sans)] md:[font:700_48px/56px_var(--font-sans)]"
           style={{ letterSpacing: "-0.4px" }}
