@@ -193,6 +193,45 @@ export function deleteBookmark(id: string) {
   };
 }
 
+// ── Media transform URLs (image-transform-dsl) ────────────────────────────────
+
+export interface MediaTransform {
+  width?: number;
+  height?: number;
+  format?: "webp" | "avif" | "jpeg" | "png";
+  quality?: number;
+  fit?: "cover" | "contain" | "fill" | "inside" | "outside";
+}
+
+/**
+ * Build a delivery URL for a media asset, optionally with a transform. Pass a
+ * `MediaTransform` for inline params, or `{ preset }` to reference a named
+ * server-side preset. Returns a path relative to the API base — the SDK client
+ * resolves it against its configured URL.
+ */
+export function mediaUrl(
+  key: string,
+  transform?: MediaTransform | { preset: string },
+): (client: LumiClient) => string {
+  return (client: LumiClient): string => {
+    const base = client.url.replace(/\/$/, "");
+    const path = `/api/v1/media/${key.split("/").map(encodeURIComponent).join("/")}`;
+    if (!transform) return `${base}${path}`;
+    const qs = new URLSearchParams();
+    if ("preset" in transform) {
+      qs.set("preset", transform.preset);
+    } else {
+      if (transform.width !== undefined) qs.set("width", String(transform.width));
+      if (transform.height !== undefined) qs.set("height", String(transform.height));
+      if (transform.format) qs.set("format", transform.format);
+      if (transform.quality !== undefined) qs.set("quality", String(transform.quality));
+      if (transform.fit) qs.set("fit", transform.fit);
+    }
+    const query = qs.toString();
+    return query ? `${base}${path}?${query}` : `${base}${path}`;
+  };
+}
+
 // ── Translation memory (translation-memory-ui) ─────────────────────────────────
 
 export type TmSource = "human" | "mt" | "imported";
