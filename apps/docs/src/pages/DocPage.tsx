@@ -72,11 +72,13 @@ export function DocPage() {
   const formattedDate = formatDate(entry!.lastModified);
 
   return (
-    <article className="p-8 max-w-4xl mx-auto">
+    <article className="mx-auto w-full max-w-[768px] px-6 py-12 md:px-10">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground">{entry!.title}</h1>
+        <h1 className="text-[44px] font-bold leading-[52px] tracking-[-0.5px] text-foreground">
+          {entry!.title}
+        </h1>
         {formattedDate && (
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="mt-3 text-[13px] font-medium text-muted-foreground">
             Last modified: {formattedDate}
           </p>
         )}

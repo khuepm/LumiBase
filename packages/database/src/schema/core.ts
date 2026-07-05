@@ -22,7 +22,7 @@ const id = () => text('id').$defaultFn(() => nanoid()).primaryKey();
 const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
-export const sites = pgTable('sites', {
+export const sites = pgTable('lumibase_sites', {
   id: id(),
   name: text('name').notNull(),
   domain: text('domain').unique(),
@@ -36,6 +36,8 @@ export const sites = pgTable('sites', {
   defaultLanguage: text('default_language').default('en').notNull(),
   /** Default appearance for new users: `auto` | `light` | `dark`. Per-user override lives in `users.preferences`. */
   defaultAppearance: text('default_appearance').default('auto').notNull(),
+  /** Default Studio save action: `stay` | `return` | `create_new`. Per-user override lives in `users.preferences.saveAction`. */
+  defaultSaveAction: text('default_save_action').default('stay').notNull(),
   /** `{ logoUrl, faviconUrl, brandColor }` — global branding for this site. */
   branding: jsonb('branding').default({}).notNull(),
   /** `{ light: { '--primary': 'H S% L%', … }, dark: { … } }` — CSS variable overrides. */
@@ -47,7 +49,7 @@ export const sites = pgTable('sites', {
 });
 
 export const users = pgTable(
-  'users',
+  'lumibase_users',
   {
     id: id(),
     externalId: text('external_id'),
@@ -89,7 +91,7 @@ export const users = pgTable(
 );
 
 export const userSites = pgTable(
-  'user_sites',
+  'lumibase_user_sites',
   {
     userId: text('user_id')
       .notNull()
@@ -108,7 +110,7 @@ export const userSites = pgTable(
 );
 
 export const teams = pgTable(
-  'teams',
+  'lumibase_teams',
   {
     id: id(),
     siteId: text('site_id')
@@ -124,7 +126,7 @@ export const teams = pgTable(
 );
 
 export const teamMembers = pgTable(
-  'team_members',
+  'lumibase_team_members',
   {
     teamId: text('team_id')
       .notNull()
@@ -144,7 +146,7 @@ export const teamMembers = pgTable(
  * this table persists durable items (mentions, denial reasons, etc.).
  */
 export const notifications = pgTable(
-  'notifications',
+  'lumibase_notifications',
   {
     id: id(),
     siteId: text('site_id')

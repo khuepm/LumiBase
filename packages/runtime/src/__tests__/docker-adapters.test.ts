@@ -235,6 +235,25 @@ describe('S3StorageProvider', () => {
         }),
       );
     });
+
+    it('maps contentType onto the native ContentType field', async () => {
+      mockS3Send.mockResolvedValue({});
+      const data = Buffer.from('img');
+
+      await provider.put('photo.png', data, { contentType: 'image/png' });
+
+      expect(mockS3Send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: {
+            Bucket: 'test-bucket',
+            Key: 'photo.png',
+            Body: data,
+            Metadata: { contentType: 'image/png' },
+            ContentType: 'image/png',
+          },
+        }),
+      );
+    });
   });
 
   describe('get', () => {

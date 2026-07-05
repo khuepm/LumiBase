@@ -63,7 +63,18 @@ All routes are under `/api/v1/deployments`, on the authenticated + tenant-scoped
 
 SDK (`@lumibase/sdk`): `client.deployments.targets.{list,create,update,delete,deploy}` and `client.deployments.{list,get,logs,refresh}`, typed with `DeploymentTargetResource` / `DeploymentResource`.
 
-## 6. AI skills & HITL
+## 6. Auto-deploy via Flows
+
+The "deploy automatically when content changes" path is wired through the Flows engine, not a bespoke trigger. Two operations are registered on the flow runtime (`apps/cms/src/services/flow-service.ts`):
+
+| Operation | Options | Effect |
+|---|---|---|
+| `deploy:trigger` | `targetId` (required), `branch?`, `reason?` | Triggers a deploy via the shared `DeploymentService` (same path, guards and audit as the manual API). Records `triggerSource='auto'` and links the flow `runId` for provenance. |
+| `deploy:status` | `deploymentId` (required) | Syncs and returns one deployment's status so a flow can branch on it. |
+
+Wire an auto-deploy by creating a Flow with `triggerType: 'event'` (e.g. an item publish in a collection) whose graph contains a `deploy:trigger` node pointing at a target. Both operations are runtime-bound: `db`, `siteId`, the **KeyProvider** (`keys`) and `runId` are supplied by the flow run environment (`routes/flows.ts`), so a deploy launched from a flow reuses the encrypted token and SSRF/audit guards exactly like the manual trigger. Missing environment or a missing `targetId`/`deploymentId` fails closed with a clear error before any provider call.
+
+## 7. AI skills & HITL
 
 Four governed skills let the AI Copilot operate deployments (`packages/ai-skills/src/skills.ts`, handlers in `ai-harness.ts`):
 
@@ -74,15 +85,15 @@ Four governed skills let the AI Copilot operate deployments (`packages/ai-skills
 
 `triggerDeployment` triggers an outward-facing side effect (a build on an external host), so it is classified dangerous: below autopilot autonomy it is routed through human approval (`ai_approvals`) instead of executing directly.
 
-## 7. Studio
+## 8. Studio
 
 A **Settings → Deployments** page (`apps/studio/src/modules/settings/deployments-page.tsx`) lists targets and recent deployments, with controls to add a target, trigger a deploy, refresh status, and view logs.
 
-## 8. Setup notes
+## 9. Setup notes
 
 - **Capabilities:** adds `deployments:read` / `deployments:write` — grant them to the admin role on upgrade. (No default agent role carries `deployments:write`, so the `triggerDeployment` skill only runs for callers explicitly granted it — deploy is never auto-available to ordinary agents.)
 - **No seed:** targets are created by an admin after setup; there are no defaults.
-- **RLS:** `deployment_targets` and `deployments` are site-isolated via `packages/database/migrations/rls-policies.sql` (per project convention, not in the table migration).
+- **RLS:** `lumibase_deployment_targets` and `lumibase_deployments` are site-isolated via `packages/database/migrations/rls-policies.sql` (per project convention, not in the table migration).
 - **Inbound webhooks (optional):** to receive provider-pushed status, set the per-site setting `deployment.webhook.<provider>` to `{ "secret": "<shared secret>" }` and configure the same secret on the provider's webhook. Without it, status syncs via the 30s poller only.
-- **Migration `0038_deployment_integrations`:** additive and idempotent (`CREATE TABLE IF NOT EXISTS`) — existing installations receive two empty tables.
+- **Tables** `lumibase_deployment_targets` and `lumibase_deployments` are part of the consolidated `0000_lumibase_init` schema migration.
 - See the spec under `.kiro/specs/deployment-integrations/` for the full requirements and design.

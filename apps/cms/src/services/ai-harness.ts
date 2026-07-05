@@ -10,6 +10,7 @@ import type { IntentService } from './intent-service';
 import { runFlow, type FlowGraph } from './flow-service';
 import type { ConfiguredLLM } from './llm-provider';
 import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
+import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentAutonomousOpsTotal } from './agent-metrics';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
 import { AUTONOMY_LEVELS, AutonomyService } from './autonomy-service';
@@ -98,6 +99,12 @@ export interface AISecureHarnessConfig {
   extensionsService?: ExtensionsService;
   /** Enables first-class agent_goals/runs/tool_calls audit for tests or non-service callers. */
   enableAgentHarnessAudit?: boolean;
+  /**
+   * Optional push-notification sink (push-noti feature). When provided, a
+   * newly created HITL approval is pushed in-app / via Web Push so a reviewer
+   * is reached immediately. Best-effort — never blocks execution.
+   */
+  notify?: AgentNotifier;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +186,31 @@ function isWriteSkill(tool: { requiredCapabilities?: unknown }): boolean {
     ? (tool.requiredCapabilities as string[])
     : [];
   return caps.some((cap) => /:(write|update|create|delete)$/.test(cap));
+}
+
+/**
+ * Pure classifier: is this skill a control-plane / dangerous operation?
+ *
+ * Mirrors {@link AISecureHarness.evaluateRisk} exactly so callers outside the
+ * harness (e.g. the MCP route's admin backstop) agree byte-for-byte on which
+ * skills are control-plane. A skill is control-plane when it is explicitly
+ * flagged `dangerous`, requires a mutating `schema:*` capability, or its name
+ * starts with `delete` (covers `deleteCollection`, `deleteRole`, …). Keep this
+ * and `evaluateRisk` in lockstep.
+ */
+export function isControlPlaneSkill(
+  skill: Pick<SkillDefinition, 'requiredCapabilities' | 'dangerous'>,
+  skillName: string,
+): boolean {
+  if (skill.dangerous) return true;
+  if (
+    skill.requiredCapabilities.some(
+      (capability) => capability.startsWith('schema:') && capability !== 'schema:read',
+    )
+  ) {
+    return true;
+  }
+  return skillName.startsWith('delete');
 }
 
 /**
@@ -1624,12 +1656,14 @@ export class AISecureHarness {
   private readonly toolRegistry: ToolRegistryService;
   private readonly itemService?: ItemService;
   private readonly queue?: QueueProvider;
+  private readonly notify?: AgentNotifier;
 
   constructor(config: AISecureHarnessConfig) {
     this.db = config.db;
     this.siteId = config.siteId;
     this.itemService = config.itemService;
     this.queue = config.queue;
+    this.notify = config.notify;
     const hasService = Boolean(
       config.schemaService ||
         config.itemService ||
@@ -1664,7 +1698,7 @@ export class AISecureHarness {
       this.skills = CORE_SKILLS;
     }
 
-    this.runService = new AgentRunService(this.db, this.siteId);
+    this.runService = new AgentRunService(this.db, this.siteId, config.queue, config.notify);
     this.toolRegistry = new ToolRegistryService(this.db, this.siteId, this.skills);
   }
 
@@ -1713,16 +1747,7 @@ export class AISecureHarness {
    * @returns true if the skill is classified as dangerous, false otherwise.
    */
   evaluateRisk(skill: SkillDefinition, skillName: string): boolean {
-    if (skill.dangerous) {
-      return true;
-    }
-    if (skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read')) {
-      return true;
-    }
-    if (skillName.startsWith('delete')) {
-      return true;
-    }
-    return false;
+    return isControlPlaneSkill(skill, skillName);
   }
 
   // ---------- Execution ----------
@@ -1776,7 +1801,7 @@ export class AISecureHarness {
     const loadGuard = getLoadGuard();
     if (loadGuard.shouldPause(envelope.origin)) {
       if (loadGuard.markIncidentOnce(this.siteId)) {
-        await new AutonomyService({ db: this.db, siteId: this.siteId }).recordIncident({
+        await new AutonomyService({ db: this.db, siteId: this.siteId, notify: this.notify }).recordIncident({
           agentRole: 'reconciler',
           source: 'load_guard',
           severity: 'low',
@@ -1886,7 +1911,7 @@ export class AISecureHarness {
       // dangerous action awaits approval (≤L2), stages into the veto
       // window (L3) or executes directly (L4). Irreversible skills never
       // resolve above L2 via the resolver's hard ceiling.
-      const autonomy = new AutonomyService({ db: this.db, siteId: this.siteId });
+      const autonomy = new AutonomyService({ db: this.db, siteId: this.siteId, notify: this.notify });
       const agentRole = envelope.agentName ?? run.agentName;
       const capability = primaryDangerousCapability(tool, skillName);
       const level = await autonomy.resolve(agentRole, capability, {
@@ -1908,7 +1933,7 @@ export class AISecureHarness {
           .catch(() => false));
       if (vetoWindowEnabled && isStageableItemPatch(skillName, args)) {
         const vetoWindowMs = Number((envelope.budget ?? {})['vetoWindowMs']) || undefined;
-        const veto = new VetoService({ db: this.db, siteId: this.siteId, vetoWindowMs });
+        const veto = new VetoService({ db: this.db, siteId: this.siteId, vetoWindowMs, notify: this.notify });
         // Pin the active constitution to the run before staging (Req 15.3,
         // Property 12): the staged revision carries the hash the run
         // started with, even if a new version activates before commit.
@@ -2023,6 +2048,15 @@ export class AISecureHarness {
           requestedByAgent: run.agentName,
         })
         .returning();
+
+      this.notify?.({
+        kind: 'approval',
+        severity: 'info',
+        title: 'Approval requested',
+        body: `${run.agentName} requests approval to run "${skillName}"`,
+        deepLink: `/mission-control/inbox?entry=approval:${agentApproval!.id}`,
+        entityId: agentApproval!.id,
+      });
 
       await this.runService.finishToolCall(toolCallId, {
         status: 'pending_approval',

@@ -429,11 +429,19 @@ export type ItemFilterOp =
   | "_starts_with"
   | "_ends_with"
   | "_null"
-  | "_nnull";
+  | "_nnull"
+  // JSON field search: query into nested JSONB. A dotted field key
+  // (e.g. "metadata.author.country") addresses a nested path; these operators
+  // act on JSON containment / key existence.
+  | "_json_contains"
+  | "_has_key"
+  | "_has_any_keys"
+  | "_has_all_keys";
 
 export interface ItemFilter {
   _and?: ItemFilter[];
   _or?: ItemFilter[];
+  /** Field key; may be a dotted path into nested JSON, e.g. "meta.author.country". */
   [key: string]: { [op in ItemFilterOp]?: unknown } | ItemFilter[] | undefined;
 }
 
@@ -926,6 +934,8 @@ export interface SiteResource {
   descriptor: string | null;
   defaultLanguage: string;
   defaultAppearance: string;
+  /** Default Studio save action: `stay` | `return` | `create_new`. */
+  defaultSaveAction: string;
   branding: { logoUrl?: string; faviconUrl?: string; brandColor?: string };
   themeOverrides: {
     light?: Record<string, string>;
@@ -1153,6 +1163,24 @@ export interface FileResource {
   metadata: Record<string, unknown>;
   uploadedBy: string | null;
   createdAt: string;
+}
+
+export interface UploadTypeCatalogueEntry {
+  mime: string;
+  extensions: string[];
+  label: string;
+  note?: string;
+}
+
+export interface UploadConfigResource {
+  /** Maximum accepted upload size, in bytes. */
+  maxBytes: number;
+  /** Allowed MIME types (the enforced allowlist). */
+  allowedMimeTypes: string[];
+  /** Extensions derived from the allowlist, for the file picker `accept`. */
+  allowedExtensions: string[];
+  /** Full catalogue of selectable types (label + extensions per MIME). */
+  catalogue: UploadTypeCatalogueEntry[];
 }
 
 export interface WebhookResource {

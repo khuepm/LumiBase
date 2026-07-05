@@ -41,11 +41,11 @@ interface FakeDbOptions {
 function makeFakeDb(opts: FakeDbOptions = {}) {
   function rowsForTable(name: string): ReadonlyArray<Record<string, unknown>> {
     switch (name) {
-      case 'users':
+      case 'lumibase_users':
         return opts.userRows ?? [];
-      case 'system_state':
+      case 'lumibase_system_state':
         return opts.stateRows ?? [];
-      case 'admin_backup_codes':
+      case 'lumibase_admin_backup_codes':
         return opts.codeRows ?? [];
       default:
         return [];
@@ -83,7 +83,7 @@ function makeFakeDb(opts: FakeDbOptions = {}) {
               return {
                 returning() {
                   return Promise.resolve(
-                    name === 'admin_backup_codes'
+                    name === 'lumibase_admin_backup_codes'
                       ? (opts.backupCodeUpdateRows ?? [{ id: 'bkc_1' }])
                       : [],
                   );

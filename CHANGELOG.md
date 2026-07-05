@@ -11,6 +11,287 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [0.17.0] - 2026-07-03
+
+### Version
+
+- `v0.17.0`
+
+### Date
+
+- `2026-07-03`
+
+### Highlights
+
+- **`lumibase_` table namespace (breaking, fresh-install only).** Every system
+  table is physically renamed to `lumibase_<name>` and the whole migration
+  history is squashed into a single `0000_lumibase_init` — any table without
+  the prefix is unambiguously user-created. The migrate runner refuses to run
+  on a database carrying the pre-squash history, and collection names starting
+  with `lumibase_`/`mat_` are rejected at the API.
+- **Content Releases, external JWT auth, FK dependent-records, JSON field
+  search, configurable save action** — the v0.14–v0.16 feature train lands on
+  the new schema (their tables are prefixed and folded into the init).
+
+### Changed
+
+- **All system tables now carry a `lumibase_` prefix.** Every built-in table is
+  named `lumibase_<name>` (e.g. `lumibase_users`, `lumibase_agent_runs`,
+  `lumibase_releases`, `lumibase_push_subscriptions`) so the `lumibase_` namespace
+  is reserved for the platform and any table without it is unambiguously
+  user-created. Drizzle ORM code is unaffected (table `const` exports keep their
+  names). See [ADR-010](docs/en/architecture/decisions/adr-010-lumibase-table-prefix.md).
+- **Migration history squashed.** All legacy migrations (including the v0.14–v0.16
+  additions: push subscriptions, content releases, save-default-preference,
+  external-auth issuers) were collapsed into a single `0000_lumibase_init`
+  generated from the schema; the schema now fully expresses the `shares` CHECK
+  constraints and the `agent_approvals_veto_due_idx` partial index, and the
+  Drizzle snapshots were regenerated clean (no drift).
+
+### Fixed
+
+- `rls-policies.sql`: fixed a pre-existing nested `$$` dollar-quote bug in the RLS
+  `DO` block (the inner `CREATE POLICY` string now uses a `$pol$` tag) so the script
+  applies via `psql` without a syntax error.
+
+### Added
+
+- **Content Releases.** Collate specific item revisions across collections into
+  a named **Release** and publish them all at once — manually or scheduled for a
+  date/time (à la Directus Releases). New `releases` + `release_items` tables and
+  a `ReleaseService` exposed at `/api/v1/releases` (create / list / detail /
+  patch / `:id/publish` / delete). Publish delegates to the item update path, so
+  the editorial gate, validation, permissions and hooks all apply.
+  `atomicityMode` is `all_or_nothing` (pre-flight all items, publish none if any
+  is blocked) or `best_effort` (per-item outcomes). Scheduled releases publish
+  via the shared `content-scheduler` tick (`sweepDueReleases`) — idempotent and
+  `maintenanceWindow`-aware. Each `release_item` can pin a specific revision.
+- **Configurable default save action.** The Studio content editor's post-save
+  behavior is now configurable — `stay` (remain on the form), `return` (back to
+  the list), or `create_new` — as a **per-user preference**
+  (`users.preferences.saveAction`, set via the editor's split-button or
+  `PATCH /api/v1/me/preferences`) that overrides a **site-wide default**
+  (`sites.default_save_action`, set in Settings → Site). The hardcoded fallback
+  is `stay`, matching the editor's previous behavior, so existing instances are
+  unchanged until someone opts into another action.
+
+- **External JWT authentication.** A site can trust JWTs issued by an external
+  IdP (Okta, Entra, Auth0, Logto, Keycloak, Cloudflare Access…), verified against
+  the issuer's public JWKS. New `auth_external_issuers` table + admin CRUD at
+  `/api/v1/admin/auth/issuers`. The auth chain matches the token's `iss` to a
+  trusted issuer for the site, verifies the signature + standard claims with the
+  issuer's asymmetric-only algorithm allowlist, maps role claims to LumiBase
+  roles (**default-deny** — never implicit admin), enforces a `siteId`-claim ==
+  request-site gate, and optionally JIT-provisions the user. Fail-closed once an
+  issuer matches; a token for an unknown issuer falls through to internal auth.
+
+- **Foreign-key dependent-records handling.** Deleting an item that other records
+  still reference (via a `restrict` relation) is now blocked with a structured
+  **409 `DEPENDENT_RECORDS_EXIST`** instead of orphaning references. New
+  `GET /api/v1/items/:collection/:id/dependents` (what references this item) and
+  `POST …/resolve-dependents` (batch `set_null` / `delete` / `reassign`,
+  transactional). The Studio editor shows a dialog to resolve each dependency
+  group, then retries the delete. References live in JSONB so `onDelete` is
+  enforced in the application layer — only `restrict` blocks; `set null`/`cascade`
+  are never auto-applied on soft-delete. No schema migration (reuses `relations`).
+
+- **Search inside JSON fields.** Item filters can now query **into** nested
+  JSON/JSONB content. A dotted field key (`metadata.author.country`) addresses a
+  nested path (compiled to `data #>> '{…}'`), and new operators `_json_contains`
+  (`@>`), `_has_key`, `_has_any_keys`, `_has_all_keys` test JSON containment /
+  key existence against the existing GIN index. Path segments are allow-listed
+  (`[A-Za-z0-9_]`) and parameter-bound (injection-safe), with depth/clause
+  limits. Purely additive — top-level keys and structural fields are unchanged;
+  no schema migration. SDK `ItemFilterOp` exposes the new operators.
+
+### Migrations
+
+- **Breaking, fresh-install only — no upgrade path from a pre-prefix database.**
+  The whole migration history — including this release's additions
+  (`lumibase_releases` + `lumibase_release_items`, `lumibase_push_subscriptions`,
+  `sites.default_save_action`, `lumibase_auth_external_issuers`) — is consolidated
+  into the single `0000_lumibase_init`. Create the schema from scratch:
+  `pnpm -F @lumibase/database migrate`, then apply
+  `packages/database/migrations/rls-policies.sql`. An existing pre-prefix database
+  must be dropped and recreated; for the Docker dev stack destroy the `pgdata`
+  volume first:
+  `docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d`.
+  The migrate runner detects a database carrying the pre-squash migration history
+  and refuses to apply (bypass with `FORCE_MIGRATE=true` at your own risk;
+  `SKIP_MIGRATIONS=true` skips the boot-time migrate in Docker).
+
+### Security
+
+- **External JWT hardening:** see
+  [docs/en/security/external-jwt-auth.md](docs/en/security/external-jwt-auth.md)
+  for the threat model. `HS*`/`none` algorithms are rejected for external issuers
+  (alg-confusion); raw tokens are never logged.
+
+## [0.16.0] - 2026-07-03
+
+### Version
+
+- `v0.16.0`
+
+### Date
+
+- `2026-07-03`
+
+### Highlights
+
+- **Code-First Configuration (Config Manifest).** A site's schema configuration — collections, fields, relations, settings and webhooks — can now be exported, diffed and applied as a single declarative, version-controllable JSON manifest (`lumibase.config@v1`), enabling CI/CD and environment sync.
+- **Auto-deploy from Flows.** New flow operations `deploy:trigger` and `deploy:status` complete the auto-deploy-on-content-change path promised by deployment integrations: an `event`-triggered Flow can deploy a target and branch on its status, with full provenance.
+- **Security hardening.** Tenant membership is now enforced by middleware for user principals, dynamic extension dispatch is admin-gated again, `POST /auth/register` is fixed and fail-closed, and `/api/v1/flows` joins the control-plane backstop — all locked by a source-level tripwire suite.
+
+### Breaking changes
+
+- None. Collection names starting with `lumibase_` are now reserved (see Added), which only affects new create/rename attempts.
+
+### Added
+
+- **CMS / deployments:** Flow operations `deploy:trigger` and `deploy:status`,
+  completing the auto-deploy-on-content-change path promised by deployment
+  integrations (Req 5). A Flow with an `event` trigger can now deploy a target
+  via `deploy:trigger` (`triggerSource='auto'`, linked to the flow run for
+  provenance) and branch on `deploy:status`. Both reuse the shared
+  `DeploymentService` — same encrypted-token, SSRF and audit guards as the
+  manual API — and receive `db`/`siteId`/`keys`/`runId` from the flow run
+  environment.
+- **Code-First Configuration (Config Manifest).** Export / diff / apply a site's
+  schema configuration — collections, fields, relations, settings and webhooks —
+  as a single declarative, version-controllable JSON manifest
+  (`lumibase.config@v1`) for CI/CD and environment sync. New admin-only endpoints
+  `GET /api/v1/config/export` and `POST /api/v1/config/import` (with `dryRun`,
+  `mode=merge|replace-managed|replace-all`, and an `allowDestructive` guard), plus
+  a reworked `pnpm --filter @lumibase/cms config export|diff|apply` CLI (`diff`
+  exits 1 when changes are pending, for use as a PR gate). Apply is transactional
+  (all-or-nothing) and delegates schema mutation to the existing `SchemaService`;
+  merge never deletes, replace-all is a full sync. Manifests carry no
+  id/siteId/timestamps/secrets and round-trip losslessly. No schema migration —
+  reuses existing tables. See
+  [`docs/en/contributing/code-first-config.md`](docs/en/contributing/code-first-config.md).
+- **CMS / schema:** the `lumibase_` collection name prefix is reserved for
+  platform-owned tables (CDC/Firebase sync, internal config). Creating or
+  renaming a collection to a `lumibase_*` name is rejected with `RESERVED_NAME`
+  (HTTP 422). The guard lives in `SchemaService.ensureName`, so it applies
+  uniformly to the schema builder routes and the AI harness `createCollection`
+  skill; the collections route also validates early via Zod for client feedback.
+
+### Changed
+
+- **Definition of Done gains section 6 (DoD evolution):** a mandatory
+  retrospective step — a bug fix must ask whether it should lock the whole error
+  *class* with a tripwire, and a feature must ask whether it opens a new
+  failure-mode/attack-surface warranting a new DoD rule; DoD changes land in the
+  same PR. Makes the "learn from a bug, add a guard" loop (which produced 2b/2c)
+  explicit instead of relying on reviewer memory.
+
+### Security
+
+- **Tenant membership enforcement** (ports open PR #184): new `withSiteMembership` middleware between `withAuth` and route handlers — a user principal must hold a `user_sites` membership for the site selected via `X-Lumi-Site`, closing cross-tenant access for authenticated principals. API keys stay site-matched by `withAuth`; local dev tokens, bootstrap users, and the Cloudflare Access admin flow keep their existing carve-outs.
+- **Dynamic extension dispatch is admin-gated again** (ports open PR #152): restores the `adminOnly` guard on `extensionsRouter.all('/:name/*')` that a refactor had dropped, so non-admin principals can no longer execute endpoint extension bundles.
+- **`POST /auth/register` fixed and fail-closed** (bug portion of open PR #130): the path was on the `withAuth` bypass list while the handler read the principal, so the route always crashed with 500; it now runs through the full auth chain, requires an admin principal (403 otherwise, even with no principal), and binds new users to the site's seeded `member` role id instead of the invalid literal `'member'` (an FK violation).
+- **Flows are control-plane again:** `/api/v1/flows` is now in `CONTROL_PLANE_PATHS`
+  so the admin-only backstop runs even if a flows route forgets its own guard —
+  the same gap class as the historical `/api/v1/agent` omission, now that flow
+  operations (`deploy:trigger`/`deploy:status`) mutate external deploy state. A
+  tripwire assertion in `security-guards.wiring.test.ts` locks it.
+- **Recurrence prevention:** source-level tripwire suite `apps/cms/src/__tests__/security-guards.wiring.test.ts` locks the guard-chain wiring, bypass lists, extension admin gate, and control-plane path coverage; new guide `docs/en/security/route-guards.md`; Definition of Done gains section 2c (route-guard security checklist).
+
+### Notes
+
+- **CI:** the Docker workflow now uses `env.NODE_VERSION` for `setup-node`, keeping the Node version consistent across CI workflows.
+
+### Migrations
+
+- None
+
+## [0.15.0] - 2026-07-02
+
+### Version
+
+- `v0.15.0`
+
+### Date
+
+- `2026-07-02`
+
+### Highlights
+
+- **Realtime audience plane.** Realtime is now split into two planes: the existing admin/Studio plane and a new **audience plane** for end-user frontends. Frontends connect with short-lived audience tickets over a plane-aware WebSocket upgrade, subscribe to subject/channel addresses, and receive targeted fan-out from a plane-aware `SiteRoom`. A per-subject connection cap and audience shard resolver keep tenants isolated under load. A new `@lumibase/sdk` `AudienceClient` gives frontend apps a typed entry point, and a Node WebSocket hub backs the audience plane under the Docker dual deployment.
+- **Cosmic design system.** The landing, marketplace, and docs surfaces adopt a shared cosmic design system — an orbital hero and product sections on landing, refreshed browse/detail pages on marketplace, and a cosmic dark theme for the docs viewer.
+- **Security hardening.** `ItemService` construction is now funnelled through an RBAC-explicit factory so no call site can bypass permission context, and schema-admin routes are guarded against missing permission checks.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **Realtime / audience plane:** shared `audience-channels` protocol; runtime realtime provider abstraction (ADR-002); plane-aware `SiteRoom` with targeted fan-out; audience tickets + plane-aware WS upgrade; targeted publish via provider + notification inbox; Node WebSocket hub for the Docker dual deployment; per-subject connection cap + audience shard resolver.
+- **SDK:** `AudienceClient` for frontend end-user realtime.
+- **CMS:** admin backstop for control-plane skills on the MCP endpoint.
+
+### Changed
+
+- **Landing / marketplace / docs:** applied the cosmic design system — orbital hero and product sections (landing), browse and detail pages (marketplace), cosmic dark theme (docs viewer).
+- **CMS:** `ItemService` construction routed through an RBAC-explicit factory.
+
+### Fixed
+
+- **CMS:** schema-admin routes now guarded against a missing permission check (regression test added).
+- **Marketplace:** removed a no-op SEO self-replacement in `categoryLabel`.
+- **SDK:** fixed strict-null handling in the `AudienceClient` test helper.
+
+### Notes
+
+- **Docs:** documented the audience plane and logged it in the Setup Impact registry; added English + Vietnamese runtime security guards reference docs (EN/VI parity); logged the `ItemService` RBAC guard as reviewed (n/a) in the Setup Impact registry.
+
+### Migrations
+
+- None
+
+## [0.14.0] - 2026-07-02
+
+### Version
+
+- `v0.14.0`
+
+### Date
+
+- `2026-07-02`
+
+### Highlights
+
+- **Push notifications.** Operational agent events (HITL approvals, L3 veto-window stagings, agent incidents, run/goal status changes) now reach Studio operators over two transports: in-app realtime via the per-site `SiteRoom` Durable Object, and Web Push (VAPID, RFC 8291/8292) so operators are reached even with the tab closed. Both are best-effort and non-blocking; the Mission Control inbox poll remains the fallback. Includes a Settings → Notifications page (status, per-browser enable/disable, send-test) and a CLI connection tester.
+- **Docs version badge.** The docs site header now shows the current release version, linking to that release's GitHub notes.
+- **Path-traversal hardening.** Extends the prior items/collections/fields path-segment validation to every MCP tool that interpolates a dynamic segment into an API path — closing the same path-traversal / confused-deputy class across the shared CRUD factory, users/teams, API keys, access, agent, admin, relations, extensions, and settings tools.
+
+### Breaking changes
+
+- None. All capabilities are additive.
+
+### Added
+
+- **CMS / push notifications:** runtime-agnostic Web Push crypto (Web Crypto, no Node-only `web-push` dep); central `agent-notifications` broadcaster (in-app DO + Web Push fanout, prunes 404/410 endpoints); `SiteRoom` `notification` frame + publish path; `GET /api/v1/push/vapid-public-key`, `POST`/`DELETE /api/v1/push/subscriptions`, `GET /api/v1/push/status`, `POST /api/v1/push/test`; `push_subscriptions` table (migration `0039`) with RLS.
+- **Studio:** push service worker + enrollment lib; notifications panel with realtime updates and enable/disable toggle; Settings → Notifications page (server status, per-browser controls, connect guide, send-test).
+- **Tooling:** `apps/cms/scripts/push-test.mjs` CLI to verify a tenant's push connectivity without opening Studio; VAPID key generator script.
+- **Docs:** version badge in the docs header (`__APP_VERSION__` build-time define); `features/push-notifications.md` guide with a Multi-tenancy section; `definition-of-done.md` gained a mandatory multi-tenant isolation checklist for new features.
+
+### Changed
+
+- **MCP server:** `registerCrud` and explicit endpoints across users-teams, api-keys, access, agent, admin, relations, extensions, and settings tools now validate ids/keys with `idPathSegmentSchema` and encode path segments; added `mediaKeySchema`/`encodeMediaKey` for multi-segment storage keys.
+
+### Fixed
+
+- **Security / mcp-server:** hardened tool path parameters and extended path hardening from items/collections/fields to all CRUD and explicit-endpoint tools (path-traversal / confused-deputy).
+- **Security / mcp-server:** settings tools (`get_setting`, `upsert_setting`, `delete_setting`) switched from `encodeURIComponent` to `idPathSegmentSchema`, closing a residual traversal gap where `.`/`..` were not neutralized.
+
+### Migrations
+
+- **1 new schema migration (additive, idempotent):** `0039_push_subscriptions.sql` adds the site-isolated `push_subscriptions` table, guarded with `CREATE TABLE IF NOT EXISTS` so it re-runs safely and leaves existing installs untouched. RLS is applied via `packages/database/migrations/rls-policies.sql`. No data migration.
+- Apply with `pnpm -F @lumibase/database db:migrate`.
+
 ## [0.13.0] - 2026-06-30
 
 ### Version

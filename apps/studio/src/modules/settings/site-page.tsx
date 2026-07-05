@@ -24,6 +24,7 @@ interface SiteFormValues {
   descriptor: string;
   defaultLanguage: string;
   defaultAppearance: 'auto' | 'light' | 'dark';
+  defaultSaveAction: 'stay' | 'return' | 'create_new';
   branding: { logoUrl: string; faviconUrl: string; brandColor: string };
   themeOverrides: { light: Record<string, string>; dark: Record<string, string> };
   customCss: string;
@@ -37,6 +38,7 @@ function toFormValues(site: SiteResource): SiteFormValues {
     descriptor: site.descriptor ?? '',
     defaultLanguage: site.defaultLanguage ?? 'en',
     defaultAppearance: (site.defaultAppearance as SiteFormValues['defaultAppearance']) ?? 'auto',
+    defaultSaveAction: (site.defaultSaveAction as SiteFormValues['defaultSaveAction']) ?? 'stay',
     branding: {
       logoUrl: site.branding?.logoUrl ?? '',
       faviconUrl: site.branding?.faviconUrl ?? '',
@@ -112,6 +114,7 @@ function SiteSettingsForm({ site, onSave, saving, saved, errorCode }: FormProps)
   const descId = useId();
   const langId = useId();
   const appearanceId = useId();
+  const saveActionId = useId();
 
   const form = useForm<SiteFormValues>({
     resolver: zodResolver(SiteConfigUpdateSchema),
@@ -151,6 +154,7 @@ function SiteSettingsForm({ site, onSave, saving, saved, errorCode }: FormProps)
       descriptor: values.descriptor,
       defaultLanguage: values.defaultLanguage,
       defaultAppearance: values.defaultAppearance,
+      defaultSaveAction: values.defaultSaveAction,
       branding: values.branding,
       themeOverrides: values.themeOverrides,
       customCss: values.customCss,
@@ -246,6 +250,13 @@ function SiteSettingsForm({ site, onSave, saving, saved, errorCode }: FormProps)
             <option value="auto">Auto (system)</option>
             <option value="light">Light</option>
             <option value="dark">Dark</option>
+          </select>
+        </Field>
+        <Field id={saveActionId} label="Default save action" help="After saving content, where editors go. Per-user preference overrides this.">
+          <select id={saveActionId} className={inputClass(false)} {...register('defaultSaveAction')}>
+            <option value="stay">Save &amp; stay on the form</option>
+            <option value="return">Save &amp; return to list</option>
+            <option value="create_new">Save &amp; create new</option>
           </select>
         </Field>
         <div className="grid gap-6 sm:grid-cols-2">

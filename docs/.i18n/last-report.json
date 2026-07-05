@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-29T16:16:44.819Z",
+  "generatedAt": "2026-07-05T05:32:27.341Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,10 +8,22 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 1,
-    "upToDate": 15,
-    "planned": 102
+    "upToDate": 14,
+    "planned": 111
   },
   "actions": [
+    {
+      "rel": "DEPLOYMENT-CHECKLIST.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
     {
       "rel": "README.md",
       "type": "translate",
@@ -278,6 +290,18 @@
     },
     {
       "rel": "architecture/decisions/adr-009-graphql-yoga.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "architecture/decisions/adr-010-lumibase-table-prefix.md",
       "type": "translate",
       "reason": "missing vi translation",
       "enLang": "en",
@@ -589,6 +613,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "contributing/code-first-config.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "contributing/code-style.md",
       "type": "translate",
       "reason": "missing vi translation",
@@ -853,6 +889,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/content-releases.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/deployment-integrations.md",
       "type": "translate",
       "reason": "missing vi translation",
@@ -926,13 +974,13 @@
     },
     {
       "rel": "features/firebase-sync.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1029,6 +1077,18 @@
       "sourceLocale": "vi",
       "targetLocale": "en",
       "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/push-notifications.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1161,7 +1221,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-06-29T16-16-44-932Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-05T05-32-27-458Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1241,6 +1301,18 @@
       "type": "translate",
       "reason": "missing en translation",
       "enLang": null,
+      "viLang": "vi",
+      "sourceLocale": "vi",
+      "targetLocale": "en",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "roadmap/collection-create-modes.md",
+      "type": "translate",
+      "reason": "en duplicates vi content; replace en with English translation",
+      "enLang": "vi",
       "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
@@ -1347,6 +1419,18 @@
     {
       "rel": "security/dependency-overrides.md",
       "type": "translate",
+      "reason": "source changed since last sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/external-jwt-auth.md",
+      "type": "translate",
       "reason": "missing vi translation",
       "enLang": "en",
       "viLang": null,
@@ -1358,6 +1442,18 @@
     },
     {
       "rel": "security/idor-testing.md",
+      "type": "translate",
+      "reason": "source changed since last sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/route-guards.md",
       "type": "translate",
       "reason": "missing vi translation",
       "enLang": "en",
@@ -1371,11 +1467,11 @@
     {
       "rel": "security/runtime-security-guards-plan.md",
       "type": "translate",
-      "reason": "missing en translation",
-      "enLang": null,
+      "reason": "source changed since last sync",
+      "enLang": "en",
       "viLang": "vi",
-      "sourceLocale": "vi",
-      "targetLocale": "en",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
       "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0

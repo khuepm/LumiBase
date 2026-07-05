@@ -11,4 +11,10 @@ export {
 export type { JobOptions, Job, QueueProvider } from './queue';
 export type { TransformOptions, MediaProcessor } from './media';
 export type { KeyStatus, KeyMeta, ResolvedKey, KeyProvider } from './keys';
+export type {
+  RealtimePlane,
+  RealtimeTargetLike,
+  RealtimeEventLike,
+  RealtimeProvider,
+} from './realtime';
 export type { RuntimeContext } from './runtime';

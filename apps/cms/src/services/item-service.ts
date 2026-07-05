@@ -20,6 +20,7 @@ import {
   type CacheProvider,
   type SearchProvider,
   type QueueProvider,
+  type RealtimeProvider,
 } from '@lumibase/runtime';
 import { buildSearchDocument } from './search-document';
 import { PermissionService, type CompiledPermission, type PermissionAction } from './permission-service';
@@ -78,7 +79,12 @@ export type ItemFilterOp =
   | '_starts_with'
   | '_ends_with'
   | '_null'
-  | '_nnull';
+  | '_nnull'
+  // JSON field-search (json-field-search Req 3): containment + key-existence.
+  | '_json_contains'
+  | '_has_key'
+  | '_has_any_keys'
+  | '_has_all_keys';
 
 /** Recursive tree-shaped filter, e.g. `{ _and: [ { status: { _eq: 'published' } } ] }`. */
 export interface ItemFilter {
@@ -181,9 +187,17 @@ export interface ItemServiceDeps {
   keyProvider?: KeyProvider;
   /**
    * SiteRoom Durable Object namespace (Cloudflare Workers only).
-   * When provided, item mutations are published to connected WebSocket clients.
+   * @deprecated Prefer `realtime` (RealtimeProvider) for runtime-agnostic
+   * fan-out (ADR-002). Kept for the GraphQL subscription bridge which still
+   * connects to the DO directly.
    */
   realtimeNamespace?: DurableObjectNamespace;
+  /**
+   * Runtime realtime provider (ADR-002). When provided, item mutations are
+   * published through it (Cloudflare DO or Docker hub). Takes precedence over
+   * `realtimeNamespace`.
+   */
+  realtime?: RealtimeProvider;
   /**
    * Environment bindings passed to ExtensionSandbox for capability-gated access.
    * When omitted, extension hooks are skipped.
@@ -209,8 +223,57 @@ const WRITABLE_STRUCTURAL_FIELDS = ['status', 'sort'] as const;
 
 type RelationMetadata = typeof relations.$inferSelect;
 
+// JSON field-search limits (json-field-search Req 5).
+const MAX_PATH_DEPTH = 8;
+const MAX_SEGMENT_LEN = 64;
+const MAX_FILTER_CLAUSES = 100;
+const SEGMENT_RE = /^[A-Za-z0-9_]+$/;
+
+/**
+ * Validate + split a field reference into path segments. A dotted key (e.g.
+ * `metadata.author.country`) addresses nested JSONB; a single segment keeps the
+ * existing top-level behavior. Throws INVALID_FILTER on any unsafe / malformed
+ * segment so nothing unvalidated reaches SQL (json-field-search Req 5, 6).
+ */
+export function resolveFieldPath(name: string): string[] {
+  const segments = name.split('.');
+  if (segments.length > MAX_PATH_DEPTH) {
+    throw new ItemServiceError('INVALID_FILTER', 'Filter path is too deep.');
+  }
+  for (const seg of segments) {
+    if (seg.length === 0 || seg.length > MAX_SEGMENT_LEN || !SEGMENT_RE.test(seg)) {
+      throw new ItemServiceError('INVALID_FILTER', `Invalid path segment "${seg}".`);
+    }
+  }
+  return segments;
+}
+
+/**
+ * Bind a validated path as a Postgres `text[]` for `#>` / `#>>`. The array
+ * literal is passed as a single BOUND parameter (`'{a,b}'` → `::text[]`), not a
+ * positional record — segments have already passed the strict allow-list, so no
+ * special character can appear inside the braces.
+ */
+function bindArrayLiteral(segments: string[]): SQL {
+  const literal = `{${segments.join(',')}}`;
+  return sql`${literal}::text[]`;
+}
+
+/**
+ * Coerce a `_has_any_keys`/`_has_all_keys` value to a bound `text[]` SQL. Each
+ * key is a bound parameter inside `array[...]::text[]` (user values, so they
+ * must stay parameterized — never inlined). Rejects non-string arrays.
+ */
+function asKeyArray(raw: unknown, op: string): SQL {
+  if (!Array.isArray(raw) || raw.length === 0 || !raw.every((v) => typeof v === 'string')) {
+    throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" expects a non-empty array of strings.`);
+  }
+  const bound = (raw as string[]).map((k) => sql`${k}`);
+  return sql`array[${sql.join(bound, sql`, `)}]::text[]`;
+}
+
 /** Reserved data keys that map to structural columns rather than JSONB. */
-function fieldExpression(name: string): SQL {
+function fieldExpression(name: string, mode: 'text' | 'json' = 'text'): SQL {
   switch (name) {
     case 'id':
       return items.id as unknown as SQL;
@@ -226,9 +289,21 @@ function fieldExpression(name: string): SQL {
       return items.createdAt as unknown as SQL;
     case 'updated_at':
       return items.updatedAt as unknown as SQL;
-    default:
-      // JSONB path access. Drizzle's `sql` keeps the binding parameterized.
-      return sql`${items.data}->>${name}`;
+    default: {
+      // JSONB access. `name` may be a dotted path into nested JSON.
+      const segments = resolveFieldPath(name);
+      if (segments.length === 1) {
+        // Top-level — unchanged. Drizzle keeps the key a bound parameter.
+        return mode === 'json' ? sql`${items.data}->${segments[0]}` : sql`${items.data}->>${segments[0]}`;
+      }
+      // Nested path via #> / #>>, which take a text[]. Every segment has already
+      // passed the strict `^[A-Za-z0-9_]+$` allow-list in resolveFieldPath, so
+      // building the array literal cannot inject (no quotes/braces/commas can
+      // appear in a segment). `bindArrayLiteral` produces a parameter-bound
+      // `'{a,b}'::text[]` rather than a positional record.
+      const pathArray = bindArrayLiteral(segments);
+      return mode === 'json' ? sql`${items.data}#>${pathArray}` : sql`${items.data}#>>${pathArray}`;
+    }
   }
 }
 
@@ -255,7 +330,26 @@ function buildFilter(filter?: ItemFilter): SQL | undefined {
     if (!value || typeof value !== 'object') continue;
     const expr = fieldExpression(key);
     for (const [op, raw] of Object.entries(value as Record<string, unknown>)) {
+      if (clauses.length >= MAX_FILTER_CLAUSES) {
+        throw new ItemServiceError('INVALID_FILTER', 'Filter has too many clauses.');
+      }
       switch (op as ItemFilterOp) {
+        // ── JSON containment / key-existence (json-field-search Req 3) ──
+        // Use the json-mode expression (-> / #>) and jsonb_* functions rather
+        // than the ?/?|/?& operators (which collide with the driver's
+        // parameter placeholder). Value/keys are bound parameters.
+        case '_json_contains':
+          clauses.push(sql`${fieldExpression(key, 'json')} @> ${JSON.stringify(raw)}::jsonb`);
+          break;
+        case '_has_key':
+          clauses.push(sql`jsonb_exists(${fieldExpression(key, 'json')}, ${String(raw)})`);
+          break;
+        case '_has_any_keys':
+          clauses.push(sql`jsonb_exists_any(${fieldExpression(key, 'json')}, ${asKeyArray(raw, op)})`);
+          break;
+        case '_has_all_keys':
+          clauses.push(sql`jsonb_exists_all(${fieldExpression(key, 'json')}, ${asKeyArray(raw, op)})`);
+          break;
         case '_eq':
           clauses.push(sql`${expr} = ${raw}`);
           break;
@@ -1319,27 +1413,34 @@ export class ItemService {
     itemId: string,
     payload: unknown,
   ): Promise<void> {
-    if (!this.deps.realtimeNamespace) return;
+    const event = {
+      type: 'event' as const,
+      plane: 'studio' as const,
+      collection,
+      action,
+      itemId,
+      payload,
+      actorUserId: this.deps.userId ?? undefined,
+    };
     try {
-      const id = this.deps.realtimeNamespace.idFromName(this.deps.siteId);
-      const stub = this.deps.realtimeNamespace.get(id);
-      // Call the SiteRoom's publish() method via a synthetic HTTP request.
-      // SiteRoom exposes publish() as a durable object method; we invoke it
-      // via the DO's fetch() with a special internal path.
-      await stub.fetch(
-        new Request('https://internal/publish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'event',
-            collection,
-            action,
-            itemId,
-            payload,
-            actorUserId: this.deps.userId ?? undefined,
+      // Preferred path (ADR-002): runtime-agnostic provider.
+      if (this.deps.realtime) {
+        await this.deps.realtime.publish(this.deps.siteId, event);
+        return;
+      }
+      // Legacy path: direct SiteRoom DO stub (Cloudflare only). Kept so callers
+      // that only wire `realtimeNamespace` (e.g. the GraphQL bridge) still work.
+      if (this.deps.realtimeNamespace) {
+        const id = this.deps.realtimeNamespace.idFromName(this.deps.siteId);
+        const stub = this.deps.realtimeNamespace.get(id);
+        await stub.fetch(
+          new Request('https://internal/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(event),
           }),
-        }),
-      );
+        );
+      }
     } catch (err) {
       // Realtime fan-out is non-critical — log and continue.
       console.error('[item-service] realtime publish failed', { collection, itemId, err: formatSafeError(err) });

@@ -45,6 +45,7 @@ const DeveloperTypesPage = lazy(() => import('./modules/settings/types-page').th
 const TranslationsPage = lazy(() => import('./modules/translations').then((m) => ({ default: m.TranslationsPage })));
 const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
 const EmailSettingsPage = lazy(() => import('./modules/settings/email-page').then((m) => ({ default: m.EmailSettingsPage })));
+const NotificationsSettingsPage = lazy(() => import('./modules/settings/notifications-page').then((m) => ({ default: m.NotificationsSettingsPage })));
 const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then((m) => ({ default: m.SiteSettingsPage })));
 const DomainsSettingsPage = lazy(() => import('./modules/settings/domains-page').then((m) => ({ default: m.DomainsSettingsPage })));
 const KeyboardSettingsPage = lazy(() => import('./modules/settings/keyboard-page').then((m) => ({ default: m.KeyboardSettingsPage })));
@@ -53,6 +54,7 @@ const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page'
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const EncryptionSettingsPage = lazy(() => import('./modules/settings/encryption-page').then((m) => ({ default: m.EncryptionSettingsPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
+const UploadsSettingsPage = lazy(() => import('./modules/settings/uploads-page').then((m) => ({ default: m.UploadsSettingsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
 const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
 const AgentHarnessPage = lazy(() => import('./modules/settings/agent-harness-page').then((m) => ({ default: m.AgentHarnessPage })));
@@ -614,6 +616,12 @@ const emailSettingsRoute = createRoute({
   component: withSuspense(EmailSettingsPage),
 });
 
+const notificationsSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'notifications',
+  component: withSuspense(NotificationsSettingsPage),
+});
+
 const siteSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'site',
@@ -660,6 +668,12 @@ const extensionsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'extensions',
   component: withSuspense(ExtensionsPage),
+});
+
+const uploadsSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'uploads',
+  component: withSuspense(UploadsSettingsPage),
 });
 
 const marketplaceRoute = createRoute({
@@ -725,6 +739,12 @@ const adminPathEmailSettingsRoute = createRoute({
   component: withSuspense(EmailSettingsPage),
 });
 
+const adminPathNotificationsSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'notifications',
+  component: withSuspense(NotificationsSettingsPage),
+});
+
 const adminPathSiteSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'site',
@@ -771,6 +791,12 @@ const adminPathMarketplaceRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'marketplace',
   component: withSuspense(MarketplacePage),
+});
+
+const adminPathUploadsSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'uploads',
+  component: withSuspense(UploadsSettingsPage),
 });
 
 const adminPathUpdatesRoute = createRoute({
@@ -1184,11 +1210,13 @@ const routeTree = rootRoute.addChildren([
       keyboardSettingsRoute,
       webhooksRoute,
       emailSettingsRoute,
+      notificationsSettingsRoute,
       materializeSettingsRoute,
       translationMemoryRoute,
       activityRoute,
       encryptionSettingsRoute,
       extensionsRoute,
+      uploadsSettingsRoute,
       marketplaceRoute,
       updatesRoute,
       agentHarnessRoute,
@@ -1248,10 +1276,12 @@ const routeTree = rootRoute.addChildren([
       adminPathKeyboardSettingsRoute,
       adminPathWebhooksRoute,
       adminPathEmailSettingsRoute,
+      adminPathNotificationsSettingsRoute,
       adminPathMaterializeSettingsRoute,
       adminPathTranslationMemoryRoute,
       adminPathActivityRoute,
       adminPathExtensionsRoute,
+      adminPathUploadsSettingsRoute,
       adminPathMarketplaceRoute,
       adminPathUpdatesRoute,
       adminPathAgentHarnessRoute,

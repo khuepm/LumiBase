@@ -35,7 +35,7 @@ const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
 export const siteDomains = pgTable(
-  'site_domains',
+  'lumibase_site_domains',
   {
     id: id(),
     siteId: text('site_id')

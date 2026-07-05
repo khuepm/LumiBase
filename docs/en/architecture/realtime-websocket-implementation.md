@@ -234,6 +234,22 @@ Manual verification:
 
 ## Open items
 
-- Docker realtime adapter does not exist yet, so this document treats production realtime as Cloudflare-only.
-- Publish and connect need a shared shard resolver to avoid room mismatch when multi-region sharding is enabled.
+- ~~Docker realtime adapter does not exist yet~~ — shipped in `realtime-audience-channels` (see below).
+- ~~Publish and connect need a shared shard resolver~~ — shipped as `resolveRoomName()` in `apps/cms/src/realtime/shard-config.ts`.
 - Permission-aware per-subscriber payload masking should be a Phase 2 task if Phase 1 needs to ship quickly.
+
+## Audience plane (end-user frontend realtime)
+
+The sections above cover the **studio plane** — admin users (`users` table) subscribing by collection. The `realtime-audience-channels` spec (`.kiro/specs/realtime-audience-channels/`) adds a second, isolated **audience plane** for frontend end-users who live in an app-owned table (keyed by e.g. a `citizenID`), not `users`.
+
+Key pieces:
+
+- **Protocol** (`@lumibase/shared` `realtime/protocol.ts`): the shared `lumibase-sync-v1` Zod schema, extended with `join`/`leave` frames, a `notification` frame, `welcome.plane`, and a targeted `RealtimeEvent` envelope `{ plane, target: { userId | subjectId | channel } }`. Studio frames are byte-compatible.
+- **Runtime provider** (`RealtimeProvider`, ADR-002): `runtime.realtime.publish(siteId, event)`. Cloudflare forwards to the `SiteRoom` DO; Docker publishes into an in-process hub backing a `ws` server (`apps/cms/src/realtime/node-hub.ts`) attached in `serve.ts`. Multi-node Docker (Postgres `LISTEN/NOTIFY` or Redis) is future work.
+- **Fan-out** (`apps/cms/src/realtime/fan-out.ts`, `shouldDeliver`): plane → target (userId/subjectId/channel) → collection subscription. Studio-only skip-echo. Strict plane isolation.
+- **Tickets** (`POST /api/v1/realtime/audience-ticket`): authz lives at the route via `resolveAudienceGrant` — it maps the authenticated frontend principal to a `subjectId` and a channel allowlist from verified claims. The signed ticket carries `plane:'public'`, `subjectId`, `channels`; the DO/hub trusts these and never reads identity from the client.
+- **Notifications** (`NotificationService`): persists a `notifications` row and fans it out to the recipient's sessions (`userId` for studio, `subjectId` for public), flips `pushed`, and exposes `listUndelivered`/`markPushed` for reconnect replay.
+- **SDK** (`AudienceClient`): fetches the audience ticket, joins/leaves channels, surfaces channel events + notifications, reconnects with backoff and re-joins channels.
+- **Scale**: per-session rate-limit/heartbeat/idle apply to both planes; `LUMIBASE_REALTIME_MAX_CONNECTIONS_PER_SUBJECT` caps per-subject sessions; `resolveRoomName`/`subjectBucket` support audience bucket sharding (v1 defaults to a single `{siteId}:aud` room).
+
+Design rationale: the end-user table being separate from `users` is intentional and correct. The fix for "realtime can't filter end-users" is a logical **subject** address decoupled from the user source, resolved server-side from a verified ticket — not merging tables.
