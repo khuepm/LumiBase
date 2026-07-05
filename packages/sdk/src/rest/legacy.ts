@@ -48,6 +48,8 @@ import {
   SettingResource,
   SiteResource,
   SiteConfigUpdate,
+  DomainResource,
+  DomainCreateInput,
   UserResource,
   TeamResource,
   TeamMemberResource,
@@ -501,6 +503,25 @@ export function legacyRest() {
         }),
     };
 
+    const domains = {
+      list: () => client.rawRequest<DomainResource[]>("/api/v1/domains"),
+      create: (input: DomainCreateInput) =>
+        client.rawRequest<DomainResource>("/api/v1/domains", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      verify: (id: string) =>
+        client.rawRequest<DomainResource>(`/api/v1/domains/${id}/verify`, {
+          method: "POST",
+        }),
+      setPrimary: (id: string) =>
+        client.rawRequest<DomainResource>(`/api/v1/domains/${id}/primary`, {
+          method: "POST",
+        }),
+      delete: (id: string) =>
+        client.rawRequest<void>(`/api/v1/domains/${id}`, { method: "DELETE" }),
+    };
+
     const users = {
       list: () => client.rawRequest<UserResource[]>("/api/v1/users"),
       get: (id: string) => client.rawRequest<UserResource>(`/api/v1/users/${id}`),
@@ -770,6 +791,7 @@ export function legacyRest() {
       translations,
       settings,
       site,
+      domains,
       users,
       teams,
       folders,
