@@ -105,6 +105,25 @@ export {
   type UserPreferencesUpdate,
 } from './user-preferences';
 
+export {
+  DEFAULT_UPLOAD_MAX_BYTES,
+  DEFAULT_UPLOAD_MIME_TYPES,
+  UPLOAD_TYPE_CATALOGUE,
+  MIME_EXTENSIONS,
+  UploadPolicyConfigSchema,
+  UploadPolicyUpdateSchema,
+  normalizeMimeType,
+  resolveMaxBytes,
+  resolveMimeAllowlist,
+  isMimeAllowed,
+  extensionMatchesMime,
+  extensionsForMimeTypes,
+  acceptAttribute,
+  type UploadTypeEntry,
+  type UploadPolicyConfig,
+  type UploadPolicyUpdateInput,
+} from './upload-policy';
+
 export { TM_DEFAULT_THRESHOLD } from './translation';
 
 export { diffFields, type Change, type ChangeState } from './diff';

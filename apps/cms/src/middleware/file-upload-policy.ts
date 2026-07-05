@@ -1,31 +1,14 @@
 import type { MiddlewareHandler } from 'hono';
+import {
+  extensionMatchesMime,
+  isMimeAllowed,
+  normalizeMimeType,
+  resolveMaxBytes,
+  resolveMimeAllowlist,
+} from '@lumibase/shared/schemas';
 import type { AppEnv, AuthPrincipal } from '../env';
+import { resolveUploadPolicy } from '../services/upload-policy-service';
 import { auditSecurityGuardDenied } from './security-audit';
-
-const DEFAULT_FILE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
-const DEFAULT_FILE_UPLOAD_MIME_ALLOWLIST = [
-  'image/avif',
-  'image/gif',
-  'image/jpeg',
-  'image/png',
-  'image/svg+xml',
-  'image/webp',
-  'application/pdf',
-  'text/csv',
-  'text/plain',
-] as const;
-
-const MIME_EXTENSIONS: Record<string, string[]> = {
-  'image/avif': ['.avif'],
-  'image/gif': ['.gif'],
-  'image/jpeg': ['.jpeg', '.jpg'],
-  'image/png': ['.png'],
-  'image/svg+xml': ['.svg'],
-  'image/webp': ['.webp'],
-  'application/pdf': ['.pdf'],
-  'text/csv': ['.csv'],
-  'text/plain': ['.txt', '.text', '.log', '.md'],
-};
 
 /**
  * Enforce storage safety at the upload boundary. Every path that can create
@@ -71,9 +54,19 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
     );
   }
 
+  // Effective policy: per-site DB config → env override → default. Resolution
+  // is fail-safe (falls back to env/default if the DB/cache are unavailable),
+  // so the guard keeps working even when mounted without a DB context.
+  const policy = await resolveUploadPolicy({
+    db: safeGet(c, 'db'),
+    cache: safeGet(c, 'runtime')?.cache,
+    siteId: safeGet(c, 'siteId'),
+    env: c.env as Partial<AppEnv['Bindings']> | undefined,
+  });
+  const maxBytes = policy.maxBytes;
+  const allowedMimes = policy.allowedMimeTypes;
+
   const contentLength = parseContentLength(c.req.header('content-length'));
-  const env = c.env as Partial<AppEnv['Bindings']> | undefined;
-  const maxBytes = resolveFileUploadMaxBytes(env?.FILE_UPLOAD_MAX_BYTES ?? process.env.FILE_UPLOAD_MAX_BYTES);
   if (contentLength !== null && contentLength > maxBytes) {
     await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
       path,
@@ -95,9 +88,6 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
     );
   }
 
-  const allowedMimes = resolveFileUploadMimeAllowlist(
-    env?.FILE_UPLOAD_ALLOWED_MIME_TYPES ?? process.env.FILE_UPLOAD_ALLOWED_MIME_TYPES,
-  );
   const metadata = isMetadataCreate
     ? await peekMetadata(c.req.raw.clone() as Parameters<typeof peekMetadata>[0])
     : null;
@@ -212,42 +202,27 @@ export function isPublicUploadPrincipal(auth: AuthPrincipal | undefined): boolea
   return roles.length === 0 || roles.some((role) => role === 'public' || role === '$public');
 }
 
+// These thin wrappers preserve the middleware's historical helper API while
+// delegating to the shared upload-policy module — the single source of truth
+// shared with the Studio client so the server allowlist and the client file
+// picker cannot drift.
 export function resolveFileUploadMaxBytes(raw: string | undefined): number {
-  if (!raw) return DEFAULT_FILE_UPLOAD_MAX_BYTES;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_FILE_UPLOAD_MAX_BYTES;
-  return parsed;
+  return resolveMaxBytes(raw);
 }
 
 export function resolveFileUploadMimeAllowlist(raw: string | undefined): string[] {
-  if (!raw) return [...DEFAULT_FILE_UPLOAD_MIME_ALLOWLIST];
-  const parsed = raw
-    .split(',')
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-  return parsed.length > 0 ? parsed : [...DEFAULT_FILE_UPLOAD_MIME_ALLOWLIST];
+  return resolveMimeAllowlist(raw);
 }
 
 export function isFileUploadMimeAllowed(
   mime: string | undefined,
-  allowlist = resolveFileUploadMimeAllowlist(undefined),
+  allowlist = resolveMimeAllowlist(undefined),
 ): boolean {
-  if (!mime) return false;
-  const normalized = mime.split(';', 1)[0]?.trim().toLowerCase();
-  if (!normalized) return false;
-  return allowlist.some((allowed) => {
-    const lower = allowed.toLowerCase();
-    if (lower.endsWith('/*')) return normalized.startsWith(lower.slice(0, -1));
-    return normalized === lower;
-  });
+  return isMimeAllowed(mime, allowlist);
 }
 
 export function isFileExtensionCompatibleWithMime(fileName: string, mime: string | undefined): boolean {
-  if (!mime) return false;
-  const extensions = MIME_EXTENSIONS[mime];
-  if (!extensions) return true;
-  const normalizedName = fileName.trim().toLowerCase();
-  return extensions.some((extension) => normalizedName.endsWith(extension));
+  return extensionMatchesMime(fileName, mime);
 }
 
 export async function isFileContentCompatibleWithMime(request: Request, mime: string | undefined): Promise<boolean> {
@@ -297,8 +272,17 @@ export function isFileContentCompatibleWithBytes(bytes: Uint8Array, mime: string
 }
 
 function safeGetAuth(c: Parameters<MiddlewareHandler<AppEnv>>[0]): AuthPrincipal | undefined {
+  return safeGet(c, 'auth');
+}
+
+// `c.get` can throw in some test harnesses when a variable was never set;
+// callers here treat "unset" as "unavailable", not an error.
+function safeGet<K extends keyof AppEnv['Variables']>(
+  c: Parameters<MiddlewareHandler<AppEnv>>[0],
+  key: K,
+): AppEnv['Variables'][K] | undefined {
   try {
-    return c.get('auth');
+    return c.get(key);
   } catch {
     return undefined;
   }
@@ -324,7 +308,7 @@ async function peekMetadata(request: Request): Promise<{ mime: string; filenameD
 }
 
 function normalizeMime(mime: string | undefined): string | undefined {
-  return mime?.split(';', 1)[0]?.trim().toLowerCase() || undefined;
+  return normalizeMimeType(mime);
 }
 
 function startsWith(bytes: Uint8Array, signature: number[]): boolean {

@@ -269,4 +269,38 @@ describe('media upload policy middleware', () => {
     expect(res.status).toBe(201);
     expect(await res.json()).toMatchObject({ ok: true });
   });
+
+  it('honours the per-site allowlist stored in the DB (image blocked when only PDF is allowed)', async () => {
+    const app = new Hono<AppEnv>();
+    // DB config restricts the site to PDFs only — a PNG must be rejected even
+    // though PNG is in the built-in default allowlist.
+    const db = {
+      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [{ value: { maxBytes: 10485760, allowedMimeTypes: ['application/pdf'] } }],
+          }),
+        }),
+      }),
+    };
+    app.use('*', async (c, next) => {
+      c.set('auth', { roles: ['editor'], raw: {} });
+      c.set('db', db as never);
+      c.set('siteId', 'site_1');
+      c.set('requestId', 'req_db');
+      await next();
+    });
+    app.use('*', withFileUploadPolicy());
+    app.post('/api/v1/media/:key{.+}', (c) => c.json({ ok: true }, 201));
+
+    const res = await app.request('/api/v1/media/logo.png', {
+      method: 'POST',
+      headers: { 'content-type': 'image/png' },
+      body: VALID_PNG,
+    });
+
+    expect(res.status).toBe(415);
+    expect(await res.json()).toMatchObject({ errors: [{ code: 'UPLOAD_MIME_FORBIDDEN' }] });
+  });
 });

@@ -55,6 +55,7 @@ import { rolesRouter } from './routes/roles';
 import { healthRouter } from './routes/health';
 import { insightsRouter } from './routes/insights';
 import { mediaRouter } from './routes/media';
+import { uploadsRouter } from './routes/uploads';
 import { marketplaceRouter } from './routes/marketplace';
 import { materializeRouter } from './routes/materialize';
 import { metricsRouter, withMetrics } from './routes/metrics';
@@ -221,6 +222,8 @@ api.route('/config', configRouter);
 api.route('/api-keys', apiKeysRouter);
 api.route('/search', searchRouter);
 api.route('/media', mediaRouter);
+// Upload policy config (effective allowlist/size for the picker; admin edits).
+api.route('/uploads', uploadsRouter);
 // Future routers: presets, translations, ...
 api.route('/presets', presetsRouter);
 api.route('/translations', translationsRouter);

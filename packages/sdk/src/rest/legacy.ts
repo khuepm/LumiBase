@@ -53,6 +53,7 @@ import {
   TeamMemberResource,
   FolderResource,
   FileResource,
+  UploadConfigResource,
   WebhookResource,
   ActivityResource,
   ExtensionResource,
@@ -580,6 +581,17 @@ export function legacyRest() {
         }),
     };
 
+    const uploads = {
+      /** Effective upload policy + catalogue — drives the picker's `accept`. */
+      getConfig: () => client.rawRequest<UploadConfigResource>("/api/v1/uploads/config"),
+      /** Update the per-site allowlist / size cap (site admin only). */
+      updateConfig: (patch: { maxBytes?: number; allowedMimeTypes?: string[] }) =>
+        client.rawRequest<UploadConfigResource>("/api/v1/uploads/config", {
+          method: "PUT",
+          body: JSON.stringify(patch),
+        }),
+    };
+
     const webhooks = {
       list: () => client.rawRequest<WebhookResource[]>("/api/v1/webhooks"),
       create: (input: Record<string, unknown>) =>
@@ -769,6 +781,7 @@ export function legacyRest() {
       presets,
       translations,
       settings,
+      uploads,
       site,
       users,
       teams,

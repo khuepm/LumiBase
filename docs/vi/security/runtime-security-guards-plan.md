@@ -32,6 +32,17 @@ Chuẩn bị nền bảo mật runtime rõ ràng trước khi AI Harness đượ
      `classifyUploadSurface()` và được ghim bởi test hồi quy để không thể thêm
      route nhận-bytes mới mà quên nối vào guard.
 
+   **Cấu hình được theo site:** size cap + allowlist MIME resolve theo thứ tự
+   `DB config theo site → env override → default` qua
+   `services/upload-policy-service.ts` (có cache, fail-safe — fallback về
+   env/default nếu DB/cache không sẵn sàng nên guard không bao giờ fail open).
+   Catalogue các loại chọn được nằm ở `@lumibase/shared/schemas`
+   (`upload-policy.ts`) để allowlist server và file picker Studio dùng chung một
+   nguồn. Admin sửa tại **Studio → Settings → Uploads**, backing bởi
+   `GET/PUT /api/v1/uploads/config` (`GET` cho mọi member để cấp `accept` cho
+   picker; `PUT` gated `requireSiteAdmin`, lưu vào row `settings` key
+   `upload_policy`, chỉ nhận MIME trong catalogue).
+
    **Hardening lúc serve (`routes/media.ts`):** file tải về trả kèm
    `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`, nên
    object HTML/SVG đã lưu không thể render (và chạy script) dưới origin app khi

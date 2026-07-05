@@ -44,6 +44,17 @@ team can understand, review, and later enforce Harness usage of it.
      `classifies every known upload surface` regression test so a new
      byte-accepting route cannot be added without wiring it into the guard.
 
+   **Configurable per site:** the size cap and MIME allowlist resolve
+   `per-site DB config → env override → default` via
+   `services/upload-policy-service.ts` (cached, fail-safe — falls back to
+   env/default if the DB/cache are unavailable so the guard never fails open).
+   The catalogue of selectable types lives in `@lumibase/shared/schemas`
+   (`upload-policy.ts`) so the server allowlist and the Studio file picker share
+   one source. Admins edit it at **Studio → Settings → Uploads**, backed by
+   `GET/PUT /api/v1/uploads/config` (`GET` for any member to drive the picker's
+   `accept`; `PUT` is `requireSiteAdmin`, persisted to the `settings` row keyed
+   `upload_policy`, restricted to catalogued MIME types).
+
    **Serving hardening (`routes/media.ts`):** downloads are returned with
    `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`, so a
    stored HTML/SVG object cannot be rendered (and its script executed) under the
