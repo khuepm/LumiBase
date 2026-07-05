@@ -1,5 +1,9 @@
 # Bàn giao: dịch docs EN↔VI (nhóm A–E)
 
+> **Xem [`TASKS.md`](./TASKS.md) để lấy danh sách nhiệm vụ hiện hành + quy tắc
+> chạy song song nhiều agent.** File này (HANDOFF) chỉ còn giá trị lịch sử/tham
+> khảo workflow ban đầu; `TASKS.md` là nguồn sự thật cho tiến độ và bảng claim.
+
 **Branch:** `docs/i18n-full-translation` (từ main `87a82fcb`, v0.17.0)
 **Mục tiêu:** dịch thủ công 110 file (~17.400 dòng) → 1 PR lớn. KHÔNG dùng API key.
 
