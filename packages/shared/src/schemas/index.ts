@@ -161,6 +161,20 @@ export {
   type PanelResult,
 } from './insights';
 export {
+  MAX_DIM,
+  TRANSFORM_FORMATS,
+  TRANSFORM_FITS,
+  focalSchema,
+  transformDslSchema,
+  parseTransformQuery,
+  transformKey,
+  fileTag,
+  type TransformFormat,
+  type TransformFit,
+  type Focal,
+  type TransformDsl,
+} from './transform';
+export {
   DeploymentProviderSchema,
   DeploymentStatusSchema,
   DeploymentTargetCreateSchema,
