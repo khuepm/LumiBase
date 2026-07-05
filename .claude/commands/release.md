@@ -35,7 +35,7 @@ Then classify the state and act:
 | State | Signal | What to do |
 |---|---|---|
 | **A. Fresh release** | `TARGET` > `CURRENT`, no `vTARGET` tag anywhere | Normal path: proceed to Preconditions → Step 1. |
-| **B. Version bumped, not tagged** | `CURRENT == TARGET` (or `CURRENT` already > `LATEST_TAG`), no `vTARGET` tag | **Skip Step 1's version bump.** Verify Steps 2–3 files already reflect `TARGET` (fix any that don't), run Step 4 verify, ensure the bump is committed & pushed (Step 5), then go to Step 6 to tag. |
+| **B. Version bumped, not tagged** | `CURRENT == TARGET` (or `CURRENT` already > `LATEST_TAG`), no `vTARGET` tag | **Skip Step 1's version bump.** Verify Steps 2–3 files already reflect `TARGET` (fix any that don't), run Step 4 verify, ensure the bump is committed & pushed (Step 5). **⚠️ Then find the exact release commit and tag THAT hash, not HEAD** (see Step 6) — main may already carry newer commits for the *next* version. |
 | **C. Tagged locally, not pushed** | `vTARGET` tag exists locally, `git ls-remote` empty | Confirm the tag points at the right commit: `git rev-list -n1 vTARGET` should be the `chore(release): vTARGET` commit on `origin/main`. If wrong, `git tag -d vTARGET` and recreate at the correct commit. Then jump straight to **Step 6's push** (`git push origin vTARGET`). Skip bump/changelog/tag-create. |
 | **D. Tag pushed, release incomplete** | `git ls-remote` non-empty, but no GitHub Release or the `release.yml` run failed | Do NOT re-tag or delete a pushed tag. Inspect the failed run (`gh run list` / `gh run view <id> --log-failed`). If it's re-runnable, `gh run rerun <id>`; otherwise report the failure and what's needed. Go to Step 7. |
 | **E. Fully released** | Release exists and workflow succeeded for `vTARGET` | Nothing to do — report that `vTARGET` is already released and link the Release. Stop. |
@@ -129,13 +129,33 @@ git push -u origin main
 
 ## Step 6 — Tag (point of no return)
 
-Confirm with the user, then create and push the annotated tag:
+**⚠️ Tag the release commit, NOT necessarily HEAD.** If the version was bumped in an earlier attempt (State B) and main has since gained commits for the *next* version, `HEAD` is the wrong target — a bare `git tag -a v<x.y.z>` would tag a newer commit whose `package.json` no longer says `<x.y.z>`, and `release.yml`'s "Validate tag matches root package version" step (which reads `package.json` **at the tagged commit**) would fail or, worse, release the wrong tree.
+
+First **locate the exact commit** whose `package.json` version equals `<x.y.z>` — normally the `chore(release): v<x.y.z>` commit:
 ```bash
-git tag -a v<x.y.z> -m "LumiBase v<x.y.z>"    # skip if State C — tag already exists locally
-git push origin v<x.y.z>
+# Candidate: the release commit by message
+REL=$(git log origin/main --grep="chore(release): v<x.y.z>" --format=%H -n1)
+
+# Authoritative check — confirm package.json AT that commit actually says <x.y.z>:
+git show "$REL:package.json" | node -p "JSON.parse(require('fs').readFileSync(0)).version"   # must print <x.y.z>
+git --no-pager log -1 --format='%h %s' "$REL"
+```
+If `$REL` is empty or its `package.json` version ≠ `<x.y.z>` (e.g. squash-merge changed the message), find it by content instead and verify the same way:
+```bash
+git log origin/main --format=%H -S'"version": "<x.y.z>"' -- package.json | while read c; do
+  [ "$(git show "$c:package.json" | node -p 'JSON.parse(require("fs").readFileSync(0)).version')" = "<x.y.z>" ] && echo "$c" && break
+done
 ```
 
-> **State C (tag exists locally, not pushed):** do NOT recreate the tag — `git tag -a` fails if it exists, and recreating risks pointing at the wrong commit. Verify `git rev-list -n1 v<x.y.z>` matches the `chore(release): v<x.y.z>` commit on `origin/main`, then run only the `git push origin v<x.y.z>` line.
+Confirm the resolved commit with the user, then create the annotated tag **on that commit** and push:
+```bash
+git tag -a v<x.y.z> "$REL" -m "LumiBase v<x.y.z>"    # pin to $REL, not HEAD; skip create if State C
+git rev-list -n1 v<x.y.z>                             # sanity: prints $REL
+git push origin v<x.y.z>
+```
+(When HEAD *is* the release commit — the normal fresh-release path — `$REL` equals HEAD and this is identical to tagging HEAD. The pin is a safe no-op there and a correctness fix otherwise.)
+
+> **State C (tag exists locally, not pushed):** do NOT recreate the tag — `git tag -a` fails if it exists, and recreating risks pointing at the wrong commit. Verify `git rev-list -n1 v<x.y.z>` matches `$REL` above, then run only the `git push origin v<x.y.z>` line. If it's pinned wrong, `git tag -d v<x.y.z>` first, then recreate on `$REL`.
 
 > If the push returns **HTTP 403** (not a network error), the current environment forbids pushing tags. Do not retry. Tell the user to push the tag from their local clone with the commands above — the tag is what fires the release pipeline.
 
