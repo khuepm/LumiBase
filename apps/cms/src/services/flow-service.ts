@@ -47,6 +47,31 @@ export function getHandler(key: string): OperationHandler | undefined {
   return handlers.get(key);
 }
 
+/** Metadata describing a registered operation, for the FE palette + validation. */
+export interface OperationDescriptor {
+  key: string;
+  /** Human label; defaults to the key. */
+  label?: string;
+  /** JSON-schema-ish hint for the operation's `options`, when known. */
+  optionsSchema?: Record<string, unknown>;
+}
+
+/** Optional descriptor overrides keyed by operation key. */
+const descriptors = new Map<string, Omit<OperationDescriptor, 'key'>>();
+
+export function describeOperation(key: string, meta: Omit<OperationDescriptor, 'key'>): void {
+  descriptors.set(key, meta);
+}
+
+/**
+ * Every operation key with a registered handler, plus any descriptor metadata.
+ * This is the single source of truth for the editor palette (`GET
+ * /api/v1/flows/operations`) and for `validateGraph`'s `knownKeys`.
+ */
+export function listOperations(): OperationDescriptor[] {
+  return [...handlers.keys()].sort().map((key) => ({ key, ...(descriptors.get(key) ?? {}) }));
+}
+
 // ---------------------------------------------------------------------------
 // Built-in handlers
 // ---------------------------------------------------------------------------
@@ -276,3 +301,27 @@ export async function runFlow(graph: FlowGraph, input: Record<string, unknown>, 
 
   return { status: 'success', steps: ctx.steps };
 }
+
+// ---------------------------------------------------------------------------
+// Descriptor metadata for the built-in operations (editor palette hints).
+// ---------------------------------------------------------------------------
+
+describeOperation('log', { label: 'Log', optionsSchema: { message: 'string' } });
+describeOperation('condition', {
+  label: 'Condition',
+  optionsSchema: { path: 'string', operator: '== | != | > | < | contains', value: 'any' },
+});
+describeOperation('transform', { label: 'Transform', optionsSchema: { set: 'object' } });
+describeOperation('http', {
+  label: 'HTTP request',
+  optionsSchema: { url: 'string', method: 'string', headers: 'object', body: 'any' },
+});
+describeOperation('sleep', { label: 'Sleep', optionsSchema: { ms: 'number' } });
+describeOperation('mail', {
+  label: 'Send mail',
+  optionsSchema: { to: 'string', subject: 'string', body: 'string' },
+});
+describeOperation('drift-scan', { label: 'Drift scan', optionsSchema: { intentId: 'string' } });
+describeOperation('trust-promote-check', { label: 'Trust promote check' });
+describeOperation('deploy:trigger', { label: 'Trigger deploy', optionsSchema: { integrationId: 'string' } });
+describeOperation('deploy:status', { label: 'Deploy status', optionsSchema: { deploymentId: 'string' } });
