@@ -100,6 +100,15 @@ export interface Bindings {
   WORKERS_AI_API_TOKEN?: string;
   /** Optional Workers AI gateway URL override. */
   WORKERS_AI_GATEWAY?: string;
+  // ── Custom domains / Cloudflare for SaaS (services/domains/*) ───────────
+  /** API token with `SSL and Certificates: Edit` on the SaaS zone. */
+  CLOUDFLARE_API_TOKEN?: string;
+  /** Zone id that owns the Custom Hostnames + fallback origin. */
+  CLOUDFLARE_ZONE_ID?: string;
+  /** Hostname operators CNAME to (proxied fallback origin), e.g. `cname.lumibase.dev`. */
+  LUMIBASE_SAAS_FALLBACK?: string;
+  /** Reserved suffix offered for free subdomains. Defaults to `lumibase.dev`. */
+  LUMIBASE_FREE_DOMAIN_SUFFIX?: string;
 }
 
 /**
