@@ -45,8 +45,8 @@
 - [x] 10. Flow operation (Req 5)
   - [x] 10.1 `registerHandler('deploy:trigger')` trong `flow-service.ts`, dùng `DeploymentService.trigger`; `db/siteId/keys/runId` từ `ctx.env` (flow run route truyền `runtime.keys` + `runId`). `triggerSource='auto'`.
   - [x] 10.2 `deploy:status` handler để flow phân nhánh.
-  - [ ] 10.3 Debounce/coalescing `coalesceWindowMs` (Req 5.4) — **chưa làm**; mặc định mỗi event một deploy (đúng default Req 5.4). **Open**.
-  - [ ] 10.4 Node trong palette Flow editor Studio — **chưa làm** (op gọi được qua API/graph; thêm vào palette UI sau). **Open**.
+  - [x] 10.3 Debounce/coalescing `coalesceWindowMs` (Req 5.4) — done 2026-07-06: `DeploymentService.trigger` nhận `coalesceWindowMs`; trigger không-manual trong cửa sổ tái dùng deployment gần nhất (không-error) thay vì build mới, audit `deployment.coalesced`. Deviation: cấu hình trên node `deploy:trigger` (options) thay vì cột target — không cần migration. Test: trigger-coalesce.test.ts (3)
+  - [x] 10.4 Node trong palette Flow editor Studio — done 2026-07-06: palette giờ load từ `GET /flows/operations` (registry) nên `deploy:trigger`/`deploy:status` tự xuất hiện, kèm form config `targetId` + `coalesceWindowMs`
 - [x] 11. AI Skills (Req 6)
   - [x] 11.1 4 skill trong cả `packages/ai-skills/src/skills.ts` (declarative, cho MCP/LLM tool-list) và `ai-harness.ts` `buildCoreSkills` (executable, wired `DeploymentService` qua `db/siteId/keys`).
   - [x] 11.2 `triggerDeployment` (`deployments:write`) → `ToolRegistryService.coreTool` phân loại `dangerous` → `before_execute` (HITL). `triggerSource='agent'`. Harness construction sites (ai.ts/mcp.ts/agent-run-worker) truyền `runtime.keys`.
@@ -87,8 +87,6 @@
 ## Việc còn mở (Open / TODO cho vòng sau)
 
 - Rate-limit cứng theo target (Req 9.5 — 6.2).
-- Debounce/coalescing auto-deploy (Req 5.4 — 10.3).
-- Node `deploy:trigger` trong palette Flow editor (10.4).
 - HMAC/JWS verify đầy đủ cho inbound webhook (12 — hiện presence guard).
 - DB-integration test cho poller idempotency end-to-end (9.3 — cần Postgres).
 - Xác nhận endpoint Vercel/Netlify API theo phiên bản tại thời điểm chạy thật (design §11 TODO).
