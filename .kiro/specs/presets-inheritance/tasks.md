@@ -1,5 +1,7 @@
 # Implementation Plan: Presets Inheritance
 
+> **Status (PR #208, 2026-07-06):** Greenfield-on-existing-schema, delivered in this PR: **task 1** (`PresetService.roleChain`/`effective`/`bookmarks` with cycle guard + precedence + unit tests), **task 2** (`GET /presets/effective` + `/bookmarks`, scope-ownership RBAC on POST/PATCH/DELETE), **task 3** (SDK `getEffectivePreset`/`listBookmarks`/`saveUserView`/`create`/`update`/`deleteBookmark`), **task 4** (`BookmarkSwitcher` + `SaveBookmarkDialog` + `presets/api.ts` `viewDiffers` + tests), **task 5** (`RolePresets` admin panel). Wiring the switcher into the live collection-view mount + debounced `saveUserView` is the remaining integration. Setup Impact recorded (registry #44, `n/a`).
+
 ## Overview
 
 Gap-focused: schema sẵn có, thêm resolution + quyền + UI. Thứ tự: service resolution → endpoint → quyền scope → SDK → UI → admin role presets → chất lượng.

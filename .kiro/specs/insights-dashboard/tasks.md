@@ -1,5 +1,7 @@
 # Implementation Plan: Insights / Dashboard
 
+> **Status (PR #208, 2026-07-06):** Substantially complete before this PR — shared `PanelQuery`, `dashboards`/`panels` tables, `InsightsService` (safe aggregate + field whitelist), routes, and Studio module (list/dashboard/panel-editor/panel-view) all exist with route + service security tests. Remaining polish (dedicated FilterBuilder component extraction, panel-render component tests, optional materialized source) tracked as follow-up. Setup Impact recorded (registry #39, `n/a`).
+
 ## Overview
 
 Thứ tự: contract chung (Panel_Query) → schema/migration → service an toàn → routes → SDK → Studio (list → grid → editor → render) → chất lượng. Backend bảo mật làm trước và test kỹ. Mỗi task tự ship được.

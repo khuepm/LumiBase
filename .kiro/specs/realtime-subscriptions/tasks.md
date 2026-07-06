@@ -1,5 +1,7 @@
 # Implementation Plan: Realtime Subscriptions
 
+> **Status (PR #208, 2026-07-06):** Tasks 1–4 pre-existed (shared protocol, `SiteRoom` DO, ItemService publish, SDK client). This PR added: **task 2.2 field filter** (optional `event.fields` allowlist → `projectPayload` strips non-public fields, Req 3.5) and **task 5** Studio UI (`lib/realtime.ts` shared-client singleton, `useRealtimeCollection`/`useRealtimeItem`/`useConnectionStatus` hooks, app-shell `ConnectionStatusDot`, item-detail "updated elsewhere" banner). Setup Impact recorded (registry #43, `n/a`).
+
 ## Overview
 
 Gap-focused trên nền WS+ticket+DO sẵn có. Thứ tự: protocol chung → DO subscription+filter+permission → event ingest → SDK client → Studio live → chất lượng.

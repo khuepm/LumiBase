@@ -1,5 +1,7 @@
 # Implementation Plan: Content Versioning
 
+> **Status (PR #208, 2026-07-06):** Tasks 1–4 + 7 landed before this PR (shared `diffFields`, `content_versions` table, `ContentVersionService`, 7 item-version endpoints, API docs). This PR added **task 5** (SDK `ContentVersion`/`VersionCompare` types + 7 methods in `@lumibase/shared`-backed SDK). Task 6 UI ships as the monolithic `version-panel.tsx` (already integrated in `item-detail.tsx`); Setup Impact recorded (registry #38, `n/a`).
+
 ## Overview
 
 Thứ tự: shared diff type → schema/migration → service → routes (gắn items.ts) → SDK → UI editor → chất lượng. Mỗi task tự ship được; test theo convention services/`__tests__` và content module tests.

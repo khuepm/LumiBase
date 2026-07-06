@@ -1,5 +1,7 @@
 # Implementation Plan: Visual Flow Builder
 
+> **Status (PR #208, 2026-07-06):** Tasks 1 + 7 pre-existed (shared `flow-graph` converter/validator + tests). This PR added: **task 2** (`GET /flows/operations` registry, `validateGraph` on POST/PATCH, editor now loads/saves via `canonicalToFe`/`feToCanonical`), **task 3** (`flow-dispatch` event matching + `dispatchItemEvent` hooked into ItemService create/update/delete), **task 4** (`flow-scheduler` `runDueScheduledFlows` + self-contained cron, cron validation on save), **task 5** (`POST /:id/trigger` webhook, constant-time token), **task 6** (`GET /:id/runs/:runId` + `RunHistoryPanel`). Queue *workers* that consume `flow-events`/`flow-schedule` jobs are the remaining wiring. Setup Impact recorded (registry #40, `n/a` + runtime-tick note).
+
 ## Overview
 
 Gap-focused trên nền flows sẵn có. Thứ tự: luật chung (converter + validateGraph) → đồng bộ editor → event trigger → schedule → webhook → run history → chất lượng. Không phá manual run/editor hiện hành.

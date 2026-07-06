@@ -1,5 +1,7 @@
 # Implementation Plan: Image Transform DSL
 
+> **Status (PR #208, 2026-07-06):** Greenfield spec largely delivered in this PR: **task 1** (`transformDslSchema`/`MAX_DIM`/`transformKey`/`parseTransformQuery`/`fileTag` in `@lumibase/shared` + tests), **task 3** (`transform_presets` table + migration `0001` + CRUD routes), **task 4** (delivery transform on `GET /media/:key` — validate DSL, delegate to runtime image URL, backward-compatible), **task 6** (SDK `mediaUrl` + Studio `TransformPanel`/`FocalPicker`/`PresetManager`). Deferred: **task 2** dedicated `ImageAdapter.transform(bytes)` refactor (current impl reuses the URL-based `MediaProcessor` — CF Image Resizing / Imgproxy — rather than adding an in-process Sharp transformer) and **task 5** HMAC signed transforms. Setup Impact recorded (registry #42, migration `0001`).
+
 ## Overview
 
 Thứ tự: DSL chung → runtime adapter → preset schema/routes → delivery transform + cache → signed/abuse → UI → chất lượng. Giữ ảnh gốc + thumbnail cũ không vỡ.
