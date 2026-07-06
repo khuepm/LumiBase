@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T19:08:21.000Z
+version: 2
+lastUpdated: 2026-07-06T00:00:00.000Z
 sourceLang: en
-contentHash: 2a1dd53cbf96d0a3
+contentHash: 8307c6783a1fa3a1
 ---
 
 # CWE Top 100 Security Audit — LumiBase
@@ -31,13 +31,15 @@ There is **no official "CWE Top 100."** MITRE publishes a ranked list only to ra
 
 | | Count |
 |---|---|
-| ✅ Mitigated | **63** |
-| ⚠️ Partial | **12** |
+| ✅ Mitigated | **66** |
+| ⚠️ Partial | **9** |
 | ❌ Not addressed | **3** |
 | — N/A (memory-safety class, no surface, or no cookies) | **22** |
 | **Total** | **100** |
 
-Of the **78 applicable** weaknesses: **63 mitigated (~81%)**, 12 partial, 3 not addressed.
+Of the **78 applicable** weaknesses: **66 mitigated (~85%)**, 9 partial, 3 not addressed.
+
+> **Changelog — 2026-07-06:** Fixed the two ⚠️ findings in the official top 20 (CWE-89 SQL Injection, CWE-284 Improper Access Control) plus the related CWE-668, moving all three from Partial to Mitigated. See the corresponding rows and the remediation backlog.
 
 ---
 
@@ -46,7 +48,7 @@ Of the **78 applicable** weaknesses: **63 mitigated (~81%)**, 12 partial, 3 not 
 | # | CWE | Weakness | Verdict | Evidence / note |
 |---|-----|----------|---------|-----------------|
 | 1 | 79 | Cross-site Scripting | ✅ | Central DOMPurify allowlist `apps/studio/src/lib/sanitize-html.ts`; markdown escaped then sanitized; CSP `script-src 'self'` in `apps/cms/src/middleware/security-headers.ts`; SVG active-content scan on upload. |
-| 2 | 89 | SQL Injection | ⚠️ | Drizzle parameterized queries everywhere **except** `apps/cms/src/services/materialize-service.ts` — 11 uses of `sql.raw()` with regex-sanitized identifiers and quote-escaped values for DDL. Covered by `materialize-sql-injection.test.ts`, but fragile vs. parameterization. |
+| 2 | 89 | SQL Injection | ✅ | **Fixed 2026-07-06.** `materialize-service.ts` now uses Drizzle bind parameters for all values and `sql.identifier()` for the validated physical-table name; the one spot where bind params are impossible (the PL/pgSQL trigger body) validates ids fail-closed against `/^[A-Za-z0-9_-]+$/` instead of escaping. Elsewhere Drizzle is parameterized throughout. Covered by `materialize-sql-injection.test.ts` + `materialize-service.test.ts`. |
 | 3 | 352 | CSRF | ✅ | Auth is bearer-header only on this branch — no cookies are issued, so no ambient credentials exist for CSRF to ride on. CORS origins validated (`apps/cms/src/config/cors.ts`). Re-verify if cookie-based refresh lands (exists on a feature branch, commits 807d0fbd / 4469c36c — not merged here). |
 | 4 | 862 | Missing Authorization | ✅ | `withAuth()` on the whole `/api/v1` stack (`apps/cms/src/index.ts`); only intentional bypasses: login, setup wizard (state-gated), recovery (rate-limited), realtime ticket exchange. |
 | 5 | 787 | Out-of-bounds Write | — | Memory-safety class; no native code. |
@@ -63,7 +65,7 @@ Of the **78 applicable** weaknesses: **63 mitigated (~81%)**, 12 partial, 3 not 
 | 16 | 122 | Heap Buffer Overflow | — | Memory-safety class. |
 | 17 | 863 | Incorrect Authorization | ✅ | Postgres RLS on 25+ tables with transaction-scoped `SET LOCAL app.site_id` (`packages/database/migrations/rls-policies.sql`); app-level `siteId` scoping in services; field-level masking in `permission-service.ts`. |
 | 18 | 20 | Improper Input Validation | ✅ | Zod `safeParse()` consistently on all route inputs (shared schemas in `packages/shared/src/schemas`). |
-| 19 | 284 | Improper Access Control | ⚠️ | Route surfaces (flows, ai, cdc, uploads, shares) all enforce admin/permission checks. Gap: `/api/v1/health` is unauthenticated (returns subsystem status — reconnaissance value); `/api/v1/metrics` is token-gated **in production only**. |
+| 19 | 284 | Improper Access Control | ✅ | **Fixed 2026-07-06.** Route surfaces (flows, ai, cdc, uploads, shares) enforce admin/permission checks. `/health` now returns only overall `status` to anonymous callers (per-subsystem detail requires the observability token); `/metrics` enforces `METRICS_TOKEN` in **all** environments when configured (previously non-prod bypass). See CWE-668. |
 | 20 | 200 | Sensitive Info Exposure | ✅ | `formatSafeError()` strips request/response objects; clients get generic error codes; stack traces log server-side only (`apps/cms/src/index.ts:328`). |
 | 21 | 306 | Missing AuthN for Critical Function | ✅ | Setup wizard 404s once `system_state = initialized`; recovery is intentionally public but 3/IP/hour; metrics token-gated in prod. |
 | 22 | 918 | SSRF | ✅ | `validateOutboundUrl()` blocks RFC1918, loopback, link-local, cloud metadata endpoints, IPv6 ULA/link-local (`apps/cms/src/services/ssrf-guard.ts:33`), with tests. |
@@ -176,7 +178,7 @@ Of the **78 applicable** weaknesses: **63 mitigated (~81%)**, 12 partial, 3 not 
 | 223 | Omission of security-relevant info | ✅ | Audit entries carry actor, IP, user-agent, requestId, timestamp. |
 | 532 | Sensitive info in logs | ✅ | `maskSensitive` replaces secret fields with 8-char SHA-256 prefixes, recursively (`modules/audit/logger.ts:67`). |
 | 548 | Directory listing | — | No static directory serving. |
-| 668 | Resource exposed to wrong sphere | ⚠️ | `/health` public (subsystem status leak); `/metrics` open outside production. Gate both or reduce health verbosity for unauthenticated callers. |
+| 668 | Resource exposed to wrong sphere | ✅ | **Fixed 2026-07-06.** `/health` reveals per-subsystem detail only to callers with the observability token; anonymous probes get `{ status }` only. `/metrics` enforces `METRICS_TOKEN` in all environments when set. |
 | 1104 | Unmaintained third-party components | ❌ | No renovate/dependabot config and no `pnpm audit` step in CI. |
 | 359 | Privacy violation | ❌ | Audit `metadata` is free-form JSON — item payloads containing PII can end up in audit trails; the erasure routes purge items but not audit logs. |
 
@@ -188,13 +190,13 @@ Of the **78 applicable** weaknesses: **63 mitigated (~81%)**, 12 partial, 3 not 
 2. **CWE-302 — Trust boundaries in middleware.** Verify site membership when `X-Lumi-Site` is consumed, before RLS scoping; map Cloudflare Access principals to DB roles instead of hardcoded `['admin']`.
 3. **CWE-400 — API rate limiting.** Per-user/per-key throttling on REST + GraphQL (KV/DO-backed for Workers), not just auth paths.
 4. **CWE-521/203 — Registration hardening.** Enforce the 12+complexity policy at register; return a generic response instead of `EMAIL_ALREADY_EXISTS`.
-5. **CWE-89 — Materialize DDL.** Replace `sql.raw()` string building with parameterized/identifier-helper construction where Drizzle allows.
+5. ~~**CWE-89 — Materialize DDL.** Replace `sql.raw()` string building with parameterized/identifier-helper construction where Drizzle allows.~~ ✅ **Done 2026-07-06.**
 6. **CWE-362/367 — Atomic approval decide.** `UPDATE … WHERE id = ? AND status = 'pending'` + affected-rows check.
 7. **CWE-1104 — Dependency hygiene.** Add renovate or dependabot + a `pnpm audit --prod` CI gate.
 8. **CWE-359 — Audit-log privacy.** Redact or hash item payloads in audit metadata; include audit logs in the erasure workflow (or document retention policy).
 9. **CWE-942 — Dev CORS.** Never combine wildcard origin with `credentials: true`, even outside production.
 10. **CWE-321 — CDC fallback key.** Remove the in-repo fallback; generate a per-install ephemeral dev key instead.
-11. **CWE-668/284 — Health & metrics.** Require auth for subsystem detail in `/health`; token-gate `/metrics` in all environments.
+11. ~~**CWE-668/284 — Health & metrics.** Require auth for subsystem detail in `/health`; token-gate `/metrics` in all environments.~~ ✅ **Done 2026-07-06.**
 
 ## Related documents
 

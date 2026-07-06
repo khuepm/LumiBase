@@ -1,9 +1,9 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T19:08:21.000Z
+version: 2
+lastUpdated: 2026-07-06T00:00:00.000Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2a1dd53cbf96d0a3
+sourceHash: 8307c6783a1fa3a1
 mtEngine: manual
 syncStatus: translated
 ---
@@ -34,13 +34,15 @@ syncStatus: translated
 
 | | Số lượng |
 |---|---|
-| ✅ Đã vá | **63** |
-| ⚠️ Một phần | **12** |
+| ✅ Đã vá | **66** |
+| ⚠️ Một phần | **9** |
 | ❌ Chưa xử lý | **3** |
 | — N/A (lớp lỗi bộ nhớ, không có bề mặt, hoặc không dùng cookie) | **22** |
 | **Tổng** | **100** |
 
-Trong **78 điểm yếu có áp dụng**: **63 đã vá (~81%)**, 12 một phần, 3 chưa xử lý.
+Trong **78 điểm yếu có áp dụng**: **66 đã vá (~85%)**, 9 một phần, 3 chưa xử lý.
+
+> **Nhật ký thay đổi — 2026-07-06:** Đã vá 2 mục ⚠️ trong top 20 chính thức (CWE-89 SQL Injection, CWE-284 Improper Access Control) cùng CWE-668 liên quan, chuyển cả ba từ Một phần sang Đã vá. Xem các dòng tương ứng và danh sách khắc phục.
 
 ---
 
@@ -49,7 +51,7 @@ Trong **78 điểm yếu có áp dụng**: **63 đã vá (~81%)**, 12 một ph�
 | # | CWE | Điểm yếu | Verdict | Bằng chứng / ghi chú |
 |---|-----|----------|---------|----------------------|
 | 1 | 79 | Cross-site Scripting | ✅ | Allowlist DOMPurify tập trung `apps/studio/src/lib/sanitize-html.ts`; markdown escape rồi sanitize; CSP `script-src 'self'` trong `apps/cms/src/middleware/security-headers.ts`; quét active-content SVG khi upload. |
-| 2 | 89 | SQL Injection | ⚠️ | Drizzle parameterized ở mọi nơi **trừ** `apps/cms/src/services/materialize-service.ts` — 11 chỗ dùng `sql.raw()` với identifier lọc bằng regex và value escape dấu nháy cho DDL. Có test `materialize-sql-injection.test.ts` nhưng mong manh hơn parameterization. |
+| 2 | 89 | SQL Injection | ✅ | **Đã vá 2026-07-06.** `materialize-service.ts` nay dùng bind parameter của Drizzle cho mọi value và `sql.identifier()` cho tên bảng vật lý đã kiểm; chỗ duy nhất không thể dùng bind param (thân hàm PL/pgSQL của trigger) kiểm id fail-closed theo `/^[A-Za-z0-9_-]+$/` thay vì escape. Các nơi khác Drizzle parameterized xuyên suốt. Có test `materialize-sql-injection.test.ts` + `materialize-service.test.ts`. |
 | 3 | 352 | CSRF | ✅ | Trên nhánh này auth chỉ dùng bearer header — không phát hành cookie, nên không có credential tự-gửi để CSRF lợi dụng. Origin CORS được kiểm (`apps/cms/src/config/cors.ts`). Kiểm lại nếu refresh qua cookie được merge (đang ở nhánh tính năng, commit 807d0fbd / 4469c36c — chưa có trên nhánh này). |
 | 4 | 862 | Missing Authorization | ✅ | `withAuth()` phủ toàn bộ stack `/api/v1` (`apps/cms/src/index.ts`); chỉ các bypass chủ đích: login, setup wizard (chặn theo state), recovery (giới hạn tần suất), đổi ticket realtime. |
 | 5 | 787 | Out-of-bounds Write | — | Lớp lỗi bộ nhớ; không có mã native. |
@@ -66,7 +68,7 @@ Trong **78 điểm yếu có áp dụng**: **63 đã vá (~81%)**, 12 một ph�
 | 16 | 122 | Heap Buffer Overflow | — | Lớp lỗi bộ nhớ. |
 | 17 | 863 | Incorrect Authorization | ✅ | Postgres RLS trên 25+ bảng với `SET LOCAL app.site_id` phạm vi transaction (`packages/database/migrations/rls-policies.sql`); scope `siteId` ở tầng service; masking cấp field trong `permission-service.ts`. |
 | 18 | 20 | Improper Input Validation | ✅ | Zod `safeParse()` nhất quán trên mọi input route (schema dùng chung ở `packages/shared/src/schemas`). |
-| 19 | 284 | Improper Access Control | ⚠️ | Các bề mặt route (flows, ai, cdc, uploads, shares) đều kiểm admin/permission. Khoảng trống: `/api/v1/health` không cần auth (trả trạng thái subsystem — giá trị do thám); `/api/v1/metrics` chỉ khoá token **ở production**. |
+| 19 | 284 | Improper Access Control | ✅ | **Đã vá 2026-07-06.** Các bề mặt route (flows, ai, cdc, uploads, shares) đều kiểm admin/permission. `/health` nay chỉ trả `status` tổng cho caller ẩn danh (chi tiết subsystem cần observability token); `/metrics` ép `METRICS_TOKEN` ở **mọi** môi trường khi được cấu hình (trước đây bỏ qua ở non-prod). Xem CWE-668. |
 | 20 | 200 | Lộ thông tin nhạy cảm | ✅ | `formatSafeError()` bỏ object request/response; client chỉ nhận mã lỗi chung; stack trace chỉ log phía server (`apps/cms/src/index.ts:328`). |
 | 21 | 306 | Thiếu xác thực cho chức năng trọng yếu | ✅ | Setup wizard trả 404 khi `system_state = initialized`; recovery công khai chủ đích nhưng 3/IP/giờ; metrics khoá token ở prod. |
 | 22 | 918 | SSRF | ✅ | `validateOutboundUrl()` chặn RFC1918, loopback, link-local, endpoint metadata cloud, IPv6 ULA/link-local (`apps/cms/src/services/ssrf-guard.ts:33`), có test. |
@@ -179,7 +181,7 @@ Trong **78 điểm yếu có áp dụng**: **63 đã vá (~81%)**, 12 một ph�
 | 223 | Bỏ sót thông tin liên quan bảo mật | ✅ | Bản ghi audit mang actor, IP, user-agent, requestId, timestamp. |
 | 532 | Thông tin nhạy cảm trong log | ✅ | `maskSensitive` thay field secret bằng prefix SHA-256 8 ký tự, đệ quy (`modules/audit/logger.ts:67`). |
 | 548 | Liệt kê thư mục | — | Không serve tĩnh thư mục. |
-| 668 | Tài nguyên lộ sai phạm vi | ⚠️ | `/health` công khai (lộ trạng thái subsystem); `/metrics` mở ngoài production. Cần khoá cả hai hoặc giảm chi tiết health cho caller chưa xác thực. |
+| 668 | Tài nguyên lộ sai phạm vi | ✅ | **Đã vá 2026-07-06.** `/health` chỉ lộ chi tiết subsystem cho caller có observability token; probe ẩn danh chỉ nhận `{ status }`. `/metrics` ép `METRICS_TOKEN` ở mọi môi trường khi được đặt. |
 | 1104 | Thành phần bên thứ ba không bảo trì | ❌ | Không có cấu hình renovate/dependabot và không có bước `pnpm audit` trong CI. |
 | 359 | Vi phạm quyền riêng tư | ❌ | `metadata` audit là JSON tự do — payload item chứa PII có thể lọt vào audit trail; route erasure xóa item nhưng không xóa audit log. |
 
@@ -191,13 +193,13 @@ Trong **78 điểm yếu có áp dụng**: **63 đã vá (~81%)**, 12 một ph�
 2. **CWE-302 — Ranh giới tin cậy trong middleware.** Kiểm membership site khi tiêu thụ `X-Lumi-Site`, trước khi scope RLS; ánh xạ principal Cloudflare Access sang role DB thay vì hard-code `['admin']`.
 3. **CWE-400 — Rate limit API.** Throttle per-user/per-key trên REST + GraphQL (dùng KV/DO cho Workers), không chỉ đường auth.
 4. **CWE-521/203 — Cứng hóa đăng ký.** Ép policy 12+độ phức tạp lúc register; trả phản hồi chung thay vì `EMAIL_ALREADY_EXISTS`.
-5. **CWE-89 — DDL materialize.** Thay dựng chuỗi `sql.raw()` bằng parameterized/identifier-helper ở nơi Drizzle cho phép.
+5. ~~**CWE-89 — DDL materialize.** Thay dựng chuỗi `sql.raw()` bằng parameterized/identifier-helper ở nơi Drizzle cho phép.~~ ✅ **Xong 2026-07-06.**
 6. **CWE-362/367 — Quyết định phê duyệt nguyên tử.** `UPDATE … WHERE id = ? AND status = 'pending'` + kiểm số dòng bị ảnh hưởng.
 7. **CWE-1104 — Vệ sinh dependency.** Thêm renovate hoặc dependabot + cổng CI `pnpm audit --prod`.
 8. **CWE-359 — Quyền riêng tư audit-log.** Che hoặc hash payload item trong metadata audit; đưa audit log vào quy trình erasure (hoặc ghi rõ chính sách lưu trữ).
 9. **CWE-942 — CORS dev.** Không bao giờ kết hợp wildcard origin với `credentials: true`, kể cả ngoài production.
 10. **CWE-321 — Khóa fallback CDC.** Bỏ khóa fallback trong repo; sinh khóa dev tạm thời theo từng cài đặt.
-11. **CWE-668/284 — Health & metrics.** Yêu cầu auth cho chi tiết subsystem trong `/health`; khoá token `/metrics` ở mọi môi trường.
+11. ~~**CWE-668/284 — Health & metrics.** Yêu cầu auth cho chi tiết subsystem trong `/health`; khoá token `/metrics` ở mọi môi trường.~~ ✅ **Xong 2026-07-06.**
 
 ## Tài liệu liên quan
 
