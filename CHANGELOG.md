@@ -11,6 +11,63 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [0.18.0] - 2026-07-06
+
+### Version
+
+- `v0.18.0`
+
+### Date
+
+- `2026-07-06`
+
+### Highlights
+
+- **Custom domains.** Sites can now provision their own custom domain via
+  Cloudflare for SaaS — a new `site_domains` table, `client.domains` SDK
+  resource, and a Studio Settings → Domains page cover request/verify/status
+  end to end.
+- **Translation Memory (TM).** The Studio content editor gains a translation
+  mode with a TM suggest popover, backed by a new `tm.*` SDK namespace
+  (`TmEntry`/`TmSuggestion`) for reusing prior translations across items.
+- **Upload allowlist hardening.** Uploads are now governed by an
+  admin-configurable, DB-backed allowlist with a picker UI, and the upload
+  policy was extended to `/media` with tightened image/SVG validation.
+
+### Added
+
+- **Custom domain provisioning.** `feat(database)` adds `site_domains`;
+  `feat(cms)` adds Cloudflare for SaaS-backed provisioning; `feat(shared,sdk)`
+  adds domain schemas and the `client.domains` resource; `feat(studio)` adds
+  the Domains settings page. Registered in the Setup Impact Registry (row 29).
+- **Translation Memory UI.** `feat(sdk)` adds the `tm.*` namespace
+  (`TmEntry`/`TmSuggestion` types); `feat(studio)` adds the suggest popover,
+  translation mode, and a TM manager to the content editor.
+- **AI crawler discoverability for docs.** Prerendered docs pages are now
+  discoverable by AI crawlers.
+
+### Changed
+
+- **`/release` runbook.** Added Step 0 preflight & resume detection so a
+  partially-completed release (version bumped but untagged, tag pushed but
+  workflow incomplete, etc.) can be resumed from the correct step instead of
+  re-run from scratch; the tag step now pins to the resolved release commit
+  rather than assuming `HEAD`.
+
+### Fixed
+
+- **Docs hard-navigation.** Prerendered docs pages are now served directly on
+  hard navigation instead of falling through the SPA catch-all rewrite.
+- **Upload security.** Extended the upload policy to `/media` and hardened
+  image/SVG upload validation.
+- **Landing page.** Fixed a black square artifact around the section-header
+  planet graphic on mobile.
+
+### Migrations
+
+- `0001_site_custom_domains.sql` — adds the `site_domains` table (additive,
+  no breaking changes).
+
 ## [0.17.0] - 2026-07-03
 
 ### Version
