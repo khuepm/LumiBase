@@ -516,15 +516,25 @@ Scheduled releases publish via the shared `content-scheduler` tick
 | `DELETE` | `/api/v1/files/:id` | Delete file |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
 | `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
-| `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`) |
+| `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |
 | `DELETE` | `/api/v1/media/:key` | Delete media object |
+| `GET` | `/api/v1/transform-presets` | List named image-transform presets (RBAC `media:read`) |
+| `POST` | `/api/v1/transform-presets` | Create a preset `{ key, name, dsl }` (RBAC `media:create`) |
+| `PATCH` | `/api/v1/transform-presets/:id` | Update a preset (RBAC `media:update`) |
+| `DELETE` | `/api/v1/transform-presets/:id` | Delete a preset (RBAC `media:delete`) |
 | `GET` | `/api/v1/uploads/config` | Effective upload policy + type catalogue (any member) |
 | `PUT` | `/api/v1/uploads/config` | Update allowlist / size cap (site admin) |
 
-**Image transform params for `/api/v1/assets/:id`:**
+**Image transform DSL (`/api/v1/media/:key` and `/api/v1/assets/:id`):**
 ```
-?width=800&height=600&format=webp&quality=80&fit=cover
+?width=800&height=600&format=webp&quality=80&fit=cover&focal=0.5,0.5
+?preset=thumbnail
 ```
+On `/media/:key`, transform params are validated against `transformDslSchema`
+(`@lumibase/shared`; `MAX_DIM=5000`) and the request 302-redirects to the runtime
+image URL (CF Image Resizing / Imgproxy). No params → the original bytes.
+`?preset=<key>` resolves a saved `transform_presets` row for the site. See
+`.kiro/specs/image-transform-dsl`.
 
 **Upload policy (`/api/v1/uploads/config`).** Enforced by the `file-upload-policy`
 guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`,
@@ -542,18 +552,50 @@ PUT  /api/v1/uploads/config           # site admin only
 { "maxBytes": 5242880, "allowedMimeTypes": ["image/png","image/jpeg"] }
 ```
 
+### 6b. View presets (collection views + bookmarks)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/presets/effective?collection=` | Effective default view (precedence user > role-chain > global), with `sourceScope` |
+| `GET` | `/api/v1/presets/bookmarks?collection=` | Named bookmarks visible to the principal, each with `sourceScope` |
+| `GET` | `/api/v1/presets` | List presets (optional `?collection=`) |
+| `POST` | `/api/v1/presets` | Create a preset/bookmark; user-scope self-managed, role/global require admin |
+| `PATCH` | `/api/v1/presets/:id` | Update (authorized against the row's current scope) |
+| `DELETE` | `/api/v1/presets/:id` | Delete (user owns own; role/global require admin) |
+
+Scope is derived from ownership columns: `userId` set → user, `roleId` set →
+role, neither → global. Role presets inherit down the `roles.parentId` chain.
+See `.kiro/specs/presets-inheritance`.
+
+### 6c. Translation memory
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/tm?source=&target=&entrySource=&limit=&offset=` | List TM entries (paginated; `meta { total, limit, offset }`) |
+| `POST` | `/api/v1/tm` | Upsert an entry |
+| `PATCH` | `/api/v1/tm/:id` | Edit target/quality/source (siteId-scoped, 404 cross-tenant) |
+| `DELETE` | `/api/v1/tm/:id` | Delete an entry (siteId-scoped) |
+| `POST` | `/api/v1/tm/lookup` | Best fuzzy match `{ query, sourceLang, targetLang, threshold? }` → `{ match }` |
+| `POST` | `/api/v1/tm/translate` | MT pipeline `{ text, from, to }` (TM → glossary → provider) |
+
+`TM_DEFAULT_THRESHOLD = 75` (`@lumibase/shared`). Learn-TM (Studio) upserts
+human translations on save when `translations.learnTm` is enabled.
+See `.kiro/specs/translation-memory-ui`.
+
 ---
 
 ## 7. Flows / Automation
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/api/v1/flows/operations` | Registered operation keys + option hints (editor palette / `validateGraph` knownKeys) |
 | `GET` | `/api/v1/flows` | List flows (filter by `status`, `trigger`) |
-| `POST` | `/api/v1/flows` | Create a new flow |
+| `POST` | `/api/v1/flows` | Create a new flow (validates graph when `active`; schedule flows require a valid cron) |
 | `GET` | `/api/v1/flows/:id` | Get flow detail + graph |
 | `PATCH` | `/api/v1/flows/:id` | Update flow (graph, status, options) |
 | `DELETE` | `/api/v1/flows/:id` | Delete flow |
 | `POST` | `/api/v1/flows/:id/run` | Manual trigger with body as input |
+| `POST` | `/api/v1/flows/:id/trigger` | Webhook trigger — token-authed (`x-flow-token`, constant-time), input `{ body, headers, query }` |
 | `GET` | `/api/v1/flows/:id/runs` | Execution history |
 | `GET` | `/api/v1/flows/:id/runs/:runId` | Single run detail (steps output) |
 
