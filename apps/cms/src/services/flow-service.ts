@@ -47,6 +47,48 @@ export function getHandler(key: string): OperationHandler | undefined {
   return handlers.get(key);
 }
 
+/**
+ * Palette metadata for built-in operations. Extensions registered at runtime
+ * appear in `listOperations()` with just their key; the registry (not this
+ * map) stays the source of truth for which keys are runnable.
+ */
+const OPERATION_DOCS: Record<string, { description: string; options?: Record<string, string> }> = {
+  log: { description: 'Log a message', options: { message: 'string' } },
+  condition: {
+    description: 'Compare a context path against a value; the result carries { pass }',
+    options: { path: "string — e.g. 'input.event.action'", operator: "'==' | '!=' | '>' | '<' | 'contains'", value: 'any' },
+  },
+  transform: { description: 'Merge fixed fields into the previous step output', options: { set: 'object — fields to set' } },
+  http: {
+    description: 'Call an external HTTP endpoint (SSRF-guarded, 30s timeout)',
+    options: { url: 'string', method: 'GET|POST|PATCH|PUT|DELETE', headers: 'object', body: 'object' },
+  },
+  sleep: { description: 'Pause the flow', options: { ms: 'number — milliseconds (max 60000)' } },
+  mail: { description: 'Send an email notification', options: { to: 'string', subject: 'string' } },
+  'drift-scan': { description: 'Scan one intent for content drift and open reconciler goals', options: { intentId: 'string' } },
+  'trust-promote-check': { description: 'Check trust score for autonomy promotion' },
+  'deploy:trigger': {
+    description: 'Trigger a deployment target',
+    options: { targetId: 'string — deployment target id', coalesceWindowMs: 'number — reuse a deploy created within this window' },
+  },
+  'deploy:status': { description: 'Fetch latest deployment status', options: { targetId: 'string — deployment target id' } },
+};
+
+export interface OperationInfo {
+  key: string;
+  description: string;
+  options?: Record<string, string>;
+}
+
+/** Registered operations (built-ins + extensions), for the editor palette + validateGraph knownKeys. */
+export function listOperations(): OperationInfo[] {
+  return [...handlers.keys()].sort().map((key) => ({
+    key,
+    description: OPERATION_DOCS[key]?.description ?? '',
+    ...(OPERATION_DOCS[key]?.options ? { options: OPERATION_DOCS[key]!.options } : {}),
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Built-in handlers
 // ---------------------------------------------------------------------------
@@ -198,6 +240,9 @@ registerHandler('deploy:trigger', async (ctx, options) => {
     reason: options['reason'] ? String(options['reason']) : 'flow auto-deploy',
     source: 'auto',
     triggeredBy: ctx.env['runId'] ? String(ctx.env['runId']) : undefined,
+    // Req 5.4: bursts of content events within the window collapse into one
+    // build instead of one deploy per event.
+    coalesceWindowMs: Number(options['coalesceWindowMs'] ?? 0) || undefined,
   });
   return { deploymentId: row.id, status: row.status, provider: row.provider };
 });

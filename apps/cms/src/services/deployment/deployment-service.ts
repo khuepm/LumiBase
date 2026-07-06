@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, ne } from 'drizzle-orm';
 import { deploymentTargets, deployments, type Database } from '@lumibase/database';
 import type { KeyProvider } from '@lumibase/runtime';
 import { AuditLogger } from '../../modules/audit/logger';
@@ -184,7 +184,19 @@ export class DeploymentService {
 
   async trigger(
     targetId: string,
-    opts: { branch?: string; reason?: string; source?: TriggerSource; triggeredBy?: string },
+    opts: {
+      branch?: string;
+      reason?: string;
+      source?: TriggerSource;
+      triggeredBy?: string;
+      /**
+       * Coalescing window (Req 5.4): when set and a non-error deployment for
+       * this target was created within the window, reuse it instead of
+       * triggering another build. Manual triggers never coalesce — a human
+       * clicking Deploy expects a deploy.
+       */
+      coalesceWindowMs?: number;
+    },
   ): Promise<typeof deployments.$inferSelect> {
     const target = await this.getTargetRow(targetId);
     if (!target) throw new DeploymentError('NOT_FOUND', 'Deployment target not found.');
@@ -194,6 +206,35 @@ export class DeploymentService {
     if (!provider) throw new DeploymentError('UNKNOWN_PROVIDER', `Unknown provider '${target.provider}'.`);
 
     const source: TriggerSource = opts.source ?? 'manual';
+
+    const windowMs = opts.coalesceWindowMs ?? 0;
+    if (windowMs > 0 && source !== 'manual') {
+      const cutoff = new Date(Date.now() - windowMs);
+      const [recent] = await this.deps.db
+        .select()
+        .from(deployments)
+        .where(
+          and(
+            eq(deployments.siteId, this.deps.siteId),
+            eq(deployments.targetId, targetId),
+            gte(deployments.createdAt, cutoff),
+            ne(deployments.status, 'error'),
+          ),
+        )
+        .orderBy(desc(deployments.createdAt))
+        .limit(1);
+      if (recent) {
+        this.audit('deployment.coalesced', {
+          targetId,
+          provider: target.provider,
+          source,
+          reason: opts.reason,
+          coalescedInto: recent.id,
+          windowMs,
+        });
+        return recent;
+      }
+    }
     let ref: DeploymentRef | null = null;
     let errorMessage: string | null = null;
     try {

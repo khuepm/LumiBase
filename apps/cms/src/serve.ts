@@ -141,6 +141,18 @@ async function main() {
     queue: runtime.queue,
   });
 
+  // ── Flow event trigger (visual-flow-builder Req 1) ───────────────────────
+  //
+  // Consumes the `flow-events` queue: ItemService enqueues one job per
+  // matching active event-flow on create/update/delete; this worker executes
+  // the flow and records the run. Without it, event flows never fire.
+  const { registerFlowEventWorker } = await import('./services/flow-dispatch');
+  registerFlowEventWorker({
+    db: rotatorDb,
+    queue: runtime.queue,
+    keys: runtime.keys,
+  });
+
   // ── Veto-window commits (content-os task 14; Req 13.3/13.5) ─────────────
   //
   // Primary path: delayed queue jobs fire at each staging's autoCommitAt.
