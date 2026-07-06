@@ -10,6 +10,7 @@ import { cn } from '@/lib/cn';
 import { usePermissions, type PermissionHelpers } from '@/lib/use-permissions';
 import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 import { PresenceChip } from '@/components/presence-chip';
+import { useRealtimeItem } from '@/hooks/use-realtime';
 import { resolveInterface } from './interfaces/registry';
 import { GroupContainer, type GroupVariant } from './interfaces/group';
 import { RawToggle } from './interfaces/raw-toggle';
@@ -50,6 +51,9 @@ export function ItemDetailPage() {
   const [shareMaxUses, setShareMaxUses] = useState('');
   const [shareUrl, setShareUrl] = useState('');
   const [shareCopied, setShareCopied] = useState(false);
+  // Realtime: flag when this open item is changed elsewhere (Req 5.2).
+  const [remotelyUpdated, setRemotelyUpdated] = useState(false);
+  useRealtimeItem(collection, id, () => setRemotelyUpdated(true));
 
   const canRead = perms.can(collection, 'read');
   const canUpdate = perms.can(collection, 'update');
@@ -373,6 +377,25 @@ export function ItemDetailPage() {
           </div>
         </div>
       </header>
+
+      {remotelyUpdated && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"
+        >
+          <span>This item was updated elsewhere. Reload to see the latest changes.</span>
+          <button
+            type="button"
+            className="rounded-md border border-amber-400 px-2 py-1 text-xs font-medium hover:bg-amber-100"
+            onClick={() => {
+              setRemotelyUpdated(false);
+              void queryClient.invalidateQueries({ queryKey: ['item', collection, id] });
+            }}
+          >
+            Reload
+          </button>
+        </div>
+      )}
 
       {saveMutation.error && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
