@@ -200,6 +200,21 @@ async function main() {
     });
   });
 
+  // ── Flow workers + schedule tick (visual-flow-builder tasks 3.3, 4.x) ──
+  //
+  // The consumers drain event- and schedule-triggered flow jobs; a 1-minute
+  // tick enqueues schedule flows whose `nextRunAt` is due (nextRunAt is advanced
+  // before enqueue so a slow job never re-fires the same flow every tick).
+  const { registerFlowWorker } = await import('./services/flow-worker');
+  const { runDueScheduledFlows } = await import('./services/flow-scheduler');
+  const flowWorkerDeps = { db: rotatorDb, queue: runtime.queue, keys: runtime.keys };
+  registerFlowWorker(flowWorkerDeps);
+  const flowScheduleTask = cron.schedule('* * * * *', () => {
+    void runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
+      console.error('[flow-schedule] tick failed', formatSafeError(err));
+    });
+  });
+
   // ── Envelope migration consumer (regulated-content-readiness task 3.6) ──
   //
   // Drains background migrations enqueued when an operator toggles
@@ -218,6 +233,7 @@ async function main() {
     schedulerTask.stop();
     retentionTask.stop();
     deploymentPollTask.stop();
+    flowScheduleTask.stop();
     pressureLimiter.stop();
     clearInterval(loadGuardTimer);
 
