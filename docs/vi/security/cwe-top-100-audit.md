@@ -1,9 +1,9 @@
 ---
-version: 3
-lastUpdated: 2026-07-06T23:06:07.000Z
+version: 4
+lastUpdated: 2026-07-06T23:15:55.000Z
 sourceLang: en
 translatedFrom: en
-sourceHash: bd712c285ab93fc7
+sourceHash: 0b02fec2a9ea24df
 mtEngine: manual
 syncStatus: translated
 ---
@@ -127,7 +127,7 @@ Trong **78 điểm yếu có áp dụng**: **78 đã vá (100%)**, 0 một phầ
 | CWE | Điểm yếu | Verdict | Bằng chứng / ghi chú |
 |-----|----------|---------|----------------------|
 | 384 | Session fixation | ✅ | JWT mới mỗi lần login; không mang session identifier qua các lần xác thực. |
-| 613 | Hết hạn phiên không đủ | ✅ | **Đã vá 2026-07-06.** Thêm cột `users.token_version` (migration `0001_add_user_token_version.sql`) nhúng vào mọi JWT và kiểm khi verify (`middleware/auth.ts`). Đổi/reset mật khẩu sẽ tăng nó, vô hiệu tức thì mọi token đang tồn tại của user. |
+| 613 | Hết hạn phiên không đủ | ✅ | **Đã vá 2026-07-06.** Thêm cột `users.token_version` (migration `0002_add_user_token_version.sql`) nhúng vào mọi JWT và kiểm khi verify (`middleware/auth.ts`). Đổi/reset mật khẩu sẽ tăng nó, vô hiệu tức thì mọi token đang tồn tại của user. |
 | 307 | Quá nhiều lần thử xác thực | ✅ | Lockout login (`users.lockedUntil`) + cửa sổ trượt per-IP (423/429); recovery 3/IP/giờ; endpoint state setup 60/phút/IP. |
 | 521 | Yêu cầu mật khẩu yếu | ✅ | **Đã vá 2026-07-06.** Thêm `PasswordSchema` dùng chung (min 12 + độ phức tạp) ở `packages/shared/src/schemas/password.ts`, nay dùng bởi register, setup, recovery nên policy đồng nhất và không lệch được. |
 | 620 | Đổi mật khẩu không xác minh | ✅ | **Đã vá 2026-07-06.** Thêm `POST /api/v1/me/change-password` yêu cầu mật khẩu hiện tại (verify constant-time) và tăng `token_version` để thu hồi phiên khác, trả token mới cho caller (`routes/auth.ts`). |

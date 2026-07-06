@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T11:00:40.159Z
+sourceLang: en
+contentHash: 200624c06dc3da89
+---
+
 # Route guards — the `/api/v1` security chain
 
 Every authenticated API request passes through a fixed middleware chain

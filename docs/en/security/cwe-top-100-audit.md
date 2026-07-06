@@ -1,8 +1,8 @@
 ---
-version: 3
-lastUpdated: 2026-07-06T23:06:07.000Z
+version: 4
+lastUpdated: 2026-07-06T23:15:55.000Z
 sourceLang: en
-contentHash: bd712c285ab93fc7
+contentHash: 0b02fec2a9ea24df
 ---
 
 # CWE Top 100 Security Audit — LumiBase
@@ -124,7 +124,7 @@ Of the **78 applicable** weaknesses: **78 mitigated (100%)**, 0 partial, 0 not a
 | CWE | Weakness | Verdict | Evidence / note |
 |-----|----------|---------|-----------------|
 | 384 | Session fixation | ✅ | Fresh JWT per login; no session identifier carried across authentication. |
-| 613 | Insufficient session expiration | ✅ | **Fixed 2026-07-06.** Added a `users.token_version` column (migration `0001_add_user_token_version.sql`) embedded in every JWT and checked on verify (`middleware/auth.ts`). A password change or reset bumps it, instantly invalidating all outstanding tokens for that user. |
+| 613 | Insufficient session expiration | ✅ | **Fixed 2026-07-06.** Added a `users.token_version` column (migration `0002_add_user_token_version.sql`) embedded in every JWT and checked on verify (`middleware/auth.ts`). A password change or reset bumps it, instantly invalidating all outstanding tokens for that user. |
 | 307 | Excessive auth attempts | ✅ | Login lockout (`users.lockedUntil`) + per-IP sliding window (423/429); recovery 3/IP/h; setup state endpoint 60/min/IP. |
 | 521 | Weak password requirements | ✅ | **Fixed 2026-07-06.** Introduced a shared `PasswordSchema` (min 12 + complexity) in `packages/shared/src/schemas/password.ts`, now used by register, setup, and recovery so the policy is uniform and can't drift. |
 | 620 | Unverified password change | ✅ | **Fixed 2026-07-06.** Added `POST /api/v1/me/change-password` which requires the current password (constant-time verify) and bumps `token_version` to revoke other sessions, returning a fresh token for the caller (`routes/auth.ts`). |

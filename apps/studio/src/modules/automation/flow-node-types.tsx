@@ -222,7 +222,33 @@ export function ItemCrudNode({ data, selected }: { data: any; selected?: boolean
   );
 }
 
+/**
+ * Fallback node for registry operations without a dedicated component
+ * (drift-scan, deploy:trigger, extension-registered ops, …). The real
+ * operation key lives in `data.key`; options preview as JSON.
+ */
+export function GenericOpNode({ data, selected }: { data: any; selected?: boolean }) {
+  const preview = JSON.stringify(data?.options ?? {}, null, 0);
+  return (
+    <div className="relative">
+      <Handle type="target" position={Position.Left} className="w-2.5 h-2.5 bg-primary" />
+      <NodeWrapper
+        title={String(data?.key ?? 'operation')}
+        icon={Puzzle}
+        colorClass="bg-slate-500/10 text-slate-500 border-slate-500/20"
+        selected={selected}
+      >
+        <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[150px] block">
+          {preview.length > 2 ? preview : 'No options'}
+        </span>
+      </NodeWrapper>
+      <Handle type="source" position={Position.Right} className="w-2.5 h-2.5 bg-primary" />
+    </div>
+  );
+}
+
 export const flowNodeTypes = {
+  genericOp: GenericOpNode,
   condition: ConditionNode,
   transform: TransformNode,
   http: HttpNode,

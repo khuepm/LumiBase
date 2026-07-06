@@ -160,6 +160,23 @@ export {
   type DashboardCreateInput,
   type PanelResult,
 } from './insights';
+
+export {
+  FREE_DOMAIN_SUFFIX,
+  DOMAIN_KINDS,
+  DOMAIN_STATUSES,
+  DomainKindSchema,
+  DomainStatusSchema,
+  DomainCreateSchema,
+  DomainVerificationRecordSchema,
+  DomainResourceSchema,
+  type DomainKind,
+  type DomainStatus,
+  type DomainCreateInput,
+  type DomainVerificationRecord,
+  type DomainResource,
+} from './domain';
+
 export {
   DeploymentProviderSchema,
   DeploymentStatusSchema,

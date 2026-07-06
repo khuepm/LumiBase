@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T11:00:40.093Z
+sourceLang: en
+contentHash: a2fe3e3fa700797a
+---
+
 # Content Releases
 
 A **Release** collates specific item revisions across collections into a named
