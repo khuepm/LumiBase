@@ -76,6 +76,12 @@ export interface Bindings {
   FILE_UPLOAD_ALLOWED_MIME_TYPES?: string;
   /** Bearer token required to read Prometheus metrics in production. */
   METRICS_TOKEN?: string;
+  /** Set to 'true' to disable the general API rate limiter (CWE-400). */
+  LUMIBASE_RATE_LIMIT_DISABLED?: string;
+  /** Max requests per window for the general API rate limiter (default 300). */
+  LUMIBASE_RATE_LIMIT_MAX?: string;
+  /** Window length in seconds for the general API rate limiter (default 60). */
+  LUMIBASE_RATE_LIMIT_WINDOW_S?: string;
   /**
    * Sentry DSN for the Cloudflare Workers build. When unset, `withSentry`
    * in `cloudflare.ts` initializes with an empty DSN and Sentry becomes a
