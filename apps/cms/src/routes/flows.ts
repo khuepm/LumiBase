@@ -324,3 +324,17 @@ flowsRouter.get('/:id/runs', async (c) => {
     .limit(100);
   return c.json({ data: rows });
 });
+
+// Run detail — per-node steps for the run-history panel (visual-flow-builder Req 6.2).
+flowsRouter.get('/:id/runs/:runId', async (c) => {
+  const siteId = c.get('siteId');
+  const db = c.get('db');
+  const id = c.req.param('id');
+  const runId = c.req.param('runId');
+  const [run] = await db
+    .select()
+    .from(flowRuns)
+    .where(and(eq(flowRuns.id, runId), eq(flowRuns.flowId, id), eq(flowRuns.siteId, siteId)));
+  if (!run) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Run not found' }] }, 404);
+  return c.json({ data: run });
+});

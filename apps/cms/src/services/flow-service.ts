@@ -53,22 +53,22 @@ export function getHandler(key: string): OperationHandler | undefined {
  * map) stays the source of truth for which keys are runnable.
  */
 const OPERATION_DOCS: Record<string, { description: string; options?: Record<string, string> }> = {
-  log: { description: 'Log a message', options: { message: 'string — template with {{ }} placeholders' } },
+  log: { description: 'Log a message', options: { message: 'string' } },
   condition: {
-    description: 'Branch on a filter over the payload; non-match routes to onError',
-    options: { filter: 'object — { field: { _eq | _neq | _gt | _lt | ... } }' },
+    description: 'Compare a context path against a value; the result carries { pass }',
+    options: { path: "string — e.g. 'input.event.action'", operator: "'==' | '!=' | '>' | '<' | 'contains'", value: 'any' },
   },
-  transform: { description: 'Map the payload into a new shape', options: { json: 'object — template with {{ }} placeholders' } },
+  transform: { description: 'Merge fixed fields into the previous step output', options: { set: 'object — fields to set' } },
   http: {
-    description: 'Call an external HTTP endpoint',
+    description: 'Call an external HTTP endpoint (SSRF-guarded, 30s timeout)',
     options: { url: 'string', method: 'GET|POST|PATCH|PUT|DELETE', headers: 'object', body: 'object' },
   },
-  sleep: { description: 'Pause the flow', options: { ms: 'number — milliseconds (bounded)' } },
-  mail: { description: 'Send an email notification', options: { to: 'string', subject: 'string', body: 'string' } },
-  'drift-scan': { description: 'Run a drift scan over a collection', options: { collection: 'string' } },
+  sleep: { description: 'Pause the flow', options: { ms: 'number — milliseconds (max 60000)' } },
+  mail: { description: 'Send an email notification', options: { to: 'string', subject: 'string' } },
+  'drift-scan': { description: 'Scan one intent for content drift and open reconciler goals', options: { intentId: 'string' } },
   'trust-promote-check': { description: 'Check trust score for autonomy promotion' },
-  'deploy:trigger': { description: 'Trigger a deployment target', options: { target: 'string — deployment target id' } },
-  'deploy:status': { description: 'Fetch latest deployment status', options: { target: 'string — deployment target id' } },
+  'deploy:trigger': { description: 'Trigger a deployment target', options: { targetId: 'string — deployment target id' } },
+  'deploy:status': { description: 'Fetch latest deployment status', options: { targetId: 'string — deployment target id' } },
 };
 
 export interface OperationInfo {
