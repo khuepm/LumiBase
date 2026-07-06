@@ -924,6 +924,34 @@ export interface SettingResource {
   updatedAt: string;
 }
 
+/** Origin of a translation-memory entry. */
+export type TmSource = "human" | "mt" | "imported";
+
+/** A stored translation-memory pair for a language pair. */
+export interface TmEntry {
+  id: string;
+  siteId: string;
+  sourceLang: string;
+  targetLang: string;
+  sourceText: string;
+  targetText: string;
+  context: string | null;
+  quality: number | null;
+  source: TmSource;
+  provider: string | null;
+  hits: number;
+  updatedAt: string;
+}
+
+/** A fuzzy-match suggestion surfaced from the TM store (score normalized to `similarity`). */
+export interface TmSuggestion {
+  targetText: string;
+  /** Levenshtein similarity 0–100. */
+  similarity: number;
+  source: TmSource;
+  entryId?: string;
+}
+
 /** Site (tenant) configuration row — identity, branding and theme defaults. */
 export interface SiteResource {
   id: string;
