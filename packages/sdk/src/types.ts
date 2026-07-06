@@ -924,6 +924,41 @@ export interface SettingResource {
   updatedAt: string;
 }
 
+/** A named parallel draft branch of a content item (content-versioning). */
+export interface ContentVersion {
+  id: string;
+  siteId: string;
+  itemId: string;
+  collectionId: string;
+  /** Stable slug, unique per item. */
+  key: string;
+  /** Human-readable label. */
+  name: string;
+  /** Snapshot of the item data for this branch. */
+  data: Record<string, unknown>;
+  /** Hash of main's data at snapshot time — detects divergence before promote. */
+  hash: string;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** True when main's data changed since this version branched (list only). */
+  mainChanged?: boolean;
+}
+
+/** One changed field between main and a version. */
+export interface VersionFieldChange {
+  field: string;
+  main: unknown;
+  version: unknown;
+}
+
+/** `GET …/versions/:key/compare` payload. */
+export interface VersionCompare {
+  main: Record<string, unknown>;
+  version: Record<string, unknown>;
+  changes: VersionFieldChange[];
+}
+
 /** Origin of a translation-memory entry. */
 export type TmSource = "human" | "mt" | "imported";
 
