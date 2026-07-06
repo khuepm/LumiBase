@@ -1,12 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, Code2, Filter, Lock, RefreshCw, Save } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FieldResource, PresetResource } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePermissions } from '@/lib/use-permissions';
 import { useRealtimeSubscription } from '@/hooks/use-realtime';
+import { getEffectivePreset, saveUserView, viewDiffers } from '@/modules/presets/api';
 import { BulkRawEditor } from './bulk-raw-editor';
 import { resolveDisplay } from './displays/registry';
 import { FilterBuilder, compileFilter, type FilterCondition } from './filter-builder';
@@ -54,6 +55,39 @@ export function ItemsListPage() {
   });
 
   const filterPayload = useMemo(() => compileFilter(filters), [filters]);
+
+  // ── Effective preset (presets-inheritance) ──────────────────────────────────
+  // Apply the effective default view (user > role-chain > global) on mount, then
+  // debounce-persist the user's default when their view drifts from it.
+  const appliedRef = useRef(false);
+  const effectiveRef = useRef<{ sort?: SortState; filter?: Record<string, unknown> }>({});
+  const effectiveQuery = useQuery({
+    queryKey: ['preset-effective', collection],
+    queryFn: () => getEffectivePreset(collection),
+  });
+
+  useEffect(() => {
+    if (appliedRef.current || effectiveQuery.data === undefined) return;
+    appliedRef.current = true;
+    const p = effectiveQuery.data;
+    if (p) {
+      const savedSort = (p.layoutQuery as { sort?: SortState })?.sort;
+      if (savedSort?.field) setSort(savedSort);
+      effectiveRef.current = { sort: savedSort, filter: p.filter };
+    }
+  }, [effectiveQuery.data]);
+
+  // Debounced save of the user's default view when it differs from effective.
+  useEffect(() => {
+    if (!appliedRef.current) return;
+    const current = { layoutQuery: { sort }, filter: filterPayload };
+    const baseline = { layoutQuery: { sort: effectiveRef.current.sort }, filter: effectiveRef.current.filter ?? {} };
+    if (!viewDiffers(current, baseline)) return;
+    const timer = setTimeout(() => {
+      void saveUserView({ collection, filter: filterPayload, layoutQuery: { sort } }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [sort, filterPayload, collection]);
 
   const canRead = perms.can(collection, 'read');
   const canUpdate = perms.can(collection, 'update');
