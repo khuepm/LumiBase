@@ -5,13 +5,14 @@ import {
   hasTranslation,
   localeValue,
   setLocaleValue,
+  tmLearnEntries,
   translatableFields,
 } from '../translatable-fields';
 
 /**
  * Translatable-field helpers (translation-memory-ui).
  *
- * **Validates: Requirements 4.1, 5.1**
+ * **Validates: Requirements 4.1, 5.1, 6.1**
  */
 
 function field(name: string, iface: string): FieldResource {
@@ -74,5 +75,58 @@ describe('completionPct', () => {
 
   it('is 100 when there are no translatable fields', () => {
     expect(completionPct([field('slug', 'input')], {}, 'vi')).toBe(100);
+  });
+});
+
+describe('tmLearnEntries (learn-on-save, Req 6.1)', () => {
+  const data = { title: { en: 'Hello', vi: 'Xin chào' }, body: { en: 'B', vi: '' } };
+
+  it('returns human pairs for edited fields when enabled', () => {
+    expect(
+      tmLearnEntries({
+        enabled: true,
+        editedFields: ['title'],
+        data,
+        sourceLocale: 'en',
+        targetLocale: 'vi',
+      }),
+    ).toEqual([{ sourceLang: 'en', targetLang: 'vi', sourceText: 'Hello', targetText: 'Xin chào' }]);
+  });
+
+  it('returns nothing when learning is disabled', () => {
+    expect(
+      tmLearnEntries({
+        enabled: false,
+        editedFields: ['title'],
+        data,
+        sourceLocale: 'en',
+        targetLocale: 'vi',
+      }),
+    ).toEqual([]);
+  });
+
+  it('skips fields missing either source or target text', () => {
+    // `body` has an empty vi target → not learnable.
+    expect(
+      tmLearnEntries({
+        enabled: true,
+        editedFields: ['body'],
+        data,
+        sourceLocale: 'en',
+        targetLocale: 'vi',
+      }),
+    ).toEqual([]);
+  });
+
+  it('returns nothing when source and target locale match', () => {
+    expect(
+      tmLearnEntries({
+        enabled: true,
+        editedFields: ['title'],
+        data,
+        sourceLocale: 'en',
+        targetLocale: 'en',
+      }),
+    ).toEqual([]);
   });
 });

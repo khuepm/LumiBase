@@ -55,3 +55,38 @@ export function completionPct(
   const done = translatable.filter((f) => hasTranslation(data[f.name], targetLocale)).length;
   return Math.round((done / translatable.length) * 100);
 }
+
+/** A source→target pair to upsert into TM when learning on save. */
+export interface TmLearnEntry {
+  sourceLang: string;
+  targetLang: string;
+  sourceText: string;
+  targetText: string;
+}
+
+/**
+ * TM entries to learn from a save (translation-memory-ui Req 6.1).
+ *
+ * Given the fields the user edited in this session, returns the human
+ * source→target pairs worth storing. Returns nothing when learning is off,
+ * the locales match, or a pair is missing either side — so the caller can
+ * upsert the result unconditionally.
+ */
+export function tmLearnEntries(opts: {
+  enabled: boolean;
+  editedFields: Iterable<string>;
+  data: Record<string, unknown>;
+  sourceLocale: string;
+  targetLocale: string;
+}): TmLearnEntry[] {
+  const { enabled, editedFields, data, sourceLocale, targetLocale } = opts;
+  if (!enabled || !targetLocale || targetLocale === sourceLocale) return [];
+  const out: TmLearnEntry[] = [];
+  for (const name of editedFields) {
+    const sourceText = localeValue(data[name], sourceLocale);
+    const targetText = localeValue(data[name], targetLocale);
+    if (!sourceText.trim() || !targetText.trim()) continue;
+    out.push({ sourceLang: sourceLocale, targetLang: targetLocale, sourceText, targetText });
+  }
+  return out;
+}
