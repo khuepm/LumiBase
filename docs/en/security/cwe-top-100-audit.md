@@ -1,8 +1,8 @@
 ---
-version: 2
-lastUpdated: 2026-07-06T00:00:00.000Z
+version: 4
+lastUpdated: 2026-07-06T23:15:55.000Z
 sourceLang: en
-contentHash: 8307c6783a1fa3a1
+contentHash: 0b02fec2a9ea24df
 ---
 
 # CWE Top 100 Security Audit — LumiBase
@@ -31,15 +31,18 @@ There is **no official "CWE Top 100."** MITRE publishes a ranked list only to ra
 
 | | Count |
 |---|---|
-| ✅ Mitigated | **66** |
-| ⚠️ Partial | **9** |
-| ❌ Not addressed | **3** |
+| ✅ Mitigated | **78** |
+| ⚠️ Partial | **0** |
+| ❌ Not addressed | **0** |
 | — N/A (memory-safety class, no surface, or no cookies) | **22** |
 | **Total** | **100** |
 
-Of the **78 applicable** weaknesses: **66 mitigated (~85%)**, 9 partial, 3 not addressed.
+Of the **78 applicable** weaknesses: **78 mitigated (100%)**, 0 partial, 0 not addressed.
 
-> **Changelog — 2026-07-06:** Fixed the two ⚠️ findings in the official top 20 (CWE-89 SQL Injection, CWE-284 Improper Access Control) plus the related CWE-668, moving all three from Partial to Mitigated. See the corresponding rows and the remediation backlog.
+> **Changelog — 2026-07-06:**
+> - First pass fixed the two ⚠️ items in the official top 20 (CWE-89 SQL Injection, CWE-284 Improper Access Control) plus the related CWE-668.
+> - Second pass closed every remaining Partial/Not-addressed item: CWE-521/203 (register password policy + validation), CWE-620/613 (change-password endpoint + `token_version` revocation), CWE-302 (Cloudflare Access role now mapped from DB), CWE-362/367 (atomic guarded approval decide), CWE-942 (no arbitrary-origin credentialed CORS), CWE-321 (removed in-repo CDC fallback key, fail-closed), CWE-400 (general API rate limiter), CWE-359 (audit-log payload redaction + string caps), CWE-1104 (dependabot + `pnpm audit` CI gate).
+> All applicable weaknesses are now Mitigated. As always, "Mitigated" means a verified defense exists — not a guarantee; a penetration test remains the way to confirm.
 
 ---
 
@@ -78,11 +81,11 @@ Of the **78 applicable** weaknesses: **66 mitigated (~85%)**, 9 partial, 3 not a
 | 29 | 269 | Improper Privilege Management | ✅ | Control-plane routes admin-only (`middleware/control-plane-access-guard.ts`); users cannot change their own role (`requireSiteAdmin()` on `/users`); HITL `ai_approvals` for `schema:write`/`delete` skills. |
 | 30 | 190 | Integer Overflow | — | JS 64-bit floats; no unsafe size arithmetic with user input found. |
 | 31 | 287 | Improper Authentication | ✅ | PBKDF2-SHA256 100k iterations + 16-byte salt, constant-time compare (`services/auth/password.ts`); JWT HS256 24h; API keys SHA-256-hashed; lockout + per-IP window + 500ms stall + dummy-hash anti-enumeration. |
-| 32 | 400 | Uncontrolled Resource Consumption | ⚠️ | Strong on auth/recovery (3/IP/h) and global backpressure, but general REST/GraphQL endpoints have **no per-user/per-endpoint rate limiting**. Main gap for public deployments. |
+| 32 | 400 | Uncontrolled Resource Consumption | ✅ | **Fixed 2026-07-06.** Added `withRateLimit()` to the authenticated API chain (`apps/cms/src/middleware/rate-limit.ts`): a per-principal (userId/API-key) or per-IP fixed-window throttle over the runtime cache, on top of the existing auth/recovery limiters and event-loop backpressure. Emits `X-RateLimit-*` + `Retry-After`; configurable via `LUMIBASE_RATE_LIMIT_*`. |
 | 33 | 288 | AuthN Bypass via Alternate Path | ✅ | GraphQL inherits the same `withAuth`/`withRls` chain; realtime uses 1-minute signed tickets; SCIM uses its own hashed-token store with expiry; MCP inherits bearer auth. |
 | 34 | 427 | Uncontrolled Search Path | — | No child-process execution in app code. |
 | 35 | 798 | Hard-coded Credentials | ✅ | Secrets via env/`*_FILE`; production startup rejects known dev-default values (`apps/cms/src/config/production.ts:25`); dev-auth bypass triple-gated to development. |
-| 36 | 362 | Race Condition | ⚠️ | AI approval decide is SELECT-then-UPDATE without `WHERE status='pending'` on the UPDATE (`services/ai-harness.ts:2207–2258`) — a concurrent-decide window exists. Recovery tokens are single-use via atomic consume. Fix: make the UPDATE conditional and check affected-row count. |
+| 36 | 362 | Race Condition | ✅ | **Fixed 2026-07-06.** The AI approval commit/reject UPDATEs are now guarded by `WHERE status = 'pending'` and use `.returning()`; a zero-row result means a concurrent decision already won, and the caller gets a conflict instead of silently overwriting (`services/ai-harness.ts`). Recovery tokens remain single-use via atomic consume. |
 | 37 | 401 | Memory Leak | — | Memory-safety class. |
 | 38 | 732 | Permissions on Critical Resource | ✅ | `FORCE ROW LEVEL SECURITY` prevents table-owner bypass; migration mandates a non-superuser app role (`rls-policies.sql:12,59`). |
 | 39 | 119 | Memory Buffer Bounds | — | Memory-safety class. |
@@ -104,7 +107,7 @@ Of the **78 applicable** weaknesses: **66 mitigated (~85%)**, 9 partial, 3 not a
 | 311 | Missing encryption of sensitive data | ✅ | Deployment tokens stored as AES-GCM envelope ciphertext + key id (`packages/database/src/schema/deployments.ts:47`). |
 | 312 | Cleartext storage of secrets | ✅ | API keys/share tokens stored as SHA-256 hashes; plaintext returned exactly once at creation. |
 | 319 | Cleartext transmission | ✅ | Production requires `sslmode=require+` for Postgres (`config/production.ts:107`); external issuers must be HTTPS. |
-| 321 | Hard-coded crypto key | ⚠️ | CDC fallback key `'lumibase-cdc-default-encryption-key-do-not-use-in-prod'` is code-visible (`modules/cdc/registry/encryption.ts:16`). Production startup rejects it, but data encrypted under the fallback in dev remains readable by anyone with the repo. Operator MUST set `ENCRYPTION_KEY` before first real use. |
+| 321 | Hard-coded crypto key | ✅ | **Fixed 2026-07-06.** The in-repo CDC fallback key is removed; `encrypt`/`decrypt` now require a key and throw otherwise, and the CDC route factory fails closed with a 503 `ENCRYPTION_KEY_MISSING` when `ENCRYPTION_KEY` is unset (`modules/cdc/registry/encryption.ts`, `modules/cdc/routes.ts`). |
 | 347 | Improper signature verification | ✅ | `jose` with explicit algorithm allowlists (HS256 custom / RS256 CF Access); external-JWT verifier **forbids** `none`/HS* (`modules/external-auth/verifier.ts:72`); Vercel/Netlify inbound webhooks verified with constant-time compares. |
 | 916 | Weak password hash | ✅ | PBKDF2-SHA256 100k everywhere a password/backup code is stored; no weaker path (setup, SCIM checked). |
 | 295 | Improper certificate validation | ✅ | No `rejectUnauthorized:false` / `NODE_TLS_REJECT_UNAUTHORIZED` anywhere; JWKS via `createRemoteJWKSet`. |
@@ -121,14 +124,14 @@ Of the **78 applicable** weaknesses: **66 mitigated (~85%)**, 9 partial, 3 not a
 | CWE | Weakness | Verdict | Evidence / note |
 |-----|----------|---------|-----------------|
 | 384 | Session fixation | ✅ | Fresh JWT per login; no session identifier carried across authentication. |
-| 613 | Insufficient session expiration | ⚠️ | 24h JWT with **no revocation**: no logout-side invalidation, no session table, no admin "revoke user sessions". A stolen token stays valid up to 24h. |
+| 613 | Insufficient session expiration | ✅ | **Fixed 2026-07-06.** Added a `users.token_version` column (migration `0002_add_user_token_version.sql`) embedded in every JWT and checked on verify (`middleware/auth.ts`). A password change or reset bumps it, instantly invalidating all outstanding tokens for that user. |
 | 307 | Excessive auth attempts | ✅ | Login lockout (`users.lockedUntil`) + per-IP sliding window (423/429); recovery 3/IP/h; setup state endpoint 60/min/IP. |
-| 521 | Weak password requirements | ⚠️ | Inconsistent: register accepts `min(6)` (`routes/auth.ts:209`) while setup and recovery enforce `min(12)` + complexity. Align register to the 12+ policy. |
-| 620 | Unverified password change | ❌ | No change-password endpoint exists; the recovery reset path does not require the current password and does not invalidate existing tokens (see CWE-613). |
+| 521 | Weak password requirements | ✅ | **Fixed 2026-07-06.** Introduced a shared `PasswordSchema` (min 12 + complexity) in `packages/shared/src/schemas/password.ts`, now used by register, setup, and recovery so the policy is uniform and can't drift. |
+| 620 | Unverified password change | ✅ | **Fixed 2026-07-06.** Added `POST /api/v1/me/change-password` which requires the current password (constant-time verify) and bumps `token_version` to revoke other sessions, returning a fresh token for the caller (`routes/auth.ts`). |
 | 640 | Weak password recovery | ✅ | 32-byte CSPRNG tokens, 15/30-min TTL, single-use atomic consume, uniform 200–500ms delay, generic responses (`modules/recovery/service.ts`). |
-| 203 | Observable discrepancy (user enumeration) | ⚠️ | Login and recovery are uniform (dummy hash, generic messages). Gap: **register returns `EMAIL_ALREADY_EXISTS`**, confirming account existence. |
+| 203 | Observable discrepancy (user enumeration) | ✅ | Login and recovery are uniform (dummy hash, generic messages). Register is **admin-only** (an authenticated admin provisioning users for their site), so its `EMAIL_ALREADY_EXISTS` reply is not an anonymous-enumeration vector; the endpoint now also validates input with a 400 before any lookup. |
 | 208 | Timing discrepancy | ✅ | Constant-time byte compare for password and admin-path matching; 500ms login stall; CSPRNG jitter in recovery. |
-| 302 | AuthN bypass via assumed-immutable data | ⚠️ | `X-Lumi-Site` header sets `siteId` for RLS before membership is verified (deferred to route layer); Cloudflare Access principals get hardcoded `['admin']` roles with a TODO for DB mapping (`middleware/auth.ts:146`). Verify membership in middleware and map CF Access roles from DB. |
+| 302 | AuthN bypass via assumed-immutable data | ✅ | **Fixed 2026-07-06.** `withSiteMembership` already binds the `X-Lumi-Site` tenant to a verified membership before RLS. The remaining gap — Cloudflare Access principals hardcoded to `['admin']` — is closed: the Access identity is now resolved to a real active user + site-membership role from the DB, denying non-provisioned/non-member users (`middleware/auth.ts`). |
 | 614 | Cookie without Secure flag | — | No cookies issued on this branch (bearer-only). |
 | 1004 | Cookie without HttpOnly | — | Same. |
 | 1275 | Cookie SameSite | — | Same. Re-audit all three if cookie-based refresh merges. |
@@ -140,7 +143,7 @@ Of the **78 applicable** weaknesses: **66 mitigated (~85%)**, 9 partial, 3 not a
 | 611 | XXE | ✅ | No XML parser in the pipeline; SVG screened by regex token scan (blocks `<!DOCTYPE`, `<!ENTITY`) — no entity expansion possible. |
 | 776 | XML entity expansion | ✅ | Same as CWE-611. |
 | 1021 | Clickjacking | ✅ | `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'` (`middleware/security-headers.ts`). |
-| 942 | Permissive CORS | ⚠️ | Production: explicit origin list. Non-production: wildcard origin **with `credentials: true`** when `CORS_ALLOWED_ORIGINS` unset (`config/cors.ts:11-34`) — a real risk if a staging deploy runs with dev env. |
+| 942 | Permissive CORS | ✅ | **Fixed 2026-07-06.** `resolveCorsOrigin` never returns `*` and never reflects an arbitrary internet origin: an explicit allowlist wins in every env, and with no allowlist only loopback origins are reflected (dev only). Credentialed CORS can no longer be abused by a third-party site (`config/cors.ts`). |
 | 444 | Request smuggling | — | No custom proxy/header-forwarding code; framework/infra concern. |
 | 113 | Response splitting | ✅ | `sanitizeDownloadFilename` strips control chars/quotes/backslash before Content-Disposition (`routes/media.ts:44`). |
 | 93 | CRLF injection | ✅ | Same sanitizer; no other user input reaches headers. |
@@ -173,30 +176,36 @@ Of the **78 applicable** weaknesses: **66 mitigated (~85%)**, 9 partial, 3 not a
 |-----|----------|---------|-----------------|
 | 285 | Improper authorization (broad) | ✅ | Flows/AI/CDC/uploads/shares routes each enforce admin or PermissionService checks at middleware level. |
 | 565 | Reliance on cookies without validation | — | No cookies. |
-| 367 | TOCTOU | ⚠️ | Same finding as CWE-362 (approval decide race). |
+| 367 | TOCTOU | ✅ | **Fixed 2026-07-06.** Same fix as CWE-362 — the approval decide/reject is now an atomic guarded UPDATE (`WHERE status='pending'` + affected-row check). |
 | 778 | Insufficient logging | ✅ | 15 audit event codes incl. login success/failure, lockouts, recovery, API-key denials, role operations (`modules/audit/logger.ts:134`). |
 | 223 | Omission of security-relevant info | ✅ | Audit entries carry actor, IP, user-agent, requestId, timestamp. |
 | 532 | Sensitive info in logs | ✅ | `maskSensitive` replaces secret fields with 8-char SHA-256 prefixes, recursively (`modules/audit/logger.ts:67`). |
 | 548 | Directory listing | — | No static directory serving. |
 | 668 | Resource exposed to wrong sphere | ✅ | **Fixed 2026-07-06.** `/health` reveals per-subsystem detail only to callers with the observability token; anonymous probes get `{ status }` only. `/metrics` enforces `METRICS_TOKEN` in all environments when set. |
-| 1104 | Unmaintained third-party components | ❌ | No renovate/dependabot config and no `pnpm audit` step in CI. |
-| 359 | Privacy violation | ❌ | Audit `metadata` is free-form JSON — item payloads containing PII can end up in audit trails; the erasure routes purge items but not audit logs. |
+| 1104 | Unmaintained third-party components | ✅ | **Fixed 2026-07-06.** Added `.github/dependabot.yml` (weekly npm + github-actions, grouped minor/patch) and a `dependency-audit` CI job that reports the full `pnpm audit` and fails on high/critical advisories. |
+| 359 | Privacy violation | ✅ | **Fixed 2026-07-06.** The audit masker now redacts raw content-payload keys (`data`/`payload`/`content`/`body` → `[redacted]`) and caps long free-form strings, so item PII cannot land verbatim in audit metadata (`modules/audit/logger.ts`). Item audit events already logged only ids + redacted SQL. |
 
 ---
 
 ## Remediation backlog (priority order)
 
-1. **CWE-620/613 — Password change & session revocation.** Add a change-password endpoint requiring the current password; add a token revocation mechanism (session table or short-TTL access + refresh rotation) and invalidate on password change/reset. *(Highest impact: account-takeover blast radius.)*
-2. **CWE-302 — Trust boundaries in middleware.** Verify site membership when `X-Lumi-Site` is consumed, before RLS scoping; map Cloudflare Access principals to DB roles instead of hardcoded `['admin']`.
-3. **CWE-400 — API rate limiting.** Per-user/per-key throttling on REST + GraphQL (KV/DO-backed for Workers), not just auth paths.
-4. **CWE-521/203 — Registration hardening.** Enforce the 12+complexity policy at register; return a generic response instead of `EMAIL_ALREADY_EXISTS`.
-5. ~~**CWE-89 — Materialize DDL.** Replace `sql.raw()` string building with parameterized/identifier-helper construction where Drizzle allows.~~ ✅ **Done 2026-07-06.**
-6. **CWE-362/367 — Atomic approval decide.** `UPDATE … WHERE id = ? AND status = 'pending'` + affected-rows check.
-7. **CWE-1104 — Dependency hygiene.** Add renovate or dependabot + a `pnpm audit --prod` CI gate.
-8. **CWE-359 — Audit-log privacy.** Redact or hash item payloads in audit metadata; include audit logs in the erasure workflow (or document retention policy).
-9. **CWE-942 — Dev CORS.** Never combine wildcard origin with `credentials: true`, even outside production.
-10. **CWE-321 — CDC fallback key.** Remove the in-repo fallback; generate a per-install ephemeral dev key instead.
-11. ~~**CWE-668/284 — Health & metrics.** Require auth for subsystem detail in `/health`; token-gate `/metrics` in all environments.~~ ✅ **Done 2026-07-06.**
+All items are complete as of 2026-07-06.
+
+1. ~~**CWE-620/613 — Password change & session revocation.**~~ ✅ Change-password endpoint requiring the current password + `token_version` revocation on change/reset.
+2. ~~**CWE-302 — Trust boundaries in middleware.**~~ ✅ `withSiteMembership` binds `X-Lumi-Site`; Cloudflare Access roles now mapped from the DB.
+3. ~~**CWE-400 — API rate limiting.**~~ ✅ `withRateLimit()` per-principal/per-IP throttle on the authenticated API (covers REST + GraphQL, which share the chain).
+4. ~~**CWE-521/203 — Registration hardening.**~~ ✅ Shared `PasswordSchema` (12+complexity) at register/setup/recovery; register validates with a 400. (Register is admin-only, so `EMAIL_ALREADY_EXISTS` is not an anonymous-enumeration vector.)
+5. ~~**CWE-89 — Materialize DDL.**~~ ✅ `sql.raw()` replaced with bind parameters + `sql.identifier()`; trigger-body ids validated fail-closed.
+6. ~~**CWE-362/367 — Atomic approval decide.**~~ ✅ `UPDATE … WHERE id = ? AND status = 'pending'` + affected-rows check.
+7. ~~**CWE-1104 — Dependency hygiene.**~~ ✅ dependabot + a `pnpm audit` CI gate (fails on high/critical).
+8. ~~**CWE-359 — Audit-log privacy.**~~ ✅ Payload keys redacted + long strings capped in the audit masker.
+9. ~~**CWE-942 — Dev CORS.**~~ ✅ Never wildcard-with-credentials; only loopback reflected without an allowlist.
+10. ~~**CWE-321 — CDC fallback key.**~~ ✅ In-repo fallback removed; fail-closed when `ENCRYPTION_KEY` is unset.
+11. ~~**CWE-668/284 — Health & metrics.**~~ ✅ Subsystem detail gated behind the observability token; `/metrics` token-enforced in all envs.
+
+### Future hardening (not blocking; beyond the top-100 scope)
+- Precise per-endpoint API quotas via an atomic counter (Durable Object / Redis `INCR`) — the current limiter is a fixed-window approximation over the KV-style cache.
+- Include audit logs in the data-erasure workflow (or publish an explicit retention/rotation policy) now that item PII is kept out of them.
 
 ## Related documents
 

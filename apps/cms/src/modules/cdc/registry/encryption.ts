@@ -13,13 +13,22 @@
 
 const IV_LENGTH = 12;
 const ALGORITHM = 'AES-GCM';
-const FALLBACK_KEY = 'lumibase-cdc-default-encryption-key-do-not-use-in-prod';
 
 /**
  * Derive a CryptoKey from a string key using SHA-256.
  * This ensures we always have a 256-bit key regardless of input length.
+ *
+ * A non-empty key is REQUIRED. There is no built-in fallback: an in-repo
+ * default key would let anyone with the source decrypt CDC connection strings
+ * that were encrypted under it (CWE-321). Callers must supply a real key
+ * (operators set `ENCRYPTION_KEY`).
  */
 async function deriveKey(key: string): Promise<CryptoKey> {
+  if (!key) {
+    throw new Error(
+      'CDC encryption key is required. Set ENCRYPTION_KEY before using CDC pipelines.',
+    );
+  }
   const encoder = new TextEncoder();
   const keyData = await crypto.subtle.digest('SHA-256', encoder.encode(key));
   return crypto.subtle.importKey('raw', keyData, { name: ALGORITHM }, false, [
@@ -36,13 +45,13 @@ async function deriveKey(key: string): Promise<CryptoKey> {
  * from the plaintext input (Property 3).
  *
  * @param plaintext - The string to encrypt
- * @param key - Encryption key (uses fallback if not provided)
+ * @param key - Encryption key (required; no fallback)
  */
 export async function encrypt(
   plaintext: string,
-  key?: string,
+  key: string,
 ): Promise<string> {
-  const cryptoKey = await deriveKey(key ?? FALLBACK_KEY);
+  const cryptoKey = await deriveKey(key);
   const encoder = new TextEncoder();
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 
@@ -67,14 +76,14 @@ export async function encrypt(
  * using AES-256-GCM (which also verifies the auth tag).
  *
  * @param ciphertext - The base64-encoded encrypted string
- * @param key - Encryption key (uses fallback if not provided)
+ * @param key - Encryption key (required; no fallback)
  * @throws Error if decryption fails (wrong key or tampered data)
  */
 export async function decrypt(
   ciphertext: string,
-  key?: string,
+  key: string,
 ): Promise<string> {
-  const cryptoKey = await deriveKey(key ?? FALLBACK_KEY);
+  const cryptoKey = await deriveKey(key);
   const combined = Uint8Array.from(atob(ciphertext), (c) => c.charCodeAt(0));
 
   const iv = combined.slice(0, IV_LENGTH);
@@ -102,12 +111,12 @@ export async function decrypt(
  */
 export async function decryptCompat(
   ciphertext: string,
-  key?: string,
+  key: string,
 ): Promise<string> {
   try {
     return await decrypt(ciphertext, key);
   } catch {
-    return decryptLegacyXor(ciphertext, key ?? FALLBACK_KEY);
+    return decryptLegacyXor(ciphertext, key);
   }
 }
 

@@ -132,7 +132,9 @@ function createFullFlowMockDb(siteId: string) {
     update: vi.fn().mockImplementation(() => ({
       set: vi.fn().mockImplementation((setData: Record<string, unknown>) => ({
         where: vi.fn().mockImplementation(() => {
-          // Apply the update to the last pending record
+          // Apply the update to the last pending record. The guarded status
+          // transition is filtered to status='pending', so we mirror that here.
+          const updated: Array<{ id: string }> = [];
           const pending = store.filter(
             (r) => r.siteId === siteId && r.status === 'pending',
           );
@@ -142,8 +144,14 @@ function createFullFlowMockDb(siteId: string) {
             if (setData['decidedAt']) record.decidedAt = setData['decidedAt'] as Date;
             if (setData['decidedBy'] !== undefined) record.decidedBy = setData['decidedBy'] as string | null;
             updateCalls.push({ id: record.id, data: setData });
+            updated.push({ id: record.id });
           }
-          return Promise.resolve(undefined);
+          // Result is awaitable and exposes .returning() for guarded writes.
+          const thenable = Promise.resolve(undefined) as Promise<undefined> & {
+            returning: () => Promise<Array<{ id: string }>>;
+          };
+          thenable.returning = () => Promise.resolve(updated);
+          return thenable;
         }),
       })),
     })),

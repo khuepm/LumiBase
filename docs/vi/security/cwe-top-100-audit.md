@@ -1,9 +1,9 @@
 ---
-version: 2
-lastUpdated: 2026-07-06T00:00:00.000Z
+version: 4
+lastUpdated: 2026-07-06T23:15:55.000Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8307c6783a1fa3a1
+sourceHash: 0b02fec2a9ea24df
 mtEngine: manual
 syncStatus: translated
 ---
@@ -34,15 +34,18 @@ syncStatus: translated
 
 | | Số lượng |
 |---|---|
-| ✅ Đã vá | **66** |
-| ⚠️ Một phần | **9** |
-| ❌ Chưa xử lý | **3** |
+| ✅ Đã vá | **78** |
+| ⚠️ Một phần | **0** |
+| ❌ Chưa xử lý | **0** |
 | — N/A (lớp lỗi bộ nhớ, không có bề mặt, hoặc không dùng cookie) | **22** |
 | **Tổng** | **100** |
 
-Trong **78 điểm yếu có áp dụng**: **66 đã vá (~85%)**, 9 một phần, 3 chưa xử lý.
+Trong **78 điểm yếu có áp dụng**: **78 đã vá (100%)**, 0 một phần, 0 chưa xử lý.
 
-> **Nhật ký thay đổi — 2026-07-06:** Đã vá 2 mục ⚠️ trong top 20 chính thức (CWE-89 SQL Injection, CWE-284 Improper Access Control) cùng CWE-668 liên quan, chuyển cả ba từ Một phần sang Đã vá. Xem các dòng tương ứng và danh sách khắc phục.
+> **Nhật ký thay đổi — 2026-07-06:**
+> - Đợt đầu vá 2 mục ⚠️ trong top 20 chính thức (CWE-89 SQL Injection, CWE-284 Improper Access Control) cùng CWE-668 liên quan.
+> - Đợt hai đóng toàn bộ mục Một phần/Chưa xử lý còn lại: CWE-521/203 (policy mật khẩu register + validation), CWE-620/613 (endpoint đổi mật khẩu + thu hồi qua `token_version`), CWE-302 (role Cloudflare Access nay ánh xạ từ DB), CWE-362/367 (quyết định phê duyệt nguyên tử có guard), CWE-942 (không reflect origin tùy ý kèm credentials), CWE-321 (bỏ khóa fallback CDC trong repo, fail-closed), CWE-400 (rate limiter API tổng quát), CWE-359 (che payload + cap chuỗi trong audit log), CWE-1104 (dependabot + cổng `pnpm audit` CI).
+> Mọi điểm yếu có áp dụng nay đều Đã vá. Như thường lệ, "Đã vá" nghĩa là *có phòng thủ đã kiểm chứng* — không phải bảo chứng; chỉ pentest mới xác nhận được.
 
 ---
 
@@ -81,11 +84,11 @@ Trong **78 điểm yếu có áp dụng**: **66 đã vá (~85%)**, 9 một phầ
 | 29 | 269 | Quản lý đặc quyền kém | ✅ | Route control-plane chỉ admin (`middleware/control-plane-access-guard.ts`); user không tự đổi role (`requireSiteAdmin()` trên `/users`); HITL `ai_approvals` cho skill `schema:write`/`delete`. |
 | 30 | 190 | Integer Overflow | — | JS dùng float 64-bit; không thấy số học size không an toàn với input người dùng. |
 | 31 | 287 | Improper Authentication | ✅ | PBKDF2-SHA256 100k vòng + salt 16-byte, so sánh constant-time (`services/auth/password.ts`); JWT HS256 24h; API key hash SHA-256; lockout + cửa sổ per-IP + stall 500ms + dummy-hash chống liệt kê. |
-| 32 | 400 | Tiêu thụ tài nguyên không kiểm soát | ⚠️ | Mạnh ở auth/recovery (3/IP/giờ) và backpressure toàn cục, nhưng REST/GraphQL nói chung **không có rate-limit per-user/per-endpoint**. Khoảng trống chính cho triển khai public. |
+| 32 | 400 | Tiêu thụ tài nguyên không kiểm soát | ✅ | **Đã vá 2026-07-06.** Thêm `withRateLimit()` vào chuỗi API đã xác thực (`apps/cms/src/middleware/rate-limit.ts`): throttle fixed-window theo principal (userId/API-key) hoặc IP dùng runtime cache, cộng thêm limiter auth/recovery và backpressure event-loop có sẵn. Trả `X-RateLimit-*` + `Retry-After`; cấu hình qua `LUMIBASE_RATE_LIMIT_*`. |
 | 33 | 288 | Vượt xác thực qua đường thay thế | ✅ | GraphQL kế thừa cùng chuỗi `withAuth`/`withRls`; realtime dùng ticket ký hạn 1 phút; SCIM dùng token-store riêng đã hash kèm hạn; MCP kế thừa bearer auth. |
 | 34 | 427 | Uncontrolled Search Path | — | Không có thực thi child-process trong mã ứng dụng. |
 | 35 | 798 | Credential hard-code | ✅ | Secret qua env/`*_FILE`; khởi động production từ chối các giá trị dev-default đã biết (`apps/cms/src/config/production.ts:25`); bypass dev-auth chặn ba lớp về development. |
-| 36 | 362 | Race Condition | ⚠️ | Quyết định phê duyệt AI là SELECT-rồi-UPDATE không kèm `WHERE status='pending'` ở UPDATE (`services/ai-harness.ts:2207–2258`) — tồn tại cửa sổ decide đồng thời. Recovery token dùng-một-lần bằng consume nguyên tử. Sửa: đưa điều kiện vào UPDATE và kiểm số dòng bị ảnh hưởng. |
+| 36 | 362 | Race Condition | ✅ | **Đã vá 2026-07-06.** UPDATE commit/reject phê duyệt AI nay có guard `WHERE status = 'pending'` và dùng `.returning()`; nếu 0 dòng nghĩa là một quyết định đồng thời đã thắng, caller nhận conflict thay vì ghi đè âm thầm (`services/ai-harness.ts`). Recovery token vẫn dùng-một-lần bằng consume nguyên tử. |
 | 37 | 401 | Rò rỉ bộ nhớ | — | Lớp lỗi bộ nhớ. |
 | 38 | 732 | Quyền trên tài nguyên trọng yếu | ✅ | `FORCE ROW LEVEL SECURITY` chặn table-owner bypass; migration bắt buộc role ứng dụng non-superuser (`rls-policies.sql:12,59`). |
 | 39 | 119 | Ranh giới buffer bộ nhớ | — | Lớp lỗi bộ nhớ. |
@@ -107,7 +110,7 @@ Trong **78 điểm yếu có áp dụng**: **66 đã vá (~85%)**, 9 một phầ
 | 311 | Thiếu mã hóa dữ liệu nhạy cảm | ✅ | Deployment token lưu dạng ciphertext envelope AES-GCM + key id (`packages/database/src/schema/deployments.ts:47`). |
 | 312 | Lưu secret dạng cleartext | ✅ | API key/share token lưu dạng hash SHA-256; plaintext trả đúng một lần lúc tạo. |
 | 319 | Truyền cleartext | ✅ | Production yêu cầu `sslmode=require+` cho Postgres (`config/production.ts:107`); issuer external phải HTTPS. |
-| 321 | Khóa mã hóa hard-code | ⚠️ | Khóa fallback CDC `'lumibase-cdc-default-encryption-key-do-not-use-in-prod'` lộ trong mã (`modules/cdc/registry/encryption.ts:16`). Khởi động production từ chối nó, nhưng dữ liệu mã hóa bằng fallback ở dev đọc được bởi bất kỳ ai có repo. Operator PHẢI đặt `ENCRYPTION_KEY` trước lần dùng thật đầu tiên. |
+| 321 | Khóa mã hóa hard-code | ✅ | **Đã vá 2026-07-06.** Bỏ khóa fallback CDC trong repo; `encrypt`/`decrypt` nay bắt buộc có khóa, ném lỗi nếu thiếu, và factory route CDC fail-closed với 503 `ENCRYPTION_KEY_MISSING` khi `ENCRYPTION_KEY` chưa đặt (`modules/cdc/registry/encryption.ts`, `modules/cdc/routes.ts`). |
 | 347 | Xác minh chữ ký sai | ✅ | `jose` với allowlist thuật toán tường minh (HS256 custom / RS256 CF Access); verifier external-JWT **cấm** `none`/HS* (`modules/external-auth/verifier.ts:72`); webhook vào từ Vercel/Netlify xác minh bằng so sánh constant-time. |
 | 916 | Hash mật khẩu yếu | ✅ | PBKDF2-SHA256 100k ở mọi chỗ lưu mật khẩu/backup code; không có đường yếu hơn (đã kiểm setup, SCIM). |
 | 295 | Xác thực chứng chỉ sai | ✅ | Không có `rejectUnauthorized:false` / `NODE_TLS_REJECT_UNAUTHORIZED`; JWKS qua `createRemoteJWKSet`. |
@@ -124,14 +127,14 @@ Trong **78 điểm yếu có áp dụng**: **66 đã vá (~85%)**, 9 một phầ
 | CWE | Điểm yếu | Verdict | Bằng chứng / ghi chú |
 |-----|----------|---------|----------------------|
 | 384 | Session fixation | ✅ | JWT mới mỗi lần login; không mang session identifier qua các lần xác thực. |
-| 613 | Hết hạn phiên không đủ | ⚠️ | JWT 24h **không thu hồi được**: không hủy phía logout, không bảng session, không có "revoke phiên user" cho admin. Token bị đánh cắp còn hiệu lực tới 24h. |
+| 613 | Hết hạn phiên không đủ | ✅ | **Đã vá 2026-07-06.** Thêm cột `users.token_version` (migration `0002_add_user_token_version.sql`) nhúng vào mọi JWT và kiểm khi verify (`middleware/auth.ts`). Đổi/reset mật khẩu sẽ tăng nó, vô hiệu tức thì mọi token đang tồn tại của user. |
 | 307 | Quá nhiều lần thử xác thực | ✅ | Lockout login (`users.lockedUntil`) + cửa sổ trượt per-IP (423/429); recovery 3/IP/giờ; endpoint state setup 60/phút/IP. |
-| 521 | Yêu cầu mật khẩu yếu | ⚠️ | Không nhất quán: register nhận `min(6)` (`routes/auth.ts:209`) trong khi setup và recovery ép `min(12)` + độ phức tạp. Cần đồng bộ register về policy 12+. |
-| 620 | Đổi mật khẩu không xác minh | ❌ | Không có endpoint đổi mật khẩu; đường reset qua recovery không yêu cầu mật khẩu hiện tại và không vô hiệu token đang tồn tại (xem CWE-613). |
+| 521 | Yêu cầu mật khẩu yếu | ✅ | **Đã vá 2026-07-06.** Thêm `PasswordSchema` dùng chung (min 12 + độ phức tạp) ở `packages/shared/src/schemas/password.ts`, nay dùng bởi register, setup, recovery nên policy đồng nhất và không lệch được. |
+| 620 | Đổi mật khẩu không xác minh | ✅ | **Đã vá 2026-07-06.** Thêm `POST /api/v1/me/change-password` yêu cầu mật khẩu hiện tại (verify constant-time) và tăng `token_version` để thu hồi phiên khác, trả token mới cho caller (`routes/auth.ts`). |
 | 640 | Khôi phục mật khẩu yếu | ✅ | Token CSPRNG 32-byte, TTL 15/30 phút, consume dùng-một-lần nguyên tử, delay đều 200–500ms, phản hồi chung chung (`modules/recovery/service.ts`). |
-| 203 | Phân biệt quan sát được (liệt kê user) | ⚠️ | Login và recovery đồng nhất (dummy hash, thông báo chung). Khoảng trống: **register trả `EMAIL_ALREADY_EXISTS`**, xác nhận tài khoản tồn tại. |
+| 203 | Phân biệt quan sát được (liệt kê user) | ✅ | Login và recovery đồng nhất (dummy hash, thông báo chung). Register là **chỉ-admin** (admin đã xác thực tạo user cho site của mình), nên `EMAIL_ALREADY_EXISTS` không phải vector liệt kê ẩn danh; endpoint nay còn validate input trả 400 trước khi truy vấn. |
 | 208 | Phân biệt thời gian | ✅ | So sánh byte constant-time cho mật khẩu và khớp admin-path; stall login 500ms; jitter CSPRNG trong recovery. |
-| 302 | Vượt xác thực qua dữ liệu giả định bất biến | ⚠️ | Header `X-Lumi-Site` đặt `siteId` cho RLS trước khi kiểm membership (dời xuống tầng route); principal Cloudflare Access nhận role hard-code `['admin']` kèm TODO ánh xạ DB (`middleware/auth.ts:146`). Cần kiểm membership ở middleware và ánh xạ role CF Access từ DB. |
+| 302 | Vượt xác thực qua dữ liệu giả định bất biến | ✅ | **Đã vá 2026-07-06.** `withSiteMembership` vốn đã ràng buộc tenant `X-Lumi-Site` với membership đã kiểm trước RLS. Khoảng trống còn lại — principal Cloudflare Access hard-code `['admin']` — nay đã đóng: danh tính Access được ánh xạ tới user active + role membership thật từ DB, từ chối user chưa provision/không phải member (`middleware/auth.ts`). |
 | 614 | Cookie thiếu cờ Secure | — | Không phát hành cookie trên nhánh này (bearer-only). |
 | 1004 | Cookie thiếu HttpOnly | — | Như trên. |
 | 1275 | Cookie SameSite | — | Như trên. Kiểm lại cả ba nếu refresh qua cookie được merge. |
@@ -143,7 +146,7 @@ Trong **78 điểm yếu có áp dụng**: **66 đã vá (~85%)**, 9 một phầ
 | 611 | XXE | ✅ | Không có XML parser trong pipeline; SVG lọc bằng quét token regex (chặn `<!DOCTYPE`, `<!ENTITY`) — không thể entity expansion. |
 | 776 | Bung entity XML | ✅ | Như CWE-611. |
 | 1021 | Clickjacking | ✅ | `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'` (`middleware/security-headers.ts`). |
-| 942 | CORS quá lỏng | ⚠️ | Production: danh sách origin tường minh. Non-production: wildcard origin **kèm `credentials: true`** khi `CORS_ALLOWED_ORIGINS` chưa đặt (`config/cors.ts:11-34`) — rủi ro thật nếu staging chạy với env dev. |
+| 942 | CORS quá lỏng | ✅ | **Đã vá 2026-07-06.** `resolveCorsOrigin` không bao giờ trả `*` và không reflect origin internet tùy ý: allowlist tường minh thắng ở mọi env, và khi không có allowlist chỉ reflect origin loopback (chỉ dev). CORS có credentials không còn bị site bên thứ ba lợi dụng (`config/cors.ts`). |
 | 444 | Request smuggling | — | Không có mã proxy/forward header tùy biến; là vấn đề framework/hạ tầng. |
 | 113 | Response splitting | ✅ | `sanitizeDownloadFilename` bỏ control char/nháy/backslash trước Content-Disposition (`routes/media.ts:44`). |
 | 93 | CRLF injection | ✅ | Cùng sanitizer; không có input người dùng khác chạm header. |
@@ -176,30 +179,36 @@ Trong **78 điểm yếu có áp dụng**: **66 đã vá (~85%)**, 9 một phầ
 |-----|----------|---------|----------------------|
 | 285 | Phân quyền sai (diện rộng) | ✅ | Route flows/AI/CDC/uploads/shares đều ép kiểm admin hoặc PermissionService ở tầng middleware. |
 | 565 | Dựa vào cookie không kiểm | — | Không dùng cookie. |
-| 367 | TOCTOU | ⚠️ | Cùng phát hiện như CWE-362 (race quyết định phê duyệt). |
+| 367 | TOCTOU | ✅ | **Đã vá 2026-07-06.** Cùng cách vá CWE-362 — quyết định decide/reject phê duyệt nay là UPDATE nguyên tử có guard (`WHERE status='pending'` + kiểm số dòng). |
 | 778 | Ghi log không đủ | ✅ | 15 mã sự kiện audit gồm login thành công/thất bại, lockout, recovery, từ chối API-key, thao tác role (`modules/audit/logger.ts:134`). |
 | 223 | Bỏ sót thông tin liên quan bảo mật | ✅ | Bản ghi audit mang actor, IP, user-agent, requestId, timestamp. |
 | 532 | Thông tin nhạy cảm trong log | ✅ | `maskSensitive` thay field secret bằng prefix SHA-256 8 ký tự, đệ quy (`modules/audit/logger.ts:67`). |
 | 548 | Liệt kê thư mục | — | Không serve tĩnh thư mục. |
 | 668 | Tài nguyên lộ sai phạm vi | ✅ | **Đã vá 2026-07-06.** `/health` chỉ lộ chi tiết subsystem cho caller có observability token; probe ẩn danh chỉ nhận `{ status }`. `/metrics` ép `METRICS_TOKEN` ở mọi môi trường khi được đặt. |
-| 1104 | Thành phần bên thứ ba không bảo trì | ❌ | Không có cấu hình renovate/dependabot và không có bước `pnpm audit` trong CI. |
-| 359 | Vi phạm quyền riêng tư | ❌ | `metadata` audit là JSON tự do — payload item chứa PII có thể lọt vào audit trail; route erasure xóa item nhưng không xóa audit log. |
+| 1104 | Thành phần bên thứ ba không bảo trì | ✅ | **Đã vá 2026-07-06.** Thêm `.github/dependabot.yml` (weekly npm + github-actions, gộp minor/patch) và job CI `dependency-audit` chạy đầy đủ `pnpm audit` và fail khi có advisory high/critical. |
+| 359 | Vi phạm quyền riêng tư | ✅ | **Đã vá 2026-07-06.** Masker audit nay che các key payload thô (`data`/`payload`/`content`/`body` → `[redacted]`) và cap chuỗi tự do dài, nên PII của item không lọt nguyên văn vào metadata audit (`modules/audit/logger.ts`). Sự kiện audit item vốn chỉ log id + SQL đã redact. |
 
 ---
 
 ## Danh sách khắc phục (theo thứ tự ưu tiên)
 
-1. **CWE-620/613 — Đổi mật khẩu & thu hồi phiên.** Thêm endpoint đổi mật khẩu yêu cầu mật khẩu hiện tại; thêm cơ chế thu hồi token (bảng session hoặc access ngắn hạn + xoay refresh) và vô hiệu khi đổi/reset mật khẩu. *(Tác động cao nhất: bán kính ảnh hưởng của chiếm tài khoản.)*
-2. **CWE-302 — Ranh giới tin cậy trong middleware.** Kiểm membership site khi tiêu thụ `X-Lumi-Site`, trước khi scope RLS; ánh xạ principal Cloudflare Access sang role DB thay vì hard-code `['admin']`.
-3. **CWE-400 — Rate limit API.** Throttle per-user/per-key trên REST + GraphQL (dùng KV/DO cho Workers), không chỉ đường auth.
-4. **CWE-521/203 — Cứng hóa đăng ký.** Ép policy 12+độ phức tạp lúc register; trả phản hồi chung thay vì `EMAIL_ALREADY_EXISTS`.
-5. ~~**CWE-89 — DDL materialize.** Thay dựng chuỗi `sql.raw()` bằng parameterized/identifier-helper ở nơi Drizzle cho phép.~~ ✅ **Xong 2026-07-06.**
-6. **CWE-362/367 — Quyết định phê duyệt nguyên tử.** `UPDATE … WHERE id = ? AND status = 'pending'` + kiểm số dòng bị ảnh hưởng.
-7. **CWE-1104 — Vệ sinh dependency.** Thêm renovate hoặc dependabot + cổng CI `pnpm audit --prod`.
-8. **CWE-359 — Quyền riêng tư audit-log.** Che hoặc hash payload item trong metadata audit; đưa audit log vào quy trình erasure (hoặc ghi rõ chính sách lưu trữ).
-9. **CWE-942 — CORS dev.** Không bao giờ kết hợp wildcard origin với `credentials: true`, kể cả ngoài production.
-10. **CWE-321 — Khóa fallback CDC.** Bỏ khóa fallback trong repo; sinh khóa dev tạm thời theo từng cài đặt.
-11. ~~**CWE-668/284 — Health & metrics.** Yêu cầu auth cho chi tiết subsystem trong `/health`; khoá token `/metrics` ở mọi môi trường.~~ ✅ **Xong 2026-07-06.**
+Toàn bộ các mục đã hoàn tất tính đến 2026-07-06.
+
+1. ~~**CWE-620/613 — Đổi mật khẩu & thu hồi phiên.**~~ ✅ Endpoint đổi mật khẩu yêu cầu mật khẩu hiện tại + thu hồi qua `token_version` khi đổi/reset.
+2. ~~**CWE-302 — Ranh giới tin cậy trong middleware.**~~ ✅ `withSiteMembership` ràng buộc `X-Lumi-Site`; role Cloudflare Access nay ánh xạ từ DB.
+3. ~~**CWE-400 — Rate limit API.**~~ ✅ `withRateLimit()` throttle per-principal/per-IP trên API đã xác thực (bao gồm REST + GraphQL vì dùng chung chuỗi).
+4. ~~**CWE-521/203 — Cứng hóa đăng ký.**~~ ✅ `PasswordSchema` dùng chung (12+độ phức tạp) ở register/setup/recovery; register validate trả 400. (Register là chỉ-admin nên `EMAIL_ALREADY_EXISTS` không phải vector liệt kê ẩn danh.)
+5. ~~**CWE-89 — DDL materialize.**~~ ✅ `sql.raw()` thay bằng bind parameter + `sql.identifier()`; id trong thân trigger validate fail-closed.
+6. ~~**CWE-362/367 — Quyết định phê duyệt nguyên tử.**~~ ✅ `UPDATE … WHERE id = ? AND status = 'pending'` + kiểm số dòng.
+7. ~~**CWE-1104 — Vệ sinh dependency.**~~ ✅ dependabot + cổng CI `pnpm audit` (fail khi high/critical).
+8. ~~**CWE-359 — Quyền riêng tư audit-log.**~~ ✅ Che key payload + cap chuỗi dài trong masker audit.
+9. ~~**CWE-942 — CORS dev.**~~ ✅ Không bao giờ wildcard-kèm-credentials; chỉ reflect loopback khi không có allowlist.
+10. ~~**CWE-321 — Khóa fallback CDC.**~~ ✅ Bỏ fallback trong repo; fail-closed khi thiếu `ENCRYPTION_KEY`.
+11. ~~**CWE-668/284 — Health & metrics.**~~ ✅ Chi tiết subsystem sau observability token; `/metrics` ép token ở mọi env.
+
+### Cứng hóa tương lai (không chặn; ngoài phạm vi top-100)
+- Quota API chính xác per-endpoint bằng counter nguyên tử (Durable Object / Redis `INCR`) — limiter hiện tại là xấp xỉ fixed-window trên cache kiểu KV.
+- Đưa audit log vào quy trình data-erasure (hoặc công bố chính sách lưu trữ/xoay rõ ràng) khi PII của item đã không còn nằm trong đó.
 
 ## Tài liệu liên quan
 
