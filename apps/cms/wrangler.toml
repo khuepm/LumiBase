@@ -187,13 +187,19 @@ CLOUDFLARE_ZONE_ID = "REPLACE_WITH_SAAS_ZONE_ID"
 pattern = "api.lumibase.dev"
 custom_domain = true
 
-# Free `*.lumibase.dev` subdomains for tenant sites. The wildcard zone route
-# delivers every `<slug>.lumibase.dev` request to this Worker; the tenant
-# middleware then maps the Host header to a site. Custom domains (operator-owned)
-# arrive via Cloudflare for SaaS custom hostnames pointed at the fallback origin
-# and need no per-domain route here.
+# Free `<slug>.lumibase.dev` subdomains for tenant sites. The wildcard zone
+# route delivers their API surface to this Worker; the tenant middleware then
+# maps the Host header to a site. Custom domains (operator-owned) arrive via
+# Cloudflare for SaaS custom hostnames pointed at the fallback origin and need
+# no per-domain route here.
+#
+# The pattern MUST stay scoped to `/api/*`. A Worker zone route outranks Pages
+# custom domains on matching paths, so a bare `*.lumibase.dev/*` swallows every
+# first-party Pages site on the zone (docs./studio./marketplace.lumibase.dev
+# all returned this Worker's JSON 404 in v0.18.0). The CMS serves nothing
+# outside `/api/*` on tenant hosts anyway.
 [[env.production.routes]]
-pattern = "*.lumibase.dev/*"
+pattern = "*.lumibase.dev/api/*"
 zone_name = "lumibase.dev"
 
 [[env.production.durable_objects.bindings]]
