@@ -47,7 +47,7 @@ Gap-focused trên backend TM sẵn có. Thứ tự: hằng chung + endpoint CRUD
 - [x] 7. Learn TM khi save
   - [x] 7.1 Settings key `translations.learnTm` (default true khi vắng); save human-edited → upsertTm(source=human, quality=100) best-effort (Promise.allSettled)
     - _Requirements: 6.1_
-  - [ ] 7.2 Test: bật → gọi upsertTm; tắt → không gọi  _(chưa: cần integration test cho item-detail save; helper + popover đã test)_
+  - [x] 7.2 Test: bật → có learn entry; tắt → rỗng; thiếu source/target → bỏ; same-locale → rỗng (`tmLearnEntries` — tách quyết định learn khỏi mutation để unit-test không cần render cả page)
     - **Validates: Requirements 6.1**
 
 - [x] 8. Chất lượng & Setup Impact
@@ -56,4 +56,4 @@ Gap-focused trên backend TM sẵn có. Thứ tự: hằng chung + endpoint CRUD
   - [x] 8.2 **Setup Impact** (DoD): cập nhật row #22 — settings key `translations.learnTm` (default ON, không seed/wizard/backfill); locale dùng settings `locales` (không cột mới)
     - _Requirements: DoD_
 
-> **Ghi chú phạm vi:** (a) `/tm/lookup` trả 1 match tốt nhất — popover hiển thị match đó, không top-N (ngoài acceptance criteria). (b) Task 7.2 (integration test cho learn-on-save trong item-detail) còn để lại; logic đã implement + typecheck.
+> **Ghi chú phạm vi:** `/tm/lookup` trả 1 match tốt nhất — popover hiển thị match đó, không top-N (ngoài acceptance criteria). Quyết định learn-on-save tách thành pure helper `tmLearnEntries` (unit-test đầy đủ) thay vì render cả `ItemDetailPage` — tránh test giòn phụ thuộc router/permissions/6 query.
