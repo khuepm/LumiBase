@@ -48,7 +48,7 @@ export interface RefreshResult {
  * tenants. Using the metadata id keeps DDL, refreshes, drops, and reads scoped
  * to a caller-owned materialization.
  */
-function sanitizeTableName(materializationId: string): string {
+export function sanitizeTableName(materializationId: string): string {
   const clean = materializationId
     .toLowerCase()
     .replace(/[^a-z0-9_]/g, '')
