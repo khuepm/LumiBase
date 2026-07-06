@@ -697,13 +697,24 @@ export function FlowEditor() {
                 )}
 
                 {(selectedKey === 'deploy:trigger' || selectedKey === 'deploy:status') && (
-                  <OptionInput
-                    label="Deployment target id"
-                    hint="Settings → Deployments"
-                    value={selectedOptions.targetId}
-                    onChange={(v) => updateOption('targetId', v)}
-                    mono
-                  />
+                  <>
+                    <OptionInput
+                      label="Deployment target id"
+                      hint="Settings → Deployments"
+                      value={selectedOptions.targetId}
+                      onChange={(v) => updateOption('targetId', v)}
+                      mono
+                    />
+                    {selectedKey === 'deploy:trigger' && (
+                      <OptionInput
+                        label="Coalesce window (ms)"
+                        hint="Bursts of events within this window reuse one deploy. 0 = deploy per event."
+                        value={selectedOptions.coalesceWindowMs}
+                        onChange={(v) => updateOption('coalesceWindowMs', Number(v) || 0)}
+                        type="number"
+                      />
+                    )}
+                  </>
                 )}
 
                 {selectedKey === 'drift-scan' && (

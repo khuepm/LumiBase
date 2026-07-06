@@ -67,7 +67,10 @@ const OPERATION_DOCS: Record<string, { description: string; options?: Record<str
   mail: { description: 'Send an email notification', options: { to: 'string', subject: 'string' } },
   'drift-scan': { description: 'Scan one intent for content drift and open reconciler goals', options: { intentId: 'string' } },
   'trust-promote-check': { description: 'Check trust score for autonomy promotion' },
-  'deploy:trigger': { description: 'Trigger a deployment target', options: { targetId: 'string — deployment target id' } },
+  'deploy:trigger': {
+    description: 'Trigger a deployment target',
+    options: { targetId: 'string — deployment target id', coalesceWindowMs: 'number — reuse a deploy created within this window' },
+  },
   'deploy:status': { description: 'Fetch latest deployment status', options: { targetId: 'string — deployment target id' } },
 };
 
@@ -237,6 +240,9 @@ registerHandler('deploy:trigger', async (ctx, options) => {
     reason: options['reason'] ? String(options['reason']) : 'flow auto-deploy',
     source: 'auto',
     triggeredBy: ctx.env['runId'] ? String(ctx.env['runId']) : undefined,
+    // Req 5.4: bursts of content events within the window collapse into one
+    // build instead of one deploy per event.
+    coalesceWindowMs: Number(options['coalesceWindowMs'] ?? 0) || undefined,
   });
   return { deploymentId: row.id, status: row.status, provider: row.provider };
 });
