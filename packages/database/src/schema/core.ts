@@ -78,6 +78,13 @@ export const users = pgTable(
     failedCount: integer('failed_count').default(0).notNull(),
     /** Sliding-window start for `failedCount`. */
     failedCountWindowStart: timestamp('failed_count_window_start'),
+    /**
+     * Monotonic session/token generation. Every issued JWT embeds the value
+     * current at sign time; auth rejects a token whose `tokenVersion` is stale.
+     * Bumping this (on password change/reset) invalidates all outstanding
+     * tokens for the user — the revocation mechanism for CWE-613/620.
+     */
+    tokenVersion: integer('token_version').default(0).notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

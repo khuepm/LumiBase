@@ -146,6 +146,33 @@ describe('maskSensitive (Req 15.3)', () => {
     expect(codes[1]!.note).toBe('keep me');
   });
 
+  it('redacts raw content payload keys (CWE-359)', async () => {
+    const out = await maskSensitive({
+      collection: 'posts',
+      recordId: 'rec_123',
+      data: { ssn: '123-45-6789', notes: 'private' },
+      payload: 'raw body',
+      content: 'more raw',
+      body: { anything: true },
+    });
+    expect(out).toEqual({
+      collection: 'posts',
+      recordId: 'rec_123',
+      data: '[redacted]',
+      payload: '[redacted]',
+      content: '[redacted]',
+      body: '[redacted]',
+    });
+  });
+
+  it('truncates long free-form strings (CWE-359)', async () => {
+    const long = 'x'.repeat(400);
+    const out = await maskSensitive({ note: long });
+    expect(typeof out.note).toBe('string');
+    expect((out.note as string).length).toBeLessThan(long.length);
+    expect(out.note as string).toMatch(/\[truncated\]$/);
+  });
+
   it('maps non-string secret values to null (defensive)', async () => {
     const out = await maskSensitive({
       setupToken: 12345 as unknown as string,

@@ -67,7 +67,8 @@ function registerRequest(app: Hono<AppEnv>) {
   return app.request('/auth/register', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'new@example.com', password: 'secret123' }),
+    // Must satisfy the shared strength policy (CWE-521): 12+ chars + complexity.
+    body: JSON.stringify({ email: 'new@example.com', password: 'CorrectHorseBattery!42' }),
   });
 }
 
@@ -89,6 +90,19 @@ describe('POST /auth/register', () => {
     );
 
     expect(res.status).toBe(403);
+  });
+
+  it('rejects a weak password with 400 (CWE-521)', async () => {
+    const { db, inserts } = makeFakeDb([], []);
+    const res = await buildApp(adminPrincipal, db).request('/auth/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'new@example.com', password: 'secret123' }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json() as { errors: Array<{ code: string }> };
+    expect(body.errors[0]?.code).toBe('VALIDATION');
+    expect(inserts).toHaveLength(0);
   });
 
   it('binds the new user with the site\'s seeded member role id, not a literal key', async () => {

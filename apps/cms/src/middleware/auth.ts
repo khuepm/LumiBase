@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { apiKeys, users, userSites } from '@lumibase/database';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
@@ -146,10 +146,58 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         algorithms: ['RS256'],
       });
 
+      const email = typeof payload.email === 'string' ? payload.email : undefined;
+      const requestSiteId = c.get('siteId');
+
+      // Map the Access identity to a real user + site role from the DB instead
+      // of trusting the edge assertion for authorization (CWE-302). A verified
+      // Access token proves identity; it does NOT grant admin. The user must
+      // exist, be active, and either be the bootstrap admin or hold a membership
+      // in the requested site — the role comes from that membership.
+      if (!email) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Cloudflare Access token has no email.' }] },
+          401,
+        );
+      }
+
+      const [user] = await c
+        .get('db')
+        .select({
+          id: users.id,
+          status: users.status,
+          isBootstrap: users.isBootstrap,
+        })
+        .from(users)
+        .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
+        .limit(1);
+
+      if (!user || user.status !== 'active') {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Cloudflare Access user is not provisioned.' }] },
+          401,
+        );
+      }
+
+      const [membership] = await c
+        .get('db')
+        .select({ roleId: userSites.roleId })
+        .from(userSites)
+        .where(and(eq(userSites.userId, user.id), eq(userSites.siteId, requestSiteId)))
+        .limit(1);
+
+      if (!membership && !user.isBootstrap) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Cloudflare Access user is not a member of the selected site.' }] },
+          401,
+        );
+      }
+
       const principal: AuthPrincipal = {
+        userId: user.id,
         externalId: String(payload.sub),
-        email: typeof payload.email === 'string' ? payload.email : undefined,
-        roles: ['admin'], // Defaults to admin for Access users, mapping will be done in db query
+        email,
+        roles: user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'],
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);
@@ -270,13 +318,29 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       const userId = String(payload.userId);
       const [user] = await c
         .get('db')
-        .select({ id: users.id, status: users.status, isBootstrap: users.isBootstrap })
+        .select({
+          id: users.id,
+          status: users.status,
+          isBootstrap: users.isBootstrap,
+          tokenVersion: users.tokenVersion,
+        })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
       if (!user || user.status !== 'active') {
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
+          401,
+        );
+      }
+
+      // Token revocation (CWE-613/620): a token is only valid while its embedded
+      // tokenVersion matches the user's current one. A password change/reset
+      // bumps the stored version, instantly invalidating every prior token.
+      const tokenVersion = typeof payload.tokenVersion === 'number' ? payload.tokenVersion : 0;
+      if (tokenVersion !== (user.tokenVersion ?? 0)) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Session expired. Please sign in again.' }] },
           401,
         );
       }

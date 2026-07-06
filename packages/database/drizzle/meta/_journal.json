@@ -19,8 +19,15 @@
     {
       "idx": 2,
       "version": "7",
-      "when": 1783200000000,
-      "tag": "0002_transform_presets",
+      "when": 1783329587877,
+      "tag": "0002_add_user_token_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783400000000,
+      "tag": "0003_transform_presets",
       "breakpoints": true
     }
   ]
