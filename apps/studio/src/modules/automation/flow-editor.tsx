@@ -136,6 +136,25 @@ export function FlowEditor() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<any>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Per-node steps of the run selected in RunHistoryPanel — used to highlight
+  // nodes on the canvas by outcome (success/error/skipped). Null → no run picked.
+  const [runSteps, setRunSteps] = useState<Record<string, unknown> | null>(null);
+
+  // Annotate nodes with a ring class reflecting the selected run's outcome
+  // (Req 6.3): a node with an `error` step → red ring; a node that ran → green
+  // ring; nodes not in the run (skipped) → dimmed. No run selected → nodes as-is.
+  const displayNodes = useMemo<Node[]>(() => {
+    if (!runSteps) return nodes;
+    return nodes.map((n) => {
+      const step = runSteps[n.id];
+      let ring = 'opacity-50'; // skipped / not reached
+      if (step !== undefined) {
+        const errored = typeof step === 'object' && step !== null && 'error' in (step as Record<string, unknown>);
+        ring = errored ? 'ring-2 ring-red-500' : 'ring-2 ring-green-500';
+      }
+      return { ...n, className: [n.className, ring].filter(Boolean).join(' ') };
+    });
+  }, [nodes, runSteps]);
 
   // Fetch flow detail if edit mode
   const flowQuery = useQuery({
@@ -419,7 +438,7 @@ export function FlowEditor() {
         {/* Visual Editor Canvas */}
         <div className="flex-1 relative bg-muted/5">
           <ReactFlow
-            nodes={nodes}
+            nodes={displayNodes}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
@@ -652,7 +671,7 @@ export function FlowEditor() {
           {!isNew && id && (
             <div className="border-t pt-4">
               <h3 className="mb-2 text-sm font-semibold">Run history</h3>
-              <RunHistoryPanel flowId={id} />
+              <RunHistoryPanel flowId={id} onSelectRun={setRunSteps} />
             </div>
           )}
         </div>

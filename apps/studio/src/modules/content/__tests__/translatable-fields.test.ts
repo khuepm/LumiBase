@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldResource } from '@lumibase/sdk';
 import {
+  buildLearnTmEntries,
   completionPct,
   hasTranslation,
   localeValue,
@@ -74,5 +75,36 @@ describe('completionPct', () => {
 
   it('is 100 when there are no translatable fields', () => {
     expect(completionPct([field('slug', 'input')], {}, 'vi')).toBe(100);
+  });
+});
+
+describe('buildLearnTmEntries (learn-TM on save, Req 6.1)', () => {
+  const data = { title: { en: 'Hello', vi: 'Xin chào' }, body: { en: 'World', vi: '' } };
+
+  it('builds a human/quality=100 entry per touched field with both source + target text', () => {
+    const entries = buildLearnTmEntries({
+      enabled: true,
+      sourceLocale: 'en',
+      targetLocale: 'vi',
+      touchedFields: ['title', 'body'],
+      data,
+    });
+    // Only `title` has a vi value; `body` vi is empty → skipped.
+    expect(entries).toEqual([
+      { sourceLang: 'en', targetLang: 'vi', sourceText: 'Hello', targetText: 'Xin chào', source: 'human', quality: 100 },
+    ]);
+  });
+
+  it('returns [] when learn-TM is disabled', () => {
+    expect(buildLearnTmEntries({ enabled: false, sourceLocale: 'en', targetLocale: 'vi', touchedFields: ['title'], data })).toEqual([]);
+  });
+
+  it('returns [] when target === source or no target locale', () => {
+    expect(buildLearnTmEntries({ enabled: true, sourceLocale: 'en', targetLocale: 'en', touchedFields: ['title'], data })).toEqual([]);
+    expect(buildLearnTmEntries({ enabled: true, sourceLocale: 'en', targetLocale: null, touchedFields: ['title'], data })).toEqual([]);
+  });
+
+  it('returns [] when no fields were touched', () => {
+    expect(buildLearnTmEntries({ enabled: true, sourceLocale: 'en', targetLocale: 'vi', touchedFields: [], data })).toEqual([]);
   });
 });

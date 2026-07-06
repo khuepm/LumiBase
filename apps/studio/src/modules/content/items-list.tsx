@@ -2,12 +2,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, Code2, Filter, Lock, RefreshCw, Save } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FieldResource, PresetResource } from '@lumibase/sdk';
+import type { FieldResource } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePermissions } from '@/lib/use-permissions';
 import { useRealtimeSubscription } from '@/hooks/use-realtime';
-import { getEffectivePreset, saveUserView, viewDiffers } from '@/modules/presets/api';
+import { deleteBookmark, getEffectivePreset, saveUserView, viewDiffers, type ScopedViewPreset } from '@/modules/presets/api';
+import { BookmarkSwitcher } from '@/modules/presets/bookmark-switcher';
+import { SaveBookmarkDialog } from '@/modules/presets/save-bookmark-dialog';
 import { BulkRawEditor } from './bulk-raw-editor';
 import { resolveDisplay } from './displays/registry';
 import { FilterBuilder, compileFilter, type FilterCondition } from './filter-builder';
@@ -36,6 +38,8 @@ export function ItemsListPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showBulk, setShowBulk] = useState(false);
   const [liveMode, setLiveMode] = useState(false);
+  const [activeBookmarkId, setActiveBookmarkId] = useState<string | null>(null);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const queryClient = useQueryClient();
 
   useRealtimeSubscription(collection, () => {
@@ -47,11 +51,6 @@ export function ItemsListPage() {
   const fieldsQuery = useQuery({
     queryKey: ['fields', collection],
     queryFn: async () => (await client.schema.listFields(collection)).data,
-  });
-
-  const presetsQuery = useQuery({
-    queryKey: ['presets', collection],
-    queryFn: async () => (await client.presets.list(collection)).data,
   });
 
   const filterPayload = useMemo(() => compileFilter(filters), [filters]);
@@ -77,9 +76,11 @@ export function ItemsListPage() {
     }
   }, [effectiveQuery.data]);
 
-  // Debounced save of the user's default view when it differs from effective.
+  // Debounced save of the user's DEFAULT view when it drifts from effective.
+  // Skipped while a named bookmark is active (that's a transient view, not the
+  // user's default) so switching to a bookmark never overwrites the default.
   useEffect(() => {
-    if (!appliedRef.current) return;
+    if (!appliedRef.current || activeBookmarkId !== null) return;
     const current = { layoutQuery: { sort }, filter: filterPayload };
     const baseline = { layoutQuery: { sort: effectiveRef.current.sort }, filter: effectiveRef.current.filter ?? {} };
     if (!viewDiffers(current, baseline)) return;
@@ -87,7 +88,32 @@ export function ItemsListPage() {
       void saveUserView({ collection, filter: filterPayload, layoutQuery: { sort } }).catch(() => {});
     }, 800);
     return () => clearTimeout(timer);
-  }, [sort, filterPayload, collection]);
+  }, [sort, filterPayload, collection, activeBookmarkId]);
+
+  // Apply a bookmark/preset's saved view (sort restored from layoutQuery).
+  const applyPreset = (p: ScopedViewPreset) => {
+    const savedSort = (p.layoutQuery as { sort?: SortState })?.sort;
+    if (savedSort?.field) setSort(savedSort);
+    setPage(0);
+  };
+  // Re-apply the effective default view (used by "Default view").
+  const applyEffective = () => {
+    const savedSort = effectiveRef.current.sort;
+    if (savedSort?.field) setSort(savedSort);
+    setPage(0);
+  };
+  // "Reset to default": drop the user's own default preset (if any), then
+  // re-resolve the effective view (falls back to role/global).
+  const resetToDefault = async () => {
+    setActiveBookmarkId(null);
+    const own = (effectiveQuery.data?.sourceScope === 'user' && effectiveQuery.data) || null;
+    if (own) {
+      await deleteBookmark(own.id).catch(() => {});
+    }
+    appliedRef.current = false;
+    await effectiveQuery.refetch();
+    void queryClient.invalidateQueries({ queryKey: ['preset-bookmarks', collection] });
+  };
 
   const canRead = perms.can(collection, 'read');
   const canUpdate = perms.can(collection, 'update');
@@ -159,43 +185,26 @@ export function ItemsListPage() {
             Live Mode
           </label>
 
-          {/* Preset Switcher */}
-          <div className="flex items-center rounded-md border text-xs">
-            <select
-              className="bg-transparent px-2 py-1 outline-none font-medium"
-              onChange={(e) => {
-                const id = e.target.value;
-                if (!id) return;
-                const preset = presetsQuery.data?.find((p) => p.id === id);
-                if (preset) {
-                  // Apply preset
-                  if (preset.filter && Object.keys(preset.filter).length > 0) {
-                    // Hacky for now: we can't easily reverse-compile filter JSON to FilterBuilder UI state,
-                    // but in a real app we'd save the UI state in `layoutOptions` or similar.
-                  }
-                }
+          {/* Preset / bookmark switcher (presets-inheritance) */}
+          <div className="flex items-center gap-1">
+            <BookmarkSwitcher
+              collection={collection}
+              activeBookmarkId={activeBookmarkId}
+              onSelectDefault={() => {
+                setActiveBookmarkId(null);
+                applyEffective();
               }}
-            >
-              <option value="">Default View</option>
-              {(presetsQuery.data ?? []).map((p) => (
-                <option key={p.id} value={p.id}>{p.bookmark || 'Saved View'}</option>
-              ))}
-            </select>
+              onSelectBookmark={(b) => {
+                setActiveBookmarkId(b.id);
+                applyPreset(b);
+              }}
+              onResetToDefault={() => void resetToDefault()}
+            />
             <button
               type="button"
-              title="Save current view as Preset"
-              onClick={() => {
-                const name = prompt('Name for this preset?');
-                if (name) {
-                  client.presets.create({
-                    collection,
-                    bookmark: name,
-                    filter: filterPayload,
-                    layoutQuery: { sort: sort },
-                  }).then(() => presetsQuery.refetch());
-                }
-              }}
-              className="border-l px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="Save current view as bookmark"
+              onClick={() => setSaveDialogOpen(true)}
+              className="rounded-md border px-2 py-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <Bookmark className="h-3.5 w-3.5" />
             </button>
@@ -386,6 +395,15 @@ export function ItemsListPage() {
             setSelected(new Set());
             itemsQuery.refetch();
           }}
+        />
+      )}
+
+      {saveDialogOpen && (
+        <SaveBookmarkDialog
+          collection={collection}
+          view={{ filter: filterPayload, layoutQuery: { sort } }}
+          canManageShared={perms.isAdmin}
+          onClose={() => setSaveDialogOpen(false)}
         />
       )}
     </div>

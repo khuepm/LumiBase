@@ -20,7 +20,7 @@ import { RawJsonPanel } from './raw-json-panel';
 import { VersionPanel } from './version-panel';
 import { DependentRecordsDialog, type DependentGroup } from './dependent-records-dialog';
 import { TranslationMode } from './translation-mode';
-import { translatableFields, localeValue } from './translatable-fields';
+import { translatableFields, buildLearnTmEntries } from './translatable-fields';
 import { useSiteLocales } from './use-site-locales';
 
 type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
@@ -194,22 +194,15 @@ export function ItemDetailPage() {
       });
       // Learn human-edited translations into TM (Req 6.1). Best-effort: a TM
       // write failure must not fail the save that already succeeded.
-      if (learnTmEnabled && targetLocale && targetLocale !== sourceLocale && learnFields.size > 0) {
-        await Promise.allSettled(
-          [...learnFields].map((name) => {
-            const sourceText = localeValue(draft[name], sourceLocale);
-            const targetText = localeValue(draft[name], targetLocale);
-            if (!sourceText.trim() || !targetText.trim()) return Promise.resolve();
-            return client.tm.upsert({
-              sourceLang: sourceLocale,
-              targetLang: targetLocale,
-              sourceText,
-              targetText,
-              source: 'human',
-              quality: 100,
-            });
-          }),
-        );
+      const learnEntries = buildLearnTmEntries({
+        enabled: learnTmEnabled,
+        sourceLocale,
+        targetLocale,
+        touchedFields: learnFields,
+        data: draft,
+      });
+      if (learnEntries.length > 0) {
+        await Promise.allSettled(learnEntries.map((entry) => client.tm.upsert(entry)));
         setLearnFields(new Set());
       }
       return res.data as ItemRow;

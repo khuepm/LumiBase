@@ -55,3 +55,39 @@ export function completionPct(
   const done = translatable.filter((f) => hasTranslation(data[f.name], targetLocale)).length;
   return Math.round((done / translatable.length) * 100);
 }
+
+/** A TM upsert payload learned from a human-authored translation (Req 6.1). */
+export interface LearnTmEntry {
+  sourceLang: string;
+  targetLang: string;
+  sourceText: string;
+  targetText: string;
+  source: 'human';
+  quality: 100;
+}
+
+/**
+ * Build the TM entries to learn from a save (translation-memory-ui Req 6.1).
+ * Pure so it can be unit-tested: returns [] when learn-TM is off, no target
+ * locale, target === source, or no fields were touched; otherwise one entry per
+ * touched field that has BOTH a source and a target value. The caller upserts
+ * these best-effort after a successful save.
+ */
+export function buildLearnTmEntries(args: {
+  enabled: boolean;
+  sourceLocale: string;
+  targetLocale: string | null;
+  touchedFields: Iterable<string>;
+  data: Record<string, unknown>;
+}): LearnTmEntry[] {
+  const { enabled, sourceLocale, targetLocale, touchedFields, data } = args;
+  if (!enabled || !targetLocale || targetLocale === sourceLocale) return [];
+  const entries: LearnTmEntry[] = [];
+  for (const name of touchedFields) {
+    const sourceText = localeValue(data[name], sourceLocale).trim();
+    const targetText = localeValue(data[name], targetLocale).trim();
+    if (!sourceText || !targetText) continue;
+    entries.push({ sourceLang: sourceLocale, targetLang: targetLocale, sourceText, targetText, source: 'human', quality: 100 });
+  }
+  return entries;
+}

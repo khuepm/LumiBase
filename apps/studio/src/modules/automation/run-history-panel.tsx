@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock, Loader2 } from 'lucide-react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 
@@ -46,7 +46,14 @@ function duration(run: RunRow): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function RunHistoryPanel({ flowId }: { flowId: string }) {
+export function RunHistoryPanel({
+  flowId,
+  onSelectRun,
+}: {
+  flowId: string;
+  /** Emits the selected run's per-node steps so the editor can highlight nodes (Req 6.3). */
+  onSelectRun?: (steps: Record<string, unknown> | null) => void;
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const runsQuery = useQuery({
@@ -60,6 +67,11 @@ export function RunHistoryPanel({ flowId }: { flowId: string }) {
     queryFn: () => runsApi<RunDetail>(`/${flowId}/runs/${selectedId}`),
     enabled: !!selectedId,
   });
+
+  // Surface the selected run's steps to the parent (for canvas highlighting).
+  useEffect(() => {
+    onSelectRun?.(detailQuery.data?.steps ?? null);
+  }, [detailQuery.data, onSelectRun]);
 
   const runs = runsQuery.data ?? [];
 
