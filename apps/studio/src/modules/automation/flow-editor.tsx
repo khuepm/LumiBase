@@ -16,6 +16,13 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import {
+  type FeGraph,
+  type FlowGraph,
+  canonicalToFe,
+  feToCanonical,
+  validateGraph,
+} from '@lumibase/shared';
+import {
   Save,
   Play,
   ArrowLeft,
@@ -35,6 +42,7 @@ import {
 } from 'lucide-react';
 import { getApiClient, getActiveToken, getActiveSite } from '@/lib/api';
 import { flowNodeTypes } from './flow-node-types';
+import { RunHistoryPanel } from './run-history-panel';
 
 interface FlowDetail {
   id: string;
@@ -74,6 +82,46 @@ function flowsApi(path: string, init?: RequestInit) {
   });
 }
 
+/**
+ * Bridge ReactFlow's node/edge model to the shared FeGraph so the canonical
+ * converter + validator (single source of truth with the backend) can run.
+ * ReactFlow encodes the operation key on `node.type` and marks the error branch
+ * with `sourceHandle === 'no'`.
+ */
+function toFeGraph(nodes: Node[], edges: Edge[]): FeGraph {
+  return {
+    nodes: nodes.map((n) => ({
+      id: n.id,
+      data: { key: (n.type as string) ?? '', options: (n.data ?? {}) as Record<string, unknown> },
+      position: n.position,
+    })),
+    edges: edges.map((e) => ({
+      source: e.source,
+      target: e.target,
+      type: (e as { sourceHandle?: string }).sourceHandle === 'no' ? 'onError' : 'next',
+    })),
+  };
+}
+
+/** Canonical runtime graph → ReactFlow nodes/edges for the editor. */
+function fromCanonical(graph: FlowGraph): { nodes: Node[]; edges: Edge[] } {
+  const fe = canonicalToFe(graph);
+  const nodes: Node[] = fe.nodes.map((n) => ({
+    id: n.id,
+    type: n.data?.key ?? 'log',
+    position: n.position ?? { x: 0, y: 0 },
+    data: (n.data?.options ?? {}) as Record<string, unknown>,
+  }));
+  const edges: Edge[] = fe.edges.map((e) => ({
+    id: `edge_${e.source}_${e.target}_${e.type}`,
+    source: e.source,
+    target: e.target,
+    sourceHandle: e.type === 'onError' ? 'no' : 'yes',
+    type: 'smoothstep',
+  }));
+  return { nodes, edges };
+}
+
 export function FlowEditor() {
   const { id } = useParams({ strict: false });
   const isNew = !id || id === 'new';
@@ -109,8 +157,17 @@ export function FlowEditor() {
       setStatus(flow.status);
       setTriggerType(flow.triggerType);
       if (flow.graph) {
-        setNodes(flow.graph.nodes ?? []);
-        setEdges(flow.graph.edges ?? []);
+        const g = flow.graph as unknown as Record<string, unknown>;
+        if (Array.isArray(g.edges)) {
+          // Legacy row stored the raw ReactFlow shape — load as-is.
+          setNodes((g.nodes as Node[]) ?? []);
+          setEdges((g.edges as Edge[]) ?? []);
+        } else {
+          // Canonical runtime graph (the format the backend persists now).
+          const fe = fromCanonical(flow.graph as unknown as FlowGraph);
+          setNodes(fe.nodes);
+          setEdges(fe.edges);
+        }
       }
     }
   }, [flowQuery.data, setNodes, setEdges]);
@@ -118,7 +175,14 @@ export function FlowEditor() {
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const graph = { nodes, edges };
+      // Convert to the canonical runtime graph and validate before persisting so
+      // the drawn graph and the executed graph never diverge (validateGraph runs
+      // on the server too, but catching it here gives inline feedback).
+      const graph = feToCanonical(toFeGraph(nodes, edges));
+      const result = validateGraph(graph, []);
+      if (status === 'active' && !result.ok) {
+        throw new Error(result.errors.map((e) => e.message).join('; '));
+      }
       const body = { name, description, status, triggerType, graph };
 
       if (isNew) {
@@ -142,6 +206,9 @@ export function FlowEditor() {
       if (isNew && data?.id) {
         navigate({ to: `/automation/flows/${data.id}` });
       }
+    },
+    onError: (err) => {
+      alert(`Cannot save flow: ${(err as Error).message}`);
     },
   });
 
@@ -581,6 +648,13 @@ export function FlowEditor() {
               ID: {selectedNodeId || 'none'}
             </span>
           </div>
+
+          {!isNew && id && (
+            <div className="border-t pt-4">
+              <h3 className="mb-2 text-sm font-semibold">Run history</h3>
+              <RunHistoryPanel flowId={id} />
+            </div>
+          )}
         </div>
       </div>
     </div>
