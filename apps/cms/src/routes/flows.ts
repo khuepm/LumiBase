@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { type FlowGraph as CanonicalGraph, validateGraph } from '@lumibase/shared';
 import type { AppEnv } from '../env';
 import { listOperations, runFlow, type FlowGraph } from '../services/flow-service';
+import { isValidCron, nextCron } from '../services/flow-scheduler';
 
 export const flowsRouter = new Hono<AppEnv>();
 
@@ -123,7 +124,19 @@ flowsRouter.post('/', async (c) => {
     const invalid = validateFlowGraph(c, parsed.data.graph);
     if (invalid) return invalid;
   }
-  const inserted = await db.insert(flows).values({ siteId, ...parsed.data }).returning();
+  // Schedule flows must carry a valid cron; seed the first nextRunAt when active.
+  let nextRunAt: Date | null = null;
+  if (parsed.data.triggerType === 'schedule') {
+    const cron = (parsed.data.triggerOptions as { cron?: string }).cron;
+    if (!cron || !isValidCron(cron)) {
+      return c.json({ errors: [{ code: 'VALIDATION', message: 'schedule flow requires a valid cron' }] }, 400);
+    }
+    if (parsed.data.status === 'active') nextRunAt = nextCron(cron, new Date());
+  }
+  const inserted = await db
+    .insert(flows)
+    .values({ siteId, ...parsed.data, ...(nextRunAt ? { nextRunAt } : {}) })
+    .returning();
   return c.json({ data: inserted[0] }, 201);
 });
 
@@ -166,9 +179,34 @@ flowsRouter.patch('/:id', async (c) => {
     }
   }
 
+  // Validate cron + (re)seed nextRunAt when a schedule flow's cron or status
+  // changes. Read the current row to know the effective triggerType/cron/status.
+  const patch: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
+  if (parsed.data.triggerOptions !== undefined || parsed.data.status !== undefined) {
+    const [current] = await db
+      .select()
+      .from(flows)
+      .where(and(eq(flows.id, id), eq(flows.siteId, siteId)))
+      .limit(1);
+    const effectiveType = parsed.data.triggerType ?? current?.triggerType;
+    if (effectiveType === 'schedule') {
+      const effectiveOpts = (parsed.data.triggerOptions ?? current?.triggerOptions ?? {}) as { cron?: string };
+      const cron = effectiveOpts.cron;
+      if (cron && !isValidCron(cron)) {
+        return c.json({ errors: [{ code: 'VALIDATION', message: 'invalid cron expression' }] }, 400);
+      }
+      const effectiveStatus = parsed.data.status ?? current?.status;
+      if (effectiveStatus === 'active' && cron) {
+        patch.nextRunAt = nextCron(cron, new Date());
+      } else if (effectiveStatus && effectiveStatus !== 'active') {
+        patch.nextRunAt = null;
+      }
+    }
+  }
+
   const updated = await db
     .update(flows)
-    .set({ ...parsed.data, updatedAt: new Date() })
+    .set(patch)
     .where(and(eq(flows.id, id), eq(flows.siteId, siteId)))
     .returning();
   if (updated.length === 0)

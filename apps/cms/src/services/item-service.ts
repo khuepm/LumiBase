@@ -726,6 +726,7 @@ export class ItemService {
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
+    await this.dispatchFlowEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     await this.dispatchFirebaseSync(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
@@ -904,6 +905,7 @@ export class ItemService {
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
+    await this.dispatchFlowEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     await this.dispatchFirebaseSync(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
@@ -979,6 +981,7 @@ export class ItemService {
     await this.writeActivity('delete', coll.name, id, {});
     await this.deindexItem(collectionName, id);
     await this.publishRealtimeEvent(collectionName, 'delete', id, {});
+    await this.dispatchFlowEvent(collectionName, 'delete', id, {});
     await this.dispatchFirebaseSync(collectionName, 'delete', id, {});
     // After hook — fire-and-forget.
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
@@ -1444,6 +1447,28 @@ export class ItemService {
     } catch (err) {
       // Realtime fan-out is non-critical — log and continue.
       console.error('[item-service] realtime publish failed', { collection, itemId, err: formatSafeError(err) });
+    }
+  }
+
+  /**
+   * Fan out an item mutation to active event-triggered flows (visual-flow-builder
+   * task 3.2). Non-critical: enqueue happens off the write path via the queue,
+   * and any failure is swallowed so a flow trigger never blocks or fails a write.
+   */
+  private async dispatchFlowEvent(
+    collection: string,
+    action: 'create' | 'update' | 'delete',
+    itemId: string,
+    payload: unknown,
+  ): Promise<void> {
+    try {
+      const { dispatchItemEvent } = await import('./flow-dispatch');
+      await dispatchItemEvent(
+        { db: this.deps.db, queue: this.deps.queue },
+        { siteId: this.deps.siteId, collection, action, itemId, payload },
+      );
+    } catch (err) {
+      console.error('[item-service] flow dispatch failed', { collection, itemId, err: formatSafeError(err) });
     }
   }
 
