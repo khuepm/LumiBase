@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SiteConfigUpdateSchema, normalizeSiteUrl } from '@lumibase/shared/schemas';
 import type { SiteResource } from '@lumibase/sdk';
@@ -207,9 +208,16 @@ function SiteSettingsForm({ site, onSave, saving, saved, errorCode }: FormProps)
             id={domainId}
             label="Custom domain"
             error={errors.domain?.message ?? (errorCode === 'DOMAIN_TAKEN' ? 'That domain is already in use.' : undefined)}
-            help="Maps requests to this site via subdomain routing."
+            help="Connect your own domain or a free subdomain on the Domains page."
           >
             <input id={domainId} className={inputClass(!!errors.domain || errorCode === 'DOMAIN_TAKEN')} placeholder="cms.example.com" {...register('domain')} />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Provision SSL & manage multiple hostnames in{' '}
+              <Link to="/settings/domains" className="text-primary hover:underline">
+                Settings → Domains
+              </Link>
+              .
+            </p>
           </Field>
           <Field id={descId} label="Descriptor" error={errors.descriptor?.message} help="Short description shown in Studio.">
             <input id={descId} className={inputClass(!!errors.descriptor)} {...register('descriptor')} />

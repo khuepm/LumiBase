@@ -47,6 +47,7 @@ const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then(
 const EmailSettingsPage = lazy(() => import('./modules/settings/email-page').then((m) => ({ default: m.EmailSettingsPage })));
 const NotificationsSettingsPage = lazy(() => import('./modules/settings/notifications-page').then((m) => ({ default: m.NotificationsSettingsPage })));
 const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then((m) => ({ default: m.SiteSettingsPage })));
+const DomainsSettingsPage = lazy(() => import('./modules/settings/domains-page').then((m) => ({ default: m.DomainsSettingsPage })));
 const KeyboardSettingsPage = lazy(() => import('./modules/settings/keyboard-page').then((m) => ({ default: m.KeyboardSettingsPage })));
 const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
@@ -627,6 +628,12 @@ const siteSettingsRoute = createRoute({
   component: withSuspense(SiteSettingsPage),
 });
 
+const domainsSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'domains',
+  component: withSuspense(DomainsSettingsPage),
+});
+
 const keyboardSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'keyboard',
@@ -742,6 +749,12 @@ const adminPathSiteSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'site',
   component: withSuspense(SiteSettingsPage),
+});
+
+const adminPathDomainsSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'domains',
+  component: withSuspense(DomainsSettingsPage),
 });
 
 const adminPathKeyboardSettingsRoute = createRoute({
@@ -1193,6 +1206,7 @@ const routeTree = rootRoute.addChildren([
       settingsTypesRoute,
       translationsRoute,
       siteSettingsRoute,
+      domainsSettingsRoute,
       keyboardSettingsRoute,
       webhooksRoute,
       emailSettingsRoute,
@@ -1258,6 +1272,7 @@ const routeTree = rootRoute.addChildren([
       adminPathSettingsTypesRoute,
       adminPathTranslationsRoute,
       adminPathSiteSettingsRoute,
+      adminPathDomainsSettingsRoute,
       adminPathKeyboardSettingsRoute,
       adminPathWebhooksRoute,
       adminPathEmailSettingsRoute,

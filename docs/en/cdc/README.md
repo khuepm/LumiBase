@@ -1,5 +1,9 @@
 ---
 title: ClickHouse CDC
+version: 1
+lastUpdated: 2026-07-05T11:00:40.057Z
+sourceLang: en
+contentHash: ef8d8fe4645cd386
 ---
 
 # ClickHouse CDC

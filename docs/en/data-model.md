@@ -358,7 +358,7 @@ Content OS columns on existing tables:
 | `content_versions` | Named parallel draft branches of an item, distinct from linear `revisions`. Snapshots item `data` + a `hash` of main at snapshot time (divergence detection). Promote applies a version to main via ItemService (writes a revision). Unique `(siteId, collectionId, itemId, key)`. See `.kiro/specs/content-versioning`. |
 | `dashboards` | Insights dashboard container per site (name/icon/color/note). |
 | `panels` | One visualization on a dashboard: `type` (metric/timeSeries/bar/pie/list/table), `position` (`{x,y,w,h}`), `query` (a `PanelQuery`), `options`. Aggregates run safely (field whitelist + siteId scope). See `.kiro/specs/insights-dashboard`. |
-| `transform_presets` | Named image-transform presets: URL-safe `key` → a `TransformDsl` (`{ width?, height?, format?, quality?, fit?, focal? }`). Resolved by `GET /media/:key?preset=<key>`. Unique `(siteId, key)`. Migration `0001_transform_presets`. See `.kiro/specs/image-transform-dsl`. |
+| `transform_presets` | Named image-transform presets: URL-safe `key` → a `TransformDsl` (`{ width?, height?, format?, quality?, fit?, focal? }`). Resolved by `GET /media/:key?preset=<key>`. Unique `(siteId, key)`. Migration `0002_transform_presets`. See `.kiro/specs/image-transform-dsl`. |
 
 ## 11. Firebase Sync (`firebase-sync.ts`)
 
