@@ -145,16 +145,20 @@ import {
   type RollbackResult,
 } from './ai-flow/rollback-manager';
 
-// ── default encryption key (dev fallback) ───────────────────────────────
-
 /**
- * Fallback encryption key used only when `ENCRYPTION_KEY` is not configured.
- * Connection parameters MUST be encrypted (Req 1.4); production deployments
- * MUST set `ENCRYPTION_KEY`. Using this fallback in production is unsafe — it
- * mirrors the dev fallback in `registry/encryption.ts`.
+ * Thrown when CDC is used without an `ENCRYPTION_KEY` configured. There is no
+ * in-repo fallback key on purpose (CWE-321): a committed default would let
+ * anyone with the source decrypt stored connection strings.
  */
-const FALLBACK_ENCRYPTION_KEY =
-  'lumibase-cdc-default-encryption-key-do-not-use-in-prod';
+class EncryptionKeyMissingError extends Error {
+  readonly code = 'ENCRYPTION_KEY_MISSING' as const;
+  constructor() {
+    super(
+      'CDC requires ENCRYPTION_KEY to be configured. Set it before creating or reading pipelines.',
+    );
+    this.name = 'EncryptionKeyMissingError';
+  }
+}
 
 // ── connector singletons (Req 1.2) ──────────────────────────────────────
 
@@ -282,7 +286,14 @@ export function defaultCdcServicesFactory(
   const db = c.get('db');
   const processEncryptionKey =
     typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : undefined;
-  const encryptionKey = c.env?.ENCRYPTION_KEY ?? processEncryptionKey ?? FALLBACK_ENCRYPTION_KEY;
+  const encryptionKey = c.env?.ENCRYPTION_KEY ?? processEncryptionKey;
+  if (!encryptionKey) {
+    // Fail closed: CDC connection parameters MUST be encrypted (Req 1.4). We do
+    // NOT fall back to an in-repo default key — that would let anyone with the
+    // source decrypt stored connection strings (CWE-321). Operators must set
+    // ENCRYPTION_KEY.
+    throw new EncryptionKeyMissingError();
+  }
 
   const registry = new PipelineRegistry({
     db,
@@ -470,6 +481,11 @@ function registryErrorResponse(
   c: Context<AppEnv>,
   err: unknown,
 ): Response | null {
+  if (err instanceof EncryptionKeyMissingError) {
+    // Server misconfiguration: fail closed with a 503 rather than encrypting
+    // with a weak/known default (CWE-321).
+    return c.json(errorBody('ENCRYPTION_KEY_MISSING', err.message), 503);
+  }
   if (err instanceof PipelineNameConflictError) {
     return c.json(errorBody('PIPELINE_NAME_CONFLICT', err.message), 409);
   }
@@ -586,7 +602,16 @@ export function createCdcRouter(
         400,
       );
     }
-    const services = resolveServices(c);
+    let services: CdcRouteServices;
+    try {
+      services = resolveServices(c);
+    } catch (err) {
+      // Surface server misconfiguration (e.g. missing ENCRYPTION_KEY) as a clean
+      // response on every CDC route instead of a bare 500.
+      const mapped = registryErrorResponse(c, err);
+      if (mapped) return mapped;
+      throw err;
+    }
     if (!(await services.authorizeSiteAdmin(siteId))) {
       return c.json(
         errorBody('FORBIDDEN', 'Admin access for the requested site is required.'),

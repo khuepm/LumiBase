@@ -64,12 +64,12 @@ describe('CDC encryption utilities', () => {
       expect(decrypted).toBe(plaintext);
     });
 
-    it('uses fallback key when no key is provided', async () => {
+    it('fails closed when no key is provided (CWE-321: no in-repo fallback)', async () => {
       const plaintext = 'postgresql://user:pass@host:5432/db';
-      // Both encrypt and decrypt should use the same fallback
-      const encrypted = await encrypt(plaintext);
-      const decrypted = await decrypt(encrypted);
-      expect(decrypted).toBe(plaintext);
+      // There is no default key: encrypting/decrypting without a key must throw
+      // rather than silently use a committed default.
+      await expect(encrypt(plaintext, '')).rejects.toThrow(/required/i);
+      await expect(decrypt('deadbeef', '')).rejects.toThrow(/required/i);
     });
   });
 
