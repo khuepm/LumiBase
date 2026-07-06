@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T10:56:37.166Z
+sourceLang: en
+contentHash: e5dad22e7ceea328
+---
+
 # ADR-006: Drizzle ORM over Prisma
 
 **Date:** 2024-01-25
