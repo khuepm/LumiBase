@@ -1,4 +1,4 @@
-import { MAX_DIM, parseTransformQuery, transformDslSchema, transformKey } from '@lumibase/shared';
+import { MAX_DIM, parseTransformQuery, signTransform, transformDslSchema, transformKey, verifyTransform } from '@lumibase/shared';
 import { describe, expect, it } from 'vitest';
 
 describe('transform DSL schema', () => {
@@ -53,5 +53,30 @@ describe('transformKey', () => {
 
   it('changes when a parameter changes', () => {
     expect(transformKey('img.jpg', { width: 100 })).not.toBe(transformKey('img.jpg', { width: 200 }));
+  });
+});
+
+describe('signed transforms', () => {
+  const secret = 'test-secret';
+
+  it('round-trips: a fresh signature verifies', async () => {
+    const sig = await signTransform(secret, 'img.jpg', { width: 100 });
+    expect(await verifyTransform(secret, 'img.jpg', { width: 100 }, sig)).toBe(true);
+  });
+
+  it('rejects a signature for a different dsl (param tampering)', async () => {
+    const sig = await signTransform(secret, 'img.jpg', { width: 100 });
+    expect(await verifyTransform(secret, 'img.jpg', { width: 200 }, sig)).toBe(false);
+  });
+
+  it('is stable regardless of param order (same signature)', async () => {
+    const a = await signTransform(secret, 'img.jpg', { width: 100, height: 50 });
+    const b = await signTransform(secret, 'img.jpg', { height: 50, width: 100 });
+    expect(a).toBe(b);
+  });
+
+  it('rejects a signature made with a different secret', async () => {
+    const sig = await signTransform('other', 'img.jpg', { width: 100 });
+    expect(await verifyTransform(secret, 'img.jpg', { width: 100 }, sig)).toBe(false);
   });
 });

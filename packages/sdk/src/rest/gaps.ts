@@ -212,6 +212,7 @@ export interface MediaTransform {
 export function mediaUrl(
   key: string,
   transform?: MediaTransform | { preset: string },
+  opts?: { sign?: string },
 ): (client: LumiClient) => string {
   return (client: LumiClient): string => {
     const base = client.url.replace(/\/$/, "");
@@ -226,6 +227,9 @@ export function mediaUrl(
       if (transform.format) qs.set("format", transform.format);
       if (transform.quality !== undefined) qs.set("quality", String(transform.quality));
       if (transform.fit) qs.set("fit", transform.fit);
+      // Signature (image-transform-dsl task 5) applies to custom transforms only;
+      // presets are already trusted server-side.
+      if (opts?.sign) qs.set("sig", opts.sign);
     }
     const query = qs.toString();
     return query ? `${base}${path}?${query}` : `${base}${path}`;

@@ -89,3 +89,50 @@ function sortObj(o: Record<string, unknown>): Record<string, unknown> {
 export function fileTag(fileKey: string): string {
   return `file:${fileKey}`;
 }
+
+// ── Signed transforms (abuse guard) ──────────────────────────────────────────
+
+/**
+ * The canonical string signed for a (file, dsl) pair. Uses `transformKey` so
+ * the signature is stable regardless of query-param order — a client can't
+ * reorder params to dodge the signature.
+ */
+export function signaturePayload(fileKey: string, dsl: TransformDsl): string {
+  return transformKey(fileKey, dsl);
+}
+
+/**
+ * HMAC-SHA256 signature (hex) for a transform, using the Web Crypto API so the
+ * same code runs on Cloudflare Workers and Node. Returns a lowercase hex digest.
+ */
+export async function signTransform(secret: string, fileKey: string, dsl: TransformDsl): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(signaturePayload(fileKey, dsl)));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Constant-time hex-string comparison (avoids leaking the signature via timing). */
+export function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/** Verify a provided signature against a freshly computed one (constant-time). */
+export async function verifyTransform(
+  secret: string,
+  fileKey: string,
+  dsl: TransformDsl,
+  provided: string,
+): Promise<boolean> {
+  const expected = await signTransform(secret, fileKey, dsl);
+  return timingSafeEqualHex(provided.toLowerCase(), expected);
+}
