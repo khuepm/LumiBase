@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-06T04:41:04.950Z",
+  "generatedAt": "2026-07-06T12:06:27.543Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 1,
-    "upToDate": 31,
+    "upToDate": 32,
     "planned": 94
   },
   "actions": [
@@ -1221,7 +1221,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-06T04-41-05-071Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-06T12-06-27-664Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1413,6 +1413,18 @@
       "sourceLocale": "en",
       "targetLocale": "vi",
       "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/cwe-top-100-audit.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
     },

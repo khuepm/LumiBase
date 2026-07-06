@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../env';
+import { canReadObservabilityDetail } from './metrics';
 
 type ServiceStatus = 'healthy' | 'unhealthy';
 type OverallStatus = 'healthy' | 'degraded';
@@ -24,7 +25,11 @@ interface HealthResponse {
  * when all services are reachable, or 200 with `status: 'degraded'` when one
  * or more non-critical services are down.
  *
- * This endpoint does NOT require authentication.
+ * This endpoint does NOT require authentication so load balancers and uptime
+ * probes can reach it. To avoid leaking infrastructure topology to anonymous
+ * callers (CWE-668), the per-subsystem breakdown is only returned to callers
+ * presenting a valid observability token; everyone else sees the overall
+ * status only.
  */
 export const healthRouter = new Hono<AppEnv>();
 
@@ -126,9 +131,17 @@ async function collectHealth(c: Context<AppEnv>): Promise<HealthResponse> {
   return response;
 }
 
-healthRouter.get('/', async (c) => c.json(await collectHealth(c), 200));
+/** Strip the per-subsystem detail unless the caller is trusted. */
+function shapeHealth(c: Context<AppEnv>, full: HealthResponse): HealthResponse | { status: OverallStatus } {
+  if (canReadObservabilityDetail(c.env, c.req.header('authorization'))) {
+    return full;
+  }
+  return { status: full.status };
+}
+
+healthRouter.get('/', async (c) => c.json(shapeHealth(c, await collectHealth(c)), 200));
 
 healthRouter.get('/ready', async (c) => {
   const response = await collectHealth(c);
-  return c.json(response, response.status === 'healthy' ? 200 : 503);
+  return c.json(shapeHealth(c, response), response.status === 'healthy' ? 200 : 503);
 });

@@ -1,7 +1,5 @@
 # Implementation Plan: Insights / Dashboard
 
-> **Status (PR #208, 2026-07-06):** Substantially complete before this PR — shared `PanelQuery`, `dashboards`/`panels` tables, `InsightsService` (safe aggregate + field whitelist), routes, and Studio module (list/dashboard/panel-editor/panel-view) all exist with route + service security tests. Remaining polish (dedicated FilterBuilder component extraction, panel-render component tests, optional materialized source) tracked as follow-up. Setup Impact recorded (registry #39, `n/a`).
-
 ## Overview
 
 Thứ tự: contract chung (Panel_Query) → schema/migration → service an toàn → routes → SDK → Studio (list → grid → editor → render) → chất lượng. Backend bảo mật làm trước và test kỹ. Mỗi task tự ship được.
@@ -68,7 +66,7 @@ Thứ tự: contract chung (Panel_Query) → schema/migration → service an to�
   - [x] 8.3 Component test: PanelFrame 3 trạng thái
     - **Validates: Requirements 8.2**
 
-- [ ] 9. (Optional) Materialized source  _(DEFERRED — explicitly optional; service is designed to accept a materialized source later, security invariants unchanged. Not implemented in PR #208.)_
+- [ ] 9. (Optional) Materialized source — **CHƯA LÀM (optional, để v2)**: insights-service mới có ghi chú hướng mở (dòng 16), chưa có `options.source`
   - [ ] 9.1 `options.source='items'|'materialized'` (default items); khi materialized vẫn áp whitelist + siteId trên bảng `mat_*`
     - _Requirements: 9.1, 9.2, 9.3_
 

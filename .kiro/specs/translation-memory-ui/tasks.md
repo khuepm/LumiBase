@@ -1,7 +1,5 @@
 # Implementation Plan: Translation Memory UI
 
-> **Status (PR #208, 2026-07-06):** Task 1 (backend CRUD + `TM_DEFAULT_THRESHOLD`) pre-existed. This PR added: **task 2** (SDK `listTm`/`upsertTm`/`updateTm`/`deleteTm`/`lookupTm`/`translate`), **task 4** (`TmSuggestPopover` debounced lookup + Apply, integrated into `TranslatableText`), **task 6** (`completionPct` in `translatable-fields`), **task 7** (`learn-tm` settings-gated human feedback on save), and **task 3** (TM-page inline edit via PATCH + pagination controls). Task 5 full side-by-side locale mode uses the per-locale `TranslatableText` (with TM popover) as its editing surface; a dedicated split-pane view remains optional polish. Setup Impact recorded (registry #41, settings key `translations.learnTm`, default ON).
-
 ## Overview
 
 Gap-focused trên backend TM sẵn có. Thứ tự: hằng chung + endpoint CRUD → SDK → TM page → suggestion editor → side-by-side → completion → learn-TM → chất lượng.
@@ -49,7 +47,7 @@ Gap-focused trên backend TM sẵn có. Thứ tự: hằng chung + endpoint CRUD
 - [x] 7. Learn TM khi save
   - [x] 7.1 Settings key `translations.learnTm` (default true khi vắng); save human-edited → upsertTm(source=human, quality=100) best-effort (Promise.allSettled)
     - _Requirements: 6.1_
-  - [x] 7.2 Test: bật → gọi upsertTm; tắt → không gọi  _(learn-on-save tách thành `buildLearnTmEntries` (pure) + unit test: enabled→entry human/quality=100, disabled/same-locale/no-target/no-touched→[]; item-detail gọi helper)_
+  - [x] 7.2 Test: bật → có learn entry; tắt → rỗng; thiếu source/target → bỏ; same-locale → rỗng (`tmLearnEntries` — tách quyết định learn khỏi mutation để unit-test không cần render cả page)
     - **Validates: Requirements 6.1**
 
 - [x] 8. Chất lượng & Setup Impact
@@ -58,4 +56,4 @@ Gap-focused trên backend TM sẵn có. Thứ tự: hằng chung + endpoint CRUD
   - [x] 8.2 **Setup Impact** (DoD): cập nhật row #22 — settings key `translations.learnTm` (default ON, không seed/wizard/backfill); locale dùng settings `locales` (không cột mới)
     - _Requirements: DoD_
 
-> **Ghi chú phạm vi:** `/tm/lookup` trả 1 match tốt nhất — popover hiển thị match đó, không top-N (ngoài acceptance criteria). Learn-on-save (7.2) đã tách thành helper thuần `buildLearnTmEntries` + unit test đầy đủ.
+> **Ghi chú phạm vi:** `/tm/lookup` trả 1 match tốt nhất — popover hiển thị match đó, không top-N (ngoài acceptance criteria). Quyết định learn-on-save tách thành pure helper `tmLearnEntries` (unit-test đầy đủ) thay vì render cả `ItemDetailPage` — tránh test giòn phụ thuộc router/permissions/6 query.

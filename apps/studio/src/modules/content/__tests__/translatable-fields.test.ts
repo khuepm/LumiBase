@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldResource } from '@lumibase/sdk';
 import {
-  buildLearnTmEntries,
   completionPct,
   hasTranslation,
   localeValue,
   setLocaleValue,
+  tmLearnEntries,
   translatableFields,
 } from '../translatable-fields';
 
 /**
  * Translatable-field helpers (translation-memory-ui).
  *
- * **Validates: Requirements 4.1, 5.1**
+ * **Validates: Requirements 4.1, 5.1, 6.1**
  */
 
 function field(name: string, iface: string): FieldResource {
@@ -78,33 +78,55 @@ describe('completionPct', () => {
   });
 });
 
-describe('buildLearnTmEntries (learn-TM on save, Req 6.1)', () => {
-  const data = { title: { en: 'Hello', vi: 'Xin chào' }, body: { en: 'World', vi: '' } };
+describe('tmLearnEntries (learn-on-save, Req 6.1)', () => {
+  const data = { title: { en: 'Hello', vi: 'Xin chào' }, body: { en: 'B', vi: '' } };
 
-  it('builds a human/quality=100 entry per touched field with both source + target text', () => {
-    const entries = buildLearnTmEntries({
-      enabled: true,
-      sourceLocale: 'en',
-      targetLocale: 'vi',
-      touchedFields: ['title', 'body'],
-      data,
-    });
-    // Only `title` has a vi value; `body` vi is empty → skipped.
-    expect(entries).toEqual([
-      { sourceLang: 'en', targetLang: 'vi', sourceText: 'Hello', targetText: 'Xin chào', source: 'human', quality: 100 },
-    ]);
+  it('returns human pairs for edited fields when enabled', () => {
+    expect(
+      tmLearnEntries({
+        enabled: true,
+        editedFields: ['title'],
+        data,
+        sourceLocale: 'en',
+        targetLocale: 'vi',
+      }),
+    ).toEqual([{ sourceLang: 'en', targetLang: 'vi', sourceText: 'Hello', targetText: 'Xin chào' }]);
   });
 
-  it('returns [] when learn-TM is disabled', () => {
-    expect(buildLearnTmEntries({ enabled: false, sourceLocale: 'en', targetLocale: 'vi', touchedFields: ['title'], data })).toEqual([]);
+  it('returns nothing when learning is disabled', () => {
+    expect(
+      tmLearnEntries({
+        enabled: false,
+        editedFields: ['title'],
+        data,
+        sourceLocale: 'en',
+        targetLocale: 'vi',
+      }),
+    ).toEqual([]);
   });
 
-  it('returns [] when target === source or no target locale', () => {
-    expect(buildLearnTmEntries({ enabled: true, sourceLocale: 'en', targetLocale: 'en', touchedFields: ['title'], data })).toEqual([]);
-    expect(buildLearnTmEntries({ enabled: true, sourceLocale: 'en', targetLocale: null, touchedFields: ['title'], data })).toEqual([]);
+  it('skips fields missing either source or target text', () => {
+    // `body` has an empty vi target → not learnable.
+    expect(
+      tmLearnEntries({
+        enabled: true,
+        editedFields: ['body'],
+        data,
+        sourceLocale: 'en',
+        targetLocale: 'vi',
+      }),
+    ).toEqual([]);
   });
 
-  it('returns [] when no fields were touched', () => {
-    expect(buildLearnTmEntries({ enabled: true, sourceLocale: 'en', targetLocale: 'vi', touchedFields: [], data })).toEqual([]);
+  it('returns nothing when source and target locale match', () => {
+    expect(
+      tmLearnEntries({
+        enabled: true,
+        editedFields: ['title'],
+        data,
+        sourceLocale: 'en',
+        targetLocale: 'en',
+      }),
+    ).toEqual([]);
   });
 });

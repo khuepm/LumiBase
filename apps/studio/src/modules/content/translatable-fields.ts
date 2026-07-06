@@ -56,38 +56,37 @@ export function completionPct(
   return Math.round((done / translatable.length) * 100);
 }
 
-/** A TM upsert payload learned from a human-authored translation (Req 6.1). */
-export interface LearnTmEntry {
+/** A source→target pair to upsert into TM when learning on save. */
+export interface TmLearnEntry {
   sourceLang: string;
   targetLang: string;
   sourceText: string;
   targetText: string;
-  source: 'human';
-  quality: 100;
 }
 
 /**
- * Build the TM entries to learn from a save (translation-memory-ui Req 6.1).
- * Pure so it can be unit-tested: returns [] when learn-TM is off, no target
- * locale, target === source, or no fields were touched; otherwise one entry per
- * touched field that has BOTH a source and a target value. The caller upserts
- * these best-effort after a successful save.
+ * TM entries to learn from a save (translation-memory-ui Req 6.1).
+ *
+ * Given the fields the user edited in this session, returns the human
+ * source→target pairs worth storing. Returns nothing when learning is off,
+ * the locales match, or a pair is missing either side — so the caller can
+ * upsert the result unconditionally.
  */
-export function buildLearnTmEntries(args: {
+export function tmLearnEntries(opts: {
   enabled: boolean;
-  sourceLocale: string;
-  targetLocale: string | null;
-  touchedFields: Iterable<string>;
+  editedFields: Iterable<string>;
   data: Record<string, unknown>;
-}): LearnTmEntry[] {
-  const { enabled, sourceLocale, targetLocale, touchedFields, data } = args;
+  sourceLocale: string;
+  targetLocale: string;
+}): TmLearnEntry[] {
+  const { enabled, editedFields, data, sourceLocale, targetLocale } = opts;
   if (!enabled || !targetLocale || targetLocale === sourceLocale) return [];
-  const entries: LearnTmEntry[] = [];
-  for (const name of touchedFields) {
-    const sourceText = localeValue(data[name], sourceLocale).trim();
-    const targetText = localeValue(data[name], targetLocale).trim();
-    if (!sourceText || !targetText) continue;
-    entries.push({ sourceLang: sourceLocale, targetLang: targetLocale, sourceText, targetText, source: 'human', quality: 100 });
+  const out: TmLearnEntry[] = [];
+  for (const name of editedFields) {
+    const sourceText = localeValue(data[name], sourceLocale);
+    const targetText = localeValue(data[name], targetLocale);
+    if (!sourceText.trim() || !targetText.trim()) continue;
+    out.push({ sourceLang: sourceLocale, targetLang: targetLocale, sourceText, targetText });
   }
-  return entries;
+  return out;
 }

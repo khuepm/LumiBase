@@ -1,15 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock, Loader2 } from 'lucide-react';
-import { getActiveSite, getActiveToken } from '@/lib/api';
+import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { useState } from 'react';
+import { getActiveToken, getActiveSite } from '@/lib/api';
 
 /**
- * Flow run history (visual-flow-builder Req 6.1, 6.2). Lists a flow's recent
- * runs (status / startedAt / duration); selecting one loads its detail
- * (`GET /:id/runs/:runId`) and shows the input plus per-node step outputs.
+ * Run history panel (visual-flow-builder Req 6).
+ *
+ * Lists a flow's recent runs and, on selection, loads the run detail —
+ * input, per-node steps, error — and reports the steps up to the editor so
+ * the canvas can highlight the executed path.
  */
 
-interface RunRow {
+export interface FlowRunSummary {
   id: string;
   status: 'pending' | 'running' | 'success' | 'error' | 'cancelled';
   startedAt: string;
@@ -17,117 +19,126 @@ interface RunRow {
   error: string | null;
 }
 
-interface RunDetail extends RunRow {
+export interface FlowRunDetail extends FlowRunSummary {
   input: Record<string, unknown>;
   steps: Record<string, unknown>;
+  output: Record<string, unknown>;
 }
 
-async function runsApi<T>(path: string): Promise<T> {
-  const res = await fetch(`/api/v1/flows${path}`, {
+function runsApi<T>(path: string): Promise<T> {
+  return fetch(`/api/v1/flows${path}`, {
     headers: {
-      ...(getActiveToken() ? { Authorization: `Bearer ${getActiveToken()}` } : {}),
-      ...(getActiveSite() ? { 'X-Lumi-Site': getActiveSite() } : {}),
+      Authorization: `Bearer ${getActiveToken()}`,
+      'X-Lumi-Site': getActiveSite(),
     },
+  }).then(async (r) => {
+    if (!r.ok) throw new Error(`Flows API error: ${r.status}`);
+    return ((await r.json()) as { data: T }).data;
   });
-  const body = (await res.json().catch(() => ({}))) as { data?: T };
-  return body.data as T;
 }
 
-function StatusIcon({ status }: { status: RunRow['status'] }) {
-  if (status === 'success') return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-  if (status === 'error') return <AlertCircle className="h-4 w-4 text-destructive" />;
-  if (status === 'running' || status === 'pending') return <Loader2 className="h-4 w-4 animate-spin text-amber-500" />;
-  return <Clock className="h-4 w-4 text-muted-foreground" />;
-}
-
-function duration(run: RunRow): string {
+function durationLabel(run: FlowRunSummary): string {
   if (!run.finishedAt) return '—';
   const ms = new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime();
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
+function StatusIcon({ status }: { status: FlowRunSummary['status'] }) {
+  if (status === 'success') return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />;
+  if (status === 'error') return <XCircle className="h-3.5 w-3.5 text-rose-500" />;
+  if (status === 'running' || status === 'pending')
+    return <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />;
+  return <AlertCircle className="h-3.5 w-3.5 text-muted-foreground" />;
+}
+
 export function RunHistoryPanel({
   flowId,
-  onSelectRun,
+  onRunSelected,
 }: {
   flowId: string;
-  /** Emits the selected run's per-node steps so the editor can highlight nodes (Req 6.3). */
-  onSelectRun?: (steps: Record<string, unknown> | null) => void;
+  /** Reports the selected run so the canvas can highlight executed nodes. */
+  onRunSelected?: (run: FlowRunDetail | null) => void;
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   const runsQuery = useQuery({
     queryKey: ['flow-runs', flowId],
-    queryFn: () => runsApi<RunRow[]>(`/${flowId}/runs`),
-    refetchInterval: 5000,
+    queryFn: () => runsApi<FlowRunSummary[]>(`/${flowId}/runs`),
   });
 
   const detailQuery = useQuery({
-    queryKey: ['flow-run', flowId, selectedId],
-    queryFn: () => runsApi<RunDetail>(`/${flowId}/runs/${selectedId}`),
-    enabled: !!selectedId,
+    queryKey: ['flow-run-detail', flowId, selectedRunId],
+    enabled: selectedRunId !== null,
+    queryFn: async () => {
+      const run = await runsApi<FlowRunDetail>(`/${flowId}/runs/${selectedRunId}`);
+      onRunSelected?.(run);
+      return run;
+    },
   });
 
-  // Surface the selected run's steps to the parent (for canvas highlighting).
-  useEffect(() => {
-    onSelectRun?.(detailQuery.data?.steps ?? null);
-  }, [detailQuery.data, onSelectRun]);
-
   const runs = runsQuery.data ?? [];
+  const detail = detailQuery.data ?? null;
 
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-[16rem_1fr]">
-      <ul className="max-h-96 divide-y overflow-auto rounded-md border">
-        {runs.length === 0 && <li className="p-3 text-sm text-muted-foreground">No runs yet.</li>}
-        {runs.map((run) => (
-          <li key={run.id}>
-            <button
-              type="button"
-              onClick={() => setSelectedId(run.id)}
-              className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted ${
-                run.id === selectedId ? 'bg-muted' : ''
-              }`}
-            >
-              <span className="flex items-center gap-2">
+    <div className="space-y-3" data-testid="run-history">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Run history</h3>
+      {runsQuery.isLoading ? (
+        <p className="text-xs text-muted-foreground">Loading runs…</p>
+      ) : runsQuery.isError ? (
+        <p className="text-xs text-destructive">Failed to load runs.</p>
+      ) : runs.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No runs yet — trigger the flow to see history here.</p>
+      ) : (
+        <ul className="space-y-1">
+          {runs.map((run) => (
+            <li key={run.id}>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = selectedRunId === run.id ? null : run.id;
+                  setSelectedRunId(next);
+                  if (next === null) onRunSelected?.(null);
+                }}
+                className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs hover:bg-accent ${
+                  selectedRunId === run.id ? 'border-primary bg-accent' : ''
+                }`}
+              >
                 <StatusIcon status={run.status} />
-                <span className="font-mono text-xs">{run.id.slice(0, 8)}</span>
-              </span>
-              <span className="text-xs text-muted-foreground">{duration(run)}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
+                <span className="flex-1 truncate">{new Date(run.startedAt).toLocaleString()}</span>
+                <span className="font-mono text-[10px] text-muted-foreground">{durationLabel(run)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
-      <div className="rounded-md border p-3">
-        {!selectedId && <p className="text-sm text-muted-foreground">Select a run to see its steps.</p>}
-        {selectedId && detailQuery.isLoading && <p className="text-sm text-muted-foreground">Loading run…</p>}
-        {detailQuery.data && (
-          <div className="space-y-3 text-sm">
-            <div>
-              <h4 className="mb-1 font-medium">Input</h4>
-              <pre className="overflow-auto rounded bg-muted/40 p-2 text-xs">
-                {JSON.stringify(detailQuery.data.input, null, 2)}
-              </pre>
-            </div>
-            {detailQuery.data.error && (
-              <p className="rounded bg-destructive/10 p-2 text-xs text-destructive">{detailQuery.data.error}</p>
-            )}
-            <div>
-              <h4 className="mb-1 font-medium">Steps</h4>
-              <div className="space-y-1">
-                {Object.entries(detailQuery.data.steps ?? {})
-                  .filter(([nodeId]) => nodeId !== 'previous')
-                  .map(([nodeId, out]) => (
-                    <div key={nodeId} className="rounded border p-2">
-                      <span className="font-mono text-xs text-muted-foreground">{nodeId}</span>
-                      <pre className="mt-1 overflow-auto text-xs">{JSON.stringify(out, null, 2)}</pre>
-                    </div>
-                  ))}
-              </div>
-            </div>
+      {detail && (
+        <div className="space-y-2 border-t pt-2" data-testid="run-detail">
+          <div className="flex items-center gap-2 text-xs">
+            <StatusIcon status={detail.status} />
+            <span className="font-medium">{detail.status}</span>
           </div>
-        )}
-      </div>
+          {detail.error && (
+            <pre className="overflow-x-auto rounded-md border border-rose-500/30 bg-rose-500/5 p-2 font-mono text-[10px] text-rose-600">
+              {detail.error}
+            </pre>
+          )}
+          <div>
+            <span className="text-[10px] font-medium uppercase text-muted-foreground">Input</span>
+            <pre className="mt-1 max-h-32 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[10px]">
+              {JSON.stringify(detail.input, null, 2)}
+            </pre>
+          </div>
+          <div>
+            <span className="text-[10px] font-medium uppercase text-muted-foreground">
+              Steps ({Object.keys(detail.steps ?? {}).length})
+            </span>
+            <pre className="mt-1 max-h-48 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[10px]">
+              {JSON.stringify(detail.steps, null, 2)}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

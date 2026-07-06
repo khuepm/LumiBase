@@ -83,7 +83,10 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   if (
     path === '/api/v1/auth/login' ||
     path === '/api/v1/realtime' ||
-    path.startsWith('/api/v1/files/upload/')
+    path.startsWith('/api/v1/files/upload/') ||
+    // Flow webhook trigger authenticates with a per-flow token inside the
+    // route (constant-time compare) — external callers have no CMS session.
+    /^\/api\/v1\/flows\/[^/]+\/trigger$/.test(path)
   ) {
     return next();
   }

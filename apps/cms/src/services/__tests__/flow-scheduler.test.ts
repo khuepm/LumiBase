@@ -1,68 +1,104 @@
-import type { Database } from '@lumibase/database';
 import { describe, expect, it, vi } from 'vitest';
-import { isValidCron, nextCron, runDueScheduledFlows } from '../flow-scheduler';
+import type { Database } from '@lumibase/database';
+import { isValidCron, nextCronRun, runDueScheduledFlows } from '../flow-scheduler';
+import { FLOW_EVENTS_QUEUE } from '../flow-dispatch';
 
-describe('cron validation', () => {
+/**
+ * Scheduled flow runner (visual-flow-builder task 4.4).
+ *
+ * **Validates: Requirements 2.1, 2.3**
+ */
+
+describe('isValidCron', () => {
   it('accepts standard 5-field expressions', () => {
-    expect(isValidCron('* * * * *')).toBe(true);
-    expect(isValidCron('0 9 * * 1-5')).toBe(true);
-    expect(isValidCron('*/15 * * * *')).toBe(true);
+    for (const expr of ['* * * * *', '*/5 * * * *', '0 3 * * *', '15,45 8-17 * * 1-5', '0 0 1 1 0']) {
+      expect(isValidCron(expr), expr).toBe(true);
+    }
   });
+
   it('rejects malformed expressions', () => {
-    expect(isValidCron('* * * *')).toBe(false); // 4 fields
-    expect(isValidCron('60 * * * *')).toBe(false); // minute out of range
-    expect(isValidCron('nonsense')).toBe(false);
+    for (const expr of ['', '* * * *', '60 * * * *', '* 24 * * *', 'a * * * *', '* * 0 * *', '*/0 * * * *', 5, null]) {
+      expect(isValidCron(expr), String(expr)).toBe(false);
+    }
   });
 });
 
-describe('nextCron', () => {
-  it('computes the next matching minute (UTC), strictly after `from`', () => {
-    // Every day at 09:00 UTC; from 08:59 → same-day 09:00.
-    const from = new Date('2026-01-01T08:59:00Z');
-    expect(nextCron('0 9 * * *', from).toISOString()).toBe('2026-01-01T09:00:00.000Z');
+describe('nextCronRun', () => {
+  it('advances to the next matching minute', () => {
+    const next = nextCronRun('*/5 * * * *', new Date('2026-07-06T12:02:10Z'));
+    expect(next?.toISOString()).toBe('2026-07-06T12:05:00.000Z');
   });
-  it('rolls to the next day when already past today’s time', () => {
-    const from = new Date('2026-01-01T09:30:00Z');
-    expect(nextCron('0 9 * * *', from).toISOString()).toBe('2026-01-02T09:00:00.000Z');
+
+  it('is strictly after `from` even when `from` matches', () => {
+    const next = nextCronRun('*/5 * * * *', new Date('2026-07-06T12:05:00Z'));
+    expect(next?.toISOString()).toBe('2026-07-06T12:10:00.000Z');
   });
-  it('honors a step field', () => {
-    const from = new Date('2026-01-01T00:04:00Z');
-    expect(nextCron('*/15 * * * *', from).toISOString()).toBe('2026-01-01T00:15:00.000Z');
+
+  it('rolls over to the next day for a daily schedule', () => {
+    const next = nextCronRun('0 3 * * *', new Date('2026-07-06T12:00:00Z'));
+    expect(next?.toISOString()).toBe('2026-07-07T03:00:00.000Z');
+  });
+
+  it('respects day-of-week restrictions', () => {
+    // 2026-07-06 is a Monday; next Friday is 2026-07-10.
+    const next = nextCronRun('0 9 * * 5', new Date('2026-07-06T12:00:00Z'));
+    expect(next?.toISOString()).toBe('2026-07-10T09:00:00.000Z');
+  });
+
+  it('returns null for an invalid expression', () => {
+    expect(nextCronRun('not a cron', new Date())).toBeNull();
   });
 });
 
-function fakeDb(dueRows: { id: string; siteId: string; triggerOptions: unknown }[]) {
-  const captured: { updates: Record<string, unknown>[] } = { updates: [] };
-  const selectChain = { from: () => selectChain, where: () => Promise.resolve(dueRows) };
-  const updateChain = {
-    set: (v: Record<string, unknown>) => {
-      captured.updates.push(v);
-      return updateChain;
+function makeDb(dueFlows: Record<string, unknown>[]) {
+  const updates: Record<string, unknown>[] = [];
+  const db = {
+    select() {
+      const b: Record<string, unknown> = { from: () => b, where: () => Promise.resolve(dueFlows) };
+      return b;
     },
-    where: () => Promise.resolve([]),
+    update() {
+      return {
+        set(set: Record<string, unknown>) {
+          updates.push(set);
+          return { where: () => Promise.resolve(undefined) };
+        },
+      };
+    },
   };
-  const db = { select: () => selectChain, update: () => updateChain } as unknown as Database;
-  return { db, captured };
+  return { db: db as unknown as Database, updates };
 }
 
-describe('runDueScheduledFlows', () => {
-  it('enqueues each due flow and advances nextRunAt from cron', async () => {
-    const now = new Date('2026-01-01T09:00:00Z');
-    const { db, captured } = fakeDb([{ id: 'f1', siteId: 's1', triggerOptions: { cron: '0 9 * * *' } }]);
-    const enqueue = vi.fn(async () => 'job');
-    const queue = { enqueue, process: vi.fn(), getStatus: vi.fn() } as never;
-    const n = await runDueScheduledFlows({ db, queue }, now);
+const NOW = new Date('2026-07-06T12:02:00Z');
+
+describe('runDueScheduledFlows (Req 2.1)', () => {
+  it('enqueues due flows and advances next_run_at before the run', async () => {
+    const { db, updates } = makeDb([
+      { id: 'f1', siteId: 's1', triggerOptions: { cron: '*/5 * * * *' } },
+    ]);
+    const enqueue = vi.fn().mockResolvedValue('job_1');
+    const queue = { enqueue, process: vi.fn(), getStatus: vi.fn() };
+
+    const n = await runDueScheduledFlows({ db, queue }, NOW);
     expect(n).toBe(1);
-    expect(enqueue).toHaveBeenCalledWith('flow-schedule', 'run-scheduled-flow', { siteId: 's1', flowId: 'f1' });
-    // nextRunAt advanced to the following day at 09:00.
-    expect((captured.updates[0]!.nextRunAt as Date).toISOString()).toBe('2026-01-02T09:00:00.000Z');
+    expect((updates[0]?.nextRunAt as Date).toISOString()).toBe('2026-07-06T12:05:00.000Z');
+    expect(enqueue).toHaveBeenCalledWith(FLOW_EVENTS_QUEUE, 'flow:scheduled', {
+      siteId: 's1',
+      flowId: 'f1',
+      input: { trigger: 'schedule', scheduledAt: NOW.toISOString() },
+    });
   });
 
-  it('still advances nextRunAt when no queue is bound (no wedge)', async () => {
-    const now = new Date('2026-01-01T09:00:00Z');
-    const { db, captured } = fakeDb([{ id: 'f1', siteId: 's1', triggerOptions: { cron: '0 9 * * *' } }]);
-    const n = await runDueScheduledFlows({ db }, now);
-    expect(n).toBe(0);
-    expect(captured.updates).toHaveLength(1);
+  it('clears next_run_at when the cron became invalid (stops re-sweeping)', async () => {
+    const { db, updates } = makeDb([{ id: 'f1', siteId: 's1', triggerOptions: { cron: 'garbage' } }]);
+    const queue = { enqueue: vi.fn().mockResolvedValue('job_1'), process: vi.fn(), getStatus: vi.fn() };
+    await runDueScheduledFlows({ db, queue }, NOW);
+    expect(updates[0]?.nextRunAt).toBeNull();
+  });
+
+  it('is a no-op without a queue', async () => {
+    const { db, updates } = makeDb([{ id: 'f1', siteId: 's1', triggerOptions: { cron: '* * * * *' } }]);
+    expect(await runDueScheduledFlows({ db }, NOW)).toBe(0);
+    expect(updates).toHaveLength(0);
   });
 });

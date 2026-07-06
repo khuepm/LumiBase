@@ -1,50 +1,133 @@
+import { describe, it, expect, vi } from 'vitest';
 import type { Database } from '@lumibase/database';
-import { describe, expect, it, vi } from 'vitest';
-import { dispatchItemEvent, findActiveEventFlows } from '../flow-dispatch';
+import {
+  FLOW_EVENTS_QUEUE,
+  dispatchItemEvent,
+  findActiveEventFlows,
+  processFlowEventJob,
+  type FlowEventJob,
+} from '../flow-dispatch';
 
-function fakeDb(rows: { id: string; triggerOptions: unknown }[]) {
-  const chain = { from: () => chain, where: () => Promise.resolve(rows) };
-  return { select: () => chain } as unknown as Database;
+/**
+ * Flow event trigger (visual-flow-builder task 3.4).
+ *
+ * **Validates: Requirements 1.1, 1.5, 7.3**
+ */
+
+/** Fake drizzle surface: selects resolve to canned flow rows; inserts/updates recorded. */
+function makeDb(flowRows: Record<string, unknown>[]) {
+  const inserted: Record<string, unknown>[] = [];
+  const updates: Record<string, unknown>[] = [];
+  const db = {
+    select() {
+      const builder: Record<string, unknown> = {
+        from: () => builder,
+        where: () => Promise.resolve(flowRows),
+      };
+      return builder;
+    },
+    insert() {
+      return {
+        values(v: Record<string, unknown>) {
+          inserted.push(v);
+          return { returning: () => Promise.resolve([{ id: 'run_1', ...v }]) };
+        },
+      };
+    },
+    update() {
+      return {
+        set(set: Record<string, unknown>) {
+          updates.push(set);
+          return { where: () => Promise.resolve(undefined) };
+        },
+      };
+    },
+  };
+  return { db: db as unknown as Database, inserted, updates };
 }
 
-describe('findActiveEventFlows', () => {
-  it('matches on collection + action, and treats absent actions as all', async () => {
-    const db = fakeDb([
-      { id: 'f_all', triggerOptions: { collection: 'posts' } },
-      { id: 'f_create', triggerOptions: { collection: 'posts', actions: ['create'] } },
-      { id: 'f_other', triggerOptions: { collection: 'pages' } },
-    ]);
-    const create = await findActiveEventFlows(db, 's1', 'posts', 'create');
-    expect(create.map((f) => f.id).sort()).toEqual(['f_all', 'f_create']);
+import type { QueueProvider } from '@lumibase/runtime';
 
-    const update = await findActiveEventFlows(db, 's1', 'posts', 'update');
-    expect(update.map((f) => f.id)).toEqual(['f_all']);
+function makeQueue() {
+  const enqueued: { queue: string; name: string; data: FlowEventJob }[] = [];
+  const enqueue = vi.fn(async (queue: string, name: string, data: FlowEventJob) => {
+    enqueued.push({ queue, name, data });
+    return 'job_1';
+  });
+  const queue = { enqueue, process: vi.fn(), getStatus: vi.fn() } as unknown as QueueProvider;
+  return { enqueued, enqueue, queue };
+}
+
+const EVENT = { collection: 'posts', action: 'create' as const, itemId: 'i1', payload: { title: 'x' } };
+
+const flow = (id: string, triggerOptions: Record<string, unknown>, status = 'active') => ({
+  id,
+  siteId: 's1',
+  status,
+  triggerType: 'event',
+  triggerOptions,
+  graph: { entry: 'n1', nodes: [{ id: 'n1', key: 'log', options: { message: 'hi' } }] },
+});
+
+describe('findActiveEventFlows trigger matching (Req 1.1, 1.5)', () => {
+  it('matches on collection + action and supports arrays', async () => {
+    const { db } = makeDb([
+      flow('f1', { collection: 'posts', action: 'create' }),
+      flow('f2', { collection: ['posts', 'pages'], action: ['update', 'create'] }),
+      flow('f3', { collection: 'pages' }), // other collection → no match
+      flow('f4', { collection: 'posts', action: 'delete' }), // other action → no match
+    ]);
+    const matched = await findActiveEventFlows(db, 's1', 'posts', 'create');
+    expect(matched.map((f) => f.id)).toEqual(['f1', 'f2']);
+  });
+
+  it('treats missing collection/action options as wildcard', async () => {
+    const { db } = makeDb([flow('f1', {})]);
+    const matched = await findActiveEventFlows(db, 's1', 'anything', 'delete');
+    expect(matched.map((f) => f.id)).toEqual(['f1']);
   });
 });
 
-describe('dispatchItemEvent', () => {
-  it('enqueues one job per matched flow, non-blocking', async () => {
-    const db = fakeDb([{ id: 'f1', triggerOptions: { collection: 'posts' } }]);
-    const enqueue = vi.fn(async () => 'job-1');
-    const queue = { enqueue, process: vi.fn(), getStatus: vi.fn() } as never;
-    const n = await dispatchItemEvent(
-      { db, queue },
-      { siteId: 's1', collection: 'posts', action: 'create', itemId: 'i1', payload: { a: 1 } },
-    );
-    expect(n).toBe(1);
-    expect(enqueue).toHaveBeenCalledWith('flow-events', 'run-event-flow', expect.objectContaining({ flowId: 'f1' }));
+describe('dispatchItemEvent (Req 1.1, 7.3)', () => {
+  it('enqueues one flow:event job per matching flow, carrying siteId', async () => {
+    const { db } = makeDb([flow('f1', { collection: 'posts' }), flow('f2', { collection: 'pages' })]);
+    const { queue, enqueued } = makeQueue();
+    await dispatchItemEvent({ db, siteId: 's1', queue }, EVENT);
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({
+      queue: FLOW_EVENTS_QUEUE,
+      name: 'flow:event',
+      data: { siteId: 's1', flowId: 'f1', event: EVENT },
+    });
   });
 
-  it('is a no-op without a queue', async () => {
-    const db = fakeDb([{ id: 'f1', triggerOptions: {} }]);
-    const n = await dispatchItemEvent({ db }, { siteId: 's1', collection: 'posts', action: 'create', itemId: 'i1', payload: {} });
-    expect(n).toBe(0);
+  it('is a no-op without a queue provider', async () => {
+    const { db } = makeDb([flow('f1', {})]);
+    await expect(dispatchItemEvent({ db, siteId: 's1' }, EVENT)).resolves.toBeUndefined();
   });
 
-  it('swallows enqueue errors so mutations are never blocked', async () => {
-    const db = fakeDb([{ id: 'f1', triggerOptions: {} }]);
-    const queue = { enqueue: vi.fn(async () => { throw new Error('down'); }), process: vi.fn(), getStatus: vi.fn() } as never;
-    const n = await dispatchItemEvent({ db, queue }, { siteId: 's1', collection: 'posts', action: 'update', itemId: 'i1', payload: {} });
-    expect(n).toBe(0);
+  it('never throws when enqueue fails (mutate must not block on flows)', async () => {
+    const { db } = makeDb([flow('f1', {})]);
+    const { queue, enqueue } = makeQueue();
+    enqueue.mockRejectedValue(new Error('queue down'));
+    await expect(dispatchItemEvent({ db, siteId: 's1', queue }, EVENT)).resolves.toBeUndefined();
+  });
+});
+
+describe('processFlowEventJob (Req 1.4)', () => {
+  const job: FlowEventJob = { siteId: 's1', flowId: 'f1', event: EVENT };
+
+  it('records a flow run and persists the outcome', async () => {
+    const { db, inserted, updates } = makeDb([flow('f1', {})]);
+    await processFlowEventJob(db, job);
+    expect(inserted[0]).toMatchObject({ siteId: 's1', flowId: 'f1', status: 'running', input: { event: EVENT } });
+    expect(updates[0]).toMatchObject({ status: 'success' });
+    expect(updates[0]?.finishedAt).toBeInstanceOf(Date);
+  });
+
+  it('skips flows deactivated between enqueue and consume', async () => {
+    const { db, inserted } = makeDb([flow('f1', {}, 'inactive')]);
+    await processFlowEventJob(db, job);
+    expect(inserted).toHaveLength(0);
   });
 });

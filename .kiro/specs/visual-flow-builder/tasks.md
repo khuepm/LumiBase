@@ -1,7 +1,5 @@
 # Implementation Plan: Visual Flow Builder
 
-> **Status (PR #208, 2026-07-06):** Tasks 1 + 7 pre-existed (shared `flow-graph` converter/validator + tests). This PR added: **task 2** (`GET /flows/operations` registry, `validateGraph` on POST/PATCH, editor now loads/saves via `canonicalToFe`/`feToCanonical`), **task 3** (`flow-dispatch` event matching + `dispatchItemEvent` hooked into ItemService create/update/delete), **task 4** (`flow-scheduler` `runDueScheduledFlows` + self-contained cron, cron validation on save), **task 5** (`POST /:id/trigger` webhook, constant-time token), **task 6** (`GET /:id/runs/:runId` + `RunHistoryPanel`), and the **queue workers** (`flow-worker` consumes `flow-events` + `flow-schedule`, registered in `serve.ts` with a 1-min schedule tick). All 7 task groups complete. Setup Impact recorded (registry #40, `n/a` + runtime-tick note).
-
 ## Overview
 
 Gap-focused trên nền flows sẵn có. Thứ tự: luật chung (converter + validateGraph) → đồng bộ editor → event trigger → schedule → webhook → run history → chất lượng. Không phá manual run/editor hiện hành.
@@ -55,7 +53,7 @@ Gap-focused trên nền flows sẵn có. Thứ tự: luật chung (converter + v
     - _Requirements: 6.2_
   - [x] 6.2 `RunHistoryPanel`: list runs (status/startedAt/duration) + chọn run → input/steps/error
     - _Requirements: 6.1, 6.2_
-  - [x] 6.3 Highlight node trên canvas theo steps của run đã chọn (success/error/skipped)  _(flow-editor `displayNodes` gán ring theo `runSteps` từ RunHistoryPanel `onSelectRun`)_
+  - [x] 6.3 Highlight node trên canvas theo steps của run đã chọn (success/error/skipped); Test Run hiển thị steps ngay
     - _Requirements: 6.3, 6.4_
   - [x] 6.4 Component test: RunHistoryPanel render steps; highlight theo run
     - **Validates: Requirements 6.2, 6.3**
@@ -65,3 +63,18 @@ Gap-focused trên nền flows sẵn có. Thứ tự: luật chung (converter + v
     - _Requirements: 7.1, 7.4_
   - [x] 7.2 **Setup Impact** (DoD): rà soát 6 câu hỏi. Cân nhắc seed flow mẫu (Q1) — dự kiến `n/a`. Lưu ý: scheduled handler đăng ký runtime có thể cần bước cấu hình; ghi rõ khi implement. Thêm dòng registry sau
     - _Requirements: DoD_
+
+---
+
+## Implementation status (2026-07-06)
+
+**Done — toàn bộ.** Task 1 (shared graph + validate + 8 unit tests) đã có từ trước (flow-graph.ts / flow-graph.test.ts). Hoàn tất hôm nay:
+
+- **2**: `GET /flows/operations` (registry + palette docs); graph gate POST/PATCH (`GRAPH_*` 400 khi active, draft được lưu dở); editor load/save qua `canonicalToFe`/`feToCanonical` (đọc được cả graph RF-format cũ), palette load từ registry, validate trước save + inline node ring đỏ.
+- **3**: `flow-dispatch.ts` — `findActiveEventFlows` (match collection/action, string|array|wildcard) + `dispatchItemEvent` (queue `flow-events`, không bao giờ throw) móc vào ItemService create/update/delete; consumer `registerFlowEventWorker` (serve.ts) chạy flow + ghi `flow_runs`, re-check active khi consume.
+- **4**: `flow-scheduler.ts` — cron 5-field tự viết (không thêm dependency; wildcard/list/range/step, DOM|DOW semantics chuẩn), `runDueScheduledFlows` sweep trong `runSchedulerTick`, advance `next_run_at` TRƯỚC enqueue (idempotent), cron sai → clear `next_run_at`; validate cron khi save (`CRON_INVALID`/`CRON_REQUIRED`).
+- **5**: `POST /flows/:id/trigger` — token per-flow (SHA-256 digest constant-time), đăng ký trước `requireFlowAdmin` + bypass `withAuth`; strip credential headers khỏi run input; 404 chung cho non-webhook/inactive (chống probe).
+- **6**: `GET /flows/:id/runs/:runId`; `RunHistoryPanel` (list + detail steps/input/error) + highlight node canvas theo run (executed xanh, node lỗi đỏ, chưa chạy mờ); Test Run mở panel ngay.
+- **7**: api-spec §7 cập nhật (operations/trigger/gates); Setup Impact #25 cập nhật (queue mới `flow-events`; CF Workers cần wire consumer).
+
+**Verified:** flow-graph 8 + flow-dispatch 7 + flow-scheduler 10 + flows-triggers route 10 + scheduler-worker 5 + run-history-panel component 3 = 43 tests; recursive typecheck pass.

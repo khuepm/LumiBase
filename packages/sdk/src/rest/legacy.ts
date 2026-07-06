@@ -45,6 +45,8 @@ import {
   ShareSecretResult,
   PresetResource,
   TranslationResource,
+  ContentVersion,
+  VersionCompare,
   TmEntry,
   TmSuggestion,
   TmSource,
@@ -328,6 +330,45 @@ export function legacyRest() {
             `${base}/${id}/pins/${encodeURIComponent(field)}`,
             { method: "DELETE" },
           ),
+        // Content versions — named parallel draft branches (content-versioning).
+        versions: {
+          list: (id: string) =>
+            client.rawRequest<ContentVersion[]>(`${base}/${id}/versions`),
+          create: (id: string, input: { key: string; name: string }) =>
+            client.rawRequest<ContentVersion>(`${base}/${id}/versions`, {
+              method: "POST",
+              body: JSON.stringify(input),
+            }),
+          get: (id: string, key: string) =>
+            client.rawRequest<ContentVersion>(
+              `${base}/${id}/versions/${encodeURIComponent(key)}`,
+            ),
+          update: (
+            id: string,
+            key: string,
+            patch: { data?: Record<string, unknown>; name?: string },
+          ) =>
+            client.rawRequest<ContentVersion>(
+              `${base}/${id}/versions/${encodeURIComponent(key)}`,
+              { method: "PATCH", body: JSON.stringify(patch) },
+            ),
+          delete: (id: string, key: string) =>
+            client.rawRequest<null>(
+              `${base}/${id}/versions/${encodeURIComponent(key)}`,
+              { method: "DELETE" },
+            ),
+          compare: (id: string, key: string) =>
+            client.rawRequest<VersionCompare>(
+              `${base}/${id}/versions/${encodeURIComponent(key)}/compare`,
+            ),
+          // Returns the promoted item; `meta.mainDiverged` flags that main
+          // changed after the branch was cut (review advised).
+          promote: (id: string, key: string) =>
+            client.rawRequest<Row>(
+              `${base}/${id}/versions/${encodeURIComponent(key)}/promote`,
+              { method: "POST" },
+            ),
+        },
       };
     }
 

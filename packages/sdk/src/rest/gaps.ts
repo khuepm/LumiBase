@@ -1,114 +1,13 @@
 /**
- * SDK commands for feature-gap specs: content versions, view presets, and
- * translation memory. Each is a command factory `(client) => Promise<T>` used
- * with `client.request(...)`, matching the rest of the REST module.
+ * SDK commands for view presets (presets-inheritance) and media transform URLs
+ * (image-transform-dsl). Each is a command factory `(client) => Promise<T>`
+ * used with `client.request(...)`, matching the rest of the REST module.
  *
- * Specs: content-versioning, presets-inheritance, translation-memory-ui.
+ * Content-version and translation-memory helpers live in the core SDK
+ * (`client.items(...).versions` and `client.tm`).
  */
 
 import type { LumiClient } from "../client";
-
-// ── Content versions (content-versioning) ─────────────────────────────────────
-
-export interface ContentVersion {
-  id: string;
-  itemId: string;
-  collectionId: string;
-  key: string;
-  name: string;
-  data: Record<string, unknown>;
-  hash: string;
-  /** True when main has diverged from the snapshot this version was cut from. */
-  mainChanged?: boolean;
-  createdAt: string;
-}
-
-export interface FieldChange {
-  field: string;
-  before: unknown;
-  after: unknown;
-  status: "added" | "removed" | "changed" | "unchanged";
-}
-
-export interface VersionCompare {
-  changes: FieldChange[];
-}
-
-const versionsBase = (collection: string, id: string) =>
-  `/api/v1/items/${encodeURIComponent(collection)}/${encodeURIComponent(id)}/versions`;
-
-export function listVersions(collection: string, id: string) {
-  return async (client: LumiClient): Promise<ContentVersion[]> => {
-    const res = await client.rawRequest<ContentVersion[]>(versionsBase(collection, id));
-    return res.data;
-  };
-}
-
-export function createVersion(collection: string, id: string, input: { key: string; name: string }) {
-  return async (client: LumiClient): Promise<ContentVersion> => {
-    const res = await client.rawRequest<ContentVersion>(versionsBase(collection, id), {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    return res.data;
-  };
-}
-
-export function getVersion(collection: string, id: string, key: string) {
-  return async (client: LumiClient): Promise<ContentVersion> => {
-    const res = await client.rawRequest<ContentVersion>(
-      `${versionsBase(collection, id)}/${encodeURIComponent(key)}`,
-    );
-    return res.data;
-  };
-}
-
-export function updateVersion(
-  collection: string,
-  id: string,
-  key: string,
-  input: { data?: Record<string, unknown>; name?: string },
-) {
-  return async (client: LumiClient): Promise<ContentVersion> => {
-    const res = await client.rawRequest<ContentVersion>(
-      `${versionsBase(collection, id)}/${encodeURIComponent(key)}`,
-      { method: "PATCH", body: JSON.stringify(input) },
-    );
-    return res.data;
-  };
-}
-
-export function deleteVersion(collection: string, id: string, key: string) {
-  return async (client: LumiClient): Promise<null> => {
-    const res = await client.rawRequest<null>(
-      `${versionsBase(collection, id)}/${encodeURIComponent(key)}`,
-      { method: "DELETE" },
-    );
-    return res.data;
-  };
-}
-
-export function compareVersion(collection: string, id: string, key: string) {
-  return async (client: LumiClient): Promise<VersionCompare> => {
-    const res = await client.rawRequest<VersionCompare>(
-      `${versionsBase(collection, id)}/${encodeURIComponent(key)}/compare`,
-    );
-    return res.data;
-  };
-}
-
-export function promoteVersion(collection: string, id: string, key: string) {
-  return async (
-    client: LumiClient,
-  ): Promise<{ item: Record<string, unknown>; meta?: { mainDiverged: boolean } }> => {
-    // The endpoint returns `{ data: item, meta: { mainDiverged } }`.
-    const res = await client.rawRequest<Record<string, unknown>>(
-      `${versionsBase(collection, id)}/${encodeURIComponent(key)}/promote`,
-      { method: "POST" },
-    );
-    return { item: res.data, meta: res.meta as { mainDiverged: boolean } | undefined };
-  };
-}
 
 // ── View presets (presets-inheritance) ────────────────────────────────────────
 

@@ -141,6 +141,18 @@ async function main() {
     queue: runtime.queue,
   });
 
+  // ── Flow event trigger (visual-flow-builder Req 1) ───────────────────────
+  //
+  // Consumes the `flow-events` queue: ItemService enqueues one job per
+  // matching active event-flow on create/update/delete; this worker executes
+  // the flow and records the run. Without it, event flows never fire.
+  const { registerFlowEventWorker } = await import('./services/flow-dispatch');
+  registerFlowEventWorker({
+    db: rotatorDb,
+    queue: runtime.queue,
+    keys: runtime.keys,
+  });
+
   // ── Veto-window commits (content-os task 14; Req 13.3/13.5) ─────────────
   //
   // Primary path: delayed queue jobs fire at each staging's autoCommitAt.
@@ -200,15 +212,13 @@ async function main() {
     });
   });
 
-  // ── Flow workers + schedule tick (visual-flow-builder tasks 3.3, 4.x) ──
+  // ── Flow schedule tick (visual-flow-builder task 4.x) ───────────────────
   //
-  // The consumers drain event- and schedule-triggered flow jobs; a 1-minute
-  // tick enqueues schedule flows whose `nextRunAt` is due (nextRunAt is advanced
-  // before enqueue so a slow job never re-fires the same flow every tick).
-  const { registerFlowWorker } = await import('./services/flow-worker');
+  // The event-triggered flow consumer is `registerFlowEventWorker` (above).
+  // Schedule flows need a periodic sweep: a 1-minute tick enqueues every flow
+  // whose `next_run_at` is due onto the same `flow-events` queue (nextRunAt is
+  // advanced before enqueue so a slow job never re-fires the same flow).
   const { runDueScheduledFlows } = await import('./services/flow-scheduler');
-  const flowWorkerDeps = { db: rotatorDb, queue: runtime.queue, keys: runtime.keys };
-  registerFlowWorker(flowWorkerDeps);
   const flowScheduleTask = cron.schedule('* * * * *', () => {
     void runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
       console.error('[flow-schedule] tick failed', formatSafeError(err));
