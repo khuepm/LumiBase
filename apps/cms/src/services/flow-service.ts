@@ -47,6 +47,45 @@ export function getHandler(key: string): OperationHandler | undefined {
   return handlers.get(key);
 }
 
+/**
+ * Palette metadata for built-in operations. Extensions registered at runtime
+ * appear in `listOperations()` with just their key; the registry (not this
+ * map) stays the source of truth for which keys are runnable.
+ */
+const OPERATION_DOCS: Record<string, { description: string; options?: Record<string, string> }> = {
+  log: { description: 'Log a message', options: { message: 'string — template with {{ }} placeholders' } },
+  condition: {
+    description: 'Branch on a filter over the payload; non-match routes to onError',
+    options: { filter: 'object — { field: { _eq | _neq | _gt | _lt | ... } }' },
+  },
+  transform: { description: 'Map the payload into a new shape', options: { json: 'object — template with {{ }} placeholders' } },
+  http: {
+    description: 'Call an external HTTP endpoint',
+    options: { url: 'string', method: 'GET|POST|PATCH|PUT|DELETE', headers: 'object', body: 'object' },
+  },
+  sleep: { description: 'Pause the flow', options: { ms: 'number — milliseconds (bounded)' } },
+  mail: { description: 'Send an email notification', options: { to: 'string', subject: 'string', body: 'string' } },
+  'drift-scan': { description: 'Run a drift scan over a collection', options: { collection: 'string' } },
+  'trust-promote-check': { description: 'Check trust score for autonomy promotion' },
+  'deploy:trigger': { description: 'Trigger a deployment target', options: { target: 'string — deployment target id' } },
+  'deploy:status': { description: 'Fetch latest deployment status', options: { target: 'string — deployment target id' } },
+};
+
+export interface OperationInfo {
+  key: string;
+  description: string;
+  options?: Record<string, string>;
+}
+
+/** Registered operations (built-ins + extensions), for the editor palette + validateGraph knownKeys. */
+export function listOperations(): OperationInfo[] {
+  return [...handlers.keys()].sort().map((key) => ({
+    key,
+    description: OPERATION_DOCS[key]?.description ?? '',
+    ...(OPERATION_DOCS[key]?.options ? { options: OPERATION_DOCS[key]!.options } : {}),
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Built-in handlers
 // ---------------------------------------------------------------------------
