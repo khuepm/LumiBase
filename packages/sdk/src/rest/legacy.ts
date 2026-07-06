@@ -45,6 +45,9 @@ import {
   ShareSecretResult,
   PresetResource,
   TranslationResource,
+  TmEntry,
+  TmSuggestion,
+  TmSource,
   SettingResource,
   SiteResource,
   SiteConfigUpdate,
@@ -483,6 +486,78 @@ export function legacyRest() {
       delete: (id: string) => client.rawRequest<null>(`/api/v1/translations/${id}`, { method: "DELETE" }),
     };
 
+    const tm = {
+      /** List TM entries. Filters: source/target lang pair + `entrySource` (human|mt|imported). Returns the full response so callers can read pagination `meta`. */
+      list: (params?: {
+        source?: string;
+        target?: string;
+        entrySource?: TmSource;
+        limit?: number;
+        offset?: number;
+      }) => {
+        const qs = new URLSearchParams();
+        if (params?.source) qs.set("source", params.source);
+        if (params?.target) qs.set("target", params.target);
+        if (params?.entrySource) qs.set("entrySource", params.entrySource);
+        if (params?.limit != null) qs.set("limit", String(params.limit));
+        if (params?.offset != null) qs.set("offset", String(params.offset));
+        const s = qs.toString();
+        return client.rawRequest<TmEntry[]>(`/api/v1/tm${s ? `?${s}` : ""}`);
+      },
+      upsert: (input: {
+        sourceLang: string;
+        targetLang: string;
+        sourceText: string;
+        targetText: string;
+        context?: string;
+        quality?: number;
+        source?: TmSource;
+        provider?: string;
+      }) =>
+        client.rawRequest<TmEntry>("/api/v1/tm", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      update: (
+        id: string,
+        patch: { targetText?: string; quality?: number; context?: string | null; source?: TmSource },
+      ) =>
+        client.rawRequest<TmEntry>(`/api/v1/tm/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        }),
+      delete: (id: string) =>
+        client.rawRequest<{ id: string }>(`/api/v1/tm/${id}`, { method: "DELETE" }),
+      /** Fuzzy TM lookup. Normalizes the route's `{ match: { targetText, score } | null }` to a `TmSuggestion | null`. */
+      lookup: async (input: {
+        query: string;
+        sourceLang: string;
+        targetLang: string;
+        threshold?: number;
+      }): Promise<TmSuggestion | null> => {
+        const res = await client.rawRequest<{
+          match: { targetText: string; score: number; source?: TmSource; id?: string } | null;
+        }>("/api/v1/tm/lookup", {
+          method: "POST",
+          body: JSON.stringify(input),
+        });
+        const m = res.data.match;
+        if (!m) return null;
+        return {
+          targetText: m.targetText,
+          similarity: m.score,
+          source: m.source ?? "human",
+          entryId: m.id,
+        };
+      },
+      /** Full MT pipeline (TM → glossary → provider). */
+      translate: (input: { text: string; from: string; to: string; provider?: string }) =>
+        client.rawRequest<{ text: string; source?: string; provider?: string }>(
+          "/api/v1/tm/translate",
+          { method: "POST", body: JSON.stringify(input) },
+        ),
+    };
+
     const settings = {
       list: (scope?: string) =>
         client.rawRequest<SettingResource[]>(`/api/v1/settings${scope ? `?scope=${scope}` : ""}`),
@@ -801,6 +876,7 @@ export function legacyRest() {
       permissions,
       presets,
       translations,
+      tm,
       settings,
       uploads,
       site,
