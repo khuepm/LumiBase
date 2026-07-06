@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 
@@ -219,20 +219,45 @@ function TranslatePanel() {
   );
 }
 
+const PAGE_SIZE = 50;
+
+/** Fetch entries + pagination meta (the plain `tmFetch` drops `meta`). */
+async function fetchTmPage(params: string): Promise<{ data: TmRow[]; meta: { total: number; limit: number; offset: number } }> {
+  const token = getActiveToken();
+  const site = getActiveSite();
+  const res = await fetch(`/api/v1/tm${params}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(site ? { 'x-site-id': site } : {}),
+    },
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    data?: TmRow[];
+    meta?: { total: number; limit: number; offset: number };
+    errors?: Array<{ message: string }>;
+  };
+  if (!res.ok) throw new Error(body.errors?.[0]?.message ?? `Request failed: ${res.status}`);
+  return { data: body.data ?? [], meta: body.meta ?? { total: 0, limit: PAGE_SIZE, offset: 0 } };
+}
+
 export function TranslationMemoryPage() {
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [sourceFilter, setSourceFilter] = useState('');
   const [targetFilter, setTargetFilter] = useState('');
+  const [page, setPage] = useState(0);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{ targetText: string; quality: string }>({ targetText: '', quality: '' });
 
   const entriesQuery = useQuery({
-    queryKey: ['tm-entries', sourceFilter, targetFilter],
+    queryKey: ['tm-entries', sourceFilter, targetFilter, page],
     queryFn: () => {
       const params = new URLSearchParams();
       if (sourceFilter) params.set('source', sourceFilter);
       if (targetFilter) params.set('target', targetFilter);
-      const qs = params.toString();
-      return tmFetch<TmRow[]>(qs ? `?${qs}` : '');
+      params.set('limit', String(PAGE_SIZE));
+      params.set('offset', String(page * PAGE_SIZE));
+      return fetchTmPage(`?${params.toString()}`);
     },
   });
 
@@ -241,7 +266,26 @@ export function TranslationMemoryPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tm-entries'] }),
   });
 
-  const entries = entriesQuery.data ?? [];
+  const editMutation = useMutation({
+    mutationFn: (input: { id: string; targetText: string; quality?: number }) =>
+      tmFetch(`/${input.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ targetText: input.targetText, ...(input.quality != null ? { quality: input.quality } : {}) }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['tm-entries'] });
+      setEditId(null);
+    },
+  });
+
+  const startEdit = (row: TmRow) => {
+    setEditId(row.id);
+    setEditForm({ targetText: row.targetText, quality: row.quality != null ? String(row.quality) : '' });
+  };
+
+  const entries = entriesQuery.data?.data ?? [];
+  const meta = entriesQuery.data?.meta ?? { total: 0, limit: PAGE_SIZE, offset: 0 };
+  const totalPages = Math.max(1, Math.ceil(meta.total / PAGE_SIZE));
 
   return (
     <div className="space-y-4 p-6">
@@ -318,28 +362,111 @@ export function TranslationMemoryPage() {
                   <td className="max-w-xs truncate py-2 text-xs" title={row.sourceText}>
                     {row.sourceText}
                   </td>
-                  <td className="max-w-xs truncate py-2 text-xs" title={row.targetText}>
-                    {row.targetText}
+                  <td className="max-w-xs py-2 text-xs">
+                    {editId === row.id ? (
+                      <input
+                        value={editForm.targetText}
+                        onChange={(e) => setEditForm((f) => ({ ...f, targetText: e.target.value }))}
+                        aria-label="Edit target text"
+                        className="w-full rounded border px-2 py-1 text-xs"
+                      />
+                    ) : (
+                      <span className="block truncate" title={row.targetText}>{row.targetText}</span>
+                    )}
                   </td>
-                  <td className="py-2 text-xs">{row.quality ?? '—'}</td>
+                  <td className="py-2 text-xs">
+                    {editId === row.id ? (
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={editForm.quality}
+                        onChange={(e) => setEditForm((f) => ({ ...f, quality: e.target.value }))}
+                        aria-label="Edit quality"
+                        className="w-16 rounded border px-1 py-1 text-xs"
+                      />
+                    ) : (
+                      (row.quality ?? '—')
+                    )}
+                  </td>
                   <td className="py-2 text-xs">
                     {row.source}
                     {row.provider ? ` (${row.provider})` : ''}
                   </td>
                   <td className="py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => deleteMutation.mutate(row.id)}
-                      aria-label={`Delete TM entry ${row.id}`}
-                      className="rounded p-1 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    {editId === row.id ? (
+                      <span className="inline-flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            editMutation.mutate({
+                              id: row.id,
+                              targetText: editForm.targetText,
+                              quality: editForm.quality ? Number(editForm.quality) : undefined,
+                            })
+                          }
+                          className="rounded bg-primary px-2 py-0.5 text-[11px] text-primary-foreground"
+                        >
+                          Save
+                        </button>
+                        <button type="button" onClick={() => setEditId(null)} className="rounded border px-2 py-0.5 text-[11px]">
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <span className="inline-flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(row)}
+                          aria-label={`Edit TM entry ${row.id}`}
+                          className="rounded p-1 text-muted-foreground hover:text-foreground"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteMutation.mutate(row.id)}
+                          aria-label={`Delete TM entry ${row.id}`}
+                          className="rounded p-1 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        )}
+
+        {meta.total > PAGE_SIZE && (
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              {meta.offset + 1}–{Math.min(meta.offset + PAGE_SIZE, meta.total)} of {meta.total}
+            </span>
+            <span className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={page === 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                className="rounded border px-2 py-1 disabled:opacity-40"
+              >
+                Prev
+              </button>
+              <span>
+                Page {page + 1} / {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page + 1 >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                className="rounded border px-2 py-1 disabled:opacity-40"
+              >
+                Next
+              </button>
+            </span>
+          </div>
         )}
       </div>
     </div>
