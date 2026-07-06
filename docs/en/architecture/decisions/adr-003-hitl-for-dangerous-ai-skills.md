@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T10:56:37.062Z
+sourceLang: en
+contentHash: 10c992809cf09694
+---
+
 # ADR-003: Human-in-the-Loop (HITL) for Dangerous AI Skills
 
 **Date:** 2024-03-20

@@ -21,7 +21,7 @@ const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
 export const emailSuppressions = pgTable(
-  'email_suppressions',
+  'lumibase_email_suppressions',
   {
     id: id(),
     siteId: text('site_id')
@@ -46,7 +46,7 @@ export const emailSuppressions = pgTable(
 );
 
 export const processingRestrictions = pgTable(
-  'processing_restrictions',
+  'lumibase_processing_restrictions',
   {
     id: id(),
     siteId: text('site_id')

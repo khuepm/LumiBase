@@ -19,6 +19,7 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { PasswordSchema } from '@lumibase/shared/schemas';
 import type { AppEnv } from '../../env';
 import { withDb } from '../../middleware/db';
 import {
@@ -34,7 +35,9 @@ const completeBodySchema = z.object({
   setupToken: z.string().min(1).max(256).optional(),
   account: z.object({
     email: z.string().email().max(254),
-    password: z.string().min(12).max(256),
+    // Shared strength policy (min 12 + complexity) — consistent with register
+    // and recovery (CWE-521).
+    password: PasswordSchema,
     firstName: z.string().min(1).max(100),
     lastName: z.string().min(1).max(100),
   }),

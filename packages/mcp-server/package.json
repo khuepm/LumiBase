@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/mcp-server",
-  "version": "0.15.0",
+  "version": "0.18.0",
   "description": "LumiBase MCP server — lets AI assistants manage the full LumiBase Content OS: collections, fields, items, relations, RBAC (roles/policies/permissions/API keys), users & teams, intents, flows, webhooks, translations, search, media, extensions, and site administration.",
   "type": "module",
   "repository": {

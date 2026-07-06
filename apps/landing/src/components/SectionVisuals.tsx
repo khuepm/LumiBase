@@ -38,43 +38,6 @@ export function RunsViz() {
   );
 }
 
-export function TrustViz() {
-  const levels = ["L0", "L1", "L2", "L3", "L4"];
-  const active = 3;
-  return (
-    <div className="w-full p-6">
-      <div className="flex gap-2">
-        {levels.map((l, i) => (
-          <div key={l} className="flex-1 text-center">
-            <div
-              className="mb-2 h-1.5 rounded-[3px]"
-              style={{
-                background: i <= active ? "var(--color-violet)" : "var(--color-surface-4)",
-                boxShadow: i <= active ? "0 0 10px rgba(123,97,255,0.7)" : "none",
-              }}
-            />
-            <span
-              style={{
-                font: `600 12px ${sans}`,
-                color: i === active ? "#fff" : "var(--color-text-muted)",
-              }}
-            >
-              {l}
-            </span>
-          </div>
-        ))}
-      </div>
-      <div
-        className="mt-4"
-        style={{ font: `500 12px/1.5 ${sans}`, color: "var(--color-text-secondary)" }}
-      >
-        Currently at <b className="text-white">L3 — veto window</b>. Silence
-        commits; the kill switch stays armed.
-      </div>
-    </div>
-  );
-}
-
 export function ProvenanceViz() {
   const rows: Array<[string, string]> = [
     ["agent:writer-2", "drafted body · run #482"],

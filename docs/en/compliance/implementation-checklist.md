@@ -38,7 +38,7 @@
   change. Consent is **not** stored in the free-form `users.preferences` JSONB.
 - **Delivered:**
   - Schema `packages/database/src/schema/consent.ts` (+ migration
-    `drizzle/0031_user_consents.sql`, RLS in `migrations/rls-policies.sql`).
+    `drizzle/0000_lumibase_init.sql` (consolidated), RLS in `migrations/rls-policies.sql`).
   - DTOs `packages/shared/src/schemas/consent.ts` (`CONSENT_TYPES`, `ConsentSetSchema`).
   - `ConsentService` (`apps/cms/src/modules/consent/service.ts`) — upsert on the
     `(site,user,type)` unique index.
@@ -50,7 +50,7 @@
 - **Why:** CAN-SPAM (mandatory), ePrivacy.
 - **Delivered:**
   - `email_suppressions` table (`packages/database/src/schema/compliance.ts`) +
-    migration `0032_email_suppressions.sql` + RLS.
+    migration `0000_lumibase_init.sql` (consolidated) + RLS.
   - `SuppressionService` (`apps/cms/src/modules/email/suppression.ts`) with
     `isSuppressed`/`filter`/`suppress`/`unsuppress`/`list` and stateless signed
     unsubscribe tokens (`createUnsubscribeToken`/`verifyUnsubscribeToken`).

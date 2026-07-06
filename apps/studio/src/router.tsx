@@ -47,12 +47,14 @@ const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then(
 const EmailSettingsPage = lazy(() => import('./modules/settings/email-page').then((m) => ({ default: m.EmailSettingsPage })));
 const NotificationsSettingsPage = lazy(() => import('./modules/settings/notifications-page').then((m) => ({ default: m.NotificationsSettingsPage })));
 const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then((m) => ({ default: m.SiteSettingsPage })));
+const DomainsSettingsPage = lazy(() => import('./modules/settings/domains-page').then((m) => ({ default: m.DomainsSettingsPage })));
 const KeyboardSettingsPage = lazy(() => import('./modules/settings/keyboard-page').then((m) => ({ default: m.KeyboardSettingsPage })));
 const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const EncryptionSettingsPage = lazy(() => import('./modules/settings/encryption-page').then((m) => ({ default: m.EncryptionSettingsPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
+const UploadsSettingsPage = lazy(() => import('./modules/settings/uploads-page').then((m) => ({ default: m.UploadsSettingsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
 const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
 const AgentHarnessPage = lazy(() => import('./modules/settings/agent-harness-page').then((m) => ({ default: m.AgentHarnessPage })));
@@ -626,6 +628,12 @@ const siteSettingsRoute = createRoute({
   component: withSuspense(SiteSettingsPage),
 });
 
+const domainsSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'domains',
+  component: withSuspense(DomainsSettingsPage),
+});
+
 const keyboardSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'keyboard',
@@ -660,6 +668,12 @@ const extensionsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'extensions',
   component: withSuspense(ExtensionsPage),
+});
+
+const uploadsSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'uploads',
+  component: withSuspense(UploadsSettingsPage),
 });
 
 const marketplaceRoute = createRoute({
@@ -737,6 +751,12 @@ const adminPathSiteSettingsRoute = createRoute({
   component: withSuspense(SiteSettingsPage),
 });
 
+const adminPathDomainsSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'domains',
+  component: withSuspense(DomainsSettingsPage),
+});
+
 const adminPathKeyboardSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'keyboard',
@@ -771,6 +791,12 @@ const adminPathMarketplaceRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'marketplace',
   component: withSuspense(MarketplacePage),
+});
+
+const adminPathUploadsSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'uploads',
+  component: withSuspense(UploadsSettingsPage),
 });
 
 const adminPathUpdatesRoute = createRoute({
@@ -1180,6 +1206,7 @@ const routeTree = rootRoute.addChildren([
       settingsTypesRoute,
       translationsRoute,
       siteSettingsRoute,
+      domainsSettingsRoute,
       keyboardSettingsRoute,
       webhooksRoute,
       emailSettingsRoute,
@@ -1189,6 +1216,7 @@ const routeTree = rootRoute.addChildren([
       activityRoute,
       encryptionSettingsRoute,
       extensionsRoute,
+      uploadsSettingsRoute,
       marketplaceRoute,
       updatesRoute,
       agentHarnessRoute,
@@ -1244,6 +1272,7 @@ const routeTree = rootRoute.addChildren([
       adminPathSettingsTypesRoute,
       adminPathTranslationsRoute,
       adminPathSiteSettingsRoute,
+      adminPathDomainsSettingsRoute,
       adminPathKeyboardSettingsRoute,
       adminPathWebhooksRoute,
       adminPathEmailSettingsRoute,
@@ -1252,6 +1281,7 @@ const routeTree = rootRoute.addChildren([
       adminPathTranslationMemoryRoute,
       adminPathActivityRoute,
       adminPathExtensionsRoute,
+      adminPathUploadsSettingsRoute,
       adminPathMarketplaceRoute,
       adminPathUpdatesRoute,
       adminPathAgentHarnessRoute,

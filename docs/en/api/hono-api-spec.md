@@ -88,6 +88,17 @@ Error response:
 | `_starts_with`, `_ends_with` | String prefix/suffix |
 | `_between` | Range (two-element array) |
 | `_and`, `_or` | Logical grouping |
+| `_json_contains` | JSONB `@>` — value/sub-object/array-membership containment |
+| `_has_key` | The JSON object has this key |
+| `_has_any_keys`, `_has_all_keys` | The JSON object has any / all of these keys (string array) |
+
+**Searching inside JSON.** A filter field key may be a **dotted path** into a
+nested JSON/JSONB field — e.g. `filter={"metadata.author.country":{"_eq":"VN"}}`
+compiles to a `data #>> '{metadata,author,country}'` lookup. Path segments are
+restricted to `[A-Za-z0-9_]` and bound as parameters (injection-safe); depth is
+capped at 8. The `_json_contains` / `_has_*` operators run against the JSONB and
+use the existing GIN index. Top-level keys and structural fields behave exactly
+as before.
 
 ### Filter forms
 
@@ -127,6 +138,8 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/auth/refresh` | Refresh expired access token |
 | `POST` | `/api/v1/auth/logout` | Revoke tokens |
 | `GET` | `/api/v1/auth/me` | Get current user profile |
+| `GET` | `/api/v1/me/preferences` | The current user's preferences blob (`users.preferences`) |
+| `PATCH` | `/api/v1/me/preferences` | Shallow-merge a validated preferences patch |
 | `GET` | `/api/v1/me/consents` | List the current user's consent decisions |
 | `PUT` | `/api/v1/me/consents/:type` | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
 | `GET` | `/api/v1/me/data-export` | Download the current user's personal data (GDPR Art. 15/20) |
@@ -171,6 +184,43 @@ The unsubscribe token is a stateless HS256 JWT (`{ siteId, email }`, no expiry) 
 with `JWT_SECRET`. Marketing sends (`EmailModuleService.send({ category: 'marketing' })`)
 filter recipients against `email_suppressions` before dispatch. Unsubscribe/suppression
 changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
+
+**Preferences & save action.** `PATCH /api/v1/me/preferences` shallow-merges a
+validated patch into `users.preferences` (other sections like `language` /
+`keybindings` are preserved). Send `{ "saveAction": "stay" | "return" |
+"create_new" }` to set the Studio editor's post-save navigation; send
+`{ "saveAction": null }` to fall back to the site default
+(`sites.default_save_action`, set via `PATCH /api/v1/site`). Invalid enum → 400.
+
+### External JWT authentication
+
+A site can trust JWTs issued by an external IdP (Okta, Entra, Auth0, Logto,
+Keycloak, Cloudflare Access…). Present the token as `Authorization: Bearer
+<jwt>` with `X-Lumi-Site`. The auth chain verifies it against the issuer's
+**public JWKS** (between the API-key and internal-JWT branches): it matches the
+token's `iss` to a trusted issuer registered for that site, verifies the
+signature + `aud`/`exp`/`nbf` with the issuer's allowed (asymmetric-only)
+algorithms, maps role claims to LumiBase roles (**default-deny** — no mapping
+means 403, never implicit admin), enforces that any `siteId` claim equals the
+request site, and optionally JIT-provisions the user. A token whose `iss` isn't
+trusted is ignored (falls through to internal auth); once an issuer matches,
+verification is fail-closed.
+
+Admin CRUD for trusted issuers (admin-only):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/admin/auth/issuers` | List trusted external issuers |
+| `POST` | `/api/v1/admin/auth/issuers` | Register an issuer |
+| `GET` | `/api/v1/admin/auth/issuers/:id` | Get one |
+| `PATCH` | `/api/v1/admin/auth/issuers/:id` | Update |
+| `DELETE` | `/api/v1/admin/auth/issuers/:id` | Remove |
+
+**Issuer config:** `{ issuer, jwksUri | discoveryUrl, audience, algorithms
+(RS*/ES* only), claimMapping: { email, roles, siteId?, externalId? }, roleMapping:
+{ "<claim role>": { roleId | systemKey } }, defaultRoleId?, jitProvisioning,
+clockSkewSeconds (≤300), enabled }`. Errors: `VALIDATION_FAILED` (422, incl. an
+HS*/`none` algorithm), `ISSUER_ALREADY_EXISTS` (409), `NOT_FOUND` (404).
 
 **Login request:**
 ```json
@@ -263,6 +313,52 @@ changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 | `PATCH` | `/api/v1/relations/:id` | Update relation |
 | `DELETE` | `/api/v1/relations/:id` | Remove relation |
 
+### Code-First Configuration (Config Manifest)
+
+Export / diff / apply a site's **schema configuration** — collections, fields,
+relations, settings and webhooks — as a single declarative, version-controllable
+JSON manifest (`lumibase.config@v1`). Built for CI/CD and environment sync (à la
+Directus schema snapshot/apply). **Admin-only.** Does **not** include content
+items, secrets, or access control (use `/api/v1/access/*` for the latter).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/config/export?scope=all\|schema\|settings\|webhooks` | Export the config manifest |
+| `POST` | `/api/v1/config/import?dryRun=true&mode=<mode>` | Validate + diff a manifest (no write) |
+| `POST` | `/api/v1/config/import?mode=<mode>&allowDestructive=true` | Apply a manifest in one transaction |
+
+`mode` ∈ `merge` (create/update only — never deletes), `replace-managed` (also
+deletes resources within the manifest's `managedScopes`), `replace-all` (full
+sync — deletes anything absent from the manifest). High-risk destructive changes
+(dropping a collection/field with data, changing a field type, widening a
+relation's `onDelete` to `cascade`) are rejected unless `allowDestructive=true`.
+
+**Export response** (`{ data: ConfigManifest }`):
+```json
+{
+  "data": {
+    "version": "lumibase.config@v1",
+    "exportedAt": "2026-06-22T00:00:00.000Z",
+    "collections": [{ "name": "articles", "label": "Articles", "versioning": true }],
+    "fields": [{ "collection": "articles", "field": "title", "type": "string", "interface": "input" }],
+    "relations": [],
+    "webhooks": [],
+    "settings": [{ "key": "login_security_policy", "value": { } }],
+    "managedScopes": ["articles"]
+  }
+}
+```
+
+**Dry-run / apply response** (`{ data: { valid, errors, diff, applied? } }`): the
+`diff` lists per-resource `create | update | unchanged | delete` counts and a
+top-level `risk` (`low | medium | high`). On apply, `applied` reports
+`{ created, updated, deleted }`. Validation errors use codes
+`UNSUPPORTED_MANIFEST_VERSION`, `DANGLING_REFERENCE`, `DUPLICATE_KEY`; a blocked
+destructive apply returns HTTP 409 `DESTRUCTIVE_BLOCKED`.
+
+CLI: `pnpm --filter @lumibase/cms config export|diff|apply` — see
+[`docs/en/contributing/code-first-config.md`](../contributing/code-first-config.md).
+
 ---
 
 ## 3. Items (Generic CRUD)
@@ -274,7 +370,9 @@ changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 | `GET` | `/api/v1/items/:collection/:id` | Get single item |
 | `PATCH` | `/api/v1/items/:collection/:id` | Partial update |
 | `PUT` | `/api/v1/items/:collection/:id` | Full replace |
-| `DELETE` | `/api/v1/items/:collection/:id` | Delete item (or array bulk) |
+| `DELETE` | `/api/v1/items/:collection/:id` | Delete item — **409 if blocked by dependents** |
+| `GET` | `/api/v1/items/:collection/:id/dependents` | List records that reference this item |
+| `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Batch-resolve a relation's dependents |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Revert to revision |
 | `GET` | `/api/v1/items/:collection/:id/versions` | List named draft versions (each has a `mainChanged` flag) |
@@ -284,6 +382,20 @@ changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 | `DELETE` | `/api/v1/items/:collection/:id/versions/:key` | Delete a version |
 | `GET` | `/api/v1/items/:collection/:id/versions/:key/compare` | Field diff vs main → `{ main, version, changes }` |
 | `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Apply version to main (writes a revision); `meta.mainDiverged` |
+
+**Dependent records.** Because item references live in JSONB (not physical FK
+columns), a relation's `onDelete` is enforced in the application layer. On
+`DELETE`, if a relation declared `restrict` still has records pointing at the
+item, the delete is blocked with **409 `DEPENDENT_RECORDS_EXIST`** and a
+`dependents` array. (`set null`/`cascade` are **not** auto-applied on
+soft-delete — that would break soft-delete's recoverability; the editor clears
+them explicitly.) `GET …/dependents` returns
+`{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count,
+sample }] } }`. `POST …/resolve-dependents` takes
+`{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` and
+runs transactionally (delete delegates to the normal item-delete path).
+Errors: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null on a
+required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
 
 **Optional headers:**
 - `X-Lumi-Draft: true` — fetch draft version
@@ -301,6 +413,57 @@ changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
   { "title": "Article 2", "status": "draft" }
 ]
 ```
+
+---
+
+## 3b. Content Releases
+
+A **Release** collates specific item revisions across collections into a named
+bundle that publishes all at once — manually or scheduled for a date/time
+(à la Directus Releases). Publish delegates to the item update path, so the
+editorial gate, validation, permissions and hooks all apply.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/releases` | Create a release (`draft`, or `scheduled` if `publishAt` set) |
+| `GET` | `/api/v1/releases` | List releases (`?status=&page=&limit=`) |
+| `GET` | `/api/v1/releases/:id` | Release detail + its items |
+| `PATCH` | `/api/v1/releases/:id` | Update meta, `addItems`/`removeItems`, set `publishAt` |
+| `POST` | `/api/v1/releases/:id/publish` | Publish now (manual) |
+| `DELETE` | `/api/v1/releases/:id` | Delete release (items cascade) |
+
+**Create / patch body:**
+```json
+{
+  "name": "Spring launch",
+  "atomicityMode": "all_or_nothing",
+  "publishAt": "2026-07-01T09:00:00Z",
+  "maintenanceWindow": { "windows": [{ "dow": 1, "start": "09:00", "end": "17:00" }] },
+  "addItems": [
+    { "collection": "articles", "itemId": "itm_1", "targetStatus": "published", "revisionId": "rev_3" }
+  ]
+}
+```
+
+`atomicityMode`: `all_or_nothing` (pre-flight checks every item is publishable —
+exists, not deleted, editorial gate satisfiable — and publishes nothing if any
+is blocked) or `best_effort` (publishes each independently, recording a per-item
+outcome). `revisionId` pins a specific revision's snapshot; omit it to publish
+the item's live state at publish time.
+
+**Publish response** (`{ data: { release, status, outcomes } }`): `status` is
+`published` | `partially_failed` | `failed`; each outcome is
+`{ collection, itemId, outcome: 'published'|'skipped'|'failed', reason? }`. A
+partial/failed publish still returns **HTTP 200** with the outcomes.
+
+**Error codes:** `EMPTY_RELEASE` (422), `ALREADY_PUBLISHED` (409),
+`RELEASE_IMMUTABLE` (409, editing a published release's items), `ITEM_NOT_FOUND`
+(404), `REVISION_STAGED` (409, pinning an uncommitted revision),
+`VALIDATION_FAILED` (422, incl. `publishAt` in the past). Per-item publish
+blockers surface as outcome reasons `EDITORIAL_GATE_REQUIRED` / `ITEM_DELETED`.
+
+Scheduled releases publish via the shared `content-scheduler` tick
+(`sweepDueReleases`) — idempotent and `maintenanceWindow`-aware.
 
 ---
 
@@ -352,10 +515,31 @@ changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 | `PATCH` | `/api/v1/files/:id` | Update metadata (title, tags, folder) |
 | `DELETE` | `/api/v1/files/:id` | Delete file |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
+| `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
+| `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`) |
+| `DELETE` | `/api/v1/media/:key` | Delete media object |
+| `GET` | `/api/v1/uploads/config` | Effective upload policy + type catalogue (any member) |
+| `PUT` | `/api/v1/uploads/config` | Update allowlist / size cap (site admin) |
 
 **Image transform params for `/api/v1/assets/:id`:**
 ```
 ?width=800&height=600&format=webp&quality=80&fit=cover
+```
+
+**Upload policy (`/api/v1/uploads/config`).** Enforced by the `file-upload-policy`
+guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`,
+`POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
+its true byte length; the declared MIME must be in the allowlist and match the
+filename extension; raw bytes are content-sniffed (magic bytes) and executables /
+active-content SVGs are rejected. The allowlist + cap resolve `per-site DB
+(settings key upload_policy) → env (FILE_UPLOAD_*) → default`.
+
+```
+GET  /api/v1/uploads/config
+→ { data: { maxBytes, allowedMimeTypes[], allowedExtensions[], catalogue[] } }
+
+PUT  /api/v1/uploads/config           # site admin only
+{ "maxBytes": 5242880, "allowedMimeTypes": ["image/png","image/jpeg"] }
 ```
 
 ---
@@ -365,13 +549,19 @@ changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/flows` | List flows (filter by `status`, `trigger`) |
+| `GET` | `/api/v1/flows/operations` | Operation registry: `{ key, description, options }` — palette + `validateGraph` knownKeys source of truth |
 | `POST` | `/api/v1/flows` | Create a new flow |
 | `GET` | `/api/v1/flows/:id` | Get flow detail + graph |
 | `PATCH` | `/api/v1/flows/:id` | Update flow (graph, status, options) |
 | `DELETE` | `/api/v1/flows/:id` | Delete flow |
 | `POST` | `/api/v1/flows/:id/run` | Manual trigger with body as input |
+| `POST` | `/api/v1/flows/:id/trigger` | **Webhook trigger** — no CMS session; authenticate with the per-flow token (`x-flow-token` header or `Bearer`), compared constant-time. Input = `{ body, headers, query }` (credential headers stripped). 404 for non-webhook/inactive flows; 401 `WEBHOOK_NOT_CONFIGURED`/`UNAUTHENTICATED` |
 | `GET` | `/api/v1/flows/:id/runs` | Execution history |
 | `GET` | `/api/v1/flows/:id/runs/:runId` | Single run detail (steps output) |
+
+**Save-time gates:** an `active` flow must pass the shared graph validation — `400` with `GRAPH_DANGLING_EDGE` / `GRAPH_CYCLE` / `GRAPH_NO_ENTRY` / `GRAPH_UNKNOWN_OPERATION` (+ `nodeId`) otherwise; drafts may hold invalid work-in-progress. Schedule flows validate `triggerOptions.cron` (5-field, UTC): `400 CRON_INVALID` on a malformed expression, `400 CRON_REQUIRED` when activating without one; `next_run_at` is computed on save and advanced by the scheduler sweep before each enqueued run (idempotent).
+
+**Triggers:** `event` flows fire on item create/update/delete via the `flow-events` queue (`triggerOptions.collection` / `.action` filter, string or array, missing = all); `schedule` flows are swept every scheduler tick; `webhook` flows use the endpoint above; `manual` runs inline via `/run`.
 
 **Trigger a flow:**
 ```bash
@@ -529,7 +719,9 @@ row (not the key/value `settings` table). Scoped to the active tenant via the
 
 `PATCH /api/v1/site` accepts any subset of: `name`, `displayTitle`, `siteUrl`,
 `descriptor`, `domain`, `defaultLanguage`, `defaultAppearance`
-(`auto`\|`light`\|`dark`), `branding` (`{ logoUrl, faviconUrl, brandColor }`),
+(`auto`\|`light`\|`dark`), `defaultSaveAction`
+(`stay`\|`return`\|`create_new` — the site-wide default save action a user's
+personal preference overrides), `branding` (`{ logoUrl, faviconUrl, brandColor }`),
 `themeOverrides` (`{ light, dark }` maps of whitelisted CSS tokens → `H S% L%`
 values), and `customCss`. An empty string clears a nullable field. A duplicate
 `domain` returns `409 { errors: [{ code: 'DOMAIN_TAKEN' }] }`.

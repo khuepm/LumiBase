@@ -20,7 +20,8 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
       properties: {
         name: {
           type: 'string',
-          description: 'The unique snake_case name of the collection (e.g., blog_posts, products).',
+          description:
+            'The unique snake_case name of the collection (e.g., blog_posts, products). Must not start with the reserved prefix "lumibase_", which is owned by the platform.',
         },
         description: {
           type: 'string',

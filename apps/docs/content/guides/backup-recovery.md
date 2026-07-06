@@ -294,7 +294,7 @@ docker cp $(docker compose ps -q postgres):/var/lib/postgresql/data ./corrupted_
 ./docker/scripts/restore.sh latest
 
 # Verify
-docker compose exec postgres psql -U lumibase -d lumibase -c "SELECT count(*) FROM items;"
+docker compose exec postgres psql -U lumibase -d lumibase -c "SELECT count(*) FROM lumibase_items;"
 docker compose start cms
 ```
 

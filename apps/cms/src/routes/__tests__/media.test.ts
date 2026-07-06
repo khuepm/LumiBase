@@ -69,6 +69,28 @@ describe('mediaRouter', () => {
     expect((await app.request('/media/site-b/secret.txt', { method: 'DELETE' })).status).toBe(204);
     expect(storage.delete).toHaveBeenCalledWith('sites/site-a/media/site-b/secret.txt');
   });
+
+  it('serves downloads as attachments and falls back to metadata content-type', async () => {
+    vi.spyOn(PermissionService.prototype, 'canAccess').mockResolvedValue(allowPermission);
+    // Simulate an older object that only carries content-type in custom metadata.
+    const storage = mockStorage({
+      get: vi.fn(async () => ({
+        body: Buffer.from('<svg/>'),
+        size: 6,
+        contentType: undefined,
+        metadata: { contentType: 'image/svg+xml' },
+      })),
+    });
+
+    const res = await appFor(storage).request('/media/evil.svg');
+
+    expect(res.status).toBe(200);
+    // Never rendered inline — forced download neutralizes stored HTML/SVG.
+    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="evil.svg"');
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    // Content-type recovered from metadata when the native field is absent.
+    expect(res.headers.get('Content-Type')).toBe('image/svg+xml');
+  });
 });
 
 function appFor(storage: ReturnType<typeof mockStorage>) {

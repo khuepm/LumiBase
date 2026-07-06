@@ -56,7 +56,7 @@ const organizationJsonLd = {
     "LumiBase is a Content Operating System — an edge-native, AI-native headless CMS where governed agents operate content against declarative SLOs while humans set intent, taste, and accountability.",
   sameAs: [
     "https://github.com/khuepm/lumibase",
-    "https://twitter.com/lumibase",
+    "https://twitter.com/khuephamminh",
   ],
   contactPoint: {
     "@type": "ContactPoint",

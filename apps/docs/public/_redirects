@@ -1,1 +1,10 @@
-/* /index.html 200
+# No catch-all rewrite.
+#
+# This is a PRERENDERED site: every doc route is emitted as a static
+# <slug>/index.html by scripts/prerender.mjs, and Cloudflare Pages serves those
+# directly for both /slug and /slug/. Requests with no matching static asset
+# fall through to 404.html (also prerendered as the SPA shell), which boots the
+# client router to resolve client-only routes or render the NotFoundPage.
+#
+# The former `/* /index.html 200` rule rewrote EVERY request to the empty index
+# shell, shadowing all prerendered pages and breaking hard navigation / F5.
