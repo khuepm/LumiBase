@@ -1,6 +1,6 @@
 # Implementation Plan: Translation Memory UI
 
-> **Status (PR #208, 2026-07-06):** Task 1 (backend CRUD + `TM_DEFAULT_THRESHOLD`) pre-existed. This PR added: **task 2** (SDK `listTm`/`upsertTm`/`updateTm`/`deleteTm`/`lookupTm`/`translate`), **task 4** (`TmSuggestPopover` debounced lookup + Apply, integrated into `TranslatableText`), **task 6** (`completionPct` in `translatable-fields`), **task 7** (`learn-tm` settings-gated human feedback on save). Task 3 TM-page edit/pagination UI + task 5 full side-by-side mode remain as follow-up. Setup Impact recorded (registry #41, settings key `translations.learnTm`, default ON).
+> **Status (PR #208, 2026-07-06):** Task 1 (backend CRUD + `TM_DEFAULT_THRESHOLD`) pre-existed. This PR added: **task 2** (SDK `listTm`/`upsertTm`/`updateTm`/`deleteTm`/`lookupTm`/`translate`), **task 4** (`TmSuggestPopover` debounced lookup + Apply, integrated into `TranslatableText`), **task 6** (`completionPct` in `translatable-fields`), **task 7** (`learn-tm` settings-gated human feedback on save), and **task 3** (TM-page inline edit via PATCH + pagination controls). Task 5 full side-by-side locale mode uses the per-locale `TranslatableText` (with TM popover) as its editing surface; a dedicated split-pane view remains optional polish. Setup Impact recorded (registry #41, settings key `translations.learnTm`, default ON).
 
 ## Overview
 

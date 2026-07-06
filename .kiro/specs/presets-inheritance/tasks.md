@@ -1,6 +1,6 @@
 # Implementation Plan: Presets Inheritance
 
-> **Status (PR #208, 2026-07-06):** Greenfield-on-existing-schema, delivered in this PR: **task 1** (`PresetService.roleChain`/`effective`/`bookmarks` with cycle guard + precedence + unit tests), **task 2** (`GET /presets/effective` + `/bookmarks`, scope-ownership RBAC on POST/PATCH/DELETE), **task 3** (SDK `getEffectivePreset`/`listBookmarks`/`saveUserView`/`create`/`update`/`deleteBookmark`), **task 4** (`BookmarkSwitcher` + `SaveBookmarkDialog` + `presets/api.ts` `viewDiffers` + tests), **task 5** (`RolePresets` admin panel). Wiring the switcher into the live collection-view mount + debounced `saveUserView` is the remaining integration. Setup Impact recorded (registry #44, `n/a`).
+> **Status (PR #208, 2026-07-06):** Greenfield-on-existing-schema, delivered in this PR: **task 1** (`PresetService.roleChain`/`effective`/`bookmarks` with cycle guard + precedence + unit tests), **task 2** (`GET /presets/effective` + `/bookmarks`, scope-ownership RBAC on POST/PATCH/DELETE), **task 3** (SDK `getEffectivePreset`/`listBookmarks`/`saveUserView`/`create`/`update`/`deleteBookmark`), **task 4** (`BookmarkSwitcher` + `SaveBookmarkDialog` + `presets/api.ts` `viewDiffers` + tests), **task 5** (`RolePresets` admin panel), and **task 4.1** (items-list applies the effective preset on mount + debounced `saveUserView` on view drift). All task groups complete. Setup Impact recorded (registry #44, `n/a`).
 
 ## Overview
 
