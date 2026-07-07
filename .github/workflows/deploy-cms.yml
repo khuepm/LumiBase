@@ -72,7 +72,7 @@ jobs:
       LUMIBASE_RELEASE_CHANNEL: ${{ needs.resolve-env.outputs.target }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
