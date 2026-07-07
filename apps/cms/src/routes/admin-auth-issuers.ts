@@ -15,7 +15,17 @@ adminAuthIssuersRouter.use('*', requireSiteAdmin());
 function service(c: Context<AppEnv>): ExternalIssuerService {
   const isDev =
     c.env?.LUMIBASE_ENV === 'development' || process.env.LUMIBASE_ENV === 'development' || process.env.NODE_ENV === 'development';
-  return new ExternalIssuerService({ db: c.get('db'), siteId: c.get('siteId'), allowLocalHttp: isDev });
+  return new ExternalIssuerService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    allowLocalHttp: isDev,
+    actor: {
+      email: c.get('auth')?.email ?? null,
+      ip: c.get('ip') ?? null,
+      userAgent: c.get('userAgent') ?? null,
+      requestId: c.get('requestId') ?? null,
+    },
+  });
 }
 
 function toError(err: unknown) {

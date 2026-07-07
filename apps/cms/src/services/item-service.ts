@@ -725,7 +725,7 @@ export class ItemService {
     await this.writeActivity('create', coll.name, row.id, { data: payload.data });
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
-    await this.publishRealtimeEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
+    await this.publishRealtimeEvent(collectionName, 'create', row.id);
     await this.dispatchFirebaseSync(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
@@ -903,7 +903,7 @@ export class ItemService {
     
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
-    await this.publishRealtimeEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
+    await this.publishRealtimeEvent(collectionName, 'update', row.id);
     await this.dispatchFirebaseSync(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
@@ -978,7 +978,7 @@ export class ItemService {
     if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
     await this.writeActivity('delete', coll.name, id, {});
     await this.deindexItem(collectionName, id);
-    await this.publishRealtimeEvent(collectionName, 'delete', id, {});
+    await this.publishRealtimeEvent(collectionName, 'delete', id);
     await this.dispatchFirebaseSync(collectionName, 'delete', id, {});
     // After hook — fire-and-forget.
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
@@ -1406,12 +1406,21 @@ export class ItemService {
   /**
    * Publish an item mutation event to SiteRoom for realtime fan-out.
    * Non-critical: errors are caught and logged, never blocking the main response.
+   *
+   * SECURITY (spec realtime-subscriptions Req 2, §fan-out): a studio
+   * collection-broadcast reaches every session subscribed to `collection`,
+   * whose per-collection read grant and field mask are NOT re-evaluated at the
+   * hub. So the event carries ONLY the change signal (`collection`/`action`/
+   * `itemId`) — never `row.data`. The Studio client treats it as an
+   * invalidation trigger and re-fetches through the permission-enforced
+   * `/items` API, which applies row RBAC + field masking. This makes
+   * fan-out masking correct by construction: no row content ever crosses the
+   * wire (or sits in hub/DO memory) without going through authorization.
    */
   private async publishRealtimeEvent(
     collection: string,
     action: 'create' | 'update' | 'delete',
     itemId: string,
-    payload: unknown,
   ): Promise<void> {
     const event = {
       type: 'event' as const,
@@ -1419,7 +1428,9 @@ export class ItemService {
       collection,
       action,
       itemId,
-      payload,
+      // Empty payload: subscribers re-fetch under their own RBAC (see doc-block).
+      // Never `row.data` — that would bypass per-subscriber field masking.
+      payload: null,
       actorUserId: this.deps.userId ?? undefined,
     };
     try {

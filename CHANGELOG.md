@@ -11,6 +11,21 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Security
 
+- **Realtime studio broadcasts are signal-only.** An item mutation used to
+  fan out the full `row.data` to every studio session subscribed to the
+  collection, without re-checking that session's read grant or field mask —
+  a client could read row content (including masked fields) straight off the
+  WebSocket. The broadcast now carries only the change signal
+  (`collection`/`action`/`itemId`, `payload: null`); the Studio client
+  re-fetches through the permission-enforced `/items` API, so field masking and
+  row RBAC apply by construction and no row content crosses the wire.
+- **External JWT auth: DoS guards + denial/issuer auditing.** The verifier now
+  rejects an oversized bearer (`> 8192` chars) before parsing it and caps the
+  role-claim list it resolves (`≤ 50`), bounding attacker-controlled parse/query
+  work. Denied external authentications now write an `external_auth_denied`
+  audit row (classification code only — never the token, claims, or reason), and
+  issuer create/update/delete write `external_issuer_*` audit rows.
+
 - **FK dependent-records now enforce the caller's RBAC.** The
   `POST /api/v1/items/:collection/:id/resolve-dependents` and
   `GET …/dependents` endpoints previously ran the batch `set_null` / `reassign`

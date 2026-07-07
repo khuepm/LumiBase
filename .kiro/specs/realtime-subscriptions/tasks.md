@@ -15,8 +15,8 @@ Gap-focused trên nền WS+ticket+DO sẵn có. Thứ tự: protocol chung → D
 - [ ] 2. Site_Room subscription
   - [ ] 2.1 DO `SiteRoom`: lưu subs per-connection; subscribe (permission check qua PermissionService) → ack; unsubscribe; ping/pong; msg sai → error không ngắt — **làm một phần**: subscribe/unsubscribe/ping-pong ✅ (`site-room.ts` + `node-hub.ts`); KHÔNG có permission check qua PermissionService khi subscribe (mô hình audience-grant/plane-isolation thay thế)
     - _Requirements: 2.1, 2.2, 2.4, 2.5, 1.4_
-  - [ ] 2.2 `broadcast(ev)`: gửi tới conn khớp collection + filter (`evaluateRule`) + còn quyền; field-level lọc payload — **làm một phần**: broadcast khớp collection + plane/subject isolation ✅ (`fan-out.ts`); KHÔNG có filter `evaluateRule` per-sub, KHÔNG field-level masking payload
-    - _Requirements: 2.3, 3.2, 3.5, 6.2_
+  - [ ] 2.2 `broadcast(ev)`: gửi tới conn khớp collection + filter (`evaluateRule`) + còn quyền; field-level lọc payload
+    - _Requirements: 2.3, 3.2, 3.5, 6.2_ — **P1 (2026-07-07) — field masking ĐÃ đóng theo hướng khác**: studio collection-broadcast nay **signal-only** (`publishRealtimeEvent` gửi `payload:null`, chỉ `collection/action/itemId`); client re-fetch qua `/items` (RBAC + field mask enforced) → không row-data nào rời server chưa qua kiểm quyền (mask đúng-by-construction). CÒN THIẾU: filter `evaluateRule` per-sub + read-gate lúc subscribe (cần db trong hub — follow-up)
   - [ ] 2.3 Test DO: subscribe/ack, unsubscribe, filter chặn, permission chặn, nhiều sub, cross-site không nhận — **làm một phần**: fan-out tests (plane isolation, subject targeting) ✅; thiếu case filter chặn + permission chặn
     - **Validates: Requirements 2.1, 2.2, 2.3, 3.3**
 

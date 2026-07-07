@@ -6,6 +6,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { authExternalIssuers, scopeSite, type Database } from '@lumibase/database';
 import { makeExternalIssuerConfigSchema, makeExternalIssuerUpdateSchema } from '@lumibase/shared/schemas';
+import { AuditLogger } from '../modules/audit/logger';
 
 export class ExternalIssuerError extends Error {
   constructor(public code: string, message: string, public status = 400) {
@@ -14,15 +15,41 @@ export class ExternalIssuerError extends Error {
   }
 }
 
+/** Request actor context for audit enrichment (all optional). */
+export interface ExternalIssuerActor {
+  email?: string | null;
+  ip?: string | null;
+  userAgent?: string | null;
+  requestId?: string | null;
+}
+
 export interface ExternalIssuerServiceDeps {
   db: Database;
   siteId: string;
   /** Relax https requirement for localhost (development only). */
   allowLocalHttp?: boolean;
+  /** Actor context for `external_issuer_*` audit rows (never logs config secrets). */
+  actor?: ExternalIssuerActor;
 }
 
 export class ExternalIssuerService {
   constructor(private readonly deps: ExternalIssuerServiceDeps) {}
+
+  /**
+   * Record an issuer lifecycle change. Metadata is deliberately limited to the
+   * issuer URL + id — never the JWKS/discovery config or any claim/role mapping
+   * (best-effort; the AuditLogger never throws).
+   */
+  private async audit(event: string, issuer: string, id: string): Promise<void> {
+    await new AuditLogger({ db: this.deps.db, siteId: this.deps.siteId }).write({
+      event,
+      actorEmail: this.deps.actor?.email ?? null,
+      ip: this.deps.actor?.ip ?? null,
+      userAgent: this.deps.actor?.userAgent ?? null,
+      requestId: this.deps.actor?.requestId ?? null,
+      metadata: { issuer, issuerId: id },
+    });
+  }
 
   async list() {
     return this.deps.db
@@ -73,6 +100,7 @@ export class ExternalIssuerService {
         enabled: cfg.enabled,
       })
       .returning();
+    if (row) await this.audit('external_issuer_created', row.issuer, row.id);
     return row;
   }
 
@@ -104,13 +132,15 @@ export class ExternalIssuerService {
       .set(set)
       .where(and(scopeSite(authExternalIssuers.siteId, this.deps.siteId), eq(authExternalIssuers.id, id)))
       .returning();
+    if (row) await this.audit('external_issuer_updated', row.issuer, row.id);
     return row;
   }
 
   async delete(id: string): Promise<void> {
-    await this.get(id);
+    const existing = await this.get(id);
     await this.deps.db
       .delete(authExternalIssuers)
       .where(and(scopeSite(authExternalIssuers.siteId, this.deps.siteId), eq(authExternalIssuers.id, id)));
+    await this.audit('external_issuer_deleted', existing.issuer, existing.id);
   }
 }

@@ -49,7 +49,7 @@ Toàn bộ thay đổi tập trung ở `apps/cms/src/services/item-service.ts` (
 
 - [ ] 7. Backward-compat & integration tests — 7.1 done
   - [x] 7.1 Integration test trên DB thật: tạo item có JSON lồng (`metadata.author.country`, `metadata.tags[]`) → list với dot-path, nested-object, JSON ops trả đúng record (Req 1, 2, 3; design §3-6)
-  - [ ] 7.2 Backward-compat test: filter top-level cũ (`{title:{_eq}}`) + Structural_Field (`status`, `created_at`) cho kết quả KHÔNG đổi; tenant scope giữ (kết quả không leak cross-site) (Req 7.1, 7.2, 7.5; design §10) — **làm một phần**: top-level backward-compat test ✅; thiếu two-site cross-tenant leak test (DoD 2b)
+  - [x] 7.2 Backward-compat test: filter top-level cũ (`{title:{_eq}}`) + Structural_Field (`status`, `created_at`) cho kết quả KHÔNG đổi; tenant scope giữ (kết quả không leak cross-site) (Req 7.1, 7.2, 7.5; design §10) — **P2 (2026-07-07)**: thêm two-site isolation test (site B nested value không lọt vào site A) ✅
 
 - [x] 8. Docs & DoD
   - [x] 8.1 Cập nhật `docs/en/api/hono-api-spec.md`: mô tả filter nested (dot-path + nested-object), JSON_Operator mới, Cast_Rule, limits, ví dụ request/response (Req 10.4; DoD §4)
