@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-07-07T12:01:03.930Z",
+  "generatedAt": "2026-07-07T18:30:13.037Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
-    "preserved": 1,
+    "preserved": 0,
     "conflicts": 1,
     "upToDate": 32,
     "planned": 97
@@ -890,10 +890,10 @@
     },
     {
       "rel": "features/collection-preview.md",
-      "type": "preserve-and-translate",
-      "reason": "en-file-is-vietnamese; no vi counterpart",
+      "type": "translate",
+      "reason": "en duplicates vi content; replace en with English translation",
       "enLang": "vi",
-      "viLang": null,
+      "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
       "willTranslate": true,
@@ -1245,7 +1245,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-07T12-01-04-064Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-07T18-30-13-136Z.bak.md",
       "missingPlaceholders": 0
     },
     {
