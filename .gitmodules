@@ -4,7 +4,7 @@
 	branch = main
 [submodule "apps/marketplace"]
 	path = apps/marketplace
-	url = git@github.com:lumibase-ai/marketplace.git
+	url = https://github.com/lumibase-ai/marketplace.git
 	branch = main
 [submodule "apps/enterprise"]
 	path = apps/enterprise

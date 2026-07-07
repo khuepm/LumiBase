@@ -85,6 +85,12 @@ const synced = [];
 
 for (const relativePackagePath of await packagePaths()) {
   const absolutePackagePath = path.join(REPO_ROOT, relativePackagePath);
+  // Skip packages whose files aren't present — e.g. a submodule (apps/marketplace)
+  // that wasn't checked out in this environment. Its version is managed in its
+  // own repo, so there's nothing to sync here.
+  if (!(await pathExists(absolutePackagePath))) {
+    continue;
+  }
   const { content, data } = await readJson(absolutePackagePath);
 
   if (data.version === rootVersion) {

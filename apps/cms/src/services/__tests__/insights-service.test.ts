@@ -13,6 +13,23 @@ function fakeDb(dataRows: Record<string, unknown>[]): Database {
   return { select: () => chain } as unknown as Database;
 }
 
+/**
+ * Fake DB for the materialized path: the `materialized_collections` lookup
+ * (`select().from().where().limit()`) resolves `matRow`; `execute()` resolves
+ * the mat table's `{ data }` rows.
+ */
+function fakeMatDb(matRow: { id: string } | null, dataRows: Record<string, unknown>[]): Database {
+  const chain = {
+    from: () => chain,
+    where: () => chain,
+    limit: () => Promise.resolve(matRow ? [matRow] : []),
+  };
+  return {
+    select: () => chain,
+    execute: () => Promise.resolve({ rows: dataRows.map((data) => ({ data })) }),
+  } as unknown as Database;
+}
+
 /** Fake SchemaService exposing a collection + a fixed field whitelist. */
 function fakeSchema(opts: { collection?: { id: string } | null; fields?: string[] }): SchemaService {
   return {
@@ -116,5 +133,45 @@ describe('InsightsService.runPanel — security', () => {
       filter: { status: { _eq: 'published' } },
     } as PanelQuery);
     expect(res.data.value).toBe(1);
+  });
+});
+
+describe('InsightsService.runPanel — materialized source (Req 9)', () => {
+  it('reads from the mat table and applies the same whitelist + filter + aggregate', async () => {
+    const db = fakeMatDb({ id: 'mat_meta_1' }, [
+      { amount: 10, category: 'a' },
+      { amount: 5, category: 'b' },
+      { amount: 20, category: 'a' },
+    ]);
+    const service = new InsightsService({ db, siteId: 'site_1', schema: fakeSchema({}) });
+    const res = await service.runPanel(
+      { collection: 'orders', aggregate: 'sum', field: 'amount', groupBy: 'category' } as PanelQuery,
+      undefined,
+      { source: 'materialized' },
+    );
+    expect(res.data.series).toEqual([
+      { label: 'a', value: 30 },
+      { label: 'b', value: 5 },
+    ]);
+  });
+
+  it('still enforces the field whitelist on the materialized path', async () => {
+    const db = fakeMatDb({ id: 'mat_meta_1' }, [{ amount: 1 }]);
+    const service = new InsightsService({ db, siteId: 'site_1', schema: fakeSchema({ fields: ['amount'] }) });
+    await expect(
+      service.runPanel(
+        { collection: 'orders', aggregate: 'sum', field: 'secret' } as PanelQuery,
+        undefined,
+        { source: 'materialized' },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_FIELD' });
+  });
+
+  it('404s when the collection has no materialized projection', async () => {
+    const db = fakeMatDb(null, []);
+    const service = new InsightsService({ db, siteId: 'site_1', schema: fakeSchema({}) });
+    await expect(
+      service.runPanel({ collection: 'orders', aggregate: 'count' } as PanelQuery, undefined, { source: 'materialized' }),
+    ).rejects.toMatchObject({ code: 'NO_MATERIALIZED_SOURCE', status: 404 });
   });
 });

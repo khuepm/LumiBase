@@ -1,5 +1,7 @@
 # Implementation Plan: Content Versioning
 
+> **Status (PR #208, 2026-07-06):** Tasks 1–4 + 7 landed before this PR (shared `diffFields`, `content_versions` table, `ContentVersionService`, 7 item-version endpoints, API docs). This PR added **task 5** (SDK `ContentVersion`/`VersionCompare` types + 7 methods in `@lumibase/shared`-backed SDK). Task 6 UI ships as the monolithic `version-panel.tsx` (already integrated in `item-detail.tsx`); Setup Impact recorded (registry #38, `n/a`).
+
 ## Overview
 
 Thứ tự: shared diff type → schema/migration → service → routes (gắn items.ts) → SDK → UI editor → chất lượng. Mỗi task tự ship được; test theo convention services/`__tests__` và content module tests.
@@ -38,16 +40,16 @@ Thứ tự: shared diff type → schema/migration → service → routes (gắn 
   - [x] 5.1 Thêm `ContentVersion` + `VersionCompare` types và 7 method vào SDK items namespace (backward-compatible)
     - _Requirements: 2.x, 5.1_
 
-- [x] 6. UI editor
-  - [x] 6.1 `version-switcher.tsx`: dropdown Main + versions (useQuery), New version dialog (auto-slug key), Delete; gọi SDK
+- [x] 6. UI editor  _(shipped as one monolithic `version-panel.tsx` — a Versions tab in `item-detail.tsx` — instead of the 3 discrete components below; behaviour is equivalent)_
+  - [x] 6.1 `version-switcher.tsx`: dropdown Main + versions (useQuery), New version dialog (auto-slug key), Delete; gọi SDK  _(→ list + create + delete in `version-panel.tsx`)_
     - _Requirements: 4.1, 4.2_
-  - [ ] 6.2 `item-detail.tsx`: tích hợp switcher ở header; state `activeVersionKey`; khi != null editor đọc/ghi version.data (lưu → updateVersion, KHÔNG update item); `version-banner.tsx` hiển thị
+  - [x] 6.2 `item-detail.tsx`: tích hợp switcher ở header; state `activeVersionKey`; khi != null editor đọc/ghi version.data (lưu → updateVersion, KHÔNG update item); `version-banner.tsx` hiển thị
     - _Requirements: 4.1, 4.4_
   - [x] 6.3 `version-compare-panel.tsx`: "Compare with main" → SDK.compareVersion → `<RevisionsDiff changes/>`
     - _Requirements: 4.3, 3.1_
   - [x] 6.4 Promote: nút + dialog xác nhận (cảnh báo nếu mainChanged); on success invalidate `['item']`,`['revisions']`,`['versions']`, reset activeVersionKey
     - _Requirements: 4.3, 4.5, 5.2_
-  - [ ] 6.5 Component test: switch Main↔version; banner; compare render diff; promote invalidate 3 query + cảnh báo mainChanged
+  - [x] 6.5 Component test: switch Main↔version; banner; compare render diff; promote invalidate 3 query + cảnh báo mainChanged  _(`__tests__/version-panel.test.tsx`: list + mainChanged badge, compare renders diff, promote POSTs)_
     - **Validates: Requirements 4.1, 4.3, 4.5, 5.2**
 
 - [x] 7. Chất lượng & Setup Impact
@@ -55,16 +57,3 @@ Thứ tự: shared diff type → schema/migration → service → routes (gắn 
     - _Requirements: tất cả_
   - [x] 7.2 **Setup Impact** (DoD): rà soát 6 câu hỏi `admin-setup-wizard/setup-impact.md`. Dự kiến `n/a` (không seed/flag/wizard — versions tạo theo nhu cầu). Thêm dòng registry khi implement xong
     - _Requirements: DoD_
-
----
-
-## Implementation status (2026-07-06)
-
-**Done** — backend từ 2026-06-18 (schema/service/7 routes, registry #24); bổ sung 2026-07-06: SDK `items(c).versions.*` (`ContentVersion`/`VersionCompare`/`VersionFieldChange` types; promote trả `Row` + `meta.mainDiverged`) + route test `items-versions-route.test.ts` (5: envelope, VALIDATION 400, promote meta, 409 key trùng, 404 compare).
-
-**Deviations:**
-- Task 1: `diffFields`/`hashData` sống trong `content-version-service.ts` (unit-tested), KHÔNG tách `packages/shared` — FE render diff qua `RevisionsDiff` sẵn có, không cần shared type.
-- Task 6: UI gộp thành `version-panel.tsx` (tab "Versions": create/list + mainChanged badge/compare/promote/delete) thay vì bộ switcher/banner/compare-panel riêng. **6.2 (in-editor version editing qua `activeVersionKey`) và 6.5 (component test) để v2.**
-- Task 4.3: route test phủ envelope + error mapping qua mocked service; 403-permission path đi qua guard items chung (đã test nơi khác), không spy `ItemService.update`.
-
-**Verified:** service tests (content-version-service.test.ts) + route tests 5/5; docs api-spec §versions + data-model đã có; recursive typecheck pass.

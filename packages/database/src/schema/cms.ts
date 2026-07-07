@@ -617,3 +617,30 @@ export const releaseItems = pgTable(
     releaseIdx: index('release_items_release_idx').on(t.siteId, t.releaseId),
   }),
 );
+
+/**
+ * Named image-transform presets — a stable slug (`key`) mapped to a
+ * `TransformDsl` (@lumibase/shared). The delivery route resolves `?preset=key`
+ * to these params so callers get canonical derivatives (e.g. `thumbnail`,
+ * `hero`) without spelling out every dimension. See
+ * `.kiro/specs/image-transform-dsl`.
+ */
+export const transformPresets = pgTable(
+  'lumibase_transform_presets',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** URL-safe slug used as `?preset=<key>`. */
+    key: text('key').notNull(),
+    name: text('name').notNull(),
+    /** The TransformDsl object: `{ width?, height?, format?, quality?, fit?, focal? }`. */
+    dsl: jsonb('dsl').default({}).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteKeyUnique: uniqueIndex('transform_presets_site_key_unique').on(t.siteId, t.key),
+  }),
+);
