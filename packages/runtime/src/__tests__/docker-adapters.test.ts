@@ -12,8 +12,13 @@ const mockRedis = {
   quit: vi.fn(),
 };
 
+// Use `function` (not arrow) for classes instantiated with `new`: vitest 4
+// invokes the mock implementation as a constructor, and arrow functions are
+// not constructable ("... is not a constructor").
 vi.mock('ioredis', () => ({
-  default: vi.fn(() => mockRedis),
+  default: vi.fn(function () {
+    return mockRedis;
+  }),
 }));
 
 // ─── Mock @aws-sdk/client-s3 ────────────────────────────────────────────────
@@ -21,11 +26,21 @@ vi.mock('ioredis', () => ({
 const mockS3Send = vi.fn();
 
 vi.mock('@aws-sdk/client-s3', () => ({
-  S3Client: vi.fn(() => ({ send: mockS3Send })),
-  PutObjectCommand: vi.fn((input: unknown) => ({ _type: 'PutObject', input })),
-  GetObjectCommand: vi.fn((input: unknown) => ({ _type: 'GetObject', input })),
-  DeleteObjectCommand: vi.fn((input: unknown) => ({ _type: 'DeleteObject', input })),
-  ListObjectsV2Command: vi.fn((input: unknown) => ({ _type: 'ListObjectsV2', input })),
+  S3Client: vi.fn(function () {
+    return { send: mockS3Send };
+  }),
+  PutObjectCommand: vi.fn(function (input: unknown) {
+    return { _type: 'PutObject', input };
+  }),
+  GetObjectCommand: vi.fn(function (input: unknown) {
+    return { _type: 'GetObject', input };
+  }),
+  DeleteObjectCommand: vi.fn(function (input: unknown) {
+    return { _type: 'DeleteObject', input };
+  }),
+  ListObjectsV2Command: vi.fn(function (input: unknown) {
+    return { _type: 'ListObjectsV2', input };
+  }),
 }));
 
 // ─── Mock meilisearch ───────────────────────────────────────────────────────
@@ -42,7 +57,9 @@ const mockMeiliClient = {
 };
 
 vi.mock('meilisearch', () => ({
-  MeiliSearch: vi.fn(() => mockMeiliClient),
+  MeiliSearch: vi.fn(function () {
+    return mockMeiliClient;
+  }),
 }));
 
 // ─── Import adapters after mocks ────────────────────────────────────────────

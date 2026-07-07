@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
+    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ext .ts,.tsx --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next .turbo dist"
   },
@@ -16,14 +16,15 @@
     "lucide-react": "^0.452.0",
     "next": "^16.2.10",
     "react": "^18.3.1",
-    "react-dom": "^19.2.7"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.2",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.11",
-    "@types/react-dom": "^19.2.3",
+    "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.20",
-    "eslint": "^10.6.0",
+    "eslint": "^9.36.0",
     "eslint-config-next": "^15.0.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^4.3.2",

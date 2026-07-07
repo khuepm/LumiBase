@@ -60,7 +60,7 @@ describe('SchemaService reserved collection-name prefixes', () => {
     const service = new SchemaService({ db: db as never, siteId: 'site-1' });
     // getCollection returning null means "does not exist yet".
     vi.spyOn(service, 'getCollection').mockResolvedValue(null as never);
-    vi.spyOn(service as never, 'invalidate').mockResolvedValue(undefined as never);
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'invalidate').mockResolvedValue(undefined as never);
 
     const row = await service.createCollection({ name: 'blog_posts' } as never);
     expect(row).toMatchObject({ name: 'blog_posts' });

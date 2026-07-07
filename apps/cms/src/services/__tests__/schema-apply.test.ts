@@ -135,10 +135,10 @@ describe('SchemaService schema apply', () => {
 
     vi.spyOn(service, 'getCollection').mockResolvedValue(collection as never);
     vi.spyOn(service, 'listFields').mockResolvedValue([titleField, staleField] as never);
-    vi.spyOn(service as never, 'listRelationsForCollection').mockResolvedValue([authorRelation, staleRelation] as never);
-    vi.spyOn(service as never, 'countFieldDataRows').mockResolvedValue(0);
-    vi.spyOn(service as never, 'validateRelationInput').mockResolvedValue(undefined);
-    vi.spyOn(service as never, 'deleteRelationRow').mockImplementation(async (relation: unknown) => {
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'listRelationsForCollection').mockResolvedValue([authorRelation, staleRelation] as never);
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'countFieldDataRows').mockResolvedValue(0);
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'validateRelationInput').mockResolvedValue(undefined);
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'deleteRelationRow').mockImplementation(async (relation: unknown) => {
       const row = relation as typeof authorRelation;
       calls.push(`delete-relation:${row.id}`);
     });
@@ -150,7 +150,7 @@ describe('SchemaService schema apply', () => {
       calls.push(`upsert-field:${field.name}`);
       return field as never;
     });
-    vi.spyOn(service as never, 'updateRelation').mockImplementation(async (_existing: unknown, relation: unknown) => {
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'updateRelation').mockImplementation(async (_existing: unknown, relation: unknown) => {
       const row = relation as typeof authorRelation;
       calls.push(`update-relation:${row.aliasField}`);
       return row as never;

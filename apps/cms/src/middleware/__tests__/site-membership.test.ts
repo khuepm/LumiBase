@@ -7,7 +7,9 @@ import { withSiteMembership } from '../site-membership';
 const bundleMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/permission-service', () => ({
-  PermissionService: vi.fn().mockImplementation(() => ({ bundle: bundleMock })),
+  PermissionService: vi.fn().mockImplementation(function () {
+    return { bundle: bundleMock };
+  }),
 }));
 
 function makeFakeDb(results: unknown[][]): Database {
