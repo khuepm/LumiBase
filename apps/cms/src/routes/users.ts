@@ -62,17 +62,24 @@ const subscriberAccessSchema = z.object({
 usersRouter.post('/subscriber-access', async (c) => {
   const body = await c.req.json();
   const input = subscriberAccessSchema.parse(body);
-  const grant = await grantSubscriberRead(c.get('db'), c.get('siteId'), input);
+  const siteId = c.get('siteId');
+  const grant = await grantSubscriberRead(c.get('db'), siteId, input);
+  // Policy mutation → drop compiled permission bundles at once instead of
+  // waiting out the cache TTL.
+  await bumpPermissionVersion(c, siteId);
   return c.json({ data: grant });
 });
 
 // Revoke subscriber read on a collection.
 usersRouter.delete('/subscriber-access/:collection', async (c) => {
   const collection = c.req.param('collection');
-  const removed = await revokeSubscriberRead(c.get('db'), c.get('siteId'), collection);
+  const siteId = c.get('siteId');
+  const removed = await revokeSubscriberRead(c.get('db'), siteId, collection);
   if (!removed) {
     return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
   }
+  // Revoked grant must stop applying immediately, not after the cache TTL.
+  await bumpPermissionVersion(c, siteId);
   return c.json({ data: { collection, removed: true } });
 });
 
