@@ -17,8 +17,9 @@
  *     using WebCrypto (`subtle.verify`).
  */
 
-import { extensions, userSites, notifications, roles } from "@lumibase/database";
+import { extensions, extensionVotes, userSites, notifications, roles } from "@lumibase/database";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../env";
@@ -187,7 +188,14 @@ function latestPublishedRows(rows: ExtensionRow[]): ExtensionRow[] {
   return [...bySlug.values()];
 }
 
-function toCatalogExtension(row: ExtensionRow) {
+interface CatalogProjectionOpts {
+  /** Total upvotes for the listing (across versions). */
+  voteCount?: number;
+  /** Whether the requesting user has already upvoted. */
+  hasVoted?: boolean;
+}
+
+function toCatalogExtension(row: ExtensionRow, opts: CatalogProjectionOpts = {}) {
   const manifest = asManifest(row.manifest);
   const slug = row.marketplaceSlug ?? row.key ?? extensionKey(row);
   const category = asString(catalogValue(manifest, "category")) ?? row.type;
@@ -215,7 +223,15 @@ function toCatalogExtension(row: ExtensionRow) {
     latestVersion: row.version,
     version: row.version,
     type: row.type,
-    totalDownloads: 0,
+    totalDownloads: row.downloadCount ?? 0,
+    voteCount: opts.voteCount ?? 0,
+    hasVoted: opts.hasVoted ?? false,
+    /**
+     * Trusted source signal: the listing carries a detached signature bound
+     * to a registered publisher key and an integrity hash. The install path
+     * re-verifies cryptographically; this flag drives the "verified" badge.
+     */
+    verified: Boolean(row.signature && row.publisherKeyId && row.bundleSha256),
     rating: null,
     ratingCount: null,
     versions: [
@@ -249,6 +265,40 @@ function parsePositiveInt(value: string | undefined, fallback: number, max?: num
   return max ? Math.min(integer, max) : integer;
 }
 
+/**
+ * Load raw vote rows for the given slugs. Aggregated in JS (consistent with the
+ * catalog which already materialises rows in memory) so callers can derive both
+ * per-slug counts and the caller's own vote state from a single query.
+ */
+async function loadVotes(
+  db: AppEnv["Variables"]["db"],
+  slugs: string[],
+): Promise<Array<{ marketplaceSlug: string; userId: string }>> {
+  if (slugs.length === 0) return [];
+  const rows = await db
+    .select()
+    .from(extensionVotes)
+    .where(inArray(extensionVotes.marketplaceSlug, slugs));
+  return rows.map((r) => ({ marketplaceSlug: r.marketplaceSlug, userId: r.userId }));
+}
+
+function tallyVotes(
+  votes: Array<{ marketplaceSlug: string; userId: string }>,
+  userId: string | null,
+): { counts: Map<string, number>; voted: Set<string> } {
+  const counts = new Map<string, number>();
+  const voted = new Set<string>();
+  for (const v of votes) {
+    counts.set(v.marketplaceSlug, (counts.get(v.marketplaceSlug) ?? 0) + 1);
+    if (userId && v.userId === userId) voted.add(v.marketplaceSlug);
+  }
+  return { counts, voted };
+}
+
+function currentUserId(c: Context<AppEnv>): string | null {
+  return c.get("auth")?.userId ?? null;
+}
+
 // ── routes ─────────────────────────────────────────────────────────────────
 
 marketplaceRouter.get("/extensions", async (c) => {
@@ -269,7 +319,7 @@ marketplaceRouter.get("/extensions", async (c) => {
     .from(extensions)
     .where(and(isNull(extensions.siteId), isNotNull(extensions.publishedAt)));
 
-  let catalog = latestPublishedRows(rows).map(toCatalogExtension);
+  let catalog = latestPublishedRows(rows).map((row) => toCatalogExtension(row));
 
   if (q) {
     catalog = catalog.filter((ext) => {
@@ -311,10 +361,19 @@ marketplaceRouter.get("/extensions", async (c) => {
   const total = catalog.length;
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const start = (page - 1) * perPage;
+  const pageItems = catalog.slice(start, start + perPage);
 
+  // Attach vote metrics only for the current page's listings.
+  const votes = await loadVotes(db, pageItems.map((ext) => ext.slug));
+  const { counts, voted } = tallyVotes(votes, currentUserId(c));
+  const data = pageItems.map((ext) => ({
+    ...ext,
+    voteCount: counts.get(ext.slug) ?? 0,
+    hasVoted: voted.has(ext.slug),
+  }));
 
   return c.json({
-    data: catalog.slice(start, start + perPage),
+    data,
     total,
     page,
     perPage,
@@ -342,9 +401,134 @@ marketplaceRouter.get("/extensions/:slug", async (c) => {
       404,
     );
 
+  const votes = await loadVotes(db, [slug]);
+  const { counts, voted } = tallyVotes(votes, currentUserId(c));
+
   return c.json({
-    data: toCatalogExtension(row),
+    data: toCatalogExtension(row, {
+      voteCount: counts.get(slug) ?? 0,
+      hasVoted: voted.has(slug),
+    }),
   });
+});
+
+// ── package download ─────────────────────────────────────────────────────────
+// Public "Download package" action. Bumps the download counter and hands back
+// the signed bundle location so the client can save it without installing.
+marketplaceRouter.get("/extensions/:slug/download", async (c) => {
+  const db = c.get("db");
+  const slug = c.req.param("slug");
+
+  const rows = await db
+    .select()
+    .from(extensions)
+    .where(
+      and(
+        eq(extensions.marketplaceSlug, slug),
+        isNull(extensions.siteId),
+        isNotNull(extensions.publishedAt),
+      ),
+    );
+  const [row] = latestPublishedRows(rows);
+  if (!row)
+    return c.json(
+      { errors: [{ code: "NOT_FOUND", message: "Extension not found" }] },
+      404,
+    );
+
+  await db
+    .update(extensions)
+    .set({ downloadCount: (row.downloadCount ?? 0) + 1 })
+    .where(eq(extensions.id, row.id));
+
+  // A redirect keeps large bundles off the Worker; `?redirect=0` returns JSON
+  // for programmatic clients that want the metadata (hash/signature) too.
+  if (c.req.query("redirect") === "0") {
+    return c.json({
+      data: {
+        slug,
+        version: row.version,
+        bundleUrl: row.bundleUrl,
+        bundleSha256: row.bundleSha256,
+        signature: row.signature,
+        signatureAlg: row.signatureAlg,
+        publisherKeyId: row.publisherKeyId,
+        downloadCount: (row.downloadCount ?? 0) + 1,
+      },
+    });
+  }
+  return c.redirect(row.bundleUrl, 302);
+});
+
+// ── voting ────────────────────────────────────────────────────────────────────
+async function slugIsPublished(
+  db: AppEnv["Variables"]["db"],
+  slug: string,
+): Promise<boolean> {
+  const rows = await db
+    .select()
+    .from(extensions)
+    .where(
+      and(
+        eq(extensions.marketplaceSlug, slug),
+        isNull(extensions.siteId),
+        isNotNull(extensions.publishedAt),
+      ),
+    );
+  return rows.length > 0;
+}
+
+marketplaceRouter.post("/extensions/:slug/vote", async (c) => {
+  const userId = currentUserId(c);
+  if (!userId)
+    return c.json(
+      { errors: [{ code: "UNAUTHORIZED", message: "Sign in to vote." }] },
+      401,
+    );
+
+  const db = c.get("db");
+  const slug = c.req.param("slug");
+
+  if (!(await slugIsPublished(db, slug)))
+    return c.json(
+      { errors: [{ code: "NOT_FOUND", message: "Extension not found" }] },
+      404,
+    );
+
+  // Idempotent: the unique (user, slug) index absorbs repeat votes.
+  await db
+    .insert(extensionVotes)
+    .values({ id: nanoid(), marketplaceSlug: slug, userId })
+    .onConflictDoNothing();
+
+  const votes = await loadVotes(db, [slug]);
+  const { counts } = tallyVotes(votes, userId);
+  return c.json({ data: { slug, voteCount: counts.get(slug) ?? 0, hasVoted: true } });
+});
+
+marketplaceRouter.delete("/extensions/:slug/vote", async (c) => {
+  const userId = currentUserId(c);
+  if (!userId)
+    return c.json(
+      { errors: [{ code: "UNAUTHORIZED", message: "Sign in to vote." }] },
+      401,
+    );
+
+  const db = c.get("db");
+  const slug = c.req.param("slug");
+
+  await db
+    .delete(extensionVotes)
+    .where(
+      and(
+        eq(extensionVotes.marketplaceSlug, slug),
+        eq(extensionVotes.userId, userId),
+      ),
+    );
+
+  const votes = await loadVotes(db, [slug]);
+  const { counts } = tallyVotes(votes, userId);
+  return c.json({ data: { slug, voteCount: counts.get(slug) ?? 0, hasVoted: false } });
 });
 
 marketplaceRouter.get("/updates", async (c) => {
@@ -617,4 +801,206 @@ marketplaceRouter.post("/publish", async (c) => {
   }
 
   return c.json({ data: source });
+});
+
+// ── community submissions ─────────────────────────────────────────────────────
+// Any authenticated user can propose an extension for the catalog. The listing
+// lands in `submission_status = 'pending'` and unpublished (`publishedAt` null),
+// so it never appears in the public catalog until a moderator approves and a
+// signed bundle is published via /publish.
+
+async function requireConfigurePermission(
+  c: Context<AppEnv>,
+): Promise<Response | null> {
+  const perm = await new PermissionService({
+    db: c.get("db"),
+    cache: c.get("runtime").cache,
+    ctx: permissionCtx(c),
+  }).canAccess("extensions", "configure");
+
+  if (perm) return null;
+  return c.json(
+    {
+      errors: [
+        {
+          code: "FORBIDDEN",
+          message: 'Action "extensions:configure" is not allowed.',
+        },
+      ],
+    },
+    403,
+  );
+}
+
+const submitSchema = z.object({
+  name: z.string().min(1).max(120),
+  version: z
+    .string()
+    .regex(/^\d+\.\d+\.\d+([-.+][0-9A-Za-z-.]+)?$/, "Expected SemVer version"),
+  type: z.enum([
+    "hook",
+    "endpoint",
+    "operation",
+    "interface",
+    "display",
+    "layout",
+    "panel",
+    "module",
+  ]),
+  marketplaceSlug: z.string().regex(/^[a-z0-9-]+$/),
+  bundleUrl: z.string().url(),
+  bundleSha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+  description: z.string().max(2000).optional(),
+  publisher: z.string().min(1).max(120).optional(),
+  repositoryUrl: z.string().url().optional(),
+  capabilities: z.array(z.string()).max(100).optional(),
+});
+
+marketplaceRouter.post("/submit", async (c) => {
+  const userId = currentUserId(c);
+  if (!userId)
+    return c.json(
+      { errors: [{ code: "UNAUTHORIZED", message: "Sign in to submit." }] },
+      401,
+    );
+
+  const db = c.get("db");
+  const parsed = submitSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json(
+      {
+        errors: parsed.error.issues.map((i) => ({
+          code: "VALIDATION",
+          message: `${i.path.join(".") || "(root)"}: ${i.message}`,
+        })),
+      },
+      400,
+    );
+  }
+  const input = parsed.data;
+
+  // Guard the namespace: a slug already live in the public catalog can only be
+  // updated by its publisher through /publish, not re-claimed via /submit.
+  const existingPublished = await db
+    .select()
+    .from(extensions)
+    .where(
+      and(
+        eq(extensions.marketplaceSlug, input.marketplaceSlug),
+        isNull(extensions.siteId),
+        isNotNull(extensions.publishedAt),
+      ),
+    );
+  if (existingPublished.length > 0)
+    return c.json(
+      {
+        errors: [
+          {
+            code: "SLUG_TAKEN",
+            message: `Slug "${input.marketplaceSlug}" is already published.`,
+          },
+        ],
+      },
+      409,
+    );
+
+  const manifest: MarketplaceManifest = {
+    name: input.name,
+    marketplace: {
+      description: input.description,
+      publisherName: input.publisher,
+      repositoryUrl: input.repositoryUrl,
+    },
+  };
+
+  const submitted = await db
+    .insert(extensions)
+    .values({
+      siteId: null,
+      key: input.marketplaceSlug,
+      name: input.name,
+      version: input.version,
+      type: input.type,
+      enabled: false,
+      bundleUrl: input.bundleUrl,
+      manifest,
+      capabilities: input.capabilities ?? [],
+      bundleSha256: input.bundleSha256 ?? null,
+      publisher: input.publisher ?? null,
+      marketplaceSlug: input.marketplaceSlug,
+      publishedAt: null,
+      submissionStatus: "pending",
+      submittedBy: userId,
+    })
+    .returning();
+
+  return c.json({ data: submitted[0] }, 201);
+});
+
+// List submissions for moderation (defaults to pending).
+marketplaceRouter.get("/submissions", async (c) => {
+  const denied = await requireConfigurePermission(c);
+  if (denied) return denied;
+
+  const db = c.get("db");
+  const status = c.req.query("status") ?? "pending";
+
+  const rows = await db
+    .select()
+    .from(extensions)
+    .where(
+      and(isNull(extensions.siteId), eq(extensions.submissionStatus, status)),
+    );
+
+  return c.json({ data: rows });
+});
+
+const reviewSchema = z.object({
+  action: z.enum(["approve", "reject"]),
+});
+
+// Moderate a submission. Approving marks it reviewed; publishing to the public
+// catalog still requires a signed bundle via /publish.
+marketplaceRouter.post("/submissions/:id/review", async (c) => {
+  const denied = await requireConfigurePermission(c);
+  if (denied) return denied;
+
+  const db = c.get("db");
+  const id = c.req.param("id");
+  const parsed = reviewSchema.safeParse(await c.req.json());
+  if (!parsed.success)
+    return c.json(
+      {
+        errors: parsed.error.issues.map((i) => ({
+          code: "VALIDATION",
+          message: i.message,
+        })),
+      },
+      400,
+    );
+
+  const nextStatus = parsed.data.action === "approve" ? "approved" : "rejected";
+
+  const updated = await db
+    .update(extensions)
+    .set({ submissionStatus: nextStatus })
+    .where(
+      and(
+        eq(extensions.id, id),
+        isNull(extensions.siteId),
+        isNotNull(extensions.submissionStatus),
+      ),
+    )
+    .returning();
+
+  if (updated.length === 0)
+    return c.json(
+      { errors: [{ code: "NOT_FOUND", message: "Submission not found" }] },
+      404,
+    );
+
+  return c.json({ data: updated[0] });
 });

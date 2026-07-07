@@ -22,6 +22,13 @@
       "when": 1783329587877,
       "tag": "0002_add_user_token_version",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783329687877,
+      "tag": "0003_marketplace_votes_downloads",
+      "breakpoints": true
     }
   ]
 }
