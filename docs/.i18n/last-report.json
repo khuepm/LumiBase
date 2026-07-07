@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-06T23:26:57.132Z",
+  "generatedAt": "2026-07-07T07:47:58.471Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -9,7 +9,7 @@
     "preserved": 0,
     "conflicts": 1,
     "upToDate": 32,
-    "planned": 94
+    "planned": 95
   },
   "actions": [
     {
@@ -805,6 +805,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "enterprise/private-submodule.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/access-manifest-v1.md",
       "type": "translate",
       "reason": "source changed since last sync",
@@ -1221,7 +1233,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-06T23-26-57-251Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-07T07-47-58-594Z.bak.md",
       "missingPlaceholders": 0
     },
     {
