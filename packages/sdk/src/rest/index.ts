@@ -73,6 +73,7 @@ export function readItems<
     if (params?.limit !== undefined) qs.set("limit", String(params.limit));
     if (params?.offset !== undefined) qs.set("offset", String(params.offset));
     if (params?.status) qs.set("status", params.status);
+    if (params?.meta) qs.set("meta", params.meta);
 
     const s = qs.toString();
     const query = s ? `?${s}` : "";

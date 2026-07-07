@@ -9,7 +9,39 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **Delivery API HTTP caching.** `GET /api/v1/deliver/page/:site_id/:slug`
+  now emits `Cache-Control: public, s-maxage=…, stale-while-revalidate=…`,
+  a weak `ETag`, and `Vary: X-Lumi-Site` for credential-less requests, and
+  answers `If-None-Match` with `304` from a single content-fingerprint query
+  (no section hydration). Requests carrying `Authorization` get
+  `private, no-store`. Tunable via `LUMIBASE_DELIVER_SMAXAGE` (default 60)
+  and `LUMIBASE_DELIVER_SWR` (default 300).
+- **Opt-in list totals.** `GET /api/v1/items/:collection?meta=none` skips the
+  `count(*)` aggregate and omits `meta.total` for cheaper feed/infinite-scroll
+  reads. Default (`meta=total_count`) is unchanged; the `@lumibase/sdk`
+  `readItems` gains a matching `meta` option.
+- **Request body-size limits.** Caddy caps request bodies (10 MB API, 50 MB
+  media uploads); the app also rejects oversized JSON bodies with `413`
+  (`LUMIBASE_MAX_JSON_BODY`, default 1 MiB) as defense-in-depth.
+
+### Changed
+
+- **Permission cache invalidation now takes effect immediately.** Compiled
+  permission bundles are keyed by a per-site version pointer
+  (`perm:{site}:v{n}:{principal}`); role/policy/permission/API-key/membership
+  mutations bump the pointer so a revoked grant stops applying at once instead
+  of lingering for the 60s TTL (which remains as a safety net). Fixes the
+  previously dead `PermissionService.invalidate()`.
+- **API-key `lastUsedAt` writes are debounced.** An API-key-authenticated
+  request refreshes the last-used timestamp at most once per
+  `LUMIBASE_APIKEY_TOUCH_INTERVAL` seconds (default 60), off the response path,
+  instead of issuing an `UPDATE` on every request.
+- **Setup-complete check is process-cached.** The per-request bootstrap-admin
+  lookup in `requireSetupComplete` is cached (permanently once initialized,
+  5s TTL while uninitialized), removing a DB round-trip from every
+  authenticated request.
 
 ## [0.19.0] - 2026-07-07
 

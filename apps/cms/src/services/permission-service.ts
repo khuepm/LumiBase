@@ -36,8 +36,10 @@ import {
  *   2. Call `bundle()` once; this returns the cached compiled bundle and is
  *      reused for every subsequent `canAccess` / `whereFor` / `applyPresets`
  *      call within the request.
- *   3. Mutations to roles/policies/permissions invalidate the KV cache via
- *      `invalidate(siteId, principalKey?)`.
+ *   3. Mutations to roles/policies/permission rows/principal bindings bump
+ *      the site-wide cache version via `PermissionService.bumpVersion` —
+ *      routes call the `bumpPermissionVersion(c)` helper in
+ *      `services/permission-invalidation.ts` after the write commits.
  *
  * The compiled bundle is also returned by `GET /permissions/me`.
  */
@@ -98,8 +100,28 @@ export interface PermissionServiceDeps {
 
 const CACHE_TTL_SECONDS = 60;
 
-const cacheKey = (siteId: string, principal: string) =>
-  `perm:${siteId}:${principal}`;
+/**
+ * Site-wide cache version pointer (high-load-cache-readiness Req 2; design
+ * §5.1). Bundles are stored under `perm:{site}:v{n}:{principal}`; bumping the
+ * pointer orphans every cached bundle for the site in ONE write — no
+ * list-by-prefix needed (Workers KV has none). Orphaned entries age out via
+ * the 60s entry TTL, which doubles as the safety net when a bump write fails
+ * or is still propagating through KV's eventual-consistency window.
+ */
+const versionKey = (siteId: string) => `perm-ver:${siteId}`;
+
+const cacheKey = (siteId: string, version: number, principal: string) =>
+  `perm:${siteId}:v${version}:${principal}`;
+
+async function readPermissionVersion(cache: CacheProvider, siteId: string): Promise<number> {
+  try {
+    const raw = await cache.get<number | string>(versionKey(siteId));
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 1 ? Math.floor(value) : 1;
+  } catch {
+    return 1;
+  }
+}
 
 export class PermissionService {
   private compiled: PermissionBundle | null = null;
@@ -118,10 +140,12 @@ export class PermissionService {
   async bundle(): Promise<PermissionBundle> {
     if (this.compiled) return this.compiled;
 
-    if (this.deps.cache) {
-      const cached = await this.deps.cache.get<PermissionBundle>(
-        cacheKey(this.deps.ctx.siteId, this.principalKey),
-      );
+    const cache = this.deps.cache;
+    let key: string | null = null;
+    if (cache) {
+      const version = await readPermissionVersion(cache, this.deps.ctx.siteId);
+      key = cacheKey(this.deps.ctx.siteId, version, this.principalKey);
+      const cached = await cache.get<PermissionBundle>(key);
       if (cached) {
         this.compiled = cached;
         await this.hydrateMagicContext(cached);
@@ -131,25 +155,29 @@ export class PermissionService {
 
     this.compiled = await this.compile();
 
-    if (this.deps.cache) {
-      await this.deps.cache.set(
-        cacheKey(this.deps.ctx.siteId, this.principalKey),
-        JSON.stringify(this.compiled),
-        { ttl: CACHE_TTL_SECONDS },
-      );
+    if (cache && key) {
+      await cache.set(key, JSON.stringify(this.compiled), { ttl: CACHE_TTL_SECONDS });
     }
     return this.compiled;
   }
 
-  /** Drop the KV entry; call after CRUD on roles/policies/permissions. */
-  async invalidate(siteId: string, principal?: string): Promise<void> {
-    if (!this.deps.cache) return;
-    if (principal) {
-      await this.deps.cache.delete(cacheKey(siteId, principal));
-    } else {
-      // We don't have list-by-prefix in KV; rely on TTL to age out. Targeted
-      // invalidation is best-effort: known principals only.
-      await this.deps.cache.delete(cacheKey(siteId, this.principalKey));
+  /**
+   * Invalidate every cached bundle for the site by bumping the version
+   * pointer. Call after ANY mutation that can change effective permissions:
+   * roles, policies, permission rows, role/policy bindings, memberships,
+   * API-key state. Best-effort by design — a cache outage must never fail
+   * the mutation; the 60s entry TTL bounds staleness in that case.
+   */
+  static async bumpVersion(
+    cache: CacheProvider | null | undefined,
+    siteId: string,
+  ): Promise<void> {
+    if (!cache || !siteId) return;
+    try {
+      const current = await readPermissionVersion(cache, siteId);
+      await cache.set(versionKey(siteId), String(current + 1));
+    } catch (error) {
+      console.warn('[permission-service] version bump failed; relying on TTL expiry', error);
     }
   }
 

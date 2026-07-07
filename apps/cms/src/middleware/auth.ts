@@ -9,6 +9,48 @@ import { formatSafeError } from '@lumibase/shared/utils';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
+/**
+ * Debounce window (seconds) for the API-key `lastUsedAt` touch
+ * (high-load-cache-readiness Req 3). Under read load, every API-key request
+ * previously issued an `UPDATE api_keys` — turning a read into a write and
+ * hammering the row. We now only touch when the stored `lastUsedAt` is older
+ * than this interval, and the write is scheduled OFF the response path.
+ */
+const DEFAULT_APIKEY_TOUCH_INTERVAL_SECONDS = 60;
+
+export function apiKeyTouchIntervalMs(env: Partial<AppEnv['Bindings']> | undefined): number {
+  const raw = env?.LUMIBASE_APIKEY_TOUCH_INTERVAL ?? process.env.LUMIBASE_APIKEY_TOUCH_INTERVAL;
+  const seconds = Number(raw);
+  const resolved = Number.isFinite(seconds) && seconds >= 0 ? seconds : DEFAULT_APIKEY_TOUCH_INTERVAL_SECONDS;
+  return resolved * 1000;
+}
+
+/** True when the key's last touch is stale enough to warrant a fresh write. */
+export function shouldTouchApiKey(lastUsedAt: Date | null | undefined, now: Date, intervalMs: number): boolean {
+  if (intervalMs === 0) return true;
+  if (!lastUsedAt) return true;
+  return now.getTime() - lastUsedAt.getTime() >= intervalMs;
+}
+
+/**
+ * Run `promise` detached from the response. On Workers it hands off to
+ * `executionCtx.waitUntil`; on Node/tests it's fire-and-forget. Hono's
+ * `c.executionCtx` getter *throws* when no context is bound (Node / tests),
+ * so the probe is wrapped in try/catch — mirrors `scheduleWorkersDrain`.
+ */
+function runDetached(c: Parameters<MiddlewareHandler<AppEnv>>[0], promise: Promise<unknown>): void {
+  try {
+    const ctx = c.executionCtx as { waitUntil?: (p: Promise<unknown>) => void } | undefined;
+    if (ctx && typeof ctx.waitUntil === 'function') {
+      ctx.waitUntil(promise);
+      return;
+    }
+  } catch {
+    // No execution context bound — fall through to fire-and-forget.
+  }
+  void promise;
+}
+
 const getJwks = (certsUrl: string) => {
   let jwks = JWKS_CACHE.get(certsUrl);
   if (!jwks) {
@@ -252,15 +294,29 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
-      await c
-        .get('db')
-        .update(apiKeys)
-        .set({
-          lastUsedAt: now,
-          lastUsedIp: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-          lastUsedUserAgent: c.get('userAgent') ?? c.req.header('user-agent') ?? null,
-        })
-        .where(eq(apiKeys.id, apiKey.id));
+      // Debounced, off-path last-used touch (Req 3): skip the write entirely
+      // when the stored timestamp is still within the interval, and never let
+      // it block the response. Last-write-wins on these stats columns makes a
+      // race between concurrent instances harmless.
+      if (shouldTouchApiKey(apiKey.lastUsedAt, now, apiKeyTouchIntervalMs(c.env))) {
+        const db = c.get('db');
+        const touch = Promise.resolve(
+          db
+            .update(apiKeys)
+            .set({
+              lastUsedAt: now,
+              lastUsedIp: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+              lastUsedUserAgent: c.get('userAgent') ?? c.req.header('user-agent') ?? null,
+            })
+            .where(eq(apiKeys.id, apiKey.id)),
+        ).then(
+          () => undefined,
+          (err: unknown) => {
+            console.warn('[withAuth] api-key lastUsed touch failed', formatSafeError(err));
+          },
+        );
+        runDetached(c, touch);
+      }
 
       const snapshot = apiKeySnapshot({ ...apiKey, lastUsedAt: now });
       const principal: AuthPrincipal = {

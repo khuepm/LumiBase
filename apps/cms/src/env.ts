@@ -76,6 +76,14 @@ export interface Bindings {
   FILE_UPLOAD_ALLOWED_MIME_TYPES?: string;
   /** Bearer token required to read Prometheus metrics in production. */
   METRICS_TOKEN?: string;
+  /** Delivery API shared-cache lifetime in seconds (`0` disables public caching). Default 60. */
+  LUMIBASE_DELIVER_SMAXAGE?: string;
+  /** Delivery API stale-while-revalidate window in seconds. Default 300. */
+  LUMIBASE_DELIVER_SWR?: string;
+  /** Debounce window (seconds) for API-key `lastUsedAt` writes. Default 60; `0` = touch every request. */
+  LUMIBASE_APIKEY_TOUCH_INTERVAL?: string;
+  /** Max JSON request body in bytes for the app-level guard. Default 1 MiB. */
+  LUMIBASE_MAX_JSON_BODY?: string;
   /** Set to 'true' to disable the general API rate limiter (CWE-400). */
   LUMIBASE_RATE_LIMIT_DISABLED?: string;
   /** Max requests per window for the general API rate limiter (default 300). */
