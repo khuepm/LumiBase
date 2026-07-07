@@ -195,12 +195,52 @@ export const extensions = pgTable(
     publishedAt: timestamp('published_at'),
     /** SHA-256 of the bundle for integrity verification at install time. */
     bundleSha256: text('bundle_sha256'),
+    /** Cumulative package downloads (increments on the /download endpoint). */
+    downloadCount: integer('download_count').default(0).notNull(),
+    /**
+     * User-submission review state for community-contributed extensions:
+     * null = not a submission, `pending` = awaiting review, `approved`,
+     * `rejected`. Publishing to the catalog still goes through /publish.
+     */
+    submissionStatus: text('submission_status'),
+    /** User who submitted this extension via the community submit flow. */
+    submittedBy: text('submitted_by').references(() => users.id),
   },
   (t) => ({
     siteNameIdx: index('extensions_site_name_idx').on(t.siteId, t.name),
     siteKeyIdx: index('extensions_site_key_idx').on(t.siteId, t.key),
     publisherIdx: index('extensions_publisher_idx').on(t.publisher, t.publishedAt),
     marketplaceSlugIdx: index('extensions_marketplace_slug_idx').on(t.marketplaceSlug),
+    submissionStatusIdx: index('extensions_submission_status_idx').on(
+      t.submissionStatus,
+    ),
+  }),
+);
+
+/**
+ * Marketplace upvotes. One row per (user, marketplace listing); the unique
+ * index makes voting idempotent and prevents ballot-stuffing. Votes are keyed
+ * by `marketplaceSlug` (not extension row id) so they persist across version
+ * bumps of the same listing.
+ */
+export const extensionVotes = pgTable(
+  'lumibase_extension_votes',
+  {
+    id: id(),
+    /** Marketplace listing slug the vote is cast for. */
+    marketplaceSlug: text('marketplace_slug').notNull(),
+    /** Voter. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    userSlugIdx: uniqueIndex('extension_votes_user_slug_idx').on(
+      t.userId,
+      t.marketplaceSlug,
+    ),
+    slugIdx: index('extension_votes_slug_idx').on(t.marketplaceSlug),
   }),
 );
 
