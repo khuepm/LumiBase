@@ -1,3 +1,13 @@
+## UX Psychology
+
+- [UX Psychology Principles for Lumibase](./UX%20Psychology%20Principles%20for%20Lumibase.pdf)
+Cuốn sách này là cẩm nang toàn diện tổng hợp các nguyên lý tâm lý học hành vi cốt lõi và cách ứng dụng trực tiếp chúng vào việc tối ưu hóa giao diện trong hệ sinh thái LumiBase. Tài liệu giúp làm rõ cách người dùng tư duy, tiếp nhận thông tin và đưa ra quyết định, từ đó xây dựng các trải nghiệm mượt mà, tự nhiên và hiệu quả nhất.
+
+> 📌 **Lưu ý:** Để đảm bảo tính thời sự và chiều sâu kiến thức, tài liệu này sẽ **được mình liên tục cập nhật, bổ sung và hoàn thiện một cách đầy đủ nhất** dựa trên các nghiên cứu thực tế và sự phát triển của hệ thống.
+
+<img width="1130" height="620" alt="image" src="https://github.com/user-attachments/assets/dcbf048c-4107-48db-9223-7a4574fd0f42" />
+
+
 # LumiBase Documentation Index
 
 LumiBase is an Edge-native Headless CMS built on Hono.js + PostgreSQL + Cloudflare Workers / Docker.
