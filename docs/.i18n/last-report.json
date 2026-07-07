@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-07-07T08:18:48.926Z",
+  "generatedAt": "2026-07-07T12:01:03.930Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
-    "preserved": 0,
+    "preserved": 1,
     "conflicts": 1,
     "upToDate": 32,
-    "planned": 96
+    "planned": 97
   },
   "actions": [
     {
@@ -889,6 +889,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/collection-preview.md",
+      "type": "preserve-and-translate",
+      "reason": "en-file-is-vietnamese; no vi counterpart",
+      "enLang": "vi",
+      "viLang": null,
+      "sourceLocale": "vi",
+      "targetLocale": "en",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/collections-builder.md",
       "type": "translate",
       "reason": "source changed since last sync",
@@ -1233,7 +1245,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-07T08-18-49-061Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-07T12-01-04-064Z.bak.md",
       "missingPlaceholders": 0
     },
     {
