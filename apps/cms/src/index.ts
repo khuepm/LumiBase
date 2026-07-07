@@ -8,6 +8,7 @@ import { withJsonBodyLimit } from './middleware/body-limit';
 import { withAuth } from './middleware/auth';
 import { withDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
+import { withRateLimit } from './middleware/rate-limit';
 import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
@@ -56,6 +57,7 @@ import { rolesRouter } from './routes/roles';
 import { healthRouter } from './routes/health';
 import { insightsRouter } from './routes/insights';
 import { mediaRouter } from './routes/media';
+import { uploadsRouter } from './routes/uploads';
 import { marketplaceRouter } from './routes/marketplace';
 import { materializeRouter } from './routes/materialize';
 import { metricsRouter, withMetrics } from './routes/metrics';
@@ -63,6 +65,7 @@ import { searchRouter } from './routes/search';
 import { scimRouter } from './routes/scim';
 import { scimAdminRouter } from './routes/scim-admin';
 import { settingsRouter } from './routes/settings';
+import { domainsRouter } from './routes/domains';
 import { siteRouter } from './routes/site';
 import { systemRouter } from './routes/system';
 import { shareAdminRouter, sharePublicRouter } from './routes/shares';
@@ -191,7 +194,7 @@ app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withDb(), withAuth(), withSiteMembership(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
+api.use('*', withTenant(), withDb(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).
@@ -228,11 +231,14 @@ api.route('/config', configRouter);
 api.route('/api-keys', apiKeysRouter);
 api.route('/search', searchRouter);
 api.route('/media', mediaRouter);
+// Upload policy config (effective allowlist/size for the picker; admin edits).
+api.route('/uploads', uploadsRouter);
 // Future routers: presets, translations, ...
 api.route('/presets', presetsRouter);
 api.route('/translations', translationsRouter);
 api.route('/settings', settingsRouter);
 api.route('/site', siteRouter);
+api.route('/domains', domainsRouter);
 api.route('/shares', shareAdminRouter);
 api.route('/users', usersRouter);
 api.route('/teams', teamsRouter);

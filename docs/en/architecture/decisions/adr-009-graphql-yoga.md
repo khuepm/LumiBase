@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T10:56:37.270Z
+sourceLang: en
+contentHash: d5c1914b1d9af5eb
+---
+
 # ADR-009: GraphQL Yoga with Dynamic Schema over ItemService
 
 **Date:** 2026-06-17

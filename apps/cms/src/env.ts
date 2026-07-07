@@ -84,6 +84,12 @@ export interface Bindings {
   LUMIBASE_APIKEY_TOUCH_INTERVAL?: string;
   /** Max JSON request body in bytes for the app-level guard. Default 1 MiB. */
   LUMIBASE_MAX_JSON_BODY?: string;
+  /** Set to 'true' to disable the general API rate limiter (CWE-400). */
+  LUMIBASE_RATE_LIMIT_DISABLED?: string;
+  /** Max requests per window for the general API rate limiter (default 300). */
+  LUMIBASE_RATE_LIMIT_MAX?: string;
+  /** Window length in seconds for the general API rate limiter (default 60). */
+  LUMIBASE_RATE_LIMIT_WINDOW_S?: string;
   /**
    * Sentry DSN for the Cloudflare Workers build. When unset, `withSentry`
    * in `cloudflare.ts` initializes with an empty DSN and Sentry becomes a
@@ -108,6 +114,15 @@ export interface Bindings {
   WORKERS_AI_API_TOKEN?: string;
   /** Optional Workers AI gateway URL override. */
   WORKERS_AI_GATEWAY?: string;
+  // ── Custom domains / Cloudflare for SaaS (services/domains/*) ───────────
+  /** API token with `SSL and Certificates: Edit` on the SaaS zone. */
+  CLOUDFLARE_API_TOKEN?: string;
+  /** Zone id that owns the Custom Hostnames + fallback origin. */
+  CLOUDFLARE_ZONE_ID?: string;
+  /** Hostname operators CNAME to (proxied fallback origin), e.g. `cname.lumibase.dev`. */
+  LUMIBASE_SAAS_FALLBACK?: string;
+  /** Reserved suffix offered for free subdomains. Defaults to `lumibase.dev`. */
+  LUMIBASE_FREE_DOMAIN_SUFFIX?: string;
 }
 
 /**

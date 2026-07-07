@@ -2,3 +2,11 @@
 	path = extensions
 	url = https://github.com/lumibase-ai/extensions
 	branch = main
+[submodule "apps/marketplace"]
+	path = apps/marketplace
+	url = git@github.com:lumibase-ai/marketplace.git
+	branch = main
+[submodule "apps/enterprise"]
+	path = apps/enterprise
+	url = https://github.com/lumibase-ai/enterprise-core.git
+	branch = feat/custom-domains-docs

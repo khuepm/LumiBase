@@ -10,14 +10,16 @@ const KEY_V1 = Buffer.alloc(32, 2).toString('base64');
 
 // SchemaService is constructed inside rewrapBatch; stub getCompiled.
 vi.mock('../schema-service', () => ({
-  SchemaService: vi.fn().mockImplementation(() => ({
-    getCompiled: vi.fn().mockResolvedValue({
-      fields: [
-        { name: 'name', encrypted: false },
-        { name: 'ssn', encrypted: true },
-      ],
-    }),
-  })),
+  SchemaService: vi.fn().mockImplementation(function () {
+    return {
+      getCompiled: vi.fn().mockResolvedValue({
+        fields: [
+          { name: 'name', encrypted: false },
+          { name: 'ssn', encrypted: true },
+        ],
+      }),
+    };
+  }),
 }));
 
 function makeDb(itemRows: Record<string, unknown>[]) {

@@ -12,6 +12,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
+import { dispatchItemEvent } from './flow-dispatch';
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
 import { validateItem } from './validation';
@@ -740,6 +741,7 @@ export class ItemService {
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     await this.dispatchFirebaseSync(collectionName, 'create', row.id, row.data as Record<string, unknown>);
+    await this.dispatchFlowEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -918,6 +920,7 @@ export class ItemService {
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     await this.dispatchFirebaseSync(collectionName, 'update', row.id, row.data as Record<string, unknown>);
+    await this.dispatchFlowEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -993,6 +996,7 @@ export class ItemService {
     await this.deindexItem(collectionName, id);
     await this.publishRealtimeEvent(collectionName, 'delete', id, {});
     await this.dispatchFirebaseSync(collectionName, 'delete', id, {});
+    await this.dispatchFlowEvent(collectionName, 'delete', id, {});
     // After hook — fire-and-forget.
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -1458,6 +1462,25 @@ export class ItemService {
       // Realtime fan-out is non-critical — log and continue.
       console.error('[item-service] realtime publish failed', { collection, itemId, err: formatSafeError(err) });
     }
+  }
+
+  /**
+   * Fan a committed item mutation out to matching event-triggered flows
+   * (visual-flow-builder Req 1). Only the enqueue happens here — execution is
+   * the flow-events consumer's job — and `dispatchItemEvent` never throws, so
+   * flow automation can never fail a content write.
+   */
+  private async dispatchFlowEvent(
+    collection: string,
+    action: 'create' | 'update' | 'delete',
+    itemId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.deps.queue) return;
+    await dispatchItemEvent(
+      { db: this.deps.db, siteId: this.deps.siteId, queue: this.deps.queue },
+      { collection, action, itemId, payload },
+    );
   }
 
   /**

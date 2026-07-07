@@ -526,10 +526,31 @@ Scheduled releases publish via the shared `content-scheduler` tick
 | `PATCH` | `/api/v1/files/:id` | Update metadata (title, tags, folder) |
 | `DELETE` | `/api/v1/files/:id` | Delete file |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
+| `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
+| `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`) |
+| `DELETE` | `/api/v1/media/:key` | Delete media object |
+| `GET` | `/api/v1/uploads/config` | Effective upload policy + type catalogue (any member) |
+| `PUT` | `/api/v1/uploads/config` | Update allowlist / size cap (site admin) |
 
 **Image transform params for `/api/v1/assets/:id`:**
 ```
 ?width=800&height=600&format=webp&quality=80&fit=cover
+```
+
+**Upload policy (`/api/v1/uploads/config`).** Enforced by the `file-upload-policy`
+guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`,
+`POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
+its true byte length; the declared MIME must be in the allowlist and match the
+filename extension; raw bytes are content-sniffed (magic bytes) and executables /
+active-content SVGs are rejected. The allowlist + cap resolve `per-site DB
+(settings key upload_policy) → env (FILE_UPLOAD_*) → default`.
+
+```
+GET  /api/v1/uploads/config
+→ { data: { maxBytes, allowedMimeTypes[], allowedExtensions[], catalogue[] } }
+
+PUT  /api/v1/uploads/config           # site admin only
+{ "maxBytes": 5242880, "allowedMimeTypes": ["image/png","image/jpeg"] }
 ```
 
 ---
@@ -539,13 +560,19 @@ Scheduled releases publish via the shared `content-scheduler` tick
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/flows` | List flows (filter by `status`, `trigger`) |
+| `GET` | `/api/v1/flows/operations` | Operation registry: `{ key, description, options }` — palette + `validateGraph` knownKeys source of truth |
 | `POST` | `/api/v1/flows` | Create a new flow |
 | `GET` | `/api/v1/flows/:id` | Get flow detail + graph |
 | `PATCH` | `/api/v1/flows/:id` | Update flow (graph, status, options) |
 | `DELETE` | `/api/v1/flows/:id` | Delete flow |
 | `POST` | `/api/v1/flows/:id/run` | Manual trigger with body as input |
+| `POST` | `/api/v1/flows/:id/trigger` | **Webhook trigger** — no CMS session; authenticate with the per-flow token (`x-flow-token` header or `Bearer`), compared constant-time. Input = `{ body, headers, query }` (credential headers stripped). 404 for non-webhook/inactive flows; 401 `WEBHOOK_NOT_CONFIGURED`/`UNAUTHENTICATED` |
 | `GET` | `/api/v1/flows/:id/runs` | Execution history |
 | `GET` | `/api/v1/flows/:id/runs/:runId` | Single run detail (steps output) |
+
+**Save-time gates:** an `active` flow must pass the shared graph validation — `400` with `GRAPH_DANGLING_EDGE` / `GRAPH_CYCLE` / `GRAPH_NO_ENTRY` / `GRAPH_UNKNOWN_OPERATION` (+ `nodeId`) otherwise; drafts may hold invalid work-in-progress. Schedule flows validate `triggerOptions.cron` (5-field, UTC): `400 CRON_INVALID` on a malformed expression, `400 CRON_REQUIRED` when activating without one; `next_run_at` is computed on save and advanced by the scheduler sweep before each enqueued run (idempotent).
+
+**Triggers:** `event` flows fire on item create/update/delete via the `flow-events` queue (`triggerOptions.collection` / `.action` filter, string or array, missing = all); `schedule` flows are swept every scheduler tick; `webhook` flows use the endpoint above; `manual` runs inline via `/run`.
 
 **Trigger a flow:**
 ```bash

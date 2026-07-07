@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T11:00:40.127Z
+sourceLang: en
+contentHash: 8ea669829ae0efac
+---
+
 # External JWT Authentication
 
 LumiBase can authenticate users and services via JWTs issued by an external

@@ -25,6 +25,17 @@ The LumiBase Marketplace lets you publish and install **digitally signed** exten
 | `marketplaceSlug` | Slug used to build the public detail URL |
 | `publishedAt` | Null when not yet published |
 | `bundleSha256` | The bundle's SHA-256 hex, to verify integrity |
+| `downloadCount` | Cumulative package downloads (bumped by `/download`) |
+| `submissionStatus` | Community submission state: `pending` / `approved` / `rejected` (null = not a submission) |
+| `submittedBy` | User who submitted the extension via the community flow |
+
+`extension_votes` records marketplace upvotes — one row per `(userId, marketplaceSlug)`, enforced by a unique index so voting is idempotent. Votes are keyed by slug so they survive version bumps.
+
+| Column | Purpose |
+|--------|----------|
+| `marketplaceSlug` | The listing being voted for |
+| `userId` | The voter (FK → `users`, cascade delete) |
+| `createdAt` | When the vote was cast |
 
 ## Public keys registry
 
@@ -42,13 +53,51 @@ Loaded once at router init, not cached long-term (can be rotated via an env upda
 ## API endpoints
 
 ```
-GET  /api/v1/marketplace/extensions             List published extensions
-GET  /api/v1/marketplace/extensions/:slug       Detail (with signature)
-POST /api/v1/marketplace/extensions/:slug/install   Install into the current site
-POST /api/v1/marketplace/publish                Publish an uploaded extension
+GET    /api/v1/marketplace/extensions              List published extensions
+GET    /api/v1/marketplace/extensions/:slug        Detail (with signature)
+GET    /api/v1/marketplace/extensions/:slug/download   Download package (302 → bundle; ?redirect=0 → JSON)
+POST   /api/v1/marketplace/extensions/:slug/install    Install into the current site
+POST   /api/v1/marketplace/extensions/:slug/vote       Upvote (auth; idempotent)
+DELETE /api/v1/marketplace/extensions/:slug/vote       Remove upvote (auth)
+POST   /api/v1/marketplace/publish                 Publish an uploaded (signed) extension
+POST   /api/v1/marketplace/submit                  Community-submit an extension for review (auth)
+GET    /api/v1/marketplace/submissions?status=     List submissions for moderation (extensions:configure)
+POST   /api/v1/marketplace/submissions/:id/review  Approve / reject a submission (extensions:configure)
 ```
 
 Implementation: `apps/cms/src/routes/marketplace.ts`.
+
+The catalog projection adds three derived fields on top of the stable public
+fields: `verified` (true when the listing carries a signature + registered
+publisher key + integrity hash — drives the "Verified" badge and the trusted
+install path), `voteCount`, and `hasVoted` (for the authenticated caller).
+`totalDownloads` now reflects `downloadCount`.
+
+## Download
+
+`GET /extensions/:slug/download` bumps `downloadCount` on the latest published
+version and, by default, `302`-redirects to the signed `bundleUrl` so large
+bundles never transit the Worker. Programmatic clients pass `?redirect=0` to get
+the bundle metadata (URL, hash, signature, key id, new count) as JSON instead.
+
+## Voting
+
+Any authenticated user can upvote a listing. `POST …/vote` inserts a row with
+`ON CONFLICT DO NOTHING` against the unique `(userId, marketplaceSlug)` index, so
+repeat votes are no-ops; `DELETE …/vote` retracts it. Both return the fresh
+`{ voteCount, hasVoted }`.
+
+## Community submissions
+
+`POST /submit` lets any authenticated user propose an extension for the public
+catalog. It validates the payload (name, SemVer `version`, `type`, slug, bundle
+URL, optional description/publisher/repo/capabilities), rejects a slug that is
+already live in the catalog (`409 SLUG_TAKEN`), and creates a **global,
+unpublished** row (`siteId = null`, `publishedAt = null`) with
+`submissionStatus = 'pending'` and `submittedBy = <user>`. Because it is
+unpublished, it never appears in the public catalog until a moderator approves
+it (`/submissions/:id/review`) **and** a signed bundle is published via
+`/publish`. Moderation endpoints require the `extensions:configure` permission.
 
 ## Verification flow
 
