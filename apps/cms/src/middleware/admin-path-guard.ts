@@ -317,19 +317,23 @@ export function adminPathGuard(): MiddlewareHandler<AppEnv> {
     // runtime when `c.get('db')` is unset.
     const db = resolveDb(c);
     if (!db) {
-      // No DB available means we can't tell if state is initialized.
-      // Fail open to `next()` — the route handler will run its own
-      // checks, and on a real deployment `withRuntime` is global so
-      // this branch only fires in misconfigured tests.
-      return next();
+      // No DB available means we can't tell if state is initialized. Fail
+      // CLOSED: emit the canonical 404 so a misconfigured (or degraded)
+      // deployment cannot leak the existence of the Studio path. On a real
+      // deployment `withRuntime` is global, so this branch effectively only
+      // fires in misconfigured tests — and there 404 is still correct.
+      return buildIndistinguishable404();
     }
 
     let state: CachedState;
     try {
       state = await readState(db);
     } catch {
-      // Fail open: see readState() comment.
-      return next();
+      // Fail CLOSED on read failure: run the latency no-op to preserve the
+      // timing profile, then emit the canonical 404. A DB hiccup must not
+      // downgrade the guard into leaking that this path is special.
+      await selectOneNoop(db);
+      return buildIndistinguishable404();
     }
 
     // Bypass while the wizard is reachable (Req 5.4).

@@ -226,6 +226,10 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
     if (apiKey) {
       const now = new Date();
+      // Fail-closed tenant scoping: a token that belongs to another site is
+      // never accepted here. We fetch by token hash (a 256-bit unguessable
+      // value) and then reject + audit any cross-tenant use before the key
+      // can yield a principal.
       if (apiKey.siteId !== c.get('siteId')) {
         await auditApiKeyUseDenied(c, apiKey, 'site_mismatch');
         return c.json(
