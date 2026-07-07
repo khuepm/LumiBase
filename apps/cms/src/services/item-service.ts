@@ -64,6 +64,13 @@ export interface ListItemsParams {
   limit?: number;
   offset?: number;
   status?: string | null;
+  /**
+   * Whether to run the `count(*)` total (high-load-cache-readiness Req 5).
+   * Defaults to `true` to preserve the historical response shape; callers that
+   * don't render a total (infinite scroll, delivery) pass `false` to skip the
+   * extra aggregate query. When `false`, `meta.total` is omitted.
+   */
+  withTotal?: boolean;
 }
 
 export type ItemFilterOp =
@@ -574,11 +581,17 @@ export class ItemService {
       .limit(limit)
       .offset(offset);
 
-    const totals = await this.deps.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(items)
-      .where(where);
-    const total = totals[0]?.count ?? 0;
+    // `count(*)` is opt-out (Req 5): skip the extra aggregate when the caller
+    // doesn't need a total. Default preserves the historical behaviour.
+    const withTotal = params.withTotal ?? true;
+    let total: number | undefined;
+    if (withTotal) {
+      const totals = await this.deps.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(items)
+        .where(where);
+      total = totals[0]?.count ?? 0;
+    }
 
     const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
     const masked = perm && this.permissions
@@ -607,7 +620,7 @@ export class ItemService {
 
     return {
       data,
-      meta: { total, limit, offset },
+      meta: total === undefined ? { limit, offset } : { total, limit, offset },
     };
   }
 

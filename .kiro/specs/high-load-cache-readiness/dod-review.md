@@ -2,6 +2,11 @@
 
 > Rà soát chương trình này theo từng mục của `.kiro/steering/definition-of-done.md`, thực hiện **tại thời điểm viết spec** (2026-07-04) và phải rà lại **tại mỗi lần đóng phase** (tasks 7.2, 15.2, 21.2). DoD áp cho từng PR/feature khi hoàn thành — bảng dưới chỉ ra hàng rào tương ứng đã được thiết kế sẵn ở đâu trong spec, để lúc thực thi không mục nào bị "quên".
 
+## Trạng thái đóng phase
+
+- **Phase P0 (tasks 1–6): đã triển khai + rà DoD 2026-07-05.** typecheck workspace sạch; 1838 test CMS pass (24 test P0.1/P0.2 + 27 test P0.3–P0.6 + count opt-in). Setup Impact Registry dòng #37 = `n/a` (mọi knob là env, không seed/wizard/backfill). Tutorial impact: không đổi contract (delivery chỉ thêm header, list `meta` default giữ nguyên) → không tutorial nào bị ảnh hưởng. CHANGELOG [Unreleased] cập nhật. Còn mở: task 1.3 (edge-cache adapter CF), 2.3 (integration test Postgres thật), 7.1 (k6 baseline — cần môi trường load-test).
+- Phase P1, P2: chưa bắt đầu.
+
 ## DoD §1 — Code & test
 
 | Mục DoD | Hàng rào trong spec |

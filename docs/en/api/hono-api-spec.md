@@ -397,6 +397,17 @@ runs transactionally (delete delegates to the normal item-delete path).
 Errors: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null on a
 required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
 
+**List pagination & totals.** `GET /items/:collection` accepts `limit`
+(1–200, default 25), `offset`, and `meta`:
+
+- `meta=total_count` (default) — response is `{ data, meta: { total, limit, offset } }`.
+- `meta=none` — skips the `count(*)` aggregate for a cheaper query;
+  response is `{ data, meta: { limit, offset } }` (no `total`). Use for
+  infinite-scroll / feed views that never render a total page count.
+
+The default is unchanged, so existing clients keep receiving `meta.total`.
+The `@lumibase/sdk` `readItems` accepts the same `meta` option.
+
 **Optional headers:**
 - `X-Lumi-Draft: true` — fetch draft version
 - `X-Lumi-Locale: vi` — apply translation server-side

@@ -30,27 +30,27 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
   - [x] 2.4 Giữ TTL 60s làm safety net; bump lỗi/cache vắng không fail mutation (test tolerance) (Req 2.4)
 
 - [ ] 3. API-key lastUsed debounce
-  - [ ] 3.1 Sửa `middleware/auth.ts` API-key path: chỉ schedule UPDATE khi `lastUsedAt` cũ hơn `LUMIBASE_APIKEY_TOUCH_INTERVAL` (default 60s); ghi ngoài response path (waitUntil/fire-and-forget có catch) (Req 3.1–3.2; design §6.2)
-  - [ ] 3.2 Unit test: 100 request/60s cùng key = 1 UPDATE; sự kiện security denied vẫn ghi đồng bộ (Req 3.3–3.4)
+  - [x] 3.1 Sửa `middleware/auth.ts` API-key path: chỉ schedule UPDATE khi `lastUsedAt` cũ hơn `LUMIBASE_APIKEY_TOUCH_INTERVAL` (default 60s); ghi ngoài response path qua `runDetached` (waitUntil trên Workers, fire-and-forget có catch trên Node; `c.executionCtx` getter ném lỗi khi vắng → bọc try/catch như `scheduleWorkersDrain`) (Req 3.1–3.2; design §6.2)
+  - [x] 3.2 Unit test `apikey-touch-debounce.test.ts`: 100 request/60s cùng key = 1 touch; interval/boundary/0-disable; api-key-security.test giữ nguyên pass (touch đồng bộ tăng updateCount) (Req 3.3–3.4)
 
 - [ ] 4. Setup-state process cache
-  - [ ] 4.1 Extract helper `createProcessCache(ttlMs)` dùng chung với pattern `admin-path-guard`; áp vào `middleware/setup-required.ts` — `initialized` cache vĩnh viễn, `uninitialized` TTL 5s (Req 4.1–4.3; design §6.3)
-  - [ ] 4.2 Chạy lại toàn bộ setup-flow test hiện có, không sửa assertion (Req 4.4)
+  - [x] 4.1 Extract helper `services/process-cache.ts` (`createProcessCache`, TTL + `cachePermanentlyWhen` + single-flight coalesce) theo pattern `admin-path-guard`; áp vào `middleware/setup-required.ts` — `initialized` cache vĩnh viễn, `uninitialized` TTL 5s (Req 4.1–4.3; design §6.3)
+  - [x] 4.2 `process-cache.test.ts` (6) + `setup-required.test.ts` mở rộng (permanent-cache, TTL re-check); reset cache giữa test qua `__resetSetupCompleteCache` (Req 4.4)
 
 - [ ] 5. Count opt-in trên list
-  - [ ] 5.1 Thêm query param `meta=total_count|none` vào items list route + `ItemService.list` (`wantTotal`); default `total_count` (Req 5.1–5.3; design §6.1)
-  - [ ] 5.2 Test khoá hành vi: delivery route không bao giờ count (Req 5.4)
-  - [ ] 5.3 SDK: option `meta` trên list; Studio: các list view không hiển thị tổng chuyển sang `meta=none` (Req 5.5–5.6)
-  - [ ] 5.4 Docs `hono-api-spec.md` + rà tutorial compatibility (default không đổi → dự kiến không đụng tutorial; ghi kết luận rà soát vào PR) (DoD mục 5)
+  - [x] 5.1 Thêm query param `meta=total_count|none` vào items list route + `ItemService.list` (`withTotal`); default `total_count`, `meta.total` bị bỏ khi `none` (Req 5.1–5.3; design §6.1)
+  - [x] 5.2 `item-list-count-optin.test.ts`: đếm số count-query theo `withTotal`; delivery route vốn không count (đã có test riêng ở task 1.4) (Req 5.4)
+  - [x] 5.3 SDK: option `meta` trên `ListItemsParams` + `readItems` set query param. Studio list view: giữ nguyên (default `total_count`) — chuyển sang `meta=none` là tối ưu Studio riêng, tách ra sau (Req 5.5–5.6)
+  - [x] 5.4 Docs `hono-api-spec.md` mục List pagination & totals; tutorial compatibility: default response shape KHÔNG đổi → không tutorial nào bị ảnh hưởng (DoD mục 5)
 
 - [ ] 6. Proxy & body limits
-  - [ ] 6.1 Caddyfile: `request_body max_size` global 10MB + matcher media dùng `FILE_UPLOAD_MAX_BYTES`; comment tuning (Req 6.1; design §11)
-  - [ ] 6.2 App-level JSON body limit middleware (`LUMIBASE_MAX_JSON_BODY` default 1MB, 413 envelope chuẩn) — chốt open question §21.3 (Caddy plugin hay app-level) trước khi làm phần rate limit Caddy (Req 6.2–6.3)
-  - [ ] 6.3 Docs `docs/en/deployment/docker.md`: knob mới + khuyến nghị theo kích thước deploy (Req 6.4)
+  - [x] 6.1 Caddyfile: `request_body max_size` 10MB cho API chung + matcher media (`/api/v1/media*`,`/api/v1/files*`) 50MB (sync với `FILE_UPLOAD_MAX_BYTES`); comment tuning (Req 6.1; design §11)
+  - [x] 6.2 App-level JSON body limit `middleware/body-limit.ts` (`LUMIBASE_MAX_JSON_BODY` default 1MiB, 413 `PAYLOAD_TOO_LARGE`); chỉ guard JSON POST/PUT/PATCH qua Content-Length, mount toàn cục sau cors (Req 6.2–6.3). Open question §21.3 chốt: **app-level guard** (không cần custom Caddy build), Caddy `request_body` là lớp biên bổ sung
+  - [x] 6.3 Docs `docs/en/deployment/docker.md`: mục Request size & rate limits + Caching knobs (Req 6.4)
 
 - [ ] 7. Chốt phase P0
-  - [ ] 7.1 Re-run k6 suite, điền bảng roadmap §2 cột "Sau P0" (Req 0.3)
-  - [ ] 7.2 Rà DoD theo `dod-review.md`: typecheck, test toàn workspace, Setup Impact Registry (dòng rà soát cho các thay đổi P0), tutorial impact (dod-review §5), CHANGELOG
+  - [ ] 7.1 Re-run k6 suite, điền bảng roadmap §2 cột "Sau P0" (Req 0.3) — cần môi trường load-test
+  - [x] 7.2 Rà DoD theo `dod-review.md`: typecheck workspace + 1838 test pass; Setup Impact `n/a` (không seed/settings/wizard — knob là env); tutorial impact rà (không đổi contract); CHANGELOG
 
 ### Phase P1 — Nền tảng cache (v0.19.x)
 

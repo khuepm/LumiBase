@@ -452,6 +452,12 @@ export interface ListItemsParams {
   limit?: number;
   offset?: number;
   status?: string | null;
+  /**
+   * Controls whether the server computes the `count(*)` total. `'total_count'`
+   * (default) returns `meta.total`; `'none'` skips the extra aggregate query
+   * for a cheaper list (e.g. infinite scroll) and omits `meta.total`.
+   */
+  meta?: 'total_count' | 'none';
 }
 
 /** Reserved metadata attributes present on every search hit. */

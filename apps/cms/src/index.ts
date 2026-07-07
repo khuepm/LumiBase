@@ -4,6 +4,7 @@ import type { AppEnv } from './env';
 import { resolveCorsOrigin } from './config/cors';
 import { adminPathGuard } from './middleware/admin-path-guard';
 import { withAuditContext } from './middleware/audit-context';
+import { withJsonBodyLimit } from './middleware/body-limit';
 import { withAuth } from './middleware/auth';
 import { withDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
@@ -114,6 +115,12 @@ app.use(
 // `withRuntime`/`cors` block (which §6.2 doesn't enumerate) and just
 // before the guard so the three audit dimensions are present for the
 // entire downstream chain.
+// App-level JSON body-size cap (high-load-cache-readiness Req 6.2).
+// Defense-in-depth for deployments without the Caddy body limit; only
+// guards JSON POST/PUT/PATCH via Content-Length, so it's a cheap no-op
+// for reads and file uploads (which have their own policy).
+app.use('*', withJsonBodyLimit());
+
 app.use('*', withAuditContext());
 
 // Admin Path Guard (admin-setup-wizard Req 5.1, 5.2, 5.4, 5.6, 5.7;

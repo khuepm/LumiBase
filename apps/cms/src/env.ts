@@ -80,6 +80,10 @@ export interface Bindings {
   LUMIBASE_DELIVER_SMAXAGE?: string;
   /** Delivery API stale-while-revalidate window in seconds. Default 300. */
   LUMIBASE_DELIVER_SWR?: string;
+  /** Debounce window (seconds) for API-key `lastUsedAt` writes. Default 60; `0` = touch every request. */
+  LUMIBASE_APIKEY_TOUCH_INTERVAL?: string;
+  /** Max JSON request body in bytes for the app-level guard. Default 1 MiB. */
+  LUMIBASE_MAX_JSON_BODY?: string;
   /**
    * Sentry DSN for the Cloudflare Workers build. When unset, `withSentry`
    * in `cloudflare.ts` initializes with an empty DSN and Sentry becomes a
