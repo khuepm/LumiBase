@@ -43,6 +43,145 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   5s TTL while uninitialized), removing a DB round-trip from every
   authenticated request.
 
+## [0.19.0] - 2026-07-07
+
+### Version
+
+- `v0.19.0`
+
+### Date
+
+- `2026-07-07`
+
+### Highlights
+
+- **CWE Top 100 audit closed out.** The remaining 12 CWEs (of 78 applicable
+  weaknesses) are now mitigated: credentialed CORS can no longer reflect a
+  wildcard/arbitrary origin, the CDC fallback encryption key is gone (fails
+  closed instead), AI-approval decide/reject is race-free, password strength
+  is enforced uniformly, JWTs carry a revocable `token_version`, Cloudflare
+  Access roles resolve from real site membership, a general per-principal API
+  rate limiter is in place, and audit metadata redacts payload fields.
+- **Visual Flow Builder triggers.** The flows engine now supports event
+  (on content create/update/delete), schedule (5-field cron), and webhook
+  triggers end to end, with a shared graph validator enforced on both the
+  editor and the API; the Studio flow editor now persists the canonical graph
+  (not raw ReactFlow shape) and drives its palette from the operation
+  registry.
+- **Marketplace community features.** Verified/trusted install badges,
+  package download counting, idempotent upvotes, and a community submission +
+  moderation flow.
+- **Production routing fix.** The `v0.18.0` wildcard tenant route
+  (`*.lumibase.dev/*`) was outranking Pages custom domains, breaking
+  `docs.`, `studio.`, and `marketplace.lumibase.dev`; narrowed to
+  `*.lumibase.dev/api/*` so Pages resolves everything else again.
+
+### Added
+
+- **Marketplace.** `feat(marketplace)` adds a `verified` badge (signature +
+  publisher key + integrity hash, re-verified on install), download
+  tracking (`GET /extensions/:slug/download`), idempotent upvoting
+  (`POST`/`DELETE /extensions/:slug/vote`), and community submission +
+  moderation (`POST /submit`, `GET /submissions`,
+  `POST /submissions/:id/review`, gated by `extensions:configure`). The
+  marketplace app has moved to a separate `lumibase-ai/marketplace` repo,
+  mounted back in as a git submodule.
+- **Visual Flow Builder — triggers (backend).** `feat(cms)` adds
+  `GET /flows/operations` (operation registry as the palette/validation
+  source of truth), a shared `validateGraph` gate on activate/patch
+  (`GRAPH_DANGLING_EDGE` / `GRAPH_CYCLE` / `GRAPH_NO_ENTRY` /
+  `GRAPH_UNKNOWN_OPERATION`), an event trigger fanned out from `ItemService`
+  through a new `flow-events` queue, a dependency-free 5-field cron
+  scheduler, and a webhook trigger authenticated by a per-flow token
+  (constant-time comparison, credentials stripped from run input).
+- **Visual Flow Builder — editor.** `feat(studio)` switches the flow editor
+  to save/load the canonical graph shape (legacy ReactFlow graphs still
+  load), drives the node palette from the operation registry (extension ops
+  now appear automatically, via a new generic op node for undecorated
+  operations), and surfaces `GRAPH_*` validation errors inline on the
+  canvas.
+- **Auto-deploy coalescing.** `feat(cms)` lets `DeploymentService.trigger`
+  reuse an in-flight, same-target deployment within a configurable window
+  instead of spawning one build per content event (manual triggers never
+  coalesce); exposed as a `coalesceWindowMs` option on the `deploy:trigger`
+  flow node.
+- **Content-version SDK.** `feat(sdk)` adds
+  `items(collection).versions.{list,create,get,update,delete,compare,promote}`
+  with `ContentVersion`/`VersionCompare` types.
+- **Dependency security gate.** Weekly Dependabot (npm + GitHub Actions,
+  grouped minor/patch) and a CI `pnpm audit` job that fails the build on
+  high/critical advisories.
+
+### Changed
+
+- **Enterprise app scaffold.** `apps/enterprise` is a standalone Hono Worker
+  that depends on `@lumibase/*` packages as a one-way consumer (enterprise →
+  core); it now lives in the private `lumibase-ai/enterprise-core` repo,
+  mounted back in as a git submodule so its source is excluded from the
+  public repo.
+
+### Fixed
+
+- **Production routing.** Scoped the tenant wildcard route from
+  `*.lumibase.dev/*` to `*.lumibase.dev/api/*` — the broader pattern
+  (shipped in v0.18.0 for free tenant subdomains) outranked every Pages
+  custom domain on the zone and broke `docs.`/`studio.`/`marketplace.lumibase.dev`.
+- **Security — SQL injection in materialize service (CWE-89).** Replaced
+  `sql.raw()` string interpolation with Drizzle bind parameters and
+  `sql.identifier()` for validated table names; the PL/pgSQL trigger body
+  now fail-closes on embedded IDs that don't match a URL-safe pattern.
+- **Security — observability disclosure (CWE-284/668).** `/health` now
+  returns only overall status to anonymous callers (per-subsystem detail
+  requires a valid `METRICS_TOKEN`), and `/metrics` enforces the token in
+  every environment when configured (previously bypassed outside
+  production).
+- **Security — CORS (CWE-942).** `resolveCorsOrigin` no longer returns `*`
+  or reflects an arbitrary origin with credentials; only an explicit
+  `CORS_ALLOWED_ORIGINS` allowlist (or loopback outside production) is
+  honored.
+- **Security — CDC encryption key (CWE-321).** Removed the in-repo fallback
+  encryption key; the CDC route factory now fails closed
+  (`503 ENCRYPTION_KEY_MISSING`) when `ENCRYPTION_KEY` is unset.
+- **Security — AI approval race (CWE-362/367).** Approval decide/reject is
+  now atomic (conditional update + `.returning()`); a lost race surfaces as
+  `409` instead of silently overwriting a concurrent decision.
+- **Security — password policy (CWE-521).** A shared `PasswordSchema`
+  (minimum 12 characters + complexity) is enforced uniformly at register,
+  setup, and recovery, replacing an inconsistent `min(6)` at register.
+- **Security — token revocation & Access roles (CWE-613/620/302).** JWTs now
+  embed `token_version`; stale-versioned tokens are rejected, and the
+  version bumps on password change/reset. Cloudflare Access identities now
+  resolve to a real user + site-membership role instead of a hardcoded
+  `admin` role.
+- **Security — API rate limiting (CWE-400).** Added a general
+  per-principal (user/API-key) or per-IP rate limiter on top of the
+  existing auth/recovery limiters, configurable via `LUMIBASE_RATE_LIMIT_*`.
+- **Security — audit log redaction (CWE-359).** The audit masker now
+  redacts raw payload/content/body fields and truncates long free-form
+  strings so item PII cannot land verbatim in the audit trail.
+- **Security — dependency (GHSA-96hv-2xvq-fx4p).** Pinned `ws` to `>=8.21.0`
+  via `pnpm.overrides` to close a high-severity DoS (memory exhaustion from
+  tiny fragments), caught by the new audit gate on its first run.
+
+### Notes
+
+- A design spec for a Directus-style **Collection Preview** (iframe in the
+  record editor, origin-allowlisted) was added under
+  `.kiro/specs/` — no code shipped yet in this release.
+- Routine dependency bumps: `react-dom`/`@types/react-dom`, `vitest` 3→4,
+  `jsdom` 25→29, `tailwindcss` 3→4, `next` 15→16, `react-markdown` 9→10,
+  `vite` 7→8, `@hono/node-server` 1→2, `eslint` 8→10, and several
+  `actions/*` GitHub Actions version bumps.
+
+### Migrations
+
+- `0002_add_user_token_version.sql` — adds `lumibase_users.token_version`
+  (default `0`, not null) for JWT revocation. Additive, idempotent.
+- `0003_marketplace_votes_downloads.sql` — adds `lumibase_extension_votes`
+  and three columns on `lumibase_extensions`
+  (`download_count`/`submission_status`/`submitted_by`). Additive,
+  idempotent; no RLS on the votes table by design (global, not site-scoped).
+
 ## [0.18.0] - 2026-07-06
 
 ### Version
