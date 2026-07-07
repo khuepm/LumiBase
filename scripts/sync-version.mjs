@@ -30,7 +30,17 @@ async function pathExists(filePath) {
 }
 
 async function packagePaths() {
-  const packagePaths = [...APP_PACKAGE_PATHS];
+  // Skip hardcoded app paths that no longer resolve to a file — e.g. once an
+  // app is extracted into a git submodule its package.json lives inside the
+  // (uninitialized in CI) submodule, so `apps/<name>/package.json` is absent.
+  const appPackagePaths = [];
+  for (const relativePackagePath of APP_PACKAGE_PATHS) {
+    if (await pathExists(path.join(REPO_ROOT, relativePackagePath))) {
+      appPackagePaths.push(relativePackagePath);
+    }
+  }
+
+  const packagePaths = [...appPackagePaths];
   const packagesRoot = path.join(REPO_ROOT, 'packages');
 
   if (await pathExists(packagesRoot)) {
