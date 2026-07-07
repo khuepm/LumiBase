@@ -11,6 +11,179 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [0.18.0] - 2026-07-06
+
+### Version
+
+- `v0.18.0`
+
+### Date
+
+- `2026-07-06`
+
+### Highlights
+
+- **Custom domains.** Sites can now provision their own custom domain via
+  Cloudflare for SaaS — a new `site_domains` table, `client.domains` SDK
+  resource, and a Studio Settings → Domains page cover request/verify/status
+  end to end.
+- **Translation Memory (TM).** The Studio content editor gains a translation
+  mode with a TM suggest popover, backed by a new `tm.*` SDK namespace
+  (`TmEntry`/`TmSuggestion`) for reusing prior translations across items.
+- **Upload allowlist hardening.** Uploads are now governed by an
+  admin-configurable, DB-backed allowlist with a picker UI, and the upload
+  policy was extended to `/media` with tightened image/SVG validation.
+
+### Added
+
+- **Custom domain provisioning.** `feat(database)` adds `site_domains`;
+  `feat(cms)` adds Cloudflare for SaaS-backed provisioning; `feat(shared,sdk)`
+  adds domain schemas and the `client.domains` resource; `feat(studio)` adds
+  the Domains settings page. Registered in the Setup Impact Registry (row 29).
+- **Translation Memory UI.** `feat(sdk)` adds the `tm.*` namespace
+  (`TmEntry`/`TmSuggestion` types); `feat(studio)` adds the suggest popover,
+  translation mode, and a TM manager to the content editor.
+- **AI crawler discoverability for docs.** Prerendered docs pages are now
+  discoverable by AI crawlers.
+
+### Changed
+
+- **`/release` runbook.** Added Step 0 preflight & resume detection so a
+  partially-completed release (version bumped but untagged, tag pushed but
+  workflow incomplete, etc.) can be resumed from the correct step instead of
+  re-run from scratch; the tag step now pins to the resolved release commit
+  rather than assuming `HEAD`.
+
+### Fixed
+
+- **Docs hard-navigation.** Prerendered docs pages are now served directly on
+  hard navigation instead of falling through the SPA catch-all rewrite.
+- **Upload security.** Extended the upload policy to `/media` and hardened
+  image/SVG upload validation.
+- **Landing page.** Fixed a black square artifact around the section-header
+  planet graphic on mobile.
+
+### Migrations
+
+- `0001_site_custom_domains.sql` — adds the `site_domains` table (additive,
+  no breaking changes).
+
+## [0.17.0] - 2026-07-03
+
+### Version
+
+- `v0.17.0`
+
+### Date
+
+- `2026-07-03`
+
+### Highlights
+
+- **`lumibase_` table namespace (breaking, fresh-install only).** Every system
+  table is physically renamed to `lumibase_<name>` and the whole migration
+  history is squashed into a single `0000_lumibase_init` — any table without
+  the prefix is unambiguously user-created. The migrate runner refuses to run
+  on a database carrying the pre-squash history, and collection names starting
+  with `lumibase_`/`mat_` are rejected at the API.
+- **Content Releases, external JWT auth, FK dependent-records, JSON field
+  search, configurable save action** — the v0.14–v0.16 feature train lands on
+  the new schema (their tables are prefixed and folded into the init).
+
+### Changed
+
+- **All system tables now carry a `lumibase_` prefix.** Every built-in table is
+  named `lumibase_<name>` (e.g. `lumibase_users`, `lumibase_agent_runs`,
+  `lumibase_releases`, `lumibase_push_subscriptions`) so the `lumibase_` namespace
+  is reserved for the platform and any table without it is unambiguously
+  user-created. Drizzle ORM code is unaffected (table `const` exports keep their
+  names). See [ADR-010](docs/en/architecture/decisions/adr-010-lumibase-table-prefix.md).
+- **Migration history squashed.** All legacy migrations (including the v0.14–v0.16
+  additions: push subscriptions, content releases, save-default-preference,
+  external-auth issuers) were collapsed into a single `0000_lumibase_init`
+  generated from the schema; the schema now fully expresses the `shares` CHECK
+  constraints and the `agent_approvals_veto_due_idx` partial index, and the
+  Drizzle snapshots were regenerated clean (no drift).
+
+### Fixed
+
+- `rls-policies.sql`: fixed a pre-existing nested `$$` dollar-quote bug in the RLS
+  `DO` block (the inner `CREATE POLICY` string now uses a `$pol$` tag) so the script
+  applies via `psql` without a syntax error.
+
+### Added
+
+- **Content Releases.** Collate specific item revisions across collections into
+  a named **Release** and publish them all at once — manually or scheduled for a
+  date/time (à la Directus Releases). New `releases` + `release_items` tables and
+  a `ReleaseService` exposed at `/api/v1/releases` (create / list / detail /
+  patch / `:id/publish` / delete). Publish delegates to the item update path, so
+  the editorial gate, validation, permissions and hooks all apply.
+  `atomicityMode` is `all_or_nothing` (pre-flight all items, publish none if any
+  is blocked) or `best_effort` (per-item outcomes). Scheduled releases publish
+  via the shared `content-scheduler` tick (`sweepDueReleases`) — idempotent and
+  `maintenanceWindow`-aware. Each `release_item` can pin a specific revision.
+- **Configurable default save action.** The Studio content editor's post-save
+  behavior is now configurable — `stay` (remain on the form), `return` (back to
+  the list), or `create_new` — as a **per-user preference**
+  (`users.preferences.saveAction`, set via the editor's split-button or
+  `PATCH /api/v1/me/preferences`) that overrides a **site-wide default**
+  (`sites.default_save_action`, set in Settings → Site). The hardcoded fallback
+  is `stay`, matching the editor's previous behavior, so existing instances are
+  unchanged until someone opts into another action.
+
+- **External JWT authentication.** A site can trust JWTs issued by an external
+  IdP (Okta, Entra, Auth0, Logto, Keycloak, Cloudflare Access…), verified against
+  the issuer's public JWKS. New `auth_external_issuers` table + admin CRUD at
+  `/api/v1/admin/auth/issuers`. The auth chain matches the token's `iss` to a
+  trusted issuer for the site, verifies the signature + standard claims with the
+  issuer's asymmetric-only algorithm allowlist, maps role claims to LumiBase
+  roles (**default-deny** — never implicit admin), enforces a `siteId`-claim ==
+  request-site gate, and optionally JIT-provisions the user. Fail-closed once an
+  issuer matches; a token for an unknown issuer falls through to internal auth.
+
+- **Foreign-key dependent-records handling.** Deleting an item that other records
+  still reference (via a `restrict` relation) is now blocked with a structured
+  **409 `DEPENDENT_RECORDS_EXIST`** instead of orphaning references. New
+  `GET /api/v1/items/:collection/:id/dependents` (what references this item) and
+  `POST …/resolve-dependents` (batch `set_null` / `delete` / `reassign`,
+  transactional). The Studio editor shows a dialog to resolve each dependency
+  group, then retries the delete. References live in JSONB so `onDelete` is
+  enforced in the application layer — only `restrict` blocks; `set null`/`cascade`
+  are never auto-applied on soft-delete. No schema migration (reuses `relations`).
+
+- **Search inside JSON fields.** Item filters can now query **into** nested
+  JSON/JSONB content. A dotted field key (`metadata.author.country`) addresses a
+  nested path (compiled to `data #>> '{…}'`), and new operators `_json_contains`
+  (`@>`), `_has_key`, `_has_any_keys`, `_has_all_keys` test JSON containment /
+  key existence against the existing GIN index. Path segments are allow-listed
+  (`[A-Za-z0-9_]`) and parameter-bound (injection-safe), with depth/clause
+  limits. Purely additive — top-level keys and structural fields are unchanged;
+  no schema migration. SDK `ItemFilterOp` exposes the new operators.
+
+### Migrations
+
+- **Breaking, fresh-install only — no upgrade path from a pre-prefix database.**
+  The whole migration history — including this release's additions
+  (`lumibase_releases` + `lumibase_release_items`, `lumibase_push_subscriptions`,
+  `sites.default_save_action`, `lumibase_auth_external_issuers`) — is consolidated
+  into the single `0000_lumibase_init`. Create the schema from scratch:
+  `pnpm -F @lumibase/database migrate`, then apply
+  `packages/database/migrations/rls-policies.sql`. An existing pre-prefix database
+  must be dropped and recreated; for the Docker dev stack destroy the `pgdata`
+  volume first:
+  `docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d`.
+  The migrate runner detects a database carrying the pre-squash migration history
+  and refuses to apply (bypass with `FORCE_MIGRATE=true` at your own risk;
+  `SKIP_MIGRATIONS=true` skips the boot-time migrate in Docker).
+
+### Security
+
+- **External JWT hardening:** see
+  [docs/en/security/external-jwt-auth.md](docs/en/security/external-jwt-auth.md)
+  for the threat model. `HS*`/`none` algorithms are rejected for external issuers
+  (alg-confusion); raw tokens are never logged.
+
 ## [0.16.0] - 2026-07-03
 
 ### Version

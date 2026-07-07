@@ -93,7 +93,7 @@ A **Settings → Deployments** page (`apps/studio/src/modules/settings/deploymen
 
 - **Capabilities:** adds `deployments:read` / `deployments:write` — grant them to the admin role on upgrade. (No default agent role carries `deployments:write`, so the `triggerDeployment` skill only runs for callers explicitly granted it — deploy is never auto-available to ordinary agents.)
 - **No seed:** targets are created by an admin after setup; there are no defaults.
-- **RLS:** `deployment_targets` and `deployments` are site-isolated via `packages/database/migrations/rls-policies.sql` (per project convention, not in the table migration).
+- **RLS:** `lumibase_deployment_targets` and `lumibase_deployments` are site-isolated via `packages/database/migrations/rls-policies.sql` (per project convention, not in the table migration).
 - **Inbound webhooks (optional):** to receive provider-pushed status, set the per-site setting `deployment.webhook.<provider>` to `{ "secret": "<shared secret>" }` and configure the same secret on the provider's webhook. Without it, status syncs via the 30s poller only.
-- **Migration `0038_deployment_integrations`:** additive and idempotent (`CREATE TABLE IF NOT EXISTS`) — existing installations receive two empty tables.
+- **Tables** `lumibase_deployment_targets` and `lumibase_deployments` are part of the consolidated `0000_lumibase_init` schema migration.
 - See the spec under `.kiro/specs/deployment-integrations/` for the full requirements and design.

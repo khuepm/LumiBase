@@ -49,7 +49,7 @@ describe('Marketplace Versioning & Updates — integration', () => {
   beforeEach(async () => {
     if (!canConnect) return;
     await db.execute(
-      sql`TRUNCATE TABLE extensions, user_sites, users, notifications RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE TABLE lumibase_extensions, lumibase_user_sites, lumibase_users, lumibase_notifications RESTART IDENTITY CASCADE`,
     );
   });
 

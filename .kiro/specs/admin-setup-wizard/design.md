@@ -480,7 +480,7 @@ Self-hosted Lumibase mặc định **không có Redis**. Thiết kế: `LoginGua
 
 ```sql
 -- userFailedCount trong cửa sổ trượt
-SELECT count(*) FROM login_attempts
+SELECT count(*) FROM lumibase_login_attempts
 WHERE email_lower = $1 AND result='fail'
   AND created_at >= now() - ($2 || ' seconds')::interval;
 ```
@@ -491,7 +491,7 @@ Query trả nhanh nhờ index range scan (≤ 5ms với <100k rows/giờ). Clean
 
 ```
 begin transaction
-  acquire row lock: SELECT * FROM system_state WHERE id='singleton' FOR UPDATE
+  acquire row lock: SELECT * FROM lumibase_system_state WHERE id='singleton' FOR UPDATE
   if state != 'uninitialized': rollback; return 404 ALREADY_INITIALIZED
   set state='initializing', updatedAt=now()
   validate input (account, adminPath, policy)
@@ -673,7 +673,7 @@ Map in-memory `Map<string, number>` key = `${event}:${emailLower}`, value = time
 
 ### 10.1. Write path
 
-`AuditLogger.write` chạy `INSERT INTO audit_log` đồng bộ trong handler hoàn tất transaction nghiệp vụ chính. Budget 1s; nếu DB write fail (rất hiếm), fallback `console.error` JSON structured `{ level:'error', source:'audit-fallback', entry: {...} }` để log aggregator có thể replay. Audit không nên block flow login (theo Req 13.4 cũng vậy với notification).
+`AuditLogger.write` chạy `INSERT INTO lumibase_audit_log` đồng bộ trong handler hoàn tất transaction nghiệp vụ chính. Budget 1s; nếu DB write fail (rất hiếm), fallback `console.error` JSON structured `{ level:'error', source:'audit-fallback', entry: {...} }` để log aggregator có thể replay. Audit không nên block flow login (theo Req 13.4 cũng vậy với notification).
 
 Mọi giá trị nhạy cảm mask: `passwordHash → null`, `setupToken → sha256(token).slice(0,8)`, `backupCode → sha256(code).slice(0,8)`, `recoveryToken → sha256(token).slice(0,8)`. Helper `maskSensitive(metadata: object)` chạy trước insert.
 
@@ -684,8 +684,8 @@ Job `auditRotator.rotate()` chạy:
 - Hoặc trigger khi `count(*) > 10,000` từ middleware audit-context (best-effort, throttle 1/h).
 
 ```sql
-DELETE FROM audit_log WHERE timestamp < now() - ($retentionDays || ' days')::interval;
-DELETE FROM login_attempts WHERE created_at < now() - ($retentionDays || ' days')::interval;
+DELETE FROM lumibase_audit_log WHERE timestamp < now() - ($retentionDays || ' days')::interval;
+DELETE FROM lumibase_login_attempts WHERE created_at < now() - ($retentionDays || ' days')::interval;
 ```
 
 `LUMIBASE_AUDIT_RETENTION_DAYS` default 90, range 1–3650.

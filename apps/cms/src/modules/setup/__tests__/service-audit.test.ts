@@ -53,7 +53,7 @@ function makeFakeDb(
         values() {
           const builder = {
             async returning() {
-              if (tableName === 'roles') {
+              if (tableName === 'lumibase_roles') {
                 return [{ id: 'role_admin' }];
               }
               return [
@@ -69,7 +69,7 @@ function makeFakeDb(
             onConflictDoNothing() {
               return {
                 async returning() {
-                  if (tableName === 'roles') {
+                  if (tableName === 'lumibase_roles') {
                     return [{ id: 'role_admin' }];
                   }
                   return [];

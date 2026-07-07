@@ -60,6 +60,22 @@ function sanitizeTableName(materializationId: string): string {
 }
 
 /**
+ * System identifiers (nanoid site/collection ids, route-validated targets) that
+ * must be embedded as literals inside a PL/pgSQL trigger body — the one place we
+ * cannot use bind parameters. We fail closed rather than escape: anything
+ * outside the URL-safe id alphabet indicates a bug or injection attempt
+ * upstream, so we reject it instead of trying to neutralize it (CWE-89).
+ */
+const SAFE_ID_VALUE = /^[A-Za-z0-9_-]+$/;
+
+function assertSafeIdValue(value: string, label: string): string {
+  if (!SAFE_ID_VALUE.test(value)) {
+    throw new Error(`Unsafe ${label} for materialized trigger: ${value}`);
+  }
+  return value;
+}
+
+/**
  * Creates a physical table for a materialized collection.
  *
  * The table uses a flat schema:
@@ -78,9 +94,10 @@ export async function createPhysicalTable(
   config: MaterializeConfig,
 ): Promise<void> {
   const tableName = sanitizeTableName(config.id);
+  const table = sql.identifier(tableName);
 
-  await db.execute(sql.raw(`
-    CREATE TABLE IF NOT EXISTS ${tableName} (
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS ${table} (
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
       collection_id TEXT NOT NULL,
@@ -92,13 +109,13 @@ export async function createPhysicalTable(
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
-  `));
+  `);
 
   // Create an index for site-scoped queries
-  await db.execute(sql.raw(`
-    CREATE INDEX IF NOT EXISTS ${tableName}_site_idx
-    ON ${tableName} (site_id, status)
-  `));
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS ${sql.identifier(`${tableName}_site_idx`)}
+    ON ${table} (site_id, status)
+  `);
 }
 
 /**
@@ -110,6 +127,7 @@ export async function refreshPhysicalTable(
   config: MaterializeConfig,
 ): Promise<RefreshResult> {
   const tableName = sanitizeTableName(config.id);
+  const table = sql.identifier(tableName);
   const startTime = Date.now();
 
   // Resolve source collection id
@@ -128,50 +146,44 @@ export async function refreshPhysicalTable(
   }
 
   // Truncate the materialized table
-  await db.execute(sql.raw(`TRUNCATE TABLE ${tableName}`));
+  await db.execute(sql`TRUNCATE TABLE ${table}`);
 
-  // Build the INSERT ... SELECT query
-  // Apply filter if present (basic status filter for now)
-  let filterClause = '';
-  if (config.filter && Object.keys(config.filter).length > 0) {
-    if (config.filter['status']) {
-      const status = String(config.filter['status']).replace(/'/g, "''");
-      filterClause = ` AND i.status = '${status}'`;
-    }
-  }
+  // Build the INSERT ... SELECT query. Every user/config-derived VALUE below is
+  // passed as a bind parameter (not string-interpolated); only the validated
+  // physical table name is an identifier.
+  const statusFilter =
+    config.filter && config.filter['status']
+      ? sql`AND i.status = ${String(config.filter['status'])}`
+      : sql``;
 
-  // Build field projection (if not wildcard, extract specific JSONB keys)
+  // Build field projection (if not wildcard, extract specific JSONB keys).
   const projectionFields = config.projection?.fields ?? ['*'];
-  let dataProjection = 'i.data';
+  let dataProjection = sql`i.data`;
   if (!projectionFields.includes('*') && projectionFields.length > 0) {
-    // Build a JSONB object with only the projected fields
-    const fieldExprs = projectionFields
-      .map((f) => {
-        const safe = f.replace(/[^a-zA-Z0-9_]/g, '');
-        return `'${safe}', i.data->'${safe}'`;
-      })
-      .join(', ');
-    dataProjection = `jsonb_build_object(${fieldExprs})`;
+    const fieldExprs = projectionFields.map(
+      (f) => sql`${f}::text, i.data -> ${f}::text`,
+    );
+    dataProjection = sql`jsonb_build_object(${sql.join(fieldExprs, sql`, `)})`;
   }
 
   const orderClause = config.projection?.orderBy
-    ? `ORDER BY i.data->>'${config.projection.orderBy.replace(/[^a-zA-Z0-9_]/g, '')}'`
-    : 'ORDER BY i.sort, i.created_at';
+    ? sql`ORDER BY i.data ->> ${config.projection.orderBy}::text`
+    : sql`ORDER BY i.sort, i.created_at`;
 
-  await db.execute(sql.raw(`
-    INSERT INTO ${tableName} (id, site_id, collection_id, status, data, sort, user_created, user_updated, created_at, updated_at)
+  await db.execute(sql`
+    INSERT INTO ${table} (id, site_id, collection_id, status, data, sort, user_created, user_updated, created_at, updated_at)
     SELECT i.id, i.site_id, i.collection_id, i.status, ${dataProjection}, i.sort, i.user_created, i.user_updated, i.created_at, i.updated_at
-    FROM items i
-    WHERE i.site_id = '${config.siteId.replace(/'/g, "''")}'
-      AND i.collection_id = '${coll.id.replace(/'/g, "''")}'
+    FROM lumibase_items i
+    WHERE i.site_id = ${config.siteId}
+      AND i.collection_id = ${coll.id}
       AND i.deleted_at IS NULL
-      ${filterClause}
+      ${statusFilter}
     ${orderClause}
-  `));
+  `);
 
   // Count rows in the materialized table
   const countResult = await db.execute(
-    sql.raw(`SELECT COUNT(*) as cnt FROM ${tableName}`),
+    sql`SELECT COUNT(*) as cnt FROM ${table}`,
   );
   const rowCount = Number((countResult as unknown as Array<{ cnt: string }>)[0]?.cnt ?? 0);
 
@@ -192,7 +204,7 @@ export async function dropPhysicalTable(
   config: MaterializeConfig,
 ): Promise<void> {
   const tableName = sanitizeTableName(config.id);
-  await db.execute(sql.raw(`DROP TABLE IF EXISTS ${tableName} CASCADE`));
+  await db.execute(sql`DROP TABLE IF EXISTS ${sql.identifier(tableName)} CASCADE`);
 }
 
 /**
@@ -226,14 +238,21 @@ export async function installAutoRefreshTrigger(
     throw new Error(`Source collection '${config.collection}' not found`);
   }
 
+  // These values are baked into the PL/pgSQL body as literals — bind params are
+  // not usable inside a `$$ ... $$` function body — so we reject anything that
+  // is not a plain URL-safe id/target before embedding (fail closed).
+  const safeTarget = assertSafeIdValue(config.target, 'target');
+  const safeSiteId = assertSafeIdValue(config.siteId, 'siteId');
+  const safeCollId = assertSafeIdValue(coll.id, 'collection id');
+
   // Create the trigger function
   await db.execute(sql.raw(`
     CREATE OR REPLACE FUNCTION ${triggerName}_fn()
     RETURNS trigger AS $$
     BEGIN
       PERFORM pg_notify('${channelName}', json_build_object(
-        'target', '${config.target.replace(/'/g, "''")}',
-        'site_id', '${config.siteId.replace(/'/g, "''")}',
+        'target', '${safeTarget}',
+        'site_id', '${safeSiteId}',
         'action', TG_OP
       )::text);
       RETURN COALESCE(NEW, OLD);
@@ -243,11 +262,11 @@ export async function installAutoRefreshTrigger(
 
   // Create the trigger
   await db.execute(sql.raw(`
-    DROP TRIGGER IF EXISTS ${triggerName} ON items;
+    DROP TRIGGER IF EXISTS ${triggerName} ON lumibase_items;
     CREATE TRIGGER ${triggerName}
-    AFTER INSERT OR UPDATE OR DELETE ON items
+    AFTER INSERT OR UPDATE OR DELETE ON lumibase_items
     FOR EACH ROW
-    WHEN (NEW.collection_id = '${coll.id}' OR OLD.collection_id = '${coll.id}')
+    WHEN (NEW.collection_id = '${safeCollId}' OR OLD.collection_id = '${safeCollId}')
     EXECUTE FUNCTION ${triggerName}_fn()
   `));
 }
@@ -265,7 +284,7 @@ export async function removeAutoRefreshTrigger(
   )}`;
 
   await db.execute(sql.raw(`
-    DROP TRIGGER IF EXISTS ${triggerName} ON items;
+    DROP TRIGGER IF EXISTS ${triggerName} ON lumibase_items;
     DROP FUNCTION IF EXISTS ${triggerName}_fn();
   `));
 }
@@ -281,24 +300,22 @@ export async function queryPhysicalTable(
   opts: { limit?: number; offset?: number; status?: string } = {},
 ): Promise<{ data: unknown[]; total: number }> {
   const tableName = sanitizeTableName(materializationId);
+  const table = sql.identifier(tableName);
   const limit = opts.limit ?? 100;
   const offset = opts.offset ?? 0;
-  const escapedSiteId = siteId.replace(/'/g, "''");
-  const statusFilter = opts.status
-    ? `AND status = '${opts.status.replace(/'/g, "''")}'`
-    : '';
+  const statusFilter = opts.status ? sql`AND status = ${opts.status}` : sql``;
 
-  const rows = await db.execute(sql.raw(`
-    SELECT * FROM ${tableName}
-    WHERE site_id = '${escapedSiteId}' ${statusFilter}
+  const rows = await db.execute(sql`
+    SELECT * FROM ${table}
+    WHERE site_id = ${siteId} ${statusFilter}
     ORDER BY sort, created_at
     LIMIT ${limit} OFFSET ${offset}
-  `));
+  `);
 
-  const countResult = await db.execute(sql.raw(`
-    SELECT COUNT(*) as cnt FROM ${tableName}
-    WHERE site_id = '${escapedSiteId}' ${statusFilter}
-  `));
+  const countResult = await db.execute(sql`
+    SELECT COUNT(*) as cnt FROM ${table}
+    WHERE site_id = ${siteId} ${statusFilter}
+  `);
   const total = Number((countResult as unknown as Array<{ cnt: string }>)[0]?.cnt ?? 0);
 
   return { data: rows as unknown as unknown[], total };

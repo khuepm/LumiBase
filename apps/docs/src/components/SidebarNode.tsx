@@ -48,14 +48,14 @@ export function SidebarNode({
           onClick={() => onToggle(dirPath)}
           className={`flex w-full items-center gap-1.5 rounded-[10px] px-3 py-[7px] text-left transition-colors ${
             isSection
-              ? 'text-[12px] font-semibold uppercase tracking-[0.6px] text-[rgb(130,130,138)] hover:text-white'
-              : 'text-[14px] font-medium text-[rgb(170,170,176)] hover:text-white'
+              ? 'text-[12px] font-semibold uppercase tracking-[0.6px] text-muted-foreground hover:text-foreground'
+              : 'text-[14px] font-medium text-muted-foreground hover:text-foreground'
           }`}
           style={{ paddingLeft: `${level * 12 + 12}px` }}
           aria-expanded={expanded}
         >
           <ChevronRight
-            className={`h-3.5 w-3.5 shrink-0 text-[rgb(130,130,138)] transition-transform duration-150 ${
+            className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ${
               expanded ? 'rotate-90' : ''
             }`}
           />
@@ -93,15 +93,15 @@ export function SidebarNode({
       onClick={() => node.slug && onNavigate(node.slug)}
       className={`flex w-full items-center gap-1.5 rounded-[10px] px-3 py-[7px] text-left text-[14px] transition-colors ${
         isActive
-          ? 'bg-[rgba(123,97,255,0.16)] font-semibold text-white shadow-[inset_0_0_0_1px_rgba(123,97,255,0.30)]'
-          : 'font-medium text-[rgb(170,170,176)] hover:text-white'
+          ? 'bg-primary/15 font-semibold text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.3)] dark:text-white'
+          : 'font-medium text-muted-foreground hover:text-foreground'
       } ${isMissing ? 'opacity-50' : ''}`}
       style={{ paddingLeft: `${level * 12 + 12}px` }}
       aria-current={isActive ? 'page' : undefined}
       title={isMissing ? 'Translation pending' : undefined}
     >
       {isMissing && (
-        <Languages className="h-4 w-4 shrink-0 text-[rgb(130,130,138)]" />
+        <Languages className="h-4 w-4 shrink-0 text-muted-foreground" />
       )}
       <span className="truncate">{node.name}</span>
     </button>

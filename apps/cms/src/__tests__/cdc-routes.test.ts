@@ -116,6 +116,10 @@ function buildApp(
 
   const parent = new Hono<AppEnv>();
   parent.use('*', async (c, next) => {
+    // CDC requires an encryption key (fail-closed, CWE-321). Provide a test key
+    // so the default services factory constructs its registry; the actual
+    // registry used by these tests is injected via the override below.
+    c.env = { ...(c.env ?? {}), ENCRYPTION_KEY: 'test-cdc-encryption-key' } as AppEnv['Bindings'];
     c.set('auth', { roles, raw: {} });
     if (siteId) c.set('siteId', siteId);
     await next();

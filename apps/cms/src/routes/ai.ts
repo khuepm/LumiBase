@@ -496,6 +496,19 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
   }
 
   // decision === 'rejected'
-  await harness.rejectApproval(approvalId, userId);
+  const rejected = await harness.rejectApproval(approvalId, userId);
+  if (!rejected) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'CONFLICT',
+            message: 'Approval not found or already processed',
+          },
+        ],
+      },
+      409,
+    );
+  }
   return c.json({ data: { success: true } });
 });

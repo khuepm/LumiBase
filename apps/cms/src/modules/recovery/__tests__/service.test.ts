@@ -66,11 +66,11 @@ function makeFakeDb(opts: FakeDbOptions = {}) {
 
   function rowsForTable(name: string): ReadonlyArray<Record<string, unknown>> {
     switch (name) {
-      case 'users':
+      case 'lumibase_users':
         return opts.userRows ?? [];
-      case 'system_state':
+      case 'lumibase_system_state':
         return opts.stateRows ?? [];
-      case 'admin_backup_codes':
+      case 'lumibase_admin_backup_codes':
         return opts.codeRows ?? [];
       default:
         return [];
@@ -114,7 +114,7 @@ function makeFakeDb(opts: FakeDbOptions = {}) {
               return {
                 returning() {
                   return Promise.resolve(
-                    name === 'admin_backup_codes'
+                    name === 'lumibase_admin_backup_codes'
                       ? (opts.backupCodeUpdateRows ?? [{ id: 'bkc_1' }])
                       : [],
                   );
@@ -188,13 +188,13 @@ describe('RecoveryService.recover — success (Req 14.4)', () => {
 
     // Code marked used: an UPDATE on admin_backup_codes stamping
     // usedAt + usedFromIp.
-    const codeUpdate = updates.find((u) => u.table === 'admin_backup_codes');
+    const codeUpdate = updates.find((u) => u.table === 'lumibase_admin_backup_codes');
     expect(codeUpdate).toBeDefined();
     expect(codeUpdate!.values.usedFromIp).toBe(IP);
     expect(codeUpdate!.values.usedAt).toBeInstanceOf(Date);
 
     // User lockout cleared.
-    const userUpdate = updates.find((u) => u.table === 'users');
+    const userUpdate = updates.find((u) => u.table === 'lumibase_users');
     expect(userUpdate).toBeDefined();
     expect(userUpdate!.values).toMatchObject({
       lockedUntil: null,
@@ -203,7 +203,7 @@ describe('RecoveryService.recover — success (Req 14.4)', () => {
     });
 
     // Two login_attempts deletes: email drain + IP drain.
-    const attemptDeletes = deletes.filter((d) => d.table === 'login_attempts');
+    const attemptDeletes = deletes.filter((d) => d.table === 'lumibase_login_attempts');
     expect(attemptDeletes).toHaveLength(2);
 
     // Token persisted + redeemable.
@@ -245,7 +245,7 @@ describe('RecoveryService.recover — success (Req 14.4)', () => {
     expect(result).toBeNull();
     expect(store.size).toBe(0);
     expect(updates).toHaveLength(1);
-    expect(updates[0]?.table).toBe('admin_backup_codes');
+    expect(updates[0]?.table).toBe('lumibase_admin_backup_codes');
     expect(deletes).toHaveLength(0);
     expect(sleep).toHaveBeenCalledTimes(1);
   });

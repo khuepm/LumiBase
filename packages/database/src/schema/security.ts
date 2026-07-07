@@ -36,7 +36,7 @@ const createdAt = () => timestamp('created_at').defaultNow().notNull();
  */
 
 export const systemState = pgTable(
-  'system_state',
+  'lumibase_system_state',
   {
     /** Always `'singleton'` — enforced by the CHECK constraint below. */
     id: text('id').primaryKey().default('singleton'),
@@ -88,7 +88,7 @@ export const systemState = pgTable(
  * before write per Req 15.3.
  */
 export const auditLog = pgTable(
-  'audit_log',
+  'lumibase_audit_log',
   {
     id: text('id')
       .$defaultFn(() => nanoid())
@@ -143,7 +143,7 @@ export const auditLog = pgTable(
  * attempts queryable after a user is removed.
  */
 export const loginAttempts = pgTable(
-  'login_attempts',
+  'lumibase_login_attempts',
   {
     id: id(),
     /** Lowercased + trimmed email used as the per-user counter key. */
@@ -208,7 +208,7 @@ export const loginAttempts = pgTable(
  * for backup codes — when a user is removed, their baseline goes with
  * them since it has no archival value.
  */
-export const loginBaselines = pgTable('login_baselines', {
+export const loginBaselines = pgTable('lumibase_login_baselines', {
   /** Owning user; one baseline row per user. */
   userId: text('user_id')
     .primaryKey()
@@ -256,7 +256,7 @@ export const loginBaselines = pgTable('login_baselines', {
  * Contract: see design §3.3 and Req 14.2.
  */
 export const adminBackupCodes = pgTable(
-  'admin_backup_codes',
+  'lumibase_admin_backup_codes',
   {
     id: id(),
     /** Owning user; codes are cascade-deleted with the user. */

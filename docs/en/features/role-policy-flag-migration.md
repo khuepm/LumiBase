@@ -7,7 +7,7 @@
 - The `policies` schema already has `admin_access`, `app_access`, `enforce_tfa`, `ip_allow`, `ip_deny`, `valid_from`, and `valid_until`.
 - The `roles` schema still has `admin_access` and `app_access` for compatibility.
 - `PermissionService` currently computes effective access with a compatibility fallback: legacy role flags OR active policy flags.
-- Migration `0010_loud_the_renegades.sql` added policy flags, but it did not materialize existing role flags into policy rows.
+- An earlier migration (`0010_loud_the_renegades.sql`, since squashed into `0000_lumibase_init`) added policy flags, but it did not materialize existing role flags into policy rows.
 
 Conclusion: the migration can be safe if legacy role flags are not removed or disabled immediately. Policy flags become the new source of truth, while role flags stay as fallback for one release window.
 
@@ -107,11 +107,11 @@ WITH legacy_roles AS (
         'g'
       )
     ) AS role_key
-  FROM roles
+  FROM lumibase_roles
   WHERE admin_access = true OR app_access = true
 ),
 upserted_policies AS (
-  INSERT INTO policies (
+  INSERT INTO lumibase_policies (
     id,
     site_id,
     key,
@@ -151,7 +151,7 @@ upserted_policies AS (
     valid_until = excluded.valid_until
   RETURNING id, site_id, key
 )
-INSERT INTO role_policies (role_id, policy_id, priority)
+INSERT INTO lumibase_role_policies (role_id, policy_id, priority)
 SELECT lr.role_id, p.id, 5
 FROM legacy_roles lr
 JOIN upserted_policies p
@@ -172,7 +172,7 @@ Pre-check:
 
 ```sql
 SELECT site_id, count(*) AS role_count
-FROM roles
+FROM lumibase_roles
 WHERE admin_access = true OR app_access = true
 GROUP BY site_id;
 ```
@@ -181,12 +181,12 @@ Post-check:
 
 ```sql
 SELECT r.id, r.site_id, r.name, r.admin_access, r.app_access
-FROM roles r
+FROM lumibase_roles r
 WHERE (r.admin_access = true OR r.app_access = true)
 AND NOT EXISTS (
   SELECT 1
-  FROM role_policies rp
-  JOIN policies p ON p.id = rp.policy_id
+  FROM lumibase_role_policies rp
+  JOIN lumibase_policies p ON p.id = rp.policy_id
   WHERE rp.role_id = r.id
     AND p.admin_access = r.admin_access
     AND p.app_access = r.app_access
@@ -209,12 +209,12 @@ Behavior tests:
 Safe rollback during the compatibility window:
 
 ```sql
-DELETE FROM role_policies
+DELETE FROM lumibase_role_policies
 WHERE policy_id IN (
-  SELECT id FROM policies WHERE key LIKE 'legacy_role_flags_%'
+  SELECT id FROM lumibase_policies WHERE key LIKE 'legacy_role_flags_%'
 );
 
-DELETE FROM policies
+DELETE FROM lumibase_policies
 WHERE key LIKE 'legacy_role_flags_%';
 ```
 

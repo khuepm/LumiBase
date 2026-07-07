@@ -239,6 +239,14 @@ Access Grafana at http://localhost:3002 (admin / admin). A pre-configured Lumiba
 
 ## Resetting the Environment
 
+> **Required after the `lumibase_` table-prefix change.** The schema was rebuilt
+> greenfield (a single `0000_lumibase_init` migration, no upgrade path — see
+> ADR-010). If your `pgdata` volume predates that change, the boot-time migrator
+> will detect the old migration history and refuse to start. Do a full reset
+> (`docker compose down -v`) before `up`. Escape hatches: `SKIP_MIGRATIONS=true`
+> skips the boot-time migrate; `FORCE_MIGRATE=true` bypasses the guard at your
+> own risk.
+
 ### Reset a Single Service
 
 ```bash

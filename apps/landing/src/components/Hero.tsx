@@ -105,16 +105,7 @@ export default function Hero() {
               background: "linear-gradient(180deg,#fff 0%,#cfcfcf 100%)",
               boxShadow: "0 0 80px rgba(123,97,255,0.35), var(--shadow-lg)",
             }}
-          >
-            <Image
-              src="/assets/d-cutout.png"
-              alt=""
-              width={72}
-              height={140}
-              className="absolute"
-              style={{ left: 92, top: 24 }}
-            />
-          </div>
+          />
         </div>
       </div>
     </section>

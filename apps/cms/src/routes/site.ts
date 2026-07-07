@@ -57,6 +57,7 @@ siteRouter.patch('/', async (c) => {
   if ('domain' in patch) set.domain = blankToNull(patch.domain);
   if ('defaultLanguage' in patch) set.defaultLanguage = patch.defaultLanguage;
   if ('defaultAppearance' in patch) set.defaultAppearance = patch.defaultAppearance;
+  if ('defaultSaveAction' in patch) set.defaultSaveAction = patch.defaultSaveAction;
   if ('branding' in patch) set.branding = patch.branding;
   if ('themeOverrides' in patch) set.themeOverrides = patch.themeOverrides;
   if ('customCss' in patch) set.customCss = blankToNull(patch.customCss);

@@ -23,6 +23,10 @@ const OP_LABELS: Record<ItemFilterOp, string> = {
   _lte: '<=',
   _null: 'is null',
   _nnull: 'is not null',
+  _json_contains: 'JSON contains',
+  _has_key: 'has key',
+  _has_any_keys: 'has any keys',
+  _has_all_keys: 'has all keys',
 };
 
 const OP_ORDER: ItemFilterOp[] = [
