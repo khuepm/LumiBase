@@ -9,6 +9,24 @@ source.
 > `private: true` and consumed via `workspace:*`. A submodule keeps that intact:
 > when checked out, the enterprise app is just another `apps/*` workspace.
 
+## As configured in this repo
+
+This is already wired up (`.gitmodules` → submodule `apps/enterprise`):
+
+- **Private repo:** `https://github.com/lumibase-ai/enterprise-core.git`
+- **Tracked branch:** `feat/custom-domains-docs` (this repo's default branch — it
+  has no `main`)
+- **Path:** `apps/enterprise/` (matched by the `apps/*` workspace glob)
+
+Verified behaviour when the submodule is **absent** (public checkout / CI):
+`pnpm install --frozen-lockfile` succeeds and simply skips the empty
+`apps/enterprise/` directory (workspace drops from 18 → 17 projects, no error).
+So `actions/checkout@v5` with its default `submodules: false` needs no change —
+public CI installs cleanly without ever touching the private repo.
+
+Sections 1–2 below are the generic recipe (already executed for this repo);
+keep them for reference or when re-homing the submodule.
+
 ## Threat model / boundary rules
 
 - **One-way dependency:** `enterprise → core` only. Core code (`cms`, `studio`,
