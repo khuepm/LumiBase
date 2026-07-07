@@ -41,6 +41,7 @@ import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
 import { deploymentsRouter, deploymentsWebhookRouter } from './routes/deployments';
 import { extensionsRouter } from './routes/extensions';
+import { rah5Router } from './routes/rah5';
 import { filesRouter } from './routes/files';
 import { flowsRouter } from './routes/flows';
 import { itemsRouter } from './routes/items';
@@ -243,6 +244,8 @@ api.route('/activity', activityRouter);
 api.route('/realtime', realtimeRouter);
 api.route('/push', pushRouter);
 api.route('/extensions', extensionsRouter);
+// RAH5 game module (first-party) — see routes/rah5.ts.
+api.route('/rah5', rah5Router);
 api.route('/admin', adminRouter);
 // Admin Security surface (admin-setup-wizard task 6.4; Req 7.6, 7.7,
 // 8.7, 8.8, 8.9; design §4.5, §4.6). Mounted *under* `withAuth` so the

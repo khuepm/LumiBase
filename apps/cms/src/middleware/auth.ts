@@ -82,6 +82,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   // handler requires an admin principal, so it must run through withAuth.
   if (
     path === '/api/v1/auth/login' ||
+    path === '/api/v1/rah5/auth/guest' ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/') ||
     // Flow webhook trigger authenticates with a per-flow token inside the
