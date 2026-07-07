@@ -31,7 +31,12 @@ vi.mock('../../services/content-version-service', () => {
       this.name = 'ContentVersionError';
     }
   }
-  return { ContentVersionError, ContentVersionService: vi.fn(() => svc) };
+  return {
+    ContentVersionError,
+    ContentVersionService: vi.fn(function () {
+      return svc;
+    }),
+  };
 });
 vi.mock('../../services/item-service-factory', () => ({
   itemServiceForRequest: vi.fn(() => ({})),
