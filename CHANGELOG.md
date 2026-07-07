@@ -9,7 +9,22 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Security
+
+- **FK dependent-records now enforce the caller's RBAC.** The
+  `POST /api/v1/items/:collection/:id/resolve-dependents` and
+  `GET …/dependents` endpoints previously ran the batch `set_null` / `reassign`
+  / `delete` and the preflight report without the caller's permission context —
+  any authenticated tenant member could clear, reassign, or delete records in a
+  collection they had no `update`/`delete` grant on, and read dependent ids they
+  could not otherwise see. The resolve path now gates each action against
+  `update`/`delete` on the dependent collection (403 `FORBIDDEN`), scopes batch
+  writes to the caller's row-level grant, delegates deletes through a
+  permission-carrying `ItemService`, and the preflight requires `read` on the
+  target and only samples rows the caller may read. A source-independent
+  tripwire (`dependents-service-rbac.test.ts`) locks the gate, and Definition of
+  Done §2c gains a rule for request-path services that delegate to `ItemService`
+  or write content tables directly. No schema or setup change.
 
 ## [0.17.0] - 2026-07-03
 

@@ -38,6 +38,7 @@ Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, ba
 - [ ] **Surface mới dưới `/api/v1` được phân loại**: content plane / Studio plane (`STUDIO_ACCESS_PATH_PREFIXES`) / control plane (`CONTROL_PLANE_PATHS`). Control-plane prefix PHẢI vào guard list — `adminOnly` per-route chỉ là lớp trong, không thay thế backstop.
 - [ ] **Không thêm path vào bypass/public list** (`withAuth`, `PUBLIC_AUTH_PATHS` của `site-membership`/`studio-access`) nếu không kèm test chứng minh handler an toàn khi `auth === undefined`.
 - [ ] **Route thực thi code động hoặc mutate agent state** (extensions, agent harness, flows) → control-plane, admin-only trước khi handler chạy.
+- [ ] **Service request-path ủy quyền cho ItemService (hoặc ghi trực tiếp bảng content)** PHẢI mang permission context của caller: dựng qua `itemServiceForRequest(c)` / `permissionServiceForRequest(c)`, KHÔNG `itemServiceForSystem` trên đường request. Ghi raw SQL vào `items` (batch update/delete) phải tự gate `canAccess(collection, action)` + áp `whereFor()` row-scope. Đây là class lỗi "quên carry RBAC context" (đã lặp: AI `updateItem`, MCP endpoint, dependents resolve) — khoá bằng behavioural test dạng `dependents-service-rbac.test.ts` (deny → throw trước khi query/mutate).
 - [ ] Tripwire test `apps/cms/src/__tests__/security-guards.wiring.test.ts` vẫn pass; nếu tái cấu trúc guard thì cập nhật assertion CÙNG với behavioural test mới, không xoá.
 
 ## 3. Spec hygiene
@@ -66,7 +67,7 @@ Với mỗi tutorial hiện có, rà mục **"Compatibility / Tương thích"** 
 
 ## 6. DoD evolution — RÀ SOÁT chính checklist này
 
-> Chính DoD này lớn lên từ sự cố: mục 2b sinh sau các lần rò rỉ tenant, mục 2c sau khi `/api/v1/agent` lọt khỏi control-plane list (CHANGELOG: *"Definition of Done gains section 2c"*). Nhưng đến giờ việc "học từ bug → thêm hàng rào" vẫn **ngầm định** — phụ thuộc người review có nhớ hay không. Đúng cái class lỗi 2c cảnh báo: *quên, không phải sai*. Mục này biến nó thành bước bắt buộc.
+> Chính DoD này lớn lên từ sự cố: mục 2b sinh sau các lần rò rỉ tenant, mục 2c sau khi `/api/v1/agent` lọt khỏi control-plane list (CHANGELOG: *"Definition of Done gains section 2c"*). Bullet "service request-path ủy quyền ItemService" trong 2c thêm sau khi audit phát hiện `DependentsService` (resolve/preflight FK dependents) ghi/xoá bản ghi collection phụ mà KHÔNG mang permission context của caller — bất kỳ thành viên tenant nào cũng set_null/reassign/delete được dữ liệu ngoài quyền (cùng class với AI `updateItem` / MCP đã vá). Nhưng đến giờ việc "học từ bug → thêm hàng rào" vẫn **ngầm định** — phụ thuộc người review có nhớ hay không. Đúng cái class lỗi 2c cảnh báo: *quên, không phải sai*. Mục này biến nó thành bước bắt buộc.
 >
 > Hàng rào tốt nhất là **cơ giới hóa** (test/tripwire/lint/CI chặn), rồi mới tới **checklist** (con người rà). Ưu tiên cơ giới hóa; chỉ dùng checklist khi không thể chặn tự động.
 

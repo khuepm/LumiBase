@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ItemServiceError, parseDeepQueryParams, parseFilterQueryParams } from '../services/item-service';
-import { itemServiceForRequest } from '../services/item-service-factory';
+import { itemServiceForRequest, permissionServiceForRequest } from '../services/item-service-factory';
 import { ContentVersionError, ContentVersionService } from '../services/content-version-service';
 import { DependentsError, DependentsService, type ResolveAction } from '../services/dependents-service';
 import { formatSafeError } from '@lumibase/shared/utils';
@@ -170,39 +170,52 @@ itemsRouter.put('/:collection/:id', async (c) => {
 
 function buildDependents(c: Context<AppEnv>): DependentsService {
   const auth = c.get('auth');
-  // DependentsService's default itemServiceFactory constructs an ItemService
-  // bound to the given db/siteId/userId (tx-aware for batch deletes).
+  // Request path: DependentsService gets the caller's PermissionService (the
+  // authority for its read/update/delete gates) and a permission-carrying
+  // ItemService factory rebindable to the batch transaction, so delegated
+  // deletes enforce the caller's per-item RBAC — never a system bypass.
   return new DependentsService({
     db: c.get('db'),
     siteId: c.get('siteId'),
     userId: auth?.userId ?? null,
+    permissions: permissionServiceForRequest(c),
+    itemServiceFactory: (db) => itemServiceForRequest(c, { db }),
   });
 }
+
+// DependentsError carries a stable code + HTTP status (403 FORBIDDEN, etc.).
+const dependentsError = (err: unknown) =>
+  err instanceof DependentsError
+    ? { status: err.status, body: { errors: [{ code: err.code, message: err.message }] } }
+    : toError(err);
 
 itemsRouter.delete('/:collection/:id', async (c) => {
   const collection = c.req.param('collection');
   const id = c.req.param('id');
   try {
-    // Block the delete if a `restrict` relation still has dependents (Req 3).
-    const report = await buildDependents(c).report(collection, id);
+    // Require delete on the target before revealing dependents, then block the
+    // delete if a `restrict` relation still has dependents (Req 3).
+    const report = await buildDependents(c).report(collection, id, { requireTarget: 'delete' });
     if (report.blocking) {
       return c.json({ errors: [{ code: 'DEPENDENT_RECORDS_EXIST', dependents: report.dependents }] }, 409);
     }
     await buildService(c).softDelete(collection, id);
     return c.body(null, 204);
   } catch (err) {
-    const { status, body } = toError(err);
+    const { status, body } = dependentsError(err);
     return c.json(body, status as 400);
   }
 });
 
-// Preflight: what references this item? (Req 2)
+// Preflight: what references this item? (Req 2) — requires read on the target.
 itemsRouter.get('/:collection/:id/dependents', async (c) => {
   try {
-    const report = await buildDependents(c).report(c.req.param('collection'), c.req.param('id'));
+    const report = await buildDependents(c).report(c.req.param('collection'), c.req.param('id'), {
+      requireTarget: 'read',
+    });
     return c.json({ data: report });
   } catch (err) {
-    const { status, body } = toError(err);
+    const { status, body } = dependentsError(err);
     return c.json(body, status as 400);
   }
 });

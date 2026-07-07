@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import type { AppEnv, AuthPrincipal } from '../env';
 import type { MagicContext } from './permission-dsl';
 import { ItemService, type ItemServiceDeps } from './item-service';
+import { PermissionService } from './permission-service';
 
 /**
  * ItemService construction helpers that make the RBAC posture *explicit*.
@@ -71,12 +72,14 @@ function collectRequestHeaders(c: Context<AppEnv>): Record<string, string> {
  * as the normal `/items` API — an AI or MCP caller can never do more than the
  * bearer token could do directly.
  *
- * `overrides` lets a caller add optional deps (e.g. omit `search`) but cannot
- * remove the permission context — `permissionCtx` is applied last.
+ * `overrides` lets a caller add optional deps (e.g. omit `search`, or rebind
+ * `db` to a transaction handle for a batch operation) but cannot remove the
+ * permission context — `permissionCtx` and `siteId` are applied last, so a
+ * caller can never accidentally widen the RBAC posture or cross tenants.
  */
 export function itemServiceForRequest(
   c: Context<AppEnv>,
-  overrides: Partial<Omit<ItemServiceDeps, 'permissionCtx' | 'db' | 'siteId'>> = {},
+  overrides: Partial<Omit<ItemServiceDeps, 'permissionCtx' | 'siteId'>> = {},
 ): ItemService {
   const auth = c.get('auth');
   const runtime = c.get('runtime');
@@ -88,7 +91,6 @@ export function itemServiceForRequest(
 
   return new ItemService({
     db: c.get('db'),
-    siteId,
     userId: auth?.userId ?? null,
     cache: runtime.cache,
     search: runtime.search,
@@ -100,9 +102,34 @@ export function itemServiceForRequest(
     encryptionKey:
       c.env.ENCRYPTION_KEY || (typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : undefined),
     ...overrides,
-    // Applied last so overrides can never drop the enforcement context.
+    // siteId + permissionCtx applied last so overrides can never cross tenants
+    // or drop the enforcement context.
+    siteId,
     permissionCtx: buildRequestPermissionContext({
       auth,
+      siteId,
+      headers: collectRequestHeaders(c),
+      ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+    }),
+  });
+}
+
+/**
+ * Construct a PermissionService bound to the authenticated principal of `c`.
+ *
+ * Use this whenever a request-path service needs to make its *own* RBAC
+ * decisions outside ItemService (e.g. DependentsService gating raw batch
+ * writes, aggregate/insights services). It shares the same principal context
+ * as {@link itemServiceForRequest}, so a caller can never authorize more than
+ * the bearer token could do directly.
+ */
+export function permissionServiceForRequest(c: Context<AppEnv>): PermissionService {
+  const siteId = c.get('siteId');
+  return new PermissionService({
+    db: c.get('db'),
+    cache: c.get('runtime').cache,
+    ctx: buildRequestPermissionContext({
+      auth: c.get('auth'),
       siteId,
       headers: collectRequestHeaders(c),
       ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
