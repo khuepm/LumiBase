@@ -26,7 +26,7 @@ const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
 /** Page-builder pages (kept from initial scaffold; consumed by /deliver). */
 export const pages = pgTable(
-  'pages',
+  'lumibase_pages',
   {
     id: id(),
     siteId: text('site_id')
@@ -45,7 +45,7 @@ export const pages = pgTable(
 );
 
 export const collections = pgTable(
-  'collections',
+  'lumibase_collections',
   {
     id: id(),
     siteId: text('site_id')
@@ -86,7 +86,7 @@ export const collections = pgTable(
 );
 
 export const fields = pgTable(
-  'fields',
+  'lumibase_fields',
   {
     id: id(),
     siteId: text('site_id')
@@ -147,7 +147,7 @@ export const fields = pgTable(
 );
 
 export const relations = pgTable(
-  'relations',
+  'lumibase_relations',
   {
     id: id(),
     siteId: text('site_id')
@@ -182,7 +182,7 @@ export const relations = pgTable(
  * a Phase-2 optimization.
  */
 export const items = pgTable(
-  'items',
+  'lumibase_items',
   {
     id: id(),
     siteId: text('site_id')
@@ -242,7 +242,7 @@ export const items = pgTable(
 );
 
 export const revisions = pgTable(
-  'revisions',
+  'lumibase_revisions',
   {
     id: id(),
     siteId: text('site_id')
@@ -286,7 +286,7 @@ export const revisions = pgTable(
 );
 
 export const activity = pgTable(
-  'activity',
+  'lumibase_activity',
   {
     id: id(),
     siteId: text('site_id')
@@ -319,7 +319,7 @@ export const activity = pgTable(
 // ---------------------------------------------------------------------------
 
 export const flows = pgTable(
-  'flows',
+  'lumibase_flows',
   {
     id: id(),
     siteId: text('site_id')
@@ -348,7 +348,7 @@ export const flows = pgTable(
 );
 
 export const flowRuns = pgTable(
-  'flow_runs',
+  'lumibase_flow_runs',
   {
     id: id(),
     siteId: text('site_id')
@@ -376,7 +376,7 @@ export const flowRuns = pgTable(
 );
 
 export const operations = pgTable(
-  'operations',
+  'lumibase_operations',
   {
     id: id(),
     siteId: text('site_id')
@@ -410,7 +410,7 @@ export const operations = pgTable(
 // ---------------------------------------------------------------------------
 
 export const materializedCollections = pgTable(
-  'materialized_collections',
+  'lumibase_materialized_collections',
   {
     id: id(),
     siteId: text('site_id')
@@ -452,7 +452,7 @@ export const materializedCollections = pgTable(
  * See `.kiro/specs/insights-dashboard`.
  */
 export const dashboards = pgTable(
-  'dashboards',
+  'lumibase_dashboards',
   {
     id: id(),
     siteId: text('site_id')
@@ -476,7 +476,7 @@ export const dashboards = pgTable(
  * `PanelQuery` (see `@lumibase/shared`); `position` is the grid placement.
  */
 export const panels = pgTable(
-  'panels',
+  'lumibase_panels',
   {
     id: id(),
     siteId: text('site_id')
@@ -509,7 +509,7 @@ export const panels = pgTable(
  * revision). See `.kiro/specs/content-versioning`.
  */
 export const contentVersions = pgTable(
-  'content_versions',
+  'lumibase_content_versions',
   {
     id: id(),
     siteId: text('site_id')
@@ -539,5 +539,108 @@ export const contentVersions = pgTable(
       t.key,
     ),
     itemIdx: index('content_versions_item_idx').on(t.siteId, t.itemId),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Content Releases (spec: .kiro/specs/content-releases)
+// A Release collates specific item revisions across collections into a named
+// bundle, published all at once (manual) or scheduled for a date/time. Reuses
+// the items/revisions model and the content-scheduler queue; only these two
+// junction tables are new.
+// ---------------------------------------------------------------------------
+
+/** A cross-collection publish bundle. */
+export const releases = pgTable(
+  'lumibase_releases',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    /** `draft` | `scheduled` | `published` | `failed` | `partially_failed` */
+    status: text('status').default('draft').notNull(),
+    /** `all_or_nothing` | `best_effort` — publish atomicity strategy. */
+    atomicityMode: text('atomicity_mode').default('all_or_nothing').notNull(),
+    /** When a scheduled release should publish (null for manual-only). */
+    publishAt: timestamp('publish_at'),
+    /** Set once the release reaches `published`. */
+    publishedAt: timestamp('published_at'),
+    /** `{ tz, windows: [{ dow, start, end }] }` — borrowed from contentIntents. */
+    maintenanceWindow: jsonb('maintenance_window'),
+    /** Circuit-breaker detail when status is `failed`/`partially_failed`. */
+    statusReason: text('status_reason'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteStatusIdx: index('releases_site_status_idx').on(t.siteId, t.status),
+    // Release sweep scan: due scheduled releases per site (mirrors items.publishDueIdx).
+    publishDueIdx: index('releases_publish_due_idx').on(t.siteId, t.status, t.publishAt),
+  }),
+);
+
+/** Junction: a release ↔ a specific item, optionally pinned to one revision. */
+export const releaseItems = pgTable(
+  'lumibase_release_items',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    releaseId: text('release_id')
+      .notNull()
+      .references(() => releases.id, { onDelete: 'cascade' }),
+    /** Collection name (releases span collections). */
+    collection: text('collection').notNull(),
+    itemId: text('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    /** Target `items.status` to set on publish (`published` default). */
+    targetStatus: text('target_status').default('published').notNull(),
+    /** Revision pin; null → publish the item's live state at publish time. */
+    revisionId: text('revision_id').references(() => revisions.id, { onDelete: 'set null' }),
+    /** Publish outcome: null until publish; `published` | `skipped` | `failed`. */
+    outcome: text('outcome'),
+    outcomeReason: text('outcome_reason'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    releaseItemUnique: uniqueIndex('release_items_release_item_unique').on(
+      t.releaseId,
+      t.collection,
+      t.itemId,
+    ),
+    releaseIdx: index('release_items_release_idx').on(t.siteId, t.releaseId),
+  }),
+);
+
+/**
+ * Named image-transform presets — a stable slug (`key`) mapped to a
+ * `TransformDsl` (@lumibase/shared). The delivery route resolves `?preset=key`
+ * to these params so callers get canonical derivatives (e.g. `thumbnail`,
+ * `hero`) without spelling out every dimension. See
+ * `.kiro/specs/image-transform-dsl`.
+ */
+export const transformPresets = pgTable(
+  'lumibase_transform_presets',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** URL-safe slug used as `?preset=<key>`. */
+    key: text('key').notNull(),
+    name: text('name').notNull(),
+    /** The TransformDsl object: `{ width?, height?, format?, quality?, fit?, focal? }`. */
+    dsl: jsonb('dsl').default({}).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteKeyUnique: uniqueIndex('transform_presets_site_key_unique').on(t.siteId, t.key),
   }),
 );

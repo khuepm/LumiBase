@@ -7,7 +7,9 @@ import type { PermissionBundle } from '../../services/permission-service';
 const bundleMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/permission-service', () => ({
-  PermissionService: vi.fn().mockImplementation(() => ({ bundle: bundleMock })),
+  PermissionService: vi.fn().mockImplementation(function () {
+    return { bundle: bundleMock };
+  }),
 }));
 
 function principal(raw: Record<string, unknown>): AuthPrincipal {
@@ -86,7 +88,7 @@ describe('withStudioAccess', () => {
     expect(bundleMock).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects a frontend-audience session token before any permission lookup (ADR 0001 hard wall)', async () => {
+  it('rejects a frontend-audience session token before any permission lookup (ADR-011 hard wall)', async () => {
     const app = new Hono<AppEnv>();
     app.use('*', async (c, next) => {
       c.set('auth', principal({ aud: 'frontend' }));

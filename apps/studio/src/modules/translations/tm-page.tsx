@@ -1,52 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2 } from 'lucide-react';
+import { Check, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
-import { getActiveSite, getActiveToken } from '@/lib/api';
+import type { TmEntry, TmSource } from '@lumibase/sdk';
+import { getApiClient } from '@/lib/api';
 
 /**
- * Translation memory manager (studio-ops-ui task 2; Req 2).
+ * Translation memory manager (translation-memory-ui Req 1–2).
  *
- * Surfaces /api/v1/tm: the TM entry store plus the two pipelines built on
- * it — fuzzy lookup (TM only) and full translate (TM → glossary → MT
- * provider). The two try-out panels exist so an operator can see exactly
- * what an agent translating content would get.
+ * Surfaces the TM entry store (list / filter / edit / delete with pagination)
+ * plus the two pipelines built on it — fuzzy lookup (TM only) and full
+ * translate (TM → glossary → MT provider). The try-out panels let an operator
+ * see exactly what an agent translating content would get.
  */
 
-interface TmRow {
-  id: string;
-  sourceLang: string;
-  targetLang: string;
-  sourceText: string;
-  targetText: string;
-  quality: number | null;
-  source: string;
-  provider: string | null;
-  context: string | null;
-}
-
-async function tmFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getActiveToken();
-  const site = getActiveSite();
-  const res = await fetch(`/api/v1/tm${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(site ? { 'x-site-id': site } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
-  const body = (await res.json().catch(() => ({}))) as {
-    data?: T;
-    errors?: Array<{ code: string; message: string }>;
-  };
-  if (!res.ok) {
-    throw new Error(body.errors?.[0]?.message ?? `Request failed: ${res.status}`);
-  }
-  return body.data as T;
-}
+const PAGE_SIZE = 25;
+const SOURCES: TmSource[] = ['human', 'mt', 'imported'];
 
 function UpsertForm({ onClose }: { onClose: () => void }) {
+  const client = getApiClient();
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     sourceLang: 'en',
@@ -56,15 +27,17 @@ function UpsertForm({ onClose }: { onClose: () => void }) {
   });
 
   const mutation = useMutation({
-    mutationFn: () => tmFetch('', { method: 'POST', body: JSON.stringify(form) }),
+    mutationFn: () => client.tm.upsert({ ...form, source: 'human' }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['tm-entries'] });
       onClose();
     },
   });
 
-  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    setForm((prev) => ({ ...prev, [key]: e.target.value }));
+  const set =
+    (key: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setForm((prev) => ({ ...prev, [key]: e.target.value }));
 
   return (
     <div className="space-y-2 rounded-lg border bg-background p-4">
@@ -110,16 +83,13 @@ function UpsertForm({ onClose }: { onClose: () => void }) {
 }
 
 function LookupPanel() {
+  const client = getApiClient();
   const [query, setQuery] = useState('');
   const [sourceLang, setSourceLang] = useState('en');
   const [targetLang, setTargetLang] = useState('vi');
 
   const mutation = useMutation({
-    mutationFn: () =>
-      tmFetch<{ match: { targetText: string; score: number } | null }>('/lookup', {
-        method: 'POST',
-        body: JSON.stringify({ query, sourceLang, targetLang }),
-      }),
+    mutationFn: () => client.tm.lookup({ query, sourceLang, targetLang }),
   });
 
   return (
@@ -153,10 +123,10 @@ function LookupPanel() {
           </p>
         )}
         {mutation.isSuccess &&
-          (mutation.data.match ? (
+          (mutation.data ? (
             <div className="rounded-md border bg-muted/30 p-2 text-xs">
-              <p className="font-medium">{mutation.data.match.targetText}</p>
-              <p className="text-muted-foreground">score {mutation.data.match.score}</p>
+              <p className="font-medium">{mutation.data.targetText}</p>
+              <p className="text-muted-foreground">similarity {mutation.data.similarity}%</p>
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">No match above threshold.</p>
@@ -167,16 +137,13 @@ function LookupPanel() {
 }
 
 function TranslatePanel() {
+  const client = getApiClient();
   const [text, setText] = useState('');
   const [from, setFrom] = useState('en');
   const [to, setTo] = useState('vi');
 
   const mutation = useMutation({
-    mutationFn: () =>
-      tmFetch<Record<string, unknown>>('/translate', {
-        method: 'POST',
-        body: JSON.stringify({ text, from, to }),
-      }),
+    mutationFn: () => client.tm.translate({ text, from, to }),
   });
 
   return (
@@ -211,7 +178,7 @@ function TranslatePanel() {
         )}
         {mutation.isSuccess && (
           <pre className="overflow-x-auto rounded-md border bg-muted/30 p-2 font-mono text-xs">
-            {JSON.stringify(mutation.data, null, 2)}
+            {JSON.stringify(mutation.data.data, null, 2)}
           </pre>
         )}
       </div>
@@ -219,29 +186,139 @@ function TranslatePanel() {
   );
 }
 
-export function TranslationMemoryPage() {
+function SourceBadge({ source }: { source: string }) {
+  return (
+    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+      {source}
+    </span>
+  );
+}
+
+function EntryRow({ row }: { row: TmEntry }) {
+  const client = getApiClient();
   const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [targetText, setTargetText] = useState(row.targetText);
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['tm-entries'] });
+
+  const saveMutation = useMutation({
+    mutationFn: () => client.tm.update(row.id, { targetText }),
+    onSuccess: () => {
+      invalidate();
+      setEditing(false);
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: () => client.tm.delete(row.id),
+    onSuccess: invalidate,
+  });
+
+  return (
+    <tr className="border-b align-top last:border-0">
+      <td className="py-2 font-mono text-xs">
+        {row.sourceLang}→{row.targetLang}
+      </td>
+      <td className="max-w-xs truncate py-2 text-xs" title={row.sourceText}>
+        {row.sourceText}
+      </td>
+      <td className="max-w-xs py-2 text-xs">
+        {editing ? (
+          <textarea
+            value={targetText}
+            onChange={(e) => setTargetText(e.target.value)}
+            rows={2}
+            aria-label={`Edit target for ${row.id}`}
+            className="w-full rounded-md border bg-background px-2 py-1 text-xs"
+          />
+        ) : (
+          <span className="block truncate" title={row.targetText}>
+            {row.targetText}
+          </span>
+        )}
+      </td>
+      <td className="py-2 text-xs">{row.quality ?? '—'}</td>
+      <td className="py-2 text-xs">
+        <SourceBadge source={row.source} />
+        {row.provider ? <span className="ml-1 text-muted-foreground">({row.provider})</span> : null}
+      </td>
+      <td className="py-2 text-right">
+        {editing ? (
+          <div className="flex justify-end gap-1">
+            <button
+              type="button"
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending || !targetText.trim()}
+              aria-label={`Save TM entry ${row.id}`}
+              className="rounded p-1 text-muted-foreground hover:text-primary disabled:opacity-50"
+            >
+              <Check className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTargetText(row.targetText);
+                setEditing(false);
+              }}
+              aria-label={`Cancel editing ${row.id}`}
+              className="rounded p-1 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex justify-end gap-1">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              aria-label={`Edit TM entry ${row.id}`}
+              className="rounded p-1 text-muted-foreground hover:text-foreground"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => deleteMutation.mutate()}
+              aria-label={`Delete TM entry ${row.id}`}
+              className="rounded p-1 text-muted-foreground hover:text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+export function TranslationMemoryPage() {
+  const client = getApiClient();
   const [adding, setAdding] = useState(false);
   const [sourceFilter, setSourceFilter] = useState('');
   const [targetFilter, setTargetFilter] = useState('');
+  const [entrySource, setEntrySource] = useState<TmSource | ''>('');
+  const [page, setPage] = useState(0);
 
   const entriesQuery = useQuery({
-    queryKey: ['tm-entries', sourceFilter, targetFilter],
-    queryFn: () => {
-      const params = new URLSearchParams();
-      if (sourceFilter) params.set('source', sourceFilter);
-      if (targetFilter) params.set('target', targetFilter);
-      const qs = params.toString();
-      return tmFetch<TmRow[]>(qs ? `?${qs}` : '');
-    },
+    queryKey: ['tm-entries', sourceFilter, targetFilter, entrySource, page],
+    queryFn: () =>
+      client.tm.list({
+        source: sourceFilter || undefined,
+        target: targetFilter || undefined,
+        entrySource: entrySource || undefined,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      }),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => tmFetch(`/${id}`, { method: 'DELETE' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tm-entries'] }),
-  });
+  const entries = entriesQuery.data?.data ?? [];
+  const total = (entriesQuery.data?.meta?.total as number | undefined) ?? entries.length;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const entries = entriesQuery.data ?? [];
+  const resetPage = <T,>(setter: (v: T) => void) => (v: T) => {
+    setter(v);
+    setPage(0);
+  };
 
   return (
     <div className="space-y-4 p-6">
@@ -272,22 +349,35 @@ export function TranslationMemoryPage() {
       </div>
 
       <div className="rounded-lg border bg-background p-4">
-        <div className="mb-2 flex items-center gap-2">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-semibold">Entries</h3>
           <input
             value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value)}
+            onChange={(e) => resetPage(setSourceFilter)(e.target.value)}
             placeholder="source lang"
             aria-label="Filter source lang"
             className="w-24 rounded-md border bg-background px-2 py-1 font-mono text-xs"
           />
           <input
             value={targetFilter}
-            onChange={(e) => setTargetFilter(e.target.value)}
+            onChange={(e) => resetPage(setTargetFilter)(e.target.value)}
             placeholder="target lang"
             aria-label="Filter target lang"
             className="w-24 rounded-md border bg-background px-2 py-1 font-mono text-xs"
           />
+          <select
+            value={entrySource}
+            onChange={(e) => resetPage(setEntrySource)(e.target.value as TmSource | '')}
+            aria-label="Filter origin"
+            className="rounded-md border bg-background px-2 py-1 text-xs"
+          >
+            <option value="">all origins</option>
+            {SOURCES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
         </div>
         {entriesQuery.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading entries…</p>
@@ -298,48 +388,48 @@ export function TranslationMemoryPage() {
         ) : entries.length === 0 ? (
           <p className="text-sm text-muted-foreground">No entries for this filter.</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs uppercase text-muted-foreground">
-                <th className="py-2">Pair</th>
-                <th>Source</th>
-                <th>Target</th>
-                <th>Quality</th>
-                <th>Origin</th>
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((row) => (
-                <tr key={row.id} className="border-b align-top last:border-0">
-                  <td className="py-2 font-mono text-xs">
-                    {row.sourceLang}→{row.targetLang}
-                  </td>
-                  <td className="max-w-xs truncate py-2 text-xs" title={row.sourceText}>
-                    {row.sourceText}
-                  </td>
-                  <td className="max-w-xs truncate py-2 text-xs" title={row.targetText}>
-                    {row.targetText}
-                  </td>
-                  <td className="py-2 text-xs">{row.quality ?? '—'}</td>
-                  <td className="py-2 text-xs">
-                    {row.source}
-                    {row.provider ? ` (${row.provider})` : ''}
-                  </td>
-                  <td className="py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => deleteMutation.mutate(row.id)}
-                      aria-label={`Delete TM entry ${row.id}`}
-                      className="rounded p-1 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
+          <>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                  <th className="py-2">Pair</th>
+                  <th>Source</th>
+                  <th>Target</th>
+                  <th>Quality</th>
+                  <th>Origin</th>
+                  <th aria-label="Actions" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {entries.map((row) => (
+                  <EntryRow key={row.id} row={row} />
+                ))}
+              </tbody>
+            </table>
+            <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                {total} entr{total === 1 ? 'y' : 'ies'} · page {page + 1} of {pageCount}
+              </span>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="rounded-md border px-2 py-1 hover:bg-muted disabled:opacity-40"
+                >
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => (p + 1 < pageCount ? p + 1 : p))}
+                  disabled={page + 1 >= pageCount}
+                  className="rounded-md border px-2 py-1 hover:bg-muted disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>

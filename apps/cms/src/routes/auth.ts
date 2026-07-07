@@ -67,7 +67,7 @@ import { getSecurityNotificationDispatcher, scheduleWorkersDrain } from '../modu
 import type { NotificationDeps } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';
 import { formatSafeError } from '@lumibase/shared/utils';
-import { UserPreferencesUpdateSchema } from '@lumibase/shared/schemas';
+import { UserPreferencesUpdateSchema, PasswordSchema } from '@lumibase/shared/schemas';
 
 /**
  * True for a Postgres unique-constraint violation (SQLSTATE 23505),
@@ -162,14 +162,15 @@ meRouter.get('/admin-path', async (c) => {
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(6),
+  // Shared strength policy (min 12 + complexity) — CWE-521.
+  newPassword: PasswordSchema,
 });
 
 /**
  * `POST /api/v1/me/change-password` — authenticated self-service password
- * change. Verifies the current password, sets the new hash, and revokes all
- * refresh tokens so other sessions cannot be silently renewed (the caller's
- * current access JWT survives until its short TTL; re-login refreshes it).
+ * change. Verifies the current password, sets the new hash, revokes all
+ * refresh tokens, and bumps `tokenVersion` so every outstanding access JWT
+ * dies immediately (CWE-613/620). The caller must sign in again.
  */
 meRouter.post('/change-password', async (c) => {
   const db = c.get('db');
@@ -207,7 +208,14 @@ meRouter.post('/change-password', async (c) => {
   const now = new Date();
   await db
     .update(users)
-    .set({ passwordHash, passwordChangedAt: now, updatedAt: now })
+    .set({
+      passwordHash,
+      passwordChangedAt: now,
+      // Bump the session generation: every outstanding access JWT (which
+      // embeds the old tokenVersion) dies immediately (CWE-613/620).
+      tokenVersion: sql`${users.tokenVersion} + 1`,
+      updatedAt: now,
+    })
     .where(eq(users.id, user.id));
   await revokeAllRefreshTokens(db, siteId, user.id);
 
@@ -428,7 +436,9 @@ async function signCustomJwt(
 
 const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  // Enforce the shared strength policy (min 12 + complexity) instead of the
+  // former weak min(6) (CWE-521).
+  password: PasswordSchema,
   firstName: z.string().optional(),
   lastName: z.string().optional(),
 });
@@ -460,7 +470,7 @@ const resetPasswordSchema = z.object({
  * unauthenticated and is bypassed by `withAuth` / `withStudioAccess` like
  * `/login`.
  *
- * Guardrails (see ADR 0001 — user-management realms):
+ * Guardrails (see ADR-011 — user-management realms):
  *   1. Least-privilege role is resolved SERVER-SIDE
  *      ({@link ensureSubscriberRole}) — the request body can never choose
  *      a role, so a self-registered visitor can never get Studio/admin.
@@ -496,8 +506,23 @@ authRouter.post('/register', async (c) => {
     );
   }
 
-  const body = await c.req.json();
-  const input = registerSchema.parse(body);
+  const body = await c.req.json().catch(() => ({}));
+  const parsedInput = registerSchema.safeParse(body);
+  if (!parsedInput.success) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'VALIDATION',
+            message: parsedInput.error.message,
+            issues: parsedInput.error.issues,
+          },
+        ],
+      },
+      400,
+    );
+  }
+  const input = parsedInput.data;
   const emailLower = normalizeEmail(input.email);
 
   const audit = new AuditLogger({ db, siteId });
@@ -517,7 +542,7 @@ authRouter.post('/register', async (c) => {
     const subscriberRoleId = await ensureSubscriberRole(db, siteId);
 
     // The SELECT above is advisory; the `users_email_lower_unique` index
-    // (migration 0042) is the real guard. A concurrent registration for the
+    // (migration 0006) is the real guard. A concurrent registration for the
     // same email loses the INSERT race with a unique violation — swallow it
     // and fall through to the identical generic 202 so the outcome (and the
     // response) is the same as "email already existed" (H3 + anti-enum).
@@ -923,7 +948,14 @@ authRouter.post('/reset-password', async (c) => {
   const now = new Date();
   await db
     .update(users)
-    .set({ passwordHash, passwordChangedAt: now, updatedAt: now })
+    .set({
+      passwordHash,
+      passwordChangedAt: now,
+      // Bump the session generation: every outstanding access JWT (which
+      // embeds the old tokenVersion) dies immediately (CWE-613/620).
+      tokenVersion: sql`${users.tokenVersion} + 1`,
+      updatedAt: now,
+    })
     .where(eq(users.id, user.id));
 
   // Revoke all refresh tokens so a stolen session cannot be silently
@@ -1319,6 +1351,9 @@ authRouter.post('/login', async (c) => {
       email: user.email,
       roles: tokenRoles,
       siteId,
+      // Session generation at sign time; auth rejects tokens whose value is
+      // older than the stored one (revocation on password change/reset).
+      tokenVersion: user.tokenVersion ?? 0,
     },
     jwtSecret,
     audience,
@@ -1421,7 +1456,13 @@ authRouter.post('/refresh', async (c) => {
   // Re-resolve the user so the new access token reflects current state
   // (e.g. a now-suspended account cannot keep renewing).
   const [user] = await db
-    .select({ id: users.id, email: users.email, status: users.status, isBootstrap: users.isBootstrap })
+    .select({
+      id: users.id,
+      email: users.email,
+      status: users.status,
+      isBootstrap: users.isBootstrap,
+      tokenVersion: users.tokenVersion,
+    })
     .from(users)
     .where(eq(users.id, outcome.userId))
     .limit(1);
@@ -1470,7 +1511,15 @@ authRouter.post('/refresh', async (c) => {
   const audience = appAccess ? TOKEN_AUDIENCE.studio : TOKEN_AUDIENCE.frontend;
 
   const token = await signCustomJwt(
-    { userId: user.id, email: user.email, roles: tokenRoles, siteId },
+    {
+      userId: user.id,
+      email: user.email,
+      roles: tokenRoles,
+      siteId,
+      // Session generation at sign time; auth rejects tokens whose value is
+      // older than the stored one (revocation on password change/reset).
+      tokenVersion: user.tokenVersion ?? 0,
+    },
     jwtSecret,
     audience,
     sessionTtlFor(audience, c.env),
@@ -1568,3 +1617,7 @@ authRouter.get('/me', async (c) => {
     },
   });
 });
+
+// Preference reads/writes live on `meRouter` (`GET/PATCH /api/v1/me/preferences`
+// above) — the save-default-preference `saveAction` key is validated there via
+// UserPreferencesSchema, alongside keybindings/language/theme.

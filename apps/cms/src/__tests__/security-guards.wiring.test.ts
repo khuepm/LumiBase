@@ -36,7 +36,7 @@ describe('security guard wiring — /api/v1 middleware chain (index.ts)', () => 
 
   it('mounts the full guard chain on the authenticated api sub-app', () => {
     expect(source).toMatch(
-      /api\.use\('\*',\s*withTenant\(\),\s*withDb\(\),\s*withAuth\(\),\s*withSiteMembership\(\),\s*requireSetupComplete\(\),\s*withStudioAccess\(\),\s*withControlPlaneAccessGuard\(\),/,
+      /api\.use\('\*',\s*withTenant\(\),\s*withDb\(\),\s*withAuth\(\),\s*withSiteMembership\(\),\s*withRateLimit\(\),\s*requireSetupComplete\(\),\s*withStudioAccess\(\),\s*withControlPlaneAccessGuard\(\),/,
     );
   });
 

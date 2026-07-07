@@ -70,7 +70,7 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
 
   // Hard wall: a `frontend` (subscriber) session token can NEVER reach the
   // Studio management surface, regardless of any `appAccess` policy. This
-  // is the audience guardrail from ADR 0001 — defense-in-depth on top of
+  // is the audience guardrail from ADR-011 — defense-in-depth on top of
   // the `appAccess` bundle check below.
   if (isFrontendAudience(auth?.raw?.aud)) {
     return c.json(

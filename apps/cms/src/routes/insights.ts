@@ -185,9 +185,11 @@ insightsRouter.post('/:id/panels/:panelId/data', async (c) => {
 
   const override = runOverrideSchema.safeParse(await c.req.json().catch(() => undefined));
   try {
+    const source = (row.options as { source?: 'items' | 'materialized' } | null)?.source;
     const result = await buildInsights(c).runPanel(
       row.query as PanelQuery,
       override.success ? (override.data as Partial<PanelQuery>) : undefined,
+      source ? { source } : undefined,
     );
     return c.json(result);
   } catch (e) {

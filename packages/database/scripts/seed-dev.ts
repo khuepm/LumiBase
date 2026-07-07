@@ -32,7 +32,7 @@ async function main() {
 
   // 1. Default dev site (referenced by Studio DEFAULT_DEV_SITE = 'site_demo')
   await db.execute(
-    sql`INSERT INTO sites (id, name, domain) VALUES ('site_demo', 'Demo Site', 'localhost')
+    sql`INSERT INTO lumibase_sites (id, name, domain) VALUES ('site_demo', 'Demo Site', 'localhost')
         ON CONFLICT (id) DO NOTHING`
   );
   console.log('[seed-dev] ✓ site_demo site row');
@@ -40,14 +40,14 @@ async function main() {
   // 2. system_state singleton (needed for adminPathGuard to not block API routes
   //    while the Setup Wizard hasn't been run)
   await db.execute(
-    sql`INSERT INTO system_state (id, state) VALUES ('singleton', 'initialized')
+    sql`INSERT INTO lumibase_system_state (id, state) VALUES ('singleton', 'initialized')
         ON CONFLICT (id) DO NOTHING`
   );
   console.log('[seed-dev] ✓ system_state singleton (state=initialized)');
 
   for (const role of DEV_ACCESS_SEED.roles) {
     await db.execute(
-      sql`INSERT INTO roles (
+      sql`INSERT INTO lumibase_roles (
             id, site_id, key, system_key, name, description, icon, admin_access, app_access
           )
           VALUES (
@@ -69,7 +69,7 @@ async function main() {
 
   for (const policy of DEV_ACCESS_SEED.policies) {
     await db.execute(
-      sql`INSERT INTO policies (
+      sql`INSERT INTO lumibase_policies (
             id, site_id, key, name, description, icon, admin_access, app_access,
             enforce_tfa, ip_allow, ip_deny, rules
           )
@@ -97,7 +97,7 @@ async function main() {
 
   for (const binding of DEV_ACCESS_SEED.rolePolicies) {
     await db.execute(
-      sql`INSERT INTO role_policies (role_id, policy_id, priority)
+      sql`INSERT INTO lumibase_role_policies (role_id, policy_id, priority)
           VALUES (${binding.roleId}, ${binding.policyId}, ${binding.priority})
           ON CONFLICT (role_id, policy_id) DO UPDATE SET
             priority = EXCLUDED.priority`
@@ -107,7 +107,7 @@ async function main() {
 
   for (const permission of DEV_ACCESS_SEED.permissions) {
     await db.execute(
-      sql`INSERT INTO permissions (
+      sql`INSERT INTO lumibase_permissions (
             id, site_id, policy_id, collection, action, permissions, validation, presets, fields
           )
           VALUES (

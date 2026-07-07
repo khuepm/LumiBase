@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { NotificationsPanel } from '@/components/notifications-panel';
 import { ReleaseUpdateNotice } from '@/components/release-update-notice';
+import { ConnectionStatusDot } from '@/components/connection-status-dot';
 import { CommandPalette } from '@/components/command-palette';
 import { SearchPalette } from '@/components/search-palette';
 import { clearActiveToken, getApiClient, hasActiveToken, logout } from '@/lib/api';
@@ -248,6 +249,7 @@ export function AppShell({ children }: AppShellProps) {
                 ⌘P
               </kbd>
             </button>
+            <ConnectionStatusDot />
             <ReleaseUpdateNotice compact />
             <NotificationsPanel />
             <button

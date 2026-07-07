@@ -116,7 +116,7 @@ describe('Audit log — integration', () => {
     // CASCADE handles incidental FK references (login_attempts → users,
     // settings → sites, user_sites → users).
     await db.execute(
-      sql`TRUNCATE TABLE audit_log, login_attempts, system_state, settings, user_sites, sites, users RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE TABLE lumibase_audit_log, lumibase_login_attempts, lumibase_system_state, lumibase_settings, lumibase_user_sites, lumibase_sites, lumibase_users RESTART IDENTITY CASCADE`,
     );
     await db.insert(sites).values({ id: 'site_test', name: 'Test site' });
   });

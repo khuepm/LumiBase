@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { boolean, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
@@ -13,7 +14,7 @@ const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
 export const aiApprovals = pgTable(
-  'ai_approvals',
+  'lumibase_ai_approvals',
   {
     id: id(),
     siteId: text('site_id')
@@ -41,7 +42,7 @@ export const aiApprovals = pgTable(
  * AI conversations — groups messages into threads.
  */
 export const aiConversations = pgTable(
-  'ai_conversations',
+  'lumibase_ai_conversations',
   {
     id: id(),
     siteId: text('site_id')
@@ -61,7 +62,7 @@ export const aiConversations = pgTable(
  * AI messages — individual messages within a conversation.
  */
 export const aiMessages = pgTable(
-  'ai_messages',
+  'lumibase_ai_messages',
   {
     id: id(),
     conversationId: text('conversation_id')
@@ -94,7 +95,7 @@ export const aiMessages = pgTable(
  * work with brute-force cosine similarity for moderate dataset sizes.
  */
 export const aiEmbeddings = pgTable(
-  'ai_embeddings',
+  'lumibase_ai_embeddings',
   {
     id: id(),
     siteId: text('site_id')
@@ -125,7 +126,7 @@ export const aiEmbeddings = pgTable(
 // ---------------------------------------------------------------------------
 
 export const agentGoals = pgTable(
-  'agent_goals',
+  'lumibase_agent_goals',
   {
     id: id(),
     siteId: text('site_id')
@@ -173,7 +174,7 @@ export const agentGoals = pgTable(
 );
 
 export const agentRuns = pgTable(
-  'agent_runs',
+  'lumibase_agent_runs',
   {
     id: id(),
     goalId: text('goal_id')
@@ -204,7 +205,7 @@ export const agentRuns = pgTable(
 );
 
 export const agentPlans = pgTable(
-  'agent_plans',
+  'lumibase_agent_plans',
   {
     id: id(),
     runId: text('run_id')
@@ -229,7 +230,7 @@ export const agentPlans = pgTable(
 );
 
 export const agentTools = pgTable(
-  'agent_tools',
+  'lumibase_agent_tools',
   {
     id: id(),
     siteId: text('site_id').references(() => sites.id, { onDelete: 'cascade' }),
@@ -253,7 +254,7 @@ export const agentTools = pgTable(
 );
 
 export const agentPermissions = pgTable(
-  'agent_permissions',
+  'lumibase_agent_permissions',
   {
     id: id(),
     siteId: text('site_id')
@@ -277,7 +278,7 @@ export const agentPermissions = pgTable(
 );
 
 export const agentToolCalls = pgTable(
-  'agent_tool_calls',
+  'lumibase_agent_tool_calls',
   {
     id: id(),
     runId: text('run_id')
@@ -306,7 +307,7 @@ export const agentToolCalls = pgTable(
 );
 
 export const agentApprovals = pgTable(
-  'agent_approvals',
+  'lumibase_agent_approvals',
   {
     id: id(),
     runId: text('run_id')
@@ -342,11 +343,14 @@ export const agentApprovals = pgTable(
     siteStatusIdx: index('agent_approvals_site_status_idx').on(t.siteId, t.status),
     runCreatedIdx: index('agent_approvals_run_created_idx').on(t.runId, t.createdAt),
     subjectIdx: index('agent_approvals_subject_idx').on(t.subjectType, t.subjectId),
+    vetoDueIdx: index('agent_approvals_veto_due_idx')
+      .on(t.siteId, t.autoCommitAt)
+      .where(sql`${t.kind} = 'veto' and ${t.status} = 'pending'`),
   }),
 );
 
 export const agentArtifacts = pgTable(
-  'agent_artifacts',
+  'lumibase_agent_artifacts',
   {
     id: id(),
     runId: text('run_id')
@@ -375,7 +379,7 @@ export const agentArtifacts = pgTable(
 );
 
 export const agentEvaluations = pgTable(
-  'agent_evaluations',
+  'lumibase_agent_evaluations',
   {
     id: id(),
     runId: text('run_id')
@@ -401,7 +405,7 @@ export const agentEvaluations = pgTable(
 );
 
 export const agentMemory = pgTable(
-  'agent_memory',
+  'lumibase_agent_memory',
   {
     id: id(),
     siteId: text('site_id')

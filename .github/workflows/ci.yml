@@ -23,10 +23,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -35,7 +35,7 @@ jobs:
         run: corepack enable
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
           version: 9.12.0
           run_install: false
@@ -52,7 +52,7 @@ jobs:
           mkdir -p .turbo
 
       - name: Restore pnpm cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
@@ -60,7 +60,7 @@ jobs:
             ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-
 
       - name: Restore Turbo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-turbo-${{ github.sha }}
@@ -91,10 +91,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -103,7 +103,7 @@ jobs:
         run: corepack enable
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
           version: 9.12.0
           run_install: false
@@ -120,7 +120,7 @@ jobs:
           mkdir -p .turbo
 
       - name: Restore pnpm cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
@@ -128,7 +128,7 @@ jobs:
             ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-
 
       - name: Restore Turbo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-turbo-lint-${{ github.sha }}
@@ -141,3 +141,36 @@ jobs:
 
       - name: Lint allowlisted packages
         run: pnpm --filter @lumibase/landing --filter @lumibase/marketplace --filter @lumibase/studio --filter @lumibase/docs --filter @lumibase/cms lint
+
+  dependency-audit:
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      # Report the full audit for visibility (never fails the build) …
+      - name: Audit (report, non-blocking)
+        run: pnpm audit --prod || true
+
+      # … then fail only on HIGH/CRITICAL advisories so a known-exploitable
+      # dependency blocks the merge while noisy low/moderate transitive
+      # advisories do not (CWE-1104).
+      - name: Audit (fail on high/critical)
+        run: pnpm audit --prod --audit-level high

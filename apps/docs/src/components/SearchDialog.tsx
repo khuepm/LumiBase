@@ -127,12 +127,12 @@ export function SearchDialog() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 rounded-2xl bg-white/[0.06] px-3.5 py-2 text-[13px] font-medium text-[rgb(155,155,160)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.10)] transition-colors hover:bg-white/[0.10]"
+        className="glass-chip glass-chip-hover flex items-center gap-2 rounded-2xl px-3.5 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
         aria-label="Search documentation (Cmd+K)"
       >
         <Search className="h-[15px] w-[15px]" />
         <span className="hidden sm:inline">{t('search.placeholder')}</span>
-        <kbd className="hidden rounded-md bg-white/[0.08] px-1.5 py-0.5 font-sans text-[11px] text-[rgb(180,180,185)] sm:ml-2 sm:inline-block">
+        <kbd className="glass-chip hidden rounded-md px-1.5 py-0.5 font-sans text-[11px] text-muted-foreground sm:ml-2 sm:inline-block">
           ⌘K
         </kbd>
       </button>
@@ -148,16 +148,16 @@ export function SearchDialog() {
     >
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-[rgba(8,8,11,0.62)] backdrop-blur-[6px]"
+        className="fixed inset-0 bg-black/40 backdrop-blur-[6px] dark:bg-[rgba(8,8,11,0.62)]"
         onClick={closeDialog}
         aria-hidden="true"
       />
 
       {/* Dialog panel */}
-      <div className="relative z-10 w-[560px] max-w-[92vw] overflow-hidden rounded-[18px] bg-[rgb(24,23,28)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.10),0_32px_80px_-12px_rgba(0,0,0,0.7)]">
+      <div className="relative z-10 w-[560px] max-w-[92vw] overflow-hidden rounded-[18px] bg-popover shadow-[var(--ring-glass-strong),0_32px_80px_-12px_rgba(0,0,0,0.35)] dark:shadow-[var(--ring-glass-strong),0_32px_80px_-12px_rgba(0,0,0,0.7)]">
         {/* Search input */}
-        <div className="flex items-center gap-3 border-b border-white/[0.08] px-[18px] py-4">
-          <Search className="h-[18px] w-[18px] shrink-0 text-[rgb(155,155,160)]" />
+        <div className="flex items-center gap-3 border-b border-border px-[18px] py-4">
+          <Search className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
             type="text"
@@ -165,7 +165,7 @@ export function SearchDialog() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleInputKeyDown}
             placeholder={t('search.placeholder')}
-            className="flex-1 bg-transparent text-base font-medium text-white outline-none placeholder:text-[rgb(125,125,133)]"
+            className="flex-1 bg-transparent text-base font-medium text-foreground outline-none placeholder:text-muted-foreground"
             aria-label="Search query"
             aria-activedescendant={
               results.length > 0 ? `search-result-${selectedIndex}` : undefined
@@ -177,7 +177,7 @@ export function SearchDialog() {
           />
           <kbd
             onClick={closeDialog}
-            className="cursor-pointer rounded-[7px] bg-white/[0.08] px-2 py-[3px] font-sans text-[11px] font-semibold text-[rgb(180,180,185)]"
+            className="glass-chip cursor-pointer rounded-[7px] px-2 py-[3px] font-sans text-[11px] font-semibold text-muted-foreground"
           >
             Esc
           </kbd>
@@ -197,7 +197,7 @@ export function SearchDialog() {
                 role="option"
                 aria-selected={index === selectedIndex}
                 className={`flex cursor-pointer items-center gap-3 rounded-[11px] px-3 py-[11px] transition-colors ${
-                  index === selectedIndex ? 'bg-white/[0.06]' : ''
+                  index === selectedIndex ? 'bg-[var(--color-glass)]' : ''
                 }`}
                 onClick={() => navigateToResult(result)}
                 onMouseEnter={() => setSelectedIndex(index)}
@@ -208,11 +208,11 @@ export function SearchDialog() {
                   style={{ background: planetFor(result.slug) }}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-white">
+                  <div className="truncate text-sm font-semibold text-foreground">
                     {result.title}
                   </div>
                   <div
-                    className="mt-0.5 line-clamp-2 text-xs font-medium text-[rgb(150,150,156)] [&_mark]:rounded-sm [&_mark]:bg-[rgba(123,97,255,0.35)] [&_mark]:px-0.5 [&_mark]:text-white"
+                    className="mt-0.5 line-clamp-2 text-xs font-medium text-muted-foreground [&_mark]:rounded-sm [&_mark]:bg-primary/30 [&_mark]:px-0.5 [&_mark]:text-foreground [&_mark]:dark:text-white"
                     dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(result.snippet) }}
                   />
                 </div>
@@ -223,14 +223,14 @@ export function SearchDialog() {
 
         {/* No results message */}
         {query.trim().length >= 2 && results.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm font-medium text-[rgb(150,150,156)]">
+          <div className="px-4 py-8 text-center text-sm font-medium text-muted-foreground">
             {t('search.no-results', { q: query })}
           </div>
         )}
 
         {/* Empty state hint */}
         {query.trim().length < 2 && (
-          <div className="px-4 py-8 text-center text-sm font-medium text-[rgb(150,150,156)]">
+          <div className="px-4 py-8 text-center text-sm font-medium text-muted-foreground">
             {t('search.min-chars')}
           </div>
         )}

@@ -2,6 +2,8 @@
 
 Checklist bắt buộc trước khi đánh dấu một feature spec là hoàn thành. Áp dụng cho mọi spec trong `.kiro/specs/`.
 
+> DoD này ở cấp **feature**. Điều kiện thoát cho một **release major** (v1.0.0 trở đi) nằm ở `v1-release-criteria.md` cùng thư mục — đó là nơi gom security audit, scope freeze, quality gate, upgrade-path và semver policy cho cả bản phát hành.
+
 ## 1. Code & test
 
 - [ ] `pnpm typecheck` pass toàn bộ workspace

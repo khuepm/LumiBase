@@ -9,7 +9,7 @@
 > tables. Self-service visitors get a least-privilege `subscriber` role
 > (`appAccess: false`); staff are invite-only with Studio roles; session
 > tokens carry an `aud` claim so a frontend token can never reach Studio.
-> See **ADR-010** for the decision record.
+> See **ADR-011** for the decision record.
 
 ---
 
@@ -243,7 +243,7 @@ POST /auth/refresh  → { token, refreshToken, refreshTokenExpiresAt }  (rotates
 POST /auth/logout   → revokes the family + clears the cookie
 ```
 
-Security model (`services/auth/refresh-token.ts`, table `refresh_tokens`):
+Security model (`services/auth/refresh-token.ts`, table `lumibase_refresh_tokens`):
 
 - **Hashed at rest** — only `sha256(plaintext)` is stored; plaintext is
   returned once per login/refresh.
@@ -400,11 +400,11 @@ never become an agent tool.
 | Subscriber role provisioning | `apps/cms/src/services/auth/frontend-role.ts` |
 | Subscriber content-read grants | `apps/cms/src/services/auth/subscriber-access.ts` |
 | Token audiences + access/refresh TTL helpers | `apps/cms/src/services/auth/token-audience.ts` |
-| Rotating refresh tokens (issue/rotate/revoke) | `apps/cms/src/services/auth/refresh-token.ts` (table `refresh_tokens`) |
+| Rotating refresh tokens (issue/rotate/revoke) | `apps/cms/src/services/auth/refresh-token.ts` (table `lumibase_refresh_tokens`) |
 | Email-verify / password-reset tokens | `apps/cms/src/services/auth/{email-verification,password-reset}.ts` |
 | Per-IP rate limit (register/resend/forgot) | `apps/cms/src/modules/auth/registration-guard.ts` |
 | Verification / reset emails | `apps/cms/src/modules/email/{verify-email,password-reset}.ts` |
-| Decision record | `docs/en/architecture/decisions/adr-010-user-management-realms.md` |
+| Decision record | `docs/en/architecture/decisions/adr-011-user-management-realms.md` |
 
 ---
 
@@ -413,12 +413,12 @@ never become an agent tool.
 Verified fixes shipped with this feature (see CHANGELOG):
 
 - **Single-use password-reset (H1).** `users.password_changed_at` (migration
-  `0042`) is stamped on every reset/change; a reset token whose `iat`
+  `0006`) is stamped on every reset/change; a reset token whose `iat`
   predates it is rejected (`isResetTokenStale`). A leaked or replayed link
   cannot set a second password, and issuing a newer reset invalidates older
   links.
 - **Global unique email (H3).** Unique index on `lower(email)` (migration
-  `0042`) is the DB backstop behind the check-then-insert in `/register`;
+  `0006`) is the DB backstop behind the check-then-insert in `/register`;
   a lost registration race surfaces as the same generic `202`.
 - **Atomic refresh rotation (M1).** Rotation claims the row with a
   conditional `UPDATE … WHERE revoked_at IS NULL`; a concurrent loser is
@@ -453,7 +453,7 @@ before relying on them in a hostile deployment):
   (a subsequent site-A cookie `/refresh` then 401s and clears). Body-token
   transport is unaffected — cross-tenant SPAs should prefer it.
 
-Operational note — the `lower(email)` unique index (`0042`) fails to create
+Operational note — the `lower(email)` unique index (`0006`) fails to create
 if the `users` table already holds case-insensitive duplicate emails.
 De-duplicate first:
 

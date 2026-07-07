@@ -1,33 +1,98 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+@config '../tailwind.config.ts';
 
 /*
  * Design tokens.
- * - shadcn/ui HSL tokens (light kept for theme-toggle compatibility,
- *   `.dark` mapped to the LumiBase "dark cosmic" palette — shipped default).
- * - Raw cosmic custom properties from the LumiBase design system spec.
+ * - shadcn/ui HSL tokens: `:root` = light, `.dark` = the LumiBase "dark cosmic"
+ *   palette (both shipped; the active one follows the `dark` class on <html>,
+ *   set by the no-flash bootstrap in index.html + the useTheme hook).
+ * - Raw cosmic custom properties: values that differ per theme are declared in
+ *   BOTH blocks so glass/gradient/text helpers flip automatically. Light mode
+ *   is a "light cosmic" reading — black-tinted glass, light gradient, no stars.
  */
 @layer base {
   :root {
     --background: 0 0% 100%;
     --foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
+    --primary: 250 84% 54%; /* violet, darkened for contrast on light */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
     --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
+    --muted-foreground: 240 3.8% 40%;
     --accent: 240 4.8% 95.9%;
     --accent-foreground: 240 5.9% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     --border: 240 5.9% 90%;
     --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
+    --ring: 250 84% 54%;
+    --link: 250 72% 48%; /* readable violet link on light bg */
     --radius: 0.5rem;
 
-    /* LumiBase cosmic design-system tokens */
+    /* LumiBase cosmic design-system tokens — LIGHT reading */
+    --color-bg-top: rgb(250, 250, 252);
+    --color-bg-bottom: rgb(238, 238, 244);
+    --gradient-page: linear-gradient(135deg, rgb(250, 250, 252) 0%, rgb(236, 236, 243) 100%);
+    --color-surface-1: rgb(255, 255, 255);
+    --color-surface-2: rgb(248, 248, 250);
+    --color-surface-3: rgb(242, 242, 245);
+    --color-surface-4: rgb(236, 236, 240);
+    --color-surface-sunken: rgb(244, 244, 247);
+    --color-glass: rgba(20, 18, 30, 0.05);
+    --color-glass-hover: rgba(20, 18, 30, 0.09);
+    --color-text: rgb(17, 17, 20);
+    --color-text-secondary: rgb(80, 80, 92);
+    --color-text-muted: rgb(110, 110, 122);
+    --color-violet: rgb(108, 82, 235);
+    --color-blue: rgb(20, 130, 220);
+    --color-green: rgb(30, 160, 100);
+    --color-red: rgb(210, 60, 60);
+    --color-border: rgba(20, 18, 30, 0.1);
+    --color-border-strong: rgba(20, 18, 30, 0.18);
+    --radius-pill: 32px;
+    --radius-card: 24px;
+    --radius-lg: 20px;
+    --radius-md: 16px;
+    --radius-sm: 12px;
+    --radius-xs: 8px;
+    --ring-glass: inset 0 0 0 1px rgba(20, 18, 30, 0.1);
+    --ring-glass-strong: inset 0 0 0 1px rgba(20, 18, 30, 0.18);
+    --shadow-sm: 0 2px 4px rgba(20, 18, 30, 0.08);
+    --shadow-md: 0 8px 24px rgba(20, 18, 30, 0.12);
+    --shadow-lg: 0 24px 64px rgba(20, 18, 30, 0.18);
+    --glow-violet: 0 0 60px rgba(123, 97, 255, 0.25);
+    --glow-blue: 0 0 60px rgba(24, 160, 251, 0.22);
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --duration: 240ms;
+  }
+
+  .dark {
+    /* shadcn tokens mapped to the cosmic palette */
+    --background: 240 10% 6%; /* near-black rgb(14,14,17) */
+    --foreground: 0 0% 100%;
+    --primary: 250 100% 69%; /* violet rgb(123,97,255) */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 270 3% 14%; /* surface-2 rgb(36,35,37) */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 270 3% 14%; /* surface-2 rgb(36,35,37) */
+    --muted-foreground: 0 0% 66%; /* rgb(169,169,169) */
+    --accent: 240 2% 16%; /* surface-3 rgb(41,41,43) */
+    --accent-foreground: 0 0% 100%;
+    --popover: 260 8% 10%; /* rgb(24,23,28) */
+    --popover-foreground: 0 0% 100%;
+    --destructive: 0 61% 62%; /* rgb(232,86,86) */
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 4% 14%; /* opaque equivalent of white@8% on near-black */
+    --input: 240 4% 14%;
+    --ring: 250 100% 69%;
+    --link: 250 100% 81%; /* lavender rgb(169,155,255) */
+
+    /* LumiBase cosmic design-system tokens — DARK reading (shipped default) */
     --color-bg-top: rgb(30, 30, 32);
     --color-bg-bottom: rgb(14, 14, 17);
     --gradient-page: linear-gradient(135deg, rgb(30, 30, 32) 0%, rgb(14, 14, 17) 32%);
@@ -47,12 +112,6 @@
     --color-red: rgb(232, 86, 86);
     --color-border: rgba(255, 255, 255, 0.08);
     --color-border-strong: rgba(255, 255, 255, 0.16);
-    --radius-pill: 32px;
-    --radius-card: 24px;
-    --radius-lg: 20px;
-    --radius-md: 16px;
-    --radius-sm: 12px;
-    --radius-xs: 8px;
     --ring-glass: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
     --ring-glass-strong: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
     --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.32);
@@ -60,25 +119,6 @@
     --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.8);
     --glow-violet: 0 0 80px rgba(123, 97, 255, 0.45);
     --glow-blue: 0 0 80px rgba(24, 160, 251, 0.4);
-    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-    --duration: 240ms;
-  }
-
-  .dark {
-    /* shadcn tokens mapped to the cosmic palette */
-    --background: 240 10% 6%; /* near-black rgb(14,14,17) */
-    --foreground: 0 0% 100%;
-    --primary: 250 100% 69%; /* violet rgb(123,97,255) */
-    --primary-foreground: 0 0% 100%;
-    --muted: 270 3% 14%; /* surface-2 rgb(36,35,37) */
-    --muted-foreground: 0 0% 66%; /* rgb(169,169,169) */
-    --accent: 240 2% 16%; /* surface-3 rgb(41,41,43) */
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 61% 62%; /* rgb(232,86,86) */
-    --destructive-foreground: 0 0% 100%;
-    --border: 240 4% 14%; /* opaque equivalent of white@8% on near-black */
-    --input: 240 4% 14%;
-    --ring: 250 100% 69%;
   }
 
   * {
@@ -87,6 +127,9 @@
 
   body {
     @apply bg-background text-foreground;
+    /* Cosmic page shell: 135deg gradient, fixed attachment (both themes) */
+    background: var(--gradient-page);
+    background-attachment: fixed;
     font-family:
       'Inter',
       -apple-system,
@@ -98,13 +141,7 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Cosmic page shell: 135deg near-black gradient, fixed attachment */
-  .dark body {
-    background: var(--gradient-page);
-    background-attachment: fixed;
-  }
-
-  /* Fixed starfield overlay */
+  /* Fixed starfield overlay — dark theme only */
   .dark body::before {
     content: '';
     position: fixed;
@@ -130,7 +167,7 @@
 }
 
 @layer components {
-  /* Reusable cosmic helpers */
+  /* Reusable cosmic helpers — flip with the theme via the vars above */
   .ring-glass {
     box-shadow: var(--ring-glass);
   }
@@ -138,8 +175,11 @@
     box-shadow: var(--ring-glass-strong);
   }
   .glass-chip {
-    background: rgba(255, 255, 255, 0.06);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    background: var(--color-glass);
+    box-shadow: var(--ring-glass);
+  }
+  .glass-chip-hover:hover {
+    background: var(--color-glass-hover);
   }
 }
 
@@ -150,7 +190,7 @@
   font-size: 18px;
   line-height: 30px;
   font-weight: 500;
-  color: rgb(195, 195, 200);
+  color: var(--color-text-secondary);
 }
 
 /* Note-callout inner text (blockquote override renders the shell) */
@@ -159,10 +199,10 @@
   font-size: 14px;
   line-height: 23px;
   font-weight: 500;
-  color: rgb(205, 220, 235);
+  color: var(--color-text-secondary);
 }
 .prose-docs blockquote strong {
-  color: #fff;
+  color: var(--color-text);
 }
 
 /* ---- Shiki dual-theme support: activate the dark theme under `.dark` ---- */

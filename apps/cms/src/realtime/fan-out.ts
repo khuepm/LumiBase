@@ -49,6 +49,24 @@ export function shouldDeliver(event: RealtimeEvent, session: FanoutSession): boo
   return true;
 }
 
+/**
+ * Project an event's payload down to its `fields` allowlist (Req 3.5). Only
+ * applies when `fields` is set and the payload is a plain object; otherwise the
+ * payload passes through unchanged. Keeps non-public fields off the wire.
+ */
+export function projectPayload(event: RealtimeEvent): unknown {
+  const fields = event.fields;
+  const payload = event.payload;
+  if (!fields || fields.length === 0) return payload;
+  if (payload == null || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  const src = payload as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of fields) {
+    if (Object.prototype.hasOwnProperty.call(src, key)) out[key] = src[key];
+  }
+  return out;
+}
+
 /** Map an internal publish envelope to the client-facing wire message. */
 export function toWireMessage(event: RealtimeEvent): Record<string, unknown> {
   if (event.type === 'notification') {
@@ -60,6 +78,6 @@ export function toWireMessage(event: RealtimeEvent): Record<string, unknown> {
     action: event.action,
     itemId: event.itemId,
     channel: event.target?.channel,
-    payload: event.payload,
+    payload: projectPayload(event),
   };
 }

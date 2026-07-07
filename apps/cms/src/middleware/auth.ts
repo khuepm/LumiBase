@@ -1,13 +1,56 @@
 import type { MiddlewareHandler } from 'hono';
 import { apiKeys, users, userSites } from '@lumibase/database';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
+import { tryExternalJwt } from '../modules/external-auth/adapter';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { TOKEN_AUDIENCE, audienceValues } from '../services/auth/token-audience';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+
+/**
+ * Debounce window (seconds) for the API-key `lastUsedAt` touch
+ * (high-load-cache-readiness Req 3). Under read load, every API-key request
+ * previously issued an `UPDATE api_keys` — turning a read into a write and
+ * hammering the row. We now only touch when the stored `lastUsedAt` is older
+ * than this interval, and the write is scheduled OFF the response path.
+ */
+const DEFAULT_APIKEY_TOUCH_INTERVAL_SECONDS = 60;
+
+export function apiKeyTouchIntervalMs(env: Partial<AppEnv['Bindings']> | undefined): number {
+  const raw = env?.LUMIBASE_APIKEY_TOUCH_INTERVAL ?? process.env.LUMIBASE_APIKEY_TOUCH_INTERVAL;
+  const seconds = Number(raw);
+  const resolved = Number.isFinite(seconds) && seconds >= 0 ? seconds : DEFAULT_APIKEY_TOUCH_INTERVAL_SECONDS;
+  return resolved * 1000;
+}
+
+/** True when the key's last touch is stale enough to warrant a fresh write. */
+export function shouldTouchApiKey(lastUsedAt: Date | null | undefined, now: Date, intervalMs: number): boolean {
+  if (intervalMs === 0) return true;
+  if (!lastUsedAt) return true;
+  return now.getTime() - lastUsedAt.getTime() >= intervalMs;
+}
+
+/**
+ * Run `promise` detached from the response. On Workers it hands off to
+ * `executionCtx.waitUntil`; on Node/tests it's fire-and-forget. Hono's
+ * `c.executionCtx` getter *throws* when no context is bound (Node / tests),
+ * so the probe is wrapped in try/catch — mirrors `scheduleWorkersDrain`.
+ */
+function runDetached(c: Parameters<MiddlewareHandler<AppEnv>>[0], promise: Promise<unknown>): void {
+  try {
+    const ctx = c.executionCtx as { waitUntil?: (p: Promise<unknown>) => void } | undefined;
+    if (ctx && typeof ctx.waitUntil === 'function') {
+      ctx.waitUntil(promise);
+      return;
+    }
+  } catch {
+    // No execution context bound — fall through to fire-and-forget.
+  }
+  void promise;
+}
 
 const getJwks = (certsUrl: string) => {
   let jwks = JWKS_CACHE.get(certsUrl);
@@ -101,7 +144,10 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     path === '/api/v1/auth/logout' ||
     path === '/api/v1/auth/login' ||
     path === '/api/v1/realtime' ||
-    path.startsWith('/api/v1/files/upload/')
+    path.startsWith('/api/v1/files/upload/') ||
+    // Flow webhook trigger authenticates with a per-flow token inside the
+    // route (constant-time compare) — external callers have no CMS session.
+    /^\/api\/v1\/flows\/[^/]+\/trigger$/.test(path)
   ) {
     return next();
   }
@@ -161,10 +207,58 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         algorithms: ['RS256'],
       });
 
+      const email = typeof payload.email === 'string' ? payload.email : undefined;
+      const requestSiteId = c.get('siteId');
+
+      // Map the Access identity to a real user + site role from the DB instead
+      // of trusting the edge assertion for authorization (CWE-302). A verified
+      // Access token proves identity; it does NOT grant admin. The user must
+      // exist, be active, and either be the bootstrap admin or hold a membership
+      // in the requested site — the role comes from that membership.
+      if (!email) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Cloudflare Access token has no email.' }] },
+          401,
+        );
+      }
+
+      const [user] = await c
+        .get('db')
+        .select({
+          id: users.id,
+          status: users.status,
+          isBootstrap: users.isBootstrap,
+        })
+        .from(users)
+        .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
+        .limit(1);
+
+      if (!user || user.status !== 'active') {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Cloudflare Access user is not provisioned.' }] },
+          401,
+        );
+      }
+
+      const [membership] = await c
+        .get('db')
+        .select({ roleId: userSites.roleId })
+        .from(userSites)
+        .where(and(eq(userSites.userId, user.id), eq(userSites.siteId, requestSiteId)))
+        .limit(1);
+
+      if (!membership && !user.isBootstrap) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Cloudflare Access user is not a member of the selected site.' }] },
+          401,
+        );
+      }
+
       const principal: AuthPrincipal = {
+        userId: user.id,
         externalId: String(payload.sub),
-        email: typeof payload.email === 'string' ? payload.email : undefined,
-        roles: ['admin'], // Defaults to admin for Access users, mapping will be done in db query
+        email,
+        roles: user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'],
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);
@@ -193,6 +287,10 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
     if (apiKey) {
       const now = new Date();
+      // Fail-closed tenant scoping: a token that belongs to another site is
+      // never accepted here. We fetch by token hash (a 256-bit unguessable
+      // value) and then reject + audit any cross-tenant use before the key
+      // can yield a principal.
       if (apiKey.siteId !== c.get('siteId')) {
         await auditApiKeyUseDenied(c, apiKey, 'site_mismatch');
         return c.json(
@@ -215,15 +313,29 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
-      await c
-        .get('db')
-        .update(apiKeys)
-        .set({
-          lastUsedAt: now,
-          lastUsedIp: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-          lastUsedUserAgent: c.get('userAgent') ?? c.req.header('user-agent') ?? null,
-        })
-        .where(eq(apiKeys.id, apiKey.id));
+      // Debounced, off-path last-used touch (Req 3): skip the write entirely
+      // when the stored timestamp is still within the interval, and never let
+      // it block the response. Last-write-wins on these stats columns makes a
+      // race between concurrent instances harmless.
+      if (shouldTouchApiKey(apiKey.lastUsedAt, now, apiKeyTouchIntervalMs(c.env))) {
+        const db = c.get('db');
+        const touch = Promise.resolve(
+          db
+            .update(apiKeys)
+            .set({
+              lastUsedAt: now,
+              lastUsedIp: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+              lastUsedUserAgent: c.get('userAgent') ?? c.req.header('user-agent') ?? null,
+            })
+            .where(eq(apiKeys.id, apiKey.id)),
+        ).then(
+          () => undefined,
+          (err: unknown) => {
+            console.warn('[withAuth] api-key lastUsed touch failed', formatSafeError(err));
+          },
+        );
+        runDetached(c, touch);
+      }
 
       const snapshot = apiKeySnapshot({ ...apiKey, lastUsedAt: now });
       const principal: AuthPrincipal = {
@@ -236,6 +348,31 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       c.set('auth', principal);
       return next();
     }
+
+    // 3b. External JWT (trusted issuer JWKS). Sits between API-key and the
+    // internal custom JWT. `skip` → the token isn't for any trusted issuer of
+    // this site, so fall through to the custom-JWT branch; `rejected` →
+    // fail-closed (the issuer matched but the token is invalid / unauthorized).
+    const ext = await tryExternalJwt(c, bearerToken);
+    if (ext.kind === 'authenticated') {
+      const principal: AuthPrincipal = {
+        type: 'user',
+        userId: ext.userId,
+        externalId: ext.externalId,
+        email: ext.email,
+        roles: ext.roleIds,
+        raw: ext.payload as Record<string, unknown>,
+      };
+      c.set('auth', principal);
+      return next();
+    }
+    if (ext.kind === 'rejected') {
+      // Generic outward code; the specific reason is for server logs only.
+      const outward = ext.status === 403 ? 'FORBIDDEN' : 'UNAUTHENTICATED';
+      console.warn('[withAuth] external JWT rejected:', ext.code, ext.reason);
+      return c.json({ errors: [{ code: outward, message: ext.status === 403 ? 'Access denied.' : 'Authentication required.' }] }, ext.status);
+    }
+    // ext.kind === 'skip' → continue to custom JWT below.
 
     // Fall back to process.env for Node.js / Docker serve mode.
     const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
@@ -260,13 +397,29 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       const userId = String(payload.userId);
       const [user] = await c
         .get('db')
-        .select({ id: users.id, status: users.status, isBootstrap: users.isBootstrap })
+        .select({
+          id: users.id,
+          status: users.status,
+          isBootstrap: users.isBootstrap,
+          tokenVersion: users.tokenVersion,
+        })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
       if (!user || user.status !== 'active') {
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
+          401,
+        );
+      }
+
+      // Token revocation (CWE-613/620): a token is only valid while its embedded
+      // tokenVersion matches the user's current one. A password change/reset
+      // bumps the stored version, instantly invalidating every prior token.
+      const tokenVersion = typeof payload.tokenVersion === 'number' ? payload.tokenVersion : 0;
+      if (tokenVersion !== (user.tokenVersion ?? 0)) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Session expired. Please sign in again.' }] },
           401,
         );
       }

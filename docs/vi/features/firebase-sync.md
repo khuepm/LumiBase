@@ -98,7 +98,7 @@ Sync là best-effort theo từng pipeline: một pipeline lỗi được ghi log
 | `lumibase_firebase_sync_pipelines` | Cấu hình pipeline + credentials mã hoá + `lastSyncAt`/`lastSyncItemCount` |
 | `lumibase_firebase_sync_log` | Append-only: mỗi lần sync (collection, itemId, action, result, errorMessage, durationMs) |
 
-Migration: `packages/database/drizzle/0029_lumibase_firebase_sync.sql` (idempotent, chỉ `CREATE TABLE IF NOT EXISTS`). Xem thêm [data-model.md](../data-model.md).
+Migration: các bảng được tạo bởi migration gộp `packages/database/drizzle/0000_lumibase_init.sql`. Xem thêm [data-model.md](../data-model.md).
 
 ## 9. Liên quan
 

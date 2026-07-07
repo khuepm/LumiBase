@@ -88,6 +88,17 @@ Error response:
 | `_starts_with`, `_ends_with` | String prefix/suffix |
 | `_between` | Range (two-element array) |
 | `_and`, `_or` | Logical grouping |
+| `_json_contains` | JSONB `@>` — value/sub-object/array-membership containment |
+| `_has_key` | The JSON object has this key |
+| `_has_any_keys`, `_has_all_keys` | The JSON object has any / all of these keys (string array) |
+
+**Searching inside JSON.** A filter field key may be a **dotted path** into a
+nested JSON/JSONB field — e.g. `filter={"metadata.author.country":{"_eq":"VN"}}`
+compiles to a `data #>> '{metadata,author,country}'` lookup. Path segments are
+restricted to `[A-Za-z0-9_]` and bound as parameters (injection-safe); depth is
+capped at 8. The `_json_contains` / `_has_*` operators run against the JSONB and
+use the existing GIN index. Top-level keys and structural fields behave exactly
+as before.
 
 ### Filter forms
 
@@ -132,7 +143,7 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/auth/refresh` | public | Rotate the refresh token (cookie or body) → fresh access JWT + new refresh token |
 | `POST` | `/api/v1/auth/logout` | public | Revoke the presented refresh token's family + clear the cookie |
 | `GET` | `/api/v1/auth/me` | bearer | Get current user profile |
-| `POST` | `/api/v1/me/change-password` | bearer | Verify current password, set new hash, revoke all refresh tokens |
+| `POST` | `/api/v1/me/change-password` | bearer | Verify current password, set new hash, revoke refresh tokens + bump `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | List the caller's active sessions (live refresh tokens, redacted) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Revoke one of the caller's sessions |
 | `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions |
@@ -190,6 +201,43 @@ The unsubscribe token is a stateless HS256 JWT (`{ siteId, email }`, no expiry) 
 with `JWT_SECRET`. Marketing sends (`EmailModuleService.send({ category: 'marketing' })`)
 filter recipients against `email_suppressions` before dispatch. Unsubscribe/suppression
 changes audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
+
+**Preferences & save action.** `PATCH /api/v1/me/preferences` shallow-merges a
+validated patch into `users.preferences` (other sections like `language` /
+`keybindings` are preserved). Send `{ "saveAction": "stay" | "return" |
+"create_new" }` to set the Studio editor's post-save navigation; send
+`{ "saveAction": null }` to fall back to the site default
+(`sites.default_save_action`, set via `PATCH /api/v1/site`). Invalid enum → 400.
+
+### External JWT authentication
+
+A site can trust JWTs issued by an external IdP (Okta, Entra, Auth0, Logto,
+Keycloak, Cloudflare Access…). Present the token as `Authorization: Bearer
+<jwt>` with `X-Lumi-Site`. The auth chain verifies it against the issuer's
+**public JWKS** (between the API-key and internal-JWT branches): it matches the
+token's `iss` to a trusted issuer registered for that site, verifies the
+signature + `aud`/`exp`/`nbf` with the issuer's allowed (asymmetric-only)
+algorithms, maps role claims to LumiBase roles (**default-deny** — no mapping
+means 403, never implicit admin), enforces that any `siteId` claim equals the
+request site, and optionally JIT-provisions the user. A token whose `iss` isn't
+trusted is ignored (falls through to internal auth); once an issuer matches,
+verification is fail-closed.
+
+Admin CRUD for trusted issuers (admin-only):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/admin/auth/issuers` | List trusted external issuers |
+| `POST` | `/api/v1/admin/auth/issuers` | Register an issuer |
+| `GET` | `/api/v1/admin/auth/issuers/:id` | Get one |
+| `PATCH` | `/api/v1/admin/auth/issuers/:id` | Update |
+| `DELETE` | `/api/v1/admin/auth/issuers/:id` | Remove |
+
+**Issuer config:** `{ issuer, jwksUri | discoveryUrl, audience, algorithms
+(RS*/ES* only), claimMapping: { email, roles, siteId?, externalId? }, roleMapping:
+{ "<claim role>": { roleId | systemKey } }, defaultRoleId?, jitProvisioning,
+clockSkewSeconds (≤300), enabled }`. Errors: `VALIDATION_FAILED` (422, incl. an
+HS*/`none` algorithm), `ISSUER_ALREADY_EXISTS` (409), `NOT_FOUND` (404).
 
 **Login request:**
 ```json
@@ -339,7 +387,9 @@ CLI: `pnpm --filter @lumibase/cms config export|diff|apply` — see
 | `GET` | `/api/v1/items/:collection/:id` | Get single item |
 | `PATCH` | `/api/v1/items/:collection/:id` | Partial update |
 | `PUT` | `/api/v1/items/:collection/:id` | Full replace |
-| `DELETE` | `/api/v1/items/:collection/:id` | Delete item (or array bulk) |
+| `DELETE` | `/api/v1/items/:collection/:id` | Delete item — **409 if blocked by dependents** |
+| `GET` | `/api/v1/items/:collection/:id/dependents` | List records that reference this item |
+| `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Batch-resolve a relation's dependents |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Revert to revision |
 | `GET` | `/api/v1/items/:collection/:id/versions` | List named draft versions (each has a `mainChanged` flag) |
@@ -349,6 +399,31 @@ CLI: `pnpm --filter @lumibase/cms config export|diff|apply` — see
 | `DELETE` | `/api/v1/items/:collection/:id/versions/:key` | Delete a version |
 | `GET` | `/api/v1/items/:collection/:id/versions/:key/compare` | Field diff vs main → `{ main, version, changes }` |
 | `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Apply version to main (writes a revision); `meta.mainDiverged` |
+
+**Dependent records.** Because item references live in JSONB (not physical FK
+columns), a relation's `onDelete` is enforced in the application layer. On
+`DELETE`, if a relation declared `restrict` still has records pointing at the
+item, the delete is blocked with **409 `DEPENDENT_RECORDS_EXIST`** and a
+`dependents` array. (`set null`/`cascade` are **not** auto-applied on
+soft-delete — that would break soft-delete's recoverability; the editor clears
+them explicitly.) `GET …/dependents` returns
+`{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count,
+sample }] } }`. `POST …/resolve-dependents` takes
+`{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` and
+runs transactionally (delete delegates to the normal item-delete path).
+Errors: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null on a
+required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
+
+**List pagination & totals.** `GET /items/:collection` accepts `limit`
+(1–200, default 25), `offset`, and `meta`:
+
+- `meta=total_count` (default) — response is `{ data, meta: { total, limit, offset } }`.
+- `meta=none` — skips the `count(*)` aggregate for a cheaper query;
+  response is `{ data, meta: { limit, offset } }` (no `total`). Use for
+  infinite-scroll / feed views that never render a total page count.
+
+The default is unchanged, so existing clients keep receiving `meta.total`.
+The `@lumibase/sdk` `readItems` accepts the same `meta` option.
 
 **Optional headers:**
 - `X-Lumi-Draft: true` — fetch draft version
@@ -366,6 +441,57 @@ CLI: `pnpm --filter @lumibase/cms config export|diff|apply` — see
   { "title": "Article 2", "status": "draft" }
 ]
 ```
+
+---
+
+## 3b. Content Releases
+
+A **Release** collates specific item revisions across collections into a named
+bundle that publishes all at once — manually or scheduled for a date/time
+(à la Directus Releases). Publish delegates to the item update path, so the
+editorial gate, validation, permissions and hooks all apply.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/releases` | Create a release (`draft`, or `scheduled` if `publishAt` set) |
+| `GET` | `/api/v1/releases` | List releases (`?status=&page=&limit=`) |
+| `GET` | `/api/v1/releases/:id` | Release detail + its items |
+| `PATCH` | `/api/v1/releases/:id` | Update meta, `addItems`/`removeItems`, set `publishAt` |
+| `POST` | `/api/v1/releases/:id/publish` | Publish now (manual) |
+| `DELETE` | `/api/v1/releases/:id` | Delete release (items cascade) |
+
+**Create / patch body:**
+```json
+{
+  "name": "Spring launch",
+  "atomicityMode": "all_or_nothing",
+  "publishAt": "2026-07-01T09:00:00Z",
+  "maintenanceWindow": { "windows": [{ "dow": 1, "start": "09:00", "end": "17:00" }] },
+  "addItems": [
+    { "collection": "articles", "itemId": "itm_1", "targetStatus": "published", "revisionId": "rev_3" }
+  ]
+}
+```
+
+`atomicityMode`: `all_or_nothing` (pre-flight checks every item is publishable —
+exists, not deleted, editorial gate satisfiable — and publishes nothing if any
+is blocked) or `best_effort` (publishes each independently, recording a per-item
+outcome). `revisionId` pins a specific revision's snapshot; omit it to publish
+the item's live state at publish time.
+
+**Publish response** (`{ data: { release, status, outcomes } }`): `status` is
+`published` | `partially_failed` | `failed`; each outcome is
+`{ collection, itemId, outcome: 'published'|'skipped'|'failed', reason? }`. A
+partial/failed publish still returns **HTTP 200** with the outcomes.
+
+**Error codes:** `EMPTY_RELEASE` (422), `ALREADY_PUBLISHED` (409),
+`RELEASE_IMMUTABLE` (409, editing a published release's items), `ITEM_NOT_FOUND`
+(404), `REVISION_STAGED` (409, pinning an uncommitted revision),
+`VALIDATION_FAILED` (422, incl. `publishAt` in the past). Per-item publish
+blockers surface as outcome reasons `EDITORIAL_GATE_REQUIRED` / `ITEM_DELETED`.
+
+Scheduled releases publish via the shared `content-scheduler` tick
+(`sweepDueReleases`) — idempotent and `maintenanceWindow`-aware.
 
 ---
 
@@ -417,11 +543,72 @@ CLI: `pnpm --filter @lumibase/cms config export|diff|apply` — see
 | `PATCH` | `/api/v1/files/:id` | Update metadata (title, tags, folder) |
 | `DELETE` | `/api/v1/files/:id` | Delete file |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
+| `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
+| `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |
+| `DELETE` | `/api/v1/media/:key` | Delete media object |
+| `GET` | `/api/v1/transform-presets` | List named image-transform presets (RBAC `media:read`) |
+| `POST` | `/api/v1/transform-presets` | Create a preset `{ key, name, dsl }` (RBAC `media:create`) |
+| `PATCH` | `/api/v1/transform-presets/:id` | Update a preset (RBAC `media:update`) |
+| `DELETE` | `/api/v1/transform-presets/:id` | Delete a preset (RBAC `media:delete`) |
+| `GET` | `/api/v1/uploads/config` | Effective upload policy + type catalogue (any member) |
+| `PUT` | `/api/v1/uploads/config` | Update allowlist / size cap (site admin) |
 
-**Image transform params for `/api/v1/assets/:id`:**
+**Image transform DSL (`/api/v1/media/:key` and `/api/v1/assets/:id`):**
 ```
-?width=800&height=600&format=webp&quality=80&fit=cover
+?width=800&height=600&format=webp&quality=80&fit=cover&focal=0.5,0.5
+?preset=thumbnail
 ```
+On `/media/:key`, transform params are validated against `transformDslSchema`
+(`@lumibase/shared`; `MAX_DIM=5000`) and the request 302-redirects to the runtime
+image URL (CF Image Resizing / Imgproxy). No params → the original bytes.
+`?preset=<key>` resolves a saved `transform_presets` row for the site. See
+`.kiro/specs/image-transform-dsl`.
+
+**Upload policy (`/api/v1/uploads/config`).** Enforced by the `file-upload-policy`
+guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`,
+`POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
+its true byte length; the declared MIME must be in the allowlist and match the
+filename extension; raw bytes are content-sniffed (magic bytes) and executables /
+active-content SVGs are rejected. The allowlist + cap resolve `per-site DB
+(settings key upload_policy) → env (FILE_UPLOAD_*) → default`.
+
+```
+GET  /api/v1/uploads/config
+→ { data: { maxBytes, allowedMimeTypes[], allowedExtensions[], catalogue[] } }
+
+PUT  /api/v1/uploads/config           # site admin only
+{ "maxBytes": 5242880, "allowedMimeTypes": ["image/png","image/jpeg"] }
+```
+
+### 6b. View presets (collection views + bookmarks)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/presets/effective?collection=` | Effective default view (precedence user > role-chain > global), with `sourceScope` |
+| `GET` | `/api/v1/presets/bookmarks?collection=` | Named bookmarks visible to the principal, each with `sourceScope` |
+| `GET` | `/api/v1/presets` | List presets (optional `?collection=`) |
+| `POST` | `/api/v1/presets` | Create a preset/bookmark; user-scope self-managed, role/global require admin |
+| `PATCH` | `/api/v1/presets/:id` | Update (authorized against the row's current scope) |
+| `DELETE` | `/api/v1/presets/:id` | Delete (user owns own; role/global require admin) |
+
+Scope is derived from ownership columns: `userId` set → user, `roleId` set →
+role, neither → global. Role presets inherit down the `roles.parentId` chain.
+See `.kiro/specs/presets-inheritance`.
+
+### 6c. Translation memory
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/tm?source=&target=&entrySource=&limit=&offset=` | List TM entries (paginated; `meta { total, limit, offset }`) |
+| `POST` | `/api/v1/tm` | Upsert an entry |
+| `PATCH` | `/api/v1/tm/:id` | Edit target/quality/source (siteId-scoped, 404 cross-tenant) |
+| `DELETE` | `/api/v1/tm/:id` | Delete an entry (siteId-scoped) |
+| `POST` | `/api/v1/tm/lookup` | Best fuzzy match `{ query, sourceLang, targetLang, threshold? }` → `{ match }` |
+| `POST` | `/api/v1/tm/translate` | MT pipeline `{ text, from, to }` (TM → glossary → provider) |
+
+`TM_DEFAULT_THRESHOLD = 75` (`@lumibase/shared`). Learn-TM (Studio) upserts
+human translations on save when `translations.learnTm` is enabled.
+See `.kiro/specs/translation-memory-ui`.
 
 ---
 
@@ -429,14 +616,20 @@ CLI: `pnpm --filter @lumibase/cms config export|diff|apply` — see
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/api/v1/flows/operations` | Registered operation keys + option hints (editor palette / `validateGraph` knownKeys) |
 | `GET` | `/api/v1/flows` | List flows (filter by `status`, `trigger`) |
-| `POST` | `/api/v1/flows` | Create a new flow |
+| `POST` | `/api/v1/flows` | Create a new flow (validates graph when `active`; schedule flows require a valid cron) |
 | `GET` | `/api/v1/flows/:id` | Get flow detail + graph |
 | `PATCH` | `/api/v1/flows/:id` | Update flow (graph, status, options) |
 | `DELETE` | `/api/v1/flows/:id` | Delete flow |
 | `POST` | `/api/v1/flows/:id/run` | Manual trigger with body as input |
+| `POST` | `/api/v1/flows/:id/trigger` | **Webhook trigger** — no CMS session; authenticate with the per-flow token (`x-flow-token` header or `Bearer`), compared constant-time. Input = `{ body, headers, query }` (credential headers stripped). 404 for non-webhook/inactive flows; 401 `WEBHOOK_NOT_CONFIGURED`/`UNAUTHENTICATED` |
 | `GET` | `/api/v1/flows/:id/runs` | Execution history |
 | `GET` | `/api/v1/flows/:id/runs/:runId` | Single run detail (steps output) |
+
+**Save-time gates:** an `active` flow must pass the shared graph validation — `400` with `GRAPH_DANGLING_EDGE` / `GRAPH_CYCLE` / `GRAPH_NO_ENTRY` / `GRAPH_UNKNOWN_OPERATION` (+ `nodeId`) otherwise; drafts may hold invalid work-in-progress. Schedule flows validate `triggerOptions.cron` (5-field, UTC): `400 CRON_INVALID` on a malformed expression, `400 CRON_REQUIRED` when activating without one; `next_run_at` is computed on save and advanced by the scheduler sweep before each enqueued run (idempotent).
+
+**Triggers:** `event` flows fire on item create/update/delete via the `flow-events` queue (`triggerOptions.collection` / `.action` filter, string or array, missing = all); `schedule` flows are swept every scheduler tick; `webhook` flows use the endpoint above; `manual` runs inline via `/run`.
 
 **Trigger a flow:**
 ```bash
@@ -594,7 +787,9 @@ row (not the key/value `settings` table). Scoped to the active tenant via the
 
 `PATCH /api/v1/site` accepts any subset of: `name`, `displayTitle`, `siteUrl`,
 `descriptor`, `domain`, `defaultLanguage`, `defaultAppearance`
-(`auto`\|`light`\|`dark`), `branding` (`{ logoUrl, faviconUrl, brandColor }`),
+(`auto`\|`light`\|`dark`), `defaultSaveAction`
+(`stay`\|`return`\|`create_new` — the site-wide default save action a user's
+personal preference overrides), `branding` (`{ logoUrl, faviconUrl, brandColor }`),
 `themeOverrides` (`{ light, dark }` maps of whitelisted CSS tokens → `H S% L%`
 values), and `customCss`. An empty string clears a nullable field. A duplicate
 `domain` returns `409 { errors: [{ code: 'DOMAIN_TAKEN' }] }`.
@@ -825,6 +1020,24 @@ No `Authorization` header needed. Permission applied via `public` role.
 | `GET` | `/api/v1/deliver/page/:slug` | 1-roundtrip page hydration |
 | `GET` | `/api/v1/deliver/items/:collection` | Public item list |
 | `GET` | `/api/v1/deliver/menu/:key` | Menu config |
+
+**HTTP caching** (`GET /deliver/page/:site_id/:slug`): responses without
+credentials are shared-cacheable so any CDN/proxy can absorb repeat reads.
+
+| Request | Response headers |
+|---------|------------------|
+| No credentials (default) | `Cache-Control: public, s-maxage=60, stale-while-revalidate=300` · `ETag: W/"…"` · `Vary: X-Lumi-Site` |
+| `Authorization` header present | `Cache-Control: private, no-store` (no shared `ETag`) |
+| Page not found | `404` + `Cache-Control: no-store` |
+
+Conditional requests: send `If-None-Match` with the last `ETag`; a match
+returns `304 Not Modified` with an empty body and skips section hydration
+entirely. The ETag is a site-level content fingerprint — any item write (or a
+scheduled publish/unpublish taking effect) rotates it, so a stale 304 is never
+served at the cost of a lower revalidation hit-rate.
+
+Tunables (env): `LUMIBASE_DELIVER_SMAXAGE` (seconds, default `60`, `0`
+disables public caching), `LUMIBASE_DELIVER_SWR` (seconds, default `300`).
 
 ---
 

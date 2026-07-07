@@ -33,7 +33,7 @@ const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
  * the active one). Neither column is ever returned by the API.
  */
 export const deploymentTargets = pgTable(
-  'deployment_targets',
+  'lumibase_deployment_targets',
   {
     id: id(),
     siteId: text('site_id')
@@ -73,7 +73,7 @@ export const deploymentTargets = pgTable(
  * per-provider mapping).
  */
 export const deployments = pgTable(
-  'deployments',
+  'lumibase_deployments',
   {
     id: id(),
     siteId: text('site_id')

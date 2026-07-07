@@ -36,6 +36,16 @@ function makeDb(data: FakeDbData): Database {
             }
             return rows.slice(0, limit);
           },
+          // The delivery HTTP-cache content fingerprint awaits the items
+          // aggregate right after where() — resolve like the real driver.
+          then: (
+            onFulfilled?: (value: unknown[]) => unknown,
+            onRejected?: (reason: unknown) => unknown,
+          ) =>
+            Promise.resolve([{ maxUpdatedAt: null, visibleCount: 0 }]).then(
+              onFulfilled,
+              onRejected,
+            ),
         };
 
         return fluent;
