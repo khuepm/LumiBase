@@ -100,6 +100,10 @@ LUMIBASE_VERSION=0.21.0 docker compose -f docker/docker-compose.yml -f docker/do
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.
 
+### Versioning
+
+From `v1.0.0`, LumiBase follows strict [Semantic Versioning](https://semver.org/): breaking changes to the public surface (REST/GraphQL API, `@lumibase/sdk` exports, response envelopes, header and env-var contracts, CLI/setup flags) require a major bump; features are additive in minors; deprecations run for at least one minor before removal. Security fixes cover the current and previous major for 6 months. Full rules: [`docs/en/contributing/versioning-policy.md`](./docs/en/contributing/versioning-policy.md). To report a vulnerability, see [`SECURITY.md`](./SECURITY.md).
+
 ### Why port 1989?
 
 LumiBase uses `1989` as its default CMS API port as a small tribute to the Web's origin story: in March 1989, Tim Berners-Lee wrote the proposal that became the World Wide Web. The same year also evokes walls coming down, which fits a headless CMS built to separate backend content infrastructure from frontend presentation.

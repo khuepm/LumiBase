@@ -1,6 +1,9 @@
 ---
 title: Docs i18n Sync
 sourceLang: en
+version: 1
+lastUpdated: 2026-07-08T20:22:56.098Z
+contentHash: e8086806e67522bc
 ---
 
 # Documentation i18n Sync (EN ⇄ VI)

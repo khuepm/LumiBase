@@ -2,14 +2,17 @@
 version: 1
 lastUpdated: 2026-07-08T20:22:56.199Z
 sourceLang: en
-contentHash: cdcd5dfe1e155963
+translatedFrom: en
+sourceHash: cdcd5dfe1e155963
+mtEngine: claude
+syncStatus: machine-translated
 ---
 
 # Testing Guide
 
-LumiBase uses **Vitest** for unit and integration tests across the monorepo. This guide covers testing conventions, patterns, and how to write good tests for LumiBase.
+LumiBase dùng **Vitest** cho unit và integration test trên toàn monorepo. Hướng dẫn này bao quát các quy ước testing, pattern, và cách viết test tốt cho LumiBase.
 
-## Running tests
+## Chạy test
 
 ```bash
 # Run all tests
@@ -32,9 +35,9 @@ pnpm -F @lumibase/cms test src/services/__tests__/ai-harness-execute.test.ts
 
 ### Unit tests
 
-Test individual functions and classes in isolation. Mock all external dependencies.
+Test từng function và class một cách độc lập. Mock mọi external dependency.
 
-Location: `src/**/__tests__/*.test.ts`
+Vị trí: `src/**/__tests__/*.test.ts`
 
 ```typescript
 import { describe, it, expect, vi } from 'vitest'
@@ -60,7 +63,7 @@ describe('AISecureHarness', () => {
 
 ### Property-based tests
 
-For logic that must hold across many inputs, use **fast-check** (already used in the codebase):
+Với logic phải đúng trên nhiều input, dùng **fast-check** (đã được dùng trong codebase):
 
 ```typescript
 import { describe, it, expect } from 'vitest'
@@ -85,11 +88,11 @@ describe('evaluateConditions', () => {
 })
 ```
 
-Properties are named `Property N` in the test file — see `src/services/__tests__/` for examples.
+Các property được đặt tên `Property N` trong test file — xem `src/services/__tests__/` để có ví dụ.
 
 ### Integration tests
 
-Test route handlers with a real Hono app instance and mocked services:
+Test route handler với một instance Hono app thật và các service được mock:
 
 ```typescript
 import { describe, it, expect, beforeAll } from 'vitest'
@@ -130,7 +133,7 @@ describe('POST /api/v1/ai/chat', () => {
 
 ### DB-backed integration tests
 
-Some suites exercise real SQL against a live Postgres (drift→goal transitions, fingerprint dedupe, partial unique indexes, tenant scoping). They follow the shared `DATABASE_URL` pattern: when the variable is unset or the database is unreachable, the suite **self-skips** with a warning so local-only `pnpm test` and CI without a database stay green.
+Một số suite chạy SQL thật đối với một Postgres live (drift→goal transition, fingerprint dedupe, partial unique index, tenant scoping). Chúng tuân theo pattern `DATABASE_URL` dùng chung: khi biến này không được set hoặc database không kết nối được, suite sẽ **tự skip** kèm một cảnh báo để `pnpm test` chỉ chạy local và CI không có database vẫn giữ trạng thái xanh.
 
 ```typescript
 const TEST_DATABASE_URL = process.env.DATABASE_URL
@@ -163,7 +166,7 @@ describe('My DB integration', () => {
 })
 ```
 
-Run them against a local database:
+Chạy chúng đối với một database local:
 
 ```bash
 # Start Postgres (override the port if 5432 is taken locally)
@@ -178,29 +181,29 @@ DATABASE_URL="postgres://lumibase:lumibase_dev@localhost:5433/lumibase" \
   pnpm -F @lumibase/cms test
 ```
 
-> **File parallelism.** When `DATABASE_URL` is set, `apps/cms/vitest.config.ts` disables `fileParallelism` automatically. Integration suites share one database and reset shared tables in `beforeEach`, so running their files concurrently lets one file's reset wipe another's fixtures mid-test. Without a database the tests self-skip and the rest of the suite runs fully parallel.
+> **File parallelism.** Khi `DATABASE_URL` được set, `apps/cms/vitest.config.ts` tự động tắt `fileParallelism`. Các integration suite dùng chung một database và reset các bảng dùng chung trong `beforeEach`, nên chạy song song các file của chúng có thể khiến reset của một file xóa sạch fixture của file khác giữa chừng test. Không có database, các test tự skip và phần còn lại của suite chạy hoàn toàn song song.
 
 ## Test conventions
 
-### What to test
+### Test cái gì
 
-| Code | Test type | Coverage target |
+| Code | Loại test | Mục tiêu coverage |
 |------|-----------|-----------------|
-| Business logic (services) | Unit | All branches |
+| Business logic (services) | Unit | Mọi branch |
 | Permission evaluation | Property-based | ≥100 iterations |
 | Route handlers | Integration | Happy path + error cases |
 | Schema validation | Unit | Valid + invalid inputs |
-| Utility functions | Unit | All edge cases |
+| Utility functions | Unit | Mọi edge case |
 
-### What NOT to test
+### KHÔNG test cái gì
 
-- Drizzle ORM itself (trust the library)
-- Logto JWT validation (trust the library)
-- CSS styles (visual regression tests are out of scope)
+- Bản thân Drizzle ORM (tin tưởng thư viện)
+- Logto JWT validation (tin tưởng thư viện)
+- CSS styles (visual regression test nằm ngoài phạm vi)
 
 ### Mocking patterns
 
-**Mock the runtime (not the database):**
+**Mock runtime (không phải database):**
 
 ```typescript
 // ✓ Good — mock at the runtime abstraction layer
@@ -211,7 +214,7 @@ const mockCache: CacheProvider = {
 }
 ```
 
-**Mock external HTTP calls:**
+**Mock external HTTP call:**
 
 ```typescript
 import { http, HttpResponse } from 'msw'
@@ -235,7 +238,7 @@ src/__tests__/ai-integration.test.ts                   # Integration tests
 
 ## Coverage thresholds
 
-Per-package targets (enforced in CI):
+Mục tiêu theo từng package (được thực thi trong CI):
 
 | Package | Branch | Lines |
 |---------|--------|-------|
@@ -244,7 +247,7 @@ Per-package targets (enforced in CI):
 | `@lumibase/ai-skills` | 90% | 90% |
 | `@lumibase/shared` | 85% | 90% |
 
-View coverage report:
+Xem coverage report:
 
 ```bash
 pnpm -F @lumibase/cms test --coverage
@@ -253,7 +256,7 @@ open apps/cms/coverage/index.html
 
 ## CI
 
-Tests run automatically on every PR and push to `main`:
+Test chạy tự động trên mỗi PR và push lên `main`:
 
 ```yaml
 # .github/workflows/test.yml
@@ -264,4 +267,4 @@ Tests run automatically on every PR and push to `main`:
   run: pnpm -F @lumibase/cms test --coverage --reporter=json
 ```
 
-PRs cannot be merged if tests fail or coverage drops below thresholds.
+PR không thể được merge nếu test fail hoặc coverage tụt xuống dưới ngưỡng.

@@ -2,18 +2,21 @@
 version: 1
 lastUpdated: 2026-07-08T20:22:25.809Z
 sourceLang: en
-contentHash: 051a5ab7df48ac91
+translatedFrom: en
+sourceHash: 051a5ab7df48ac91
+mtEngine: claude
+syncStatus: machine-translated
 ---
 
-# Codex — LumiBase Agent Setup
+# Codex — Thiết lập Agent cho LumiBase
 
-> **Codex** is a lightweight open-source terminal agent that reads and writes files, runs commands, and browses the web in a sandbox. Made by OpenAI.
+> **Codex** là một terminal agent nhẹ, mã nguồn mở, có thể đọc và ghi file, chạy lệnh, và duyệt web trong một sandbox. Do OpenAI tạo ra.
 >
 > **Tags:** Terminal · Standalone · Cloud · Extension · Open Source
 
 ---
 
-## Quick setup (recommended)
+## Thiết lập nhanh (khuyến nghị)
 
 ```bash
 codex "Read docs/en/agent-setup/prompt.md and follow all setup instructions."
@@ -21,34 +24,34 @@ codex "Read docs/en/agent-setup/prompt.md and follow all setup instructions."
 
 ---
 
-## Manual setup
+## Thiết lập thủ công
 
-### Step 1 — Install Codex
+### Bước 1 — Cài đặt Codex
 
 ```bash
 npm install -g @openai/codex
 ```
 
-Authenticate:
+Xác thực:
 ```bash
 export OPENAI_API_KEY=<your-key>
 ```
 
-### Step 2 — Navigate to the project
+### Bước 2 — Di chuyển tới dự án
 
 ```bash
 cd /path/to/lumibase
 ```
 
-### Step 3 — Load LumiBase context
+### Bước 3 — Nạp ngữ cảnh LumiBase
 
 ```bash
 codex "Read docs/en/README.md and docs/en/data-model.md to understand the LumiBase codebase structure and conventions."
 ```
 
-### Step 4 — Create a context file (optional)
+### Bước 4 — Tạo một file ngữ cảnh (tùy chọn)
 
-Codex respects `AGENTS.md` or `codex.md` in the project root. Create one:
+Codex tôn trọng `AGENTS.md` hoặc `codex.md` ở thư mục gốc dự án. Tạo một file:
 
 ```bash
 cat > AGENTS.md << 'EOF'
@@ -73,13 +76,13 @@ Key docs:
 EOF
 ```
 
-### Step 5 — Add MCP server (optional)
+### Bước 5 — Thêm MCP server (tùy chọn)
 
 ```bash
 codex mcp add lumibase --url http://localhost:1989/mcp
 ```
 
-Set auth via environment:
+Đặt auth qua environment:
 ```bash
 export LUMIBASE_TOKEN=<your-access-token>
 export LUMIBASE_SITE_ID=<your-site-id>
@@ -87,7 +90,7 @@ export LUMIBASE_SITE_ID=<your-site-id>
 
 ---
 
-## Example Codex sessions
+## Ví dụ các phiên Codex
 
 ```bash
 # Add a new API route
@@ -102,9 +105,9 @@ codex "apps/cms/src/services/flow-service.ts has a bug where failed flow_runs ar
 
 ---
 
-## Sandbox mode
+## Chế độ Sandbox
 
-Codex runs in a sandboxed environment. For LumiBase development:
+Codex chạy trong một môi trường được sandbox. Đối với phát triển LumiBase:
 
 ```bash
 # Codex can read/write files and run commands — useful for:
@@ -114,12 +117,12 @@ codex "Generate Drizzle migration SQL for adding a tags column to the flows tabl
 
 ---
 
-## Troubleshooting
+## Xử lý sự cố
 
-**Codex doesn't understand monorepo structure**: Point it at `docs/en/README.md` first, which maps all packages and apps.
+**Codex không hiểu cấu trúc monorepo**: Trỏ nó tới `docs/en/README.md` trước, file này ánh xạ toàn bộ package và app.
 
-**Commands fail in sandbox**: Some pnpm workspace commands need the workspace root. Tell Codex: "Run this from the project root, not from a subdirectory."
+**Lệnh thất bại trong sandbox**: Một số lệnh pnpm workspace cần workspace root. Hãy bảo Codex: "Run this from the project root, not from a subdirectory."
 
 ---
 
-← [Back to Agent Setup](./index.md)
+← [Quay lại Thiết lập Agent](./index.md)

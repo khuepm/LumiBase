@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:25.753Z
+sourceLang: en
+contentHash: 24a4ff7faa0c8795
+---
+
 # Claude Code — LumiBase Agent Setup
 
 > **Claude Code** is a terminal-based coding agent made by Anthropic. It understands your codebase, runs commands, edits files, and manages git.
