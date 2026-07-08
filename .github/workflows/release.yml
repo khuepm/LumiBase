@@ -182,10 +182,14 @@ jobs:
             project: lumibase-studio
     steps:
       - uses: actions/checkout@v7
-        with:
-          # marketplace (apps/marketplace) is a public HTTPS submodule; fetch it
-          # so `pnpm --filter @lumibase/marketplace build` produces apps/marketplace/out.
-          submodules: true
+
+      # Only the marketplace app needs its (public HTTPS) submodule so that
+      # `pnpm --filter @lumibase/marketplace build` can produce apps/marketplace/out.
+      # We init ONLY that path — the enterprise/extensions submodules are private
+      # and would abort a blanket `submodules: true` checkout with "repository not found".
+      - name: Fetch marketplace submodule
+        if: matrix.app.name == 'marketplace'
+        run: git submodule update --init --depth=1 apps/marketplace
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
