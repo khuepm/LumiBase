@@ -9,6 +9,30 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [0.21.0] - 2026-07-08
+
+### Version
+
+- `v0.21.0`
+
+### Date
+
+- `2026-07-08`
+
+### Highlights
+
+- **Self-service auth realms (PR #130).** Subscriber registration, email
+  verification, password recovery, rotating refresh tokens, per-realm session
+  TTLs, and SDK silent auto-refresh — with server-side role resolution and
+  audience-pinned tokens. See ADR-011 and the Security section below.
+- **Cloudflare Pages deploys repaired.** The Pages pipeline had been failing
+  since v0.18.0. The `apps/marketplace` submodule is now decoupled from the
+  pnpm workspace and built standalone (authenticated with a PAT), the docs
+  deploy verification matches the current prerendered-404 SPA design, and the
+  release checkout no longer aborts on private sibling submodules. See Fixed.
+
 ### Added
 
 - **Self-service auth realms.** Subscriber registration (`/auth/register`) with email verification (`/auth/verify-email`, `/auth/resend-verification`), password recovery (`/auth/forgot-password`, `/auth/reset-password`), and an admin primitive to grant subscribers `read` on collections (`/api/v1/users/subscriber-access`). Tokens carry a per-realm `aud` (`studio`/`frontend`); `withStudioAccess` hard-rejects frontend tokens. See ADR-011.
@@ -33,6 +57,35 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 - Run `pnpm -F @lumibase/database migrate` to apply migrations `0005` (adds `lumibase_refresh_tokens`) and `0006` (adds `users.password_changed_at` **and** the unique `lower(email)` index). Migration `0006` fails if the `users` table already contains case-insensitive duplicate emails — de-duplicate first; see the migration header. No other backfill required.
 - **Known limitations (tracked follow-ups, not fixed here):** per-IP rate limiting relies on `LUMIBASE_TRUSTED_PROXIES` being configured (and, off Cloudflare, a wired remote-address resolver) — the same limitation the login-guard already carries (review finding H2); refresh rotation grants a fresh TTL per hop with no absolute session cap (M2); the refresh cookie is one host-scoped name across tenants on a shared host (L2). See `docs/en/security/user-management.md`.
+
+### Fixed
+
+- **Cloudflare Pages deploys (broken since v0.18.0).** Four defects kept the
+  Pages pipeline red:
+  - `apps/marketplace` (a private `lumibase-ai/marketplace` submodule) is now
+    **decoupled from the pnpm workspace** (`!apps/marketplace`) and built
+    standalone (`pnpm install --no-frozen-lockfile --ignore-workspace`), so the
+    root `--frozen-lockfile` install no longer breaks when the submodule is
+    present. It is versioned/released independently and dropped from
+    `version:sync`.
+  - The submodule clone now authenticates with the `MARKETPLACE_SUBMODULE_TOKEN`
+    PAT (the runner's `GITHUB_TOKEN` cannot read another org's repo).
+  - `release.yml` no longer uses a blanket `submodules: true` checkout, which
+    aborted on the private `enterprise`/`extensions` submodules; it inits only
+    the marketplace path.
+  - The docs deploy verification now asserts the current design — an unmatched
+    deep-link serves the prerendered `404.html` SPA shell (HTTP 404 + shell
+    body) — instead of the removed `/* /index.html 200` catch-all.
+
+### Migrations
+
+- `0005_refresh_tokens.sql` — adds `lumibase_refresh_tokens` (rotating refresh
+  tokens, under RLS).
+- `0006_password_changed_at_and_email_unique.sql` — adds
+  `users.password_changed_at` and a unique index on `lower(email)`. **Fails if
+  the `users` table already contains case-insensitive duplicate emails —
+  de-duplicate first** (see the migration header). Apply with
+  `pnpm -F @lumibase/database migrate`.
 
 ## [0.20.0] - 2026-07-08
 
