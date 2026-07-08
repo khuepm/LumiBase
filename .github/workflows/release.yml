@@ -183,13 +183,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Only the marketplace app needs its (public HTTPS) submodule so that
+      # Only the marketplace app needs its submodule so that
       # `pnpm --filter @lumibase/marketplace build` can produce apps/marketplace/out.
-      # We init ONLY that path — the enterprise/extensions submodules are private
-      # and would abort a blanket `submodules: true` checkout with "repository not found".
+      # It lives in the private lumibase-ai/marketplace repo, which the runner's
+      # GITHUB_TOKEN cannot read, so authenticate with the MARKETPLACE_SUBMODULE_TOKEN
+      # PAT via a scoped insteadOf rewrite. Init ONLY this path — enterprise/extensions
+      # are private too and a blanket `submodules: true` checkout would abort with
+      # "repository not found".
       - name: Fetch marketplace submodule
         if: matrix.app.name == 'marketplace'
-        run: git submodule update --init --depth=1 apps/marketplace
+        env:
+          MARKETPLACE_SUBMODULE_TOKEN: ${{ secrets.MARKETPLACE_SUBMODULE_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf "https://github.com/lumibase-ai/"
+          git submodule update --init --depth=1 apps/marketplace
+          git config --global --unset url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
