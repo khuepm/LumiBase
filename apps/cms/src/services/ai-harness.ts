@@ -2242,8 +2242,12 @@ export class AISecureHarness {
     );
 
     if (result.success) {
-      // Skill succeeded — update record to 'approved'
-      await this.db
+      // Skill succeeded — commit the decision. The UPDATE is guarded by
+      // `status = 'pending'` and uses .returning() so that if a concurrent
+      // decide/reject already moved the record out of 'pending' (CWE-362/367
+      // TOCTOU), this write affects zero rows and we report a conflict instead
+      // of silently overwriting the other decision.
+      const committed = await this.db
         .update(aiApprovals)
         .set({
           status: 'approved',
@@ -2254,8 +2258,17 @@ export class AISecureHarness {
           and(
             eq(aiApprovals.id, approvalId),
             eq(aiApprovals.siteId, this.siteId),
+            eq(aiApprovals.status, 'pending'),
           ),
-        );
+        )
+        .returning({ id: aiApprovals.id });
+
+      if (committed.length === 0) {
+        return {
+          status: 'denied',
+          message: 'Approval was already processed by another request',
+        };
+      }
 
       return { status: 'executed', data: result.data };
     }
@@ -2329,6 +2342,8 @@ export class AISecureHarness {
     );
 
     if (result.success) {
+      // Guard the transition on status='pending' so a concurrent decide/reject
+      // cannot be silently overwritten (CWE-362/367).
       await this.db
         .update(aiApprovals)
         .set({
@@ -2340,6 +2355,7 @@ export class AISecureHarness {
           and(
             eq(aiApprovals.id, record.id),
             eq(aiApprovals.siteId, this.siteId),
+            eq(aiApprovals.status, 'pending'),
           ),
         );
       if (existingAgentApproval) {
@@ -2390,8 +2406,11 @@ export class AISecureHarness {
   async rejectApproval(
     approvalId: string,
     userId: string,
-  ): Promise<void> {
-    await this.db
+  ): Promise<boolean> {
+    // Only a still-pending approval can be rejected; the status guard makes the
+    // reject atomic w.r.t. a concurrent approve (CWE-362/367). Returns whether
+    // this call actually performed the rejection.
+    const rejected = await this.db
       .update(aiApprovals)
       .set({
         status: 'rejected',
@@ -2402,8 +2421,12 @@ export class AISecureHarness {
         and(
           eq(aiApprovals.id, approvalId),
           eq(aiApprovals.siteId, this.siteId),
+          eq(aiApprovals.status, 'pending'),
         ),
-      );
+      )
+      .returning({ id: aiApprovals.id });
+
+    if (rejected.length === 0) return false;
 
     if (this.agentHarnessEnabled) {
       await this.db
@@ -2417,8 +2440,11 @@ export class AISecureHarness {
           and(
             eq(agentApprovals.legacyApprovalId, approvalId),
             eq(agentApprovals.siteId, this.siteId),
+            eq(agentApprovals.status, 'pending'),
           ),
         );
     }
+
+    return true;
   }
 }

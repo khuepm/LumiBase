@@ -20,15 +20,20 @@ import { NotFoundPage } from '../pages/NotFoundPage';
 
 // Mock IntersectionObserver for jsdom (used by TableOfContents)
 beforeAll(() => {
-  const mockIntersectionObserver = vi.fn().mockImplementation(() => ({
-    observe: vi.fn(),
-    unobserve: vi.fn(),
-    disconnect: vi.fn(),
-    root: null,
-    rootMargin: '',
-    thresholds: [],
-    takeRecords: () => [],
-  }));
+  // `function` (not arrow): jsdom/TableOfContents calls `new IntersectionObserver`,
+  // and vitest 4 invokes the mock implementation as a constructor — arrow
+  // functions are not constructable.
+  const mockIntersectionObserver = vi.fn().mockImplementation(function () {
+    return {
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+      disconnect: vi.fn(),
+      root: null,
+      rootMargin: '',
+      thresholds: [],
+      takeRecords: () => [],
+    };
+  });
   vi.stubGlobal('IntersectionObserver', mockIntersectionObserver);
 
   // Patch global Request to handle AbortSignal compatibility issue

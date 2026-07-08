@@ -368,10 +368,14 @@ describe('PipelineRegistry', () => {
       connector.destroy.mockImplementation(async () => {
         callOrder.push('destroy');
       });
-      const originalDelete = db.delete;
-      vi.spyOn(db, 'delete').mockImplementation((...args) => {
+      // vitest 4's vi.spyOn reuses the existing mock instance, so a reference
+      // captured before spying resolves to the spy itself and would recurse.
+      // Capture the fake's return chain (mockReturnValue yields a stable
+      // object) up front and hand it back directly instead of calling through.
+      const deleteChain = (db.delete as () => unknown)();
+      vi.spyOn(db, 'delete').mockImplementation(() => {
         callOrder.push('delete');
-        return (originalDelete as typeof db.delete).apply(db, args);
+        return deleteChain as ReturnType<typeof db.delete>;
       });
 
       const registry = new PipelineRegistry({

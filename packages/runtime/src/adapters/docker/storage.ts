@@ -46,6 +46,11 @@ export class S3StorageProvider implements StorageProvider {
         Key: key,
         Body: body,
         Metadata: metadata,
+        // Map the logical content type onto S3's native `ContentType` so
+        // `get()` (which reads `response.ContentType`) round-trips it. S3
+        // lowercases user-metadata keys, so relying on `Metadata.contentType`
+        // alone would not survive the round-trip.
+        ...(metadata?.contentType ? { ContentType: metadata.contentType } : {}),
       }),
     );
   }

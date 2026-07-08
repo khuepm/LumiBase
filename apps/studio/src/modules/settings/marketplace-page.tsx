@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Puzzle, Download, Search, Check, ExternalLink, ShieldAlert, Info, X, User } from 'lucide-react';
+import { Puzzle, Download, Search, Check, ExternalLink, ShieldAlert, ShieldCheck, Info, X, User, ArrowBigUp, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
 
@@ -12,6 +12,14 @@ interface PublishedExtension {
   publisher: string;
   marketplaceSlug: string;
   publishedAt: string;
+  /** Cryptographically signed by a registered publisher key. */
+  verified?: boolean;
+  /** Cumulative package downloads. */
+  totalDownloads?: number;
+  /** Community upvotes for the listing. */
+  voteCount?: number;
+  /** Whether the current user has upvoted. */
+  hasVoted?: boolean;
 }
 
 interface ExtensionDetail extends PublishedExtension {
@@ -154,6 +162,127 @@ function PublishDialog({
   );
 }
 
+/**
+ * Community submit dialog: lets any user propose an extension for the public
+ * catalog. The listing lands in `pending` review (unpublished) — publishing a
+ * signed bundle is a separate, moderated step.
+ */
+function SubmitDialog({ onClose }: { onClose: () => void }) {
+  const client = getApiClient();
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    name: '',
+    version: '0.1.0',
+    type: 'module',
+    marketplaceSlug: '',
+    bundleUrl: '',
+    description: '',
+    publisher: '',
+    repositoryUrl: '',
+  });
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      client.rawRequest<unknown>('/api/v1/marketplace/submit', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...form,
+          repositoryUrl: form.repositoryUrl || undefined,
+          description: form.description || undefined,
+          publisher: form.publisher || undefined,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['marketplace-extensions'] });
+      onClose();
+    },
+  });
+
+  const set =
+    (key: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+      setForm((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const valid =
+    form.name &&
+    /^\d+\.\d+\.\d+/.test(form.version) &&
+    /^[a-z0-9-]+$/.test(form.marketplaceSlug) &&
+    /^https?:\/\//.test(form.bundleUrl);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4"
+      role="dialog"
+      aria-label="Submit extension"
+    >
+      <div className="max-h-[85vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-lg border bg-background p-4 shadow-xl">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold">Submit an extension</h2>
+          <button type="button" onClick={onClose} aria-label="Close submit dialog" className="rounded-md border p-1 hover:bg-muted">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Propose an extension for the public catalog. It enters review before it
+          becomes installable.
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="text-xs">
+            <span className="mb-1 block text-muted-foreground">Name *</span>
+            <input value={form.name} onChange={set('name')} className="w-full rounded-md border bg-background px-2 py-1.5" />
+          </label>
+          <label className="text-xs">
+            <span className="mb-1 block text-muted-foreground">Version *</span>
+            <input value={form.version} onChange={set('version')} className="w-full rounded-md border bg-background px-2 py-1.5 font-mono" />
+          </label>
+          <label className="text-xs">
+            <span className="mb-1 block text-muted-foreground">Type *</span>
+            <select value={form.type} onChange={set('type')} aria-label="Extension type" className="w-full rounded-md border bg-background px-2 py-1.5">
+              {['module', 'interface', 'display', 'layout', 'panel', 'endpoint', 'hook', 'operation'].map((tp) => (
+                <option key={tp} value={tp}>{tp}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs">
+            <span className="mb-1 block text-muted-foreground">Marketplace slug *</span>
+            <input value={form.marketplaceSlug} onChange={set('marketplaceSlug')} placeholder="my-extension" className="w-full rounded-md border bg-background px-2 py-1.5 font-mono" />
+          </label>
+          <label className="text-xs sm:col-span-2">
+            <span className="mb-1 block text-muted-foreground">Bundle URL *</span>
+            <input value={form.bundleUrl} onChange={set('bundleUrl')} placeholder="https://…/bundle.js" className="w-full rounded-md border bg-background px-2 py-1.5 font-mono" />
+          </label>
+          <label className="text-xs">
+            <span className="mb-1 block text-muted-foreground">Publisher</span>
+            <input value={form.publisher} onChange={set('publisher')} className="w-full rounded-md border bg-background px-2 py-1.5" />
+          </label>
+          <label className="text-xs">
+            <span className="mb-1 block text-muted-foreground">Repository URL</span>
+            <input value={form.repositoryUrl} onChange={set('repositoryUrl')} placeholder="https://github.com/…" className="w-full rounded-md border bg-background px-2 py-1.5 font-mono" />
+          </label>
+          <label className="text-xs sm:col-span-2">
+            <span className="mb-1 block text-muted-foreground">Description</span>
+            <textarea value={form.description} onChange={set('description')} rows={3} className="w-full rounded-md border bg-background px-2 py-1.5" />
+          </label>
+        </div>
+        {mutation.isError && (
+          <p className="text-xs text-destructive">
+            {mutation.error instanceof Error ? mutation.error.message : 'Submission failed.'}
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={() => mutation.mutate()}
+          disabled={!valid || mutation.isPending}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+        >
+          {mutation.isPending ? 'Submitting…' : 'Submit for review'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function MarketplacePage() {
   const { t } = useTranslation();
   const client = getApiClient();
@@ -163,6 +292,7 @@ export function MarketplacePage() {
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<string>('all');
   const [publishing, setPublishing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Fetch installed extensions
   const installedQuery = useQuery({
@@ -202,6 +332,25 @@ export function MarketplacePage() {
       setSelectedSlug(null);
     },
   });
+
+  // Toggle upvote — DELETE when already voted, POST otherwise.
+  const voteMutation = useMutation({
+    mutationFn: ({ slug, hasVoted }: { slug: string; hasVoted: boolean }) =>
+      client.rawRequest<unknown>(`/api/v1/marketplace/extensions/${slug}/vote`, {
+        method: hasVoted ? 'DELETE' : 'POST',
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['marketplace-extensions'] });
+      qc.invalidateQueries({ queryKey: ['marketplace-extension-detail'] });
+    },
+  });
+
+  // Download the signed package without installing. The endpoint bumps the
+  // download counter and 302s to the bundle.
+  const handleDownload = (slug: string) => {
+    window.open(`/api/v1/marketplace/extensions/${slug}/download`, '_blank', 'noopener');
+    qc.invalidateQueries({ queryKey: ['marketplace-extensions'] });
+  };
 
   const published = marketplaceQuery.data ?? [];
   const installed = installedQuery.data ?? [];
@@ -244,15 +393,27 @@ export function MarketplacePage() {
             Browse and install verified third-party extensions to extend Lumibase's capabilities.
           </p>
         </div>
-        {/* Publish loop (studio-ops-ui Req 3) */}
-        <button
-          type="button"
-          onClick={() => setPublishing(true)}
-          className="inline-flex items-center gap-1 self-start rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted"
-        >
-          <ExternalLink className="h-4 w-4" /> Publish extension
-        </button>
+        <div className="flex items-center gap-2 self-start">
+          {/* Community submission loop */}
+          <button
+            type="button"
+            onClick={() => setSubmitting(true)}
+            className="inline-flex items-center gap-1 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted"
+          >
+            <Upload className="h-4 w-4" /> {t('submit_extension', 'Submit extension')}
+          </button>
+          {/* Publish loop (studio-ops-ui Req 3) */}
+          <button
+            type="button"
+            onClick={() => setPublishing(true)}
+            className="inline-flex items-center gap-1 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted"
+          >
+            <ExternalLink className="h-4 w-4" /> {t('publish_extension', 'Publish extension')}
+          </button>
+        </div>
       </header>
+
+      {submitting && <SubmitDialog onClose={() => setSubmitting(false)} />}
 
       {publishing && (
         <PublishDialog
@@ -320,9 +481,17 @@ export function MarketplacePage() {
                     <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/5 text-primary border border-primary/10 group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-200">
                       <Puzzle className="h-6 w-6" />
                     </div>
-                    <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-semibold text-secondary-foreground border border-secondary-foreground/10 capitalize">
-                      {ext.type}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-semibold text-secondary-foreground border border-secondary-foreground/10 capitalize">
+                        {ext.type}
+                      </span>
+                      {ext.verified && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-700" title={t('verified_source', 'Signed by a verified publisher')}>
+                          <ShieldCheck className="h-3 w-3" />
+                          {t('verified', 'Verified')}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="mt-4">
@@ -340,7 +509,37 @@ export function MarketplacePage() {
                   </div>
                 </div>
 
-                <div className="mt-6 flex items-center justify-between border-t pt-4">
+                <div className="mt-4 flex items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => voteMutation.mutate({ slug: ext.marketplaceSlug, hasVoted: !!ext.hasVoted })}
+                    disabled={voteMutation.isPending}
+                    aria-pressed={!!ext.hasVoted}
+                    aria-label={t('upvote', 'Upvote')}
+                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 font-semibold transition disabled:opacity-50 ${
+                      ext.hasVoted
+                        ? 'border-primary/40 bg-primary/10 text-primary'
+                        : 'hover:bg-muted text-muted-foreground'
+                    }`}
+                  >
+                    <ArrowBigUp className="h-3.5 w-3.5" />
+                    {ext.voteCount ?? 0}
+                  </button>
+                  <span className="inline-flex items-center gap-1 text-muted-foreground" title={t('downloads', 'Downloads')}>
+                    <Download className="h-3.5 w-3.5" />
+                    {ext.totalDownloads ?? 0}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(ext.marketplaceSlug)}
+                    className="ml-auto inline-flex items-center gap-1 rounded-md border px-2 py-1 font-medium hover:bg-muted"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    {t('download_package', 'Download')}
+                  </button>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between border-t pt-4">
                   <button
                     onClick={() => setSelectedSlug(ext.marketplaceSlug)}
                     className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
@@ -465,6 +664,13 @@ export function MarketplacePage() {
                 </div>
 
                 <div className="border-t pt-4 flex justify-end gap-2">
+                  <button
+                    onClick={() => handleDownload(selectedExtension.marketplaceSlug)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-muted transition"
+                  >
+                    <Download className="h-4 w-4" />
+                    {t('download_package', 'Download')}
+                  </button>
                   <button
                     onClick={() => setSelectedSlug(null)}
                     className="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-muted transition"

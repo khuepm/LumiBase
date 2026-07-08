@@ -6,6 +6,7 @@ import { nanoid } from 'nanoid';
 import type { AppEnv } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
 import { sendTeammateInvite } from '../modules/email/invite';
+import { bumpPermissionVersion } from '../services/permission-invalidation';
 
 export const usersRouter = new Hono<AppEnv>();
 usersRouter.use('*', requireSiteAdmin());
@@ -99,6 +100,7 @@ usersRouter.post('/invite', async (c) => {
     siteId,
     roleId: input.roleId,
   }).onConflictDoNothing(); // If already in site, do nothing
+  await bumpPermissionVersion(c, siteId);
 
   // Best-effort invite email — sent AFTER the binding so a mail failure can't
   // affect the invite itself. Detached via waitUntil on Workers; the helper
@@ -142,6 +144,7 @@ usersRouter.patch('/:id', async (c) => {
     await db.update(userSites)
       .set({ roleId: input.roleId })
       .where(and(eq(userSites.siteId, siteId), eq(userSites.userId, id)));
+    await bumpPermissionVersion(c, siteId);
   }
 
   if (input.status !== undefined) {
@@ -167,6 +170,7 @@ usersRouter.delete('/:id', async (c) => {
     return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
   }
 
+  await bumpPermissionVersion(c, siteId);
   return c.json({ data: null });
 });
 

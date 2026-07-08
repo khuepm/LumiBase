@@ -52,10 +52,27 @@ export function withRls() {
         // SET LOCAL applies only to the current transaction (Hyperdrive scope).
         await sql`SELECT set_config('app.site_id', ${siteId}, true)`;
       } catch (err) {
-        // Non-fatal: RLS is defence-in-depth. Application-level permission
-        // checks still apply. Log and continue.
+        // Fail CLOSED: if the RLS scope can't be established, the DB-layer
+        // tenant isolation is silently absent for this request. Rather than
+        // relying solely on application-level `.where(siteId)` filters (a
+        // single missed filter would then leak cross-tenant rows), reject the
+        // request so a degraded RLS setup can never widen data exposure.
         const requestId = c.get('requestId');
-        console.warn('[rls] Failed to set app.site_id', { requestId, err: formatSafeError(err) });
+        console.error('[rls] Failed to set app.site_id — failing closed', {
+          requestId,
+          err: formatSafeError(err),
+        });
+        return c.json(
+          {
+            errors: [
+              {
+                code: 'RLS_UNAVAILABLE',
+                message: 'Request could not be securely scoped. Please retry.',
+              },
+            ],
+          },
+          503,
+        );
       }
     }
 

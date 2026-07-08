@@ -1,5 +1,9 @@
 User-agent: *
 Allow: /
 
-# Sitemap for AI agents & Search Crawlers
+# Primary sitemap — auto-generated from prerendered HTML routes
+# (see scripts/prerender.mjs). Lists every crawlable doc page.
+Sitemap: https://docs.lumibase.dev/sitemap.xml
+
+# Secondary sitemap for AI agents — raw .md source URLs (hand-curated).
 Sitemap: https://docs.lumibase.dev/en/sitemap-ai.xml

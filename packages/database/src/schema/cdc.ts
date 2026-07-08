@@ -21,7 +21,7 @@ const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
 export const cdcPipelines = pgTable(
-  'cdc_pipelines',
+  'lumibase_cdc_pipelines',
   {
     id: id(),
     siteId: text('site_id')
@@ -57,7 +57,7 @@ export const cdcPipelines = pgTable(
 );
 
 export const cdcPipelineHealth = pgTable(
-  'cdc_pipeline_health',
+  'lumibase_cdc_pipeline_health',
   {
     id: id(),
     pipelineId: text('pipeline_id')
@@ -77,7 +77,7 @@ export const cdcPipelineHealth = pgTable(
 );
 
 export const cdcDeployments = pgTable(
-  'cdc_deployments',
+  'lumibase_cdc_deployments',
   {
     id: id(),
     pipelineId: text('pipeline_id').references(() => cdcPipelines.id, {

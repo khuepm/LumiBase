@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T10:56:36.990Z
+sourceLang: en
+contentHash: 0275f7b0e36f3a46
+---
+
 # ADR-001: Use NanoID / UUIDv7 over Auto-increment
 
 **Date:** 2024-01-15

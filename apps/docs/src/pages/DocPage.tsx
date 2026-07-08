@@ -78,7 +78,7 @@ export function DocPage() {
           {entry!.title}
         </h1>
         {formattedDate && (
-          <p className="mt-3 text-[13px] font-medium text-[rgb(150,150,156)]">
+          <p className="mt-3 text-[13px] font-medium text-muted-foreground">
             Last modified: {formattedDate}
           </p>
         )}

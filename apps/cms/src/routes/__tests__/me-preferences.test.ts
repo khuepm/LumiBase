@@ -117,4 +117,39 @@ describe('PATCH /api/v1/me/preferences', () => {
     });
     expect(res.status).toBe(400);
   });
+
+  // save-default-preference (Req 1, 2): the saveAction key rides the same
+  // endpoint — validated enum, merged without dropping other sections.
+  it('accepts and merges a valid saveAction (Req 1.2)', async () => {
+    const { db, state } = makeFakeDb({ preferences: { language: 'vi' } });
+    const res = await buildApp(db).request('/api/v1/me/preferences', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ saveAction: 'return' }),
+    });
+    expect(res.status).toBe(200);
+    expect(state.lastSet?.preferences).toEqual({ language: 'vi', saveAction: 'return' });
+  });
+
+  it('rejects an invalid saveAction enum with 400 (Req 2.2)', async () => {
+    const { db } = makeFakeDb({ preferences: {} });
+    const res = await buildApp(db).request('/api/v1/me/preferences', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ saveAction: 'bogus' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts saveAction: null to fall back to the site default (Req 7.2)', async () => {
+    const { db, state } = makeFakeDb({ preferences: { saveAction: 'return' } });
+    const res = await buildApp(db).request('/api/v1/me/preferences', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ saveAction: null }),
+    });
+    expect(res.status).toBe(200);
+    // Stored as null — resolveSaveAction treats null as "not configured".
+    expect((state.lastSet?.preferences as Record<string, unknown>).saveAction).toBeNull();
+  });
 });

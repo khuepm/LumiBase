@@ -193,7 +193,7 @@ describe('auth/login — no user-enumeration timing parity (Property 8)', () => 
     // slate. CASCADE handles incidental FK references the same way
     // the lockout-flow integration test does.
     await db.execute(
-      sql`TRUNCATE TABLE login_attempts, audit_log, system_state, settings, user_sites, sites, users RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE TABLE lumibase_login_attempts, lumibase_audit_log, lumibase_system_state, lumibase_settings, lumibase_user_sites, lumibase_sites, lumibase_users RESTART IDENTITY CASCADE`,
     );
   });
 
@@ -259,16 +259,16 @@ describe('auth/login — no user-enumeration timing parity (Property 8)', () => 
    * (no 423/429 short-circuit). Runs before each timed call — outside
    * the timing window, so its cost doesn't pollute the measurement.
    *
-   * `DELETE FROM login_attempts` is preferred over `TRUNCATE` here
+   * `DELETE FROM lumibase_login_attempts` is preferred over `TRUNCATE` here
    * because the table is tiny (≤ a few rows between resets) and
    * `DELETE` doesn't take an exclusive lock that could serialise
    * neighbouring queries; the clamp on `users.lockedUntil` is the
    * critical part.
    */
   async function resetGuardState(): Promise<void> {
-    await db.execute(sql`DELETE FROM login_attempts`);
+    await db.execute(sql`DELETE FROM lumibase_login_attempts`);
     await db.execute(
-      sql`UPDATE users SET locked_until = NULL, failed_count = 0, failed_count_window_start = NULL`,
+      sql`UPDATE lumibase_users SET locked_until = NULL, failed_count = 0, failed_count_window_start = NULL`,
     );
   }
 

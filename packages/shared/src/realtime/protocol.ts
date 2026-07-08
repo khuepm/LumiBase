@@ -107,6 +107,12 @@ export const realtimeEventSchema = z.object({
   action: realtimeActionSchema.optional(),
   itemId: z.string().optional(),
   payload: z.unknown(),
+  /**
+   * Field-level allowlist (Req 3.5). When set and the payload is an object, the
+   * hub delivers ONLY these top-level keys — used to strip non-public fields
+   * from audience-plane events. Absent → the full payload is delivered.
+   */
+  fields: z.array(z.string()).optional(),
   /** Actor that triggered the mutation. Skip-echo applies to studio only. */
   actorUserId: z.string().optional(),
 });

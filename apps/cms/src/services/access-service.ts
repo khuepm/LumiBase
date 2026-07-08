@@ -9,9 +9,11 @@ import {
   users,
   type Database,
 } from '@lumibase/database';
+import type { CacheProvider } from '@lumibase/runtime';
 import { and, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { createPlaintextToken } from './api-key-token';
+import { PermissionService } from './permission-service';
 
 /**
  * Thin, tenant-scoped service over RBAC + identity tables, used by the governed
@@ -25,6 +27,11 @@ export interface AccessServiceDeps {
   siteId: string;
   /** Acting principal, recorded as createdBy/rotatedBy/revokedBy on API keys. */
   userId?: string | null;
+  /**
+   * Runtime cache — when provided, permission-affecting mutations bump the
+   * site's permission-cache version (high-load-cache-readiness Req 2).
+   */
+  cache?: CacheProvider;
 }
 
 export interface RoleInput {
@@ -56,6 +63,11 @@ function publicApiKey(row: typeof apiKeys.$inferSelect) {
 export class AccessService {
   constructor(private readonly deps: AccessServiceDeps) {}
 
+  /** Best-effort permission-cache invalidation after a mutating skill. */
+  private bumpPermissions(): Promise<void> {
+    return PermissionService.bumpVersion(this.deps.cache, this.deps.siteId);
+  }
+
   // ── Roles ───────────────────────────────────────────────────────────────
   listRoles() {
     return this.deps.db.select().from(roles).where(scopeSite(roles.siteId, this.deps.siteId));
@@ -66,6 +78,7 @@ export class AccessService {
       .insert(roles)
       .values({ ...input, siteId: this.deps.siteId })
       .returning();
+    await this.bumpPermissions();
     return row;
   }
 
@@ -73,6 +86,7 @@ export class AccessService {
     await this.deps.db
       .delete(roles)
       .where(and(scopeSite(roles.siteId, this.deps.siteId), eq(roles.id, id)));
+    await this.bumpPermissions();
     return { deleted: true, id };
   }
 
@@ -86,6 +100,7 @@ export class AccessService {
       .insert(policies)
       .values({ ...input, siteId: this.deps.siteId, rules: input.rules ?? {} })
       .returning();
+    await this.bumpPermissions();
     return row;
   }
 
@@ -93,6 +108,7 @@ export class AccessService {
     await this.deps.db
       .delete(policies)
       .where(and(scopeSite(policies.siteId, this.deps.siteId), eq(policies.id, id)));
+    await this.bumpPermissions();
     return { deleted: true, id };
   }
 
@@ -140,6 +156,7 @@ export class AccessService {
       .where(and(scopeSite(apiKeys.siteId, this.deps.siteId), eq(apiKeys.id, id)))
       .returning();
     if (!row) throw new Error('API_KEY_NOT_FOUND');
+    await this.bumpPermissions();
     return { ...publicApiKey(row), token: token.token };
   }
 
@@ -150,6 +167,7 @@ export class AccessService {
       .where(and(scopeSite(apiKeys.siteId, this.deps.siteId), eq(apiKeys.id, id)))
       .returning();
     if (!row) throw new Error('API_KEY_NOT_FOUND');
+    await this.bumpPermissions();
     return publicApiKey(row);
   }
 
@@ -184,6 +202,7 @@ export class AccessService {
       .insert(userSites)
       .values({ userId: existing.id, siteId: this.deps.siteId, roleId: input.roleId })
       .onConflictDoNothing();
+    if (input.roleId) await this.bumpPermissions();
     return existing;
   }
 
@@ -193,6 +212,7 @@ export class AccessService {
         .update(userSites)
         .set({ roleId: patch.roleId })
         .where(and(eq(userSites.siteId, this.deps.siteId), eq(userSites.userId, id)));
+      await this.bumpPermissions();
     }
     if (patch.status !== undefined) {
       await this.deps.db.update(users).set({ status: patch.status, updatedAt: new Date() }).where(eq(users.id, id));
@@ -204,6 +224,7 @@ export class AccessService {
     await this.deps.db
       .delete(userSites)
       .where(and(eq(userSites.siteId, this.deps.siteId), eq(userSites.userId, id)));
+    await this.bumpPermissions();
     return { deleted: true, id };
   }
 

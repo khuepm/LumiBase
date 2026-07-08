@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { SignJWT } from 'jose';
 import { and, eq, sql } from 'drizzle-orm';
-import { systemState, users, userSites } from '@lumibase/database';
+import { roles, systemState, users, userSites } from '@lumibase/database';
 import type { AppEnv } from '../env';
 import { hashPassword, verifyPassword } from '../services/auth/password';
 import {
@@ -31,7 +31,7 @@ import { getSecurityNotificationDispatcher, scheduleWorkersDrain } from '../modu
 import type { NotificationDeps } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';
 import { formatSafeError } from '@lumibase/shared/utils';
-import { UserPreferencesUpdateSchema } from '@lumibase/shared/schemas';
+import { UserPreferencesUpdateSchema, PasswordSchema } from '@lumibase/shared/schemas';
 
 export const authRouter = new Hono<AppEnv>();
 
@@ -193,6 +193,92 @@ meRouter.patch('/preferences', async (c) => {
   return c.json({ data: merged });
 });
 
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(256),
+  newPassword: PasswordSchema,
+});
+
+/**
+ * POST /api/v1/me/change-password — change the caller's own password.
+ *
+ * Requires the current password (CWE-620) and bumps `tokenVersion`, which
+ * invalidates every previously-issued token for this user (CWE-613). A fresh
+ * token carrying the new version is returned so the caller who performed the
+ * change stays signed in; all other sessions are revoked.
+ */
+meRouter.post('/change-password', async (c) => {
+  const db = c.get('db');
+  const auth = c.get('auth');
+  const userId = auth.userId;
+  if (!userId) {
+    return c.json(
+      { errors: [{ code: 'UNAUTHENTICATED', message: 'No authenticated user.' }] },
+      401,
+    );
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = changePasswordSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: parsed.error.message, issues: parsed.error.issues }] },
+      400,
+    );
+  }
+
+  const [user] = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      passwordHash: users.passwordHash,
+      tokenVersion: users.tokenVersion,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (!user || !user.passwordHash) {
+    return c.json(
+      { errors: [{ code: 'PASSWORD_NOT_SET', message: 'This account has no local password.' }] },
+      400,
+    );
+  }
+
+  const currentValid = await verifyPassword(parsed.data.currentPassword, user.passwordHash);
+  if (!currentValid) {
+    return c.json(
+      { errors: [{ code: 'INVALID_CREDENTIALS', message: 'Current password is incorrect.' }] },
+      403,
+    );
+  }
+
+  const newHash = await hashPassword(parsed.data.newPassword);
+  const nextTokenVersion = (user.tokenVersion ?? 0) + 1;
+  await db
+    .update(users)
+    .set({ passwordHash: newHash, tokenVersion: nextTokenVersion, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+
+  // Issue a replacement token on the new version so this session survives while
+  // every other outstanding token is invalidated.
+  const jwtSecret = c.env.JWT_SECRET;
+  const siteId = c.get('siteId');
+  const token = jwtSecret
+    ? await signCustomJwt(
+        {
+          userId: user.id,
+          email: user.email,
+          roles: auth.roles ?? [],
+          siteId,
+          tokenVersion: nextTokenVersion,
+        },
+        jwtSecret,
+      )
+    : null;
+
+  return c.json({ data: { success: true, ...(token ? { token } : {}) } });
+});
+
 // Helper to sign Custom JWT (HS256)
 async function signCustomJwt(payload: any, secret: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -206,7 +292,9 @@ async function signCustomJwt(payload: any, secret: string): Promise<string> {
 
 const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  // Enforce the shared strength policy (min 12 + complexity) instead of the
+  // former weak min(6) (CWE-521).
+  password: PasswordSchema,
   firstName: z.string().optional(),
   lastName: z.string().optional(),
 });
@@ -220,16 +308,34 @@ const loginSchema = z.object({
 authRouter.post('/register', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
+  // Defensive optional chaining: if this path is ever re-added to the
+  // `withAuth` bypass list the principal is absent, and the route must fail
+  // closed (403) instead of throwing a 500.
   const auth = c.get('auth');
-  if (!auth.roles?.includes('admin')) {
+  if (!auth?.roles?.includes('admin')) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Only administrators can register users for a site.' }] },
       403,
     );
   }
 
-  const body = await c.req.json();
-  const input = registerSchema.parse(body);
+  const body = await c.req.json().catch(() => ({}));
+  const parsedInput = registerSchema.safeParse(body);
+  if (!parsedInput.success) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'VALIDATION',
+            message: parsedInput.error.message,
+            issues: parsedInput.error.issues,
+          },
+        ],
+      },
+      400,
+    );
+  }
+  const input = parsedInput.data;
 
   // Check if user exists by email
   const [existingUser] = await db
@@ -242,6 +348,23 @@ authRouter.post('/register', async (c) => {
     return c.json(
       { errors: [{ code: 'EMAIL_ALREADY_EXISTS', message: 'Email is already registered.' }] },
       400
+    );
+  }
+
+  // Resolve the site's seeded "member" role BEFORE creating the user so a
+  // misconfigured site fails cleanly instead of leaving an orphan user.
+  // `user_sites.role_id` is a nanoid FK into `roles` — a literal key like
+  // 'member' violates the FK and aborts the insert.
+  const [memberRole] = await db
+    .select({ id: roles.id })
+    .from(roles)
+    .where(and(eq(roles.siteId, siteId), eq(roles.systemKey, 'member')))
+    .limit(1);
+
+  if (!memberRole) {
+    return c.json(
+      { errors: [{ code: 'ROLE_NOT_FOUND', message: 'Default member role is not provisioned for this site.' }] },
+      500,
     );
   }
 
@@ -263,13 +386,13 @@ authRouter.post('/register', async (c) => {
     return c.json({ errors: [{ code: 'REGISTRATION_FAILED', message: 'Failed to create user.' }] }, 500);
   }
 
-  // Bind new user to the current site (default 'member' role)
+  // Bind new user to the current site (seeded member role)
   await db
     .insert(userSites)
     .values({
       userId: newUser.id,
       siteId,
-      roleId: 'member',
+      roleId: memberRole.id,
     })
     .onConflictDoNothing();
 
@@ -643,6 +766,9 @@ authRouter.post('/login', async (c) => {
       email: user.email,
       roles: tokenRoles,
       siteId,
+      // Session generation at sign time; auth rejects tokens whose value is
+      // older than the stored one (revocation on password change/reset).
+      tokenVersion: user.tokenVersion ?? 0,
     },
     jwtSecret
   );
@@ -717,3 +843,7 @@ authRouter.get('/me', async (c) => {
     },
   });
 });
+
+// Preference reads/writes live on `meRouter` (`GET/PATCH /api/v1/me/preferences`
+// above) — the save-default-preference `saveAction` key is validated there via
+// UserPreferencesSchema, alongside keybindings/language/theme.

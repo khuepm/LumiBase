@@ -2,6 +2,8 @@
 
 Checklist bắt buộc trước khi đánh dấu một feature spec là hoàn thành. Áp dụng cho mọi spec trong `.kiro/specs/`.
 
+> DoD này ở cấp **feature**. Điều kiện thoát cho một **release major** (v1.0.0 trở đi) nằm ở `v1-release-criteria.md` cùng thư mục — đó là nơi gom security audit, scope freeze, quality gate, upgrade-path và semver policy cho cả bản phát hành.
+
 ## 1. Code & test
 
 - [ ] `pnpm typecheck` pass toàn bộ workspace
@@ -31,6 +33,15 @@ Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, ba
 - [ ] **Background/cron/queue context**: job chạy ngoài request vẫn resolve đúng `siteId` từ payload (không "rò" site của request gần nhất, không quét toàn bộ tenant ngoài ý muốn).
 - [ ] **Tài liệu**: mục Multi-tenancy trong `docs/en/features/<feature>.md` nêu rõ shared-vs-isolated + cách verify (xem `push-notifications.md` làm mẫu).
 
+## 2c. Route-guard security — BẮT BUỘC khi thêm/đổi route hoặc middleware
+
+> Các lỗ hổng đã từng xảy ra đều do "quên guard" chứ không do guard sai: refactor làm rơi `adminOnly` khỏi dynamic extension route, `/api/v1/agent` không nằm trong control-plane list, thiếu kiểm tra tenant membership sau `withAuth`. Xem `docs/en/security/route-guards.md`.
+
+- [ ] **Surface mới dưới `/api/v1` được phân loại**: content plane / Studio plane (`STUDIO_ACCESS_PATH_PREFIXES`) / control plane (`CONTROL_PLANE_PATHS`). Control-plane prefix PHẢI vào guard list — `adminOnly` per-route chỉ là lớp trong, không thay thế backstop.
+- [ ] **Không thêm path vào bypass/public list** (`withAuth`, `PUBLIC_AUTH_PATHS` của `site-membership`/`studio-access`) nếu không kèm test chứng minh handler an toàn khi `auth === undefined`.
+- [ ] **Route thực thi code động hoặc mutate agent state** (extensions, agent harness, flows) → control-plane, admin-only trước khi handler chạy.
+- [ ] Tripwire test `apps/cms/src/__tests__/security-guards.wiring.test.ts` vẫn pass; nếu tái cấu trúc guard thì cập nhật assertion CÙNG với behavioural test mới, không xoá.
+
 ## 3. Spec hygiene
 
 - [ ] `requirements.md`, `design.md`, `tasks.md` của spec phản ánh đúng trạng thái cuối (task done được tick, quyết định mở được chốt hoặc ghi rõ TODO có owner)
@@ -54,3 +65,14 @@ Với mỗi tutorial hiện có, rà mục **"Compatibility / Tương thích"** 
 - [ ] **Nếu CÓ:** cập nhật **đúng tutorial bị ảnh hưởng** — sửa contract + bump bảng version (thêm dòng `phiên-bản-mới → latest` ở **trên cùng**, hạ dòng cũ xuống), cập nhật comment `verified_on` (và `applies_to_min` nếu là breaking), rồi verify lại bằng tay. KHÔNG tạo bản sao tutorial mới theo version.
 - [ ] **Nếu KHÔNG:** không cần đụng tutorial — contract giữ nguyên thì badge version tối thiểu vẫn đúng cho bản mới.
 - [ ] Tính năng đủ lớn cần hướng dẫn tận tay (frontend mới, luồng auth mới, SDK surface mới) → cân nhắc **thêm tutorial mới** vào `docs/{en,vi}/tutorials/`, đăng ký vào `apps/docs/docs.config.json` (sidebar + navbar) và link từ `docs/{en,vi}/README.md`.
+
+## 6. DoD evolution — RÀ SOÁT chính checklist này
+
+> Chính DoD này lớn lên từ sự cố: mục 2b sinh sau các lần rò rỉ tenant, mục 2c sau khi `/api/v1/agent` lọt khỏi control-plane list (CHANGELOG: *"Definition of Done gains section 2c"*). Nhưng đến giờ việc "học từ bug → thêm hàng rào" vẫn **ngầm định** — phụ thuộc người review có nhớ hay không. Đúng cái class lỗi 2c cảnh báo: *quên, không phải sai*. Mục này biến nó thành bước bắt buộc.
+>
+> Hàng rào tốt nhất là **cơ giới hóa** (test/tripwire/lint/CI chặn), rồi mới tới **checklist** (con người rà). Ưu tiên cơ giới hóa; chỉ dùng checklist khi không thể chặn tự động.
+
+- [ ] **Bug fix — chống tái diễn cả class:** bản vá này thuộc một *class lỗi* (không chỉ một chỗ)? Ví dụ: quên guard trên một route → còn route nào khác cùng dạng? sai cô lập `siteId` ở một query → factory/helper nào khác bỏ sót? Nếu là class → thêm **tripwire/test source-scan** khoá cả class (mẫu: `security-guards.wiring.test.ts`, `item-service-rbac-context.test.ts`), KHÔNG chỉ test đúng chỗ vừa sửa.
+- [ ] **Feature — mở failure-mode/attack-surface mới?** feature này tạo một *loại* rủi ro mà chưa mục DoD nào phủ (bề mặt thực thi code động mới, kênh fan-out realtime mới, đường ghi ngoài request, nơi lưu secret mới, contract phá vỡ tương thích)? Nếu có và sẽ tái xuất ở feature sau → đề xuất **mục/checklist DoD mới**, đừng chỉ xử lý một lần cho feature này.
+- [ ] **Cập nhật DoD ngay trong cùng PR:** nếu hai câu trên trả lời "có", sửa file này (thêm mục / thêm dòng checklist / thêm tripwire) **cùng PR** với fix/feature, kèm blockquote nêu sự cố hoặc rủi ro đã dẫn tới hàng rào — để mục mới tự giải thích vì sao tồn tại (như 2b/2c đang làm). Ghi vào CHANGELOG nếu DoD đổi.
+- [ ] **Không cần đổi:** nếu class lỗi đã có hàng rào, hoặc rủi ro là một-lần không tái diễn → không đụng DoD; ghi một dòng lý do trong mô tả PR để biết đã cân nhắc, không phải bị quên.

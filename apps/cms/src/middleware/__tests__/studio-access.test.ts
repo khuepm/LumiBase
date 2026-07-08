@@ -7,7 +7,9 @@ import type { PermissionBundle } from '../../services/permission-service';
 const bundleMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/permission-service', () => ({
-  PermissionService: vi.fn().mockImplementation(() => ({ bundle: bundleMock })),
+  PermissionService: vi.fn().mockImplementation(function () {
+    return { bundle: bundleMock };
+  }),
 }));
 
 function principal(raw: Record<string, unknown>): AuthPrincipal {

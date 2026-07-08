@@ -19,7 +19,7 @@ const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
 export const userConsents = pgTable(
-  'user_consents',
+  'lumibase_user_consents',
   {
     id: id(),
     siteId: text('site_id')

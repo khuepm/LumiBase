@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T10:56:36.915Z
+sourceLang: en
+contentHash: 79cfea483ac84a02
+---
+
 # Private Admin Path
 
 The private admin path is the secret Studio entry point created during setup, for example `/lumi-7f3a9c`. It replaces predictable paths such as `/admin` and reduces automated login discovery.
