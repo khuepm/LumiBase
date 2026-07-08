@@ -11,6 +11,7 @@ function makeSiteConfig(i18n: SiteConfig['i18n']): SiteConfig {
     projectName: 'test',
     i18n,
     navbar: { title: 'Test', items: [] },
+    sidebar: { docs: [] },
     footer: { style: 'dark', links: [], copyright: '' },
   };
 }
