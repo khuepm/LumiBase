@@ -19,15 +19,18 @@ export const stagger: Variants = {
 export function Reveal({
   children,
   className,
+  style,
   delay = 0,
 }: {
   children: ReactNode;
   className?: string;
+  style?: React.CSSProperties;
   delay?: number;
 }) {
   return (
     <motion.div
       className={className}
+      style={style}
       variants={fadeUp}
       initial="hidden"
       whileInView="show"

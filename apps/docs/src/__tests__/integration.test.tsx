@@ -20,15 +20,20 @@ import { NotFoundPage } from '../pages/NotFoundPage';
 
 // Mock IntersectionObserver for jsdom (used by TableOfContents)
 beforeAll(() => {
-  const mockIntersectionObserver = vi.fn().mockImplementation(() => ({
-    observe: vi.fn(),
-    unobserve: vi.fn(),
-    disconnect: vi.fn(),
-    root: null,
-    rootMargin: '',
-    thresholds: [],
-    takeRecords: () => [],
-  }));
+  // `function` (not arrow): jsdom/TableOfContents calls `new IntersectionObserver`,
+  // and vitest 4 invokes the mock implementation as a constructor — arrow
+  // functions are not constructable.
+  const mockIntersectionObserver = vi.fn().mockImplementation(function () {
+    return {
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+      disconnect: vi.fn(),
+      root: null,
+      rootMargin: '',
+      thresholds: [],
+      takeRecords: () => [],
+    };
+  });
   vi.stubGlobal('IntersectionObserver', mockIntersectionObserver);
 
   // Patch global Request to handle AbortSignal compatibility issue
@@ -54,6 +59,28 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
 });
+
+// Mock docs.config.json so the sidebar tree (built from siteConfig.sidebar.docs)
+// matches this test suite's fixture slugs, independent of the real site config.
+vi.mock('../../docs.config.json', () => ({
+  default: {
+    title: 'Lumibase',
+    tagline: '',
+    url: 'https://example.com',
+    baseUrl: '/',
+    organizationName: 'test',
+    projectName: 'test',
+    i18n: { defaultLocale: 'en', locales: ['en', 'vi'], localeNames: { en: 'English', vi: 'Tiếng Việt' } },
+    navbar: { title: 'Lumibase', items: [] },
+    sidebar: {
+      docs: [
+        { type: 'category', label: 'features', items: ['features/collections', 'features/relations'] },
+        { type: 'category', label: 'Getting Started', items: ['README'] },
+      ],
+    },
+    footer: { style: 'dark', links: [], copyright: '' },
+  },
+}));
 
 // Mock the virtual:docs-registry module with test data
 vi.mock('virtual:docs-registry', () => {

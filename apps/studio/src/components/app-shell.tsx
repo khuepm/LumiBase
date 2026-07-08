@@ -11,14 +11,18 @@ import {
   LogOut,
   Radar,
   BarChart3,
+  Search,
 } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { NotificationsPanel } from '@/components/notifications-panel';
 import { ReleaseUpdateNotice } from '@/components/release-update-notice';
+import { ConnectionStatusDot } from '@/components/connection-status-dot';
 import { CommandPalette } from '@/components/command-palette';
-import { clearActiveToken, getApiClient, hasActiveToken } from '@/lib/api';
+import { SearchPalette } from '@/components/search-palette';
+import { clearActiveToken, getApiClient, hasActiveToken, logout } from '@/lib/api';
 import { VersionInfoFooter } from '@/components/version-info-footer';
 import { getAdminBase } from '@/lib/admin-base';
 import { useInboxData } from '@/modules/mission-control/use-inbox';
@@ -82,9 +86,24 @@ interface AppShellProps {
  *  - Icon SVGs are aria-hidden (decorative); link text is the accessible label.
  */
 export function AppShell({ children }: AppShellProps) {
+  const { t } = useTranslation('ui');
   const { location } = useRouterState();
   const navigate = useNavigate();
   const adminBase = getAdminBase(location.pathname);
+
+  // Content search palette (distinct from the nav command palette on ⌘K):
+  // opened from the TopBar button or ⌘P / Ctrl+P.
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -152,8 +171,10 @@ export function AppShell({ children }: AppShellProps) {
                 : 'content';
 
   const handleLogout = () => {
-    clearActiveToken();
-    window.location.assign(adminBase ? `${adminBase}/login` : '/');
+    // Revoke server-side (best-effort), clear local tokens, then redirect.
+    void logout().finally(() => {
+      window.location.assign(adminBase ? `${adminBase}/login` : '/');
+    });
   };
 
   return (
@@ -216,6 +237,19 @@ export function AppShell({ children }: AppShellProps) {
           </div>
           {/* Right-side topbar actions */}
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              aria-label={t('search_open', 'Search content')}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-2.5 text-sm text-muted-foreground shadow-sm transition hover:bg-muted hover:text-foreground"
+            >
+              <Search className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden sm:inline">{t('search_placeholder', 'Search content…')}</span>
+              <kbd className="hidden rounded border border-border bg-muted px-1 text-[10px] font-medium sm:inline">
+                ⌘P
+              </kbd>
+            </button>
+            <ConnectionStatusDot />
             <ReleaseUpdateNotice compact />
             <NotificationsPanel />
             <button
@@ -241,6 +275,8 @@ export function AppShell({ children }: AppShellProps) {
         onClose={() => setPaletteOpen(false)}
         adminBase={adminBase}
       />
+
+      <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   );
 }

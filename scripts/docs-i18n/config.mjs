@@ -38,29 +38,26 @@ export const SYNC_LOG_PATH = path.join(DOCS_ROOT, 'i18n-sync-log.md');
 export const SYNC_REPORT_PATH = path.join(DOCS_ROOT, '.i18n', 'last-report.json');
 
 /**
- * Machine-translation engine configuration.
- * Engine + credentials are read from the environment so no secret lives in the repo.
+ * Translation engine configuration.
  *
- *   DOCS_MT_ENGINE   = 'deepl' | 'google'   (default: 'deepl')
- *   DEEPL_API_KEY    = <key>                (DeepL)
- *   DEEPL_API_HOST   = api-free.deepl.com | api.deepl.com (default: api-free.deepl.com)
- *   GOOGLE_TRANSLATE_API_KEY = <key>        (Google Cloud Translation v2)
+ * Translation is performed by Claude (Anthropic Messages API) — no third-party
+ * machine-translation services. Credentials are read from the environment so no
+ * secret lives in the repo.
+ *
+ *   ANTHROPIC_API_KEY  = <key>                  (required for actual translation)
+ *   ANTHROPIC_MODEL    = <model id>             (default: claude-sonnet-4-6)
+ *   ANTHROPIC_BASE_URL = https://api.anthropic.com (override for proxies)
+ *   ANTHROPIC_MAX_TOKENS = <int>                (default: 8192 per request)
  */
 export function getEngineConfig(env = process.env) {
-  const engine = (env.DOCS_MT_ENGINE || 'deepl').toLowerCase();
   return {
-    engine,
-    deepl: {
-      apiKey: env.DEEPL_API_KEY || '',
-      host: env.DEEPL_API_HOST || 'api-free.deepl.com',
-    },
-    google: {
-      apiKey: env.GOOGLE_TRANSLATE_API_KEY || '',
-    },
+    engine: 'claude',
+    apiKey: env.ANTHROPIC_API_KEY || '',
+    model: env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+    baseUrl: env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com',
+    maxTokens: Number(env.ANTHROPIC_MAX_TOKENS || 8192),
   };
 }
 
-/** DeepL language codes per locale. */
-export const DEEPL_LANG = { en: 'EN-US', vi: 'VI' };
-/** Google language codes per locale. */
-export const GOOGLE_LANG = { en: 'en', vi: 'vi' };
+/** Full language names per locale, used in the translation instruction to Claude. */
+export const LOCALE_NAMES = { en: 'English', vi: 'Vietnamese' };

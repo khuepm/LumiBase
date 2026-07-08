@@ -14,6 +14,7 @@ import { AGENT_RUNS_QUEUE, type AgentRunJobPayload } from '../services/agent-run
 import { AgentArtifactService } from '../services/agent-artifact-service';
 import { AgentEvaluationService } from '../services/agent-evaluation-service';
 import { AgentMemoryService } from '../services/agent-memory-service';
+import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { AgentRunService } from '../services/agent-run-service';
 import { CORE_SKILLS } from '../services/ai-harness';
 import { ToolRegistryService } from '../services/tool-registry-service';
@@ -132,7 +133,7 @@ agentRouter.post('/goals', async (c) => {
   }).returning();
 
   if (parsed.data.execution === 'async') {
-    const runService = new AgentRunService(db, siteId, queue);
+    const runService = new AgentRunService(db, siteId, queue, buildAgentNotifier(c));
     const run = await runService.ensureRun({
       goalId: goal!.id,
       agentName: parsed.data.assigneeAgent,
@@ -277,7 +278,7 @@ agentRouter.post('/goals/:id/decompose', async (c) => {
 /** Settles a parent goal from its children's terminal states (Req 10.5). */
 agentRouter.post('/goals/:id/settle', async (c) => {
   const { PlannerService, PlannerError } = await import('../services/planner-service');
-  const planner = new PlannerService({ db: c.get('db'), siteId: c.get('siteId') });
+  const planner = new PlannerService({ db: c.get('db'), siteId: c.get('siteId'), notify: buildAgentNotifier(c) });
   try {
     return c.json({ data: await planner.settleParent(c.req.param('id')) });
   } catch (err) {

@@ -88,11 +88,11 @@ async function main() {
 
   // Base rows the demo depends on (same upserts as seed-dev — harmless re-run).
   await db.execute(
-    sql`INSERT INTO sites (id, name, domain) VALUES (${SITE}, 'Demo Site', 'localhost')
+    sql`INSERT INTO lumibase_sites (id, name, domain) VALUES (${SITE}, 'Demo Site', 'localhost')
         ON CONFLICT (id) DO NOTHING`,
   );
   await db.execute(
-    sql`INSERT INTO system_state (id, state) VALUES ('singleton', 'initialized')
+    sql`INSERT INTO lumibase_system_state (id, state) VALUES ('singleton', 'initialized')
         ON CONFLICT (id) DO NOTHING`,
   );
 

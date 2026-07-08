@@ -4,7 +4,7 @@
 
 Kế hoạch triển khai **Git Integration (GitHub / GitLab)** gồm 6 phase tuần tự (A→F) theo kiến trúc trong design.md. Phase A đặt nền (schema + provider abstraction + token encryption); Phase B làm kết nối & xác thực + UI Studio; Phase C làm webhook + PR/CI dashboard + log viewer; Phase D làm preview environment; Phase E làm status check ngược + provenance + notification; Phase F làm GitOps + autonomy. **MVP = Phase A–D.** Mỗi task gắn ref tới requirement và section thiết kế. Theo DoD, có thêm task Setup-impact và Docs.
 
-> **Trạng thái triển khai:** Phase **A–F đã hoàn thành** + **G (setup-impact, docs)** (module `apps/cms/src/modules/git-integration/`, schema + migration `0038`, Studio `Settings → Integrations → Git repositories`, unit tests). **Follow-up** (chưa làm): schema apply qua HITL harness (13.3), notification dispatcher đầy đủ (12.1), vòng lặp thực thi agent `git-sync` (14.3), auto-trigger GitOps khi merge `main`, YAML config. Luồng OAuth/webhook/preview với provider thật + apply migration cần verify trên môi trường có Postgres + GitHub/GitLab.
+> **Trạng thái triển khai:** Phase **A–F đã hoàn thành** + **G (setup-impact, docs)** (module `apps/cms/src/modules/git-integration/`, schema + migration `0007_git_integration` (bảng `lumibase_git_*`), Studio `Settings → Integrations → Git repositories`, unit tests). **Follow-up** (chưa làm): schema apply qua HITL harness (13.3), notification dispatcher đầy đủ (12.1), vòng lặp thực thi agent `git-sync` (14.3), auto-trigger GitOps khi merge `main`, YAML config. Luồng OAuth/webhook/preview với provider thật + apply migration cần verify trên môi trường có Postgres + GitHub/GitLab.
 
 ## Tasks
 
@@ -12,7 +12,7 @@ Kế hoạch triển khai **Git Integration (GitHub / GitLab)** gồm 6 phase tu
 
 - [x] 1. Schema + migration
   - [x] 1.1 Tạo `packages/database/src/schema/git-integration.ts` với 6 bảng `git_integrations`, `git_pull_requests`, `git_ci_runs`, `git_webhook_events`, `git_preview_envs`, `git_provenance` (id `nanoid()`, `site_id` cascade, timestamps, unique/index như design §3); export từ `packages/database/src/schema/index.ts` (Req 1, 5, 6, 9, 10, 14; design §3)
-  - [x] 1.2 Sinh migration Drizzle (viết tay `0038_git_integration.sql`, idempotent `CREATE TABLE IF NOT EXISTS`) (Req 14.3; design §3)
+  - [x] 1.2 Sinh migration Drizzle (viết tay `0007_git_integration.sql`, bảng `lumibase_git_*`, idempotent `CREATE TABLE IF NOT EXISTS`) (Req 14.3; design §3)
   - [x] 1.3 Thêm tất cả bảng mới vào `packages/database/migrations/rls-policies.sql` để cách ly tenant tầng DB (Req 14.2; design §3)
   - [x] 1.4 Thêm Zod schema + resource types chia sẻ ở `packages/shared/src/schemas/git-integration.ts` (Req 3, 5; design §4)
 

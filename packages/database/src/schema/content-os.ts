@@ -21,7 +21,7 @@ const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
  * Promotions require human approval; demotions are automatic on incidents.
  */
 export const agentAutonomyGrants = pgTable(
-  'agent_autonomy_grants',
+  'lumibase_agent_autonomy_grants',
   {
     id: id(),
     siteId: text('site_id')
@@ -54,7 +54,7 @@ export const agentAutonomyGrants = pgTable(
  * Sources: veto, eval_fail, human_report, load_guard, runtime_error.
  */
 export const agentIncidents = pgTable(
-  'agent_incidents',
+  'lumibase_agent_incidents',
   {
     id: id(),
     siteId: text('site_id')
@@ -79,7 +79,7 @@ export const agentIncidents = pgTable(
 );
 
 export const contentIntents = pgTable(
-  'content_intents',
+  'lumibase_content_intents',
   {
     id: id(),
     siteId: text('site_id')
@@ -125,7 +125,7 @@ export const contentIntents = pgTable(
  * for the same fingerprint (Properties 4/11).
  */
 export const contentDrifts = pgTable(
-  'content_drifts',
+  'lumibase_content_drifts',
   {
     id: id(),
     siteId: text('site_id')
@@ -170,7 +170,7 @@ export const contentDrifts = pgTable(
  * mid-run (Property 12). At most one `active` version per site.
  */
 export const constitutions = pgTable(
-  'constitutions',
+  'lumibase_constitutions',
   {
     id: id(),
     siteId: text('site_id')
@@ -205,7 +205,7 @@ export const constitutions = pgTable(
  * and a token can never exceed what the role declares (Req 10.4).
  */
 export const agentRoles = pgTable(
-  'agent_roles',
+  'lumibase_agent_roles',
   {
     id: id(),
     siteId: text('site_id')
@@ -236,7 +236,7 @@ export const agentRoles = pgTable(
  * pausing reuse their own state (agent_runs.status, content_intents.status).
  */
 export const agentFreezes = pgTable(
-  'agent_freezes',
+  'lumibase_agent_freezes',
   {
     id: id(),
     siteId: text('site_id')

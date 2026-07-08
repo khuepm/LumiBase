@@ -6,8 +6,11 @@ import type { AppEnv } from '../../env';
 import { withAuth } from '../auth';
 
 async function signToken(payload: Record<string, unknown>, secret = 'test-secret') {
+  // Session tokens must carry a realm audience (`studio`/`frontend`);
+  // `verifyCustomJwt` pins it so single-purpose tokens can't be replayed.
   return new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
+    .setAudience('studio')
     .setIssuedAt()
     .setExpirationTime('24h')
     .sign(new TextEncoder().encode(secret));
@@ -93,5 +96,58 @@ describe('withAuth custom JWT tenant binding', () => {
     const body = await res.json() as { data: { userId: string; roles: string[] } };
     expect(body.data.userId).toBe('user-1');
     expect(body.data.roles).toEqual(['member']);
+  });
+
+  it('rejects a token whose tokenVersion is older than the stored one (CWE-613 revocation)', async () => {
+    const token = await signToken({
+      userId: 'user-1',
+      email: 'user@example.com',
+      roles: ['member'],
+      siteId: 'site-a',
+      tokenVersion: 0,
+    });
+    // Stored user is now on tokenVersion 1 (e.g. after a password change).
+    const app = buildApp(
+      makeSelectOnlyDb([
+        [],
+        [{ id: 'user-1', status: 'active', isBootstrap: false, tokenVersion: 1 }],
+        [{ roleId: 'member' }],
+      ]),
+      'site-a',
+    );
+
+    const res = await app.request(
+      '/protected',
+      { headers: { Authorization: `Bearer ${token}` } },
+      { JWT_SECRET: 'test-secret' },
+    );
+
+    expect(res.status).toBe(401);
+  });
+
+  it('accepts a token whose tokenVersion matches the stored one', async () => {
+    const token = await signToken({
+      userId: 'user-1',
+      email: 'user@example.com',
+      roles: ['member'],
+      siteId: 'site-a',
+      tokenVersion: 2,
+    });
+    const app = buildApp(
+      makeSelectOnlyDb([
+        [],
+        [{ id: 'user-1', status: 'active', isBootstrap: false, tokenVersion: 2 }],
+        [{ roleId: 'member' }],
+      ]),
+      'site-a',
+    );
+
+    const res = await app.request(
+      '/protected',
+      { headers: { Authorization: `Bearer ${token}` } },
+      { JWT_SECRET: 'test-secret' },
+    );
+
+    expect(res.status).toBe(200);
   });
 });

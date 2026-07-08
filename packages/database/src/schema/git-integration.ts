@@ -32,7 +32,7 @@ const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
 /** A connection between one site and one repository on a Git provider. */
 export const gitIntegrations = pgTable(
-  'git_integrations',
+  'lumibase_git_integrations',
   {
     id: id(),
     siteId: text('site_id')
@@ -77,7 +77,7 @@ export const gitIntegrations = pgTable(
 
 /** Cached pull/merge request state per integration. */
 export const gitPullRequests = pgTable(
-  'git_pull_requests',
+  'lumibase_git_pull_requests',
   {
     id: id(),
     siteId: text('site_id')
@@ -112,7 +112,7 @@ export const gitPullRequests = pgTable(
 
 /** CI run + jobs (+ stored-log reference) per integration. */
 export const gitCiRuns = pgTable(
-  'git_ci_runs',
+  'lumibase_git_ci_runs',
   {
     id: id(),
     siteId: text('site_id')
@@ -147,7 +147,7 @@ export const gitCiRuns = pgTable(
 
 /** Raw inbound webhook events — replay-able, idempotent by delivery id. */
 export const gitWebhookEvents = pgTable(
-  'git_webhook_events',
+  'lumibase_git_webhook_events',
   {
     id: id(),
     siteId: text('site_id')
@@ -180,7 +180,7 @@ export const gitWebhookEvents = pgTable(
 
 /** Ephemeral preview environment for a pull request. */
 export const gitPreviewEnvs = pgTable(
-  'git_preview_envs',
+  'lumibase_git_preview_envs',
   {
     id: id(),
     siteId: text('site_id')
@@ -208,7 +208,7 @@ export const gitPreviewEnvs = pgTable(
 
 /** Links a commit / PR to the content or schema change it produced. */
 export const gitProvenance = pgTable(
-  'git_provenance',
+  'lumibase_git_provenance',
   {
     id: id(),
     siteId: text('site_id')

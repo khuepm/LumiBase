@@ -4,23 +4,25 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 /**
- * Translation memory manager tests (studio-ops-ui task 2.2).
+ * Translation memory manager tests (studio-ops-ui task 2.2; translation-memory-ui Req 1–2).
  *
  * **Validates: Requirements 2.2, 2.3, 2.4**
  */
 
+const tm = {
+  list: vi.fn(),
+  upsert: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+  lookup: vi.fn(),
+  translate: vi.fn(),
+};
+
 vi.mock('@/lib/api', () => ({
-  getActiveToken: () => 'token',
-  getActiveSite: () => 'site_1',
+  getApiClient: () => ({ tm }),
 }));
 
 import { TranslationMemoryPage } from '../tm-page';
-
-const fetchMock = vi.fn();
-
-function jsonResponse(data: unknown) {
-  return { ok: true, json: () => Promise.resolve({ data }) } as Response;
-}
 
 function renderPage() {
   const client = new QueryClient({
@@ -34,22 +36,14 @@ function renderPage() {
 }
 
 beforeEach(() => {
-  fetchMock.mockImplementation((input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes('/lookup')) {
-      return Promise.resolve(jsonResponse({ match: { targetText: 'Xin chào', score: 92 } }));
-    }
-    if (url.includes('/translate')) {
-      return Promise.resolve(jsonResponse({ translated: '[echo:vi] Hello', provider: 'echo' }));
-    }
-    return Promise.resolve(jsonResponse([]));
-  });
-  vi.stubGlobal('fetch', fetchMock);
+  tm.list.mockResolvedValue({ data: [], meta: { total: 0, limit: 25, offset: 0 } });
+  tm.upsert.mockResolvedValue({ data: { id: 'tm_1' } });
+  tm.lookup.mockResolvedValue({ targetText: 'Xin chào', similarity: 92, source: 'human' });
+  tm.translate.mockResolvedValue({ data: { translated: '[echo:vi] Hello', provider: 'echo' } });
 });
 
 afterEach(() => {
   cleanup();
-  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -63,16 +57,12 @@ describe('TranslationMemoryPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save entry' }));
 
     await waitFor(() => {
-      const post = fetchMock.mock.calls.find(
-        ([input, init]) =>
-          String(input) === '/api/v1/tm' && (init as RequestInit)?.method === 'POST',
-      );
-      expect(post).toBeDefined();
-      expect(JSON.parse((post![1] as RequestInit).body as string)).toEqual({
+      expect(tm.upsert).toHaveBeenCalledWith({
         sourceLang: 'en',
         targetLang: 'vi',
         sourceText: 'Hello',
         targetText: 'Xin chào',
+        source: 'human',
       });
     });
   });
@@ -85,7 +75,8 @@ describe('TranslationMemoryPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Lookup' }));
 
     expect(await screen.findByText('Xin chào')).toBeInTheDocument();
-    expect(screen.getByText('score 92')).toBeInTheDocument();
+    expect(screen.getByText('similarity 92%')).toBeInTheDocument();
+    expect(tm.lookup).toHaveBeenCalledWith({ query: 'Hello', sourceLang: 'en', targetLang: 'vi' });
   });
 
   it('renders the translate pipeline result (Req 2.4)', async () => {
@@ -96,5 +87,6 @@ describe('TranslationMemoryPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Translate' }));
 
     expect(await screen.findByText(/\[echo:vi\] Hello/)).toBeInTheDocument();
+    expect(tm.translate).toHaveBeenCalledWith({ text: 'Hello', from: 'en', to: 'vi' });
   });
 });

@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T10:56:37.027Z
+sourceLang: en
+contentHash: a71ace1da2c7b5a6
+---
+
 # ADR-002: Runtime Abstraction Layer for Dual Deployment
 
 **Date:** 2024-02-10

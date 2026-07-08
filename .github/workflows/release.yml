@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Validate tag matches root package version
         run: |
@@ -39,10 +39,10 @@ jobs:
           NODE
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -70,7 +70,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -121,13 +121,13 @@ jobs:
     timeout-minutes: 20
     environment: production
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -181,13 +181,29 @@ jobs:
             output: apps/studio/dist
             project: lumibase-studio
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
+
+      # Only the marketplace app needs its submodule so that
+      # `pnpm --filter @lumibase/marketplace build` can produce apps/marketplace/out.
+      # It lives in the private lumibase-ai/marketplace repo, which the runner's
+      # GITHUB_TOKEN cannot read, so authenticate with the MARKETPLACE_SUBMODULE_TOKEN
+      # PAT via a scoped insteadOf rewrite. Init ONLY this path — enterprise/extensions
+      # are private too and a blanket `submodules: true` checkout would abort with
+      # "repository not found".
+      - name: Fetch marketplace submodule
+        if: matrix.app.name == 'marketplace'
+        env:
+          MARKETPLACE_SUBMODULE_TOKEN: ${{ secrets.MARKETPLACE_SUBMODULE_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf "https://github.com/lumibase-ai/"
+          git submodule update --init --depth=1 apps/marketplace
+          git config --global --unset url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -195,7 +211,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      # marketplace is a standalone submodule excluded from the pnpm workspace,
+      # so it installs & builds on its own (its deps are not in the root lockfile).
+      - name: Build Pages app (marketplace, standalone)
+        if: matrix.app.name == 'marketplace'
+        working-directory: apps/marketplace
+        run: |
+          pnpm install --no-frozen-lockfile --ignore-workspace
+          pnpm build
+
       - name: Build Pages app
+        if: matrix.app.name != 'marketplace'
         run: pnpm --filter ${{ matrix.app.package }} build
 
       - name: Check Cloudflare credentials
@@ -225,7 +251,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Set IMAGE_NAME
         run: |
@@ -273,13 +299,13 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false

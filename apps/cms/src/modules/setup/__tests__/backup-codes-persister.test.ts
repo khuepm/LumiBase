@@ -108,7 +108,7 @@ function makeFakeDb(captured: {
             // users insert uses `.returning(...)`; roles insert uses
             // `.onConflictDoNothing().returning(...)`.
             async returning() {
-              if (tableName === 'roles') {
+              if (tableName === 'lumibase_roles') {
                 return [{ id: 'role_admin' }];
               }
               return [
@@ -125,7 +125,7 @@ function makeFakeDb(captured: {
             onConflictDoNothing() {
               return {
                 async returning() {
-                  if (tableName === 'roles') {
+                  if (tableName === 'lumibase_roles') {
                     return [{ id: 'role_admin' }];
                   }
                   return [];
@@ -137,11 +137,11 @@ function makeFakeDb(captured: {
             },
             // bare await (admin_backup_codes / audit_log)
             then(resolve: (v: unknown) => void) {
-              if (tableName === 'admin_backup_codes') {
+              if (tableName === 'lumibase_admin_backup_codes') {
                 for (const r of rows as Array<Record<string, unknown>>) {
                   captured.backupRows.push(r);
                 }
-              } else if (tableName === 'audit_log') {
+              } else if (tableName === 'lumibase_audit_log') {
                 captured.auditRows.push(rows as Record<string, unknown>);
               }
               resolve(undefined);

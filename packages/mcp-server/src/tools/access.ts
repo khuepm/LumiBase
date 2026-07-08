@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { registerCrud } from './_crud.js';
 import { confirmDescription, okText, run } from './_shared.js';
+import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 const roleSchema = z.object({
   key: z.string().min(1).max(96).optional(),
@@ -54,13 +55,13 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Attach a policy to a role. Conflicts/warnings may require overrideWarnings=true.',
       inputSchema: {
-        id: z.string().min(1).describe('Role id.'),
-        policyId: z.string().min(1),
+        id: idPathSegmentSchema.describe('Role id.'),
+        policyId: idPathSegmentSchema,
         priority: z.number().int().optional(),
         overrideWarnings: z.boolean().optional(),
       },
     },
-    async ({ id, ...body }) => run(() => client.post<unknown>(`/roles/${id}/policies`, body)),
+    async ({ id, ...body }) => run(() => client.post<unknown>(`/roles/${encodePathSegment(id)}/policies`, body)),
   );
 
   server.registerTool(
@@ -68,14 +69,14 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Detach a policy from a role. DESTRUCTIVE — pass confirm=true.',
       inputSchema: {
-        id: z.string().min(1).describe('Role id.'),
-        policyId: z.string().min(1),
+        id: idPathSegmentSchema.describe('Role id.'),
+        policyId: idPathSegmentSchema,
         confirm: z.literal(true).describe(confirmDescription),
       },
     },
     async ({ id, policyId }) =>
       run(async () => {
-        await client.delete(`/roles/${id}/policies/${policyId}`);
+        await client.delete(`/roles/${encodePathSegment(id)}/policies/${encodePathSegment(policyId)}`);
         return okText(`Policy "${policyId}" detached from role "${id}".`);
       }),
   );
@@ -84,9 +85,9 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     'assign_role_user',
     {
       description: "Assign a role to a user (sets the user's primary role for this site).",
-      inputSchema: { id: z.string().min(1).describe('Role id.'), userId: z.string().min(1) },
+      inputSchema: { id: idPathSegmentSchema.describe('Role id.'), userId: idPathSegmentSchema },
     },
-    async ({ id, userId }) => run(() => client.post<unknown>(`/roles/${id}/users`, { userId })),
+    async ({ id, userId }) => run(() => client.post<unknown>(`/roles/${encodePathSegment(id)}/users`, { userId })),
   );
 
   server.registerTool(
@@ -94,14 +95,14 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     {
       description: "Remove a user's role assignment. DESTRUCTIVE — pass confirm=true.",
       inputSchema: {
-        id: z.string().min(1).describe('Role id.'),
-        userId: z.string().min(1),
+        id: idPathSegmentSchema.describe('Role id.'),
+        userId: idPathSegmentSchema,
         confirm: z.literal(true).describe(confirmDescription),
       },
     },
     async ({ id, userId }) =>
       run(async () => {
-        await client.delete(`/roles/${id}/users/${userId}`);
+        await client.delete(`/roles/${encodePathSegment(id)}/users/${encodePathSegment(userId)}`);
         return okText(`User "${userId}" removed from role "${id}".`);
       }),
   );
@@ -120,9 +121,9 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     'add_policy_permission',
     {
       description: 'Add a permission row (collection + action) to a policy.',
-      inputSchema: { id: z.string().min(1).describe('Policy id.'), ...permissionSchema.shape },
+      inputSchema: { id: idPathSegmentSchema.describe('Policy id.'), ...permissionSchema.shape },
     },
-    async ({ id, ...body }) => run(() => client.post<unknown>(`/policies/${id}/permissions`, body)),
+    async ({ id, ...body }) => run(() => client.post<unknown>(`/policies/${encodePathSegment(id)}/permissions`, body)),
   );
 
   server.registerTool(
@@ -130,13 +131,13 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Update a permission row on a policy (partial PATCH).',
       inputSchema: {
-        id: z.string().min(1).describe('Policy id.'),
-        permId: z.string().min(1).describe('Permission row id.'),
+        id: idPathSegmentSchema.describe('Policy id.'),
+        permId: idPathSegmentSchema.describe('Permission row id.'),
         ...permissionSchema.partial().shape,
       },
     },
     async ({ id, permId, ...body }) =>
-      run(() => client.patch<unknown>(`/policies/${id}/permissions/${permId}`, body)),
+      run(() => client.patch<unknown>(`/policies/${encodePathSegment(id)}/permissions/${encodePathSegment(permId)}`, body)),
   );
 
   server.registerTool(
@@ -144,14 +145,14 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Delete a permission row from a policy. DESTRUCTIVE — pass confirm=true.',
       inputSchema: {
-        id: z.string().min(1).describe('Policy id.'),
-        permId: z.string().min(1).describe('Permission row id.'),
+        id: idPathSegmentSchema.describe('Policy id.'),
+        permId: idPathSegmentSchema.describe('Permission row id.'),
         confirm: z.literal(true).describe(confirmDescription),
       },
     },
     async ({ id, permId }) =>
       run(async () => {
-        await client.delete(`/policies/${id}/permissions/${permId}`);
+        await client.delete(`/policies/${encodePathSegment(id)}/permissions/${encodePathSegment(permId)}`);
         return okText(`Permission "${permId}" deleted from policy "${id}".`);
       }),
   );
@@ -161,13 +162,13 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Attach a policy directly to a user. Warnings may require overrideWarnings=true.',
       inputSchema: {
-        id: z.string().min(1).describe('Policy id.'),
-        userId: z.string().min(1),
+        id: idPathSegmentSchema.describe('Policy id.'),
+        userId: idPathSegmentSchema,
         priority: z.number().int().optional(),
         overrideWarnings: z.boolean().optional(),
       },
     },
-    async ({ id, ...body }) => run(() => client.post<unknown>(`/policies/${id}/users`, body)),
+    async ({ id, ...body }) => run(() => client.post<unknown>(`/policies/${encodePathSegment(id)}/users`, body)),
   );
 
   server.registerTool(
@@ -175,14 +176,14 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Detach a policy from a user. DESTRUCTIVE — pass confirm=true.',
       inputSchema: {
-        id: z.string().min(1).describe('Policy id.'),
-        userId: z.string().min(1),
+        id: idPathSegmentSchema.describe('Policy id.'),
+        userId: idPathSegmentSchema,
         confirm: z.literal(true).describe(confirmDescription),
       },
     },
     async ({ id, userId }) =>
       run(async () => {
-        await client.delete(`/policies/${id}/users/${userId}`);
+        await client.delete(`/policies/${encodePathSegment(id)}/users/${encodePathSegment(userId)}`);
         return okText(`Policy "${id}" detached from user "${userId}".`);
       }),
   );

@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { confirmDescription, okText, run } from './_shared.js';
+import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 const relationInputSchema = {
   manyCollection: z.string().min(1).describe('Collection that holds the foreign key (the "many" side).'),
@@ -42,13 +43,13 @@ export function registerRelationTools(server: McpServer, client: LumiBaseClient)
     {
       description: 'Delete a relation by id. DESTRUCTIVE — warn the user first and pass confirm=true.',
       inputSchema: {
-        id: z.string().min(1),
+        id: idPathSegmentSchema,
         confirm: z.literal(true).describe(confirmDescription),
       },
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/relations/${id}`);
+        await client.delete(`/relations/${encodePathSegment(id)}`);
         return okText(`Relation "${id}" deleted.`);
       }),
   );

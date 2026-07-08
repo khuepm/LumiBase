@@ -1,15 +1,25 @@
+---
+version: 1
+lastUpdated: 2026-06-23T13:05:48.000Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: b070858cd46928df
+mtEngine: claude
+syncStatus: machine-translated
+---
+
 # Architecture Overview
 
-## 1. Sơ đồ tầng
+## 1. Layer diagram
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ Clients                                                          │
+│ Clients (client applications)                                    │
 │  - apps/studio    (React + Vite + TanStack Router) — admin UI    │
 │  - apps/consumer  (Next.js)  — delivery demo                     │
-│  - apps/docs      (Vite SPA) — docs viewer                       │
-│  - apps/landing   (Next.js)  — public landing                    │
-│  - 3rd-party SDK / SCIM / webhooks                               │
+│  - apps/docs      (Vite SPA) — documentation site                │
+│  - apps/landing   (Next.js)  — public home page                  │
+│  - third-party SDK / SCIM / webhooks                             │
 └───────────────▲──────────────────────────────▲───────────────────┘
                 │ REST + Hydration             │ WSS realtime
 ┌───────────────┴──────────────────────────────┴───────────────────┐
@@ -31,7 +41,7 @@
 │   /flows /marketplace /materialize  (POST-GA)                    │
 │   /search                           (MeiliSearch)                │
 │   /tm                               (Translation Memory)         │
-│   /ai                               (AI Copilot + HITL approvals)│
+│   /ai                               (AI Copilot + Agent Harness)  │
 │   /admin/backup /admin/restore      (config GitOps)              │
 │   /deliver/page/:slug               (1-roundtrip)                │
 │   /realtime                         (WS upgrade)                 │
@@ -39,7 +49,7 @@
 │   /health                           (liveness probe)             │
 │   /scim/v2/*                        (SCIM 2.0 provisioning)      │
 │                                                                  │
-│ Middleware order:                                                │
+│ Middleware order:                                               │
 │   logger → metrics → runtime → cors → tenant → auth → db → rls   │
 │                                                                  │
 │ Services:                                                        │
@@ -63,7 +73,7 @@
                                   └──────────────────────────────────┘
 ```
 
-## 2. Monorepo layout
+## 2. Monorepo structure
 
 ```
 lumibase/
@@ -97,35 +107,63 @@ lumibase/
 │   ├── ai-skills/            # CORE_SKILLS registry for AI Copilot
 │   ├── shared/               # types, zod schemas, policy DSL, field DSL
 │   ├── ui/                   # shadcn + cva tokens
-│   ├── sdk/                  # JS SDK (REST+WS) cho client/extension
-│   └── extension-sdk/        # types + helpers cho dev extension
+│   ├── sdk/                  # JS SDK (REST+WS) for clients/extensions
+│   └── extension-sdk/        # types + helpers for extension developers
 ├── docker/                   # Dockerfile, docker-compose.{yml,monitoring,prod}
 │   ├── prometheus/  grafana/ scripts/
 └── docs/
 ```
 
-## 3. Các tầng logic chính (apps/cms)
+## 3. Main logic layers (apps/cms)
 
-1. **Schema layer** — quản lý `collections`, `fields`, `relations`, sinh ra "virtual schema" trong cache.
-2. **Item layer** — CRUD generic dựa trên virtual schema; build query Drizzle động. Hỗ trợ `materialized_collections` cho hot path.
-3. **Permission layer** — đánh giá Policy DSL trước mỗi hành động; trả về **field mask** (read/write).
-4. **Delivery layer** — endpoints public, áp permission của role "public" + cache-tag.
-5. **Realtime layer** — Cloudflare Durable Object per `site_id` (mode `cloudflare`); broadcast event chuẩn hoá. Có protocol cho **collaborative cursors** (CRDT-lite, last-write-wins + Y-style update vector).
-6. **Extension layer** — load manifest, mount routes/hooks/UI vào registry; gate bằng capability. Tích hợp Marketplace có ký số.
-7. **AI layer** — `AISecureHarness` đánh giá rủi ro, kiểm tra capability, chặn HITL cho skill nguy hiểm. Skills được khai báo trong `@lumibase/ai-skills`.
-8. **Flows layer** — graph các operation (condition, transform, http, mail, log, sleep, run-extension, item.*, notify) chạy theo trigger (webhook, event, schedule, manual).
-9. **Search layer** — đẩy/đồng bộ index lên MeiliSearch khi item đổi; tự động re-index qua queue.
-10. **Translation Memory layer** — TM + glossary + MT provider chain (DeepL, OpenAI, Workers AI, echo fallback).
+1. **Schema layer** — manages `collections`, `fields`, `relations`, producing a "virtual schema" in the cache.
+2. **Item layer** — generic CRUD based on the virtual schema; builds Drizzle queries dynamically. Supports `materialized_collections` for the hot path.
+3. **Permission layer** — evaluates the Policy DSL before each action; returns a **field mask** (read/write).
+4. **Delivery layer** — public endpoints, applying the "public" role's permissions + cache-tag.
+5. **Realtime layer** — a Cloudflare Durable Object per `site_id` (in `cloudflare` mode); broadcasts normalized events. It has a protocol for **collaborative cursors** (CRDT-lite, last-write-wins + a Y-style update vector).
+6. **Extension layer** — loads the manifest, mounts routes/hooks/UI into the registry; gated by capability. Integrates a signed Marketplace.
+7. **AI layer** — `AISecureHarness` evaluates risk, checks capability, and gates HITL for dangerous skills. Skills are declared in `@lumibase/ai-skills`. This is the current seed of the Agent Harness Layer.
+8. **Flows layer** — a graph of operations (condition, transform, http, mail, log, sleep, run-extension, item.*, notify) run on triggers (webhook, event, schedule, manual).
+9. **Search layer** — pushes/syncs the index to MeiliSearch when an item changes; auto re-indexes via the queue.
+10. **Translation Memory layer** — TM + glossary + an MT provider chain (DeepL, OpenAI, Workers AI, echo fallback).
 
-## 4. Caching & Invalidation
 
-- Cache keys: `schema:{site}:{collection}`, `perm:{site}:{role}:{collection}`, `settings:{site}` — qua `CacheProvider` (KV trên Cloudflare, Redis trên Docker).
-- Tag-based: mỗi item ghi tag `item:{site}:{collection}:{id}`, mutation phát event → invalidate cache + revalidate Next.js tag (qua webhook tới `apps/consumer`).
-- WebSocket cũng phát cùng event ⇒ client realtime + cache đồng bộ.
+## 3.1. Agent Harness Layer
 
-## 5. Runtime abstraction (Cloudflare ↔ Docker)
+LumiBase extends the traditional CMS model into a control plane for AI Agents. Agents do not call the API directly from a free-form prompt; every run goes through the harness to normalize input/context/permissions, observe output, log, block risks, and enable replay/retry.
 
-`@lumibase/runtime` định nghĩa 6 interface:
+```text
+User / Admin
+   ↓
+LumiBase Studio + API
+   ↓
+CMS Layer: Schemas, Roles, Policies, Content, Files, Flows
+   ↓
+Agent Harness Layer: Goals, Runs, Plans, Tools, Memory, Approvals, Evaluations
+   ↓
+AI Agents + Tool Registry + Extensions + External APIs
+   ↓
+App Generation Layer: Pages, Components, Datasets, Configs, Prompts, Migrations, API Specs
+```
+
+The standard execution lifecycle:
+
+```text
+Goal → Context package → Plan → Tool calls → Validation/Evaluation
+→ Human approval if needed → Commit artifact/result → Audit trail + Memory update
+```
+
+The current implementation already has `AISecureHarness`, backward-compatible `ai_approvals`, first-class `agent_goals`, `agent_runs`, `agent_tool_calls`, `agent_artifacts`, `agent_evaluations`, `agent_approvals`, memory, a tool registry, and an app-generation MVP. Repeatedly failing runs are pushed to `agent-dead-letter` when the runtime queue adapter is available; Prometheus/Grafana track run status, approval latency, tool latency, eval fail rate, and token/cost estimate. The detailed blueprint is in [Agent Harness Layer](../features/agent-harness-layer.md).
+
+## 4. Caching & cache invalidation
+
+- Cache keys: `schema:{site}:{collection}`, `perm:{site}:{role}:{collection}`, `settings:{site}` — via `CacheProvider` (KV on Cloudflare, Redis on Docker).
+- Tag-based: each item writes a `item:{site}:{collection}:{id}` tag; a mutation emits an event → invalidate the cache + revalidate the Next.js tag (via a webhook to `apps/consumer`).
+- WebSocket emits the same event ⇒ the realtime client and the cache stay in sync.
+
+## 5. Runtime abstraction layer (Cloudflare ↔ Docker)
+
+`@lumibase/runtime` defines 6 interfaces:
 
 | Interface | Cloudflare adapter | Docker adapter |
 |-----------|--------------------|----------------|
@@ -136,31 +174,31 @@ lumibase/
 | `QueueProvider` | Cloudflare Queues | BullMQ on Redis |
 | `MediaProcessor` | CF Image Resizing | Imgproxy (signed URLs) |
 
-Factory `createRuntime(env)` trong `packages/runtime/src/factory.ts` quyết định adapter theo `env.LUMIBASE_RUNTIME` (`cloudflare` | `docker`). Middleware `withRuntime()` inject `RuntimeContext` vào `c.set('runtime', ...)`. Toàn bộ route + service đọc qua `c.get('runtime').<provider>`.
+The `createRuntime(env)` factory in `packages/runtime/src/factory.ts` chooses the adapter by `env.LUMIBASE_RUNTIME` (`cloudflare` | `docker`). The `withRuntime()` middleware injects a `RuntimeContext` into `c.set('runtime', ...)`. Every route + service reads through `c.get('runtime').<provider>`.
 
-Xem [features/runtime-abstraction.md](../features/runtime-abstraction.md) để biết chi tiết.
+See [features/runtime-abstraction.md](../features/runtime-abstraction.md) for details.
 
 ## 6. Multi-tenancy
 
-- `site_id` truyền qua subdomain hoặc header `X-Lumi-Site`.
-- Middleware `withTenant()` gắn `c.set('siteId', …)` và inject vào mọi service.
-- Drizzle helper `scopeSite(siteId)` wrap query builder để bắt buộc filter.
-- Middleware `withRls()` set Postgres session var để áp dụng RLS policies bổ sung.
+- `site_id` is passed via subdomain or the `X-Lumi-Site` header.
+- The `withTenant()` middleware sets `c.set('siteId', …)` and injects it into every service.
+- The Drizzle helper `scopeSite(siteId)` wraps the query builder to force the filter.
+- The `withRls()` middleware sets a Postgres session var to apply additional RLS policies.
 
 ## 7. Security
 
-- Logto JWT validate ở edge (JWKS cache qua `CacheProvider`).
-- CSRF cho Studio (same-origin + token).
-- Per-field encryption (AES-GCM, key in Workers Secret hoặc env var) cho field flagged `sensitive: true`.
-- Extension chạy trong **isolated module** (dynamic import từ R2/S3), bị giới hạn bởi capability manifest. Marketplace bundles phải có signature ed25519/RSA-PSS hợp lệ.
-- SCIM token riêng (`SCIM_TOKEN` env), không dùng Logto JWT pipeline.
-- AI HITL: skill nguy hiểm (capability `schema:write` hoặc tên bắt đầu bằng `delete`) bắt buộc qua `ai_approvals`.
+- Logto JWT validated at the edge (JWKS cached via `CacheProvider`).
+- CSRF for Studio (same-origin + token).
+- Per-field encryption (AES-GCM, key in a Workers Secret or env var) for fields flagged `sensitive: true`.
+- Extensions run in an **isolated module** (dynamic import from R2/S3), constrained by the capability manifest. Marketplace bundles must have a valid ed25519/RSA-PSS signature.
+- A separate SCIM token (`SCIM_TOKEN` env), not using the Logto JWT pipeline.
+- AI HITL: dangerous skills (capability `schema:write` or a name starting with `delete`) must go through `ai_approvals`; the Agent Harness extends this same principle to plan/tool/artifact approval.
 
 ## 8. Observability
 
 - **Cloudflare**: Workers Logpush (JSON logs) + Workers Analytics Engine (metrics).
-- **Docker**: `/metrics` Prometheus endpoint + Loki/Promtail cho log + Grafana dashboard pre-provisioned (request rate, latency p50/p95/p99, error rate, queue depth, cache hit ratio).
-- Activity table cho audit nghiệp vụ.
-- Health check `/health` test kết nối tới DB, cache, search, storage, queue.
+- **Docker**: the `/metrics` Prometheus endpoint + Loki/Promtail for logs + a pre-provisioned Grafana dashboard (request rate, latency p50/p95/p99, error rate, queue depth, cache hit ratio).
+- The Activity table for business audit.
+- The `/health` health check tests connectivity to the DB, cache, search, storage, and queue.
 
-Xem [features/observability.md](../features/observability.md) để biết chi tiết stack monitoring.
+See [features/observability.md](../features/observability.md) for details on the monitoring stack.

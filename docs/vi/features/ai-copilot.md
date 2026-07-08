@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-06-23T13:05:48.000Z
+sourceLang: vi
+contentHash: d3a62a6ea64bb371
+---
+
 # AI Copilot (HITL)
 
 LumiBase Studio đi kèm một AI Copilot có thể nhận lệnh ngôn ngữ tự nhiên từ admin và thực thi các skill đã được khai báo trên CMS. Đây là bước seed của **Agent Harness Layer**: agent nhận goal/context/quyền hạn qua harness, gọi tool theo registry, bị đánh giá rủi ro và để lại audit trail. Mọi hành động nguy hiểm (đụng schema hoặc xoá dữ liệu) đều phải qua **Human-in-the-Loop (HITL)**: AI tạo `ai_approvals` row chờ admin duyệt thay vì execute trực tiếp.

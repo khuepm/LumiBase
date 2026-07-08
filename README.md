@@ -2,7 +2,8 @@
 
 <div align="center">
 <img width="1024" height="434" alt="Image" src="https://github.com/user-attachments/assets/a11def9c-f238-4a6d-9816-7f7c4f718ea9" />
-**⚡ The Content Operating System — Edge-Native, AI-Native, Agent-Operated**
+
+  **⚡ The Content Operating System — Edge-Native, AI-Native, Agent-Operated**
 
 [![GitHub Stars](https://img.shields.io/github/stars/khuepm/lumibase?style=social)](https://github.com/khuepm/lumibase)
 <!-- [![GitHub Sponsors](https://img.shields.io/github/sponsors/khuepm)](https://github.com/sponsors/khuepm) -->
@@ -91,10 +92,10 @@ The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire
 
 Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
-Current release: `v0.12.0` (`2026-06-28`) — **Privacy & compliance suite, Directus-style interfaces & tenant isolation hardening**. This release adds a **data-rights toolkit** (consent management for GDPR Art. 7 / PDPD, CCPA "Do-Not-Sell" `sale_share` consent, personal-data export, account erasure, data-retention pruning, restriction of processing, field data classification + redaction, and automated-decision transparency), **email compliance** (one-click unsubscribe + a site-scoped suppression list), a broad set of **Directus-style Studio field interfaces** (selection, hash, API autocomplete, presentation, relational drawer, M2A builder, collection-item, field grouping/width layout, map and tree-view), a **cross-platform keyboard-shortcuts system**, and **tenant-isolation hardening** for media, search, and audit logs. It ships **3 additive schema migrations** (`0035`, `0036`, `0037`) — **back up your database before upgrading**. It builds on **`v0.11.0`** (Insights, content versioning & tenant-scoped search), **`v0.10.0`** (MCP everywhere), **`v0.9.0`** (regulated/sensitive content readiness), and the **`v0.5.0` Content OS foundation** — which remain the baseline this release builds upon, not replaces.
+Current release: `v0.21.0` (`2026-07-08`) — **self-service auth realms & Cloudflare Pages pipeline repair**. Adds subscriber registration with email verification, password recovery, rotating refresh tokens (migrations `0005`/`0006`), per-realm session TTLs, audience-pinned tokens, and SDK silent auto-refresh (PR #130); and fixes the Pages deploys that had been failing since `v0.18.0` by decoupling the `apps/marketplace` submodule from the pnpm workspace (built standalone, PAT-authenticated) and correcting the docs deploy verification. It builds on **`v0.20.0`** (backend + SDK gap-closing across 7 specs & high-load/cache readiness), **`v0.19.0`** (CWE Top 100 closeout, Visual Flow Builder triggers & marketplace community features), **`v0.18.0`** (custom domains & translation memory), **`v0.17.0`** (`lumibase_` table namespace & Content Releases), **`v0.16.0`** (code-first configuration & auto-deploy from Flows), **`v0.15.0`** (realtime audience plane & cosmic design system), **`v0.14.0`** (push notifications & MCP path-traversal hardening), **`v0.13.0`** (deployment integrations & cross-collection search), **`v0.12.0`** (privacy & compliance suite, Directus-style interfaces & tenant isolation hardening), **`v0.11.0`** (Insights, content versioning & tenant-scoped search), **`v0.10.0`** (MCP everywhere), **`v0.9.0`** (regulated/sensitive content readiness), and the **`v0.5.0` Content OS foundation** — which remain the baseline this release builds upon, not replaces.
 
 ```bash
-LUMIBASE_VERSION=0.12.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=0.21.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.

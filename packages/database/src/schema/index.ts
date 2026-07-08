@@ -15,4 +15,7 @@ export * from './cdc';
 export * from './content-os';
 export * from './firebase-sync';
 export * from './regulated';
+export * from './deployments';
+export * from './domains';
+export * from './external-auth';
 export * from './git-integration';
