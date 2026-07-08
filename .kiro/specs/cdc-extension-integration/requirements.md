@@ -108,6 +108,7 @@ Spec này xây trực tiếp trên các lớp đã ship, không phát minh lại
 3. WHEN Dispatcher phân phối cho Subscription `kind='extension'`, THE Change_Feed SHALL gọi handler qua ExtensionSandbox với timeout 5 giây mỗi batch (tái dùng cơ chế `withTimeout` của HookDispatcher); handler ném lỗi hoặc timeout → batch được coi là failed, retry theo Requirement 4.5.
 4. THE Change_Feed SHALL cách ly lỗi giữa các subscriber: một extension lỗi/chậm KHÔNG chặn delivery của Subscription khác và KHÔNG ảnh hưởng mutation gốc (khác với hook sync `items.*.before`).
 5. THE Change_Feed SHALL truyền `event.id` làm idempotency key và tài liệu hoá yêu cầu handler idempotent (at-least-once semantics).
+6. THE Change_Feed SHALL định nghĩa **vòng đời chuẩn bị extension để dùng được** (khớp extensions-system hiện có), gồm: (a) manifest `lumibase-extension.json` type `hook`, `entry` export `cdcSubscriber`, khai báo `capabilities: ["cdc:subscribe:<collection>"]` (hoặc `cdc:subscribe:*`) và `compatibleWith` (semver core); (b) build bundle ESM → upload qua Studio `/settings/extensions/upload` (server validate manifest + scan capability + lưu R2 + row `extensions` scope `siteId`); (c) admin **review + grant capability** rồi **enable** (action `grant_capability` + `enable` ở `PATCH /extensions/:name`); (d) enable → `subscription-service` upsert Subscription `kind='extension'` (broadcast `extensions.changed`); (e) runtime nạp qua ExtensionSandbox (`type==='hook'`), context capability-filtered (`fetch` host-whitelist). Extension KHÔNG bao giờ tự cấp capability — luôn qua admin.
 
 ### Requirement 6: Retention, replay & pruning
 
@@ -133,6 +134,8 @@ Spec này xây trực tiếp trên các lớp đã ship, không phát minh lại
 4. THE Change_Feed SHALL bổ sung AI skills: `listCdcSubscriptions`, `getCdcSubscriptionStatus` (capability `cdc:manage`), `createCdcSubscription`, `replayCdcSubscription` (capability `cdc:manage`), `deleteCdcSubscription`; THE Harness SHALL coi `deleteCdcSubscription` là skill nguy hiểm (tên bắt đầu `delete` → HITL qua `ai_approvals` theo rule #4 `CLAUDE.md`).
 5. THE Change_Feed SHALL mask secret/token trong mọi log, audit, `errorMessage` của delivery; `webhooks.secret` không bao giờ trả về qua API (write-only, giống pattern `serializePipeline` của module cdc).
 6. THE Change_Feed SHALL KHÔNG import CF bindings trong business logic — mọi queue/cache/schedule đi qua `c.get('runtime')` (rule #3).
+8. THE Change_Feed SHALL bổ sung **MCP tool coverage** cho feed: đăng ký `packages/mcp-server/src/tools/cdc.ts` (wire vào `registerAllTools`) dùng `registerCrud`/`registerTool` để MCP client (agent) `list/get/create/delete` subscription và đọc `/cdc/events` — nhất quán chính sách `mcp-full-coverage` (registry #21); tool gọi qua `LumiBaseClient` (REST passthrough) nên **thừa hưởng nguyên vẹn** capability guard + HITL của route/harness, không bypass.
+9. THE Change_Feed SHALL wire AI skill vào Agent Harness đúng contract `SkillDefinition` hiện có (`requiredCapabilities: string[]`, cờ `dangerous?`): `deleteCdcSubscription` được `isControlPlaneSkill` tự phân loại control-plane qua tiền tố tên `delete` (không cần cờ thủ công) → HITL `ai_approvals`; các skill `cdc:manage` mang capability tương ứng để harness `checkCapabilities` enforce.
 
 ### Requirement 8: Observability & Studio panel
 

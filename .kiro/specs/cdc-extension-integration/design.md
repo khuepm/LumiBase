@@ -53,6 +53,7 @@ packages/
   extension-sdk/src/index.ts          ← +defineCdcSubscriber, CdcSubscriberDefinition, CdcEvent types
   ai-skills/src/skills.ts             ← +listCdcSubscriptions, getCdcSubscriptionStatus, createCdcSubscription,
                                          replayCdcSubscription, deleteCdcSubscription (HITL)
+  mcp-server/src/tools/cdc.ts         ← +registerCdcTools (wire vào registerAllTools) — MCP coverage feed/subscriptions
 
 apps/studio/src/modules/
   settings/change-feed-page.tsx       ← panel: subscriptions list + detail deliveries + pause/resume/replay
@@ -209,6 +210,12 @@ export function defineCdcSubscriber(def: CdcSubscriberDefinition): CdcSubscriber
 - Enable extension → `subscription-service` upsert Subscription `kind='extension'` (name = `ext:<extensionName>`); disable → `paused`. Grant capability vẫn qua flow admin review hiện có của extensions system.
 - `extension-sender` enforce filter theo capability **ở phía host** trước khi đưa event vào sandbox (không tin extension tự lọc); timeout 5s/batch qua `withTimeout` (tái dùng của HookDispatcher); lỗi → failed batch → retry/dead theo §6.
 - Khác biệt với hook sync hiện có (ghi rõ trong docs): `items.*.before/after` = sync, trong request, best-effort, có thể chặn mutation; `cdcSubscriber` = async, sau commit, at-least-once, có replay, không bao giờ chặn mutation.
+
+## 8b. Tích hợp MCP & Harness
+
+- **MCP**: MCP server (`packages/mcp-server`) đăng ký tool theo domain qua `register*Tools(server, client)` trong `registerAllTools` — REST passthrough qua `LumiBaseClient`. Hiện **chưa có** tool CDC nào. Thêm `tools/cdc.ts`: dùng `registerCrud` cho `/cdc/subscriptions` (create/get/list/delete) + `registerTool` cho `GET /cdc/events` (cursor) và `POST .../replay`. Vì đi qua REST, MCP tool **thừa hưởng nguyên** chuỗi auth/tenant + capability guard + HITL — agent qua MCP không bypass được (`deleteCdcSubscription` vẫn vào `ai_approvals`).
+- **Harness**: skill khai trong `packages/ai-skills` theo `SkillDefinition` (`requiredCapabilities`, `dangerous?`). `isControlPlaneSkill` (ai-harness) phân loại control-plane khi `dangerous`, có `schema:*` mutating, hoặc **tên bắt đầu `delete`** → `deleteCdcSubscription` tự động HITL, không cần cờ. Cân nhắc: nếu muốn cấm autopilot tuyệt đối, thêm vào `IRREVERSIBLE_SKILLS` (hard-cap L2) — mặc định KHÔNG, vì xoá subscription tái tạo được (chỉ mất checkpoint cursor).
+- **Chuẩn bị extension để dùng được** (khớp `extensions-system`): manifest `hook` khai `capabilities: ["cdc:subscribe:<collection>"]` → build ESM → upload Studio → **admin grant capability + enable** → enable upsert Subscription `kind='extension'` → runtime nạp qua sandbox (context capability-filtered). Extension không tự cấp quyền; `extension-sender` enforce filter theo capability ở host trước sandbox.
 
 ## 9. API surface
 

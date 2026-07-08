@@ -70,6 +70,7 @@
 - [ ] 12. AI skills + HITL (Req 7.4)
   - [ ] 12.1 `packages/ai-skills`: `listCdcSubscriptions`, `getCdcSubscriptionStatus`, `createCdcSubscription`, `replayCdcSubscription` (capability `cdc:manage`), `deleteCdcSubscription` (dangerous — tên bắt đầu `delete`).
   - [ ] 12.2 HITL test: agent gọi `deleteCdcSubscription` dưới ngưỡng autonomy → tạo `ai_approvals`, không xoá ngay.
+  - [ ] 12.3 MCP coverage: thêm `packages/mcp-server/src/tools/cdc.ts` (`registerCdcTools` qua `registerCrud` cho `/cdc/subscriptions` + `registerTool` cho `/cdc/events`, `.../replay`) và wire vào `registerAllTools`; test tool đi qua REST → guard capability/HITL không bị bypass. (Req 7.8)
 - [ ] 13. Audit & masking (Req 7.5, 8.4) — audit log cho create/delete/pause/resume/replay (actor + diff, secret masked); masking `errorMessage` deliveries.
 
 ## Phase H — Studio UI, docs & hoàn tất
