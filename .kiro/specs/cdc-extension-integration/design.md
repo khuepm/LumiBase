@@ -17,7 +17,7 @@ Nguyên tắc thiết kế:
 ```mermaid
 graph LR
     subgraph "CMS (Hono, dual-runtime)"
-        IS[ItemService mutation] -->|same tx| OB[(cdc_change_events)]
+        IS[ItemService mutation] -->|same tx| OB[(lumibase_cdc_change_events)]
         IS -.->|enqueue best-effort| Q[QueueProvider]
         Q --> DP[Dispatcher]
         SW[Sweep 30s / Cron Trigger] --> DP
@@ -25,8 +25,8 @@ graph LR
         DP -->|HMAC POST| WH[Webhook endpoints ngoài]
         DP -->|sandbox 5s| EXT[CDC Subscriber Extensions]
         API[Feed API /api/v1/cdc/events] --> OB
-        SUBS[(cdc_subscriptions)] --- DP
-        DLV[(cdc_deliveries)] --- DP
+        SUBS[(lumibase_cdc_subscriptions)] --- DP
+        DLV[(lumibase_cdc_deliveries)] --- DP
     end
     PULL[External pull consumer] --> API
     PULL -->|ack cursor| SUBS
@@ -60,7 +60,9 @@ apps/studio/src/modules/
 
 ## 3. Data model
 
-### 3.1 `cdc_change_events` (append-only outbox)
+> **Quy ước tên (ADR-010)**: tên vật lý mọi bảng mang prefix `lumibase_`; export Drizzle giữ camelCase (`cdcChangeEvents` → `'lumibase_cdc_change_events'`). Index literal không prefix (theo ADR-010). Thêm bảng qua migration incremental trên `0000_lumibase_init`.
+
+### 3.1 `lumibase_cdc_change_events` (append-only outbox)
 
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
@@ -78,7 +80,7 @@ apps/studio/src/modules/
 
 Index: `(siteId, id)`, `(siteId, collection, id)`. Không FK tới `items` (event sống lâu hơn item bị xoá). Không UPDATE/DELETE ngoài prune.
 
-### 3.2 `cdc_subscriptions`
+### 3.2 `lumibase_cdc_subscriptions`
 
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
@@ -90,7 +92,7 @@ Index: `(siteId, id)`, `(siteId, collection, id)`. Không FK tới `items` (even
 | `payloadMode` | text NOT NULL | `'reference' \| 'snapshot'`, default `'reference'` |
 | `cursor` | uuid NULL | checkpoint — event cuối đã ack/deliver thành công; NULL = từ đầu hiện tại |
 | `status` | text NOT NULL | `'active' \| 'paused' \| 'dead' \| 'stale'` |
-| `webhookId` | text NULL | FK → `webhooks` (kind=webhook) |
+| `webhookId` | text NULL | FK → `lumibase_webhooks` (kind=webhook) |
 | `extensionName` | text NULL | kind=extension |
 | `consecutiveFailures` | integer NOT NULL | default 0 |
 | `lastDeliveredAt` | timestamptz NULL | |
@@ -100,7 +102,7 @@ Index: unique `(siteId, name)`, `(siteId, status)`.
 
 **State machine**: `active ⇄ paused` (admin); `active → dead` (10 consecutive failures); `active/paused → stale` (cursor < retention floor); `dead/stale → active` chỉ qua replay/resume tường minh. Mỗi transition dead/stale phát notification đúng một lần.
 
-### 3.3 `cdc_deliveries` (append-only log)
+### 3.3 `lumibase_cdc_deliveries` (append-only log)
 
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
@@ -162,7 +164,7 @@ Index: `(siteId, subscriptionId, createdAt)`. Prune cùng chính sách retention
 3. Gửi (webhook-sender | extension-sender)
 4. 2xx/handler ok → UPDATE subscription SET cursor = last.id, consecutiveFailures = 0, lastDeliveredAt = now()
    → còn backlog thì lặp
-5. Fail → ghi cdc_deliveries(failed), tăng attempt; retry backoff 30s·2^n (max 5);
+5. Fail → ghi lumibase_cdc_deliveries(failed), tăng attempt; retry backoff 30s·2^n (max 5);
    hết retry → consecutiveFailures++; đạt 10 → status='dead' + notification
 ```
 

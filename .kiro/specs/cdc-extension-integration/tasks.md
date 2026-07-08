@@ -7,9 +7,9 @@
 ## Phase A — Data model & shared schemas
 
 - [ ] 1. Schema bảng mới (Req 1.1, 3.1, 4.6, 7.1)
-  - [ ] 1.1 `packages/database/src/schema/cdc.ts`: thêm `cdcChangeEvents` (uuidv7 PK), `cdcSubscriptions` (nanoid PK), `cdcDeliveries` (uuidv7 PK) + index theo design §3. Mọi bảng có `siteId`.
+  - [ ] 1.1 `packages/database/src/schema/cdc.ts`: thêm `cdcChangeEvents` (uuidv7 PK), `cdcSubscriptions` (nanoid PK), `cdcDeliveries` (uuidv7 PK) + index theo design §3. Mọi bảng có `siteId`. **Tên vật lý bảng PHẢI mang prefix `lumibase_` theo ADR-010** (`lumibase_cdc_change_events`, `lumibase_cdc_subscriptions`, `lumibase_cdc_deliveries`); export Drizzle giữ camelCase.
   - [ ] 1.2 Export ở barrel `packages/database/src/schema/index.ts`.
-  - [ ] 1.3 Migration **viết tay** `00XX_cdc_change_feed.sql` (đánh số theo main tại thời điểm merge; `CREATE TABLE IF NOT EXISTS` + FK/index idempotent) + journal entry + thêm 3 bảng vào `rls-policies.sql` (site_isolation).
+  - [ ] 1.3 Migration: sinh incremental bằng `pnpm -F @lumibase/database db:generate` (drizzle-kit) → file kế tiếp `0005_cdc_change_feed.sql` (chồng lên `0000_lumibase_init`, KHÔNG sửa init; số thứ tự thực tế theo main lúc merge) + journal entry + thêm 3 bảng (tên `lumibase_`-prefixed) vào `rls-policies.sql` (site_isolation). Đảm bảo tương thích `migration-guard.ts` (ADR-010): chỉ tạo bảng prefixed, không đụng bảng legacy.
   - [ ] 1.4 Zod schemas `packages/shared/src/schemas/cdc-feed.ts`: `EventEnvelopeSchema`, `SubscriptionCreateSchema`/`PatchSchema`, `AckSchema`, `ReplaySchema`, `FeedQuerySchema` (limit ≤ 500, retention 1–90) + export ở index.
   - [ ] 1.5 Property test **P3 Envelope round-trip** + unit test biên Zod (limit, retentionDays, name ≤ 128). (Req 2.1, 6.1)
 
@@ -38,7 +38,7 @@
 ## Phase D — Dispatcher & webhook delivery
 
 - [ ] 6. Dispatcher core (Req 4.1, 4.4, 4.5, 4.7)
-  - [ ] 6.1 `dispatcher.ts`: vòng dispatch per subscription (batch 100, tuần tự, cursor advance chỉ sau success, retry backoff 30s·2^n max 5, `consecutiveFailures` → `dead` tại 10 + notification qua notifications module); lock per subscription (cache key tenant-prefixed); ghi `cdc_deliveries` mỗi attempt.
+  - [ ] 6.1 `dispatcher.ts`: vòng dispatch per subscription (batch 100, tuần tự, cursor advance chỉ sau success, retry backoff 30s·2^n max 5, `consecutiveFailures` → `dead` tại 10 + notification qua notifications module); lock per subscription (cache key tenant-prefixed); ghi `lumibase_cdc_deliveries` mỗi attempt.
   - [ ] 6.2 Trigger: enqueue `cdc-dispatch` qua `QueueProvider` sau mutation (best-effort, dedup theo site) + sweep 30s (pattern `scheduler-worker`) + đăng ký worker trong `serve.ts` (pattern `content-indexing`). Fallback không queue: sweep + dispatch on-demand. (Req 4.7)
   - [ ] 6.3 Property test **P6 Cursor advance có điều kiện** + **P7 Retry/backoff đúng lịch**. (Req 4.4, 4.5)
 
@@ -59,7 +59,7 @@
 ## Phase F — Retention & replay
 
 - [ ] 10. Retention (Req 6.1, 6.3, 6.4)
-  - [ ] 10.1 `retention.ts`: prune idempotent theo `cdc_feed.retentionDays` (default 7, min 1, max 90) cho `cdc_change_events` + `cdc_deliveries`; giữ event chưa deliver trong retention; đánh dấu subscription `stale` khi cursor < floor + notification; scheduler đăng ký cùng sweep.
+  - [ ] 10.1 `retention.ts`: prune idempotent theo `cdc_feed.retentionDays` (default 7, min 1, max 90) cho `lumibase_cdc_change_events` + `lumibase_cdc_deliveries`; giữ event chưa deliver trong retention; đánh dấu subscription `stale` khi cursor < floor + notification; scheduler đăng ký cùng sweep.
   - [ ] 10.2 Property test **P10 Retention & stale**. (Req 6.1, 6.3)
 
 ## Phase G — Security, tenancy & AI skills
