@@ -50,7 +50,13 @@ export function resolveRelativeLink(href: string, currentSlug: string): string {
     }
   }
 
-  return resolvedSegments.join('/');
+  // Collapse a trailing `index` segment to the parent path so links to an
+  // `index.md` landing page resolve to the same slug `deriveSlug` produces
+  // (e.g. `./sdk/index.md` → `sdk`). Keep the standalone value if collapsing
+  // would empty the slug.
+  const joined = resolvedSegments.join('/');
+  const collapsed = joined.replace(/(^|\/)index$/, '');
+  return collapsed === '' ? joined : collapsed;
 }
 
 /**
