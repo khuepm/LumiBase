@@ -182,6 +182,10 @@ jobs:
             project: lumibase-studio
     steps:
       - uses: actions/checkout@v7
+        with:
+          # marketplace (apps/marketplace) is a public HTTPS submodule; fetch it
+          # so `pnpm --filter @lumibase/marketplace build` produces apps/marketplace/out.
+          submodules: true
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6

@@ -9,6 +9,31 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [0.20.0] - 2026-07-08
+
+### Version
+
+- `v0.20.0`
+
+### Date
+
+- `2026-07-08`
+
+### Highlights
+
+- **Backend + SDK gap-closing across 7 specs.** Content-versioning,
+  presets, Visual Flow Builder operations/triggers, translation-memory,
+  image-transform, realtime, and insights now have matching HTTP routes and
+  `@lumibase/sdk` client methods (see Added).
+- **High-load & cache readiness.** Delivery API HTTP caching, opt-in list
+  totals, request body-size limits, immediate permission-cache invalidation,
+  debounced API-key `lastUsedAt`, and a process-cached setup-complete check.
+- **Marketplace deploy fix.** The `apps/marketplace` submodule URL was
+  rewritten from SSH to HTTPS so CI can clone it, unblocking the Cloudflare
+  Pages `lumibase-marketplace` deploy that failed during the `v0.19.0` run.
+
 ### Added
 
 - **Delivery API HTTP caching.** `GET /api/v1/deliver/page/:site_id/:slug`
@@ -25,6 +50,27 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **Request body-size limits.** Caddy caps request bodies (10 MB API, 50 MB
   media uploads); the app also rejects oversized JSON bodies with `413`
   (`LUMIBASE_MAX_JSON_BODY`, default 1 MiB) as defense-in-depth.
+- **Image-transform presets.** Shared `TransformDsl` contract in
+  `@lumibase/shared`, a `lumibase_transform_presets` table, site-scoped
+  `/api/v1/transform-presets` CRUD (media-permission gated), on-the-fly
+  delivery transform via `GET /media/:key?preset=|?width=&…` (302 to the
+  runtime image URL; no-param path unchanged), and an SDK `mediaUrl` builder.
+- **Content-version, preset, and translation-memory SDK methods.** `versions`
+  (list/create/get/update/delete/compare/promote), `presets`
+  (getEffectivePreset/listBookmarks/saveUserView/create/update/deleteBookmark),
+  and `tm` (listTm/upsertTm/updateTm/deleteTm/lookupTm/translate) matching the
+  route contracts.
+- **Preset resolution service.** `PresetService` with role-chain resolution
+  (precedence user > role-chain > global, cycle-guarded) plus
+  `GET /api/v1/presets/effective` and `/bookmarks`, with scope-ownership RBAC
+  on write.
+- **Flows operations registry & triggers.** `GET /api/v1/flows/operations`
+  feeds the editor palette and graph validation; `validateGraph` is enforced
+  on `POST`/`PATCH`; webhook trigger (`POST /:id/trigger`, constant-time
+  token) with run detail (`GET /:id/runs/:runId`); and event-trigger dispatch
+  matching item mutations to active event flows.
+- **High-Load & Cache Readiness specification** (Phase 0–P2) added to the
+  docs.
 
 ### Changed
 
@@ -42,6 +88,25 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   lookup in `requireSetupComplete` is cached (permanently once initialized,
   5s TTL while uninitialized), removing a DB round-trip from every
   authenticated request.
+
+### Fixed
+
+- **Marketplace Pages deploy.** Rewrote the `apps/marketplace` submodule URL
+  from `git@github.com:` to `https://github.com/` so the release workflow can
+  clone it on CI, and enabled submodule checkout for the Pages-apps job. This
+  fixes the `ENOENT apps/marketplace/out` failure from the `v0.19.0` release
+  run.
+
+### Notes
+
+- Added the `v1.0.0` release-criteria checklist under `.kiro/steering/`.
+- Documentation index and English/Vietnamese i18n translations synced.
+
+### Migrations
+
+- `packages/database/drizzle/0004_transform_presets.sql` — creates the
+  additive `lumibase_transform_presets` table (site-scoped, unique
+  `(site_id, key)`). Backward-compatible; no data migration required.
 
 ## [0.19.0] - 2026-07-07
 
