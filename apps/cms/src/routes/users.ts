@@ -6,6 +6,11 @@ import { nanoid } from 'nanoid';
 import type { AppEnv } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
 import { sendTeammateInvite } from '../modules/email/invite';
+import {
+  grantSubscriberRead,
+  revokeSubscriberRead,
+  listSubscriberRead,
+} from '../services/auth/subscriber-access';
 import { bumpPermissionVersion } from '../services/permission-invalidation';
 
 export const usersRouter = new Hono<AppEnv>();
@@ -33,6 +38,49 @@ usersRouter.get('/', async (c) => {
     .where(eq(userSites.siteId, siteId));
 
   return c.json({ data });
+});
+
+// ── Subscriber content access ───────────────────────────────────────────
+// Grant/revoke what self-service frontend subscribers can READ. The
+// `subscriber` role is empty by default (ADR-010); these endpoints attach
+// `read` permissions to it via the shared subscriber policy. Registered
+// before `/:id` so the static path isn't captured by the param route.
+
+// List collections subscribers can currently read.
+usersRouter.get('/subscriber-access', async (c) => {
+  const data = await listSubscriberRead(c.get('db'), c.get('siteId'));
+  return c.json({ data });
+});
+
+const subscriberAccessSchema = z.object({
+  collection: z.string().min(1),
+  publishedOnly: z.boolean().optional(),
+  fields: z.array(z.string()).optional(),
+});
+
+// Grant (or update) subscriber read on a collection.
+usersRouter.post('/subscriber-access', async (c) => {
+  const body = await c.req.json();
+  const input = subscriberAccessSchema.parse(body);
+  const siteId = c.get('siteId');
+  const grant = await grantSubscriberRead(c.get('db'), siteId, input);
+  // Policy mutation → drop compiled permission bundles at once instead of
+  // waiting out the cache TTL.
+  await bumpPermissionVersion(c, siteId);
+  return c.json({ data: grant });
+});
+
+// Revoke subscriber read on a collection.
+usersRouter.delete('/subscriber-access/:collection', async (c) => {
+  const collection = c.req.param('collection');
+  const siteId = c.get('siteId');
+  const removed = await revokeSubscriberRead(c.get('db'), siteId, collection);
+  if (!removed) {
+    return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+  }
+  // Revoked grant must stop applying immediately, not after the cache TTL.
+  await bumpPermissionVersion(c, siteId);
+  return c.json({ data: { collection, removed: true } });
 });
 
 // Get a specific user in the active site

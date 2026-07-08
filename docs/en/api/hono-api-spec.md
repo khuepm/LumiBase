@@ -132,22 +132,39 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 
 ## 1. Auth
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/v1/auth/login` | Exchange username/password (or Logto auth code) for a bearer token |
-| `POST` | `/api/v1/auth/refresh` | Refresh expired access token |
-| `POST` | `/api/v1/auth/logout` | Revoke tokens |
-| `GET` | `/api/v1/auth/me` | Get current user profile |
-| `GET` | `/api/v1/me/preferences` | The current user's preferences blob (`users.preferences`) |
-| `PATCH` | `/api/v1/me/preferences` | Shallow-merge a validated preferences patch |
-| `GET` | `/api/v1/me/consents` | List the current user's consent decisions |
-| `PUT` | `/api/v1/me/consents/:type` | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
-| `GET` | `/api/v1/me/data-export` | Download the current user's personal data (GDPR Art. 15/20) |
-| `GET` | `/api/v1/me/restriction` | Current restriction-of-processing state (GDPR Art. 18) |
-| `PUT` | `/api/v1/me/restriction` | Set restriction of processing (`{ restricted, reason? }`) |
-| `GET` | `/api/v1/me/automated-decisions` | Agent-authored revisions on the user's content (GDPR Art. 22) |
-| `GET` | `/api/v1/retention` | Admin: report configured retention horizons |
-| `POST` | `/api/v1/retention/run` | Admin: prune `activity` + handled `notifications` past their horizons |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/auth/login` | public | Exchange Logto auth code or username/password for an access JWT + rotating refresh token |
+| `POST` | `/api/v1/auth/register` | public | Self-service subscriber sign-up (generic 202, anti-enumeration, rate-limited) |
+| `POST` | `/api/v1/auth/verify-email` | public | Activate a self-service account from the emailed token |
+| `POST` | `/api/v1/auth/resend-verification` | public | Re-send the activation email (generic 202, rate-limited) |
+| `POST` | `/api/v1/auth/forgot-password` | public | Email a password-reset link (generic 202, rate-limited) |
+| `POST` | `/api/v1/auth/reset-password` | public | Consume a reset token, set new password, revoke refresh tokens |
+| `POST` | `/api/v1/auth/refresh` | public | Rotate the refresh token (cookie or body) → fresh access JWT + new refresh token |
+| `POST` | `/api/v1/auth/logout` | public | Revoke the presented refresh token's family + clear the cookie |
+| `GET` | `/api/v1/auth/me` | bearer | Get current user profile |
+| `POST` | `/api/v1/me/change-password` | bearer | Verify current password, set new hash, revoke refresh tokens + bump `tokenVersion` |
+| `GET` | `/api/v1/me/sessions` | bearer | List the caller's active sessions (live refresh tokens, redacted) |
+| `DELETE` | `/api/v1/me/sessions/:id` | bearer | Revoke one of the caller's sessions |
+| `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions |
+| `POST` | `/api/v1/users/subscriber-access` | site-admin | Grant subscribers `read` on a collection (Policy DSL) |
+| `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | List / revoke subscriber read grants |
+| `GET` | `/api/v1/me/preferences` | bearer | Current user's preferences blob (identity-global) |
+| `PATCH` | `/api/v1/me/preferences` | bearer | Shallow-merge a preferences patch |
+| `GET` | `/api/v1/me/consents` | bearer | List the current user's consent decisions |
+| `PUT` | `/api/v1/me/consents/:type` | bearer | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
+| `GET` | `/api/v1/me/data-export` | bearer | Download the current user's personal data (GDPR Art. 15/20) |
+| `GET` | `/api/v1/me/restriction` | bearer | Current restriction-of-processing state (GDPR Art. 18) |
+| `PUT` | `/api/v1/me/restriction` | bearer | Set restriction of processing (`{ restricted, reason? }`) |
+| `GET` | `/api/v1/me/automated-decisions` | bearer | Agent-authored revisions on the user's content (GDPR Art. 22) |
+| `GET` | `/api/v1/retention` | admin | Report configured retention horizons |
+| `POST` | `/api/v1/retention/run` | admin | Prune `activity` + handled `notifications` past horizons |
+
+Cookie-sourced `/auth/refresh` + `/auth/logout` require the
+`X-LumiBase-Refresh` header (CSRF brake). Refresh tokens are delivered both
+as an `httpOnly` cookie and in the response body; see
+`docs/en/security/user-management.md` §4d for per-realm TTLs and the
+cross-domain cookie env (`REFRESH_COOKIE_SAMESITE`/`_DOMAIN`/`_SECURE`).
 
 > Account erasure (GDPR Art. 17) and Subject Access Requests are served by the
 > regulated-content-readiness feature at `/api/v1/admin/erasure` and

@@ -24,7 +24,7 @@ Spec này xây trực tiếp trên các lớp đã ship, không phát minh lại
 - **Quy ước tên bảng (ADR-010)** — mọi bảng hệ thống mang prefix `lumibase_`; migration đã reset greenfield về `0000_lumibase_init` + `migration-guard.ts`. 3 bảng mới của spec dùng tên `lumibase_cdc_*` và thêm qua migration incremental (không sửa init).
 - **Runtime abstraction** (`packages/runtime`) — `QueueProvider` (BullMQ trên Docker, CF Queues trên Workers) cho dispatch job; pattern sweep theo `scheduler-worker`.
 - **Extension sandbox + capability model** (`apps/cms/src/extensions/sandbox.ts`, `docs/en/features/extensions-system.md`) — subscriber chạy trong sandbox, capability dạng `cdc:subscribe:<collection>`.
-- **Auth API key → role/policy** (`middleware/auth.ts`, `PermissionService`) — machine-to-machine đọc feed bằng API key, resolve capability qua RBAC hiện có.
+- **Auth API key → role/policy** (`middleware/auth.ts`, `PermissionService`) — machine-to-machine đọc feed bằng API key, resolve capability qua RBAC hiện có. Theo ADR-011 (tách realm), feed là control-plane: chỉ realm `studio`/API key được truy cập, token audience `frontend`/`subscriber` bị từ chối (`withStudioAccess`).
 - **SSRF guard + guardedFetch** (pattern của `deployment-integrations`) — mọi outbound webhook đi qua `validateOutboundUrl` + timeout.
 - **Notifications module** (`apps/cms/src/modules/notifications/`) — cảnh báo khi subscription bị pause/dead.
 - **Masking theo classification** (`regulated-content-readiness`: `fields.classification` pii/phi) — payload event phải mask trước khi lưu/deliver.
@@ -129,6 +129,7 @@ Spec này xây trực tiếp trên các lớp đã ship, không phát minh lại
 1. THE Change_Feed SHALL scope mọi bảng mới (`lumibase_cdc_change_events`, `lumibase_cdc_subscriptions`, `lumibase_cdc_deliveries`) theo `siteId`, thêm vào `rls-policies.sql`, và mọi query đều `where(eq(table.siteId, siteId))`.
 2. THE Change_Feed SHALL bảo đảm event của site A không bao giờ xuất hiện trong feed/delivery của site B (two-site smoke test bắt buộc theo DoD §2b).
 3. THE Change_Feed SHALL định nghĩa capability mới: `cdc:subscribe` (đọc feed / nhận delivery) và `cdc:manage` (CRUD subscription, replay, dispatch on-demand); routes quản trị dùng `requireSiteAdmin` như `deployments`.
+7. THE Change_Feed SHALL coi feed là realm control-plane/integration (ADR-011): chỉ chấp nhận principal realm `studio` hoặc API key — token Custom JWT audience `frontend` (role `subscriber`) PHẢI bị từ chối (nhất quán `withStudioAccess`), vì feed lộ thay đổi xuyên collection vượt quyền của một end-user frontend.
 4. THE Change_Feed SHALL bổ sung AI skills: `listCdcSubscriptions`, `getCdcSubscriptionStatus` (capability `cdc:manage`), `createCdcSubscription`, `replayCdcSubscription` (capability `cdc:manage`), `deleteCdcSubscription`; THE Harness SHALL coi `deleteCdcSubscription` là skill nguy hiểm (tên bắt đầu `delete` → HITL qua `ai_approvals` theo rule #4 `CLAUDE.md`).
 5. THE Change_Feed SHALL mask secret/token trong mọi log, audit, `errorMessage` của delivery; `webhooks.secret` không bao giờ trả về qua API (write-only, giống pattern `serializePipeline` của module cdc).
 6. THE Change_Feed SHALL KHÔNG import CF bindings trong business logic — mọi queue/cache/schedule đi qua `c.get('runtime')` (rule #3).
@@ -181,6 +182,6 @@ Trả lời 6 câu hỏi của `admin-setup-wizard/setup-impact.md`:
 | 3 | Default policy/grant trong DB? | **Không** | Capability resolve qua role/policy hiện có; admin (`adminAccess`) thoả mặc nhiên. |
 | 4 | Bước Setup Wizard mới? | **Không** | Cấu hình sau setup ở Settings → Change Feed. |
 | 5 | Capability flag mới trong `/setup/capabilities`? | **Có** | `cdc:subscribe`, `cdc:manage` — cần upgrade note CHANGELOG khi triển khai (giống `deployments:*`). |
-| 6 | Backfill cho instance cũ? | **Không** | Migration incremental (`0005_cdc_change_feed`) chồng lên `0000_lumibase_init` (ADR-010), 3 bảng mới `lumibase_cdc_*` rỗng; không đổi bảng cũ. Chưa instance nào ship trước ADR-010 nên không có un-prefixed data để backfill. |
+| 6 | Backfill cho instance cũ? | **Không** | Migration incremental (`0007_cdc_change_feed`) chồng lên `0000_lumibase_init` (ADR-010), 3 bảng mới `lumibase_cdc_*` rỗng; không đổi bảng cũ. Chưa instance nào ship trước ADR-010 nên không có un-prefixed data để backfill. |
 
 Khi triển khai: thêm row vào Registry trung tâm (đã thêm `pending` #32) và cập nhật trạng thái.

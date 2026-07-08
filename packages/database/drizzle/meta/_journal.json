@@ -36,6 +36,20 @@
       "when": 1783400000000,
       "tag": "0004_transform_presets",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783500000000,
+      "tag": "0005_refresh_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783500100000,
+      "tag": "0006_password_changed_at_and_email_unique",
+      "breakpoints": true
     }
   ]
 }

@@ -60,6 +60,28 @@ afterEach(() => {
   cleanup();
 });
 
+// Mock docs.config.json so the sidebar tree (built from siteConfig.sidebar.docs)
+// matches this test suite's fixture slugs, independent of the real site config.
+vi.mock('../../docs.config.json', () => ({
+  default: {
+    title: 'Lumibase',
+    tagline: '',
+    url: 'https://example.com',
+    baseUrl: '/',
+    organizationName: 'test',
+    projectName: 'test',
+    i18n: { defaultLocale: 'en', locales: ['en', 'vi'], localeNames: { en: 'English', vi: 'Tiếng Việt' } },
+    navbar: { title: 'Lumibase', items: [] },
+    sidebar: {
+      docs: [
+        { type: 'category', label: 'features', items: ['features/collections', 'features/relations'] },
+        { type: 'category', label: 'Getting Started', items: ['README'] },
+      ],
+    },
+    footer: { style: 'dark', links: [], copyright: '' },
+  },
+}));
+
 // Mock the virtual:docs-registry module with test data
 vi.mock('virtual:docs-registry', () => {
   const testDocIndex: Record<string, {

@@ -6,12 +6,15 @@ const CHECK_MODE = process.argv.includes('--check');
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 const ROOT_PACKAGE_PATH = path.join(REPO_ROOT, 'package.json');
 
+// apps/marketplace is intentionally omitted: it is a git submodule
+// (private lumibase-ai/marketplace) that is versioned and released
+// independently from the main repo, so it must NOT be synced to the root
+// version. It is also excluded from the pnpm workspace (see pnpm-workspace.yaml).
 const APP_PACKAGE_PATHS = [
   'apps/cms/package.json',
   'apps/studio/package.json',
   'apps/docs/package.json',
   'apps/landing/package.json',
-  'apps/marketplace/package.json',
   'apps/consumer/package.json',
 ];
 

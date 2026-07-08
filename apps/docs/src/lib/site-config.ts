@@ -6,6 +6,7 @@
  * and dependency-free while exposing a familiar surface for editors.
  */
 
+import type { DocEntry, DocNode } from 'virtual:docs-registry';
 import rawConfig from '../../docs.config.json';
 
 export interface NavbarItem {
@@ -51,6 +52,12 @@ export interface ThemeConfig {
   };
 }
 
+export interface SidebarCategory {
+  type: 'category';
+  label: string;
+  items: string[];
+}
+
 export interface SiteConfig {
   title: string;
   tagline: string;
@@ -62,6 +69,9 @@ export interface SiteConfig {
   navbar: {
     title: string;
     items: NavbarItem[];
+  };
+  sidebar: {
+    docs: SidebarCategory[];
   };
   footer: {
     style: 'dark' | 'light';
@@ -108,3 +118,29 @@ export const siteConfig = rawConfig as SiteConfig;
 
 // Validate at module load time (build-time for Vite bundled code)
 validateI18nConfig(siteConfig);
+
+/**
+ * Builds the sidebar DocNode tree from docs.config.json's curated category
+ * list, instead of the full auto-discovered docTreeUnion. Internal-only docs
+ * (specs, audits, drafts under docs/en/ that aren't listed in any category)
+ * are excluded from navigation by construction.
+ */
+export function buildSidebarTreeFromConfig(
+  docIndexByLocale: Record<string, Record<string, DocEntry>>,
+  defaultLocale: string,
+  locale: string,
+): DocNode[] {
+  const localeIndex = docIndexByLocale[locale] ?? {};
+  const defaultIndex = docIndexByLocale[defaultLocale] ?? {};
+
+  return siteConfig.sidebar.docs.map((category) => ({
+    type: 'directory' as const,
+    name: category.label,
+    children: category.items.reduce<DocNode[]>((files, slug) => {
+      const entry = localeIndex[slug] ?? defaultIndex[slug];
+      if (!entry) return files;
+      files.push({ type: 'file', name: entry.title, slug: entry.slug });
+      return files;
+    }, []),
+  }));
+}

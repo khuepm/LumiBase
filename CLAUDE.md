@@ -75,4 +75,5 @@ Mọi feature trước khi đánh dấu hoàn thành phải qua checklist `.kiro
 - Full API spec: `docs/en/api/hono-api-spec.md`
 - Data model: `docs/en/data-model.md`
 - AI skills: `docs/en/ai-skills.md`
+- User management & auth realms: `docs/en/security/user-management.md` (ADR-010)
 - Contributing: `docs/en/contributing/`

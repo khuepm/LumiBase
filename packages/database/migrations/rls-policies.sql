@@ -53,7 +53,9 @@ DECLARE
     -- Deployment integrations (site-isolated).
     'lumibase_deployment_targets', 'lumibase_deployments',
     -- Custom domains & free subdomains (site-isolated).
-    'lumibase_site_domains'
+    'lumibase_site_domains',
+    -- Auth session store (site-isolated; holds session-equivalent secrets).
+    'lumibase_refresh_tokens'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

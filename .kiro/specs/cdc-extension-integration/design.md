@@ -242,6 +242,7 @@ Router con mount trong `modules/cdc/index.ts` cạnh `cdcRouter` hiện có — 
 |---|---|---|
 | Rò dữ liệu chéo tenant | `siteId` mọi bảng + RLS + two-site smoke test; queue/cache/lock key prefix `siteId` | 7.1, 7.2 |
 | Consumer đọc quá quyền | default `reference` mode → RBAC của token consumer quyết định; capability `cdc:subscribe` | 2.3, §4 |
+| Frontend end-user chạm feed | ADR-011: feed là realm studio/API-key; token audience `frontend`/`subscriber` bị `withStudioAccess` từ chối | 7.3 |
 | PII/PHI lọt ra ngoài | mask theo `fields.classification` TRƯỚC khi ghi outbox; snapshot chỉ chứa bản đã mask | 1.4 |
 | Webhook giả mạo / MITM | HMAC-SHA256 bắt buộc + timestamp chống replay; secret write-only | 4.2, 7.5 |
 | SSRF qua webhook URL | `validateOutboundUrl` + timeout + no-redirect | 4.3 |

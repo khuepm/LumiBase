@@ -6,8 +6,11 @@ import type { AppEnv } from '../../env';
 import { withAuth } from '../auth';
 
 async function signToken(payload: Record<string, unknown>, secret = 'test-secret') {
+  // Session tokens must carry a realm audience (`studio`/`frontend`);
+  // `verifyCustomJwt` pins it so single-purpose tokens can't be replayed.
   return new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
+    .setAudience('studio')
     .setIssuedAt()
     .setExpirationTime('24h')
     .sign(new TextEncoder().encode(secret));

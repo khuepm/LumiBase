@@ -1,13 +1,13 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
-import { docTreeUnion } from 'virtual:docs-registry';
+import { defaultLocale, docIndexByLocale } from 'virtual:docs-registry';
 import { Sidebar } from './Sidebar';
 import { SearchDialog } from './SearchDialog';
 import { TableOfContents } from './TableOfContents';
 import { LocaleSwitcher } from './LocaleSwitcher';
 import { ThemeToggle } from './ThemeToggle';
-import { siteConfig, resolveLabel } from '../lib/site-config';
+import { siteConfig, resolveLabel, buildSidebarTreeFromConfig } from '../lib/site-config';
 import { useLocale } from '../hooks/useLocale';
 import { useCurrentSlug } from '../hooks/useCurrentSlug';
 import { useT } from '../hooks/useT';
@@ -33,6 +33,13 @@ export function Layout() {
 
   // Extract the active slug from the current route path using parseUrl
   const activeSlug = useCurrentSlug();
+
+  // Sidebar tree is built from the curated docs.config.json category list,
+  // not the full auto-discovered doc set — internal-only docs stay out of nav.
+  const sidebarTree = useMemo(
+    () => buildSidebarTreeFromConfig(docIndexByLocale, defaultLocale, locale),
+    [locale],
+  );
 
   const handleNavigate = (slug: string) => {
     navigate(pathFor(locale, slug));
@@ -161,7 +168,7 @@ export function Layout() {
           {/* Sidebar navigation tree */}
           <div className="h-full overflow-y-auto">
             <Sidebar
-              tree={docTreeUnion}
+              tree={sidebarTree}
               activeSlug={activeSlug}
               onNavigate={handleNavigate}
               locale={locale}

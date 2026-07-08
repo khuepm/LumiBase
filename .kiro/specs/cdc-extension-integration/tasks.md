@@ -9,7 +9,7 @@
 - [ ] 1. Schema bảng mới (Req 1.1, 3.1, 4.6, 7.1)
   - [ ] 1.1 `packages/database/src/schema/cdc.ts`: thêm `cdcChangeEvents` (uuidv7 PK), `cdcSubscriptions` (nanoid PK), `cdcDeliveries` (uuidv7 PK) + index theo design §3. Mọi bảng có `siteId`. **Tên vật lý bảng PHẢI mang prefix `lumibase_` theo ADR-010** (`lumibase_cdc_change_events`, `lumibase_cdc_subscriptions`, `lumibase_cdc_deliveries`); export Drizzle giữ camelCase.
   - [ ] 1.2 Export ở barrel `packages/database/src/schema/index.ts`.
-  - [ ] 1.3 Migration: sinh incremental bằng `pnpm -F @lumibase/database db:generate` (drizzle-kit) → file kế tiếp `0005_cdc_change_feed.sql` (chồng lên `0000_lumibase_init`, KHÔNG sửa init; số thứ tự thực tế theo main lúc merge) + journal entry + thêm 3 bảng (tên `lumibase_`-prefixed) vào `rls-policies.sql` (site_isolation). Đảm bảo tương thích `migration-guard.ts` (ADR-010): chỉ tạo bảng prefixed, không đụng bảng legacy.
+  - [ ] 1.3 Migration: sinh incremental bằng `pnpm -F @lumibase/database db:generate` (drizzle-kit) → file kế tiếp `0007_cdc_change_feed.sql` (chồng lên `0000_lumibase_init`, KHÔNG sửa init; số thứ tự thực tế theo main lúc merge) + journal entry + thêm 3 bảng (tên `lumibase_`-prefixed) vào `rls-policies.sql` (site_isolation). Đảm bảo tương thích `migration-guard.ts` (ADR-010): chỉ tạo bảng prefixed, không đụng bảng legacy.
   - [ ] 1.4 Zod schemas `packages/shared/src/schemas/cdc-feed.ts`: `EventEnvelopeSchema`, `SubscriptionCreateSchema`/`PatchSchema`, `AckSchema`, `ReplaySchema`, `FeedQuerySchema` (limit ≤ 500, retention 1–90) + export ở index.
   - [ ] 1.5 Property test **P3 Envelope round-trip** + unit test biên Zod (limit, retentionDays, name ≤ 128). (Req 2.1, 6.1)
 
