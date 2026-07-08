@@ -56,6 +56,11 @@ export function toTitleCase(filename: string): string {
  * segment the page would be prerendered at `…/sdk/index/index.html` and the
  * redirect target `…/sdk/` would have no static file — a hard 404 on every
  * direct load / refresh of a section landing page.
+ *
+ * The match is case-sensitive **on purpose**: Cloudflare only collapses the
+ * lowercase `index` segment (it mirrors `index.html`). A file named
+ * `Index.md` is served fine as `…/sdk/Index/` and must NOT be rewritten —
+ * making this case-insensitive would break URLs that already work.
  */
 export function deriveSlug(relativePath: string): string {
   const withoutExt = relativePath.replace(/\.md$/, '').split(path.sep).join('/');
