@@ -306,3 +306,45 @@ export const scimTokens = pgTable(
     siteHashIdx: index('scim_tokens_site_hash_idx').on(t.siteId, t.tokenHash),
   }),
 );
+
+/**
+ * Rotating refresh tokens for self-service + staff login sessions.
+ *
+ * A login mints a short(er)-lived access JWT plus one refresh token row.
+ * `POST /auth/refresh` looks the presented token up by `tokenHash`,
+ * rotates it (revokes the old row, inserts a new one in the same
+ * `familyId`) and issues a fresh access JWT. Presenting an already-revoked
+ * token is treated as theft → the whole `familyId` is revoked
+ * (reuse-detection). Plaintext is returned to the client only on
+ * login/refresh; only the sha256 hash is ever stored.
+ */
+export const refreshTokens = pgTable(
+  'lumibase_refresh_tokens',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Realm of the access token this refreshes: `studio` | `frontend`. */
+    audience: text('audience').notNull(),
+    /** sha256(plaintext) hex; the lookup key. Plaintext is never stored. */
+    tokenHash: text('token_hash').notNull(),
+    /** Rotation-chain id — every rotation of one login shares a family. */
+    familyId: text('family_id').notNull(),
+    /** Id of the token row that superseded this one (rotation lineage). */
+    replacedBy: text('replaced_by'),
+    expiresAt: timestamp('expires_at').notNull(),
+    revokedAt: timestamp('revoked_at'),
+    lastIp: text('last_ip'),
+    lastUserAgent: text('last_user_agent'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    tokenHashUnique: uniqueIndex('refresh_tokens_token_hash_unique').on(t.tokenHash),
+    siteUserIdx: index('refresh_tokens_site_user_idx').on(t.siteId, t.userId),
+    familyIdx: index('refresh_tokens_family_idx').on(t.familyId),
+  }),
+);

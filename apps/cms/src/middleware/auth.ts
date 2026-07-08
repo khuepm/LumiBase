@@ -6,6 +6,7 @@ import type { AppEnv, AuthPrincipal } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
 import { tryExternalJwt } from '../modules/external-auth/adapter';
 import { formatSafeError } from '@lumibase/shared/utils';
+import { TOKEN_AUDIENCE, audienceValues } from '../services/auth/token-audience';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -60,12 +61,19 @@ const getJwks = (certsUrl: string) => {
   return jwks;
 };
 
-// Verify Custom JWT (HS256)
+// Verify Custom JWT (HS256).
+//
+// The `audience` is pinned to the two SESSION realms (M5): a single-purpose
+// `email-verify` / `password-reset` JWT — signed with the same JWT_SECRET —
+// therefore cannot be replayed as a session token even if its claim shape
+// later changes. Tokens with no `aud` (minted before per-realm audiences
+// existed) are rejected here and the holder simply re-authenticates.
 async function verifyCustomJwt(token: string, secret: string): Promise<any> {
   const encoder = new TextEncoder();
   const secretKey = encoder.encode(secret);
   const { payload } = await jwtVerify(token, secretKey, {
     algorithms: ['HS256'],
+    audience: [TOKEN_AUDIENCE.studio, TOKEN_AUDIENCE.frontend],
   });
   return payload;
 }
@@ -120,9 +128,20 @@ async function auditApiKeyUseDenied(
  */
 export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const path = c.req.path;
-  // NOTE: `/api/v1/auth/register` is intentionally NOT bypassed — the route
-  // handler requires an admin principal, so it must run through withAuth.
+  // Public, self-authenticating auth routes. These carry their own
+  // credential (login body, refresh token, or a single-purpose emailed
+  // JWT) and MUST NOT require a prior session — `withAuth` skips them.
+  // `/register` is public self-service (ADR-010): safe because the role is
+  // resolved server-side to a zero-privilege `subscriber` and the account
+  // starts `invited` until email verification. See `routes/auth.ts`.
   if (
+    path === '/api/v1/auth/register' ||
+    path === '/api/v1/auth/verify-email' ||
+    path === '/api/v1/auth/resend-verification' ||
+    path === '/api/v1/auth/forgot-password' ||
+    path === '/api/v1/auth/reset-password' ||
+    path === '/api/v1/auth/refresh' ||
+    path === '/api/v1/auth/logout' ||
     path === '/api/v1/auth/login' ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/') ||
@@ -418,11 +437,15 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
+      // The `aud` claim records the realm the token was minted for
+      // (`studio` vs `frontend`). `isFrontendUser` tracks it for the
+      // `/me` surface; `withStudioAccess` enforces the hard wall using
+      // the same claim carried on `raw`.
       const principal: AuthPrincipal = {
         userId,
         email: typeof payload.email === 'string' ? payload.email : undefined,
         roles: user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'],
-        isFrontendUser: true,
+        isFrontendUser: !audienceValues(payload.aud).includes(TOKEN_AUDIENCE.studio),
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);

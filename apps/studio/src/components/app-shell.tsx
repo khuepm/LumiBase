@@ -22,7 +22,7 @@ import { ReleaseUpdateNotice } from '@/components/release-update-notice';
 import { ConnectionStatusDot } from '@/components/connection-status-dot';
 import { CommandPalette } from '@/components/command-palette';
 import { SearchPalette } from '@/components/search-palette';
-import { clearActiveToken, getApiClient, hasActiveToken } from '@/lib/api';
+import { clearActiveToken, getApiClient, hasActiveToken, logout } from '@/lib/api';
 import { VersionInfoFooter } from '@/components/version-info-footer';
 import { getAdminBase } from '@/lib/admin-base';
 import { useInboxData } from '@/modules/mission-control/use-inbox';
@@ -171,8 +171,10 @@ export function AppShell({ children }: AppShellProps) {
                 : 'content';
 
   const handleLogout = () => {
-    clearActiveToken();
-    window.location.assign(adminBase ? `${adminBase}/login` : '/');
+    // Revoke server-side (best-effort), clear local tokens, then redirect.
+    void logout().finally(() => {
+      window.location.assign(adminBase ? `${adminBase}/login` : '/');
+    });
   };
 
   return (

@@ -9,7 +9,30 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **Self-service auth realms.** Subscriber registration (`/auth/register`) with email verification (`/auth/verify-email`, `/auth/resend-verification`), password recovery (`/auth/forgot-password`, `/auth/reset-password`), and an admin primitive to grant subscribers `read` on collections (`/api/v1/users/subscriber-access`). Tokens carry a per-realm `aud` (`studio`/`frontend`); `withStudioAccess` hard-rejects frontend tokens. See ADR-011.
+- **Per-realm session TTLs.** Separate access-token lifetimes for staff vs subscribers (`STUDIO_SESSION_TTL` `12h` / `FRONTEND_SESSION_TTL` `30d`).
+- **Rotating refresh tokens** (new table `lumibase_refresh_tokens`, migration `0005`). Silent renewal via `/auth/refresh`, `/auth/logout`; one-time-use rotation with family-wide reuse detection; tokens stored only as sha256. Per-realm refresh TTL (`STUDIO_REFRESH_TTL` `30d` / `FRONTEND_REFRESH_TTL` `90d`). Delivered as an `httpOnly` cookie **and** in the body.
+- **Cross-domain refresh cookie** config (`REFRESH_COOKIE_SAMESITE`/`REFRESH_COOKIE_DOMAIN`/`REFRESH_COOKIE_SECURE`) with a CSRF brake (`X-LumiBase-Refresh` header required for cookie-sourced refresh/logout).
+- **Authenticated account self-service:** `POST /api/v1/me/change-password` and session management (`GET`/`DELETE /api/v1/me/sessions[/:id]`).
+- **Hourly prune** of expired refresh tokens on the existing audit-rotation cron (Workers `scheduled` + Node `node-cron`).
+- **SDK silent auto-refresh.** `createLumiClient` accepts `refreshToken` + `onTokensRefreshed`; a 401 transparently refreshes and retries once (parallel 401s coalesce into one refresh). Studio wires this end to end (login persists the refresh token, logout revokes it server-side).
+
+### Security
+
+- **Public `/auth/register` is safe by construction** (supersedes the admin-only stopgap from #190): the endpoint is intentionally unauthenticated self-service, but the role is resolved **server-side** to a zero-privilege `subscriber` (`appAccess=false`, `adminAccess=false`) — the request body can never choose a role — and the account starts `invited` until email verification. Per-IP rate-limited and anti-enumeration (uniform `202`).
+- **Password change/reset kills every outstanding session:** both handlers stamp `users.password_changed_at` (migration `0006`), bump `tokenVersion` (so all prior access JWTs die immediately, CWE-613/620), and revoke all refresh tokens. A reset token whose `iat` predates `password_changed_at` is rejected → single-use reset links (review finding H1).
+- **Global unique email** (review finding H3): unique index on `lower(email)` (migration `0006`) closes the check-then-insert registration race that could create duplicate accounts for one email; registration maps the constraint violation to the same generic `202`.
+- **Atomic refresh-token rotation** (review finding M1): rotation claims the row with a conditional `UPDATE ... WHERE revoked_at IS NULL`, so two concurrent `/refresh` calls can no longer both succeed — the loser is treated as reuse and the family is revoked.
+- **Session Bearer verifier pins audience** (review finding M5): `verifyCustomJwt` requires `aud ∈ {studio, frontend}`, so a single-purpose `email-verify`/`password-reset` JWT can never be replayed as a session token even if its claim shape changes.
+- **`/auth/refresh` re-checks tenant membership + recomputes realm** (review finding M4): a user removed from the site, or whose role lost `appAccess`, no longer keeps minting stale-audience access tokens. Renewed access JWTs embed the current `tokenVersion`.
+- **`lumibase_refresh_tokens` under RLS** (review finding M6): added to `rls-policies.sql` `site_isolation` alongside the other tenant tables.
+
+### Notes
+
+- Run `pnpm -F @lumibase/database migrate` to apply migrations `0005` (adds `lumibase_refresh_tokens`) and `0006` (adds `users.password_changed_at` **and** the unique `lower(email)` index). Migration `0006` fails if the `users` table already contains case-insensitive duplicate emails — de-duplicate first; see the migration header. No other backfill required.
+- **Known limitations (tracked follow-ups, not fixed here):** per-IP rate limiting relies on `LUMIBASE_TRUSTED_PROXIES` being configured (and, off Cloudflare, a wired remote-address resolver) — the same limitation the login-guard already carries (review finding H2); refresh rotation grants a fresh TTL per hop with no absolute session cap (M2); the refresh cookie is one host-scoped name across tenants on a shared host (L2). See `docs/en/security/user-management.md`.
 
 ## [0.20.0] - 2026-07-08
 
