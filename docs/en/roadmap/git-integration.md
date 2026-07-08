@@ -11,6 +11,17 @@
 3. **Preview environment tự tạo** — mỗi PR sinh một site preview tạm thời (ephemeral) ngay trong LumiBase, tự dọn khi PR đóng/merge.
 4. **Config-as-Code & Earned autonomy** — đồng bộ schema/intent hai chiều với repo; agent `git-sync` thao tác theo mức autonomy được cấp (L0–L4) với HITL cho thao tác nguy hiểm.
 
+## Phân loại phạm vi v1 (scope freeze — v1-release-criteria §2)
+
+| Phần | Phân loại | Ghi chú |
+|---|---|---|
+| Kết nối repo + auth (App/OAuth/PAT), PR/CI dashboard + log viewer, webhook verify + event log, status-check ngược, provenance, notification/incident, GitOps **intents** sync | **in-v1** | Đã implement (Phase A–E + GitOps intents), DoD 2b/2c đã đóng, test xanh; cần verify DB-backed trên staging trước tag. |
+| Preview environments (ephemeral site) | **in-v1 (opt-in, mặc định off)** | `sync_config.preview`; cross-site provisioning cần verify staging. |
+| GitOps **schema apply** (collections/fields) qua HITL harness | **post-v1** | Hiện chỉ sync intents; schema apply defer. |
+| Vòng lặp thực thi agent `git-sync`; auto-trigger GitOps khi merge `main`; YAML config; notification dispatcher đầy đủ | **post-v1** | Ghi rõ ở "Follow-up" các phase bên dưới. |
+
+> API surface công khai của phần in-v1 (`/api/v1/integrations/git/*`) được chốt trong `docs/en/api/hono-api-spec.md` §12c; thay đổi breaking sau freeze dồn về major kế tiếp (semver). Setup Impact Registry đã có dòng git-integration (`n/a`).
+
 ## Nguyên tắc kiến trúc
 
 - **Provider abstraction:** interface `GitProvider` chung; adapter `GitHubProvider` / `GitLabProvider`. Business logic không phụ thuộc provider cụ thể.
