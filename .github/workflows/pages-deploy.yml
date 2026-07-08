@@ -184,8 +184,13 @@ jobs:
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         run: curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --max-time 20 "${{ steps.deploy_landing.outputs.url }}" --output /dev/null
 
+      # marketplace is a standalone submodule excluded from the pnpm workspace,
+      # so it installs & builds on its own (its deps are not in the root lockfile).
       - name: Build marketplace
-        run: pnpm marketplace:build
+        working-directory: apps/marketplace
+        run: |
+          pnpm install --no-frozen-lockfile --ignore-workspace
+          pnpm build
 
       - name: Deploy marketplace to Cloudflare Pages
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'

@@ -211,7 +211,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      # marketplace is a standalone submodule excluded from the pnpm workspace,
+      # so it installs & builds on its own (its deps are not in the root lockfile).
+      - name: Build Pages app (marketplace, standalone)
+        if: matrix.app.name == 'marketplace'
+        working-directory: apps/marketplace
+        run: |
+          pnpm install --no-frozen-lockfile --ignore-workspace
+          pnpm build
+
       - name: Build Pages app
+        if: matrix.app.name != 'marketplace'
         run: pnpm --filter ${{ matrix.app.package }} build
 
       - name: Check Cloudflare credentials
