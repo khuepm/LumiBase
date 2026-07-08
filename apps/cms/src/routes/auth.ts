@@ -458,7 +458,9 @@ const resendVerificationSchema = z.object({
 
 const resetPasswordSchema = z.object({
   token: z.string().min(1),
-  password: z.string().min(6),
+  // Shared strength policy so the reset path can't drift below the min(12) +
+  // complexity rules the other password paths enforce (CWE-521).
+  password: PasswordSchema,
 });
 
 /**
