@@ -97,7 +97,7 @@ vi.mock('virtual:docs-registry', () => {
       locale: 'en',
       title: 'Lumibase Documentation',
       filePath: 'en/README.md',
-      content: '# Welcome\n\nThis is the main documentation page.\n\n## Getting Started\n\nRead the [Collections Guide](./features/collections.md) to begin.\n\nVisit [External Site](https://example.com) for more info.',
+      content: '# Lumibase Documentation\n\nThis is the main documentation page.\n\n## Getting Started\n\nRead the [Collections Guide](./features/collections.md) to begin.\n\nVisit [External Site](https://example.com) for more info.',
       lastModified: '2024-06-15T10:00:00Z',
     },
     'features/collections': {
