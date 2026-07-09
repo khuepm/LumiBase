@@ -187,4 +187,4 @@ Trả lời 6 câu hỏi của `admin-setup-wizard/setup-impact.md`:
 | 5 | Capability flag mới trong `/setup/capabilities`? | **Có** | `cdc:subscribe`, `cdc:manage` — cần upgrade note CHANGELOG khi triển khai (giống `deployments:*`). |
 | 6 | Backfill cho instance cũ? | **Không** | Migration incremental (`0007_cdc_change_feed`) chồng lên `0000_lumibase_init` (ADR-010), 3 bảng mới `lumibase_cdc_*` rỗng; không đổi bảng cũ. Chưa instance nào ship trước ADR-010 nên không có un-prefixed data để backfill. |
 
-Khi triển khai: thêm row vào Registry trung tâm (đã thêm `pending` #32) và cập nhật trạng thái.
+Khi triển khai: thêm row vào Registry trung tâm (đã thêm `pending` #69) và cập nhật trạng thái.

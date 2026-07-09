@@ -82,7 +82,7 @@
   - [ ] 15.1 `docs/en/features/cdc-change-feed.md`: kiến trúc, envelope reference + versioning policy, semantics (at-least-once/ordering/idempotency/reconcile trên HTTP driver), hướng dẫn pull/webhook/extension, mục Multi-tenancy, verify chữ ký kèm code mẫu.
   - [ ] 15.2 Cập nhật `docs/en/api/hono-api-spec.md` + `docs/en/data-model.md`; CHANGELOG (capability mới + upgrade note); golden fixture Event_Envelope v1 + contract test.
   - [ ] 15.3 Tutorial "Build your first sink connector" + extension mẫu (sync 1 collection ra ngoài qua sandboxed fetch, idempotent theo `event.id`, mẫu theo `lumibase-firebase-sync`).
-- [ ] 16. Setup Impact Registry — cập nhật row #32 `cdc-extension-integration` trong `admin-setup-wizard/setup-impact.md` từ `pending` → `done`/kết quả thực tế (capability mới câu 5 = CÓ). (DoD §2)
+- [ ] 16. Setup Impact Registry — cập nhật row #32 `cdc-extension-integration` trong `admin-setup-wizard/setup-impact.md` từ `pending` → `done` (capability mới câu 5 = CÓ). (DoD §2)
 - [ ] 17. Final checkpoint — `pnpm typecheck` toàn workspace + full test suite pass; rà lại DoD checklist đầy đủ.
 
 ## Việc còn mở (Open / TODO cho vòng sau)
