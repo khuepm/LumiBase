@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:23:24.787Z
+sourceLang: en
+contentHash: c274dd38cd5da85d
+---
+
 # User Management Best Practices
 
 > **Audience:** operators and integrators wiring a public frontend (e.g.

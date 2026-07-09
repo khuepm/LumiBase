@@ -2,23 +2,26 @@
 version: 1
 lastUpdated: 2026-07-08T20:22:56.148Z
 sourceLang: en
-contentHash: 62e0afccda04ab1b
+translatedFrom: en
+sourceHash: 62e0afccda04ab1b
+mtEngine: claude
+syncStatus: machine-translated
 ---
 
 # Extension Development Guide
 
-LumiBase extensions allow you to add custom field interfaces, displays, layouts, operation types, and API routes without modifying the core codebase.
+LumiBase extension cho phép bạn thêm các custom field interface, display, layout, operation type và API route mà không cần chỉnh sửa core codebase.
 
 ## Extension types
 
-| Type | Description | Example |
+| Type | Mô tả | Ví dụ |
 |------|-------------|---------|
-| `interface` | Custom field input UI in the Studio | Color picker, rich text, map |
-| `display` | How a field value is rendered in list/detail views | Preview thumbnail, status badge |
-| `layout` | Alternative list view layouts | Kanban board, calendar, map view |
+| `interface` | UI nhập field tùy biến trong Studio | Color picker, rich text, map |
+| `display` | Cách một field value được render trong list/detail view | Preview thumbnail, status badge |
+| `layout` | Các layout list view thay thế | Kanban board, calendar, map view |
 | `operation` | Custom Flows operation type | Send SMS, create Stripe invoice |
 | `hook` | Server-side lifecycle hooks | Validate on create, sync to CRM |
-| `endpoint` | Custom API routes mounted under `/ext/:extensionId/` | Proxy to external service |
+| `endpoint` | Các custom API route được mount dưới `/ext/:extensionId/` | Proxy tới external service |
 
 ## Setup
 
@@ -28,7 +31,7 @@ cd my-extension
 npm install
 ```
 
-This scaffolds a project with:
+Lệnh này scaffold một project với:
 
 ```
 my-extension/
@@ -89,7 +92,7 @@ export default function ColorPickerInterface({
 }
 ```
 
-### Define the interface
+### Định nghĩa interface
 
 ```typescript
 // src/index.ts
@@ -129,7 +132,7 @@ export const handler: OperationHandler = async (options, context) => {
 }
 ```
 
-### Register the operation
+### Đăng ký operation
 
 ```typescript
 // src/index.ts
@@ -166,32 +169,32 @@ export const onArticleCreate: HookHandler = async (event, context) => {
 }
 ```
 
-### Register the hook
+### Đăng ký hook
 
 ```typescript
 registerHook('item.create:articles', onArticleCreate)
 ```
 
-Available hook events: `item.create:*`, `item.update:*`, `item.delete:*`, `auth.login`, `schema.change`.
+Các hook event khả dụng: `item.create:*`, `item.update:*`, `item.delete:*`, `auth.login`, `schema.change`.
 
 ## Security model
 
-Extensions run in an **isolated module sandbox**:
-- Extensions cannot import from `@lumibase/cms` internal modules
-- Network requests go through a capability-gated fetch proxy
-- Extensions declare `requiredCapabilities` in their manifest — granted by an admin
-- File system access is not available
+Extension chạy trong một **isolated module sandbox**:
+- Extension không thể import từ các internal module của `@lumibase/cms`
+- Network request đi qua một capability-gated fetch proxy
+- Extension khai báo `requiredCapabilities` trong manifest của nó — được cấp bởi admin
+- Không có quyền truy cập file system
 
-Available capabilities:
-- `items:read` — read items from the CMS
-- `items:write` — create/update/delete items
-- `files:read` — read file metadata
-- `files:write` — upload/delete files
-- `schema:read` — read collection/field schema
-- `settings:read` — read site settings
-- `http:external` — make HTTP requests to external services
+Các capability khả dụng:
+- `items:read` — đọc item từ CMS
+- `items:write` — tạo/cập nhật/xóa item
+- `files:read` — đọc file metadata
+- `files:write` — upload/xóa file
+- `schema:read` — đọc collection/field schema
+- `settings:read` — đọc site settings
+- `http:external` — thực hiện HTTP request tới external service
 
-## Building and publishing
+## Building và publishing
 
 ```bash
 # Build the extension bundle
@@ -208,7 +211,7 @@ lumibase extension install ./dist/index.js --local
 lumibase extension publish --token $MARKETPLACE_TOKEN
 ```
 
-## Local development in Studio
+## Local development trong Studio
 
 ```bash
 # Install your local extension in Studio dev mode
@@ -218,14 +221,14 @@ pnpm -F @lumibase/studio dev
 lumibase extension install ./my-extension/dist/index.js --local --watch
 ```
 
-The Studio's hot reload picks up extension changes automatically in dev mode.
+Hot reload của Studio tự động nhận các thay đổi extension trong dev mode.
 
-## Sending email from an extension
+## Gửi email từ một extension
 
-Extensions do **not** talk to SMTP or an email API directly. LumiBase ships a
-shared **EmailService** that owns the transport (SMTP / MailChannels) and a
-template + layout store. An extension only decides *who* to mail and *which
-template* to use, then calls the core endpoint:
+Extension **không** giao tiếp trực tiếp với SMTP hay một email API. LumiBase phát hành một
+**EmailService** dùng chung, sở hữu transport (SMTP / MailChannels) và một
+kho template + layout. Extension chỉ quyết định *ai* để gửi mail và *dùng
+template nào*, rồi gọi core endpoint:
 
 ```ts
 await ctx.fetch(`${baseUrl}/api/v1/email/send`, {
@@ -235,14 +238,14 @@ await ctx.fetch(`${baseUrl}/api/v1/email/send`, {
 });
 ```
 
-Declare only `http:fetch` (to reach the endpoint) and `env:read` (for the base
-URL + token) in your manifest. Author templates in Studio → Settings → Email,
-or configure the transport purely by env. Full reference:
-[`features/email-service.md`](../features/email-service.md). Working example:
+Chỉ khai báo `http:fetch` (để gọi tới endpoint) và `env:read` (cho base
+URL + token) trong manifest của bạn. Author template trong Studio → Settings → Email,
+hoặc cấu hình transport hoàn toàn bằng env. Tham khảo đầy đủ:
+[`features/email-service.md`](../features/email-service.md). Ví dụ thực tế:
 [`examples/extension-email-setup`](../../../examples/extension-email-setup/README.md).
 
 ## Resources
 
-- `packages/extension-sdk/src/types.ts` — full TypeScript types for all extension APIs
-- `packages/extension-sdk/src/helpers.ts` — utility helpers (`registerInterface`, `registerOperation`, etc.)
-- Example extensions: `apps/studio/src/interfaces/` (built-in interfaces as reference)
+- `packages/extension-sdk/src/types.ts` — đầy đủ TypeScript type cho mọi extension API
+- `packages/extension-sdk/src/helpers.ts` — các utility helper (`registerInterface`, `registerOperation`, v.v.)
+- Extension mẫu: `apps/studio/src/interfaces/` (các built-in interface làm tham chiếu)

@@ -2,14 +2,17 @@
 version: 1
 lastUpdated: 2026-07-08T20:21:03.641Z
 sourceLang: en
-contentHash: 9c6c07b7161c8e59
+translatedFrom: en
+sourceHash: 9c6c07b7161c8e59
+mtEngine: claude
+syncStatus: machine-translated
 ---
 
-# Getting Started — Scaffold a new project with `create-lumibase`
+# Getting Started — Khởi tạo dự án mới bằng `create-lumibase`
 
-`create-lumibase` is the official project bootstrapper for LumiBase. From an
-empty directory you run a single command and get a ready-to-run project,
-similar to `create-next-app` or `create-vite`.
+`create-lumibase` là công cụ bootstrap dự án chính thức của LumiBase. Từ một
+thư mục trống bạn chạy một lệnh duy nhất và có ngay một dự án chạy được, tương
+tự `create-next-app` hay `create-vite`.
 
 > **Package:** [`create-lumibase`](../../packages/create-lumibase) ·
 > **Published as:** `create-lumibase` on npm ·
@@ -24,9 +27,9 @@ npx create-lumibase@latest my-project
 pnpm create lumibase my-project
 ```
 
-With no arguments, the CLI runs interactively and asks for everything it needs.
+Khi không có tham số nào, CLI chạy ở chế độ tương tác và hỏi mọi thứ nó cần.
 
-## What happens, step by step
+## Điều gì diễn ra, theo từng bước
 
 ```
 npx create-lumibase@latest my-blog
@@ -50,12 +53,12 @@ npx create-lumibase@latest my-blog
 └─ 6. print exact next steps for the chosen stack
 ```
 
-### Empty-directory and overwrite handling
+### Xử lý thư mục trống và ghi đè
 
-- If the target directory does not exist it is created.
-- If it exists **and is not empty**, the CLI asks before overwriting.
-- The project name is validated against npm package-name rules (lowercase, no
-  spaces, may not start with `.`/`_`, ≤ 214 chars).
+- Nếu thư mục đích chưa tồn tại thì nó sẽ được tạo.
+- Nếu thư mục đã tồn tại **và không rỗng**, CLI sẽ hỏi trước khi ghi đè.
+- Tên dự án được kiểm tra theo quy tắc đặt tên package của npm (chữ thường,
+  không khoảng trắng, không được bắt đầu bằng `.`/`_`, ≤ 214 ký tự).
 
 ## Templates
 
@@ -64,7 +67,7 @@ npx create-lumibase@latest my-blog
 | **Docker** (default) | `--template default` | Hono + `@hono/node-server`, Drizzle ORM, PostgreSQL, Redis, `docker-compose.yml` | Self-hosting, local dev parity with production |
 | **Cloudflare Workers** | `--template cloudflare` | Hono, Drizzle ORM, D1, `wrangler.toml` | Edge deployment |
 
-### Generated files (Docker template)
+### File được sinh ra (Docker template)
 
 ```
 my-blog/
@@ -82,14 +85,14 @@ my-blog/
         └── migrate.ts       # migration runner
 ```
 
-The demo `posts` resource follows the project's
-[non-negotiable rules](../../CLAUDE.md): `nanoid()` IDs, a `site_id` column on
-every domain table, the `{ data }` / `{ errors }` response envelope, and Zod
-request validation.
+Resource `posts` demo tuân theo
+[các quy tắc bất di bất dịch](../../CLAUDE.md) của dự án: ID bằng `nanoid()`,
+một cột `site_id` trên mọi domain table, envelope response `{ data }` /
+`{ errors }`, và validation request bằng Zod.
 
-## Non-interactive (CI / scripted) usage
+## Sử dụng non-interactive (CI / scripted)
 
-Pass flags to skip prompts entirely:
+Truyền flag để bỏ qua hoàn toàn các prompt:
 
 ```bash
 npx create-lumibase@latest my-blog \
@@ -101,13 +104,13 @@ npx create-lumibase@latest my-blog \
 
 | Flag | Description |
 | --- | --- |
-| `--template <default\|cloudflare>` | Project template. |
-| `--pm <pnpm\|npm\|yarn\|bun>` | Package manager used for install. Auto-detected from `npm_config_user_agent` when omitted. |
-| `--install` / `--no-install` | Force-enable or skip dependency install. |
-| `--git` / `--no-git` | Force-enable or skip `git init` + first commit. |
-| `DEBUG=1` (env) | Print each scaffolded file path and full stack traces on error. |
+| `--template <default\|cloudflare>` | Template dự án. |
+| `--pm <pnpm\|npm\|yarn\|bun>` | Package manager dùng để cài đặt. Tự dò từ `npm_config_user_agent` khi bỏ trống. |
+| `--install` / `--no-install` | Bắt buộc bật hoặc bỏ qua bước cài dependency. |
+| `--git` / `--no-git` | Bắt buộc bật hoặc bỏ qua `git init` + commit đầu tiên. |
+| `DEBUG=1` (env) | In đường dẫn từng file được scaffold và full stack trace khi lỗi. |
 
-## First run after scaffolding
+## Lần chạy đầu tiên sau khi scaffold
 
 ### Docker template
 
@@ -121,7 +124,7 @@ pnpm run db:migrate        # apply it
 pnpm dev                   # http://localhost:8787
 ```
 
-Verify it works:
+Kiểm tra xem nó chạy chưa:
 
 ```bash
 curl http://localhost:8787/                 # {"name":"my-blog","status":"ok"}
@@ -131,9 +134,9 @@ curl -X POST http://localhost:8787/posts \
   -d '{"title":"Hello","slug":"hello","body":"First post"}'
 ```
 
-> **Note:** the `dev`, `start`, and `db:migrate` scripts use `--env-file=.env`
-> so `tsx`/`node` load your environment. `drizzle-kit` (used by `db:generate`)
-> loads `.env` automatically.
+> **Note:** các script `dev`, `start`, và `db:migrate` dùng `--env-file=.env`
+> nên `tsx`/`node` sẽ nạp environment của bạn. `drizzle-kit` (dùng bởi
+> `db:generate`) tự nạp `.env`.
 
 ### Cloudflare template
 
@@ -150,12 +153,12 @@ pnpm dev                   # wrangler dev
 
 | Symptom | Cause / fix |
 | --- | --- |
-| `Project name must be lowercase` | npm package names are lowercase; rename the project. |
-| `DATABASE_URL is required` | Copy `.env.example` to `.env` (Docker template). |
-| Port `5432` already allocated | Another Postgres is bound to `5432`; stop it or remap the host port in `docker-compose.yml`. |
-| Dependency install failed | Re-run `<pm> install` manually; the CLI continues and tells you so. |
+| `Project name must be lowercase` | Tên package npm là chữ thường; đổi tên dự án. |
+| `DATABASE_URL is required` | Copy `.env.example` thành `.env` (Docker template). |
+| Port `5432` already allocated | Một Postgres khác đang bind vào `5432`; dừng nó hoặc remap host port trong `docker-compose.yml`. |
+| Dependency install failed | Chạy lại `<pm> install` thủ công; CLI vẫn tiếp tục và báo cho bạn biết. |
 
-## Related
+## Liên quan
 
 - [Deployment overview](./deployment/overview.md)
 - [Local development](./deployment/local-development.md)
