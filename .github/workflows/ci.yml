@@ -73,6 +73,9 @@ jobs:
       - name: Check package versions
         run: pnpm version:check
 
+      - name: Check registry numbering
+        run: pnpm registry:check
+
       - name: Typecheck
         run: pnpm -r typecheck
 

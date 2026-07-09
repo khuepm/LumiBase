@@ -9,7 +9,20 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Changed
+
+- **Setup Impact Registry `#` column deduplicated.** Parallel branches had kept
+  picking "the next number" independently, leaving many collisions (#16/#20/#21
+  through #38). Colliding rows were renumbered to fresh ids (45–68), keeping the
+  occurrence that other rows cite by number so cross-references stay valid.
+
+### Added
+
+- **Registry-numbering tripwire (`pnpm registry:check`).** A CI check
+  (`scripts/check-registry-numbering.mjs`, wired into the CI `checks` job) fails
+  the build when the Setup Impact Registry `#` column contains a duplicate —
+  mechanizing the Definition of Done §2 uniqueness rule per §6 ("cơ giới hóa"),
+  replacing the manual `grep`.
 
 ## [0.21.0] - 2026-07-08
 

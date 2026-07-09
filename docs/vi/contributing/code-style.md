@@ -2,34 +2,37 @@
 version: 1
 lastUpdated: 2026-07-08T20:22:56.047Z
 sourceLang: en
-contentHash: ae71218c5e9ee3ac
+translatedFrom: en
+sourceHash: ae71218c5e9ee3ac
+mtEngine: claude
+syncStatus: machine-translated
 ---
 
 # Code Style Guide
 
-LumiBase follows consistent coding conventions across the monorepo. This guide documents the key rules enforced by our linter and formatter.
+LumiBase tuân theo các quy ước code nhất quán trên toàn monorepo. Hướng dẫn này ghi lại những quy tắc chính được linter và formatter của chúng tôi thực thi.
 
 ## Tools
 
-| Tool | Config | Purpose |
+| Tool | Config | Mục đích |
 |------|--------|---------|
 | TypeScript | `tsconfig.base.json` | Type checking, strict mode |
 | ESLint | `.eslintrc.js` (per package) | Linting |
 | Prettier | `.prettierrc` | Formatting |
-| Husky + lint-staged | `.husky/` | Pre-commit enforcement |
+| Husky + lint-staged | `.husky/` | Thực thi pre-commit |
 
 ## TypeScript conventions
 
 ### Strict mode
 
-All packages use `"strict": true` in TypeScript config. This includes:
+Mọi package dùng `"strict": true` trong TypeScript config. Điều này bao gồm:
 - `strictNullChecks`
 - `noImplicitAny`
 - `strictFunctionTypes`
 
 ### Type imports
 
-Always use `import type` for type-only imports:
+Luôn dùng `import type` cho các import chỉ chứa type:
 
 ```typescript
 // ✓ Good
@@ -39,9 +42,9 @@ import type { Collection } from '@lumibase/shared'
 import { Collection } from '@lumibase/shared'
 ```
 
-### No `any`
+### Không dùng `any`
 
-Avoid `any`. Use `unknown` for truly dynamic values and narrow with type guards:
+Tránh `any`. Dùng `unknown` cho các giá trị thực sự động và narrow lại bằng type guards:
 
 ```typescript
 // ✓ Good
@@ -54,9 +57,9 @@ function parseItem(value: unknown): Item {
 function parseItem(value: any): Item { ... }
 ```
 
-### Zod for runtime validation
+### Zod cho runtime validation
 
-All API request/response shapes are validated with Zod. Define schemas in `packages/shared/src/schemas/`:
+Mọi shape của API request/response đều được validate bằng Zod. Định nghĩa schema trong `packages/shared/src/schemas/`:
 
 ```typescript
 import { z } from 'zod'
@@ -72,7 +75,7 @@ export type CreateCollectionInput = z.infer<typeof CreateCollectionSchema>
 
 ### Naming conventions
 
-| Entity | Convention | Example |
+| Entity | Quy ước | Ví dụ |
 |--------|-----------|---------|
 | Variables | camelCase | `siteId`, `collectionName` |
 | Functions | camelCase | `getItems()`, `createCollection()` |
@@ -86,7 +89,7 @@ export type CreateCollectionInput = z.infer<typeof CreateCollectionSchema>
 
 ### Route handlers
 
-Keep route handlers thin — delegate to services:
+Giữ route handler mỏng — delegate cho service:
 
 ```typescript
 // ✓ Good — handler delegates immediately
@@ -107,7 +110,7 @@ app.get('/items/:collection', async (c) => {
 
 ### Service pattern
 
-Services receive the Hono context `c` (or specific deps) and return typed results:
+Service nhận Hono context `c` (hoặc các dependency cụ thể) và trả về kết quả có kiểu:
 
 ```typescript
 export class ItemService {
@@ -125,7 +128,7 @@ export class ItemService {
 
 ### Error handling
 
-Use the `AppError` class from `packages/shared`:
+Dùng class `AppError` từ `packages/shared`:
 
 ```typescript
 import { AppError } from '@lumibase/shared'
@@ -133,11 +136,11 @@ import { AppError } from '@lumibase/shared'
 throw new AppError('RECORD_NOT_FOUND', `Collection '${name}' not found`, 404)
 ```
 
-The global error handler in `apps/cms/src/middleware/error.ts` converts `AppError` to the standard JSON error envelope.
+Global error handler trong `apps/cms/src/middleware/error.ts` chuyển `AppError` thành JSON error envelope chuẩn.
 
 ### Multi-tenancy
 
-**Always** scope database queries to `site_id`:
+**Luôn luôn** scope các database query theo `site_id`:
 
 ```typescript
 // ✓ Good
@@ -155,7 +158,7 @@ const collections = await db
 const collections = await db.select().from(collectionsTable)
 ```
 
-Use the `scopeSite(siteId)` helper for common patterns:
+Dùng helper `scopeSite(siteId)` cho các pattern phổ biến:
 
 ```typescript
 import { scopeSite } from '@lumibase/database'
@@ -176,13 +179,13 @@ ComponentName/
 
 ### State management
 
-- Use **TanStack Query** for server state (data fetching, mutations)
-- Use **React state** (`useState`, `useReducer`) for local UI state
-- Avoid global state stores for server data
+- Dùng **TanStack Query** cho server state (data fetching, mutations)
+- Dùng **React state** (`useState`, `useReducer`) cho local UI state
+- Tránh dùng global state store cho server data
 
-### API calls from Studio
+### API calls từ Studio
 
-Always use the typed API client from `apps/studio/src/lib/api-client.ts`:
+Luôn dùng typed API client từ `apps/studio/src/lib/api-client.ts`:
 
 ```typescript
 // ✓ Good

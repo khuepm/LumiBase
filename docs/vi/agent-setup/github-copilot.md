@@ -2,20 +2,23 @@
 version: 1
 lastUpdated: 2026-07-08T20:22:25.910Z
 sourceLang: en
-contentHash: ce887b90495381f9
+translatedFrom: en
+sourceHash: ce887b90495381f9
+mtEngine: claude
+syncStatus: machine-translated
 ---
 
-# GitHub Copilot — LumiBase Agent Setup
+# GitHub Copilot — Thiết lập Agent cho LumiBase
 
-> **GitHub Copilot** is an editor extension and CLI with agent mode, workspace context, and native PR integration. Made by GitHub.
+> **GitHub Copilot** là một editor extension và CLI với chế độ agent, ngữ cảnh workspace, và tích hợp PR native. Do GitHub tạo ra.
 >
 > **Tags:** Terminal · Cloud · Extension
 
 ---
 
-## Quick setup (recommended)
+## Thiết lập nhanh (khuyến nghị)
 
-Open GitHub Copilot Chat in VS Code and paste:
+Mở GitHub Copilot Chat trong VS Code và dán:
 
 ```
 Read docs/en/agent-setup/prompt.md and follow all setup instructions.
@@ -23,19 +26,19 @@ Read docs/en/agent-setup/prompt.md and follow all setup instructions.
 
 ---
 
-## Manual setup
+## Thiết lập thủ công
 
-### Step 1 — Open the project in VS Code
+### Bước 1 — Mở dự án trong VS Code
 
 ```bash
 code /path/to/lumibase
 ```
 
-Ensure the GitHub Copilot extension is installed and authenticated.
+Đảm bảo extension GitHub Copilot đã được cài đặt và xác thực.
 
-### Step 2 — Create a workspace instructions file
+### Bước 2 — Tạo một file workspace instructions
 
-Create `.github/copilot-instructions.md` in the project root:
+Tạo `.github/copilot-instructions.md` ở thư mục gốc dự án:
 
 ```markdown
 # LumiBase — Copilot workspace instructions
@@ -65,9 +68,9 @@ Read these files before making changes in their area:
 - docs/en/features/permissions-rbac.md (permissions)
 ```
 
-### Step 3 — Set up the MCP server (optional)
+### Bước 3 — Thiết lập MCP server (tùy chọn)
 
-Add to `.vscode/mcp.json`:
+Thêm vào `.vscode/mcp.json`:
 
 ```json
 {
@@ -84,17 +87,17 @@ Add to `.vscode/mcp.json`:
 }
 ```
 
-Set `LUMIBASE_TOKEN` and `LUMIBASE_SITE_ID` in your shell environment or `.env`.
+Đặt `LUMIBASE_TOKEN` và `LUMIBASE_SITE_ID` trong môi trường shell của bạn hoặc `.env`.
 
-Reload VS Code and check the MCP panel (`Cmd+Shift+P` → "MCP: List Servers").
+Reload VS Code và kiểm tra panel MCP (`Cmd+Shift+P` → "MCP: List Servers").
 
 ---
 
-## Agent mode
+## Chế độ Agent
 
-Enable GitHub Copilot Agent Mode in VS Code (`Cmd+Shift+P` → "GitHub Copilot: Enable Agent Mode").
+Bật GitHub Copilot Agent Mode trong VS Code (`Cmd+Shift+P` → "GitHub Copilot: Enable Agent Mode").
 
-Example agent prompts for LumiBase:
+Ví dụ prompt agent cho LumiBase:
 
 ```
 #file:docs/en/features/flows-automation.md
@@ -110,26 +113,26 @@ Mark it as safe (no HITL needed). Register it in CORE_SKILLS and implement the h
 
 ---
 
-## Workspace context tips
+## Mẹo ngữ cảnh workspace
 
-Copilot workspace context (`#workspace`) works well when:
+Ngữ cảnh workspace của Copilot (`#workspace`) hoạt động tốt khi:
 
-1. You've opened the monorepo root as the VS Code workspace
-2. The relevant source files are open in editor tabs
-3. You reference docs files with `#file:` in your prompt
+1. Bạn đã mở thư mục gốc monorepo làm VS Code workspace
+2. Các file nguồn liên quan đang mở trong các tab editor
+3. Bạn tham chiếu các file docs bằng `#file:` trong prompt
 
-**Recommended files to keep open** when working on LumiBase:
+**Các file nên giữ mở** khi làm việc trên LumiBase:
 
 - `docs/en/README.md`
 - `docs/en/data-model.md`
 - `apps/cms/src/index.ts`
-- The specific route/service file you're editing
+- File route/service cụ thể bạn đang chỉnh sửa
 
 ---
 
-## PR summaries
+## Tóm tắt PR
 
-GitHub Copilot can generate PR descriptions for LumiBase changes. Ask it to:
+GitHub Copilot có thể sinh mô tả PR cho các thay đổi LumiBase. Hãy yêu cầu nó:
 
 ```
 Write a PR description for these changes. Reference the relevant docs files
@@ -138,9 +141,9 @@ Write a PR description for these changes. Reference the relevant docs files
 
 ---
 
-## CLI integration
+## Tích hợp CLI
 
-With GitHub Copilot CLI:
+Với GitHub Copilot CLI:
 
 ```bash
 # Ask about a specific LumiBase pattern
@@ -152,14 +155,14 @@ gh copilot explain "apps/cms/src/services/ai-harness.ts"
 
 ---
 
-## Troubleshooting
+## Xử lý sự cố
 
-**Copilot doesn't know LumiBase conventions**: Ensure `.github/copilot-instructions.md` is committed and VS Code has reloaded the workspace.
+**Copilot không biết các quy ước LumiBase**: Đảm bảo `.github/copilot-instructions.md` đã được commit và VS Code đã reload workspace.
 
-**MCP server not showing up**: The MCP server requires `apps/cms` to be running locally. Start it with `pnpm -F @lumibase/cms dev`.
+**MCP server không hiện lên**: MCP server yêu cầu `apps/cms` đang chạy cục bộ. Khởi động nó bằng `pnpm -F @lumibase/cms dev`.
 
-**Type errors in generated code**: Run `pnpm typecheck` in the affected package to identify mismatches, then show the error to Copilot.
+**Lỗi type trong code được sinh ra**: Chạy `pnpm typecheck` trong package bị ảnh hưởng để xác định các điểm không khớp, rồi hiển thị lỗi cho Copilot.
 
 ---
 
-← [Back to Agent Setup](./index.md)
+← [Quay lại Thiết lập Agent](./index.md)
