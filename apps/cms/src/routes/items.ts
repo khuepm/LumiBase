@@ -25,6 +25,9 @@ const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
   status: z.string().optional(),
+  // Opt out of the `count(*)` total (high-load-cache-readiness Req 5).
+  // Defaults to `total_count` to preserve the historical response shape.
+  meta: z.enum(['total_count', 'none']).optional(),
 });
 
 const scheduleSchema = {
@@ -91,6 +94,7 @@ itemsRouter.get('/:collection', async (c) => {
       limit: parsed.data.limit,
       offset: parsed.data.offset,
       status: parsed.data.status,
+      withTotal: parsed.data.meta !== 'none',
     });
     return c.json(result);
   } catch (err) {

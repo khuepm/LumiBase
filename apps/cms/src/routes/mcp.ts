@@ -50,7 +50,7 @@ mcpRouter.post('/', async (c) => {
     // same token could via the Agent API". Previously built without a
     // permissionCtx, which silently bypassed RBAC.
     itemService: itemServiceForRequest(c),
-    accessService: new AccessService({ db, siteId, userId: auth.userId ?? null }),
+    accessService: new AccessService({ db, siteId, userId: auth.userId ?? null, cache: runtime.cache }),
     intentService: new IntentService({ db, siteId, userId: auth.userId ?? null, llm }),
     configService: new ConfigService({ db, siteId }),
     extensionsService: new ExtensionsService({ db, siteId, userId: auth.userId ?? null }),

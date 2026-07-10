@@ -23,10 +23,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -35,7 +35,7 @@ jobs:
         run: corepack enable
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
           version: 9.12.0
           run_install: false
@@ -52,7 +52,7 @@ jobs:
           mkdir -p .turbo
 
       - name: Restore pnpm cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
@@ -60,7 +60,7 @@ jobs:
             ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-
 
       - name: Restore Turbo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-turbo-${{ github.sha }}
@@ -72,6 +72,9 @@ jobs:
 
       - name: Check package versions
         run: pnpm version:check
+
+      - name: Check registry numbering
+        run: pnpm registry:check
 
       - name: Typecheck
         run: pnpm -r typecheck
@@ -91,10 +94,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -103,7 +106,7 @@ jobs:
         run: corepack enable
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
           version: 9.12.0
           run_install: false
@@ -120,7 +123,7 @@ jobs:
           mkdir -p .turbo
 
       - name: Restore pnpm cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
@@ -128,7 +131,7 @@ jobs:
             ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-
 
       - name: Restore Turbo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-turbo-lint-${{ github.sha }}
@@ -148,10 +151,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -160,7 +163,7 @@ jobs:
         run: corepack enable
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
           version: 9.12.0
           run_install: false

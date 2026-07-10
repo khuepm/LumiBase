@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:25.809Z
+sourceLang: en
+contentHash: 051a5ab7df48ac91
+---
+
 # Codex — LumiBase Agent Setup
 
 > **Codex** is a lightweight open-source terminal agent that reads and writes files, runs commands, and browses the web in a sandbox. Made by OpenAI.

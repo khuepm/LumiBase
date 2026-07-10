@@ -66,8 +66,8 @@ Thứ tự: contract chung (Panel_Query) → schema/migration → service an to�
   - [x] 8.3 Component test: PanelFrame 3 trạng thái
     - **Validates: Requirements 8.2**
 
-- [ ] 9. (Optional) Materialized source — **CHƯA LÀM (optional, để v2)**: insights-service mới có ghi chú hướng mở (dòng 16), chưa có `options.source`
-  - [ ] 9.1 `options.source='items'|'materialized'` (default items); khi materialized vẫn áp whitelist + siteId trên bảng `mat_*`
+- [x] 9. Materialized source
+  - [x] 9.1 `options.source='items'|'materialized'` (default items); khi materialized đọc `data` từ bảng `mat_*` của collection (`materialized_collections.id` → `sanitizeTableName`, identifier validated), VẪN áp whitelist + `WHERE site_id`; panel lưu source trong `panel.options.source`; route đọc và truyền vào `runPanel`. Test: aggregate từ mat, whitelist vẫn chặn, 404 khi chưa materialize
     - _Requirements: 9.1, 9.2, 9.3_
 
 - [x] 10. Chất lượng & Setup Impact

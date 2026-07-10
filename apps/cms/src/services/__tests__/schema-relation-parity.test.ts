@@ -96,7 +96,7 @@ describe('SchemaService relation parity helpers', () => {
       primaryKeyField: 'id',
       storageMode: 'jsonb',
     }) as never);
-    vi.spyOn(service as never, 'fieldExists').mockResolvedValue(false);
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'fieldExists').mockResolvedValue(false);
 
     await expect(
       service.createRelation({

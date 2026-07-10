@@ -24,7 +24,7 @@ const softwareApplicationJsonLd = {
   operatingSystem: "Cloudflare Workers, Docker, Node.js",
   description:
     "LumiBase is a Content Operating System: an edge-native, AI-native headless CMS where governed agents operate content against declarative SLOs while humans set intent, taste, and accountability.",
-  softwareVersion: "0.18.0",
+  softwareVersion: "0.21.0",
   codeRepository: "https://github.com/khuepm/lumibase",
   license: "https://lumibase.dev/license",
   isAccessibleForFree: true,

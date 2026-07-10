@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
 import { buildAccessConflictReport } from '../services/access-conflict-report';
+import { bumpPermissionVersion } from '../services/permission-invalidation';
 
 /**
  * /roles — manage RBAC role definitions and their bound users/policies.
@@ -68,6 +69,7 @@ rolesRouter.post('/', async (c) => {
     .insert(roles)
     .values({ ...parsed.data, siteId: c.get('siteId') })
     .returning();
+  await bumpPermissionVersion(c);
   return c.json({ data: row }, 201);
 });
 
@@ -108,6 +110,7 @@ rolesRouter.patch('/:id', async (c) => {
     .where(and(scopeSite(roles.siteId, c.get('siteId')), eq(roles.id, id)))
     .returning();
   if (!row) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Role not found.' }] }, 404);
+  await bumpPermissionVersion(c);
   return c.json({ data: row });
 });
 
@@ -116,6 +119,7 @@ rolesRouter.delete('/:id', async (c) => {
   await db
     .delete(roles)
     .where(and(scopeSite(roles.siteId, c.get('siteId')), eq(roles.id, c.req.param('id'))));
+  await bumpPermissionVersion(c);
   return c.body(null, 204);
 });
 
@@ -169,6 +173,7 @@ rolesRouter.post('/:id/policies', async (c) => {
       priority: parsed.data.priority ?? 100,
     })
     .returning();
+  await bumpPermissionVersion(c);
   return c.json({ data: row }, 201);
 });
 
@@ -182,6 +187,7 @@ rolesRouter.delete('/:id/policies/:pid', async (c) => {
         eq(rolePolicies.policyId, c.req.param('pid')),
       ),
     );
+  await bumpPermissionVersion(c);
   return c.body(null, 204);
 });
 
@@ -206,6 +212,7 @@ rolesRouter.post('/:id/users', async (c) => {
       set: { roleId: c.req.param('id') },
     })
     .returning();
+  await bumpPermissionVersion(c);
   return c.json({ data: row }, 201);
 });
 
@@ -220,6 +227,7 @@ rolesRouter.delete('/:id/users/:uid', async (c) => {
         eq(userSites.siteId, c.get('siteId')),
       ),
     );
+  await bumpPermissionVersion(c);
   return c.body(null, 204);
 });
 

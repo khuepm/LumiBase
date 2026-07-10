@@ -23,6 +23,7 @@ LumiBase follows the [ADR pattern](https://adr.github.io/) to document significa
 | [ADR-008](./adr-008-policy-dsl-json.md) | JSON Policy DSL for Permissions | Accepted |
 | [ADR-009](./adr-009-graphql-yoga.md) | GraphQL Yoga with Dynamic Schema over ItemService | Accepted |
 | [ADR-010](./adr-010-lumibase-table-prefix.md) | `lumibase_` prefix for all system tables | Accepted |
+| [ADR-011](./adr-011-user-management-realms.md) | User Management Realms (single store, role-scoped realms, token audiences) | Accepted |
 
 ## Template
 

@@ -19,7 +19,7 @@ const ctxFor = (recordId: string) => ({
 // SchemaService, so no Postgres is needed.
 vi.mock('../schema-service', () => {
   return {
-    SchemaService: vi.fn().mockImplementation(() => {
+    SchemaService: vi.fn().mockImplementation(function () {
       return {
         getCompiled: vi.fn().mockImplementation(async (collectionName) => {
           if (collectionName === 'secure_table') {

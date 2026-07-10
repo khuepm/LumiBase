@@ -22,6 +22,34 @@
       "when": 1783329587877,
       "tag": "0002_add_user_token_version",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783329687877,
+      "tag": "0003_marketplace_votes_downloads",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783400000000,
+      "tag": "0004_transform_presets",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783500000000,
+      "tag": "0005_refresh_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783500100000,
+      "tag": "0006_password_changed_at_and_email_unique",
+      "breakpoints": true
     }
   ]
 }

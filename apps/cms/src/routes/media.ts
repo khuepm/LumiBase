@@ -4,6 +4,67 @@ import type { Context } from 'hono';
 import type { AppEnv } from '../env';
 import { PermissionService, type PermissionAction } from '../services/permission-service';
 import { formatSafeError } from '@lumibase/shared/utils';
+import { scopeSite, settings, transformPresets } from '@lumibase/database';
+import { and, eq } from 'drizzle-orm';
+import { type TransformDsl, transformDslSchema, transformKey, verifyTransform } from '@lumibase/shared';
+
+type ResolvedTransform = { dsl: TransformDsl; fromPreset: boolean };
+
+/**
+ * Resolve the transform for a delivery request from `?preset=<key>` (looked up
+ * in `transform_presets`) or inline `?width=&height=&format=&quality=&fit=`
+ * params. Returns null when no transform was requested (serve the original),
+ * or throws a ZodError when inline params fail validation. `fromPreset`
+ * distinguishes preset vs custom for the `presetOnly` guard.
+ */
+async function resolveTransform(c: Context<AppEnv>): Promise<ResolvedTransform | null> {
+  const url = new URL(c.req.url);
+  const presetKey = url.searchParams.get('preset');
+  if (presetKey) {
+    const [row] = await c
+      .get('db')
+      .select()
+      .from(transformPresets)
+      .where(and(eq(transformPresets.key, presetKey), scopeSite(transformPresets.siteId, c.get('siteId'))))
+      .limit(1);
+    if (!row) return null;
+    return { dsl: transformDslSchema.parse(row.dsl), fromPreset: true };
+  }
+  const raw: Record<string, unknown> = {};
+  const num = (v: string | null) => (v == null ? undefined : Number(v));
+  if (url.searchParams.get('width')) raw.width = num(url.searchParams.get('width'));
+  if (url.searchParams.get('height')) raw.height = num(url.searchParams.get('height'));
+  if (url.searchParams.get('format')) raw.format = url.searchParams.get('format');
+  if (url.searchParams.get('quality')) raw.quality = num(url.searchParams.get('quality'));
+  if (url.searchParams.get('fit')) raw.fit = url.searchParams.get('fit');
+  if (Object.keys(raw).length === 0) return null;
+  return { dsl: transformDslSchema.parse(raw), fromPreset: false };
+}
+
+interface SignedTransformPolicy {
+  enabled: boolean;
+  presetOnly: boolean;
+  secret: string | null;
+}
+
+/**
+ * Load the site's signed-transform policy from settings key `media.signedTransform`.
+ * Absent → disabled (all transforms allowed; backward compatible).
+ */
+async function loadSignedTransformPolicy(c: Context<AppEnv>): Promise<SignedTransformPolicy> {
+  const [row] = await c
+    .get('db')
+    .select()
+    .from(settings)
+    .where(and(eq(settings.key, 'media.signedTransform'), scopeSite(settings.siteId, c.get('siteId'))))
+    .limit(1);
+  const value = (row?.value ?? {}) as { enabled?: boolean; presetOnly?: boolean; secret?: string };
+  return {
+    enabled: value.enabled === true,
+    presetOnly: value.presetOnly === true,
+    secret: typeof value.secret === 'string' && value.secret.length > 0 ? value.secret : null,
+  };
+}
 
 /**
  * /media — asset storage endpoints powered by the StorageProvider.
@@ -159,6 +220,78 @@ mediaRouter.get('/:key{.+}', async (c) => {
       { errors: [{ code: 'SERVICE_UNAVAILABLE', message: 'Storage service is not available.' }] },
       503,
     );
+  }
+
+  // On-the-fly transform: validate the requested DSL, then delegate the actual
+  // pixel work to the runtime image processor via its transform URL (CF Image
+  // Resizing / Imgproxy on Docker). No transform params → serve the original
+  // bytes below (backward compatible). The `Vary` + transform-keyed cache tag
+  // let derivatives be invalidated with the source file (ADR-004).
+  let transform: ResolvedTransform | null;
+  try {
+    transform = await resolveTransform(c);
+  } catch {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Invalid transform parameters.' }] }, 400);
+  }
+  if (transform) {
+    const scoped = storageKey(c.get('siteId'), key);
+    const dsl = transform.dsl;
+
+    // Abuse guards (image-transform-dsl task 5). presetOnly rejects custom DSLs;
+    // signed mode requires a valid HMAC `?sig=` over the (key, dsl) pair.
+    const policy = await loadSignedTransformPolicy(c);
+    if (policy.presetOnly && !transform.fromPreset) {
+      return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Only preset transforms are allowed.' }] }, 403);
+    }
+    if (policy.enabled && !transform.fromPreset) {
+      const sig = new URL(c.req.url).searchParams.get('sig') ?? '';
+      const ok = policy.secret ? await verifyTransform(policy.secret, key, dsl, sig) : false;
+      if (!ok) {
+        return c.json({ errors: [{ code: 'UNAUTHORIZED', message: 'Missing or invalid transform signature.' }] }, 401);
+      }
+    }
+
+    const media = c.get('runtime').media;
+    const options = {
+      width: dsl.width,
+      height: dsl.height,
+      format: dsl.format,
+      quality: dsl.quality,
+      fit: dsl.fit,
+    };
+
+    // Prefer an in-process byte transform (e.g. Sharp on Docker) when the
+    // adapter supports it: fetch the source, transform, and serve directly so
+    // the derivative is cacheable under this origin. Falls back to the runtime
+    // transform URL (CF Image Resizing / Imgproxy) otherwise.
+    if (typeof media.transform === 'function') {
+      try {
+        const obj = await storage.get(scoped);
+        if (!obj) {
+          return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Media asset not found.' }] }, 404);
+        }
+        const srcBytes = await new Response(obj.body as BodyInit).arrayBuffer();
+        const out = await media.transform(srcBytes, options);
+        return new Response(out.body as unknown as BodyInit, {
+          status: 200,
+          headers: {
+            'Content-Type': out.contentType,
+            'Cache-Control': 'public, max-age=31536000, immutable',
+            'X-Transform-Key': transformKey(scoped, dsl),
+            'X-Content-Type-Options': 'nosniff',
+          },
+        });
+      } catch (err) {
+        // Fall through to the URL path if the in-process transform is unavailable.
+        console.warn('[media] in-process transform failed, falling back to URL', formatSafeError(err));
+      }
+    }
+
+    const targetUrl = media.getUrl(scoped, options);
+    const res = c.redirect(targetUrl, 302);
+    res.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    res.headers.set('X-Transform-Key', transformKey(scoped, dsl));
+    return res;
   }
 
   try {

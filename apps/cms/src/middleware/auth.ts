@@ -6,8 +6,51 @@ import type { AppEnv, AuthPrincipal } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
 import { tryExternalJwt } from '../modules/external-auth/adapter';
 import { formatSafeError } from '@lumibase/shared/utils';
+import { TOKEN_AUDIENCE, audienceValues } from '../services/auth/token-audience';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+
+/**
+ * Debounce window (seconds) for the API-key `lastUsedAt` touch
+ * (high-load-cache-readiness Req 3). Under read load, every API-key request
+ * previously issued an `UPDATE api_keys` — turning a read into a write and
+ * hammering the row. We now only touch when the stored `lastUsedAt` is older
+ * than this interval, and the write is scheduled OFF the response path.
+ */
+const DEFAULT_APIKEY_TOUCH_INTERVAL_SECONDS = 60;
+
+export function apiKeyTouchIntervalMs(env: Partial<AppEnv['Bindings']> | undefined): number {
+  const raw = env?.LUMIBASE_APIKEY_TOUCH_INTERVAL ?? process.env.LUMIBASE_APIKEY_TOUCH_INTERVAL;
+  const seconds = Number(raw);
+  const resolved = Number.isFinite(seconds) && seconds >= 0 ? seconds : DEFAULT_APIKEY_TOUCH_INTERVAL_SECONDS;
+  return resolved * 1000;
+}
+
+/** True when the key's last touch is stale enough to warrant a fresh write. */
+export function shouldTouchApiKey(lastUsedAt: Date | null | undefined, now: Date, intervalMs: number): boolean {
+  if (intervalMs === 0) return true;
+  if (!lastUsedAt) return true;
+  return now.getTime() - lastUsedAt.getTime() >= intervalMs;
+}
+
+/**
+ * Run `promise` detached from the response. On Workers it hands off to
+ * `executionCtx.waitUntil`; on Node/tests it's fire-and-forget. Hono's
+ * `c.executionCtx` getter *throws* when no context is bound (Node / tests),
+ * so the probe is wrapped in try/catch — mirrors `scheduleWorkersDrain`.
+ */
+function runDetached(c: Parameters<MiddlewareHandler<AppEnv>>[0], promise: Promise<unknown>): void {
+  try {
+    const ctx = c.executionCtx as { waitUntil?: (p: Promise<unknown>) => void } | undefined;
+    if (ctx && typeof ctx.waitUntil === 'function') {
+      ctx.waitUntil(promise);
+      return;
+    }
+  } catch {
+    // No execution context bound — fall through to fire-and-forget.
+  }
+  void promise;
+}
 
 const getJwks = (certsUrl: string) => {
   let jwks = JWKS_CACHE.get(certsUrl);
@@ -18,12 +61,19 @@ const getJwks = (certsUrl: string) => {
   return jwks;
 };
 
-// Verify Custom JWT (HS256)
+// Verify Custom JWT (HS256).
+//
+// The `audience` is pinned to the two SESSION realms (M5): a single-purpose
+// `email-verify` / `password-reset` JWT — signed with the same JWT_SECRET —
+// therefore cannot be replayed as a session token even if its claim shape
+// later changes. Tokens with no `aud` (minted before per-realm audiences
+// existed) are rejected here and the holder simply re-authenticates.
 async function verifyCustomJwt(token: string, secret: string): Promise<any> {
   const encoder = new TextEncoder();
   const secretKey = encoder.encode(secret);
   const { payload } = await jwtVerify(token, secretKey, {
     algorithms: ['HS256'],
+    audience: [TOKEN_AUDIENCE.studio, TOKEN_AUDIENCE.frontend],
   });
   return payload;
 }
@@ -78,9 +128,20 @@ async function auditApiKeyUseDenied(
  */
 export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const path = c.req.path;
-  // NOTE: `/api/v1/auth/register` is intentionally NOT bypassed — the route
-  // handler requires an admin principal, so it must run through withAuth.
+  // Public, self-authenticating auth routes. These carry their own
+  // credential (login body, refresh token, or a single-purpose emailed
+  // JWT) and MUST NOT require a prior session — `withAuth` skips them.
+  // `/register` is public self-service (ADR-010): safe because the role is
+  // resolved server-side to a zero-privilege `subscriber` and the account
+  // starts `invited` until email verification. See `routes/auth.ts`.
   if (
+    path === '/api/v1/auth/register' ||
+    path === '/api/v1/auth/verify-email' ||
+    path === '/api/v1/auth/resend-verification' ||
+    path === '/api/v1/auth/forgot-password' ||
+    path === '/api/v1/auth/reset-password' ||
+    path === '/api/v1/auth/refresh' ||
+    path === '/api/v1/auth/logout' ||
     path === '/api/v1/auth/login' ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/') ||
@@ -226,6 +287,10 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
     if (apiKey) {
       const now = new Date();
+      // Fail-closed tenant scoping: a token that belongs to another site is
+      // never accepted here. We fetch by token hash (a 256-bit unguessable
+      // value) and then reject + audit any cross-tenant use before the key
+      // can yield a principal.
       if (apiKey.siteId !== c.get('siteId')) {
         await auditApiKeyUseDenied(c, apiKey, 'site_mismatch');
         return c.json(
@@ -248,15 +313,29 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
-      await c
-        .get('db')
-        .update(apiKeys)
-        .set({
-          lastUsedAt: now,
-          lastUsedIp: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-          lastUsedUserAgent: c.get('userAgent') ?? c.req.header('user-agent') ?? null,
-        })
-        .where(eq(apiKeys.id, apiKey.id));
+      // Debounced, off-path last-used touch (Req 3): skip the write entirely
+      // when the stored timestamp is still within the interval, and never let
+      // it block the response. Last-write-wins on these stats columns makes a
+      // race between concurrent instances harmless.
+      if (shouldTouchApiKey(apiKey.lastUsedAt, now, apiKeyTouchIntervalMs(c.env))) {
+        const db = c.get('db');
+        const touch = Promise.resolve(
+          db
+            .update(apiKeys)
+            .set({
+              lastUsedAt: now,
+              lastUsedIp: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+              lastUsedUserAgent: c.get('userAgent') ?? c.req.header('user-agent') ?? null,
+            })
+            .where(eq(apiKeys.id, apiKey.id)),
+        ).then(
+          () => undefined,
+          (err: unknown) => {
+            console.warn('[withAuth] api-key lastUsed touch failed', formatSafeError(err));
+          },
+        );
+        runDetached(c, touch);
+      }
 
       const snapshot = apiKeySnapshot({ ...apiKey, lastUsedAt: now });
       const principal: AuthPrincipal = {
@@ -358,11 +437,15 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
+      // The `aud` claim records the realm the token was minted for
+      // (`studio` vs `frontend`). `isFrontendUser` tracks it for the
+      // `/me` surface; `withStudioAccess` enforces the hard wall using
+      // the same claim carried on `raw`.
       const principal: AuthPrincipal = {
         userId,
         email: typeof payload.email === 'string' ? payload.email : undefined,
         roles: user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'],
-        isFrontendUser: true,
+        isFrontendUser: !audienceValues(payload.aud).includes(TOKEN_AUDIENCE.studio),
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);

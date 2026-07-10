@@ -18,7 +18,7 @@ Schema files are split by domain:
 | File | Bảng (physical) |
 |------|------|
 | `core.ts` | `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
-| `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions` |
+| `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
 | `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
@@ -44,7 +44,10 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 | `language`, `theme`, `tfa` | jsonb | preferences |
 | `preferences` | jsonb | per-user UI prefs: `{ language, theme, timezone, defaultPresets, saveAction }`. `saveAction` (`stay`/`return`/`create_new`) overrides `sites.default_save_action`. |
 | `lastSeenAt` | timestamp |
+| `passwordChangedAt` | timestamp | Set on every reset/change (migration `0006`). A password-reset token whose `iat` predates it is rejected → single-use reset links. |
 | `createdAt`, `updatedAt` | timestamp |
+
+Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), and `users_email_lower_unique` on `lower(email)` (migration `0006`) — email is identity-global, one account per address. ⚠️ Migrating an existing instance fails if it already holds case-insensitive duplicate emails; de-duplicate first.
 
 ### `user_sites` (membership N-N)
 - `userId`, `siteId`, `roleId`, `joinedAt`. PK composite.
@@ -219,6 +222,10 @@ SDK generation uses this manifest to emit base collection interfaces and `Collec
 ### `permissions`
 - `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (row-level rule DSL), `validation jsonb`, `presets jsonb`, `fields text[]` (field-level allow list, `*` = all).
 
+### `refresh_tokens` (migration `0005`, physical `lumibase_refresh_tokens`)
+- `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — plaintext never stored), `familyId` (rotation chain), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
+- Rotating, revocable session-renewal tokens. Reuse of a revoked row revokes the whole `familyId` (theft detection). Swept on the hourly cron once expired. See [`security/user-management.md`](./security/user-management.md) §4d.
+
 ### System collections seed permissions
 
 When seeding local/staging/prod, seed system collection permissions explicitly. Sensitive collections such as `system_state`, `audit_log`, `login_attempts`, `login_baselines`, `admin_backup_codes`, `scim_tokens`, and future API key tables are admin/security-only. See [System Collections & Sensitive Access](./features/system-collections-access.md).
@@ -358,6 +365,7 @@ Content OS columns on existing tables:
 | `content_versions` | Named parallel draft branches of an item, distinct from linear `revisions`. Snapshots item `data` + a `hash` of main at snapshot time (divergence detection). Promote applies a version to main via ItemService (writes a revision). Unique `(siteId, collectionId, itemId, key)`. See `.kiro/specs/content-versioning`. |
 | `dashboards` | Insights dashboard container per site (name/icon/color/note). |
 | `panels` | One visualization on a dashboard: `type` (metric/timeSeries/bar/pie/list/table), `position` (`{x,y,w,h}`), `query` (a `PanelQuery`), `options`. Aggregates run safely (field whitelist + siteId scope). See `.kiro/specs/insights-dashboard`. |
+| `transform_presets` | Named image-transform presets: URL-safe `key` → a `TransformDsl` (`{ width?, height?, format?, quality?, fit?, focal? }`). Resolved by `GET /media/:key?preset=<key>`. Unique `(siteId, key)`. Migration `0004_transform_presets`. See `.kiro/specs/image-transform-dsl`. |
 
 ## 11. Firebase Sync (`firebase-sync.ts`)
 

@@ -6,6 +6,7 @@ import { schema } from '@lumibase/database';
 import cron from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
+import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
 import { bootstrapNodeObservability } from './observability/node';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { createPressureLimiter } from './pressure-limiter';
@@ -97,6 +98,8 @@ async function main() {
   // ticks.
   const rotationTask = cron.schedule('0 * * * *', () => {
     void runScheduledRotation(rotatorDb);
+    // Sweep expired refresh-token rows on the same hourly tick (best-effort).
+    void runScheduledRefreshTokenPrune(rotatorDb);
   });
 
   // ── Load-aware autonomy (content-os task 9; Req 9.4/9.5) ─────────────────
@@ -212,6 +215,19 @@ async function main() {
     });
   });
 
+  // ── Flow schedule tick (visual-flow-builder task 4.x) ───────────────────
+  //
+  // The event-triggered flow consumer is `registerFlowEventWorker` (above).
+  // Schedule flows need a periodic sweep: a 1-minute tick enqueues every flow
+  // whose `next_run_at` is due onto the same `flow-events` queue (nextRunAt is
+  // advanced before enqueue so a slow job never re-fires the same flow).
+  const { runDueScheduledFlows } = await import('./services/flow-scheduler');
+  const flowScheduleTask = cron.schedule('* * * * *', () => {
+    void runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
+      console.error('[flow-schedule] tick failed', formatSafeError(err));
+    });
+  });
+
   // ── Envelope migration consumer (regulated-content-readiness task 3.6) ──
   //
   // Drains background migrations enqueued when an operator toggles
@@ -230,6 +246,7 @@ async function main() {
     schedulerTask.stop();
     retentionTask.stop();
     deploymentPollTask.stop();
+    flowScheduleTask.stop();
     pressureLimiter.stop();
     clearInterval(loadGuardTimer);
 

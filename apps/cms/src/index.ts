@@ -4,6 +4,7 @@ import type { AppEnv } from './env';
 import { resolveCorsOrigin } from './config/cors';
 import { adminPathGuard } from './middleware/admin-path-guard';
 import { withAuditContext } from './middleware/audit-context';
+import { withJsonBodyLimit } from './middleware/body-limit';
 import { withAuth } from './middleware/auth';
 import { withDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
@@ -56,6 +57,7 @@ import { rolesRouter } from './routes/roles';
 import { healthRouter } from './routes/health';
 import { insightsRouter } from './routes/insights';
 import { mediaRouter } from './routes/media';
+import { transformPresetsRouter } from './routes/transform-presets';
 import { uploadsRouter } from './routes/uploads';
 import { marketplaceRouter } from './routes/marketplace';
 import { materializeRouter } from './routes/materialize';
@@ -103,7 +105,7 @@ app.use(
   cors({
     origin: (origin, c) => resolveCorsOrigin(origin, c.env),
     credentials: true,
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh'],
     exposeHeaders: ['X-Request-Id'],
   }),
 );
@@ -117,6 +119,12 @@ app.use(
 // `withRuntime`/`cors` block (which §6.2 doesn't enumerate) and just
 // before the guard so the three audit dimensions are present for the
 // entire downstream chain.
+// App-level JSON body-size cap (high-load-cache-readiness Req 6.2).
+// Defense-in-depth for deployments without the Caddy body limit; only
+// guards JSON POST/PUT/PATCH via Content-Length, so it's a cheap no-op
+// for reads and file uploads (which have their own policy).
+app.use('*', withJsonBodyLimit());
+
 app.use('*', withAuditContext());
 
 // Admin Path Guard (admin-setup-wizard Req 5.1, 5.2, 5.4, 5.6, 5.7;
@@ -224,6 +232,7 @@ api.route('/config', configRouter);
 api.route('/api-keys', apiKeysRouter);
 api.route('/search', searchRouter);
 api.route('/media', mediaRouter);
+api.route('/transform-presets', transformPresetsRouter);
 // Upload policy config (effective allowlist/size for the picker; admin edits).
 api.route('/uploads', uploadsRouter);
 // Future routers: presets, translations, ...

@@ -12,6 +12,7 @@ import { getApiBaseUrl } from '@/lib/api-base';
 
 const STORAGE_KEY = {
   token: 'lumibase.dev.token',
+  refresh: 'lumibase.dev.refresh',
   site: 'lumibase.dev.site',
 };
 
@@ -34,9 +35,44 @@ export function setActiveToken(token: string): void {
   cached = null;
 }
 
+export function getActiveRefreshToken(): string {
+  return localStorage.getItem(STORAGE_KEY.refresh) || '';
+}
+
+export function setActiveRefreshToken(token: string): void {
+  localStorage.setItem(STORAGE_KEY.refresh, token);
+  cached = null;
+}
+
 export function clearActiveToken(): void {
   localStorage.removeItem(STORAGE_KEY.token);
+  localStorage.removeItem(STORAGE_KEY.refresh);
   cached = null;
+}
+
+/**
+ * Revoke the session server-side (best-effort) and clear local tokens.
+ * The refresh token travels in the body (CSRF-exempt); the same-origin
+ * cookie is cleared by the endpoint. Always resolves — a network error
+ * must not block the local logout.
+ */
+export async function logout(): Promise<void> {
+  const refreshToken = getActiveRefreshToken();
+  try {
+    await fetch(`${getApiBaseUrl()}/api/v1/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Lumi-Site': getActiveSite(),
+        'X-LumiBase-Refresh': '1',
+      },
+      body: JSON.stringify(refreshToken ? { refreshToken } : {}),
+    });
+  } catch {
+    /* best-effort; clear locally regardless */
+  }
+  clearActiveToken();
 }
 
 export function hasActiveToken(): boolean {
@@ -81,8 +117,18 @@ function createApiClient(token: string, site: string) {
   return createLumiClient({
     url: getApiBaseUrl(),
     token,
+    refreshToken: getActiveRefreshToken(),
     siteId: site,
     headers: { 'X-Lumi-Client': 'studio' },
+    // Persist the rotated pair so a page reload keeps the renewed session.
+    onTokensRefreshed: ({ token: next, refreshToken }) => {
+      localStorage.setItem(STORAGE_KEY.token, next);
+      localStorage.setItem(STORAGE_KEY.refresh, refreshToken);
+      // Reflect the live token in the cache key so getApiClient() doesn't
+      // rebuild a client around the now-stale token on the next call.
+      if (cached) cached.token = next;
+    },
+    // Fires only after a refresh attempt has also failed.
     onUnauthorized: handleUnauthorized,
   }).with(legacyRest());
 }
