@@ -172,10 +172,56 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
         415,
       );
     }
+
+    // Polyglot defense: a file can have valid image magic bytes AND carry an
+    // executable/script payload appended or embedded (the classic "image with a
+    // shell in it"). The prefix magic-byte check above cannot see that. Scan the
+    // full bytes of raster images for high-signal script/PHP/HTML openings and
+    // reject. This runs synchronously before the storage write (no async
+    // window) on both runtimes. The stronger, false-positive-free fix is to
+    // re-encode the image to strip everything but the pixels — tracked as a
+    // follow-up that depends on the image adapter from image-transform-dsl (see
+    // .kiro/specs/upload-file-controls/tasks.md).
+    if (RASTER_IMAGE_MIMES.has(normalizedMime ?? '') && imageHasEmbeddedActivePayload(bytes)) {
+      await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
+        path,
+        method,
+        reason: 'embedded_payload',
+        mime: normalizedMime,
+      });
+      return c.json(
+        {
+          errors: [
+            {
+              code: 'UPLOAD_EMBEDDED_PAYLOAD',
+              message: 'Image contains an embedded script or executable payload and is not allowed.',
+            },
+          ],
+        },
+        415,
+      );
+    }
   }
 
   return next();
 };
+
+/** Raster image types whose bytes are opaque binary — no markup should appear. */
+const RASTER_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
+
+// Openings that turn a valid image into a functional polyglot: a PHP shell,
+// an HTML/JS document, or an inline script. None legitimately occur as literal
+// ASCII in a raster image, so their presence anywhere in the bytes is treated
+// as an embedded payload. (SVG/text are handled by their own checks.)
+const EMBEDDED_PAYLOAD_MARKERS = ['<?php', '<script', '<html', '<!doctype html'] as const;
+
+/**
+ * Scan raw image bytes for an embedded script/executable payload (polyglot).
+ * Case-insensitive byte search — no full-string allocation.
+ */
+export function imageHasEmbeddedActivePayload(bytes: Uint8Array): boolean {
+  return EMBEDDED_PAYLOAD_MARKERS.some((marker) => bytesContainAsciiCI(bytes, marker));
+}
 
 /**
  * Single source of truth for which requests are upload surfaces. Kept as a pure
@@ -383,4 +429,36 @@ function decodeAsciiPrefix(bytes: Uint8Array, maxBytes: number): string {
 function decodeUtf8(bytes: Uint8Array): string {
   // `TextDecoder` is available on both the Workers and Node runtimes.
   return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+}
+
+/**
+ * Case-insensitive search for an ASCII substring inside raw bytes, comparing
+ * byte-by-byte (no full-buffer string allocation). `needle` must be lowercase
+ * ASCII. Used to detect embedded markup in otherwise-binary image payloads.
+ */
+function bytesContainAsciiCI(bytes: Uint8Array, needle: string): boolean {
+  const n = needle.length;
+  if (n === 0 || bytes.length < n) return false;
+  const first = needle.charCodeAt(0);
+  const firstUpper = toUpperAsciiCode(first);
+  for (let i = 0; i <= bytes.length - n; i++) {
+    const b = bytes[i]!;
+    if (b !== first && b !== firstUpper) continue;
+    let matched = true;
+    for (let j = 1; j < n; j++) {
+      const nc = needle.charCodeAt(j);
+      const bc = bytes[i + j]!;
+      if (bc !== nc && bc !== toUpperAsciiCode(nc)) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) return true;
+  }
+  return false;
+}
+
+function toUpperAsciiCode(code: number): number {
+  // Only lowercase a–z map to an uppercase counterpart.
+  return code >= 0x61 && code <= 0x7a ? code - 0x20 : code;
 }

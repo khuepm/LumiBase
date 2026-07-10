@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AppEnv } from '../../env';
 import {
   classifyUploadSurface,
+  imageHasEmbeddedActivePayload,
   isFileContentCompatibleWithMime,
   isFileExtensionCompatibleWithMime,
   isFileUploadMimeAllowed,
@@ -13,8 +14,14 @@ import {
   withFileUploadPolicy,
 } from '../file-upload-policy';
 
-const VALID_PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const VALID_PNG = new Uint8Array([...PNG_MAGIC, 0x00, 0x01]);
 const WINDOWS_EXE = new Uint8Array([0x4d, 0x5a, 0x90, 0x00]);
+
+/** A file with valid PNG magic bytes but an appended payload (polyglot). */
+function pngWith(payload: string): Uint8Array<ArrayBuffer> {
+  return new Uint8Array([...PNG_MAGIC, ...new TextEncoder().encode(payload)]);
+}
 
 describe('file upload policy helpers', () => {
   it('distinguishes public upload principals from privileged upload callers', () => {
@@ -69,6 +76,15 @@ describe('file upload policy helpers', () => {
     expect(
       await isFileContentCompatibleWithMime(new Request('http://t', { method: 'POST', body: scripted }), 'image/svg+xml'),
     ).toBe(false);
+  });
+
+  it('detects embedded script/executable payloads in otherwise-valid image bytes', () => {
+    expect(imageHasEmbeddedActivePayload(VALID_PNG)).toBe(false);
+    expect(imageHasEmbeddedActivePayload(pngWith('<?php system($_GET[0]); ?>'))).toBe(true);
+    expect(imageHasEmbeddedActivePayload(pngWith('trailing <SCRIPT>alert(1)</SCRIPT>'))).toBe(true);
+    expect(imageHasEmbeddedActivePayload(pngWith('<!DOCTYPE html><html></html>'))).toBe(true);
+    // Benign trailing text that is not a payload opening stays allowed.
+    expect(imageHasEmbeddedActivePayload(pngWith('Copyright 2026 <example@site>'))).toBe(false);
   });
 
   it('classifies every known upload surface and nothing else', () => {
@@ -214,6 +230,18 @@ describe('media upload policy middleware', () => {
 
     expect(res.status).toBe(415);
     expect(await res.json()).toMatchObject({ errors: [{ code: 'UPLOAD_CONTENT_MISMATCH' }] });
+  });
+
+  it('rejects a PNG polyglot with an appended PHP shell (valid magic bytes + payload)', async () => {
+    const { app } = mediaApp({ roles: ['editor'] });
+    const res = await app.request('/api/v1/media/photo.png', {
+      method: 'POST',
+      headers: { 'content-type': 'image/png' },
+      body: pngWith('<?php system($_GET["c"]); ?>'),
+    });
+
+    expect(res.status).toBe(415);
+    expect(await res.json()).toMatchObject({ errors: [{ code: 'UPLOAD_EMBEDDED_PAYLOAD' }] });
   });
 
   it('rejects an SVG carrying a script payload with a dedicated code', async () => {
