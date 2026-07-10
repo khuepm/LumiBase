@@ -2,7 +2,7 @@
 
 Quy ước: `[x]` xong · `[ ]` chưa · `[~]` một phần. Tuân thủ DoD
 (`.kiro/steering/definition-of-done.md`), đặc biệt cập nhật Registry trung tâm
-`.kiro/specs/admin-setup-wizard/setup-impact.md` (dòng #37) và `./setup-impact.md`.
+`.kiro/specs/admin-setup-wizard/setup-impact.md` (dòng #70) và `./setup-impact.md`.
 
 Mỗi task ref `(Rx; design §…)`. Nguồn chân lý chi tiết: xem bảng ở
 `./requirements.md`.
@@ -53,6 +53,6 @@ Mỗi task ref `(Rx; design §…)`. Nguồn chân lý chi tiết: xem bảng �
 
 ## Setup impact
 
-Xem `./setup-impact.md` (đánh giá cục bộ) + Registry trung tâm dòng #37. Kết luận:
+Xem `./setup-impact.md` (đánh giá cục bộ) + Registry trung tâm dòng #70. Kết luận:
 `n/a` — không seed/bước wizard/migration bắt buộc; settings key mới `upload_policy`
 dùng bảng `settings` sẵn có, vắng row → fallback env/default.

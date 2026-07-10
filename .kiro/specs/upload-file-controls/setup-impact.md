@@ -1,6 +1,6 @@
 # Setup Impact — Upload File Controls
 
-> **Single source of truth vẫn là `.kiro/specs/admin-setup-wizard/setup-impact.md`** (dòng #37).
+> **Single source of truth vẫn là `.kiro/specs/admin-setup-wizard/setup-impact.md`** (dòng #70).
 > File này là đánh giá cục bộ của spec; giữ đồng bộ với Registry trung tâm theo
 > DoD (`.kiro/steering/definition-of-done.md`).
 
@@ -18,4 +18,4 @@
 ## Kết luận
 
 - **Setup wizard: `n/a`** — không seed/bước wizard/backfill DB bắt buộc.
-- **Registry trung tâm**: đã ghi dòng #37 (settings key `upload_policy` + endpoint + guard hardening + polyglot scan). Cập nhật lại khi triển khai task F1 (re-encode) nếu nó thêm settings/capability.
+- **Registry trung tâm**: đã ghi dòng #70 (settings key `upload_policy` + endpoint + guard hardening + polyglot scan). Cập nhật lại khi triển khai task F1 (re-encode) nếu nó thêm settings/capability.
