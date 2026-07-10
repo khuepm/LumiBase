@@ -24,7 +24,7 @@ Tính năng đã được triển khai và merge trong **PR #203**. Tài liệu 
 | Endpoint cấu hình | `apps/cms/src/routes/uploads.ts`; ref API: `docs/en/api/hono-api-spec.md` §6 |
 | Serve media an toàn + round-trip Content-Type | `apps/cms/src/routes/media.ts`; adapters `packages/runtime/src/adapters/{cloudflare,docker}/storage.ts` |
 | UI cấu hình + picker | `apps/studio/src/modules/settings/uploads-page.tsx`; `apps/studio/src/modules/files/index.tsx` |
-| Đánh giá setup impact | mục cục bộ tại `./setup-impact.md`; **Registry trung tâm**: `.kiro/specs/admin-setup-wizard/setup-impact.md` dòng #70 |
+| Đánh giá setup impact | mục cục bộ tại `./setup-impact.md`; **Registry trung tâm**: `.kiro/specs/admin-setup-wizard/setup-impact.md` dòng #68 |
 
 ## Glossary
 
