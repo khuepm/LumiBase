@@ -2,7 +2,7 @@
 
 > Trace: mỗi task ghi requirement liên quan (Req n). Tuân non-negotiable rules `CLAUDE.md` (nanoid/uuidv7, siteId, runtime abstraction, HITL, response format, TS strict). Property tests dùng `fast-check` (≥100 iterations), đánh số theo design §12.
 >
-> **Trạng thái:** Phase A hoàn tất 2026-07-10 (tasks 1.1–1.5; chốt phương án B — nanoid PK + keyset cursor `(occurredAt, id)`). Typecheck 14/14 packages pass; test envelope 8/8 pass. Phase B trở đi chưa làm.
+> **Trạng thái:** Phase A + B hoàn tất 2026-07-10 (tasks 1.1–1.5, 2.1–2.4, checkpoint 3; chốt phương án B — nanoid PK + keyset cursor `(occurredAt, id)`). Typecheck workspace pass; full CMS suite 2049 passed / 3 skipped; test CDC feed mới 14/14. Phase C trở đi chưa làm.
 
 ## Phase A — Data model & shared schemas
 
@@ -15,13 +15,13 @@
 
 ## Phase B — Capture (outbox writer)
 
-- [ ] 2. Outbox writer (Req 1.2–1.6)
-  - [ ] 2.1 `modules/cdc/change-feed/outbox-writer.ts`: build Change_Event từ mutation context (collection, itemId, operation, actor từ auth principal, source); masking field `pii`/`phi` theo `fields.classification` trước khi ghi.
-  - [ ] 2.2 Site-flag cache (CacheProvider, key prefix `siteId`, TTL 60s) — skip ghi khi site không bật feed; invalidate khi Subscription CRUD / setting `cdc_feed` đổi. (Req 1.5)
-  - [ ] 2.3 Tích hợp vào `ItemService.create/update/delete`: bọc mutation + INSERT outbox trong `db.transaction` khi driver hỗ trợ; fallback ghi sau mutation + audit warning `cdc_event_write_failed` khi fail (Req 1.3). Giữ hành vi hook sync hiện có nguyên vẹn.
-  - [ ] 2.4 Property test **P1 Outbox atomicity** (tx driver, fake db) + **P4 Masking bất biến**. (Req 1.2, 1.4)
+- [x] 2. Outbox writer (Req 1.2–1.6)
+  - [x] 2.1 `modules/cdc/change-feed/outbox-writer.ts`: build Change_Event từ mutation context (collection, itemId, operation, actor từ auth principal, source); masking field `pii`/`phi` theo `fields.classification` trước khi ghi.
+  - [x] 2.2 Site-flag cache (CacheProvider, key prefix `siteId`, TTL 60s) — skip ghi khi site không bật feed; invalidate khi Subscription CRUD / setting `cdc_feed` đổi. (Req 1.5)
+  - [x] 2.3 Tích hợp vào `ItemService.create/patch/delete` trong cụm side-effect sau mutation (cạnh index/realtime/flow) + dep mới `cdcActor` để factory gán đúng actor `api_key` (Req 1.1). **Ghi chú thực tế**: ItemService hiện KHÔNG bọc transaction cho bất kỳ write nào (revision/activity cũng tuần tự) → outbox ghi ngay-sau-mutation với audit warning `cdc_event_write_failed` khi fail (đường Req 1.3); đường same-tx (Req 1.2) kích hoạt khi ItemService có transactional pipeline — xem design §14.2.
+  - [x] 2.4 Property test **P1 Outbox atomicity** (fake db: đúng-1-event/mutation, feed-off = 0, insert fail → đúng-1 audit warning không throw) + **P4 Masking bất biến** (+ end-to-end stored payload, tenant-prefixed flag key) — `cdc-feed-outbox.property.test.ts`, 6 tests. (Req 1.2, 1.3, 1.4, 1.5)
 
-- [ ] 3. Checkpoint — `pnpm typecheck` + `pnpm -F @lumibase/cms test` pass; hỏi user nếu có câu hỏi mở.
+- [x] 3. Checkpoint 2026-07-10 — typecheck workspace pass; full CMS suite 2049 passed / 3 skipped (270 files).
 
 ## Phase C — Pull feed API & subscriptions
 
