@@ -27,11 +27,13 @@ import {
   type SetupCompleteContext,
   type SetupServiceError,
 } from './service';
-import { lockoutPolicySchema } from './policy-codec';
+import { STANDARD_LOCKOUT_POLICY, lockoutPolicySchema } from './policy-codec';
 
 // ── input schema ────────────────────────────────────────────────────────
 
-const completeBodySchema = z.object({
+// Exported for unit tests (see __tests__/complete-body-schema.test.ts). Not a
+// public API surface.
+export const completeBodySchema = z.object({
   setupToken: z.string().min(1).max(256).optional(),
   account: z.object({
     email: z.string().email().max(254),
@@ -42,7 +44,13 @@ const completeBodySchema = z.object({
     lastName: z.string().min(1).max(100),
   }),
   adminPath: z.string().min(1).max(128),
-  policy: lockoutPolicySchema,
+  // Optional: omit to apply the "Standard" lockout preset. A fresh mutable copy
+  // (incl. a fresh notifyChannels array) is passed so Zod's default never holds
+  // a reference to the frozen preset.
+  policy: lockoutPolicySchema.default(() => ({
+    ...STANDARD_LOCKOUT_POLICY,
+    notifyChannels: [...STANDARD_LOCKOUT_POLICY.notifyChannels],
+  })),
   project: z
     .object({
       defaultLanguage: z.string().min(2).max(16),
