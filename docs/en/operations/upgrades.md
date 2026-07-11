@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-11T03:49:05.879Z
+sourceLang: en
+contentHash: dc7a160b08b512cb
+---
+
 # Upgrade Operations
 
 This runbook defines the minimum upgrade path for LumiBase deployments on Cloudflare-hosted and Docker self-hosted environments. Treat every upgrade as a change-management event: choose an explicit version, back up data, run migrations intentionally, verify the running app, and keep a bounded rollback plan.
@@ -102,6 +109,51 @@ Run migrations deliberately and verify both schema and application behavior:
 - Verify migration history after completion.
 - Smoke test core reads and writes for at least one representative site tenant.
 - Keep a record of migration IDs applied during the upgrade.
+
+## Upgrading to 1.0
+
+`1.0.0` is the first release that carries a semver stability guarantee (see the [versioning policy](#) in the README). Because it freezes the public surface, the path onto it depends on the version you start from. Read this section end to end before you begin — some source versions upgrade in place, others require an intermediate stop, and one range cannot be migrated forward at all.
+
+### Supported upgrade sources
+
+| From | Path to 1.0.0 | Notes |
+|------|---------------|-------|
+| `0.18.x` – `0.21.x` | Direct. | Table prefix and RBAC model already match 1.0. Run the [migration checklist](#migration-checklist); no manual data step. |
+| `0.6.x` – `0.17.x` | Direct, **with the RBAC backfill below**. | Schema migrations are cumulative and idempotent. The one manual verification is the role→policy backfill (see [RBAC role→policy backfill](#rbac-rolepolicy-backfill)). |
+| Before `0.17.0` (unprefixed tables) | **Not supported as an in-place upgrade.** | The `0.17.x` table-prefix change is fresh-install-only. Instances created before `0.17.0` must export their data (collections, items, files, roles/policies/permissions, flows, webhooks) and re-import into a fresh `1.0.0` install. There is no forward migration for the unprefixed schema. |
+| Before `0.6.0` | Via an intermediate `0.17.x` – `0.21.x` release first. | Upgrade to a recent `0.x` (which applies the RBAC backfill and any prefix handling), verify, then upgrade to `1.0.0`. Do not skip directly. |
+
+Determine your current version from `/api/v1/system/version` before choosing a row.
+
+### RBAC role→policy backfill
+
+`1.0.0` treats **policies** as the source of truth for `admin_access` and `app_access` (plus `enforce_tfa`, IP guards, and time windows). Instances that predate the policy model stored these as flags on **roles**. During the compatibility window `PermissionService` still reads `role flags OR active policy flags`, so access does not break on upgrade — but before `1.0.0` you should materialize the legacy role flags into policy rows so the policy layer alone is authoritative.
+
+The backfill is idempotent and does **not** mutate role flags (they remain intact as the rollback anchor). For each role where `admin_access` or `app_access` is true it creates one flag-only policy — key `legacy_role_flags_<role_key>`, name `Legacy role flags: <role name>`, copying the exact flag values, with `enforce_tfa=false`, empty IP guards, and null time windows — and attaches it to the role via `role_policies`. Full contract and SQL: [Role Flag to Policy Flag Migration](../features/role-policy-flag-migration.md).
+
+Run it against staging first, then verify. The post-check must return **zero rows** — every role that carries a legacy flag must have a matching policy:
+
+```sql
+SELECT r.id, r.site_id, r.name, r.admin_access, r.app_access
+FROM lumibase_roles r
+WHERE (r.admin_access = true OR r.app_access = true)
+AND NOT EXISTS (
+  SELECT 1
+  FROM lumibase_role_policies rp
+  JOIN lumibase_policies p ON p.id = rp.policy_id
+  WHERE rp.role_id = r.id
+    AND p.admin_access = r.admin_access
+    AND p.app_access = r.app_access
+);
+```
+
+Then confirm effective access is unchanged: a legacy admin role is still admin, a legacy app-only role can still enter Studio, and a role without app access still cannot. This verification has been run against the 1.0 release fixtures and returns clean. Role flag columns stay in place through 1.0 for rollback; they are only scheduled to drop in a later release after `LUMIBASE_RBAC_LEGACY_ROLE_FLAGS=false` has shipped and been verified.
+
+### Rollback from 1.0
+
+- **Application:** roll back to the previous `0.21.x` deployment per [rollback app](#rollback-app). `1.0.0` adds no destructive schema change over `0.21.x`, so the prior app version remains compatible with the 1.0 database.
+- **RBAC backfill:** it is separately reversible during the compatibility window — delete the `legacy_role_flags_%` policies and their `role_policies` rows (role flags are untouched, so access is preserved). See [§6 Rollback](../features/role-policy-flag-migration.md#6-rollback).
+- **Pre-0.17 re-import path:** there is no rollback to the old unprefixed schema; keep the source instance running read-only until the 1.0 install is verified.
 
 ## Rollback app
 

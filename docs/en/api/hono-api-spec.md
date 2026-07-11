@@ -569,8 +569,11 @@ guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:
 `POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
 its true byte length; the declared MIME must be in the allowlist and match the
 filename extension; raw bytes are content-sniffed (magic bytes) and executables /
-active-content SVGs are rejected. The allowlist + cap resolve `per-site DB
-(settings key upload_policy) → env (FILE_UPLOAD_*) → default`.
+active-content SVGs are rejected; raster images are scanned for an embedded
+script/executable payload (polyglot) and rejected. The allowlist + cap resolve
+`per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. See
+the feature spec `.kiro/specs/upload-file-controls/` and
+`docs/en/security/runtime-security-guards-plan.md` §3 for the full guarantees.
 
 ```
 GET  /api/v1/uploads/config

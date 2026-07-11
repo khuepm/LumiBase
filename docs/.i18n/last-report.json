@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-09T06:04:41.711Z",
+  "generatedAt": "2026-07-11T06:26:11.804Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,8 +8,8 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 1,
-    "upToDate": 46,
-    "planned": 86
+    "upToDate": 47,
+    "planned": 85
   },
   "actions": [
     {
@@ -1269,7 +1269,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-09T06-04-41-850Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-11T06-26-11-938Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1334,13 +1334,13 @@
     },
     {
       "rel": "operations/upgrades.md",
-      "type": "translate",
-      "reason": "source changed since last sync",
+      "type": "up-to-date",
+      "reason": "in sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": true,
+      "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
     },

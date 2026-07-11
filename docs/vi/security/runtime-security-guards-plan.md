@@ -26,6 +26,11 @@ Chuẩn bị nền bảo mật runtime rõ ràng trước khi AI Harness đượ
    - Từ chối SVG chứa mã động (`<script>`, handler `on*=`, `javascript:`,
      `<foreignObject>`, `<iframe>`/`<embed>`, `<!DOCTYPE>`/`<!ENTITY>` XXE) —
      đúng ca "ảnh nhưng bị cài shell/script".
+   - Quét toàn bộ bytes raster image (`imageHasEmbeddedActivePayload`) tìm payload
+     script/executable nhúng — `<?php`, `<script`, `<html`, `<!doctype html` ở
+     bất kỳ đâu — và từ chối (`UPLOAD_EMBEDDED_PAYLOAD`). Bắt polyglot có magic
+     bytes ảnh hợp lệ NHƯNG kèm shell/HTML nối thêm mà kiểm tra magic-byte đầu
+     file không thấy. Chạy đồng bộ trước khi ghi storage, trên cả hai runtime.
    - **Các surface được phủ:** `POST /api/v1/files` (metadata),
      `PUT /api/v1/files/upload/:key` (bytes có chữ ký), và
      `POST /api/v1/media/:key` (bytes media có RBAC). Tập surface gom về
@@ -50,6 +55,18 @@ Chuẩn bị nền bảo mật runtime rõ ràng trước khi AI Harness đượ
    `unsafe-inline`) như phòng thủ nhiều lớp. Storage adapter map `contentType`
    sang field native R2 `httpMetadata` / S3 `ContentType` để `Content-Type` khi
    serve round-trip đúng (trước đây chỉ ghi vào custom metadata nên trả về undefined).
+
+   **Feature spec (hub):** `.kiro/specs/upload-file-controls/`
+   (requirements/design/tasks) là điểm neo duy nhất cho control này và cross-ref
+   tới mọi vị trí ở trên.
+
+   **Kế hoạch — re-encode ảnh để sanitize (chưa làm):** cách chống polyglot
+   không-FP là re-encode ảnh (bóc mọi thứ trừ pixel) thay vì quét marker. Việc
+   này phụ thuộc `ImageAdapter` (Sharp/CF Images) đề xuất ở
+   `.kiro/specs/image-transform-dsl/` và cần quyết định sync-vs-async (re-encode
+   async trong queue `media-processing` tạo cửa sổ file thô, đã giảm nhẹ bởi
+   serve attachment+nosniff ở trên). Tracked là task F1 trong spec
+   upload-file-controls; lý do bảo mật ở đây, cơ chế xử lý ảnh ở image-transform-dsl.
 
 4. **Outbound URL guard**
    - Cung cấp utility kiểm tra outbound URL trước khi bất kỳ tính năng import/fetch URL nào gọi `fetch`.
