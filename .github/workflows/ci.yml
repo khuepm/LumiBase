@@ -186,6 +186,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      # marketplace (apps/marketplace) lives in the private lumibase-ai/marketplace
+      # repo; without it the `--filter @lumibase/marketplace` lint target resolves
+      # to an empty directory and pnpm silently skips it. The runner's GITHUB_TOKEN
+      # can't read another org's repo, so authenticate with the
+      # MARKETPLACE_SUBMODULE_TOKEN PAT via a scoped insteadOf rewrite. Init ONLY
+      # this path — enterprise/extensions are private too and a blanket
+      # `submodules: true` checkout would abort with "repository not found".
+      - name: Fetch marketplace submodule
+        env:
+          MARKETPLACE_SUBMODULE_TOKEN: ${{ secrets.MARKETPLACE_SUBMODULE_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf "https://github.com/lumibase-ai/"
+          git submodule update --init --depth=1 apps/marketplace
+          git config --global --unset url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf
+
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
