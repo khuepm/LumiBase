@@ -26,6 +26,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `deleteCdcSubscription` is control-plane → HITL below autopilot.
   Feed is off-by-default per site (`cdc_feed.enabled` or first active
   subscription turns it on). No backfill: three new empty tables.
+- **Registry-numbering tripwire (`pnpm registry:check`).** A CI check
+  (`scripts/check-registry-numbering.mjs`, wired into the CI `checks` job) fails
+  the build when the Setup Impact Registry `#` column contains a duplicate —
+  mechanizing the Definition of Done §2 uniqueness rule per §6 ("cơ giới hóa"),
+  replacing the manual `grep`.
 
 ### Changed
 
@@ -33,14 +38,6 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   picking "the next number" independently, leaving many collisions (#16/#20/#21
   through #38). Colliding rows were renumbered to fresh ids (45–68), keeping the
   occurrence that other rows cite by number so cross-references stay valid.
-
-### Added
-
-- **Registry-numbering tripwire (`pnpm registry:check`).** A CI check
-  (`scripts/check-registry-numbering.mjs`, wired into the CI `checks` job) fails
-  the build when the Setup Impact Registry `#` column contains a duplicate —
-  mechanizing the Definition of Done §2 uniqueness rule per §6 ("cơ giới hóa"),
-  replacing the manual `grep`.
 
 ## [1.0.0] - 2026-07-11
 
