@@ -3,6 +3,7 @@ import { apiKeys, users, userSites } from '@lumibase/database';
 import { and, eq, sql } from 'drizzle-orm';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
+import { runDetached } from '../lib/detached';
 import { AuditLogger } from '../modules/audit/logger';
 import { tryExternalJwt } from '../modules/external-auth/adapter';
 import { formatSafeError } from '@lumibase/shared/utils';
@@ -31,25 +32,6 @@ export function shouldTouchApiKey(lastUsedAt: Date | null | undefined, now: Date
   if (intervalMs === 0) return true;
   if (!lastUsedAt) return true;
   return now.getTime() - lastUsedAt.getTime() >= intervalMs;
-}
-
-/**
- * Run `promise` detached from the response. On Workers it hands off to
- * `executionCtx.waitUntil`; on Node/tests it's fire-and-forget. Hono's
- * `c.executionCtx` getter *throws* when no context is bound (Node / tests),
- * so the probe is wrapped in try/catch — mirrors `scheduleWorkersDrain`.
- */
-function runDetached(c: Parameters<MiddlewareHandler<AppEnv>>[0], promise: Promise<unknown>): void {
-  try {
-    const ctx = c.executionCtx as { waitUntil?: (p: Promise<unknown>) => void } | undefined;
-    if (ctx && typeof ctx.waitUntil === 'function') {
-      ctx.waitUntil(promise);
-      return;
-    }
-  } catch {
-    // No execution context bound — fall through to fire-and-forget.
-  }
-  void promise;
 }
 
 const getJwks = (certsUrl: string) => {
