@@ -1,8 +1,10 @@
 import Link from "next/link";
 import Badge, { type BadgeTone } from "@/components/cosmic/Badge";
 import FeatureCard from "@/components/cosmic/FeatureCard";
-import { EclipsePhase } from "@/components/EclipseMark";
-import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
+import Scene, { ParallaxItem } from "@/components/scroll/Scene";
+import WipeTitle from "@/components/scroll/WipeTitle";
+import EclipsePhaseScrub from "@/components/scroll/EclipsePhaseScrub";
+import { RevealGroup, RevealItem } from "@/components/motion";
 
 export interface SectionFeature {
   title: string;
@@ -26,10 +28,13 @@ export interface SectionData {
   features: SectionFeature[];
 }
 
+/** Column-based drift so grid cards parallax at slightly different rates. */
+const DRIFT = [0, 26, -20];
+
 /**
- * Product section — editorial numbered header: eclipse-phase glyph, mono
- * index, uppercase display title, serif tagline, then a 3-column feature
- * grid. One per product pillar.
+ * Product section — one scroll scene per pillar: the eclipse-phase glyph and
+ * title wipe are scrubbed by this scene's own progress, then a 3-column
+ * feature grid with per-column parallax.
  */
 export default function ProductSection({
   id,
@@ -43,21 +48,11 @@ export default function ProductSection({
 }: SectionData) {
   const no = String(index).padStart(2, "0");
   return (
-    <section id={id} className="mx-auto max-w-[1200px] px-5 pt-[90px] md:pt-[120px]">
-      <hr className="rule-dashed mb-10" />
-      <Reveal className="flex flex-col items-center text-center">
-        <div className="relative mb-4 flex items-center justify-center">
-          <EclipsePhase phase={phase} size={84} />
-        </div>
-        <p className="label-mono m-0">
-          [ {no} / {title.toUpperCase()} ]
-        </p>
-        <h2
-          className="m-0 mt-3 uppercase [font:800_34px/38px_var(--font-sans)] md:[font:800_48px/50px_var(--font-sans)]"
-          style={{ letterSpacing: "-0.01em", color: "var(--foreground)" }}
-        >
-          {title}
-        </h2>
+    <Scene id={id} className="mx-auto max-w-[1200px] px-5 pt-[90px] md:pt-[140px]">
+      <div className="mb-4 flex items-center justify-center">
+        <EclipsePhaseScrub phase={phase} size={84} />
+      </div>
+      <WipeTitle label={`[ ${no} / ${title.toUpperCase()} ]`} title={title}>
         <p
           className="font-serif-body mx-auto mt-3.5 max-w-[480px]"
           style={{
@@ -85,29 +80,31 @@ export default function ProductSection({
             <span>{cta}</span>
           </Link>
         </div>
-      </Reveal>
+      </WipeTitle>
 
       <RevealGroup className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 md:mt-16 lg:grid-cols-3">
-        {features.map((f) => (
+        {features.map((f, i) => (
           <RevealItem
             key={f.title}
             className={f.span === 2 ? "sm:col-span-2" : undefined}
           >
-            <FeatureCard
-              title={f.title}
-              description={f.desc}
-              visualHeight={f.vh ?? 190}
-              visualBg={f.bg}
-              visual={
-                f.node ??
-                (f.badge ? (
-                  <Badge tone={f.badgeTone ?? "accent"}>{f.badge}</Badge>
-                ) : undefined)
-              }
-            />
+            <ParallaxItem className="h-full" drift={DRIFT[i % 3] ?? 0}>
+              <FeatureCard
+                title={f.title}
+                description={f.desc}
+                visualHeight={f.vh ?? 190}
+                visualBg={f.bg}
+                visual={
+                  f.node ??
+                  (f.badge ? (
+                    <Badge tone={f.badgeTone ?? "accent"}>{f.badge}</Badge>
+                  ) : undefined)
+                }
+              />
+            </ParallaxItem>
           </RevealItem>
         ))}
       </RevealGroup>
-    </section>
+    </Scene>
   );
 }

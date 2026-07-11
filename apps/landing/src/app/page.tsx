@@ -14,6 +14,9 @@ import {
 } from "@/components/SectionVisuals";
 import TrustViz from "@/components/TrustViz";
 import { EclipsePhase } from "@/components/EclipseMark";
+import EclipseStage from "@/components/scroll/EclipseStage";
+import Scene from "@/components/scroll/Scene";
+import WipeTitle from "@/components/scroll/WipeTitle";
 import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
 
 const softwareApplicationJsonLd = {
@@ -252,6 +255,8 @@ export default function Home() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageJsonLd) }}
       />
 
+      <EclipseStage />
+
       <Hero />
 
       {sections.map((s) => (
@@ -259,19 +264,8 @@ export default function Home() {
       ))}
 
       {/* ── FAQ ────────────────────────────────────────────── */}
-      <section className="mx-auto w-full max-w-[760px] px-5 pt-[90px] md:pt-[120px]">
-        <Reveal className="text-center">
-          <p className="label-mono m-0">[ 05 / FIELD MANUAL ]</p>
-          <h2
-            className="m-0 mt-3 uppercase"
-            style={{
-              font: "800 34px/38px var(--font-sans, inherit)",
-              letterSpacing: "-0.01em",
-            }}
-          >
-            Questions, answered
-          </h2>
-        </Reveal>
+      <Scene className="mx-auto w-full max-w-[760px] px-5 pt-[90px] md:pt-[140px]">
+        <WipeTitle label="[ 05 / FIELD MANUAL ]" title="Questions, answered" />
         <RevealGroup className="mt-10 flex flex-col gap-4">
           {faqs.map((faq) => (
             <RevealItem key={faq.question} className="card-cosmic p-6">
@@ -297,10 +291,10 @@ export default function Home() {
             </RevealItem>
           ))}
         </RevealGroup>
-      </section>
+      </Scene>
 
-      {/* ── CTA ────────────────────────────────────────────── */}
-      <section className="mx-auto w-full max-w-[1200px] px-5 pt-[90px] md:pt-[120px]">
+      {/* ── CTA — the second totality plays behind this scene ── */}
+      <Scene className="mx-auto w-full max-w-[1200px] px-5 pb-[16vh] pt-[24vh]">
         <Reveal
           className="relative flex flex-col items-start justify-between gap-8 overflow-hidden rounded-[24px] p-8 md:flex-row md:items-center md:p-12"
           style={{
@@ -360,7 +354,7 @@ export default function Home() {
             </Link>
           </div>
         </Reveal>
-      </section>
+      </Scene>
     </div>
   );
 }

@@ -246,6 +246,49 @@ body::before {
   }
 }
 
+/* ── Lenis smooth scroll (recommended base styles) ──────── */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+/* ── Fixed eclipse stage (scroll-cinema backdrop) ───────── */
+.eclipse-fixed-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.eclipse-stage-scaler {
+  position: absolute;
+  inset: 0;
+  transform: scale(var(--stage-scale, 1));
+  transform-origin: center;
+}
+@media (max-width: 1100px) {
+  .eclipse-fixed-stage {
+    --stage-scale: 0.8;
+  }
+}
+@media (max-width: 640px) {
+  .eclipse-fixed-stage {
+    --stage-scale: 0.55;
+  }
+}
+
 /* ── Eclipse hero stage ─────────────────────────────────── */
 @keyframes corona-breathe {
   0%, 100% {

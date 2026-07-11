@@ -6,6 +6,7 @@ import { Github, Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import PillNav from "@/components/cosmic/PillNav";
 import { EclipseMark } from "@/components/EclipseMark";
+import { useLenis } from "@/components/scroll/SmoothScroll";
 
 const SECTIONS = [
   { label: "AI Harness", slug: "ai-harness" },
@@ -24,6 +25,7 @@ export default function Header() {
   const [active, setActive] = useState("AI Harness");
   const pathname = usePathname();
   const router = useRouter();
+  const lenis = useLenis();
   const isHome = pathname === "/";
 
   // Scroll-spy: light up the pill of the section in view (home page only)
@@ -53,7 +55,10 @@ export default function Header() {
     setActive(label);
     if (isHome) {
       const el = document.getElementById(section.slug);
-      if (el) window.scrollTo({ top: el.offsetTop - 90, behavior: "smooth" });
+      if (!el) return;
+      const top = el.offsetTop - 90;
+      if (lenis) lenis.scrollTo(top);
+      else window.scrollTo({ top, behavior: "smooth" });
     } else {
       router.push(`/#${section.slug}`);
     }

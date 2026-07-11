@@ -3,6 +3,7 @@ import { Archivo, Literata, DM_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import SmoothScroll from "@/components/scroll/SmoothScroll";
 
 const archivo = Archivo({ subsets: ["latin"], variable: "--font-sans" });
 const literata = Literata({ subsets: ["latin"], variable: "--font-serif" });
@@ -99,11 +100,13 @@ export default function RootLayout({
         />
       </head>
       <body className={`${archivo.className} text-foreground antialiased`}>
-        <div className="relative z-[1]">
-          <Header />
-          <main className="min-h-screen">{children}</main>
-          <Footer />
-        </div>
+        <SmoothScroll>
+          <div className="relative z-[1]">
+            <Header />
+            <main className="min-h-screen">{children}</main>
+            <Footer />
+          </div>
+        </SmoothScroll>
       </body>
     </html>
   );
