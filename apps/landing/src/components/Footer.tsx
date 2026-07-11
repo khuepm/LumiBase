@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EclipseMark } from "@/components/EclipseMark";
 
 const columns = [
   {
@@ -40,18 +41,22 @@ export default function Footer() {
         {/* Brand */}
         <div className="max-w-[280px]">
           <div className="mb-3.5 flex items-center gap-2.5">
-            <span className="sphere-logo h-[22px] w-[22px]" />
+            <EclipseMark size={24} />
             <span
-              className="text-white"
-              style={{ font: "700 18px/1 var(--font-sans, inherit)", letterSpacing: "-0.4px" }}
+              className="uppercase"
+              style={{
+                font: "800 16px/1 var(--font-sans, inherit)",
+                letterSpacing: "0.04em",
+                color: "var(--foreground)",
+              }}
             >
               LumiBase
             </span>
           </div>
           <p
-            className="mb-[18px] mt-0"
+            className="font-serif-body mb-[18px] mt-0"
             style={{
-              font: "500 14px/22px var(--font-sans, inherit)",
+              font: "400 14px/23px var(--font-serif-stack)",
               color: "var(--color-text-muted)",
             }}
           >
@@ -104,12 +109,14 @@ export default function Footer() {
       <div
         className="mt-16 flex flex-col items-center justify-between gap-3 pt-6 sm:flex-row"
         style={{
-          borderTop: "1px solid var(--color-border)",
-          font: "500 13px/1 var(--font-sans, inherit)",
+          borderTop: "1px dashed var(--color-dashline)",
+          font: "500 11px/1 var(--font-mono-stack, monospace)",
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
           color: "var(--color-text-muted)",
         }}
       >
-        <span>© {new Date().getFullYear()} LumiBase · MIT</span>
+        <span>© {new Date().getFullYear()} LumiBase · MIT · [ SEE YOU AT THE NEXT ECLIPSE ]</span>
         <div className="flex gap-[18px]">
           <Link
             href="https://twitter.com/khuephamminh"

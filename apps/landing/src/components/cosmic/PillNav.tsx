@@ -119,10 +119,11 @@ export default function PillNav({ items, active, onSelect, className }: PillNavP
               cursor: "pointer",
               background: "transparent",
               borderRadius: 999,
-              font: "600 13px/1 var(--font-sans, inherit)",
-              letterSpacing: "0.2px",
+              font: "500 11px/1 var(--font-mono-stack, monospace)",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
               whiteSpace: "nowrap",
-              color: isActive ? "#fff" : "rgba(255,255,255,0.66)",
+              color: isActive ? "#ffedd7" : "rgba(255,237,215,0.62)",
               textShadow: isActive ? "0 1px 2px rgba(0,0,0,0.35)" : "none",
             }}
           >

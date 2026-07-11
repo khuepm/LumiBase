@@ -57,13 +57,13 @@ export default function TrustViz() {
               className="mb-2 h-1.5 rounded-[3px] transition-colors"
               style={{
                 background: i <= active ? "var(--color-violet)" : "var(--color-surface-4)",
-                boxShadow: i <= active ? "0 0 10px rgba(123,97,255,0.7)" : "none",
+                boxShadow: i <= active ? "0 0 10px rgba(230,80,10,0.7)" : "none",
               }}
             />
             <span
               style={{
                 font: `600 12px ${sans}`,
-                color: i === active ? "#fff" : "var(--color-text-muted)",
+                color: i === active ? "var(--foreground)" : "var(--color-text-muted)",
               }}
             >
               {l.id}
@@ -76,7 +76,7 @@ export default function TrustViz() {
         style={{ font: `500 12px/1.5 ${sans}`, color: "var(--color-text-secondary)" }}
       >
         Currently at{" "}
-        <b className="text-white">
+        <b style={{ color: "var(--foreground)" }}>
           {level.id} — {level.name}
         </b>
         . {level.desc}

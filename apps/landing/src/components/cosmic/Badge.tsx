@@ -1,8 +1,9 @@
 const tones = {
-  neutral: "rgb(189, 189, 192)",
-  violet: "rgb(123, 97, 255)",
-  blue: "rgb(24, 160, 251)",
-  green: "rgb(46, 196, 124)",
+  neutral: "rgba(255, 237, 215, 0.72)",
+  accent: "#e6500a",
+  violet: "#e6500a",
+  blue: "#ffa000",
+  green: "#5d6c49",
 } as const;
 
 export type BadgeTone = keyof typeof tones;
@@ -23,7 +24,9 @@ export default function Badge({ children, tone = "neutral", dot = true }: BadgeP
         height: 24,
         padding: "0 10px",
         background: "var(--color-glass)",
-        font: "600 11px/16px var(--font-sans, inherit)",
+        font: "500 10px/16px var(--font-mono-stack, monospace)",
+        letterSpacing: "0.1em",
+        textTransform: "uppercase",
         color: "var(--color-text-secondary)",
       }}
     >

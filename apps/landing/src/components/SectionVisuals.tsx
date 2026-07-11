@@ -21,12 +21,12 @@ export function RunsViz() {
           style={{ background: "var(--color-surface-3)" }}
         >
           <span
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-cream"
             style={{ background: r.c, font: `700 11px ${sans}` }}
           >
             {r.s}
           </span>
-          <span className="flex-1 text-white" style={{ font: `600 13px ${sans}` }}>
+          <span className="flex-1 text-cream" style={{ font: `600 13px ${sans}` }}>
             {r.t}
           </span>
           <span style={{ font: `500 11px ${sans}`, color: "var(--color-text-muted)" }}>
@@ -56,7 +56,7 @@ export function ProvenanceViz() {
             className="h-[7px] w-[7px] rounded-full"
             style={{ background: i === 1 ? "var(--color-blue)" : "var(--color-violet)" }}
           />
-          <code className="text-white" style={{ font: "600 12px var(--font-mono, monospace)" }}>
+          <code className="text-cream" style={{ font: "600 12px var(--font-mono, monospace)" }}>
             {who}
           </code>
           <span>{what}</span>
@@ -75,7 +75,7 @@ export function IntentViz() {
       >
         <span
           className="min-w-0 flex-1 truncate text-left"
-          style={{ font: `500 14px ${sans}`, color: "#fff" }}
+          style={{ font: `500 14px ${sans}`, color: "var(--foreground)" }}
         >
           Every product: ≥1 image · 50–200 words · vi+en
         </span>
@@ -96,7 +96,7 @@ export function IntentViz() {
             style={{ right: "18%", background: "var(--color-blue)" }}
           />
         </div>
-        <span className="text-white" style={{ font: `600 12px ${sans}` }}>
+        <span className="text-cream" style={{ font: `600 12px ${sans}` }}>
           82% converged
         </span>
       </div>
@@ -120,12 +120,12 @@ export function NewsroomViz() {
           style={{ background: "var(--color-surface-3)" }}
         >
           <span
-            className="flex h-[26px] w-[26px] items-center justify-center rounded-lg text-sm text-white"
-            style={{ background: "linear-gradient(180deg,#2a2730,#17161a)" }}
+            className="flex h-[26px] w-[26px] items-center justify-center rounded-lg text-sm text-cream"
+            style={{ background: "linear-gradient(180deg,#2c1c0e,#150c05)" }}
           >
             {icon}
           </span>
-          <span className="text-white" style={{ font: `600 12px ${sans}` }}>
+          <span className="text-cream" style={{ font: `600 12px ${sans}` }}>
             {name}
           </span>
         </div>
@@ -149,7 +149,7 @@ export function SchemaViz() {
           className="ring-glass flex items-center justify-between rounded-[10px] px-3 py-2"
           style={{ background: "var(--color-surface-3)" }}
         >
-          <span className="text-white" style={{ font: `600 12px ${sans}` }}>
+          <span className="text-cream" style={{ font: `600 12px ${sans}` }}>
             {name}
           </span>
           <span
@@ -195,12 +195,12 @@ export function McpViz() {
   return (
     <div className="flex w-full flex-col items-center gap-3 p-6">
       <div
-        className="flex items-center justify-center rounded-[18px] text-white"
+        className="flex items-center justify-center rounded-[18px] text-cream"
         style={{
           width: 70,
           height: 70,
-          background: "linear-gradient(180deg,#2a2730,#17161a)",
-          boxShadow: "var(--ring-glass), 0 0 50px rgba(24,160,251,0.4)",
+          background: "linear-gradient(180deg,#2c1c0e,#150c05)",
+          boxShadow: "var(--ring-glass), 0 0 50px rgba(255,160,0,0.35)",
           font: `700 26px ${sans}`,
         }}
       >
@@ -220,7 +220,7 @@ export function CdcViz() {
       {nodes.map((n, i) => (
         <span key={n} className="flex items-center gap-2.5">
           <span
-            className="ring-glass rounded-[10px] px-3 py-2 text-white"
+            className="ring-glass rounded-[10px] px-3 py-2 text-cream"
             style={{ background: "var(--color-surface-3)", font: `600 12px ${sans}` }}
           >
             {n}

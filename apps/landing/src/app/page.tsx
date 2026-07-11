@@ -13,6 +13,7 @@ import {
   SchemaViz,
 } from "@/components/SectionVisuals";
 import TrustViz from "@/components/TrustViz";
+import { EclipsePhase } from "@/components/EclipseMark";
 import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
 
 const softwareApplicationJsonLd = {
@@ -99,8 +100,8 @@ const DOCS = "https://docs.lumibase.dev";
 const sections: SectionData[] = [
   {
     id: "ai-harness",
-    planet: "/assets/planet-magician.png",
-    glow: "rgba(123,97,255,0.75)",
+    index: 1,
+    phase: 0,
     title: "AI Harness",
     tagline: "Agents operate your content. You set the intent — and hold the veto.",
     cta: "Explore the Harness",
@@ -121,8 +122,7 @@ const sections: SectionData[] = [
       {
         title: "Human-in-the-loop",
         desc: "schema:write and delete always route through approval — at every autonomy level, with no exceptions.",
-        img: "/assets/planet-magician.png",
-        imgW: 104,
+        node: <EclipsePhase phase={1} size={96} />,
       },
       {
         title: "Provenance-first",
@@ -133,8 +133,8 @@ const sections: SectionData[] = [
   },
   {
     id: "content-os",
-    planet: "/assets/planet-blue.png",
-    glow: "rgba(24,160,251,0.7)",
+    index: 2,
+    phase: 1,
     title: "Content OS",
     tagline: "Declare the desired state. LumiBase reconciles content toward it, continuously.",
     cta: "Read the vision",
@@ -149,14 +149,14 @@ const sections: SectionData[] = [
       {
         title: "Reconciliation loop",
         desc: "Content drifts; a control loop pulls it back. Live state, not last-edit state — the Kubernetes idea, applied to content.",
-        img: "/assets/planet-green.png",
-        imgW: 100,
+        node: <EclipsePhase phase={2} size={96} />,
       },
       {
         title: "Tenant Constitution",
         desc: "Versioned, hashed publish gates encode your taste and policy. What fails the constitution never ships — at any autonomy level.",
-        img: "/assets/planet-blue.png",
-        imgW: 100,
+        badge: "Publish gate",
+        badgeTone: "accent",
+        vh: 170,
       },
       {
         title: "Multi-agent newsroom",
@@ -168,8 +168,8 @@ const sections: SectionData[] = [
   },
   {
     id: "studio",
-    planet: "/assets/planet-green.png",
-    glow: "rgba(46,196,124,0.7)",
+    index: 3,
+    phase: 2,
     title: "Studio",
     tagline: "Mission control — humans supervise the system instead of hand-editing every item.",
     cta: "Tour the Studio",
@@ -186,7 +186,7 @@ const sections: SectionData[] = [
         title: "Field-level permissions",
         desc: "RBAC down to the individual field via a JSON policy engine — plus per-field AES-GCM encryption for the data that matters.",
         badge: "Security",
-        badgeTone: "violet",
+        badgeTone: "accent",
         vh: 170,
       },
       {
@@ -199,15 +199,14 @@ const sections: SectionData[] = [
       {
         title: "Realtime collaboration",
         desc: "Presence, live subscriptions, and per-field pin badges over WebSocket — humans and agents on the same content.",
-        img: "/assets/planet-genius.png",
-        imgW: 100,
+        node: <EclipsePhase phase={3} size={96} />,
       },
     ],
   },
   {
     id: "runtime",
-    planet: "/assets/planet-blue.png",
-    glow: "rgba(24,160,251,0.7)",
+    index: 4,
+    phase: 3,
     title: "Runtime",
     tagline: "Edge-native, never locked in — Cloudflare Workers or self-hosted Docker, one abstraction.",
     cta: "Read the docs",
@@ -222,8 +221,9 @@ const sections: SectionData[] = [
       {
         title: "Runtime abstraction",
         desc: "@lumibase/runtime swaps cache, storage, DB, search, and queues per deployment target. Business logic never touches a vendor binding.",
-        img: "/assets/planet-blue.png",
-        imgW: 104,
+        badge: "CF Workers · Docker",
+        badgeTone: "neutral",
+        vh: 170,
       },
       {
         title: "MCP server",
@@ -261,9 +261,13 @@ export default function Home() {
       {/* ── FAQ ────────────────────────────────────────────── */}
       <section className="mx-auto w-full max-w-[760px] px-5 pt-[90px] md:pt-[120px]">
         <Reveal className="text-center">
+          <p className="label-mono m-0">[ 05 / FIELD MANUAL ]</p>
           <h2
-            className="m-0 text-white"
-            style={{ font: "700 34px/40px var(--font-sans, inherit)", letterSpacing: "-0.4px" }}
+            className="m-0 mt-3 uppercase"
+            style={{
+              font: "800 34px/38px var(--font-sans, inherit)",
+              letterSpacing: "-0.01em",
+            }}
           >
             Questions, answered
           </h2>
@@ -272,15 +276,19 @@ export default function Home() {
           {faqs.map((faq) => (
             <RevealItem key={faq.question} className="card-cosmic p-6">
               <h3
-                className="m-0 text-white"
-                style={{ font: "600 17px/24px var(--font-sans, inherit)", letterSpacing: "-0.1px" }}
+                className="m-0"
+                style={{
+                  font: "600 17px/24px var(--font-sans, inherit)",
+                  letterSpacing: "-0.1px",
+                  color: "var(--foreground)",
+                }}
               >
                 {faq.question}
               </h3>
               <p
-                className="mb-0 mt-2.5"
+                className="font-serif-body mb-0 mt-2.5"
                 style={{
-                  font: "500 14px/23px var(--font-sans, inherit)",
+                  font: "400 14px/24px var(--font-serif-stack)",
                   color: "var(--color-text-secondary)",
                 }}
               >
@@ -294,33 +302,38 @@ export default function Home() {
       {/* ── CTA ────────────────────────────────────────────── */}
       <section className="mx-auto w-full max-w-[1200px] px-5 pt-[90px] md:pt-[120px]">
         <Reveal
-          className="relative flex flex-col items-start justify-between gap-8 overflow-hidden rounded-[28px] p-8 md:flex-row md:items-center md:p-12"
+          className="relative flex flex-col items-start justify-between gap-8 overflow-hidden rounded-[24px] p-8 md:flex-row md:items-center md:p-12"
           style={{
             background:
-              "linear-gradient(135deg, rgba(123,97,255,0.16), rgba(24,160,251,0.08))",
+              "linear-gradient(135deg, rgba(230,80,10,0.18), rgba(255,160,0,0.06))",
             boxShadow: "var(--ring-glass-strong)",
           }}
         >
           <div
-            className="pointer-events-none absolute -right-16 -top-24 h-[220px] w-[220px] rounded-full opacity-30"
-            style={{
-              background:
-                "radial-gradient(circle at 34% 30%, #fff 0%, #7B61FF 58%, #26204a 100%)",
-              boxShadow: "0 0 80px rgba(123,97,255,0.4)",
-            }}
-          />
+            className="pointer-events-none absolute -right-10 -top-16 opacity-70"
+            aria-hidden
+          >
+            <EclipsePhase phase={3} size={220} />
+          </div>
           <div className="relative max-w-[560px]">
+            <p className="label-mono label-mono-accent m-0">
+              [ FINAL TRANSMISSION ]
+            </p>
             <h2
-              className="m-0 text-white"
-              style={{ font: "700 34px/42px var(--font-sans, inherit)", letterSpacing: "-0.4px" }}
+              className="m-0 mt-3 uppercase"
+              style={{
+                font: "800 34px/38px var(--font-sans, inherit)",
+                letterSpacing: "-0.01em",
+                color: "var(--foreground)",
+              }}
             >
               Run your content like a system.
             </h2>
             <p
-              className="mb-0 mt-3"
+              className="font-serif-body mb-0 mt-3"
               style={{
-                font: "500 16px/26px var(--font-sans, inherit)",
-                color: "rgb(205,205,210)",
+                font: "400 16px/27px var(--font-serif-stack)",
+                color: "var(--color-text-secondary)",
               }}
             >
               Declare the desired state. Let governed agents converge it. Keep

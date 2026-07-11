@@ -2,44 +2,51 @@
 @config '../../tailwind.config.ts';
 
 :root {
-  /* LumiBase cosmic palette — extracted from the design system */
-  --background: rgb(14, 14, 17);
-  --foreground: #ffffff;
+  /* LumiBase eclipse palette — warm editorial dark, cream ink, totality orange */
+  --background: #100904;
+  --foreground: #ffedd7;
 
-  --gradient-page: linear-gradient(135deg, rgb(30, 30, 32) 0%, rgb(14, 14, 17) 32%);
+  --gradient-page: linear-gradient(160deg, #1a0f06 0%, #100904 42%);
 
-  --color-surface-1: rgb(29, 28, 32);
-  --color-surface-2: rgb(36, 35, 37);
-  --color-surface-3: rgb(41, 41, 43);
-  --color-surface-4: rgb(52, 50, 54);
-  --color-surface-sunken: rgb(23, 22, 25);
+  --color-surface-1: #1c120a;
+  --color-surface-2: #241709;
+  --color-surface-3: #2c1c0e;
+  --color-surface-4: #382416;
+  --color-surface-sunken: #150c05;
 
-  --color-glass: rgba(255, 255, 255, 0.08);
-  --color-glass-hover: rgba(255, 255, 255, 0.14);
+  --color-glass: rgba(255, 237, 215, 0.07);
+  --color-glass-hover: rgba(255, 237, 215, 0.13);
 
-  --color-text-secondary: rgb(189, 189, 192);
-  --color-text-muted: rgb(169, 169, 169);
+  --color-text-secondary: rgba(255, 237, 215, 0.72);
+  --color-text-muted: rgba(255, 237, 215, 0.52);
 
-  --color-violet: rgb(123, 97, 255);
-  --color-blue: rgb(24, 160, 251);
-  --color-green: rgb(46, 196, 124);
-  --color-red: rgb(232, 86, 86);
+  /* Accent ramp — totality orange leads; legacy var names kept for components */
+  --color-accent: #e6500a;
+  --color-violet: #e6500a;
+  --color-blue: #ffa000;
+  --color-green: #5d6c49;
+  --color-red: #ff6b6b;
 
-  --color-border: rgba(255, 255, 255, 0.08);
-  --color-border-strong: rgba(255, 255, 255, 0.16);
+  --color-border: rgba(255, 237, 215, 0.1);
+  --color-border-strong: rgba(255, 237, 215, 0.2);
+  --color-dashline: rgba(255, 237, 215, 0.22);
 
-  --radius-pill: 32px;
-  --radius-card: 24px;
+  --radius-pill: 3em;
+  --radius-card: 20px;
 
-  --ring-glass: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  --ring-glass-strong: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  --ring-glass: inset 0 0 0 1px rgba(255, 237, 215, 0.09);
+  --ring-glass-strong: inset 0 0 0 1px rgba(255, 237, 215, 0.18);
 
   --shadow-sm: 0px 2px 4px 0px rgba(0, 0, 0, 0.32);
   --shadow-md: 0px 8px 24px 0px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0px 24px 64px 0px rgba(0, 0, 0, 0.8);
 
-  --glow-violet: 0px 0px 80px 0px rgba(123, 97, 255, 0.45);
-  --glow-blue: 0px 0px 80px 0px rgba(24, 160, 251, 0.4);
+  --glow-violet: 0px 0px 80px 0px rgba(230, 80, 10, 0.4);
+  --glow-blue: 0px 0px 80px 0px rgba(255, 160, 0, 0.32);
+  --glow-corona: 0 0 60px rgba(230, 80, 10, 0.55), 0 0 140px rgba(255, 140, 0, 0.28);
+
+  --font-serif-stack: var(--font-serif), Georgia, 'Times New Roman', serif;
+  --font-mono-stack: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -54,10 +61,10 @@ html {
 
 body {
   color: var(--foreground);
-  background: var(--color-bg, rgb(20, 19, 22));
+  background: var(--color-bg, #100904);
 }
 
-/* Viewport-fixed cosmic gradient (avoids background-attachment quirks) */
+/* Viewport-fixed warm gradient (avoids background-attachment quirks) */
 body::after {
   content: "";
   position: fixed;
@@ -67,7 +74,7 @@ body::after {
   background: var(--gradient-page);
 }
 
-/* Faint starfield over the cosmic gradient */
+/* Faint warm starfield — the eclipse sky */
 body::before {
   content: "";
   position: fixed;
@@ -75,14 +82,14 @@ body::before {
   pointer-events: none;
   z-index: 0;
   background-image:
-    radial-gradient(1.4px 1.4px at 12% 18%, rgba(255, 255, 255, 0.7), transparent),
-    radial-gradient(1.2px 1.2px at 34% 62%, rgba(255, 255, 255, 0.5), transparent),
-    radial-gradient(1.6px 1.6px at 58% 28%, rgba(255, 255, 255, 0.6), transparent),
-    radial-gradient(1px 1px at 72% 76%, rgba(255, 255, 255, 0.5), transparent),
-    radial-gradient(1.3px 1.3px at 88% 42%, rgba(255, 255, 255, 0.6), transparent),
-    radial-gradient(1px 1px at 22% 88%, rgba(255, 255, 255, 0.4), transparent),
-    radial-gradient(1.5px 1.5px at 46% 8%, rgba(255, 255, 255, 0.55), transparent),
-    radial-gradient(1px 1px at 64% 54%, rgba(255, 255, 255, 0.4), transparent);
+    radial-gradient(1.4px 1.4px at 12% 18%, rgba(255, 237, 215, 0.6), transparent),
+    radial-gradient(1.2px 1.2px at 34% 62%, rgba(255, 237, 215, 0.4), transparent),
+    radial-gradient(1.6px 1.6px at 58% 28%, rgba(255, 237, 215, 0.5), transparent),
+    radial-gradient(1px 1px at 72% 76%, rgba(255, 237, 215, 0.4), transparent),
+    radial-gradient(1.3px 1.3px at 88% 42%, rgba(255, 200, 150, 0.5), transparent),
+    radial-gradient(1px 1px at 22% 88%, rgba(255, 237, 215, 0.32), transparent),
+    radial-gradient(1.5px 1.5px at 46% 8%, rgba(255, 237, 215, 0.45), transparent),
+    radial-gradient(1px 1px at 64% 54%, rgba(255, 200, 150, 0.32), transparent);
   background-repeat: repeat;
   background-size: 100% 1100px;
 }
@@ -100,11 +107,32 @@ body::before {
     box-shadow: var(--ring-glass-strong);
   }
 
+  /* Editorial devices borrowed from the print-magazine register */
+  .label-mono {
+    font-family: var(--font-mono-stack);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+  .label-mono-accent {
+    color: var(--color-accent);
+  }
+  .rule-dashed {
+    border: none;
+    border-top: 1px dashed var(--color-dashline);
+  }
+  .font-serif-body {
+    font-family: var(--font-serif-stack);
+  }
+
   /* Legacy control-room utilities kept for the pricing/legal pages */
   .bg-grid {
     background-image:
-      linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+      linear-gradient(to right, rgba(255, 237, 215, 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 237, 215, 0.04) 1px, transparent 1px);
     background-size: 44px 44px;
   }
   .mask-radial {
@@ -112,12 +140,12 @@ body::before {
     mask-image: radial-gradient(ellipse 60% 60% at 50% 40%, #000 40%, transparent 100%);
   }
   .text-signal-glow {
-    text-shadow: 0 0 24px rgba(123, 97, 255, 0.45);
+    text-shadow: 0 0 24px rgba(230, 80, 10, 0.45);
   }
 }
 
 @layer components {
-  /* ── Glass pill button (brand default) ─────────────────── */
+  /* ── Pill button (brand default) ────────────────────────── */
   .btn-pill {
     position: relative;
     display: inline-flex;
@@ -145,12 +173,12 @@ body::before {
   }
 
   .btn-glass {
-    background: rgba(24, 23, 28, 0.55);
-    color: #fff;
+    background: rgba(28, 18, 10, 0.55);
+    color: var(--foreground);
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.28),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+      inset 0 1px 0 rgba(255, 237, 215, 0.24),
+      inset 0 0 0 1px rgba(255, 237, 215, 0.13),
       inset 0 -7px 14px rgba(0, 0, 0, 0.28),
       0 7px 20px -4px rgba(0, 0, 0, 0.55);
   }
@@ -159,9 +187,9 @@ body::before {
     position: absolute;
     inset: 0;
     border-radius: 999px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%);
-    -webkit-backdrop-filter: blur(5px) saturate(185%);
-    backdrop-filter: blur(5px) saturate(185%);
+    background: linear-gradient(180deg, rgba(255, 237, 215, 0.09) 0%, rgba(255, 237, 215, 0.02) 100%);
+    -webkit-backdrop-filter: blur(5px) saturate(160%);
+    backdrop-filter: blur(5px) saturate(160%);
   }
   .btn-glass > * {
     position: relative;
@@ -169,9 +197,9 @@ body::before {
   }
 
   .btn-solid {
-    background: var(--color-violet);
-    color: #fff;
-    box-shadow: 0 8px 24px -8px rgba(123, 97, 255, 0.7);
+    background: var(--color-accent);
+    color: #ffedd7;
+    box-shadow: 0 8px 24px -8px rgba(230, 80, 10, 0.7);
   }
 
   .btn-sm {
@@ -199,12 +227,15 @@ body::before {
     overflow: hidden;
   }
 
-  /* ── Glossy white sphere (brand logo mark) ─────────────── */
+  /* ── Eclipse mark (brand logo) — dark disc + corona ────── */
   .sphere-logo {
     display: inline-block;
     border-radius: 50%;
-    background: linear-gradient(180deg, #fff 0%, #cfcfcf 100%);
-    box-shadow: 0 0 18px rgba(123, 97, 255, 0.6), var(--shadow-sm);
+    background: radial-gradient(circle at 50% 50%, #100904 0%, #100904 62%, #2c1c0e 100%);
+    box-shadow:
+      0 0 0 1.5px rgba(255, 160, 0, 0.9),
+      0 0 10px rgba(230, 80, 10, 0.85),
+      0 0 22px rgba(230, 80, 10, 0.4);
     flex-shrink: 0;
   }
 }
@@ -215,31 +246,83 @@ body::before {
   }
 }
 
-/* ── Orbital hero stage — fixed 980px canvas scaled per breakpoint ── */
-.orbit-wrap {
-  --orbit-scale: 1;
-  height: calc(980px * var(--orbit-scale));
+/* ── Eclipse hero stage ─────────────────────────────────── */
+@keyframes corona-breathe {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.035);
+  }
+}
+
+@keyframes corona-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Tiny spaceship transiting the moon at totality */
+@keyframes ship-transit {
+  0% {
+    transform: translate(-340px, 120px) rotate(-14deg);
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  46% {
+    transform: translate(0px, -10px) rotate(-8deg);
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(340px, -120px) rotate(-2deg);
+    opacity: 0;
+  }
+}
+
+.eclipse-wrap {
+  --eclipse-scale: 1;
+  height: calc(640px * var(--eclipse-scale));
   display: flex;
   justify-content: center;
   overflow: hidden;
 }
-.orbit-stage {
+.eclipse-stage {
   position: relative;
-  width: 980px;
-  height: 980px;
+  width: 640px;
+  height: 640px;
   flex-shrink: 0;
-  transform: scale(var(--orbit-scale));
+  transform: scale(var(--eclipse-scale));
   transform-origin: top center;
 }
 @media (max-width: 1100px) {
-  .orbit-wrap {
-    --orbit-scale: 0.72;
+  .eclipse-wrap {
+    --eclipse-scale: 0.78;
   }
 }
 @media (max-width: 640px) {
-  .orbit-wrap {
-    --orbit-scale: 0.42;
+  .eclipse-wrap {
+    --eclipse-scale: 0.52;
   }
+}
+
+.eclipse-corona {
+  animation: corona-breathe 7s ease-in-out infinite;
+}
+.eclipse-corona-rays {
+  animation: corona-rotate 90s linear infinite;
+}
+.eclipse-ship {
+  animation: ship-transit 11s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+  animation-delay: 2s;
+  opacity: 0;
+  will-change: transform, opacity;
 }
 
 /* Respect users who prefer less motion */

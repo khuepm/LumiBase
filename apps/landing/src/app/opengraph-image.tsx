@@ -20,57 +20,60 @@ export default function Image() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: "#05070a",
-          color: "white",
+          background: "#100904",
+          color: "#ffedd7",
           fontFamily: "monospace",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 24,
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "center", gap: 40 }}>
+          {/* Eclipse mark — corona + moon at totality */}
           <div
             style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              width: 96,
-              height: 96,
-              borderRadius: 20,
-              background: "rgba(34,197,94,0.12)",
-              border: "2px solid rgba(34,197,94,0.4)",
-              fontSize: 60,
-              fontWeight: 700,
-              color: "#4ade80",
+              width: 150,
+              height: 150,
+              borderRadius: 9999,
+              background:
+                "radial-gradient(circle, rgba(255,160,0,0.5) 40%, rgba(230,80,10,0.25) 60%, rgba(230,80,10,0) 75%)",
             }}
           >
-            {">_"}
+            <div
+              style={{
+                display: "flex",
+                width: 96,
+                height: 96,
+                borderRadius: 9999,
+                background: "#150c05",
+                boxShadow:
+                  "0 0 0 3px #ffa000, 0 0 40px rgba(230,80,10,0.8), 0 0 90px rgba(230,80,10,0.4)",
+              }}
+            />
           </div>
-          <div style={{ display: "flex", fontSize: 80, fontWeight: 700 }}>
-            <span>Lumi</span>
-            <span style={{ color: "#4ade80" }}>Base</span>
+          <div style={{ display: "flex", fontSize: 84, fontWeight: 700 }}>
+            <span>LUMI</span>
+            <span style={{ color: "#e6500a" }}>BASE</span>
           </div>
         </div>
         <div
           style={{
-            marginTop: 32,
-            fontSize: 40,
-            color: "#e6edf3",
+            marginTop: 36,
+            fontSize: 38,
+            color: "#ffedd7",
           }}
         >
-          The Content Operating System
+          THE CONTENT OPERATING SYSTEM
         </div>
         <div
           style={{
-            marginTop: 16,
-            fontSize: 24,
-            color: "#8b98a9",
+            marginTop: 18,
+            fontSize: 22,
+            letterSpacing: 3,
+            color: "rgba(255,237,215,0.55)",
           }}
         >
-          Declare intent · Agents reconcile · You keep the veto
+          [ DECLARE INTENT · AGENTS RECONCILE · YOU KEEP THE VETO ]
         </div>
       </div>
     ),

@@ -34,7 +34,7 @@ export default function FeatureCard({
           style={{
             font: "600 19px/26px var(--font-sans, inherit)",
             letterSpacing: "-0.1px",
-            color: "#fff",
+            color: "var(--foreground)",
           }}
         >
           {title}
