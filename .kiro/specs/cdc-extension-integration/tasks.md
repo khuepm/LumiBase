@@ -2,7 +2,7 @@
 
 > Trace: mỗi task ghi requirement liên quan (Req n). Tuân non-negotiable rules `CLAUDE.md` (nanoid/uuidv7, siteId, runtime abstraction, HITL, response format, TS strict). Property tests dùng `fast-check` (≥100 iterations), đánh số theo design §12.
 >
-> **Trạng thái:** Phase A + B hoàn tất 2026-07-10 (tasks 1.1–1.5, 2.1–2.4, checkpoint 3; chốt phương án B — nanoid PK + keyset cursor `(occurredAt, id)`). Typecheck workspace pass; full CMS suite 2049 passed / 3 skipped; test CDC feed mới 14/14. Phase C trở đi chưa làm.
+> **Trạng thái:** Phase A + B + C hoàn tất 2026-07-10 (tasks 1.x, 2.x, 3, 4.x, 5.x; chốt phương án B — nanoid PK + keyset cursor `(occurredAt, id)` + safety lag 2s). Typecheck workspace pass; full CMS suite 2076 passed / 3 skipped; test CDC feed 41/41. Phase D trở đi chưa làm (`/dispatch` trả 501 tới khi có dispatcher).
 
 ## Phase A — Data model & shared schemas
 
@@ -25,15 +25,15 @@
 
 ## Phase C — Pull feed API & subscriptions
 
-- [ ] 4. Feed API (Req 2.1–2.5)
-  - [ ] 4.1 `modules/cdc/change-feed/routes.ts`: `GET /events` cursor-based (filter, limit, `meta.nextCursor/hasMore`), guard capability `cdc:subscribe` qua PermissionService (adminAccess thoả mặc nhiên); 400 cursor lỗi, 410 `CURSOR_EXPIRED` + `earliestCursor`.
-  - [ ] 4.2 Property test **P2 Cursor pagination gap-free** + **P8 Filter đúng và đủ**. (Req 2.2, 3.1)
+- [x] 4. Feed API (Req 2.1–2.5)
+  - [x] 4.1 `modules/cdc/change-feed/routes.ts` (+ `feed-reader.ts`: `FeedReader` + `CdcEventStore` port với `DrizzleCdcEventStore`/`InMemoryCdcEventStore`, safety lag 2s, 410 `CURSOR_EXPIRED` + `earliestCursor`; guard ADR-011 reject frontend realm): `GET /events` cursor-based (filter, limit, `meta.nextCursor/hasMore`), guard capability `cdc:subscribe` qua PermissionService (adminAccess thoả mặc nhiên); 400 cursor lỗi, 410 `CURSOR_EXPIRED` + `earliestCursor`.
+  - [x] 4.2 Property test **P2 Cursor pagination gap-free** + **P8 Filter đúng và đủ** (+ safety-lag, 410, tenant isolation store) — `cdc-feed-reader.property.test.ts`, 5 tests. (Req 2.2, 3.1)
 
-- [ ] 5. Subscription service (Req 3.1–3.5, 6.2, 6.3)
-  - [ ] 5.1 `subscription-service.ts`: CRUD (max 50/site, unique name → 409), state machine (`active/paused/dead/stale` theo design §3.2), ack (không lùi), replay (trong retention window, audit), lag computation.
-  - [ ] 5.2 Routes: CRUD + `/ack` + `/replay` + `/dispatch` + `/deliveries` với guard như design §9 (`requireSiteAdmin` cho quản trị, capability cho ack).
-  - [ ] 5.3 Property test **P11 Ack không lùi** + unit test state machine transitions. (Req 3.3, 6.2)
-  - [ ] 5.4 Unit test route handlers với fake services (pattern `cdc-routes.test.ts`): 400/403/404/409/410. (Req 2.3, 2.5, 3.2)
+- [x] 5. Subscription service (Req 3.1–3.5, 6.2, 6.3)
+  - [x] 5.1 `subscription-service.ts` (+ `subscription-state.ts` pure: `canTransitionSubscription`/`compareKeyset`/`isAckAllowed`): CRUD (max 50/site, unique name → 409), state machine (`active/paused/dead/stale` theo design §3.2), ack (không lùi), replay (trong retention window, audit), lag computation.
+  - [x] 5.2 Routes: CRUD + `/ack` + `/replay` + `/dispatch` (501 tới khi Phase D nối dispatcher) + `/deliveries`; guard PermissionService bundle.admin cho quản trị, capability `cdc:subscribe` (role-carried, admin mặc nhiên) cho events/ack; mount TRƯỚC control-plane router cùng prefix `/cdc` (use('*') admin gate của nó không nuốt feed reads); replay ghi audit `cdc_subscription_replayed`.
+  - [x] 5.3 Property test **P11 Ack không lùi** (+ compareKeyset total order) + unit test toàn bộ bảng transitions — `cdc-feed-subscription-state.property.test.ts`, 6 tests. (Req 3.3, 6.2)
+  - [x] 5.4 Unit test route handlers với fake services (400/403/404/409/410/501 + happy paths) — `cdc-feed-routes.test.ts`, 16 tests. (Req 2.3, 2.5, 3.2)
 
 ## Phase D — Dispatcher & webhook delivery
 
