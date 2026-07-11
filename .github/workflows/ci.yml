@@ -248,7 +248,17 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Lint allowlisted packages
-        run: pnpm --filter @lumibase/landing --filter @lumibase/marketplace --filter @lumibase/studio --filter @lumibase/docs --filter @lumibase/cms lint
+        run: pnpm --filter @lumibase/landing --filter @lumibase/studio --filter @lumibase/docs --filter @lumibase/cms lint
+
+      # marketplace is excluded from the pnpm workspace (see pnpm-workspace.yaml),
+      # so a root `--filter @lumibase/marketplace` never matches — it must be
+      # linted standalone with its own deps, exactly as pages-deploy.yml builds
+      # it. The Fetch marketplace submodule step above makes its source present.
+      - name: Lint marketplace (standalone submodule)
+        working-directory: apps/marketplace
+        run: |
+          pnpm install --no-frozen-lockfile --ignore-workspace
+          pnpm lint
 
   dependency-audit:
     name: Dependency vulnerability audit
