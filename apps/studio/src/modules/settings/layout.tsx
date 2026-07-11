@@ -38,6 +38,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Integrations',
     items: [
       { id: 'webhooks', label: 'Webhooks', to: '/settings/webhooks' },
+      { id: 'change-feed', label: 'Change Feed', to: '/settings/change-feed' },
       { id: 'email', label: 'Email', to: '/settings/email' },
       { id: 'notifications', label: 'Notifications', to: '/settings/notifications' },
       { id: 'extensions', label: 'Extensions', to: '/settings/extensions' },

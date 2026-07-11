@@ -8,7 +8,7 @@ Nguyên tắc thiết kế:
 
 - **Outbox, không WAL** — WAL-tailing cần long-lived connection và replication slot, không chạy trên Workers và đã có control plane riêng (spec `clickhouse-cdc`) cho analytics. Outbox chạy trên mọi runtime, atomic với mutation, và cho phép mask PII *trước khi* dữ liệu rời transaction boundary.
 - **Log là nguồn sự thật, consumer giữ checkpoint** — event bất biến, append-only; mỗi Subscription chỉ là một cursor + filter. Replay = lùi cursor. Không có trạng thái "đã gửi" trên event.
-- **At-least-once + idempotency key** — không hứa exactly-once; mọi delivery mang `event.id` (UUIDv7) làm idempotency key, consumer dedup.
+- **At-least-once + idempotency key** — không hứa exactly-once; mọi delivery mang `event.id` (nanoid) làm idempotency key, consumer dedup. Thứ tự feed đến từ keyset `(occurred_at, id)`, không từ id.
 - **Tái dụng, không phát minh lại** — bảng `webhooks` sẵn có làm delivery target; `QueueProvider` cho job nền; `scheduler-worker` pattern cho sweep; ExtensionSandbox + capability model cho subscriber; `validateOutboundUrl` cho SSRF; notifications module cho cảnh báo; masking theo `fields.classification`.
 - **An toàn theo mặc định** — feed off-by-default per site; payload mode mặc định `reference` (thin event — consumer tự fetch bằng quyền của chính nó); chữ ký HMAC bắt buộc với webhook; PII/PHI mask trước khi lưu outbox.
 
@@ -67,7 +67,7 @@ apps/studio/src/modules/
 
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
-| `id` | uuid PK | **uuidv7()** — k-sortable, kiêm Cursor (rule #1: uuidv7 cho bảng audit/append-only) |
+| `id` | text PK | `nanoid()` — theo convention `audit_log`/`regulated.ts` (repo chủ ý không mang dependency uuidv7); KHÔNG kiêm cursor |
 | `siteId` | text NOT NULL | FK → sites, multi-tenancy |
 | `collection` | text NOT NULL | |
 | `itemId` | text NOT NULL | |
@@ -77,9 +77,9 @@ apps/studio/src/modules/
 | `schemaVersion` | integer NOT NULL | default 1 |
 | `actorType` / `actorId` | text | `'user' \| 'api_key' \| 'agent' \| 'system'` / id tương ứng |
 | `source` | text NOT NULL | `'api' \| 'agent' \| 'flow' \| 'system'` |
-| `occurredAt` | timestamptz NOT NULL | |
+| `occurredAt` | timestamptz NOT NULL | default Postgres `now()` — khóa chính keyset (một đồng hồ DB duy nhất) |
 
-Index: `(siteId, id)`, `(siteId, collection, id)`. Không FK tới `items` (event sống lâu hơn item bị xoá). Không UPDATE/DELETE ngoài prune.
+Index: `(siteId, occurredAt, id)`, `(siteId, collection, occurredAt, id)`. Không FK tới `items` (event sống lâu hơn item bị xoá). Không UPDATE/DELETE ngoài prune.
 
 ### 3.2 `lumibase_cdc_subscriptions`
 
@@ -91,7 +91,7 @@ Index: `(siteId, id)`, `(siteId, collection, id)`. Không FK tới `items` (even
 | `kind` | text NOT NULL | `'pull' \| 'webhook' \| 'extension'` |
 | `collections` / `operations` | jsonb | filter; `[]` = tất cả |
 | `payloadMode` | text NOT NULL | `'reference' \| 'snapshot'`, default `'reference'` |
-| `cursor` | uuid NULL | checkpoint — event cuối đã ack/deliver thành công; NULL = từ đầu hiện tại |
+| `cursorOccurredAt` / `cursorId` | timestamptz / text NULL | checkpoint keyset — event cuối đã ack/deliver thành công; NULL = từ head lúc tạo |
 | `status` | text NOT NULL | `'active' \| 'paused' \| 'dead' \| 'stale'` |
 | `webhookId` | text NULL | FK → `lumibase_webhooks` (kind=webhook) |
 | `extensionName` | text NULL | kind=extension |
@@ -107,9 +107,9 @@ Index: unique `(siteId, name)`, `(siteId, status)`.
 
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
-| `id` | uuid PK | uuidv7() |
+| `id` | text PK | `nanoid()` |
 | `siteId` / `subscriptionId` | text NOT NULL | FK |
-| `eventIdFrom` / `eventIdTo` | uuid | biên batch |
+| `eventIdFrom` / `eventIdTo` | text | biên batch (nanoid) |
 | `eventCount` | integer | |
 | `attempt` | integer | 1..5 |
 | `status` | text | `'success' \| 'failed'` |
@@ -124,7 +124,8 @@ Index: `(siteId, subscriptionId, createdAt)`. Prune cùng chính sách retention
 
 ```jsonc
 {
-  "id": "01983f2e-7c1a-7def-8a3b-9c4d5e6f7a8b",   // uuidv7 = cursor = idempotency key
+  "id": "V1StGXR8_Z5jdHi6B-myT",                    // nanoid = idempotency key (KHÔNG phải cursor)
+  "cursor": "MTc1MTk0MjQwMDAwMDpWMVN0R1hSOF9aNWpkSGk2Qi1teVQ",  // keyset token (occurredAtMs:id) — ack được mid-batch
   "type": "items.update",                          // items.<operation>
   "schemaVersion": 1,
   "siteId": "s_abc",
@@ -160,10 +161,10 @@ Index: `(siteId, subscriptionId, createdAt)`. Prune cùng chính sách retention
 **Vòng dispatch cho một Subscription** (tuần tự per subscription — bảo toàn thứ tự):
 
 ```
-1. SELECT events WHERE siteId = s AND id > cursor [AND collection IN filter...] ORDER BY id ASC LIMIT 100
+1. SELECT events WHERE siteId = s AND (occurredAt, id) > (cursorOccurredAt, cursorId) [AND collection IN filter...] ORDER BY occurredAt ASC, id ASC LIMIT 100  -- kèm safety lag: chỉ đọc event có occurredAt < now() - 2s để không vượt mặt transaction đang commit dở
 2. Rỗng → xong. Có → build envelopes (payloadMode)
 3. Gửi (webhook-sender | extension-sender)
-4. 2xx/handler ok → UPDATE subscription SET cursor = last.id, consecutiveFailures = 0, lastDeliveredAt = now()
+4. 2xx/handler ok → UPDATE subscription SET (cursorOccurredAt, cursorId) = keyset(last), consecutiveFailures = 0, lastDeliveredAt = now()
    → còn backlog thì lặp
 5. Fail → ghi lumibase_cdc_deliveries(failed), tăng attempt; retry backoff 30s·2^n (max 5);
    hết retry → consecutiveFailures++; đạt 10 → status='dead' + notification
@@ -171,7 +172,7 @@ Index: `(siteId, subscriptionId, createdAt)`. Prune cùng chính sách retention
 
 - **Trigger**: (a) sau mutation, enqueue `cdc-dispatch {siteId}` qua `QueueProvider` (best-effort, dedup theo siteId trong cửa sổ ngắn — key tenant-prefixed theo DoD); (b) sweep 30s quét subscription có backlog (nguồn sự thật, giống `status-poller`); (c) `POST .../dispatch` on-demand. Queue chỉ là tối ưu độ trễ — đúng đắn không phụ thuộc queue (Req 4.7).
 - **Concurrency guard**: lock per subscription (cache-based, key `cdc:dispatch:{siteId}:{subId}`, TTL ngắn) để hai worker không dispatch chồng — chồng nhau không phá đúng đắn (at-least-once + cursor advance có điều kiện) nhưng gây delivery trùng vô ích.
-- **Ordering**: một subscription một dòng tuần tự; không advance cursor khi batch fail → không bao giờ skip event (gap-free). Cross-subscription độc lập.
+- **Ordering**: một subscription một dòng tuần tự; không advance cursor khi batch fail → không bao giờ skip event (gap-free). Cross-subscription độc lập. **Safety lag 2s**: dispatcher/pull chỉ đọc tới `now() - 2s` để transaction dài đang giữ `now()` sớm hơn không bị reader vượt qua rồi bỏ sót.
 - **Pull consumer**: tự đọc `GET /events` + `POST /:id/ack`; ack lùi bị từ chối (chỉ replay được lùi). Lag = `count(events) sau cursor` + `now − occurredAt(head sau cursor)`.
 
 ## 7. Webhook sender
@@ -291,6 +292,6 @@ Router con mount trong `modules/cdc/index.ts` cạnh `cdcRouter` hiện có — 
 | 2 | ItemService chưa bọc transaction sẵn | Chỉ `access-import`/`schema-service` dùng `db.transaction`. Cần refactor điểm mutation của ItemService nhận optional tx — làm trong Phase B, giữ backward-compatible. | Chốt (scope Phase B) |
 | 3 | CF Queues consumer cần cấu hình wrangler | Binding + consumer config nằm ngoài code. *Chốt: queue là tối ưu độ trễ; đúng đắn dựa trên sweep (Cron Trigger đã có pattern) — thiếu queue vẫn chạy.* | Chốt |
 | 4 | Outbox phình khi site lớn | Retention 7 ngày default + prune + index `(siteId, id)`; snapshot mode làm row to → khuyến nghị `reference` cho collection lớn. Theo dõi sau khi ship, cân nhắc partition theo tháng nếu cần. | Theo dõi |
-| 5 | Thứ tự khi system clock lệch | UUIDv7 sinh tại một app instance; multi-instance Docker có thể lệch ms-level → thứ tự per-item vẫn đúng theo commit vì cùng row lock; ghi nhận giới hạn "total order xấp xỉ" trong docs. | Chốt (documented) |
+| 5 | Thứ tự & bỏ sót khi transaction chồng lấn | `occurredAt` do Postgres `now()` đóng dấu (một đồng hồ, hết lệch app-clock). Rủi ro còn lại: tx dài commit muộn với `now()` sớm → reader đã lướt qua. *Chốt (phương án B, 2026-07-10):* keyset `(occurred_at, id)` + **safety lag 2s** ở mọi đường đọc; sweep re-read từ cursor bền nên không mất event. | Chốt |
 | 6 | Mở rộng capture cho `collections`/`fields`/settings | Out of scope v1 — envelope `type` đã namespace (`items.*`) nên mở rộng không breaking. | Follow-up |
 | 7 | Realtime fan-out (WS) cho change events | Ride trên `RealtimeProvider` audience plane — spec riêng khi có nhu cầu. | Follow-up |

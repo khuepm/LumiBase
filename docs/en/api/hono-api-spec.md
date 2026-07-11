@@ -1099,3 +1099,20 @@ X-RateLimit-Reset: 1749254460
 Breaking changes get a new path prefix (`/api/v2`). The previous version is maintained for at least 12 months.
 
 Send `X-Lumi-API-Version: 1` to pin to a specific API version. Default is the latest stable.
+
+
+## Change Feed (`/api/v1/cdc` — spec cdc-extension-integration)
+
+Mounted on the authenticated `api` app BEFORE the ClickHouse CDC control-plane router. Frontend-realm tokens are rejected on every route (ADR-011).
+
+| Method | Path | Guard | Description |
+|---|---|---|---|
+| GET | `/cdc/events` | capability `cdc:subscribe` (admin implies) | Keyset-paginated change events. Query: `cursor`, `collections` (CSV), `operations` (CSV), `limit` (≤500). Returns `{ data, meta: { nextCursor, hasMore } }`. 400 malformed cursor; 410 `CURSOR_EXPIRED` + `earliestCursor` past retention. |
+| GET/POST | `/cdc/subscriptions` | site admin | List (with per-subscription lag) / create (max 50 per site → 403; duplicate name → 409; `kind=webhook` requires a webhook **with a secret** → 400). |
+| GET/PATCH/DELETE | `/cdc/subscriptions/:id` | site admin | Detail / update filters + pause/resume (invalid transition → 409) / delete (audited). |
+| POST | `/cdc/subscriptions/:id/ack` | capability `cdc:subscribe` | Commit a pull checkpoint. Forward-only — rewind → 409 `ACK_REGRESSION`. |
+| POST | `/cdc/subscriptions/:id/replay` | site admin | Rewind inside retention (`{cursor}` xor `{occurred_after}`); resets dead/stale → active. Audited. |
+| POST | `/cdc/subscriptions/:id/dispatch` | site admin | On-demand dispatch (no-queue fallback). 202. |
+| GET | `/cdc/subscriptions/:id/deliveries` | site admin | Delivery-attempt history, newest first (`limit`, `page`; `meta.total`). |
+
+Webhook deliveries are signed: `X-Lumibase-Signature: t=<unix>,v1=<hmac_sha256_hex>` over `` `${t}.${rawBody}` `` — see `docs/en/features/cdc-change-feed.md` for the verify snippet and envelope reference.

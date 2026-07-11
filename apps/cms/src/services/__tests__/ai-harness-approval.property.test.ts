@@ -22,21 +22,23 @@ const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
   .filter(([name, skill]) => {
     const requiresSchemaWrite = skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read');
     const startsWithDelete = name.startsWith('delete');
-    // Deployment skills have no offline handler behaviour (they require a
-    // runtime KeyProvider, absent here) and deliberately error instead of
-    // stubbing — they are covered by deployment/__tests__ instead.
-    const isDeployment = skill.service === 'deployments';
-    return !requiresSchemaWrite && !startsWithDelete && !isDeployment;
+    // Deployment/cdc-feed skills have no offline handler behaviour (they
+    // require a runtime KeyProvider / real tenant db, absent here) and
+    // deliberately error instead of stubbing — they are covered by
+    // deployment/__tests__ and cdc-feed-skills-hitl.test.ts instead.
+    const noOffline = ['deployments', 'cdc-feed'].includes(skill.service);
+    return !requiresSchemaWrite && !startsWithDelete && !noOffline;
   })
   .map(([name]) => name);
 
 // All skill names (including dangerous ones) — the executeApproved method
 // runs any skill stored in the approval record regardless of risk
-// classification. Deployment skills are excluded: they have no offline handler
-// behaviour (require a runtime KeyProvider), so they can't be executed in this
-// mock harness; their approval/execution path is covered in deployment tests.
+// classification. Deployment/cdc-feed skills are excluded: they have no
+// offline handler behaviour (require a runtime KeyProvider / real tenant db),
+// so they can't be executed in this mock harness; their approval/execution
+// paths are covered in deployment tests and cdc-feed-skills-hitl.test.ts.
 const ALL_SKILL_NAMES = Object.entries(CORE_SKILLS)
-  .filter(([, skill]) => skill.service !== 'deployments')
+  .filter(([, skill]) => !['deployments', 'cdc-feed'].includes(skill.service))
   .map(([name]) => name);
 
 // Arbitrary: approvalId — nanoid-like string (21 alphanumeric chars)

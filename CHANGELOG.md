@@ -9,20 +9,35 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Added
+
+- **Change Feed (CDC Extension Integration).** First-party transactional
+  outbox + relay over content mutations: `lumibase_cdc_change_events` /
+  `_subscriptions` / `_deliveries` (migration `0007_cdc_change_feed`, RLS
+  site-isolated), cursor-paginated `GET /api/v1/cdc/events`, HMAC-signed
+  webhook dispatcher with retry/dead handling, sandboxed extension
+  subscribers (`defineCdcSubscriber`, manifest capability
+  `cdc:subscribe:<collection>`), retention + replay, Studio → Settings →
+  Change Feed panel, five governed AI skills and MCP tools.
+  **Upgrade note:** two new capability strings exist — `cdc:subscribe`
+  (read the feed / ack) and `cdc:manage` (AI-skill subscription
+  management). Admin roles satisfy them implicitly (`adminAccess`
+  wildcard); grant them explicitly only for narrow integration tokens.
+  `deleteCdcSubscription` is control-plane → HITL below autopilot.
+  Feed is off-by-default per site (`cdc_feed.enabled` or first active
+  subscription turns it on). No backfill: three new empty tables.
+- **Registry-numbering tripwire (`pnpm registry:check`).** A CI check
+  (`scripts/check-registry-numbering.mjs`, wired into the CI `checks` job) fails
+  the build when the Setup Impact Registry `#` column contains a duplicate —
+  mechanizing the Definition of Done §2 uniqueness rule per §6 ("cơ giới hóa"),
+  replacing the manual `grep`.
+
 ### Changed
 
 - **Setup Impact Registry `#` column deduplicated.** Parallel branches had kept
   picking "the next number" independently, leaving many collisions (#16/#20/#21
   through #38). Colliding rows were renumbered to fresh ids (45–68), keeping the
   occurrence that other rows cite by number so cross-references stay valid.
-
-### Added
-
-- **Registry-numbering tripwire (`pnpm registry:check`).** A CI check
-  (`scripts/check-registry-numbering.mjs`, wired into the CI `checks` job) fails
-  the build when the Setup Impact Registry `#` column contains a duplicate —
-  mechanizing the Definition of Done §2 uniqueness rule per §6 ("cơ giới hóa"),
-  replacing the manual `grep`.
 
 ## [1.0.0] - 2026-07-11
 

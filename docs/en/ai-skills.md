@@ -87,6 +87,7 @@ Skills run through the **governed endpoint** `POST /api/v1/mcp` (gated by the pe
 | `listSettings`/`listTranslations`/`listWebhooks` + their create/update/delete | `config:read`/`write`/`delete` | safe / dangerous |
 | `listExtensions` / `installExtension` / `updateExtension` / `uninstallExtension` | `extensions:read`/`write`/`delete` | safe / dangerous |
 | `listDeploymentTargets` / `listDeployments` / `getDeploymentStatus` / `triggerDeployment` | `deployments:read` / `deployments:write` | safe / dangerous (`trigger` gated by HITL below autopilot) |
+| `listCdcSubscriptions` / `getCdcSubscriptionStatus` / `createCdcSubscription` / `replayCdcSubscription` / `deleteCdcSubscription` | `cdc:manage` | safe, except `deleteCdcSubscription` — control-plane via the `delete` name prefix → HITL below autopilot |
 
 **Reserved collection names.** `createCollection` (and any rename via `updateCollection`) rejects names starting with the `lumibase_` prefix, which is owned by the platform (CDC/Firebase sync tables, internal config). The guard lives in `SchemaService.ensureName`, so it applies uniformly to the AI harness, the builder/Studio routes, and any other caller; violations raise `RESERVED_NAME` (HTTP 422).
 
