@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-07-10T09:36:33.098Z",
-  "mode": "apply",
-  "effectiveMode": "preserve-only",
+  "generatedAt": "2026-07-11T03:49:19.531Z",
+  "mode": "plan",
+  "effectiveMode": "plan",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
     "preserved": 0,
-    "conflicts": 1,
-    "upToDate": 46,
+    "conflicts": 0,
+    "upToDate": 47,
     "planned": 86
   },
   "actions": [
@@ -1269,7 +1269,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-10T09-36-33-237Z.bak.md",
+      "preservedTo": null,
       "missingPlaceholders": 0
     },
     {
@@ -1334,13 +1334,13 @@
     },
     {
       "rel": "operations/upgrades.md",
-      "type": "translate",
-      "reason": "source changed since last sync",
+      "type": "up-to-date",
+      "reason": "in sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": true,
+      "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
