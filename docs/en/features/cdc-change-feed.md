@@ -60,6 +60,21 @@ curl … "https://cms.example.com/api/v1/cdc/events?cursor=<nextCursor>"
 
 Register a `kind: 'pull'` subscription to get a durable checkpoint + lag metrics, and commit it with `POST /api/v1/cdc/subscriptions/:id/ack {"cursor": "…"}`. Acks are forward-only (409 `ACK_REGRESSION` on rewind) — rewinding is what `replay` is for.
 
+Prefer typed access from JS/TS? `@lumibase/sdk` ships command resources for the whole surface (`readCdcEvents`, `ackCdcSubscription`, `replayCdcSubscription`, …); the machine-readable contract lives in `apps/cms/openapi.yaml`:
+
+```ts
+import { readCdcEvents, ackCdcSubscription } from '@lumibase/sdk';
+
+let cursor: string | undefined;
+for (;;) {
+  const { data, meta } = await client.request(readCdcEvents({ collections: ['posts'], cursor }));
+  for (const event of data) await handle(event); // dedupe on event.id
+  cursor = meta.nextCursor ?? cursor;
+  if (!meta.hasMore) break;
+}
+await client.request(ackCdcSubscription(subId, cursor!)); // durable checkpoint
+```
+
 ## 4. Webhook consumers
 
 Create a webhook (Settings → Webhooks) **with a secret** — unsigned delivery is refused — then a subscription with `kind: 'webhook'` and `webhook_id`. Batches arrive as:

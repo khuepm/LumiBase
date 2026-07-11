@@ -26,6 +26,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `deleteCdcSubscription` is control-plane → HITL below autopilot.
   Feed is off-by-default per site (`cdc_feed.enabled` or first active
   subscription turns it on). No backfill: three new empty tables.
+- **Change Feed API contract + SDK.** `apps/cms/openapi.yaml` now documents
+  every `/cdc/events` and `/cdc/subscriptions/*` endpoint (schemas
+  `EventEnvelope`, `ChangeFeedSubscription`, `ChangeFeedDelivery`, …), and
+  `@lumibase/sdk` ships typed command resources — `readCdcEvents`,
+  `listCdcSubscriptions`, `createCdcSubscription`, `updateCdcSubscription`,
+  `deleteCdcSubscription`, `ackCdcSubscription`, `replayCdcSubscription`,
+  `dispatchCdcSubscription`, `listCdcSubscriptionDeliveries` — with the
+  matching `Cdc*` result/input types.
 - **Registry-numbering tripwire (`pnpm registry:check`).** A CI check
   (`scripts/check-registry-numbering.mjs`, wired into the CI `checks` job) fails
   the build when the Setup Impact Registry `#` column contains a duplicate —

@@ -1183,6 +1183,108 @@ export interface CdcRollbackResult {
   error?: string | Record<string, unknown>;
 }
 
+/* -------- Change Feed (first-party outbox+relay; distinct from the
+ * ClickHouse CDC pipelines above). Mirrors packages/shared/schemas/cdc-feed.ts
+ * and the serialized SubscriptionRecord/delivery shapes. -------- */
+
+export type CdcOperation = "create" | "update" | "delete";
+export type CdcActorType = "user" | "api_key" | "agent" | "system";
+export type CdcSource = "api" | "agent" | "flow" | "system";
+export type CdcPayloadMode = "reference" | "snapshot";
+export type CdcSubscriptionKind = "pull" | "webhook" | "extension";
+export type CdcSubscriptionStatus = "active" | "paused" | "dead" | "stale";
+
+/** A change-feed event envelope (schemaVersion 1). `id` is the idempotency key. */
+export interface CdcEventEnvelope {
+  id: string;
+  type: string;
+  schemaVersion: number;
+  siteId: string;
+  collection: string;
+  itemId: string;
+  operation: CdcOperation;
+  occurredAt: string;
+  actor: { type: CdcActorType; id?: string };
+  source: CdcSource;
+  changedFields?: string[];
+  /** Present only in snapshot payload mode; pii/phi already masked. */
+  data?: Record<string, unknown> | null;
+  /** This event's keyset token — ack/resume marker. */
+  cursor: string;
+}
+
+export interface CdcFeedPage {
+  data: CdcEventEnvelope[];
+  meta: { nextCursor: string | null; hasMore: boolean };
+}
+
+export interface CdcFeedReadParams {
+  cursor?: string;
+  collections?: string[];
+  operations?: CdcOperation[];
+  limit?: number;
+}
+
+export interface CdcSubscriptionResource {
+  id: string;
+  siteId: string;
+  name: string;
+  kind: CdcSubscriptionKind;
+  collections: string[];
+  operations: CdcOperation[];
+  payloadMode: CdcPayloadMode;
+  cursor: string | null;
+  status: CdcSubscriptionStatus;
+  webhookId: string | null;
+  extensionName: string | null;
+  consecutiveFailures: number;
+  lastDeliveredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lag: { events: number; behindMs: number | null };
+}
+
+export interface CdcSubscriptionCreateInput {
+  name: string;
+  kind: CdcSubscriptionKind;
+  collections?: string[];
+  operations?: CdcOperation[];
+  payload_mode?: CdcPayloadMode;
+  /** Required when kind=webhook (webhook must have a secret). */
+  webhook_id?: string;
+  /** Required when kind=extension. */
+  extension_name?: string;
+}
+
+export interface CdcSubscriptionPatchInput {
+  name?: string;
+  collections?: string[];
+  operations?: CdcOperation[];
+  payload_mode?: CdcPayloadMode;
+  /** Admin flip only between active/paused; dead/stale exit via replay. */
+  status?: "active" | "paused";
+}
+
+/** Provide exactly one of cursor or occurredAfter (within retention). */
+export interface CdcReplayInput {
+  cursor?: string;
+  occurredAfter?: string;
+}
+
+export interface CdcDeliveryResource {
+  id: string;
+  subscriptionId: string;
+  eventIdFrom: string | null;
+  eventIdTo: string | null;
+  eventCount: number;
+  attempt: number;
+  status: "success" | "failed";
+  httpStatus: number | null;
+  errorMessage: string | null;
+  durationMs: number;
+  createdAt: string;
+}
+
 export interface UserResource {
   id: string;
   email: string;
