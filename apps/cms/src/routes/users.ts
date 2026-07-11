@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import type { AppEnv } from '../env';
+import { runDetached } from '../lib/detached';
 import { requireSiteAdmin } from '../middleware/site-admin';
 import { sendTeammateInvite } from '../modules/email/invite';
 import {
@@ -160,11 +161,7 @@ usersRouter.post('/invite', async (c) => {
     email: input.email,
     invitedBy: c.get('auth')?.email ?? undefined,
   });
-  if (c.executionCtx?.waitUntil) {
-    c.executionCtx.waitUntil(inviteEmail);
-  } else {
-    void inviteEmail;
-  }
+  runDetached(c, inviteEmail);
 
   return c.json({ data: existingUser });
 });
