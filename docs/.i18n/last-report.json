@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-11T06:26:11.804Z",
+  "generatedAt": "2026-07-11T16:54:43.419Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -9,7 +9,7 @@
     "preserved": 0,
     "conflicts": 1,
     "upToDate": 47,
-    "planned": 85
+    "planned": 86
   },
   "actions": [
     {
@@ -901,6 +901,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/cdc-change-feed.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/cloudflare-auth.md",
       "type": "translate",
       "reason": "en duplicates vi content; replace en with English translation",
@@ -1269,7 +1281,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-11T06-26-11-938Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-11T16-54-43-550Z.bak.md",
       "missingPlaceholders": 0
     },
     {
