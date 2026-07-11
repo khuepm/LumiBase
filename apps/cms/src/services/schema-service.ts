@@ -811,11 +811,26 @@ export class SchemaService {
     if (input.name && input.name !== name) {
       throw new SchemaServiceError('COLLECTION_RENAME_UNSUPPORTED', 'Schema apply cannot rename collections through this endpoint yet.', 400);
     }
-    const current = await this.getCollection(name);
-    if (!current) {
-      throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
-    }
     const { fields: fieldInputs, relations: relationInputs, ...collectionPatch } = input;
+    // Atomic full-schema apply: if the collection doesn't exist yet, create it
+    // in the same transaction rather than 404ing. This lets callers PUT a full
+    // schema in one call instead of POST-then-PUT.
+    let current = await this.getCollection(name);
+    if (!current) {
+      ensureName(name, 'collection');
+      assertPrimaryKeyStorageCompatible(
+        (collectionPatch.primaryKeyType ?? 'nanoid') as PrimaryKeyType,
+        (collectionPatch.storageMode ?? 'jsonb') as StorageMode,
+      );
+      const [created] = await this.deps.db
+        .insert(collections)
+        .values({ ...collectionPatch, name, siteId: this.deps.siteId })
+        .returning();
+      if (!created) {
+        throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
+      }
+      current = created;
+    }
     assertPrimaryKeyStorageCompatible(
       (collectionPatch.primaryKeyType ?? current.primaryKeyType) as PrimaryKeyType,
       (collectionPatch.storageMode ?? current.storageMode) as StorageMode,
