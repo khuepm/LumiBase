@@ -195,6 +195,11 @@ jobs:
         env:
           MARKETPLACE_SUBMODULE_TOKEN: ${{ secrets.MARKETPLACE_SUBMODULE_TOKEN }}
         run: |
+          set -euo pipefail
+          if [ -z "${MARKETPLACE_SUBMODULE_TOKEN}" ]; then
+            echo "::error::MARKETPLACE_SUBMODULE_TOKEN is not configured; cannot fetch the private apps/marketplace submodule." >&2
+            exit 1
+          fi
           git config --global url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf "https://github.com/lumibase-ai/"
           git submodule update --init --depth=1 apps/marketplace
           git config --global --unset url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf
