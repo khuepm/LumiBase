@@ -6,7 +6,9 @@ import type { FieldResource, ItemRow, RevisionRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePermissions, type PermissionHelpers } from '@/lib/use-permissions';
-import { PresenceChip } from '@/components/presence-chip';
+import { PresenceStack } from '@/components/presence-chip';
+import { CoEditingBanner } from '@/components/co-editing-banner';
+import { useCoEditors } from '@/hooks/use-presence';
 import { resolveInterface } from './interfaces/registry';
 import { RawToggle } from './interfaces/raw-toggle';
 import { ProvenanceBadge } from './provenance-badge';
@@ -27,6 +29,10 @@ export function ItemDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const perms = usePermissions();
+
+  // Real-time co-editing: one presence subscription feeds both the header
+  // avatar stack and the warning banner (peers on this same item, not self).
+  const { coEditors } = useCoEditors(collection, id);
 
   const [tab, setTab] = useState<Tab>('fields');
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
@@ -234,8 +240,8 @@ export function ItemDetailPage() {
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          {/* Presence chip — shows other users currently editing this item */}
-          <PresenceChip collection={collection} itemId={id} />
+          {/* Avatar stack — other users currently editing this same item */}
+          <PresenceStack peers={coEditors} />
           <button
             type="button"
             onClick={() => setShareOpen(true)}
@@ -283,6 +289,9 @@ export function ItemDetailPage() {
           </button>
         </div>
       </header>
+
+      {/* Real-time warning when more than one person has this item open. */}
+      <CoEditingBanner coEditors={coEditors} />
 
       {saveMutation.error && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
