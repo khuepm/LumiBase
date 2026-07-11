@@ -3,12 +3,19 @@ version: 1
 lastUpdated: 2026-06-23T09:48:37.000Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: edbefcc42100e9b8
+sourceHash: 56a6f2279ce458d8
 mtEngine: claude
 syncStatus: machine-translated
 ---
 
 # Email Service
+
+> **Availability:** The full HTTP email module documented here — templates,
+> layouts, preview, and `POST /api/v1/email/send` — ships in recent CMS images.
+> Older images (reported around `0.5.0`) only carried the internal
+> security-notification channel and do **not** expose the `/api/v1/email/*`
+> routes; verify against your deployed image's version if `/email/send` returns
+> `404`.
 
 > Goal: provide a **shared email-sending service** at the core layer, with a template/layout store, so that both Studio and extensions can use it — or configure it entirely via env when no UI is needed.
 

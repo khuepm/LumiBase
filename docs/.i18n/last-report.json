@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-07-12T05:50:14.462Z",
-  "mode": "apply",
-  "effectiveMode": "preserve-only",
+  "generatedAt": "2026-07-12T05:55:02.484Z",
+  "mode": "plan",
+  "effectiveMode": "plan",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
-    "preserved": 1,
-    "conflicts": 1,
-    "upToDate": 47,
-    "planned": 88
+    "preserved": 0,
+    "conflicts": 0,
+    "upToDate": 44,
+    "planned": 93
   },
   "actions": [
     {
@@ -38,13 +38,13 @@
     },
     {
       "rel": "agent-setup/claude-code.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -86,13 +86,13 @@
     },
     {
       "rel": "agent-setup/index.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -961,6 +961,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/data-import.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/deployment-integrations.md",
       "type": "translate",
       "reason": "missing vi translation",
@@ -1293,7 +1305,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-12T05-50-14-599Z.bak.md",
+      "preservedTo": null,
       "missingPlaceholders": 0
     },
     {
@@ -1310,13 +1322,13 @@
     },
     {
       "rel": "getting-started.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1418,10 +1430,10 @@
     },
     {
       "rel": "roadmap/git-integration.md",
-      "type": "preserve-and-translate",
-      "reason": "en-file-is-vietnamese; no vi counterpart",
+      "type": "translate",
+      "reason": "en duplicates vi content; replace en with English translation",
       "enLang": "vi",
-      "viLang": null,
+      "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
       "willTranslate": true,
