@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:56.148Z
+sourceLang: en
+contentHash: 62e0afccda04ab1b
+---
+
 # Extension Development Guide
 
 LumiBase extensions allow you to add custom field interfaces, displays, layouts, operation types, and API routes without modifying the core codebase.

@@ -34,6 +34,15 @@ export interface ImageAdapter {
 ```
 Lấy qua `c.get('runtime').image` — thêm `image` vào runtime interface (`packages/runtime/src/`) bên cạnh `cache`/`storage`. Business logic KHÔNG biết CF hay Docker.
 
+> **Cross-ref bảo mật (upload-file-controls task F1).** Cùng `ImageAdapter` này
+> là nền cho tính năng **re-encode ảnh để sanitize** — chống polyglot ("ảnh cài
+> shell") không false-positive bằng cách re-encode bản gốc, bóc mọi thứ trừ
+> pixel. Khía cạnh xử lý ảnh ở spec này; khía cạnh bảo mật + quyết định
+> sync-vs-async ở `docs/en/security/runtime-security-guards-plan.md` §3 và
+> `.kiro/specs/upload-file-controls/tasks.md` (F1). Hiện guard đã chặn polyglot
+> bằng deep byte-scan đồng bộ (`imageHasEmbeddedActivePayload`); re-encode là bản
+> nâng cấp không-FP phụ thuộc adapter này.
+
 ### Preset store
 
 Quyết định: **bảng mới `transformPresets`** (linh hoạt hơn settings key cho CRUD + per-site).
