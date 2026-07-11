@@ -75,6 +75,11 @@
       },
       {
         "type": "category",
+        "label": "Operations",
+        "items": ["operations/upgrades"]
+      },
+      {
+        "type": "category",
         "label": "ClickHouse CDC",
         "items": [
           "cdc/README",
