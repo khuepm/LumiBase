@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:21:03.748Z
+sourceLang: en
+contentHash: 934ba3ad3d3694c6
+---
+
 # GraphQL API Specification
 
 > **Status:** v1 — content items only (query + mutation). See

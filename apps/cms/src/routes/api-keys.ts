@@ -6,6 +6,7 @@ import type { AppEnv, AuthPrincipal } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
 import { createPlaintextToken } from '../services/api-key-token';
 import { buildAccessConflictReport } from '../services/access-conflict-report';
+import { bumpPermissionVersion } from '../services/permission-invalidation';
 
 export const apiKeysRouter = new Hono<AppEnv>();
 
@@ -267,6 +268,7 @@ apiKeysRouter.post('/:id/rotate', async (c) => {
     previousPrefix: before.prefix,
     newPrefix: row.prefix,
   });
+  await bumpPermissionVersion(c);
   return c.json({ data: { ...(await publicApiKey(c, row)), token: token.token } });
 });
 
@@ -291,6 +293,7 @@ apiKeysRouter.post('/:id/revoke', async (c) => {
 
   if (!row) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'API key not found.' }] }, 404);
   await writeApiKeyAudit(c, 'api_key_revoked', auth, row);
+  await bumpPermissionVersion(c);
   return c.json({ data: await publicApiKey(c, row) });
 });
 
@@ -360,6 +363,7 @@ apiKeysRouter.post('/:id/roles', async (c) => {
       priority: parsed.data.priority ?? 100,
     })
     .returning();
+  await bumpPermissionVersion(c);
   return c.json({ data: row }, 201);
 });
 
@@ -374,6 +378,7 @@ apiKeysRouter.delete('/:id/roles/:roleId', async (c) => {
         eq(apiKeyRoles.roleId, c.req.param('roleId')),
       ),
     );
+  await bumpPermissionVersion(c);
   return c.body(null, 204);
 });
 
@@ -436,6 +441,7 @@ apiKeysRouter.post('/:id/policies', async (c) => {
       priority: parsed.data.priority ?? 100,
     })
     .returning();
+  await bumpPermissionVersion(c);
   return c.json({ data: row }, 201);
 });
 
@@ -450,5 +456,6 @@ apiKeysRouter.delete('/:id/policies/:policyId', async (c) => {
         eq(apiKeyPolicies.policyId, c.req.param('policyId')),
       ),
     );
+  await bumpPermissionVersion(c);
   return c.body(null, 204);
 });

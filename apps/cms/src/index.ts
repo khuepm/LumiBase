@@ -4,12 +4,15 @@ import type { AppEnv } from './env';
 import { resolveCorsOrigin } from './config/cors';
 import { adminPathGuard } from './middleware/admin-path-guard';
 import { withAuditContext } from './middleware/audit-context';
+import { withJsonBodyLimit } from './middleware/body-limit';
 import { withAuth } from './middleware/auth';
 import { withDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
+import { withRateLimit } from './middleware/rate-limit';
 import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
+import { withSiteMembership } from './middleware/site-membership';
 import { withStudioAccess } from './middleware/studio-access';
 import { withControlPlaneAccessGuard } from './middleware/control-plane-access-guard';
 import { withFileUploadPolicy } from './middleware/file-upload-policy';
@@ -19,8 +22,10 @@ import { withTracing } from './middleware/tracing';
 import { activityRouter } from './routes/activity';
 import { accessRouter } from './routes/access';
 import { adminRouter } from './routes/admin';
+import { configRouter } from './routes/config';
 import { authRouter, meRouter } from './routes/auth';
 import { adminSecurityRouter } from './routes/admin-security';
+import { adminAuthIssuersRouter } from './routes/admin-auth-issuers';
 import { adminEncryptionRouter } from './routes/admin-encryption';
 import { editorialRouter } from './routes/editorial';
 import { adminErasureRouter } from './routes/admin-erasure';
@@ -28,7 +33,14 @@ import { adminFieldAccessRouter } from './routes/admin-field-access';
 import { adminSarRouter } from './routes/admin-sar';
 import { apiKeysRouter } from './routes/api-keys';
 import { collectionsRouter } from './routes/collections';
+import { automatedDecisionsRouter } from './routes/automated-decisions';
+import { consentRouter } from './routes/consent';
+import { dataExportRouter } from './routes/data-export';
+import { restrictionRouter } from './routes/restriction';
+import { retentionRouter } from './routes/retention';
+import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
+import { deploymentsRouter, deploymentsWebhookRouter } from './routes/deployments';
 import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
 import { flowsRouter } from './routes/flows';
@@ -37,12 +49,16 @@ import { handleGraphQL } from './graphql';
 import { permissionsRouter } from './routes/permissions';
 import { policiesRouter } from './routes/policies';
 import { presetsRouter } from './routes/presets';
+import { pushRouter } from './routes/push';
 import { realtimeRouter } from './routes/realtime';
 import { relationsRouter } from './routes/relations';
+import { releasesRouter } from './routes/releases';
 import { rolesRouter } from './routes/roles';
 import { healthRouter } from './routes/health';
 import { insightsRouter } from './routes/insights';
 import { mediaRouter } from './routes/media';
+import { transformPresetsRouter } from './routes/transform-presets';
+import { uploadsRouter } from './routes/uploads';
 import { marketplaceRouter } from './routes/marketplace';
 import { materializeRouter } from './routes/materialize';
 import { metricsRouter, withMetrics } from './routes/metrics';
@@ -50,6 +66,7 @@ import { searchRouter } from './routes/search';
 import { scimRouter } from './routes/scim';
 import { scimAdminRouter } from './routes/scim-admin';
 import { settingsRouter } from './routes/settings';
+import { domainsRouter } from './routes/domains';
 import { siteRouter } from './routes/site';
 import { systemRouter } from './routes/system';
 import { shareAdminRouter, sharePublicRouter } from './routes/shares';
@@ -88,7 +105,7 @@ app.use(
   cors({
     origin: (origin, c) => resolveCorsOrigin(origin, c.env),
     credentials: true,
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh'],
     exposeHeaders: ['X-Request-Id'],
   }),
 );
@@ -102,6 +119,12 @@ app.use(
 // `withRuntime`/`cors` block (which §6.2 doesn't enumerate) and just
 // before the guard so the three audit dimensions are present for the
 // entire downstream chain.
+// App-level JSON body-size cap (high-load-cache-readiness Req 6.2).
+// Defense-in-depth for deployments without the Caddy body limit; only
+// guards JSON POST/PUT/PATCH via Content-Length, so it's a cheap no-op
+// for reads and file uploads (which have their own policy).
+app.use('*', withJsonBodyLimit());
+
 app.use('*', withAuditContext());
 
 // Admin Path Guard (admin-setup-wizard Req 5.1, 5.2, 5.4, 5.6, 5.7;
@@ -163,18 +186,38 @@ app.route('/api/v1/admin/security', recoveryRouter);
 app.use('/scim/v2/*', withDb());
 app.route('/scim/v2', scimRouter);
 
+// Inbound deployment status webhook. PUBLIC / pre-auth on purpose: the
+// provider (Vercel/Netlify) authenticates via request signature, not a bearer
+// token. Needs `withTenant` (X-Lumi-Site → siteId) + `withDb` to update the
+// `deployments` row; `withRuntime` already ran globally for the KeyProvider.
+app.use('/api/v1/deployments/webhook/*', withTenant(), withDb());
+app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
+
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withDb(), withAuth(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
+api.use('*', withTenant(), withDb(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).
 // Mounted on the authenticated `api` Hono so `withAuth` already enforces
 // that the caller has a valid session before the handler runs.
 api.route('/me', meRouter);
+// `/me/consents` — self-service consent management (GDPR Art. 7, PDPD).
+// Separate router from `meRouter`; mounted under the same authenticated `api`
+// chain so the caller can only read/write their own consent.
+api.route('/me/consents', consentRouter);
+// `/me/data-export` — self-service "download my data" (GDPR Art. 15/20).
+api.route('/me/data-export', dataExportRouter);
+// `/me/restriction` — self-service restriction of processing (GDPR Art. 18).
+api.route('/me/restriction', restrictionRouter);
+// `/me/automated-decisions` — transparency over agent processing (GDPR Art. 22).
+api.route('/me/automated-decisions', automatedDecisionsRouter);
+// `/retention` — admin general data-retention pruning (site-admin only).
+api.route('/retention', retentionRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/items', itemsRouter);
+api.route('/releases', releasesRouter);
 api.route('/editorial', editorialRouter);
 // GraphQL surface (Yoga). Mounted inside the authenticated `api` sub-app so
 // it inherits the full tenant → db → auth → RLS chain; `all` covers POST
@@ -185,22 +228,29 @@ api.route('/roles', rolesRouter);
 api.route('/policies', policiesRouter);
 api.route('/permissions', permissionsRouter);
 api.route('/access', accessRouter);
+api.route('/config', configRouter);
 api.route('/api-keys', apiKeysRouter);
 api.route('/search', searchRouter);
 api.route('/media', mediaRouter);
+api.route('/transform-presets', transformPresetsRouter);
+// Upload policy config (effective allowlist/size for the picker; admin edits).
+api.route('/uploads', uploadsRouter);
 // Future routers: presets, translations, ...
 api.route('/presets', presetsRouter);
 api.route('/translations', translationsRouter);
 api.route('/settings', settingsRouter);
 api.route('/site', siteRouter);
+api.route('/domains', domainsRouter);
 api.route('/shares', shareAdminRouter);
 api.route('/users', usersRouter);
 api.route('/teams', teamsRouter);
 api.route('/files', filesRouter);
 api.route('/webhooks', webhooksRouter);
+api.route('/deployments', deploymentsRouter);
 api.route('/email', emailRouter);
 api.route('/activity', activityRouter);
 api.route('/realtime', realtimeRouter);
+api.route('/push', pushRouter);
 api.route('/extensions', extensionsRouter);
 api.route('/admin', adminRouter);
 // Admin Security surface (admin-setup-wizard task 6.4; Req 7.6, 7.7,
@@ -219,6 +269,8 @@ api.route('/admin/erasure', adminErasureRouter);
 api.route('/admin/field-access-log', adminFieldAccessRouter);
 // Subject Access Request export (regulated-content-readiness task 10.3; Req 13).
 api.route('/admin/sar', adminSarRouter);
+// Trusted external JWT issuers (external-jwt-auth §5). Admin-only CRUD.
+api.route('/admin/auth/issuers', adminAuthIssuersRouter);
 // Audit-log QUERY + EXPORT surface (admin-setup-wizard task 12.3; Req
 // 15.4, 15.6; design §4.9, §4.10, §10.3, §10.4). SIBLING mount alongside
 // `adminSecurityRouter` above, both under `withAuth`. The admin-role gate
@@ -268,6 +320,13 @@ api.route('/firebase-sync', lumibaseFirebaseSyncRouter);
 // Share links are public. The opaque token resolves the site and share role.
 app.use('/api/v1/shares/*', withDb());
 app.route('/api/v1/shares', sharePublicRouter);
+
+// Email unsubscribe is public (CAN-SPAM one-click). The signed token resolves
+// the site, so no session/tenant header is required. Registered before the
+// authenticated `api` mount so `/email/unsubscribe` wins; all other `/email/*`
+// paths fall through to the authenticated `emailRouter`.
+app.use('/api/v1/email/unsubscribe', withDb());
+app.route('/api/v1/email', emailPublicRouter);
 
 app.route('/api/v1', api);
 

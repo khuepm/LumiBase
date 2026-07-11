@@ -17,6 +17,8 @@
  *   rt.disconnect();
  */
 
+export * from './audience';
+
 export interface RealtimeEvent {
   type: 'event';
   collection: string;

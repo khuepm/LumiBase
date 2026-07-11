@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:25.910Z
+sourceLang: en
+contentHash: ce887b90495381f9
+---
+
 # GitHub Copilot — LumiBase Agent Setup
 
 > **GitHub Copilot** is an editor extension and CLI with agent mode, workspace context, and native PR integration. Made by GitHub.

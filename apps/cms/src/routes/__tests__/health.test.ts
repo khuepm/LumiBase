@@ -42,6 +42,20 @@ function buildApp(options?: { unhealthy?: boolean }) {
   return app;
 }
 
+function buildAppWithEnv(env: Record<string, string>, options?: { unhealthy?: boolean }) {
+  const app = buildApp(options);
+  // Layer a middleware that populates c.env (Workers-style bindings). The
+  // healthy-runtime middleware from buildApp runs first via app.use, so both are
+  // present by the time the route executes.
+  const wrapped = new Hono<AppEnv>();
+  wrapped.use('*', async (c, next) => {
+    c.env = { ...(c.env ?? {}), ...env } as AppEnv['Bindings'];
+    await next();
+  });
+  wrapped.route('/', app);
+  return wrapped;
+}
+
 describe('health routes', () => {
   it('keeps /health as a 200 degraded-info endpoint', async () => {
     const res = await buildApp({ unhealthy: true }).request('/health');
@@ -59,5 +73,35 @@ describe('health routes', () => {
     const res = await buildApp().request('/health/ready');
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: 'healthy' });
+  });
+
+  it('hides per-subsystem detail from anonymous callers when a token is configured', async () => {
+    const app = buildAppWithEnv({ METRICS_TOKEN: 'sekret' });
+    const res = await app.request('/health');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({ status: 'healthy' });
+    expect(body.services).toBeUndefined();
+  });
+
+  it('reveals per-subsystem detail to a caller with the observability token', async () => {
+    const app = buildAppWithEnv({ METRICS_TOKEN: 'sekret' });
+    const res = await app.request('/health', {
+      headers: { authorization: 'Bearer sekret' },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; services?: Record<string, string> };
+    expect(body.status).toBe('healthy');
+    expect(body.services).toMatchObject({ database: 'healthy' });
+  });
+
+  it('denies detail to a caller with a wrong token', async () => {
+    const app = buildAppWithEnv({ METRICS_TOKEN: 'sekret' });
+    const res = await app.request('/health', {
+      headers: { authorization: 'Bearer nope' },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.services).toBeUndefined();
   });
 });

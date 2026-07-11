@@ -78,7 +78,7 @@ describe('Setup flow — integration', () => {
     // `sites` cascades into `settings`, `agent_roles` and
     // `agent_autonomy_grants` (the Setup Impact seeds — task G.6).
     await db.execute(
-      sql`TRUNCATE TABLE admin_backup_codes, audit_log, system_state, users, sites RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE TABLE lumibase_admin_backup_codes, lumibase_audit_log, lumibase_system_state, lumibase_users, lumibase_sites RESTART IDENTITY CASCADE`,
     );
   });
 

@@ -1,6 +1,7 @@
 import { agentGoals } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { and, asc, eq } from 'drizzle-orm';
+import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 
 /**
  * Planner delegation (content-os task 10.3; Req 10.1, 10.4, 10.5).
@@ -63,6 +64,11 @@ export function splitBudget(remaining: number, count: number): number[] {
 export interface PlannerServiceDeps {
   db: Database;
   siteId: string;
+  /**
+   * Optional push-notification sink (push-noti feature). When provided, a
+   * parent goal settling to completed/failed is pushed. Best-effort.
+   */
+  notify?: AgentNotifier;
 }
 
 export class PlannerService {
@@ -175,6 +181,16 @@ export class PlannerService {
         },
       })
       .where(and(eq(agentGoals.siteId, this.deps.siteId), eq(agentGoals.id, parentGoalId)));
+
+    this.deps.notify?.({
+      kind: 'goal',
+      severity: nextStatus === 'failed' ? 'warning' : 'info',
+      title: `Goal ${nextStatus}`,
+      body: `"${parent.title}" ${nextStatus} (${children.length} sub-goals)`,
+      deepLink: `/mission-control/goals`,
+      entityId: parentGoalId,
+    });
+
     return { status: nextStatus, settled: true, children: children.length };
   }
 

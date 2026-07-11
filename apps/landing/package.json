@@ -1,32 +1,33 @@
 {
   "name": "@lumibase/landing",
-  "version": "0.10.0",
+  "version": "0.21.0",
   "private": true,
   "description": "LumiBase Landing Page - official website for lumibase.dev",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
+    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ext .ts,.tsx --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next .turbo dist"
   },
   "dependencies": {
     "framer-motion": "^12.40.0",
     "lucide-react": "^0.452.0",
-    "next": "^15.0.0",
+    "next": "^16.2.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.2",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.20",
-    "eslint": "^8.57.0",
+    "eslint": "^9.36.0",
     "eslint-config-next": "^15.0.0",
     "postcss": "^8.4.47",
-    "tailwindcss": "^3.4.13",
+    "tailwindcss": "^4.3.2",
     "typescript": "^5.6.2"
   }
 }

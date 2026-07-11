@@ -1,25 +1,34 @@
-import type { Database } from '@lumibase/database';
+import { extensionVotes, type Database } from '@lumibase/database';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import type { AppEnv } from '../../env';
 import { marketplaceRouter } from '../marketplace';
 
-function makeDb(rows: unknown[]): Database {
-  const selectFluent = {
-    from: () => selectFluent,
-    where: () => Promise.resolve(rows),
-  };
+type VoteRow = { marketplaceSlug: string; userId: string };
 
+// Table-aware mock: `.from(extensionVotes)` resolves to the vote rows, every
+// other table resolves to the extension rows.
+function makeDb(rows: unknown[], votes: VoteRow[] = []): Database {
   return {
-    select: () => selectFluent,
+    select: () => {
+      let data: unknown[] = rows;
+      const fluent = {
+        from: (table: unknown) => {
+          data = table === extensionVotes ? votes : rows;
+          return fluent;
+        },
+        where: () => Promise.resolve(data),
+      };
+      return fluent;
+    },
   } as unknown as Database;
 }
 
-function buildApp(rows: unknown[]) {
+function buildApp(rows: unknown[], votes: VoteRow[] = []) {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
     c.set('siteId', 'site_1');
-    c.set('db', makeDb(rows));
+    c.set('db', makeDb(rows, votes));
     c.set('runtime', { cache: undefined, search: undefined, queue: undefined } as never);
     await next();
   });
@@ -151,6 +160,39 @@ describe('marketplace public catalog routes', () => {
       version: '1.2.0',
       bundleUrl: 'https://cdn.example/seo-1.2.0.js',
     });
+  });
+
+  it('marks a signed listing verified and surfaces download + vote metrics', async () => {
+    const app = buildApp(
+      [
+        row({
+          signature: 'sig',
+          publisherKeyId: 'key_1',
+          bundleSha256: 'a'.repeat(64),
+          downloadCount: 42,
+        }),
+      ],
+      [
+        { marketplaceSlug: 'seo-toolkit', userId: 'u1' },
+        { marketplaceSlug: 'seo-toolkit', userId: 'u2' },
+      ],
+    );
+
+    const res = await app.request('/api/v1/marketplace/extensions');
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    expect(body.data[0]).toMatchObject({
+      verified: true,
+      totalDownloads: 42,
+      voteCount: 2,
+      hasVoted: false,
+    });
+  });
+
+  it('leaves an unsigned listing unverified with zeroed metrics', async () => {
+    const app = buildApp([row({})]);
+    const res = await app.request('/api/v1/marketplace/extensions');
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    expect(body.data[0]).toMatchObject({ verified: false, voteCount: 0, totalDownloads: 0 });
   });
 
   it('returns 404 for missing extension detail', async () => {

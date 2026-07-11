@@ -2,7 +2,8 @@
 
 <div align="center">
 <img width="1024" height="434" alt="Image" src="https://github.com/user-attachments/assets/a11def9c-f238-4a6d-9816-7f7c4f718ea9" />
-**⚡ The Content Operating System — Edge-Native, AI-Native, Agent-Operated**
+
+  **⚡ The Content Operating System — Edge-Native, AI-Native, Agent-Operated**
 
 [![GitHub Stars](https://img.shields.io/github/stars/khuepm/lumibase?style=social)](https://github.com/khuepm/lumibase)
 <!-- [![GitHub Sponsors](https://img.shields.io/github/sponsors/khuepm)](https://github.com/sponsors/khuepm) -->
@@ -91,13 +92,17 @@ The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire
 
 Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
-Current release: `v0.10.0` (`2026-06-22`) — **MCP everywhere**. This release makes the Model Context Protocol the base surface for the entire Content OS across both MCP surfaces: the standalone `lumibase-mcp` server (~80 tools spanning content, RBAC, users/teams, intents, flows, webhooks, translations, search, media, ops, backup/restore, materialize, extensions & marketplace) and the governed in-process endpoint `/api/v1/mcp` (HITL/autonomy-gated skills for schema, items, relations, RBAC, intents, flows, api-keys, users/teams, config and extensions). It ships **no schema migrations**. It builds on **`v0.9.0`** (regulated/sensitive content readiness — fail-closed field encryption, envelope mode, data classification, content scheduling, editorial workflow, GDPR erasure/retention/SAR) and the **`v0.5.0` Content OS foundation** (content intents/SLOs, the drift/reconciliation control loop, the earned-autonomy trust ledger L0–L4 with the L3 veto window and a four-scope kill switch, the tenant constitution, provenance-first revisions, the multi-agent newsroom, and Studio Mission Control) — which remain the baseline this release builds upon, not replaces.
+Current release: `v0.21.0` (`2026-07-08`) — **self-service auth realms & Cloudflare Pages pipeline repair**. Adds subscriber registration with email verification, password recovery, rotating refresh tokens (migrations `0005`/`0006`), per-realm session TTLs, audience-pinned tokens, and SDK silent auto-refresh (PR #130); and fixes the Pages deploys that had been failing since `v0.18.0` by decoupling the `apps/marketplace` submodule from the pnpm workspace (built standalone, PAT-authenticated) and correcting the docs deploy verification. It builds on **`v0.20.0`** (backend + SDK gap-closing across 7 specs & high-load/cache readiness), **`v0.19.0`** (CWE Top 100 closeout, Visual Flow Builder triggers & marketplace community features), **`v0.18.0`** (custom domains & translation memory), **`v0.17.0`** (`lumibase_` table namespace & Content Releases), **`v0.16.0`** (code-first configuration & auto-deploy from Flows), **`v0.15.0`** (realtime audience plane & cosmic design system), **`v0.14.0`** (push notifications & MCP path-traversal hardening), **`v0.13.0`** (deployment integrations & cross-collection search), **`v0.12.0`** (privacy & compliance suite, Directus-style interfaces & tenant isolation hardening), **`v0.11.0`** (Insights, content versioning & tenant-scoped search), **`v0.10.0`** (MCP everywhere), **`v0.9.0`** (regulated/sensitive content readiness), and the **`v0.5.0` Content OS foundation** — which remain the baseline this release builds upon, not replaces.
 
 ```bash
-LUMIBASE_VERSION=0.10.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=0.21.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.
+
+### Versioning
+
+From `v1.0.0`, LumiBase follows strict [Semantic Versioning](https://semver.org/): breaking changes to the public surface (REST/GraphQL API, `@lumibase/sdk` exports, response envelopes, header and env-var contracts, CLI/setup flags) require a major bump; features are additive in minors; deprecations run for at least one minor before removal. Security fixes cover the current and previous major for 6 months. Full rules: [`docs/en/contributing/versioning-policy.md`](./docs/en/contributing/versioning-policy.md). To report a vulnerability, see [`SECURITY.md`](./SECURITY.md).
 
 ### Why port 1989?
 

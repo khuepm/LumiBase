@@ -67,10 +67,13 @@ pnpm typecheck
 
 Mọi feature trước khi đánh dấu hoàn thành phải qua checklist `.kiro/steering/definition-of-done.md` — đặc biệt mục **Setup impact**: rà soát `.kiro/specs/admin-setup-wizard/setup-impact.md` (Setup Impact Registry) và ghi kết quả vào bảng Registry, kể cả khi kết quả là `n/a`.
 
+Điều kiện thoát cho một **release major** (v1.0.0 và các major sau) nằm ở `.kiro/steering/v1-release-criteria.md` — checklist ở cấp release, tách khỏi DoD per-feature: security audit, scope freeze, quality gate, upgrade-path test, docs/release mechanics và semver policy. Khi bàn "lên v1/major chưa", đối chiếu file đó thay vì khảo sát lại từ đầu.
+
 ## Key docs
 
 - Architecture decisions: `docs/en/architecture/decisions/`
 - Full API spec: `docs/en/api/hono-api-spec.md`
 - Data model: `docs/en/data-model.md`
 - AI skills: `docs/en/ai-skills.md`
+- User management & auth realms: `docs/en/security/user-management.md` (ADR-010)
 - Contributing: `docs/en/contributing/`

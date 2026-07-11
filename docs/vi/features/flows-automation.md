@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-06-23T12:59:56.000Z
+sourceLang: vi
+contentHash: a7d2f855ee399c09
+---
+
 # Flows / Operations Engine
 
 LumiBase Flows cho phép tự động hoá workflow đa bước — tương tự Directus Flows. Một flow là một **graph các operation** chạy theo trigger (webhook, event, schedule, hoặc manual).
@@ -34,6 +41,7 @@ Khai báo trong cột `operations.type`:
 - **`run-extension`** — gọi extension đã mount.
 - **`item.create`** / **`item.update`** / **`item.delete`** — CRUD vào CMS data.
 - **`notify`** — push notification tới user/team.
+- **`drift-scan`** — một chu kỳ reconciliation của Content OS cho một intent (`options.intentId`): quét drift theo rules của `content_intents` (tôn trọng pinned fields, time-box qua `options.timeBudgetMs`, cursor resume), rồi sinh reconciler goals trong budget `maxGoalsPerCycle`. Lên lịch một flow trigger `schedule` per intent theo cron của intent.
 
 ## Graph format
 

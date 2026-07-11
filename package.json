@@ -1,6 +1,6 @@
 {
   "name": "lumibase",
-  "version": "0.10.0",
+  "version": "0.21.0",
   "private": true,
   "description": "Lumibase - Edge-native Headless CMS (Turborepo monorepo)",
   "packageManager": "pnpm@9.12.0",
@@ -27,6 +27,9 @@
     "docs:dev": "pnpm --filter @lumibase/docs dev",
     "docs:build": "pnpm --filter @lumibase/docs build",
     "docs:preview": "pnpm --filter @lumibase/docs preview",
+    "docs:i18n:detect": "node scripts/docs-i18n/sync.mjs",
+    "docs:i18n:preserve": "node scripts/docs-i18n/sync.mjs --preserve-only",
+    "docs:i18n:sync": "node scripts/docs-i18n/sync.mjs --apply",
     "studio:dev": "pnpm --filter @lumibase/studio dev",
     "cms:dev": "pnpm --filter @lumibase/cms dev",
     "release:check": "node scripts/check-release-env.mjs --env production --config apps/cms/wrangler.toml",
@@ -41,6 +44,7 @@
     "prepare": "husky",
     "version:sync": "node scripts/sync-version.mjs",
     "version:check": "node scripts/sync-version.mjs --check",
+    "registry:check": "node scripts/check-registry-numbering.mjs",
     "db:migrate:preflight": "pnpm --filter @lumibase/database migrate:preflight",
     "db:migrate:dry-run": "pnpm --filter @lumibase/database migrate:dry-run",
     "db:migrate:version": "pnpm --filter @lumibase/database migrate:version"
@@ -63,7 +67,8 @@
       "postcss": "^8.5.14",
       "undici": "^7.28.0",
       "uuid": "^11.1.1",
-      "vite": "^7.3.5"
+      "vite": "^7.3.5",
+      "ws": "^8.21.0"
     },
     "patchedDependencies": {
       "gray-matter@4.0.3": "patches/gray-matter@4.0.3.patch"

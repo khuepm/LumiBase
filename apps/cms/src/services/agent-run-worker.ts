@@ -2,7 +2,7 @@ import type { Database } from '@lumibase/database';
 import type { CacheProvider, QueueProvider, SearchProvider } from '@lumibase/runtime';
 import { AISecureHarness } from './ai-harness';
 import { AgentRunService } from './agent-run-service';
-import { ItemService } from './item-service';
+import { itemServiceForSystem } from './item-service-factory';
 import { createConfiguredLLMProvider, type LLMProviderEnv } from './llm-provider';
 import { SchemaService } from './schema-service';
 
@@ -61,14 +61,20 @@ export async function processAgentRunJob(
     siteId: payload.siteId,
     cache: deps.cache,
   });
-  const itemService = new ItemService({
-    db: deps.db,
-    siteId: payload.siteId,
-    userId: payload.userId ?? null,
-    cache: deps.cache,
-    search: deps.search,
-    queue: deps.queue,
-  });
+  // System context: a governed agent run enforces autonomy/HITL gating in the
+  // AISecureHarness (write/delete skills route to approvals), not via per-user
+  // row/field RBAC — the run executes with system privileges under that gate.
+  const itemService = itemServiceForSystem(
+    {
+      db: deps.db,
+      siteId: payload.siteId,
+      userId: payload.userId ?? null,
+      cache: deps.cache,
+      search: deps.search,
+      queue: deps.queue,
+    },
+    'background-worker',
+  );
 
   const harness = new AISecureHarness({
     db: deps.db,

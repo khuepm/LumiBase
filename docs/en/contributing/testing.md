@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:56.199Z
+sourceLang: en
+contentHash: cdcd5dfe1e155963
+---
+
 # Testing Guide
 
 LumiBase uses **Vitest** for unit and integration tests across the monorepo. This guide covers testing conventions, patterns, and how to write good tests for LumiBase.

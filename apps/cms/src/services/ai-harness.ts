@@ -9,7 +9,8 @@ import type { ExtensionsService } from './extensions-service';
 import type { IntentService } from './intent-service';
 import { runFlow, type FlowGraph } from './flow-service';
 import type { ConfiguredLLM } from './llm-provider';
-import type { QueueProvider } from '@lumibase/runtime';
+import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
+import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentAutonomousOpsTotal } from './agent-metrics';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
 import { AUTONOMY_LEVELS, AutonomyService } from './autonomy-service';
@@ -30,7 +31,7 @@ export interface SkillDefinition {
   description: string;
   requiredCapabilities: string[];
   /** Service this skill connects to (for documentation/tracing). */
-  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows';
+  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows' | 'deployments';
   handler: (args: Record<string, unknown>) => Promise<unknown>;
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
@@ -82,6 +83,12 @@ export interface AISecureHarnessConfig {
   llm?: ConfiguredLLM | null;
   /** Queue provider for veto-window commit jobs and dead letters. */
   queue?: QueueProvider;
+  /**
+   * KeyProvider for deployment skills — decrypts/encrypts Provider tokens.
+   * When omitted, deployment skills fall back to a clear error instead of
+   * stubbing (they have no meaningful offline behaviour).
+   */
+  keys?: KeyProvider;
   /** AccessService for governed RBAC + identity skills (roles/policies/api-keys/users/teams). */
   accessService?: AccessService;
   /** IntentService for governed content-intent (SLO) skills. */
@@ -92,6 +99,12 @@ export interface AISecureHarnessConfig {
   extensionsService?: ExtensionsService;
   /** Enables first-class agent_goals/runs/tool_calls audit for tests or non-service callers. */
   enableAgentHarnessAudit?: boolean;
+  /**
+   * Optional push-notification sink (push-noti feature). When provided, a
+   * newly created HITL approval is pushed in-app / via Web Push so a reviewer
+   * is reached immediately. Best-effort — never blocks execution.
+   */
+  notify?: AgentNotifier;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +129,8 @@ interface SkillServices {
   /** Tenant-scoped DB handle for governed skills with no dedicated service (flows). */
   db?: Database;
   siteId?: string;
+  /** KeyProvider for deployment token encryption/decryption. */
+  keys?: KeyProvider;
   /**
    * Configured LLM for generation skills.
    * - key absent: offline deterministic handlers (shared CORE_SKILLS test registry).
@@ -171,6 +186,31 @@ function isWriteSkill(tool: { requiredCapabilities?: unknown }): boolean {
     ? (tool.requiredCapabilities as string[])
     : [];
   return caps.some((cap) => /:(write|update|create|delete)$/.test(cap));
+}
+
+/**
+ * Pure classifier: is this skill a control-plane / dangerous operation?
+ *
+ * Mirrors {@link AISecureHarness.evaluateRisk} exactly so callers outside the
+ * harness (e.g. the MCP route's admin backstop) agree byte-for-byte on which
+ * skills are control-plane. A skill is control-plane when it is explicitly
+ * flagged `dangerous`, requires a mutating `schema:*` capability, or its name
+ * starts with `delete` (covers `deleteCollection`, `deleteRole`, …). Keep this
+ * and `evaluateRisk` in lockstep.
+ */
+export function isControlPlaneSkill(
+  skill: Pick<SkillDefinition, 'requiredCapabilities' | 'dangerous'>,
+  skillName: string,
+): boolean {
+  if (skill.dangerous) return true;
+  if (
+    skill.requiredCapabilities.some(
+      (capability) => capability.startsWith('schema:') && capability !== 'schema:read',
+    )
+  ) {
+    return true;
+  }
+  return skillName.startsWith('delete');
 }
 
 /**
@@ -389,6 +429,20 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
   /** Distinguishes "offline test registry" from "environment has no LLM". */
   const llmResolved = 'llm' in services;
   const llm = services.llm ?? null;
+
+  /**
+   * Lazily construct a site-scoped DeploymentService for deployment skills.
+   * Requires db/siteId/keys; without them (offline registry) the skill fails
+   * with a clear error instead of stubbing.
+   */
+  const deploymentService = async () => {
+    if (!services.db || !services.siteId || !services.keys) {
+      throw new Error('DEPLOYMENTS_NOT_CONFIGURED: deployment skills require a runtime KeyProvider');
+    }
+    // Lazy import keeps the harness decoupled from the deployment module.
+    const { DeploymentService } = await import('./deployment/deployment-service');
+    return new DeploymentService({ db: services.db, siteId: services.siteId, keys: services.keys });
+  };
 
   return {
     listCollections: {
@@ -1497,6 +1551,69 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         return extensionsService.uninstallExtension(args['id'] as string);
       },
     },
+
+    // ── Deployment integrations (spec: deployment-integrations, Req 6) ───────
+    // Handlers build a site-scoped DeploymentService from db/siteId/keys; with
+    // no tenant context (offline test registry) they fail with a clear error
+    // rather than stubbing, since deploy has no meaningful offline behaviour.
+
+    listDeploymentTargets: {
+      name: 'listDeploymentTargets',
+      description: 'List the configured deployment targets (Vercel/Netlify) for the site.',
+      requiredCapabilities: ['deployments:read'],
+      service: 'deployments',
+      handler: async () => {
+        const service = await deploymentService();
+        return { targets: await service.listTargets() };
+      },
+    },
+
+    listDeployments: {
+      name: 'listDeployments',
+      description: 'List recent deployments, optionally filtered by target or status.',
+      requiredCapabilities: ['deployments:read'],
+      service: 'deployments',
+      handler: async (args) => {
+        const service = await deploymentService();
+        const deploymentsList = await service.listDeployments({
+          targetId: args['targetId'] ? String(args['targetId']) : undefined,
+          status: args['status'] ? String(args['status']) : undefined,
+        });
+        return { deployments: deploymentsList };
+      },
+    },
+
+    getDeploymentStatus: {
+      name: 'getDeploymentStatus',
+      description: 'Get the current status and details of a single deployment by id.',
+      requiredCapabilities: ['deployments:read'],
+      service: 'deployments',
+      handler: async (args) => {
+        const service = await deploymentService();
+        const row = await service.getDeployment(String(args['deploymentId'] ?? ''));
+        if (!row) throw new Error('Deployment not found');
+        return row;
+      },
+    },
+
+    triggerDeployment: {
+      name: 'triggerDeployment',
+      description:
+        'Trigger a build/deploy on a deployment target. High-risk: gated by HITL approval below autopilot autonomy.',
+      requiredCapabilities: ['deployments:write'],
+      service: 'deployments',
+      dangerous: true,
+      handler: async (args) => {
+        const service = await deploymentService();
+        const row = await service.trigger(String(args['targetId'] ?? ''), {
+          branch: args['branch'] ? String(args['branch']) : undefined,
+          reason: args['reason'] ? String(args['reason']) : 'agent deployment',
+          source: 'agent',
+          triggeredBy: args['__runId'] ? String(args['__runId']) : undefined,
+        });
+        return { deploymentId: row.id, status: row.status, provider: row.provider };
+      },
+    },
   };
 }
 
@@ -1539,19 +1656,22 @@ export class AISecureHarness {
   private readonly toolRegistry: ToolRegistryService;
   private readonly itemService?: ItemService;
   private readonly queue?: QueueProvider;
+  private readonly notify?: AgentNotifier;
 
   constructor(config: AISecureHarnessConfig) {
     this.db = config.db;
     this.siteId = config.siteId;
     this.itemService = config.itemService;
     this.queue = config.queue;
+    this.notify = config.notify;
     const hasService = Boolean(
       config.schemaService ||
         config.itemService ||
         config.accessService ||
         config.intentService ||
         config.configService ||
-        config.extensionsService,
+        config.extensionsService ||
+        config.keys,
     );
     this.agentHarnessEnabled = config.enableAgentHarnessAudit ?? hasService;
 
@@ -1568,6 +1688,8 @@ export class AISecureHarness {
         extensionsService: config.extensionsService,
         db: config.db,
         siteId: config.siteId,
+        // Tenant context + KeyProvider enable the deployment skills.
+        keys: config.keys,
         // Preserve the "offline registry" mode when callers never resolved
         // an LLM; forward null/instance when they did (Req 2.1/2.2).
         ...('llm' in config ? { llm: config.llm ?? null } : {}),
@@ -1576,7 +1698,7 @@ export class AISecureHarness {
       this.skills = CORE_SKILLS;
     }
 
-    this.runService = new AgentRunService(this.db, this.siteId);
+    this.runService = new AgentRunService(this.db, this.siteId, config.queue, config.notify);
     this.toolRegistry = new ToolRegistryService(this.db, this.siteId, this.skills);
   }
 
@@ -1625,16 +1747,7 @@ export class AISecureHarness {
    * @returns true if the skill is classified as dangerous, false otherwise.
    */
   evaluateRisk(skill: SkillDefinition, skillName: string): boolean {
-    if (skill.dangerous) {
-      return true;
-    }
-    if (skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read')) {
-      return true;
-    }
-    if (skillName.startsWith('delete')) {
-      return true;
-    }
-    return false;
+    return isControlPlaneSkill(skill, skillName);
   }
 
   // ---------- Execution ----------
@@ -1688,7 +1801,7 @@ export class AISecureHarness {
     const loadGuard = getLoadGuard();
     if (loadGuard.shouldPause(envelope.origin)) {
       if (loadGuard.markIncidentOnce(this.siteId)) {
-        await new AutonomyService({ db: this.db, siteId: this.siteId }).recordIncident({
+        await new AutonomyService({ db: this.db, siteId: this.siteId, notify: this.notify }).recordIncident({
           agentRole: 'reconciler',
           source: 'load_guard',
           severity: 'low',
@@ -1798,7 +1911,7 @@ export class AISecureHarness {
       // dangerous action awaits approval (≤L2), stages into the veto
       // window (L3) or executes directly (L4). Irreversible skills never
       // resolve above L2 via the resolver's hard ceiling.
-      const autonomy = new AutonomyService({ db: this.db, siteId: this.siteId });
+      const autonomy = new AutonomyService({ db: this.db, siteId: this.siteId, notify: this.notify });
       const agentRole = envelope.agentName ?? run.agentName;
       const capability = primaryDangerousCapability(tool, skillName);
       const level = await autonomy.resolve(agentRole, capability, {
@@ -1820,7 +1933,7 @@ export class AISecureHarness {
           .catch(() => false));
       if (vetoWindowEnabled && isStageableItemPatch(skillName, args)) {
         const vetoWindowMs = Number((envelope.budget ?? {})['vetoWindowMs']) || undefined;
-        const veto = new VetoService({ db: this.db, siteId: this.siteId, vetoWindowMs });
+        const veto = new VetoService({ db: this.db, siteId: this.siteId, vetoWindowMs, notify: this.notify });
         // Pin the active constitution to the run before staging (Req 15.3,
         // Property 12): the staged revision carries the hash the run
         // started with, even if a new version activates before commit.
@@ -1935,6 +2048,15 @@ export class AISecureHarness {
           requestedByAgent: run.agentName,
         })
         .returning();
+
+      this.notify?.({
+        kind: 'approval',
+        severity: 'info',
+        title: 'Approval requested',
+        body: `${run.agentName} requests approval to run "${skillName}"`,
+        deepLink: `/mission-control/inbox?entry=approval:${agentApproval!.id}`,
+        entityId: agentApproval!.id,
+      });
 
       await this.runService.finishToolCall(toolCallId, {
         status: 'pending_approval',
@@ -2120,8 +2242,12 @@ export class AISecureHarness {
     );
 
     if (result.success) {
-      // Skill succeeded — update record to 'approved'
-      await this.db
+      // Skill succeeded — commit the decision. The UPDATE is guarded by
+      // `status = 'pending'` and uses .returning() so that if a concurrent
+      // decide/reject already moved the record out of 'pending' (CWE-362/367
+      // TOCTOU), this write affects zero rows and we report a conflict instead
+      // of silently overwriting the other decision.
+      const committed = await this.db
         .update(aiApprovals)
         .set({
           status: 'approved',
@@ -2132,8 +2258,17 @@ export class AISecureHarness {
           and(
             eq(aiApprovals.id, approvalId),
             eq(aiApprovals.siteId, this.siteId),
+            eq(aiApprovals.status, 'pending'),
           ),
-        );
+        )
+        .returning({ id: aiApprovals.id });
+
+      if (committed.length === 0) {
+        return {
+          status: 'denied',
+          message: 'Approval was already processed by another request',
+        };
+      }
 
       return { status: 'executed', data: result.data };
     }
@@ -2207,6 +2342,8 @@ export class AISecureHarness {
     );
 
     if (result.success) {
+      // Guard the transition on status='pending' so a concurrent decide/reject
+      // cannot be silently overwritten (CWE-362/367).
       await this.db
         .update(aiApprovals)
         .set({
@@ -2218,6 +2355,7 @@ export class AISecureHarness {
           and(
             eq(aiApprovals.id, record.id),
             eq(aiApprovals.siteId, this.siteId),
+            eq(aiApprovals.status, 'pending'),
           ),
         );
       if (existingAgentApproval) {
@@ -2268,8 +2406,11 @@ export class AISecureHarness {
   async rejectApproval(
     approvalId: string,
     userId: string,
-  ): Promise<void> {
-    await this.db
+  ): Promise<boolean> {
+    // Only a still-pending approval can be rejected; the status guard makes the
+    // reject atomic w.r.t. a concurrent approve (CWE-362/367). Returns whether
+    // this call actually performed the rejection.
+    const rejected = await this.db
       .update(aiApprovals)
       .set({
         status: 'rejected',
@@ -2280,8 +2421,12 @@ export class AISecureHarness {
         and(
           eq(aiApprovals.id, approvalId),
           eq(aiApprovals.siteId, this.siteId),
+          eq(aiApprovals.status, 'pending'),
         ),
-      );
+      )
+      .returning({ id: aiApprovals.id });
+
+    if (rejected.length === 0) return false;
 
     if (this.agentHarnessEnabled) {
       await this.db
@@ -2295,8 +2440,11 @@ export class AISecureHarness {
           and(
             eq(agentApprovals.legacyApprovalId, approvalId),
             eq(agentApprovals.siteId, this.siteId),
+            eq(agentApprovals.status, 'pending'),
           ),
         );
     }
+
+    return true;
   }
 }

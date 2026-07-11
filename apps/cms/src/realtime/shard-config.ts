@@ -83,3 +83,63 @@ export function getLocationHint(
 export function isShardingSupported(runtime: string | undefined): boolean {
   return runtime === 'cloudflare';
 }
+
+// ---------------------------------------------------------------------------
+// Plane-aware room resolution (realtime-audience-channels)
+// ---------------------------------------------------------------------------
+
+export type RealtimePlane = 'studio' | 'public';
+
+/**
+ * Deterministic bucket for a subject within the audience plane. Cheap FNV-1a
+ * hash — the connect path and the publish path MUST call this identically so a
+ * subject's connections and the events targeting them land on the same room.
+ */
+export function subjectBucket(subjectId: string, buckets: number): number {
+  if (buckets <= 1) return 0;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < subjectId.length; i++) {
+    h ^= subjectId.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0) % buckets;
+}
+
+export interface RoomNameOptions {
+  /** Realtime plane. Defaults to `studio` for backward compatibility. */
+  plane?: RealtimePlane;
+  /** Region hint (studio multi-region). Ignored for audience buckets. */
+  region?: RegionHint;
+  /**
+   * Subject id — required to derive an audience bucket when `buckets > 1`.
+   * Publish paths that target a channel (no subject) must pass the same
+   * `bucket` value the connecting sessions used, or set `buckets = 1`.
+   */
+  subjectId?: string;
+  /** Explicit audience bucket, overrides `subjectId` hashing when provided. */
+  bucket?: number;
+  /** Number of audience buckets per site. `1` (default) = single room. */
+  buckets?: number;
+}
+
+/**
+ * Single source of truth for the Durable Object / hub room name. Used by BOTH
+ * the WS upgrade route (connect) and the publish path so they never diverge.
+ *
+ * - studio:   `{siteId}` or `{siteId}:{region}` (existing behaviour)
+ * - public:   `{siteId}:aud` or `{siteId}:aud:{bucket}`
+ */
+export function resolveRoomName(siteId: string, opts: RoomNameOptions = {}): string {
+  const plane = opts.plane ?? 'studio';
+
+  if (plane === 'public') {
+    const buckets = opts.buckets ?? 1;
+    if (buckets <= 1) return `${siteId}:aud`;
+    const bucket =
+      opts.bucket ?? (opts.subjectId ? subjectBucket(opts.subjectId, buckets) : 0);
+    return `${siteId}:aud:${bucket}`;
+  }
+
+  // studio plane — preserve legacy shard keys
+  return opts.region ? getShardKey(siteId, opts.region) : siteId;
+}

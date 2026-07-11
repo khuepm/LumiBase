@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:25.961Z
+sourceLang: en
+contentHash: 424c130dc0d3e319
+---
+
 # Windsurf — LumiBase Agent Setup
 
 > **Windsurf** is an agentic IDE with Cascade context engine and Flows automation for multi-step tasks. Made by Cognition.

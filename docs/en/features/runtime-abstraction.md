@@ -1,27 +1,37 @@
+---
+version: 1
+lastUpdated: 2026-06-23T13:03:22.000Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: 9ec3924addf5c76e
+mtEngine: claude
+syncStatus: machine-translated
+---
+
 # Runtime Abstraction Layer (`@lumibase/runtime`)
 
-LumiBase có thể chạy trên hai runtime hoàn toàn khác nhau:
+LumiBase can run on two completely different runtimes:
 
 - **Cloudflare Workers** — KV, R2, Hyperdrive, Durable Objects, Queues, CF Image Resizing.
-- **Docker / Node.js** — Redis, MinIO/S3, PostgreSQL pool, MeiliSearch self-host, BullMQ, Imgproxy.
+- **Docker / Node.js** — Redis, MinIO/S3, a PostgreSQL pool, self-hosted MeiliSearch, BullMQ, Imgproxy.
 
-Toàn bộ business logic (routes, services, middleware) **không gọi trực tiếp** vào API của Cloudflare hay Node — mà đi qua các interface trong `@lumibase/runtime`.
+All business logic (routes, services, middleware) **never calls** the Cloudflare or Node APIs directly — it goes through the interfaces in `@lumibase/runtime`.
 
-## Vị trí code
+## Code location
 
 ```
 packages/runtime/
 ├── src/
-│   ├── interfaces/           # Định nghĩa interface (cache/storage/database/search/queue/media)
+│   ├── interfaces/           # Interface definitions (cache/storage/database/search/queue/media)
 │   ├── adapters/
-│   │   ├── cloudflare/       # Implementation cho Cloudflare Workers
-│   │   └── docker/           # Implementation cho Docker/Node
-│   ├── factory.ts            # createRuntime(env) chọn theo LUMIBASE_RUNTIME
+│   │   ├── cloudflare/       # Implementation for Cloudflare Workers
+│   │   └── docker/           # Implementation for Docker/Node
+│   ├── factory.ts            # createRuntime(env) selects by LUMIBASE_RUNTIME
 │   └── index.ts              # Public API
 └── package.json              # deps: ioredis, @aws-sdk/client-s3, postgres, meilisearch, bullmq, prom-client
 ```
 
-## 6 Provider interfaces
+## The 6 Provider interfaces
 
 ```typescript
 // packages/runtime/src/interfaces/runtime.ts
@@ -46,7 +56,7 @@ delete(key: string): Promise<void>
 
 | Cloudflare | Docker |
 |------------|--------|
-| Cloudflare KV (`env.CONFIG_CACHE`) | Redis qua `ioredis` |
+| Cloudflare KV (`env.CONFIG_CACHE`) | Redis via `ioredis` |
 
 ### StorageProvider
 
@@ -59,7 +69,7 @@ list(prefix: string): Promise<StorageObject[]>
 
 | Cloudflare | Docker |
 |------------|--------|
-| R2 (`env.MEDIA`) | S3-compatible MinIO qua `@aws-sdk/client-s3` |
+| R2 (`env.MEDIA`) | S3-compatible MinIO via `@aws-sdk/client-s3` |
 
 ### DatabaseProvider
 
@@ -69,7 +79,7 @@ getConnection(): DrizzleDatabase
 
 | Cloudflare | Docker |
 |------------|--------|
-| Hyperdrive connection string | `pg-pool` (driver `postgres`) |
+| Hyperdrive connection string | `pg-pool` (the `postgres` driver) |
 
 ### SearchProvider
 
@@ -82,7 +92,7 @@ getIndex(collection: string): Promise<IndexInfo>
 
 | Cloudflare | Docker |
 |------------|--------|
-| MeiliSearch Cloud qua HTTP | MeiliSearch self-host |
+| MeiliSearch Cloud via HTTP | Self-hosted MeiliSearch |
 
 ### QueueProvider
 
@@ -94,9 +104,9 @@ getStatus(jobId: string): Promise<JobStatus>
 
 | Cloudflare | Docker |
 |------------|--------|
-| Cloudflare Queues | BullMQ (chạy trên Redis có sẵn) |
+| Cloudflare Queues | BullMQ (running on the existing Redis) |
 
-Hỗ trợ priority `high` / `normal` / `low`, retry 3 lần với exponential backoff.
+Supports `high` / `normal` / `low` priority, with 3 retries using exponential backoff.
 
 ### MediaProcessor
 
@@ -107,7 +117,7 @@ getUrl(key: string, transformations: TransformOptions): string
 
 | Cloudflare | Docker |
 |------------|--------|
-| CF Image Resizing | Imgproxy với signed URLs |
+| CF Image Resizing | Imgproxy with signed URLs |
 
 Operations: resize, crop, format conversion (WebP/AVIF), quality.
 
@@ -122,10 +132,10 @@ export function createRuntime(env: Record<string, unknown>): RuntimeContext {
 }
 ```
 
-Middleware `withRuntime()` (`apps/cms/src/middleware/runtime.ts`) gọi factory này và inject vào `c.set('runtime', ...)` ở mọi request — chạy ngay sau logger/metrics.
+The `withRuntime()` middleware (`apps/cms/src/middleware/runtime.ts`) calls this factory and injects it into `c.set('runtime', ...)` on every request — running right after logger/metrics.
 
 ```typescript
-// Sử dụng trong route:
+// Usage in a route:
 app.get('/example', (c) => {
   const cache = c.get('runtime').cache;
   const storage = c.get('runtime').storage;
@@ -135,25 +145,25 @@ app.get('/example', (c) => {
 
 ## Environment parity
 
-Bộ adapter phải đảm bảo:
+The adapter sets must guarantee:
 
-1. **Cùng API responses** cho mọi content CRUD bất kể runtime.
-2. **TTL behavior nhất quán** giữa KV và Redis.
-3. **Storage operations identical** (list/get/put/delete) giữa R2 và MinIO.
-4. **Cùng Drizzle schema và migrations** cho cả hai.
-5. Khi feature unavailable trên một runtime (ví dụ Durable Objects chỉ có CF), log warning và degrade — không fail.
+1. **The same API responses** for all content CRUD regardless of runtime.
+2. **Consistent TTL behavior** between KV and Redis.
+3. **Identical storage operations** (list/get/put/delete) between R2 and MinIO.
+4. **The same Drizzle schema and migrations** for both.
+5. When a feature is unavailable on a runtime (e.g. Durable Objects are CF-only), log a warning and degrade — do not fail.
 
-## Selecting runtime
+## Selecting the runtime
 
 ```bash
-# Trên Cloudflare (mặc định khi deploy bằng Wrangler):
+# On Cloudflare (the default when deploying with Wrangler):
 LUMIBASE_RUNTIME=cloudflare
 
-# Trên Docker / self-hosted:
+# On Docker / self-hosted:
 LUMIBASE_RUNTIME=docker
 ```
 
-Xem `apps/docs/content/deployment/environment-variables.md` để biết danh sách env vars đầy đủ.
+See `apps/docs/content/deployment/environment-variables.md` for the full list of env vars.
 
 ## CDC runtime split
 
@@ -173,7 +183,7 @@ inside the Workers isolate.
 
 ## Test strategy
 
-- Unit tests cho từng adapter trong `packages/runtime/src/__tests__/`:
+- Unit tests for each adapter in `packages/runtime/src/__tests__/`:
   - `cloudflare-adapters.test.ts` (mock KV/R2).
   - `docker-adapters.test.ts` (mock ioredis, S3 client, MeiliSearch).
-- Integration tests chạy thật stack qua `docker compose up` trong CI workflow `.github/workflows/docker.yml`.
+- Integration tests run the real stack via `docker compose up` in the CI workflow `.github/workflows/docker.yml`.

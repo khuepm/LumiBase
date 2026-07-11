@@ -22,7 +22,7 @@ const id = () => text('id').$defaultFn(() => nanoid()).primaryKey();
 const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
-export const sites = pgTable('sites', {
+export const sites = pgTable('lumibase_sites', {
   id: id(),
   name: text('name').notNull(),
   domain: text('domain').unique(),
@@ -36,6 +36,8 @@ export const sites = pgTable('sites', {
   defaultLanguage: text('default_language').default('en').notNull(),
   /** Default appearance for new users: `auto` | `light` | `dark`. Per-user override lives in `users.preferences`. */
   defaultAppearance: text('default_appearance').default('auto').notNull(),
+  /** Default Studio save action: `stay` | `return` | `create_new`. Per-user override lives in `users.preferences.saveAction`. */
+  defaultSaveAction: text('default_save_action').default('stay').notNull(),
   /** `{ logoUrl, faviconUrl, brandColor }` — global branding for this site. */
   branding: jsonb('branding').default({}).notNull(),
   /** `{ light: { '--primary': 'H S% L%', … }, dark: { … } }` — CSS variable overrides. */
@@ -47,7 +49,7 @@ export const sites = pgTable('sites', {
 });
 
 export const users = pgTable(
-  'users',
+  'lumibase_users',
   {
     id: id(),
     externalId: text('external_id'),
@@ -76,6 +78,21 @@ export const users = pgTable(
     failedCount: integer('failed_count').default(0).notNull(),
     /** Sliding-window start for `failedCount`. */
     failedCountWindowStart: timestamp('failed_count_window_start'),
+    /**
+     * Last time the password hash changed (reset or self-service change).
+     * A stateless password-reset token is single-use against this: the
+     * `/reset-password` handler rejects any token whose `iat` predates this
+     * timestamp, so a leaked/replayed link can't set a second password and
+     * a newer reset request supersedes older links. Null = never changed.
+     */
+    passwordChangedAt: timestamp('password_changed_at'),
+    /**
+     * Monotonic session/token generation. Every issued JWT embeds the value
+     * current at sign time; auth rejects a token whose `tokenVersion` is stale.
+     * Bumping this (on password change/reset) invalidates all outstanding
+     * tokens for the user — the revocation mechanism for CWE-613/620.
+     */
+    tokenVersion: integer('token_version').default(0).notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -85,11 +102,20 @@ export const users = pgTable(
     bootstrapUnique: uniqueIndex('users_is_bootstrap_unique')
       .on(t.isBootstrap)
       .where(sql`${t.isBootstrap} = true`),
+    /**
+     * Global case-insensitive email uniqueness. `users` is an
+     * identity-global table (one row per human across sites), so an email
+     * must resolve to exactly one account. This is the DB backstop behind
+     * the check-then-insert in `/auth/register`: it closes the
+     * concurrent-registration race that could otherwise mint two rows for
+     * one email.
+     */
+    emailLowerUnique: uniqueIndex('users_email_lower_unique').on(sql`lower(${t.email})`),
   }),
 );
 
 export const userSites = pgTable(
-  'user_sites',
+  'lumibase_user_sites',
   {
     userId: text('user_id')
       .notNull()
@@ -108,7 +134,7 @@ export const userSites = pgTable(
 );
 
 export const teams = pgTable(
-  'teams',
+  'lumibase_teams',
   {
     id: id(),
     siteId: text('site_id')
@@ -124,7 +150,7 @@ export const teams = pgTable(
 );
 
 export const teamMembers = pgTable(
-  'team_members',
+  'lumibase_team_members',
   {
     teamId: text('team_id')
       .notNull()
@@ -144,7 +170,7 @@ export const teamMembers = pgTable(
  * this table persists durable items (mentions, denial reasons, etc.).
  */
 export const notifications = pgTable(
-  'notifications',
+  'lumibase_notifications',
   {
     id: id(),
     siteId: text('site_id')

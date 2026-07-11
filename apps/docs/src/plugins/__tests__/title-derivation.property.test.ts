@@ -105,7 +105,10 @@ describe('Feature: lumibase-docs-viewer, Property 2: Title derivation correctnes
             minLength: 1,
             maxLength: 3,
           })
-          .map((parts) => parts.join('-')),
+          .map((parts) => parts.join('-'))
+          // `index` is a special case (titled after its directory), covered
+          // by its own test below — exclude it here.
+          .filter((filename) => filename !== 'index'),
         (dirPath, filename) => {
           const filePath = `${dirPath}/${filename}.md`;
           const result = deriveTitle(undefined, filePath);
@@ -113,6 +116,19 @@ describe('Feature: lumibase-docs-viewer, Property 2: Title derivation correctnes
           // deriveTitle uses path.basename to extract filename, so only the filename part matters
           const expected = toTitleCase(filename);
           expect(result).toBe(expected);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('should title an index.md after its parent directory, not "Index"', () => {
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^[a-z][a-z0-9-]*$/).filter((s) => s.length >= 1),
+        (dir) => {
+          const result = deriveTitle(undefined, `${dir}/index.md`);
+          expect(result).toBe(toTitleCase(dir));
         },
       ),
       { numRuns: 100 },

@@ -4,15 +4,24 @@ Tài liệu mô tả các bảng đã được khai báo trong `packages/databas
 
 Mọi bảng domain theo tenant đều có `site_id`.
 
+> **Tên bảng vật lý mang tiền tố `lumibase_`.** Mọi bảng hệ thống của LumiBase có tên
+> vật lý `lumibase_<tên>` (vd bảng logic `users` có tên vật lý `lumibase_users`), được
+> tạo bởi migration `0000_lumibase_init`. Điều này dành riêng namespace `lumibase_` cho
+> platform — bảng nào KHÔNG có tiền tố này chắc chắn do người dùng tạo (hoặc là bảng
+> materialization `mat_*`). Xem [ADR-010](./architecture/decisions/adr-010-lumibase-table-prefix.md).
+> Các heading bên dưới dùng tên logic ngắn cho dễ đọc; bảng tóm tắt liệt kê tên vật lý.
+
 Schema được tách theo domain:
 
-| File | Bảng |
+| File | Bảng (tên vật lý) |
 |------|------|
-| `core.ts` | `sites`, `users`, `user_sites`, `teams`, `team_members`, `notifications` |
-| `access.ts` | `roles`, `policies`, `role_policies`, `user_policies`, `permissions` |
-| `cms.ts` | `pages`, `collections`, `fields`, `relations`, `items`, `revisions`, `activity`, `flows`, `flow_runs`, `operations`, `materialized_collections` |
-| `platform.ts` | `folders`, `files`, `presets`, `translations`, `settings`, `webhooks`, `extensions`, `translation_memory`, `glossary` |
-| `ai.ts` | `ai_approvals`, `ai_conversations`, `ai_messages`, `ai_embeddings` |
+| `core.ts` | `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
+| `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions` |
+| `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `ai.ts` | `lumibase_ai_approvals`, `lumibase_ai_conversations`, `lumibase_ai_messages`, `lumibase_ai_embeddings`, `lumibase_agent_*` |
+| `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
+| `external-auth.ts` | `lumibase_auth_external_issuers` |
 
 Migrations đầy đủ trong `packages/database/migrations/` và `packages/database/drizzle/`.
 

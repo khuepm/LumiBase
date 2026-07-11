@@ -24,6 +24,10 @@ import { AuditLogger } from '../modules/audit/logger';
  */
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
+// Physical-namespace prefixes reserved by the platform: `lumibase_` is every
+// system table (ADR-010) and `mat_` is materialized collection tables.
+// User- and AI-created collections must never claim them.
+const RESERVED_COLLECTION_PREFIXES: ReadonlyArray<string> = ['lumibase_', 'mat_'];
 const SYSTEM_FIELD_NAMES = new Set([
   'id',
   'status',
@@ -286,6 +290,16 @@ const ensureName = (name: string, kind: 'collection' | 'field') => {
       `${kind} name must match ${NAME_PATTERN}; received "${name}".`,
     );
   }
+  if (kind === 'collection') {
+    const reserved = RESERVED_COLLECTION_PREFIXES.find((prefix) => name.startsWith(prefix));
+    if (reserved) {
+      throw new SchemaServiceError(
+        'RESERVED_NAME',
+        `Collection names starting with "${reserved}" are reserved for system tables.`,
+        422,
+      );
+    }
+  }
 };
 
 const cacheKey = (siteId: string, name: string) => `schema:${siteId}:${name}`;
@@ -346,6 +360,9 @@ export class SchemaService {
   }
 
   async updateCollection(name: string, patch: Partial<CollectionInput>) {
+    if (patch.name !== undefined && patch.name !== name) {
+      ensureName(patch.name, 'collection');
+    }
     const current = await this.getCollection(name);
     if (!current) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
@@ -794,11 +811,26 @@ export class SchemaService {
     if (input.name && input.name !== name) {
       throw new SchemaServiceError('COLLECTION_RENAME_UNSUPPORTED', 'Schema apply cannot rename collections through this endpoint yet.', 400);
     }
-    const current = await this.getCollection(name);
-    if (!current) {
-      throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
-    }
     const { fields: fieldInputs, relations: relationInputs, ...collectionPatch } = input;
+    // Atomic full-schema apply: if the collection doesn't exist yet, create it
+    // in the same transaction rather than 404ing. This lets callers PUT a full
+    // schema in one call instead of POST-then-PUT.
+    let current = await this.getCollection(name);
+    if (!current) {
+      ensureName(name, 'collection');
+      assertPrimaryKeyStorageCompatible(
+        (collectionPatch.primaryKeyType ?? 'nanoid') as PrimaryKeyType,
+        (collectionPatch.storageMode ?? 'jsonb') as StorageMode,
+      );
+      const [created] = await this.deps.db
+        .insert(collections)
+        .values({ ...collectionPatch, name, siteId: this.deps.siteId })
+        .returning();
+      if (!created) {
+        throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
+      }
+      current = created;
+    }
     assertPrimaryKeyStorageCompatible(
       (collectionPatch.primaryKeyType ?? current.primaryKeyType) as PrimaryKeyType,
       (collectionPatch.storageMode ?? current.storageMode) as StorageMode,

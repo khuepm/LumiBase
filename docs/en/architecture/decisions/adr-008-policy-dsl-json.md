@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T10:56:37.235Z
+sourceLang: en
+contentHash: c8336d583f99789d
+---
+
 # ADR-008: JSON Policy DSL for Permissions
 
 **Date:** 2024-02-15
