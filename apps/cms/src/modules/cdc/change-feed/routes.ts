@@ -42,6 +42,12 @@ import {
   type FeedPage,
 } from './feed-reader';
 import {
+  CdcDispatcher,
+  createWebhookEnvelopeSender,
+  DrizzleDeliveryLog,
+  DrizzleSubscriptionDispatchStore,
+} from './dispatcher';
+import {
   AckRegressionError,
   InvalidTransitionError,
   ReplayOutOfRetentionError,
@@ -66,7 +72,7 @@ export interface CdcFeedRouteServices {
   /** null → guard passes; a Response → returned as-is (403/401). */
   authorizeFeedRead: (c: Context<AppEnv>) => Promise<Response | null>;
   authorizeSiteAdmin: (c: Context<AppEnv>) => Promise<Response | null>;
-  /** On-demand dispatch (Req 4.7). Default 501 until Phase D lands the dispatcher. */
+  /** On-demand dispatch (Req 4.7) — the no-queue fallback path. */
   dispatchNow: (subscriptionId: string) => Promise<{ dispatched: boolean }>;
 }
 
@@ -198,13 +204,22 @@ export const defaultCdcFeedServicesFactory = (
     subscriptions,
     authorizeFeedRead,
     authorizeSiteAdmin,
-    dispatchNow: async () => {
-      throw new DispatcherUnavailableError();
+    dispatchNow: async (subscriptionId) => {
+      const db = c.get('db');
+      const siteId = c.get('siteId');
+      const dispatcher = new CdcDispatcher({
+        eventStore: new DrizzleCdcEventStore(db),
+        subscriptions: new DrizzleSubscriptionDispatchStore(db),
+        deliveryLog: new DrizzleDeliveryLog(db),
+        senders: { webhook: createWebhookEnvelopeSender(db) },
+        cache: c.get('runtime')?.cache,
+      });
+      return { dispatched: await dispatcher.dispatchSubscriptionById(siteId, subscriptionId) };
     },
   };
 };
 
-/** Phase D wires the real dispatcher; until then on-demand dispatch is 501. */
+/** Kept for tests/overrides that model a runtime without dispatch capability. */
 export class DispatcherUnavailableError extends Error {
   constructor() {
     super('On-demand dispatch is not available yet');

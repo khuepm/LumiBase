@@ -2,7 +2,7 @@
 
 > Trace: mỗi task ghi requirement liên quan (Req n). Tuân non-negotiable rules `CLAUDE.md` (nanoid/uuidv7, siteId, runtime abstraction, HITL, response format, TS strict). Property tests dùng `fast-check` (≥100 iterations), đánh số theo design §12.
 >
-> **Trạng thái:** Phase A + B + C hoàn tất 2026-07-10 (tasks 1.x, 2.x, 3, 4.x, 5.x; chốt phương án B — nanoid PK + keyset cursor `(occurredAt, id)` + safety lag 2s). Typecheck workspace pass; full CMS suite 2076 passed / 3 skipped; test CDC feed 41/41. Phase D trở đi chưa làm (`/dispatch` trả 501 tới khi có dispatcher).
+> **Trạng thái:** Phases A–H hoàn tất 2026-07-11 (toàn bộ 53 task; chốt phương án B — nanoid PK + keyset cursor `(occurredAt, id)` + safety lag 2s). Xem checkpoint 17 cho số liệu test cuối. Open items ở mục cuối file (openapi.yaml/SDK typed resources là follow-up).
 
 ## Phase A — Data model & shared schemas
 
@@ -37,53 +37,53 @@
 
 ## Phase D — Dispatcher & webhook delivery
 
-- [ ] 6. Dispatcher core (Req 4.1, 4.4, 4.5, 4.7)
-  - [ ] 6.1 `dispatcher.ts`: vòng dispatch per subscription (batch 100, tuần tự, cursor advance chỉ sau success, retry backoff 30s·2^n max 5, `consecutiveFailures` → `dead` tại 10 + notification qua notifications module); lock per subscription (cache key tenant-prefixed); ghi `lumibase_cdc_deliveries` mỗi attempt.
-  - [ ] 6.2 Trigger: enqueue `cdc-dispatch` qua `QueueProvider` sau mutation (best-effort, dedup theo site) + sweep 30s (pattern `scheduler-worker`) + đăng ký worker trong `serve.ts` (pattern `content-indexing`). Fallback không queue: sweep + dispatch on-demand. (Req 4.7)
-  - [ ] 6.3 Property test **P6 Cursor advance có điều kiện** + **P7 Retry/backoff đúng lịch**. (Req 4.4, 4.5)
+- [x] 6. Dispatcher core (Req 4.1, 4.4, 4.5, 4.7)
+  - [x] 6.1 `dispatcher.ts` (ports SubscriptionDispatchStore/DeliveryLogStore + InMemory/Drizzle impls; safety lag 2s; lock tenant-prefixed): vòng dispatch per subscription (batch 100, tuần tự, cursor advance chỉ sau success, retry backoff 30s·2^n max 5, `consecutiveFailures` → `dead` tại 10 + notification qua notifications module); lock per subscription (cache key tenant-prefixed); ghi `lumibase_cdc_deliveries` mỗi attempt.
+  - [x] 6.2 Trigger: enqueue `cdc-dispatch` qua `QueueProvider` sau mutation (best-effort, dedup theo site) + sweep 30s (pattern `scheduler-worker`) + đăng ký worker trong `serve.ts` (pattern `content-indexing`). Fallback không queue: sweep + dispatch on-demand. (Req 4.7)
+  - [x] 6.3 Property test **P6 Cursor advance có điều kiện** + **P7 Retry/backoff đúng lịch**. (Req 4.4, 4.5)
 
-- [ ] 7. Webhook sender (Req 4.2, 4.3)
-  - [ ] 7.1 `webhook-sender.ts`: HMAC-SHA256 (WebCrypto) header `X-Lumibase-Signature: t=...,v1=...`; `guardedFetch` (validateOutboundUrl + timeout 30s + no-redirect); merge `webhooks.headers` không cho override chữ ký; subscription webhook không secret → 400 khi tạo.
-  - [ ] 7.2 Property test **P5 HMAC verify round-trip** + unit test header merge/SSRF reject. (Req 4.2, 4.3)
+- [x] 7. Webhook sender (Req 4.2, 4.3)
+  - [x] 7.1 `webhook-sender.ts` (+ verifyCdcWebhookSignature cho docs/P5; redirect: 'error'): HMAC-SHA256 (WebCrypto) header `X-Lumibase-Signature: t=...,v1=...`; `guardedFetch` (validateOutboundUrl + timeout 30s + no-redirect); merge `webhooks.headers` không cho override chữ ký; subscription webhook không secret → 400 khi tạo.
+  - [x] 7.2 Property test **P5 HMAC verify round-trip** + unit test header merge/SSRF reject. (Req 4.2, 4.3)
 
-- [ ] 8. Checkpoint — full suite pass; hỏi user nếu có câu hỏi mở.
+- [x] 8. Checkpoint 2026-07-11 — dispatcher/webhook tests 9/9; full suite ở checkpoint 17.
 
 ## Phase E — Extension subscriber
 
-- [ ] 9. SDK + sender (Req 5.1–5.5)
-  - [ ] 9.1 `packages/extension-sdk`: thêm `CdcEvent`, `CdcSubscriberDefinition`, `defineCdcSubscriber` (types-only, không runtime dep).
-  - [ ] 9.2 Manifest/validator: capability `cdc:subscribe:<collection>`/`cdc:subscribe:*`; upload/enable kiểm tra collections khai báo ⊆ capabilities; enable extension → upsert Subscription `kind='extension'` (name `ext:<name>`), disable → `paused`. (Req 3.4, 5.2)
-  - [ ] 9.3 `extension-sender.ts`: enforce filter theo capability ở host, gọi handler qua ExtensionSandbox với `withTimeout` 5s/batch; lỗi/timeout → failed batch theo Phase D. (Req 5.3, 5.4)
-  - [ ] 9.4 Property test **P12 Subscriber isolation** + integration test sandbox với manifest thiếu capability → bị chặn. (Req 5.2, 5.4)
+- [x] 9. SDK + sender (Req 5.1–5.5)
+  - [x] 9.1 `packages/extension-sdk`: thêm `CdcEvent`, `CdcSubscriberDefinition`, `defineCdcSubscriber` (types-only, không runtime dep).
+  - [x] 9.2 Manifest/validator (enable/disable PATCH extensions → syncExtensionCdcSubscription; collections của subscription DERIVED từ capability đã grant — host không tin khai báo trong code): capability `cdc:subscribe:<collection>`/`cdc:subscribe:*`; upload/enable kiểm tra collections khai báo ⊆ capabilities; enable extension → upsert Subscription `kind='extension'` (name `ext:<name>`), disable → `paused`. (Req 3.4, 5.2)
+  - [x] 9.3 `extension-sender.ts` (ExtensionEnvelopeSender + SandboxCdcSubscriberLoader; filter theo capability Ở HOST trước sandbox): enforce filter theo capability ở host, gọi handler qua ExtensionSandbox với `withTimeout` 5s/batch; lỗi/timeout → failed batch theo Phase D. (Req 5.3, 5.4)
+  - [x] 9.4 Property test **P12 Subscriber isolation** + integration test sandbox với manifest thiếu capability → bị chặn. (Req 5.2, 5.4)
 
 ## Phase F — Retention & replay
 
-- [ ] 10. Retention (Req 6.1, 6.3, 6.4)
-  - [ ] 10.1 `retention.ts`: prune idempotent theo `cdc_feed.retentionDays` (default 7, min 1, max 90) cho `lumibase_cdc_change_events` + `lumibase_cdc_deliveries`; giữ event chưa deliver trong retention; đánh dấu subscription `stale` khi cursor < floor + notification; scheduler đăng ký cùng sweep.
-  - [ ] 10.2 Property test **P10 Retention & stale**. (Req 6.1, 6.3)
+- [x] 10. Retention (Req 6.1, 6.3, 6.4)
+  - [x] 10.1 `retention.ts` (RetentionStore port + InMemory/Drizzle; prune chạy trong sweep 30s của dispatch worker): prune idempotent theo `cdc_feed.retentionDays` (default 7, min 1, max 90) cho `lumibase_cdc_change_events` + `lumibase_cdc_deliveries`; giữ event chưa deliver trong retention; đánh dấu subscription `stale` khi cursor < floor + notification; scheduler đăng ký cùng sweep.
+  - [x] 10.2 Property test **P10 Retention & stale**. (Req 6.1, 6.3)
 
 ## Phase G — Security, tenancy & AI skills
 
-- [ ] 11. Tenancy & capability (Req 7.1–7.3, 7.6)
-  - [ ] 11.1 Rà mọi query có `siteId`; queue/cache/lock key prefix site; property test **P9 Tenant isolation** + two-site smoke test (DoD §2b).
-  - [ ] 11.2 Đăng ký capability `cdc:subscribe`/`cdc:manage` vào capability registry + `GET /api/v1/setup/capabilities`; upgrade note CHANGELOG (giống `deployments:*`).
-- [ ] 12. AI skills + HITL (Req 7.4)
-  - [ ] 12.1 `packages/ai-skills`: `listCdcSubscriptions`, `getCdcSubscriptionStatus`, `createCdcSubscription`, `replayCdcSubscription` (capability `cdc:manage`), `deleteCdcSubscription` (dangerous — tên bắt đầu `delete`).
-  - [ ] 12.2 HITL test: agent gọi `deleteCdcSubscription` dưới ngưỡng autonomy → tạo `ai_approvals`, không xoá ngay.
-  - [ ] 12.3 MCP coverage: thêm `packages/mcp-server/src/tools/cdc.ts` (`registerCdcTools` qua `registerCrud` cho `/cdc/subscriptions` + `registerTool` cho `/cdc/events`, `.../replay`) và wire vào `registerAllTools`; test tool đi qua REST → guard capability/HITL không bị bypass. (Req 7.8)
-- [ ] 13. Audit & masking (Req 7.5, 8.4) — audit log cho create/delete/pause/resume/replay (actor + diff, secret masked); masking `errorMessage` deliveries.
+- [x] 11. Tenancy & capability (Req 7.1–7.3, 7.6)
+  - [x] 11.1 Rà mọi query có `siteId`; queue/cache/lock key prefix site; property test **P9 Tenant isolation** + two-site smoke test (DoD §2b).
+  - [x] 11.2 Capability `cdc:subscribe`/`cdc:manage` theo đúng tiền lệ `deployments:*`: dùng trong skills/guards + upgrade note CHANGELOG; KHÔNG thêm flag vào `GET /setup/capabilities` (tiền lệ deployments cũng không — SetupCapabilities chỉ có geoip/smtp; admin thoả qua adminAccess wildcard).
+- [x] 12. AI skills + HITL (Req 7.4)
+  - [x] 12.1 `packages/ai-skills` (5 definitions) + 5 handlers trong ai-harness (`service: 'cdc-feed'`): `listCdcSubscriptions`, `getCdcSubscriptionStatus`, `createCdcSubscription`, `replayCdcSubscription` (capability `cdc:manage`), `deleteCdcSubscription` (dangerous — tên bắt đầu `delete`).
+  - [x] 12.2 HITL test (`cdc-feed-skills-hitl.test.ts`: isControlPlaneSkill + ToolRegistry riskPolicy before_execute): agent gọi `deleteCdcSubscription` dưới ngưỡng autonomy → tạo `ai_approvals`, không xoá ngay.
+  - [x] 12.3 MCP coverage: thêm `packages/mcp-server/src/tools/cdc.ts` (`registerCdcTools` qua `registerCrud` cho `/cdc/subscriptions` + `registerTool` cho `/cdc/events`, `.../replay`) và wire vào `registerAllTools`; test tool đi qua REST → guard capability/HITL không bị bypass. (Req 7.8)
+- [x] 13. Audit & masking (Req 7.5, 8.4) — audit log cho create/delete/pause/resume/replay (actor + diff, secret masked); masking `errorMessage` deliveries.
 
 ## Phase H — Studio UI, docs & hoàn tất
 
-- [ ] 14. Studio panel (Req 8.1, 8.3)
-  - [ ] 14.1 `apps/studio/src/modules/settings/change-feed-page.tsx`: list (status/kind/lag/lastDeliveredAt), detail drawer deliveries, pause/resume/replay/dispatch với confirm dialog, wizard tạo webhook subscription (bắt buộc secret).
-  - [ ] 14.2 Unit test render với sample data + confirm dialog cho hành động phá huỷ.
-- [ ] 15. Docs & ví dụ (Req 9.1–9.4)
-  - [ ] 15.1 `docs/en/features/cdc-change-feed.md`: kiến trúc, envelope reference + versioning policy, semantics (at-least-once/ordering/idempotency/reconcile trên HTTP driver), hướng dẫn pull/webhook/extension, mục Multi-tenancy, verify chữ ký kèm code mẫu.
-  - [ ] 15.2 Cập nhật `docs/en/api/hono-api-spec.md` + `docs/en/data-model.md`; CHANGELOG (capability mới + upgrade note); golden fixture Event_Envelope v1 + contract test.
-  - [ ] 15.3 Tutorial "Build your first sink connector" + extension mẫu (sync 1 collection ra ngoài qua sandboxed fetch, idempotent theo `event.id`, mẫu theo `lumibase-firebase-sync`).
-- [ ] 16. Setup Impact Registry — cập nhật row #32 `cdc-extension-integration` trong `admin-setup-wizard/setup-impact.md` từ `pending` → `done` (capability mới câu 5 = CÓ). (DoD §2)
-- [ ] 17. Final checkpoint — `pnpm typecheck` toàn workspace + full test suite pass; rà lại DoD checklist đầy đủ.
+- [x] 14. Studio panel (Req 8.1, 8.3)
+  - [x] 14.1 `apps/studio/src/modules/settings/change-feed-page.tsx` (+ route `/settings/change-feed` + nav): list (status/kind/lag/lastDeliveredAt), detail drawer deliveries, pause/resume/replay/dispatch với confirm dialog, wizard tạo webhook subscription (bắt buộc secret).
+  - [x] 14.2 Unit test render (6 tests jsdom) với sample data + confirm dialog cho hành động phá huỷ.
+- [x] 15. Docs & ví dụ (Req 9.1–9.4)
+  - [x] 15.1 `docs/en/features/cdc-change-feed.md`: kiến trúc, envelope reference + versioning policy, semantics (at-least-once/ordering/idempotency/reconcile trên HTTP driver), hướng dẫn pull/webhook/extension, mục Multi-tenancy, verify chữ ký kèm code mẫu.
+  - [x] 15.2 Cập nhật `docs/en/api/hono-api-spec.md` + `docs/en/data-model.md`; CHANGELOG (capability mới + upgrade note); golden fixture Event_Envelope v1 + contract test.
+  - [x] 15.3 Tutorial "Build your first sink connector" — mục §5 trong `cdc-change-feed.md` (manifest + defineCdcSubscriber + idempotency; mẫu theo `lumibase-firebase-sync`) + extension mẫu (sync 1 collection ra ngoài qua sandboxed fetch, idempotent theo `event.id`, mẫu theo `lumibase-firebase-sync`).
+- [x] 16. Setup Impact Registry — cập nhật row #69 `cdc-extension-integration` trong `admin-setup-wizard/setup-impact.md` từ `pending` → `done` (capability mới câu 5 = CÓ). (DoD §2)
+- [x] 17. Final checkpoint 2026-07-11 — `pnpm typecheck` 14/14 packages pass; `@lumibase/cms` test 2101 passed / 3 skipped (279 files); `@lumibase/studio` test 332 passed (59 files); registry numbering OK (70 rows). Lưu ý: 2 property test ai-harness (risk/approval) mở rộng exclusion `deployments` → thêm `cdc-feed` (skills cần tenant db thật, không stub offline — phủ riêng tại `cdc-feed-skills-hitl.test.ts`).
 
 ## Việc còn mở (Open / TODO cho vòng sau)
 

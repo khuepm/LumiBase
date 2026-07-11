@@ -204,6 +204,11 @@ export class SubscriptionService {
       })
       .returning();
     await invalidateFeedFlagCache(this.deps.cache, this.deps.siteId);
+    await this.deps.audit?.('cdc_subscription_created', {
+      subscriptionId: row!.id,
+      name: input.name,
+      kind: input.kind,
+    });
     return this.toRecord(row!);
   }
 
@@ -252,15 +257,28 @@ export class SubscriptionService {
       .where(and(eq(cdcSubscriptions.siteId, this.deps.siteId), eq(cdcSubscriptions.id, id)))
       .returning();
     await invalidateFeedFlagCache(this.deps.cache, this.deps.siteId);
+    if (input.status && input.status !== row.status) {
+      await this.deps.audit?.('cdc_subscription_status_changed', {
+        subscriptionId: id,
+        name: row.name,
+        from: row.status,
+        to: input.status,
+      });
+    }
     return this.toRecord(updated!);
   }
 
   async remove(id: string): Promise<void> {
-    await this.getRow(id);
+    const row = await this.getRow(id);
     await this.deps.db
       .delete(cdcSubscriptions)
       .where(and(eq(cdcSubscriptions.siteId, this.deps.siteId), eq(cdcSubscriptions.id, id)));
     await invalidateFeedFlagCache(this.deps.cache, this.deps.siteId);
+    await this.deps.audit?.('cdc_subscription_deleted', {
+      subscriptionId: id,
+      name: row.name,
+      kind: row.kind,
+    });
   }
 
   /** Pull-consumer checkpoint commit — forward-only (Req 3.3, property P11). */

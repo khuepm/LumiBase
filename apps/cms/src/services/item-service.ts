@@ -48,6 +48,7 @@ import {
   OutboxWriter,
   type OutboxActor,
 } from '../modules/cdc/change-feed/outbox-writer';
+import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
 import type { CdcOperation } from '@lumibase/shared/schemas';
 import { AuditLogger } from '../modules/audit/logger';
 import { FirebaseSyncService } from '../modules/lumibase-firebase-sync';
@@ -597,11 +598,18 @@ export class ItemService {
         : actor.type === 'system'
           ? ('system' as const)
           : ('api' as const);
-    await this.outboxWriter.write(
+    const result = await this.outboxWriter.write(
       { collection, itemId, operation, payload, changedFields },
       actor,
       source,
     );
+    if (result.written && this.deps.queue) {
+      // Latency optimization only — the 30s sweep is the correctness backstop
+      // (Req 4.7), so a lost enqueue is harmless.
+      this.deps.queue
+        .enqueue(CDC_DISPATCH_QUEUE, 'dispatch', { siteId: this.deps.siteId })
+        .catch(() => {});
+    }
   }
 
   private actorDataAccess(): ExtensionActorDataAccess {
