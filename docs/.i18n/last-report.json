@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-07-12T06:35:19.140Z",
-  "mode": "apply",
-  "effectiveMode": "preserve-only",
+  "generatedAt": "2026-07-12T19:36:49.180Z",
+  "mode": "plan",
+  "effectiveMode": "plan",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
     "preserved": 0,
-    "conflicts": 1,
-    "upToDate": 44,
-    "planned": 92
+    "conflicts": 0,
+    "upToDate": 45,
+    "planned": 93
   },
   "actions": [
     {
@@ -781,6 +781,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "deployment/multi-tenant-topologies.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "deployment/overview.md",
       "type": "translate",
       "reason": "source changed since last sync",
@@ -1305,7 +1317,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-12T06-35-19-280Z.bak.md",
+      "preservedTo": null,
       "missingPlaceholders": 0
     },
     {
