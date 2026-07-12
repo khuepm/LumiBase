@@ -28,6 +28,7 @@ import {
 } from '@lumibase/database';
 import { type ItemService, ItemServiceError } from './item-service';
 import { itemServiceForSystem } from './item-service-factory';
+import { AuditLogger } from '../modules/audit/logger';
 
 export type ReleaseStatus = 'draft' | 'scheduled' | 'published' | 'failed' | 'partially_failed';
 export type AtomicityMode = 'all_or_nothing' | 'best_effort';
@@ -458,6 +459,28 @@ function errCode(err: unknown): string {
   return 'PUBLISH_ERROR';
 }
 
+/** Audit event name for a publish result (Req 12.1-12.3) — shared by the
+ * manual route and the scheduled sweep so the vocabulary can never drift. */
+export function releaseAuditEvent(status: ReleaseStatus): string {
+  if (status === 'published') return 'release_published';
+  if (status === 'partially_failed') return 'release_partially_published';
+  return 'release_publish_failed';
+}
+
+/** Audit metadata for a publish result (Req 12.4 — counts/ids only, never item content). */
+export function releaseAuditMetadata(
+  releaseId: string,
+  trigger: PublishTrigger,
+  outcomes: PublishOutcome[],
+): Record<string, unknown> {
+  return {
+    releaseId,
+    trigger,
+    itemCount: outcomes.length,
+    failedCount: outcomes.filter((o) => o.outcome === 'failed').length,
+  };
+}
+
 function decideStatus(outcomes: PublishOutcome[]): ReleaseStatus {
   const failed = outcomes.filter((o) => o.outcome === 'failed').length;
   const published = outcomes.filter((o) => o.outcome === 'published').length;
@@ -495,8 +518,15 @@ export async function sweepDueReleases(
     if (!withinMaintenanceWindow(row.maintenanceWindow, now)) continue;
     const publish =
       publishFn ??
-      ((siteId: string, releaseId: string) =>
-        new ReleaseService({ db: deps.db, siteId }).publish(releaseId, { trigger: 'scheduled' }).then(() => undefined));
+      (async (siteId: string, releaseId: string) => {
+        const result = await new ReleaseService({ db: deps.db, siteId }).publish(releaseId, { trigger: 'scheduled' });
+        // Audit (Req 12) — same vocabulary as the manual route; the logger
+        // never throws, so a failed audit write cannot fail the sweep.
+        await new AuditLogger({ db: deps.db, siteId }).write({
+          event: releaseAuditEvent(result.status),
+          metadata: releaseAuditMetadata(releaseId, 'scheduled', result.outcomes),
+        });
+      });
     try {
       await publish(row.siteId, row.id);
       count++;

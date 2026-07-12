@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-07-11T03:49:19.531Z",
-  "mode": "plan",
-  "effectiveMode": "plan",
+  "generatedAt": "2026-07-12T06:35:19.140Z",
+  "mode": "apply",
+  "effectiveMode": "preserve-only",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
     "preserved": 0,
-    "conflicts": 0,
-    "upToDate": 47,
-    "planned": 86
+    "conflicts": 1,
+    "upToDate": 44,
+    "planned": 92
   },
   "actions": [
     {
@@ -38,13 +38,13 @@
     },
     {
       "rel": "agent-setup/claude-code.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -86,13 +86,13 @@
     },
     {
       "rel": "agent-setup/index.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -901,6 +901,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/cdc-change-feed.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/cloudflare-auth.md",
       "type": "translate",
       "reason": "en duplicates vi content; replace en with English translation",
@@ -945,6 +957,18 @@
       "sourceLocale": "en",
       "targetLocale": "vi",
       "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/data-import.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1041,6 +1065,18 @@
       "sourceLocale": "vi",
       "targetLocale": "en",
       "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/git-integration.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1269,7 +1305,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": null,
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-12T06-35-19-280Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1286,13 +1322,13 @@
     },
     {
       "rel": "getting-started.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1389,6 +1425,18 @@
       "sourceLocale": "vi",
       "targetLocale": "en",
       "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "roadmap/git-integration.md",
+      "type": "translate",
+      "reason": "en duplicates vi content; replace en with English translation",
+      "enLang": "vi",
+      "viLang": "vi",
+      "sourceLocale": "vi",
+      "targetLocale": "en",
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },

@@ -223,4 +223,76 @@ describe('SchemaService schema apply', () => {
       affectedCollections: ['authors', 'categories', 'posts', 'posts_categories'],
     });
   });
+
+  it('creates the collection when it does not exist yet (atomic full-schema apply)', async () => {
+    const calls: string[] = [];
+    let inserted: Record<string, unknown> | null = null;
+    let transactions = 0;
+
+    const db = {
+      insert: () => ({
+        values: (values: Record<string, unknown>) => {
+          inserted = values;
+          return {
+            returning: async () => [{ ...collection, ...values, id: 'collection-notes', name: values.name }],
+          };
+        },
+      }),
+      update: () => ({
+        set: () => ({
+          where: () => ({
+            returning: async () => [{ ...collection, id: 'collection-notes', name: 'notes', label: 'Notes' }],
+          }),
+        }),
+      }),
+      transaction: async (callback: (tx: unknown) => Promise<unknown>) => {
+        transactions += 1;
+        return callback(db);
+      },
+    };
+
+    const service = new SchemaService({
+      db: db as never,
+      siteId: 'site-1',
+      cache: { get: vi.fn(), set: vi.fn(), delete: vi.fn(), increment: vi.fn(async () => 1) },
+      events: { emit: vi.fn() },
+    });
+
+    // Collection missing → the apply path must create it instead of 404ing.
+    vi.spyOn(service, 'getCollection').mockResolvedValue(null as never);
+    vi.spyOn(service, 'listFields').mockResolvedValue([] as never);
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'listRelationsForCollection').mockResolvedValue([] as never);
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'countFieldDataRows').mockResolvedValue(0);
+    vi.spyOn(service, 'upsertField').mockImplementation(async (_collectionName, field) => {
+      calls.push(`upsert-field:${field.name}`);
+      return field as never;
+    });
+
+    const result = await service.updateSchema('notes', {
+      label: 'Notes',
+      fields: [{ name: 'body', type: 'text', interface: 'textarea' }],
+    });
+
+    expect(transactions).toBe(1);
+    // Inserted with the URL-param name and the request's site id.
+    expect(inserted).toMatchObject({ name: 'notes', siteId: 'site-1', label: 'Notes' });
+    // New fields are applied after creation.
+    expect(calls).toEqual(['upsert-field:body']);
+    // A fresh collection reports all its fields as additions.
+    expect(result.diff.fields.added).toEqual([expect.objectContaining({ name: 'body' })]);
+    expect(result.collection.name).toBe('notes');
+  });
+
+  it('rejects a reserved collection name on the create path', async () => {
+    const db = {
+      insert: () => ({ values: () => ({ returning: async () => [] }) }),
+      transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback(db),
+    };
+    const service = new SchemaService({ db: db as never, siteId: 'site-1' });
+    vi.spyOn(service, 'getCollection').mockResolvedValue(null as never);
+
+    await expect(
+      service.updateSchema('lumibase_secret', { fields: [] }),
+    ).rejects.toMatchObject({ code: 'RESERVED_NAME', status: 422 });
+  });
 });

@@ -725,19 +725,26 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 
 **Endpoint:** `wss://api.<your-site>.lumibase.dev/api/v1/realtime`
 
-**Auth:** Pass token in query string or first message:
+**Auth (ticket exchange):** browsers cannot send `Authorization` on the WS
+handshake, so exchange the session for a short-lived (1 min) ticket first:
+`POST /api/v1/realtime/ticket` (studio) or `POST /api/v1/realtime/audience-ticket`
+(end-user), then connect:
 ```
-wss://...realtime?token=<access_token>&site=<siteId>
+wss://...realtime?ticket=<ticket>
+```
+The studio ticket embeds the collections the principal can `read`; the hub
+rejects any other `subscribe` with `{ "type": "error", "code": "SUBSCRIBE_FORBIDDEN" }`.
+
+**Subscribe to collection** (optional Directus-style `filter`, evaluated
+server-side over the event envelope `collection`/`action`/`itemId`):
+```json
+{ "type": "subscribe", "collection": "articles", "filter": { "action": { "_eq": "delete" } } }
 ```
 
-**Subscribe to collection:**
+**Server event** — signal-only: no row data on the wire (clients re-fetch via
+`/items`, which enforces RBAC + field masking):
 ```json
-{ "type": "subscribe", "collection": "articles", "query": { "filter": { "status": { "_eq": "published" } } } }
-```
-
-**Server event:**
-```json
-{ "type": "event", "collection": "articles", "event": "update", "data": { "id": "art_001", "title": "Updated title" } }
+{ "type": "event", "collection": "articles", "action": "update", "itemId": "art_001", "payload": null }
 ```
 
 **Server notification frame** (push-noti feature) — broadcast to every session
@@ -1045,6 +1052,45 @@ collection whitelist returns `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
 
 ---
 
+## 12c. Git Integration (GitHub / GitLab)
+
+Per-site connections to source repositories: track pull requests + CI, view/store
+CI logs, post a content-validation status back, reconcile declarative intents
+(GitOps), and run auto preview environments. Authenticated routes require site
+admin and `ENCRYPTION_KEY` (tokens are stored encrypted, never returned).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/integrations/git` | List integrations for the site |
+| `POST` | `/api/v1/integrations/git` | Create `{ provider (github\|gitlab), repoFullName, displayName, authMethod (app\|pat), token?, installationId? }` → 409 on duplicate `(provider, repo)` |
+| `GET` | `/api/v1/integrations/git/:id` | Get one |
+| `PATCH` | `/api/v1/integrations/git/:id` | Update display name / token / status / sync config |
+| `DELETE` | `/api/v1/integrations/git/:id` | Disconnect (forgets token) |
+| `POST` | `/api/v1/integrations/git/:id/rotate-secret` | Rotate the webhook secret |
+| `GET` | `/api/v1/integrations/git/:id/oauth/authorize` | Returns `{ authorizeUrl }` (single-use cache state) |
+| `GET` | `/api/v1/integrations/git/:id/pull-requests` | List cached PRs |
+| `POST` | `/api/v1/integrations/git/:id/pull-requests/refresh` | Pull PRs live from the provider (upsert cache) |
+| `GET` | `/api/v1/integrations/git/:id/pull-requests/:number/ci` | CI runs for the integration |
+| `POST` | `/api/v1/integrations/git/:id/pull-requests/:number/validate` | Validate config + post `lumibase/content-validation` commit status |
+| `GET` | `/api/v1/integrations/git/:id/ci-runs/:runId/logs` | Fetch + cache CI log (blob storage) |
+| `POST` | `/api/v1/integrations/git/:id/gitops/sync` | Reconcile `lumibase/intents.json` into content intents (+ drift scan/reconcile) |
+| `GET` | `/api/v1/integrations/git/:id/provenance` | Provenance `?collection=&itemId=` — which commit/PR changed an item |
+
+Public (no session; signature-verified or single-use state):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/integrations/git/oauth/:provider/callback` | OAuth code → token exchange (bound to cache state) |
+| `POST` | `/api/v1/integrations/git/webhook/:provider/:siteId/:integrationId` | Webhook receiver — GitHub HMAC-SHA256 (`X-Hub-Signature-256`) / GitLab token (`X-Gitlab-Token`); idempotent by delivery id |
+
+Preview environments are opt-in per integration (`sync_config.preview = true`):
+on PR open/sync LumiBase seeds an ephemeral site (`${siteId}__pr-${number}`)
+served at `/api/v1/deliver/page/${ephemeralSiteId}/...`; on close/merge it is
+torn down. CI failure records an `agent_incident` (role `git-sync`) + a
+`git_ci_failed` audit entry.
+
+---
+
 ## 13. Delivery (Public)
 
 No `Authorization` header needed. Permission applied via `public` role.
@@ -1130,3 +1176,20 @@ X-RateLimit-Reset: 1749254460
 Breaking changes get a new path prefix (`/api/v2`). The previous version is maintained for at least 12 months.
 
 Send `X-Lumi-API-Version: 1` to pin to a specific API version. Default is the latest stable.
+
+
+## Change Feed (`/api/v1/cdc` — spec cdc-extension-integration)
+
+Mounted on the authenticated `api` app BEFORE the ClickHouse CDC control-plane router. Frontend-realm tokens are rejected on every route (ADR-011).
+
+| Method | Path | Guard | Description |
+|---|---|---|---|
+| GET | `/cdc/events` | capability `cdc:subscribe` (admin implies) | Keyset-paginated change events. Query: `cursor`, `collections` (CSV), `operations` (CSV), `limit` (≤500), `wait` (long-poll seconds ≤25 — holds an empty first read until an event arrives). Returns `{ data, meta: { nextCursor, hasMore } }`. Envelope `type` is `<resource>.<operation>` (`items.*` content, `collections.*`/`fields.*` schema). 400 malformed cursor; 410 `CURSOR_EXPIRED` + `earliestCursor` past retention. |
+| GET/POST | `/cdc/subscriptions` | site admin | List (with per-subscription lag) / create (max 50 per site → 403; duplicate name → 409; `kind=webhook` requires a webhook **with a secret** → 400). |
+| GET/PATCH/DELETE | `/cdc/subscriptions/:id` | site admin | Detail / update filters + pause/resume (invalid transition → 409) / delete (audited). |
+| POST | `/cdc/subscriptions/:id/ack` | capability `cdc:subscribe` | Commit a pull checkpoint. Forward-only — rewind → 409 `ACK_REGRESSION`. |
+| POST | `/cdc/subscriptions/:id/replay` | site admin | Rewind inside retention (`{cursor}` xor `{occurred_after}`); resets dead/stale → active. Audited. |
+| POST | `/cdc/subscriptions/:id/dispatch` | site admin | On-demand dispatch (no-queue fallback). 202. |
+| GET | `/cdc/subscriptions/:id/deliveries` | site admin | Delivery-attempt history, newest first (`limit`, `page`; `meta.total`). |
+
+Webhook deliveries are signed: `X-Lumibase-Signature: t=<unix>,v1=<hmac_sha256_hex>` over `` `${t}.${rawBody}` `` — see `docs/en/features/cdc-change-feed.md` for the verify snippet and envelope reference.

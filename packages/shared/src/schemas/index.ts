@@ -12,6 +12,44 @@ export {
 } from './cdc';
 
 export {
+  CDC_FEED_SCHEMA_VERSION,
+  CDC_RESOURCE_TYPE_PREFIX,
+  cdcEventType,
+  CdcOperationSchema,
+  CdcResourceSchema,
+  CdcActorTypeSchema,
+  CdcSourceSchema,
+  CdcPayloadModeSchema,
+  CdcSubscriptionKindSchema,
+  CdcSubscriptionStatusSchema,
+  CdcCursorTokenSchema,
+  encodeCdcCursor,
+  decodeCdcCursor,
+  EventEnvelopeSchema,
+  CdcSubscriptionCreateSchema,
+  CdcSubscriptionPatchSchema,
+  CdcAckSchema,
+  CdcReplaySchema,
+  CdcFeedQuerySchema,
+  CdcFeedSettingsSchema,
+  type CdcCursor,
+  type CdcOperation,
+  type CdcResource,
+  type CdcActorType,
+  type CdcSource,
+  type CdcPayloadMode,
+  type CdcSubscriptionKind,
+  type CdcSubscriptionStatus,
+  type CdcEventEnvelope,
+  type CdcSubscriptionCreateInput,
+  type CdcSubscriptionPatchInput,
+  type CdcAckInput,
+  type CdcReplayInput,
+  type CdcFeedQuery,
+  type CdcFeedSettings,
+} from './cdc-feed';
+
+export {
   CONSENT_TYPES,
   ConsentTypeSchema,
   ConsentSetSchema,
@@ -125,6 +163,23 @@ export {
 } from './upload-policy';
 
 export { TM_DEFAULT_THRESHOLD } from './translation';
+
+export {
+  GIT_PROVIDERS,
+  GIT_AUTH_METHODS,
+  GitProviderSchema,
+  GitAuthMethodSchema,
+  GitIntegrationCreateSchema,
+  GitIntegrationUpdateSchema,
+  type GitProviderName,
+  type GitAuthMethod,
+  type GitIntegrationCreateInput,
+  type GitIntegrationUpdateInput,
+  type GitIntegrationResource,
+  type PullRequestResource,
+  type CiJob,
+  type CiRunResource,
+} from './git-integration';
 
 export { diffFields, type Change, type ChangeState } from './diff';
 

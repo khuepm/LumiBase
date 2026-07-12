@@ -2,10 +2,16 @@
 version: 1
 lastUpdated: 2026-06-23T09:48:37.000Z
 sourceLang: vi
-contentHash: edbefcc42100e9b8
+contentHash: 56a6f2279ce458d8
 ---
 
 # Email Service
+
+> **Tình trạng khả dụng:** Module email HTTP đầy đủ mô tả ở đây — templates,
+> layouts, preview, và `POST /api/v1/email/send` — có trong các image CMS gần
+> đây. Image cũ hơn (được báo cáo khoảng `0.5.0`) chỉ có kênh
+> security-notification nội bộ và **không** expose các route `/api/v1/email/*`;
+> hãy kiểm tra version image đang deploy nếu `/email/send` trả `404`.
 
 > Mục tiêu: cung cấp một **dịch vụ gửi email dùng chung** ở tầng core, có template/layout store, để Studio và các extension đều dùng được — hoặc cấu hình hoàn toàn bằng env nếu không cần UI.
 

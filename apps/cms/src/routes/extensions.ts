@@ -255,6 +255,27 @@ extensionsRouter.patch('/:id', adminOnly, async (c) => {
     new ExtensionSandbox(c.env as unknown as Record<string, unknown>).evict(row.name);
   }
 
+  // Change Feed (Req 3.4): enabling a hook extension with cdc:subscribe:*
+  // capabilities upserts its `ext:<name>` subscription; disabling pauses it.
+  // Best-effort — a sync failure must not fail the admin's enable/disable.
+  try {
+    const { syncExtensionCdcSubscription } = await import(
+      '../modules/cdc/change-feed/extension-sender'
+    );
+    await syncExtensionCdcSubscription(
+      db,
+      siteId,
+      {
+        name: row.name,
+        type: row.type,
+        enabled: row.enabled,
+        capabilities: (row.capabilities as string[]) ?? [],
+      },
+      c.get('runtime')?.cache,
+    );
+  } catch (err) {
+    console.error('[extensions] cdc subscription sync failed:', err instanceof Error ? err.message : err);
+  }
   return c.json({ data: row });
 });
 

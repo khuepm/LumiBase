@@ -71,6 +71,18 @@ export interface VerifierDeps {
 
 const FORBIDDEN_ALGS = new Set(['none', 'HS256', 'HS384', 'HS512']);
 
+/**
+ * DoS guards (T7). An external bearer is attacker-controlled up to the point it
+ * is verified, so bound the parse/normalize work before doing any of it:
+ *  - `MAX_TOKEN_CHARS` caps the compact JWS length (and therefore the decoded
+ *    payload, which is a substring). External is the first JWT-parsing branch,
+ *    so an oversized bearer is rejected before the custom-JWT parser sees it too.
+ *  - `MAX_ROLE_CLAIMS` caps how many role strings the mapper/DB resolver walks,
+ *    so a token carrying thousands of roles can't amplify into a large query.
+ */
+const MAX_TOKEN_CHARS = 8192;
+const MAX_ROLE_CLAIMS = 50;
+
 /** Read a (possibly dotted) claim path from the payload. */
 function readClaim(payload: JWTPayload, path: string): unknown {
   if (path in payload) return (payload as Record<string, unknown>)[path];
@@ -102,6 +114,12 @@ export function normalizeRoles(value: unknown): string[] {
  * the skip-vs-reject contract.
  */
 export async function verifyExternalJwt(token: string, deps: VerifierDeps): Promise<VerifyOutcome> {
+  // 0. DoS guard: reject an oversized bearer before parsing it (fail-closed for
+  // the whole bearer path — external is tried before the custom-JWT parser).
+  if (token.length > MAX_TOKEN_CHARS) {
+    return { kind: 'rejected', status: 401, code: 'TOKEN_TOO_LARGE', reason: `Token exceeds ${MAX_TOKEN_CHARS} characters.` };
+  }
+
   // 1. Decode UNVERIFIED to read iss/alg only (nothing is trusted yet).
   let unverified: JWTPayload;
   let header: { alg?: string };
@@ -150,8 +168,10 @@ export async function verifyExternalJwt(token: string, deps: VerifierDeps): Prom
     }
   }
 
-  // 6. Map external roles → LumiBase role ids (default-deny).
-  const rawRoles = normalizeRoles(readClaim(payload, config.claimMapping.roles));
+  // 6. Map external roles → LumiBase role ids (default-deny). Cap the claim
+  // count so a token with a pathologically long role list can't amplify the
+  // mapping/DB resolution work (T7).
+  const rawRoles = normalizeRoles(readClaim(payload, config.claimMapping.roles)).slice(0, MAX_ROLE_CLAIMS);
   let roleIds = await deps.resolveRoleIds(rawRoles, config);
   if (roleIds.length === 0 && config.defaultRoleId) {
     roleIds = [config.defaultRoleId];

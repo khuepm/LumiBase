@@ -180,6 +180,75 @@ describe('verifyExternalJwt — reject path (fail-closed, Req 7.3)', () => {
   });
 });
 
+describe('verifyExternalJwt — DoS guards (Req 11.7 / T7)', () => {
+  it('rejects an oversized token before parsing it', async () => {
+    const { issuer, publicKey, privateKey } = await makeIssuer();
+    const token = await sign(privateKey, { pad: 'x'.repeat(9000) });
+    expect(token.length).toBeGreaterThan(8192);
+    const out = await verifyExternalJwt(token, deps(issuer, publicKey));
+    expect(out.kind).toBe('rejected');
+    if (out.kind === 'rejected') {
+      expect(out.code).toBe('TOKEN_TOO_LARGE');
+      expect(out.status).toBe(401);
+    }
+  });
+
+  it('caps the number of role claims passed to the resolver', async () => {
+    const { issuer, publicKey, privateKey } = await makeIssuer();
+    const manyRoles = Array.from({ length: 200 }, (_, i) => `r${i}`);
+    const token = await sign(privateKey, { roles: manyRoles });
+    let seen = -1;
+    await verifyExternalJwt(
+      token,
+      deps(issuer, publicKey, {
+        resolveRoleIds: async (rawRoles) => {
+          seen = rawRoles.length;
+          return ['role_editor'];
+        },
+      }),
+    );
+    expect(seen).toBeLessThanOrEqual(50);
+  });
+});
+
+describe('verifyExternalJwt — additional decision-tree cases', () => {
+  it('rejects a token whose nbf is in the future (Req 4.6)', async () => {
+    const { issuer, publicKey, privateKey } = await makeIssuer();
+    const future = Math.floor(Date.UTC(2999, 0, 1) / 1000);
+    const token = await sign(privateKey, { roles: ['editor'], nbf: future });
+    const out = await verifyExternalJwt(token, deps(issuer, publicKey));
+    expect(out.kind).toBe('rejected');
+    if (out.kind === 'rejected') expect(out.code).toBe('TOKEN_INVALID');
+  });
+
+  it('rejects an inactive user with 401 (Req 9)', async () => {
+    const { issuer, publicKey, privateKey } = await makeIssuer();
+    const token = await sign(privateKey, { roles: ['editor'] });
+    const out = await verifyExternalJwt(
+      token,
+      deps(issuer, publicKey, { provisionUser: async () => ({ error: '401', code: 'USER_INACTIVE' }) }),
+    );
+    expect(out.kind).toBe('rejected');
+    if (out.kind === 'rejected') {
+      expect(out.code).toBe('USER_INACTIVE');
+      expect(out.status).toBe(401);
+    }
+  });
+
+  it('keeps two sites on the same issuer independent (T3)', async () => {
+    // Issuer config bound to SITE; a token minted for it but presented on a
+    // different request site is rejected when a siteId claim is mapped.
+    const { issuer, publicKey, privateKey } = await makeIssuer({
+      claimMapping: { email: 'email', roles: 'roles', externalId: 'sub', siteId: 'site' },
+    });
+    const token = await sign(privateKey, { roles: ['editor'], site: SITE });
+    // Same token, request site B → mismatch.
+    const out = await verifyExternalJwt(token, deps(issuer, publicKey, { requestSiteId: 'site_B' }));
+    expect(out.kind).toBe('rejected');
+    if (out.kind === 'rejected') expect(out.code).toBe('SITE_MISMATCH');
+  });
+});
+
 describe('normalizeRoles', () => {
   it('handles array, csv, space-delimited, and non-strings', () => {
     expect(normalizeRoles(['a', 'b'])).toEqual(['a', 'b']);

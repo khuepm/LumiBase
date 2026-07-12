@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { eq, sql } from 'drizzle-orm';
-import { collections, createDb, fields, relations, sites, type Database } from '@lumibase/database';
+import { collections, createDb, fields, relations, roles, sites, userSites, users, type Database } from '@lumibase/database';
 import type { AppEnv } from '../../env';
 import { ItemService } from '../../services/item-service';
 import { itemsRouter } from '../items';
@@ -16,6 +16,7 @@ import { itemsRouter } from '../items';
 
 const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_deps_route_it';
+const ADMIN = 'usr_deps_route_admin';
 
 describe('items dependents routes — DB integration', () => {
   let db: Database;
@@ -27,7 +28,7 @@ describe('items dependents routes — DB integration', () => {
     (c as unknown as { env: Record<string, unknown> }).env = {};
     c.set('db', db);
     c.set('siteId', SITE);
-    c.set('auth', { userId: 'usr_admin', email: 'a@x.dev', roles: ['admin'], raw: { dev: true } } as AppEnv['Variables']['auth']);
+    c.set('auth', { userId: ADMIN, email: 'a@x.dev', roles: ['admin'], raw: { dev: true } } as AppEnv['Variables']['auth']);
     c.set('runtime', { cache: undefined, search: undefined, queue: undefined } as unknown as AppEnv['Variables']['runtime']);
     await next();
   });
@@ -50,6 +51,7 @@ describe('items dependents routes — DB integration', () => {
   afterAll(async () => {
     if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
+    await db.delete(users).where(eq(users.id, ADMIN)).catch(() => undefined);
   });
 
   let articleId = '';
@@ -59,6 +61,13 @@ describe('items dependents routes — DB integration', () => {
     if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.insert(sites).values({ id: SITE, name: 'Deps Route IT' });
+    // The routes enforce real RBAC (dependents-service gates per-action): seed
+    // an admin membership so the request principal has admin bypass.
+    await db.insert(users).values({ id: ADMIN, email: 'deps-route-admin@x.dev', status: 'active' }).onConflictDoNothing();
+    const adminRole = (
+      await db.insert(roles).values({ siteId: SITE, name: 'Admin', adminAccess: true, appAccess: true }).returning({ id: roles.id })
+    )[0]!.id;
+    await db.insert(userSites).values({ userId: ADMIN, siteId: SITE, roleId: adminRole });
     const articlesId = (await db.insert(collections).values({ siteId: SITE, name: 'articles', label: 'A' }).returning({ id: collections.id }))[0]!.id;
     const commentsId = (await db.insert(collections).values({ siteId: SITE, name: 'comments', label: 'C' }).returning({ id: collections.id }))[0]!.id;
     await db.insert(fields).values([

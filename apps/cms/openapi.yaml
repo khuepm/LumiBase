@@ -217,6 +217,132 @@ components:
         relations:
           type: array
           items: { $ref: '#/components/schemas/Relation' }
+    LockoutPolicy:
+      type: object
+      description: >-
+        Login-security lockout policy. Every field is required when the object
+        is supplied; omit the whole object at `/setup/complete` to apply the
+        built-in "Standard" preset.
+      required:
+        - userMaxFailedAttempts
+        - userLockoutDurationSeconds
+        - ipMaxFailedAttempts
+        - ipLockoutDurationSeconds
+        - lockoutWindowSeconds
+        - geoAnomalyEnabled
+        - timeAnomalyEnabled
+        - deviceAnomalyEnabled
+        - anomalyScoreThreshold
+        - anomalyAction
+        - notifyChannels
+        - loginStallMs
+      properties:
+        userMaxFailedAttempts: { type: integer, minimum: 3, maximum: 20 }
+        userLockoutDurationSeconds: { type: integer, minimum: 60, maximum: 86400 }
+        ipMaxFailedAttempts: { type: integer, minimum: 5, maximum: 100 }
+        ipLockoutDurationSeconds: { type: integer, minimum: 60, maximum: 86400 }
+        lockoutWindowSeconds: { type: integer, minimum: 60, maximum: 86400 }
+        geoAnomalyEnabled: { type: boolean }
+        timeAnomalyEnabled: { type: boolean }
+        deviceAnomalyEnabled: { type: boolean }
+        anomalyScoreThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: 0..1, stored with up to 2 decimal places.
+        anomalyAction: { type: string, enum: [notify_only, require_mfa, lock] }
+        notifyChannels:
+          type: array
+          maxItems: 2
+          items: { type: string, enum: [email, webhook] }
+        loginStallMs: { type: integer, minimum: 0, maximum: 5000 }
+        webhookUrl: { type: string, format: uri, maxLength: 2048 }
+        webhookSecret: { type: string, minLength: 1, maxLength: 256 }
+    SetupState:
+      type: object
+      required: [state, requiresSetupToken]
+      properties:
+        state: { type: string, enum: [uninitialized, initialized] }
+        requiresSetupToken: { type: boolean }
+    SetupCapabilities:
+      type: object
+      required: [geoip, smtp]
+      properties:
+        geoip:
+          type: object
+          required: [available]
+          properties:
+            available: { type: boolean }
+            source: { type: string, enum: [maxmind] }
+        smtp:
+          type: object
+          required: [available]
+          properties:
+            available: { type: boolean }
+    SetupCompleteInput:
+      type: object
+      required: [account, adminPath]
+      properties:
+        setupToken:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Required only when the instance was provisioned with a setup token.
+        account:
+          type: object
+          required: [email, password, firstName, lastName]
+          properties:
+            email: { type: string, format: email, maxLength: 254 }
+            password:
+              type: string
+              description: Min 12 chars + complexity (shared with register/recovery).
+            firstName: { type: string, minLength: 1, maxLength: 100 }
+            lastName: { type: string, minLength: 1, maxLength: 100 }
+        adminPath: { type: string, minLength: 1, maxLength: 128 }
+        policy:
+          allOf: [{ $ref: '#/components/schemas/LockoutPolicy' }]
+          description: >-
+            OPTIONAL. When omitted, the "Standard" lockout preset is applied.
+        project:
+          type: object
+          required: [defaultLanguage, siteUrl, displayTitle]
+          properties:
+            defaultLanguage: { type: string, minLength: 2, maxLength: 16 }
+            siteUrl: { type: string, format: uri, maxLength: 2048 }
+            displayTitle: { type: string, minLength: 2, maxLength: 80 }
+            theme: { type: 'null' }
+        invites:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [email]
+            properties:
+              email: { type: string, format: email, maxLength: 254 }
+              role: { type: string, enum: [admin, member], default: member }
+    SetupCompleteResult:
+      type: object
+      required: [user, adminPath, backupCodes, setupToken, invitedCount]
+      properties:
+        user:
+          type: object
+          required: [id, email, firstName, lastName]
+          properties:
+            id: { type: string }
+            email: { type: string }
+            firstName: { type: string, nullable: true }
+            lastName: { type: string, nullable: true }
+        adminPath: { type: string }
+        backupCodes:
+          type: array
+          items: { type: string }
+          description: Plaintext recovery codes, returned exactly once and unrecoverable afterwards.
+        setupToken:
+          type: 'null'
+          description: Always null — the setup token is invalidated during completion.
+        invitedCount:
+          type: integer
+          description: Number of teammates created as `status:'invited'` in this run.
     SchemaDiffRisk:
       type: string
       enum: [low, medium, high]
@@ -908,6 +1034,110 @@ components:
           minItems: 1
           items: { type: string, minLength: 1 }
         config: { type: object, additionalProperties: true }
+    # ── Change Feed (first-party outbox+relay; distinct from the ClickHouse
+    #    CDC pipelines above). Source of truth: packages/shared/schemas/cdc-feed.ts
+    EventEnvelope:
+      type: object
+      description: Change-feed event (schemaVersion 1). `id` is the idempotency key; `cursor` is this event's keyset token.
+      required: [id, type, schemaVersion, siteId, collection, itemId, operation, occurredAt, actor, source, cursor]
+      properties:
+        id: { type: string, description: Idempotency key (nanoid). }
+        type: { type: string, pattern: '^(items|collections|fields|settings)\.(create|update|delete)$', description: '<plural-resource>.<operation> — items.* (content), collections.*/fields.* (schema), settings.*.' }
+        schemaVersion: { type: integer, minimum: 1 }
+        siteId: { type: string }
+        collection: { type: string }
+        itemId: { type: string }
+        operation: { type: string, enum: [create, update, delete] }
+        occurredAt: { type: string, format: date-time }
+        actor:
+          type: object
+          required: [type]
+          properties:
+            type: { type: string, enum: [user, api_key, agent, system] }
+            id: { type: string }
+        source: { type: string, enum: [api, agent, flow, system] }
+        changedFields:
+          type: array
+          description: Present on update only.
+          items: { type: string }
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Post-mutation record with pii/phi masked; present only in snapshot payload mode.
+        cursor: { type: string, description: Opaque base64url keyset token for ack/resume. }
+    ChangeFeedSubscription:
+      type: object
+      required: [id, siteId, name, kind, collections, operations, payloadMode, status, consecutiveFailures, lag]
+      properties:
+        id: { type: string }
+        siteId: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [pull, webhook, extension] }
+        collections: { type: array, items: { type: string } }
+        operations: { type: array, items: { type: string, enum: [create, update, delete] } }
+        payloadMode: { type: string, enum: [reference, snapshot] }
+        cursor: { type: string, nullable: true, description: Committed checkpoint token, or null before first ack/delivery. }
+        status: { type: string, enum: [active, paused, dead, stale] }
+        webhookId: { type: string, nullable: true }
+        extensionName: { type: string, nullable: true }
+        consecutiveFailures: { type: integer }
+        lastDeliveredAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        lag:
+          type: object
+          description: Backlog between the checkpoint and the feed head (Req 3.5).
+          required: [events, behindMs]
+          properties:
+            events: { type: integer }
+            behindMs: { type: integer, nullable: true }
+    ChangeFeedSubscriptionCreate:
+      type: object
+      required: [name, kind]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        kind: { type: string, enum: [pull, webhook, extension] }
+        collections: { type: array, items: { type: string, minLength: 1 }, default: [] }
+        operations: { type: array, items: { type: string, enum: [create, update, delete] }, default: [] }
+        payload_mode: { type: string, enum: [reference, snapshot], default: reference }
+        webhook_id: { type: string, description: Required when kind=webhook (webhook must have a secret). }
+        extension_name: { type: string, description: Required when kind=extension. }
+    ChangeFeedSubscriptionPatch:
+      type: object
+      description: kind is immutable; status flips only between active/paused here (dead/stale exit via replay).
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        collections: { type: array, items: { type: string, minLength: 1 } }
+        operations: { type: array, items: { type: string, enum: [create, update, delete] } }
+        payload_mode: { type: string, enum: [reference, snapshot] }
+        status: { type: string, enum: [active, paused] }
+    ChangeFeedAck:
+      type: object
+      required: [cursor]
+      properties:
+        cursor: { type: string, description: Forward-only checkpoint token. }
+    ChangeFeedReplay:
+      type: object
+      description: Provide exactly one of cursor or occurred_after (within retention).
+      properties:
+        cursor: { type: string }
+        occurred_after: { type: string, format: date-time }
+    ChangeFeedDelivery:
+      type: object
+      required: [id, subscriptionId, eventCount, attempt, status, durationMs, createdAt]
+      properties:
+        id: { type: string }
+        subscriptionId: { type: string }
+        eventIdFrom: { type: string, nullable: true }
+        eventIdTo: { type: string, nullable: true }
+        eventCount: { type: integer }
+        attempt: { type: integer }
+        status: { type: string, enum: [success, failed] }
+        httpStatus: { type: integer, nullable: true }
+        errorMessage: { type: string, nullable: true, description: Masked — never raw consumer output. }
+        durationMs: { type: integer }
+        createdAt: { type: string, format: date-time }
     CdcHealthCheck:
       type: object
       properties:
@@ -1016,6 +1246,65 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time, nullable: true }
+    GitIntegration:
+      type: object
+      description: A per-site connection to a GitHub/GitLab repository. Tokens are never returned.
+      properties:
+        id: { type: string }
+        provider: { type: string, enum: [github, gitlab] }
+        repoFullName: { type: string, example: 'acme/website' }
+        displayName: { type: string }
+        authMethod: { type: string, enum: [app, pat] }
+        status: { type: string, enum: [connected, error, disconnected] }
+        statusReason: { type: string, nullable: true }
+        scopes: { type: array, items: { type: string } }
+        hasToken: { type: boolean, description: True when a token/installation is on file (never the value). }
+        webhookUrl: { type: string, description: Operator-facing signed webhook URL (embeds siteId + integrationId). }
+        lastSyncAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    GitIntegrationCreate:
+      type: object
+      required: [provider, repoFullName, displayName, authMethod]
+      properties:
+        provider: { type: string, enum: [github, gitlab] }
+        repoFullName: { type: string, example: 'acme/website' }
+        displayName: { type: string }
+        authMethod: { type: string, enum: [app, pat] }
+        token: { type: string, description: PAT/OAuth token (required when authMethod=pat); stored encrypted. }
+        installationId: { type: string, description: Required when authMethod=app. }
+        scopes: { type: array, items: { type: string } }
+    GitPullRequest:
+      type: object
+      properties:
+        id: { type: string }
+        number: { type: integer }
+        title: { type: string }
+        state: { type: string, enum: [open, closed, merged] }
+        ciStatus: { type: string, enum: [unknown, pending, success, failure] }
+        mergeable: { type: boolean, nullable: true }
+        headSha: { type: string }
+        author: { type: string, nullable: true }
+        previewUrl: { type: string, nullable: true }
+        updatedAt: { type: string, format: date-time }
+    GitCiRun:
+      type: object
+      properties:
+        id: { type: string }
+        providerRunId: { type: string }
+        status: { type: string, enum: [queued, in_progress, success, failure, cancelled] }
+        jobs:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              status: { type: string }
+              startedAt: { type: string, format: date-time, nullable: true }
+              completedAt: { type: string, format: date-time, nullable: true }
+              durationMs: { type: integer, nullable: true }
+        durationMs: { type: integer, nullable: true }
+        hasStoredLog: { type: boolean }
 
 
 paths:
@@ -1184,7 +1473,15 @@ paths:
       - $ref: '#/components/parameters/SiteHeader'
       - { name: name, in: path, required: true, schema: { type: string } }
     put:
-      summary: Apply a schema update to collection fields and relations
+      summary: Apply a full schema to a collection (creates it if missing)
+      description: >-
+        Atomic full-schema apply. If the collection named in the path does not
+        exist yet it is created in the same transaction (site-scoped, honouring
+        the collection name and primary-key/storage-mode compatibility rules)
+        and the provided fields/relations are applied to the fresh collection.
+        If it already exists, its fields and relations are reconciled to match
+        the request. Returns `200` in both cases. Requires the `schema:migrate`
+        capability.
       requestBody:
         required: true
         content:
@@ -1192,13 +1489,28 @@ paths:
             schema: { $ref: '#/components/schemas/SchemaApplyInput' }
       responses:
         '200':
-          description: OK
+          description: Schema applied (collection created or updated)
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/SchemaApplyResult' }
+        '400':
+          description: Validation error or unsupported change (e.g. collection rename)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Missing `schema:migrate` capability
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Reserved collection name (e.g. `lumibase_`/`mat_` prefix)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /collections/{name}/compiled:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'
@@ -1326,6 +1638,79 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '400':
           description: Missing tenant header
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /setup/state:
+    get:
+      summary: First-run setup state
+      description: >-
+        Public, unauthenticated. Returns whether the instance still needs
+        first-run setup. Once setup is complete every `/setup/*` path responds
+        `404` indistinguishably, so a `200` here implies the instance is not yet
+        initialized. IP rate-limited (`429` with `retry-after` when exceeded).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetupState' }
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /setup/capabilities:
+    get:
+      summary: Setup environment capabilities
+      description: >-
+        Reports which optional integrations are available to the setup wizard
+        (GeoIP database, SMTP). Returns `404` once the instance is initialized.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetupCapabilities' }
+        '404':
+          description: Instance already initialized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /setup/complete:
+    post:
+      summary: Complete first-run setup (create the bootstrap admin)
+      description: >-
+        Public, unauthenticated, single-use. Creates the bootstrap administrator
+        (granted an `Administrator` role bound via `user_roles`), the default
+        site, baseline settings, and the login-security policy — all in one
+        transaction. The `policy` field is OPTIONAL: when omitted, the "Standard"
+        lockout preset is applied. Returns backup codes exactly once in the
+        `201` body; they are unrecoverable afterwards. Any subsequent call once
+        initialized responds with a setup error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetupCompleteInput' }
+      responses:
+        '201':
+          description: Setup completed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetupCompleteResult' }
+        '400':
+          description: Malformed JSON or validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Already initialized or setup already in progress
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Admin path predictable/reserved/taken, or invalid token
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -1657,6 +2042,293 @@ paths:
                   data: { $ref: '#/components/schemas/CdcDeploymentResult' }
         '404':
           description: Deployment not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/events:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: Read the change feed (keyset cursor pagination)
+      description: |
+        Pull consumers read change events in feed order (keyset `(occurred_at, id)`)
+        with a 2s safety lag. Requires the `cdc:subscribe` capability (admin implies).
+        A `410 CURSOR_EXPIRED` (with `earliestCursor`) means the cursor fell past retention.
+      parameters:
+        - { name: cursor, in: query, required: false, schema: { type: string }, description: Opaque token from a prior meta.nextCursor. Omit for the first page. }
+        - { name: collections, in: query, required: false, schema: { type: string }, description: CSV collection filter. }
+        - { name: operations, in: query, required: false, schema: { type: string }, description: 'CSV of create,update,delete.' }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+        - { name: wait, in: query, required: false, schema: { type: integer, minimum: 0, maximum: 25, default: 0 }, description: Long-poll budget in seconds; server holds an empty first read until an event appears or the budget elapses. }
+      responses:
+        '200':
+          description: A page of change events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/EventEnvelope' }
+                  meta:
+                    type: object
+                    properties:
+                      nextCursor: { type: string, nullable: true }
+                      hasMore: { type: boolean }
+        '400':
+          description: Malformed cursor or query
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Requires the cdc:subscribe capability (or frontend-realm token rejected)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '410':
+          description: Cursor expired past retention (body carries earliestCursor)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/subscriptions:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: List change-feed subscriptions (site admin)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChangeFeedSubscription' }
+        '403':
+          description: Site admin access required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      summary: Create a change-feed subscription (site admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeFeedSubscriptionCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChangeFeedSubscription' }
+        '400':
+          description: Validation error or webhook missing a secret
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Site admin required or subscription limit (50/site) exceeded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Subscription name already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/subscriptions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Get a change-feed subscription (site admin)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChangeFeedSubscription' }
+        '404':
+          description: Subscription not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    patch:
+      summary: Update a change-feed subscription (site admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeFeedSubscriptionPatch' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChangeFeedSubscription' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Subscription not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Name conflict or invalid status transition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      summary: Delete a change-feed subscription (site admin)
+      responses:
+        '200':
+          description: Deleted (checkpoint lost; outbox events kept until retention)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      ok: { type: boolean }
+        '404':
+          description: Subscription not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/subscriptions/{id}/ack:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Commit a pull checkpoint (forward-only)
+      description: Requires the `cdc:subscribe` capability. Rewinding returns 409 ACK_REGRESSION — use replay instead.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeFeedAck' }
+      responses:
+        '200':
+          description: Checkpoint committed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChangeFeedSubscription' }
+        '400':
+          description: Malformed cursor
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Ack regression (cursor rewind)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/subscriptions/{id}/replay:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Rewind a subscription checkpoint within retention (site admin)
+      description: Resets dead/stale subscriptions to active — the only path out of those states. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeFeedReplay' }
+      responses:
+        '200':
+          description: Replayed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChangeFeedSubscription' }
+        '400':
+          description: Out of retention or invalid target (need exactly one of cursor/occurred_after)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Subscription not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/subscriptions/{id}/dispatch:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Trigger on-demand dispatch for a subscription (site admin)
+      description: The no-queue fallback path (Req 4.7) — flushes pending events to the webhook/extension now.
+      responses:
+        '202':
+          description: Dispatch triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      dispatched: { type: boolean }
+        '404':
+          description: Subscription not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '501':
+          description: On-demand dispatch not available in this runtime
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/subscriptions/{id}/deliveries:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+    get:
+      summary: Delivery-attempt history for a subscription (site admin, newest first)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChangeFeedDelivery' }
+                  meta:
+                    type: object
+                    properties:
+                      total: { type: integer }
+        '404':
+          description: Subscription not found
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3300,6 +3972,297 @@ paths:
           description: Accepted (ref applied or ignored)
         '401':
           description: Invalid or missing signature
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /integrations/git:
+    get:
+      tags: [Git Integration]
+      summary: List Git integrations for the site
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/GitIntegration' } }
+    post:
+      tags: [Git Integration]
+      summary: Connect a repository (site-admin)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GitIntegrationCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/GitIntegration' }
+        '409':
+          description: An integration for this (provider, repo) already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /integrations/git/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/SiteHeader' }
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Git Integration]
+      summary: Get one integration
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/GitIntegration' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    patch:
+      tags: [Git Integration]
+      summary: Update display name / token / status / sync config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/GitIntegration' }
+    delete:
+      tags: [Git Integration]
+      summary: Disconnect (forgets the stored token)
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, properties: { id: { type: string } } }
+  /integrations/git/{id}/rotate-secret:
+    post:
+      tags: [Git Integration]
+      summary: Rotate the webhook secret
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/GitIntegration' }
+  /integrations/git/{id}/oauth/authorize:
+    get:
+      tags: [Git Integration]
+      summary: Build the provider OAuth authorize URL (single-use state)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, properties: { authorizeUrl: { type: string } } }
+  /integrations/git/{id}/pull-requests:
+    get:
+      tags: [Git Integration]
+      summary: List cached pull requests
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/GitPullRequest' } }
+                  meta: { type: object }
+  /integrations/git/{id}/pull-requests/refresh:
+    post:
+      tags: [Git Integration]
+      summary: Pull PRs live from the provider (upsert cache)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/GitPullRequest' } }
+  /integrations/git/{id}/pull-requests/{number}/ci:
+    get:
+      tags: [Git Integration]
+      summary: CI runs for a pull request
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: number, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/GitCiRun' } }
+  /integrations/git/{id}/pull-requests/{number}/validate:
+    post:
+      tags: [Git Integration]
+      summary: Validate content/config and post a lumibase/content-validation status
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: number, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      state: { type: string, enum: [success, failure] }
+                      summary: { type: string }
+                      statusPosted: { type: boolean }
+  /integrations/git/{id}/ci-runs/{runId}/logs:
+    get:
+      tags: [Git Integration]
+      summary: Fetch (and cache) the CI log for a run
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: runId, in: path, required: true, schema: { type: string } }
+        - { name: jobId, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, properties: { log: { type: string } } }
+  /integrations/git/{id}/gitops/sync:
+    post:
+      tags: [Git Integration]
+      summary: Reconcile lumibase/intents.json from the repo into content intents
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: ref, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      found: { type: boolean }
+                      applied: { type: array, items: { type: object } }
+                      errors: { type: array, items: { type: string } }
+                      goalsCreated: { type: integer }
+  /integrations/git/{id}/provenance:
+    get:
+      tags: [Git Integration]
+      summary: Query commit/PR → content provenance
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: collection, in: query, required: false, schema: { type: string } }
+        - { name: itemId, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { type: object } }
+  /integrations/git/oauth/{provider}/callback:
+    get:
+      tags: [Git Integration]
+      summary: OAuth callback (public; bound to single-use cache state)
+      security: []
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [github, gitlab] } }
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: HTML page (auto-close); token exchanged and stored encrypted
+  /integrations/git/webhook/{provider}/{siteId}/{integrationId}:
+    post:
+      tags: [Git Integration]
+      summary: Inbound provider webhook (public, signature-verified)
+      description: |
+        Public, pre-auth. GitHub verified by HMAC-SHA256 (`X-Hub-Signature-256`),
+        GitLab by shared token (`X-Gitlab-Token`), compared constant-time. siteId +
+        integrationId in the path scope the (un-tenanted) lookup; the per-integration
+        secret signature is the authenticity gate. Idempotent by provider delivery id.
+      security: []
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [github, gitlab] } }
+        - { name: siteId, in: path, required: true, schema: { type: string } }
+        - { name: integrationId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Received (or duplicate)
+        '401':
+          description: Invalid signature
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

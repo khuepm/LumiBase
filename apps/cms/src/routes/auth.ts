@@ -5,6 +5,7 @@ import { SignJWT } from 'jose';
 import { and, eq, sql } from 'drizzle-orm';
 import { roles, systemState, users, userSites } from '@lumibase/database';
 import type { AppEnv } from '../env';
+import { runDetached } from '../lib/detached';
 import { hashPassword, verifyPassword } from '../services/auth/password';
 import { ensureSubscriberRole } from '../services/auth/frontend-role';
 import {
@@ -588,11 +589,7 @@ authRouter.post('/register', async (c) => {
           email: input.email,
           token,
         });
-        if (c.executionCtx?.waitUntil) {
-          c.executionCtx.waitUntil(sendMail);
-        } else {
-          void sendMail;
-        }
+        runDetached(c, sendMail);
       }
 
       await audit.write({
@@ -765,11 +762,7 @@ authRouter.post('/resend-verification', async (c) => {
         email: user.email,
         token,
       });
-      if (c.executionCtx?.waitUntil) {
-        c.executionCtx.waitUntil(sendMail);
-      } else {
-        void sendMail;
-      }
+      runDetached(c, sendMail);
       await new AuditLogger({ db, siteId }).write({
         event: 'verification_resent',
         actorEmail: user.email,
@@ -854,11 +847,7 @@ authRouter.post('/forgot-password', async (c) => {
         email: user.email,
         token,
       });
-      if (c.executionCtx?.waitUntil) {
-        c.executionCtx.waitUntil(sendMail);
-      } else {
-        void sendMail;
-      }
+      runDetached(c, sendMail);
       await new AuditLogger({ db, siteId }).write({
         event: 'password_reset_requested',
         actorEmail: user.email,
