@@ -26,12 +26,12 @@ Thứ tự: shared diff type → schema/migration → service → routes (gắn 
   - [ ] 3.3 Unit test service: snapshot đúng main; mainChanged true khi main đổi; compare ra Change[]; cross-site isolation — **làm một phần**: snapshot/mainChanged/compare/promote/409 ✅ (`content-version-service.test.ts`); THIẾU cross-site isolation test (DoD 2b)
     - **Validates: Requirements 1.4, 3.1, 3.3**
 
-- [ ] 4. Routes (gắn vào items.ts)
+- [x] 4. Routes (gắn vào items.ts)
   - [x] 4.1 Thêm 7 endpoint versions vào `apps/cms/src/routes/items.ts`, reuse permission guard của update item; create trả 409 khi key trùng; response format `{ data }`/`{ errors }`
     - _Requirements: 2.1–2.6_
-  - [x] 4.2 Promote handler: gọi `ItemService.update` (revision + cache + RLS + HITL), rồi `remove()` version, trả `meta.mainDiverged` (promote qua `ItemService.patch` + remove ✅ có test; `meta.mainDiverged` chưa verify)
+  - [x] 4.2 Promote handler: gọi `ItemService.update` (revision + cache + RLS + HITL), rồi `remove()` version, trả `meta.mainDiverged` (promote qua `ItemService.patch` + remove ✅ có test; `meta.mainDiverged` verify ở route test 4.3)
     - _Requirements: 3.2, 3.3, 3.4_
-  - [ ] 4.3 Route test: CRUD version; compare; promote tạo revision + xoá version (spy ItemService.update); 403 khi thiếu quyền; 409 key trùng; meta.mainDiverged — **chưa làm**: chỉ có service test, không có route test (403 thiếu quyền / 409 / meta ở tầng HTTP)
+  - [x] 4.3 Route test: CRUD version; compare; promote tạo revision + xoá version (spy ItemService.update); 403 khi thiếu quyền; 409 key trùng; meta.mainDiverged (`versions-route.db.integration.test.ts` — 4 test HTTP-layer: CRUD + 409 VERSION_EXISTS, compare changes, promote assert revision row thật trong DB thay vì spy + version 404 sau promote + `meta.mainDiverged=true` khi main đổi sau snapshot, 403 FORBIDDEN cho member không grant)
     - **Validates: Requirements 2.6, 3.2, 3.4**
 
 - [ ] 5. SDK
