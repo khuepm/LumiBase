@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/extension-sdk",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "Types + helpers for building LumiBase extensions (hooks, endpoints, UI).",
   "type": "module",
   "repository": {

@@ -9,6 +9,35 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [0.22.0] - 2026-07-12
+
+### Version
+
+- `v0.22.0`
+
+### Date
+
+- `2026-07-12`
+
+### Highlights
+
+- **CDC Change Feed (Phases A–H).** Outbox capture, pull API, dispatcher,
+  extension integration, retention, and Studio surface — plus skills/MCP
+  coverage. The change-data-capture pipeline lands end to end (#244).
+- **Realtime studio co-editing, hardened.** A read-gated, filterable realtime
+  plane: subscribe is permission-scoped and fail-closed, broadcasts are
+  signal-only (no row data on the wire), and the item editor shows a live
+  co-editing warning (#249).
+- **Security hardening pass.** Settings writes admin-gated with secret reads
+  redacted, external-JWT DoS guards + denial/issuer auditing, scheduled-release
+  publishes now audited, and an out-of-scope findings backlog wired into the
+  Definition of Done (#251).
+- **v1 readiness groundwork.** Golden-path E2E gate + dependency-audit in CI,
+  "Upgrading to 1.0" runbook, SECURITY.md, and the versioning policy — staging
+  the remaining work before the v1.0.0 tag (#243, #239).
+
 ### Security
 
 - **Realtime subscribe is read-gated and filterable.** A studio session could
@@ -120,6 +149,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   picking "the next number" independently, leaving many collisions (#16/#20/#21
   through #38). Colliding rows were renumbered to fresh ids (45–68), keeping the
   occurrence that other rows cite by number so cross-references stay valid.
+
+### Migrations
+
+- `0007_cdc_change_feed` — Change Feed outbox/capture tables (additive,
+  idempotent). No destructive changes.
 
 ## [1.0.0] - 2026-07-11
 
