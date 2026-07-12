@@ -45,10 +45,10 @@ Kế hoạch triển khai **External JWT Authentication** theo 5 phase. Phase A 
   - [x] 5.7 JIT provisioning: match `users` theo `external_id`; inactive → 401; missing + JIT off → 403 `USER_NOT_PROVISIONED`; JIT on → insert user (`onConflictDoNothing(external_id)`) + upsert `userSites(userId, siteId, roleId)` idempotent; audit `external_user_provisioned` (Req 9.1-9.6; design §6.6)
   - [x] 5.8 Dựng `AuthPrincipal { type:'user', userId, externalId, email, roles, raw:payload }` cho nhánh `authenticated` (Req 6.5; design §6.5, §6.6)
 
-- [ ] 6. JWKS & issuer-config caching
+- [x] 6. JWKS & issuer-config caching
   - [x] 6.1 Tái dùng `getJwks`/`JWKS_CACHE` của `middleware/auth.ts:9-18`; thêm cooldown/rate-limit refetch per `jwksUri` + timeout fetch (fail-closed khi không có cache) (Req 8.1-8.4, 3.6; design §7)
   - [x] 6.2 OIDC discovery (khi `discoveryUrl`): fetch `.well-known`, suy `jwks_uri`, validate `issuer` khớp, cache TTL riêng qua `runtime.cache` (Req 8.5; design §7) (cache discovery là Map module-level + timeout 5s, không qua runtime.cache — chấp nhận được)
-  - [ ] 6.3 Cache `getTrustedIssuers(siteId)` qua `c.get('runtime').cache` key `auth:issuers:<siteId>` TTL ≤ 60s; invalidate khi PATCH/DELETE issuer (Req 8.6, 2.6, 12.1; design §7) — **chưa làm**: `getTrustedIssuers` query DB mỗi request, không cache `auth:issuers:<siteId>` qua runtime.cache, không invalidation
+  - [x] 6.3 Cache `getTrustedIssuers(siteId)` qua `c.get('runtime').cache` key `auth:issuers:<siteId>` TTL ≤ 60s; invalidate khi PATCH/DELETE issuer (Req 8.6, 2.6, 12.1; design §7) (adapter.ts đọc/ghi key `auth:issuers:<siteId>` TTL 60s; `ExternalIssuerService` drop key trên create/update/delete; unit `issuer-cache.test.ts` 3 test + case invalidation trong DB-integration)
 
 - [ ] 7. Tích hợp vào `withAuth`
   - [x] 7.1 Chèn khối gọi `tryExternalJwt` trong block `if (bearerToken)` của `apps/cms/src/middleware/auth.ts` — SAU nhánh API-key (`auth.ts:166-218`), TRƯỚC nhánh custom JWT (`auth.ts:229-275`): `authenticated`→set principal+next; `rejected`→return response (fail-closed); `skip`→rơi xuống custom JWT (Req 7.1-7.4; design §6.1)

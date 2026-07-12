@@ -19,6 +19,7 @@ function service(c: Context<AppEnv>): ExternalIssuerService {
     db: c.get('db'),
     siteId: c.get('siteId'),
     allowLocalHttp: isDev,
+    cache: c.get('runtime').cache,
     actor: {
       email: c.get('auth')?.email ?? null,
       ip: c.get('ip') ?? null,

@@ -6,7 +6,9 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { authExternalIssuers, scopeSite, type Database } from '@lumibase/database';
 import { makeExternalIssuerConfigSchema, makeExternalIssuerUpdateSchema } from '@lumibase/shared/schemas';
+import type { CacheProvider } from '@lumibase/runtime';
 import { AuditLogger } from '../modules/audit/logger';
+import { issuerCacheKey } from '../modules/external-auth/adapter';
 
 export class ExternalIssuerError extends Error {
   constructor(public code: string, message: string, public status = 400) {
@@ -30,6 +32,8 @@ export interface ExternalIssuerServiceDeps {
   allowLocalHttp?: boolean;
   /** Actor context for `external_issuer_*` audit rows (never logs config secrets). */
   actor?: ExternalIssuerActor;
+  /** Runtime cache — CRUD drops `auth:issuers:<siteId>` so verifiers re-read fresh config. */
+  cache?: CacheProvider;
 }
 
 export class ExternalIssuerService {
@@ -49,6 +53,16 @@ export class ExternalIssuerService {
       requestId: this.deps.actor?.requestId ?? null,
       metadata: { issuer, issuerId: id },
     });
+  }
+
+  /** Drop the trusted-issuer cache entry so the next verify re-reads config. */
+  private async invalidateCache(): Promise<void> {
+    if (!this.deps.cache) return;
+    try {
+      await this.deps.cache.delete(issuerCacheKey(this.deps.siteId));
+    } catch {
+      // Best-effort: TTL (≤60s) bounds staleness if the cache is unreachable.
+    }
   }
 
   async list() {
@@ -100,7 +114,10 @@ export class ExternalIssuerService {
         enabled: cfg.enabled,
       })
       .returning();
-    if (row) await this.audit('external_issuer_created', row.issuer, row.id);
+    if (row) {
+      await this.invalidateCache();
+      await this.audit('external_issuer_created', row.issuer, row.id);
+    }
     return row;
   }
 
@@ -132,7 +149,10 @@ export class ExternalIssuerService {
       .set(set)
       .where(and(scopeSite(authExternalIssuers.siteId, this.deps.siteId), eq(authExternalIssuers.id, id)))
       .returning();
-    if (row) await this.audit('external_issuer_updated', row.issuer, row.id);
+    if (row) {
+      await this.invalidateCache();
+      await this.audit('external_issuer_updated', row.issuer, row.id);
+    }
     return row;
   }
 
@@ -141,6 +161,7 @@ export class ExternalIssuerService {
     await this.deps.db
       .delete(authExternalIssuers)
       .where(and(scopeSite(authExternalIssuers.siteId, this.deps.siteId), eq(authExternalIssuers.id, id)));
+    await this.invalidateCache();
     await this.audit('external_issuer_deleted', existing.issuer, existing.id);
   }
 }
