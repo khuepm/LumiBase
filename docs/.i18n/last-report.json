@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-12T12:17:31.926Z",
+  "generatedAt": "2026-07-12T18:37:11.260Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -9,7 +9,7 @@
     "preserved": 0,
     "conflicts": 1,
     "upToDate": 44,
-    "planned": 92
+    "planned": 93
   },
   "actions": [
     {
@@ -1305,7 +1305,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-12T12-17-32-072Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-12T18-37-11-403Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1514,6 +1514,18 @@
     },
     {
       "rel": "sdk/typegen.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/anti-abuse.md",
       "type": "translate",
       "reason": "missing vi translation",
       "enLang": "en",
