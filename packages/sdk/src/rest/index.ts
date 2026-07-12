@@ -265,6 +265,7 @@ export function readCdcEvents(params: CdcFeedReadParams = {}) {
     if (params.collections?.length) qs.set("collections", params.collections.join(","));
     if (params.operations?.length) qs.set("operations", params.operations.join(","));
     if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.wait !== undefined) qs.set("wait", String(params.wait));
     const s = qs.toString();
     const res = await client.rawRequest<CdcEventEnvelope[]>(`/api/v1/cdc/events${s ? `?${s}` : ""}`);
     return { data: res.data, meta: (res.meta as CdcFeedPage["meta"]) ?? { nextCursor: null, hasMore: false } };

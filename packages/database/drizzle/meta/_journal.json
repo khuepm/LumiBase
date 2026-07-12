@@ -57,6 +57,13 @@
       "when": 1783500100001,
       "tag": "0007_cdc_change_feed",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783500100002,
+      "tag": "0008_cdc_resource_column",
+      "breakpoints": true
     }
   ]
 }

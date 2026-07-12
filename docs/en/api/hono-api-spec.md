@@ -1107,7 +1107,7 @@ Mounted on the authenticated `api` app BEFORE the ClickHouse CDC control-plane r
 
 | Method | Path | Guard | Description |
 |---|---|---|---|
-| GET | `/cdc/events` | capability `cdc:subscribe` (admin implies) | Keyset-paginated change events. Query: `cursor`, `collections` (CSV), `operations` (CSV), `limit` (≤500). Returns `{ data, meta: { nextCursor, hasMore } }`. 400 malformed cursor; 410 `CURSOR_EXPIRED` + `earliestCursor` past retention. |
+| GET | `/cdc/events` | capability `cdc:subscribe` (admin implies) | Keyset-paginated change events. Query: `cursor`, `collections` (CSV), `operations` (CSV), `limit` (≤500), `wait` (long-poll seconds ≤25 — holds an empty first read until an event arrives). Returns `{ data, meta: { nextCursor, hasMore } }`. Envelope `type` is `<resource>.<operation>` (`items.*` content, `collections.*`/`fields.*` schema). 400 malformed cursor; 410 `CURSOR_EXPIRED` + `earliestCursor` past retention. |
 | GET/POST | `/cdc/subscriptions` | site admin | List (with per-subscription lag) / create (max 50 per site → 403; duplicate name → 409; `kind=webhook` requires a webhook **with a secret** → 400). |
 | GET/PATCH/DELETE | `/cdc/subscriptions/:id` | site admin | Detail / update filters + pause/resume (invalid transition → 409) / delete (audited). |
 | POST | `/cdc/subscriptions/:id/ack` | capability `cdc:subscribe` | Commit a pull checkpoint. Forward-only — rewind → 409 `ACK_REGRESSION`. |

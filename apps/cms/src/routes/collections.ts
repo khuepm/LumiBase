@@ -112,17 +112,27 @@ const schemaInputSchema = collectionInputSchema
     })).optional(),
   });
 
-const buildService = (c: Context<AppEnv>) =>
-  new SchemaService({
+const buildService = (c: Context<AppEnv>) => {
+  const auth = c.get('auth');
+  return new SchemaService({
     db: c.get('db') as never,
     siteId: c.get('siteId') as unknown as string,
     cache: c.get('runtime').cache,
+    // Change-feed capture of schema DDL (collections.* / fields.*). The queue
+    // is the latency path; the dispatcher sweep is the correctness backstop.
+    queue: c.get('runtime').queue,
+    cdcActor: auth?.apiKeyId
+      ? { type: 'api_key', id: auth.apiKeyId }
+      : auth?.userId
+        ? { type: 'user', id: auth.userId }
+        : undefined,
     events: {
       emit: async (event) => {
         await c.get('runtime').queue.enqueue('schema-events', event.type, event, { priority: 'normal' });
       },
     },
   });
+};
 
 const toError = (err: unknown) => {
   if (err instanceof SchemaServiceError) {

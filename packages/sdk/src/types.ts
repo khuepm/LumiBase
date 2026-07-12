@@ -1223,6 +1223,8 @@ export interface CdcFeedReadParams {
   collections?: string[];
   operations?: CdcOperation[];
   limit?: number;
+  /** Long-poll budget in seconds (0/omitted = return immediately; server caps at 25). */
+  wait?: number;
 }
 
 export interface CdcSubscriptionResource {

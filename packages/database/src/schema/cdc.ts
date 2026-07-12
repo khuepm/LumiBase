@@ -133,6 +133,13 @@ export const cdcChangeEvents = pgTable(
     siteId: text('site_id')
       .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
+    /**
+     * Resource kind the event describes: 'item' (default — content rows),
+     * 'collection'/'field' (schema changes), or 'setting'. Drives the envelope
+     * `type` prefix (`items.*`, `collections.*`, `fields.*`, `settings.*`).
+     * Defaults to 'item' so rows written before this column read correctly.
+     */
+    resource: text('resource').default('item').notNull(),
     collection: text('collection').notNull(),
     itemId: text('item_id').notNull(),
     /** 'create' | 'update' | 'delete' */

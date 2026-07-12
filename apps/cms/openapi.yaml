@@ -916,7 +916,7 @@ components:
       required: [id, type, schemaVersion, siteId, collection, itemId, operation, occurredAt, actor, source, cursor]
       properties:
         id: { type: string, description: Idempotency key (nanoid). }
-        type: { type: string, pattern: '^items\.(create|update|delete)$' }
+        type: { type: string, pattern: '^(items|collections|fields|settings)\.(create|update|delete)$', description: '<plural-resource>.<operation> — items.* (content), collections.*/fields.* (schema), settings.*.' }
         schemaVersion: { type: integer, minimum: 1 }
         siteId: { type: string }
         collection: { type: string }
@@ -1778,6 +1778,7 @@ paths:
         - { name: collections, in: query, required: false, schema: { type: string }, description: CSV collection filter. }
         - { name: operations, in: query, required: false, schema: { type: string }, description: 'CSV of create,update,delete.' }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+        - { name: wait, in: query, required: false, schema: { type: integer, minimum: 0, maximum: 25, default: 0 }, description: Long-poll budget in seconds; server holds an empty first read until an event appears or the budget elapses. }
       responses:
         '200':
           description: A page of change events

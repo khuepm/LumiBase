@@ -375,7 +375,7 @@ Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0000_l
 
 | Table | Purpose |
 |---|---|
-| `lumibase_cdc_change_events` | Append-only transactional outbox: one row per committed item mutation (`collection`, `item_id`, `operation`, masked `payload`, `changed_fields`, actor/source, `occurred_at`). Feed order = keyset `(occurred_at, id)` — nanoid PKs carry no order. Indexes `(site_id, occurred_at, id)` and `(site_id, collection, occurred_at, id)`. |
+| `lumibase_cdc_change_events` | Append-only transactional outbox: one row per committed mutation (`resource` `item`/`collection`/`field`/`setting` — default `item`, migration `0008`; `collection`, `item_id`, `operation`, masked `payload`, `changed_fields`, actor/source, `occurred_at`). The envelope `type` is `<plural-resource>.<operation>`. Feed order = keyset `(occurred_at, id)` — nanoid PKs carry no order. Indexes `(site_id, occurred_at, id)` and `(site_id, collection, occurred_at, id)`. |
 | `lumibase_cdc_subscriptions` | Consumer registry + checkpoint (`cursor_occurred_at` + `cursor_id`), kind `pull`/`webhook`/`extension`, status `active`/`paused`/`dead`/`stale`, filters, `consecutive_failures`. Unique `(site_id, name)`. |
 | `lumibase_cdc_deliveries` | Append-only delivery-attempt log per batch (attempt, status, http status, bounded error message, duration). Pruned on the same retention window as the outbox. |
 
