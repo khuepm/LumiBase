@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-07-12T05:10:25.016Z",
+  "generatedAt": "2026-07-12T05:50:14.462Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
-    "preserved": 0,
+    "preserved": 1,
     "conflicts": 1,
     "upToDate": 47,
-    "planned": 86
+    "planned": 88
   },
   "actions": [
     {
@@ -1057,6 +1057,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/git-integration.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/marketplace-ui.md",
       "type": "translate",
       "reason": "en duplicates vi content; replace en with English translation",
@@ -1281,7 +1293,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-12T05-10-25-159Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-12T05-50-14-599Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1401,6 +1413,18 @@
       "sourceLocale": "vi",
       "targetLocale": "en",
       "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "roadmap/git-integration.md",
+      "type": "preserve-and-translate",
+      "reason": "en-file-is-vietnamese; no vi counterpart",
+      "enLang": "vi",
+      "viLang": null,
+      "sourceLocale": "vi",
+      "targetLocale": "en",
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
