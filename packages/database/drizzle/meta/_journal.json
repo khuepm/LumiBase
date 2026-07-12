@@ -50,6 +50,13 @@
       "when": 1783500100000,
       "tag": "0006_password_changed_at_and_email_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783500100001,
+      "tag": "0007_cdc_change_feed",
+      "breakpoints": true
     }
   ]
 }

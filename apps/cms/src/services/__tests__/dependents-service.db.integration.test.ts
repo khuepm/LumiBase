@@ -142,6 +142,37 @@ describe('DependentsService — DB integration', () => {
     expect(c?.deletedAt).not.toBeNull();
   });
 
+  it('does not count dependents from another site (tenant isolation, Req 1)', async () => {
+    if (!canConnect) return;
+    await relation('restrict');
+    const { articleId } = await seedArticleWithComments(2);
+
+    // A second site with a comment referencing the SAME article id string.
+    const SITE_B = `${SITE}_b`;
+    await db.delete(sites).where(eq(sites.id, SITE_B));
+    await db.insert(sites).values({ id: SITE_B, name: 'Deps IT B' });
+    const bArticles = (await db.insert(collections).values({ siteId: SITE_B, name: 'articles', label: 'A' }).returning({ id: collections.id }))[0]!.id;
+    const bComments = (await db.insert(collections).values({ siteId: SITE_B, name: 'comments', label: 'C' }).returning({ id: collections.id }))[0]!.id;
+    await db.insert(fields).values([
+      { siteId: SITE_B, collectionId: bArticles, name: 'title', type: 'string', interface: 'input' },
+      { siteId: SITE_B, collectionId: bComments, name: 'body', type: 'string', interface: 'input' },
+      { siteId: SITE_B, collectionId: bComments, name: 'article', type: 'string', interface: 'input' },
+    ]);
+    await db.insert(relations).values({ siteId: SITE_B, manyCollection: 'comments', manyField: 'article', oneCollection: 'articles', type: 'm2o', onDelete: 'restrict' });
+    const itemB = new ItemService({ db, siteId: SITE_B });
+    await itemB.create('comments', { data: { body: 'cross', article: articleId } });
+
+    try {
+      // Site A only sees its own 2 comments — never site B's cross-referencing one.
+      const svc = new DependentsService({ db, siteId: SITE });
+      const report = await svc.report('articles', articleId);
+      expect(report.dependents).toHaveLength(1);
+      expect(report.dependents[0]!.count).toBe(2);
+    } finally {
+      await db.delete(sites).where(eq(sites.id, SITE_B)).catch(() => undefined);
+    }
+  });
+
   it('set_null is rejected when the field is required (Req 5.3)', async () => {
     if (!canConnect) return;
     await relation('restrict');

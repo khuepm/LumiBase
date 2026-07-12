@@ -31,7 +31,7 @@ export interface SkillDefinition {
   description: string;
   requiredCapabilities: string[];
   /** Service this skill connects to (for documentation/tracing). */
-  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows' | 'deployments';
+  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows' | 'deployments' | 'cdc-feed';
   handler: (args: Record<string, unknown>) => Promise<unknown>;
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
@@ -442,6 +442,26 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     // Lazy import keeps the harness decoupled from the deployment module.
     const { DeploymentService } = await import('./deployment/deployment-service');
     return new DeploymentService({ db: services.db, siteId: services.siteId, keys: services.keys });
+  };
+
+  const cdcFeedService = async () => {
+    if (!services.db || !services.siteId) {
+      throw new Error('CDC_FEED_NOT_CONFIGURED: change-feed skills require a tenant db context');
+    }
+    // Lazy import keeps the harness decoupled from the change-feed module.
+    const [{ SubscriptionService }, { DrizzleCdcEventStore }, { readRetentionDays }] =
+      await Promise.all([
+        import('../modules/cdc/change-feed/subscription-service'),
+        import('../modules/cdc/change-feed/feed-reader'),
+        import('../modules/cdc/change-feed/retention'),
+      ]);
+    const retentionDays = await readRetentionDays(services.db, services.siteId);
+    return new SubscriptionService({
+      db: services.db,
+      siteId: services.siteId,
+      eventStore: new DrizzleCdcEventStore(services.db),
+      retentionDays,
+    });
   };
 
   return {
@@ -1612,6 +1632,78 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           triggeredBy: args['__runId'] ? String(args['__runId']) : undefined,
         });
         return { deploymentId: row.id, status: row.status, provider: row.provider };
+      },
+    },
+
+    // ── Change Feed (spec: cdc-extension-integration, Req 7.4) ─────────────
+    // `deleteCdcSubscription` is control-plane purely via the `delete` name
+    // prefix in `isControlPlaneSkill` — no manual `dangerous` flag needed.
+
+    listCdcSubscriptions: {
+      name: 'listCdcSubscriptions',
+      description: 'List the change-feed subscriptions for the site with their status and lag.',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async () => {
+        const service = await cdcFeedService();
+        return { subscriptions: await service.list() };
+      },
+    },
+    getCdcSubscriptionStatus: {
+      name: 'getCdcSubscriptionStatus',
+      description: 'Get one change-feed subscription (status, checkpoint cursor, lag).',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async (args) => {
+        const service = await cdcFeedService();
+        return await service.get(String(args['subscriptionId'] ?? ''));
+      },
+    },
+    createCdcSubscription: {
+      name: 'createCdcSubscription',
+      description:
+        'Create a change-feed subscription (pull, webhook, or extension) with optional filters.',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async (args) => {
+        const service = await cdcFeedService();
+        const { CdcSubscriptionCreateSchema } = await import('@lumibase/shared/schemas');
+        const input = CdcSubscriptionCreateSchema.parse({
+          name: String(args['name'] ?? ''),
+          kind: String(args['kind'] ?? 'pull'),
+          collections: Array.isArray(args['collections']) ? args['collections'] : [],
+          operations: Array.isArray(args['operations']) ? args['operations'] : [],
+          webhook_id: args['webhookId'] ? String(args['webhookId']) : undefined,
+          extension_name: args['extensionName'] ? String(args['extensionName']) : undefined,
+        });
+        return await service.create(input);
+      },
+    },
+    replayCdcSubscription: {
+      name: 'replayCdcSubscription',
+      description:
+        'Rewind a subscription checkpoint inside the retention window (resets dead/stale to active).',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async (args) => {
+        const service = await cdcFeedService();
+        return await service.replay(
+          String(args['subscriptionId'] ?? ''),
+          { occurredAfter: String(args['occurredAfter'] ?? '') },
+          { type: 'agent', id: args['__runId'] ? String(args['__runId']) : null },
+        );
+      },
+    },
+    deleteCdcSubscription: {
+      name: 'deleteCdcSubscription',
+      description:
+        'Delete a change-feed subscription. Control-plane: requires HITL approval below autopilot.',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async (args) => {
+        const service = await cdcFeedService();
+        await service.remove(String(args['subscriptionId'] ?? ''));
+        return { ok: true };
       },
     },
   };

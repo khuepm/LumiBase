@@ -136,6 +136,62 @@ describe('attachNodeRealtime', () => {
     ws.close();
   });
 
+  it('read-gates subscribe from the ticket collection allowlist (studio)', async () => {
+    const t = await ticket({ plane: 'studio', userId: 'u1', collections: ['posts'], siteId: 'site-1' });
+    const ws = await connect(t);
+
+    // Allowed collection → events flow.
+    ws.send(JSON.stringify({ type: 'subscribe', collection: 'posts' }));
+    await new Promise((r) => setTimeout(r, 50));
+    const got = waitFor(ws, (m) => m.type === 'event');
+    hub.publish('site-1', { type: 'event', plane: 'studio', collection: 'posts', action: 'update', itemId: '1', payload: null });
+    expect((await got).collection).toBe('posts');
+
+    // Collection outside the allowlist → SUBSCRIBE_FORBIDDEN, no delivery.
+    ws.send(JSON.stringify({ type: 'subscribe', collection: 'salaries' }));
+    const err = await waitFor(ws, (m) => m.type === 'error');
+    expect(err.code).toBe('SUBSCRIBE_FORBIDDEN');
+
+    let leaked = false;
+    ws.on('message', (d) => {
+      const m = JSON.parse(d.toString());
+      if (m.type === 'event' && m.collection === 'salaries') leaked = true;
+    });
+    hub.publish('site-1', { type: 'event', plane: 'studio', collection: 'salaries', action: 'update', itemId: '2', payload: null });
+    await new Promise((r) => setTimeout(r, 150));
+    expect(leaked).toBe(false);
+
+    ws.close();
+  });
+
+  it('denies every subscribe when the ticket carries no collections claim (fail-closed)', async () => {
+    const t = await ticket({ plane: 'studio', userId: 'u1', siteId: 'site-1' });
+    const ws = await connect(t);
+    ws.send(JSON.stringify({ type: 'subscribe', collection: 'posts' }));
+    const err = await waitFor(ws, (m) => m.type === 'error');
+    expect(err.code).toBe('SUBSCRIBE_FORBIDDEN');
+    ws.close();
+  });
+
+  it('applies the per-subscription filter over the event envelope', async () => {
+    const t = await ticket({ plane: 'studio', userId: 'u1', collections: ['*'], siteId: 'site-1' });
+    const ws = await connect(t);
+    ws.send(JSON.stringify({ type: 'subscribe', collection: 'posts', filter: { action: { _eq: 'delete' } } }));
+    await new Promise((r) => setTimeout(r, 50));
+
+    const events: string[] = [];
+    ws.on('message', (d) => {
+      const m = JSON.parse(d.toString());
+      if (m.type === 'event') events.push(m.action);
+    });
+    hub.publish('site-1', { type: 'event', plane: 'studio', collection: 'posts', action: 'update', itemId: '1', payload: null });
+    hub.publish('site-1', { type: 'event', plane: 'studio', collection: 'posts', action: 'delete', itemId: '1', payload: null });
+    await new Promise((r) => setTimeout(r, 150));
+    expect(events).toEqual(['delete']); // update filtered out, delete delivered
+
+    ws.close();
+  });
+
   it('enforces maxConnectionsPerSubject', async () => {
     // Restart the hub with a cap of 1 connection per subject.
     close();

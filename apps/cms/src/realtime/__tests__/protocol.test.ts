@@ -23,6 +23,18 @@ describe('realtime protocol', () => {
     it('rejects empty collection on subscribe', () => {
       expect(clientMessageSchema.safeParse({ type: 'subscribe', collection: '' }).success).toBe(false);
     });
+
+    it('accepts an optional condition-rule filter on subscribe', () => {
+      expect(
+        clientMessageSchema.safeParse({
+          type: 'subscribe',
+          collection: 'posts',
+          filter: { action: { _eq: 'delete' } },
+        }).success,
+      ).toBe(true);
+      // non-object filter is rejected
+      expect(clientMessageSchema.safeParse({ type: 'subscribe', collection: 'posts', filter: 'bogus' }).success).toBe(false);
+    });
   });
 
   describe('client messages (new audience frames)', () => {

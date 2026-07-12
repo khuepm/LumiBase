@@ -144,6 +144,57 @@ async function main() {
     queue: runtime.queue,
   });
 
+  // ── Change Feed dispatch (cdc-extension-integration Req 4.7) ────────────
+  //
+  // Consumes the `cdc-dispatch` queue (latency path) and runs the 30s sweep
+  // (correctness backstop) that delivers outbox events to webhook/extension
+  // subscriptions. Without it, push subscriptions never receive events —
+  // pull consumers are unaffected.
+  const {
+    registerCdcDispatchWorker,
+    CdcDispatcher,
+    createWebhookEnvelopeSender,
+    DrizzleDeliveryLog,
+    DrizzleSubscriptionDispatchStore,
+  } = await import('./modules/cdc/change-feed/dispatcher');
+  const { DrizzleCdcEventStore } = await import('./modules/cdc/change-feed/feed-reader');
+  const { ExtensionEnvelopeSender, SandboxCdcSubscriberLoader } = await import(
+    './modules/cdc/change-feed/extension-sender'
+  );
+  const cdcSubscriptionStore = new DrizzleSubscriptionDispatchStore(rotatorDb);
+  const { DrizzleRetentionStore, pruneChangeFeed, readRetentionDays } = await import(
+    './modules/cdc/change-feed/retention'
+  );
+  registerCdcDispatchWorker({
+    queue: runtime.queue,
+    subscriptions: cdcSubscriptionStore,
+    prune: async (siteId) => {
+      await pruneChangeFeed(
+        {
+          store: new DrizzleRetentionStore(rotatorDb),
+          retentionDays: await readRetentionDays(rotatorDb, siteId),
+        },
+        siteId,
+      );
+    },
+    buildDispatcher: () =>
+      new CdcDispatcher({
+        eventStore: new DrizzleCdcEventStore(rotatorDb),
+        subscriptions: cdcSubscriptionStore,
+        deliveryLog: new DrizzleDeliveryLog(rotatorDb),
+        senders: {
+          webhook: createWebhookEnvelopeSender(rotatorDb),
+          extension: new ExtensionEnvelopeSender({
+            loader: new SandboxCdcSubscriberLoader(
+              rotatorDb,
+              process.env as Record<string, unknown>,
+            ),
+          }),
+        },
+        cache: runtime.cache,
+      }),
+  });
+
   // ── Flow event trigger (visual-flow-builder Req 1) ───────────────────────
   //
   // Consumes the `flow-events` queue: ItemService enqueues one job per

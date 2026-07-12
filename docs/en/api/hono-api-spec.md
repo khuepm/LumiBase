@@ -725,19 +725,26 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 
 **Endpoint:** `wss://api.<your-site>.lumibase.dev/api/v1/realtime`
 
-**Auth:** Pass token in query string or first message:
+**Auth (ticket exchange):** browsers cannot send `Authorization` on the WS
+handshake, so exchange the session for a short-lived (1 min) ticket first:
+`POST /api/v1/realtime/ticket` (studio) or `POST /api/v1/realtime/audience-ticket`
+(end-user), then connect:
 ```
-wss://...realtime?token=<access_token>&site=<siteId>
+wss://...realtime?ticket=<ticket>
+```
+The studio ticket embeds the collections the principal can `read`; the hub
+rejects any other `subscribe` with `{ "type": "error", "code": "SUBSCRIBE_FORBIDDEN" }`.
+
+**Subscribe to collection** (optional Directus-style `filter`, evaluated
+server-side over the event envelope `collection`/`action`/`itemId`):
+```json
+{ "type": "subscribe", "collection": "articles", "filter": { "action": { "_eq": "delete" } } }
 ```
 
-**Subscribe to collection:**
+**Server event** — signal-only: no row data on the wire (clients re-fetch via
+`/items`, which enforces RBAC + field masking):
 ```json
-{ "type": "subscribe", "collection": "articles", "query": { "filter": { "status": { "_eq": "published" } } } }
-```
-
-**Server event:**
-```json
-{ "type": "event", "collection": "articles", "event": "update", "data": { "id": "art_001", "title": "Updated title" } }
+{ "type": "event", "collection": "articles", "action": "update", "itemId": "art_001", "payload": null }
 ```
 
 **Server notification frame** (push-noti feature) — broadcast to every session
@@ -1099,3 +1106,20 @@ X-RateLimit-Reset: 1749254460
 Breaking changes get a new path prefix (`/api/v2`). The previous version is maintained for at least 12 months.
 
 Send `X-Lumi-API-Version: 1` to pin to a specific API version. Default is the latest stable.
+
+
+## Change Feed (`/api/v1/cdc` — spec cdc-extension-integration)
+
+Mounted on the authenticated `api` app BEFORE the ClickHouse CDC control-plane router. Frontend-realm tokens are rejected on every route (ADR-011).
+
+| Method | Path | Guard | Description |
+|---|---|---|---|
+| GET | `/cdc/events` | capability `cdc:subscribe` (admin implies) | Keyset-paginated change events. Query: `cursor`, `collections` (CSV), `operations` (CSV), `limit` (≤500). Returns `{ data, meta: { nextCursor, hasMore } }`. 400 malformed cursor; 410 `CURSOR_EXPIRED` + `earliestCursor` past retention. |
+| GET/POST | `/cdc/subscriptions` | site admin | List (with per-subscription lag) / create (max 50 per site → 403; duplicate name → 409; `kind=webhook` requires a webhook **with a secret** → 400). |
+| GET/PATCH/DELETE | `/cdc/subscriptions/:id` | site admin | Detail / update filters + pause/resume (invalid transition → 409) / delete (audited). |
+| POST | `/cdc/subscriptions/:id/ack` | capability `cdc:subscribe` | Commit a pull checkpoint. Forward-only — rewind → 409 `ACK_REGRESSION`. |
+| POST | `/cdc/subscriptions/:id/replay` | site admin | Rewind inside retention (`{cursor}` xor `{occurred_after}`); resets dead/stale → active. Audited. |
+| POST | `/cdc/subscriptions/:id/dispatch` | site admin | On-demand dispatch (no-queue fallback). 202. |
+| GET | `/cdc/subscriptions/:id/deliveries` | site admin | Delivery-attempt history, newest first (`limit`, `page`; `meta.total`). |
+
+Webhook deliveries are signed: `X-Lumibase-Signature: t=<unix>,v1=<hmac_sha256_hex>` over `` `${t}.${rawBody}` `` — see `docs/en/features/cdc-change-feed.md` for the verify snippet and envelope reference.

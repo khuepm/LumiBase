@@ -57,6 +57,7 @@ interface RealtimeClientOptions {
 export class RealtimeClient {
   private ws: WebSocket | null = null;
   private readonly subscriptions = new Map<string, Set<RealtimeEventCallback>>();
+  private readonly subscriptionFilters = new Map<string, Record<string, unknown>>();
   private presenceListeners = new Set<PresenceCallback>();
   private currentPresence: { collection?: string; itemId?: string; meta?: Record<string, unknown> } = {};
   private sessionId: string | null = null;
@@ -98,15 +99,25 @@ export class RealtimeClient {
    * Subscribe to item mutation events for a specific collection.
    * Multiple handlers per collection are supported.
    *
+   * `opts.filter` is an optional Directus-style condition rule evaluated
+   * server-side over the event envelope (`collection`/`action`/`itemId`) —
+   * studio broadcasts are signal-only, so row data is never filterable. The
+   * filter is per-collection: the most recent subscribe call's filter wins.
+   *
    * @returns Unsubscribe function.
    */
-  subscribe(collection: string, callback: RealtimeEventCallback): () => void {
+  subscribe(
+    collection: string,
+    callback: RealtimeEventCallback,
+    opts: { filter?: Record<string, unknown> } = {},
+  ): () => void {
     if (!this.subscriptions.has(collection)) {
       this.subscriptions.set(collection, new Set());
     }
     this.subscriptions.get(collection)!.add(callback);
+    if (opts.filter) this.subscriptionFilters.set(collection, opts.filter);
     // Send subscribe message if already connected.
-    this._send({ type: 'subscribe', collection });
+    this._send({ type: 'subscribe', collection, ...(opts.filter ? { filter: opts.filter } : {}) });
     return () => this.unsubscribe(collection, callback);
   }
 
@@ -117,6 +128,7 @@ export class RealtimeClient {
     set.delete(callback);
     if (set.size === 0) {
       this.subscriptions.delete(collection);
+      this.subscriptionFilters.delete(collection);
       this._send({ type: 'unsubscribe', collection });
     }
   }
@@ -199,9 +211,10 @@ export class RealtimeClient {
     ws.addEventListener('open', () => {
       // Reset backoff on successful connection.
       this.backoffMs = this.opts.initialBackoffMs ?? 1000;
-      // Re-subscribe to all active collections.
+      // Re-subscribe to all active collections (restoring per-sub filters).
       for (const collection of this.subscriptions.keys()) {
-        this._sendRaw({ type: 'subscribe', collection });
+        const filter = this.subscriptionFilters.get(collection);
+        this._sendRaw({ type: 'subscribe', collection, ...(filter ? { filter } : {}) });
       }
       // Restore presence.
       if (Object.keys(this.currentPresence).length > 0) {
