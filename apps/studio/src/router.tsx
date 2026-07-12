@@ -45,6 +45,7 @@ const DeveloperTypesPage = lazy(() => import('./modules/settings/types-page').th
 const TranslationsPage = lazy(() => import('./modules/translations').then((m) => ({ default: m.TranslationsPage })));
 const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
 const GitIntegrationsPage = lazy(() => import('./modules/settings/git-integrations-page').then((m) => ({ default: m.GitIntegrationsPage })));
+const ChangeFeedPage = lazy(() => import('./modules/settings/change-feed-page').then((m) => ({ default: m.ChangeFeedPage })));
 const EmailSettingsPage = lazy(() => import('./modules/settings/email-page').then((m) => ({ default: m.EmailSettingsPage })));
 const NotificationsSettingsPage = lazy(() => import('./modules/settings/notifications-page').then((m) => ({ default: m.NotificationsSettingsPage })));
 const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then((m) => ({ default: m.SiteSettingsPage })));
@@ -615,6 +616,12 @@ const gitIntegrationsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'integrations/git',
   component: withSuspense(GitIntegrationsPage),
+});
+
+const changeFeedRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'change-feed',
+  component: withSuspense(ChangeFeedPage),
 });
 
 const emailSettingsRoute = createRoute({
@@ -1223,6 +1230,7 @@ const routeTree = rootRoute.addChildren([
       keyboardSettingsRoute,
       webhooksRoute,
       gitIntegrationsRoute,
+      changeFeedRoute,
       emailSettingsRoute,
       notificationsSettingsRoute,
       materializeSettingsRoute,

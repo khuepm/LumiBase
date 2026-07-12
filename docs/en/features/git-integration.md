@@ -108,7 +108,7 @@ per the steps above (the CI environment has no Postgres).
 
 - **No setup-wizard step / seed / capability flag.** Integrations are created
   after setup in **Studio → Settings → Integrations → Git repositories**.
-- **Migration** `0007_git_integration` is additive (`CREATE TABLE IF NOT EXISTS`,
+- **Migration** `0009_git_integration` is additive (`CREATE TABLE IF NOT EXISTS`,
   `lumibase_git_*` prefix per ADR-010) — no backfill. See Setup Impact Registry
   row for git-integration.
 - The `git-sync` role is seeded lazily; its L1 autonomy grant is seeded on the

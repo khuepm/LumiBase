@@ -87,6 +87,7 @@ import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
+import { cdcFeedRouter } from './modules/cdc/change-feed/routes';
 import { lumibaseFirebaseSyncRouter } from './modules/lumibase-firebase-sync';
 import {
   gitRouter,
@@ -323,6 +324,13 @@ api.route('/mcp', mcpRouter);
 // the SECURITY note in `modules/cdc/routes.ts`). Because `api` is mounted at
 // `/api/v1` below, mounting `cdcRouter` at `/cdc` yields the intended
 // `/api/v1/cdc/*` prefix — matching how every sibling module above is wired.
+// Change Feed (spec cdc-extension-integration) shares the `/cdc` prefix but
+// carries its own guards (capability for reads, site-admin for management).
+// It MUST be mounted BEFORE `cdcRouter`: the control-plane router registers a
+// blanket `use('*')` admin gate, and Hono composes matched handlers in
+// registration order — feed handlers respond first, everything else falls
+// through to the control-plane chain.
+api.route('/cdc', cdcFeedRouter);
 api.route('/cdc', cdcRouter);
 
 // LumiBase Firebase Sync — outbound content mirroring to Firestore/RTDB.

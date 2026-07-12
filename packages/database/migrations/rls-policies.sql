@@ -56,6 +56,8 @@ DECLARE
     'lumibase_site_domains',
     -- Auth session store (site-isolated; holds session-equivalent secrets).
     'lumibase_refresh_tokens',
+    -- Change Feed (outbox + subscriptions + delivery log, site-isolated).
+    'lumibase_cdc_change_events', 'lumibase_cdc_subscriptions', 'lumibase_cdc_deliveries',
     -- Git integration (GitHub / GitLab) — site-isolated.
     'lumibase_git_integrations', 'lumibase_git_pull_requests', 'lumibase_git_ci_runs',
     'lumibase_git_webhook_events', 'lumibase_git_preview_envs', 'lumibase_git_provenance'

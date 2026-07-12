@@ -33,7 +33,7 @@ Thứ tự: shared diff type → schema/migration → service → routes (gắn 
     - _Requirements: 2.1–2.6_
   - [x] 4.2 Promote handler: gọi `ItemService.update` (revision + cache + RLS + HITL), rồi `remove()` version, trả `meta.mainDiverged`
     - _Requirements: 3.2, 3.3, 3.4_
-  - [x] 4.3 Route test: CRUD version; compare; promote tạo revision + xoá version (spy ItemService.update); 403 khi thiếu quyền; 409 key trùng; meta.mainDiverged
+  - [x] 4.3 Route test: CRUD version; compare; promote tạo revision + xoá version (spy ItemService.update); 403 khi thiếu quyền; 409 key trùng; meta.mainDiverged (`versions-route.db.integration.test.ts` — 4 test HTTP-layer: CRUD + 409 VERSION_EXISTS, compare changes, promote assert revision row thật trong DB thay vì spy + version 404 sau promote + `meta.mainDiverged=true` khi main đổi sau snapshot, 403 FORBIDDEN cho member không grant)
     - **Validates: Requirements 2.6, 3.2, 3.4**
 
 - [x] 5. SDK

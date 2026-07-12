@@ -9,7 +9,7 @@
 3. **Policy/grant mặc định trong DB?** — Grant `git-sync` (L1 PROPOSE cho `items:write`) được seed **khi tạo integration đầu tiên** (`ensureGitSyncAutonomyBaseline`, idempotent, không override grant operator đặt) — KHÔNG trong setup transaction. Resolver fallback cũng L1 cho dangerous nên instance chưa có grant vẫn an toàn.
 4. **Bước UI mới trong Setup Wizard?** — KHÔNG. Kết nối repo cấu hình sau setup ở Studio → Settings → Integrations → Git repositories (giống email #18, site-settings #12).
 5. **Capability flag mới trong `GET /api/v1/setup/capabilities`?** — KHÔNG. Chưa thêm; UI dựa trên lỗi `ENCRYPTION_NOT_CONFIGURED`/`OAUTH_NOT_CONFIGURED` trả về từ API.
-6. **Instance đã setup từ trước có cần backfill?** — KHÔNG. Migration `0007_git_integration` (bảng `lumibase_git_*` theo ADR-010) chỉ `CREATE TABLE IF NOT EXISTS` (additive, idempotent) + thêm bảng vào `rls-policies.sql`; instance cũ nhận bảng rỗng → no-op. Role/grant seed lazy/on-connect nên không cần backfill.
+6. **Instance đã setup từ trước có cần backfill?** — KHÔNG. Migration `0009_git_integration` (bảng `lumibase_git_*` theo ADR-010) chỉ `CREATE TABLE IF NOT EXISTS` (additive, idempotent) + thêm bảng vào `rls-policies.sql`; instance cũ nhận bảng rỗng → no-op. Role/grant seed lazy/on-connect nên không cần backfill.
 
 ## Kết luận
 

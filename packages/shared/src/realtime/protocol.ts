@@ -14,6 +14,7 @@
  */
 
 import { z } from 'zod';
+import { conditionRuleSchema } from '../schemas/insights';
 
 export const PROTOCOL = 'lumibase-sync-v1';
 
@@ -28,8 +29,15 @@ export type RealtimeAction = z.infer<typeof realtimeActionSchema>;
 // ─── Client → Server ────────────────────────────────────────────────────────
 
 export const clientMessageSchema = z.discriminatedUnion('type', [
-  // studio plane (unchanged)
-  z.object({ type: z.literal('subscribe'), collection: z.string().min(1) }),
+  // studio plane. `filter` is an optional Directus-style condition rule
+  // evaluated server-side per subscription. Studio collection broadcasts are
+  // signal-only (no row data on the wire), so the rule is evaluated over the
+  // event ENVELOPE only: `collection` / `action` / `itemId`.
+  z.object({
+    type: z.literal('subscribe'),
+    collection: z.string().min(1),
+    filter: conditionRuleSchema.optional(),
+  }),
   z.object({ type: z.literal('unsubscribe'), collection: z.string().min(1) }),
   z.object({
     type: z.literal('presence'),

@@ -827,4 +827,85 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     },
     requiredCapabilities: ['deployments:write'],
   },
+
+  // ── Change Feed (spec: cdc-extension-integration, Req 7.4) ──────────────
+  // `deleteCdcSubscription` starts with `delete`, so `isControlPlaneSkill`
+  // auto-classifies it control-plane → HITL via `ai_approvals` (rule #4).
+
+  listCdcSubscriptions: {
+    name: 'listCdcSubscriptions',
+    description: 'List the change-feed subscriptions for the site with their status and lag.',
+    parameters: { type: 'object', properties: {}, required: [] },
+    requiredCapabilities: ['cdc:manage'],
+  },
+  getCdcSubscriptionStatus: {
+    name: 'getCdcSubscriptionStatus',
+    description: 'Get one change-feed subscription (status, checkpoint cursor, lag).',
+    parameters: {
+      type: 'object',
+      properties: {
+        subscriptionId: { type: 'string', description: 'Subscription id.' },
+      },
+      required: ['subscriptionId'],
+    },
+    requiredCapabilities: ['cdc:manage'],
+  },
+  createCdcSubscription: {
+    name: 'createCdcSubscription',
+    description:
+      'Create a change-feed subscription (pull, webhook, or extension) with optional collection/operation filters.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Unique subscription name for the site.' },
+        kind: { type: 'string', description: 'pull | webhook | extension.' },
+        collections: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Collections to include; empty = all.',
+        },
+        operations: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Operations to include (create/update/delete); empty = all.',
+        },
+        webhookId: { type: 'string', description: 'Webhook id (required for kind=webhook).' },
+        extensionName: {
+          type: 'string',
+          description: 'Extension name (required for kind=extension).',
+        },
+      },
+      required: ['name', 'kind'],
+    },
+    requiredCapabilities: ['cdc:manage'],
+  },
+  replayCdcSubscription: {
+    name: 'replayCdcSubscription',
+    description:
+      'Rewind a subscription checkpoint inside the retention window (resets dead/stale back to active).',
+    parameters: {
+      type: 'object',
+      properties: {
+        subscriptionId: { type: 'string', description: 'Subscription id.' },
+        occurredAfter: {
+          type: 'string',
+          description: 'ISO timestamp to rewind to (within retention).',
+        },
+      },
+      required: ['subscriptionId', 'occurredAfter'],
+    },
+    requiredCapabilities: ['cdc:manage'],
+  },
+  deleteCdcSubscription: {
+    name: 'deleteCdcSubscription',
+    description: 'Delete a change-feed subscription (its checkpoint is lost; events are kept).',
+    parameters: {
+      type: 'object',
+      properties: {
+        subscriptionId: { type: 'string', description: 'Subscription id.' },
+      },
+      required: ['subscriptionId'],
+    },
+    requiredCapabilities: ['cdc:manage'],
+  },
 };

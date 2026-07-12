@@ -25,7 +25,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { nanoid } from 'nanoid';
 import { parseClientMessage, type RealtimeEvent } from '@lumibase/shared';
-import { shouldDeliver, toWireMessage } from './fan-out';
+import { canSubscribe, shouldDeliver, toWireMessage } from './fan-out';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,8 +52,10 @@ interface SessionMeta {
   sessionId: string;
   principal: SessionPrincipal;
   subscriptions: Set<string>; // collection names (studio)
+  filters: Map<string, Record<string, unknown>>; // per-collection subscribe filters
   channels: Set<string>; // joined channels (audience)
   allowedChannels: Set<string>; // channel allowlist from the ticket
+  allowedCollections: Set<string>; // collection read allowlist from the ticket ('*' = admin)
   presence: Omit<PresenceEntry, 'sessionId' | 'lastSeen'>;
   lastActivity: number; // Date.now()
   msgCount: number; // rolling 1-second counter
@@ -120,6 +122,7 @@ export class SiteRoom extends DurableObject<any> {
     const userId = url.searchParams.get('userId') ?? undefined;
     const subjectId = url.searchParams.get('subjectId') ?? undefined;
     const allowedChannels = parseChannelList(url.searchParams.get('channels'));
+    const allowedCollections = parseChannelList(url.searchParams.get('collections'));
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
@@ -133,8 +136,10 @@ export class SiteRoom extends DurableObject<any> {
       sessionId,
       principal: { plane, userId, subjectId },
       subscriptions: new Set(),
+      filters: new Map(),
       channels: new Set(),
       allowedChannels,
+      allowedCollections,
       presence: { userId, subjectId },
       lastActivity: now,
       msgCount: 0,
@@ -226,6 +231,7 @@ export class SiteRoom extends DurableObject<any> {
           subjectId: session.principal.subjectId,
           subscriptions: session.subscriptions,
           channels: session.channels,
+          filters: session.filters,
         })
       ) {
         continue;
@@ -295,11 +301,24 @@ export class SiteRoom extends DurableObject<any> {
 
     switch (msg.type) {
       case 'subscribe': {
+        // Read-gate from the ticket allowlist, never trusted from the client
+        // (mirrors the channel allowlist on `join`).
+        if (!canSubscribe(session.allowedCollections, msg.collection)) {
+          this.send(session.ws, {
+            type: 'error',
+            code: 'SUBSCRIBE_FORBIDDEN',
+            message: `Not allowed to subscribe to collection: ${msg.collection}`,
+          });
+          break;
+        }
         session.subscriptions.add(msg.collection);
+        if (msg.filter) session.filters.set(msg.collection, msg.filter);
+        else session.filters.delete(msg.collection);
         break;
       }
       case 'unsubscribe': {
         session.subscriptions.delete(msg.collection);
+        session.filters.delete(msg.collection);
         break;
       }
       case 'join': {

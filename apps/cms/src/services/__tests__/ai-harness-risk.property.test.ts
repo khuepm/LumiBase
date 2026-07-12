@@ -14,13 +14,14 @@ import type { Database } from '@lumibase/database';
  * **Validates: Requirements 2.5, 2.6, 2.7**
  */
 
-// All valid skill names from CORE_SKILLS. Deployment skills are excluded
-// because they have no offline behaviour: their handlers require a runtime
-// KeyProvider (absent in this harness) and deliberately error rather than
-// stub. They are covered by their own unit tests (deployment/__tests__),
-// including the dangerous→HITL classification of triggerDeployment.
+// All valid skill names from CORE_SKILLS. Deployment and cdc-feed skills are
+// excluded because they have no offline behaviour: their handlers require a
+// runtime KeyProvider / real tenant db (absent in this harness) and
+// deliberately error rather than stub. They are covered by their own unit
+// tests (deployment/__tests__, cdc-feed-skills-hitl.test.ts), including the
+// dangerous→HITL classification of triggerDeployment/deleteCdcSubscription.
 const validSkillNames = Object.keys(CORE_SKILLS).filter(
-  (name) => CORE_SKILLS[name]?.service !== 'deployments',
+  (name) => !['deployments', 'cdc-feed'].includes(CORE_SKILLS[name]?.service ?? ''),
 );
 
 // Arbitrary: pick a valid skill name from CORE_SKILLS

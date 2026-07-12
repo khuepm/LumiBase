@@ -4,6 +4,7 @@ import { registerAccessTools } from './access.js';
 import { registerAdminTools } from './admin.js';
 import { registerAgentTools } from './agent.js';
 import { registerApiKeyTools } from './api-keys.js';
+import { registerCdcTools } from './cdc.js';
 import { registerCollectionTools } from './collections.js';
 import { registerContentConfigTools } from './content-config.js';
 import { registerExtensionTools } from './extensions.js';
@@ -41,6 +42,7 @@ export function registerAllTools(server: McpServer, client: LumiBaseClient): voi
 
   // Automation & governance
   registerWebhookTools(server, client);
+  registerCdcTools(server, client);
   registerAgentTools(server, client);
 
   // Operations & administration

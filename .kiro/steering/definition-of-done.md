@@ -42,6 +42,7 @@ Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, ba
 - [ ] **Surface mới dưới `/api/v1` được phân loại**: content plane / Studio plane (`STUDIO_ACCESS_PATH_PREFIXES`) / control plane (`CONTROL_PLANE_PATHS`). Control-plane prefix PHẢI vào guard list — `adminOnly` per-route chỉ là lớp trong, không thay thế backstop.
 - [ ] **Không thêm path vào bypass/public list** (`withAuth`, `PUBLIC_AUTH_PATHS` của `site-membership`/`studio-access`) nếu không kèm test chứng minh handler an toàn khi `auth === undefined`.
 - [ ] **Route thực thi code động hoặc mutate agent state** (extensions, agent harness, flows) → control-plane, admin-only trước khi handler chạy.
+- [ ] **Service request-path ủy quyền cho ItemService (hoặc ghi trực tiếp bảng content)** PHẢI mang permission context của caller: dựng qua `itemServiceForRequest(c)` / `permissionServiceForRequest(c)`, KHÔNG `itemServiceForSystem` trên đường request. Ghi raw SQL vào `items` (batch update/delete) phải tự gate `canAccess(collection, action)` + áp `whereFor()` row-scope. Đây là class lỗi "quên carry RBAC context" (đã lặp: AI `updateItem`, MCP endpoint, dependents resolve) — khoá bằng behavioural test dạng `dependents-service-rbac.test.ts` (deny → throw trước khi query/mutate).
 - [ ] Tripwire test `apps/cms/src/__tests__/security-guards.wiring.test.ts` vẫn pass; nếu tái cấu trúc guard thì cập nhật assertion CÙNG với behavioural test mới, không xoá.
 
 ## 3. Spec hygiene
@@ -70,7 +71,7 @@ Với mỗi tutorial hiện có, rà mục **"Compatibility / Tương thích"** 
 
 ## 6. DoD evolution — RÀ SOÁT chính checklist này
 
-> Chính DoD này lớn lên từ sự cố: mục 2b sinh sau các lần rò rỉ tenant, mục 2c sau khi `/api/v1/agent` lọt khỏi control-plane list (CHANGELOG: *"Definition of Done gains section 2c"*). Nhưng đến giờ việc "học từ bug → thêm hàng rào" vẫn **ngầm định** — phụ thuộc người review có nhớ hay không. Đúng cái class lỗi 2c cảnh báo: *quên, không phải sai*. Mục này biến nó thành bước bắt buộc.
+> Chính DoD này lớn lên từ sự cố: mục 2b sinh sau các lần rò rỉ tenant, mục 2c sau khi `/api/v1/agent` lọt khỏi control-plane list (CHANGELOG: *"Definition of Done gains section 2c"*). Bullet "service request-path ủy quyền ItemService" trong 2c thêm sau khi audit phát hiện `DependentsService` (resolve/preflight FK dependents) ghi/xoá bản ghi collection phụ mà KHÔNG mang permission context của caller — bất kỳ thành viên tenant nào cũng set_null/reassign/delete được dữ liệu ngoài quyền (cùng class với AI `updateItem` / MCP đã vá). Nhưng đến giờ việc "học từ bug → thêm hàng rào" vẫn **ngầm định** — phụ thuộc người review có nhớ hay không. Đúng cái class lỗi 2c cảnh báo: *quên, không phải sai*. Mục này biến nó thành bước bắt buộc.
 >
 > Hàng rào tốt nhất là **cơ giới hóa** (test/tripwire/lint/CI chặn), rồi mới tới **checklist** (con người rà). Ưu tiên cơ giới hóa; chỉ dùng checklist khi không thể chặn tự động.
 
@@ -78,3 +79,14 @@ Với mỗi tutorial hiện có, rà mục **"Compatibility / Tương thích"** 
 - [ ] **Feature — mở failure-mode/attack-surface mới?** feature này tạo một *loại* rủi ro mà chưa mục DoD nào phủ (bề mặt thực thi code động mới, kênh fan-out realtime mới, đường ghi ngoài request, nơi lưu secret mới, contract phá vỡ tương thích)? Nếu có và sẽ tái xuất ở feature sau → đề xuất **mục/checklist DoD mới**, đừng chỉ xử lý một lần cho feature này.
 - [ ] **Cập nhật DoD ngay trong cùng PR:** nếu hai câu trên trả lời "có", sửa file này (thêm mục / thêm dòng checklist / thêm tripwire) **cùng PR** với fix/feature, kèm blockquote nêu sự cố hoặc rủi ro đã dẫn tới hàng rào — để mục mới tự giải thích vì sao tồn tại (như 2b/2c đang làm). Ghi vào CHANGELOG nếu DoD đổi.
 - [ ] **Không cần đổi:** nếu class lỗi đã có hàng rào, hoặc rủi ro là một-lần không tái diễn → không đụng DoD; ghi một dòng lý do trong mô tả PR để biết đã cân nhắc, không phải bị quên.
+
+## 7. Out-of-scope findings — LOG lại, đừng bỏ sót
+
+> Trong khi làm một PR, ta hay phát hiện lỗ hổng / bug / nợ kỹ thuật / feature
+> **không thuộc scope** PR đó. Nếu chỉ nêu trong mô tả PR hay chat, chúng **biến
+> mất sau khi merge**. Hàng rào: gom về một chỗ duy nhất
+> `.kiro/steering/out-of-scope-backlog.md`.
+
+- [ ] **Rà lại cả session, không chỉ diff:** có phát hiện điều gì thật (bug/lỗ hổng/nợ kỹ thuật/feature) **ngoài scope** PR này khi đọc code / chạy CI / điều tra không?
+- [ ] **Nếu CÓ:** thêm một dòng vào `.kiro/steering/out-of-scope-backlog.md` **trong cùng PR** (ID, loại, khu vực, mô tả, mức độ, trạng thái, tham chiếu). Đủ lớn thành feature → tạo `.kiro/specs/<feature>/` và để trạng thái `tracked` trỏ tới spec. Fix luôn được trong PR → vẫn log một dòng `fixed` để giữ dấu vết.
+- [ ] **Nếu KHÔNG:** không cần đụng backlog — nhưng câu hỏi phải được hỏi, không mặc định bỏ qua.
