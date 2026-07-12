@@ -7,6 +7,8 @@ import { itemServiceForRequest } from '../services/item-service-factory';
 import {
   ReleaseService,
   ReleaseServiceError,
+  releaseAuditEvent,
+  releaseAuditMetadata,
   type AtomicityMode,
 } from '../services/release-service';
 
@@ -127,22 +129,12 @@ releasesRouter.post('/:id/publish', async (c) => {
     // Audit (Req 12). best-effort, never blocks the response.
     const auth = c.get('auth');
     await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
-      event:
-        result.status === 'published'
-          ? 'release_published'
-          : result.status === 'partially_failed'
-            ? 'release_partially_published'
-            : 'release_publish_failed',
+      event: releaseAuditEvent(result.status),
       actorEmail: auth?.email ?? null,
       ip: c.get('ip') ?? null,
       userAgent: c.get('userAgent') ?? null,
       requestId: c.get('requestId') ?? null,
-      metadata: {
-        releaseId: id,
-        trigger: 'manual',
-        itemCount: result.outcomes.length,
-        failedCount: result.outcomes.filter((o) => o.outcome === 'failed').length,
-      } as Record<string, unknown>,
+      metadata: releaseAuditMetadata(id, 'manual', result.outcomes),
     });
     // partial/failed publish still returns 200 with the per-item outcomes.
     return c.json({ data: result });

@@ -56,9 +56,9 @@ Kế hoạch triển khai **Content Releases** theo 5 phase. Phase A đặt nề
   - [x] 7.4 Circuit-breaker: lỗi nghiệp vụ → `failed`+statusReason, không retry; lỗi transient → giữ `scheduled` cho tick sau (Req 10.1-10.3; design §6.2)
   - [x] 7.5 Integration test sweep: scheduled đến hạn được publish đúng một lần (idempotent qua 2 tick); maintenance window hoãn; failed không bị retry; transient giữ scheduled (Req 6.4-6.7, 10.2, 10.3; design §6)
 
-- [ ] 8. Audit & provenance
-  - [x] 8.1 Ghi `release_published` / `release_partially_published` / `release_publish_failed` qua `AuditLogger` (cùng cơ chế `scheduler-worker.ts:252`); metadata counts/ids/reasons, `trigger` manual vs scheduled, không nội dung item (Req 12.1-12.4; design §7)
-  - [ ] 8.2 Test audit: assert event + metadata đúng cho manual success, scheduled success, partial, failed (Req 12.1-12.3; design §7) — **chưa làm**: không thấy test assert audit event/metadata cho 4 kịch bản
+- [x] 8. Audit & provenance
+  - [x] 8.1 Ghi `release_published` / `release_partially_published` / `release_publish_failed` qua `AuditLogger` (cùng cơ chế `scheduler-worker.ts:252`); metadata counts/ids/reasons, `trigger` manual vs scheduled, không nội dung item (Req 12.1-12.4; design §7) (2026-07-12: vá lỗ hổng phát hiện khi viết test 8.2 — sweep scheduled trước đây KHÔNG ghi audit, chỉ route manual có; nay default publishFn của `sweepDueReleases` ghi cùng vocabulary qua `releaseAuditEvent`/`releaseAuditMetadata` share với route)
+  - [x] 8.2 Test audit: assert event + metadata đúng cho manual success, scheduled success, partial, failed (Req 12.1-12.3; design §7) (`releases-route-audit.db.integration.test.ts`: 4 kịch bản — manual success/partial/failed qua route + scheduled qua sweep; assert event + metadata counts-only, không nội dung item)
 
 ### Phase E — Docs, Setup Impact, DoD
 
