@@ -78,3 +78,14 @@ Với mỗi tutorial hiện có, rà mục **"Compatibility / Tương thích"** 
 - [ ] **Feature — mở failure-mode/attack-surface mới?** feature này tạo một *loại* rủi ro mà chưa mục DoD nào phủ (bề mặt thực thi code động mới, kênh fan-out realtime mới, đường ghi ngoài request, nơi lưu secret mới, contract phá vỡ tương thích)? Nếu có và sẽ tái xuất ở feature sau → đề xuất **mục/checklist DoD mới**, đừng chỉ xử lý một lần cho feature này.
 - [ ] **Cập nhật DoD ngay trong cùng PR:** nếu hai câu trên trả lời "có", sửa file này (thêm mục / thêm dòng checklist / thêm tripwire) **cùng PR** với fix/feature, kèm blockquote nêu sự cố hoặc rủi ro đã dẫn tới hàng rào — để mục mới tự giải thích vì sao tồn tại (như 2b/2c đang làm). Ghi vào CHANGELOG nếu DoD đổi.
 - [ ] **Không cần đổi:** nếu class lỗi đã có hàng rào, hoặc rủi ro là một-lần không tái diễn → không đụng DoD; ghi một dòng lý do trong mô tả PR để biết đã cân nhắc, không phải bị quên.
+
+## 7. Out-of-scope findings — LOG lại, đừng bỏ sót
+
+> Trong khi làm một PR, ta hay phát hiện lỗ hổng / bug / nợ kỹ thuật / feature
+> **không thuộc scope** PR đó. Nếu chỉ nêu trong mô tả PR hay chat, chúng **biến
+> mất sau khi merge**. Hàng rào: gom về một chỗ duy nhất
+> `.kiro/steering/out-of-scope-backlog.md`.
+
+- [ ] **Rà lại cả session, không chỉ diff:** có phát hiện điều gì thật (bug/lỗ hổng/nợ kỹ thuật/feature) **ngoài scope** PR này khi đọc code / chạy CI / điều tra không?
+- [ ] **Nếu CÓ:** thêm một dòng vào `.kiro/steering/out-of-scope-backlog.md` **trong cùng PR** (ID, loại, khu vực, mô tả, mức độ, trạng thái, tham chiếu). Đủ lớn thành feature → tạo `.kiro/specs/<feature>/` và để trạng thái `tracked` trỏ tới spec. Fix luôn được trong PR → vẫn log một dòng `fixed` để giữ dấu vết.
+- [ ] **Nếu KHÔNG:** không cần đụng backlog — nhưng câu hỏi phải được hỏi, không mặc định bỏ qua.
