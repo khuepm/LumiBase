@@ -217,6 +217,132 @@ components:
         relations:
           type: array
           items: { $ref: '#/components/schemas/Relation' }
+    LockoutPolicy:
+      type: object
+      description: >-
+        Login-security lockout policy. Every field is required when the object
+        is supplied; omit the whole object at `/setup/complete` to apply the
+        built-in "Standard" preset.
+      required:
+        - userMaxFailedAttempts
+        - userLockoutDurationSeconds
+        - ipMaxFailedAttempts
+        - ipLockoutDurationSeconds
+        - lockoutWindowSeconds
+        - geoAnomalyEnabled
+        - timeAnomalyEnabled
+        - deviceAnomalyEnabled
+        - anomalyScoreThreshold
+        - anomalyAction
+        - notifyChannels
+        - loginStallMs
+      properties:
+        userMaxFailedAttempts: { type: integer, minimum: 3, maximum: 20 }
+        userLockoutDurationSeconds: { type: integer, minimum: 60, maximum: 86400 }
+        ipMaxFailedAttempts: { type: integer, minimum: 5, maximum: 100 }
+        ipLockoutDurationSeconds: { type: integer, minimum: 60, maximum: 86400 }
+        lockoutWindowSeconds: { type: integer, minimum: 60, maximum: 86400 }
+        geoAnomalyEnabled: { type: boolean }
+        timeAnomalyEnabled: { type: boolean }
+        deviceAnomalyEnabled: { type: boolean }
+        anomalyScoreThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: 0..1, stored with up to 2 decimal places.
+        anomalyAction: { type: string, enum: [notify_only, require_mfa, lock] }
+        notifyChannels:
+          type: array
+          maxItems: 2
+          items: { type: string, enum: [email, webhook] }
+        loginStallMs: { type: integer, minimum: 0, maximum: 5000 }
+        webhookUrl: { type: string, format: uri, maxLength: 2048 }
+        webhookSecret: { type: string, minLength: 1, maxLength: 256 }
+    SetupState:
+      type: object
+      required: [state, requiresSetupToken]
+      properties:
+        state: { type: string, enum: [uninitialized, initialized] }
+        requiresSetupToken: { type: boolean }
+    SetupCapabilities:
+      type: object
+      required: [geoip, smtp]
+      properties:
+        geoip:
+          type: object
+          required: [available]
+          properties:
+            available: { type: boolean }
+            source: { type: string, enum: [maxmind] }
+        smtp:
+          type: object
+          required: [available]
+          properties:
+            available: { type: boolean }
+    SetupCompleteInput:
+      type: object
+      required: [account, adminPath]
+      properties:
+        setupToken:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Required only when the instance was provisioned with a setup token.
+        account:
+          type: object
+          required: [email, password, firstName, lastName]
+          properties:
+            email: { type: string, format: email, maxLength: 254 }
+            password:
+              type: string
+              description: Min 12 chars + complexity (shared with register/recovery).
+            firstName: { type: string, minLength: 1, maxLength: 100 }
+            lastName: { type: string, minLength: 1, maxLength: 100 }
+        adminPath: { type: string, minLength: 1, maxLength: 128 }
+        policy:
+          allOf: [{ $ref: '#/components/schemas/LockoutPolicy' }]
+          description: >-
+            OPTIONAL. When omitted, the "Standard" lockout preset is applied.
+        project:
+          type: object
+          required: [defaultLanguage, siteUrl, displayTitle]
+          properties:
+            defaultLanguage: { type: string, minLength: 2, maxLength: 16 }
+            siteUrl: { type: string, format: uri, maxLength: 2048 }
+            displayTitle: { type: string, minLength: 2, maxLength: 80 }
+            theme: { type: 'null' }
+        invites:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [email]
+            properties:
+              email: { type: string, format: email, maxLength: 254 }
+              role: { type: string, enum: [admin, member], default: member }
+    SetupCompleteResult:
+      type: object
+      required: [user, adminPath, backupCodes, setupToken, invitedCount]
+      properties:
+        user:
+          type: object
+          required: [id, email, firstName, lastName]
+          properties:
+            id: { type: string }
+            email: { type: string }
+            firstName: { type: string, nullable: true }
+            lastName: { type: string, nullable: true }
+        adminPath: { type: string }
+        backupCodes:
+          type: array
+          items: { type: string }
+          description: Plaintext recovery codes, returned exactly once and unrecoverable afterwards.
+        setupToken:
+          type: 'null'
+          description: Always null — the setup token is invalidated during completion.
+        invitedCount:
+          type: integer
+          description: Number of teammates created as `status:'invited'` in this run.
     SchemaDiffRisk:
       type: string
       enum: [low, medium, high]
@@ -1347,7 +1473,15 @@ paths:
       - $ref: '#/components/parameters/SiteHeader'
       - { name: name, in: path, required: true, schema: { type: string } }
     put:
-      summary: Apply a schema update to collection fields and relations
+      summary: Apply a full schema to a collection (creates it if missing)
+      description: >-
+        Atomic full-schema apply. If the collection named in the path does not
+        exist yet it is created in the same transaction (site-scoped, honouring
+        the collection name and primary-key/storage-mode compatibility rules)
+        and the provided fields/relations are applied to the fresh collection.
+        If it already exists, its fields and relations are reconciled to match
+        the request. Returns `200` in both cases. Requires the `schema:migrate`
+        capability.
       requestBody:
         required: true
         content:
@@ -1355,13 +1489,28 @@ paths:
             schema: { $ref: '#/components/schemas/SchemaApplyInput' }
       responses:
         '200':
-          description: OK
+          description: Schema applied (collection created or updated)
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/SchemaApplyResult' }
+        '400':
+          description: Validation error or unsupported change (e.g. collection rename)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Missing `schema:migrate` capability
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Reserved collection name (e.g. `lumibase_`/`mat_` prefix)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /collections/{name}/compiled:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'
@@ -1489,6 +1638,79 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '400':
           description: Missing tenant header
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /setup/state:
+    get:
+      summary: First-run setup state
+      description: >-
+        Public, unauthenticated. Returns whether the instance still needs
+        first-run setup. Once setup is complete every `/setup/*` path responds
+        `404` indistinguishably, so a `200` here implies the instance is not yet
+        initialized. IP rate-limited (`429` with `retry-after` when exceeded).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetupState' }
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /setup/capabilities:
+    get:
+      summary: Setup environment capabilities
+      description: >-
+        Reports which optional integrations are available to the setup wizard
+        (GeoIP database, SMTP). Returns `404` once the instance is initialized.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetupCapabilities' }
+        '404':
+          description: Instance already initialized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /setup/complete:
+    post:
+      summary: Complete first-run setup (create the bootstrap admin)
+      description: >-
+        Public, unauthenticated, single-use. Creates the bootstrap administrator
+        (granted an `Administrator` role bound via `user_roles`), the default
+        site, baseline settings, and the login-security policy — all in one
+        transaction. The `policy` field is OPTIONAL: when omitted, the "Standard"
+        lockout preset is applied. Returns backup codes exactly once in the
+        `201` body; they are unrecoverable afterwards. Any subsequent call once
+        initialized responds with a setup error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetupCompleteInput' }
+      responses:
+        '201':
+          description: Setup completed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetupCompleteResult' }
+        '400':
+          description: Malformed JSON or validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Already initialized or setup already in progress
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Admin path predictable/reserved/taken, or invalid token
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
