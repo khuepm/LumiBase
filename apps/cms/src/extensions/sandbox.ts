@@ -104,6 +104,13 @@ export class SandboxLoadError extends Error {
   }
 }
 
+/**
+ * Signature-verification gate for the load path. Returns whether the bundle is
+ * trusted; the caller (route) supplies this so the sandbox stays free of DB and
+ * `@lumibase/shared/extensions` imports. Resolves `true` to allow load.
+ */
+export type SandboxVerify = () => Promise<boolean>;
+
 interface SandboxLoadOptions {
   /** Extension identifier (for logging). */
   name: string;
@@ -113,6 +120,15 @@ interface SandboxLoadOptions {
   capabilities: string[];
   /** Timeout in ms before the load is aborted. Default: 5000. */
   timeoutMs?: number;
+  /** Server-derived official flag — official extensions MUST verify (fail-closed). */
+  isOfficial?: boolean;
+  /** Force signature verification even for third-party (site policy). */
+  requireSignature?: boolean;
+  /**
+   * Verifier invoked when `isOfficial || requireSignature`. Must return true to
+   * allow the load. If required but not supplied, the load fails closed.
+   */
+  verify?: SandboxVerify;
 }
 
 interface SandboxEnv {
@@ -153,6 +169,22 @@ export class ExtensionSandbox {
         `[extension-sandbox] refused to load "${opts.name}" from an untrusted bundle URL`,
       );
       return null;
+    }
+
+    // Signature gate (fail-closed for official / when signature is required).
+    // Runs BEFORE import + cache so an unverifiable official bundle never
+    // executes and is never cached. A missing verifier when one is required is
+    // treated as a failure, not a bypass.
+    if (opts.isOfficial || opts.requireSignature) {
+      const ok = opts.verify ? await opts.verify() : false;
+      if (!ok) {
+        console.error(
+          `[extension-sandbox] refused to load "${opts.name}": signature verification failed (official=${Boolean(
+            opts.isOfficial,
+          )})`,
+        );
+        return null;
+      }
     }
 
     const caps = new Set(opts.capabilities);

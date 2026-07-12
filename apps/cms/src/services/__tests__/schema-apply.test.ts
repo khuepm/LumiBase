@@ -125,6 +125,7 @@ describe('SchemaService schema apply', () => {
         delete: async (key: string) => {
           deletedKeys.push(key);
         },
+        increment: vi.fn(async () => 1),
       },
       events: {
         emit: async (event) => {
@@ -253,7 +254,7 @@ describe('SchemaService schema apply', () => {
     const service = new SchemaService({
       db: db as never,
       siteId: 'site-1',
-      cache: { get: vi.fn(), set: vi.fn(), delete: vi.fn() },
+      cache: { get: vi.fn(), set: vi.fn(), delete: vi.fn(), increment: vi.fn(async () => 1) },
       events: { emit: vi.fn() },
     });
 

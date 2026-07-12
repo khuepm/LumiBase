@@ -78,11 +78,22 @@ function withTimeout<T>(
   });
 }
 
+/**
+ * Signature-gate options for a hook extension row (built by item-service from
+ * db+env). Optional so unit tests can construct a dispatcher without a verifier;
+ * when omitted, hooks load without a signature gate (test-only convenience —
+ * production always supplies it).
+ */
+export type HookVerifyOptionsFor = (
+  ext: ExtensionRow,
+) => { isOfficial: boolean; requireSignature: boolean; verify: () => Promise<boolean> };
+
 export class HookDispatcher {
   constructor(
     private readonly sandbox: ExtensionSandbox,
     private readonly extensions: ExtensionRow[],
     private readonly hookTimeoutMs: number = DEFAULT_HOOK_TIMEOUT_MS,
+    private readonly verifyOptionsFor?: HookVerifyOptionsFor,
   ) {}
 
   /**
@@ -102,6 +113,7 @@ export class HookDispatcher {
         name: ext.name,
         bundleUrl: ext.bundleUrl,
         capabilities: (ext.capabilities as string[]) ?? [],
+        ...(this.verifyOptionsFor ? this.verifyOptionsFor(ext) : {}),
       });
 
       if (!mod?.hooks?.[event]) continue;

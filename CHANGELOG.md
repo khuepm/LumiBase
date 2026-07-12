@@ -9,7 +9,38 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **Visitor / pageview counting (`lumibase-pageview-counter`).** Built-in
+  pageview module with four per-site strategies (`db-rollup` default,
+  `hot-counter`, `cdc`, `hll`), selectable via the `pageviews` settings key. Adds
+  an atomic counter to the runtime (`CacheProvider.increment`; Redis `INCRBY` on
+  Docker, a new `PageviewCounter` Durable Object on Cloudflare) plus a public
+  beacon `POST /api/v1/pageviews/:site_id/hit` and authenticated
+  `GET /api/v1/pageviews/stats`. Attribution is consent-gated (`analytics`) and
+  privacy-preserving (salted visitor hash, never a raw IP). Counters flush to
+  `lumibase_pageview_daily` every 5 minutes.
+- **Extension signing + verify-everywhere.** Detached Ed25519 signatures are now
+  verified at every install/load path (marketplace install, generic CRUD, the
+  dynamic endpoint mount, hook dispatch) — official `lumibase-*` extensions are
+  fail-closed. New `lumibase_publisher_keys` registry (DB overrides env for
+  `official`/`revoked`), server-derived `isOfficial`, and a signing CLI
+  (`@lumibase/extension-cli`: `keygen`/`sign`/`verify`). Official extensions with
+  `autoInstall`/`enabledByDefault` are installed during setup / on site-create.
+
+### Upgrade steps
+
+- **Migrations** `0010_pageviews` and `0011_extension_signing` are additive
+  (`CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`, all defaulted) — no
+  data backfill required.
+- **Cloudflare only:** deploy the new `PAGEVIEW_COUNTER` Durable Object binding +
+  DO migration `tag="v2"` (`new_sqlite_classes`) and the added `*/5 * * * *` cron
+  trigger (already in `wrangler.toml` for every env). Missing the DO binding
+  degrades `hot-counter`/`hll` to `db-rollup` (fail-soft).
+- **For official extensions to verify on an existing instance:** set
+  `MARKETPLACE_PUBLIC_KEYS` to include the official key (`lumibase-official-v1`)
+  and run setup key-seed / a one-time reconcile. `LUMIBASE_EXT_SIGNATURE_POLICY`
+  defaults to `require` (set `warn` to soften third-party enforcement).
 
 ## [0.22.0] - 2026-07-12
 
@@ -263,6 +294,83 @@ _No unreleased changes yet._
   Optional env: `GITHUB_CLIENT_ID/SECRET`, `GITHUB_APP_ID/PRIVATE_KEY` (PKCS#8),
   `GITLAB_CLIENT_ID/SECRET`, `LUMIBASE_PUBLIC_URL`. Requires existing
   `ENCRYPTION_KEY` to manage integrations.
+
+## [1.0.0] - 2026-07-11
+
+### Version
+
+- `v1.0.0`
+
+### Date
+
+- `2026-07-11`
+
+### Highlights
+
+- **First release under a semver stability guarantee.** `1.0.0` freezes the
+  public surface — REST/GraphQL API, `@lumibase/sdk` exports, the
+  `{ data, meta }` / `{ errors }` response format, header contracts
+  (`X-Lumi-Site`…), environment variable names/semantics, and setup-wizard
+  flags. From here, breaking changes are deferred to `2.0.0`; additive changes
+  ship in minors and bug/security fixes in patches. See the versioning policy in
+  the README.
+- **Policies are the source of truth for access.** The role→policy migration
+  reaches its stable shape: `admin_access`/`app_access` (plus `enforce_tfa`, IP
+  guards, and time windows) are owned by policies. Legacy role flags remain as a
+  compatibility fallback through 1.0 for rollback safety. A verified,
+  idempotent backfill materializes legacy role flags into policies on upgrade.
+- **Backward-compatible upgrade path from `0.6.x`.** Instances on `0.6.x`–
+  `0.21.x` upgrade in place; the full "Upgrading to 1.0" runbook documents which
+  sources go direct, which need an intermediate stop, and the pre-`0.17.0`
+  re-import boundary. See Upgrade notes below.
+- **Golden-path E2E gate in CI.** No tag ships on hand-verified flows: CI now
+  drives setup wizard → create site → create collection → CRUD item → publish →
+  read via the public API, with a two-site isolation check.
+
+### Added
+
+- **CI golden-path E2E gate.** A new `e2e-golden-path` job in
+  `.github/workflows/ci.yml` exercises the end-to-end content lifecycle
+  (setup → site → collection → item CRUD → publish → public read) plus
+  cross-tenant isolation, on every PR and push to `main`. The v1 release
+  criteria (§3) require this gate to be green before tagging.
+- **"Upgrading to 1.0" operations runbook.** `docs/en/operations/upgrades.md`
+  (VI mirror in `docs/vi/`) gains a version-specific section: a supported-source
+  matrix, the RBAC role→policy backfill with its idempotent SQL and zero-row
+  verification query, and rollback guidance. Surfaced under a new "Operations"
+  docs category.
+
+### Changed
+
+- **RBAC access model finalized on policies.** Effective access continues to be
+  computed as `role flags OR active policy flags` during the 1.0 compatibility
+  window; the role flag columns are retained (not dropped) so rollback stays
+  safe. They are scheduled to drop in a later release only after
+  `LUMIBASE_RBAC_LEGACY_ROLE_FLAGS=false` has shipped and been verified.
+
+### Security
+
+- No new advisories in this release. The v1 security audit
+  (`docs/en/security/cwe-top-100-audit.md`) is the release gate: every
+  Partial/Not-addressed CWE must be fixed or accepted-with-rationale before the
+  `v1.0.0` tag. CWE-521 (password-policy alignment, `register` → 12-char
+  minimum) is tracked as a required v1 fix.
+
+### Upgrade notes
+
+- **Read `docs/en/operations/upgrades.md` → "Upgrading to 1.0" before
+  upgrading.** Summary:
+  - `0.18.x`–`0.21.x` → direct, no manual data step.
+  - `0.6.x`–`0.17.x` → direct, plus the RBAC role→policy backfill (run against
+    staging, verify the post-check returns zero rows).
+  - Before `0.17.0` (unprefixed tables) → **not an in-place upgrade**; export and
+    re-import into a fresh `1.0.0` install.
+  - Before `0.6.0` → upgrade to an intermediate `0.17.x`–`0.21.x` release first,
+    verify, then upgrade to `1.0.0`.
+- **No destructive schema change over `0.21.x`.** Application rollback to the
+  previous `0.21.x` deployment remains compatible with the 1.0 database. The
+  backfill is separately reversible during the compatibility window (delete the
+  `legacy_role_flags_%` policies; role flags are untouched).
 
 ## [0.21.0] - 2026-07-08
 

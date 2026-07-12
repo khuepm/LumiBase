@@ -877,6 +877,37 @@ hard-deletes `items` + `revisions` while **preserving** the tamper-evident
 | `POST` | `/api/v1/extensions/:id/capabilities` | Grant capabilities |
 | `GET` | `/api/v1/extensions/ui/manifest` | UI manifest for dynamic Studio import |
 
+**Signing & official extensions.** Every install/load path (marketplace install,
+generic CRUD `POST /extensions`, the dynamic endpoint mount, and hook dispatch)
+routes through a shared verifier. Detached Ed25519 signatures are checked against
+publisher keys resolved from `MARKETPLACE_PUBLIC_KEYS` (env) merged with the
+`lumibase_publisher_keys` table (**DB overrides env** for `official`/`revoked`).
+`isOfficial` is derived server-side (name in the `lumibase-` namespace **and** a
+signature by an official key) — never from a manifest claim. Official extensions
+are **fail-closed**: an unverifiable bundle never loads. Third-party enforcement
+follows `LUMIBASE_EXT_SIGNATURE_POLICY` (`require` default, or `warn`). The
+`lumibase-` namespace is reserved: community `/marketplace/submit` rejects it, and
+official extensions with `autoInstall`/`enabledByDefault` are installed during
+setup / on site-create by the reconciler. Sign bundles with the
+`@lumibase/extension-cli` (`lumibase-ext keygen|sign|verify`).
+
+---
+
+## 11a. Pageviews (visitor counting)
+
+Public beacon + authenticated read for the built-in pageview module. Per-site
+config lives in the `pageviews` settings key (`scope: 'module'`): `strategy`
+(`db-rollup` default | `hot-counter` | `cdc` | `hll`), `userTable`,
+`respectConsent`, `botFilter`, `hashSalt`, `flushIntervalS`. Authenticated hits
+are attributed to a user only with `analytics` consent; anonymous hits use a
+salted hash (never a raw IP). Counters flush to `lumibase_pageview_daily` every 5
+minutes.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/pageviews/:site_id/hit` | Public beacon; bot/DNT/GPC-filtered, rate-limited; returns `204` |
+| `GET` | `/api/v1/pageviews/stats?from=&to=&path=` | Authenticated daily views/uniques for a range |
+
 ---
 
 ## 11b. Email (templates, layouts, send)

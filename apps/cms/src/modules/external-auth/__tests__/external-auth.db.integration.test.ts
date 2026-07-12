@@ -90,6 +90,9 @@ describe('External JWT auth — DB integration', () => {
       async delete(key: string): Promise<void> {
         deletes.push(key);
       },
+      async increment(): Promise<number> {
+        return 1;
+      },
     };
     const cachedSvc = new ExternalIssuerService({ db, siteId: SITE, allowLocalHttp: true, cache });
 

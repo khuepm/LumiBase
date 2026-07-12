@@ -17,10 +17,12 @@
 
 import * as Sentry from '@sentry/cloudflare';
 import { createDb } from '@lumibase/database';
+import { createCloudflareRuntime } from '@lumibase/runtime';
 import app from './index';
 import type { Bindings } from './env';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
+import { runScheduledPageviewFlush } from './modules/pageviews/scheduled';
 import { resolveSentryOptions } from './observability/sentry';
 
 // ── Default export: ExportedHandler (fetch + scheduled) ─────────────────────
@@ -68,23 +70,33 @@ export default Sentry.withSentry(
    * cron can't surface as a Worker error.
    */
   async scheduled(
-    _controller: ScheduledController,
+    controller: ScheduledController,
     env: Bindings,
     ctx: ExecutionContext,
   ): Promise<void> {
     const hyperdrive = env.HYPERDRIVE;
     if (!hyperdrive) {
       console.error(
-        '[lumibase-cms] scheduled audit rotation skipped: HYPERDRIVE binding ' +
+        '[lumibase-cms] scheduled work skipped: HYPERDRIVE binding ' +
           'is not configured.',
       );
       return;
     }
 
     const db = createDb(hyperdrive.connectionString);
-    // waitUntil keeps the isolate alive until the (best-effort) prunes finish.
-    ctx.waitUntil(runScheduledRotation(db));
-    ctx.waitUntil(runScheduledRefreshTokenPrune(db));
+
+    // Two triggers share this handler (wrangler [triggers] crons):
+    //   "*/5 * * * *"  → pageview flush (every 5 min)
+    //   "0 * * * *"    → audit rotation + refresh-token prune (top of the hour)
+    // `controller.cron` names the schedule that fired; branch so the hourly
+    // work doesn't run 12× per hour. The pageview flush runs on every tick.
+    const runtime = createCloudflareRuntime(env as unknown as Record<string, unknown>);
+    ctx.waitUntil(runScheduledPageviewFlush(db, runtime));
+
+    if (controller.cron === '0 * * * *') {
+      ctx.waitUntil(runScheduledRotation(db));
+      ctx.waitUntil(runScheduledRefreshTokenPrune(db));
+    }
   },
   } satisfies ExportedHandler<Bindings>,
 );
@@ -93,3 +105,4 @@ export default Sentry.withSentry(
 // Wrangler reads `class_name = "SiteRoom"` in wrangler.toml and expects
 // this export to exist in the compiled worker bundle.
 export { SiteRoom } from './realtime/site-room';
+export { PageviewCounter } from './pageviews/counter-do';

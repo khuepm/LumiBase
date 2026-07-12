@@ -57,6 +57,11 @@ function makeFakeCache(preload: Record<string, unknown> = {}): FakeCache {
       cache.deletes.push(key);
       store.delete(key);
     },
+    async increment(key: string, by = 1): Promise<number> {
+      const next = Number(store.get(key) ?? '0') + by;
+      store.set(key, String(next));
+      return next;
+    },
   };
   return cache;
 }

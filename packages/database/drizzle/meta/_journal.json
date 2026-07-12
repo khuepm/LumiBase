@@ -71,6 +71,20 @@
       "when": 1783500200000,
       "tag": "0009_git_integration",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783500300000,
+      "tag": "0010_pageviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1783500400000,
+      "tag": "0011_extension_signing",
+      "breakpoints": true
     }
   ]
 }
