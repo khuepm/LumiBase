@@ -12,12 +12,12 @@ Gap-focused trên nền WS+ticket+DO sẵn có. Thứ tự: protocol chung → D
   - [x] 1.2 Unit test: parse/validate client+server msg; reject sai shape — done: `apps/cms/src/realtime/__tests__/protocol.test.ts`
     - **Validates: Requirements 1.3, 1.4**
 
-- [ ] 2. Site_Room subscription
-  - [ ] 2.1 DO `SiteRoom`: lưu subs per-connection; subscribe (permission check qua PermissionService) → ack; unsubscribe; ping/pong; msg sai → error không ngắt — **làm một phần**: subscribe/unsubscribe/ping-pong ✅ (`site-room.ts` + `node-hub.ts`); KHÔNG có permission check qua PermissionService khi subscribe (mô hình audience-grant/plane-isolation thay thế)
+- [x] 2. Site_Room subscription
+  - [x] 2.1 DO `SiteRoom`: lưu subs per-connection; subscribe (permission check qua PermissionService) → ack; unsubscribe; ping/pong; msg sai → error không ngắt (deviation có chủ đích: permission check chạy tại **route phát ticket** — `readableCollections(bundle)` từ PermissionService nhúng allowlist collections vào ticket ký, DO/hub enforce `canSubscribe` fail-closed, mirror mô hình audience-grant; ticket TTL 1 phút chặn staleness; không ack frame — subscribe từ chối trả `SUBSCRIBE_FORBIDDEN`)
     - _Requirements: 2.1, 2.2, 2.4, 2.5, 1.4_
-  - [ ] 2.2 `broadcast(ev)`: gửi tới conn khớp collection + filter (`evaluateRule`) + còn quyền; field-level lọc payload
-    - _Requirements: 2.3, 3.2, 3.5, 6.2_ — **P1 (2026-07-07) — field masking ĐÃ đóng theo hướng khác**: studio collection-broadcast nay **signal-only** (`publishRealtimeEvent` gửi `payload:null`, chỉ `collection/action/itemId`); client re-fetch qua `/items` (RBAC + field mask enforced) → không row-data nào rời server chưa qua kiểm quyền (mask đúng-by-construction). CÒN THIẾU: filter `evaluateRule` per-sub + read-gate lúc subscribe (cần db trong hub — follow-up)
-  - [ ] 2.3 Test DO: subscribe/ack, unsubscribe, filter chặn, permission chặn, nhiều sub, cross-site không nhận — **làm một phần**: fan-out tests (plane isolation, subject targeting) ✅; thiếu case filter chặn + permission chặn
+  - [x] 2.2 `broadcast(ev)`: gửi tới conn khớp collection + filter (`evaluateRule`) + còn quyền; field-level lọc payload
+    - _Requirements: 2.3, 3.2, 3.5, 6.2_ — field masking đóng qua **signal-only** (P1 2026-07-07: `payload:null`, client re-fetch `/items` — mask đúng-by-construction); filter `evaluateRule` per-sub ĐÃ làm (protocol `subscribe.filter`, đánh giá trên envelope `collection/action/itemId` vì wire signal-only không có row data); read-gate subscribe ĐÃ làm qua ticket allowlist (không cần db trong hub)
+  - [x] 2.3 Test DO: subscribe/ack, unsubscribe, filter chặn, permission chặn, nhiều sub, cross-site không nhận (fan-out tests: plane isolation, subject targeting, filter chặn/khớp, `canSubscribe` fail-closed; node-hub e2e: read-gate allowlist + fail-closed no-claim + filter envelope; `studio-grant.test.ts`: bundle→allowlist)
     - **Validates: Requirements 2.1, 2.2, 2.3, 3.3**
 
 - [ ] 3. Event ingest
@@ -47,7 +47,7 @@ Gap-focused trên nền WS+ticket+DO sẵn có. Thứ tự: protocol chung → D
     - **Validates: Requirements 5.1, 5.2**
 
 - [ ] 6. Chất lượng & Setup Impact
-  - [ ] 6.1 `pnpm typecheck` + `pnpm test` pass; runtime abstraction; cập nhật `docs/en/api/hono-api-spec.md` (protocol message) — **làm một phần**: typecheck ✅; docs protocol message trong hono-api-spec chưa verify
+  - [x] 6.1 `pnpm typecheck` + `pnpm test` pass; runtime abstraction; cập nhật `docs/en/api/hono-api-spec.md` (protocol message) (typecheck ✅; §9 hono-api-spec cập nhật khớp protocol thật: ticket exchange, `subscribe.filter`, event signal-only, `SUBSCRIBE_FORBIDDEN`)
     - _Requirements: 6.3, 6.4_
-  - [ ] 6.2 **Setup Impact** (DoD): rà soát 6 câu hỏi. DO binding `SITE_ROOM` đã có; lưu ý DO sqlite class trên free plan ([[do-sqlite-classes-free-plan]]) nếu thêm DO mới. Dự kiến `n/a` về seed/flag. Thêm dòng registry sau — **chưa làm**: spec này CHƯA có dòng Setup Impact Registry (DoD §2 yêu cầu kể cả n/a)
+  - [x] 6.2 **Setup Impact** (DoD): rà soát 6 câu hỏi. DO binding `SITE_ROOM` đã có; lưu ý DO sqlite class trên free plan ([[do-sqlite-classes-free-plan]]) nếu thêm DO mới. Dự kiến `n/a` về seed/flag. Thêm dòng registry sau (registry #30 `n/a` thêm 2026-07-07; cập nhật 2026-07-12 khi đóng filter + read-gate — vẫn không ảnh hưởng setup)
     - _Requirements: DoD_

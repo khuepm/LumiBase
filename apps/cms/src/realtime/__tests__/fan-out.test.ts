@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RealtimeEvent } from '@lumibase/shared';
-import { shouldDeliver, toWireMessage, type FanoutSession } from '../fan-out';
+import { canSubscribe, shouldDeliver, toWireMessage, type FanoutSession } from '../fan-out';
 
 function session(partial: Partial<FanoutSession>): FanoutSession {
   return {
@@ -79,6 +79,59 @@ describe('shouldDeliver — skip-echo is studio-only', () => {
       payload: {},
     };
     expect(shouldDeliver(ev, session({ plane: 'public', userId: 'u1', channels: new Set(['order:1']) }))).toBe(true);
+  });
+});
+
+describe('shouldDeliver — per-subscription filter (Req 2.3, 3.2)', () => {
+  const ev: RealtimeEvent = { type: 'event', plane: 'studio', collection: 'posts', action: 'update', itemId: 'item-7', payload: null };
+
+  it('delivers when the filter matches the event envelope', () => {
+    const s = session({
+      subscriptions: new Set(['posts']),
+      filters: new Map([['posts', { action: { _eq: 'update' } }]]),
+    });
+    expect(shouldDeliver(ev, s)).toBe(true);
+  });
+
+  it('blocks when the filter does not match', () => {
+    const s = session({
+      subscriptions: new Set(['posts']),
+      filters: new Map([['posts', { action: { _eq: 'delete' } }]]),
+    });
+    expect(shouldDeliver(ev, s)).toBe(false);
+  });
+
+  it('supports itemId filters (watch a single item)', () => {
+    const only7 = session({
+      subscriptions: new Set(['posts']),
+      filters: new Map([['posts', { itemId: { _eq: 'item-7' } }]]),
+    });
+    const only9 = session({
+      subscriptions: new Set(['posts']),
+      filters: new Map([['posts', { itemId: { _eq: 'item-9' } }]]),
+    });
+    expect(shouldDeliver(ev, only7)).toBe(true);
+    expect(shouldDeliver(ev, only9)).toBe(false);
+  });
+
+  it('a filter on another collection does not affect this one', () => {
+    const s = session({
+      subscriptions: new Set(['posts']),
+      filters: new Map([['pages', { action: { _eq: 'delete' } }]]),
+    });
+    expect(shouldDeliver(ev, s)).toBe(true);
+  });
+});
+
+describe('canSubscribe — ticket read-gate', () => {
+  it('allows only allowlisted collections and denies on an empty allowlist (fail-closed)', () => {
+    expect(canSubscribe(new Set(['posts']), 'posts')).toBe(true);
+    expect(canSubscribe(new Set(['posts']), 'salaries')).toBe(false);
+    expect(canSubscribe(new Set(), 'posts')).toBe(false);
+  });
+
+  it('the * wildcard (admin bypass) allows everything', () => {
+    expect(canSubscribe(new Set(['*']), 'anything')).toBe(true);
   });
 });
 

@@ -8,6 +8,7 @@
  */
 
 import type { RealtimeEvent } from '@lumibase/shared';
+import { evaluateRule, type ConditionRule } from '../services/conditions';
 
 export interface FanoutSession {
   plane: 'studio' | 'public';
@@ -17,6 +18,22 @@ export interface FanoutSession {
   subscriptions: ReadonlySet<string>;
   /** Channels this session has joined (audience). */
   channels: ReadonlySet<string>;
+  /**
+   * Per-collection subscribe filters (optional). Studio collection broadcasts
+   * are signal-only, so a filter is evaluated over the event ENVELOPE
+   * (`collection` / `action` / `itemId`) — never row data.
+   */
+  filters?: ReadonlyMap<string, Record<string, unknown>>;
+}
+
+/**
+ * Read-gate for `subscribe`: the allowlist comes from the SIGNED ticket
+ * (computed at issuance via PermissionService — the route has DB context, the
+ * hub does not). `*` marks an admin-bypass principal. Fail-closed: an empty
+ * allowlist (missing claim, public-plane session) denies every subscribe.
+ */
+export function canSubscribe(allowedCollections: ReadonlySet<string>, collection: string): boolean {
+  return allowedCollections.has('*') || allowedCollections.has(collection);
 }
 
 /**
@@ -38,6 +55,8 @@ export function shouldDeliver(event: RealtimeEvent, session: FanoutSession): boo
     if (!matchUser && !matchSubject && !matchChannel) return false;
   } else if (event.collection) {
     if (!session.subscriptions.has(event.collection)) return false;
+    const filter = session.filters?.get(event.collection);
+    if (filter && !evaluateRule(filter as ConditionRule, envelopeOf(event))) return false;
   } else {
     return false; // no target and no collection → nobody to deliver to
   }
@@ -47,6 +66,11 @@ export function shouldDeliver(event: RealtimeEvent, session: FanoutSession): boo
   }
 
   return true;
+}
+
+/** The filterable view of an event — envelope fields only (signal-only wire). */
+function envelopeOf(event: RealtimeEvent): Record<string, unknown> {
+  return { collection: event.collection, action: event.action, itemId: event.itemId };
 }
 
 /** Map an internal publish envelope to the client-facing wire message. */
