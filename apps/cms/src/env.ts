@@ -94,6 +94,10 @@ export interface Bindings {
   ENCRYPTION_KEY?: string;
   /** Comma-separated trusted origins for executable extension bundles. */
   EXTENSION_BUNDLE_ORIGINS?: string;
+  /** JSON map `{ keyId: pem }` of publisher public keys (merged with the DB registry). */
+  MARKETPLACE_PUBLIC_KEYS?: string;
+  /** Signature enforcement for third-party extensions: `'require'` (default) | `'warn'`. */
+  LUMIBASE_EXT_SIGNATURE_POLICY?: string;
   /** Comma-separated frontend origins allowed by CORS. */
   CORS_ALLOWED_ORIGINS?: string;
   /** Data-retention horizon (days) for the `activity` log. 0/unset = disabled. */

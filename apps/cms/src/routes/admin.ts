@@ -34,6 +34,7 @@ import { and, eq } from 'drizzle-orm';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { stream } from 'hono/streaming';
 import type { AppEnv } from '../env';
+import { reconcileOfficialExtensions } from '../services/official-extension-reconciler';
 import { PermissionService } from '../services/permission-service';
 import type { MagicContext } from '../services/permission-dsl';
 
@@ -381,6 +382,13 @@ adminRouter.post('/sites', async (c) => {
     .insert(sites)
     .values({ id: body.id, name: body.name })
     .returning();
+
+  // Auto-install official `lumibase-*` extensions for the new site. Fail-soft:
+  // never throws, skips when no published/verified source row exists yet.
+  if (row) {
+    await reconcileOfficialExtensions(db, c.env, row.id).catch(() => undefined);
+  }
+
   return c.json({ data: row }, 201);
 });
 

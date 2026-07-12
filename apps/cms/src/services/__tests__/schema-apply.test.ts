@@ -125,6 +125,7 @@ describe('SchemaService schema apply', () => {
         delete: async (key: string) => {
           deletedKeys.push(key);
         },
+        increment: vi.fn(async () => 1),
       },
       events: {
         emit: async (event) => {

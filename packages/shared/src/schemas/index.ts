@@ -214,3 +214,11 @@ export {
   PASSWORD_SPECIAL_CHARS,
   type Password,
 } from './password';
+export {
+  PAGEVIEW_STRATEGIES,
+  PAGEVIEWS_SETTINGS_KEY,
+  PageviewSettingsSchema,
+  parsePageviewSettings,
+  type PageviewStrategyName,
+  type PageviewSettings,
+} from './pageviews-settings';

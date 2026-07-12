@@ -88,6 +88,7 @@ import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
 import { lumibaseFirebaseSyncRouter } from './modules/lumibase-firebase-sync';
+import { pageviewsRouter, pageviewsPublicRouter } from './modules/pageviews/routes';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 const app = new Hono<AppEnv>();
@@ -252,6 +253,7 @@ api.route('/activity', activityRouter);
 api.route('/realtime', realtimeRouter);
 api.route('/push', pushRouter);
 api.route('/extensions', extensionsRouter);
+api.route('/pageviews', pageviewsRouter);
 api.route('/admin', adminRouter);
 // Admin Security surface (admin-setup-wizard task 6.4; Req 7.6, 7.7,
 // 8.7, 8.8, 8.9; design §4.5, §4.6). Mounted *under* `withAuth` so the
@@ -333,6 +335,12 @@ app.route('/api/v1', api);
 // Delivery (public) routes — tenancy is encoded in the URL.
 app.use('/api/v1/deliver/*', withDb());
 app.route('/api/v1/deliver', deliverRouter);
+
+// Public pageview beacon — tenancy in the URL, unauthenticated. `withRuntime`
+// ran globally; add `withDb` + the general rate limiter (keyed by IP since no
+// principal exists) so a single client can't flood the ingest endpoint.
+app.use('/api/v1/pageviews/*', withDb(), withRateLimit());
+app.route('/api/v1/pageviews', pageviewsPublicRouter);
 
 app.notFound((c) =>
   c.json({ errors: [{ code: 'NOT_FOUND', message: 'Route not found.' }] }, 404),

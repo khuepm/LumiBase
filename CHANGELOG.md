@@ -9,6 +9,39 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Added
+
+- **Visitor / pageview counting (`lumibase-pageview-counter`).** Built-in
+  pageview module with four per-site strategies (`db-rollup` default,
+  `hot-counter`, `cdc`, `hll`), selectable via the `pageviews` settings key. Adds
+  an atomic counter to the runtime (`CacheProvider.increment`; Redis `INCRBY` on
+  Docker, a new `PageviewCounter` Durable Object on Cloudflare) plus a public
+  beacon `POST /api/v1/pageviews/:site_id/hit` and authenticated
+  `GET /api/v1/pageviews/stats`. Attribution is consent-gated (`analytics`) and
+  privacy-preserving (salted visitor hash, never a raw IP). Counters flush to
+  `lumibase_pageview_daily` every 5 minutes.
+- **Extension signing + verify-everywhere.** Detached Ed25519 signatures are now
+  verified at every install/load path (marketplace install, generic CRUD, the
+  dynamic endpoint mount, hook dispatch) — official `lumibase-*` extensions are
+  fail-closed. New `lumibase_publisher_keys` registry (DB overrides env for
+  `official`/`revoked`), server-derived `isOfficial`, and a signing CLI
+  (`@lumibase/extension-cli`: `keygen`/`sign`/`verify`). Official extensions with
+  `autoInstall`/`enabledByDefault` are installed during setup / on site-create.
+
+### Upgrade steps
+
+- **Migrations** `0007_pageviews` and `0008_extension_signing` are additive
+  (`CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`, all defaulted) — no
+  data backfill required.
+- **Cloudflare only:** deploy the new `PAGEVIEW_COUNTER` Durable Object binding +
+  DO migration `tag="v2"` (`new_sqlite_classes`) and the added `*/5 * * * *` cron
+  trigger (already in `wrangler.toml` for every env). Missing the DO binding
+  degrades `hot-counter`/`hll` to `db-rollup` (fail-soft).
+- **For official extensions to verify on an existing instance:** set
+  `MARKETPLACE_PUBLIC_KEYS` to include the official key (`lumibase-official-v1`)
+  and run setup key-seed / a one-time reconcile. `LUMIBASE_EXT_SIGNATURE_POLICY`
+  defaults to `require` (set `warn` to soften third-party enforcement).
+
 ### Changed
 
 - **Setup Impact Registry `#` column deduplicated.** Parallel branches had kept

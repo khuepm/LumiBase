@@ -28,6 +28,7 @@ import {
   type SetupServiceError,
 } from './service';
 import { lockoutPolicySchema } from './policy-codec';
+import { OFFICIAL_KEY_ID } from './official-extensions';
 
 // ── input schema ────────────────────────────────────────────────────────
 
@@ -109,7 +110,32 @@ function buildService(c: {
   const db = c.get('db');
   const requireSetupToken = readBoolEnv(c.env, 'LUMIBASE_REQUIRE_SETUP_TOKEN');
   const smtpAvailable = !!readStringEnv(c.env, 'LUMIBASE_SMTP_URL');
-  return new SetupService({ db, requireSetupToken, smtpAvailable });
+  return new SetupService({
+    db,
+    requireSetupToken,
+    smtpAvailable,
+    officialPublisherKey: resolveOfficialPublisherKey(c.env),
+  });
+}
+
+/**
+ * Resolve the official signing key from `MARKETPLACE_PUBLIC_KEYS` (JSON
+ * `{ keyId: pem }`) by the well-known official key id, to seed it into
+ * `lumibase_publisher_keys` at bootstrap. Returns undefined when unconfigured.
+ */
+function resolveOfficialPublisherKey(
+  env: AppEnv['Bindings'],
+): { keyId: string; publicKeyPem: string; publisher: string } | undefined {
+  const raw = (env as unknown as Record<string, string | undefined>).MARKETPLACE_PUBLIC_KEYS;
+  if (!raw) return undefined;
+  try {
+    const map = JSON.parse(raw) as Record<string, string>;
+    const pem = map[OFFICIAL_KEY_ID];
+    if (!pem) return undefined;
+    return { keyId: OFFICIAL_KEY_ID, publicKeyPem: pem, publisher: 'LumiBase' };
+  } catch {
+    return undefined;
+  }
 }
 
 /**

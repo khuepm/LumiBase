@@ -4,7 +4,7 @@
     "releaseDate": "2026-07-08",
     "changelogUrl": "https://github.com/khuepm/lumibase/releases/tag/v0.21.0",
     "minimumSafeUpgradeVersion": "0.0.0",
-    "migrationWarning": true,
+    "migrationWarning": false,
     "upgradeGuideUrl": "https://docs.lumibase.dev/upgrade"
   },
   "edge": {
@@ -12,7 +12,7 @@
     "releaseDate": "2026-07-08",
     "changelogUrl": "https://github.com/khuepm/lumibase/releases/tag/v0.21.0",
     "minimumSafeUpgradeVersion": "0.0.0",
-    "migrationWarning": true,
+    "migrationWarning": false,
     "upgradeGuideUrl": "https://docs.lumibase.dev/upgrade"
   }
 }

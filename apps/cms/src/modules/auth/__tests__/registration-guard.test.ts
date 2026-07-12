@@ -18,6 +18,11 @@ function memoryCache(initial: Record<string, string> = {}): CacheProvider {
     delete: vi.fn(async (k: string): Promise<void> => {
       store.delete(k);
     }),
+    increment: vi.fn(async (k: string, by = 1): Promise<number> => {
+      const next = Number(store.get(k) ?? '0') + by;
+      store.set(k, String(next));
+      return next;
+    }),
   };
 }
 
@@ -64,6 +69,9 @@ describe('checkRegistrationRate', () => {
       }),
       set: vi.fn(async (): Promise<void> => undefined),
       delete: vi.fn(async (): Promise<void> => undefined),
+      increment: vi.fn(async (): Promise<number> => {
+        throw new Error('cache down');
+      }),
     };
     const verdict = await checkRegistrationRate(cache, 'site-1', '1.2.3.4');
     expect(verdict.allowed).toBe(true);

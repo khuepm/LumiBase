@@ -20,6 +20,10 @@ export interface ExtensionManifest {
   /** Declared capabilities (e.g. `items:read:posts`, `http:fetch:api.example.com`). */
   capabilities: string[];
   config?: Array<{ key: string; type: 'string' | 'integer' | 'boolean' | 'json'; default?: unknown }>;
+  /** Auto-install during setup/reconcile (verified official `lumibase-*` only). */
+  autoInstall?: boolean;
+  /** Whether an auto-installed extension starts enabled. */
+  enabledByDefault?: boolean;
 }
 
 export interface HookContext {

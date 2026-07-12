@@ -109,6 +109,7 @@ describe('SchemaService field deletion risk', () => {
         delete: async (key: string) => {
           deletedCacheKeys.push(key);
         },
+        increment: vi.fn(async () => 1),
       },
     });
     vi.spyOn(service, 'getCollection').mockResolvedValue(collection as never);
