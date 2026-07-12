@@ -908,6 +908,110 @@ components:
           minItems: 1
           items: { type: string, minLength: 1 }
         config: { type: object, additionalProperties: true }
+    # ── Change Feed (first-party outbox+relay; distinct from the ClickHouse
+    #    CDC pipelines above). Source of truth: packages/shared/schemas/cdc-feed.ts
+    EventEnvelope:
+      type: object
+      description: Change-feed event (schemaVersion 1). `id` is the idempotency key; `cursor` is this event's keyset token.
+      required: [id, type, schemaVersion, siteId, collection, itemId, operation, occurredAt, actor, source, cursor]
+      properties:
+        id: { type: string, description: Idempotency key (nanoid). }
+        type: { type: string, pattern: '^(items|collections|fields|settings)\.(create|update|delete)$', description: '<plural-resource>.<operation> — items.* (content), collections.*/fields.* (schema), settings.*.' }
+        schemaVersion: { type: integer, minimum: 1 }
+        siteId: { type: string }
+        collection: { type: string }
+        itemId: { type: string }
+        operation: { type: string, enum: [create, update, delete] }
+        occurredAt: { type: string, format: date-time }
+        actor:
+          type: object
+          required: [type]
+          properties:
+            type: { type: string, enum: [user, api_key, agent, system] }
+            id: { type: string }
+        source: { type: string, enum: [api, agent, flow, system] }
+        changedFields:
+          type: array
+          description: Present on update only.
+          items: { type: string }
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Post-mutation record with pii/phi masked; present only in snapshot payload mode.
+        cursor: { type: string, description: Opaque base64url keyset token for ack/resume. }
+    ChangeFeedSubscription:
+      type: object
+      required: [id, siteId, name, kind, collections, operations, payloadMode, status, consecutiveFailures, lag]
+      properties:
+        id: { type: string }
+        siteId: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [pull, webhook, extension] }
+        collections: { type: array, items: { type: string } }
+        operations: { type: array, items: { type: string, enum: [create, update, delete] } }
+        payloadMode: { type: string, enum: [reference, snapshot] }
+        cursor: { type: string, nullable: true, description: Committed checkpoint token, or null before first ack/delivery. }
+        status: { type: string, enum: [active, paused, dead, stale] }
+        webhookId: { type: string, nullable: true }
+        extensionName: { type: string, nullable: true }
+        consecutiveFailures: { type: integer }
+        lastDeliveredAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        lag:
+          type: object
+          description: Backlog between the checkpoint and the feed head (Req 3.5).
+          required: [events, behindMs]
+          properties:
+            events: { type: integer }
+            behindMs: { type: integer, nullable: true }
+    ChangeFeedSubscriptionCreate:
+      type: object
+      required: [name, kind]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        kind: { type: string, enum: [pull, webhook, extension] }
+        collections: { type: array, items: { type: string, minLength: 1 }, default: [] }
+        operations: { type: array, items: { type: string, enum: [create, update, delete] }, default: [] }
+        payload_mode: { type: string, enum: [reference, snapshot], default: reference }
+        webhook_id: { type: string, description: Required when kind=webhook (webhook must have a secret). }
+        extension_name: { type: string, description: Required when kind=extension. }
+    ChangeFeedSubscriptionPatch:
+      type: object
+      description: kind is immutable; status flips only between active/paused here (dead/stale exit via replay).
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        collections: { type: array, items: { type: string, minLength: 1 } }
+        operations: { type: array, items: { type: string, enum: [create, update, delete] } }
+        payload_mode: { type: string, enum: [reference, snapshot] }
+        status: { type: string, enum: [active, paused] }
+    ChangeFeedAck:
+      type: object
+      required: [cursor]
+      properties:
+        cursor: { type: string, description: Forward-only checkpoint token. }
+    ChangeFeedReplay:
+      type: object
+      description: Provide exactly one of cursor or occurred_after (within retention).
+      properties:
+        cursor: { type: string }
+        occurred_after: { type: string, format: date-time }
+    ChangeFeedDelivery:
+      type: object
+      required: [id, subscriptionId, eventCount, attempt, status, durationMs, createdAt]
+      properties:
+        id: { type: string }
+        subscriptionId: { type: string }
+        eventIdFrom: { type: string, nullable: true }
+        eventIdTo: { type: string, nullable: true }
+        eventCount: { type: integer }
+        attempt: { type: integer }
+        status: { type: string, enum: [success, failed] }
+        httpStatus: { type: integer, nullable: true }
+        errorMessage: { type: string, nullable: true, description: Masked — never raw consumer output. }
+        durationMs: { type: integer }
+        createdAt: { type: string, format: date-time }
     CdcHealthCheck:
       type: object
       properties:
@@ -1657,6 +1761,293 @@ paths:
                   data: { $ref: '#/components/schemas/CdcDeploymentResult' }
         '404':
           description: Deployment not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/events:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: Read the change feed (keyset cursor pagination)
+      description: |
+        Pull consumers read change events in feed order (keyset `(occurred_at, id)`)
+        with a 2s safety lag. Requires the `cdc:subscribe` capability (admin implies).
+        A `410 CURSOR_EXPIRED` (with `earliestCursor`) means the cursor fell past retention.
+      parameters:
+        - { name: cursor, in: query, required: false, schema: { type: string }, description: Opaque token from a prior meta.nextCursor. Omit for the first page. }
+        - { name: collections, in: query, required: false, schema: { type: string }, description: CSV collection filter. }
+        - { name: operations, in: query, required: false, schema: { type: string }, description: 'CSV of create,update,delete.' }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+        - { name: wait, in: query, required: false, schema: { type: integer, minimum: 0, maximum: 25, default: 0 }, description: Long-poll budget in seconds; server holds an empty first read until an event appears or the budget elapses. }
+      responses:
+        '200':
+          description: A page of change events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/EventEnvelope' }
+                  meta:
+                    type: object
+                    properties:
+                      nextCursor: { type: string, nullable: true }
+                      hasMore: { type: boolean }
+        '400':
+          description: Malformed cursor or query
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Requires the cdc:subscribe capability (or frontend-realm token rejected)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '410':
+          description: Cursor expired past retention (body carries earliestCursor)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/subscriptions:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: List change-feed subscriptions (site admin)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChangeFeedSubscription' }
+        '403':
+          description: Site admin access required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      summary: Create a change-feed subscription (site admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeFeedSubscriptionCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChangeFeedSubscription' }
+        '400':
+          description: Validation error or webhook missing a secret
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Site admin required or subscription limit (50/site) exceeded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Subscription name already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/subscriptions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Get a change-feed subscription (site admin)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChangeFeedSubscription' }
+        '404':
+          description: Subscription not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    patch:
+      summary: Update a change-feed subscription (site admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeFeedSubscriptionPatch' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChangeFeedSubscription' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Subscription not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Name conflict or invalid status transition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      summary: Delete a change-feed subscription (site admin)
+      responses:
+        '200':
+          description: Deleted (checkpoint lost; outbox events kept until retention)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      ok: { type: boolean }
+        '404':
+          description: Subscription not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/subscriptions/{id}/ack:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Commit a pull checkpoint (forward-only)
+      description: Requires the `cdc:subscribe` capability. Rewinding returns 409 ACK_REGRESSION — use replay instead.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeFeedAck' }
+      responses:
+        '200':
+          description: Checkpoint committed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChangeFeedSubscription' }
+        '400':
+          description: Malformed cursor
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Ack regression (cursor rewind)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/subscriptions/{id}/replay:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Rewind a subscription checkpoint within retention (site admin)
+      description: Resets dead/stale subscriptions to active — the only path out of those states. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeFeedReplay' }
+      responses:
+        '200':
+          description: Replayed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChangeFeedSubscription' }
+        '400':
+          description: Out of retention or invalid target (need exactly one of cursor/occurred_after)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Subscription not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/subscriptions/{id}/dispatch:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Trigger on-demand dispatch for a subscription (site admin)
+      description: The no-queue fallback path (Req 4.7) — flushes pending events to the webhook/extension now.
+      responses:
+        '202':
+          description: Dispatch triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      dispatched: { type: boolean }
+        '404':
+          description: Subscription not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '501':
+          description: On-demand dispatch not available in this runtime
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdc/subscriptions/{id}/deliveries:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+    get:
+      summary: Delivery-attempt history for a subscription (site admin, newest first)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChangeFeedDelivery' }
+                  meta:
+                    type: object
+                    properties:
+                      total: { type: integer }
+        '404':
+          description: Subscription not found
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

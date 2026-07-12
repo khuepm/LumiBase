@@ -27,6 +27,8 @@ export const SAFETY_LAG_MS = 2_000;
 export interface StoredChangeEvent {
   id: string;
   siteId: string;
+  /** Resource kind — defaults to 'item' for rows written before this column. */
+  resource?: string;
   collection: string;
   itemId: string;
   operation: CdcOperation;

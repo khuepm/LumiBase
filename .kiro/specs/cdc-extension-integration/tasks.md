@@ -87,11 +87,17 @@
 
 ## Việc còn mở (Open / TODO cho vòng sau)
 
-- Realtime WS fan-out của change events trên `RealtimeProvider` (audience plane) — spec riêng.
-- Capture cho `collections`/`fields`/settings (envelope `type` đã namespace sẵn, non-breaking).
-- Long-polling (`waitSeconds`) trên pull API; partition/consumer-group song song per subscription.
-- Inbound CDC (ngoài → LumiBase) / two-way sync.
-- Cân nhắc partition bảng outbox theo tháng nếu volume lớn (design §14.4).
+Đã ship thêm sau A–H (follow-up round):
+- [x] openapi.yaml + `@lumibase/sdk` typed resources cho toàn bộ Change Feed surface.
+- [x] Capture `collections.*` / `fields.*` (SchemaService hooks; migration `0008` thêm cột `resource`; `cdcEventType` + `CDC_RESOURCE_TYPE_PREFIX`; mask item-only).
+- [x] Long-polling `wait` (≤25s) trên `GET /cdc/events`.
+
+Còn lại → gom vào spec `.kiro/specs/cdc-feed-roadmap/` (requirements/design/tasks đầy đủ):
+- Realtime WS fan-out change events trên `RealtimeProvider` (audience plane) — roadmap D1/Nhóm B.
+- Capture `settings.*` (nhiều đường ghi → cần seam thống nhất qua ConfigService) — roadmap D2/Nhóm A.
+- Consumer-group / parallel delivery per subscription (gap-free high-water-mark) — roadmap D3/Nhóm C.
+- Inbound CDC (ngoài → LumiBase) / two-way sync — roadmap D4/Nhóm D (tách spec riêng khi khởi động).
+- Partition bảng outbox theo tháng nếu volume lớn (design §14.4) — roadmap D5/Nhóm E.
 
 ## Task Dependency Graph
 

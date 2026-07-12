@@ -27,7 +27,7 @@ ItemService mutation ──(same request)──▶ lumibase_cdc_change_events (o
 ```jsonc
 {
   "id": "V1StGXR8_Z5jdHi6B-myT",        // idempotency key
-  "type": "items.update",                 // items.<operation>
+  "type": "items.update",                 // <resource>.<operation> — items.* | collections.* | fields.* | settings.*
   "schemaVersion": 1,
   "siteId": "s_abc",
   "collection": "posts",
@@ -43,6 +43,7 @@ ItemService mutation ──(same request)──▶ lumibase_cdc_change_events (o
 ```
 
 - `payloadMode: 'reference'` (default) omits `data` — the consumer re-fetches `GET /items/:collection/:id` with its own token, so its RBAC decides what it sees. `snapshot` inlines the post-mutation record with `pii`/`phi` fields already replaced by `[masked]` **before** the event was stored.
+- **Resource kinds**: `items.*` are content-row changes (the default). Schema DDL emits `collections.*` (with `collection`/`itemId` = the collection name) and `fields.*` (`collection` = owning collection, `itemId` = field name); their `data` is the definition, stored verbatim (schema metadata carries no per-field pii/phi classification, so masking is item-only). A consumer that only wants content changes filters on the `items.` prefix. (`settings.*` is a planned follow-up — see `.kiro/specs/cdc-feed-roadmap/`.)
 - Versioning: additive fields keep `schemaVersion: 1`; renames/removals bump it, and the previous version stays serializable for at least one minor release. `EventEnvelopeSchema` in `@lumibase/shared/schemas` is the source of truth.
 
 ## 3. Pull consumers
@@ -56,9 +57,28 @@ curl -H "Authorization: Bearer lbk_…" -H "X-Lumi-Site: s_abc" \
 # Continue from the cursor; 410 CURSOR_EXPIRED (with earliestCursor) means you
 # fell behind retention — resync from scratch or from earliestCursor.
 curl … "https://cms.example.com/api/v1/cdc/events?cursor=<nextCursor>"
+
+# Long-poll (avoid tight empty polling): the server holds an empty first read
+# for up to `wait` seconds (≤25) and returns as soon as an event arrives.
+curl … "https://cms.example.com/api/v1/cdc/events?cursor=<nextCursor>&wait=20"
 ```
 
 Register a `kind: 'pull'` subscription to get a durable checkpoint + lag metrics, and commit it with `POST /api/v1/cdc/subscriptions/:id/ack {"cursor": "…"}`. Acks are forward-only (409 `ACK_REGRESSION` on rewind) — rewinding is what `replay` is for.
+
+Prefer typed access from JS/TS? `@lumibase/sdk` ships command resources for the whole surface (`readCdcEvents`, `ackCdcSubscription`, `replayCdcSubscription`, …); the machine-readable contract lives in `apps/cms/openapi.yaml`:
+
+```ts
+import { readCdcEvents, ackCdcSubscription } from '@lumibase/sdk';
+
+let cursor: string | undefined;
+for (;;) {
+  const { data, meta } = await client.request(readCdcEvents({ collections: ['posts'], cursor }));
+  for (const event of data) await handle(event); // dedupe on event.id
+  cursor = meta.nextCursor ?? cursor;
+  if (!meta.hasMore) break;
+}
+await client.request(ackCdcSubscription(subId, cursor!)); // durable checkpoint
+```
 
 ## 4. Webhook consumers
 

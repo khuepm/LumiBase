@@ -25,11 +25,13 @@ import {
 } from '@lumibase/database';
 import {
   CDC_FEED_SCHEMA_VERSION,
+  cdcEventType,
   encodeCdcCursor,
   type CdcActorType,
   type CdcCursor,
   type CdcEventEnvelope,
   type CdcOperation,
+  type CdcResource,
   type CdcSource,
 } from '@lumibase/shared/schemas';
 import type { CacheProvider, QueueProvider } from '@lumibase/runtime';
@@ -135,7 +137,7 @@ export function buildEnvelope(
 ): CdcEventEnvelope {
   return {
     id: event.id,
-    type: `items.${event.operation}`,
+    type: cdcEventType((event.resource as CdcResource | undefined) ?? 'item', event.operation),
     schemaVersion: event.schemaVersion ?? CDC_FEED_SCHEMA_VERSION,
     siteId: event.siteId,
     collection: event.collection,

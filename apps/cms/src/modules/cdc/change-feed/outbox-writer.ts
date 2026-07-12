@@ -34,6 +34,7 @@ import { CdcFeedSettingsSchema } from '@lumibase/shared/schemas';
 import type {
   CdcActorType,
   CdcOperation,
+  CdcResource,
   CdcSource,
 } from '@lumibase/shared/schemas';
 import type { CacheProvider } from '@lumibase/runtime';
@@ -48,6 +49,13 @@ export interface OutboxActor {
 }
 
 export interface OutboxMutationInput {
+  /**
+   * Resource kind — 'item' (default) for content rows, or 'collection' /
+   * 'field' / 'setting' for schema/config changes. Per-field pii/phi masking
+   * only applies to 'item' (the classification lives on collection fields);
+   * other kinds store their payload verbatim.
+   */
+  resource?: CdcResource;
   collection: string;
   itemId: string;
   operation: CdcOperation;
@@ -201,16 +209,26 @@ export class OutboxWriter {
     try {
       if (!(await this.isFeedEnabled())) return { written: false };
 
+      const resource = mutation.resource ?? 'item';
       let payload: Record<string, unknown> | null = null;
       if (mutation.payload && mutation.operation !== 'delete') {
-        const sensitive = await this.deps.getSensitiveFields(mutation.collection);
-        payload = maskChangeEventPayload(mutation.payload, sensitive);
+        // pii/phi classification is a property of collection fields, so masking
+        // only applies to item snapshots; schema/setting payloads are stored
+        // verbatim (they carry no per-field classified data).
+        payload =
+          resource === 'item'
+            ? maskChangeEventPayload(
+                mutation.payload,
+                await this.deps.getSensitiveFields(mutation.collection),
+              )
+            : mutation.payload;
       }
 
       const [row] = await this.deps.db
         .insert(cdcChangeEvents)
         .values({
           siteId: this.deps.siteId,
+          resource,
           collection: mutation.collection,
           itemId: mutation.itemId,
           operation: mutation.operation,

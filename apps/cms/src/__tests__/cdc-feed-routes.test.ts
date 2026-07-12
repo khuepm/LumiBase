@@ -272,6 +272,57 @@ describe('cdc-feed routes — happy paths', () => {
     expect(body).toEqual({ data: [], meta: { nextCursor: null, hasMore: false } });
   });
 
+  it('GET /events?wait: long-polls until an event appears, then returns it', async () => {
+    let calls = 0;
+    const app = makeApp({
+      // Empty for the first two reads, then one event arrives.
+      readFeed: async () => {
+        calls += 1;
+        return calls >= 3
+          ? { events: [{ id: 'evt_late' }] as never, nextCursor: 'C', hasMore: false }
+          : { events: [], nextCursor: null, hasMore: false };
+      },
+      sleep: async () => {}, // instant — no real waiting in tests
+    });
+    const res = await app.request('/events?wait=10');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ResponseBody;
+    expect((body.data as unknown as unknown[]).length).toBe(1);
+    expect(calls).toBe(3);
+  });
+
+  it('GET /events?wait: returns empty after the budget elapses', async () => {
+    let calls = 0;
+    const app = makeApp({
+      readFeed: async () => {
+        calls += 1;
+        return { events: [], nextCursor: null, hasMore: false };
+      },
+      sleep: async () => {},
+    });
+    const res = await app.request('/events?wait=3');
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as ResponseBody).data).toEqual([]);
+    // initial read + one re-read per second of budget.
+    expect(calls).toBe(4);
+  });
+
+  it('GET /events?wait: skips long-poll when the first read already has events', async () => {
+    let calls = 0;
+    const app = makeApp({
+      readFeed: async () => {
+        calls += 1;
+        return { events: [{ id: 'e' }] as never, nextCursor: 'C', hasMore: true };
+      },
+      sleep: async () => {
+        throw new Error('sleep must not be called when the first page is non-empty');
+      },
+    });
+    const res = await app.request('/events?wait=10');
+    expect(res.status).toBe(200);
+    expect(calls).toBe(1);
+  });
+
   it('POST /subscriptions returns 201 with the record', async () => {
     const res = await makeApp().request('/subscriptions', {
       method: 'POST',

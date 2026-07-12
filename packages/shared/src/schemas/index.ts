@@ -13,7 +13,10 @@ export {
 
 export {
   CDC_FEED_SCHEMA_VERSION,
+  CDC_RESOURCE_TYPE_PREFIX,
+  cdcEventType,
   CdcOperationSchema,
+  CdcResourceSchema,
   CdcActorTypeSchema,
   CdcSourceSchema,
   CdcPayloadModeSchema,
@@ -31,6 +34,7 @@ export {
   CdcFeedSettingsSchema,
   type CdcCursor,
   type CdcOperation,
+  type CdcResource,
   type CdcActorType,
   type CdcSource,
   type CdcPayloadMode,

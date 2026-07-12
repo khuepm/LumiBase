@@ -15,6 +15,12 @@ import { z } from 'zod';
 export const CDC_FEED_SCHEMA_VERSION = 1;
 
 export const CdcOperationSchema = z.enum(['create', 'update', 'delete']);
+/**
+ * Resource kind an event describes. `item` is content-row changes (the v1
+ * default); `collection`/`field` are schema changes; `setting` is site config.
+ * The envelope `type` is `<plural>.<operation>` — see {@link cdcEventType}.
+ */
+export const CdcResourceSchema = z.enum(['item', 'collection', 'field', 'setting']);
 export const CdcActorTypeSchema = z.enum(['user', 'api_key', 'agent', 'system']);
 export const CdcSourceSchema = z.enum(['api', 'agent', 'flow', 'system']);
 export const CdcPayloadModeSchema = z.enum(['reference', 'snapshot']);
@@ -77,9 +83,25 @@ export const CdcCursorTokenSchema = z
  * this event's own keyset token so consumers can ack mid-batch. `data` is
  * present only in snapshot mode and is already masked.
  */
+/** Maps a resource kind to the plural namespace used in the envelope `type`. */
+export const CDC_RESOURCE_TYPE_PREFIX = {
+  item: 'items',
+  collection: 'collections',
+  field: 'fields',
+  setting: 'settings',
+} as const satisfies Record<z.infer<typeof CdcResourceSchema>, string>;
+
+/** Builds the envelope `type` string, e.g. `('collection','update') → 'collections.update'`. */
+export function cdcEventType(
+  resource: z.infer<typeof CdcResourceSchema>,
+  operation: z.infer<typeof CdcOperationSchema>,
+): string {
+  return `${CDC_RESOURCE_TYPE_PREFIX[resource]}.${operation}`;
+}
+
 export const EventEnvelopeSchema = z.object({
   id: z.string().min(1),
-  type: z.string().regex(/^items\.(create|update|delete)$/),
+  type: z.string().regex(/^(items|collections|fields|settings)\.(create|update|delete)$/),
   schemaVersion: z.number().int().min(1),
   siteId: z.string().min(1),
   collection: z.string().min(1),
@@ -153,6 +175,13 @@ export const CdcFeedQuerySchema = z.object({
   collections: z.preprocess(csvToArray, z.array(z.string().min(1)).optional()),
   operations: z.preprocess(csvToArray, z.array(CdcOperationSchema).optional()),
   limit: z.coerce.number().int().min(1).max(500).default(100),
+  /**
+   * Long-poll budget in seconds (0 = return immediately). When the first read
+   * is empty, the server holds the request and re-reads until an event appears
+   * or the budget elapses. Capped at 25s to stay under typical edge/gateway
+   * request timeouts.
+   */
+  wait: z.coerce.number().int().min(0).max(25).default(0),
 });
 
 /** Per-site settings under key `cdc_feed` (Req 1.5, 6.1). */
@@ -162,6 +191,7 @@ export const CdcFeedSettingsSchema = z.object({
 });
 
 export type CdcOperation = z.infer<typeof CdcOperationSchema>;
+export type CdcResource = z.infer<typeof CdcResourceSchema>;
 export type CdcActorType = z.infer<typeof CdcActorTypeSchema>;
 export type CdcSource = z.infer<typeof CdcSourceSchema>;
 export type CdcPayloadMode = z.infer<typeof CdcPayloadModeSchema>;

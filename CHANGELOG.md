@@ -123,6 +123,23 @@ _No unreleased changes yet._
   `deleteCdcSubscription` is control-plane → HITL below autopilot.
   Feed is off-by-default per site (`cdc_feed.enabled` or first active
   subscription turns it on). No backfill: three new empty tables.
+- **Change Feed API contract + SDK.** `apps/cms/openapi.yaml` now documents
+  every `/cdc/events` and `/cdc/subscriptions/*` endpoint (schemas
+  `EventEnvelope`, `ChangeFeedSubscription`, `ChangeFeedDelivery`, …), and
+  `@lumibase/sdk` ships typed command resources — `readCdcEvents`,
+  `listCdcSubscriptions`, `createCdcSubscription`, `updateCdcSubscription`,
+  `deleteCdcSubscription`, `ackCdcSubscription`, `replayCdcSubscription`,
+  `dispatchCdcSubscription`, `listCdcSubscriptionDeliveries` — with the
+  matching `Cdc*` result/input types.
+- **Change Feed captures schema changes + long-polls.** The outbox gained a
+  `resource` discriminator (migration `0008_cdc_resource_column`, default
+  `item`), so collection/field DDL now emits `collections.*` / `fields.*`
+  events alongside `items.*` (envelope `type` is `<plural-resource>.<operation>`;
+  schema payloads are stored verbatim — masking stays item-only). `GET
+  /cdc/events` accepts `?wait=<seconds>` (≤25) to long-poll: the server holds an
+  empty first read until an event arrives, cutting idle polls. `settings.*`
+  capture, realtime WS fan-out, consumer-group parallelism, inbound/two-way
+  sync, and outbox partitioning are specced in `.kiro/specs/cdc-feed-roadmap/`.
 - **Registry-numbering tripwire (`pnpm registry:check`).** A CI check
   (`scripts/check-registry-numbering.mjs`, wired into the CI `checks` job) fails
   the build when the Setup Impact Registry `#` column contains a duplicate —

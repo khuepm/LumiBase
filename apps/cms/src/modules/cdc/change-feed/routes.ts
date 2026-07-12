@@ -74,7 +74,12 @@ export interface CdcFeedRouteServices {
   authorizeSiteAdmin: (c: Context<AppEnv>) => Promise<Response | null>;
   /** On-demand dispatch (Req 4.7) — the no-queue fallback path. */
   dispatchNow: (subscriptionId: string) => Promise<{ dispatched: boolean }>;
+  /** Injectable delay for long-poll (tests override to run instantly). */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+/** Poll cadence while a long-poll request waits for the first event. */
+export const LONG_POLL_INTERVAL_MS = 1_000;
 
 export type CdcFeedServicesFactory = (
   c: Context<AppEnv>,
@@ -261,6 +266,7 @@ export function createCdcFeedRouter(servicesFactory?: CdcFeedServicesFactory): H
       collections: c.req.query('collections'),
       operations: c.req.query('operations'),
       limit: c.req.query('limit'),
+      wait: c.req.query('wait'),
     });
     if (!parsed.success) {
       return errors(c, 400, 'VALIDATION_ERROR', 'Invalid feed query.', {
@@ -268,11 +274,21 @@ export function createCdcFeedRouter(servicesFactory?: CdcFeedServicesFactory): H
       });
     }
     try {
-      const page = await svc.readFeed(
-        parsed.data.cursor ?? null,
-        { collections: parsed.data.collections, operations: parsed.data.operations },
-        parsed.data.limit,
-      );
+      const filters = { collections: parsed.data.collections, operations: parsed.data.operations };
+      const readOnce = () => svc.readFeed(parsed.data.cursor ?? null, filters, parsed.data.limit);
+      const sleep = svc.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+
+      let page = await readOnce();
+      // Long-poll (Req: reduce empty polls): hold the request and re-read until
+      // an event appears or the budget elapses. Only kicks in on an empty first
+      // page so a caller that is already behind returns its backlog at once.
+      if (parsed.data.wait > 0 && page.events.length === 0) {
+        const deadline = parsed.data.wait * 1000;
+        for (let waited = 0; waited < deadline && page.events.length === 0; waited += LONG_POLL_INTERVAL_MS) {
+          await sleep(Math.min(LONG_POLL_INTERVAL_MS, deadline - waited));
+          page = await readOnce();
+        }
+      }
       return c.json({
         data: page.events,
         meta: { nextCursor: page.nextCursor, hasMore: page.hasMore },
