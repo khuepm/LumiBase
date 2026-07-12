@@ -1,0 +1,32 @@
+# Out-of-scope findings backlog
+
+> **Nơi duy nhất (single source) log lại mọi lỗ hổng / bug / feature / task được
+> phát hiện *trong khi làm một PR* nhưng **không thuộc scope** của PR đó.**
+>
+> Vì sao cần: phát hiện ngoài scope hay bị nêu trong mô tả PR hoặc chat rồi
+> **biến mất sau khi PR merge**. File này giữ chúng ở một chỗ để không bỏ sót.
+> Bắt buộc qua DoD §7 (`definition-of-done.md`).
+
+## Cách dùng
+
+1. Khi đang làm PR mà phát hiện điều gì đó thật (bug/lỗ hổng/nợ kỹ thuật/feature)
+   **ngoài scope** PR hiện tại → thêm một dòng vào bảng dưới **trong cùng PR đó**.
+2. Đặt `Trạng thái`: `open` · `fixed` (kèm PR/commit) · `wontfix` (kèm lý do) ·
+   `tracked` (đã có spec/issue riêng — ghi link).
+3. Khi một mục được xử lý ở PR sau → cập nhật trạng thái + tham chiếu (đừng xoá
+   dòng, giữ dấu vết).
+4. Nếu mục đủ lớn thành feature → tạo `.kiro/specs/<feature>/` và đổi trạng thái
+   sang `tracked` trỏ tới spec đó.
+5. Mức độ: `critical` · `high` · `medium` · `low`.
+
+## Registry
+
+| ID | Phát hiện (ngày · PR) | Loại | Khu vực | Mô tả | Mức độ | Trạng thái | Tham chiếu |
+|----|----------------------|------|---------|-------|--------|-----------|-----------|
+| B1 | 2026-07-10 · upload-file-controls | vuln | `routes/settings.ts` | `POST /api/v1/settings` + `DELETE /:key` không có admin gate → mọi member đã đăng nhập ghi được **bất kỳ** settings key (kể cả `upload_policy`, `media.signedTransform`), vòng qua admin gate của các endpoint config riêng | high | `fixed` | Gated `requireSiteAdmin` cho POST/DELETE (giữ GET mở cho member) + test `routes/__tests__/settings.test.ts` |
+| B2 | 2026-07-10 · upload-file-controls | vuln | `routes/settings.ts` GET | `GET /api/v1/settings` và `/:key` trả **nguyên value** cho mọi member — lộ settings chứa secret, cụ thể `media.signedTransform.secret` (dùng ký/verify signed image transform) → member thường có thể đọc rồi giả mạo transform | high | `fixed` | `redactSecrets` che field secret (theo tên: secret/token/password/apikey/…) ở cả GET list + by-key, cho mọi caller (consumer server đọc trực tiếp từ DB, không qua HTTP). Test trong `routes/__tests__/settings.test.ts` |
+| B3 | 2026-07-10 · upload-file-controls | bug (infra) | CI · Cloudflare Pages | Preview build `lumibase-docs` + `lumibase-landing` fail tức thì (0 giây) trên PR — là config CF Pages project (git-integrated auto-build), không phải nội dung repo (docs build local pass; landing không bị PR đụng). Xuất hiện từ một lần merge main | low | `open` | Sửa ở Cloudflare dashboard (build config/root dir) hoặc tắt preview cho 2 project này. Không chặn merge (non-required) |
+| B4 | 2026-07-10 · upload-file-controls | task (hygiene) | `apps/docs/public/releases.json` | File được git-track nhưng `pnpm docs:build` (`build-release-manifest.mjs`) sinh lại → mỗi lần build docs làm bẩn working tree (lần gặp: flip `migrationWarning`) | low | `fixed` | KHÔNG untrack (release skill hand-edit file này làm source of truth). Thay vào đó làm `build-release-manifest.mjs` **idempotent**: giữ editorial fields (`migrationWarning`/`minimumSafeUpgradeVersion`) + `releaseDate` từ manifest đã commit khi không có override (env/CHANGELOG). Vá luôn bug tiềm ẩn: deploy build trước đây clobber hand-edit về default. Diff = 0 khi build lại |
+| B5 | 2026-07-05 · upload-file-controls | feature | Upload security | Re-encode ảnh để sanitize (chống polyglot không-false-positive) — hiện chỉ có deep byte-scan heuristic. Phụ thuộc `ImageAdapter` (Sharp/CF Images) | medium | `tracked` | `.kiro/specs/upload-file-controls/tasks.md` (F1) ↔ `image-transform-dsl` ↔ `runtime-security-guards-plan.md` §3 |
+| B6 | 2026-07-05 · upload-file-controls | vuln (residual) | `middleware/file-upload-policy.ts` | SVG có `<use xlink:href>` trỏ resource external không bị chặn ở scan (bỏ để tránh false-positive) | low | `wontfix` | Đã trung hoà bởi serve `attachment` + `nosniff` + CSP; ghi trong `upload-file-controls/design.md` |
+| B7 | 2026-07-05 · upload-file-controls | task (residual) | `studio/.../interfaces/file.tsx` | `maxSize` per-field chỉ là UI hint, không enforce server per-field | low | `wontfix` | Global upload policy đã enforce server-side; rủi ro thấp |

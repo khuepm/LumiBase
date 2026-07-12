@@ -9,6 +9,20 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Security
+
+- **`/api/v1/settings` writes are now admin-only.** `POST /api/v1/settings` and
+  `DELETE /api/v1/settings/:key` were open to any authenticated site member,
+  letting a non-admin overwrite arbitrary settings keys (including
+  `upload_policy` and `media.signedTransform`) and bypass the admin gates on
+  dedicated config endpoints. Both now require `requireSiteAdmin`; reads stay
+  open because non-admin editors legitimately read keys like `locales`.
+- **Settings reads redact secret-bearing fields.** `GET /api/v1/settings` and
+  `/:key` previously returned raw values including secrets such as
+  `media.signedTransform.secret`. Secret-named fields (secret/token/password/
+  apiKey/…) are now redacted (`[redacted]`) on read for every caller; code that
+  needs the real value reads it directly from the DB, not this HTTP endpoint.
+
 ### Added
 
 - **Change Feed (CDC Extension Integration).** First-party transactional
@@ -31,6 +45,20 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   the build when the Setup Impact Registry `#` column contains a duplicate —
   mechanizing the Definition of Done §2 uniqueness rule per §6 ("cơ giới hóa"),
   replacing the manual `grep`.
+- **Out-of-scope findings backlog + Definition of Done §7.** A single place
+  (`.kiro/steering/out-of-scope-backlog.md`) to log vulnerabilities, bugs, and
+  follow-up tasks discovered while working a PR but outside its scope, so they
+  are not lost after merge. DoD §7 makes logging them a required review step.
+
+### Fixed
+
+- **`build-release-manifest.mjs` is now idempotent.** Regenerating
+  `apps/docs/public/releases.json` on a plain `docs:build` no longer dirties the
+  working tree: editorial fields (`migrationWarning`, `minimumSafeUpgradeVersion`)
+  and `releaseDate` are preserved from the committed manifest unless explicitly
+  overridden (env var, or a matching CHANGELOG heading for the date). This also
+  fixes a latent bug where a deploy build could clobber a hand-set editorial
+  value back to its default.
 
 ### Changed
 
