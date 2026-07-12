@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:25.632Z
+sourceLang: en
+contentHash: 605ac6e8cf30748d
+---
+
 # Agent Setup — LumiBase
 
 > **For AI agents:** This page is also available as clean Markdown. If you are reading HTML, request `index.md` instead. For the full page index, see [`llms.txt`](../llms.txt).

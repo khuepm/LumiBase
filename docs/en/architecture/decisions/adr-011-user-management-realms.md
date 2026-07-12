@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:23:24.860Z
+sourceLang: en
+contentHash: ad07e9950138a1c0
+---
+
 # ADR-011: User Management Realms (single identity store, role-scoped realms, token audiences)
 
 **Date:** 2026-06-18

@@ -37,6 +37,12 @@ team can understand, review, and later enforce Harness usage of it.
    - Reject SVGs that embed script or active content (`<script>`, inline `on*=`
      handlers, `javascript:`, `<foreignObject>`, `<iframe>`/`<embed>`, and
      `<!DOCTYPE>`/`<!ENTITY>` XXE) — the "image with a shell in it" case.
+   - Scan raster image bytes (`imageHasEmbeddedActivePayload`) for an embedded
+     script/executable payload — `<?php`, `<script`, `<html`, `<!doctype html`
+     anywhere in the file — and reject (`UPLOAD_EMBEDDED_PAYLOAD`). This catches
+     a polyglot that has valid image magic bytes AND an appended shell/HTML,
+     which the prefix magic-byte check alone cannot see. Runs synchronously
+     before the storage write on both runtimes.
    - **Covered upload surfaces:** `POST /api/v1/files` (metadata),
      `PUT /api/v1/files/upload/:key` (signed bytes), and
      `POST /api/v1/media/:key` (RBAC-authorized media bytes). The surface set is
@@ -63,6 +69,20 @@ team can understand, review, and later enforce Harness usage of it.
    adapters map the logical `contentType` onto the native R2 `httpMetadata` /
    S3 `ContentType` field so the served `Content-Type` round-trips correctly
    (previously it was written only to custom metadata and came back undefined).
+
+   **Feature spec (hub):** `.kiro/specs/upload-file-controls/`
+   (requirements/design/tasks) is the single anchor for this control and
+   cross-references every location above.
+
+   **Planned — image re-encode sanitization (not yet implemented):** the
+   false-positive-free defense against image polyglots is to re-encode the
+   uploaded image (strip everything but the pixels) rather than scan for
+   markers. This depends on the `ImageAdapter` (Sharp on Docker / Cloudflare
+   Images on CF) proposed in `.kiro/specs/image-transform-dsl/` and needs a
+   sync-vs-async design decision (an async re-encode in the `media-processing`
+   queue leaves a raw-file window, mitigated by the attachment+nosniff serving
+   above). Tracked as task F1 in the upload-file-controls spec; the security
+   rationale lives here, the image-processing mechanics in image-transform-dsl.
 
 4. **Outbound URL guard**
    - Provide a utility that validates outbound URLs before any import/URL-fetch

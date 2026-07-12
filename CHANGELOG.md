@@ -9,7 +9,20 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Changed
+
+- **Setup Impact Registry `#` column deduplicated.** Parallel branches had kept
+  picking "the next number" independently, leaving many collisions (#16/#20/#21
+  through #38). Colliding rows were renumbered to fresh ids (45–68), keeping the
+  occurrence that other rows cite by number so cross-references stay valid.
+
 ### Added
+
+- **Registry-numbering tripwire (`pnpm registry:check`).** A CI check
+  (`scripts/check-registry-numbering.mjs`, wired into the CI `checks` job) fails
+  the build when the Setup Impact Registry `#` column contains a duplicate —
+  mechanizing the Definition of Done §2 uniqueness rule per §6 ("cơ giới hóa"),
+  replacing the manual `grep`.
 
 - **Git integration (GitHub / GitLab).** Per-site repository connections with
   GitHub App / GitLab App or OAuth/PAT auth (tokens encrypted at rest). Tracks
@@ -20,7 +33,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `git-sync` agent role with conservative L1 autonomy. Studio: **Settings →
   Integrations → Git repositories**. Migration `0007_git_integration` is additive
   (`CREATE TABLE IF NOT EXISTS`, tables prefixed `lumibase_git_*` per ADR-010) —
-  no backfill needed.
+  no backfill needed. Registry row #70.
 
   Optional env: `GITHUB_CLIENT_ID/SECRET`, `GITHUB_APP_ID/PRIVATE_KEY` (PKCS#8),
   `GITLAB_CLIENT_ID/SECRET`, `LUMIBASE_PUBLIC_URL`. Requires existing

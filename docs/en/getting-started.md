@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:21:03.641Z
+sourceLang: en
+contentHash: 9c6c07b7161c8e59
+---
+
 # Getting Started — Scaffold a new project with `create-lumibase`
 
 `create-lumibase` is the official project bootstrapper for LumiBase. From an
