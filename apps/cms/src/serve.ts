@@ -102,6 +102,13 @@ async function main() {
     void runScheduledRefreshTokenPrune(rotatorDb);
   });
 
+  // Pageview flush — every 5 minutes, roll up raw events and drain hot counters
+  // into the daily rollup. Best-effort; never throws (see the module doc).
+  const { runScheduledPageviewFlush } = await import('./modules/pageviews/scheduled');
+  const pageviewFlushTask = cron.schedule('*/5 * * * *', () => {
+    void runScheduledPageviewFlush(rotatorDb, runtime);
+  });
+
   // ── Load-aware autonomy (content-os task 9; Req 9.4/9.5) ─────────────────
   //
   // Feed event-loop pressure samples into the agent load guard: overload
@@ -293,6 +300,7 @@ async function main() {
     // Stop the hourly audit-rotation cron and pressure sampler so their timers
     // can't keep the event loop alive past the server close (task 11.4).
     rotationTask.stop();
+    pageviewFlushTask.stop();
     vetoSweepTask.stop();
     schedulerTask.stop();
     retentionTask.stop();

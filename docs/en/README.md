@@ -103,6 +103,10 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [deployment/local-development.md](./deployment/local-development.md) — Local dev workflow and pre-deploy checks.
 - **Operations** (`operations/`)
   - [operations/upgrades.md](./operations/upgrades.md) — Fixed-version upgrade policy, Cloudflare/Docker flows, backup, migrations, and rollback limits.
+- **Security** (`security/`)
+  - [security/anti-abuse.md](./security/anti-abuse.md) — Anti-abuse mechanisms & best practices: defense-in-depth registry (rate-limiting, brute-force, anomaly, RLS, upload policy, SSRF, AI load-guard, audit) + known gaps.
+  - [security/idor-testing.md](./security/idor-testing.md) — Cross-tenant (IDOR) testing guidelines.
+  - [security/dependency-overrides.md](./security/dependency-overrides.md) — Supply-chain / dependency-override hardening.
 - **Compliance & User Rights** (`compliance/`)
   - [compliance/README.md](./compliance/README.md) — Overview + rights × market matrix (EU/US/VN, Google/Apple) mapped to LumiBase. **Not legal advice.**
   - [compliance/user-rights-catalog.md](./compliance/user-rights-catalog.md) — Plain-language catalog of each right (right to be forgotten, access, portability, consent, unsubscribe, account deletion…).

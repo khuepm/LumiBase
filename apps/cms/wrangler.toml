@@ -41,9 +41,23 @@ LUMIBASE_DEV_AUTH = "true"
 name = "SITE_ROOM"
 class_name = "SiteRoom"
 
+# One PageviewCounter DO instance per siteId provides atomic view counters and
+# exact unique-visitor sets for the pageview module's hot-counter/HLL strategies
+# (KV cannot increment atomically). Drained into lumibase_pageview_daily by the
+# */5 flush cron.
+[[durable_objects.bindings]]
+name = "PAGEVIEW_COUNTER"
+class_name = "PageviewCounter"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["SiteRoom"]
+
+# Append-only: v1 (SiteRoom) is already applied on deployed workers, so the new
+# SQLite class ships as its own tag. Free-plan DOs require new_sqlite_classes.
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["PageviewCounter"]
 
 # ─── Cron Triggers ────────────────────────────────────────────────────────────
 # Audit-log retention rotation (admin-setup-wizard task 11.4; Req 15.5;
@@ -51,8 +65,11 @@ new_sqlite_classes = ["SiteRoom"]
 # every hour to prune `audit_log` / `login_attempts` rows past
 # LUMIBASE_AUDIT_RETENTION_DAYS. Self-hosted Node drives the same rotation with
 # node-cron in src/serve.ts instead.
+# The `*/5` trigger drives the pageview hot-counter/DO flush into
+# lumibase_pageview_daily; the handler branches on the fire time so the hourly
+# rotation still only runs at minute 0.
 [triggers]
-crons = ["0 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *"]
 
 # ─── Queues ───────────────────────────────────────────────────────────────────
 # Used by ItemService to publish mutation events to SiteRoom without blocking.
@@ -127,9 +144,17 @@ zone_name = "lumibase.dev"
 name = "SITE_ROOM"
 class_name = "SiteRoom"
 
+[[env.staging.durable_objects.bindings]]
+name = "PAGEVIEW_COUNTER"
+class_name = "PageviewCounter"
+
 [[env.staging.migrations]]
 tag = "v1"
 new_sqlite_classes = ["SiteRoom"]
+
+[[env.staging.migrations]]
+tag = "v2"
+new_sqlite_classes = ["PageviewCounter"]
 
 # [[env.staging.hyperdrive]]
 # binding = "HYPERDRIVE"
@@ -144,7 +169,7 @@ new_sqlite_classes = ["SiteRoom"]
 # bucket_name = "lumibase-media-staging"
 
 [env.staging.triggers]
-crons = ["0 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *"]
 
 [env.production]
 name = "lumibase-cms-production"
@@ -206,9 +231,17 @@ zone_name = "lumibase.dev"
 name = "SITE_ROOM"
 class_name = "SiteRoom"
 
+[[env.production.durable_objects.bindings]]
+name = "PAGEVIEW_COUNTER"
+class_name = "PageviewCounter"
+
 [[env.production.migrations]]
 tag = "v1"
 new_sqlite_classes = ["SiteRoom"]
+
+[[env.production.migrations]]
+tag = "v2"
+new_sqlite_classes = ["PageviewCounter"]
 
 [[env.production.hyperdrive]]
 binding = "HYPERDRIVE"
@@ -227,7 +260,7 @@ binding = "REALTIME_QUEUE"
 queue = "lumibase-realtime"
 
 [env.production.triggers]
-crons = ["0 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *"]
 
 # ─── Dev environment (dev.lumibase.dev, shared domain) ───────────────────────
 # Continuous-integration environment, auto-deployed from the `dev` branch.
@@ -264,12 +297,20 @@ zone_name = "lumibase.dev"
 name = "SITE_ROOM"
 class_name = "SiteRoom"
 
+[[env.dev.durable_objects.bindings]]
+name = "PAGEVIEW_COUNTER"
+class_name = "PageviewCounter"
+
 [[env.dev.migrations]]
 tag = "v1"
 new_sqlite_classes = ["SiteRoom"]
 
+[[env.dev.migrations]]
+tag = "v2"
+new_sqlite_classes = ["PageviewCounter"]
+
 [env.dev.triggers]
-crons = ["0 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *"]
 
 # ─── Demo environment (demo.lumibase.dev, shared domain) ─────────────────────
 # Public demo / showcase. Deployed manually via workflow_dispatch. May be
@@ -307,9 +348,17 @@ zone_name = "lumibase.dev"
 name = "SITE_ROOM"
 class_name = "SiteRoom"
 
+[[env.demo.durable_objects.bindings]]
+name = "PAGEVIEW_COUNTER"
+class_name = "PageviewCounter"
+
 [[env.demo.migrations]]
 tag = "v1"
 new_sqlite_classes = ["SiteRoom"]
 
+[[env.demo.migrations]]
+tag = "v2"
+new_sqlite_classes = ["PageviewCounter"]
+
 [env.demo.triggers]
-crons = ["0 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *"]

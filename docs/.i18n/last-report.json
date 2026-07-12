@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-07-12T19:36:49.180Z",
-  "mode": "plan",
-  "effectiveMode": "plan",
+  "generatedAt": "2026-07-12T18:37:11.260Z",
+  "mode": "apply",
+  "effectiveMode": "preserve-only",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
     "preserved": 0,
-    "conflicts": 0,
-    "upToDate": 45,
+    "conflicts": 1,
+    "upToDate": 44,
     "planned": 93
   },
   "actions": [
@@ -781,18 +781,6 @@
       "missingPlaceholders": 0
     },
     {
-      "rel": "deployment/multi-tenant-topologies.md",
-      "type": "up-to-date",
-      "reason": "in sync",
-      "enLang": "en",
-      "viLang": "vi",
-      "sourceLocale": "en",
-      "targetLocale": "vi",
-      "willTranslate": false,
-      "preservedTo": null,
-      "missingPlaceholders": 0
-    },
-    {
       "rel": "deployment/overview.md",
       "type": "translate",
       "reason": "source changed since last sync",
@@ -1317,7 +1305,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": null,
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-12T18-37-11-403Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1526,6 +1514,18 @@
     },
     {
       "rel": "sdk/typegen.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/anti-abuse.md",
       "type": "translate",
       "reason": "missing vi translation",
       "enLang": "en",

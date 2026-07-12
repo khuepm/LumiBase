@@ -44,6 +44,8 @@ import type { KeyProvider } from '@lumibase/runtime';
 import { nanoid } from 'nanoid';
 import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
+import { buildSandboxVerifyOptions } from './extension-verifier';
+import type { Bindings } from '../env';
 import {
   OutboxWriter,
   type OutboxActor,
@@ -539,7 +541,9 @@ export class ItemService {
           });
         },
       );
-      this.hookDispatcher = new HookDispatcher(sandbox, rows);
+      this.hookDispatcher = new HookDispatcher(sandbox, rows, undefined, (ext) =>
+        buildSandboxVerifyOptions(ext, this.deps.db, this.deps.extensionEnv as unknown as Bindings),
+      );
     } catch {
       /* non-critical — return null if extensions can't be loaded */
     }

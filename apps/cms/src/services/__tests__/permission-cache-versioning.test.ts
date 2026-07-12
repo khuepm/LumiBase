@@ -27,6 +27,11 @@ class FakeCache implements CacheProvider {
   async delete(key: string): Promise<void> {
     this.store.delete(key);
   }
+  async increment(key: string, by = 1): Promise<number> {
+    const next = Number(this.store.get(key) ?? '0') + by;
+    this.store.set(key, String(next));
+    return next;
+  }
 }
 
 const BUNDLE: PermissionBundle = {

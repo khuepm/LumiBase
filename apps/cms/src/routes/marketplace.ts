@@ -24,29 +24,11 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../env";
 import { PermissionService } from "../services/permission-service";
+import { ExtensionVerifierService } from "../services/extension-verifier";
 
 export const marketplaceRouter = new Hono<AppEnv>();
 
 // ── helpers ────────────────────────────────────────────────────────────────
-
-function loadPublicKeys(env: AppEnv["Bindings"]): Record<string, string> {
-  const raw = (env as unknown as Record<string, string | undefined>)[
-    "MARKETPLACE_PUBLIC_KEYS"
-  ];
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw) as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-async function sha256(buf: ArrayBuffer): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 function permissionCtx(c: Context<AppEnv>) {
   const auth = c.get("auth");
@@ -85,38 +67,6 @@ function extensionKey(input: { key?: string | null; marketplaceSlug?: string | n
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
-}
-
-async function verifyEd25519Signature(
-  publicKeyPem: string,
-  signatureB64: string,
-  message: ArrayBuffer,
-): Promise<boolean> {
-  // Strip PEM headers + base64 decode.
-  const body = publicKeyPem
-    .replace("-----BEGIN PUBLIC KEY-----", "")
-    .replace("-----END PUBLIC KEY-----", "")
-    .replace(/\s+/g, "");
-  const der = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
-  const sig = Uint8Array.from(atob(signatureB64), (c) => c.charCodeAt(0));
-
-  try {
-    const key = await crypto.subtle.importKey(
-      "spki",
-      der.buffer as ArrayBuffer,
-      { name: "Ed25519" } as { name: "Ed25519" },
-      false,
-      ["verify"],
-    );
-    return await crypto.subtle.verify(
-      { name: "Ed25519" },
-      key,
-      sig.buffer as ArrayBuffer,
-      message,
-    );
-  } catch {
-    return false;
-  }
 }
 
 export function compareSemver(a: string, b: string): number {
@@ -227,11 +177,16 @@ function toCatalogExtension(row: ExtensionRow, opts: CatalogProjectionOpts = {})
     voteCount: opts.voteCount ?? 0,
     hasVoted: opts.hasVoted ?? false,
     /**
-     * Trusted source signal: the listing carries a detached signature bound
-     * to a registered publisher key and an integrity hash. The install path
-     * re-verifies cryptographically; this flag drives the "verified" badge.
+     * Trusted source signal driving the "verified" badge. Prefer the persisted
+     * `verifiedAt` (set only after a real crypto check at publish/install) or
+     * the server-derived `isOfficial`; fall back to the presence of signature
+     * fields for legacy rows published before verification was recorded.
      */
-    verified: Boolean(row.signature && row.publisherKeyId && row.bundleSha256),
+    verified: Boolean(
+      row.verifiedAt ||
+        row.isOfficial ||
+        (row.signature && row.publisherKeyId && row.bundleSha256),
+    ),
     rating: null,
     ratingCount: null,
     versions: [
@@ -609,61 +564,36 @@ marketplaceRouter.post("/extensions/:slug/install", async (c) => {
       404,
     );
 
-  // Fetch bundle and verify signature.
-  if (source.bundleSha256 && source.signature && source.publisherKeyId) {
-    const res = await fetch(source.bundleUrl);
-    if (!res.ok) {
-      return c.json(
-        {
-          errors: [
-            { code: "BUNDLE_FETCH_FAILED", message: `Status ${res.status}` },
-          ],
-        },
-        502,
-      );
-    }
-    const bundleBytes = await res.arrayBuffer();
-    const computed = await sha256(bundleBytes);
-    if (computed !== source.bundleSha256) {
-      return c.json(
-        {
-          errors: [
-            { code: "SIGNATURE_INVALID", message: "Bundle hash mismatch" },
-          ],
-        },
-        400,
-      );
-    }
+  // Verify the bundle signature (mandatory + fail-closed for official
+  // `lumibase-*`; policy-driven for third-party). The verifier fetches the
+  // bundle (SSRF-guarded), re-hashes it, resolves the publisher key (DB over
+  // env), and derives the official flag server-side.
+  const verifier = new ExtensionVerifierService(db, c.env);
+  const verdict = await verifier.verifyByMetadata(source.name, {
+    bundleUrl: source.bundleUrl,
+    bundleSha256: source.bundleSha256,
+    signature: source.signature,
+    publisherKeyId: source.publisherKeyId,
+    signatureAlg: source.signatureAlg,
+  });
 
-    const keys = loadPublicKeys(c.env);
-    const pem = keys[source.publisherKeyId];
-    if (!pem) {
-      return c.json(
-        {
-          errors: [
-            {
-              code: "UNKNOWN_PUBLISHER",
-              message: `Public key ${source.publisherKeyId} not registered`,
-            },
-          ],
-        },
-        400,
-      );
-    }
-    const ok = await verifyEd25519Signature(pem, source.signature, bundleBytes);
-    if (!ok) {
-      return c.json(
-        {
-          errors: [
-            {
-              code: "SIGNATURE_INVALID",
-              message: "Signature verification failed",
-            },
-          ],
-        },
-        400,
-      );
-    }
+  const requireSignature =
+    ExtensionVerifierService.isReservedName(source.name) ||
+    (c.env.LUMIBASE_EXT_SIGNATURE_POLICY ?? "require") !== "warn";
+
+  if (requireSignature && !verdict.ok) {
+    return c.json(
+      { errors: [{ code: "SIGNATURE_INVALID", message: `Signature check failed: ${verdict.reason}` }] },
+      400,
+    );
+  }
+  // A reserved `lumibase-*` name that verifies but is NOT signed by an official
+  // key must never be installed as official (namespace squat protection).
+  if (ExtensionVerifierService.isReservedName(source.name) && !verdict.isOfficial) {
+    return c.json(
+      { errors: [{ code: "RESERVED_NAMESPACE", message: "lumibase-* requires an official signature" }] },
+      400,
+    );
   }
 
   // Clone the marketplace row into the site's installation row.
@@ -675,7 +605,11 @@ marketplaceRouter.post("/extensions/:slug/install", async (c) => {
       name: source.name,
       version: source.version,
       type: source.type,
-      enabled: false,
+      enabled: source.enabledByDefault,
+      enabledByDefault: source.enabledByDefault,
+      autoInstall: source.autoInstall,
+      isOfficial: verdict.isOfficial,
+      verifiedAt: verdict.ok ? new Date() : null,
       bundleUrl: source.bundleUrl,
       manifest: source.manifest,
       capabilities: [],
@@ -881,6 +815,25 @@ marketplaceRouter.post("/submit", async (c) => {
     );
   }
   const input = parsed.data;
+
+  // Reserved namespace: community `/submit` is unsigned, so it must never claim
+  // a `lumibase-*` name/slug. Official extensions ship via signed `/publish`.
+  if (
+    ExtensionVerifierService.isReservedName(input.name) ||
+    ExtensionVerifierService.isReservedName(input.marketplaceSlug)
+  ) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: "RESERVED_NAMESPACE",
+            message: 'The "lumibase-" namespace is reserved for official extensions.',
+          },
+        ],
+      },
+      400,
+    );
+  }
 
   // Guard the namespace: a slug already live in the public catalog can only be
   // updated by its publisher through /publish, not re-claimed via /submit.

@@ -11,6 +11,11 @@ function makeCache(seed: Record<string, string> = {}): CacheProvider {
     get: async <T = string>(key: string) => (store.get(key) ?? null) as T | null,
     set: async (key, value) => void store.set(key, value),
     delete: async (key) => void store.delete(key),
+    increment: async (key, by = 1) => {
+      const next = Number(store.get(key) ?? '0') + by;
+      store.set(key, String(next));
+      return next;
+    },
   };
 }
 

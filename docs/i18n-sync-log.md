@@ -2,17 +2,17 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
-## 2026-07-12T19:36:49.180Z — mode `plan` (effective `plan`)
+## 2026-07-12T18:37:11.260Z — mode `apply` (effective `preserve-only`)
 
 Engine: `claude` · API key: absent · files scanned: 138
 
-Summary — up-to-date: 45, translated: 0, preserved: 0, conflicts: 0, planned: 93
+Summary — up-to-date: 44, translated: 0, preserved: 0, conflicts: 1, planned: 93
 
 ### Language mismatches / preservation
 
 | File | en lang | vi lang | Action | Note |
 |------|---------|---------|--------|------|
-| `features/user-management.md` | vi | vi | conflict | en file holds Vietnamese that differs from existing docs/vi |
+| `features/user-management.md` | vi | vi | conflict | preserved → `.i18n/preserved/features/user-management.md.2026-07-12T18-37-11-403Z.bak.md` |
 
 ### Pending / performed translations
 
@@ -102,6 +102,7 @@ Summary — up-to-date: 45, translated: 0, preserved: 0, conflicts: 0, planned: 
 | `roadmap/studio-content-slices.md` | vi → en | en duplicates vi content; replace en with English translation |
 | `sdk/javascript.md` | en → vi | missing vi translation |
 | `sdk/typegen.md` | en → vi | missing vi translation |
+| `security/anti-abuse.md` | en → vi | missing vi translation |
 | `security/cwe-top-100-audit.md` | en → vi | source changed since last sync |
 | `security/dependency-overrides.md` | en → vi | source changed since last sync |
 | `security/idor-testing.md` | en → vi | source changed since last sync |
@@ -113,17 +114,17 @@ Summary — up-to-date: 45, translated: 0, preserved: 0, conflicts: 0, planned: 
 
 ---
 
-## 2026-07-12T19:35:34.955Z — mode `plan` (effective `plan`)
+## 2026-07-12T12:17:31.926Z — mode `apply` (effective `preserve-only`)
 
-Engine: `claude` · API key: absent · files scanned: 138
+Engine: `claude` · API key: absent · files scanned: 137
 
-Summary — up-to-date: 44, translated: 0, preserved: 0, conflicts: 0, planned: 94
+Summary — up-to-date: 44, translated: 0, preserved: 0, conflicts: 1, planned: 92
 
 ### Language mismatches / preservation
 
 | File | en lang | vi lang | Action | Note |
 |------|---------|---------|--------|------|
-| `features/user-management.md` | vi | vi | conflict | en file holds Vietnamese that differs from existing docs/vi |
+| `features/user-management.md` | vi | vi | conflict | preserved → `.i18n/preserved/features/user-management.md.2026-07-12T12-17-32-072Z.bak.md` |
 
 ### Pending / performed translations
 
@@ -167,7 +168,6 @@ Summary — up-to-date: 44, translated: 0, preserved: 0, conflicts: 0, planned: 
 | `deployment/docker.md` | en → vi | source changed since last sync |
 | `deployment/environment-variables.md` | en → vi | source changed since last sync |
 | `deployment/local-development.md` | en → vi | source changed since last sync |
-| `deployment/multi-tenant-topologies.md` | en → vi | source changed since last sync |
 | `deployment/overview.md` | en → vi | source changed since last sync |
 | `deployment/shared-domain-environments.md` | en → vi | missing vi translation |
 | `devpost-xprize-submission.md` | en → vi | missing vi translation |
