@@ -50,6 +50,20 @@
       "when": 1783500100000,
       "tag": "0006_password_changed_at_and_email_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783500200000,
+      "tag": "0007_pageviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783500300000,
+      "tag": "0008_extension_signing",
+      "breakpoints": true
     }
   ]
 }
