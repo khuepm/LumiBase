@@ -27,7 +27,7 @@ Read docs/en/agent-setup/prompt.md and follow all setup instructions.
 Hoặc nếu bạn đang dùng bản copy docs từ xa:
 
 ```
-Fetch https://raw.githubusercontent.com/lumibase/lumibase/main/docs/en/agent-setup/prompt.md
+Fetch https://raw.githubusercontent.com/khuepm/lumibase/main/docs/en/agent-setup/prompt.md
 ```
 
 ---

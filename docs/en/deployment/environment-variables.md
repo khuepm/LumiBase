@@ -129,6 +129,20 @@ The Docker CMS process includes an overload guard for the Node.js event loop. Wh
 
 ---
 
+## Rate limiting
+
+A fixed-window throttle guards the authenticated API. It keys per principal (user → API key → IP) and is scoped per site. When exceeded it returns HTTP `429` with a `RATE_LIMITED` envelope plus `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `Retry-After`. It fails open if the cache is unavailable, so it is defence-in-depth rather than a hard quota.
+
+Large imports can trip the default budget. Raise `LUMIBASE_RATE_LIMIT_MAX` and prefer the bulk endpoint — see [Data import](../features/data-import.md).
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LUMIBASE_RATE_LIMIT_MAX` | ✗ | `300` | Max requests per window per principal, per site. |
+| `LUMIBASE_RATE_LIMIT_WINDOW_S` | ✗ | `60` | Window length in seconds. |
+| `LUMIBASE_RATE_LIMIT_DISABLED` | ✗ | (unset) | Set to `true` to disable the throttle entirely. |
+
+---
+
 ## Observability
 
 | Variable | Required | Description |

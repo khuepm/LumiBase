@@ -18,7 +18,7 @@ LumiBase provides a [prompt template](./prompt.md), MCP server configs, and stru
 Already have an agent? Paste this into any AI coding agent to load the LumiBase project context in one step:
 
 ```
-Fetch https://raw.githubusercontent.com/lumibase/lumibase/main/docs/en/agent-setup/prompt.md
+Fetch https://raw.githubusercontent.com/khuepm/lumibase/main/docs/en/agent-setup/prompt.md
 ```
 
 Or if you're working locally, tell your agent:
