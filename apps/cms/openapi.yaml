@@ -1016,6 +1016,65 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time, nullable: true }
+    GitIntegration:
+      type: object
+      description: A per-site connection to a GitHub/GitLab repository. Tokens are never returned.
+      properties:
+        id: { type: string }
+        provider: { type: string, enum: [github, gitlab] }
+        repoFullName: { type: string, example: 'acme/website' }
+        displayName: { type: string }
+        authMethod: { type: string, enum: [app, pat] }
+        status: { type: string, enum: [connected, error, disconnected] }
+        statusReason: { type: string, nullable: true }
+        scopes: { type: array, items: { type: string } }
+        hasToken: { type: boolean, description: True when a token/installation is on file (never the value). }
+        webhookUrl: { type: string, description: Operator-facing signed webhook URL (embeds siteId + integrationId). }
+        lastSyncAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    GitIntegrationCreate:
+      type: object
+      required: [provider, repoFullName, displayName, authMethod]
+      properties:
+        provider: { type: string, enum: [github, gitlab] }
+        repoFullName: { type: string, example: 'acme/website' }
+        displayName: { type: string }
+        authMethod: { type: string, enum: [app, pat] }
+        token: { type: string, description: PAT/OAuth token (required when authMethod=pat); stored encrypted. }
+        installationId: { type: string, description: Required when authMethod=app. }
+        scopes: { type: array, items: { type: string } }
+    GitPullRequest:
+      type: object
+      properties:
+        id: { type: string }
+        number: { type: integer }
+        title: { type: string }
+        state: { type: string, enum: [open, closed, merged] }
+        ciStatus: { type: string, enum: [unknown, pending, success, failure] }
+        mergeable: { type: boolean, nullable: true }
+        headSha: { type: string }
+        author: { type: string, nullable: true }
+        previewUrl: { type: string, nullable: true }
+        updatedAt: { type: string, format: date-time }
+    GitCiRun:
+      type: object
+      properties:
+        id: { type: string }
+        providerRunId: { type: string }
+        status: { type: string, enum: [queued, in_progress, success, failure, cancelled] }
+        jobs:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              status: { type: string }
+              startedAt: { type: string, format: date-time, nullable: true }
+              completedAt: { type: string, format: date-time, nullable: true }
+              durationMs: { type: integer, nullable: true }
+        durationMs: { type: integer, nullable: true }
+        hasStoredLog: { type: boolean }
 
 
 paths:
@@ -3300,6 +3359,297 @@ paths:
           description: Accepted (ref applied or ignored)
         '401':
           description: Invalid or missing signature
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /integrations/git:
+    get:
+      tags: [Git Integration]
+      summary: List Git integrations for the site
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/GitIntegration' } }
+    post:
+      tags: [Git Integration]
+      summary: Connect a repository (site-admin)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GitIntegrationCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/GitIntegration' }
+        '409':
+          description: An integration for this (provider, repo) already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /integrations/git/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/SiteHeader' }
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Git Integration]
+      summary: Get one integration
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/GitIntegration' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    patch:
+      tags: [Git Integration]
+      summary: Update display name / token / status / sync config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/GitIntegration' }
+    delete:
+      tags: [Git Integration]
+      summary: Disconnect (forgets the stored token)
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, properties: { id: { type: string } } }
+  /integrations/git/{id}/rotate-secret:
+    post:
+      tags: [Git Integration]
+      summary: Rotate the webhook secret
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/GitIntegration' }
+  /integrations/git/{id}/oauth/authorize:
+    get:
+      tags: [Git Integration]
+      summary: Build the provider OAuth authorize URL (single-use state)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, properties: { authorizeUrl: { type: string } } }
+  /integrations/git/{id}/pull-requests:
+    get:
+      tags: [Git Integration]
+      summary: List cached pull requests
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/GitPullRequest' } }
+                  meta: { type: object }
+  /integrations/git/{id}/pull-requests/refresh:
+    post:
+      tags: [Git Integration]
+      summary: Pull PRs live from the provider (upsert cache)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/GitPullRequest' } }
+  /integrations/git/{id}/pull-requests/{number}/ci:
+    get:
+      tags: [Git Integration]
+      summary: CI runs for a pull request
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: number, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/GitCiRun' } }
+  /integrations/git/{id}/pull-requests/{number}/validate:
+    post:
+      tags: [Git Integration]
+      summary: Validate content/config and post a lumibase/content-validation status
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: number, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      state: { type: string, enum: [success, failure] }
+                      summary: { type: string }
+                      statusPosted: { type: boolean }
+  /integrations/git/{id}/ci-runs/{runId}/logs:
+    get:
+      tags: [Git Integration]
+      summary: Fetch (and cache) the CI log for a run
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: runId, in: path, required: true, schema: { type: string } }
+        - { name: jobId, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, properties: { log: { type: string } } }
+  /integrations/git/{id}/gitops/sync:
+    post:
+      tags: [Git Integration]
+      summary: Reconcile lumibase/intents.json from the repo into content intents
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: ref, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      found: { type: boolean }
+                      applied: { type: array, items: { type: object } }
+                      errors: { type: array, items: { type: string } }
+                      goalsCreated: { type: integer }
+  /integrations/git/{id}/provenance:
+    get:
+      tags: [Git Integration]
+      summary: Query commit/PR → content provenance
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: collection, in: query, required: false, schema: { type: string } }
+        - { name: itemId, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { type: object } }
+  /integrations/git/oauth/{provider}/callback:
+    get:
+      tags: [Git Integration]
+      summary: OAuth callback (public; bound to single-use cache state)
+      security: []
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [github, gitlab] } }
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: HTML page (auto-close); token exchanged and stored encrypted
+  /integrations/git/webhook/{provider}/{siteId}/{integrationId}:
+    post:
+      tags: [Git Integration]
+      summary: Inbound provider webhook (public, signature-verified)
+      description: |
+        Public, pre-auth. GitHub verified by HMAC-SHA256 (`X-Hub-Signature-256`),
+        GitLab by shared token (`X-Gitlab-Token`), compared constant-time. siteId +
+        integrationId in the path scope the (un-tenanted) lookup; the per-integration
+        secret signature is the authenticity gate. Idempotent by provider delivery id.
+      security: []
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [github, gitlab] } }
+        - { name: siteId, in: path, required: true, schema: { type: string } }
+        - { name: integrationId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Received (or duplicate)
+        '401':
+          description: Invalid signature
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
