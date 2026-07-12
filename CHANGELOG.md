@@ -11,6 +11,53 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Security
 
+- **Realtime subscribe is read-gated and filterable.** A studio session could
+  previously subscribe to any collection name and receive change signals for
+  collections it had no `read` grant on (metadata leak: which collections
+  change, when, and which item ids). The studio realtime ticket now embeds the
+  collections the principal can `read` (computed by PermissionService at ticket
+  issuance — admin bypass gets `*`), and the hub rejects any other `subscribe`
+  with `SUBSCRIBE_FORBIDDEN`, fail-closed on a missing/empty allowlist. The
+  `subscribe` message also accepts an optional Directus-style `filter`,
+  evaluated server-side per subscription over the event envelope
+  (`collection`/`action`/`itemId` — the wire is signal-only, so row data is
+  never filterable or leakable).
+- **Scheduled release publishes are now audited.** The scheduler sweep
+  published due releases without writing any audit row — only manual publishes
+  were recorded. The sweep now writes the same `release_published` /
+  `release_partially_published` / `release_publish_failed` vocabulary
+  (shared helpers, counts-only metadata) with `trigger: 'scheduled'`.
+
+- **Realtime studio broadcasts are signal-only.** An item mutation used to
+  fan out the full `row.data` to every studio session subscribed to the
+  collection, without re-checking that session's read grant or field mask —
+  a client could read row content (including masked fields) straight off the
+  WebSocket. The broadcast now carries only the change signal
+  (`collection`/`action`/`itemId`, `payload: null`); the Studio client
+  re-fetches through the permission-enforced `/items` API, so field masking and
+  row RBAC apply by construction and no row content crosses the wire.
+- **External JWT auth: DoS guards + denial/issuer auditing.** The verifier now
+  rejects an oversized bearer (`> 8192` chars) before parsing it and caps the
+  role-claim list it resolves (`≤ 50`), bounding attacker-controlled parse/query
+  work. Denied external authentications now write an `external_auth_denied`
+  audit row (classification code only — never the token, claims, or reason), and
+  issuer create/update/delete write `external_issuer_*` audit rows.
+
+- **FK dependent-records now enforce the caller's RBAC.** The
+  `POST /api/v1/items/:collection/:id/resolve-dependents` and
+  `GET …/dependents` endpoints previously ran the batch `set_null` / `reassign`
+  / `delete` and the preflight report without the caller's permission context —
+  any authenticated tenant member could clear, reassign, or delete records in a
+  collection they had no `update`/`delete` grant on, and read dependent ids they
+  could not otherwise see. The resolve path now gates each action against
+  `update`/`delete` on the dependent collection (403 `FORBIDDEN`), scopes batch
+  writes to the caller's row-level grant, delegates deletes through a
+  permission-carrying `ItemService`, and the preflight requires `read` on the
+  target and only samples rows the caller may read. A source-independent
+  tripwire (`dependents-service-rbac.test.ts`) locks the gate, and Definition of
+  Done §2c gains a rule for request-path services that delegate to `ItemService`
+  or write content tables directly. No schema or setup change.
+
 - **`/api/v1/settings` writes are now admin-only.** `POST /api/v1/settings` and
   `DELETE /api/v1/settings/:key` were open to any authenticated site member,
   letting a non-admin overwrite arbitrary settings keys (including
@@ -22,6 +69,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `media.signedTransform.secret`. Secret-named fields (secret/token/password/
   apiKey/…) are now redacted (`[redacted]`) on read for every caller; code that
   needs the real value reads it directly from the DB, not this HTTP endpoint.
+
+### Performance
+
+- **Trusted external-JWT issuers are cached.** `getTrustedIssuers` queried the
+  DB on every bearer-token request; it now reads through `runtime.cache`
+  (`auth:issuers:<siteId>`, TTL 60s) and issuer create/update/delete drop the
+  key, so config changes apply within the TTL bound.
 
 ### Added
 

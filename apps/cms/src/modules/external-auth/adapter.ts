@@ -22,6 +22,12 @@ import {
   type VerifyOutcome,
 } from './verifier';
 
+/** Trusted-issuer cache key (invalidated by ExternalIssuerService on CRUD). */
+export const issuerCacheKey = (siteId: string) => `auth:issuers:${siteId}`;
+
+/** TTL bounds staleness when invalidation is missed (spec Req 8.6: ≤ 60s). */
+const ISSUER_CACHE_TTL_SECONDS = 60;
+
 /** In-process JWKS cache keyed by URL (mirrors middleware/auth.ts getJwks). */
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 function getJwks(url: string) {
@@ -73,16 +79,23 @@ function toTrustedIssuer(row: typeof authExternalIssuers.$inferSelect): TrustedI
 export async function tryExternalJwt(c: Context<AppEnv>, token: string): Promise<VerifyOutcome> {
   const db = c.get('db');
   const siteId = c.get('siteId');
+  // Defensive: auth middleware must keep working (fail-closed per-token, not
+  // crash) if the runtime middleware has not populated the context.
+  const cache = c.get('runtime')?.cache;
 
   const deps: VerifierDeps = {
     requestSiteId: siteId,
 
     getTrustedIssuers: async () => {
+      const cached = cache ? await cache.get<TrustedIssuer[]>(issuerCacheKey(siteId)) : null;
+      if (cached) return cached;
       const rows = await db
         .select()
         .from(authExternalIssuers)
         .where(and(scopeSite(authExternalIssuers.siteId, siteId), eq(authExternalIssuers.enabled, true)));
-      return rows.map(toTrustedIssuer);
+      const issuers = rows.map(toTrustedIssuer);
+      if (cache) await cache.set(issuerCacheKey(siteId), JSON.stringify(issuers), { ttl: ISSUER_CACHE_TTL_SECONDS });
+      return issuers;
     },
 
     resolveJwks: async (issuer) => getJwks(await resolveJwksUri(issuer)),

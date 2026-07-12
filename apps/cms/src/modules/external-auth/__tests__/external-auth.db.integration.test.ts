@@ -79,6 +79,39 @@ describe('External JWT auth — DB integration', () => {
     await expect(svc().create(input)).rejects.toMatchObject({ code: 'ISSUER_ALREADY_EXISTS' });
   });
 
+  it('issuer CRUD drops the auth:issuers:<siteId> cache entry (Req 8.6, 2.6 — task 6.3)', async () => {
+    if (!canConnect) return;
+    const deletes: string[] = [];
+    const cache = {
+      async get<T>(): Promise<T | null> {
+        return null;
+      },
+      async set(): Promise<void> {},
+      async delete(key: string): Promise<void> {
+        deletes.push(key);
+      },
+    };
+    const cachedSvc = new ExternalIssuerService({ db, siteId: SITE, allowLocalHttp: true, cache });
+
+    const row = await cachedSvc.create({
+      issuer: ISSUER,
+      jwksUri: 'https://idp.example.com/jwks',
+      audience: 'lumibase-api',
+      algorithms: ['RS256'],
+      claimMapping: { email: 'email', roles: 'roles', externalId: 'sub' },
+      roleMapping: { editor: { systemKey: 'editor' } },
+      jitProvisioning: true,
+    });
+    expect(deletes).toEqual([`auth:issuers:${SITE}`]);
+
+    await cachedSvc.update(row!.id, { enabled: false });
+    expect(deletes).toHaveLength(2);
+
+    await cachedSvc.delete(row!.id);
+    expect(deletes).toHaveLength(3);
+    expect(new Set(deletes)).toEqual(new Set([`auth:issuers:${SITE}`]));
+  });
+
   it('rejects an HS256 algorithm in config (Req 2.3)', async () => {
     if (!canConnect) return;
     await expect(

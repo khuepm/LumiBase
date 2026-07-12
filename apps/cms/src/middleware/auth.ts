@@ -352,6 +352,16 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       // Generic outward code; the specific reason is for server logs only.
       const outward = ext.status === 403 ? 'FORBIDDEN' : 'UNAUTHENTICATED';
       console.warn('[withAuth] external JWT rejected:', ext.code, ext.reason);
+      // Audit the denial with the classification code only — never the token,
+      // claims, or the server-side reason string (best-effort; never throws).
+      await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
+        event: 'external_auth_denied',
+        actorEmail: null,
+        ip: c.get('ip') ?? null,
+        userAgent: c.get('userAgent') ?? null,
+        requestId: c.get('requestId') ?? null,
+        metadata: { code: ext.code, status: ext.status },
+      });
       return c.json({ errors: [{ code: outward, message: ext.status === 403 ? 'Access denied.' : 'Authentication required.' }] }, ext.status);
     }
     // ext.kind === 'skip' → continue to custom JWT below.

@@ -20,7 +20,7 @@ import { jwtVerify } from 'jose';
 import { nanoid } from 'nanoid';
 import { parseClientMessage, type RealtimeEvent } from '@lumibase/shared';
 import type { InProcessRealtimeHub, RealtimeEventLike } from '@lumibase/runtime';
-import { shouldDeliver, toWireMessage } from './fan-out';
+import { canSubscribe, shouldDeliver, toWireMessage } from './fan-out';
 
 const REALTIME_PATH = '/api/v1/realtime';
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -34,8 +34,10 @@ interface NodeSession {
   userId?: string;
   subjectId?: string;
   subscriptions: Set<string>;
+  filters: Map<string, Record<string, unknown>>;
   channels: Set<string>;
   allowedChannels: Set<string>;
+  allowedCollections: Set<string>;
   unsubscribeHub: () => void;
   lastPong: number;
   msgCount: number;
@@ -126,8 +128,10 @@ export function attachNodeRealtime(opts: NodeHubOptions): { close: () => void } 
       userId: principal.userId,
       subjectId: principal.subjectId,
       subscriptions: new Set(),
+      filters: new Map(),
       channels: new Set(),
       allowedChannels: new Set(principal.channels),
+      allowedCollections: new Set(principal.collections),
       unsubscribeHub: () => {},
       lastPong: Date.now(),
       msgCount: 0,
@@ -158,6 +162,7 @@ export function attachNodeRealtime(opts: NodeHubOptions): { close: () => void } 
         subjectId: session.subjectId,
         subscriptions: session.subscriptions,
         channels: session.channels,
+        filters: session.filters,
       })
     ) {
       return;
@@ -191,10 +196,23 @@ export function attachNodeRealtime(opts: NodeHubOptions): { close: () => void } 
 
     switch (msg.type) {
       case 'subscribe':
+        // Read-gate from the ticket allowlist, never trusted from the client
+        // (mirrors the channel allowlist on `join`).
+        if (!canSubscribe(session.allowedCollections, msg.collection)) {
+          send(session.ws, {
+            type: 'error',
+            code: 'SUBSCRIBE_FORBIDDEN',
+            message: `Not allowed to subscribe to collection: ${msg.collection}`,
+          });
+          break;
+        }
         session.subscriptions.add(msg.collection);
+        if (msg.filter) session.filters.set(msg.collection, msg.filter);
+        else session.filters.delete(msg.collection);
         break;
       case 'unsubscribe':
         session.subscriptions.delete(msg.collection);
+        session.filters.delete(msg.collection);
         break;
       case 'join':
         if (!session.allowedChannels.has(msg.channel)) {
@@ -268,6 +286,8 @@ interface TicketPrincipal {
   userId?: string;
   subjectId?: string;
   channels: string[];
+  /** Collection read allowlist from the signed ticket ('*' = admin bypass). */
+  collections: string[];
 }
 
 async function verifyTicket(ticket: string, secretKey: Uint8Array): Promise<TicketPrincipal | null> {
@@ -281,6 +301,7 @@ async function verifyTicket(ticket: string, secretKey: Uint8Array): Promise<Tick
       userId: plane === 'studio' ? String(p.userId ?? 'anon') : undefined,
       subjectId: plane === 'public' ? String(p.subjectId ?? '') : undefined,
       channels: Array.isArray(p.channels) ? (p.channels as string[]) : [],
+      collections: Array.isArray(p.collections) ? (p.collections as string[]) : [],
     };
   } catch {
     return null;

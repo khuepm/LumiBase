@@ -725,19 +725,26 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 
 **Endpoint:** `wss://api.<your-site>.lumibase.dev/api/v1/realtime`
 
-**Auth:** Pass token in query string or first message:
+**Auth (ticket exchange):** browsers cannot send `Authorization` on the WS
+handshake, so exchange the session for a short-lived (1 min) ticket first:
+`POST /api/v1/realtime/ticket` (studio) or `POST /api/v1/realtime/audience-ticket`
+(end-user), then connect:
 ```
-wss://...realtime?token=<access_token>&site=<siteId>
+wss://...realtime?ticket=<ticket>
+```
+The studio ticket embeds the collections the principal can `read`; the hub
+rejects any other `subscribe` with `{ "type": "error", "code": "SUBSCRIBE_FORBIDDEN" }`.
+
+**Subscribe to collection** (optional Directus-style `filter`, evaluated
+server-side over the event envelope `collection`/`action`/`itemId`):
+```json
+{ "type": "subscribe", "collection": "articles", "filter": { "action": { "_eq": "delete" } } }
 ```
 
-**Subscribe to collection:**
+**Server event** — signal-only: no row data on the wire (clients re-fetch via
+`/items`, which enforces RBAC + field masking):
 ```json
-{ "type": "subscribe", "collection": "articles", "query": { "filter": { "status": { "_eq": "published" } } } }
-```
-
-**Server event:**
-```json
-{ "type": "event", "collection": "articles", "event": "update", "data": { "id": "art_001", "title": "Updated title" } }
+{ "type": "event", "collection": "articles", "action": "update", "itemId": "art_001", "payload": null }
 ```
 
 **Server notification frame** (push-noti feature) — broadcast to every session
