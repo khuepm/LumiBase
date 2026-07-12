@@ -44,6 +44,7 @@ const FilesPage = lazy(() => import('./modules/files').then((m) => ({ default: m
 const DeveloperTypesPage = lazy(() => import('./modules/settings/types-page').then((m) => ({ default: m.DeveloperTypesPage })));
 const TranslationsPage = lazy(() => import('./modules/translations').then((m) => ({ default: m.TranslationsPage })));
 const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
+const GitIntegrationsPage = lazy(() => import('./modules/settings/git-integrations-page').then((m) => ({ default: m.GitIntegrationsPage })));
 const ChangeFeedPage = lazy(() => import('./modules/settings/change-feed-page').then((m) => ({ default: m.ChangeFeedPage })));
 const EmailSettingsPage = lazy(() => import('./modules/settings/email-page').then((m) => ({ default: m.EmailSettingsPage })));
 const NotificationsSettingsPage = lazy(() => import('./modules/settings/notifications-page').then((m) => ({ default: m.NotificationsSettingsPage })));
@@ -611,6 +612,12 @@ const webhooksRoute = createRoute({
   component: withSuspense(WebhooksPage),
 });
 
+const gitIntegrationsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'integrations/git',
+  component: withSuspense(GitIntegrationsPage),
+});
+
 const changeFeedRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'change-feed',
@@ -738,6 +745,12 @@ const adminPathWebhooksRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'webhooks',
   component: withSuspense(WebhooksPage),
+});
+
+const adminPathGitIntegrationsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'integrations/git',
+  component: withSuspense(GitIntegrationsPage),
 });
 
 const adminPathEmailSettingsRoute = createRoute({
@@ -1216,6 +1229,7 @@ const routeTree = rootRoute.addChildren([
       domainsSettingsRoute,
       keyboardSettingsRoute,
       webhooksRoute,
+      gitIntegrationsRoute,
       changeFeedRoute,
       emailSettingsRoute,
       notificationsSettingsRoute,
@@ -1283,6 +1297,7 @@ const routeTree = rootRoute.addChildren([
       adminPathDomainsSettingsRoute,
       adminPathKeyboardSettingsRoute,
       adminPathWebhooksRoute,
+      adminPathGitIntegrationsRoute,
       adminPathEmailSettingsRoute,
       adminPathNotificationsSettingsRoute,
       adminPathMaterializeSettingsRoute,

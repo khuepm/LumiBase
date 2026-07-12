@@ -1021,6 +1021,45 @@ collection whitelist returns `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
 
 ---
 
+## 12c. Git Integration (GitHub / GitLab)
+
+Per-site connections to source repositories: track pull requests + CI, view/store
+CI logs, post a content-validation status back, reconcile declarative intents
+(GitOps), and run auto preview environments. Authenticated routes require site
+admin and `ENCRYPTION_KEY` (tokens are stored encrypted, never returned).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/integrations/git` | List integrations for the site |
+| `POST` | `/api/v1/integrations/git` | Create `{ provider (github\|gitlab), repoFullName, displayName, authMethod (app\|pat), token?, installationId? }` → 409 on duplicate `(provider, repo)` |
+| `GET` | `/api/v1/integrations/git/:id` | Get one |
+| `PATCH` | `/api/v1/integrations/git/:id` | Update display name / token / status / sync config |
+| `DELETE` | `/api/v1/integrations/git/:id` | Disconnect (forgets token) |
+| `POST` | `/api/v1/integrations/git/:id/rotate-secret` | Rotate the webhook secret |
+| `GET` | `/api/v1/integrations/git/:id/oauth/authorize` | Returns `{ authorizeUrl }` (single-use cache state) |
+| `GET` | `/api/v1/integrations/git/:id/pull-requests` | List cached PRs |
+| `POST` | `/api/v1/integrations/git/:id/pull-requests/refresh` | Pull PRs live from the provider (upsert cache) |
+| `GET` | `/api/v1/integrations/git/:id/pull-requests/:number/ci` | CI runs for the integration |
+| `POST` | `/api/v1/integrations/git/:id/pull-requests/:number/validate` | Validate config + post `lumibase/content-validation` commit status |
+| `GET` | `/api/v1/integrations/git/:id/ci-runs/:runId/logs` | Fetch + cache CI log (blob storage) |
+| `POST` | `/api/v1/integrations/git/:id/gitops/sync` | Reconcile `lumibase/intents.json` into content intents (+ drift scan/reconcile) |
+| `GET` | `/api/v1/integrations/git/:id/provenance` | Provenance `?collection=&itemId=` — which commit/PR changed an item |
+
+Public (no session; signature-verified or single-use state):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/integrations/git/oauth/:provider/callback` | OAuth code → token exchange (bound to cache state) |
+| `POST` | `/api/v1/integrations/git/webhook/:provider/:siteId/:integrationId` | Webhook receiver — GitHub HMAC-SHA256 (`X-Hub-Signature-256`) / GitLab token (`X-Gitlab-Token`); idempotent by delivery id |
+
+Preview environments are opt-in per integration (`sync_config.preview = true`):
+on PR open/sync LumiBase seeds an ephemeral site (`${siteId}__pr-${number}`)
+served at `/api/v1/deliver/page/${ephemeralSiteId}/...`; on close/merge it is
+torn down. CI failure records an `agent_incident` (role `git-sync`) + a
+`git_ci_failed` audit entry.
+
+---
+
 ## 13. Delivery (Public)
 
 No `Authorization` header needed. Permission applied via `public` role.

@@ -64,6 +64,13 @@
       "when": 1783500100002,
       "tag": "0008_cdc_resource_column",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783500200000,
+      "tag": "0009_git_integration",
+      "breakpoints": true
     }
   ]
 }

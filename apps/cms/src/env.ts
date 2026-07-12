@@ -153,6 +153,21 @@ export interface Bindings {
   LUMIBASE_SAAS_FALLBACK?: string;
   /** Reserved suffix offered for free subdomains. Defaults to `lumibase.dev`. */
   LUMIBASE_FREE_DOMAIN_SUFFIX?: string;
+  // ── Git integration (modules/git-integration) ───────────────────────────
+  /** Public origin used to build operator-facing webhook URLs (e.g. https://api.example.com). */
+  LUMIBASE_PUBLIC_URL?: string;
+  /** GitHub OAuth app client id (for PAT/OAuth connect flow). */
+  GITHUB_CLIENT_ID?: string;
+  /** GitHub OAuth app client secret. */
+  GITHUB_CLIENT_SECRET?: string;
+  /** GitHub App id (for installation-token minting). */
+  GITHUB_APP_ID?: string;
+  /** GitHub App private key, PKCS#8 PEM. */
+  GITHUB_APP_PRIVATE_KEY?: string;
+  /** GitLab OAuth application id. */
+  GITLAB_CLIENT_ID?: string;
+  /** GitLab OAuth application secret. */
+  GITLAB_CLIENT_SECRET?: string;
 }
 
 /**

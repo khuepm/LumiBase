@@ -164,6 +164,23 @@ export {
 
 export { TM_DEFAULT_THRESHOLD } from './translation';
 
+export {
+  GIT_PROVIDERS,
+  GIT_AUTH_METHODS,
+  GitProviderSchema,
+  GitAuthMethodSchema,
+  GitIntegrationCreateSchema,
+  GitIntegrationUpdateSchema,
+  type GitProviderName,
+  type GitAuthMethod,
+  type GitIntegrationCreateInput,
+  type GitIntegrationUpdateInput,
+  type GitIntegrationResource,
+  type PullRequestResource,
+  type CiJob,
+  type CiRunResource,
+} from './git-integration';
+
 export { diffFields, type Change, type ChangeState } from './diff';
 
 export {

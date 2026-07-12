@@ -481,6 +481,25 @@ Index: `(siteId, status)`.
 
 ---
 
+## 11d. Git Integration (`git-integration.ts`)
+
+Per-tenant GitHub/GitLab connections + cached PR/CI state, raw webhook log,
+ephemeral preview environments, and commit↔content provenance. All tables carry
+`site_id` (cascade) and are registered for RLS. Physical names carry the
+`lumibase_` prefix (ADR-010). Migration `0009_git_integration`.
+
+| Table (physical) | Purpose | Key columns |
+|-------|---------|-------------|
+| `lumibase_git_integrations` | One repo connection per `(site, provider, repo)` | `provider`, `repo_full_name`, `auth_method` (app\|pat), `installation_id`, `encrypted_token`, `webhook_secret_enc`, `status`, `scopes`, `sync_config` |
+| `lumibase_git_pull_requests` | Cached PR/MR state | unique `(integration_id, number)`; `state`, `ci_status`, `mergeable`, `head_sha`, `preview_url`, `raw` |
+| `lumibase_git_ci_runs` | CI run + jobs + stored-log ref | unique `(integration_id, provider_run_id)`; `status`, `jobs`, `duration_ms`, `log_ref` (runtime blob) |
+| `lumibase_git_webhook_events` | Raw inbound events (replay-able) | unique `(provider, delivery_id)`; `event`, `payload`, `processed`, `error` |
+| `lumibase_git_preview_envs` | Ephemeral preview site per PR | unique `(pr_id)`; `ephemeral_site_id`, `status`, `url`, `expires_at` |
+| `lumibase_git_provenance` | Commit/PR → content/schema/intent link | `commit_sha`, `pr_number`, `collection`, `item_id`, `change_type` |
+
+Tokens + webhook secrets are encrypted at rest via `CryptoService` (AES-GCM,
+AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
+
 ## 12. Indexing & RLS
 
 - Bắt buộc index `(siteId, …)` ở mọi bảng domain.

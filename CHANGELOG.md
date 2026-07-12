@@ -249,6 +249,21 @@ _No unreleased changes yet._
   backfill is separately reversible during the compatibility window (delete the
   `legacy_role_flags_%` policies; role flags are untouched).
 
+- **Git integration (GitHub / GitLab).** Per-site repository connections with
+  GitHub App / GitLab App or OAuth/PAT auth (tokens encrypted at rest). Tracks
+  pull requests + CI, stores CI logs for replay, posts a
+  `lumibase/content-validation` commit status, runs GitOps reconcile of
+  `lumibase/intents.json` into content intents, records commit↔content
+  provenance, and provisions opt-in ephemeral preview environments per PR. New
+  `git-sync` agent role with conservative L1 autonomy. Studio: **Settings →
+  Integrations → Git repositories**. Migration `0009_git_integration` is additive
+  (`CREATE TABLE IF NOT EXISTS`, tables prefixed `lumibase_git_*` per ADR-010) —
+  no backfill needed. Registry row #70.
+
+  Optional env: `GITHUB_CLIENT_ID/SECRET`, `GITHUB_APP_ID/PRIVATE_KEY` (PKCS#8),
+  `GITLAB_CLIENT_ID/SECRET`, `LUMIBASE_PUBLIC_URL`. Requires existing
+  `ENCRYPTION_KEY` to manage integrations.
+
 ## [0.21.0] - 2026-07-08
 
 ### Version
