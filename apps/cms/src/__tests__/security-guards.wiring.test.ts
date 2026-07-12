@@ -36,7 +36,7 @@ describe('security guard wiring — /api/v1 middleware chain (index.ts)', () => 
 
   it('mounts the full guard chain on the authenticated api sub-app', () => {
     expect(source).toMatch(
-      /api\.use\('\*',\s*withTenant\(\),\s*withDb\(\),\s*withAuth\(\),\s*withSiteMembership\(\),\s*requireSetupComplete\(\),\s*withStudioAccess\(\),\s*withControlPlaneAccessGuard\(\),/,
+      /api\.use\('\*',\s*withTenant\(\),\s*withDb\(\),\s*withAuth\(\),\s*withSiteMembership\(\),\s*withRateLimit\(\),\s*requireSetupComplete\(\),\s*withStudioAccess\(\),\s*withControlPlaneAccessGuard\(\),/,
     );
   });
 
@@ -52,21 +52,43 @@ describe('security guard wiring — /api/v1 middleware chain (index.ts)', () => 
 describe('security guard wiring — withAuth bypass list (middleware/auth.ts)', () => {
   const source = read('middleware/auth.ts');
 
-  it('does NOT bypass /api/v1/auth/register (admin-only route needs a principal)', () => {
-    expect(source).not.toMatch(/['"]\/api\/v1\/auth\/register['"]/);
+  // `/auth/register` IS public self-service (ADR-010): it is safe not because
+  // it needs a principal, but because the role is resolved server-side to a
+  // zero-privilege subscriber and the account starts `invited`. Those are the
+  // real invariants — asserted against routes/auth.ts below.
+  it('bypasses the known public, self-authenticating auth paths', () => {
+    for (const p of [
+      '/api/v1/auth/login',
+      '/api/v1/auth/register',
+      '/api/v1/auth/verify-email',
+      '/api/v1/auth/forgot-password',
+      '/api/v1/auth/reset-password',
+      '/api/v1/auth/refresh',
+      '/api/v1/auth/logout',
+    ]) {
+      expect(source).toContain(`'${p}'`);
+    }
   });
 
-  it('still bypasses only the known public paths', () => {
-    expect(source).toMatch(/['"]\/api\/v1\/auth\/login['"]/);
+  it('pins the session-token audience so single-purpose tokens cannot be replayed', () => {
+    expect(source).toMatch(/audience:\s*\[TOKEN_AUDIENCE\.studio,\s*TOKEN_AUDIENCE\.frontend\]/);
   });
 });
 
-describe('security guard wiring — public-path carve-outs', () => {
-  it.each([
-    'middleware/site-membership.ts',
-    'middleware/studio-access.ts',
-  ])('%s does not treat /api/v1/auth/register as public', (rel) => {
-    expect(read(rel)).not.toMatch(/['"]\/api\/v1\/auth\/register['"]/);
+describe('security guard wiring — public register is safe by construction (routes/auth.ts)', () => {
+  const source = read('routes/auth.ts');
+
+  it('resolves the subscriber role server-side (body can never choose a role)', () => {
+    expect(source).toMatch(/ensureSubscriberRole\(db, siteId\)/);
+    expect(source).not.toMatch(/roleId:\s*(input|body)\./);
+  });
+
+  it('creates the account inactive until email verification', () => {
+    expect(source).toMatch(/status:\s*'invited'/);
+  });
+
+  it('rate-limits registration before hashing', () => {
+    expect(source).toMatch(/checkRegistrationRate\(/);
   });
 });
 

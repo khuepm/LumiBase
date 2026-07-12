@@ -31,7 +31,7 @@ export interface SkillDefinition {
   description: string;
   requiredCapabilities: string[];
   /** Service this skill connects to (for documentation/tracing). */
-  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows' | 'deployments';
+  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows' | 'deployments' | 'cdc-feed';
   handler: (args: Record<string, unknown>) => Promise<unknown>;
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
@@ -442,6 +442,26 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     // Lazy import keeps the harness decoupled from the deployment module.
     const { DeploymentService } = await import('./deployment/deployment-service');
     return new DeploymentService({ db: services.db, siteId: services.siteId, keys: services.keys });
+  };
+
+  const cdcFeedService = async () => {
+    if (!services.db || !services.siteId) {
+      throw new Error('CDC_FEED_NOT_CONFIGURED: change-feed skills require a tenant db context');
+    }
+    // Lazy import keeps the harness decoupled from the change-feed module.
+    const [{ SubscriptionService }, { DrizzleCdcEventStore }, { readRetentionDays }] =
+      await Promise.all([
+        import('../modules/cdc/change-feed/subscription-service'),
+        import('../modules/cdc/change-feed/feed-reader'),
+        import('../modules/cdc/change-feed/retention'),
+      ]);
+    const retentionDays = await readRetentionDays(services.db, services.siteId);
+    return new SubscriptionService({
+      db: services.db,
+      siteId: services.siteId,
+      eventStore: new DrizzleCdcEventStore(services.db),
+      retentionDays,
+    });
   };
 
   return {
@@ -1614,6 +1634,78 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         return { deploymentId: row.id, status: row.status, provider: row.provider };
       },
     },
+
+    // ── Change Feed (spec: cdc-extension-integration, Req 7.4) ─────────────
+    // `deleteCdcSubscription` is control-plane purely via the `delete` name
+    // prefix in `isControlPlaneSkill` — no manual `dangerous` flag needed.
+
+    listCdcSubscriptions: {
+      name: 'listCdcSubscriptions',
+      description: 'List the change-feed subscriptions for the site with their status and lag.',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async () => {
+        const service = await cdcFeedService();
+        return { subscriptions: await service.list() };
+      },
+    },
+    getCdcSubscriptionStatus: {
+      name: 'getCdcSubscriptionStatus',
+      description: 'Get one change-feed subscription (status, checkpoint cursor, lag).',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async (args) => {
+        const service = await cdcFeedService();
+        return await service.get(String(args['subscriptionId'] ?? ''));
+      },
+    },
+    createCdcSubscription: {
+      name: 'createCdcSubscription',
+      description:
+        'Create a change-feed subscription (pull, webhook, or extension) with optional filters.',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async (args) => {
+        const service = await cdcFeedService();
+        const { CdcSubscriptionCreateSchema } = await import('@lumibase/shared/schemas');
+        const input = CdcSubscriptionCreateSchema.parse({
+          name: String(args['name'] ?? ''),
+          kind: String(args['kind'] ?? 'pull'),
+          collections: Array.isArray(args['collections']) ? args['collections'] : [],
+          operations: Array.isArray(args['operations']) ? args['operations'] : [],
+          webhook_id: args['webhookId'] ? String(args['webhookId']) : undefined,
+          extension_name: args['extensionName'] ? String(args['extensionName']) : undefined,
+        });
+        return await service.create(input);
+      },
+    },
+    replayCdcSubscription: {
+      name: 'replayCdcSubscription',
+      description:
+        'Rewind a subscription checkpoint inside the retention window (resets dead/stale to active).',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async (args) => {
+        const service = await cdcFeedService();
+        return await service.replay(
+          String(args['subscriptionId'] ?? ''),
+          { occurredAfter: String(args['occurredAfter'] ?? '') },
+          { type: 'agent', id: args['__runId'] ? String(args['__runId']) : null },
+        );
+      },
+    },
+    deleteCdcSubscription: {
+      name: 'deleteCdcSubscription',
+      description:
+        'Delete a change-feed subscription. Control-plane: requires HITL approval below autopilot.',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async (args) => {
+        const service = await cdcFeedService();
+        await service.remove(String(args['subscriptionId'] ?? ''));
+        return { ok: true };
+      },
+    },
   };
 }
 
@@ -2242,8 +2334,12 @@ export class AISecureHarness {
     );
 
     if (result.success) {
-      // Skill succeeded — update record to 'approved'
-      await this.db
+      // Skill succeeded — commit the decision. The UPDATE is guarded by
+      // `status = 'pending'` and uses .returning() so that if a concurrent
+      // decide/reject already moved the record out of 'pending' (CWE-362/367
+      // TOCTOU), this write affects zero rows and we report a conflict instead
+      // of silently overwriting the other decision.
+      const committed = await this.db
         .update(aiApprovals)
         .set({
           status: 'approved',
@@ -2254,8 +2350,17 @@ export class AISecureHarness {
           and(
             eq(aiApprovals.id, approvalId),
             eq(aiApprovals.siteId, this.siteId),
+            eq(aiApprovals.status, 'pending'),
           ),
-        );
+        )
+        .returning({ id: aiApprovals.id });
+
+      if (committed.length === 0) {
+        return {
+          status: 'denied',
+          message: 'Approval was already processed by another request',
+        };
+      }
 
       return { status: 'executed', data: result.data };
     }
@@ -2329,6 +2434,8 @@ export class AISecureHarness {
     );
 
     if (result.success) {
+      // Guard the transition on status='pending' so a concurrent decide/reject
+      // cannot be silently overwritten (CWE-362/367).
       await this.db
         .update(aiApprovals)
         .set({
@@ -2340,6 +2447,7 @@ export class AISecureHarness {
           and(
             eq(aiApprovals.id, record.id),
             eq(aiApprovals.siteId, this.siteId),
+            eq(aiApprovals.status, 'pending'),
           ),
         );
       if (existingAgentApproval) {
@@ -2390,8 +2498,11 @@ export class AISecureHarness {
   async rejectApproval(
     approvalId: string,
     userId: string,
-  ): Promise<void> {
-    await this.db
+  ): Promise<boolean> {
+    // Only a still-pending approval can be rejected; the status guard makes the
+    // reject atomic w.r.t. a concurrent approve (CWE-362/367). Returns whether
+    // this call actually performed the rejection.
+    const rejected = await this.db
       .update(aiApprovals)
       .set({
         status: 'rejected',
@@ -2402,8 +2513,12 @@ export class AISecureHarness {
         and(
           eq(aiApprovals.id, approvalId),
           eq(aiApprovals.siteId, this.siteId),
+          eq(aiApprovals.status, 'pending'),
         ),
-      );
+      )
+      .returning({ id: aiApprovals.id });
+
+    if (rejected.length === 0) return false;
 
     if (this.agentHarnessEnabled) {
       await this.db
@@ -2417,8 +2532,11 @@ export class AISecureHarness {
           and(
             eq(agentApprovals.legacyApprovalId, approvalId),
             eq(agentApprovals.siteId, this.siteId),
+            eq(agentApprovals.status, 'pending'),
           ),
         );
     }
+
+    return true;
   }
 }

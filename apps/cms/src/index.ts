@@ -4,9 +4,11 @@ import type { AppEnv } from './env';
 import { resolveCorsOrigin } from './config/cors';
 import { adminPathGuard } from './middleware/admin-path-guard';
 import { withAuditContext } from './middleware/audit-context';
+import { withJsonBodyLimit } from './middleware/body-limit';
 import { withAuth } from './middleware/auth';
 import { withDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
+import { withRateLimit } from './middleware/rate-limit';
 import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
@@ -55,6 +57,8 @@ import { rolesRouter } from './routes/roles';
 import { healthRouter } from './routes/health';
 import { insightsRouter } from './routes/insights';
 import { mediaRouter } from './routes/media';
+import { transformPresetsRouter } from './routes/transform-presets';
+import { uploadsRouter } from './routes/uploads';
 import { marketplaceRouter } from './routes/marketplace';
 import { materializeRouter } from './routes/materialize';
 import { metricsRouter, withMetrics } from './routes/metrics';
@@ -62,6 +66,7 @@ import { searchRouter } from './routes/search';
 import { scimRouter } from './routes/scim';
 import { scimAdminRouter } from './routes/scim-admin';
 import { settingsRouter } from './routes/settings';
+import { domainsRouter } from './routes/domains';
 import { siteRouter } from './routes/site';
 import { systemRouter } from './routes/system';
 import { shareAdminRouter, sharePublicRouter } from './routes/shares';
@@ -82,6 +87,7 @@ import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
+import { cdcFeedRouter } from './modules/cdc/change-feed/routes';
 import { lumibaseFirebaseSyncRouter } from './modules/lumibase-firebase-sync';
 import { formatSafeError } from '@lumibase/shared/utils';
 
@@ -100,7 +106,7 @@ app.use(
   cors({
     origin: (origin, c) => resolveCorsOrigin(origin, c.env),
     credentials: true,
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh'],
     exposeHeaders: ['X-Request-Id'],
   }),
 );
@@ -114,6 +120,12 @@ app.use(
 // `withRuntime`/`cors` block (which §6.2 doesn't enumerate) and just
 // before the guard so the three audit dimensions are present for the
 // entire downstream chain.
+// App-level JSON body-size cap (high-load-cache-readiness Req 6.2).
+// Defense-in-depth for deployments without the Caddy body limit; only
+// guards JSON POST/PUT/PATCH via Content-Length, so it's a cheap no-op
+// for reads and file uploads (which have their own policy).
+app.use('*', withJsonBodyLimit());
+
 app.use('*', withAuditContext());
 
 // Admin Path Guard (admin-setup-wizard Req 5.1, 5.2, 5.4, 5.6, 5.7;
@@ -184,7 +196,7 @@ app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withDb(), withAuth(), withSiteMembership(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
+api.use('*', withTenant(), withDb(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).
@@ -221,11 +233,15 @@ api.route('/config', configRouter);
 api.route('/api-keys', apiKeysRouter);
 api.route('/search', searchRouter);
 api.route('/media', mediaRouter);
+api.route('/transform-presets', transformPresetsRouter);
+// Upload policy config (effective allowlist/size for the picker; admin edits).
+api.route('/uploads', uploadsRouter);
 // Future routers: presets, translations, ...
 api.route('/presets', presetsRouter);
 api.route('/translations', translationsRouter);
 api.route('/settings', settingsRouter);
 api.route('/site', siteRouter);
+api.route('/domains', domainsRouter);
 api.route('/shares', shareAdminRouter);
 api.route('/users', usersRouter);
 api.route('/teams', teamsRouter);
@@ -295,6 +311,13 @@ api.route('/mcp', mcpRouter);
 // the SECURITY note in `modules/cdc/routes.ts`). Because `api` is mounted at
 // `/api/v1` below, mounting `cdcRouter` at `/cdc` yields the intended
 // `/api/v1/cdc/*` prefix — matching how every sibling module above is wired.
+// Change Feed (spec cdc-extension-integration) shares the `/cdc` prefix but
+// carries its own guards (capability for reads, site-admin for management).
+// It MUST be mounted BEFORE `cdcRouter`: the control-plane router registers a
+// blanket `use('*')` admin gate, and Hono composes matched handlers in
+// registration order — feed handlers respond first, everything else falls
+// through to the control-plane chain.
+api.route('/cdc', cdcFeedRouter);
 api.route('/cdc', cdcRouter);
 
 // LumiBase Firebase Sync — outbound content mirroring to Firestore/RTDB.

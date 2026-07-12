@@ -6,6 +6,7 @@ import { schema } from '@lumibase/database';
 import cron from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
+import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
 import { bootstrapNodeObservability } from './observability/node';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { createPressureLimiter } from './pressure-limiter';
@@ -97,6 +98,8 @@ async function main() {
   // ticks.
   const rotationTask = cron.schedule('0 * * * *', () => {
     void runScheduledRotation(rotatorDb);
+    // Sweep expired refresh-token rows on the same hourly tick (best-effort).
+    void runScheduledRefreshTokenPrune(rotatorDb);
   });
 
   // ── Load-aware autonomy (content-os task 9; Req 9.4/9.5) ─────────────────
@@ -139,6 +142,69 @@ async function main() {
   registerContentIndexingWorker({
     search: runtime.search,
     queue: runtime.queue,
+  });
+
+  // ── Change Feed dispatch (cdc-extension-integration Req 4.7) ────────────
+  //
+  // Consumes the `cdc-dispatch` queue (latency path) and runs the 30s sweep
+  // (correctness backstop) that delivers outbox events to webhook/extension
+  // subscriptions. Without it, push subscriptions never receive events —
+  // pull consumers are unaffected.
+  const {
+    registerCdcDispatchWorker,
+    CdcDispatcher,
+    createWebhookEnvelopeSender,
+    DrizzleDeliveryLog,
+    DrizzleSubscriptionDispatchStore,
+  } = await import('./modules/cdc/change-feed/dispatcher');
+  const { DrizzleCdcEventStore } = await import('./modules/cdc/change-feed/feed-reader');
+  const { ExtensionEnvelopeSender, SandboxCdcSubscriberLoader } = await import(
+    './modules/cdc/change-feed/extension-sender'
+  );
+  const cdcSubscriptionStore = new DrizzleSubscriptionDispatchStore(rotatorDb);
+  const { DrizzleRetentionStore, pruneChangeFeed, readRetentionDays } = await import(
+    './modules/cdc/change-feed/retention'
+  );
+  registerCdcDispatchWorker({
+    queue: runtime.queue,
+    subscriptions: cdcSubscriptionStore,
+    prune: async (siteId) => {
+      await pruneChangeFeed(
+        {
+          store: new DrizzleRetentionStore(rotatorDb),
+          retentionDays: await readRetentionDays(rotatorDb, siteId),
+        },
+        siteId,
+      );
+    },
+    buildDispatcher: () =>
+      new CdcDispatcher({
+        eventStore: new DrizzleCdcEventStore(rotatorDb),
+        subscriptions: cdcSubscriptionStore,
+        deliveryLog: new DrizzleDeliveryLog(rotatorDb),
+        senders: {
+          webhook: createWebhookEnvelopeSender(rotatorDb),
+          extension: new ExtensionEnvelopeSender({
+            loader: new SandboxCdcSubscriberLoader(
+              rotatorDb,
+              process.env as Record<string, unknown>,
+            ),
+          }),
+        },
+        cache: runtime.cache,
+      }),
+  });
+
+  // ── Flow event trigger (visual-flow-builder Req 1) ───────────────────────
+  //
+  // Consumes the `flow-events` queue: ItemService enqueues one job per
+  // matching active event-flow on create/update/delete; this worker executes
+  // the flow and records the run. Without it, event flows never fire.
+  const { registerFlowEventWorker } = await import('./services/flow-dispatch');
+  registerFlowEventWorker({
+    db: rotatorDb,
+    queue: runtime.queue,
+    keys: runtime.keys,
   });
 
   // ── Veto-window commits (content-os task 14; Req 13.3/13.5) ─────────────
@@ -200,6 +266,19 @@ async function main() {
     });
   });
 
+  // ── Flow schedule tick (visual-flow-builder task 4.x) ───────────────────
+  //
+  // The event-triggered flow consumer is `registerFlowEventWorker` (above).
+  // Schedule flows need a periodic sweep: a 1-minute tick enqueues every flow
+  // whose `next_run_at` is due onto the same `flow-events` queue (nextRunAt is
+  // advanced before enqueue so a slow job never re-fires the same flow).
+  const { runDueScheduledFlows } = await import('./services/flow-scheduler');
+  const flowScheduleTask = cron.schedule('* * * * *', () => {
+    void runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
+      console.error('[flow-schedule] tick failed', formatSafeError(err));
+    });
+  });
+
   // ── Envelope migration consumer (regulated-content-readiness task 3.6) ──
   //
   // Drains background migrations enqueued when an operator toggles
@@ -218,6 +297,7 @@ async function main() {
     schedulerTask.stop();
     retentionTask.stop();
     deploymentPollTask.stop();
+    flowScheduleTask.stop();
     pressureLimiter.stop();
     clearInterval(loadGuardTimer);
 

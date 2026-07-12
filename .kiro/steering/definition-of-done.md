@@ -2,6 +2,8 @@
 
 Checklist bắt buộc trước khi đánh dấu một feature spec là hoàn thành. Áp dụng cho mọi spec trong `.kiro/specs/`.
 
+> DoD này ở cấp **feature**. Điều kiện thoát cho một **release major** (v1.0.0 trở đi) nằm ở `v1-release-criteria.md` cùng thư mục — đó là nơi gom security audit, scope freeze, quality gate, upgrade-path và semver policy cho cả bản phát hành.
+
 ## 1. Code & test
 
 - [ ] `pnpm typecheck` pass toàn bộ workspace
@@ -16,6 +18,8 @@ Checklist bắt buộc trước khi đánh dấu một feature spec là hoàn th
 - [ ] Nếu có yêu cầu khởi tạo: thêm dòng vào bảng Registry + task vào `admin-setup-wizard/tasks.md`
 - [ ] Nếu không: vẫn thêm dòng `n/a` kèm ngày rà soát — để biết feature đã được xem xét, không phải bị quên
 - [ ] Instance đã setup từ trước có cần backfill không? Nếu có → migration idempotent + upgrade note trong CHANGELOG
+- [ ] **Số thứ tự dòng Registry là DUY NHẤT** — nay được **cơ giới hóa**: `pnpm registry:check` (`scripts/check-registry-numbering.mjs`) chặn trùng số trong CI (§6). Đừng chỉ lấy "số kế tiếp" — nhánh song song hay chọn trùng (đã xảy ra: hàng loạt dòng #20/#21/#22…/#38). Nếu check báo trùng, cấp số mới lớn hơn max hiện có; giữ số ở dòng được các dòng khác **trích dẫn theo số** để cross-reference không gãy.
+- [ ] **Số migration không đụng `main`**: rebase/merge `main` trước, rồi `ls packages/database/drizzle/*.sql | tail` để lấy số kế tiếp thật. Migration sửa/thêm cột hay index PHẢI idempotent (`IF NOT EXISTS`/`duplicate_object` guard); nếu tạo **unique index/constraint** trên bảng có sẵn dữ liệu → ghi rõ điều kiện FAIL (vd dữ liệu trùng) + bước de-dup trong header migration **và** CHANGELOG (không phải mọi "thêm index" đều là backfill-free).
 
 ## 2b. Multi-tenant — BẮT BUỘC KIỂM TRA
 
@@ -75,3 +79,14 @@ Với mỗi tutorial hiện có, rà mục **"Compatibility / Tương thích"** 
 - [ ] **Feature — mở failure-mode/attack-surface mới?** feature này tạo một *loại* rủi ro mà chưa mục DoD nào phủ (bề mặt thực thi code động mới, kênh fan-out realtime mới, đường ghi ngoài request, nơi lưu secret mới, contract phá vỡ tương thích)? Nếu có và sẽ tái xuất ở feature sau → đề xuất **mục/checklist DoD mới**, đừng chỉ xử lý một lần cho feature này.
 - [ ] **Cập nhật DoD ngay trong cùng PR:** nếu hai câu trên trả lời "có", sửa file này (thêm mục / thêm dòng checklist / thêm tripwire) **cùng PR** với fix/feature, kèm blockquote nêu sự cố hoặc rủi ro đã dẫn tới hàng rào — để mục mới tự giải thích vì sao tồn tại (như 2b/2c đang làm). Ghi vào CHANGELOG nếu DoD đổi.
 - [ ] **Không cần đổi:** nếu class lỗi đã có hàng rào, hoặc rủi ro là một-lần không tái diễn → không đụng DoD; ghi một dòng lý do trong mô tả PR để biết đã cân nhắc, không phải bị quên.
+
+## 7. Out-of-scope findings — LOG lại, đừng bỏ sót
+
+> Trong khi làm một PR, ta hay phát hiện lỗ hổng / bug / nợ kỹ thuật / feature
+> **không thuộc scope** PR đó. Nếu chỉ nêu trong mô tả PR hay chat, chúng **biến
+> mất sau khi merge**. Hàng rào: gom về một chỗ duy nhất
+> `.kiro/steering/out-of-scope-backlog.md`.
+
+- [ ] **Rà lại cả session, không chỉ diff:** có phát hiện điều gì thật (bug/lỗ hổng/nợ kỹ thuật/feature) **ngoài scope** PR này khi đọc code / chạy CI / điều tra không?
+- [ ] **Nếu CÓ:** thêm một dòng vào `.kiro/steering/out-of-scope-backlog.md` **trong cùng PR** (ID, loại, khu vực, mô tả, mức độ, trạng thái, tham chiếu). Đủ lớn thành feature → tạo `.kiro/specs/<feature>/` và để trạng thái `tracked` trỏ tới spec. Fix luôn được trong PR → vẫn log một dòng `fixed` để giữ dấu vết.
+- [ ] **Nếu KHÔNG:** không cần đụng backlog — nhưng câu hỏi phải được hỏi, không mặc định bỏ qua.

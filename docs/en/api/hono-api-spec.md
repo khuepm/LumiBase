@@ -132,22 +132,39 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 
 ## 1. Auth
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/v1/auth/login` | Exchange username/password (or Logto auth code) for a bearer token |
-| `POST` | `/api/v1/auth/refresh` | Refresh expired access token |
-| `POST` | `/api/v1/auth/logout` | Revoke tokens |
-| `GET` | `/api/v1/auth/me` | Get current user profile |
-| `GET` | `/api/v1/me/preferences` | The current user's preferences blob (`users.preferences`) |
-| `PATCH` | `/api/v1/me/preferences` | Shallow-merge a validated preferences patch |
-| `GET` | `/api/v1/me/consents` | List the current user's consent decisions |
-| `PUT` | `/api/v1/me/consents/:type` | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
-| `GET` | `/api/v1/me/data-export` | Download the current user's personal data (GDPR Art. 15/20) |
-| `GET` | `/api/v1/me/restriction` | Current restriction-of-processing state (GDPR Art. 18) |
-| `PUT` | `/api/v1/me/restriction` | Set restriction of processing (`{ restricted, reason? }`) |
-| `GET` | `/api/v1/me/automated-decisions` | Agent-authored revisions on the user's content (GDPR Art. 22) |
-| `GET` | `/api/v1/retention` | Admin: report configured retention horizons |
-| `POST` | `/api/v1/retention/run` | Admin: prune `activity` + handled `notifications` past their horizons |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/auth/login` | public | Exchange Logto auth code or username/password for an access JWT + rotating refresh token |
+| `POST` | `/api/v1/auth/register` | public | Self-service subscriber sign-up (generic 202, anti-enumeration, rate-limited) |
+| `POST` | `/api/v1/auth/verify-email` | public | Activate a self-service account from the emailed token |
+| `POST` | `/api/v1/auth/resend-verification` | public | Re-send the activation email (generic 202, rate-limited) |
+| `POST` | `/api/v1/auth/forgot-password` | public | Email a password-reset link (generic 202, rate-limited) |
+| `POST` | `/api/v1/auth/reset-password` | public | Consume a reset token, set new password, revoke refresh tokens |
+| `POST` | `/api/v1/auth/refresh` | public | Rotate the refresh token (cookie or body) → fresh access JWT + new refresh token |
+| `POST` | `/api/v1/auth/logout` | public | Revoke the presented refresh token's family + clear the cookie |
+| `GET` | `/api/v1/auth/me` | bearer | Get current user profile |
+| `POST` | `/api/v1/me/change-password` | bearer | Verify current password, set new hash, revoke refresh tokens + bump `tokenVersion` |
+| `GET` | `/api/v1/me/sessions` | bearer | List the caller's active sessions (live refresh tokens, redacted) |
+| `DELETE` | `/api/v1/me/sessions/:id` | bearer | Revoke one of the caller's sessions |
+| `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions |
+| `POST` | `/api/v1/users/subscriber-access` | site-admin | Grant subscribers `read` on a collection (Policy DSL) |
+| `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | List / revoke subscriber read grants |
+| `GET` | `/api/v1/me/preferences` | bearer | Current user's preferences blob (identity-global) |
+| `PATCH` | `/api/v1/me/preferences` | bearer | Shallow-merge a preferences patch |
+| `GET` | `/api/v1/me/consents` | bearer | List the current user's consent decisions |
+| `PUT` | `/api/v1/me/consents/:type` | bearer | Grant or withdraw a consent (GDPR Art. 7, PDPD) |
+| `GET` | `/api/v1/me/data-export` | bearer | Download the current user's personal data (GDPR Art. 15/20) |
+| `GET` | `/api/v1/me/restriction` | bearer | Current restriction-of-processing state (GDPR Art. 18) |
+| `PUT` | `/api/v1/me/restriction` | bearer | Set restriction of processing (`{ restricted, reason? }`) |
+| `GET` | `/api/v1/me/automated-decisions` | bearer | Agent-authored revisions on the user's content (GDPR Art. 22) |
+| `GET` | `/api/v1/retention` | admin | Report configured retention horizons |
+| `POST` | `/api/v1/retention/run` | admin | Prune `activity` + handled `notifications` past horizons |
+
+Cookie-sourced `/auth/refresh` + `/auth/logout` require the
+`X-LumiBase-Refresh` header (CSRF brake). Refresh tokens are delivered both
+as an `httpOnly` cookie and in the response body; see
+`docs/en/security/user-management.md` §4d for per-realm TTLs and the
+cross-domain cookie env (`REFRESH_COOKIE_SAMESITE`/`_DOMAIN`/`_SECURE`).
 
 > Account erasure (GDPR Art. 17) and Subject Access Requests are served by the
 > regulated-content-readiness feature at `/api/v1/admin/erasure` and
@@ -397,6 +414,17 @@ runs transactionally (delete delegates to the normal item-delete path).
 Errors: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null on a
 required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
 
+**List pagination & totals.** `GET /items/:collection` accepts `limit`
+(1–200, default 25), `offset`, and `meta`:
+
+- `meta=total_count` (default) — response is `{ data, meta: { total, limit, offset } }`.
+- `meta=none` — skips the `count(*)` aggregate for a cheaper query;
+  response is `{ data, meta: { limit, offset } }` (no `total`). Use for
+  infinite-scroll / feed views that never render a total page count.
+
+The default is unchanged, so existing clients keep receiving `meta.total`.
+The `@lumibase/sdk` `readItems` accepts the same `meta` option.
+
 **Optional headers:**
 - `X-Lumi-Draft: true` — fetch draft version
 - `X-Lumi-Locale: vi` — apply translation server-side
@@ -515,11 +543,75 @@ Scheduled releases publish via the shared `content-scheduler` tick
 | `PATCH` | `/api/v1/files/:id` | Update metadata (title, tags, folder) |
 | `DELETE` | `/api/v1/files/:id` | Delete file |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
+| `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
+| `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |
+| `DELETE` | `/api/v1/media/:key` | Delete media object |
+| `GET` | `/api/v1/transform-presets` | List named image-transform presets (RBAC `media:read`) |
+| `POST` | `/api/v1/transform-presets` | Create a preset `{ key, name, dsl }` (RBAC `media:create`) |
+| `PATCH` | `/api/v1/transform-presets/:id` | Update a preset (RBAC `media:update`) |
+| `DELETE` | `/api/v1/transform-presets/:id` | Delete a preset (RBAC `media:delete`) |
+| `GET` | `/api/v1/uploads/config` | Effective upload policy + type catalogue (any member) |
+| `PUT` | `/api/v1/uploads/config` | Update allowlist / size cap (site admin) |
 
-**Image transform params for `/api/v1/assets/:id`:**
+**Image transform DSL (`/api/v1/media/:key` and `/api/v1/assets/:id`):**
 ```
-?width=800&height=600&format=webp&quality=80&fit=cover
+?width=800&height=600&format=webp&quality=80&fit=cover&focal=0.5,0.5
+?preset=thumbnail
 ```
+On `/media/:key`, transform params are validated against `transformDslSchema`
+(`@lumibase/shared`; `MAX_DIM=5000`) and the request 302-redirects to the runtime
+image URL (CF Image Resizing / Imgproxy). No params → the original bytes.
+`?preset=<key>` resolves a saved `transform_presets` row for the site. See
+`.kiro/specs/image-transform-dsl`.
+
+**Upload policy (`/api/v1/uploads/config`).** Enforced by the `file-upload-policy`
+guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`,
+`POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
+its true byte length; the declared MIME must be in the allowlist and match the
+filename extension; raw bytes are content-sniffed (magic bytes) and executables /
+active-content SVGs are rejected; raster images are scanned for an embedded
+script/executable payload (polyglot) and rejected. The allowlist + cap resolve
+`per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. See
+the feature spec `.kiro/specs/upload-file-controls/` and
+`docs/en/security/runtime-security-guards-plan.md` §3 for the full guarantees.
+
+```
+GET  /api/v1/uploads/config
+→ { data: { maxBytes, allowedMimeTypes[], allowedExtensions[], catalogue[] } }
+
+PUT  /api/v1/uploads/config           # site admin only
+{ "maxBytes": 5242880, "allowedMimeTypes": ["image/png","image/jpeg"] }
+```
+
+### 6b. View presets (collection views + bookmarks)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/presets/effective?collection=` | Effective default view (precedence user > role-chain > global), with `sourceScope` |
+| `GET` | `/api/v1/presets/bookmarks?collection=` | Named bookmarks visible to the principal, each with `sourceScope` |
+| `GET` | `/api/v1/presets` | List presets (optional `?collection=`) |
+| `POST` | `/api/v1/presets` | Create a preset/bookmark; user-scope self-managed, role/global require admin |
+| `PATCH` | `/api/v1/presets/:id` | Update (authorized against the row's current scope) |
+| `DELETE` | `/api/v1/presets/:id` | Delete (user owns own; role/global require admin) |
+
+Scope is derived from ownership columns: `userId` set → user, `roleId` set →
+role, neither → global. Role presets inherit down the `roles.parentId` chain.
+See `.kiro/specs/presets-inheritance`.
+
+### 6c. Translation memory
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/tm?source=&target=&entrySource=&limit=&offset=` | List TM entries (paginated; `meta { total, limit, offset }`) |
+| `POST` | `/api/v1/tm` | Upsert an entry |
+| `PATCH` | `/api/v1/tm/:id` | Edit target/quality/source (siteId-scoped, 404 cross-tenant) |
+| `DELETE` | `/api/v1/tm/:id` | Delete an entry (siteId-scoped) |
+| `POST` | `/api/v1/tm/lookup` | Best fuzzy match `{ query, sourceLang, targetLang, threshold? }` → `{ match }` |
+| `POST` | `/api/v1/tm/translate` | MT pipeline `{ text, from, to }` (TM → glossary → provider) |
+
+`TM_DEFAULT_THRESHOLD = 75` (`@lumibase/shared`). Learn-TM (Studio) upserts
+human translations on save when `translations.learnTm` is enabled.
+See `.kiro/specs/translation-memory-ui`.
 
 ---
 
@@ -527,14 +619,20 @@ Scheduled releases publish via the shared `content-scheduler` tick
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/api/v1/flows/operations` | Registered operation keys + option hints (editor palette / `validateGraph` knownKeys) |
 | `GET` | `/api/v1/flows` | List flows (filter by `status`, `trigger`) |
-| `POST` | `/api/v1/flows` | Create a new flow |
+| `POST` | `/api/v1/flows` | Create a new flow (validates graph when `active`; schedule flows require a valid cron) |
 | `GET` | `/api/v1/flows/:id` | Get flow detail + graph |
 | `PATCH` | `/api/v1/flows/:id` | Update flow (graph, status, options) |
 | `DELETE` | `/api/v1/flows/:id` | Delete flow |
 | `POST` | `/api/v1/flows/:id/run` | Manual trigger with body as input |
+| `POST` | `/api/v1/flows/:id/trigger` | **Webhook trigger** — no CMS session; authenticate with the per-flow token (`x-flow-token` header or `Bearer`), compared constant-time. Input = `{ body, headers, query }` (credential headers stripped). 404 for non-webhook/inactive flows; 401 `WEBHOOK_NOT_CONFIGURED`/`UNAUTHENTICATED` |
 | `GET` | `/api/v1/flows/:id/runs` | Execution history |
 | `GET` | `/api/v1/flows/:id/runs/:runId` | Single run detail (steps output) |
+
+**Save-time gates:** an `active` flow must pass the shared graph validation — `400` with `GRAPH_DANGLING_EDGE` / `GRAPH_CYCLE` / `GRAPH_NO_ENTRY` / `GRAPH_UNKNOWN_OPERATION` (+ `nodeId`) otherwise; drafts may hold invalid work-in-progress. Schedule flows validate `triggerOptions.cron` (5-field, UTC): `400 CRON_INVALID` on a malformed expression, `400 CRON_REQUIRED` when activating without one; `next_run_at` is computed on save and advanced by the scheduler sweep before each enqueued run (idempotent).
+
+**Triggers:** `event` flows fire on item create/update/delete via the `flow-events` queue (`triggerOptions.collection` / `.action` filter, string or array, missing = all); `schedule` flows are swept every scheduler tick; `webhook` flows use the endpoint above; `manual` runs inline via `/run`.
 
 **Trigger a flow:**
 ```bash
@@ -933,6 +1031,24 @@ No `Authorization` header needed. Permission applied via `public` role.
 | `GET` | `/api/v1/deliver/items/:collection` | Public item list |
 | `GET` | `/api/v1/deliver/menu/:key` | Menu config |
 
+**HTTP caching** (`GET /deliver/page/:site_id/:slug`): responses without
+credentials are shared-cacheable so any CDN/proxy can absorb repeat reads.
+
+| Request | Response headers |
+|---------|------------------|
+| No credentials (default) | `Cache-Control: public, s-maxage=60, stale-while-revalidate=300` · `ETag: W/"…"` · `Vary: X-Lumi-Site` |
+| `Authorization` header present | `Cache-Control: private, no-store` (no shared `ETag`) |
+| Page not found | `404` + `Cache-Control: no-store` |
+
+Conditional requests: send `If-None-Match` with the last `ETag`; a match
+returns `304 Not Modified` with an empty body and skips section hydration
+entirely. The ETag is a site-level content fingerprint — any item write (or a
+scheduled publish/unpublish taking effect) rotates it, so a stale 304 is never
+served at the cost of a lower revalidation hit-rate.
+
+Tunables (env): `LUMIBASE_DELIVER_SMAXAGE` (seconds, default `60`, `0`
+disables public caching), `LUMIBASE_DELIVER_SWR` (seconds, default `300`).
+
 ---
 
 ## 14. Utility endpoints
@@ -990,3 +1106,20 @@ X-RateLimit-Reset: 1749254460
 Breaking changes get a new path prefix (`/api/v2`). The previous version is maintained for at least 12 months.
 
 Send `X-Lumi-API-Version: 1` to pin to a specific API version. Default is the latest stable.
+
+
+## Change Feed (`/api/v1/cdc` — spec cdc-extension-integration)
+
+Mounted on the authenticated `api` app BEFORE the ClickHouse CDC control-plane router. Frontend-realm tokens are rejected on every route (ADR-011).
+
+| Method | Path | Guard | Description |
+|---|---|---|---|
+| GET | `/cdc/events` | capability `cdc:subscribe` (admin implies) | Keyset-paginated change events. Query: `cursor`, `collections` (CSV), `operations` (CSV), `limit` (≤500). Returns `{ data, meta: { nextCursor, hasMore } }`. 400 malformed cursor; 410 `CURSOR_EXPIRED` + `earliestCursor` past retention. |
+| GET/POST | `/cdc/subscriptions` | site admin | List (with per-subscription lag) / create (max 50 per site → 403; duplicate name → 409; `kind=webhook` requires a webhook **with a secret** → 400). |
+| GET/PATCH/DELETE | `/cdc/subscriptions/:id` | site admin | Detail / update filters + pause/resume (invalid transition → 409) / delete (audited). |
+| POST | `/cdc/subscriptions/:id/ack` | capability `cdc:subscribe` | Commit a pull checkpoint. Forward-only — rewind → 409 `ACK_REGRESSION`. |
+| POST | `/cdc/subscriptions/:id/replay` | site admin | Rewind inside retention (`{cursor}` xor `{occurred_after}`); resets dead/stale → active. Audited. |
+| POST | `/cdc/subscriptions/:id/dispatch` | site admin | On-demand dispatch (no-queue fallback). 202. |
+| GET | `/cdc/subscriptions/:id/deliveries` | site admin | Delivery-attempt history, newest first (`limit`, `page`; `meta.total`). |
+
+Webhook deliveries are signed: `X-Lumibase-Signature: t=<unix>,v1=<hmac_sha256_hex>` over `` `${t}.${rawBody}` `` — see `docs/en/features/cdc-change-feed.md` for the verify snippet and envelope reference.

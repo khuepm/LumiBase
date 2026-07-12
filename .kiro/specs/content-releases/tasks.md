@@ -10,12 +10,12 @@ Kế hoạch triển khai **Content Releases** theo 5 phase. Phase A đặt nề
 
 - [x] 1. Bảng `releases` + `release_items` + migration
   - [x] 1.1 Thêm `releases` và `releaseItems` pgTable vào `packages/database/src/schema/cms.ts`: `id()` nanoid, `site_id` FK cascade, `status`/`atomicityMode`/`publishAt`/`publishedAt`/`maintenanceWindow`/`statusReason`/`createdBy` cho releases; `releaseId`/`collection`/`itemId`/`targetStatus`/`revisionId`/`outcome` cho release_items; index `releases_publish_due_idx`, unique `release_items_release_item_unique` (Req 1.2, 2.4, 11.1, 11.3; design §3)
-  - [x] 1.2 Viết migration **hand-written** (0012+, KHÔNG drizzle-kit generate) tạo hai bảng `CREATE TABLE IF NOT EXISTS` + indexes; sửa journal tương ứng (Req 14.3; design §10) (migration đã gộp vào `0000_lumibase_init` sau table-prefix refactor)
+  - [x] 1.2 Viết migration **hand-written** (0012+, KHÔNG drizzle-kit generate) tạo hai bảng `CREATE TABLE IF NOT EXISTS` + indexes; sửa journal tương ứng (Req 14.3; design §10)
   - [x] 1.3 Export bảng mới từ schema index nếu cần; chạy `pnpm -F @lumibase/database db:migrate` trên DB local để xác nhận migration apply sạch (Req 14.3; design §3)
 
-- [ ] 2. Zod schemas cho Release payloads
-  - [ ] 2.1 Tạo `packages/shared/src/schemas/release.ts` export `CreateReleaseSchema`, `PatchReleaseSchema` (addItems/removeItems/publishAt/atomicityMode/maintenanceWindow), `ReleaseStatusSchema`, `AtomicityModeSchema`; `targetStatus` enum khớp `items.status` (`cms.ts:195`) (Req 1.4, 2.5, 5.1; design §3, §4.2) — **CỐ Ý hoãn** (deviation): validate bằng inline Zod trong `routes/releases.ts`; shared schema tạo khi build Studio UI/SDK cho Releases
-  - [ ] 2.2 Export từ `packages/shared/src/schemas/index.ts`; chia sẻ cho CMS (validate) + Studio (form) + SDK theo quy ước (Req 11.5; design §3) — hoãn cùng 2.1
+- [ ] 2. Zod schemas cho Release payloads — **HOÃN có chủ đích** (deviation 2026-06-22: validate bằng inline Zod trong `routes/releases.ts`; shared schema chỉ cần khi build Studio UI/SDK cho releases; xem Implementation status)
+  - [ ] 2.1 Tạo `packages/shared/src/schemas/release.ts` export `CreateReleaseSchema`, `PatchReleaseSchema` (addItems/removeItems/publishAt/atomicityMode/maintenanceWindow), `ReleaseStatusSchema`, `AtomicityModeSchema`; `targetStatus` enum khớp `items.status` (`cms.ts:195`) (Req 1.4, 2.5, 5.1; design §3, §4.2)
+  - [ ] 2.2 Export từ `packages/shared/src/schemas/index.ts`; chia sẻ cho CMS (validate) + Studio (form) + SDK theo quy ước (Req 11.5; design §3)
 
 ### Phase B — Release CRUD & revision pin
 
@@ -30,22 +30,22 @@ Kế hoạch triển khai **Content Releases** theo 5 phase. Phase A đặt nề
   - [x] 4.2 Revision pin: verify `revisionId` thuộc đúng itemId + site (REVISION_NOT_FOUND), từ chối revision `staged=true` chưa commit (REVISION_STAGED) (Req 3.1, 3.2, 3.5; design §4.2)
   - [x] 4.3 `patch` publishAt: set tương lai → `scheduled`; null trên scheduled → `draft`; quá khứ → 422 (Req 6.1-6.3; design §4.2)
   - [x] 4.4 Route `apps/cms/src/routes/releases.ts`: POST/GET/GET:id/PATCH/DELETE, mỏng, mount sau auth (Req 1.1, 2.1, 4.1, 4.2, 9.1; design §4.6)
-  - [x] 4.5 Integration test CRUD: tạo Release, add item xuyên 2 collection khác nhau, pin revision, remove item, list/get/delete; assert scoped per site, unique upsert không nhân bản (Req 2.2, 2.4, 3.1, 4.5; design §4.2, §4.3) (thiếu assert cross-site isolation tường minh trong test list)
+  - [x] 4.5 Integration test CRUD: tạo Release, add item xuyên 2 collection khác nhau, pin revision, remove item, list/get/delete; assert scoped per site, unique upsert không nhân bản (Req 2.2, 2.4, 3.1, 4.5; design §4.2, §4.3)
 
 ### Phase C — Publish engine (atomicity + editorial gate)
 
 - [x] 5. publishOneItem (delegate ItemService)
-  - [x] 5.1 Đọc chữ ký thực `ItemService.update`; nếu cần cho nhận `tx` optional để publish chạy trong transaction (open question §11.2) (Req 8.4; design §4.5) (chốt open question §11.2: ItemService.patch KHÔNG nhận tx — publish không xuyên transaction)
+  - [x] 5.1 Đọc chữ ký thực `ItemService.update`; nếu cần cho nhận `tx` optional để publish chạy trong transaction (open question §11.2) (Req 8.4; design §4.5)
   - [x] 5.2 `publishOneItem(releaseItem, tx)`: nếu `revisionId` set → materialize delta (RFC6902 từ `revisions`) thành data; gọi `ItemService.update(collection, itemId, { data?, status: targetStatus }, { tx })` để tái dùng editorial gate (`item-service.ts:717-736`) + validation + hooks (Req 3.4, 8.1, 8.4; design §4.5)
   - [x] 5.3 Map kết quả → `Publish_Outcome` (`published|skipped|failed` + reason); item soft-deleted → `skipped`/ITEM_DELETED (Req 5.5, 5.6; design §4.5, §5)
 
-- [ ] 6. publish(id, {trigger}) — atomicity modes
+- [x] 6. publish(id, {trigger}) — atomicity modes
   - [x] 6.1 `publish` shared path: load scoped, 409 ALREADY_PUBLISHED, 422 EMPTY_RELEASE; allowEarly cho scheduled (Req 7.1-7.4; design §4.4)
-  - [x] 6.2 `all_or_nothing`: một Drizzle tx, lặp `publishOneItem`, bất kỳ fail → rollback + `status='failed'` + statusReason; trạng thái item không đổi (Req 5.1, 5.2, 8.2; design §4.4) (deviation: `all_or_nothing` = pre-flight publishability pass thay vì DB-tx rollback — kiểm mọi item trước, không publish gì nếu có blocker)
+  - [x] 6.2 `all_or_nothing`: một Drizzle tx, lặp `publishOneItem`, bất kỳ fail → rollback + `status='failed'` + statusReason; trạng thái item không đổi (Req 5.1, 5.2, 8.2; design §4.4)
   - [x] 6.3 `best_effort`: per-item try-catch độc lập, thu Publish_Outcome, mixed → `partially_failed`; persist outcome lên release_items (Req 5.3, 5.5, 8.3; design §4.4, §5)
   - [x] 6.4 Toàn bộ thành công → `published` + `publishedAt`; dispatch revalidation post-commit (Req 5.4, 6.8; design §4.4)
   - [x] 6.5 Endpoint `POST /releases/:id/publish` (`trigger:'manual'`); partial best_effort → HTTP 200 body `{ data: { status:'partially_failed', outcomes } }` (Req 7.1, 7.5; design §4.6)
-  - [x] 6.6 Unit + integration test publish: all_or_nothing rollback khi 1 item fail; best_effort partial; editorial gate chặn item chưa approved ở cả hai mode; revision pin phát hành đúng phiên bản đã ghim (Req 5.2-5.6, 8.1-8.3, 3.4; design §4.4, §4.5) (thiếu case editorial-gate chặn item chưa approved trong test list)
+  - [x] 6.6 Unit + integration test publish: all_or_nothing rollback khi 1 item fail; best_effort partial; editorial gate chặn item chưa approved ở cả hai mode; revision pin phát hành đúng phiên bản đã ghim (Req 5.2-5.6, 8.1-8.3, 3.4; design §4.4, §4.5)
 
 ### Phase D — Scheduled publish (reuse scheduler sweep) & circuit-breaker
 

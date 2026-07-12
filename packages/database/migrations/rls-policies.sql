@@ -51,7 +51,13 @@ DECLARE
     -- Privacy / data-subject rights (site-isolated).
     'lumibase_user_consents', 'lumibase_email_suppressions', 'lumibase_processing_restrictions',
     -- Deployment integrations (site-isolated).
-    'lumibase_deployment_targets', 'lumibase_deployments'
+    'lumibase_deployment_targets', 'lumibase_deployments',
+    -- Custom domains & free subdomains (site-isolated).
+    'lumibase_site_domains',
+    -- Auth session store (site-isolated; holds session-equivalent secrets).
+    'lumibase_refresh_tokens',
+    -- Change Feed (outbox + subscriptions + delivery log, site-isolated).
+    'lumibase_cdc_change_events', 'lumibase_cdc_subscriptions', 'lumibase_cdc_deliveries'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

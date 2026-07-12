@@ -58,6 +58,36 @@ export interface Bindings {
   CF_ACCESS_AUDIENCE?: string;
   /** Secret key for signing internal Custom JWTs (for frontend users) */
   JWT_SECRET?: string;
+  /**
+   * Session-token TTL for the `studio` realm (staff/CMS). Accepts a
+   * compact duration (`12h`, `30m`, `7d`) or a number of seconds.
+   * Defaults to `12h`. Invalid values fall back to the default.
+   */
+  STUDIO_SESSION_TTL?: string;
+  /**
+   * Session-token TTL for the `frontend` realm (subscribers). Accepts a
+   * compact duration (`30d`, `12h`) or a number of seconds. Defaults to
+   * `30d`. Invalid values fall back to the default.
+   */
+  FRONTEND_SESSION_TTL?: string;
+  /**
+   * Refresh-token TTL for the `studio` realm — the "stay logged in"
+   * horizon over which a short access token is silently renewed. Defaults
+   * to `30d`. Invalid values fall back to the default.
+   */
+  STUDIO_REFRESH_TTL?: string;
+  /** Refresh-token TTL for the `frontend` realm. Defaults to `90d`. */
+  FRONTEND_REFRESH_TTL?: string;
+  /**
+   * Refresh cookie `SameSite`: `Lax` (default) | `Strict` | `None`. Use
+   * `None` when the frontend is on a different site/domain than the API
+   * (cross-site) — browsers then also require `Secure`, which is forced.
+   */
+  REFRESH_COOKIE_SAMESITE?: string;
+  /** Refresh cookie `Domain`, e.g. `.example.com` to share across subdomains. */
+  REFRESH_COOKIE_DOMAIN?: string;
+  /** `"false"` allows the refresh cookie over plain http (local dev only). */
+  REFRESH_COOKIE_SECURE?: string;
   /** When set to `"true"`, withAuth allows dev tokens (skip JWKS verify). */
   LUMIBASE_DEV_AUTH?: string;
   /** Secret key for AES-GCM per-field encryption (base64 encoded). */
@@ -76,6 +106,20 @@ export interface Bindings {
   FILE_UPLOAD_ALLOWED_MIME_TYPES?: string;
   /** Bearer token required to read Prometheus metrics in production. */
   METRICS_TOKEN?: string;
+  /** Delivery API shared-cache lifetime in seconds (`0` disables public caching). Default 60. */
+  LUMIBASE_DELIVER_SMAXAGE?: string;
+  /** Delivery API stale-while-revalidate window in seconds. Default 300. */
+  LUMIBASE_DELIVER_SWR?: string;
+  /** Debounce window (seconds) for API-key `lastUsedAt` writes. Default 60; `0` = touch every request. */
+  LUMIBASE_APIKEY_TOUCH_INTERVAL?: string;
+  /** Max JSON request body in bytes for the app-level guard. Default 1 MiB. */
+  LUMIBASE_MAX_JSON_BODY?: string;
+  /** Set to 'true' to disable the general API rate limiter (CWE-400). */
+  LUMIBASE_RATE_LIMIT_DISABLED?: string;
+  /** Max requests per window for the general API rate limiter (default 300). */
+  LUMIBASE_RATE_LIMIT_MAX?: string;
+  /** Window length in seconds for the general API rate limiter (default 60). */
+  LUMIBASE_RATE_LIMIT_WINDOW_S?: string;
   /**
    * Sentry DSN for the Cloudflare Workers build. When unset, `withSentry`
    * in `cloudflare.ts` initializes with an empty DSN and Sentry becomes a
@@ -100,6 +144,15 @@ export interface Bindings {
   WORKERS_AI_API_TOKEN?: string;
   /** Optional Workers AI gateway URL override. */
   WORKERS_AI_GATEWAY?: string;
+  // ── Custom domains / Cloudflare for SaaS (services/domains/*) ───────────
+  /** API token with `SSL and Certificates: Edit` on the SaaS zone. */
+  CLOUDFLARE_API_TOKEN?: string;
+  /** Zone id that owns the Custom Hostnames + fallback origin. */
+  CLOUDFLARE_ZONE_ID?: string;
+  /** Hostname operators CNAME to (proxied fallback origin), e.g. `cname.lumibase.dev`. */
+  LUMIBASE_SAAS_FALLBACK?: string;
+  /** Reserved suffix offered for free subdomains. Defaults to `lumibase.dev`. */
+  LUMIBASE_FREE_DOMAIN_SUFFIX?: string;
 }
 
 /**

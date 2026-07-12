@@ -1,3 +1,9 @@
 packages:
   - "apps/*"
+  # apps/marketplace is a git submodule (private lumibase-ai/marketplace) that
+  # builds independently from the main repo with its own dependencies. Excluding
+  # it from the workspace keeps the root pnpm-lock.yaml free of its deps, so a
+  # frozen install here never depends on the submodule being checked out. CI
+  # installs & builds it standalone inside apps/marketplace instead.
+  - "!apps/marketplace"
   - "packages/*"

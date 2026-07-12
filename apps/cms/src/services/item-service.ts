@@ -12,6 +12,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
+import { dispatchItemEvent } from './flow-dispatch';
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
 import { validateItem } from './validation';
@@ -43,6 +44,12 @@ import type { KeyProvider } from '@lumibase/runtime';
 import { nanoid } from 'nanoid';
 import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
+import {
+  OutboxWriter,
+  type OutboxActor,
+} from '../modules/cdc/change-feed/outbox-writer';
+import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
+import type { CdcOperation } from '@lumibase/shared/schemas';
 import { AuditLogger } from '../modules/audit/logger';
 import { FirebaseSyncService } from '../modules/lumibase-firebase-sync';
 import { WriteCoalescer } from './load-guard-service';
@@ -64,6 +71,13 @@ export interface ListItemsParams {
   limit?: number;
   offset?: number;
   status?: string | null;
+  /**
+   * Whether to run the `count(*)` total (high-load-cache-readiness Req 5).
+   * Defaults to `true` to preserve the historical response shape; callers that
+   * don't render a total (infinite scroll, delivery) pass `false` to skip the
+   * extra aggregate query. When `false`, `meta.total` is omitted.
+   */
+  withTotal?: boolean;
 }
 
 export type ItemFilterOp =
@@ -207,6 +221,14 @@ export interface ItemServiceDeps {
   suppressExtensionHooks?: boolean;
   /** Revision provenance; defaults to `{ authorType: 'human' }` when omitted. */
   provenance?: ItemProvenance;
+  /**
+   * Change Feed actor override (spec cdc-extension-integration, Req 1.1).
+   * Lets the request factory attribute outbox events to an API key
+   * (`{ type: 'api_key', id }`) — ItemService itself only knows `userId`.
+   * When omitted the actor is derived: agent provenance → agent, userId →
+   * user, otherwise system.
+   */
+  cdcActor?: OutboxActor;
 }
 
 const STRUCTURAL_FIELDS = new Set([
@@ -415,6 +437,7 @@ export class ItemService {
   /** KEK provider for envelope mode (wrap/unwrap per-record DEKs). */
   private readonly keyProvider: KeyProvider | null;
   private hookDispatcher: HookDispatcher | null = null;
+  private outboxWriter: OutboxWriter | null = null;
   private provenance: ItemProvenance;
   private writeCoalescer: WriteCoalescer | null = null;
   /** Memoized per-site envelope-write decision (resolved at most once). */
@@ -523,6 +546,72 @@ export class ItemService {
     return this.hookDispatcher;
   }
 
+  /**
+   * Append a Change Feed outbox event for a committed mutation (spec
+   * cdc-extension-integration, Req 1.2–1.6). Sits in the same post-mutation
+   * side-effect cluster as indexing/realtime/flows; the writer never throws
+   * (a failed insert emits a `cdc_event_write_failed` audit warning instead
+   * — Req 1.3) and returns immediately for sites without the feed enabled.
+   */
+  private async writeCdcEvent(
+    collection: string,
+    operation: CdcOperation,
+    itemId: string,
+    payload: Record<string, unknown> | null,
+    changedFields?: string[] | null,
+  ): Promise<void> {
+    if (!this.outboxWriter) {
+      this.outboxWriter = new OutboxWriter({
+        db: this.deps.db,
+        siteId: this.deps.siteId,
+        cache: this.deps.cache,
+        getSensitiveFields: async (coll) => {
+          const compiled = await this.schemaService.getCompiled(coll);
+          return new Set(
+            (compiled?.fields ?? [])
+              .filter((f) => f.classification === 'pii' || f.classification === 'phi')
+              .map((f) => f.name),
+          );
+        },
+        auditWarn: async (warning) => {
+          await new AuditLogger({ db: this.deps.db, siteId: this.deps.siteId }).write({
+            event: warning.event,
+            actorEmail: null,
+            ip: this.deps.permissionCtx?.ip ?? null,
+            userAgent: null,
+            requestId: null,
+            metadata: { ...warning },
+          });
+        },
+      });
+    }
+    const actor: OutboxActor =
+      this.provenance.authorType === 'agent'
+        ? { type: 'agent', id: this.provenance.runId ?? null }
+        : this.deps.cdcActor ??
+          (this.deps.userId
+            ? { type: 'user', id: this.deps.userId }
+            : { type: 'system' });
+    const source =
+      this.provenance.authorType === 'agent'
+        ? ('agent' as const)
+        : actor.type === 'system'
+          ? ('system' as const)
+          : ('api' as const);
+    const result = await this.outboxWriter.write(
+      { collection, itemId, operation, payload, changedFields },
+      actor,
+      source,
+    );
+    if (result.written && this.deps.queue) {
+      // Latency optimization only — the 30s sweep is the correctness backstop
+      // (Req 4.7), so a lost enqueue is harmless.
+      this.deps.queue
+        .enqueue(CDC_DISPATCH_QUEUE, 'dispatch', { siteId: this.deps.siteId })
+        .catch(() => {});
+    }
+  }
+
   private actorDataAccess(): ExtensionActorDataAccess {
     const buildService = () =>
       new ItemService({
@@ -574,11 +663,17 @@ export class ItemService {
       .limit(limit)
       .offset(offset);
 
-    const totals = await this.deps.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(items)
-      .where(where);
-    const total = totals[0]?.count ?? 0;
+    // `count(*)` is opt-out (Req 5): skip the extra aggregate when the caller
+    // doesn't need a total. Default preserves the historical behaviour.
+    const withTotal = params.withTotal ?? true;
+    let total: number | undefined;
+    if (withTotal) {
+      const totals = await this.deps.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(items)
+        .where(where);
+      total = totals[0]?.count ?? 0;
+    }
 
     const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
     const masked = perm && this.permissions
@@ -607,7 +702,7 @@ export class ItemService {
 
     return {
       data,
-      meta: { total, limit, offset },
+      meta: total === undefined ? { limit, offset } : { total, limit, offset },
     };
   }
 
@@ -727,6 +822,8 @@ export class ItemService {
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'create', row.id);
     await this.dispatchFirebaseSync(collectionName, 'create', row.id, row.data as Record<string, unknown>);
+    await this.dispatchFlowEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
+    await this.writeCdcEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -905,6 +1002,14 @@ export class ItemService {
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'update', row.id);
     await this.dispatchFirebaseSync(collectionName, 'update', row.id, row.data as Record<string, unknown>);
+    await this.dispatchFlowEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
+    await this.writeCdcEvent(
+      collectionName,
+      'update',
+      row.id,
+      row.data as Record<string, unknown>,
+      Object.keys(patch.data ?? {}),
+    );
     // After hook — fire-and-forget.
     hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -980,6 +1085,8 @@ export class ItemService {
     await this.deindexItem(collectionName, id);
     await this.publishRealtimeEvent(collectionName, 'delete', id);
     await this.dispatchFirebaseSync(collectionName, 'delete', id, {});
+    await this.dispatchFlowEvent(collectionName, 'delete', id, {});
+    await this.writeCdcEvent(collectionName, 'delete', id, null);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -1456,6 +1563,25 @@ export class ItemService {
       // Realtime fan-out is non-critical — log and continue.
       console.error('[item-service] realtime publish failed', { collection, itemId, err: formatSafeError(err) });
     }
+  }
+
+  /**
+   * Fan a committed item mutation out to matching event-triggered flows
+   * (visual-flow-builder Req 1). Only the enqueue happens here — execution is
+   * the flow-events consumer's job — and `dispatchItemEvent` never throws, so
+   * flow automation can never fail a content write.
+   */
+  private async dispatchFlowEvent(
+    collection: string,
+    action: 'create' | 'update' | 'delete',
+    itemId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.deps.queue) return;
+    await dispatchItemEvent(
+      { db: this.deps.db, siteId: this.deps.siteId, queue: this.deps.queue },
+      { collection, action, itemId, payload },
+    );
   }
 
   /**

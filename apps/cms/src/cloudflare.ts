@@ -20,6 +20,7 @@ import { createDb } from '@lumibase/database';
 import app from './index';
 import type { Bindings } from './env';
 import { runScheduledRotation } from './modules/audit/scheduled';
+import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
 import { resolveSentryOptions } from './observability/sentry';
 
 // ── Default export: ExportedHandler (fetch + scheduled) ─────────────────────
@@ -81,8 +82,9 @@ export default Sentry.withSentry(
     }
 
     const db = createDb(hyperdrive.connectionString);
-    // waitUntil keeps the isolate alive until the (best-effort) prune finishes.
+    // waitUntil keeps the isolate alive until the (best-effort) prunes finish.
     ctx.waitUntil(runScheduledRotation(db));
+    ctx.waitUntil(runScheduledRefreshTokenPrune(db));
   },
   } satisfies ExportedHandler<Bindings>,
 );

@@ -85,4 +85,45 @@ export function getAllPaths(): PrerenderPath[] {
   return paths;
 }
 
+export interface LocaleIndex {
+  locale: string;
+  /** URL path of the locale landing page, e.g. /en/ (root uses /). */
+  url: string;
+  /** Every doc in this locale, sorted by slug, for a crawlable link list. */
+  pages: { title: string; url: string; slug: string }[];
+  /** Newest lastModified across the locale's pages, for sitemap lastmod. */
+  lastModified?: string;
+}
+
+/**
+ * Per-locale landing-page data. The default locale also owns the site root
+ * (`/`). Each landing page renders a plain <a> link list so crawlers reach
+ * every prerendered doc from the homepage — the SPA <Navigate> redirect that
+ * the client uses is invisible to bots.
+ */
+export function getLocaleIndexes(): LocaleIndex[] {
+  const indexes: LocaleIndex[] = [];
+  for (const locale of locales) {
+    const slugs = [...(docSlugsByLocale[locale] ?? [])].sort((a, b) =>
+      a.localeCompare(b),
+    );
+    const pages = slugs
+      .map((slug) => {
+        const entry = docIndexByLocale[locale]?.[slug];
+        if (!entry) return null;
+        return { title: entry.title, url: pathFor(locale, slug), slug };
+      })
+      .filter((p): p is { title: string; url: string; slug: string } => p !== null);
+
+    let lastModified: string | undefined;
+    for (const slug of slugs) {
+      const lm = docIndexByLocale[locale]?.[slug]?.lastModified;
+      if (lm && (!lastModified || lm > lastModified)) lastModified = lm;
+    }
+
+    indexes.push({ locale, url: `/${locale}/`, pages, lastModified });
+  }
+  return indexes;
+}
+
 export { locales, defaultLocale };

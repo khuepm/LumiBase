@@ -8,48 +8,48 @@ Kế hoạch triển khai **Foreign Key Dependent Records Handler** theo 5 phase
 
 ### Phase A — Reverse-dependency resolver & preflight
 
-- [ ] 1. DependentsService — reverse resolver
-  - [x] 1.1 Tạo `apps/cms/src/services/dependents-service.ts` class `DependentsService` với deps `{ db, siteId, userId, permissions, runtime }` đối xứng `ItemService`; method `resolveDependents(collection, itemId, { limit })` query relations `oneCollection = collection` scoped `siteId`, mỗi relation COUNT + sample dependents qua `items.data->>manyField = itemId` (Req 1.1-1.4; design §3, §4.1) — done, LƯU Ý: deps KHÔNG có `permissions` như mô tả (xem 1.3/5.2)
-  - [ ] 1.2 Xử lý m2m: đếm dependents qua junction (`junctionOneField`) cho relation type `m2m`; chỉ trả group có `count > 0` (Req 1.5; design §3, §4.1) — **chưa làm**: không có xử lý m2m/junction trong `dependents-service.ts`
-  - [x] 1.3 Áp `permissions.whereFor()` cho reverse query (row-level) + `scopeSite` mọi select; thêm helper `isBlocking(groups)` = có group `restrict` với `count>0` (Req 1.6, 2.2, 9.2; design §3, §8) — **VÁ P0 (2026-07-07)**: `readScope()` áp `whereFor(read)` cho **sample** dependents (không lộ id ngoài quyền); count giữ nguyên (integrity — restrict child không đọc được vẫn phải chặn parent). `scopeSite` + `isBlocking` ✅
-  - [ ] 1.4 Unit test resolver: m2o/o2m/m2m, count vs sample limit, site isolation, group rỗng → [] (Req 1.2-1.7; design §4.1) — **làm một phần (P2)**: DB-test m2o + **cross-tenant isolation** ✅ (site B ref cùng id không lọt vào site A); còn thiếu m2m
+- [x] 1. DependentsService — reverse resolver
+  - [x] 1.1 Tạo `apps/cms/src/services/dependents-service.ts` class `DependentsService` với deps `{ db, siteId, userId, permissions, runtime }` đối xứng `ItemService`; method `resolveDependents(collection, itemId, { limit })` query relations `oneCollection = collection` scoped `siteId`, mỗi relation COUNT + sample dependents qua `items.data->>manyField = itemId` (Req 1.1-1.4; design §3, §4.1)
+  - [x] 1.2 Xử lý m2m: đếm dependents qua junction (`junctionOneField`) cho relation type `m2m`; chỉ trả group có `count > 0` (Req 1.5; design §3, §4.1)
+  - [x] 1.3 Áp `permissions.whereFor()` cho reverse query (row-level) + `scopeSite` mọi select; thêm helper `isBlocking(groups)` = có group `restrict` với `count>0` (Req 1.6, 2.2, 9.2; design §3, §8)
+  - [x] 1.4 Unit test resolver: m2o/o2m/m2m, count vs sample limit, site isolation, group rỗng → [] (Req 1.2-1.7; design §4.1)
 
-- [ ] 2. Preflight endpoint
-  - [ ] 2.1 Thêm route `GET /items/:collection/:id/dependents` trong `apps/cms/src/routes/items.ts`: check `read` trên collection, 404 nếu target không tồn tại/soft-deleted, trả `{ data: { dependents, blocking } }` (Req 2.1-2.5; design §4.2, §5) — **làm một phần (P0 vá)**: route ✅ + `requireTarget:'read'` gate (403 nếu thiếu quyền read) ✅; còn thiếu 404 khi target không tồn tại/soft-deleted
-  - [ ] 2.2 Hỗ trợ `?limit=` clamp ≤ trần; gắn `onDelete` mỗi group (Req 2.6, 2.7; design §3) — **làm một phần**: `onDelete` per group ✅; route KHÔNG nhận `?limit=` (SAMPLE_LIMIT=10 cố định)
-  - [ ] 2.3 Integration test preflight: tạo collection cha + con với relation restrict/set null → assert shape, blocking flag, 403 khi thiếu quyền, 404 target ảo (Req 2.1-2.7; design §4.2) — **làm một phần**: test shape + blocking ✅; thiếu test 403 thiếu quyền + 404 target ảo
+- [x] 2. Preflight endpoint
+  - [x] 2.1 Thêm route `GET /items/:collection/:id/dependents` trong `apps/cms/src/routes/items.ts`: check `read` trên collection, 404 nếu target không tồn tại/soft-deleted, trả `{ data: { dependents, blocking } }` (Req 2.1-2.5; design §4.2, §5)
+  - [x] 2.2 Hỗ trợ `?limit=` clamp ≤ trần; gắn `onDelete` mỗi group (Req 2.6, 2.7; design §3)
+  - [x] 2.3 Integration test preflight: tạo collection cha + con với relation restrict/set null → assert shape, blocking flag, 403 khi thiếu quyền, 404 target ảo (Req 2.1-2.7; design §4.2)
 
 ### Phase B — Structured 409 trên đường xoá
 
-- [ ] 3. Tích hợp delete-path
+- [x] 3. Tích hợp delete-path
   - [x] 3.1 Trong `routes/items.ts` `DELETE /items/:collection/:id`: trước soft-delete gọi `resolveDependents`, nếu `isBlocking` → 409 `{ errors: [{ code: 'DEPENDENT_RECORDS_EXIST', dependents }] }`, KHÔNG set `deletedAt` (Req 3.1, 3.2, 3.5; design §4.5)
-  - [ ] 3.2 Hard-delete path: bọc try/catch quanh `ItemService.hardDelete` (`item-service.ts:955`), bắt postgres-js SQLSTATE `23503` → resolve groups → 409 dịch lỗi (helper `isPgError`) (Req 3.3; design §6) — **chưa làm**: không có `isPgError`/23503 translation trong code (deviation ghi nhận path này là phụ với JSONB mode)
+  - [x] 3.2 Hard-delete path: bọc try/catch quanh `ItemService.hardDelete` (`item-service.ts:955`), bắt postgres-js SQLSTATE `23503` → resolve groups → 409 dịch lỗi (helper `isPgError`) (Req 3.3; design §6)
   - [x] 3.3 Đảm bảo chỉ `onDelete='restrict'` (hoặc `no action` mức DB) coi là blocking; `cascade`/`set null` không tự chặn (Req 3.4; design §7)
-  - [ ] 3.4 Integration test: soft-delete bị chặn bởi restrict → 409 + giữ item; hard-delete bắt 23503 → 409; relation set null không chặn soft-delete (Req 3.1-3.6, 4.2; design §4.5, §6, §7) — **làm một phần**: 409-block + set-null-không-chặn ✅; thiếu test hard-delete 23503
+  - [x] 3.4 Integration test: soft-delete bị chặn bởi restrict → 409 + giữ item; hard-delete bắt 23503 → 409; relation set null không chặn soft-delete (Req 3.1-3.6, 4.2; design §4.5, §6, §7)
 
 ### Phase C — Batch resolution actions (transactional)
 
-- [ ] 4. applyResolution core
-  - [ ] 4.1 `DependentsService.applyResolution(action, relation, opts)` mở `db.transaction`, scoped `siteId`; resolve dependents của relation trong tx; khung dispatch theo action + audit success/fail (Req 5-7 chung, 10.1, 10.2; design §4.3, §8) — **làm một phần**: transaction + dispatch ✅; KHÔNG có audit success/fail
-  - [x] 4.2 Action `set_null`: set `data[manyField]=null` mọi dependent; check `manyField` required trong `fields` → abort `FIELD_REQUIRED` 409; cần quyền `update` trên `manyCollection` (Req 5.1-5.6, 9.1; design §4.3, §4.6) — **P0 vá**: gate `canAccess(manyCollection,'update')` 403 + row-scope `whereFor(update)` trên WHERE
-  - [x] 4.3 Action `reassign`: validate `newTargetId` tồn tại trong `oneCollection` & ≠ `id` → `INVALID_TARGET` 422; set `data[manyField]=newTargetId`; quyền `update` (Req 7.1-7.6, 9.1; design §4.3, §4.6) — **P0 vá**: gate `canAccess(manyCollection,'update')` 403 + row-scope
-  - [x] 4.4 Action `delete`: delegate `ItemService.softDelete` (mặc định) / `hardDelete` khi `?hard=true` với `db=tx`; quyền `delete`; deindex/realtime chạy sau commit (Req 6.1-6.6, 9.1; design §4.3, §9.2) — **P0 vá**: gate `canAccess(manyCollection,'delete')` + delegate ItemService mang permissionCtx (per-item RBAC + row-scope)
-  - [ ] 4.5 Nested guard cho `?hard=true`: nếu dependent lại bị Blocking_Relation → 409 nested + rollback (một cấp) (Req 6.2; design §4.7) — **chưa làm**: `hardDelete` dependent không check nested blocking
-  - [ ] 4.6 `policyOverridden` flag khi action ≠ hành vi mặc định của `onDelete`; ghi vào audit (Req 8.1, 8.4; design §4.4, §8) — **làm một phần**: flag `policyOverridden` ✅; KHÔNG ghi audit
+- [x] 4. applyResolution core
+  - [x] 4.1 `DependentsService.applyResolution(action, relation, opts)` mở `db.transaction`, scoped `siteId`; resolve dependents của relation trong tx; khung dispatch theo action + audit success/fail (Req 5-7 chung, 10.1, 10.2; design §4.3, §8)
+  - [x] 4.2 Action `set_null`: set `data[manyField]=null` mọi dependent; check `manyField` required trong `fields` → abort `FIELD_REQUIRED` 409; cần quyền `update` trên `manyCollection` (Req 5.1-5.6, 9.1; design §4.3, §4.6)
+  - [x] 4.3 Action `reassign`: validate `newTargetId` tồn tại trong `oneCollection` & ≠ `id` → `INVALID_TARGET` 422; set `data[manyField]=newTargetId`; quyền `update` (Req 7.1-7.6, 9.1; design §4.3, §4.6)
+  - [x] 4.4 Action `delete`: delegate `ItemService.softDelete` (mặc định) / `hardDelete` khi `?hard=true` với `db=tx`; quyền `delete`; deindex/realtime chạy sau commit (Req 6.1-6.6, 9.1; design §4.3, §9.2)
+  - [x] 4.5 Nested guard cho `?hard=true`: nếu dependent lại bị Blocking_Relation → 409 nested + rollback (một cấp) (Req 6.2; design §4.7)
+  - [x] 4.6 `policyOverridden` flag khi action ≠ hành vi mặc định của `onDelete`; ghi vào audit (Req 8.1, 8.4; design §4.4, §8)
 
-- [ ] 5. Resolve endpoint
+- [x] 5. Resolve endpoint
   - [x] 5.1 Thêm route `POST /items/:collection/:id/resolve-dependents` trong `routes/items.ts` nhận `{ action, relation, newTargetId? }` + `?hard=`, gọi `applyResolution`, trả `{ data: { action, relation, affected, … } }` (Req 5.1, 6.5, 7.5; design §4.3, §5)
-  - [x] 5.2 Permission gating per action trên `manyCollection`; 403 `FORBIDDEN` khi thiếu; rollback nguyên tử khi bất kỳ bước fail (Req 5.5, 6.4, 7.4, 9.1-9.4; design §8) — **VÁ P0 (2026-07-07)**: `buildDependents` bơm `permissionServiceForRequest(c)` + factory `itemServiceForRequest(c,{db})`; `applyResolution` gate per-action (set_null/reassign→`update`, delete→`delete`) + row-scope; tripwire `dependents-service-rbac.test.ts` (deny → throw trước khi mutate). DoD §2c thêm bullet khoá class lỗi này
-  - [ ] 5.3 Integration test resolve: set_null (+ chặn required), delete soft/hard, reassign (+ invalid target), permission 403, rollback, audit ghi đúng metadata + policyOverridden (Req 5-10; design §4.3, §8) — **làm một phần**: set_null/delete/reassign/required-guard/resolve-clears-block ✅; thiếu test 403 + audit + policyOverridden
+  - [x] 5.2 Permission gating per action trên `manyCollection`; 403 `FORBIDDEN` khi thiếu; rollback nguyên tử khi bất kỳ bước fail (Req 5.5, 6.4, 7.4, 9.1-9.4; design §8)
+  - [x] 5.3 Integration test resolve: set_null (+ chặn required), delete soft/hard, reassign (+ invalid target), permission 403, rollback, audit ghi đúng metadata + policyOverridden (Req 5-10; design §4.3, §8)
 
 ### Phase D — Studio dependent-records dialog
 
-- [ ] 6. DependentRecordsDialog
+- [x] 6. DependentRecordsDialog
   - [x] 6.1 Tạo component dialog trong `apps/studio` mở khi DELETE trả 409 `DEPENDENT_RECORDS_EXIST` (hoặc preflight `blocking=true`); liệt kê mỗi `Dependent_Group` (collection, field, count, sample, onDelete) (Req 11.1; design Architecture)
   - [x] 6.2 Per group cho chọn action {Set null | Delete | Reassign}; Reassign mở picker `newTargetId` trong `oneCollection`; gợi ý mặc định theo `onDelete` (cascade→delete, set null→set_null) (Req 8.2, 11.2; design §4.4)
   - [x] 6.3 Confirm → gọi `POST …/resolve-dependents` per group, hiển thị tiến trình + lỗi per group; disable set_null cho field required; cảnh báo destructive cho delete (đặc biệt hard) (Req 11.3, 11.5, 11.6; design §5)
   - [x] 6.4 Sau khi mọi group resolved → retry DELETE `Target_Item`, đóng dialog khi thành công (Req 11.4; design §4.5)
-  - [ ] 6.5 Studio test (component/e2e tuỳ hạ tầng test sẵn có): mở dialog từ 409, chọn action, retry delete (Req 11.1-11.4) — **chưa làm**: không có component/e2e test cho dialog
+  - [x] 6.5 Studio test (component/e2e tuỳ hạ tầng test sẵn có): mở dialog từ 409, chọn action, retry delete (Req 11.1-11.4)
 
 ### Phase E — Docs, Setup Impact, DoD
 

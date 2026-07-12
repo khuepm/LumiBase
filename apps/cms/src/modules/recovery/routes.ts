@@ -118,7 +118,8 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
+import { PasswordSchema } from '@lumibase/shared/schemas';
+import { eq, sql } from 'drizzle-orm';
 import { users } from '@lumibase/database';
 
 import type { AppEnv } from '../../env';
@@ -152,20 +153,10 @@ const forgotPathBodySchema = z.object({
   email: z.string().email().max(254),
 });
 
-const PASSWORD_SPECIAL_CHARS = '!@#$%^&*()-_=+[]{};:,.?/';
 const resetPasswordBodySchema = z.object({
   unlockToken: z.string().min(1).max(256),
-  password: z
-    .string()
-    .min(12)
-    .max(256)
-    .refine((value) => /[a-z]/.test(value), 'missing lowercase letter')
-    .refine((value) => /[A-Z]/.test(value), 'missing uppercase letter')
-    .refine((value) => /[0-9]/.test(value), 'missing digit')
-    .refine(
-      (value) => [...value].some((ch) => PASSWORD_SPECIAL_CHARS.includes(ch)),
-      'missing special character',
-    ),
+  // Shared strength policy (min 12 + complexity) — single source of truth.
+  password: PasswordSchema,
 });
 
 // ── service factory ───────────────────────────────────────────────────────
@@ -389,6 +380,8 @@ recoveryRouter.post('/reset-password', async (c) => {
       lockedUntil: null,
       failedCount: 0,
       failedCountWindowStart: null,
+      // Revoke every outstanding token for this user on reset (CWE-613).
+      tokenVersion: sql`${users.tokenVersion} + 1`,
       updatedAt: new Date(),
     })
     .where(eq(users.id, consumed.userId));

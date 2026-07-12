@@ -4,8 +4,9 @@
  * Responsibilities:
  * - Load doc content via `resolveDoc(locale, slug)` with fallback to default locale
  * - Pass content to MarkdownRenderer with `currentLocale` for link rewriting
- * - Display document title as H1 at top of content area
- * - Display last-modified date below title in DD/MM/YYYY format (if available)
+ *   (the markdown's own H1 is the visible page title — no duplicate header)
+ * - Display last-modified date in a footer at the bottom of the page,
+ *   in DD/MM/YYYY format (if available)
  * - Set browser <title> to `{document title} — Lumibase Docs`
  * - If slug not found in any locale, redirect to NotFoundPage
  * - Expose `isFallback` for TranslationBanner (task 6.5)
@@ -73,16 +74,6 @@ export function DocPage() {
 
   return (
     <article className="mx-auto w-full max-w-[768px] px-6 py-12 md:px-10">
-      <header className="mb-8">
-        <h1 className="text-[44px] font-bold leading-[52px] tracking-[-0.5px] text-foreground">
-          {entry!.title}
-        </h1>
-        {formattedDate && (
-          <p className="mt-3 text-[13px] font-medium text-muted-foreground">
-            Last modified: {formattedDate}
-          </p>
-        )}
-      </header>
       {isFallback && <TranslationBanner filePath={entry!.filePath} />}
       <MarkdownRenderer
         content={entry!.content}
@@ -90,6 +81,11 @@ export function DocPage() {
         knownSlugs={knownSlugs}
         currentLocale={locale}
       />
+      {formattedDate && (
+        <footer className="mt-12 border-t border-border pt-6 text-[13px] font-medium text-muted-foreground">
+          Last modified: {formattedDate}
+        </footer>
+      )}
     </article>
   );
 }

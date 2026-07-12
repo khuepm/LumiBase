@@ -78,6 +78,21 @@ export const users = pgTable(
     failedCount: integer('failed_count').default(0).notNull(),
     /** Sliding-window start for `failedCount`. */
     failedCountWindowStart: timestamp('failed_count_window_start'),
+    /**
+     * Last time the password hash changed (reset or self-service change).
+     * A stateless password-reset token is single-use against this: the
+     * `/reset-password` handler rejects any token whose `iat` predates this
+     * timestamp, so a leaked/replayed link can't set a second password and
+     * a newer reset request supersedes older links. Null = never changed.
+     */
+    passwordChangedAt: timestamp('password_changed_at'),
+    /**
+     * Monotonic session/token generation. Every issued JWT embeds the value
+     * current at sign time; auth rejects a token whose `tokenVersion` is stale.
+     * Bumping this (on password change/reset) invalidates all outstanding
+     * tokens for the user — the revocation mechanism for CWE-613/620.
+     */
+    tokenVersion: integer('token_version').default(0).notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -87,6 +102,15 @@ export const users = pgTable(
     bootstrapUnique: uniqueIndex('users_is_bootstrap_unique')
       .on(t.isBootstrap)
       .where(sql`${t.isBootstrap} = true`),
+    /**
+     * Global case-insensitive email uniqueness. `users` is an
+     * identity-global table (one row per human across sites), so an email
+     * must resolve to exactly one account. This is the DB backstop behind
+     * the check-then-insert in `/auth/register`: it closes the
+     * concurrent-registration race that could otherwise mint two rows for
+     * one email.
+     */
+    emailLowerUnique: uniqueIndex('users_email_lower_unique').on(sql`lower(${t.email})`),
   }),
 );
 

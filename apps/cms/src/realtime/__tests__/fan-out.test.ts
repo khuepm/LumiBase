@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RealtimeEvent } from '@lumibase/shared';
-import { canSubscribe, shouldDeliver, toWireMessage, type FanoutSession } from '../fan-out';
+import { canSubscribe, projectPayload, shouldDeliver, toWireMessage, type FanoutSession } from '../fan-out';
 
 function session(partial: Partial<FanoutSession>): FanoutSession {
   return {
@@ -151,5 +151,32 @@ describe('toWireMessage', () => {
       channel: 'order:1',
       payload: { x: 1 },
     });
+  });
+
+  it('projects the payload to the field allowlist (Req 3.5)', () => {
+    const ev: RealtimeEvent = {
+      type: 'event',
+      plane: 'public',
+      target: { channel: 'order:1' },
+      action: 'update',
+      itemId: '9',
+      payload: { public: 'ok', secret: 'nope' },
+      fields: ['public'],
+    };
+    expect((toWireMessage(ev) as { payload: unknown }).payload).toEqual({ public: 'ok' });
+  });
+});
+
+describe('projectPayload', () => {
+  it('passes through when no fields set', () => {
+    expect(projectPayload({ type: 'event', plane: 'studio', payload: { a: 1 } } as RealtimeEvent)).toEqual({ a: 1 });
+  });
+  it('keeps only allowlisted keys', () => {
+    const ev = { type: 'event', plane: 'studio', payload: { a: 1, b: 2 }, fields: ['a'] } as RealtimeEvent;
+    expect(projectPayload(ev)).toEqual({ a: 1 });
+  });
+  it('leaves non-object payloads unchanged', () => {
+    const ev = { type: 'event', plane: 'studio', payload: 'scalar', fields: ['a'] } as RealtimeEvent;
+    expect(projectPayload(ev)).toBe('scalar');
   });
 });

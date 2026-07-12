@@ -18,8 +18,11 @@ import { RevisionsPanel } from './revisions-panel';
 import { RawJsonPanel } from './raw-json-panel';
 import { VersionPanel } from './version-panel';
 import { DependentRecordsDialog, type DependentGroup } from './dependent-records-dialog';
+import { TranslationMode } from './translation-mode';
+import { translatableFields, tmLearnEntries } from './translatable-fields';
+import { useSiteLocales } from './use-site-locales';
 
-type Tab = 'fields' | 'revisions' | 'versions' | 'raw';
+type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
 
 /**
  * Content module detail editor.
@@ -39,6 +42,13 @@ export function ItemDetailPage() {
 
   const [tab, setTab] = useState<Tab>('fields');
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
+  // Translation mode (translation-memory-ui): the site's default is the source
+  // locale; the user picks a target to translate into.
+  const locales = useSiteLocales();
+  const [targetLocale, setTargetLocale] = useState<string | null>(null);
+  // Translatable fields the user set by hand (or applied a human TM match) in
+  // this session — learned into TM on save when `translations.learnTm` is on.
+  const [learnFields, setLearnFields] = useState<Set<string>>(() => new Set());
   // Content scheduling (Publish_Window) — datetime-local strings, '' = unset.
   const [publishAt, setPublishAt] = useState<string | null>(null);
   const [unpublishAt, setUnpublishAt] = useState<string | null>(null);
@@ -60,6 +70,19 @@ export function ItemDetailPage() {
     queryKey: ['fields', collection],
     queryFn: async () => (await client.schema.listFields(collection)).data,
   });
+
+  // Learn-on-save toggle (Req 6.1). Defaults ON when the key is unset.
+  const learnTmQuery = useQuery({
+    queryKey: ['settings', 'translations.learnTm'],
+    queryFn: async () => {
+      try {
+        return (await client.settings.get('translations.learnTm')).data;
+      } catch {
+        return null;
+      }
+    },
+  });
+  const learnTmEnabled = (learnTmQuery.data?.value?.enabled as boolean | undefined) ?? true;
 
   const itemQuery = useQuery({
     queryKey: ['item', collection, id],
@@ -137,6 +160,17 @@ export function ItemDetailPage() {
     [fields, perms, collection],
   );
 
+  // Source locale = site default (first supported); target defaults to the
+  // first other locale. Both derive from the same `locales` setting the
+  // translatable-text interface uses, so lists never diverge.
+  const sourceLocale = locales[0] ?? 'en';
+  useEffect(() => {
+    if (targetLocale === null) {
+      setTargetLocale(locales.find((l) => l !== sourceLocale) ?? sourceLocale);
+    }
+  }, [locales, sourceLocale, targetLocale]);
+  const hasTranslatableFields = translatableFields(editable).length > 0;
+
   const isDirty = useMemo(() => {
     if (!itemQuery.data || draft === null) return false;
     if (JSON.stringify(draft) !== JSON.stringify(itemQuery.data.data ?? {})) return true;
@@ -154,6 +188,21 @@ export function ItemDetailPage() {
         publishAt: localInputToIso(publishAt),
         unpublishAt: localInputToIso(unpublishAt),
       });
+      // Learn human-edited translations into TM (Req 6.1). Best-effort: a TM
+      // write failure must not fail the save that already succeeded.
+      const toLearn = tmLearnEntries({
+        enabled: learnTmEnabled,
+        editedFields: learnFields,
+        data: draft,
+        sourceLocale,
+        targetLocale: targetLocale ?? '',
+      });
+      if (toLearn.length > 0) {
+        await Promise.allSettled(
+          toLearn.map((entry) => client.tm.upsert({ ...entry, source: 'human', quality: 100 })),
+        );
+        setLearnFields(new Set());
+      }
       return res.data as ItemRow;
     },
     onSuccess: () => {
@@ -513,6 +562,40 @@ export function ItemDetailPage() {
               onReleasePin={canUpdate ? (field) => releasePinMutation.mutate(field) : undefined}
             />
           )}
+          {tab === 'translation' && draft && targetLocale && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-muted-foreground" htmlFor="tm-target-locale">
+                  Target locale
+                </label>
+                <select
+                  id="tm-target-locale"
+                  value={targetLocale}
+                  onChange={(e) => setTargetLocale(e.target.value)}
+                  className="rounded-md border bg-background px-2 py-1 font-mono text-xs"
+                >
+                  {locales
+                    .filter((l) => l !== sourceLocale)
+                    .map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <TranslationMode
+                fields={editable}
+                draft={draft}
+                onChange={setDraft}
+                sourceLocale={sourceLocale}
+                targetLocale={targetLocale}
+                readOnly={!canUpdate}
+                onFieldEdited={(name) =>
+                  setLearnFields((prev) => new Set(prev).add(name))
+                }
+              />
+            </div>
+          )}
           {tab === 'revisions' && (
             <RevisionsPanel
               collection={collection}
@@ -536,6 +619,9 @@ export function ItemDetailPage() {
           <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Tabs</h2>
           <ul className="space-y-1 text-sm">
             <TabButton current={tab} value="fields" onClick={setTab}>Fields</TabButton>
+            {hasTranslatableFields && (
+              <TabButton current={tab} value="translation" onClick={setTab}>Translation</TabButton>
+            )}
             <TabButton current={tab} value="revisions" onClick={setTab}>Revisions</TabButton>
             <TabButton current={tab} value="versions" onClick={setTab}>Versions</TabButton>
             <TabButton current={tab} value="raw" onClick={setTab}>Raw JSON</TabButton>

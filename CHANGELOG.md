@@ -58,12 +58,514 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   Done §2c gains a rule for request-path services that delegate to `ItemService`
   or write content tables directly. No schema or setup change.
 
+- **`/api/v1/settings` writes are now admin-only.** `POST /api/v1/settings` and
+  `DELETE /api/v1/settings/:key` were open to any authenticated site member,
+  letting a non-admin overwrite arbitrary settings keys (including
+  `upload_policy` and `media.signedTransform`) and bypass the admin gates on
+  dedicated config endpoints. Both now require `requireSiteAdmin`; reads stay
+  open because non-admin editors legitimately read keys like `locales`.
+- **Settings reads redact secret-bearing fields.** `GET /api/v1/settings` and
+  `/:key` previously returned raw values including secrets such as
+  `media.signedTransform.secret`. Secret-named fields (secret/token/password/
+  apiKey/…) are now redacted (`[redacted]`) on read for every caller; code that
+  needs the real value reads it directly from the DB, not this HTTP endpoint.
+
 ### Performance
 
 - **Trusted external-JWT issuers are cached.** `getTrustedIssuers` queried the
   DB on every bearer-token request; it now reads through `runtime.cache`
   (`auth:issuers:<siteId>`, TTL 60s) and issuer create/update/delete drop the
   key, so config changes apply within the TTL bound.
+
+### Added
+
+- **Change Feed (CDC Extension Integration).** First-party transactional
+  outbox + relay over content mutations: `lumibase_cdc_change_events` /
+  `_subscriptions` / `_deliveries` (migration `0007_cdc_change_feed`, RLS
+  site-isolated), cursor-paginated `GET /api/v1/cdc/events`, HMAC-signed
+  webhook dispatcher with retry/dead handling, sandboxed extension
+  subscribers (`defineCdcSubscriber`, manifest capability
+  `cdc:subscribe:<collection>`), retention + replay, Studio → Settings →
+  Change Feed panel, five governed AI skills and MCP tools.
+  **Upgrade note:** two new capability strings exist — `cdc:subscribe`
+  (read the feed / ack) and `cdc:manage` (AI-skill subscription
+  management). Admin roles satisfy them implicitly (`adminAccess`
+  wildcard); grant them explicitly only for narrow integration tokens.
+  `deleteCdcSubscription` is control-plane → HITL below autopilot.
+  Feed is off-by-default per site (`cdc_feed.enabled` or first active
+  subscription turns it on). No backfill: three new empty tables.
+- **Registry-numbering tripwire (`pnpm registry:check`).** A CI check
+  (`scripts/check-registry-numbering.mjs`, wired into the CI `checks` job) fails
+  the build when the Setup Impact Registry `#` column contains a duplicate —
+  mechanizing the Definition of Done §2 uniqueness rule per §6 ("cơ giới hóa"),
+  replacing the manual `grep`.
+- **Out-of-scope findings backlog + Definition of Done §7.** A single place
+  (`.kiro/steering/out-of-scope-backlog.md`) to log vulnerabilities, bugs, and
+  follow-up tasks discovered while working a PR but outside its scope, so they
+  are not lost after merge. DoD §7 makes logging them a required review step.
+
+### Fixed
+
+- **`build-release-manifest.mjs` is now idempotent.** Regenerating
+  `apps/docs/public/releases.json` on a plain `docs:build` no longer dirties the
+  working tree: editorial fields (`migrationWarning`, `minimumSafeUpgradeVersion`)
+  and `releaseDate` are preserved from the committed manifest unless explicitly
+  overridden (env var, or a matching CHANGELOG heading for the date). This also
+  fixes a latent bug where a deploy build could clobber a hand-set editorial
+  value back to its default.
+
+### Changed
+
+- **Setup Impact Registry `#` column deduplicated.** Parallel branches had kept
+  picking "the next number" independently, leaving many collisions (#16/#20/#21
+  through #38). Colliding rows were renumbered to fresh ids (45–68), keeping the
+  occurrence that other rows cite by number so cross-references stay valid.
+
+## [1.0.0] - 2026-07-11
+
+### Version
+
+- `v1.0.0`
+
+### Date
+
+- `2026-07-11`
+
+### Highlights
+
+- **First release under a semver stability guarantee.** `1.0.0` freezes the
+  public surface — REST/GraphQL API, `@lumibase/sdk` exports, the
+  `{ data, meta }` / `{ errors }` response format, header contracts
+  (`X-Lumi-Site`…), environment variable names/semantics, and setup-wizard
+  flags. From here, breaking changes are deferred to `2.0.0`; additive changes
+  ship in minors and bug/security fixes in patches. See the versioning policy in
+  the README.
+- **Policies are the source of truth for access.** The role→policy migration
+  reaches its stable shape: `admin_access`/`app_access` (plus `enforce_tfa`, IP
+  guards, and time windows) are owned by policies. Legacy role flags remain as a
+  compatibility fallback through 1.0 for rollback safety. A verified,
+  idempotent backfill materializes legacy role flags into policies on upgrade.
+- **Backward-compatible upgrade path from `0.6.x`.** Instances on `0.6.x`–
+  `0.21.x` upgrade in place; the full "Upgrading to 1.0" runbook documents which
+  sources go direct, which need an intermediate stop, and the pre-`0.17.0`
+  re-import boundary. See Upgrade notes below.
+- **Golden-path E2E gate in CI.** No tag ships on hand-verified flows: CI now
+  drives setup wizard → create site → create collection → CRUD item → publish →
+  read via the public API, with a two-site isolation check.
+
+### Added
+
+- **CI golden-path E2E gate.** A new `e2e-golden-path` job in
+  `.github/workflows/ci.yml` exercises the end-to-end content lifecycle
+  (setup → site → collection → item CRUD → publish → public read) plus
+  cross-tenant isolation, on every PR and push to `main`. The v1 release
+  criteria (§3) require this gate to be green before tagging.
+- **"Upgrading to 1.0" operations runbook.** `docs/en/operations/upgrades.md`
+  (VI mirror in `docs/vi/`) gains a version-specific section: a supported-source
+  matrix, the RBAC role→policy backfill with its idempotent SQL and zero-row
+  verification query, and rollback guidance. Surfaced under a new "Operations"
+  docs category.
+
+### Changed
+
+- **RBAC access model finalized on policies.** Effective access continues to be
+  computed as `role flags OR active policy flags` during the 1.0 compatibility
+  window; the role flag columns are retained (not dropped) so rollback stays
+  safe. They are scheduled to drop in a later release only after
+  `LUMIBASE_RBAC_LEGACY_ROLE_FLAGS=false` has shipped and been verified.
+
+### Security
+
+- No new advisories in this release. The v1 security audit
+  (`docs/en/security/cwe-top-100-audit.md`) is the release gate: every
+  Partial/Not-addressed CWE must be fixed or accepted-with-rationale before the
+  `v1.0.0` tag. CWE-521 (password-policy alignment, `register` → 12-char
+  minimum) is tracked as a required v1 fix.
+
+### Upgrade notes
+
+- **Read `docs/en/operations/upgrades.md` → "Upgrading to 1.0" before
+  upgrading.** Summary:
+  - `0.18.x`–`0.21.x` → direct, no manual data step.
+  - `0.6.x`–`0.17.x` → direct, plus the RBAC role→policy backfill (run against
+    staging, verify the post-check returns zero rows).
+  - Before `0.17.0` (unprefixed tables) → **not an in-place upgrade**; export and
+    re-import into a fresh `1.0.0` install.
+  - Before `0.6.0` → upgrade to an intermediate `0.17.x`–`0.21.x` release first,
+    verify, then upgrade to `1.0.0`.
+- **No destructive schema change over `0.21.x`.** Application rollback to the
+  previous `0.21.x` deployment remains compatible with the 1.0 database. The
+  backfill is separately reversible during the compatibility window (delete the
+  `legacy_role_flags_%` policies; role flags are untouched).
+
+## [0.21.0] - 2026-07-08
+
+### Version
+
+- `v0.21.0`
+
+### Date
+
+- `2026-07-08`
+
+### Highlights
+
+- **Self-service auth realms (PR #130).** Subscriber registration, email
+  verification, password recovery, rotating refresh tokens, per-realm session
+  TTLs, and SDK silent auto-refresh — with server-side role resolution and
+  audience-pinned tokens. See ADR-011 and the Security section below.
+- **Cloudflare Pages deploys repaired.** The Pages pipeline had been failing
+  since v0.18.0. The `apps/marketplace` submodule is now decoupled from the
+  pnpm workspace and built standalone (authenticated with a PAT), the docs
+  deploy verification matches the current prerendered-404 SPA design, and the
+  release checkout no longer aborts on private sibling submodules. See Fixed.
+
+### Added
+
+- **Self-service auth realms.** Subscriber registration (`/auth/register`) with email verification (`/auth/verify-email`, `/auth/resend-verification`), password recovery (`/auth/forgot-password`, `/auth/reset-password`), and an admin primitive to grant subscribers `read` on collections (`/api/v1/users/subscriber-access`). Tokens carry a per-realm `aud` (`studio`/`frontend`); `withStudioAccess` hard-rejects frontend tokens. See ADR-011.
+- **Per-realm session TTLs.** Separate access-token lifetimes for staff vs subscribers (`STUDIO_SESSION_TTL` `12h` / `FRONTEND_SESSION_TTL` `30d`).
+- **Rotating refresh tokens** (new table `lumibase_refresh_tokens`, migration `0005`). Silent renewal via `/auth/refresh`, `/auth/logout`; one-time-use rotation with family-wide reuse detection; tokens stored only as sha256. Per-realm refresh TTL (`STUDIO_REFRESH_TTL` `30d` / `FRONTEND_REFRESH_TTL` `90d`). Delivered as an `httpOnly` cookie **and** in the body.
+- **Cross-domain refresh cookie** config (`REFRESH_COOKIE_SAMESITE`/`REFRESH_COOKIE_DOMAIN`/`REFRESH_COOKIE_SECURE`) with a CSRF brake (`X-LumiBase-Refresh` header required for cookie-sourced refresh/logout).
+- **Authenticated account self-service:** `POST /api/v1/me/change-password` and session management (`GET`/`DELETE /api/v1/me/sessions[/:id]`).
+- **Hourly prune** of expired refresh tokens on the existing audit-rotation cron (Workers `scheduled` + Node `node-cron`).
+- **SDK silent auto-refresh.** `createLumiClient` accepts `refreshToken` + `onTokensRefreshed`; a 401 transparently refreshes and retries once (parallel 401s coalesce into one refresh). Studio wires this end to end (login persists the refresh token, logout revokes it server-side).
+
+### Security
+
+- **Public `/auth/register` is safe by construction** (supersedes the admin-only stopgap from #190): the endpoint is intentionally unauthenticated self-service, but the role is resolved **server-side** to a zero-privilege `subscriber` (`appAccess=false`, `adminAccess=false`) — the request body can never choose a role — and the account starts `invited` until email verification. Per-IP rate-limited and anti-enumeration (uniform `202`).
+- **Password change/reset kills every outstanding session:** both handlers stamp `users.password_changed_at` (migration `0006`), bump `tokenVersion` (so all prior access JWTs die immediately, CWE-613/620), and revoke all refresh tokens. A reset token whose `iat` predates `password_changed_at` is rejected → single-use reset links (review finding H1).
+- **Global unique email** (review finding H3): unique index on `lower(email)` (migration `0006`) closes the check-then-insert registration race that could create duplicate accounts for one email; registration maps the constraint violation to the same generic `202`.
+- **Atomic refresh-token rotation** (review finding M1): rotation claims the row with a conditional `UPDATE ... WHERE revoked_at IS NULL`, so two concurrent `/refresh` calls can no longer both succeed — the loser is treated as reuse and the family is revoked.
+- **Session Bearer verifier pins audience** (review finding M5): `verifyCustomJwt` requires `aud ∈ {studio, frontend}`, so a single-purpose `email-verify`/`password-reset` JWT can never be replayed as a session token even if its claim shape changes.
+- **`/auth/refresh` re-checks tenant membership + recomputes realm** (review finding M4): a user removed from the site, or whose role lost `appAccess`, no longer keeps minting stale-audience access tokens. Renewed access JWTs embed the current `tokenVersion`.
+- **`lumibase_refresh_tokens` under RLS** (review finding M6): added to `rls-policies.sql` `site_isolation` alongside the other tenant tables.
+
+### Notes
+
+- Run `pnpm -F @lumibase/database migrate` to apply migrations `0005` (adds `lumibase_refresh_tokens`) and `0006` (adds `users.password_changed_at` **and** the unique `lower(email)` index). Migration `0006` fails if the `users` table already contains case-insensitive duplicate emails — de-duplicate first; see the migration header. No other backfill required.
+- **Known limitations (tracked follow-ups, not fixed here):** per-IP rate limiting relies on `LUMIBASE_TRUSTED_PROXIES` being configured (and, off Cloudflare, a wired remote-address resolver) — the same limitation the login-guard already carries (review finding H2); refresh rotation grants a fresh TTL per hop with no absolute session cap (M2); the refresh cookie is one host-scoped name across tenants on a shared host (L2). See `docs/en/security/user-management.md`.
+
+### Fixed
+
+- **Cloudflare Pages deploys (broken since v0.18.0).** Four defects kept the
+  Pages pipeline red:
+  - `apps/marketplace` (a private `lumibase-ai/marketplace` submodule) is now
+    **decoupled from the pnpm workspace** (`!apps/marketplace`) and built
+    standalone (`pnpm install --no-frozen-lockfile --ignore-workspace`), so the
+    root `--frozen-lockfile` install no longer breaks when the submodule is
+    present. It is versioned/released independently and dropped from
+    `version:sync`.
+  - The submodule clone now authenticates with the `MARKETPLACE_SUBMODULE_TOKEN`
+    PAT (the runner's `GITHUB_TOKEN` cannot read another org's repo).
+  - `release.yml` no longer uses a blanket `submodules: true` checkout, which
+    aborted on the private `enterprise`/`extensions` submodules; it inits only
+    the marketplace path.
+  - The docs deploy verification now asserts the current design — an unmatched
+    deep-link serves the prerendered `404.html` SPA shell (HTTP 404 + shell
+    body) — instead of the removed `/* /index.html 200` catch-all.
+
+### Migrations
+
+- `0005_refresh_tokens.sql` — adds `lumibase_refresh_tokens` (rotating refresh
+  tokens, under RLS).
+- `0006_password_changed_at_and_email_unique.sql` — adds
+  `users.password_changed_at` and a unique index on `lower(email)`. **Fails if
+  the `users` table already contains case-insensitive duplicate emails —
+  de-duplicate first** (see the migration header). Apply with
+  `pnpm -F @lumibase/database migrate`.
+
+## [0.20.0] - 2026-07-08
+
+### Version
+
+- `v0.20.0`
+
+### Date
+
+- `2026-07-08`
+
+### Highlights
+
+- **Backend + SDK gap-closing across 7 specs.** Content-versioning,
+  presets, Visual Flow Builder operations/triggers, translation-memory,
+  image-transform, realtime, and insights now have matching HTTP routes and
+  `@lumibase/sdk` client methods (see Added).
+- **High-load & cache readiness.** Delivery API HTTP caching, opt-in list
+  totals, request body-size limits, immediate permission-cache invalidation,
+  debounced API-key `lastUsedAt`, and a process-cached setup-complete check.
+- **Marketplace deploy fix.** The `apps/marketplace` submodule URL was
+  rewritten from SSH to HTTPS so CI can clone it, unblocking the Cloudflare
+  Pages `lumibase-marketplace` deploy that failed during the `v0.19.0` run.
+
+### Added
+
+- **Delivery API HTTP caching.** `GET /api/v1/deliver/page/:site_id/:slug`
+  now emits `Cache-Control: public, s-maxage=…, stale-while-revalidate=…`,
+  a weak `ETag`, and `Vary: X-Lumi-Site` for credential-less requests, and
+  answers `If-None-Match` with `304` from a single content-fingerprint query
+  (no section hydration). Requests carrying `Authorization` get
+  `private, no-store`. Tunable via `LUMIBASE_DELIVER_SMAXAGE` (default 60)
+  and `LUMIBASE_DELIVER_SWR` (default 300).
+- **Opt-in list totals.** `GET /api/v1/items/:collection?meta=none` skips the
+  `count(*)` aggregate and omits `meta.total` for cheaper feed/infinite-scroll
+  reads. Default (`meta=total_count`) is unchanged; the `@lumibase/sdk`
+  `readItems` gains a matching `meta` option.
+- **Request body-size limits.** Caddy caps request bodies (10 MB API, 50 MB
+  media uploads); the app also rejects oversized JSON bodies with `413`
+  (`LUMIBASE_MAX_JSON_BODY`, default 1 MiB) as defense-in-depth.
+- **Image-transform presets.** Shared `TransformDsl` contract in
+  `@lumibase/shared`, a `lumibase_transform_presets` table, site-scoped
+  `/api/v1/transform-presets` CRUD (media-permission gated), on-the-fly
+  delivery transform via `GET /media/:key?preset=|?width=&…` (302 to the
+  runtime image URL; no-param path unchanged), and an SDK `mediaUrl` builder.
+- **Content-version, preset, and translation-memory SDK methods.** `versions`
+  (list/create/get/update/delete/compare/promote), `presets`
+  (getEffectivePreset/listBookmarks/saveUserView/create/update/deleteBookmark),
+  and `tm` (listTm/upsertTm/updateTm/deleteTm/lookupTm/translate) matching the
+  route contracts.
+- **Preset resolution service.** `PresetService` with role-chain resolution
+  (precedence user > role-chain > global, cycle-guarded) plus
+  `GET /api/v1/presets/effective` and `/bookmarks`, with scope-ownership RBAC
+  on write.
+- **Flows operations registry & triggers.** `GET /api/v1/flows/operations`
+  feeds the editor palette and graph validation; `validateGraph` is enforced
+  on `POST`/`PATCH`; webhook trigger (`POST /:id/trigger`, constant-time
+  token) with run detail (`GET /:id/runs/:runId`); and event-trigger dispatch
+  matching item mutations to active event flows.
+- **High-Load & Cache Readiness specification** (Phase 0–P2) added to the
+  docs.
+
+### Changed
+
+- **Permission cache invalidation now takes effect immediately.** Compiled
+  permission bundles are keyed by a per-site version pointer
+  (`perm:{site}:v{n}:{principal}`); role/policy/permission/API-key/membership
+  mutations bump the pointer so a revoked grant stops applying at once instead
+  of lingering for the 60s TTL (which remains as a safety net). Fixes the
+  previously dead `PermissionService.invalidate()`.
+- **API-key `lastUsedAt` writes are debounced.** An API-key-authenticated
+  request refreshes the last-used timestamp at most once per
+  `LUMIBASE_APIKEY_TOUCH_INTERVAL` seconds (default 60), off the response path,
+  instead of issuing an `UPDATE` on every request.
+- **Setup-complete check is process-cached.** The per-request bootstrap-admin
+  lookup in `requireSetupComplete` is cached (permanently once initialized,
+  5s TTL while uninitialized), removing a DB round-trip from every
+  authenticated request.
+
+### Fixed
+
+- **Marketplace Pages deploy.** Rewrote the `apps/marketplace` submodule URL
+  from `git@github.com:` to `https://github.com/` so the release workflow can
+  clone it on CI, and enabled submodule checkout for the Pages-apps job. This
+  fixes the `ENOENT apps/marketplace/out` failure from the `v0.19.0` release
+  run.
+
+### Notes
+
+- Added the `v1.0.0` release-criteria checklist under `.kiro/steering/`.
+- Documentation index and English/Vietnamese i18n translations synced.
+
+### Migrations
+
+- `packages/database/drizzle/0004_transform_presets.sql` — creates the
+  additive `lumibase_transform_presets` table (site-scoped, unique
+  `(site_id, key)`). Backward-compatible; no data migration required.
+
+## [0.19.0] - 2026-07-07
+
+### Version
+
+- `v0.19.0`
+
+### Date
+
+- `2026-07-07`
+
+### Highlights
+
+- **CWE Top 100 audit closed out.** The remaining 12 CWEs (of 78 applicable
+  weaknesses) are now mitigated: credentialed CORS can no longer reflect a
+  wildcard/arbitrary origin, the CDC fallback encryption key is gone (fails
+  closed instead), AI-approval decide/reject is race-free, password strength
+  is enforced uniformly, JWTs carry a revocable `token_version`, Cloudflare
+  Access roles resolve from real site membership, a general per-principal API
+  rate limiter is in place, and audit metadata redacts payload fields.
+- **Visual Flow Builder triggers.** The flows engine now supports event
+  (on content create/update/delete), schedule (5-field cron), and webhook
+  triggers end to end, with a shared graph validator enforced on both the
+  editor and the API; the Studio flow editor now persists the canonical graph
+  (not raw ReactFlow shape) and drives its palette from the operation
+  registry.
+- **Marketplace community features.** Verified/trusted install badges,
+  package download counting, idempotent upvotes, and a community submission +
+  moderation flow.
+- **Production routing fix.** The `v0.18.0` wildcard tenant route
+  (`*.lumibase.dev/*`) was outranking Pages custom domains, breaking
+  `docs.`, `studio.`, and `marketplace.lumibase.dev`; narrowed to
+  `*.lumibase.dev/api/*` so Pages resolves everything else again.
+
+### Added
+
+- **Marketplace.** `feat(marketplace)` adds a `verified` badge (signature +
+  publisher key + integrity hash, re-verified on install), download
+  tracking (`GET /extensions/:slug/download`), idempotent upvoting
+  (`POST`/`DELETE /extensions/:slug/vote`), and community submission +
+  moderation (`POST /submit`, `GET /submissions`,
+  `POST /submissions/:id/review`, gated by `extensions:configure`). The
+  marketplace app has moved to a separate `lumibase-ai/marketplace` repo,
+  mounted back in as a git submodule.
+- **Visual Flow Builder — triggers (backend).** `feat(cms)` adds
+  `GET /flows/operations` (operation registry as the palette/validation
+  source of truth), a shared `validateGraph` gate on activate/patch
+  (`GRAPH_DANGLING_EDGE` / `GRAPH_CYCLE` / `GRAPH_NO_ENTRY` /
+  `GRAPH_UNKNOWN_OPERATION`), an event trigger fanned out from `ItemService`
+  through a new `flow-events` queue, a dependency-free 5-field cron
+  scheduler, and a webhook trigger authenticated by a per-flow token
+  (constant-time comparison, credentials stripped from run input).
+- **Visual Flow Builder — editor.** `feat(studio)` switches the flow editor
+  to save/load the canonical graph shape (legacy ReactFlow graphs still
+  load), drives the node palette from the operation registry (extension ops
+  now appear automatically, via a new generic op node for undecorated
+  operations), and surfaces `GRAPH_*` validation errors inline on the
+  canvas.
+- **Auto-deploy coalescing.** `feat(cms)` lets `DeploymentService.trigger`
+  reuse an in-flight, same-target deployment within a configurable window
+  instead of spawning one build per content event (manual triggers never
+  coalesce); exposed as a `coalesceWindowMs` option on the `deploy:trigger`
+  flow node.
+- **Content-version SDK.** `feat(sdk)` adds
+  `items(collection).versions.{list,create,get,update,delete,compare,promote}`
+  with `ContentVersion`/`VersionCompare` types.
+- **Dependency security gate.** Weekly Dependabot (npm + GitHub Actions,
+  grouped minor/patch) and a CI `pnpm audit` job that fails the build on
+  high/critical advisories.
+
+### Changed
+
+- **Enterprise app scaffold.** `apps/enterprise` is a standalone Hono Worker
+  that depends on `@lumibase/*` packages as a one-way consumer (enterprise →
+  core); it now lives in the private `lumibase-ai/enterprise-core` repo,
+  mounted back in as a git submodule so its source is excluded from the
+  public repo.
+
+### Fixed
+
+- **Production routing.** Scoped the tenant wildcard route from
+  `*.lumibase.dev/*` to `*.lumibase.dev/api/*` — the broader pattern
+  (shipped in v0.18.0 for free tenant subdomains) outranked every Pages
+  custom domain on the zone and broke `docs.`/`studio.`/`marketplace.lumibase.dev`.
+- **Security — SQL injection in materialize service (CWE-89).** Replaced
+  `sql.raw()` string interpolation with Drizzle bind parameters and
+  `sql.identifier()` for validated table names; the PL/pgSQL trigger body
+  now fail-closes on embedded IDs that don't match a URL-safe pattern.
+- **Security — observability disclosure (CWE-284/668).** `/health` now
+  returns only overall status to anonymous callers (per-subsystem detail
+  requires a valid `METRICS_TOKEN`), and `/metrics` enforces the token in
+  every environment when configured (previously bypassed outside
+  production).
+- **Security — CORS (CWE-942).** `resolveCorsOrigin` no longer returns `*`
+  or reflects an arbitrary origin with credentials; only an explicit
+  `CORS_ALLOWED_ORIGINS` allowlist (or loopback outside production) is
+  honored.
+- **Security — CDC encryption key (CWE-321).** Removed the in-repo fallback
+  encryption key; the CDC route factory now fails closed
+  (`503 ENCRYPTION_KEY_MISSING`) when `ENCRYPTION_KEY` is unset.
+- **Security — AI approval race (CWE-362/367).** Approval decide/reject is
+  now atomic (conditional update + `.returning()`); a lost race surfaces as
+  `409` instead of silently overwriting a concurrent decision.
+- **Security — password policy (CWE-521).** A shared `PasswordSchema`
+  (minimum 12 characters + complexity) is enforced uniformly at register,
+  setup, and recovery, replacing an inconsistent `min(6)` at register.
+- **Security — token revocation & Access roles (CWE-613/620/302).** JWTs now
+  embed `token_version`; stale-versioned tokens are rejected, and the
+  version bumps on password change/reset. Cloudflare Access identities now
+  resolve to a real user + site-membership role instead of a hardcoded
+  `admin` role.
+- **Security — API rate limiting (CWE-400).** Added a general
+  per-principal (user/API-key) or per-IP rate limiter on top of the
+  existing auth/recovery limiters, configurable via `LUMIBASE_RATE_LIMIT_*`.
+- **Security — audit log redaction (CWE-359).** The audit masker now
+  redacts raw payload/content/body fields and truncates long free-form
+  strings so item PII cannot land verbatim in the audit trail.
+- **Security — dependency (GHSA-96hv-2xvq-fx4p).** Pinned `ws` to `>=8.21.0`
+  via `pnpm.overrides` to close a high-severity DoS (memory exhaustion from
+  tiny fragments), caught by the new audit gate on its first run.
+
+### Notes
+
+- A design spec for a Directus-style **Collection Preview** (iframe in the
+  record editor, origin-allowlisted) was added under
+  `.kiro/specs/` — no code shipped yet in this release.
+- Routine dependency bumps: `react-dom`/`@types/react-dom`, `vitest` 3→4,
+  `jsdom` 25→29, `tailwindcss` 3→4, `next` 15→16, `react-markdown` 9→10,
+  `vite` 7→8, `@hono/node-server` 1→2, `eslint` 8→10, and several
+  `actions/*` GitHub Actions version bumps.
+
+### Migrations
+
+- `0002_add_user_token_version.sql` — adds `lumibase_users.token_version`
+  (default `0`, not null) for JWT revocation. Additive, idempotent.
+- `0003_marketplace_votes_downloads.sql` — adds `lumibase_extension_votes`
+  and three columns on `lumibase_extensions`
+  (`download_count`/`submission_status`/`submitted_by`). Additive,
+  idempotent; no RLS on the votes table by design (global, not site-scoped).
+
+## [0.18.0] - 2026-07-06
+
+### Version
+
+- `v0.18.0`
+
+### Date
+
+- `2026-07-06`
+
+### Highlights
+
+- **Custom domains.** Sites can now provision their own custom domain via
+  Cloudflare for SaaS — a new `site_domains` table, `client.domains` SDK
+  resource, and a Studio Settings → Domains page cover request/verify/status
+  end to end.
+- **Translation Memory (TM).** The Studio content editor gains a translation
+  mode with a TM suggest popover, backed by a new `tm.*` SDK namespace
+  (`TmEntry`/`TmSuggestion`) for reusing prior translations across items.
+- **Upload allowlist hardening.** Uploads are now governed by an
+  admin-configurable, DB-backed allowlist with a picker UI, and the upload
+  policy was extended to `/media` with tightened image/SVG validation.
+
+### Added
+
+- **Custom domain provisioning.** `feat(database)` adds `site_domains`;
+  `feat(cms)` adds Cloudflare for SaaS-backed provisioning; `feat(shared,sdk)`
+  adds domain schemas and the `client.domains` resource; `feat(studio)` adds
+  the Domains settings page. Registered in the Setup Impact Registry (row 29).
+- **Translation Memory UI.** `feat(sdk)` adds the `tm.*` namespace
+  (`TmEntry`/`TmSuggestion` types); `feat(studio)` adds the suggest popover,
+  translation mode, and a TM manager to the content editor.
+- **AI crawler discoverability for docs.** Prerendered docs pages are now
+  discoverable by AI crawlers.
+
+### Changed
+
+- **`/release` runbook.** Added Step 0 preflight & resume detection so a
+  partially-completed release (version bumped but untagged, tag pushed but
+  workflow incomplete, etc.) can be resumed from the correct step instead of
+  re-run from scratch; the tag step now pins to the resolved release commit
+  rather than assuming `HEAD`.
+
+### Fixed
+
+- **Docs hard-navigation.** Prerendered docs pages are now served directly on
+  hard navigation instead of falling through the SPA catch-all rewrite.
+- **Upload security.** Extended the upload policy to `/media` and hardened
+  image/SVG upload validation.
+- **Landing page.** Fixed a black square artifact around the section-header
+  planet graphic on mobile.
+
+### Migrations
+
+- `0001_site_custom_domains.sql` — adds the `site_domains` table (additive,
+  no breaking changes).
 
 ## [0.17.0] - 2026-07-03
 

@@ -92,6 +92,13 @@ export function itemServiceForRequest(
   return new ItemService({
     db: c.get('db'),
     userId: auth?.userId ?? null,
+    // Change Feed actor attribution: an API-key principal has no userId, so
+    // without this the outbox would record it as `system` (Req 1.1).
+    cdcActor: auth?.apiKeyId
+      ? { type: 'api_key', id: auth.apiKeyId }
+      : auth?.userId
+        ? { type: 'user', id: auth.userId }
+        : undefined,
     cache: runtime.cache,
     search: runtime.search,
     queue: runtime.queue,

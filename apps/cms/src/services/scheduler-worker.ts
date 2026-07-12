@@ -5,6 +5,7 @@ import { dispatchRevalidation, parseTargets } from './revalidation';
 import { AuditLogger } from '../modules/audit/logger';
 import { itemServiceForSystem } from './item-service-factory';
 import { sweepDueReleases } from './release-service';
+import { runDueScheduledFlows } from './flow-scheduler';
 
 /**
  * Content scheduler (regulated-content-readiness task 7; Req 7.3, 7.4, 7.6, 7.7).
@@ -31,6 +32,8 @@ export interface SchedulerTickResult {
   unpublished: number;
   /** Scheduled Content Releases published this tick. */
   releasesPublished: number;
+  /** Due scheduled flows enqueued this tick (visual-flow-builder Req 2). */
+  flowsEnqueued: number;
 }
 
 /** Resolve a collection's unpublish target (`archived` default, or `draft`). */
@@ -168,7 +171,11 @@ export async function runSchedulerTick(deps: SchedulerDeps, now = new Date()): P
   // the content-scheduler queue). Idempotent + batch-bounded like the sweeps
   // above. See .kiro/specs/content-releases design §6.
   const releasesPublished = await sweepDueReleases(deps, now);
-  return { published, unpublished, releasesPublished };
+  // Scheduled flows: enqueue due cron flows on the same tick (executed by the
+  // flow-events consumer). Idempotent — next_run_at advances before enqueue.
+  // See .kiro/specs/visual-flow-builder Req 2.
+  const flowsEnqueued = await runDueScheduledFlows({ db: deps.db, queue: deps.queue }, now);
+  return { published, unpublished, releasesPublished, flowsEnqueued };
 }
 
 export type RetentionAction = 'archive' | 'hard_delete' | 'crypto_shred';

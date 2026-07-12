@@ -12,6 +12,40 @@ export {
 } from './cdc';
 
 export {
+  CDC_FEED_SCHEMA_VERSION,
+  CdcOperationSchema,
+  CdcActorTypeSchema,
+  CdcSourceSchema,
+  CdcPayloadModeSchema,
+  CdcSubscriptionKindSchema,
+  CdcSubscriptionStatusSchema,
+  CdcCursorTokenSchema,
+  encodeCdcCursor,
+  decodeCdcCursor,
+  EventEnvelopeSchema,
+  CdcSubscriptionCreateSchema,
+  CdcSubscriptionPatchSchema,
+  CdcAckSchema,
+  CdcReplaySchema,
+  CdcFeedQuerySchema,
+  CdcFeedSettingsSchema,
+  type CdcCursor,
+  type CdcOperation,
+  type CdcActorType,
+  type CdcSource,
+  type CdcPayloadMode,
+  type CdcSubscriptionKind,
+  type CdcSubscriptionStatus,
+  type CdcEventEnvelope,
+  type CdcSubscriptionCreateInput,
+  type CdcSubscriptionPatchInput,
+  type CdcAckInput,
+  type CdcReplayInput,
+  type CdcFeedQuery,
+  type CdcFeedSettings,
+} from './cdc-feed';
+
+export {
   CONSENT_TYPES,
   ConsentTypeSchema,
   ConsentSetSchema,
@@ -105,6 +139,25 @@ export {
   type UserPreferencesUpdate,
 } from './user-preferences';
 
+export {
+  DEFAULT_UPLOAD_MAX_BYTES,
+  DEFAULT_UPLOAD_MIME_TYPES,
+  UPLOAD_TYPE_CATALOGUE,
+  MIME_EXTENSIONS,
+  UploadPolicyConfigSchema,
+  UploadPolicyUpdateSchema,
+  normalizeMimeType,
+  resolveMaxBytes,
+  resolveMimeAllowlist,
+  isMimeAllowed,
+  extensionMatchesMime,
+  extensionsForMimeTypes,
+  acceptAttribute,
+  type UploadTypeEntry,
+  type UploadPolicyConfig,
+  type UploadPolicyUpdateInput,
+} from './upload-policy';
+
 export { TM_DEFAULT_THRESHOLD } from './translation';
 
 export { diffFields, type Change, type ChangeState } from './diff';
@@ -141,6 +194,41 @@ export {
   type DashboardCreateInput,
   type PanelResult,
 } from './insights';
+
+export {
+  FREE_DOMAIN_SUFFIX,
+  DOMAIN_KINDS,
+  DOMAIN_STATUSES,
+  DomainKindSchema,
+  DomainStatusSchema,
+  DomainCreateSchema,
+  DomainVerificationRecordSchema,
+  DomainResourceSchema,
+  type DomainKind,
+  type DomainStatus,
+  type DomainCreateInput,
+  type DomainVerificationRecord,
+  type DomainResource,
+} from './domain';
+
+export {
+  MAX_DIM,
+  TRANSFORM_FORMATS,
+  TRANSFORM_FITS,
+  focalSchema,
+  transformDslSchema,
+  parseTransformQuery,
+  transformKey,
+  fileTag,
+  signaturePayload,
+  signTransform,
+  verifyTransform,
+  timingSafeEqualHex,
+  type TransformFormat,
+  type TransformFit,
+  type Focal,
+  type TransformDsl,
+} from './transform';
 export {
   DeploymentProviderSchema,
   DeploymentStatusSchema,
@@ -153,3 +241,10 @@ export {
   type DeploymentTargetUpdateInput,
   type DeployTriggerInput,
 } from './deployment';
+export {
+  PasswordSchema,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_SPECIAL_CHARS,
+  type Password,
+} from './password';

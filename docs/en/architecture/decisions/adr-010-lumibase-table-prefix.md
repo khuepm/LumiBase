@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T10:56:37.304Z
+sourceLang: en
+contentHash: aa38dc3991e5b3dd
+---
+
 # ADR-010: `lumibase_` prefix for all system tables
 
 **Date:** 2026-07-01

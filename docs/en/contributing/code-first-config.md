@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:55.993Z
+sourceLang: en
+contentHash: a88561e009df6196
+---
+
 # Code-First Configuration
 
 LumiBase can export a site's **schema configuration** — collections, fields,

@@ -7,7 +7,9 @@ import type { PermissionBundle } from '../../services/permission-service';
 const bundleMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/permission-service', () => ({
-  PermissionService: vi.fn().mockImplementation(() => ({ bundle: bundleMock })),
+  PermissionService: vi.fn().mockImplementation(function () {
+    return { bundle: bundleMock };
+  }),
 }));
 
 function principal(raw: Record<string, unknown>): AuthPrincipal {
@@ -84,6 +86,67 @@ describe('withStudioAccess', () => {
       errors: [{ code: 'APP_ACCESS_DENIED', message: 'This account is not allowed to use Studio.' }],
     });
     expect(bundleMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a frontend-audience session token before any permission lookup (ADR-011 hard wall)', async () => {
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('auth', principal({ aud: 'frontend' }));
+      c.set('siteId', 'site-1');
+      c.set('db', {} as AppEnv['Variables']['db']);
+      c.set('runtime', { cache: {} } as AppEnv['Variables']['runtime']);
+      await next();
+    });
+    app.use('*', withStudioAccess());
+    app.post('/api/v1/roles', (c) => c.json({ ok: true }, 201));
+
+    const res = await app.request('/api/v1/roles', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Editors' }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      errors: [{ code: 'APP_ACCESS_DENIED', message: 'This session is not allowed to use Studio.' }],
+    });
+    // The wall short-circuits before the policy bundle is ever resolved.
+    expect(bundleMock).not.toHaveBeenCalled();
+  });
+
+  it('lets public auth paths through the Studio wall even for a frontend-audience session', async () => {
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('auth', principal({ aud: 'frontend' }));
+      c.set('siteId', 'site-1');
+      c.set('db', {} as AppEnv['Variables']['db']);
+      c.set('runtime', { cache: {} } as AppEnv['Variables']['runtime']);
+      await next();
+    });
+    app.use('*', withStudioAccess());
+    for (const p of [
+      '/api/v1/auth/login',
+      '/api/v1/auth/register',
+      '/api/v1/auth/verify-email',
+      '/api/v1/auth/resend-verification',
+      '/api/v1/auth/forgot-password',
+      '/api/v1/auth/reset-password',
+      '/api/v1/auth/refresh',
+      '/api/v1/auth/logout',
+    ]) {
+      app.post(p, (c) => c.json({ ok: true }));
+    }
+
+    for (const p of [
+      '/api/v1/auth/resend-verification',
+      '/api/v1/auth/forgot-password',
+      '/api/v1/auth/reset-password',
+      '/api/v1/auth/refresh',
+      '/api/v1/auth/logout',
+    ]) {
+      const res = await app.request(p, { method: 'POST', body: '{}' });
+      expect(res.status, p).toBe(200);
+    }
+    expect(bundleMock).not.toHaveBeenCalled();
   });
 
   it('continues to leave unmarked content API calls to downstream permission checks', async () => {

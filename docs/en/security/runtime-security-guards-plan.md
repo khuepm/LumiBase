@@ -23,11 +23,66 @@ team can understand, review, and later enforce Harness usage of it.
      the browser surface.
 
 3. **File upload policy**
-   - Forbid the public role from creating upload metadata.
-   - Cap upload size via `FILE_UPLOAD_MAX_BYTES`, default 10 MiB.
+   - Forbid the public role from creating upload metadata **or pushing raw media
+     bytes**.
+   - Cap upload size via `FILE_UPLOAD_MAX_BYTES`, default 10 MiB — enforced on
+     the client-declared `Content-Length` AND on the true body byte count for
+     raw-byte surfaces (a lying/absent `Content-Length` cannot slip past).
    - Allow MIME types via `FILE_UPLOAD_ALLOWED_MIME_TYPES`, defaulting to common
      images, PDF, CSV, and text.
-   - Verify the signed upload PUT before writing to storage.
+   - Cross-check the declared filename extension against the MIME type.
+   - Content-sniff raw-byte uploads (magic bytes) so a declared image that is
+     really an executable/other type is rejected; reject any executable
+     signature (PE/ELF/Mach-O) outright.
+   - Reject SVGs that embed script or active content (`<script>`, inline `on*=`
+     handlers, `javascript:`, `<foreignObject>`, `<iframe>`/`<embed>`, and
+     `<!DOCTYPE>`/`<!ENTITY>` XXE) — the "image with a shell in it" case.
+   - Scan raster image bytes (`imageHasEmbeddedActivePayload`) for an embedded
+     script/executable payload — `<?php`, `<script`, `<html`, `<!doctype html`
+     anywhere in the file — and reject (`UPLOAD_EMBEDDED_PAYLOAD`). This catches
+     a polyglot that has valid image magic bytes AND an appended shell/HTML,
+     which the prefix magic-byte check alone cannot see. Runs synchronously
+     before the storage write on both runtimes.
+   - **Covered upload surfaces:** `POST /api/v1/files` (metadata),
+     `PUT /api/v1/files/upload/:key` (signed bytes), and
+     `POST /api/v1/media/:key` (RBAC-authorized media bytes). The surface set is
+     centralized in `classifyUploadSurface()` and pinned by the
+     `classifies every known upload surface` regression test so a new
+     byte-accepting route cannot be added without wiring it into the guard.
+
+   **Configurable per site:** the size cap and MIME allowlist resolve
+   `per-site DB config → env override → default` via
+   `services/upload-policy-service.ts` (cached, fail-safe — falls back to
+   env/default if the DB/cache are unavailable so the guard never fails open).
+   The catalogue of selectable types lives in `@lumibase/shared/schemas`
+   (`upload-policy.ts`) so the server allowlist and the Studio file picker share
+   one source. Admins edit it at **Studio → Settings → Uploads**, backed by
+   `GET/PUT /api/v1/uploads/config` (`GET` for any member to drive the picker's
+   `accept`; `PUT` is `requireSiteAdmin`, persisted to the `settings` row keyed
+   `upload_policy`, restricted to catalogued MIME types).
+
+   **Serving hardening (`routes/media.ts`):** downloads are returned with
+   `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`, so a
+   stored HTML/SVG object cannot be rendered (and its script executed) under the
+   app origin when opened top-level. This composes with the global CSP
+   (`script-src 'self'`, no `unsafe-inline`) as defense-in-depth. The storage
+   adapters map the logical `contentType` onto the native R2 `httpMetadata` /
+   S3 `ContentType` field so the served `Content-Type` round-trips correctly
+   (previously it was written only to custom metadata and came back undefined).
+
+   **Feature spec (hub):** `.kiro/specs/upload-file-controls/`
+   (requirements/design/tasks) is the single anchor for this control and
+   cross-references every location above.
+
+   **Planned — image re-encode sanitization (not yet implemented):** the
+   false-positive-free defense against image polyglots is to re-encode the
+   uploaded image (strip everything but the pixels) rather than scan for
+   markers. This depends on the `ImageAdapter` (Sharp on Docker / Cloudflare
+   Images on CF) proposed in `.kiro/specs/image-transform-dsl/` and needs a
+   sync-vs-async design decision (an async re-encode in the `media-processing`
+   queue leaves a raw-file window, mitigated by the attachment+nosniff serving
+   above). Tracked as task F1 in the upload-file-controls spec; the security
+   rationale lives here, the image-processing mechanics in image-transform-dsl.
 
 4. **Outbound URL guard**
    - Provide a utility that validates outbound URLs before any import/URL-fetch
@@ -56,9 +111,13 @@ team can understand, review, and later enforce Harness usage of it.
 
 - A non-admin principal receives `CONTROL_PLANE_FORBIDDEN` when calling system
   control-plane routes.
-- The public role cannot create file upload metadata.
-- Uploads that exceed the size cap or use a MIME outside the allowlist are
-  rejected before writing to storage.
+- The public role cannot create file upload metadata or upload raw media bytes.
+- Uploads that exceed the size cap (by declared length or true body size), use a
+  MIME outside the allowlist, mismatch their declared extension/content, or embed
+  active SVG content are rejected before writing to storage — on every covered
+  upload surface, including `POST /api/v1/media/:key`.
+- Media downloads are served as attachments with `nosniff`, and the served
+  `Content-Type` round-trips through both storage adapters.
 - Every response carries a CSP and the baseline security headers.
 - The outbound URL guard has tests for localhost, private IPs, link-local
   metadata IPs, and dangerous protocols.

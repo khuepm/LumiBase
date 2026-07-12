@@ -17,7 +17,7 @@
  * above still apply there.
  */
 
-import { items } from '@lumibase/database';
+import { items, materializedCollections } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import {
   PANEL_DEFAULT_LIMIT,
@@ -25,9 +25,13 @@ import {
   type PanelQuery,
   type PanelResult,
 } from '@lumibase/shared';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { type ConditionRule, evaluateRule } from './conditions';
+import { sanitizeTableName } from './materialize-service';
 import { SchemaService } from './schema-service';
+
+/** Where a panel reads its rows from. `items` (default) or a materialized projection. */
+export type PanelSource = 'items' | 'materialized';
 
 /** System columns always queryable in addition to the collection's own fields. */
 const SYSTEM_FIELDS = new Set(['id', 'status', 'sort', 'created_at', 'updated_at']);
@@ -52,8 +56,18 @@ interface Deps {
 export class InsightsService {
   constructor(private readonly deps: Deps) {}
 
-  /** Run a PanelQuery and return the computed result. */
-  async runPanel(query: PanelQuery, override?: Partial<Pick<PanelQuery, 'filter' | 'dateRange'>>): Promise<PanelResult> {
+  /**
+   * Run a PanelQuery and return the computed result. `source` selects the row
+   * source (options.source in the design): `items` (default, the JSONB store)
+   * or `materialized` (the collection's `mat_*` projection). Both apply the
+   * SAME security invariants — field whitelist, `WHERE site_id`, and (for items)
+   * `deleted_at IS NULL` — so switching sources can't widen access.
+   */
+  async runPanel(
+    query: PanelQuery,
+    override?: Partial<Pick<PanelQuery, 'filter' | 'dateRange'>>,
+    options?: { source?: PanelSource },
+  ): Promise<PanelResult> {
     const start = Date.now();
     const q: PanelQuery = { ...query, ...override };
 
@@ -61,21 +75,7 @@ export class InsightsService {
     const allowed = await this.fieldWhitelist(q.collection);
     this.assertFields(q, allowed);
 
-    const rows = await this.deps.db
-      .select({ data: items.data })
-      .from(items)
-      .where(
-        and(
-          eq(items.siteId, this.deps.siteId),
-          eq(items.collectionId, collection.id),
-          isNull(items.deletedAt),
-        ),
-      );
-
-    // Each item's queryable record = its JSONB data merged with system columns
-    // we expose. For v1 only data fields are aggregated; system fields are
-    // whitelisted so filters referencing them validate, but values come from data.
-    const records = rows.map((r) => (r.data ?? {}) as Record<string, unknown>);
+    const records = await this.loadRecords(q.collection, collection.id, options?.source ?? 'items');
 
     const filtered = q.filter
       ? records.filter((rec) => evaluateRule(q.filter as ConditionRule, rec))
@@ -96,6 +96,65 @@ export class InsightsService {
       throw new InsightsServiceError('INVALID_COLLECTION', `Collection "${name}" not found.`, 404);
     }
     return collection;
+  }
+
+  /**
+   * Load the queryable records for a collection from the requested source.
+   * `items`: the JSONB store, site-scoped + not-deleted. `materialized`: the
+   * collection's `mat_*` projection (same flat `{ data JSONB }` shape),
+   * site-scoped. The materialized table name comes from the caller-owned
+   * `materialized_collections.id` (never user input) and is re-validated via
+   * `sanitizeTableName` before it touches SQL, so the identifier is safe.
+   */
+  private async loadRecords(
+    collectionName: string,
+    collectionId: string,
+    source: PanelSource,
+  ): Promise<Record<string, unknown>[]> {
+    if (source === 'materialized') {
+      const [mat] = await this.deps.db
+        .select({ id: materializedCollections.id })
+        .from(materializedCollections)
+        .where(
+          and(
+            eq(materializedCollections.siteId, this.deps.siteId),
+            eq(materializedCollections.collection, collectionName),
+          ),
+        )
+        .limit(1);
+      if (!mat) {
+        throw new InsightsServiceError(
+          'NO_MATERIALIZED_SOURCE',
+          `No materialized projection for collection "${collectionName}".`,
+          404,
+        );
+      }
+      const table = sql.identifier(sanitizeTableName(mat.id));
+      // site_id is bound; the table identifier is validated above. Only `data`
+      // is projected — the same field the items path aggregates.
+      const result = await this.deps.db.execute<{ data: Record<string, unknown> | null }>(
+        sql`SELECT data FROM ${table} WHERE site_id = ${this.deps.siteId}`,
+      );
+      const rows = (result as unknown as { rows?: { data: Record<string, unknown> | null }[] }).rows
+        ?? (result as unknown as { data: Record<string, unknown> | null }[]);
+      return rows.map((r) => (r.data ?? {}) as Record<string, unknown>);
+    }
+
+    // Default: the JSONB item store.
+    const rows = await this.deps.db
+      .select({ data: items.data })
+      .from(items)
+      .where(
+        and(
+          eq(items.siteId, this.deps.siteId),
+          eq(items.collectionId, collectionId),
+          isNull(items.deletedAt),
+        ),
+      );
+    // Each item's queryable record = its JSONB data. For v1 only data fields are
+    // aggregated; system fields are whitelisted so filters validate, but values
+    // come from data.
+    return rows.map((r) => (r.data ?? {}) as Record<string, unknown>);
   }
 
   private async fieldWhitelist(collectionName: string): Promise<Set<string>> {
