@@ -15,11 +15,11 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/client-s3": "^3.1085.0",
     "@hono/node-server": "^2.0.8",
-    "bullmq": "^5.12.0",
+    "bullmq": "^5.80.2",
     "ioredis": "^5.11.1",
-    "meilisearch": "^0.41.0",
+    "meilisearch": "^0.59.0",
     "postgres": "^3.4.5",
     "prom-client": "^15.1.0"
   },
