@@ -28,6 +28,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   (`@lumibase/extension-cli`: `keygen`/`sign`/`verify`). Official extensions with
   `autoInstall`/`enabledByDefault` are installed during setup / on site-create.
 
+### Changed
+
+- Project license updated to the Apache License, Version 2.0 (from MIT),
+  effective this release.
+
 ### Upgrade steps
 
 - **Migrations** `0010_pageviews` and `0011_extension_signing` are additive

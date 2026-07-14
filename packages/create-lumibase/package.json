@@ -2,6 +2,7 @@
   "name": "create-lumibase",
   "version": "0.22.0",
   "description": "Scaffold a new LumiBase project — Edge-native Headless CMS",
+  "license": "Apache-2.0",
   "type": "module",
   "bin": {
     "create-lumibase": "./bin/create-lumibase.js"
