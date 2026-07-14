@@ -100,6 +100,20 @@
       },
       {
         "type": "category",
+        "label": "Security",
+        "items": [
+          "security/anti-abuse",
+          "security/route-guards",
+          "security/runtime-security-guards-plan",
+          "security/cwe-top-100-audit",
+          "security/idor-testing",
+          "security/external-jwt-auth",
+          "security/user-management",
+          "security/dependency-overrides"
+        ]
+      },
+      {
+        "type": "category",
         "label": "Compliance & User Rights",
         "items": [
           "compliance/README",
