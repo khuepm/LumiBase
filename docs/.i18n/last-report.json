@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-12T18:37:11.260Z",
+  "generatedAt": "2026-07-14T12:54:09.830Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -1305,7 +1305,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-12T18-37-11-403Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-14T12-54-09-976Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1527,9 +1527,9 @@
     {
       "rel": "security/anti-abuse.md",
       "type": "translate",
-      "reason": "missing vi translation",
+      "reason": "source changed since last sync",
       "enLang": "en",
-      "viLang": null,
+      "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
       "willTranslate": true,
