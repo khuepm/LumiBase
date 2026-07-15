@@ -51,13 +51,16 @@ Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (v0.6.0, `@mode
 - **Client:** `LumiBaseClient` — HTTP tới `/api/v1` với Bearer token + site header.
 - **Config:** [`docs/en/agent-setup/mcp-config.json`](../agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
 
-### 15 tool (cố định, CRUD)
+### Tool cố định (CRUD + insights read-only)
 
 | Nhóm | Tools |
 |---|---|
 | Collections (7) | `list_collections`, `get_collection`, `create_collection`, `update_collection`, `delete_collection`, `diff_schema`, `apply_schema` |
 | Fields (3) | `list_fields`, `upsert_field`, `delete_field` |
 | Items (5) | `list_items`, `get_item`, `create_item`, `update_item`, `delete_item` |
+| Insights (5, read-only) | `list_dashboards`, `get_dashboard`, `list_dashboard_panels`, `run_panel`, `query_insights` |
+
+> **Insights (Sóng 1 — [`mcp-application-analysis.md`](mcp-application-analysis.md)):** nhóm read-only cho phép agent "hỏi số liệu" — chạy panel đã lưu hoặc query aggregate ad-hoc (`query_insights`, tool giá trị nhất). Không mutate, mang quyền đọc của token, không vào HITL; aggregation được whitelist field + cap giới hạn server-side bởi `InsightsService`. Bảng trên minh hoạ các nhóm chính; nguồn chân lý là [`packages/mcp-server/src/tools/`](../../../packages/mcp-server/src/tools/).
 
 ## 3. Bất biến & ranh giới đã xác lập
 

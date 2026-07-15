@@ -88,6 +88,9 @@ describe('registerAllTools', () => {
       'list_extensions',
       'lookup_tm',
       'get_my_permissions',
+      'list_dashboards',
+      'run_panel',
+      'query_insights',
     ]) {
       expect(tools.has(name), `missing tool: ${name}`).toBe(true);
     }
@@ -139,6 +142,46 @@ describe('tool handlers call the right endpoints', () => {
     registerAllTools(server as never, client);
     await tools.get('export_backup')!.handler({});
     expect(calls).toContainEqual({ method: 'GET_TEXT', path: '/admin/backup' });
+  });
+
+  it('list_dashboards → GET /dashboards', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('list_dashboards')!.handler({});
+    expect(calls).toContainEqual({ method: 'GET', path: '/dashboards', body: undefined });
+  });
+
+  it('run_panel → POST /dashboards/:id/panels/:panelId/data with override body', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('run_panel')!.handler({
+      dashboardId: 'd1',
+      panelId: 'p1',
+      filter: { status: { _eq: 'published' } },
+    });
+    expect(calls).toContainEqual({
+      method: 'POST',
+      path: '/dashboards/d1/panels/p1/data',
+      body: { filter: { status: { _eq: 'published' } } },
+    });
+  });
+
+  it('query_insights → POST /dashboards/:id/panels/preview with query body only', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('query_insights')!.handler({
+      dashboardId: 'd1',
+      collection: 'posts',
+      aggregate: 'count',
+    });
+    expect(calls).toContainEqual({
+      method: 'POST',
+      path: '/dashboards/d1/panels/preview',
+      body: { collection: 'posts', aggregate: 'count' },
+    });
   });
 });
 

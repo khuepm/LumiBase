@@ -9,6 +9,7 @@ import { registerCollectionTools } from './collections.js';
 import { registerContentConfigTools } from './content-config.js';
 import { registerExtensionTools } from './extensions.js';
 import { registerFieldTools } from './fields.js';
+import { registerInsightsTools } from './insights.js';
 import { registerItemTools } from './items.js';
 import { registerOpsTools } from './ops.js';
 import { registerPermissionTools } from './permissions.js';
@@ -33,6 +34,7 @@ export function registerAllTools(server: McpServer, client: LumiBaseClient): voi
   registerContentConfigTools(server, client);
   registerSearchMediaTools(server, client);
   registerTranslationMemoryTools(server, client);
+  registerInsightsTools(server, client);
 
   // Access control & identity
   registerPermissionTools(server, client);
