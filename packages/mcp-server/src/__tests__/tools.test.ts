@@ -91,6 +91,12 @@ describe('registerAllTools', () => {
       'list_dashboards',
       'run_panel',
       'query_insights',
+      'update_tm',
+      'delete_tm',
+      'get_flow_run',
+      'list_transform_presets',
+      'get_effective_preset',
+      'list_preset_bookmarks',
     ]) {
       expect(tools.has(name), `missing tool: ${name}`).toBe(true);
     }
@@ -182,6 +188,46 @@ describe('tool handlers call the right endpoints', () => {
       path: '/dashboards/d1/panels/preview',
       body: { collection: 'posts', aggregate: 'count' },
     });
+  });
+
+  it('update_tm → PATCH /tm/:id with the id stripped from the body', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('update_tm')!.handler({ id: 't1', targetText: 'xin chào' });
+    expect(calls).toContainEqual({ method: 'PATCH', path: '/tm/t1', body: { targetText: 'xin chào' } });
+  });
+
+  it('delete_tm → DELETE /tm/:id and confirms', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('delete_tm')!.handler({ id: 't1', confirm: true });
+    expect(calls).toContainEqual({ method: 'DELETE', path: '/tm/t1', body: undefined });
+  });
+
+  it('get_flow_run → GET /flows/:id/runs/:runId', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('get_flow_run')!.handler({ id: 'f1', runId: 'r9' });
+    expect(calls).toContainEqual({ method: 'GET', path: '/flows/f1/runs/r9', body: undefined });
+  });
+
+  it('list_transform_presets → GET /transform-presets', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('list_transform_presets')!.handler({});
+    expect(calls).toContainEqual({ method: 'GET', path: '/transform-presets', body: undefined });
+  });
+
+  it('get_effective_preset → GET /presets/effective?collection=', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('get_effective_preset')!.handler({ collection: 'posts' });
+    expect(calls).toContainEqual({ method: 'GET', path: '/presets/effective?collection=posts', body: undefined });
   });
 });
 

@@ -1,6 +1,6 @@
 # Phân tích ứng dụng MCP cho 7 spec Directus-inspired
 
-> Mục đích: nơi quay lại để quyết định **tính năng nào nên phơi bày qua MCP**, tool gì, rủi ro & ưu tiên. Dựa trên hạ tầng MCP hiện có ([`index.md`](index.md)). Đây là phân tích thiết kế, **chưa implement** — mỗi mục ghi rõ điều kiện tiên quyết (REST/service phải tồn tại trước).
+> Mục đích: nơi quay lại để quyết định **tính năng nào nên phơi bày qua MCP**, tool gì, rủi ro & ưu tiên. Dựa trên hạ tầng MCP hiện có ([`index.md`](index.md)). Các bảng/phân mục bên dưới là **phân tích thiết kế gốc**; **trạng thái triển khai hiện tại** nằm ở mục "Lộ trình MCP" (Sóng 1/2 + vá nhỏ = đã triển khai). Mỗi mục ghi rõ điều kiện tiên quyết (REST/service phải tồn tại trước).
 >
 > Nhãn nguồn: nội dung dưới đây là **[Inference]** dựa trên kiến trúc đã đọc trong codebase, không phải hành vi đã chạy.
 
@@ -115,8 +115,15 @@
    - `version.*` qua **hướng B (harness skill)** — không phải stdio passthrough — để `promoteVersion` đi qua HITL/autonomy. Skills: `listVersions`, `compareVersion` (safe); `createVersion`, `updateVersion`, `deleteVersion`, `promoteVersion` (dangerous). Định nghĩa ở `apps/cms/src/services/ai-harness.ts` + `packages/ai-skills/src/skills.ts`; phơi bày qua `POST /api/v1/mcp` (`tools/list`).
    - `tm.upsert` — đã có (`upsert_tm`).
 3. **Sóng 3 (side-effect, cẩn trọng):**
-   - `flow.run` (capability hẹp + autonomy thấp) — hiện có `run_flow` ở stdio passthrough; bản governed (`runFlow` harness skill, dangerous) cũng đã tồn tại.
-4. **Bỏ qua / theo dõi:** realtime (không hợp request/response), image transform (chỉ `media.url`), presets (`preset.effective` tùy chọn).
+   - `flow.run` (capability hẹp + autonomy thấp) — hiện có `run_flow` ở stdio passthrough; bản governed (`runFlow` harness skill, dangerous) cũng đã tồn tại. Bổ sung `get_flow_run` (đọc chi tiết 1 run để chẩn đoán).
+4. **Vá nhỏ hoàn thiện: ✅ đã triển khai** (stdio passthrough, read/CRUD an toàn):
+   - TM: `update_tm` (PATCH `/tm/:id`), `delete_tm` (DELETE, `confirm=true`).
+   - Flow: `get_flow_run` (GET `/flows/:id/runs/:runId`).
+   - Image transform: `list_transform_presets` (GET `/transform-presets`). **`media.url` cố ý KHÔNG expose** — URL delivery đã ký được dựng ở edge bằng server secret (`transformKey`/HMAC), không có REST endpoint trả URL đã ký; `/files/presigned-url` chỉ dành cho upload. Đưa lên MCP sẽ hoặc trả URL sai (thiếu chữ ký) hoặc phải nhân bản secret — cả hai đều không hợp.
+   - Presets: `get_effective_preset` (GET `/presets/effective`), `list_preset_bookmarks` (GET `/presets/bookmarks`).
+5. **Bỏ qua / theo dõi:** realtime (không hợp request/response — dùng `cdc_events_read` để poll thay vì subscribe).
+
+**Kết luận:** cả 7 spec Directus-inspired đều đã được phủ ở mức MCP đúng như phân tích, cộng governed versioning. Khoảng trống MCP còn lại: chỉ những thứ **cố ý không hợp** (realtime streaming, signed media URL) — đã ghi rõ lý do ở trên.
 
 > **Vì sao `version.*` đi hướng B chứ không phải stdio passthrough?** `promoteVersion` ghi đè main; nguyên tắc #2 (permission floor + HITL cho write nguy hiểm) đòi hỏi nó chảy qua `AISecureHarness` để vào `agent_approvals`. Stdio server (`@lumibase/mcp-server`) là passthrough không HITL, nên chỉ hợp cho read/CRUD an toàn — không hợp cho promote. Do đó versioning **cố ý không** nằm ở stdio server; nó chỉ xuất hiện ở governed endpoint. Xem [`index.md`](index.md) §Content versions.
 
