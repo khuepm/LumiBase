@@ -186,6 +186,103 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     requiredCapabilities: ['items:delete'],
   },
 
+  // ── Content versions — named parallel draft branches of an item ────────────
+  // Reads (list/compare) are safe; writes (create/update/delete/promote) are
+  // HITL/autonomy-gated by the harness (`promoteVersion` applies to main).
+
+  listVersions: {
+    name: 'listVersions',
+    description: 'List the named version branches of an item (each with a mainChanged flag).',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: { type: 'string', description: 'The collection name.' },
+        itemId: { type: 'string', description: 'The item id whose versions to list.' },
+      },
+      required: ['collection', 'itemId'],
+    },
+    requiredCapabilities: ['items:read'],
+  },
+
+  compareVersion: {
+    name: 'compareVersion',
+    description: 'Compare a version branch against the item’s current main data (field-level changes).',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: { type: 'string' },
+        itemId: { type: 'string' },
+        key: { type: 'string', description: 'The version branch key.' },
+      },
+      required: ['collection', 'itemId', 'key'],
+    },
+    requiredCapabilities: ['items:read'],
+  },
+
+  createVersion: {
+    name: 'createVersion',
+    description: 'Snapshot the item’s current data into a new named version branch.',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: { type: 'string' },
+        itemId: { type: 'string' },
+        key: { type: 'string', description: 'Unique branch key for this item.' },
+        name: { type: 'string', description: 'Human-readable branch name.' },
+      },
+      required: ['collection', 'itemId', 'key', 'name'],
+    },
+    requiredCapabilities: ['items:write'],
+  },
+
+  updateVersion: {
+    name: 'updateVersion',
+    description: 'Update a version branch’s draft data and/or display name.',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: { type: 'string' },
+        itemId: { type: 'string' },
+        key: { type: 'string' },
+        data: { type: 'object', description: 'Replacement draft data for the branch.' },
+        name: { type: 'string' },
+      },
+      required: ['collection', 'itemId', 'key'],
+    },
+    requiredCapabilities: ['items:write'],
+  },
+
+  deleteVersion: {
+    name: 'deleteVersion',
+    description: 'Delete a version branch (does not touch main).',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: { type: 'string' },
+        itemId: { type: 'string' },
+        key: { type: 'string' },
+      },
+      required: ['collection', 'itemId', 'key'],
+    },
+    requiredCapabilities: ['items:write'],
+  },
+
+  promoteVersion: {
+    name: 'promoteVersion',
+    description:
+      'Apply a version branch’s data to main (writes a revision + invalidates caches), then delete the branch. Highest-risk versioning op — HITL-gated.',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: { type: 'string' },
+        itemId: { type: 'string' },
+        key: { type: 'string' },
+      },
+      required: ['collection', 'itemId', 'key'],
+    },
+    requiredCapabilities: ['items:write'],
+  },
+
   // ── POST-GA Task #3 — RAG Skills ─────────────────────────────────────────
 
   aiSuggestField: {

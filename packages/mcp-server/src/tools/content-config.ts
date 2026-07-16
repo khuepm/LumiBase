@@ -39,6 +39,29 @@ export function registerContentConfigTools(server: McpServer, client: LumiBaseCl
     updateSchema: presetSchema.partial().shape,
   });
 
+  // Resolution endpoints — the effective default view (user > role-chain >
+  // global) and the named bookmarks a principal can see for a collection.
+  server.registerTool(
+    'get_effective_preset',
+    {
+      description:
+        'Resolve the effective default view for a collection (user > role-chain > global precedence).',
+      inputSchema: { collection: z.string().min(1) },
+    },
+    async ({ collection }) =>
+      run(() => client.get<unknown>(`/presets/effective?collection=${encodeURIComponent(collection)}`)),
+  );
+
+  server.registerTool(
+    'list_preset_bookmarks',
+    {
+      description: 'List the named preset bookmarks visible to the principal for a collection (with scope).',
+      inputSchema: { collection: z.string().min(1) },
+    },
+    async ({ collection }) =>
+      run(() => client.get<unknown>(`/presets/bookmarks?collection=${encodeURIComponent(collection)}`)),
+  );
+
   // ── Translations (i18n strings) ───────────────────────────────────────────
   registerCrud(server, client, {
     basePath: '/translations',
