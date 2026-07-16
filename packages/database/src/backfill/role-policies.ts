@@ -41,10 +41,23 @@ interface LegacyRole {
   appAccess: boolean;
 }
 
-/** Stable per-role key: `lower(regexp_replace(coalesce(system_key, key, id), '[^a-zA-Z0-9]+', '_'))`. */
+/**
+ * Stable, collision-proof per-role policy key.
+ *
+ * The readable part is `lower(regexp_replace(coalesce(system_key, key, id),
+ * '[^a-zA-Z0-9]+', '_'))`, but that normalization is lossy: two distinct,
+ * individually-unique role keys in one site can collapse to the same string
+ * (`content-editor`, `Content Editor`, `content_editor!` → `content_editor`).
+ * Keying the legacy policy on the readable part alone would then map both
+ * roles onto ONE policy row — the second upsert overwrites the first's flags
+ * and both roles link to it, so a low-privilege role can inherit a colliding
+ * admin role's `admin_access` through the shared policy. The stable role id
+ * (unique per row) is appended to guarantee a 1:1 role↔policy mapping.
+ */
 export function deriveLegacyRoleKey(role: Pick<LegacyRole, 'id' | 'key' | 'systemKey'>): string {
   const source = role.systemKey ?? role.key ?? role.id;
-  return source.replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase();
+  const readable = source.replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase();
+  return `${readable}_${role.id}`;
 }
 
 export interface BackfillResult {

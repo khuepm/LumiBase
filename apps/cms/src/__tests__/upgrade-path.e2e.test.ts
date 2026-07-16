@@ -4,6 +4,7 @@ import {
   LEGACY_POLICY_KEY_PREFIX,
   backfillRolePolicyFlags,
   createDb,
+  deriveLegacyRoleKey,
   findUnbackfilledRoles,
   policies,
   rolePolicies,
@@ -49,6 +50,15 @@ const FIXTURE_ROLES = [
   { id: 'upg_role_app', name: 'Upg App Only', systemKey: 'upg_app_only', adminAccess: false, appAccess: true },
   { id: 'upg_role_api', name: 'Upg API Admin', systemKey: 'upg_api_admin', adminAccess: true, appAccess: false },
   { id: 'upg_role_none', name: 'Upg No Access', systemKey: 'upg_no_access', adminAccess: false, appAccess: false },
+  // Collision pair: two roles whose keys normalize to the SAME readable string
+  // (`upg_collide`) but carry DIFFERENT flags. A key derived from the readable
+  // part alone would map both onto one policy and leak admin to the non-admin
+  // role; the backfill must give each its own policy (regression for the
+  // legacy-key-collision privilege-escalation finding).
+  // collide_plain must carry a flag (app-only) so the backfill processes it —
+  // that is exactly the condition under which a shared policy would leak admin.
+  { id: 'upg_role_collide_admin', name: 'Upg Collide A', systemKey: 'upg-collide', adminAccess: true, appAccess: true },
+  { id: 'upg_role_collide_plain', name: 'Upg Collide B', systemKey: 'Upg Collide', adminAccess: false, appAccess: true },
 ] as const;
 
 describe('Upgrade path 0.6.x → 1.0: RBAC role→policy backfill', () => {
@@ -121,15 +131,25 @@ describe('Upgrade path 0.6.x → 1.0: RBAC role→policy backfill', () => {
       return;
     }
 
+    // Expected collision-proof policy key for a fixture role (readable part +
+    // stable role id), mirroring `deriveLegacyRoleKey`.
+    const expectedKey = (id: string): string => {
+      const f = FIXTURE_ROLES.find((r) => r.id === id)!;
+      return `${LEGACY_POLICY_KEY_PREFIX}${deriveLegacyRoleKey({ id: f.id, key: null, systemKey: f.systemKey })}`;
+    };
+
+    // The five flag-carrying fixture roles (everything except `none`).
+    const flaggedIds = FIXTURE_ROLES.filter((r) => r.adminAccess || r.appAccess).map((r) => r.id);
+
     // ── 0. The legacy instance genuinely fails the post-check before backfill ─
     const before = await findUnbackfilledRoles(db);
-    const fixtureIds = new Set<string>(FIXTURE_ROLES.filter((r) => r.adminAccess || r.appAccess).map((r) => r.id));
-    expect(before.filter((r) => fixtureIds.has(r.id))).toHaveLength(3);
+    const fixtureIds = new Set<string>(flaggedIds);
+    expect(before.filter((r) => fixtureIds.has(r.id))).toHaveLength(flaggedIds.length);
 
     // ── 1. Run the real backfill ─────────────────────────────────────────────
     const first = await backfillRolePolicyFlags(db);
-    // At least our 3 legacy-flag roles; other suites' fixtures may add more.
-    expect(first.legacyRoleCount).toBeGreaterThanOrEqual(3);
+    // At least our flag-carrying roles; other suites' fixtures may add more.
+    expect(first.legacyRoleCount).toBeGreaterThanOrEqual(flaggedIds.length);
 
     // ── 2. Documented post-check returns zero rows (whole database) ──────────
     expect(await findUnbackfilledRoles(db)).toHaveLength(0);
@@ -138,13 +158,13 @@ describe('Upgrade path 0.6.x → 1.0: RBAC role→policy backfill', () => {
     const legacy = await legacyPoliciesInSite();
     const byKey = new Map(legacy.map((p) => [p.key, p]));
 
-    const admin = byKey.get(`${LEGACY_POLICY_KEY_PREFIX}upg_administrator`);
+    const admin = byKey.get(expectedKey('upg_role_admin'));
     expect(admin).toMatchObject({ adminAccess: true, appAccess: true });
 
-    const appOnly = byKey.get(`${LEGACY_POLICY_KEY_PREFIX}upg_app_only`);
+    const appOnly = byKey.get(expectedKey('upg_role_app'));
     expect(appOnly).toMatchObject({ adminAccess: false, appAccess: true });
 
-    const apiAdmin = byKey.get(`${LEGACY_POLICY_KEY_PREFIX}upg_api_admin`);
+    const apiAdmin = byKey.get(expectedKey('upg_role_api'));
     expect(apiAdmin).toMatchObject({ adminAccess: true, appAccess: false });
 
     // Flag-only contract: no TFA, no IP guards, no time window.
@@ -152,8 +172,20 @@ describe('Upgrade path 0.6.x → 1.0: RBAC role→policy backfill', () => {
       expect(policy).toMatchObject({ enforceTfa: false, ipAllow: [], ipDeny: [], validFrom: null, validUntil: null });
     }
 
+    // ── 3b. Colliding role keys get SEPARATE policies — no admin leak ────────
+    // Both roles' keys normalize to `upg_collide`; the id suffix keeps them
+    // distinct so the app-only role never inherits the admin role's flags.
+    const collideAdmin = byKey.get(expectedKey('upg_role_collide_admin'));
+    const collidePlain = byKey.get(expectedKey('upg_role_collide_plain'));
+    expect(collideAdmin, 'collide-admin has its own policy').toBeTruthy();
+    expect(collidePlain, 'collide-plain has its own policy').toBeTruthy();
+    expect(collideAdmin!.id).not.toBe(collidePlain!.id);
+    expect(collideAdmin).toMatchObject({ adminAccess: true });
+    // The critical assertion: the app-only role did NOT pick up admin_access.
+    expect(collidePlain).toMatchObject({ adminAccess: false, appAccess: true });
+
     // The no-flags role gets no policy and no link.
-    expect(byKey.has(`${LEGACY_POLICY_KEY_PREFIX}upg_no_access`)).toBe(false);
+    expect(byKey.has(expectedKey('upg_role_none'))).toBe(false);
     const noneLinks = await db.select().from(rolePolicies).where(eq(rolePolicies.roleId, 'upg_role_none'));
     expect(noneLinks).toHaveLength(0);
 
@@ -183,10 +215,10 @@ describe('Upgrade path 0.6.x → 1.0: RBAC role→policy backfill', () => {
 
     // ── 6. Compat-window rollback removes the backfill cleanly ──────────────
     const { policiesDeleted } = await rollbackRolePolicyBackfill(db);
-    expect(policiesDeleted).toBeGreaterThanOrEqual(3);
+    expect(policiesDeleted).toBeGreaterThanOrEqual(flaggedIds.length);
     expect(await legacyPoliciesInSite()).toHaveLength(0);
     // Role flags intact → legacy fallback still grants access after rollback.
     const afterRollback = await findUnbackfilledRoles(db);
-    expect(afterRollback.filter((r) => fixtureIds.has(r.id))).toHaveLength(3);
+    expect(afterRollback.filter((r) => fixtureIds.has(r.id))).toHaveLength(flaggedIds.length);
   });
 });
