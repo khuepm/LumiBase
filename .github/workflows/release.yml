@@ -153,6 +153,29 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      # v1 release criteria §3: the release itself must smoke-test the CF
+      # target, not rely on the separate deploy-cms.yml workflow. Asserts the
+      # production Worker is healthy AND actually serves the version being
+      # released (with-build-metadata injects it at deploy time).
+      - name: Verify Worker deployment health
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_URL="https://api.lumibase.dev"
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            "${BASE_URL}/health" > /dev/null
+
+          EXPECTED_VERSION="${GITHUB_REF_NAME#v}"
+          VERSION_JSON="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            "${BASE_URL}/api/v1/system/version")"
+          RUNNING_VERSION="$(node -e "const d = JSON.parse(process.argv[1]); console.log(d.version ?? '')" "$VERSION_JSON")"
+          if [ "$RUNNING_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "::error::Production Worker reports version ${RUNNING_VERSION}, expected ${EXPECTED_VERSION}."
+            exit 1
+          fi
+          echo "Production Worker healthy at ${RUNNING_VERSION}."
+
 
   deploy-cloudflare-pages-apps:
     name: Deploy Cloudflare Pages apps (${{ matrix.app.name }})
@@ -299,6 +322,75 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # v1 release criteria §3: both deployment targets get smoke-tested on the
+  # release itself. The Worker is verified post-deploy above; this job pulls
+  # the exact image that was just pushed for this tag and asserts the Docker
+  # path (serve.ts) boots and answers /health.
+  smoke-docker-image:
+    name: Smoke-test Docker image
+    runs-on: ubuntu-latest
+    needs: publish-docker-image
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run released image health check
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY }}/khuepm/lumibase-cms:${GITHUB_REF_NAME#v}"
+
+          cleanup() {
+            docker logs lumibase-release-smoke 2>/dev/null || true
+            docker rm -f lumibase-release-smoke 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          docker pull "$IMAGE"
+          # Same boot env as the docker.yml health check: /health only needs
+          # the app up, not live backing services.
+          docker run -d --name lumibase-release-smoke \
+            -p 1989:1989 \
+            -e LUMIBASE_RUNTIME=docker \
+            -e PORT=1989 \
+            -e DATABASE_URL=postgresql://localhost:5432/lumibase \
+            -e REDIS_URL=redis://localhost:6379 \
+            -e S3_ENDPOINT=http://localhost:9000 \
+            -e S3_ACCESS_KEY=minioadmin \
+            -e S3_SECRET_KEY=minioadmin \
+            -e S3_BUCKET=lumibase-media \
+            -e MEILISEARCH_HOST=http://localhost:7700 \
+            -e MEILISEARCH_API_KEY=test \
+            -e IMGPROXY_URL=http://localhost:8080 \
+            -e IMGPROXY_KEY=736563726574 \
+            -e IMGPROXY_SALT=736563726574 \
+            -e SKIP_MIGRATIONS=true \
+            "$IMAGE"
+
+          echo "Waiting for container to start..."
+          sleep 5
+
+          MAX_RETRIES=6
+          RETRY_COUNT=0
+          until curl --max-time 5 -sf http://localhost:1989/health > /dev/null 2>&1; do
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+              echo "Health check failed after $MAX_RETRIES attempts"
+              exit 1
+            fi
+            echo "Attempt $RETRY_COUNT/$MAX_RETRIES - waiting..."
+            sleep 5
+          done
+          echo "Released Docker image healthy."
 
   publish-npm-packages:
     name: Publish npm packages
