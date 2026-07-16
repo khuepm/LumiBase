@@ -357,17 +357,25 @@ app.route('/api/v1/shares', sharePublicRouter);
 app.use('/api/v1/email/unsubscribe', withDb());
 app.route('/api/v1/email', emailPublicRouter);
 
-app.route('/api/v1', api);
-
-// Delivery (public) routes — tenancy is encoded in the URL.
+// Delivery (public) routes — tenancy is encoded in the URL. MUST be mounted
+// BEFORE `app.route('/api/v1', api)`: the authenticated sub-app's `use('*')`
+// chain flattens to `/api/v1/*`, so any handler registered after that mount
+// runs the tenant/auth middleware first and an anonymous read is rejected
+// with 400/401 before it can reach the handler. Registering the public
+// handlers first makes them win for their disjoint paths (same mechanism as
+// the shares/email mounts above).
 app.use('/api/v1/deliver/*', withDb());
 app.route('/api/v1/deliver', deliverRouter);
 
 // Public pageview beacon — tenancy in the URL, unauthenticated. `withRuntime`
 // ran globally; add `withDb` + the general rate limiter (keyed by IP since no
 // principal exists) so a single client can't flood the ingest endpoint.
-app.use('/api/v1/pageviews/*', withDb(), withRateLimit());
+// Middleware is scoped to the beacon leaf so the authenticated
+// `/api/v1/pageviews/stats` (mounted on `api` below) doesn't run it twice.
+app.use('/api/v1/pageviews/:site_id/hit', withDb(), withRateLimit());
 app.route('/api/v1/pageviews', pageviewsPublicRouter);
+
+app.route('/api/v1', api);
 
 app.notFound((c) =>
   c.json({ errors: [{ code: 'NOT_FOUND', message: 'Route not found.' }] }, 404),
