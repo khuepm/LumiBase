@@ -62,6 +62,23 @@ Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (v0.6.0, `@mode
 
 > **Insights (Sóng 1 — [`mcp-application-analysis.md`](mcp-application-analysis.md)):** nhóm read-only cho phép agent "hỏi số liệu" — chạy panel đã lưu hoặc query aggregate ad-hoc (`query_insights`, tool giá trị nhất). Không mutate, mang quyền đọc của token, không vào HITL; aggregation được whitelist field + cap giới hạn server-side bởi `InsightsService`. Bảng trên minh hoạ các nhóm chính; nguồn chân lý là [`packages/mcp-server/src/tools/`](../../../packages/mcp-server/src/tools/).
 
+## 2b. Content versions qua MCP (Sóng 2 — governed harness skills)
+
+Versioning **không** nằm ở stdio server. Nó được phơi bày dưới dạng **governed skill** chảy qua `AISecureHarness` (`POST /api/v1/mcp` → `tools/list`/`tools/call`), vì `promoteVersion` ghi đè main và **bắt buộc qua HITL** — điều stdio passthrough không làm được.
+
+| Skill | Capability | Risk | Ghi chú |
+|---|---|---|---|
+| `listVersions` | `items:read` | safe | Liệt kê nhánh version của item (kèm cờ `mainChanged`). |
+| `compareVersion` | `items:read` | safe | So sánh nhánh với main (field-level changes). |
+| `createVersion` | `items:write` | **dangerous** | Snapshot data hiện tại vào nhánh mới. |
+| `updateVersion` | `items:write` | **dangerous** | Sửa draft/tên của nhánh. |
+| `deleteVersion` | `items:write` | **dangerous** | Xoá nhánh (không đụng main); dangerous theo tiền tố `delete`. |
+| `promoteVersion` | `items:write` | **dangerous** | Áp nhánh lên main qua `ItemService.patch` (ghi revision + invalidate cache), rồi xoá nhánh; trả `mainDiverged`. |
+
+- **Nguồn:** handler ở [`apps/cms/src/services/ai-harness.ts`](../../../apps/cms/src/services/ai-harness.ts) (`buildCoreSkills` → `ContentVersionService`); định nghĩa public ở [`packages/ai-skills/src/skills.ts`](../../../packages/ai-skills/src/skills.ts). Hai nơi **phải cùng key set** (test `governed-skills.test.ts`).
+- **Risk:** `createVersion`/`updateVersion`/`promoteVersion` đặt cờ `dangerous`; `deleteVersion` dangerous nhờ tiền tố tên. `ToolRegistryService.coreTool` → `riskPolicy.level = 'dangerous'`, `approvalPolicy = 'before_execute'`.
+- **`promoteVersion` không irreversible:** nó ghi một revision nên khôi phục được → **không** bị hard-cap L2 như schema drops; vẫn `dangerous` (HITL ở ≤L2 mặc định, cho tới khi role earn autonomy cao hơn).
+
 ## 3. Bất biến & ranh giới đã xác lập
 
 - **MCP parity (Property 14):** quyết định `tools/call` khớp **byte-for-byte** với quyết định harness trực tiếp. Test: [`apps/cms/src/services/__tests__/mcp-parity.property.test.ts`](../../../apps/cms/src/services/__tests__/mcp-parity.property.test.ts).

@@ -166,7 +166,7 @@ Skills are defined in two synchronized locations:
 - **Harness handlers** (`apps/cms/src/services/ai-harness.ts` → `buildCoreSkills()`) — actual execution logic
 
 A skill is classified as **DANGEROUS** (requires HITL approval) when:
-1. It sets the explicit `dangerous` flag (governed namespaces `access:*`, `intents:*`, `flows:*`), OR
+1. It sets the explicit `dangerous` flag (governed namespaces `access:*`, `intents:*`, `flows:*`, and content-version writes `createVersion`/`updateVersion`/`promoteVersion`), OR
 2. Its `requiredCapabilities` includes any `schema:*` except `schema:read`, OR
 3. Its name starts with `delete`
 
@@ -183,6 +183,9 @@ The `dangerous` flag is honoured by both `AISecureHarness.evaluateRisk` and `Too
 | `createItem` | items | `items:write` | SAFE | Real → ItemService |
 | `updateItem` | items | `items:update` | SAFE | Real → ItemService.patch() |
 | `deleteItem` | items | `items:write` | **DANGEROUS** | Real → ItemService.softDelete() |
+| `listVersions` / `compareVersion` | items | `items:read` | SAFE | Real → ContentVersionService |
+| `createVersion` / `updateVersion` / `deleteVersion` | items | `items:write` | **DANGEROUS** | Real → ContentVersionService (draft branches) |
+| `promoteVersion` | items | `items:write` | **DANGEROUS** | Real → ContentVersionService.promote() → main via ItemService.patch (writes a revision; revision-protected, so not hard-capped like schema drops) |
 | `aiSuggestField` | ai | `schema:read` | SAFE | Real → LLM + existing-field context (offline registry: keyword patterns) |
 | `aiContentAssist` | ai | `items:read` | SAFE | Real → LLM + RAG item samples via ItemService |
 | `generateAppSpec` | ai | `schema:read`, `items:read` | SAFE | Real → LLM + live schema introspection; sections must declare `source` bindings |

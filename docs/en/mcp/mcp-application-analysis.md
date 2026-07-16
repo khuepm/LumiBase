@@ -108,15 +108,17 @@
 
 ## Lộ trình MCP đề xuất (sau khi spec gốc implement)
 
-1. **Sóng 1 (giá trị cao, rủi ro thấp, read-first):**
-   - `insights.query` / `panel.run` (read aggregate — tool MCP giá trị nhất).
-   - `tm.lookup` / `tm.translate` (có thể làm sớm — backend TM đã sẵn).
-2. **Sóng 2 (ghi có guard):**
-   - `version.*` (promote qua HITL).
-   - `tm.upsert`.
+1. **Sóng 1 (giá trị cao, rủi ro thấp, read-first): ✅ đã triển khai**
+   - `insights.query` / `panel.run` (read aggregate — tool MCP giá trị nhất) → `packages/mcp-server/src/tools/insights.ts` (`query_insights`, `run_panel`, `list_dashboards`, `get_dashboard`, `list_dashboard_panels`).
+   - `tm.lookup` / `tm.translate` (đã có sẵn từ trước — `lookup_tm`, `translate_text`).
+2. **Sóng 2 (ghi có guard): ✅ đã triển khai (`version.*`)**
+   - `version.*` qua **hướng B (harness skill)** — không phải stdio passthrough — để `promoteVersion` đi qua HITL/autonomy. Skills: `listVersions`, `compareVersion` (safe); `createVersion`, `updateVersion`, `deleteVersion`, `promoteVersion` (dangerous). Định nghĩa ở `apps/cms/src/services/ai-harness.ts` + `packages/ai-skills/src/skills.ts`; phơi bày qua `POST /api/v1/mcp` (`tools/list`).
+   - `tm.upsert` — đã có (`upsert_tm`).
 3. **Sóng 3 (side-effect, cẩn trọng):**
-   - `flow.run` (capability hẹp + autonomy thấp).
+   - `flow.run` (capability hẹp + autonomy thấp) — hiện có `run_flow` ở stdio passthrough; bản governed (`runFlow` harness skill, dangerous) cũng đã tồn tại.
 4. **Bỏ qua / theo dõi:** realtime (không hợp request/response), image transform (chỉ `media.url`), presets (`preset.effective` tùy chọn).
+
+> **Vì sao `version.*` đi hướng B chứ không phải stdio passthrough?** `promoteVersion` ghi đè main; nguyên tắc #2 (permission floor + HITL cho write nguy hiểm) đòi hỏi nó chảy qua `AISecureHarness` để vào `agent_approvals`. Stdio server (`@lumibase/mcp-server`) là passthrough không HITL, nên chỉ hợp cho read/CRUD an toàn — không hợp cho promote. Do đó versioning **cố ý không** nằm ở stdio server; nó chỉ xuất hiện ở governed endpoint. Xem [`index.md`](index.md) §Content versions.
 
 ## Điều kiện chung trước khi mở bất kỳ tool MCP ghi nào
 

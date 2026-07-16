@@ -8,6 +8,7 @@ import type { ConfigService } from './config-service';
 import type { ExtensionsService } from './extensions-service';
 import type { IntentService } from './intent-service';
 import { runFlow, type FlowGraph } from './flow-service';
+import { ContentVersionService } from './content-version-service';
 import type { ConfiguredLLM } from './llm-provider';
 import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
@@ -464,6 +465,19 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     });
   };
 
+  /**
+   * Content-version service for the versioning skills. Needs item access (to
+   * snapshot/promote main) plus a tenant db context; without them (offline
+   * registry) the skill returns a stub so the shared CORE_SKILLS registry
+   * stays offline-safe.
+   */
+  const contentVersionService = (): ContentVersionService | null => {
+    if (!itemService || !db || !siteId) return null;
+    // Agent-authored versions: createdBy stays null (the run stamps revision
+    // provenance separately via ItemService.setProvenance on promote).
+    return new ContentVersionService({ db, siteId, userId: null, items: itemService });
+  };
+
   return {
     listCollections: {
       name: 'listCollections',
@@ -620,6 +634,164 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         const id = args['id'] as string;
         const result = await itemService.softDelete(collection, id);
         return { deleted: true, result };
+      },
+    },
+
+    // ── Content versions — named parallel draft branches of an item ──────────
+    // Reads (list/compare) are safe. Writes are forced dangerous so they run
+    // through the HITL + autonomy gradient (Wave 2, `docs/en/mcp/`): a version
+    // create/update/delete guards the draft branch, and `promoteVersion` applies
+    // a branch to main — the highest-risk step (autonomy hard-capped ≤ L2 unless
+    // a role earns higher). Mirrors the REST surface in `routes/items.ts`.
+
+    listVersions: {
+      name: 'listVersions',
+      description: 'List the named version branches of an item (with a mainChanged flag per branch).',
+      requiredCapabilities: ['items:read'],
+      service: 'items',
+      inputSchema: {
+        type: 'object',
+        properties: { collection: { type: 'string' }, itemId: { type: 'string' } },
+        required: ['collection', 'itemId'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) return { versions: [] };
+        const versions = await svc.list(args['collection'] as string, args['itemId'] as string);
+        return { versions };
+      },
+    },
+
+    compareVersion: {
+      name: 'compareVersion',
+      description: 'Compare a version branch against the item’s current main data (returns field-level changes).',
+      requiredCapabilities: ['items:read'],
+      service: 'items',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string' },
+          itemId: { type: 'string' },
+          key: { type: 'string' },
+        },
+        required: ['collection', 'itemId', 'key'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) return { main: {}, version: {}, changes: [] };
+        return svc.compare(args['collection'] as string, args['itemId'] as string, args['key'] as string);
+      },
+    },
+
+    createVersion: {
+      name: 'createVersion',
+      description: 'Snapshot the item’s current data into a new named version branch.',
+      requiredCapabilities: ['items:write'],
+      service: 'items',
+      dangerous: true,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string' },
+          itemId: { type: 'string' },
+          key: { type: 'string' },
+          name: { type: 'string' },
+        },
+        required: ['collection', 'itemId', 'key', 'name'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) return { created: true };
+        const version = await svc.create(
+          args['collection'] as string,
+          args['itemId'] as string,
+          args['key'] as string,
+          args['name'] as string,
+        );
+        return { created: true, version };
+      },
+    },
+
+    updateVersion: {
+      name: 'updateVersion',
+      description: 'Update a version branch’s draft data and/or display name.',
+      requiredCapabilities: ['items:write'],
+      service: 'items',
+      dangerous: true,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string' },
+          itemId: { type: 'string' },
+          key: { type: 'string' },
+          data: { type: 'object' },
+          name: { type: 'string' },
+        },
+        required: ['collection', 'itemId', 'key'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) return { updated: true };
+        const patch: { data?: Record<string, unknown>; name?: string } = {};
+        if (args['data'] !== undefined) patch.data = args['data'] as Record<string, unknown>;
+        if (args['name'] !== undefined) patch.name = args['name'] as string;
+        const version = await svc.update(
+          args['collection'] as string,
+          args['itemId'] as string,
+          args['key'] as string,
+          patch,
+        );
+        return { updated: true, version };
+      },
+    },
+
+    deleteVersion: {
+      name: 'deleteVersion',
+      description: 'Delete a version branch (does not touch main).',
+      requiredCapabilities: ['items:write'],
+      service: 'items',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string' },
+          itemId: { type: 'string' },
+          key: { type: 'string' },
+        },
+        required: ['collection', 'itemId', 'key'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) return { deleted: true };
+        await svc.remove(args['collection'] as string, args['itemId'] as string, args['key'] as string);
+        return { deleted: true, key: args['key'] };
+      },
+    },
+
+    promoteVersion: {
+      name: 'promoteVersion',
+      description:
+        'Apply a version branch’s data to main (writes a revision + invalidates caches), then delete the branch. Reports whether main had diverged from the snapshot.',
+      requiredCapabilities: ['items:write'],
+      service: 'items',
+      dangerous: true,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string' },
+          itemId: { type: 'string' },
+          key: { type: 'string' },
+        },
+        required: ['collection', 'itemId', 'key'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) return { promoted: true };
+        const result = await svc.promote(
+          args['collection'] as string,
+          args['itemId'] as string,
+          args['key'] as string,
+        );
+        return { promoted: true, ...result };
       },
     },
 
