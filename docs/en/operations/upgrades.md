@@ -129,7 +129,15 @@ Determine your current version from `/api/v1/system/version` before choosing a r
 
 `1.0.0` treats **policies** as the source of truth for `admin_access` and `app_access` (plus `enforce_tfa`, IP guards, and time windows). Instances that predate the policy model stored these as flags on **roles**. During the compatibility window `PermissionService` still reads `role flags OR active policy flags`, so access does not break on upgrade — but before `1.0.0` you should materialize the legacy role flags into policy rows so the policy layer alone is authoritative.
 
-The backfill is idempotent and does **not** mutate role flags (they remain intact as the rollback anchor). For each role where `admin_access` or `app_access` is true it creates one flag-only policy — key `legacy_role_flags_<role_key>`, name `Legacy role flags: <role name>`, copying the exact flag values, with `enforce_tfa=false`, empty IP guards, and null time windows — and attaches it to the role via `role_policies`. Full contract and SQL: [Role Flag to Policy Flag Migration](../features/role-policy-flag-migration.md).
+The backfill is idempotent and does **not** mutate role flags (they remain intact as the rollback anchor). For each role where `admin_access` or `app_access` is true it creates one flag-only policy — key `legacy_role_flags_<role_key>`, name `Legacy role flags: <role name>`, copying the exact flag values, with `enforce_tfa=false`, empty IP guards, and null time windows — and attaches it to the role via `role_policies`. Full contract: [Role Flag to Policy Flag Migration](../features/role-policy-flag-migration.md).
+
+Run it with the bundled script (apply also runs the post-check and exits non-zero if it fails):
+
+```bash
+DATABASE_URL=postgresql://... pnpm --filter @lumibase/database backfill:role-policies          # apply + verify
+DATABASE_URL=postgresql://... pnpm --filter @lumibase/database backfill:role-policies verify   # post-check only
+DATABASE_URL=postgresql://... pnpm --filter @lumibase/database backfill:role-policies rollback # compat-window rollback
+```
 
 Run it against staging first, then verify. The post-check must return **zero rows** — every role that carries a legacy flag must have a matching policy:
 
@@ -147,7 +155,7 @@ AND NOT EXISTS (
 );
 ```
 
-Then confirm effective access is unchanged: a legacy admin role is still admin, a legacy app-only role can still enter Studio, and a role without app access still cannot. This verification has been run against the 1.0 release fixtures and returns clean. Role flag columns stay in place through 1.0 for rollback; they are only scheduled to drop in a later release after `LUMIBASE_RBAC_LEGACY_ROLE_FLAGS=false` has shipped and been verified.
+Then confirm effective access is unchanged: a legacy admin role is still admin, a legacy app-only role can still enter Studio, and a role without app access still cannot. This whole path — pre-policy fixture → backfill → zero-row post-check → idempotent re-run → rollback — is exercised automatically in CI by `apps/cms/src/__tests__/upgrade-path.e2e.test.ts` (the `e2e-golden-path` job), so a green build is the release-gate evidence. Role flag columns stay in place through 1.0 for rollback; they are only scheduled to drop in a later release after `LUMIBASE_RBAC_LEGACY_ROLE_FLAGS=false` has shipped and been verified.
 
 ### Rollback from 1.0
 

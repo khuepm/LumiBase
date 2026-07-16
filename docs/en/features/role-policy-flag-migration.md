@@ -89,6 +89,8 @@ Only after a clear release boundary:
 
 ## 4. Idempotent SQL Strategy
 
+> **Implementation:** `packages/database/src/backfill/role-policies.ts` (run via `pnpm --filter @lumibase/database backfill:role-policies`), tested end-to-end in `apps/cms/src/__tests__/upgrade-path.e2e.test.ts`. The pseudo-SQL below documents the intended shape; the shipped code uses a Drizzle transaction and `nanoid()` IDs.
+
 This is pseudo-SQL, not the final migration. The implementation should use a Drizzle/SQL transaction and the same ID generator as the rest of the project.
 
 ```sql
