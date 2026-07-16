@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-16T04:41:56.664Z",
+  "generatedAt": "2026-07-16T05:11:56.086Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -7,9 +7,9 @@
   "summary": {
     "translated": 0,
     "preserved": 0,
-    "conflicts": 1,
+    "conflicts": 3,
     "upToDate": 44,
-    "planned": 94
+    "planned": 92
   },
   "actions": [
     {
@@ -1317,7 +1317,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-16T04-41-56-811Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-16T05-11-56-235Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1358,26 +1358,26 @@
     },
     {
       "rel": "mcp/index.md",
-      "type": "translate",
-      "reason": "en duplicates vi content; replace en with English translation",
+      "type": "conflict",
+      "reason": "en file holds Vietnamese that differs from existing docs/vi",
       "enLang": "vi",
       "viLang": "vi",
-      "sourceLocale": "vi",
-      "targetLocale": "en",
-      "willTranslate": true,
-      "preservedTo": null,
+      "sourceLocale": null,
+      "targetLocale": null,
+      "willTranslate": false,
+      "preservedTo": ".i18n/preserved/mcp/index.md.2026-07-16T05-11-56-235Z.bak.md",
       "missingPlaceholders": 0
     },
     {
       "rel": "mcp/mcp-application-analysis.md",
-      "type": "translate",
-      "reason": "en duplicates vi content; replace en with English translation",
+      "type": "conflict",
+      "reason": "en file holds Vietnamese that differs from existing docs/vi",
       "enLang": "vi",
       "viLang": "vi",
-      "sourceLocale": "vi",
-      "targetLocale": "en",
-      "willTranslate": true,
-      "preservedTo": null,
+      "sourceLocale": null,
+      "targetLocale": null,
+      "willTranslate": false,
+      "preservedTo": ".i18n/preserved/mcp/mcp-application-analysis.md.2026-07-16T05-11-56-235Z.bak.md",
       "missingPlaceholders": 0
     },
     {
