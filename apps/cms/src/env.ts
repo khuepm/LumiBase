@@ -137,13 +137,26 @@ export interface Bindings {
    */
   SENTRY_TRACES_SAMPLE_RATE?: string;
   // ── LLM Provider (POST-GA Task #1) ──────────────────────────────────────
-  /** `'openai'` | `'anthropic'` | `'claude'` | `'gemini'` | `'workers-ai'` | `'echo'` (default). */
+  /**
+   * `'openai'` | `'anthropic'` | `'claude'` | `'gemini'` | `'nvidia'`
+   * | `'vertex'` | `'workers-ai'` | `'echo'` (default).
+   */
   LLM_PROVIDER?: string;
   /** Provider-specific model override. */
   LLM_MODEL?: string;
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  /** NVIDIA hosted inference (build.nvidia.com / NIM) API key. */
+  NVIDIA_API_KEY?: string;
+  /** Optional NVIDIA endpoint override (e.g. a self-hosted NIM container). */
+  NVIDIA_BASE_URL?: string;
+  /** OAuth 2.0 bearer for Vertex AI (e.g. `gcloud auth print-access-token`). Billed to GCP, not AWS. */
+  VERTEX_ACCESS_TOKEN?: string;
+  /** Google Cloud project id that owns the Vertex AI models. */
+  VERTEX_PROJECT_ID?: string;
+  /** Vertex AI region. Defaults to `us-central1`. */
+  VERTEX_LOCATION?: string;
   WORKERS_AI_ACCOUNT_ID?: string;
   WORKERS_AI_API_TOKEN?: string;
   /** Optional Workers AI gateway URL override. */
