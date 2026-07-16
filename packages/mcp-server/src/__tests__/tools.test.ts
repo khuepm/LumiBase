@@ -97,6 +97,15 @@ describe('registerAllTools', () => {
       'list_transform_presets',
       'get_effective_preset',
       'list_preset_bookmarks',
+      'list_reviews',
+      'approve_content',
+      'list_releases',
+      'publish_release',
+      'list_deployments',
+      'get_deployment_logs',
+      'create_share',
+      'revoke_share',
+      'get_site',
     ]) {
       expect(tools.has(name), `missing tool: ${name}`).toBe(true);
     }
@@ -228,6 +237,56 @@ describe('tool handlers call the right endpoints', () => {
     registerAllTools(server as never, client);
     await tools.get('get_effective_preset')!.handler({ collection: 'posts' });
     expect(calls).toContainEqual({ method: 'GET', path: '/presets/effective?collection=posts', body: undefined });
+  });
+
+  it('approve_content → POST /editorial/:collection/:id/approve', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('approve_content')!.handler({ collection: 'posts', id: 'p1', reason: 'ok' });
+    expect(calls).toContainEqual({
+      method: 'POST',
+      path: '/editorial/posts/p1/approve',
+      body: { reason: 'ok' },
+    });
+  });
+
+  it('publish_release → POST /releases/:id/publish', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('publish_release')!.handler({ id: 'rel1' });
+    expect(calls).toContainEqual({ method: 'POST', path: '/releases/rel1/publish', body: {} });
+  });
+
+  it('delete_release → DELETE /releases/:id and confirms', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('delete_release')!.handler({ id: 'rel1', confirm: true });
+    expect(calls).toContainEqual({ method: 'DELETE', path: '/releases/rel1', body: undefined });
+  });
+
+  it('get_deployment_logs → GET /deployments/:id/logs', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('get_deployment_logs')!.handler({ id: 'd1' });
+    expect(calls).toContainEqual({ method: 'GET', path: '/deployments/d1/logs', body: undefined });
+  });
+
+  it('create_share → POST /shares; revoke_share → POST /shares/:id/revoke (confirmed)', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('create_share')!.handler({ collection: 'posts', itemId: 'p1', roleId: 'r1' });
+    await tools.get('revoke_share')!.handler({ id: 's1', confirm: true });
+    expect(calls).toContainEqual({
+      method: 'POST',
+      path: '/shares',
+      body: { collection: 'posts', itemId: 'p1', roleId: 'r1' },
+    });
+    expect(calls).toContainEqual({ method: 'POST', path: '/shares/s1/revoke', body: {} });
   });
 });
 

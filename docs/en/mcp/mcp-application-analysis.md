@@ -123,7 +123,7 @@
    - Presets: `get_effective_preset` (GET `/presets/effective`), `list_preset_bookmarks` (GET `/presets/bookmarks`).
 5. **Bỏ qua / theo dõi:** realtime (không hợp request/response — dùng `cdc_events_read` để poll thay vì subscribe).
 
-**Kết luận:** cả 7 spec Directus-inspired đều đã được phủ ở mức MCP đúng như phân tích, cộng governed versioning. Khoảng trống MCP còn lại: chỉ những thứ **cố ý không hợp** (realtime streaming, signed media URL) — đã ghi rõ lý do ở trên.
+**Kết luận:** cả 7 spec Directus-inspired đều đã được phủ ở mức MCP đúng như phân tích, cộng governed versioning. Ngoài 7 spec, rà soát toàn bộ route `/api/v1/*` còn bổ sung các bề mặt content-ops trước đây chưa lên MCP: **editorial** (`list_reviews`/`submit_review`/`approve_content`/`reject_content`), **releases** (CRUD + `publish_release`), **deployments** (read-only; trigger vẫn governed), **shares** (`create_share`/`revoke_share`), và `get_site`. Khoảng trống MCP còn lại: chỉ những thứ **cố ý loại trừ** — xem bảng "Cố ý KHÔNG đưa lên MCP" trong [`index.md`](index.md) (realtime streaming, signed media URL, binary up/download, trigger deploy, security/GDPR admin, auth/self-service, dev/infra tooling).
 
 > **Vì sao `version.*` đi hướng B chứ không phải stdio passthrough?** `promoteVersion` ghi đè main; nguyên tắc #2 (permission floor + HITL cho write nguy hiểm) đòi hỏi nó chảy qua `AISecureHarness` để vào `agent_approvals`. Stdio server (`@lumibase/mcp-server`) là passthrough không HITL, nên chỉ hợp cho read/CRUD an toàn — không hợp cho promote. Do đó versioning **cố ý không** nằm ở stdio server; nó chỉ xuất hiện ở governed endpoint. Xem [`index.md`](index.md) §Content versions.
 

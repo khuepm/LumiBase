@@ -59,8 +59,27 @@ Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (v0.6.0, `@mode
 | Fields (3) | `list_fields`, `upsert_field`, `delete_field` |
 | Items (5) | `list_items`, `get_item`, `create_item`, `update_item`, `delete_item` |
 | Insights (5, read-only) | `list_dashboards`, `get_dashboard`, `list_dashboard_panels`, `run_panel`, `query_insights` |
+| Editorial (4) | `list_reviews`, `submit_review`, `approve_content`, `reject_content` |
+| Releases (6) | `list_releases`, `get_release`, `create_release`, `update_release`, `publish_release`, `delete_release` |
+| Deployments (4, read-only) | `list_deployment_targets`, `list_deployments`, `get_deployment`, `get_deployment_logs` |
+| Shares (2) | `create_share`, `revoke_share` |
+| TM / presets / misc | `list_tm`/`lookup_tm`/`translate_text`/`upsert_tm`/`update_tm`/`delete_tm`, `get_effective_preset`, `list_preset_bookmarks`, `list_transform_presets`, `get_flow_run`, `get_site` |
 
 > **Insights (Sóng 1 — [`mcp-application-analysis.md`](mcp-application-analysis.md)):** nhóm read-only cho phép agent "hỏi số liệu" — chạy panel đã lưu hoặc query aggregate ad-hoc (`query_insights`, tool giá trị nhất). Không mutate, mang quyền đọc của token, không vào HITL; aggregation được whitelist field + cap giới hạn server-side bởi `InsightsService`. Bảng trên minh hoạ các nhóm chính; nguồn chân lý là [`packages/mcp-server/src/tools/`](../../../packages/mcp-server/src/tools/).
+
+### Cố ý KHÔNG đưa lên MCP (loại trừ có chủ đích)
+
+Không phải bỏ sót — mỗi mục có lý do:
+
+| Bề mặt | Vì sao loại trừ |
+|---|---|
+| `/realtime` (SSE/WS) | MCP là request/response; không streaming. Agent dùng `cdc_events_read` để poll. |
+| Signed media delivery URL | URL đã ký dựng ở edge bằng server secret; không có REST endpoint trả URL. `/files/presigned-url` chỉ cho upload. |
+| Binary `/files`, `/uploads` | Up/download nhị phân stream ở edge — không hợp text tool. |
+| Trigger deploy | Side-effect ra host ngoài → **dangerous**, chỉ ở governed skill `triggerDeployment` (HITL). Stdio chỉ có phần đọc. |
+| `/admin/encryption`·`/admin/sar`·`/admin/erasure`·`/retention`·`/scim-tokens` | Security/GDPR/enterprise admin nhạy cảm — crypto/SSRF/PII logic ở REST, không passthrough. |
+| `/auth`, `/me/*` | Auth/session + self-service của con người, không phải content-ops. |
+| `/typegen`·`/domains`·`/integrations/git`·`/firebase-sync`·`/push` | Dev/infra tooling, giá trị agent thấp. |
 
 ## 2b. Content versions qua MCP (Sóng 2 — governed harness skills)
 
