@@ -68,8 +68,8 @@
   - [x] 11.1 Rà mọi query có `siteId`; queue/cache/lock key prefix site; property test **P9 Tenant isolation** + two-site smoke test (DoD §2b).
   - [x] 11.2 Capability `cdc:subscribe`/`cdc:manage` theo đúng tiền lệ `deployments:*`: dùng trong skills/guards + upgrade note CHANGELOG; KHÔNG thêm flag vào `GET /setup/capabilities` (tiền lệ deployments cũng không — SetupCapabilities chỉ có geoip/smtp; admin thoả qua adminAccess wildcard).
 - [x] 12. AI skills + HITL (Req 7.4)
-  - [x] 12.1 `packages/ai-skills` (5 definitions) + 5 handlers trong ai-harness (`service: 'cdc-feed'`): `listCdcSubscriptions`, `getCdcSubscriptionStatus`, `createCdcSubscription`, `replayCdcSubscription` (capability `cdc:manage`), `deleteCdcSubscription` (dangerous — tên bắt đầu `delete`).
-  - [x] 12.2 HITL test (`cdc-feed-skills-hitl.test.ts`: isControlPlaneSkill + ToolRegistry riskPolicy before_execute): agent gọi `deleteCdcSubscription` dưới ngưỡng autonomy → tạo `ai_approvals`, không xoá ngay.
+  - [x] 12.1 `packages/ai-skills` (5 definitions) + 5 handlers trong ai-harness (`service: 'cdc-feed'`): `listCdcSubscriptions`, `getCdcSubscriptionStatus` (read, safe), `createCdcSubscription`, `replayCdcSubscription` (capability `cdc:manage`, `dangerous: true`), `deleteCdcSubscription` (dangerous — tên bắt đầu `delete`).
+  - [x] 12.2 HITL test (`cdc-feed-skills-hitl.test.ts`: isControlPlaneSkill + ToolRegistry riskPolicy before_execute): agent gọi `createCdcSubscription`/`replayCdcSubscription`/`deleteCdcSubscription` dưới ngưỡng autonomy → tạo `ai_approvals`, không thực thi ngay.
   - [x] 12.3 MCP coverage: thêm `packages/mcp-server/src/tools/cdc.ts` (`registerCdcTools` qua `registerCrud` cho `/cdc/subscriptions` + `registerTool` cho `/cdc/events`, `.../replay`) và wire vào `registerAllTools`; test tool đi qua REST → guard capability/HITL không bị bypass. (Req 7.8)
 - [x] 13. Audit & masking (Req 7.5, 8.4) — audit log cho create/delete/pause/resume/replay (actor + diff, secret masked); masking `errorMessage` deliveries.
 
