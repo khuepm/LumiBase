@@ -13,6 +13,10 @@ LumiBase integrates **MeiliSearch** as its full-text search backend, behind the
 Both implement the same `SearchProvider` interface — application code never
 needs to know which one is active.
 
+To self-host the Docker backend on AWS (Lightsail / ECS Fargate) instead of
+running it alongside the CMS, see
+[Deploying MeiliSearch on AWS](../deployment/meilisearch-aws.md).
+
 ## API endpoint
 
 `GET /api/v1/search?q=...&collection=...&filter=...&sort=...&limit=...&offset=...`

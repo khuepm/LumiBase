@@ -88,12 +88,22 @@ For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `LLM_PROVIDER` | ✗ | LLM provider: `openai`, `anthropic`, `claude`, `gemini`, `workers-ai`, `echo` (default: `echo`) |
+| `LLM_PROVIDER` | ✗ | LLM provider: `openai`, `anthropic`, `claude`, `gemini`, `nvidia`, `vertex`, `workers-ai`, `echo` (default: `echo`) |
 | `OPENAI_API_KEY` | If `openai` provider | OpenAI API key |
 | `ANTHROPIC_API_KEY` | If `anthropic` / `claude` provider | Anthropic API key |
 | `GEMINI_API_KEY` | If `gemini` provider | Google Gemini API key |
-| `LLM_MODEL` | ✗ | Model name override (e.g., `gpt-4.1-nano`, `claude-3-5-haiku-latest`, `gemini-3.5-flash`) |
+| `NVIDIA_API_KEY` | If `nvidia` provider | NVIDIA hosted-inference key (build.nvidia.com / NIM). Billed by NVIDIA. |
+| `NVIDIA_BASE_URL` | ✗ | Override the NVIDIA endpoint — e.g. a self-hosted NIM container (`http://nim:8000/v1`). Defaults to `https://integrate.api.nvidia.com/v1`. |
+| `VERTEX_ACCESS_TOKEN` | If `vertex` provider | Google Cloud OAuth 2.0 bearer (`gcloud auth print-access-token`). Tokens expire (~1h). **Billed to Google Cloud, not AWS.** |
+| `VERTEX_PROJECT_ID` | If `vertex` provider | Google Cloud project id that owns the Vertex AI models. |
+| `VERTEX_LOCATION` | ✗ | Vertex AI region (default: `us-central1`). |
+| `LLM_MODEL` | ✗ | Model name override (e.g., `gpt-4.1-nano`, `claude-3-5-haiku-latest`, `gemini-3.5-flash`, `meta/llama-3.1-8b-instruct`) |
 | `WORKERS_AI_GATEWAY` | Workers AI only | CF Workers AI gateway URL |
+
+> **Provider ↔ billing:** `nvidia` and `vertex` call *external* clouds — NVIDIA
+> and Google Cloud respectively — so their usage is **not** covered by AWS
+> credit. `nvidia` (or a self-hosted NIM via `NVIDIA_BASE_URL`) and MeiliSearch
+> are the pieces that pair naturally with AWS-hosted infrastructure.
 
 ---
 
