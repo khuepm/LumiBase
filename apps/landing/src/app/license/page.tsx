@@ -18,7 +18,7 @@ export default function License() {
 
       <div className="mt-12 rounded-xl border border-ink-700 bg-ink-900 p-8">
         <pre className="whitespace-pre-wrap font-mono text-sm text-gray-300">
-          {`Copyright (c) 2025 LumiBase Contributors
+          {`Copyright (c) 2025-2026 LumiBase Contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
