@@ -280,6 +280,24 @@ export interface Variables {
     forgotPath(email: string, ip: string): Promise<void>;
     validateUnlockToken(token: string): Promise<{ readonly userId: string } | null>;
   };
+  /**
+   * Test-only injection seam for the public setup routes. When set via
+   * `c.set('setupServiceOverride', stub)` *before* the setup router runs,
+   * `modules/setup/routes.ts` uses the stub instead of constructing a real
+   * `SetupService` — so `POST /setup/complete` can be exercised without a
+   * live Postgres. Declared structurally (only the `complete` method the
+   * route calls) to keep `env.ts` free of route/service imports, mirroring
+   * `recoveryServiceOverride`. The real `SetupService` satisfies this shape.
+   */
+  setupServiceOverride?: {
+    complete(
+      input: unknown,
+      ctx: unknown,
+    ): Promise<
+      | { readonly ok: true; readonly value: unknown }
+      | { readonly ok: false; readonly error: unknown }
+    >;
+  };
 }
 
 export type AppEnv = {
