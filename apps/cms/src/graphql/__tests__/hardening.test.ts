@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { NoSchemaIntrospectionCustomRule, parse, validate } from 'graphql';
 import { buildSiteSchema } from '../schema-builder';
 import { depthLimitRule } from '../depth-limit';
+import { costLimitRule, type CostLimitOptions } from '../cost-limit';
 import type { CompiledCollection, CompiledField } from '../../services/schema-service';
 
 function field(name: string, type: string): CompiledField {
@@ -21,8 +22,15 @@ const articles: CompiledCollection = {
   primaryKeyType: 'nanoid', storageMode: 'jsonb', displayTemplate: null, sortField: null,
   archiveField: null, archiveValue: null, unarchiveValue: null, itemDuplicationFields: [],
   translations: {}, accountability: 'all', versioning: false, meta: {}, systemFields: [],
-  fields: [field('title', 'string')],
+  fields: [
+    field('title', 'string'),
+    field('body', 'string'),
+    field('slug', 'string'),
+    field('summary', 'string'),
+  ],
 };
+
+const LOW_COST: CostLimitOptions = { maxCost: 5, defaultListSize: 3, maxListMultiplier: 100 };
 
 function fakeSchemaService(collections: CompiledCollection[]) {
   return {
@@ -60,6 +68,97 @@ describe('GraphQL hardening', () => {
   it('introspection is permitted when the rule is not applied (dev)', async () => {
     const schema = await buildSiteSchema(fakeSchemaService([articles]));
     const errors = validate(schema, parse(`{ __schema { types { name } } }`));
+    expect(errors).toHaveLength(0);
+  });
+});
+
+describe('GraphQL cost limiting', () => {
+  it('rejects wide, shallow queries that exceed the cost limit', async () => {
+    const schema = await buildSiteSchema(fakeSchemaService([articles]));
+    // articles (list, defaultListSize 3) × 4 fields = 1 * (1 + 3*4) = 13 > 5.
+    const errors = validate(
+      schema,
+      parse(`{ articles { title body slug summary } }`),
+      [costLimitRule(LOW_COST)],
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toMatch(/maximum cost of 5/);
+  });
+
+  it('allows an ordinary query within the cost limit', async () => {
+    const schema = await buildSiteSchema(fakeSchemaService([articles]));
+    // 1 * (1 + 3*1) = 4 ≤ 5.
+    const errors = validate(schema, parse(`{ articles { title } }`), [costLimitRule(LOW_COST)]);
+    expect(errors).toHaveLength(0);
+  });
+
+  it('prices a large literal pagination argument up to the limit', async () => {
+    const schema = await buildSiteSchema(fakeSchemaService([articles]));
+    // limit 10 → 1 * (1 + 10*1) = 11 > 5.
+    const errors = validate(schema, parse(`{ articles(limit: 10) { title } }`), [costLimitRule(LOW_COST)]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toMatch(/maximum cost of 5/);
+  });
+
+  it('honours a small literal pagination argument', async () => {
+    const schema = await buildSiteSchema(fakeSchemaService([articles]));
+    // limit 2 → 1 * (1 + 2*1) = 3 ≤ 5.
+    const errors = validate(schema, parse(`{ articles(limit: 2) { title } }`), [costLimitRule(LOW_COST)]);
+    expect(errors).toHaveLength(0);
+  });
+
+  it('accumulates cost across duplicated aliases of the same field', async () => {
+    const schema = await buildSiteSchema(fakeSchemaService([articles]));
+    // two aliases: 4 + 4 = 8 > 5.
+    const errors = validate(
+      schema,
+      parse(`{ a: articles { title } b: articles { title } }`),
+      [costLimitRule(LOW_COST)],
+    );
+    expect(errors).toHaveLength(1);
+  });
+
+  it('clamps an over-large pagination argument to maxListMultiplier', async () => {
+    const schema = await buildSiteSchema(fakeSchemaService([articles]));
+    // limit 999999 clamps to 100 → 1 * (1 + 100*1) = 101; still well over any small cap.
+    const errors = validate(
+      schema,
+      parse(`{ articles(limit: 999999) { title } }`),
+      [costLimitRule({ maxCost: 50, defaultListSize: 3, maxListMultiplier: 100 })],
+    );
+    expect(errors).toHaveLength(1);
+    // A clamped multiplier of 100 (not 999999) keeps the reported cost bounded.
+    expect(errors[0]?.message).toMatch(/maximum cost of 50/);
+  });
+
+  it('does not charge for introspection meta-fields', async () => {
+    const schema = await buildSiteSchema(fakeSchemaService([articles]));
+    const errors = validate(schema, parse(`{ __typename }`), [costLimitRule(LOW_COST)]);
+    expect(errors).toHaveLength(0);
+  });
+
+  it('counts fields hidden behind a fragment spread', async () => {
+    const schema = await buildSiteSchema(fakeSchemaService([articles]));
+    // Fragments must not let a client dodge the cost accounting.
+    const errors = validate(
+      schema,
+      parse(`
+        { articles { ...f } }
+        fragment f on Articles { title body slug summary }
+      `),
+      [costLimitRule(LOW_COST)],
+    );
+    expect(errors).toHaveLength(1);
+  });
+
+  it('a generous default limit passes ordinary Studio-style queries', async () => {
+    const schema = await buildSiteSchema(fakeSchemaService([articles]));
+    // Same query as the "wide" case but under the production default (1000).
+    const errors = validate(
+      schema,
+      parse(`{ articles(limit: 25) { title body slug summary } }`),
+      [costLimitRule({ maxCost: 1000, defaultListSize: 20, maxListMultiplier: 100 })],
+    );
     expect(errors).toHaveLength(0);
   });
 });

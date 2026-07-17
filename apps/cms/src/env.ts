@@ -124,6 +124,12 @@ export interface Bindings {
   LUMIBASE_RATE_LIMIT_MAX?: string;
   /** Window length in seconds for the general API rate limiter (default 60). */
   LUMIBASE_RATE_LIMIT_WINDOW_S?: string;
+  /** Max static cost accepted per GraphQL operation (default 1000). */
+  LUMIBASE_GQL_MAX_COST?: string;
+  /** List multiplier for GraphQL list fields lacking a literal pagination arg (default 20). */
+  LUMIBASE_GQL_DEFAULT_LIST_SIZE?: string;
+  /** Upper clamp on a GraphQL list field's cost multiplier (default 100). */
+  LUMIBASE_GQL_MAX_LIST_MULTIPLIER?: string;
   /**
    * Sentry DSN for the Cloudflare Workers build. When unset, `withSentry`
    * in `cloudflare.ts` initializes with an empty DSN and Sentry becomes a
