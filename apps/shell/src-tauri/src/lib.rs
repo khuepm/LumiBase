@@ -46,11 +46,16 @@ pub fn run() {
                 .build(),
         );
 
-    // Desktop-only plugins + auto-update + hybrid remote upgrade.
+    // Desktop-only plugins + auto-update + hybrid remote upgrade + keychain.
     #[cfg(desktop)]
     let builder = builder
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build());
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            secure_store::secure_get,
+            secure_store::secure_set,
+            secure_store::secure_delete,
+        ]);
 
     builder
         .setup(|app| {
@@ -181,6 +186,44 @@ mod remote {
                 log::info!("remote Studio probe failed: {error}");
                 false
             }
+        }
+    }
+}
+
+/// OS-keychain-backed storage for the Studio session tokens, exposed to the SPA
+/// as `secure_get` / `secure_set` / `secure_delete` commands. Desktop only —
+/// on mobile the commands are not registered, so the frontend falls back to the
+/// sandboxed webview storage.
+#[cfg(desktop)]
+mod secure_store {
+    use keyring::Entry;
+
+    /// Keychain service namespace; the `key` (e.g. "token") is the account.
+    const SERVICE: &str = "com.lumibase.studio";
+
+    fn entry(key: &str) -> Result<Entry, String> {
+        Entry::new(SERVICE, key).map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn secure_get(key: String) -> Result<Option<String>, String> {
+        match entry(&key)?.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
+    #[tauri::command]
+    pub fn secure_set(key: String, value: String) -> Result<(), String> {
+        entry(&key)?.set_password(&value).map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn secure_delete(key: String) -> Result<(), String> {
+        match entry(&key)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(error) => Err(error.to_string()),
         }
     }
 }

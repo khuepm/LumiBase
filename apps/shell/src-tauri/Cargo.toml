@@ -31,6 +31,15 @@ tauri-plugin-dialog = "2"
 # Forwards deep links to the already-running instance instead of spawning a new
 # one (desktop only; mobile routes deep links to the live app automatically).
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+# OS keychain for session tokens (macOS Keychain / Windows Credential Manager /
+# Linux Secret Service). Desktop only; mobile falls back to sandboxed webview
+# storage. `crypto-rust` avoids a system OpenSSL build dependency on Linux.
+keyring = { version = "3", features = [
+  "apple-native",
+  "windows-native",
+  "sync-secret-service",
+  "crypto-rust",
+] }
 # Lightweight probe for the hybrid "remote-first" connectivity check. rustls
 # avoids a system OpenSSL build dependency across platforms.
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }

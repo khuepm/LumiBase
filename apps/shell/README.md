@@ -162,13 +162,25 @@ To rotate keys, regenerate and replace the committed `pubkey`:
 pnpm -F @lumibase/shell exec tauri signer generate -w lumibase-shell-updater.key
 ```
 
+## Secure token storage
+
+In the desktop shell the Studio session tokens are kept in the **OS keychain**
+(macOS Keychain, Windows Credential Manager, Linux Secret Service) via the
+`secure_get` / `secure_set` / `secure_delete` commands (`src/lib.rs`,
+`keyring` crate) rather than plaintext webview `localStorage`. The frontend
+side (`apps/studio/src/lib/token-store.ts`) keeps the public token accessors
+synchronous by caching in memory and hydrating from the keychain once at
+startup; it migrates any pre-existing localStorage tokens into the keychain on
+first run.
+
+If the keychain is unavailable (a Linux box with no Secret Service daemon, or
+mobile — where the commands are not registered) it transparently falls back to
+`localStorage`, which on iOS/Android is already app-sandboxed. In the browser,
+behavior is unchanged (localStorage).
+
 ## Roadmap / not yet implemented
 
-- **OS-keychain token storage.** Studio currently persists the session token in
-  the webview's `localStorage`, which the shell inherits. Moving it to the OS
-  keychain/keystore (e.g. `tauri-plugin-stronghold`) is a deliberate follow-up:
-  it touches the auth flow shared with the browser build and requires making the
-  token accessors async, so it is intentionally out of scope for the initial
-  build-enablement work rather than done shallowly.
 - **iOS/Android store submission** (Fastlane lanes, provisioning) beyond the CI
   build jobs.
+- **Mobile keystore/Keychain** for tokens (currently sandboxed webview storage
+  on mobile; desktop uses the OS keychain as above).

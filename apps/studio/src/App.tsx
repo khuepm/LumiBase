@@ -6,6 +6,7 @@ import { SiteThemeStyle } from './components/site-theme';
 import { getApiBaseUrl } from './lib/api-base';
 import { isDesktopShell } from './lib/shell';
 import { ServerConnection } from './components/server-connection';
+import { hydrateTokens } from './lib/token-store';
 
 /**
  * Root component. Hands off to TanStack Router; AppShell + active module
@@ -15,14 +16,16 @@ import { ServerConnection } from './components/server-connection';
  * user picks a server, so we gate on a resolved API base first.
  */
 export function App() {
-  const [i18nReady, setI18nReady] = useState(false);
+  const [ready, setReady] = useState(false);
   const [connected, setConnected] = useState(() => !isDesktopShell() || Boolean(getApiBaseUrl()));
 
   useEffect(() => {
-    initI18n().finally(() => setI18nReady(true));
+    // Hydrate persisted tokens (OS keychain in the shell) before the router
+    // reads them, in parallel with i18n init.
+    Promise.all([initI18n(), hydrateTokens()]).finally(() => setReady(true));
   }, []);
 
-  if (!i18nReady) {
+  if (!ready) {
     return <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">Loading Studio…</div>;
   }
 
