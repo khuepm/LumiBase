@@ -106,10 +106,39 @@ pnpm -F @lumibase/shell exec tauri icon src-tauri/icons/app-icon.png
 Edit `src-tauri/icons/app-icon.svg`, re-render to `app-icon.png` (1024×1024), then
 re-run the command above to regenerate every size/format.
 
+## Releasing
+
+Pushing a `v*.*.*` tag runs `.github/workflows/release-apps.yml`, which builds
+the shell on macOS/Linux/Windows runners (plus Android, and iOS when Apple
+secrets are present) and uploads the signed bundles and `latest.json` to the
+GitHub Release. Required/optional secrets are documented at the top of that
+workflow. The desktop `.deb`/`.rpm`/`.AppImage`/`.msi`/`.dmg` build was verified
+locally end-to-end (`.deb` + `.rpm` produced from a signed release build).
+
+## Server connection
+
+Because the bundled app is served from `tauri://localhost` with no co-located
+backend, on first run inside the shell Studio shows a **Connect to LumiBase**
+screen (`apps/studio/src/components/server-connection.tsx`). The entered origin
+is validated against the CMS `/health` endpoint and persisted as a runtime
+API-base override (`lib/api-base.ts`). Self-hosted CMS servers must allow the
+shell origin (`tauri://localhost`, `https://tauri.localhost` on Windows) via
+`CORS_ALLOWED_ORIGINS`. In remote (hosted) mode this is same-origin and no CORS
+is involved.
+
+## Deep links
+
+The `lumibase://` scheme (desktop) and `studio.lumibase.dev` universal links
+(mobile) are registered via `tauri-plugin-deep-link`. Opened URLs are forwarded
+to the SPA as a `shell://deep-link` event (`src/lib.rs`) for auth callbacks.
+`tauri-plugin-single-instance` ensures a deep-link launch focuses the running
+window instead of opening a duplicate.
+
 ## Auto-update (desktop)
 
 Desktop builds check for updates in the background on launch (`src/lib.rs`) via
-`tauri-plugin-updater`. Updates are verified against the minisign public key in
+`tauri-plugin-updater`, then prompt "Update ready — restart now?" and relaunch on
+confirmation. Updates are verified against the minisign public key in
 `tauri.conf.json → plugins.updater.pubkey`.
 
 The release pipeline must:
@@ -132,3 +161,14 @@ To rotate keys, regenerate and replace the committed `pubkey`:
 ```bash
 pnpm -F @lumibase/shell exec tauri signer generate -w lumibase-shell-updater.key
 ```
+
+## Roadmap / not yet implemented
+
+- **OS-keychain token storage.** Studio currently persists the session token in
+  the webview's `localStorage`, which the shell inherits. Moving it to the OS
+  keychain/keystore (e.g. `tauri-plugin-stronghold`) is a deliberate follow-up:
+  it touches the auth flow shared with the browser build and requires making the
+  token accessors async, so it is intentionally out of scope for the initial
+  build-enablement work rather than done shallowly.
+- **iOS/Android store submission** (Fastlane lanes, provisioning) beyond the CI
+  build jobs.
