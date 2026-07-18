@@ -21,12 +21,12 @@
   - [x] 4.2 Khẳng định message nêu `maxCost` và validate fail ở tầng validate, trước execute (Req 4.2)
   - [x] 4.3 Test trần thay đổi có hiệu lực — truyền `maxCost` khác trực tiếp vào rule (env→rule đã đơn giản, phủ ở test wiring của `gqlInt` không cần thiết) (Req 4.3)
   - [x] 4.4 Depth-limit + introspection test cũ vẫn xanh (Req 4.4)
-  - Ghi chú trung thực: **nested-list multiplier (list-trong-list) chưa có test riêng** — schema test hiện chỉ có root list `articles`; logic nhân lồng nhau qua đệ quy đã có nhưng chưa được test qua một relation o2m. Đề xuất bổ sung khi thêm collection có relation vào fixture test (không chặn merge — logic single-level đã phủ).
+  - [x] 4.5 **Nested-list multiplier** (Req 2.4) đã có test riêng: fixture thêm o2m `authors→books` (`fakeSchemaService` nhận relations, default `[]` nên không phá test cũ); 2 case — (a) `authors(limit:2){ books(limit:2){…} }` cost 7 vượt cap 6; (b) cùng outer, inner 2 vs 5 ⇒ 7 vs 13, chứng minh multiplier lồng nhân qua tích. Case inner-2 `toHaveLength(0)` cũng loại false-positive "unknown field" (chứng minh relation field build thật).
 
 - [x] 5. Verify & DoD
-  - [x] 5.1 `pnpm -F @lumibase/cms test graphql/__tests__/hardening.test.ts` 13/13 xanh; `pnpm -F @lumibase/cms typecheck` sạch. **Lưu ý:** `pnpm turbo run typecheck` (recursive) fail ở `@lumibase/extension-cli` do **thiếu `node_modules` trong worktree** (lỗi môi trường pre-existing: "Cannot find type definition file for 'node'"), KHÔNG liên quan thay đổi này.
+  - [x] 5.1 `pnpm -F @lumibase/cms test graphql/__tests__/hardening.test.ts` 15/15 xanh (graphql suite 28/28); `pnpm -F @lumibase/cms typecheck` sạch. **Lưu ý:** `pnpm turbo run typecheck` (recursive) fail ở `@lumibase/extension-cli` do **thiếu `node_modules` trong worktree** (lỗi môi trường pre-existing: "Cannot find type definition file for 'node'"), KHÔNG liên quan thay đổi này.
   - [x] 5.2 Ghi kết quả vào Setup Impact Registry — hàng #78, verdict `n/a` (thuần API hardening; 3 env mới là `Bindings` optional có default, không phải settings-DB key / không đụng setup wizard)
 
 ---
 
-**Implementation status:** Implemented 2026-07-17. `cost-limit.ts` + wiring in `yoga.ts` + env types + 9 new tests in `hardening.test.ts` (13/13 pass, cms typecheck clean). Follow-up test gap noted: nested-list multiplier lacks a dedicated case (needs a relation in the test fixture).
+**Implementation status:** Implemented 2026-07-17. `cost-limit.ts` + wiring in `yoga.ts` + env types + 11 tests in `hardening.test.ts` (15/15 pass, cms typecheck clean). Nested-list multiplier gap closed 2026-07-19 via an o2m `authors→books` fixture (2 dedicated cases).

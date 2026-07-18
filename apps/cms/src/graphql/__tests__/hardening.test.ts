@@ -32,11 +32,39 @@ const articles: CompiledCollection = {
 
 const LOW_COST: CostLimitOptions = { maxCost: 5, defaultListSize: 3, maxListMultiplier: 100 };
 
-function fakeSchemaService(collections: CompiledCollection[]) {
+/** A collection with the same shape as `articles` but a caller-chosen name/fields. */
+function collection(name: string, fieldNames: string[]): CompiledCollection {
+  return {
+    ...articles,
+    id: `c-${name}`,
+    name,
+    fields: fieldNames.map((f) => field(f, 'string')),
+  };
+}
+
+// authors (one) --o2m--> books (many): the `books` field on the Authors type is
+// a list, giving us a list-inside-a-list for the nested-multiplier test.
+const authors = collection('authors', ['name']);
+const books = collection('books', ['title']);
+
+type RelationRow = Awaited<ReturnType<Parameters<typeof buildSiteSchema>[0]['listRelations']>>[number];
+
+const authorsBooksRelation = {
+  type: 'o2m',
+  oneCollection: 'authors',
+  manyCollection: 'books',
+  manyField: 'author_id',
+  aliasField: null,
+} as unknown as RelationRow;
+
+function fakeSchemaService(
+  collections: CompiledCollection[],
+  relations: RelationRow[] = [],
+) {
   return {
     listCollections: vi.fn(async () => collections.map((c) => ({ name: c.name }))),
     getCompiled: vi.fn(async (name: string) => collections.find((c) => c.name === name) ?? null),
-    listRelations: vi.fn(async () => []),
+    listRelations: vi.fn(async () => relations),
   } as unknown as Parameters<typeof buildSiteSchema>[0];
 }
 
@@ -149,6 +177,44 @@ describe('GraphQL cost limiting', () => {
       [costLimitRule(LOW_COST)],
     );
     expect(errors).toHaveLength(1);
+  });
+
+  it('multiplies nested list multipliers (list inside a list)', async () => {
+    const schema = await buildSiteSchema(
+      fakeSchemaService([authors, books], [authorsBooksRelation]),
+    );
+    // authors(limit 2) → books(limit 2) → title:
+    //   books subtree = 2*(1) = 2; books field under authors-mult 2 = 2*(1+2)=6;
+    //   authors field = 1*(1 + 6) = 7 > 6.
+    const inner2 = validate(
+      schema,
+      parse(`{ authors(limit: 2) { books(limit: 2) { title } } }`),
+      [costLimitRule({ maxCost: 6, defaultListSize: 3, maxListMultiplier: 100 })],
+    );
+    expect(inner2).toHaveLength(1);
+  });
+
+  it('reflects the inner list size in the nested cost', async () => {
+    const schema = await buildSiteSchema(
+      fakeSchemaService([authors, books], [authorsBooksRelation]),
+    );
+    // Same outer limit, larger inner limit → strictly higher cost:
+    //   inner 2 → authors cost 7; inner 5 → 1*(1 + 2*(1+5)) = 13.
+    // Under a cap of 10, inner-2 passes but inner-5 is rejected — proving the
+    // inner multiplier propagates through the product, not just the outer one.
+    const opts = { maxCost: 10, defaultListSize: 3, maxListMultiplier: 100 };
+    const small = validate(
+      schema,
+      parse(`{ authors(limit: 2) { books(limit: 2) { title } } }`),
+      [costLimitRule(opts)],
+    );
+    const large = validate(
+      schema,
+      parse(`{ authors(limit: 2) { books(limit: 5) { title } } }`),
+      [costLimitRule(opts)],
+    );
+    expect(small).toHaveLength(0);
+    expect(large).toHaveLength(1);
   });
 
   it('a generous default limit passes ordinary Studio-style queries', async () => {
