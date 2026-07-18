@@ -10,6 +10,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
+import rehypeRaw from 'rehype-raw';
 import rehypeSlug from 'rehype-slug';
 import rehypeShikiFromHighlighter from '@shikijs/rehype/core';
 import { createHighlighter, type Highlighter, type ShikiTransformer } from 'shiki';
@@ -376,9 +377,15 @@ export function MarkdownRenderer({
     [currentSlug, knownSlugs, currentLocale],
   );
 
-  // Build rehype plugins — only include shiki when highlighter is ready
+  // Build rehype plugins — only include shiki when highlighter is ready.
+  // rehypeRaw must run first: react-markdown's remark→rehype conversion
+  // otherwise leaves embedded HTML (e.g. the <div align="center"> banners
+  // and comparison tables in tutorials) as literal raw/comment mdast nodes,
+  // which render as escaped text instead of real elements. rehypeRaw parses
+  // that raw HTML into actual hast elements so every plugin after it (and
+  // the component overrides below) sees real <div>/<table>/<h2> nodes.
   const rehypePlugins = useMemo(() => {
-    const plugins: any[] = [rehypeSlug];
+    const plugins: any[] = [rehypeRaw, rehypeSlug];
     if (highlighter) {
       plugins.push([
         rehypeShikiFromHighlighter,
