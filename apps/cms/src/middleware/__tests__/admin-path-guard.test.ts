@@ -356,15 +356,31 @@ describe('adminPathGuard — state caching', () => {
 // ── failure handling ───────────────────────────────────────────────────
 
 describe('adminPathGuard — DB read failure', () => {
-  it('fails open (calls next) when state read errors out', async () => {
+  it('fails closed (canonical 404) when state read errors out', async () => {
     const { db } = makeFakeDb({ failOnSelect: true });
     const app = buildApp(db);
-    // Suppress the expected console.error noise — failure path is
-    // intentionally swallowed by the guard.
+    // Suppress the expected console.error noise — the guard logs the read
+    // failure before failing closed.
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await app.request('/admin');
     errSpy.mockRestore();
-    // Guard fails open → downstream handler responds 200.
-    expect(res.status).toBe(200);
+    // A DB hiccup must NOT downgrade the guard into leaking that the Studio
+    // path is special — it emits the same indistinguishable 404 as a miss.
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body).toEqual({ errors: [{ code: 'NOT_FOUND' }] });
+  });
+
+  it('fails closed (canonical 404) when no DB is resolvable', async () => {
+    // `c.get('db')` unset → resolveDb() returns null. Rather than bypassing
+    // the guard, a degraded/misconfigured deployment must still 404 Studio
+    // paths so their existence cannot be probed.
+    const app = new Hono<AppEnv>();
+    app.use('*', adminPathGuard());
+    app.all('*', (c) => c.json({ ok: true }, 200));
+    const res = await app.request('/admin');
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body).toEqual({ errors: [{ code: 'NOT_FOUND' }] });
   });
 });

@@ -9,9 +9,11 @@ import {
   type Database,
 } from '@lumibase/database';
 import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
-import type { CacheProvider } from '@lumibase/runtime';
-import type { FieldClassification } from '@lumibase/shared';
+import type { CacheProvider, QueueProvider } from '@lumibase/runtime';
+import type { CdcOperation, CdcResource, FieldClassification } from '@lumibase/shared';
 import { AuditLogger } from '../modules/audit/logger';
+import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';
+import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
 
 /**
  * SchemaService — owns the no-code collection/field/relation lifecycle.
@@ -24,6 +26,10 @@ import { AuditLogger } from '../modules/audit/logger';
  */
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
+// Physical-namespace prefixes reserved by the platform: `lumibase_` is every
+// system table (ADR-010) and `mat_` is materialized collection tables.
+// User- and AI-created collections must never claim them.
+const RESERVED_COLLECTION_PREFIXES: ReadonlyArray<string> = ['lumibase_', 'mat_'];
 const SYSTEM_FIELD_NAMES = new Set([
   'id',
   'status',
@@ -286,6 +292,16 @@ const ensureName = (name: string, kind: 'collection' | 'field') => {
       `${kind} name must match ${NAME_PATTERN}; received "${name}".`,
     );
   }
+  if (kind === 'collection') {
+    const reserved = RESERVED_COLLECTION_PREFIXES.find((prefix) => name.startsWith(prefix));
+    if (reserved) {
+      throw new SchemaServiceError(
+        'RESERVED_NAME',
+        `Collection names starting with "${reserved}" are reserved for system tables.`,
+        422,
+      );
+    }
+  }
 };
 
 const cacheKey = (siteId: string, name: string) => `schema:${siteId}:${name}`;
@@ -297,10 +313,62 @@ export interface SchemaServiceDeps {
   events?: {
     emit(event: SchemaChangedEvent): Promise<void>;
   };
+  /** Dispatch-queue for the change feed (latency path); sweep is the backstop. */
+  queue?: QueueProvider;
+  /** Attribution for schema change events written to the feed (defaults to system). */
+  cdcActor?: OutboxActor;
 }
 
 export class SchemaService {
   constructor(private readonly deps: SchemaServiceDeps) {}
+
+  private outboxWriter: OutboxWriter | null = null;
+
+  /**
+   * Append a schema change event to the Change Feed (collections.* / fields.*).
+   * Best-effort and never throws — a lost schema event must not fail the DDL
+   * (mirrors ItemService's outbox contract). Masking is skipped for non-item
+   * resources, so `getSensitiveFields` is a no-op here.
+   */
+  private async emitCdcSchemaEvent(
+    resource: Extract<CdcResource, 'collection' | 'field'>,
+    operation: CdcOperation,
+    collectionName: string,
+    itemId: string,
+    payload: Record<string, unknown> | null,
+  ): Promise<void> {
+    try {
+      if (!this.outboxWriter) {
+        this.outboxWriter = new OutboxWriter({
+          db: this.deps.db,
+          siteId: this.deps.siteId,
+          cache: this.deps.cache,
+          getSensitiveFields: async () => new Set(),
+          auditWarn: async (warning) => {
+            await new AuditLogger({ db: this.deps.db, siteId: this.deps.siteId }).write({
+              event: warning.event,
+              requestId: null,
+              metadata: { ...warning },
+            });
+          },
+        });
+      }
+      const actor: OutboxActor = this.deps.cdcActor ?? { type: 'system' };
+      const source = actor.type === 'system' ? ('system' as const) : ('api' as const);
+      const result = await this.outboxWriter.write(
+        { resource, collection: collectionName, itemId, operation, payload },
+        actor,
+        source,
+      );
+      if (result.written && this.deps.queue) {
+        this.deps.queue
+          .enqueue(CDC_DISPATCH_QUEUE, 'dispatch', { siteId: this.deps.siteId })
+          .catch(() => {});
+      }
+    } catch {
+      // never let feed capture take down a schema mutation
+    }
+  }
 
   // ---------- Collections ----------
 
@@ -342,10 +410,20 @@ export class SchemaService {
       .values({ ...input, siteId: this.deps.siteId })
       .returning();
     await this.invalidate(input.name);
+    await this.emitCdcSchemaEvent(
+      'collection',
+      'create',
+      input.name,
+      input.name,
+      (row as Record<string, unknown>) ?? null,
+    );
     return row;
   }
 
   async updateCollection(name: string, patch: Partial<CollectionInput>) {
+    if (patch.name !== undefined && patch.name !== name) {
+      ensureName(patch.name, 'collection');
+    }
     const current = await this.getCollection(name);
     if (!current) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
@@ -360,6 +438,14 @@ export class SchemaService {
       .where(eq(collections.id, current.id))
       .returning();
     await this.invalidate(name);
+    // itemId keys on the post-update name so consumers can follow a rename.
+    await this.emitCdcSchemaEvent(
+      'collection',
+      'update',
+      (patch.name ?? name) as string,
+      (patch.name ?? name) as string,
+      (row as Record<string, unknown>) ?? null,
+    );
     return row;
   }
 
@@ -392,6 +478,7 @@ export class SchemaService {
     }
     await this.deps.db.delete(collections).where(eq(collections.id, current.id));
     await this.invalidate(name);
+    await this.emitCdcSchemaEvent('collection', 'delete', name, name, null);
     return { ok: true } as const;
   }
 
@@ -446,6 +533,13 @@ export class SchemaService {
       await this.auditClassificationChange(collectionName, input.name, null, input.classification);
     }
     await this.invalidate(collection.name);
+    await this.emitCdcSchemaEvent(
+      'field',
+      'create',
+      collection.name,
+      input.name,
+      (row as Record<string, unknown>) ?? null,
+    );
     return row;
   }
 
@@ -495,6 +589,13 @@ export class SchemaService {
       );
     }
     await this.invalidate(collection.name);
+    await this.emitCdcSchemaEvent(
+      'field',
+      'update',
+      collection.name,
+      fieldName,
+      (row as Record<string, unknown>) ?? null,
+    );
     return row;
   }
 
@@ -538,6 +639,14 @@ export class SchemaService {
       .where(eq(fields.id, existing.id))
       .returning();
     await this.invalidate(collection.name);
+    // Rename is an update keyed on the new field name.
+    await this.emitCdcSchemaEvent(
+      'field',
+      'update',
+      collection.name,
+      input.name,
+      (row as Record<string, unknown>) ?? null,
+    );
     return row;
   }
 
@@ -592,6 +701,7 @@ export class SchemaService {
       throw new SchemaServiceError('NOT_FOUND', `Field "${fieldName}" not found.`, 404);
     }
     await this.invalidate(collection.name);
+    await this.emitCdcSchemaEvent('field', 'delete', collection.name, fieldName, null);
     return { ok: true } as const;
   }
 
@@ -794,11 +904,26 @@ export class SchemaService {
     if (input.name && input.name !== name) {
       throw new SchemaServiceError('COLLECTION_RENAME_UNSUPPORTED', 'Schema apply cannot rename collections through this endpoint yet.', 400);
     }
-    const current = await this.getCollection(name);
-    if (!current) {
-      throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
-    }
     const { fields: fieldInputs, relations: relationInputs, ...collectionPatch } = input;
+    // Atomic full-schema apply: if the collection doesn't exist yet, create it
+    // in the same transaction rather than 404ing. This lets callers PUT a full
+    // schema in one call instead of POST-then-PUT.
+    let current = await this.getCollection(name);
+    if (!current) {
+      ensureName(name, 'collection');
+      assertPrimaryKeyStorageCompatible(
+        (collectionPatch.primaryKeyType ?? 'nanoid') as PrimaryKeyType,
+        (collectionPatch.storageMode ?? 'jsonb') as StorageMode,
+      );
+      const [created] = await this.deps.db
+        .insert(collections)
+        .values({ ...collectionPatch, name, siteId: this.deps.siteId })
+        .returning();
+      if (!created) {
+        throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
+      }
+      current = created;
+    }
     assertPrimaryKeyStorageCompatible(
       (collectionPatch.primaryKeyType ?? current.primaryKeyType) as PrimaryKeyType,
       (collectionPatch.storageMode ?? current.storageMode) as StorageMode,

@@ -22,6 +22,17 @@ export const ui = {
   'banner.contribute': { en: 'Contribute translation', vi: 'Đóng góp bản dịch' },
   'sidebar.empty': { en: 'No documents found.', vi: 'Chưa có tài liệu.' },
   'locale-switcher.tooltip': { en: 'Switch language', vi: 'Chuyển ngôn ngữ' },
+  'version.badge-tooltip': {
+    en: 'Current LumiBase version — view release notes',
+    vi: 'Phiên bản LumiBase hiện tại — xem ghi chú phát hành',
+  },
+  'theme.light': { en: 'Light', vi: 'Sáng' },
+  'theme.dark': { en: 'Dark', vi: 'Tối' },
+  'theme.auto': { en: 'System', vi: 'Hệ thống' },
+  'theme.toggle-tooltip': {
+    en: 'Theme: {mode} — click to switch',
+    vi: 'Giao diện: {mode} — nhấn để chuyển',
+  },
 } satisfies Record<string, Record<string, string>>;
 
 export type UiKey = keyof typeof ui;

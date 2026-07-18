@@ -3,9 +3,10 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { AISecureHarness } from '../services/ai-harness';
 import { SchemaService } from '../services/schema-service';
-import { ItemService } from '../services/item-service';
+import { itemServiceForRequest } from '../services/item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
 import { formatSafeError } from '@lumibase/shared/utils';
 
@@ -64,40 +65,9 @@ function requireAdmin(c: Context<AppEnv>) {
   return null;
 }
 
-function buildItemService(c: Context<AppEnv>): ItemService {
-  const auth = c.get('auth');
-  const runtime = c.get('runtime');
-  const headers: Record<string, string> = {};
-  c.req.raw.headers.forEach((value, key) => {
-    headers[key.toLowerCase()] = value;
-  });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const realtimeNamespace = (c.env as unknown as Record<string, any>)[
-    'SITE_ROOM'
-  ] as DurableObjectNamespace | undefined;
-
-  return new ItemService({
-    db: c.get('db'),
-    siteId: c.get('siteId'),
-    userId: auth.userId ?? null,
-    cache: runtime.cache,
-    search: runtime.search,
-    queue: runtime.queue,
-    realtimeNamespace,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    extensionEnv: c.env as unknown as Record<string, unknown>,
-    permissionCtx: {
-      userId: auth.userId ?? null,
-      siteId: c.get('siteId'),
-      roleId: null,
-      ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-      headers,
-      apiKey: auth.apiKey ?? null,
-    },
-    keyProvider: runtime.keys,
-    encryptionKey: c.env.ENCRYPTION_KEY,
-  });
-}
+// ItemService for AI routes is built via the shared `itemServiceForRequest`
+// factory so LLM-driven skills enforce the same row/field RBAC as the normal
+// `/items` API (see item-service-factory.ts).
 
 /**
  * POST /chat
@@ -228,7 +198,7 @@ aiRouter.post('/chat', async (c) => {
       siteId,
       cache: runtime.cache,
     });
-    const itemService = buildItemService(c);
+    const itemService = itemServiceForRequest(c);
 
     const harness = new AISecureHarness({
       db,
@@ -237,6 +207,7 @@ aiRouter.post('/chat', async (c) => {
       itemService,
       llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
       queue: runtime.queue,
+      notify: buildAgentNotifier(c),
     });
     const result = await harness.execute(
       toolCall.name,
@@ -491,7 +462,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
       siteId,
       cache: runtime.cache,
     });
-    const itemService = buildItemService(c);
+    const itemService = itemServiceForRequest(c);
     const authorizedHarness = new AISecureHarness({
       db,
       siteId,
@@ -499,6 +470,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
       itemService,
       llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
       queue: runtime.queue,
+      notify: buildAgentNotifier(c),
     });
     const result = await authorizedHarness.executeApproved(
       approvalId,
@@ -524,6 +496,19 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
   }
 
   // decision === 'rejected'
-  await harness.rejectApproval(approvalId, userId);
+  const rejected = await harness.rejectApproval(approvalId, userId);
+  if (!rejected) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'CONFLICT',
+            message: 'Approval not found or already processed',
+          },
+        ],
+      },
+      409,
+    );
+  }
   return c.json({ data: { success: true } });
 });

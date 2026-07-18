@@ -1,8 +1,8 @@
 import type { Database } from '@lumibase/database';
 import { Hono } from 'hono';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { AppEnv } from '../../env';
-import { requireSetupComplete } from '../setup-required';
+import { __resetSetupCompleteCache, requireSetupComplete } from '../setup-required';
 
 interface FakeDbState {
   bootstrapRows: Array<{ id: string }>;
@@ -46,6 +46,10 @@ function buildApp(db: Database): Hono<AppEnv> {
 }
 
 describe('requireSetupComplete', () => {
+  // The bootstrap check is process-cached (Req 4); reset between cases so
+  // one test's cached value can't leak into the next.
+  beforeEach(() => __resetSetupCompleteCache());
+
   it('blocks authenticated API traffic before bootstrap admin exists', async () => {
     const { db, state } = makeFakeDb([]);
     const app = buildApp(db);
@@ -74,5 +78,33 @@ describe('requireSetupComplete', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
     expect(state.selectCount).toBe(1);
+  });
+
+  it('caches an initialized result permanently — one DB read across many requests (Req 4.1, 4.2)', async () => {
+    const { db, state } = makeFakeDb([{ id: 'usr_bootstrap' }]);
+    const app = buildApp(db);
+
+    for (let i = 0; i < 25; i += 1) {
+      const res = await app.request('/api/v1/users');
+      expect(res.status).toBe(200);
+    }
+    expect(state.selectCount).toBe(1);
+  });
+
+  it('does not cache an uninitialized result permanently — re-checks so a completed setup is picked up (Req 4.3)', async () => {
+    // First DB reports no bootstrap admin; the middleware caches `false` under
+    // a short TTL, not permanently. Swapping the DB to report a bootstrap
+    // admin AFTER the TTL clears lets the next request flip to 200.
+    const empty = makeFakeDb([]);
+    const app1 = buildApp(empty.db);
+    expect((await app1.request('/api/v1/users')).status).toBe(423);
+
+    // Simulate TTL expiry by clearing the process cache, then a later request
+    // against a now-initialized instance must re-read and pass through.
+    __resetSetupCompleteCache();
+    const ready = makeFakeDb([{ id: 'usr_bootstrap' }]);
+    const app2 = buildApp(ready.db);
+    expect((await app2.request('/api/v1/users')).status).toBe(200);
+    expect(ready.state.selectCount).toBe(1);
   });
 });

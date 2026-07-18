@@ -1,62 +1,67 @@
-import { useEffect, useRef, useState } from 'react';
-import { getApiClient } from '@/lib/api';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import type { RealtimeEvent } from '@lumibase/sdk';
+import { type ConnectionStatus, onConnectionStatus, subscribeCollection } from '@/lib/realtime';
 
-export function useRealtimeSubscription(collection: string, onUpdate?: (payload: any) => void) {
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const client = getApiClient();
+/**
+ * Realtime hooks over the app-wide singleton (`lib/realtime.ts`). All
+ * subscribers share one WebSocket; each hook just registers/unregisters its
+ * callback. See `.kiro/specs/realtime-subscriptions` (task 5).
+ */
 
+/** Subscribe to a collection; invoke `onEvent` for each matching event. */
+export function useRealtimeSubscription(
+  collection: string,
+  onEvent?: (event: RealtimeEvent) => void,
+): void {
   useEffect(() => {
-    let isMounted = true;
-
-    // In a real application, we would pass the active siteId.
-    // For this stub, we just pass 'default'.
-    client.realtime.connect('default').then((ws) => {
-      if (!isMounted) {
-        ws.close();
-        return;
-      }
-      
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setIsConnected(true);
-        ws.send(JSON.stringify({ type: 'subscribe', collection }));
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.collection === collection && onUpdate) {
-            onUpdate(data);
-          }
-        } catch (err) {
-          console.error('Failed to parse realtime message:', formatSafeError(err));
-        }
-      };
-
-      ws.onerror = (event) => {
-        setError(new Error('WebSocket error'));
-      };
-
-      ws.onclose = () => {
-        setIsConnected(false);
-      };
-    }).catch(err => {
-      console.error('Failed to connect to realtime:', err);
-      if (isMounted) setError(err);
+    if (!collection) return;
+    const unsubscribe = subscribeCollection(collection, (event) => {
+      if (event.collection === collection) onEvent?.(event);
     });
+    return unsubscribe;
+  }, [collection, onEvent]);
+}
 
-    return () => {
-      isMounted = false;
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
+/**
+ * Subscribe to a collection and keep its React Query list fresh: invalidates
+ * the `['items', collection]` query on any mutation event. Callers that want
+ * incremental cache patching can pass their own `onEvent` via
+ * {@link useRealtimeSubscription} instead.
+ */
+export function useRealtimeCollection(collection: string): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!collection) return;
+    return subscribeCollection(collection, (event) => {
+      if (event.collection !== collection) return;
+      void queryClient.invalidateQueries({ queryKey: ['items', collection] });
+    });
+  }, [collection, queryClient]);
+}
+
+/**
+ * Fire `onItemUpdate` when the specific open item receives an `update`/`delete`
+ * event — powers the "this item was updated" banner in the detail view.
+ */
+export function useRealtimeItem(
+  collection: string,
+  itemId: string | undefined,
+  onItemUpdate?: (event: RealtimeEvent) => void,
+): void {
+  useEffect(() => {
+    if (!collection || !itemId) return;
+    return subscribeCollection(collection, (event) => {
+      if (event.collection === collection && event.itemId === itemId && event.action !== 'create') {
+        onItemUpdate?.(event);
       }
-    };
-  }, [collection, client.realtime, onUpdate]);
+    });
+  }, [collection, itemId, onItemUpdate]);
+}
 
-  return { isConnected, error };
+/** Reactive connection status for the app-shell status dot. */
+export function useConnectionStatus(): ConnectionStatus {
+  const [status, setStatus] = useState<ConnectionStatus>('disconnected');
+  useEffect(() => onConnectionStatus(setStatus), []);
+  return status;
 }

@@ -313,7 +313,7 @@ export async function loadLockoutPolicyFromSettings(
   // parsed by the driver.
   type Row = { value: unknown };
   const rows = (await db.execute(
-    sql`SELECT value FROM settings WHERE key = ${POLICY_SETTINGS_KEY} LIMIT 1`,
+    sql`SELECT value FROM lumibase_settings WHERE key = ${POLICY_SETTINGS_KEY} LIMIT 1`,
   )) as unknown as Row[] | { rows: Row[] };
 
   // postgres-js returns the array directly; node-postgres wraps it in

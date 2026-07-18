@@ -30,9 +30,28 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
+
+      # marketplace (apps/marketplace) lives in the private lumibase-ai/marketplace
+      # repo; `pnpm marketplace:build` needs it to emit apps/marketplace/out. The
+      # runner's GITHUB_TOKEN can't read another org's repo, so authenticate with
+      # the MARKETPLACE_SUBMODULE_TOKEN PAT via a scoped insteadOf rewrite. Init
+      # ONLY this path — enterprise/extensions are private too and a blanket
+      # `submodules: true` checkout would abort with "repository not found".
+      - name: Fetch marketplace submodule
+        env:
+          MARKETPLACE_SUBMODULE_TOKEN: ${{ secrets.MARKETPLACE_SUBMODULE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MARKETPLACE_SUBMODULE_TOKEN}" ]; then
+            echo "::error::MARKETPLACE_SUBMODULE_TOKEN is not configured; cannot fetch the private apps/marketplace submodule." >&2
+            exit 1
+          fi
+          git config --global url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf "https://github.com/lumibase-ai/"
+          git submodule update --init --depth=1 apps/marketplace
+          git config --global --unset url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf
 
       - name: Validate release tag
         run: |
@@ -42,10 +61,10 @@ jobs:
           fi
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -113,7 +132,39 @@ jobs:
 
       - name: Verify docs deployment
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
-        run: curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --max-time 20 "${{ steps.deploy_docs.outputs.url }}" --output /dev/null
+        env:
+          DOCS_URL: ${{ steps.deploy_docs.outputs.url }}
+        run: |
+          set -euo pipefail
+          base="${DOCS_URL%/}"
+
+          # 1. Homepage must load.
+          curl --fail --silent --show-error --location --retry 5 --retry-delay 5 \
+            --max-time 20 "$base" --output /dev/null
+
+          # 2. Unmatched deep-links must serve the prerendered 404.html SPA shell.
+          #    This is a PRERENDERED site (scripts/prerender.mjs): the former
+          #    `/* /index.html 200` catch-all was removed in fe9fa9db because it
+          #    shadowed every prerendered page and broke hard-nav/F5. Now an
+          #    unmatched path falls through to 404.html — which by Cloudflare
+          #    Pages convention is served with HTTP 404 but is the SPA shell that
+          #    boots the client router (NotFoundPage / client-only routes). So we
+          #    assert 404 + a shell body (has #root and the JS bundle), NOT a bare
+          #    Cloudflare error page and NOT a 200.
+          probe="$base/en/docs/__spa-fallback-probe__"
+          body="$(mktemp)"
+          status="$(curl --silent --show-error --location --retry 5 --retry-delay 5 \
+            --max-time 20 --output "$body" --write-out '%{http_code}' "$probe")"
+          if [ "$status" != "404" ]; then
+            echo "Unmatched deep-link returned HTTP $status for $probe (expected 404 from 404.html)." >&2
+            exit 1
+          fi
+          if ! grep -q 'id="root"' "$body" || ! grep -qE '/assets/.*\.js' "$body"; then
+            echo "404 response for $probe is not the prerendered SPA shell (missing #root / JS bundle)." >&2
+            echo "The client router will not boot — direct page refreshes will show a bare 404." >&2
+            exit 1
+          fi
+          echo "SPA 404 shell fallback OK ($probe -> $status, shell served)."
 
       - name: Build landing
         run: pnpm landing:build
@@ -138,8 +189,13 @@ jobs:
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         run: curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --max-time 20 "${{ steps.deploy_landing.outputs.url }}" --output /dev/null
 
+      # marketplace is a standalone submodule excluded from the pnpm workspace,
+      # so it installs & builds on its own (its deps are not in the root lockfile).
       - name: Build marketplace
-        run: pnpm marketplace:build
+        working-directory: apps/marketplace
+        run: |
+          pnpm install --no-frozen-lockfile --ignore-workspace
+          pnpm build
 
       - name: Deploy marketplace to Cloudflare Pages
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'

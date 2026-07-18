@@ -1,132 +1,142 @@
+---
+version: 1
+lastUpdated: 2026-06-23T13:13:36.000Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: 75a34bb34c05772c
+mtEngine: claude
+syncStatus: machine-translated
+---
+
 # Roadmap & Task Breakdown
 
-> **Scope:** Roadmap này dành cho **LumiBase Studio** — admin panel để quản lý data, collections, permissions, v.v. — và **LumiBase CMS API** chạy được trên cả Cloudflare Workers và Docker.
+> **Scope:** This roadmap covers **LumiBase Studio** — the admin panel for managing data, collections, permissions, etc. — and the **LumiBase CMS API**, which runs on both Cloudflare Workers and Docker.
 >
-> **Consumer app (frontend end-user)** ở `apps/consumer` (Next.js) là demo dùng SDK để gọi Delivery API — **không phải** CMS Studio.
+> The **Consumer app (the end-user frontend)** in `apps/consumer` (Next.js) is a demo that uses the SDK to call the Delivery API — it is **not** the CMS Studio.
 >
-> Ngôn ngữ task: ngắn, có thể chuyển thẳng vào issue tracker. Mỗi task có **scope rõ ràng**, **deliverable**, và link tài liệu liên quan.
+> Task language: short, ready to drop straight into an issue tracker. Each task has a **clear scope**, a **deliverable**, and a link to related docs.
 
-Quy ước:
+Conventions:
 - `[BE]` apps/cms (Backend API - Hono)
 - `[FE]` apps/studio (Admin panel - React + Vite)
 - `[DB]` packages/database
-- `[RT]` packages/runtime (abstraction layer Cloudflare/Docker)
+- `[RT]` packages/runtime (the Cloudflare/Docker abstraction layer)
 - `[AI]` packages/ai-skills + AI Copilot
-- `[SDK]` packages/sdk (Type-safe client cho cả Studio và consumer apps)
-- `[DOC]` apps/docs hoặc tài liệu trong `docs/`
+- `[SDK]` packages/sdk (a type-safe client for both Studio and consumer apps)
+- `[DOC]` apps/docs or docs in `docs/`
 - `[OPS]` infra/deploy/CI
-- Mỗi PR nên gắn 1 nhánh `feature/<phase>-<short-name>` theo Git hygiene rule.
+- Each PR should be on a `feature/<phase>-<short-name>` branch per the Git hygiene rule.
 
-Trạng thái tổng quan: Phase 0 → Phase G (GA hardening) đã xong. POST-GA và Dual Deployment + AI Copilot đã hoàn thành. Hiện tại tập trung vào polish, dev experience và mở rộng marketplace.
+Overall status: Phase 0 → Phase G (GA hardening) is done. POST-GA and Dual Deployment + AI Copilot are complete. The current focus is polish, developer experience, and expanding the marketplace.
 
 ## Active Ops Hardening Tasks
 
-Nguồn: `apps/docs/content/deployment/docker.md`, `apps/docs/content/guides/backup-recovery.md`.
+Sources: `apps/docs/content/deployment/docker.md`, `apps/docs/content/guides/backup-recovery.md`.
 
-- [x] `[OPS]` Docker image chạy non-root user.
-- [x] `[BE]` Validate production config khi `NODE_ENV=production` hoặc `LUMIBASE_ENV=production`.
-- [x] `[BE]` Hỗ trợ Docker secret files qua `*_FILE` trước migration/server startup.
-- [x] `[BE]` CORS allowlist qua `CORS_ALLOWED_ORIGINS`; reject wildcard production.
-- [x] `[BE]` Require `ENCRYPTION_KEY` production và validate AES key format.
-- [x] `[BE]` Require DB TLS `sslmode=require|verify-ca|verify-full` production, trừ khi explicit `DATABASE_SSL_MODE=disable`.
-- [x] `[OPS]` `docker-compose.prod.yml` không publish port cho stateful internal services.
-- [x] `[DOC]` Cập nhật Docker deployment docs và environment reference.
-- [x] `[DOC]` Bổ sung restore drill, row-count verification, app health check sau restore, media/search rebuild, RTO/RPO documentation.
-- [x] `[DOC]` Bổ sung Cloudflare DR validation cho Workers, Hyperdrive, R2, KV, Queues, MeiliSearch Cloud, DNS/WAF/Access.
-- [x] `[OPS]` Cấu hình TLS termination thực tế tại load balancer/reverse proxy của môi trường deploy.
-- [x] `[OPS]` Tự động hóa restore drill định kỳ cho Docker và Cloudflare restore environment.
+- [x] `[OPS]` Docker image runs as a non-root user.
+- [x] `[BE]` Validate the production config when `NODE_ENV=production` or `LUMIBASE_ENV=production`.
+- [x] `[BE]` Support Docker secret files via `*_FILE` before migration/server startup.
+- [x] `[BE]` CORS allowlist via `CORS_ALLOWED_ORIGINS`; reject a wildcard in production.
+- [x] `[BE]` Require `ENCRYPTION_KEY` in production and validate the AES key format.
+- [x] `[BE]` Require DB TLS `sslmode=require|verify-ca|verify-full` in production, unless `DATABASE_SSL_MODE=disable` is explicit.
+- [x] `[OPS]` `docker-compose.prod.yml` does not publish ports for stateful internal services.
+- [x] `[DOC]` Update the Docker deployment docs and the environment reference.
+- [x] `[DOC]` Add a restore drill, row-count verification, app health check after restore, media/search rebuild, and RTO/RPO documentation.
+- [x] `[DOC]` Add Cloudflare DR validation for Workers, Hyperdrive, R2, KV, Queues, MeiliSearch Cloud, DNS/WAF/Access.
+- [x] `[OPS]` Configure real TLS termination at the deploy environment's load balancer/reverse proxy.
+- [x] `[OPS]` Automate a periodic restore drill for the Docker and Cloudflare restore environments.
 
 ---
 
 ## Phase 0 — Foundation (DONE)
 
-Mục tiêu: bộ khung monorepo chạy được, schema lõi, auth Logto, CI.
+Goal: a working monorepo skeleton, the core schema, Logto auth, CI.
 
-- [x] `[OPS]` Tạo `apps/cms` (Hono + Cloudflare Workers template + wrangler config).
-- [x] `[OPS]` Tạo `apps/studio` (Vite + React + TS + Tailwind + shadcn init).
-- [x] `[OPS]` Tạo `packages/shared`, `packages/sdk`, `packages/ui`, `packages/extension-sdk` (boilerplate + tsconfig + lint).
-- [x] `[DB]` Bổ sung schema: `users`, `user_sites`, `teams`, `team_members`, `roles`, `policies`, `role_policies`, `user_policies`, `permissions` (xem `data-model.md`).
-- [x] `[DB]` Drizzle migration runner cho Hyperdrive (local + remote scripts).
-- [x] `[BE]` Middleware `withAuth` (Logto JWKS), `withTenant` (`site_id` từ subdomain/header), `withLogger`.
+- [x] `[OPS]` Create `apps/cms` (Hono + Cloudflare Workers template + wrangler config).
+- [x] `[OPS]` Create `apps/studio` (Vite + React + TS + Tailwind + shadcn init).
+- [x] `[OPS]` Create `packages/shared`, `packages/sdk`, `packages/ui`, `packages/extension-sdk` (boilerplate + tsconfig + lint).
+- [x] `[DB]` Add schema: `users`, `user_sites`, `teams`, `team_members`, `roles`, `policies`, `role_policies`, `user_policies`, `permissions` (see `data-model.md`).
+- [x] `[DB]` Drizzle migration runner for Hyperdrive (local + remote scripts).
+- [x] `[BE]` `withAuth` middleware (Logto JWKS), `withTenant` (`site_id` from subdomain/header), `withLogger`.
 - [x] `[BE]` `GET /auth/me` + `GET /utils/health`.
 - [x] `[FE]` App shell + module bar + routing skeleton + Logto login flow.
-- [x] `[FE]` API client trong `packages/sdk` (fetch wrapper, error format, site header).
-- [x] `[OPS]` Pipeline CI (lint, typecheck, test, build) + preview deploy.
-- [x] `[DOC]` Cập nhật `architecture.md` (root) khi cấu trúc thay đổi.
+- [x] `[FE]` API client in `packages/sdk` (fetch wrapper, error format, site header).
+- [x] `[OPS]` CI pipeline (lint, typecheck, test, build) + preview deploy.
+- [x] `[DOC]` Update `architecture.md` (root) when the structure changes.
 
 ---
 
 ## Phase A — Schema engine (DONE)
 
-Mục tiêu: tạo/quản lý collection & field qua API + UI.
+Goal: create/manage collections & fields via API + UI.
 
-- [x] `[DB]` Bảng `collections`, `fields`, `relations`.
+- [x] `[DB]` Tables `collections`, `fields`, `relations`.
 - [x] `[BE]` `SchemaService` (CRUD + compile cache).
 - [x] `[BE]` Endpoints `/collections`, `/fields`, `/relations`.
-- [x] `[BE]` Endpoint diff `/collections/diff` + `PUT /collections/:name/schema`.
-- [x] `[BE]` Validation tên collection/field, kiểm tra dependency khi xoá.
-- [x] `[SDK]` Type-safe client cho schema.
-- [x] `[BE]` Script CLI `apps/cms/scripts/typegen.ts` + alias `lumibase typegen`.
-- [x] `[FE]` Module *Settings → Data Model* (list collection).
-- [x] `[FE]` Collection wizard 3 bước.
+- [x] `[BE]` Diff endpoint `/collections/diff` + `PUT /collections/:name/schema`.
+- [x] `[BE]` Validate collection/field names, check dependencies on delete.
+- [x] `[SDK]` Type-safe client for the schema.
+- [x] `[BE]` CLI script `apps/cms/scripts/typegen.ts` + alias `lumibase typegen`.
+- [x] `[FE]` Module *Settings → Data Model* (collection list).
+- [x] `[FE]` 3-step collection wizard.
 - [x] `[FE]` Collection detail tabs (Fields, Display, Archive, Raw JSON).
-- [x] `[FE]` Field inspector cơ bản (interfaces `input`, `input-multiline`, `toggle`, `select-dropdown`, `datetime`, `json-raw`).
-- [x] `[FE]` Live JSON pane (Monaco) cho schema collection, two-way sync.
-- [x] `[FE]` Drag-drop reorder field (dnd-kit).
-- [x] `[BE]` Endpoint `GET /typegen/schema` (manifest đã apply permission).
+- [x] `[FE]` Basic field inspector (interfaces `input`, `input-multiline`, `toggle`, `select-dropdown`, `datetime`, `json-raw`).
+- [x] `[FE]` Live JSON pane (Monaco) for the collection schema, two-way sync.
+- [x] `[FE]` Drag-drop field reorder (dnd-kit).
+- [x] `[BE]` Endpoint `GET /typegen/schema` (manifest with permissions applied).
 - [x] `[SDK]` Generator core `packages/sdk/src/typegen/`.
-- [x] `[FE]` Trang *Settings → Developer → Types* (preview + download).
+- [x] `[FE]` *Settings → Developer → Types* page (preview + download).
 
 ---
 
-## Phase B — Items & Field system mở rộng (DONE)
+## Phase B — Items & extended Field system (DONE)
 
-- [x] `[DB]` Bảng `items`, `revisions`, `activity` + indexes GIN.
-- [x] `[BE]` `ItemService` build query Drizzle động (fields, filter, sort, paginate, deep).
-- [x] `[BE]` Endpoints `/items/:collection` đầy đủ.
+- [x] `[DB]` Tables `items`, `revisions`, `activity` + GIN indexes.
+- [x] `[BE]` `ItemService` builds Drizzle queries dynamically (fields, filter, sort, paginate, deep).
+- [x] `[BE]` Full `/items/:collection` endpoints.
 - [x] `[BE]` Revision write + revert.
-- [x] `[BE]` Activity log middleware cho mutation.
-- [x] `[BE]` Validation pipeline (Zod + JSONata) chạy server-side.
-- [x] `[BE]` Conditions evaluator (server + helper xuất sang client).
-- [x] `[BE]` Per-field encryption service (AES-GCM, key Workers Secret/env).
+- [x] `[BE]` Activity-log middleware for mutations.
+- [x] `[BE]` Validation pipeline (Zod + JSONata) running server-side.
+- [x] `[BE]` Conditions evaluator (server + a helper exported to the client).
+- [x] `[BE]` Per-field encryption service (AES-GCM, key in Workers Secret/env).
 - [x] `[FE]` Content module list view (tabular layout) + filter builder + sort + paginate.
-- [x] `[FE]` Detail editor + tabs side panel (Revisions, Raw JSON).
-- [x] `[FE]` Interface registry hoàn chỉnh: text, number, choice, boolean, date, relation, file, json-raw, code, wysiwyg, markdown, slug, color, tags, rating, repeater, presentation.
+- [x] `[FE]` Detail editor + side-panel tabs (Revisions, Raw JSON).
+- [x] `[FE]` Complete interface registry: text, number, choice, boolean, date, relation, file, json-raw, code, wysiwyg, markdown, slug, color, tags, rating, repeater, presentation.
 - [x] `[FE]` Display registry: formatted-value, raw, boolean-icon, datetime, image, labels, mustache-template.
-- [x] `[FE]` Raw toggle component (Monaco) cho mọi interface.
-- [x] `[FE]` Bulk raw editor cho toàn item.
+- [x] `[FE]` Raw toggle component (Monaco) for every interface.
+- [x] `[FE]` Bulk raw editor for the whole item.
 - [x] `[FE]` Revisions diff viewer.
-- [x] `[FE]` Mustache display template editor.
-- [x] `[BE]` `POST /utils/render-template` (mustache only Phase B).
+- [x] `[FE]` Mustache display-template editor.
+- [x] `[BE]` `POST /utils/render-template` (mustache only in Phase B).
 
 ---
 
 ## Phase C — Permissions & Access (DONE)
 
 - [x] `[BE]` `PermissionService` (compile rule, cache, field mask).
-- [x] `[BE]` Endpoints CRUD `/roles`, `/policies`, `/policies/:id/permissions`, attach/detach.
+- [x] `[BE]` CRUD endpoints `/roles`, `/policies`, `/policies/:id/permissions`, attach/detach.
 - [x] `[BE]` `GET /permissions/me` + `POST /permissions/check` (trace).
-- [x] `[BE]` Tích hợp Permission vào ItemService (where injection + post-check).
+- [x] `[BE]` Integrate Permissions into ItemService (where injection + post-check).
 - [x] `[BE]` Magic vars `$CURRENT_USER`, `$CURRENT_SITE`, `$CURRENT_ROLE`, `$NOW`, `$IP`, `$HEADERS.*`.
-- [x] `[BE]` Time-bound + IP allow/deny ở policy level.
+- [x] `[BE]` Time-bound + IP allow/deny at the policy level.
 - [x] `[BE]` Permission compose rules.
-- [x] `[FE]` Module Access Control: Roles, Policies (GUI + JSON Monaco), Permission matrix, Test sandbox.
-- [x] `[FE]` Field-level hide/disable trong form theo `/permissions/me`.
-- [x] `[FE]` List view hide column nếu không có quyền read field.
-- [x] `[FE]` Hide/disable bulk action theo permission.
+- [x] `[FE]` Access Control module: Roles, Policies (GUI + JSON Monaco), Permission matrix, Test sandbox.
+- [x] `[FE]` Field-level hide/disable in the form per `/permissions/me`.
+- [x] `[FE]` List view hides a column when there's no read permission on the field.
+- [x] `[FE]` Hide/disable bulk actions per permission.
 
 ---
 
-## Phase C2 — Presets, Bookmarks, Translations cơ bản (DONE)
+## Phase C2 — Presets, Bookmarks, basic Translations (DONE)
 
-- [x] `[DB]` Bảng `presets`, `translations`.
+- [x] `[DB]` Tables `presets`, `translations`.
 - [x] `[BE]` CRUD `/presets`, scope resolution (user > role > site).
-- [x] `[BE]` CRUD `/translations` (namespace `ui`, `field`, `content`).
+- [x] `[BE]` CRUD `/translations` (namespaces `ui`, `field`, `content`).
 - [x] `[BE]` Locale settings (`settings.locales.*`).
-- [x] `[FE]` Preset switcher + save/edit dialog ở list view.
-- [x] `[FE]` Module Translations (UI strings tab + content tab JSONB).
-- [x] `[FE]` Interface `translatable-text` (JSONB map locale).
-- [x] `[FE]` i18n cho Studio UI (react-i18next bind to translations API).
+- [x] `[FE]` Preset switcher + save/edit dialog in the list view.
+- [x] `[FE]` Translations module (UI strings tab + content tab JSONB).
+- [x] `[FE]` `translatable-text` interface (JSONB locale map).
+- [x] `[FE]` i18n for the Studio UI (react-i18next bound to the translations API).
 
 ---
 
@@ -137,216 +147,216 @@ Mục tiêu: tạo/quản lý collection & field qua API + UI.
 - [x] `[BE]` Files: presigned R2/S3 upload, `/files`, `/assets/:id` transform, `/media` (StorageProvider abstraction).
 - [x] `[BE]` Settings storage + cache + `settings.changed` event.
 - [x] `[BE]` Webhooks CRUD + dispatcher (Queues / BullMQ).
-- [x] `[BE]` Activity log endpoint (filter, paginate).
-- [x] `[FE]` Module Users + Teams.
-- [x] `[FE]` Module Files (grid + folders + drag-drop upload).
-- [x] `[FE]` Module Settings (general, locales, security, files, webhooks, activity).
-- [x] `[FE]` Notifications inbox (qua realtime).
+- [x] `[BE]` Activity-log endpoint (filter, paginate).
+- [x] `[FE]` Users + Teams module.
+- [x] `[FE]` Files module (grid + folders + drag-drop upload).
+- [x] `[FE]` Settings module (general, locales, security, files, webhooks, activity).
+- [x] `[FE]` Notifications inbox (via realtime).
 
 ---
 
 ## Phase E — Realtime / WebSocket (DONE)
 
-- [x] `[OPS]` Tạo Durable Object class `SiteRoom` (Wrangler binding).
-- [x] `[BE]` Endpoint `/realtime` upgrade WS, route tới DO theo `siteId`.
-- [x] `[BE]` Protocol subscribe/unsubscribe/presence.
-- [x] `[BE]` Publish pipeline trong ItemService.commit().
-- [x] `[BE]` Permission re-check khi fan-out event.
+- [x] `[OPS]` Create the Durable Object class `SiteRoom` (Wrangler binding).
+- [x] `[BE]` `/realtime` endpoint upgrades WS, routes to the DO by `siteId`.
+- [x] `[BE]` Subscribe/unsubscribe/presence protocol.
+- [x] `[BE]` Publish pipeline in ItemService.commit().
+- [x] `[BE]` Permission re-check on event fan-out.
 - [x] `[BE]` Rate limit + heartbeat.
-- [x] `[SDK]` Client realtime trong `packages/sdk`.
-- [x] `[FE]` Hook `useRealtimeSubscription`, `usePresence`.
-- [x] `[FE]` Presence chip topbar + detail editor.
+- [x] `[SDK]` Realtime client in `packages/sdk`.
+- [x] `[FE]` Hooks `useRealtimeSubscription`, `usePresence`.
+- [x] `[FE]` Presence chip in the topbar + detail editor.
 - [x] `[FE]` List view "Live mode" toggle.
 - [x] `[FE]` Smart preset subscribe.
-- [x] `[FE]` Notifications realtime.
+- [x] `[FE]` Realtime notifications.
 
 ---
 
-## Phase F — Extensions & Display Templates nâng cao (DONE)
+## Phase F — Advanced Extensions & Display Templates (DONE)
 
-- [x] `[DB]` Bảng `extensions`.
+- [x] `[DB]` Table `extensions`.
 - [x] `[BE]` Extension uploader (multipart → R2/S3) + manifest validator + capability registry.
 - [x] `[BE]` Sandbox loader (dynamic import + proxy ctx + capability gate).
-- [x] `[BE]` Hook dispatcher tích hợp ItemService (`before/after`).
-- [x] `[BE]` Endpoint mount `/extensions/:name/*` từ extension type `endpoint`.
-- [x] `[BE]` `/utils/render-template` hỗ trợ component DSL.
-- [x] `[FE]` Module Settings → Extensions (upload, review caps, enable/disable, version).
-- [x] `[FE]` Dynamic loader UI extensions (interface/display/layout/panel/module).
-- [x] `[FE]` Display template editor mode component (block builder).
-- [x] `[DOC]` Tutorial "Build your first extension" trong `docs/features/extensions-system.md`.
+- [x] `[BE]` Hook dispatcher integrated with ItemService (`before/after`).
+- [x] `[BE]` Mount endpoint `/extensions/:name/*` from `endpoint`-type extensions.
+- [x] `[BE]` `/utils/render-template` supports the component DSL.
+- [x] `[FE]` Settings → Extensions module (upload, review caps, enable/disable, version).
+- [x] `[FE]` Dynamic loader for UI extensions (interface/display/layout/panel/module).
+- [x] `[FE]` Display-template editor in component mode (block builder).
+- [x] `[DOC]` "Build your first extension" tutorial in `docs/features/extensions-system.md`.
 
 ---
 
 ## Phase G — Hardening & GA (DONE)
 
-- [x] `[BE]` Postgres RLS policies bổ sung qua middleware `withRls()` (defence-in-depth).
-- [x] `[BE]` Tag-based invalidation hoàn thiện (revalidateTag webhook → Next.js consumer).
-- [x] `[BE]` Backups + restore qua endpoints `/api/v1/admin/backup` + `/api/v1/admin/restore` (NDJSON bundle).
+- [x] `[BE]` Additional Postgres RLS policies via the `withRls()` middleware (defense-in-depth).
+- [x] `[BE]` Complete tag-based invalidation (revalidateTag webhook → Next.js consumer).
+- [x] `[BE]` Backups + restore via the `/api/v1/admin/backup` + `/api/v1/admin/restore` endpoints (NDJSON bundle).
 - [x] `[BE]` Config export/import CLI (`apps/cms/scripts/config-cli.ts`).
 - [x] `[FE]` Accessibility audit + fix.
 - [x] `[FE]` Bundle size audit, lazy module splitting (TanStack Router lazy-load).
-- [x] `[OPS]` Load test (k6) cho delivery API và realtime — `apps/cms/k6/`.
-- [x] `[OPS]` SLO dashboards (Workers Analytics Engine + Grafana cho Docker).
+- [x] `[OPS]` Load test (k6) for the delivery API and realtime — `apps/cms/k6/`.
+- [x] `[OPS]` SLO dashboards (Workers Analytics Engine + Grafana for Docker).
 - [x] `[DOC]` Public docs site (`apps/docs` — Vite + React + Markdown).
 
 ---
 
 ## Phase POST-GA1 — Translation Memory + MT (DONE)
 
-- [x] `[DB]` Bảng `translation_memory` + `glossary`.
-- [x] `[BE]` Service `translation-memory.ts` với providers: DeepL, OpenAI, Workers AI, echo fallback.
-- [x] `[BE]` Routes `/api/v1/tm` (list/upsert/lookup fuzzy/translate pipeline TM → glossary → MT).
-- [x] `[FE]` UI tích hợp TM trong module Translations.
+- [x] `[DB]` Tables `translation_memory` + `glossary`.
+- [x] `[BE]` `translation-memory.ts` service with providers: DeepL, OpenAI, Workers AI, echo fallback.
+- [x] `[BE]` Routes `/api/v1/tm` (list/upsert/fuzzy lookup/translate pipeline TM → glossary → MT).
+- [x] `[FE]` TM integration UI in the Translations module.
 - [x] `[DOC]` `features/translation-memory.md`.
 
 ## Phase POST-GA2 — Collaborative cursors (DONE)
 
 - [x] `[BE]` `cursor-protocol.ts` (CRDT-lite: last-write-wins position + Y-style update vector).
-- [x] `[BE]` Broadcast qua Durable Object SiteRoom (CF) hoặc in-process (Docker).
-- [x] `[FE]` Render cursors + selection trong WYSIWYG / text fields.
+- [x] `[BE]` Broadcast via the Durable Object SiteRoom (CF) or in-process (Docker).
+- [x] `[FE]` Render cursors + selection in WYSIWYG / text fields.
 
 ## Phase POST-GA3 — Flows / Operations engine (DONE)
 
-- [x] `[DB]` Bảng `flows`, `flow_runs`, `operations`.
-- [x] `[BE]` Service `flow-service.ts` runner với operation types: `condition`, `transform`, `http`, `mail`, `log`, `sleep`, `run-extension`, `item.create|update|delete`, `notify`.
+- [x] `[DB]` Tables `flows`, `flow_runs`, `operations`.
+- [x] `[BE]` `flow-service.ts` runner service with operation types: `condition`, `transform`, `http`, `mail`, `log`, `sleep`, `run-extension`, `item.create|update|delete`, `notify`.
 - [x] `[BE]` Routes `/api/v1/flows` + manual `/run` + `/runs` history.
 - [x] `[BE]` Trigger types: `webhook`, `event` (item.*), `schedule` (cron), `manual`.
-- [x] `[FE]` Module Automation → Flows (list page).
+- [x] `[FE]` Automation → Flows module (list page).
 - [x] `[DOC]` `features/flows-automation.md`.
 
 ## Phase POST-GA4 — SCIM 2.0 provisioning (DONE)
 
 - [x] `[BE]` `/scim/v2/Users` + `/Groups` + ServiceProviderConfig + Schemas + ResourceTypes (RFC 7644 subset).
-- [x] `[BE]` Bearer token auth riêng (`SCIM_TOKEN`), không dùng Logto JWT.
+- [x] `[BE]` A separate Bearer token auth (`SCIM_TOKEN`), not using Logto JWT.
 - [x] `[BE]` Mapping: SCIM Group → LumiBase Team.
 - [x] `[DOC]` `features/scim-provisioning.md`.
 
 ## Phase POST-GA5 — Marketplace extensions (DONE)
 
-- [x] `[DB]` Bổ sung cột `signature`, `signatureAlg`, `publisherKeyId`, `publisher`, `marketplaceSlug`, `publishedAt`, `bundleSha256` vào `extensions`.
+- [x] `[DB]` Add columns `signature`, `signatureAlg`, `publisherKeyId`, `publisher`, `marketplaceSlug`, `publishedAt`, `bundleSha256` to `extensions`.
 - [x] `[BE]` Routes `/api/v1/marketplace/extensions` (list, detail, install, publish).
-- [x] `[BE]` Signature verification: SHA-256 bundle + ed25519/RSA-PSS qua WebCrypto, public keys load từ env `MARKETPLACE_PUBLIC_KEYS`.
-- [x] `[FE]` Public Marketplace site uses the real catalog API with SEO/static export/deploy checklist.
-- [x] `[DOC]` Revenue sharing is Free-first for launch; commercial checkout/payout moved to a later backlog.
+- [x] `[BE]` Signature verification: SHA-256 bundle + ed25519/RSA-PSS via WebCrypto, public keys loaded from the env `MARKETPLACE_PUBLIC_KEYS`.
+- [x] `[FE]` Public Marketplace site using the real catalog API, SEO/static export/deploy checklist.
+- [x] `[DOC]` Revenue sharing settled on Free-first; commercial checkout/payout split into a later backlog.
 - [x] `[DOC]` `features/marketplace.md`.
 
 ## Phase POST-GA6 — Materialized collections (DONE)
 
-- [x] `[DB]` Bảng `materialized_collections`.
+- [x] `[DB]` Table `materialized_collections`.
 - [x] `[BE]` Routes `/api/v1/materialize` (register, refresh, drop).
-- [x] `[BE]` Logical refresh strategy (count + lastRefreshedAt). Full denormalized write còn để mở.
+- [x] `[BE]` Logical refresh strategy (count + lastRefreshedAt). Full denormalized write still open.
 - [x] `[DOC]` `features/materialized-collections.md`.
 
 ## Phase POST-GA7 — Advanced Permission Builder & RBAC (TODO)
 
-Mục tiêu: nâng cấp Access Control hiện có thành hệ Role / Policy / Permission tương đương Directus nhưng fail-closed hơn, có conflict detection, policy flags, API keys theo role, import/export JSON và seed system permissions. Tham chiếu: `docs/vi/features/permission-builder-directus-investigation.md`.
+Goal: upgrade the existing Access Control into a Role / Policy / Permission system equivalent to Directus but more fail-closed, with conflict detection, policy flags, role-based API keys, JSON import/export, and seeded system permissions. Reference: `docs/vi/features/permission-builder-directus-investigation.md`.
 
-### Chuẩn bị bắt buộc
+### Mandatory preparation
 
-- [x] `[BE]` Audit `PermissionService` hiện tại: ghi rõ hành vi compose hiện có (`OR` rules, union fields, merge presets/validation) và các case có thể mở rộng quyền im lặng.
-- [x] `[DB]` Thiết kế migration backward-compatible cho `roles.admin_access/app_access` → policy-level `admin_access/app_access/enforce_tfa/ip_allow/ip_deny/valid_from/valid_until`.
-- [x] `[DB]` Thêm stable `key`/`system_key` cho roles/policies để phục vụ import/export idempotent.
-- [x] `[DOC]` Chốt danh sách system collections được đưa vào Permission Builder và nhóm sensitive/admin-only trước khi seed.
-- [x] `[BE]` Định nghĩa JSON schema version `lumibase.access@v1` cho export/import roles, policies, permission rows, bindings và API key metadata.
+- [x] `[BE]` Audit the current `PermissionService`: clearly document the existing compose behavior (`OR` rules, union fields, merge presets/validation) and cases that could silently widen permissions.
+- [x] `[DB]` Design a backward-compatible migration for `roles.admin_access/app_access` → policy-level `admin_access/app_access/enforce_tfa/ip_allow/ip_deny/valid_from/valid_until`.
+- [x] `[DB]` Add a stable `key`/`system_key` for roles/policies to support idempotent import/export.
+- [x] `[DOC]` Finalize the list of system collections included in the Permission Builder and the sensitive/admin-only groups before seeding.
+- [x] `[BE]` Define the JSON schema version `lumibase.access@v1` for export/import of roles, policies, permission rows, bindings, and API key metadata.
 
 ### Schema & evaluator hardening
 
-- [x] `[DB]` Thêm unique constraint `(policy_id, collection, action)` cho `permissions`; migration phải detect/report duplicate hiện có trước khi apply.
-- [x] `[DB]` Thêm bảng `user_roles` để hỗ trợ nhiều role/user/site; giữ `user_sites.role_id` làm primary/display role trong giai đoạn chuyển đổi.
-- [x] `[DB]` Thêm policy flags explicit vào `policies`; giữ `policies.rules` cho custom/future guardrails.
-- [x] `[BE]` Mở rộng IP guard hỗ trợ IPv4, IPv6, CIDR và precedence `ipDeny` thắng `ipAllow`.
+- [x] `[DB]` Add a unique constraint `(policy_id, collection, action)` to `permissions`; the migration must detect/report existing duplicates before applying.
+- [x] `[DB]` Add a `user_roles` table to support multiple roles/user/site; keep `user_sites.role_id` as the primary/display role during the transition.
+- [x] `[DB]` Add explicit policy flags to `policies`; keep `policies.rules` for custom/future guardrails.
+- [x] `[BE]` Extend the IP guard to support IPv4, IPv6, CIDR, and the precedence `ipDeny` beats `ipAllow`.
 - [x] `[BE]` Enforce `update`/`delete` in `ItemService` with action permission and row-level WHERE.
-- [x] `[BE]` Enforce field whitelist for `create`/`update`, including structural fields `status`/`sort`.
-- [x] `[BE]` Enforce permission-level `validation` in write paths.
-- [x] `[BE]` Enforce app access from effective active policies for Studio; API keys are always blocked from Studio.
-- [x] `[BE]` Enforce `enforceTfa=true`: user must enroll and pass TFA; API key attach already conflicts/warns for TFA policies.
+- [x] `[BE]` Enforce field whitelist for `create`/`update`, including the structural fields `status`/`sort`.
+- [x] `[BE]` Enforce permission-level `validation` in the write path.
+- [x] `[BE]` Enforce app access from effective active policies when entering Studio; API keys are always blocked from Studio.
+- [x] `[BE]` Enforce `enforceTfa=true`: the user must enroll and pass TFA; an API key attaching a TFA policy must be flagged as a conflict/warning.
 - [x] `[BE]` Extend magic vars: `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$CURRENT_API_KEY`, nested `$CURRENT_USER.*`, `$NOW(+/- duration)`.
-- [x] `[BE]` Fail closed for unknown operators/magic vars; add tests for `_null`, `_nnull`, `_empty`, `_nempty`, `_regex`, case-insensitive string ops.
+- [x] `[BE]` Fail closed for unknown operator/magic var; add tests for `_null`, `_nnull`, `_empty`, `_nempty`, `_regex`, case-insensitive string ops.
 
 ### Conflict detection
 
-- [x] `[BE]` Tạo `AccessConflictService` phân loại `compatible`, `warning`, `blocking` cho overlap cùng `collection + action`.
-- [x] `[BE]` Block conflict unconditional-vs-restricted rule, `["*"]` vs whitelist fields, validation/preset cùng field khác value, admin bypass + granular policy.
-- [x] `[BE]` Endpoint `POST /api/v1/access/conflicts/check` nhận target role/user/api_key + add/remove policies và trả diff có source policy.
-- [x] `[BE]` Tích hợp conflict check vào attach role-policy, user-policy, API-key-policy; cho phép override warning có audit.
-- [x] `[BE]` Tích hợp conflict check vào attach role-policy và user-policy; warning override ghi audit.
-- [x] `[FE]` Role Detail gọi conflict check trước khi attach policy; blocking conflict không cho lưu.
-- [x] `[FE]` Permission Matrix thêm Effective View hiển thị quyền cuối cùng và source policies.
-- [x] `[TEST]` Property tests for the conflict classifier across field/rule/preset/validation combinations.
+- [x] `[BE]` Create an `AccessConflictService` classifying `compatible`, `warning`, `blocking` for overlaps on the same `collection + action`.
+- [x] `[BE]` Block conflicts of unconditional-vs-restricted rule, `["*"]` vs whitelisted fields, validation/preset on the same field with different values, admin bypass + granular policy.
+- [x] `[BE]` Endpoint `POST /api/v1/access/conflicts/check` takes a target role/user/api_key + add/remove policies and returns a diff with the source policy.
+- [x] `[BE]` Integrate the conflict check into attaching role-policy, user-policy, api-key-policy; allow overriding a warning with an audit.
+- [x] `[BE]` Integrate the conflict check into attaching role-policy and user-policy; a warning override is audited.
+- [x] `[FE]` Role Detail calls the conflict check before attaching a policy; a blocking conflict prevents saving.
+- [x] `[FE]` The Permission Matrix adds an Effective View showing the final permissions and source policies.
+- [x] `[TEST]` Property tests for the conflict classifier with combinations of field/rule/preset/validation.
 
-### API Keys theo Roles/Policies
+### API Keys by Roles/Policies
 
-- [x] `[DB]` Thêm `api_keys`, `api_key_roles`, `api_key_policies` với token hash, prefix, expire/revoke/last_used metadata.
-- [x] `[BE]` Bearer auth lookup API key bằng hash; principal type `api_key` compile quyền giống user.
-- [x] `[BE]` Rotate/revoke API key; plaintext chỉ trả một lần khi tạo/rotate.
-- [x] `[BE]` Audit create/rotate/revoke/use-denied cho API key, không log plaintext token.
-- [x] `[SDK]` Thêm client methods cho API key CRUD, attach roles/policies, conflict preview.
+- [x] `[DB]` Add `api_keys`, `api_key_roles`, `api_key_policies` with token hash, prefix, expire/revoke/last_used metadata.
+- [x] `[BE]` Bearer auth looks up the API key by hash; the `api_key` principal type compiles permissions like a user.
+- [x] `[BE]` Rotate/revoke an API key; the plaintext is only returned once at create/rotate.
+- [x] `[BE]` Audit create/rotate/revoke/use-denied for API keys, without logging the plaintext token.
+- [x] `[SDK]` Add client methods for API key CRUD, attach roles/policies, conflict preview.
 - [x] `[FE]` Studio API Keys page: create, rotate, revoke, attach roles/policies, preview effective permissions.
-- [x] `[TEST]` API key không truy cập Studio; revoked/expired key bị 401; key chỉ thấy fields/rows theo policy.
+- [x] `[TEST]` An API key cannot access Studio; a revoked/expired key gets 401; a key only sees the fields/rows allowed by policy.
 
-### Import / Export Permission Builder
+### Permission Builder Import / Export
 
-- [x] `[BE]` `GET /api/v1/access/export` xuất roles, policies, permissions, bindings, API key metadata bằng stable keys, không chứa secrets.
-- [x] `[BE]` `POST /api/v1/access/import?dryRun=true` parse/validate/diff/conflict-check nhưng không ghi DB.
-- [x] `[BE]` Import modes: `merge`, `replace-managed`, `replace-all`; apply trong transaction và audit diff summary.
-- [x] `[BE]` Idempotency tests: import cùng manifest nhiều lần không tạo duplicate.
-- [x] `[SDK]` Thêm access export/import client types.
-- [x] `[FE]` Import dialog hiển thị diff, warnings, blocking conflicts và kết quả dry-run.
-- [x] `[OPS]` CLI `lumibase access export/import` cho CI/CD giữa dev/staging/prod.
+- [x] `[BE]` `GET /api/v1/access/export` exports roles, policies, permissions, bindings, API key metadata with stable keys, containing no secrets.
+- [x] `[BE]` `POST /api/v1/access/import?dryRun=true` parses/validates/diffs/conflict-checks but does not write the DB.
+- [x] `[BE]` Import modes: `merge`, `replace-managed`, `replace-all`; applied in a transaction with an audited diff summary.
+- [x] `[BE]` Idempotency tests: importing the same manifest multiple times creates no duplicates.
+- [x] `[SDK]` Add access export/import client types.
+- [x] `[FE]` Import dialog shows the diff, warnings, blocking conflicts, and dry-run results.
+- [x] `[OPS]` CLI `lumibase access export/import` for CI/CD between dev/staging/prod.
 
 ### System permissions & seeding
 
-- [x] `[DB]` Cập nhật `seed-dev.ts` seed `policy_admin`, `role_administrator`, `policy_studio_self`, `policy_public`.
-- [x] `[DB]` Seed explicit permissions cho nhóm schema/access manager: `collections`, `fields`, `relations`, `roles`, `policies`, `permissions`.
-- [x] `[DB]` Đảm bảo sensitive collections (`system_state`, `audit_log`, `login_attempts`, `admin_backup_codes`, `scim_tokens`, `api_keys`) admin/security-only.
-- [x] `[FE]` Permission Builder phân nhóm system collections và ẩn sensitive collections khỏi non-admin.
-- [x] `[TEST]` Public policy mặc định không đọc được content/system collections nếu chưa explicit grant.
+- [x] `[DB]` Update `seed-dev.ts` to seed `policy_admin`, `role_administrator`, `policy_studio_self`, `policy_public`.
+- [x] `[DB]` Seed explicit permissions for the schema/access manager group: `collections`, `fields`, `relations`, `roles`, `policies`, `permissions`.
+- [x] `[DB]` Ensure sensitive collections (`system_state`, `audit_log`, `login_attempts`, `admin_backup_codes`, `scim_tokens`, `api_keys`) are admin/security-only.
+- [x] `[FE]` The Permission Builder groups system collections and hides sensitive collections from non-admins.
+- [x] `[TEST]` The default public policy cannot read content/system collections without an explicit grant.
 
 ### Extension access control
 
-- [x] `[DOC]` Ghi rõ Directus extension permission layers: install/enable, sandbox scopes, accountability services, app module self-check.
-- [x] `[DB]` Thêm stable `extensions.key` và system access targets `extensions`, `extension_modules`, `extension_endpoints`, `extension_operations`.
-- [x] `[BE]` Enforce `extensions:read/configure/install/enable/delete/grant_capability` trên extension management routes.
-- [x] `[BE]` Enforce `extensions:execute` trước khi dispatch `/api/v1/extensions/:name/*`.
-- [x] `[BE]` Extension data access mặc định dùng actor permissions; service-account mode cần policy/capability riêng và audit.
-- [x] `[FE]` Studio extension loader/module bar chỉ hiển thị extension principal được phép đọc.
-- [x] `[FE]` Permission Builder thêm nhóm Extension Access để gán user/role truy cập extension.
-- [x] `[TEST]` User thiếu `extensions:execute` không gọi được endpoint extension dù extension enabled.
+- [x] `[DOC]` Document the Directus extension permission layers: install/enable, sandbox scopes, accountability services, app module self-check.
+- [x] `[DB]` Add a stable `extensions.key` and system access targets `extensions`, `extension_modules`, `extension_endpoints`, `extension_operations`.
+- [x] `[BE]` Enforce `extensions:read/configure/install/enable/delete/grant_capability` on extension management routes.
+- [x] `[BE]` Enforce `extensions:execute` before dispatching `/api/v1/extensions/:name/*`.
+- [x] `[BE]` Extension data access defaults to actor permissions; service-account mode needs its own policy/capability and audit.
+- [x] `[FE]` The Studio extension loader/module bar only shows extensions the principal is allowed to read.
+- [x] `[FE]` The Permission Builder adds an Extension Access group to grant users/roles access to extensions.
+- [x] `[TEST]` A user without `extensions:execute` cannot call an extension endpoint even if the extension is enabled.
 
 ### Share action
 
-- [x] `[DB]` Thêm bảng `shares` với role share chuyên dụng, password hash, validity window, max uses, revoke.
-- [x] `[BE]` Implement `share` action: chỉ user có quyền share mới tạo share link; read payload vẫn đi qua role share permission.
-- [x] `[FE]` Share dialog chỉ cho chọn role có `appAccess=false`, `adminAccess=false`, read permissions tối thiểu.
-- [x] `[TEST]` Share link chỉ đọc fields/rows role share được phép, hết hạn/max uses/revoked đều bị deny.
+- [x] `[DB]` Add a `shares` table with a dedicated share role, password hash, validity window, max uses, revoke.
+- [x] `[BE]` Implement the `share` action: only a user with the share permission can create a share link; the read payload still goes through the share role's permissions.
+- [x] `[FE]` The Share dialog only allows selecting a role with `appAccess=false`, `adminAccess=false`, and minimal read permissions.
+- [x] `[TEST]` A share link only reads the fields/rows the share role is allowed; expired/max-uses/revoked are all denied.
 
 ---
 
 ## Phase Docker Dual-Deployment (DONE)
 
-Mục tiêu: chạy được toàn bộ stack trên Docker không cần Cloudflare account.
+Goal: run the entire stack on Docker without a Cloudflare account.
 
-- [x] `[RT]` Tạo package `@lumibase/runtime` với 6 interface: `CacheProvider`, `StorageProvider`, `DatabaseProvider`, `SearchProvider`, `QueueProvider`, `MediaProcessor`.
+- [x] `[RT]` Create the `@lumibase/runtime` package with 6 interfaces: `CacheProvider`, `StorageProvider`, `DatabaseProvider`, `SearchProvider`, `QueueProvider`, `MediaProcessor`.
 - [x] `[RT]` Cloudflare adapters: KV, R2, Hyperdrive, MeiliSearch Cloud HTTP, CF Queues, CF Image Resizing.
-- [x] `[RT]` Docker adapters: Redis (ioredis), MinIO/S3 (`@aws-sdk/client-s3`), pg pool (`postgres`), MeiliSearch self-host, BullMQ on Redis, Imgproxy với signed URLs.
-- [x] `[RT]` Factory `createRuntime(env)` chọn theo `LUMIBASE_RUNTIME`.
-- [x] `[BE]` Refactor middleware/db.ts để dùng DatabaseProvider.
-- [x] `[BE]` Refactor routes dùng KV/R2 sang `c.get('runtime').<provider>`.
-- [x] `[BE]` Tạo `apps/cms/src/serve.ts` Node entrypoint với graceful shutdown (SIGTERM, 10s timeout).
-- [x] `[BE]` Endpoint `/health` test connectivity (db, cache, search, storage, queue).
-- [x] `[BE]` Endpoint `/metrics` Prometheus exposition format.
-- [x] `[BE]` Endpoint `/api/v1/search` qua SearchProvider.
-- [x] `[BE]` Auto-index/remove items qua QueueProvider khi item create/update/delete.
-- [x] `[BE]` Media processing hook: enqueue thumbnail generation (150/300/600) khi upload.
+- [x] `[RT]` Docker adapters: Redis (ioredis), MinIO/S3 (`@aws-sdk/client-s3`), pg pool (`postgres`), self-hosted MeiliSearch, BullMQ on Redis, Imgproxy with signed URLs.
+- [x] `[RT]` Factory `createRuntime(env)` selects by `LUMIBASE_RUNTIME`.
+- [x] `[BE]` Refactor middleware/db.ts to use the DatabaseProvider.
+- [x] `[BE]` Refactor routes using KV/R2 to `c.get('runtime').<provider>`.
+- [x] `[BE]` Create `apps/cms/src/serve.ts` Node entrypoint with graceful shutdown (SIGTERM, 10s timeout).
+- [x] `[BE]` `/health` endpoint tests connectivity (db, cache, search, storage, queue).
+- [x] `[BE]` `/metrics` endpoint in Prometheus exposition format.
+- [x] `[BE]` `/api/v1/search` endpoint via the SearchProvider.
+- [x] `[BE]` Auto-index/remove items via the QueueProvider on item create/update/delete.
+- [x] `[BE]` Media processing hook: enqueue thumbnail generation (150/300/600) on upload.
 - [x] `[OPS]` `docker/Dockerfile` multi-stage (Node 20 slim, non-root, HEALTHCHECK).
-- [x] `[OPS]` `docker/Dockerfile.dev` cho hot-reload.
-- [x] `[OPS]` `docker/scripts/entrypoint.sh` chạy migrations với retry exponential backoff.
+- [x] `[OPS]` `docker/Dockerfile.dev` for hot-reload.
+- [x] `[OPS]` `docker/scripts/entrypoint.sh` runs migrations with exponential-backoff retry.
 - [x] `[OPS]` `docker/docker-compose.yml`: Postgres 16, Redis 7, MinIO, MeiliSearch, Imgproxy, CMS, Bull Board.
 - [x] `[OPS]` `docker/docker-compose.monitoring.yml`: Prometheus + Grafana + Loki + pg-backup.
-- [x] `[OPS]` `docker/docker-compose.prod.yml` cho production-like local testing.
+- [x] `[OPS]` `docker/docker-compose.prod.yml` for production-like local testing.
 - [x] `[OPS]` Pre-provisioned Grafana dashboard (request rate, latency p50/p95/p99, error rate, queue depth, cache hit ratio).
 - [x] `[OPS]` `docker/scripts/backup.sh` + `restore.sh` (pg_dump → S3, retention 7 daily / 4 weekly).
-- [x] `[OPS]` Workflow CI `.github/workflows/docker.yml` (build & push GHCR trên main, build-only PR, layer caching, health check verify).
+- [x] `[OPS]` CI workflow `.github/workflows/docker.yml` (build & push GHCR on main, build-only on PR, layer caching, health check verify).
 - [x] `[DOC]` `apps/docs/content/deployment/{overview,cloudflare,docker,local-development,environment-variables}.md`.
 - [x] `[DOC]` `apps/docs/content/guides/{tooling-recommendations,backup-recovery}.md`.
 - [x] `[DOC]` `features/runtime-abstraction.md` + `features/observability.md` + `features/search.md`.
@@ -355,97 +365,146 @@ Mục tiêu: chạy được toàn bộ stack trên Docker không cần Cloudfla
 
 ## Phase AI-First Copilot (DONE)
 
-Mục tiêu: AI Agent tương tác an toàn với CMS qua HITL.
+Goal: an AI Agent that interacts safely with the CMS via HITL.
 
-- [x] `[DB]` Bảng `ai_approvals` (id nanoid 21 + siteId + agentName + skillName + arguments jsonb + status + context + decidedAt + decidedBy).
-- [x] `[AI]` Package `@lumibase/ai-skills` với `CORE_SKILLS` (listCollections, createCollection, deleteCollection, createField, deleteField, listItems, createItem, updateItem, deleteItem) + OpenAI tool definitions.
-- [x] `[BE]` Service `ai-harness.ts` (validateSkill, checkCapabilities với wildcard `*`, evaluateRisk, execute, executeApproved, rejectApproval, runSkill timeout 30s).
+- [x] `[DB]` Table `ai_approvals` (id nanoid 21 + siteId + agentName + skillName + arguments jsonb + status + context + decidedAt + decidedBy).
+- [x] `[AI]` Package `@lumibase/ai-skills` with `CORE_SKILLS` (listCollections, createCollection, deleteCollection, createField, deleteField, listItems, createItem, updateItem, deleteItem) + OpenAI tool definitions.
+- [x] `[BE]` Service `ai-harness.ts` (validateSkill, checkCapabilities with wildcard `*`, evaluateRisk, execute, executeApproved, rejectApproval, runSkill 30s timeout).
 - [x] `[BE]` Routes `/api/v1/ai/chat`, `/api/v1/ai/approvals`, `/api/v1/ai/approvals/:id/decide`.
-- [x] `[BE]` Property tests fast-check (15 properties, 100+ iterations) + integration tests.
+- [x] `[BE]` fast-check property tests (15 properties, 100+ iterations) + integration tests.
 - [x] `[FE]` `components/ai-assistant.tsx` floating panel 320×480 glassmorphism, max 50 messages.
-- [x] `[FE]` `modules/settings/ai-approvals.tsx` card list pending approvals với Approve/Reject.
-- [x] `[DOC]` `features/ai-copilot.md` + giữ `features/ai-first-specification.md` lịch sử.
+- [x] `[FE]` `modules/settings/ai-approvals.tsx` card list of pending approvals with Approve/Reject.
+- [x] `[DOC]` `features/ai-copilot.md` + keep the historical `features/ai-first-specification.md`.
 
 ---
 
-## Phase POST-GA — Nâng cao (TODO / In progress)
+## Phase POST-GA — Advanced (TODO / In progress)
 
-- [x] `[AI]` Tích hợp LLM provider thật (OpenAI / Anthropic / Workers AI) thay cho mock intent parser trong `/ai/chat`.
-- [x] `[AI]` Thêm context memory (lịch sử conversation) trong AI Copilot.
-- [x] `[AI]` Skill `aiSuggestField` + `aiContentAssist` (RAG via embeddings).
-- [x] `[BE]` Materialize collection write thực sự (không chỉ logical refresh) — bảng vật lý + trigger refresh.
+- [x] `[AI]` Integrate a real LLM provider (OpenAI / Anthropic / Workers AI) instead of the mock intent parser in `/ai/chat`.
+- [x] `[AI]` Add context memory (conversation history) to the AI Copilot.
+- [x] `[AI]` Skills `aiSuggestField` + `aiContentAssist` (RAG via embeddings).
+- [x] `[BE]` Real materialized collection writes (not just logical refresh) — a physical table + a refresh trigger.
 - [x] `[BE]` Multi-region Durable Objects sharding.
-- [x] `[FE]` Marketplace browser UI trong Studio (browse, install với 1 click).
-- [x] `[FE]` Flows visual editor (drag-drop graph) — hiện chỉ có list page.
+- [x] `[FE]` Marketplace browser UI in Studio (browse, 1-click install).
+- [x] `[FE]` Flows visual editor (drag-drop graph) — currently only a list page.
 - [x] `[BE]` SCIM Token rotation + audit.
-- [x] `[OPS]` Multi-tenant isolation testing tự động (k6 cross-site leak detection).
+- [x] `[OPS]` Automated multi-tenant isolation testing (k6 cross-site leak detection).
+
+
+---
+
+## Phase Agent Harness Layer (DONE)
+
+Goal: turn LumiBase into a control plane where humans, agents, data, workflows, and applications co-evolve under control. The detailed checklist is in [`agent-harness-implementation.md`](./agent-harness-implementation.md).
+
+### A. Foundational lifecycle
+
+- [x] `[DB]` Add `agent_goals`, `agent_runs`, `agent_plans`, `agent_tool_calls` with `siteId`, lifecycle status, policy snapshot, budget, audit metadata, and indexes by `siteId/runId/goalId`.
+- [x] `[BE]` Create `AgentRunService` to open/append/close/fail/retry a run; refactor `AISecureHarness` so every runtime execute is tied to a `goalId/runId`.
+- [x] `[TEST]` Extended property tests for multi-tenant isolation, a failed run still keeps the audit trail, and retry does not duplicate tool calls/artifacts.
+
+### B. Tool Registry + capability policy
+
+- [x] `[DB]` Add `agent_tools` and `agent_permissions` to declare input/output schema, required capabilities, risk policy, rate limit, and validity window.
+- [x] `[BE]` Implement `ToolRegistryService` to load core skills + DB overrides; enforce disabled tool, capability, risk policy, and rate limit.
+- [x] `[FE]` Studio "Agent Harness" page showing tools, risk, approvals, runs, artifacts, and memory.
+- [x] `[SDK]` Add types/client methods for tools, capabilities, and risk policies.
+
+### C. General approval
+
+- [x] `[DB]` Add `agent_approvals` for `plan` / `tool_call` / `artifact` / `schema_diff`; bridge backward-compatibly with `ai_approvals`.
+- [x] `[BE]` Foundational approval policy engine: `none`, `before_execute`, `before_commit`, `two_person_rule`, `owner_only`, `security_admin_only` as a contract/policy field.
+- [x] `[FE]` Elevate the Studio surface into an Agent Harness queue with subject type, status, and a decision surface.
+- [x] `[TEST]` A dangerous plan does not execute before approval; a rejected/expired approval cannot commit.
+
+### D. Artifact Store + Evaluation Gate
+
+- [x] `[DB]` Add `agent_artifacts` and `agent_evaluations` with content hash, version, status, eval kind/status/score/details.
+- [x] `[BE]` First artifact writers: `schema_diff`, `page_spec`, `component_spec`, `seed_data`, `api_spec`, `prompt`, `migration`.
+- [x] `[BE]` First eval runners: JSON schema validation, schema/migration guard, generated API spec validation, prompt safety check.
+- [x] `[FE]` Minimal artifact review UI in the Studio Agent Harness: list artifacts, status, hash, generated app artifacts.
+- [x] `[TEST]` An artifact that fails eval cannot be published; the artifact hash is stable; publish/rollback is idempotent.
+
+### E. Memory + App Generation MVP
+
+- [x] `[DB]` Add `agent_memory` with scope, provenance, confidence, expiry, and an optional embedding.
+- [x] `[BE]` RAG context builder that respects expiry, provenance, and secret redaction.
+- [x] `[AI]` Skills `generateAppSpec`, `generateApiDocs`, `generateSeedData` produce an artifact payload instead of writing directly to content/schema.
+- [x] `[FE]` A "Generate" action in the Agent Harness creates app artifacts from `products/orders/customers` with a budget and approval policy.
+- [x] `[TEST]` E2E demo: generate a storefront from `products/orders/customers` → plan → artifacts → eval → approval → publish.
+
+### F. Operations
+
+- [x] `[BE]` Metrics for run success/fail, approval latency, tool latency, eval fail rate, token/cost estimate, and budget stop reason.
+- [x] `[OPS]` A Grafana "Agent Harness" dashboard and a dead-letter queue for repeatedly failing runs/tool calls.
+- [x] `[DOC]` Update `data-model.md`, `architecture/overview.md`, OpenAPI, SDK docs, and runtime limitations per phase.
 
 ---
 
 ## Phase POST-GA8 — Directus Data Model Parity (DONE)
 
-Goal: upgrade Data Model / Collections Builder so a LumiBase collection has a Directus-grade contract: complete metadata, primary key strategy, system fields, advanced field config, relation metadata, schema permissions, atomic diff/apply, SDK/typegen/OpenAPI, and parity tests. Detailed reference: `docs/en/features/directus-data-model-parity-tasks.md`.
+Goal: upgrade the Data Model / Collections Builder so a collection in LumiBase has a contract as clear as Directus's: full metadata, primary key strategy, system fields, advanced field config, relation metadata, schema permissions, atomic diff/apply, SDK/typegen/OpenAPI, and parity tests. Detailed reference: `docs/en/features/directus-data-model-parity-tasks.md`.
 
 ### Milestone 1 — Correctness fixes before expansion (DONE)
 
-- [x] `[FE]` Collection wizard sends the correct top-level payload (`note`, `accountability`, `versioning`, `singleton`, `primaryKeyType`, `storageMode`) instead of hiding these fields in `meta`.
-- [x] `[BE]` `ItemService.patch/replace/softDelete` enforce `update/delete` permissions, row-level scope, and field-level update allowlist.
-- [x] `[BE]` Relation delete/dependency checks cover both `manyCollection` and `oneCollection`; block field/collection deletion while referenced by relations.
-- [x] `[TEST]` Add regression tests for wizard payload, update/delete permissions, and relation dependency checks.
+- [x] `[FE]` The collection wizard sends the correct top-level payload (`note`, `accountability`, `versioning`, `singleton`, `primaryKeyType`, `storageMode`) instead of cramming it into `meta`.
+- [x] `[BE]` `ItemService.patch/replace/softDelete` enforce `update/delete` permission, row-level scope, and the field-level update allowlist.
+- [x] `[BE]` Relation delete/dependency checks cover both `manyCollection` and `oneCollection` directions; block deleting a field/collection while a relation still points to it.
+- [x] `[TEST]` Add regression tests for the wizard payload, update/delete permission, and relation dependency checks.
 
 ### Milestone 2 — Collection metadata + primary key contract (DONE)
 
 - [x] `[DB]` Add first-class collection columns: `label`, `pluralLabel`, `hidden`, `system`, `primaryKeyField`, `primaryKeyType`, `storageMode`, `unarchiveValue`, `itemDuplicationFields`, `translations`.
-- [x] `[BE]` Add backward-compatible backfill/migration; route validation and `SchemaService` use new fields while `meta` remains for extension/custom UI hints.
-- [x] `[SDK]` Update collection input/output types and schema client methods for the new metadata.
-- [x] `[FE]` Wizard has Identity, Storage, System fields, Permissions defaults, and Review JSON steps.
-- [x] `[BE]` Implement primary key strategy for `jsonb`: `nanoid`, `uuid`, `string`; defer or explicitly block `integer/bigInteger` until sequence support exists.
-- [x] `[TEST]` Item create respects primary key strategy; duplicate user-provided ID returns `409`.
+- [x] `[BE]` Backward-compatible backfill/migration; route validation and `SchemaService` use the new fields, keeping `meta` for extension/custom UI hints.
+- [x] `[SDK]` Update the collection input/output types and schema client methods for the new metadata.
+- [x] `[FE]` The wizard has Identity, Storage, System fields, Permissions defaults, and Review JSON steps.
+- [x] `[BE]` Implement the primary key strategy for `jsonb`: `nanoid`, `uuid`, `string`; explicitly defer or block `integer/bigInteger` if there's no sequence yet.
+- [x] `[TEST]` Create item respects the primary key strategy; a duplicate user-provided ID returns `409`.
 
 ### Milestone 3 — System fields and field configuration parity
 
-- [x] `[BE]` Extend compiled schema with `systemFields` (`id`, `status`, `sort`, `user_created`, `user_updated`, `created_at`, `updated_at`, `deleted_at`).
-- [x] `[FE]` Fields tab renders system fields in a locked group; allow display/hidden/readonly/translations/width config but not deletion.
+- [x] `[BE]` Extend the compiled schema with `systemFields` (`id`, `status`, `sort`, `user_created`, `user_updated`, `created_at`, `updated_at`, `deleted_at`).
+- [x] `[FE]` The Fields tab shows system fields in a locked group; allows configuring display/hidden/readonly/translations/width but not deletion.
 - [x] `[DB]` Add field metadata: `label`, `note`, `defaultValue`, `nullable`, `unique`, `indexed`, `searchable`, `length`, `precision`, `scale`, `special`.
 - [x] `[FE]` FieldInspector advanced tabs: Basics, Options, Display, Validation, Conditions, Layout, Storage, Translations.
-- [x] `[BE]` Split create/update/rename/delete/migration field paths; reject type/name changes when data exists unless a migration plan exists.
-- [x] `[TEST]` FieldInspector preserves unknown `options/displayOptions/validation/conditions`; risky changes return `409` or require confirmation.
+- [x] `[BE]` Separate the create/update/rename/delete/migration field paths; reject changing type/name when data exists without a migration plan.
+- [x] `[TEST]` FieldInspector does not lose unknown `options/displayOptions/validation/conditions`; risky changes return `409` or require confirmation.
 
 ### Milestone 4 — Relations parity and deep read
 
-- [x] `[BE]` Validate relation references: collection/field existence, non-duplicate relation names, and storage-mode-compatible `onDelete`.
+- [x] `[BE]` Validate relation references: the collection/field exists, the relation name is not duplicated, `onDelete` is valid for the storage mode.
 - [x] `[DB]` Extend relation metadata: `type`, `aliasField`, `relatedDisplayTemplate`, `junctionManyField`, `junctionOneField`.
-- [x] `[BE]` Support relation types `m2o`, `o2m`, `m2m`; reserve `m2a` and return "not implemented" if selected.
+- [x] `[BE]` Support relation types `m2o`, `o2m`, `m2m`; reserve `m2a` and return "not implemented" if chosen.
 - [x] `[BE]` Implement relation expansion for item queries (`fields=author.name,categories.*`, `deep[...]`) with permission masking for related collections.
-- [x] `[TEST]` M2O expands to an object when requested; O2M/M2M return arrays; common cases batch to avoid N+1 behavior.
+- [x] `[TEST]` M2O returns an object on expand; O2M/M2M return an array; batching avoids N+1 in common cases.
 
 ### Milestone 5 — Schema permissions, diff/apply, and storage positioning
 
 - [x] `[BE]` Add schema permission actions: `schema:read/create/update/delete/migrate`.
 - [x] `[BE]` Apply `requireSchemaPermission` to collections/fields/relations/compiled schema routes and AI schema skills.
-- [x] `[BE]` Expand schema diff: collection metadata, field metadata, relation changes, risk classification, and runtime impact.
-- [x] `[BE]` `PUT /collections/:name/schema` validates all input, computes diff, applies transactionally when supported, invalidates schema/permission/typegen caches, and emits `schema.changed`.
-- [x] `[FE]` Raw JSON schema tab shows diff/risk before apply.
-- [x] `[DOC]` Document storage modes `jsonb/materialized/physical/external`, including limitations badges in Studio.
-- [x] `[DOC]` Create `docs/en/architecture/physical-collections.md` design doc to decide physical/external mode.
+- [x] `[BE]` Expand the schema diff: collection metadata, field metadata, relation changes, risk classification, and runtime impact.
+- [x] `[BE]` `PUT /collections/:name/schema` validates everything, computes the diff, applies transactionally when the runtime supports it, invalidates schema/permission/typegen cache, and emits `schema.changed`.
+- [x] `[FE]` The Raw JSON schema tab shows the diff/risk before applying.
+- [x] `[DOC]` Document the storage modes `jsonb/materialized/physical/external`, with a limitations badge in Studio.
+- [x] `[DOC]` Create the design doc `docs/en/architecture/physical-collections.md` to decide on physical/external mode.
 
 ### Milestone 6 — SDK, typegen, OpenAPI, docs, and parity tests
 
-- [x] `[SDK]` Expose complete schema resources: collections/fields/relations CRUD, field rename/delete options, schema diff/apply.
-- [x] `[SDK]` Preserve legacy methods or provide deprecation wrappers; preserve error `code/path/risk` metadata.
-- [x] `[SDK]` Typegen includes primary key type, system fields, nullable/required, readonly/generated, and relation-expanded response types.
+- [x] `[SDK]` Open the full schema resources: collections/fields/relations CRUD, field rename/delete options, schema diff/apply.
+- [x] `[SDK]` Keep legacy methods or a deprecation wrapper; preserve the error `code/path/risk` metadata.
+- [x] `[SDK]` Typegen includes the primary key type, system fields, nullable/required, readonly/generated, and relation-expanded response types.
 - [x] `[DOC]` Update `apps/cms/openapi.yaml`, `docs/en/features/collections-builder.md`, `docs/en/features/field-types-and-config.md`, `docs/en/data-model.md`.
-- [x] `[DOC]` Sync Vietnamese docs after the English contract stabilizes.
-- [x] `[TEST]` Backend/frontend/SDK parity suite covers all acceptance criteria in `directus-data-model-parity-tasks.md`.
+- [x] `[DOC]` Sync the Vietnamese version after the English contract stabilizes.
+- [x] `[TEST]` Backend/frontend/SDK parity suite covering the acceptance criteria in `directus-data-model-parity-tasks.md`.
 
 ---
 
-## Cross-cutting checklist (mỗi phase)
+## Cross-cutting checklist (every phase)
 
-- [x] Cập nhật `architecture.md` nếu thay đổi cấu trúc.
-- [x] Viết unit + integration test trước khi merge; với logic phức tạp dùng property-based testing (fast-check).
-- [x] Cập nhật OpenAPI spec (`apps/cms/openapi.yaml`) cho mọi endpoint mới.
-- [x] Cập nhật `packages/sdk` types tương ứng.
-- [x] Cập nhật docs trong `docs/features/` hoặc `apps/docs/content/`.
-- [x] Work directly on `main` under the current repo instruction; use conventional commits and push directly to reduce conflicts with parallel work.
-- [x] Đảm bảo route mới hoạt động trên CẢ hai runtime (Cloudflare + Docker) — nếu phụ thuộc API cụ thể, gate bằng feature flag và document trong `features/runtime-abstraction.md`.
+- [x] Update `architecture.md` if the structure changes.
+- [x] Write unit + integration tests before merging; for complex logic use property-based testing (fast-check).
+- [x] Update the OpenAPI spec (`apps/cms/openapi.yaml`) for every new endpoint.
+- [x] Update the corresponding `packages/sdk` types.
+- [x] Update docs in `docs/features/` or `apps/docs/content/`.
+- [x] Work directly on `main` per the current repo guidance; commit with conventional commits and push directly to reduce conflicts with parallel workstreams.
+- [x] Ensure new routes work on BOTH runtimes (Cloudflare + Docker) — if it depends on a specific API, gate it with a feature flag and document it in `features/runtime-abstraction.md`.

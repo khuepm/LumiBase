@@ -7,6 +7,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { and, asc, eq, isNull, lte } from 'drizzle-orm';
+import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentVetoesTotal, agentVetoStagingsTotal } from './agent-metrics';
 import { AutonomyService } from './autonomy-service';
 import { ItemService, type ItemProvenance } from './item-service';
@@ -86,6 +87,13 @@ export interface VetoServiceDeps {
   siteId: string;
   /** Window length override; defaults to 4 hours. */
   vetoWindowMs?: number;
+  /**
+   * Optional push-notification sink (push-noti feature). Request-context
+   * callers pass a notifier so reviewers are reached in-app / via Web Push
+   * the moment a write is staged; background callers omit it and rely on the
+   * Mission-Control inbox poll. Best-effort — never blocks staging.
+   */
+  notify?: AgentNotifier;
 }
 
 export interface StagedWrite {
@@ -198,6 +206,15 @@ export class VetoService {
         autoCommitAt: autoCommitAt.toISOString(),
         reviewPath,
       },
+    });
+
+    this.deps.notify?.({
+      kind: 'veto',
+      severity: 'warning',
+      title: 'Veto window open',
+      body: `Staged change on ${input.collection}/${input.itemId} auto-commits at ${autoCommitAt.toISOString()}`,
+      deepLink: `/mission-control/inbox?entry=veto:${approval!.id}`,
+      entityId: approval!.id,
     });
 
     return { approvalId: approval!.id, revisionId: staging!.id, autoCommitAt, reviewPath };

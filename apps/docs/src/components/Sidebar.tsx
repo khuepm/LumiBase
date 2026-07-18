@@ -60,7 +60,10 @@ export function Sidebar({ tree, activeSlug, onNavigate, locale }: SidebarProps) 
   }
 
   return (
-    <nav className="flex flex-col gap-0.5 p-2" aria-label="Documentation navigation">
+    <nav
+      className="flex flex-col gap-0.5 px-3 pb-20 pt-6"
+      aria-label="Documentation navigation"
+    >
       {tree.map((node) => (
         <SidebarNode
           key={node.type === 'file' ? node.slug : node.name}

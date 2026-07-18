@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T10:56:37.131Z
+sourceLang: en
+contentHash: 872eb1bddf553837
+---
+
 # ADR-005: Hono.js over Express / Elysia
 
 **Date:** 2024-01-20

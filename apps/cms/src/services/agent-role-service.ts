@@ -66,6 +66,13 @@ export const ROLE_LIBRARY: readonly AgentRoleDefinition[] = [
     systemPromptRef: 'roles/librarian.v1',
     capabilities: ['items:read', 'media:read', 'media:write'],
   },
+  {
+    name: 'git-sync',
+    description:
+      'Reconciles content/intents with a connected Git repository and resolves CI-driven follow-ups.',
+    systemPromptRef: 'roles/git-sync.v1',
+    capabilities: ['items:read', 'items:write', 'schema:read'],
+  },
 ] as const;
 
 /**

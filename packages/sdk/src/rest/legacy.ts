@@ -45,18 +45,42 @@ import {
   ShareSecretResult,
   PresetResource,
   TranslationResource,
+  ContentVersion,
+  VersionCompare,
+  TmEntry,
+  TmSuggestion,
+  TmSource,
   SettingResource,
   SiteResource,
   SiteConfigUpdate,
+  DomainResource,
+  DomainCreateInput,
   UserResource,
   TeamResource,
   TeamMemberResource,
   FolderResource,
   FileResource,
+  UploadConfigResource,
   WebhookResource,
   ActivityResource,
   ExtensionResource,
+  DeploymentTargetResource,
+  DeploymentResource,
 } from "../types";
+
+/**
+ * Loose shape for `users.preferences`. The CMS validates the strict schema
+ * (`@lumibase/shared/schemas#UserPreferences`); the SDK stays decoupled and
+ * passes the blob through, so callers keep full type-safety on the Studio side
+ * where the shared schema is imported.
+ */
+export interface UserPreferencesPayload {
+  language?: string;
+  theme?: "auto" | "light" | "dark";
+  timezone?: string;
+  keybindings?: Record<string, string>;
+  [key: string]: unknown;
+}
 
 function withQuery(path: string, params: Record<string, unknown> = {}) {
   const qs = new URLSearchParams();
@@ -229,7 +253,6 @@ export function legacyRest() {
         if (params.offset !== undefined)
           qs.set("offset", String(params.offset));
         if (params.status) qs.set("status", params.status);
-        if (params.search) qs.set("search", params.search);
         const s = qs.toString();
         return s ? `?${s}` : "";
       }
@@ -307,6 +330,45 @@ export function legacyRest() {
             `${base}/${id}/pins/${encodeURIComponent(field)}`,
             { method: "DELETE" },
           ),
+        // Content versions — named parallel draft branches (content-versioning).
+        versions: {
+          list: (id: string) =>
+            client.rawRequest<ContentVersion[]>(`${base}/${id}/versions`),
+          create: (id: string, input: { key: string; name: string }) =>
+            client.rawRequest<ContentVersion>(`${base}/${id}/versions`, {
+              method: "POST",
+              body: JSON.stringify(input),
+            }),
+          get: (id: string, key: string) =>
+            client.rawRequest<ContentVersion>(
+              `${base}/${id}/versions/${encodeURIComponent(key)}`,
+            ),
+          update: (
+            id: string,
+            key: string,
+            patch: { data?: Record<string, unknown>; name?: string },
+          ) =>
+            client.rawRequest<ContentVersion>(
+              `${base}/${id}/versions/${encodeURIComponent(key)}`,
+              { method: "PATCH", body: JSON.stringify(patch) },
+            ),
+          delete: (id: string, key: string) =>
+            client.rawRequest<null>(
+              `${base}/${id}/versions/${encodeURIComponent(key)}`,
+              { method: "DELETE" },
+            ),
+          compare: (id: string, key: string) =>
+            client.rawRequest<VersionCompare>(
+              `${base}/${id}/versions/${encodeURIComponent(key)}/compare`,
+            ),
+          // Returns the promoted item; `meta.mainDiverged` flags that main
+          // changed after the branch was cut (review advised).
+          promote: (id: string, key: string) =>
+            client.rawRequest<Row>(
+              `${base}/${id}/versions/${encodeURIComponent(key)}/promote`,
+              { method: "POST" },
+            ),
+        },
       };
     }
 
@@ -465,6 +527,78 @@ export function legacyRest() {
       delete: (id: string) => client.rawRequest<null>(`/api/v1/translations/${id}`, { method: "DELETE" }),
     };
 
+    const tm = {
+      /** List TM entries. Filters: source/target lang pair + `entrySource` (human|mt|imported). Returns the full response so callers can read pagination `meta`. */
+      list: (params?: {
+        source?: string;
+        target?: string;
+        entrySource?: TmSource;
+        limit?: number;
+        offset?: number;
+      }) => {
+        const qs = new URLSearchParams();
+        if (params?.source) qs.set("source", params.source);
+        if (params?.target) qs.set("target", params.target);
+        if (params?.entrySource) qs.set("entrySource", params.entrySource);
+        if (params?.limit != null) qs.set("limit", String(params.limit));
+        if (params?.offset != null) qs.set("offset", String(params.offset));
+        const s = qs.toString();
+        return client.rawRequest<TmEntry[]>(`/api/v1/tm${s ? `?${s}` : ""}`);
+      },
+      upsert: (input: {
+        sourceLang: string;
+        targetLang: string;
+        sourceText: string;
+        targetText: string;
+        context?: string;
+        quality?: number;
+        source?: TmSource;
+        provider?: string;
+      }) =>
+        client.rawRequest<TmEntry>("/api/v1/tm", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      update: (
+        id: string,
+        patch: { targetText?: string; quality?: number; context?: string | null; source?: TmSource },
+      ) =>
+        client.rawRequest<TmEntry>(`/api/v1/tm/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        }),
+      delete: (id: string) =>
+        client.rawRequest<{ id: string }>(`/api/v1/tm/${id}`, { method: "DELETE" }),
+      /** Fuzzy TM lookup. Normalizes the route's `{ match: { targetText, score } | null }` to a `TmSuggestion | null`. */
+      lookup: async (input: {
+        query: string;
+        sourceLang: string;
+        targetLang: string;
+        threshold?: number;
+      }): Promise<TmSuggestion | null> => {
+        const res = await client.rawRequest<{
+          match: { targetText: string; score: number; source?: TmSource; id?: string } | null;
+        }>("/api/v1/tm/lookup", {
+          method: "POST",
+          body: JSON.stringify(input),
+        });
+        const m = res.data.match;
+        if (!m) return null;
+        return {
+          targetText: m.targetText,
+          similarity: m.score,
+          source: m.source ?? "human",
+          entryId: m.id,
+        };
+      },
+      /** Full MT pipeline (TM → glossary → provider). */
+      translate: (input: { text: string; from: string; to: string; provider?: string }) =>
+        client.rawRequest<{ text: string; source?: string; provider?: string }>(
+          "/api/v1/tm/translate",
+          { method: "POST", body: JSON.stringify(input) },
+        ),
+    };
+
     const settings = {
       list: (scope?: string) =>
         client.rawRequest<SettingResource[]>(`/api/v1/settings${scope ? `?scope=${scope}` : ""}`),
@@ -484,6 +618,25 @@ export function legacyRest() {
           method: "PATCH",
           body: JSON.stringify(patch),
         }),
+    };
+
+    const domains = {
+      list: () => client.rawRequest<DomainResource[]>("/api/v1/domains"),
+      create: (input: DomainCreateInput) =>
+        client.rawRequest<DomainResource>("/api/v1/domains", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      verify: (id: string) =>
+        client.rawRequest<DomainResource>(`/api/v1/domains/${id}/verify`, {
+          method: "POST",
+        }),
+      setPrimary: (id: string) =>
+        client.rawRequest<DomainResource>(`/api/v1/domains/${id}/primary`, {
+          method: "POST",
+        }),
+      delete: (id: string) =>
+        client.rawRequest<void>(`/api/v1/domains/${id}`, { method: "DELETE" }),
     };
 
     const users = {
@@ -562,6 +715,17 @@ export function legacyRest() {
         client.rawRequest<{ url: string; method: string; key: string }>("/api/v1/files/presigned-url", {
           method: "POST",
           body: JSON.stringify({ filename }),
+        }),
+    };
+
+    const uploads = {
+      /** Effective upload policy + catalogue — drives the picker's `accept`. */
+      getConfig: () => client.rawRequest<UploadConfigResource>("/api/v1/uploads/config"),
+      /** Update the per-site allowlist / size cap (site admin only). */
+      updateConfig: (patch: { maxBytes?: number; allowedMimeTypes?: string[] }) =>
+        client.rawRequest<UploadConfigResource>("/api/v1/uploads/config", {
+          method: "PUT",
+          body: JSON.stringify(patch),
         }),
     };
 
@@ -689,6 +853,58 @@ export function legacyRest() {
         }),
     };
 
+    /**
+     * Current-user surface. `preferences` is the identity-global JSONB blob
+     * (`users.preferences`) — keybindings, language, theme. `update` shallow-
+     * merges server-side, so callers can PATCH a single section.
+     */
+    const me = {
+      getPreferences: () =>
+        client.rawRequest<UserPreferencesPayload>("/api/v1/me/preferences"),
+      updatePreferences: (patch: UserPreferencesPayload) =>
+        client.rawRequest<UserPreferencesPayload>("/api/v1/me/preferences", {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        }),
+    };
+
+    // Deployment integrations (spec: deployment-integrations).
+    const deployments = {
+      targets: {
+        list: () =>
+          client.rawRequest<DeploymentTargetResource[]>("/api/v1/deployments/targets"),
+        create: (input: Record<string, unknown>) =>
+          client.rawRequest<DeploymentTargetResource>("/api/v1/deployments/targets", {
+            method: "POST",
+            body: JSON.stringify(input),
+          }),
+        update: (id: string, patch: Record<string, unknown>) =>
+          client.rawRequest<DeploymentTargetResource>(`/api/v1/deployments/targets/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify(patch),
+          }),
+        delete: (id: string) =>
+          client.rawRequest<null>(`/api/v1/deployments/targets/${id}`, { method: "DELETE" }),
+        deploy: (id: string, input: { branch?: string; reason?: string } = {}) =>
+          client.rawRequest<DeploymentResource>(`/api/v1/deployments/targets/${id}/deploy`, {
+            method: "POST",
+            body: JSON.stringify(input),
+          }),
+      },
+      list: (params?: { targetId?: string; status?: string }) => {
+        const qs = new URLSearchParams();
+        if (params?.targetId) qs.set("targetId", params.targetId);
+        if (params?.status) qs.set("status", params.status);
+        const suffix = qs.toString() ? `?${qs.toString()}` : "";
+        return client.rawRequest<DeploymentResource[]>(`/api/v1/deployments${suffix}`);
+      },
+      get: (id: string) => client.rawRequest<DeploymentResource>(`/api/v1/deployments/${id}`),
+      logs: (id: string) =>
+        client.rawRequest<{ log: string }>(`/api/v1/deployments/${id}/logs`),
+      refresh: (id: string) =>
+        client.rawRequest<DeploymentResource>(`/api/v1/deployments/${id}/refresh`, { method: "POST" }),
+    };
+
     return {
       schema,
       items,
@@ -697,11 +913,15 @@ export function legacyRest() {
       access,
       apiKeys,
       shares,
+      me,
       permissions,
       presets,
       translations,
+      tm,
       settings,
+      uploads,
       site,
+      domains,
       users,
       teams,
       folders,
@@ -709,6 +929,7 @@ export function legacyRest() {
       webhooks,
       activity,
       extensions,
+      deployments,
       realtime: {
         /**
          * Create a RealtimeClient for the current site.

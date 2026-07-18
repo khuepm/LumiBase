@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-11T03:49:05.879Z
+sourceLang: en
+translatedFrom: en
+sourceHash: dc7a160b08b512cb
+mtEngine: claude
+syncStatus: machine-translated
+---
+
 # Vận hành nâng cấp
 
 Runbook này định nghĩa luồng nâng cấp tối thiểu cho LumiBase trên môi trường Cloudflare-hosted và Docker self-hosted. Hãy xem mỗi lần nâng cấp là một thay đổi vận hành: chọn phiên bản rõ ràng, sao lưu dữ liệu, chạy migration có kiểm soát, xác minh ứng dụng đang chạy và chuẩn bị kế hoạch rollback có giới hạn.
@@ -102,6 +112,51 @@ Chạy migration có chủ đích và xác minh cả schema lẫn hành vi ứng
 - Xác minh migration history sau khi hoàn tất.
 - Smoke test core reads/writes cho ít nhất một site tenant đại diện.
 - Ghi lại migration ID đã apply trong lần nâng cấp.
+
+## Nâng cấp lên 1.0
+
+`1.0.0` là bản phát hành đầu tiên có cam kết ổn định theo semver (xem [chính sách versioning](#) trong README). Vì nó freeze public surface, đường nâng cấp lên 1.0 phụ thuộc vào version bạn đang chạy. Đọc hết mục này trước khi bắt đầu — một số version nâng cấp tại chỗ được, số khác cần một bước trung gian, và có một dải version không thể migrate tiến lên.
+
+### Các nguồn nâng cấp được hỗ trợ
+
+| Từ | Đường lên 1.0.0 | Ghi chú |
+|------|---------------|-------|
+| `0.18.x` – `0.21.x` | Trực tiếp. | Table prefix và mô hình RBAC đã khớp 1.0. Chạy [migration checklist](#migration-checklist); không có bước dữ liệu thủ công. |
+| `0.6.x` – `0.17.x` | Trực tiếp, **kèm RBAC backfill bên dưới**. | Migration schema là cộng dồn và idempotent. Bước thủ công duy nhất là backfill role→policy (xem [RBAC backfill role→policy](#rbac-backfill-rolepolicy)). |
+| Trước `0.17.0` (bảng chưa có prefix) | **Không hỗ trợ nâng cấp tại chỗ.** | Thay đổi table-prefix ở `0.17.x` chỉ áp dụng cho fresh-install. Instance tạo trước `0.17.0` phải export dữ liệu (collections, items, files, roles/policies/permissions, flows, webhooks) và re-import vào một bản `1.0.0` mới. Không có migration tiến lên cho schema chưa prefix. |
+| Trước `0.6.0` | Qua một bản trung gian `0.17.x` – `0.21.x` trước. | Nâng lên một bản `0.x` gần đây (bản này áp dụng RBAC backfill và xử lý prefix), verify, rồi nâng lên `1.0.0`. Không nhảy thẳng. |
+
+Xác định version hiện tại qua `/api/v1/system/version` trước khi chọn dòng phù hợp.
+
+### RBAC backfill role→policy
+
+`1.0.0` coi **policy** là nguồn sự thật cho `admin_access` và `app_access` (cùng `enforce_tfa`, IP guard, và time window). Instance có trước mô hình policy lưu các cờ này trên **role**. Trong compatibility window, `PermissionService` vẫn đọc `cờ role OR cờ policy đang active`, nên access không vỡ khi nâng cấp — nhưng trước `1.0.0` bạn nên materialize cờ role legacy thành policy row để riêng lớp policy là authoritative.
+
+Backfill là idempotent và **không** sửa cờ role (chúng giữ nguyên làm mỏ neo rollback). Với mỗi role có `admin_access` hoặc `app_access` bằng true, nó tạo một policy chỉ chứa cờ — key `legacy_role_flags_<role_key>`, tên `Legacy role flags: <role name>`, copy đúng giá trị cờ, với `enforce_tfa=false`, IP guard rỗng, và time window null — rồi attach vào role qua `role_policies`. Hợp đồng đầy đủ và SQL: [Role Flag to Policy Flag Migration](../features/role-policy-flag-migration.md).
+
+Chạy trên staging trước, rồi verify. Post-check phải trả về **không dòng nào** — mọi role mang cờ legacy đều phải có policy tương ứng:
+
+```sql
+SELECT r.id, r.site_id, r.name, r.admin_access, r.app_access
+FROM lumibase_roles r
+WHERE (r.admin_access = true OR r.app_access = true)
+AND NOT EXISTS (
+  SELECT 1
+  FROM lumibase_role_policies rp
+  JOIN lumibase_policies p ON p.id = rp.policy_id
+  WHERE rp.role_id = r.id
+    AND p.admin_access = r.admin_access
+    AND p.app_access = r.app_access
+);
+```
+
+Rồi xác nhận effective access không đổi: role admin legacy vẫn là admin, role chỉ-app legacy vẫn vào được Studio, và role không có app access vẫn không vào được. Bước verify này đã được chạy trên fixture của bản 1.0 và trả về sạch. Cột cờ role vẫn giữ nguyên qua 1.0 để rollback; chúng chỉ được lên lịch xoá ở một bản sau khi `LUMIBASE_RBAC_LEGACY_ROLE_FLAGS=false` đã ship và được verify.
+
+### Rollback từ 1.0
+
+- **Application:** rollback về deployment `0.21.x` trước đó theo [rollback app](#rollback-app). `1.0.0` không thêm thay đổi schema phá huỷ nào so với `0.21.x`, nên app version cũ vẫn tương thích với database 1.0.
+- **RBAC backfill:** có thể đảo ngược riêng trong compatibility window — xoá các policy `legacy_role_flags_%` và các dòng `role_policies` của chúng (cờ role không đụng đến, nên access được bảo toàn). Xem [§6 Rollback](../features/role-policy-flag-migration.md#6-rollback).
+- **Đường re-import pre-0.17:** không có rollback về schema chưa prefix cũ; giữ instance nguồn chạy read-only cho tới khi bản cài 1.0 được verify.
 
 ## Rollback app
 

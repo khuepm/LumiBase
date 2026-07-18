@@ -125,7 +125,7 @@ describe('Recovery flow — integration', () => {
     // handles incidental FK references; `admin_backup_codes` is included
     // because the recovery flow reads/writes it directly.
     await db.execute(
-      sql`TRUNCATE TABLE login_attempts, audit_log, admin_backup_codes, system_state, settings, user_sites, sites, users RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE TABLE lumibase_login_attempts, lumibase_audit_log, lumibase_admin_backup_codes, lumibase_system_state, lumibase_settings, lumibase_user_sites, lumibase_sites, lumibase_users RESTART IDENTITY CASCADE`,
     );
     // The recovery rate limiter is a module-level bucket map shared
     // across the whole process — clear it so a prior test's requests

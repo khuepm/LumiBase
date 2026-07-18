@@ -189,12 +189,12 @@ function processEnvValue(key: string): string | undefined {
   }
 }
 
-function isProductionMetricsEnv(env: AppEnv['Bindings']): boolean {
-  return env.LUMIBASE_ENV === 'production' || processEnvValue('LUMIBASE_ENV') === 'production';
+function isProductionMetricsEnv(env: AppEnv['Bindings'] | undefined): boolean {
+  return env?.LUMIBASE_ENV === 'production' || processEnvValue('LUMIBASE_ENV') === 'production';
 }
 
-function resolveMetricsToken(env: AppEnv['Bindings']): string | undefined {
-  return env.METRICS_TOKEN || processEnvValue('METRICS_TOKEN');
+function resolveMetricsToken(env: AppEnv['Bindings'] | undefined): string | undefined {
+  return env?.METRICS_TOKEN || processEnvValue('METRICS_TOKEN');
 }
 
 function extractBearerToken(header: string | undefined): string | null {
@@ -214,12 +214,29 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-function canReadMetrics(env: AppEnv['Bindings'], authorization: string | undefined): boolean {
-  if (!isProductionMetricsEnv(env)) return true;
+function canReadMetrics(env: AppEnv['Bindings'] | undefined, authorization: string | undefined): boolean {
   const expected = resolveMetricsToken(env);
-  if (!expected) return false;
-  const actual = extractBearerToken(authorization);
-  return actual !== null && constantTimeEqual(actual, expected);
+  // When a token is configured, enforce it in *every* environment. Previously
+  // the token was only checked in production, leaving metrics wide open on
+  // staging/preview stacks (CWE-284/668).
+  if (expected) {
+    const actual = extractBearerToken(authorization);
+    return actual !== null && constantTimeEqual(actual, expected);
+  }
+  // No token configured: allow only outside production (dev convenience).
+  return !isProductionMetricsEnv(env);
+}
+
+/**
+ * Whether the caller may see detailed observability output (per-subsystem
+ * health, Prometheus metrics). Reuses the metrics-token gate so `/health` and
+ * `/metrics` share one trust boundary.
+ */
+export function canReadObservabilityDetail(
+  env: AppEnv['Bindings'] | undefined,
+  authorization: string | undefined,
+): boolean {
+  return canReadMetrics(env, authorization);
 }
 
 // ---------------------------------------------------------------------------

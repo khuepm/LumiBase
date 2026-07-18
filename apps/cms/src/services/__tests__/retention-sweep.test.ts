@@ -5,10 +5,12 @@ import type { Database } from '@lumibase/database';
 
 // ItemService is constructed inside sweepRetention; stub hardDelete/cryptoShred.
 vi.mock('../item-service', () => ({
-  ItemService: vi.fn().mockImplementation(() => ({
-    hardDelete: vi.fn().mockResolvedValue(true),
-    cryptoShred: vi.fn().mockResolvedValue(true),
-  })),
+  ItemService: vi.fn().mockImplementation(function () {
+    return {
+      hardDelete: vi.fn().mockResolvedValue(true),
+      cryptoShred: vi.fn().mockResolvedValue(true),
+    };
+  }),
 }));
 
 function makeDb(rowsByTable: Map<unknown, Record<string, unknown>[]>) {

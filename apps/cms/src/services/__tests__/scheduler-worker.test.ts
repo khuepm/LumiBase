@@ -96,8 +96,13 @@ describe('scheduler sweepDueUnpublish (Req 7.4)', () => {
 });
 
 describe('runSchedulerTick', () => {
-  it('returns published + unpublished counts', async () => {
+  it('returns published + unpublished + release + flow counts', async () => {
     const { db } = makeDb(new Map([[items, []]]));
-    expect(await runSchedulerTick({ db }, now)).toEqual({ published: 0, unpublished: 0 });
+    expect(await runSchedulerTick({ db }, now)).toEqual({
+      published: 0,
+      unpublished: 0,
+      releasesPublished: 0,
+      flowsEnqueued: 0,
+    });
   });
 });

@@ -15,6 +15,14 @@ import {
   CdcPipelineResource,
   CdcRollbackResult,
   CdcValidateEnvInput,
+  CdcDeliveryResource,
+  CdcEventEnvelope,
+  CdcFeedPage,
+  CdcFeedReadParams,
+  CdcReplayInput,
+  CdcSubscriptionCreateInput,
+  CdcSubscriptionPatchInput,
+  CdcSubscriptionResource,
   AccessExportManifest,
   AccessImportApplyResult,
   AccessImportDryRunResult,
@@ -31,9 +39,33 @@ import {
   AgentMemoryWriteInput,
   AgentRunResource,
   AgentToolResource,
+  SearchParams,
+  SearchResponse,
 } from "../types";
 
 export * from "./legacy";
+export * from "./gaps";
+
+/**
+ * Full-text search via `GET /api/v1/search`. Omit `params.collection` for a
+ * cross-collection (global) search that fans out over every collection of the
+ * current site; pass it to scope to one collection. Diacritics-insensitive
+ * matching (e.g. "ha noi" → "Hà Nội") is handled server-side by MeiliSearch.
+ */
+export function search<Schema extends DefaultSchema>(query: string, params?: SearchParams) {
+  return async (client: LumiClient<Schema>): Promise<SearchResponse> => {
+    const qs = new URLSearchParams();
+    qs.set("q", query);
+    if (params?.collection) qs.set("collection", params.collection);
+    if (params?.filter) qs.set("filter", params.filter);
+    if (params?.sort?.length) qs.set("sort", params.sort.join(","));
+    if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params?.offset !== undefined) qs.set("offset", String(params.offset));
+
+    const res = await client.rawRequest<unknown>(`/api/v1/search?${qs.toString()}`);
+    return res as unknown as SearchResponse;
+  };
+}
 
 export function readItems<
   Schema extends DefaultSchema,
@@ -49,8 +81,8 @@ export function readItems<
     if (params?.limit !== undefined) qs.set("limit", String(params.limit));
     if (params?.offset !== undefined) qs.set("offset", String(params.offset));
     if (params?.status) qs.set("status", params.status);
-    if (params?.search) qs.set("search", params.search);
-    
+    if (params?.meta) qs.set("meta", params.meta);
+
     const s = qs.toString();
     const query = s ? `?${s}` : "";
 
@@ -215,6 +247,126 @@ export function rollbackCdcDeployment(id: string) {
       method: "POST",
     });
     return res.data;
+  };
+}
+
+/* ---------------- Change Feed ---------------- */
+
+/**
+ * Read a page of the change feed (`GET /cdc/events`). Consumers dedupe on
+ * `event.id` (at-least-once) and resume from `meta.nextCursor`. A 410
+ * `CURSOR_EXPIRED` (thrown as {@link LumiError}) means the cursor fell past
+ * retention — resync from scratch or from the `earliestCursor` in the body.
+ */
+export function readCdcEvents(params: CdcFeedReadParams = {}) {
+  return async (client: LumiClient): Promise<CdcFeedPage> => {
+    const qs = new URLSearchParams();
+    if (params.cursor) qs.set("cursor", params.cursor);
+    if (params.collections?.length) qs.set("collections", params.collections.join(","));
+    if (params.operations?.length) qs.set("operations", params.operations.join(","));
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.wait !== undefined) qs.set("wait", String(params.wait));
+    const s = qs.toString();
+    const res = await client.rawRequest<CdcEventEnvelope[]>(`/api/v1/cdc/events${s ? `?${s}` : ""}`);
+    return { data: res.data, meta: (res.meta as CdcFeedPage["meta"]) ?? { nextCursor: null, hasMore: false } };
+  };
+}
+
+export function listCdcSubscriptions() {
+  return async (client: LumiClient): Promise<CdcSubscriptionResource[]> => {
+    const res = await client.rawRequest<CdcSubscriptionResource[]>("/api/v1/cdc/subscriptions");
+    return res.data;
+  };
+}
+
+export function createCdcSubscription(input: CdcSubscriptionCreateInput) {
+  return async (client: LumiClient): Promise<CdcSubscriptionResource> => {
+    const res = await client.rawRequest<CdcSubscriptionResource>("/api/v1/cdc/subscriptions", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    return res.data;
+  };
+}
+
+export function readCdcSubscription(id: string) {
+  return async (client: LumiClient): Promise<CdcSubscriptionResource> => {
+    const res = await client.rawRequest<CdcSubscriptionResource>(
+      `/api/v1/cdc/subscriptions/${encodeURIComponent(id)}`,
+    );
+    return res.data;
+  };
+}
+
+export function updateCdcSubscription(id: string, input: CdcSubscriptionPatchInput) {
+  return async (client: LumiClient): Promise<CdcSubscriptionResource> => {
+    const res = await client.rawRequest<CdcSubscriptionResource>(
+      `/api/v1/cdc/subscriptions/${encodeURIComponent(id)}`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    );
+    return res.data;
+  };
+}
+
+export function deleteCdcSubscription(id: string) {
+  return async (client: LumiClient): Promise<{ ok: boolean }> => {
+    const res = await client.rawRequest<{ ok: boolean }>(
+      `/api/v1/cdc/subscriptions/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+    return res.data;
+  };
+}
+
+/** Commit a pull checkpoint — forward-only (409 ACK_REGRESSION on rewind). */
+export function ackCdcSubscription(id: string, cursor: string) {
+  return async (client: LumiClient): Promise<CdcSubscriptionResource> => {
+    const res = await client.rawRequest<CdcSubscriptionResource>(
+      `/api/v1/cdc/subscriptions/${encodeURIComponent(id)}/ack`,
+      { method: "POST", body: JSON.stringify({ cursor }) },
+    );
+    return res.data;
+  };
+}
+
+/** Rewind within retention; resets dead/stale to active (the only exit). */
+export function replayCdcSubscription(id: string, target: CdcReplayInput) {
+  return async (client: LumiClient): Promise<CdcSubscriptionResource> => {
+    const body: Record<string, unknown> = {};
+    if (target.cursor !== undefined) body.cursor = target.cursor;
+    if (target.occurredAfter !== undefined) body.occurred_after = target.occurredAfter;
+    const res = await client.rawRequest<CdcSubscriptionResource>(
+      `/api/v1/cdc/subscriptions/${encodeURIComponent(id)}/replay`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+    return res.data;
+  };
+}
+
+/** On-demand dispatch (the no-queue fallback path). */
+export function dispatchCdcSubscription(id: string) {
+  return async (client: LumiClient): Promise<{ dispatched: boolean }> => {
+    const res = await client.rawRequest<{ dispatched: boolean }>(
+      `/api/v1/cdc/subscriptions/${encodeURIComponent(id)}/dispatch`,
+      { method: "POST" },
+    );
+    return res.data;
+  };
+}
+
+export function listCdcSubscriptionDeliveries(
+  id: string,
+  params: { limit?: number; page?: number } = {},
+) {
+  return async (client: LumiClient): Promise<{ data: CdcDeliveryResource[]; total: number }> => {
+    const qs = new URLSearchParams();
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.page !== undefined) qs.set("page", String(params.page));
+    const s = qs.toString();
+    const res = await client.rawRequest<CdcDeliveryResource[]>(
+      `/api/v1/cdc/subscriptions/${encodeURIComponent(id)}/deliveries${s ? `?${s}` : ""}`,
+    );
+    return { data: res.data, total: (res.meta as { total?: number } | undefined)?.total ?? res.data.length };
   };
 }
 

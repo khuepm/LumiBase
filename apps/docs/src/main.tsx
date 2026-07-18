@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import './index.css';
 
+// Theme is bootstrapped by the inline no-flash script in index.html (runs
+// before paint) and then kept in sync by the useTheme hook after hydration.
+
 const rootEl = document.getElementById('root')!;
 
 // Prerendered pages ship server-rendered markup inside #root → hydrate it.

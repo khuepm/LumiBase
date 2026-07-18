@@ -108,6 +108,12 @@ class RecordingCacheProvider implements CacheProvider {
     this.store.delete(key);
     this.applied.push({ kind: 'DEL', key });
   }
+
+  async increment(key: string, by = 1): Promise<number> {
+    const next = Number(this.store.get(key) ?? '0') + by;
+    this.store.set(key, String(next));
+    return next;
+  }
 }
 
 /** Mirror of the invalidator's payload serialization (`JSON.stringify(p ?? null)`). */

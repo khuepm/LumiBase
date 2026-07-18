@@ -1,19 +1,22 @@
 ---
 title: Docs i18n Sync
 sourceLang: en
+version: 1
+lastUpdated: 2026-07-08T20:22:56.098Z
+contentHash: e8086806e67522bc
 ---
 
 # Documentation i18n Sync (EN ⇄ VI)
 
 LumiBase ships docs in two locales: `docs/en` (canonical) and `docs/vi`. The
 i18n sync tooling under `scripts/docs-i18n/` keeps them aligned, detects when a
-file is written in the wrong language, machine-translates stale or missing
-targets, and stamps every managed file with a version and update timestamp.
+file is written in the wrong language, translates stale or missing targets, and
+stamps every managed file with a version and update timestamp.
 
-The translation step itself uses a machine-translation provider (DeepL by
-default, Google Cloud Translation as an alternative). Translation runs in CI
-where the API key lives as a secret; locally you can run detection without any
-key.
+Translation is performed by Claude (the Anthropic Messages API) — there are no
+third-party machine-translation services. Translation runs in CI where the
+`ANTHROPIC_API_KEY` lives as a secret; locally you can run detection (and the
+no-loss preservation step) without any key.
 
 ## What it does
 
@@ -49,21 +52,21 @@ pnpm docs:i18n:detect
 # (safe to run without an API key).
 pnpm docs:i18n:preserve
 
-# Full sync: preserve + machine-translate + version. Needs an MT API key.
-DEEPL_API_KEY=*** pnpm docs:i18n:sync
+# Full sync: preserve + translate with Claude + version. Needs ANTHROPIC_API_KEY.
+ANTHROPIC_API_KEY=*** pnpm docs:i18n:sync
 ```
 
 Environment variables:
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `DOCS_MT_ENGINE` | `deepl` or `google` | `deepl` |
-| `DEEPL_API_KEY` | DeepL auth key | — |
-| `DEEPL_API_HOST` | `api-free.deepl.com` or `api.deepl.com` | `api-free.deepl.com` |
-| `GOOGLE_TRANSLATE_API_KEY` | Google Cloud Translation v2 key | — |
+| `ANTHROPIC_API_KEY` | Anthropic API key (required to translate) | — |
+| `ANTHROPIC_MODEL` | Claude model id | `claude-sonnet-4-6` |
+| `ANTHROPIC_BASE_URL` | API base URL (proxy override) | `https://api.anthropic.com` |
+| `ANTHROPIC_MAX_TOKENS` | Max output tokens per request | `8192` |
 | `DOCS_ROOT` | Override docs root (testing/CI) | repo `docs/` |
 
-Without an MT key, `--apply` automatically degrades to preservation +
+Without an API key, `--apply` automatically degrades to preservation +
 versioning and records why in the log.
 
 ## CI
@@ -75,8 +78,7 @@ versioning and records why in the log.
   nothing.
 - **Push to `main`:** full sync, then commits the result back.
 
-Configure the provider key as a repository secret (`DEEPL_API_KEY` or
-`GOOGLE_TRANSLATE_API_KEY`) for translation to run.
+Configure `ANTHROPIC_API_KEY` as a repository secret for translation to run.
 
 ## Front-matter fields
 
@@ -88,7 +90,7 @@ Configure the provider key as a repository secret (`DEEPL_API_KEY` or
 | `translatedFrom` | Source locale a translated file came from |
 | `sourceHash` | Hash of the source body the translation was built from |
 | `contentHash` | Hash of an authored file's own body (change detection) |
-| `mtEngine` | Engine used (`deepl`/`google`) |
+| `mtEngine` | Engine used (`claude`) |
 | `syncStatus` | `machine-translated` or `needs-review` |
 
 The docs viewer reads `lastUpdated` for the displayed "last modified" date,
@@ -102,5 +104,8 @@ falling back to filesystem mtime when the field is absent.
 - The default authoring direction for an in-sync pair is `en → vi`. Files
   authored in Vietnamese under `docs/en` are detected and handled, but routine
   pairs assume English is canonical.
-- Machine translation quality is provider-dependent and `needs-review` output
-  should be proofread before release.
+- Translations are produced by Claude and `needs-review` output should be
+  proofread before release.
+- Each document is translated in a single request; very long docs may hit the
+  `ANTHROPIC_MAX_TOKENS` limit and need a higher value (the run fails loudly
+  rather than writing a truncated file).

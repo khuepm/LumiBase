@@ -52,7 +52,7 @@ interface MockR2Object {
 function createMockR2Bucket(): R2Bucket {
   const store = new Map<
     string,
-    { data: Buffer; metadata?: Record<string, string> }
+    { data: Buffer; metadata?: Record<string, string>; httpMetadata?: { contentType?: string } }
   >();
 
   return {
@@ -60,7 +60,7 @@ function createMockR2Bucket(): R2Bucket {
       async (
         key: string,
         value: ReadableStream | ArrayBuffer | Buffer | string | null,
-        options?: { customMetadata?: Record<string, string> },
+        options?: { customMetadata?: Record<string, string>; httpMetadata?: { contentType?: string } },
       ) => {
         let buffer: Buffer;
         if (Buffer.isBuffer(value)) {
@@ -83,7 +83,11 @@ function createMockR2Bucket(): R2Bucket {
           }
           buffer = Buffer.concat(chunks);
         }
-        store.set(key, { data: buffer, metadata: options?.customMetadata });
+        store.set(key, {
+          data: buffer,
+          metadata: options?.customMetadata,
+          httpMetadata: options?.httpMetadata,
+        });
       },
     ),
     get: vi.fn(async (key: string): Promise<MockR2Object | null> => {
@@ -99,7 +103,7 @@ function createMockR2Bucket(): R2Bucket {
         key,
         body: stream,
         size: entry.data.length,
-        httpMetadata: undefined,
+        httpMetadata: entry.httpMetadata,
         customMetadata: entry.metadata,
       };
     }),
@@ -225,6 +229,19 @@ describe("CloudflareStorageProvider", () => {
         data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
         { customMetadata: metadata },
       );
+    });
+
+    it("maps contentType onto native httpMetadata so it round-trips on get", async () => {
+      const data = Buffer.from("img");
+      await storage.put("photo.png", data, { contentType: "image/png" });
+      expect(bucket.put).toHaveBeenCalledWith(
+        "photo.png",
+        data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+        { customMetadata: { contentType: "image/png" }, httpMetadata: { contentType: "image/png" } },
+      );
+
+      const result = await storage.get("photo.png");
+      expect(result!.contentType).toBe("image/png");
     });
   });
 

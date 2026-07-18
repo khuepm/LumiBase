@@ -346,9 +346,16 @@ function classify(rel, ctx) {
     };
   }
 
-  // Both exist and folders match their language → default source is en.
+  // Both exist and folders match their language. The authoring direction is
+  // taken from front matter (`translatedFrom`) so a translated file is never
+  // mistaken for the source and used to overwrite the authored original.
+  // Falls back to the default locale (en) when neither side declares provenance.
   if (enAbs && viAbs) {
-    const sourceLocale = DEFAULT_LOCALE;
+    const enFrom = readKey(splitFrontMatter(readFile(enAbs)).fmRaw, 'translatedFrom');
+    const viFrom = readKey(splitFrontMatter(readFile(viAbs)).fmRaw, 'translatedFrom');
+    let sourceLocale = DEFAULT_LOCALE;
+    if (enFrom === 'vi') sourceLocale = 'vi';
+    else if (viFrom === 'en') sourceLocale = 'en';
     const targetLocale = otherLocale(sourceLocale);
     const sourceBody = sourceLocale === 'en' ? enBody : viBody;
     const targetAbs = targetLocale === 'en' ? enAbs : viAbs;

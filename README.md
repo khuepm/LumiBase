@@ -2,7 +2,8 @@
 
 <div align="center">
 <img width="1024" height="434" alt="Image" src="https://github.com/user-attachments/assets/a11def9c-f238-4a6d-9816-7f7c4f718ea9" />
-**⚡ The Content Operating System — Edge-Native, AI-Native, Agent-Operated**
+
+  **⚡ The Content Operating System — Edge-Native, AI-Native, Agent-Operated**
 
 [![GitHub Stars](https://img.shields.io/github/stars/khuepm/lumibase?style=social)](https://github.com/khuepm/lumibase)
 <!-- [![GitHub Sponsors](https://img.shields.io/github/sponsors/khuepm)](https://github.com/sponsors/khuepm) -->
@@ -91,13 +92,17 @@ The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire
 
 Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
-Current release: `v0.11.0` (`2026-06-22`) — **Insights, content versioning & tenant-scoped search**. This release adds **Insights dashboards** (`dashboards`/`panels` + `/api/v1/insights` + Studio UI), **content versioning** (named parallel draft branches of an item, with diff/compare and a Studio UI), **Translation Memory management** (backend + Studio UI over the existing `/api/v1/tm` pipeline), **tenant-scoped search** (per-site index names + a dedicated indexing-queue worker, closing cross-tenant leakage), and groundwork for the **visual flow builder** — plus EN/VI docs sync tooling. It ships **2 additive schema migrations** (`0033`, `0034`) — **back up your database before upgrading**. It builds on **`v0.10.0`** (MCP everywhere), **`v0.9.0`** (regulated/sensitive content readiness), and the **`v0.5.0` Content OS foundation** — which remain the baseline this release builds upon, not replaces.
+Current release: `v0.23.0` (`2026-07-14`) — **Git integration, Change Feed schema capture, and relicense to Apache 2.0**. Adds per-site GitHub/GitLab repository connections with PR/CI tracking, GitOps reconcile, and opt-in preview environments (migration `0009`, PR #172); Change Feed now captures schema (DDL) changes and supports long-polling, plus a documented OpenAPI/SDK surface (migration `0008`, PR #252); visitor/pageview counting and extension signing land as first-party modules (migrations `0010`/`0011`, PR #261); and the project license changes from MIT to Apache License 2.0, effective this release — `v0.22.0` remains the final MIT-licensed release. It builds on **`v0.22.0`** (`2026-07-12`, CDC Change Feed end to end & realtime hardening — outbox capture, pull API, dispatcher, extension integration, retention, Studio surface, skills/MCP, migration `0007`), **`v0.21.0`** (`2026-07-08`, self-service auth realms & Cloudflare Pages pipeline repair — subscriber registration, rotating refresh tokens, per-realm session TTLs, migrations `0005`/`0006`), **`v0.20.0`** (backend + SDK gap-closing across 7 specs & high-load/cache readiness), **`v0.19.0`** (CWE Top 100 closeout, Visual Flow Builder triggers & marketplace community features), **`v0.18.0`** (custom domains & translation memory), **`v0.17.0`** (`lumibase_` table namespace & Content Releases), **`v0.16.0`** (code-first configuration & auto-deploy from Flows), **`v0.15.0`** (realtime audience plane & cosmic design system), **`v0.14.0`** (push notifications & MCP path-traversal hardening), **`v0.13.0`** (deployment integrations & cross-collection search), **`v0.12.0`** (privacy & compliance suite, Directus-style interfaces & tenant isolation hardening), **`v0.11.0`** (Insights, content versioning & tenant-scoped search), **`v0.10.0`** (MCP everywhere), **`v0.9.0`** (regulated/sensitive content readiness), and the **`v0.5.0` Content OS foundation** — which remain the baseline this release builds upon, not replaces.
 
 ```bash
-LUMIBASE_VERSION=0.11.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=0.23.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.
+
+### Versioning
+
+From `v1.0.0`, LumiBase follows strict [Semantic Versioning](https://semver.org/): breaking changes to the public surface (REST/GraphQL API, `@lumibase/sdk` exports, response envelopes, header and env-var contracts, CLI/setup flags) require a major bump; features are additive in minors; deprecations run for at least one minor before removal. Security fixes cover the current and previous major for 6 months. Full rules: [`docs/en/contributing/versioning-policy.md`](./docs/en/contributing/versioning-policy.md). To report a vulnerability, see [`SECURITY.md`](./SECURITY.md).
 
 ### Why port 1989?
 
