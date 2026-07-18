@@ -27,6 +27,9 @@ tauri-plugin-log = "2"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
 tauri-plugin-dialog = "2"
+# Lightweight probe for the hybrid "remote-first" connectivity check. rustls
+# avoids a system OpenSSL build dependency across platforms.
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 
 [features]
 # Used by `tauri dev`/`tauri build` to toggle custom-protocol asset serving.

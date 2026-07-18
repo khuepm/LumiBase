@@ -2,10 +2,38 @@
 
 Unified **Tauri 2** desktop + mobile shell for **LumiBase Studio**.
 
-The shell is a thin native wrapper: it does not reimplement any UI. In development
-it points the webview at the Studio Vite dev server; in release it bundles the
-compiled `apps/studio/dist` assets. Desktop builds add signed, silent auto-update;
-mobile builds are distributed through the app stores.
+The shell is a thin native wrapper: it does not reimplement any UI. Desktop builds
+add signed auto-update; mobile builds are distributed through the app stores.
+
+## Frontend delivery — hybrid
+
+The Studio SPA reaches the app in a **hybrid** model (`src/lib.rs`):
+
+1. The compiled `apps/studio/dist` assets are **bundled** into the app and load
+   first — instantly, and fully offline-capable. This is also what `tauri dev`
+   uses (via the Vite dev server on port 2026).
+2. On desktop **release** builds, once the window is up the shell probes the
+   configured remote Studio deployment. If it answers within 3s, the webview
+   navigates there, so the always-current hosted UI is used when online — a web
+   deploy reaches users without any app update. If it is unreachable, the app
+   quietly stays on the bundled assets.
+
+The remote deployment defaults to production (`https://studio.lumibase.dev`) and
+is overridable at build time:
+
+```bash
+# Target a non-prod environment or a self-hosted Studio:
+export LUMIBASE_STUDIO_URL="https://staging.lumibase.dev"
+
+# Force pure-bundled (never navigate away from embedded assets):
+export LUMIBASE_STUDIO_URL=""
+```
+
+> The remote upgrade is skipped in dev builds, so `pnpm dev` always uses the
+> local Vite server.
+
+The API base URL the SPA talks to is a separate concern (see the Studio
+`VITE_API_URL` handling), tracked independently from asset delivery.
 
 ```
 apps/shell/
