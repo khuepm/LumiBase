@@ -21,7 +21,7 @@ title: Next.js Quickstart — Hiển thị nội dung LumiBase
 
 <h1>🟡 Hiển thị nội dung LumiBase trên app Next.js</h1>
 
-<p><strong>Đi từ máy trống đến một trang Next.js render nội dung từ LumiBase.</strong></p>
+<p><strong>Xây dựng trang Next.js đầu tiên với nội dung được phân phối từ LumiBase.</strong></p>
 
 <p>
   <img alt="LumiBase version" src="https://img.shields.io/badge/LumiBase-%E2%89%A5%200.9.0%20%C2%B7%20verified%200.10.0-F5A623?style=for-the-badge">
