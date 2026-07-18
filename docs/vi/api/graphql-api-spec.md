@@ -1,9 +1,9 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:21:03.748Z
+version: 2
+lastUpdated: 2026-07-18T20:49:50.811Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 934ba3ad3d3694c6
+sourceHash: 69fb55e16335b41b
 mtEngine: claude
 syncStatus: machine-translated
 ---
@@ -93,8 +93,8 @@ query {
 ```
 
 Các relation `m2m` / `m2a` chưa được nested — dùng escape hatch `_data` JSON để
-đọc giá trị thô của chúng. Độ sâu query bị giới hạn (mặc định 12) để chặn việc
-duyệt nested relation quá sâu.
+đọc giá trị thô của chúng. Độ sâu query bị giới hạn (xem [Chống lạm dụng](#chống-lạm-dụng))
+để chặn việc duyệt nested relation quá sâu.
 
 ## Arguments
 
@@ -106,6 +106,35 @@ duyệt nested relation quá sâu.
 - **`limit`** / **`offset`** — phân trang (limit tối đa 200).
 - **`status`** — filter theo workflow status.
 - **`search`** — full-text search qua SearchProvider đã cấu hình.
+
+## Chống lạm dụng
+
+Mọi operation đều được validate *trước khi* chạy, đối chiếu với hai giới hạn
+tĩnh, nên một query đắt bất thường bị từ chối ngay ở tầng parse mà không chạm
+tới resolver nào (CWE-770). Cả hai chạy ở mọi môi trường; ngoài ra introspection
+bị tắt ngoài môi trường development.
+
+- **Giới hạn độ sâu** — chặn độ sâu lồng nhau của field. Query sâu quá giới hạn
+  bị từ chối với `Query exceeds the maximum depth of N.`
+- **Giới hạn chi phí** — chặn điểm *chi phí* tĩnh, bắt các query nông-nhưng-rộng
+  (nhiều field song song, `limit` lớn, hoặc cùng một field bị alias lặp lại) mà
+  riêng giới hạn độ sâu bỏ lọt. Mỗi field tốn 1; subtree của một list field được
+  nhân với argument phân trang (`limit`/`first`/`last`/`pageSize`), hoặc một giá
+  trị mặc định khi argument đó vắng mặt hoặc là variable. List lồng nhau nhân
+  qua tích. Query vượt ngân sách bị từ chối với `Query exceeds the maximum cost of N.`
+
+| Guard | Mặc định | Env override |
+| --- | --- | --- |
+| Độ sâu tối đa | 12 | — (hằng số compile-time) |
+| Chi phí tối đa | 1000 | `LUMIBASE_GQL_MAX_COST` |
+| Cỡ list mặc định (hệ số nhân chi phí khi không có argument phân trang literal) | 20 | `LUMIBASE_GQL_DEFAULT_LIST_SIZE` |
+| Hệ số nhân list tối đa (trần clamp mỗi list field) | 100 | `LUMIBASE_GQL_MAX_LIST_MULTIPLIER` |
+
+> Một `limit` literal cực lớn bị clamp về *hệ số nhân list tối đa* khi tính điểm,
+> nên một `articles(limit: 999999)` vượt ngân sách chi phí một cách xác định thay
+> vì gây tràn. Vì chi phí là tĩnh, một `limit` truyền qua variable (`$n`) được
+> tính theo *cỡ list mặc định*, không phải giá trị runtime của nó — một ước lượng
+> bảo thủ có chủ đích. Tăng `LUMIBASE_GQL_MAX_COST` nếu một query hợp lệ bị từ chối.
 
 ## Examples
 

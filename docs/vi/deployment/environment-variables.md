@@ -30,6 +30,16 @@ CMS chạy bằng Docker có cơ chế bảo vệ quá tải cho event loop Node
 | `LUMIBASE_PRESSURE_LIMITER_RETRY_AFTER` | Tùy chọn | `5` | Số giây ghi trong header `Retry-After`. |
 | `LUMIBASE_PRESSURE_LIMITER_EXCLUDED_PATHS` | Tùy chọn | `/health,/metrics` | Danh sách prefix phân tách bằng dấu phẩy vẫn được phục vụ khi guard phát hiện quá tải. |
 
+## GraphQL
+
+Mọi operation GraphQL đều được validate trước khi chạy, đối chiếu với một giới hạn độ sâu và một giới hạn chi phí tĩnh, từ chối các query sâu hoặc rộng bất thường ngay ở tầng parse (CWE-770). Độ sâu là hằng số compile-time (12); chi phí thì tinh chỉnh được. Tăng `LUMIBASE_GQL_MAX_COST` nếu một query hợp lệ bị từ chối. Xem [`graphql-api-spec.md`](../api/graphql-api-spec.md#chống-lạm-dụng).
+
+| Biến | Bắt buộc | Mặc định | Ghi chú |
+| --- | --- | --- | --- |
+| `LUMIBASE_GQL_MAX_COST` | Tùy chọn | `1000` | Chi phí tĩnh tối đa chấp nhận cho mỗi operation. |
+| `LUMIBASE_GQL_DEFAULT_LIST_SIZE` | Tùy chọn | `20` | Hệ số nhân chi phí cho một list field không có argument phân trang literal (hoặc là variable). |
+| `LUMIBASE_GQL_MAX_LIST_MULTIPLIER` | Tùy chọn | `100` | Trần clamp cho hệ số nhân chi phí của một list field bất kỳ. |
+
 ## Binding Cloudflare
 
 | Binding | Loại | Mục đích |
