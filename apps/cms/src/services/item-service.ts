@@ -134,6 +134,14 @@ export interface DeepRelationOptions {
 export type DeepQuery = Record<string, DeepRelationOptions>;
 
 /**
+ * Relation aliases that must never be used as object keys: reading or writing
+ * them walks the prototype chain (`obj['__proto__']` resolves to
+ * `Object.prototype`), which turns a user-controlled `deep[<alias>][...]` query
+ * param into a prototype-pollution sink. No real relation is ever named these.
+ */
+const UNSAFE_ALIASES = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
  * Per-record crypto threading for {@link ItemService.processCrypto}.
  * - `dekWrapped` (read): the record's stored wrapped DEK; non-null selects the
  *   envelope cipher for that record.
@@ -2186,7 +2194,7 @@ export function parseRelationFieldSelections(fields: string[], deep: DeepQuery =
   const limits = new Map<string, number>();
   for (const token of fields) {
     const [alias, ...path] = token.split('.');
-    if (!alias || path.length === 0) continue;
+    if (!alias || UNSAFE_ALIASES.has(alias) || path.length === 0) continue;
     const field = path.join('.');
     if (!field) continue;
     const selected = byAlias.get(alias) ?? new Set<string>();
@@ -2194,7 +2202,7 @@ export function parseRelationFieldSelections(fields: string[], deep: DeepQuery =
     byAlias.set(alias, selected);
   }
   for (const [alias, options] of Object.entries(deep)) {
-    if (!alias) continue;
+    if (!alias || UNSAFE_ALIASES.has(alias)) continue;
     const selected = byAlias.get(alias) ?? new Set<string>();
     const deepFields = options.fields?.length ? options.fields : ['*'];
     for (const field of deepFields) {
@@ -2230,6 +2238,7 @@ export function parseDeepQueryParams(searchParams: URLSearchParams): DeepQuery |
     if (!match) continue;
     const [, alias, option] = match;
     if (!alias || !option) continue;
+    if (UNSAFE_ALIASES.has(alias)) continue;
     const current = deep[alias] ?? {};
     if (option === 'fields') {
       current.fields = value.split(',').map((field) => field.trim()).filter(Boolean);

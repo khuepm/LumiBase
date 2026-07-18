@@ -131,6 +131,39 @@ describe('ItemService relation expansion helpers', () => {
   });
 });
 
+describe('ItemService relation expansion prototype pollution', () => {
+  // A relation alias resolves to an object key, so a user-supplied
+  // `deep[__proto__][fields]=...` would otherwise read/write Object.prototype.
+  it('does not pollute Object.prototype via deep[__proto__]', () => {
+    const params = new URLSearchParams();
+    params.set('deep[__proto__][fields]', 'x,y');
+    params.set('deep[constructor][fields]', 'z');
+
+    const parsed = parseDeepQueryParams(params);
+
+    expect(parsed).toBeUndefined();
+    expect(({} as Record<string, unknown>).fields).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty('fields')).toBe(false);
+  });
+
+  it('keeps safe aliases while dropping dangerous ones', () => {
+    const params = new URLSearchParams();
+    params.set('deep[__proto__][fields]', 'evil');
+    params.set('deep[author][fields]', 'id,name');
+
+    expect(parseDeepQueryParams(params)).toEqual({
+      author: { fields: ['id', 'name'] },
+    });
+  });
+
+  it('ignores dangerous aliases in dotted field selections', () => {
+    const result = parseRelationFieldSelections(['__proto__.polluted', 'author.name']);
+
+    expect(result).toEqual([{ alias: 'author', fields: ['name'] }]);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});
+
 describe('ItemService relation expansion batching', () => {
   it('expands M2O relations to objects with one batched related query', async () => {
     const db = makeQueuedDb([
