@@ -11,15 +11,35 @@
 //! * In `dev` the webview points at the Studio Vite dev server (port 2026) and
 //!   the remote upgrade is skipped.
 //!
-//! Desktop builds add signed auto-update via `tauri-plugin-updater`; mobile
-//! builds rely on the app stores for distribution and updates.
+//! Desktop builds add signed auto-update (with a confirm-and-restart prompt) via
+//! `tauri-plugin-updater`; mobile builds rely on the app stores. Deep links
+//! (`lumibase://…`) are delivered to the SPA on all platforms.
+
+use tauri::Emitter;
+
+/// Event emitted to the webview when the app is opened via a deep link.
+const DEEP_LINK_EVENT: &str = "shell://deep-link";
 
 /// Shared entry point used by both the desktop binary (`main.rs`) and the
 /// mobile app harness (`tauri::mobile_entry_point`).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // The single-instance plugin MUST be registered first: on a second launch
+    // it focuses the running window (and forwards the deep link) rather than
+    // opening a duplicate. Desktop only — mobile is inherently single-instance.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        use tauri::Manager;
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.set_focus();
+        }
+    }));
+
+    let builder = builder
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
@@ -30,34 +50,58 @@ pub fn run() {
     #[cfg(desktop)]
     let builder = builder
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .setup(|app| {
-            let handle = app.handle().clone();
+        .plugin(tauri_plugin_updater::Builder::new().build());
 
-            // Check for updates in the background so we never block window
-            // creation or the first paint of the Studio SPA.
+    builder
+        .setup(|app| {
+            deep_link::forward_to_webview(app.handle());
+
+            #[cfg(desktop)]
             {
-                let handle = handle.clone();
+                let handle = app.handle().clone();
+
+                // Check for updates in the background so we never block window
+                // creation or the first paint of the Studio SPA.
+                {
+                    let handle = handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(error) = update::check(handle).await {
+                            log::error!("update check failed: {error}");
+                        }
+                    });
+                }
+
+                // Hybrid: upgrade the bundled SPA to the hosted deployment when
+                // it is reachable. Release only — dev uses the Vite dev server.
+                #[cfg(not(debug_assertions))]
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = update::check(handle).await {
-                        log::error!("update check failed: {error}");
-                    }
+                    remote::upgrade_if_reachable(handle).await;
                 });
             }
 
-            // Hybrid: upgrade the bundled SPA to the hosted deployment when it
-            // is reachable. Only in release — dev uses the Vite dev server.
-            #[cfg(not(debug_assertions))]
-            tauri::async_runtime::spawn(async move {
-                remote::upgrade_if_reachable(handle).await;
-            });
-
             Ok(())
-        });
-
-    builder
+        })
         .run(tauri::generate_context!())
         .expect("error while running LumiBase Shell");
+}
+
+/// Deliver deep links (`lumibase://…`) to the SPA as a `shell://deep-link`
+/// event carrying the opened URLs.
+mod deep_link {
+    use super::{Emitter, DEEP_LINK_EVENT};
+    use tauri::AppHandle;
+    use tauri_plugin_deep_link::DeepLinkExt;
+
+    pub fn forward_to_webview(app: &AppHandle) {
+        let handle = app.clone();
+        app.deep_link().on_open_url(move |event| {
+            let urls: Vec<String> = event.urls().iter().map(|u| u.to_string()).collect();
+            log::info!("deep link opened: {urls:?}");
+            if let Err(error) = handle.emit(DEEP_LINK_EVENT, urls) {
+                log::error!("failed to forward deep link to webview: {error}");
+            }
+        });
+    }
 }
 
 /// Hybrid frontend delivery: prefer the hosted Studio deployment when online,
@@ -144,20 +188,23 @@ mod remote {
 #[cfg(desktop)]
 mod update {
     use tauri::AppHandle;
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
     use tauri_plugin_updater::UpdaterExt;
 
-    /// Check the configured update endpoint, and if a newer signed release is
-    /// available, download and install it. The relaunch is left to the user
-    /// (or a follow-up prompt) so we don't interrupt in-flight editing.
+    /// Check the configured update endpoint; if a newer signed release exists,
+    /// download and install it, then ask the user to restart. The download runs
+    /// in the background so editing is never interrupted, and the relaunch only
+    /// happens on explicit confirmation.
     pub async fn check(app: AppHandle) -> tauri_plugin_updater::Result<()> {
         let Some(update) = app.updater()?.check().await? else {
             log::info!("no update available");
             return Ok(());
         };
 
+        let version = update.version.clone();
         log::info!(
             "installing update {} (current {})",
-            update.version,
+            version,
             update.current_version
         );
 
@@ -171,10 +218,31 @@ mod update {
                         None => log::info!("downloaded {downloaded} bytes"),
                     }
                 },
-                || log::info!("update download complete; ready to relaunch"),
+                || log::info!("update download complete"),
             )
             .await?;
 
+        prompt_restart(app, version);
         Ok(())
+    }
+
+    /// Ask the user whether to restart now to apply the freshly-installed update.
+    fn prompt_restart(app: AppHandle, version: String) {
+        let restart_handle = app.clone();
+        app.dialog()
+            .message(format!(
+                "LumiBase Studio {version} has been installed. Restart now to apply it?"
+            ))
+            .title("Update ready")
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Restart now".to_string(),
+                "Later".to_string(),
+            ))
+            .show(move |restart_now| {
+                if restart_now {
+                    restart_handle.restart();
+                }
+            });
     }
 }

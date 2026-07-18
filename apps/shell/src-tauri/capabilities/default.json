@@ -8,6 +8,7 @@
     "process:default",
     "process:allow-restart",
     "dialog:default",
-    "updater:default"
+    "updater:default",
+    "deep-link:default"
   ]
 }

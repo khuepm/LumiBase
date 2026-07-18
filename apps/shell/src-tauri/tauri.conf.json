@@ -48,6 +48,17 @@
         "https://github.com/khuepm/lumibase/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM4NDU0Q0NBODgxQUJDNDgKUldSSXZCcUl5a3hGT09KQU1yNnNOZWZGNzlXSjB3bE1WR1lZR2dwQUt3Nm0zSjl0bWFUc2tpZTYK"
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["lumibase"]
+      },
+      "mobile": [
+        {
+          "host": "studio.lumibase.dev",
+          "pathPrefix": ["/oauth", "/auth"]
+        }
+      ]
     }
   }
 }

@@ -18,6 +18,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-process = "2"
+tauri-plugin-deep-link = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
@@ -27,6 +28,9 @@ tauri-plugin-log = "2"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
 tauri-plugin-dialog = "2"
+# Forwards deep links to the already-running instance instead of spawning a new
+# one (desktop only; mobile routes deep links to the live app automatically).
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 # Lightweight probe for the hybrid "remote-first" connectivity check. rustls
 # avoids a system OpenSSL build dependency across platforms.
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
