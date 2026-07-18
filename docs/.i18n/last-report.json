@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-07-17T03:45:50.327Z",
-  "mode": "apply",
-  "effectiveMode": "preserve-only",
+  "generatedAt": "2026-07-18T20:57:57.849Z",
+  "mode": "plan",
+  "effectiveMode": "plan",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
     "preserved": 0,
-    "conflicts": 3,
+    "conflicts": 0,
     "upToDate": 44,
-    "planned": 92
+    "planned": 95
   },
   "actions": [
     {
@@ -1317,7 +1317,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-17T03-45-50-430Z.bak.md",
+      "preservedTo": null,
       "missingPlaceholders": 0
     },
     {
@@ -1365,7 +1365,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/mcp/index.md.2026-07-17T03-45-50-430Z.bak.md",
+      "preservedTo": null,
       "missingPlaceholders": 0
     },
     {
@@ -1377,7 +1377,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/mcp/mcp-application-analysis.md.2026-07-17T03-45-50-430Z.bak.md",
+      "preservedTo": null,
       "missingPlaceholders": 0
     },
     {

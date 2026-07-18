@@ -84,11 +84,22 @@ interface RateBucket {
 const STATE_RATE_LIMIT = 60; // req/min/IP
 const STATE_RATE_WINDOW_MS = 60_000;
 
+// `POST /complete` is an expensive, one-shot mutation (password hashing +
+// DB lock), so it gets a tighter per-IP brake than the cheap `/state` read.
+// It guards the pre-initialized window against setupToken brute-force and
+// CPU-exhaustion spam (analog of Strapi #26494). The DB advisory lock +
+// unique index remain the hard guard against duplicate admins; this is
+// defence-in-depth, in-memory per isolate (see design "known limits").
+const COMPLETE_RATE_LIMIT = 10; // req/min/IP
+const COMPLETE_RATE_WINDOW_MS = 60_000;
+
 /** Module-level so tests can reset between runs. */
 const stateRateBuckets = new Map<string, RateBucket>();
+const completeRateBuckets = new Map<string, RateBucket>();
 
 export function __resetSetupRateLimitForTests(): void {
   stateRateBuckets.clear();
+  completeRateBuckets.clear();
 }
 
 function checkStateRateLimit(ip: string): boolean {
@@ -99,6 +110,19 @@ function checkStateRateLimit(ip: string): boolean {
     return true;
   }
   if (bucket.count >= STATE_RATE_LIMIT) return false;
+  bucket.count += 1;
+  return true;
+}
+
+function checkCompleteRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const key = ip || 'unknown'; // always key deterministically
+  const bucket = completeRateBuckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    completeRateBuckets.set(key, { count: 1, resetAt: now + COMPLETE_RATE_WINDOW_MS });
+    return true;
+  }
+  if (bucket.count >= COMPLETE_RATE_LIMIT) return false;
   bucket.count += 1;
   return true;
 }
@@ -278,6 +302,17 @@ setupRouter.get('/capabilities', async (c) => {
 });
 
 setupRouter.post('/complete', async (c) => {
+  // Rate-brake *before* parsing the body or hashing a password, so a
+  // blocked request costs nothing (CWE-770; analog of Strapi #26494).
+  const ip = extractClientIp(c.req.raw);
+  if (!checkCompleteRateLimit(ip)) {
+    return c.json(
+      { errors: [{ code: 'RATE_LIMITED' }] },
+      429,
+      { 'retry-after': Math.ceil(COMPLETE_RATE_WINDOW_MS / 1000).toString() },
+    );
+  }
+
   // Parse body first so a malformed payload yields a clean 400 before
   // we touch the DB.
   let raw: unknown;
@@ -308,17 +343,21 @@ setupRouter.post('/complete', async (c) => {
     );
   }
 
-  const svc = buildService(c);
+  // Honor the test-only injection seam (mirrors recoveryServiceOverride);
+  // falls back to a real SetupService bound to the request db.
+  const svc = c.get('setupServiceOverride') ?? buildService(c);
   const ctx: SetupCompleteContext = {
     requestId: c.get('requestId'),
-    ip: extractClientIp(c.req.raw),
+    ip, // reuse the IP computed for the rate brake
     userAgent: c.req.header('user-agent') ?? undefined,
   };
 
   const outcome = await svc.complete(parsed.data, ctx);
 
   if (!outcome.ok) {
-    const mapped = errorToHttp(outcome.error);
+    // `outcome.error` is `SetupServiceError` from the real service; the
+    // override seam types it as `unknown`, so narrow at this one call site.
+    const mapped = errorToHttp(outcome.error as SetupServiceError);
     // mapped.status is 4xx/5xx in our taxonomy.
     return c.json(mapped.body, mapped.status as 400 | 401 | 404 | 409 | 422 | 500);
   }

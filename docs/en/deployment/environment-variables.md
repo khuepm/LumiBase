@@ -153,6 +153,18 @@ Large imports can trip the default budget. Raise `LUMIBASE_RATE_LIMIT_MAX` and p
 
 ---
 
+## GraphQL
+
+Every GraphQL operation is validated before it runs against a depth limit and a static cost limit, rejecting abusively deep or wide queries at parse time (CWE-770). Depth is a compile-time constant (12); cost is tunable. Raise `LUMIBASE_GQL_MAX_COST` if a legitimate query is rejected. See [`graphql-api-spec.md`](../api/graphql-api-spec.md#abuse-guards).
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LUMIBASE_GQL_MAX_COST` | ✗ | `1000` | Max static cost accepted per operation. |
+| `LUMIBASE_GQL_DEFAULT_LIST_SIZE` | ✗ | `20` | Cost multiplier for a list field with no literal pagination argument (or a variable one). |
+| `LUMIBASE_GQL_MAX_LIST_MULTIPLIER` | ✗ | `100` | Upper clamp on any single list field's cost multiplier. |
+
+---
+
 ## Observability
 
 | Variable | Required | Description |
