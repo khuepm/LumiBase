@@ -75,3 +75,4 @@ Secrets such as `JWT_SECRET`, Cloudflare Access values and database credentials 
 
 See [Cloudflare deployment](./cloudflare.md) for the detailed Worker and Pages commands.
 See [Private admin path](./private-admin-path.md) for the production no-redirect policy that keeps the Studio entry point secret.
+See [Multi-tenant deployment topologies](./multi-tenant-topologies.md) for how to lay out cells, databases and domains when one deployment serves many tenants.

@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-07-18T21:51:12.118Z",
-  "mode": "apply",
-  "effectiveMode": "preserve-only",
+  "generatedAt": "2026-07-21T17:40:01.790Z",
+  "mode": "plan",
+  "effectiveMode": "plan",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
     "preserved": 0,
-    "conflicts": 3,
-    "upToDate": 44,
-    "planned": 92
+    "conflicts": 0,
+    "upToDate": 45,
+    "planned": 95
   },
   "actions": [
     {
@@ -793,6 +793,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "deployment/multi-tenant-topologies.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "deployment/overview.md",
       "type": "translate",
       "reason": "source changed since last sync",
@@ -1317,7 +1329,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-18T21-51-12-230Z.bak.md",
+      "preservedTo": null,
       "missingPlaceholders": 0
     },
     {
@@ -1365,7 +1377,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/mcp/index.md.2026-07-18T21-51-12-231Z.bak.md",
+      "preservedTo": null,
       "missingPlaceholders": 0
     },
     {
@@ -1377,7 +1389,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/mcp/mcp-application-analysis.md.2026-07-18T21-51-12-231Z.bak.md",
+      "preservedTo": null,
       "missingPlaceholders": 0
     },
     {
