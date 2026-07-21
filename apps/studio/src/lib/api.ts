@@ -1,18 +1,23 @@
 import { createLumiClient, legacyRest } from '@lumibase/sdk';
 import { getAdminBase } from '@/lib/admin-base';
 import { getApiBaseUrl } from '@/lib/api-base';
+import {
+  clearTokens,
+  readRefresh,
+  readToken,
+  writeRefresh,
+  writeToken,
+} from '@/lib/token-store';
 
 /**
  * Studio API client. The base URL is resolved by `getApiBaseUrl()`:
  * same-origin in dev (Vite proxy) and Docker, or the absolute CMS origin
  * (`VITE_API_URL`) when the Studio is deployed standalone (Cloudflare
- * Pages). Token + site come from localStorage in dev; production wires
- * Logto's access token and the site switcher.
+ * Pages). Token + site come from localStorage in the browser; in the desktop
+ * shell tokens are kept in the OS keychain (see `lib/token-store.ts`).
  */
 
 const STORAGE_KEY = {
-  token: 'lumibase.dev.token',
-  refresh: 'lumibase.dev.refresh',
   site: 'lumibase.dev.site',
 };
 
@@ -27,26 +32,25 @@ export function setActiveSite(siteId: string): void {
 }
 
 export function getActiveToken(): string {
-  return localStorage.getItem(STORAGE_KEY.token) || '';
+  return readToken();
 }
 
 export function setActiveToken(token: string): void {
-  localStorage.setItem(STORAGE_KEY.token, token);
+  writeToken(token);
   cached = null;
 }
 
 export function getActiveRefreshToken(): string {
-  return localStorage.getItem(STORAGE_KEY.refresh) || '';
+  return readRefresh();
 }
 
 export function setActiveRefreshToken(token: string): void {
-  localStorage.setItem(STORAGE_KEY.refresh, token);
+  writeRefresh(token);
   cached = null;
 }
 
 export function clearActiveToken(): void {
-  localStorage.removeItem(STORAGE_KEY.token);
-  localStorage.removeItem(STORAGE_KEY.refresh);
+  clearTokens();
   cached = null;
 }
 
@@ -122,8 +126,8 @@ function createApiClient(token: string, site: string) {
     headers: { 'X-Lumi-Client': 'studio' },
     // Persist the rotated pair so a page reload keeps the renewed session.
     onTokensRefreshed: ({ token: next, refreshToken }) => {
-      localStorage.setItem(STORAGE_KEY.token, next);
-      localStorage.setItem(STORAGE_KEY.refresh, refreshToken);
+      writeToken(next);
+      writeRefresh(refreshToken);
       // Reflect the live token in the cache key so getApiClient() doesn't
       // rebuild a client around the now-stale token on the next call.
       if (cached) cached.token = next;

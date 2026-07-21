@@ -1,0 +1,53 @@
+name: Shell check
+
+# Fast PR feedback for the Tauri shell's Rust crate. Runs only when apps/shell
+# changes — the full multi-platform bundling lives in release-apps.yml.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/shell/**"
+      - ".github/workflows/shell-check.yml"
+  pull_request:
+    paths:
+      - "apps/shell/**"
+      - ".github/workflows/shell-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-check:
+    name: cargo check (desktop + android)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev libsoup-3.0-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/shell/src-tauri -> target
+
+      - name: cargo check (host / desktop)
+        working-directory: apps/shell/src-tauri
+        run: cargo check --locked
+
+      # Cross-check the mobile target so desktop-only plugins/capabilities that
+      # would break the Android/iOS build are caught at PR time.
+      - name: cargo check (aarch64-linux-android)
+        working-directory: apps/shell/src-tauri
+        run: cargo check --locked --target aarch64-linux-android
