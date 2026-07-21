@@ -178,6 +178,26 @@ mobile — where the commands are not registered) it transparently falls back to
 `localStorage`, which on iOS/Android is already app-sandboxed. In the browser,
 behavior is unchanged (localStorage).
 
+## Contracts future work must not break
+
+The shell is a thin wrapper, so it depends on a handful of Studio/CMS contracts.
+A change elsewhere in the monorepo can silently break the desktop/mobile app
+without breaking the browser build. **Before changing any of these, keep the
+shell working** (see the "Shell impact" step in
+`.kiro/steering/definition-of-done.md`).
+
+| # | Contract | Where | Break it and… |
+|---|----------|-------|---------------|
+| C1 | Session tokens go through `token-store.ts` / the `api.ts` accessors — **never** `localStorage.setItem('lumibase.dev.token', …)` directly. | `apps/studio/src/lib/token-store.ts`, `api.ts` | tokens bypass the OS keychain in the shell and are lost on next launch / left in plaintext. |
+| C2 | The CMS origin is always resolved via `getApiBaseUrl()` — never hardcode `/api` same-origin or read `import.meta.env.VITE_API_URL` directly. | `apps/studio/src/lib/api-base.ts` | the shell's runtime server override + cross-origin bundled mode stop working. |
+| C3 | Studio builds to `apps/studio/dist` with a root Vite `base`. | `apps/studio/vite.config.ts` ↔ `frontendDist` in `tauri.conf.json` | bundling fails, or assets 404 under `tauri://localhost`. |
+| C4 | Studio dev server runs on port **2026**. | `apps/studio/vite.config.ts` ↔ `beforeDevCommand`/`devUrl` in `tauri.conf.json` | `pnpm -F @lumibase/shell dev` loads a blank window. |
+| C5 | New browser APIs must degrade gracefully — the shell runs WKWebView (macOS/iOS), WebView2 (Windows), WebKitGTK (Linux). | Studio features | a feature works in Chrome but throws in the shell. |
+| C6 | Cross-origin auth: in bundled mode the SPA calls the CMS from `tauri://localhost`. Auth flows must work with the token-in-body path (not only same-origin cookies), and new SPA-called endpoints must be CORS-reachable (`CORS_ALLOWED_ORIGINS`). | CMS auth/CORS, `@lumibase/sdk` refresh | login/refresh fails only in the bundled shell. |
+| C7 | The server-connection probe hits `GET {origin}/health` (public, no auth). | `apps/studio/src/components/server-connection.tsx` ↔ CMS `/health` | the "Connect to LumiBase" screen can never validate a server. |
+| C8 | Deep links arrive as the `shell://deep-link` event; auth callbacks should consume it rather than assume a browser redirect. | `src/lib.rs` | OAuth/magic-link callbacks silently drop on desktop/mobile. |
+| C9 | Release bumps `apps/shell/package.json` **and** `src-tauri/Cargo.toml` + `tauri.conf.json` together (package.json is in `sync-version.mjs`; the Rust/Tauri versions are not — bump them by hand). | `/release` flow | updater version math / store version is wrong. |
+
 ## Roadmap / not yet implemented
 
 - **iOS/Android store submission** (Fastlane lanes, provisioning) beyond the CI
