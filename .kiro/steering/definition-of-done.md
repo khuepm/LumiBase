@@ -45,6 +45,19 @@ Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, ba
 - [ ] **Service request-path ủy quyền cho ItemService (hoặc ghi trực tiếp bảng content)** PHẢI mang permission context của caller: dựng qua `itemServiceForRequest(c)` / `permissionServiceForRequest(c)`, KHÔNG `itemServiceForSystem` trên đường request. Ghi raw SQL vào `items` (batch update/delete) phải tự gate `canAccess(collection, action)` + áp `whereFor()` row-scope. Đây là class lỗi "quên carry RBAC context" (đã lặp: AI `updateItem`, MCP endpoint, dependents resolve) — khoá bằng behavioural test dạng `dependents-service-rbac.test.ts` (deny → throw trước khi query/mutate).
 - [ ] Tripwire test `apps/cms/src/__tests__/security-guards.wiring.test.ts` vẫn pass; nếu tái cấu trúc guard thì cập nhật assertion CÙNG với behavioural test mới, không xoá.
 
+## 2d. Desktop/mobile shell impact — RÀ SOÁT khi đổi Studio SPA hoặc auth/CORS
+
+> `apps/shell` (Tauri 2) chỉ **bọc** Studio SPA, nên nó phụ thuộc một số **contract** của Studio/CMS. Một thay đổi ở nơi khác có thể làm **hỏng bản desktop/mobile mà KHÔNG hỏng bản trình duyệt** — đúng class "quên, không phải sai" mà 2c cảnh báo, chỉ khác là failure chỉ lộ khi chạy trong shell. Danh sách contract đầy đủ + hệ quả nằm ở bảng "Contracts future work must not break" trong `apps/shell/README.md`.
+
+Với feature đụng tới auth/token, base URL API, build output của Studio, dev server, hoặc thêm endpoint mà SPA gọi:
+
+- [ ] **Token**: mọi lưu/đọc session token đi qua `apps/studio/src/lib/token-store.ts` (hoặc accessor trong `api.ts`) — KHÔNG ghi thẳng `localStorage` (C1). Ghi thẳng sẽ bỏ qua OS keychain của shell.
+- [ ] **API base**: luôn resolve qua `getApiBaseUrl()`; KHÔNG hardcode `/api` same-origin hay đọc `import.meta.env.VITE_API_URL` trực tiếp (C2).
+- [ ] **Cross-origin auth/CORS**: luồng auth mới chạy được ở chế độ bundled (`tauri://localhost`) — hỗ trợ token-in-body chứ không chỉ cookie same-origin; endpoint mới SPA gọi phải CORS-reachable (C6). Đổi endpoint `/health` phải giữ public/no-auth (C7).
+- [ ] **Build/dev contract**: đổi `build.outDir`/`base` (C3) hoặc port dev 2026 (C4) của Studio → cập nhật `apps/shell/src-tauri/tauri.conf.json` cùng lúc.
+- [ ] **Webview compat**: API trình duyệt mới phải degrade gracefully trên WKWebView/WebView2/WebKitGTK (C5).
+- [ ] **Không ảnh hưởng**: nếu feature không đụng các contract trên → không cần làm gì, nhưng câu hỏi phải được hỏi (ghi một dòng trong mô tả PR). `pnpm -F @lumibase/shell exec tauri` + workflow `shell-check.yml` (cargo check desktop + android) là hàng rào cơ giới một phần.
+
 ## 3. Spec hygiene
 
 - [ ] `requirements.md`, `design.md`, `tasks.md` của spec phản ánh đúng trạng thái cuối (task done được tick, quyết định mở được chốt hoặc ghi rõ TODO có owner)

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-12T19:47:19.840Z",
+  "generatedAt": "2026-07-21T17:40:01.790Z",
   "mode": "plan",
   "effectiveMode": "plan",
   "engine": "claude",
@@ -9,7 +9,7 @@
     "preserved": 0,
     "conflicts": 0,
     "upToDate": 45,
-    "planned": 94
+    "planned": 95
   },
   "actions": [
     {
@@ -781,6 +781,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "deployment/meilisearch-aws.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "deployment/multi-tenant-topologies.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1358,25 +1370,25 @@
     },
     {
       "rel": "mcp/index.md",
-      "type": "translate",
-      "reason": "en duplicates vi content; replace en with English translation",
+      "type": "conflict",
+      "reason": "en file holds Vietnamese that differs from existing docs/vi",
       "enLang": "vi",
       "viLang": "vi",
-      "sourceLocale": "vi",
-      "targetLocale": "en",
-      "willTranslate": true,
+      "sourceLocale": null,
+      "targetLocale": null,
+      "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
     {
       "rel": "mcp/mcp-application-analysis.md",
-      "type": "translate",
-      "reason": "en duplicates vi content; replace en with English translation",
+      "type": "conflict",
+      "reason": "en file holds Vietnamese that differs from existing docs/vi",
       "enLang": "vi",
       "viLang": "vi",
-      "sourceLocale": "vi",
-      "targetLocale": "en",
-      "willTranslate": true,
+      "sourceLocale": null,
+      "targetLocale": null,
+      "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1539,9 +1551,9 @@
     {
       "rel": "security/anti-abuse.md",
       "type": "translate",
-      "reason": "missing vi translation",
+      "reason": "source changed since last sync",
       "enLang": "en",
-      "viLang": null,
+      "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
       "willTranslate": true,

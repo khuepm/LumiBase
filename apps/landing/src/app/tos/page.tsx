@@ -34,7 +34,7 @@ export default function TermsOfService() {
         <section>
           <h2 className="text-2xl font-semibold">3. Open Source License</h2>
           <p>
-            LumiBase is released under the MIT License. You are free to use, modify, and distribute the software
+            LumiBase is released under the Apache License, Version 2.0. You are free to use, modify, and distribute the software
             in accordance with the license terms. See our <a href="/license" className="text-signal-400 hover:underline">License page</a> for details.
           </p>
         </section>

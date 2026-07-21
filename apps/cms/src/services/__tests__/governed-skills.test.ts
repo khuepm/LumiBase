@@ -29,6 +29,12 @@ describe('governed skill registry', () => {
       'createFlow',
       'deleteFlow',
       'runFlow',
+      'listVersions',
+      'compareVersion',
+      'createVersion',
+      'updateVersion',
+      'deleteVersion',
+      'promoteVersion',
     ]) {
       expect(CORE_SKILLS[name], `missing harness skill: ${name}`).toBeDefined();
     }
@@ -69,9 +75,15 @@ describe('governed risk classification', () => {
     'installExtension',
     'updateExtension',
     'uninstallExtension',
+    'createVersion',
+    'updateVersion',
+    'deleteVersion',
+    'promoteVersion',
   ];
   const SAFE = [
     'listRelations',
+    'listVersions',
+    'compareVersion',
     'listRoles',
     'listPolicies',
     'listIntents',

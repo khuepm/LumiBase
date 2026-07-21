@@ -166,7 +166,7 @@ Skills are defined in two synchronized locations:
 - **Harness handlers** (`apps/cms/src/services/ai-harness.ts` → `buildCoreSkills()`) — actual execution logic
 
 A skill is classified as **DANGEROUS** (requires HITL approval) when:
-1. It sets the explicit `dangerous` flag (governed namespaces `access:*`, `intents:*`, `flows:*`), OR
+1. It sets the explicit `dangerous` flag (governed namespaces `access:*`, `intents:*`, `flows:*`, and content-version writes `createVersion`/`updateVersion`/`promoteVersion`), OR
 2. Its `requiredCapabilities` includes any `schema:*` except `schema:read`, OR
 3. Its name starts with `delete`
 
@@ -183,6 +183,9 @@ The `dangerous` flag is honoured by both `AISecureHarness.evaluateRisk` and `Too
 | `createItem` | items | `items:write` | SAFE | Real → ItemService |
 | `updateItem` | items | `items:update` | SAFE | Real → ItemService.patch() |
 | `deleteItem` | items | `items:write` | **DANGEROUS** | Real → ItemService.softDelete() |
+| `listVersions` / `compareVersion` | items | `items:read` | SAFE | Real → ContentVersionService |
+| `createVersion` / `updateVersion` / `deleteVersion` | items | `items:write` | **DANGEROUS** | Real → ContentVersionService (draft branches) |
+| `promoteVersion` | items | `items:write` | **DANGEROUS** | Real → ContentVersionService.promote() → main via ItemService.patch (writes a revision; revision-protected, so not hard-capped like schema drops) |
 | `aiSuggestField` | ai | `schema:read` | SAFE | Real → LLM + existing-field context (offline registry: keyword patterns) |
 | `aiContentAssist` | ai | `items:read` | SAFE | Real → LLM + RAG item samples via ItemService |
 | `generateAppSpec` | ai | `schema:read`, `items:read` | SAFE | Real → LLM + live schema introspection; sections must declare `source` bindings |
@@ -261,7 +264,7 @@ If future evaluation runners depend on runtime-specific APIs, they must be featu
 - **Law Zero (override-is-law):** human edits on collections governed by an active content intent pin the touched fields (`items.pinnedFields`). Agent writes to pinned fields are denied at the ItemService boundary with `PINNED_BY_HUMAN`; pins are listed/released via `GET/DELETE /api/v1/items/:collection/:id/pins[/:field]` and every pin/release is audited in the activity log.
 - Tool inputs and memory context are redacted/masked before audit or prompt assembly.
 - Prompt text cannot grant permissions; only policy snapshots and capability grants can.
-- **MCP control-plane backstop (defense-in-depth):** the `/api/v1/mcp` endpoint is intentionally *not* in `CONTROL_PLANE_PATHS`, so — like `/api/v1/agent/*` — it relies on the harness's in-code capability + HITL checks, which are byte-for-byte identical to the Agent API (Property 14). On top of that, a `tools/call` targeting a **control-plane skill** (any DANGEROUS / schema-mutating / `delete*` skill, per `isControlPlaneSkill` — e.g. `deleteCollection`, `triggerDeployment`, `deleteCdcSubscription`) is rejected with `403 CONTROL_PLANE_FORBIDDEN` **before** the harness runs unless the caller is an admin principal, and the denial is audited (`mcp_control_plane_skill_denied`). Discovery (`tools/list`, `initialize`, `ping`) and safe read skills stay open to non-admins. This mirrors `withControlPlaneAccessGuard()`'s intent — control-plane operations stay behind an admin even if the in-code check is later weakened.
+- **MCP control-plane backstop (defense-in-depth):** the `/api/v1/mcp` endpoint is intentionally *not* in `CONTROL_PLANE_PATHS`, so — like `/api/v1/agent/*` — it relies on the harness's in-code capability + HITL checks, which are byte-for-byte identical to the Agent API (Property 14). On top of that, a `tools/call` targeting a **control-plane skill** (any DANGEROUS / schema-mutating / `delete*` skill, per `isControlPlaneSkill` — e.g. `deleteCollection`, `triggerDeployment`, `createCdcSubscription`, `replayCdcSubscription`, `deleteCdcSubscription`) is rejected with `403 CONTROL_PLANE_FORBIDDEN` **before** the harness runs unless the caller is an admin principal, and the denial is audited (`mcp_control_plane_skill_denied`). Discovery (`tools/list`, `initialize`, `ping`) and safe read skills stay open to non-admins. This mirrors `withControlPlaneAccessGuard()`'s intent — control-plane operations stay behind an admin even if the in-code check is later weakened.
 - Approval decisions are recorded with actor, decision, reason, and timestamps.
 - Tool calls preserve input/output/error metadata for audit while avoiding plaintext secrets.
 

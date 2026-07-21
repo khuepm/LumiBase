@@ -1,6 +1,6 @@
 {
   "name": "lumibase",
-  "version": "0.22.0",
+  "version": "0.24.0",
   "private": true,
   "description": "Lumibase - Edge-native Headless CMS (Turborepo monorepo)",
   "packageManager": "pnpm@9.12.0",
@@ -8,7 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "turbo run build",
+    "build": "turbo run build --filter=!@lumibase/shell",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
@@ -63,7 +63,7 @@
       "dompurify": "^3.4.11",
       "esbuild": "^0.28.1",
       "form-data": "^4.0.6",
-      "js-yaml": "^4.2.0",
+      "js-yaml": "^4.3.0",
       "postcss": "^8.5.14",
       "undici": "^7.28.0",
       "uuid": "^11.1.1",
