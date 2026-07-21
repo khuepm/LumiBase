@@ -182,6 +182,10 @@ jobs:
     name: Lint stable packages
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # `secrets` context is not allowed in step-level `if:`, so surface the token's
+    # presence as an env var the steps below can gate on.
+    env:
+      MARKETPLACE_SUBMODULE_TOKEN: ${{ secrets.MARKETPLACE_SUBMODULE_TOKEN }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -199,9 +203,7 @@ jobs:
       # (and the marketplace lint below) in that case — the workspace packages
       # still lint fine without it.
       - name: Fetch marketplace submodule
-        if: ${{ secrets.MARKETPLACE_SUBMODULE_TOKEN != '' }}
-        env:
-          MARKETPLACE_SUBMODULE_TOKEN: ${{ secrets.MARKETPLACE_SUBMODULE_TOKEN }}
+        if: ${{ env.MARKETPLACE_SUBMODULE_TOKEN != '' }}
         run: |
           git config --global url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf "https://github.com/lumibase-ai/"
           git submodule update --init --depth=1 apps/marketplace
@@ -261,7 +263,7 @@ jobs:
       # linted standalone with its own deps, exactly as pages-deploy.yml builds
       # it. The Fetch marketplace submodule step above makes its source present.
       - name: Lint marketplace (standalone submodule)
-        if: ${{ secrets.MARKETPLACE_SUBMODULE_TOKEN != '' }}
+        if: ${{ env.MARKETPLACE_SUBMODULE_TOKEN != '' }}
         working-directory: apps/marketplace
         run: |
           pnpm install --no-frozen-lockfile --ignore-workspace
