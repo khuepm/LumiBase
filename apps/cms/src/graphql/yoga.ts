@@ -5,6 +5,7 @@ import type { AppEnv } from '../env';
 import { buildGraphQLContext } from './context';
 import { buildSiteSchema } from './schema-builder';
 import { depthLimitRule } from './depth-limit';
+import { costLimitRule } from './cost-limit';
 import { SchemaService } from '../services/schema-service';
 
 /**
@@ -56,8 +57,20 @@ function isDevEnv(c: Context<AppEnv>): boolean {
 /** Maximum field nesting depth accepted by an operation (abuse guard). */
 const MAX_QUERY_DEPTH = 12;
 
+/** Defaults for the static cost limiter (see `cost-limit.ts`). */
+const DEFAULT_MAX_COST = 1000;
+const DEFAULT_LIST_SIZE = 20;
+const DEFAULT_MAX_LIST_MULTIPLIER = 100;
+
+/** Parse a positive integer from env, falling back on invalid/absent values. */
+function gqlInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const n = Number.parseInt(value, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 /**
- * Hardening: always cap query depth; disable schema introspection in
+ * Hardening: always cap query depth and cost; disable schema introspection in
  * production. `context` here is the server context (`{ honoCtx }`),
  * available before the full GraphQL context is built (see envelop
  * orchestrator — `onValidate` receives `initialContext`).
@@ -66,6 +79,14 @@ const hardeningPlugin: Plugin<ServerContext> = {
   onValidate({ addValidationRule, context }) {
     addValidationRule(depthLimitRule(MAX_QUERY_DEPTH));
     const honoCtx = (context as Partial<ServerContext> | undefined)?.honoCtx;
+    const env = honoCtx?.env ?? ({} as AppEnv['Bindings']);
+    addValidationRule(
+      costLimitRule({
+        maxCost: gqlInt(env.LUMIBASE_GQL_MAX_COST, DEFAULT_MAX_COST),
+        defaultListSize: gqlInt(env.LUMIBASE_GQL_DEFAULT_LIST_SIZE, DEFAULT_LIST_SIZE),
+        maxListMultiplier: gqlInt(env.LUMIBASE_GQL_MAX_LIST_MULTIPLIER, DEFAULT_MAX_LIST_MULTIPLIER),
+      }),
+    );
     if (honoCtx && !isDevEnv(honoCtx)) {
       addValidationRule(NoSchemaIntrospectionCustomRule);
     }

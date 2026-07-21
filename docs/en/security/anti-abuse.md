@@ -62,6 +62,17 @@ with `Retry-After`, and never let a denied request extend the window.
   splitting across the two paths). Fixed window; `Retry-After` shrinks
   monotonically. This limiter is **in-memory per process** (see
   [Gaps](#gaps--recommendations)).
+- **Setup brakes** — the public setup surface (mounted *before* auth, reachable
+  only while uninitialized) is throttled per IP in
+  `apps/cms/src/modules/setup/routes.ts`: `GET /setup/state` at 60 req / 60 s,
+  and `POST /setup/complete` at **10 req / 60 s** on its own bucket. The
+  `/complete` brake runs *before* the body is parsed or a password is hashed, so
+  it blunts `setupToken` brute-force and hashing-CPU spam in the bootstrap
+  window at zero cost per blocked request. Returns `429 RATE_LIMITED` +
+  `Retry-After`. The hard guard against a duplicate first admin remains the
+  `SELECT … FOR UPDATE` on the `system_state` singleton plus a unique index —
+  this brake is defence-in-depth. It is **in-memory per isolate** (see
+  [Gaps](#gaps--recommendations)).
 - **Generic API throttle** — `apps/cms/src/middleware/rate-limit.ts`
   (`withRateLimit`) is a coarse fixed-window safety net over the authenticated
   REST/GraphQL surface: default 300 req / 60 s (`LUMIBASE_RATE_LIMIT_MAX` /
@@ -139,9 +150,16 @@ enforce isolation in the database so a missing `.where()` cannot leak data.
   rejects mutating JSON requests over 1 MiB (`LUMIBASE_MAX_JSON_BODY`) with
   `413 PAYLOAD_TOO_LARGE`, checked on `Content-Length` before the body is read.
   It is the belt to the upstream Caddy `request_body max_size` braces.
-- **GraphQL depth** — `apps/cms/src/graphql/yoga.ts` sets `MAX_QUERY_DEPTH = 12`
-  via `depthLimitRule`, and disables introspection when `LUMIBASE_ENV` is
-  `production`.
+- **GraphQL depth & cost** — `apps/cms/src/graphql/yoga.ts` caps field nesting
+  at `MAX_QUERY_DEPTH = 12` (`depthLimitRule`) *and* static query cost at
+  `LUMIBASE_GQL_MAX_COST` (default 1000, `costLimitRule`). Cost catches the
+  shallow-but-wide queries depth alone misses — many parallel fields, large
+  `limit`s, or a field aliased repeatedly — scoring each field 1 and
+  multiplying a list's subtree by its pagination argument
+  (`LUMIBASE_GQL_DEFAULT_LIST_SIZE` when absent/variable, clamped to
+  `LUMIBASE_GQL_MAX_LIST_MULTIPLIER`). Both run in every environment, validated
+  before any resolver; introspection is disabled when `LUMIBASE_ENV` is
+  `production`. See [`graphql-api-spec.md`](../api/graphql-api-spec.md#abuse-guards).
 - **Pagination** — list queries clamp the page size (e.g.
   `Math.min(params.limit ?? 25, 200)` in `item-service.ts`; `PANEL_MAX_LIMIT`,
   CDC feed `max(500)`), so a caller cannot request an unbounded page.

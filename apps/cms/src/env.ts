@@ -124,6 +124,12 @@ export interface Bindings {
   LUMIBASE_RATE_LIMIT_MAX?: string;
   /** Window length in seconds for the general API rate limiter (default 60). */
   LUMIBASE_RATE_LIMIT_WINDOW_S?: string;
+  /** Max static cost accepted per GraphQL operation (default 1000). */
+  LUMIBASE_GQL_MAX_COST?: string;
+  /** List multiplier for GraphQL list fields lacking a literal pagination arg (default 20). */
+  LUMIBASE_GQL_DEFAULT_LIST_SIZE?: string;
+  /** Upper clamp on a GraphQL list field's cost multiplier (default 100). */
+  LUMIBASE_GQL_MAX_LIST_MULTIPLIER?: string;
   /**
    * Sentry DSN for the Cloudflare Workers build. When unset, `withSentry`
    * in `cloudflare.ts` initializes with an empty DSN and Sentry becomes a
@@ -273,6 +279,24 @@ export interface Variables {
     } | null>;
     forgotPath(email: string, ip: string): Promise<void>;
     validateUnlockToken(token: string): Promise<{ readonly userId: string } | null>;
+  };
+  /**
+   * Test-only injection seam for the public setup routes. When set via
+   * `c.set('setupServiceOverride', stub)` *before* the setup router runs,
+   * `modules/setup/routes.ts` uses the stub instead of constructing a real
+   * `SetupService` — so `POST /setup/complete` can be exercised without a
+   * live Postgres. Declared structurally (only the `complete` method the
+   * route calls) to keep `env.ts` free of route/service imports, mirroring
+   * `recoveryServiceOverride`. The real `SetupService` satisfies this shape.
+   */
+  setupServiceOverride?: {
+    complete(
+      input: unknown,
+      ctx: unknown,
+    ): Promise<
+      | { readonly ok: true; readonly value: unknown }
+      | { readonly ok: false; readonly error: unknown }
+    >;
   };
 }
 
