@@ -11,6 +11,34 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [0.24.1] - 2026-07-21
+
+### Version
+
+- `v0.24.1`
+
+### Date
+
+- `2026-07-21`
+
+### Highlights
+
+- **Shell version alignment.** The Tauri desktop/mobile app (`@lumibase/shell`)
+  `src-tauri` version metadata is brought in lockstep with the monorepo release,
+  so the auto-updater compares against the correct version. (#287)
+
+### Fixed
+
+- **Shell version drift.** `apps/shell/src-tauri` (`tauri.conf.json`,
+  `Cargo.toml`, `Cargo.lock`) lagged the `@lumibase/shell` package version; all
+  are now synced to the monorepo release version. The `tauri.conf.json` version
+  is the value the desktop auto-updater compares against, so keeping it in
+  lockstep with the release avoids stale/incorrect update checks. (#287)
+
+### Migrations
+
+- None
+
 ## [0.24.0] - 2026-07-21
 
 ### Version

@@ -1,6 +1,6 @@
 [package]
 name = "lumibase-shell"
-version = "0.24.0"
+version = "0.24.1"
 description = "LumiBase Shell — unified desktop + mobile app wrapping the Studio SPA"
 authors = ["LumiBase"]
 edition = "2021"

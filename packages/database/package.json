@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/database",
-  "version": "0.24.0",
+  "version": "0.24.1",
   "private": true,
   "description": "Lumibase Drizzle ORM schema and migrations (PostgreSQL via Cloudflare Hyperdrive).",
   "type": "module",
