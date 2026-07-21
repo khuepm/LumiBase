@@ -1,4 +1,7 @@
-import { MeiliSearch } from 'meilisearch';
+// meilisearch >=0.50 renamed the client class to `Meilisearch` (lowercase `s`)
+// and dropped the old `MeiliSearch` named/default export. Alias it back so the
+// provider naming below stays stable.
+import { Meilisearch as MeiliSearch } from 'meilisearch';
 import type {
   SearchProvider,
   SearchResult,
