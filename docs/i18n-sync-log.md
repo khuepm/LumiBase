@@ -2,6 +2,119 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
+## 2026-07-21T17:47:16.407Z — mode `apply` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 140
+
+Summary — up-to-date: 45, translated: 0, preserved: 0, conflicts: 3, planned: 92
+
+### Language mismatches / preservation
+
+| File | en lang | vi lang | Action | Note |
+|------|---------|---------|--------|------|
+| `features/user-management.md` | vi | vi | conflict | preserved → `.i18n/preserved/features/user-management.md.2026-07-21T17-47-16-564Z.bak.md` |
+| `mcp/index.md` | vi | vi | conflict | preserved → `.i18n/preserved/mcp/index.md.2026-07-21T17-47-16-564Z.bak.md` |
+| `mcp/mcp-application-analysis.md` | vi | vi | conflict | preserved → `.i18n/preserved/mcp/mcp-application-analysis.md.2026-07-21T17-47-16-564Z.bak.md` |
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `DEPLOYMENT-CHECKLIST.md` | en → vi | missing vi translation |
+| `README.md` | vi → en | source changed since last sync |
+| `agent-setup/claude-code.md` | en → vi | source changed since last sync |
+| `agent-setup/index.md` | en → vi | source changed since last sync |
+| `ai-skills.md` | en → vi | source changed since last sync |
+| `aio/AIO-AUDIT-REPORT.md` | en → vi | missing vi translation |
+| `aio/README.md` | en → vi | missing vi translation |
+| `api/hono-api-spec.md` | en → vi | source changed since last sync |
+| `architecture/decisions/index.md` | en → vi | source changed since last sync |
+| `architecture/page-hydration.md` | en → vi | source changed since last sync |
+| `architecture/physical-collections.md` | en → vi | missing vi translation |
+| `architecture/realtime-websocket-implementation.md` | en → vi | source changed since last sync |
+| `cdc/architecture.md` | en → vi | missing vi translation |
+| `cdc/deployment-cloudflare-workers.md` | en → vi | missing vi translation |
+| `cdc/deployment-docker-compose.md` | en → vi | missing vi translation |
+| `cdc/environment-variables.md` | en → vi | missing vi translation |
+| `cdc/setup-airbyte.md` | en → vi | missing vi translation |
+| `cdc/setup-debezium-kafka.md` | en → vi | missing vi translation |
+| `cdc/setup-materialized-engine.md` | en → vi | missing vi translation |
+| `cdc/troubleshooting.md` | en → vi | missing vi translation |
+| `compliance/README.md` | en → vi | source changed since last sync |
+| `compliance/data-map.md` | en → vi | source changed since last sync |
+| `compliance/data-residency.md` | en → vi | source changed since last sync |
+| `compliance/dpa-template.md` | en → vi | source changed since last sync |
+| `compliance/gap-analysis.md` | en → vi | source changed since last sync |
+| `compliance/implementation-checklist.md` | en → vi | source changed since last sync |
+| `compliance/market-eu-gdpr.md` | en → vi | source changed since last sync |
+| `compliance/market-us.md` | en → vi | source changed since last sync |
+| `compliance/market-vietnam.md` | en → vi | source changed since last sync |
+| `compliance/provider-google-apple.md` | en → vi | source changed since last sync |
+| `compliance/user-rights-catalog.md` | en → vi | source changed since last sync |
+| `contributing/index.md` | en → vi | missing vi translation |
+| `data-model.md` | en → vi | source changed since last sync |
+| `deployment/cloudflare-pages-ci.md` | en → vi | missing vi translation |
+| `deployment/cloudflare.md` | en → vi | source changed since last sync |
+| `deployment/docker.md` | en → vi | source changed since last sync |
+| `deployment/environment-variables.md` | en → vi | source changed since last sync |
+| `deployment/local-development.md` | en → vi | source changed since last sync |
+| `deployment/meilisearch-aws.md` | en → vi | missing vi translation |
+| `deployment/overview.md` | en → vi | source changed since last sync |
+| `deployment/shared-domain-environments.md` | en → vi | missing vi translation |
+| `devpost-xprize-submission.md` | en → vi | missing vi translation |
+| `enterprise/private-submodule.md` | en → vi | missing vi translation |
+| `features/access-manifest-v1.md` | en → vi | source changed since last sync |
+| `features/agent-harness-layer.md` | en → vi | source changed since last sync |
+| `features/ai-first-specification.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `features/bookmarks-presets.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `features/cdc-change-feed.md` | en → vi | missing vi translation |
+| `features/cloudflare-auth.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `features/collection-preview.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `features/collections-builder.md` | en → vi | source changed since last sync |
+| `features/data-import.md` | en → vi | missing vi translation |
+| `features/deployment-integrations.md` | en → vi | missing vi translation |
+| `features/directus-data-model-parity-tasks.md` | en → vi | missing vi translation |
+| `features/display-templates.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `features/field-types-and-config.md` | en → vi | source changed since last sync |
+| `features/firebase-sync.md` | vi → en | source changed since last sync |
+| `features/git-integration.md` | en → vi | missing vi translation |
+| `features/marketplace-ui.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `features/materialized-collections.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `features/permission-builder-directus-investigation.md` | vi → en | missing en translation |
+| `features/permission-service-compose-audit.md` | en → vi | source changed since last sync |
+| `features/push-notifications.md` | en → vi | missing vi translation |
+| `features/raw-data-editing.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `features/role-policy-flag-migration.md` | en → vi | source changed since last sync |
+| `features/scim-provisioning.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `features/search.md` | en → vi | source changed since last sync |
+| `features/system-collections-access.md` | en → vi | source changed since last sync |
+| `features/translation-memory.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `features/translations-i18n.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `features/typegen.md` | en → vi | source changed since last sync |
+| `features/websockets-realtime.md` | en → vi | source changed since last sync |
+| `getting-started.md` | en → vi | source changed since last sync |
+| `marketplace-submodule-migration.md` | en → vi | missing vi translation |
+| `release/npm-publishing.md` | vi → en | missing en translation |
+| `roadmap/agent-harness-implementation.md` | vi → en | missing en translation |
+| `roadmap/collection-create-modes.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `roadmap/git-integration.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `roadmap/phase-d1-users.md` | en → vi | source changed since last sync |
+| `roadmap/post-ga-walkthrough.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `roadmap/studio-content-slices.md` | vi → en | en duplicates vi content; replace en with English translation |
+| `sdk/javascript.md` | en → vi | missing vi translation |
+| `sdk/typegen.md` | en → vi | missing vi translation |
+| `security/anti-abuse.md` | en → vi | source changed since last sync |
+| `security/cwe-top-100-audit.md` | en → vi | source changed since last sync |
+| `security/dependency-overrides.md` | en → vi | source changed since last sync |
+| `security/idor-testing.md` | en → vi | source changed since last sync |
+| `security/route-guards.md` | en → vi | source changed since last sync |
+| `security/runtime-security-guards-plan.md` | en → vi | source changed since last sync |
+| `tutorials/index.md` | en → vi | source changed since last sync |
+| `tutorials/nextjs-quickstart.md` | en → vi | source changed since last sync |
+| `ui/studio-ui-spec.md` | vi → en | en duplicates vi content; replace en with English translation |
+
+---
+
 ## 2026-07-21T17:40:01.790Z — mode `plan` (effective `plan`)
 
 Engine: `claude` · API key: absent · files scanned: 140
