@@ -190,11 +190,19 @@ response.
 private/loopback/metadata targets; whitelist protocols; reject embedded
 credentials.
 
-- `apps/cms/src/services/ssrf-guard.ts` exposes `validateOutboundUrl()` and the
-  `guardedFetch()` wrapper. It blocks `localhost`/`.localhost`, RFC 1918 /
-  link-local / loopback ranges, cloud metadata endpoints (`169.254.169.254`,
-  `100.100.100.200`, `metadata.google.internal`), `user:pass@` URLs, and any
-  protocol other than `http`/`https`.
+- `apps/cms/src/services/ssrf-guard.ts` exposes `validateOutboundUrl()` (sync,
+  literal-string checks), `resolveAndValidateOutboundUrl()` (adds DNS
+  resolution), and the `guardedFetch()` wrapper. It blocks `localhost`/
+  `.localhost`, RFC 1918 / link-local / loopback ranges, cloud metadata
+  endpoints (`169.254.169.254`, `100.100.100.200`, `metadata.google.internal`),
+  `user:pass@` URLs, and any protocol other than `http`/`https`.
+- **DNS-rebinding defence:** `guardedFetch()` / `resolveAndValidateOutboundUrl()`
+  additionally **resolve the hostname and re-check every resolved IP** against
+  the private/loopback/metadata ranges, so a public name that points at
+  `169.254.169.254` or `10.0.0.5` is rejected. Resolution uses a lazily-loaded
+  `node:dns` resolver on Node and is skipped on Workers (best-effort by default;
+  set `requireDnsResolution` to fail closed when resolution can't run). The
+  resolver is injectable (`options.resolve`) for testing.
 - **Rule:** any feature that fetches a user-provided URL (imports, webhooks,
   avatar fetch, …) must route through `guardedFetch()` / `validateOutboundUrl()`.
 
@@ -258,7 +266,7 @@ explicit — not all are bugs; several are deliberately delegated upstream.
 | Priority | Gap | Recommendation |
 |---|---|---|
 | Medium | The **recovery limiter** (`recovery/rate-limit.ts`) is in-memory per process — not shared across Workers isolates / multiple Node processes | Back it with a shared store (Redis via `LUMIBASE_REDIS_URL`, or a DB-backed counter like the Postgres-backed login limiter). The `CounterStore` interface exists; a `RedisCounterStore` is planned (Phase C+) |
-| Medium | The generic API throttle is **coarse and non-atomic** (read-modify-write can undercount under high concurrency) and fails open | Acceptable as a safety net; for precise per-endpoint quotas use an atomic counter (Durable Object / Redis `INCR`) |
+| Medium | The generic API throttle is **coarse and non-atomic** (read-modify-write can undercount under high concurrency) | Acceptable as a safety net; for precise per-endpoint quotas use an atomic counter (Durable Object / Redis `INCR`). Fail mode is now configurable: it fails **open** by default (cache outage never downs the API), or **closed** (503 `RATE_LIMIT_UNAVAILABLE`) when `LUMIBASE_RATE_LIMIT_FAIL_CLOSED='true'` for hardened deployments where the throttle is load-bearing |
 | Medium | No IP allowlist/blocklist, no CAPTCHA / bot detection | Delegate to the upstream WAF (Cloudflare) in production; consider CAPTCHA on the most sensitive endpoints |
 | Low | API keys support expiry + revocation (`api_keys.expiresAt` / `revokedAt`) but there is **no enforced mandatory rotation** policy | Add a rotation policy / expiry-nudge if required by compliance |
 | Low | Realtime channels have subscribe read-gating and field masking but **no per-connection rate limit** | Add a per-connection limiter to the realtime layer |
