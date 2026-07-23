@@ -264,6 +264,38 @@ export interface Variables {
   /** Runtime context providing cache, storage, database, search, queue, and media adapters. */
   runtime: RuntimeContext;
   /**
+   * Request_Context_Bundle — per-request identity cache
+   * (high-load-cache-readiness Req 10; design §6.4).
+   *
+   * A temporary cache that lives ONLY for the lifecycle of one request. When
+   * `withAuth` resolves the caller's `users` row and site membership it stashes
+   * them here; every downstream guard (`withSiteMembership`,
+   * `withStudioAccess`) reads from this bundle first and only touches the DB
+   * when a value is absent. This de-duplicates the identity lookups so a single
+   * request performs at most ONE `users` and ONE `userSites` query for
+   * identification instead of repeating them in each middleware.
+   *
+   * Absent when `withAuth` did not resolve a DB-backed user (dev-auth,
+   * API-key, or external-JWT principals), or when a middleware is mounted in
+   * isolation in a unit test. Consumers MUST fall back to querying in that
+   * case so each middleware stays independently correct.
+   */
+  principal?: {
+    /** The resolved `users` row for the caller, or `null` when none exists. */
+    user: {
+      id: string;
+      externalId: string | null;
+      email: string;
+      isBootstrap: boolean;
+    } | null;
+    /**
+     * The caller's `user_sites` membership for the active site, resolved by
+     * `withAuth` for the request's `siteId`. `null` when the caller has no
+     * membership (only reachable for bootstrap admins, who bypass the check).
+     */
+    membership: { roleId: string } | null;
+  };
+  /**
    * Internal response-type marker for observability/log enrichment.
    * Currently used by `adminPathGuard` (admin-setup-wizard Req 5.2) to
    * tag a request as serving the Studio HTML/asset bundle vs. a regular
