@@ -299,7 +299,7 @@ export default function Home() {
           className="relative flex flex-col items-start justify-between gap-8 overflow-hidden rounded-[24px] p-8 md:flex-row md:items-center md:p-12"
           style={{
             background:
-              "linear-gradient(135deg, rgba(230,80,10,0.18), rgba(255,160,0,0.06))",
+              "linear-gradient(135deg, rgba(155,92,255,0.2), rgba(214,31,159,0.12) 46%, rgba(41,216,230,0.08))",
             boxShadow: "var(--ring-glass-strong)",
           }}
         >

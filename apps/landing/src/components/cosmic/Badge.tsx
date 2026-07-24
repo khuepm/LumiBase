@@ -1,9 +1,9 @@
 const tones = {
-  neutral: "rgba(255, 237, 215, 0.72)",
-  accent: "#e6500a",
-  violet: "#e6500a",
-  blue: "#ffa000",
-  green: "#5d6c49",
+  neutral: "rgba(244, 236, 255, 0.72)",
+  accent: "#b06bff",
+  violet: "#9b5cff",
+  blue: "#29d8e6",
+  green: "#34e0b4",
 } as const;
 
 export type BadgeTone = keyof typeof tones;

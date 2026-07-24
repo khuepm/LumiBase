@@ -7,7 +7,7 @@ import {
   useTransform,
 } from "framer-motion";
 import { useStaticMotion } from "@/components/scroll/useStaticMotion";
-import { EclipsePhase } from "@/components/EclipseMark";
+import { EclipsePhase, PHASE_HUES } from "@/components/EclipseMark";
 import { useSceneProgress } from "@/components/scroll/Scene";
 
 /** End-state moon offset per phase — matches EclipseMark's PHASE_OFFSET. */
@@ -45,29 +45,34 @@ export default function EclipsePhaseScrub({
   }
 
   const id = `eps-p${phase}`;
+  const [disc, glow] = PHASE_HUES[phase] ?? PHASE_HUES[0]!;
   return (
     <svg width={size} height={size} viewBox="0 0 72 72" fill="none" aria-hidden>
       <defs>
         <radialGradient id={`${id}-g`} cx="50%" cy="50%" r="50%">
-          <stop offset="50%" stopColor="#ff8c00" stopOpacity={total ? 0.85 : 0.55} />
-          <stop offset="74%" stopColor="#e6500a" stopOpacity={total ? 0.4 : 0.22} />
-          <stop offset="100%" stopColor="#e6500a" stopOpacity="0" />
+          <stop offset="48%" stopColor={disc} stopOpacity={total ? 0.85 : 0.6} />
+          <stop offset="72%" stopColor={glow} stopOpacity={total ? 0.42 : 0.26} />
+          <stop offset="100%" stopColor={glow} stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id={`${id}-d`} cx="42%" cy="38%" r="70%">
+          <stop offset="0%" stopColor={disc} />
+          <stop offset="100%" stopColor={glow} />
         </radialGradient>
         <clipPath id={`${id}-c`}>
           <circle cx="36" cy="36" r="21" />
         </clipPath>
       </defs>
       <circle cx="36" cy="36" r="34" fill={`url(#${id}-g)`} />
-      <circle cx="36" cy="36" r="20" fill="#ffa000" />
-      <circle cx="36" cy="36" r="20" stroke="#ffedd7" strokeWidth="0.8" opacity="0.7" />
+      <circle cx="36" cy="36" r="20" fill={`url(#${id}-d)`} />
+      <circle cx="36" cy="36" r="20" stroke="#f4ecff" strokeWidth="0.8" opacity="0.7" />
       <g clipPath={`url(#${id}-c)`}>
-        <motion.circle cx={cx} cy={cy} r="19.4" fill="#100904" />
+        <motion.circle cx={cx} cy={cy} r="19.4" fill="#0b0713" />
       </g>
       {total && (
         <motion.g style={{ opacity: totalityOpacity }}>
-          <circle cx="36" cy="36" r="20" stroke="#ffa000" strokeWidth="1.8" />
-          <circle cx="49.5" cy="23.5" r="1.9" fill="#ffedd7" />
-          <circle cx="49.5" cy="23.5" r="4" fill="#ffedd7" opacity="0.22" />
+          <circle cx="36" cy="36" r="20" stroke={disc} strokeWidth="1.8" />
+          <circle cx="49.5" cy="23.5" r="1.9" fill="#ffffff" />
+          <circle cx="49.5" cy="23.5" r="4" fill="#c4a8ff" opacity="0.28" />
         </motion.g>
       )}
     </svg>

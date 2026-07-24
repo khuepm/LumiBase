@@ -20,13 +20,13 @@ export default function Image() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: "#100904",
-          color: "#ffedd7",
+          background: "#0b0713",
+          color: "#f4ecff",
           fontFamily: "monospace",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 40 }}>
-          {/* Eclipse mark — corona + moon at totality */}
+          {/* Eclipse mark — prismatic corona + moon at totality */}
           <div
             style={{
               display: "flex",
@@ -36,7 +36,7 @@ export default function Image() {
               height: 150,
               borderRadius: 9999,
               background:
-                "radial-gradient(circle, rgba(255,160,0,0.5) 40%, rgba(230,80,10,0.25) 60%, rgba(230,80,10,0) 75%)",
+                "radial-gradient(circle, rgba(255,176,32,0.45) 34%, rgba(214,31,159,0.3) 55%, rgba(155,92,255,0.22) 68%, rgba(41,216,230,0) 80%)",
             }}
           >
             <div
@@ -45,22 +45,30 @@ export default function Image() {
                 width: 96,
                 height: 96,
                 borderRadius: 9999,
-                background: "#150c05",
+                background: "#120b1c",
                 boxShadow:
-                  "0 0 0 3px #ffa000, 0 0 40px rgba(230,80,10,0.8), 0 0 90px rgba(230,80,10,0.4)",
+                  "0 0 0 3px #ffb020, 0 0 40px rgba(214,31,159,0.75), 0 0 90px rgba(155,92,255,0.5)",
               }}
             />
           </div>
           <div style={{ display: "flex", fontSize: 84, fontWeight: 700 }}>
             <span>LUMI</span>
-            <span style={{ color: "#e6500a" }}>BASE</span>
+            <span
+              style={{
+                background: "linear-gradient(120deg,#b06bff,#d61f9f,#ff6a1a)",
+                backgroundClip: "text",
+                color: "transparent",
+              }}
+            >
+              BASE
+            </span>
           </div>
         </div>
         <div
           style={{
             marginTop: 36,
             fontSize: 38,
-            color: "#ffedd7",
+            color: "#f4ecff",
           }}
         >
           THE CONTENT OPERATING SYSTEM
@@ -70,7 +78,7 @@ export default function Image() {
             marginTop: 18,
             fontSize: 22,
             letterSpacing: 3,
-            color: "rgba(255,237,215,0.55)",
+            color: "rgba(244,236,255,0.55)",
           }}
         >
           [ DECLARE INTENT · AGENTS RECONCILE · YOU KEEP THE VETO ]

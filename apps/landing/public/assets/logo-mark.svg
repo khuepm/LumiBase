@@ -1,39 +1,40 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
   <defs>
     <radialGradient id="corona" cx="50%" cy="50%" r="50%">
-      <stop offset="55%" stop-color="#ff8c00" stop-opacity="0.9"/>
-      <stop offset="72%" stop-color="#e6500a" stop-opacity="0.45"/>
-      <stop offset="100%" stop-color="#e6500a" stop-opacity="0"/>
+      <stop offset="52%" stop-color="#ffb020" stop-opacity="0.9"/>
+      <stop offset="66%" stop-color="#ff4d8d" stop-opacity="0.55"/>
+      <stop offset="80%" stop-color="#9b5cff" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#29d8e6" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="moon" cx="38%" cy="34%" r="80%">
-      <stop offset="0%" stop-color="#2c1c0e"/>
-      <stop offset="60%" stop-color="#150c05"/>
-      <stop offset="100%" stop-color="#100904"/>
+      <stop offset="0%" stop-color="#251a30"/>
+      <stop offset="60%" stop-color="#120b1c"/>
+      <stop offset="100%" stop-color="#0b0713"/>
     </radialGradient>
   </defs>
 
-  <!-- Corona glow -->
+  <!-- Prismatic corona glow -->
   <circle cx="24" cy="24" r="23" fill="url(#corona)"/>
   <!-- Chromosphere ring -->
-  <circle cx="24" cy="24" r="15.5" stroke="#ffa000" stroke-width="1.6"/>
-  <circle cx="24" cy="24" r="15.5" stroke="#ffedd7" stroke-width="0.5" opacity="0.85"/>
+  <circle cx="24" cy="24" r="15.5" stroke="#ffb020" stroke-width="1.6"/>
+  <circle cx="24" cy="24" r="15.5" stroke="#c4a8ff" stroke-width="0.5" opacity="0.85"/>
   <!-- Diamond-ring flare, upper right -->
-  <circle cx="35.2" cy="13.6" r="1.7" fill="#ffedd7"/>
-  <circle cx="35.2" cy="13.6" r="3.4" fill="#ffedd7" opacity="0.25"/>
+  <circle cx="35.2" cy="13.6" r="1.7" fill="#ffffff"/>
+  <circle cx="35.2" cy="13.6" r="3.4" fill="#c4a8ff" opacity="0.3"/>
   <!-- Moon at totality -->
   <circle cx="24" cy="24" r="15" fill="url(#moon)"/>
 
   <!-- Tiny spaceship transiting the moon -->
   <g transform="translate(24 25) rotate(-16)">
     <!-- exhaust trail -->
-    <path d="M -4.6 0 L -10 0" stroke="#ffedd7" stroke-width="0.7" stroke-linecap="round" opacity="0.5"/>
-    <path d="M -4.6 0 L -7.4 0" stroke="#ffa000" stroke-width="1" stroke-linecap="round" opacity="0.9"/>
+    <path d="M -4.6 0 L -10 0" stroke="#29d8e6" stroke-width="0.7" stroke-linecap="round" opacity="0.55"/>
+    <path d="M -4.6 0 L -7.4 0" stroke="#b06bff" stroke-width="1" stroke-linecap="round" opacity="0.95"/>
     <!-- hull -->
-    <path d="M 5.2 0 C 4.2 -1.7 1.4 -2 -2.4 -1.5 L -4.4 0 L -2.4 1.5 C 1.4 2 4.2 1.7 5.2 0 Z" fill="#ffedd7"/>
+    <path d="M 5.2 0 C 4.2 -1.7 1.4 -2 -2.4 -1.5 L -4.4 0 L -2.4 1.5 C 1.4 2 4.2 1.7 5.2 0 Z" fill="#f4ecff"/>
     <!-- fin -->
-    <path d="M -1.4 -1.4 L -3.4 -3 L -4.2 -0.8 Z" fill="#f6e0c6"/>
-    <path d="M -1.4 1.4 L -3.4 3 L -4.2 0.8 Z" fill="#f6e0c6"/>
+    <path d="M -1.4 -1.4 L -3.4 -3 L -4.2 -0.8 Z" fill="#c4a8ff"/>
+    <path d="M -1.4 1.4 L -3.4 3 L -4.2 0.8 Z" fill="#c4a8ff"/>
     <!-- porthole -->
-    <circle cx="1.6" cy="0" r="0.7" fill="#100904"/>
+    <circle cx="1.6" cy="0" r="0.7" fill="#0b0713"/>
   </g>
 </svg>

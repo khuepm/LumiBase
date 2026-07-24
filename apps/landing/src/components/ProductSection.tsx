@@ -4,6 +4,7 @@ import FeatureCard from "@/components/cosmic/FeatureCard";
 import Scene, { ParallaxItem } from "@/components/scroll/Scene";
 import WipeTitle from "@/components/scroll/WipeTitle";
 import EclipsePhaseScrub from "@/components/scroll/EclipsePhaseScrub";
+import { PHASE_HUES } from "@/components/EclipseMark";
 import { RevealGroup, RevealItem } from "@/components/motion";
 
 export interface SectionFeature {
@@ -47,6 +48,7 @@ export default function ProductSection({
   features,
 }: SectionData) {
   const no = String(index).padStart(2, "0");
+  const [hue] = PHASE_HUES[phase] ?? PHASE_HUES[0]!;
   return (
     <Scene id={id} className="mx-auto max-w-[1200px] px-5 pt-[90px] md:pt-[140px]">
       <div className="mb-4 flex items-center justify-center">
@@ -73,8 +75,8 @@ export default function ProductSection({
             <span
               className="h-2 w-2 rounded-full"
               style={{
-                background: "var(--color-accent)",
-                boxShadow: "0 0 8px rgba(230,80,10,0.8)",
+                background: hue,
+                boxShadow: `0 0 8px ${hue}`,
               }}
             />
             <span>{cta}</span>

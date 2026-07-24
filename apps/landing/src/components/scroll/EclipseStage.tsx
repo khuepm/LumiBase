@@ -29,7 +29,7 @@ function CoronaRays() {
   const rays = Array.from({ length: 14 }, (_, i) => {
     const angle = (360 / 14) * i;
     const len = i % 3 === 0 ? 300 : i % 2 === 0 ? 250 : 210;
-    return { angle, len };
+    return { angle, len, hue: RAY_HUES[i % RAY_HUES.length] };
   });
   return (
     <svg
@@ -41,12 +41,14 @@ function CoronaRays() {
       aria-hidden
     >
       <defs>
-        <linearGradient id="stage-ray" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#ff8c00" stopOpacity="0.5" />
-          <stop offset="100%" stopColor="#e6500a" stopOpacity="0" />
-        </linearGradient>
+        {RAY_HUES.map((c, i) => (
+          <linearGradient key={i} id={`stage-ray-${i}`} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={c} stopOpacity="0.55" />
+            <stop offset="100%" stopColor={c} stopOpacity="0" />
+          </linearGradient>
+        ))}
       </defs>
-      {rays.map((r) => (
+      {rays.map((r, i) => (
         <rect
           key={r.angle}
           x={150}
@@ -54,7 +56,7 @@ function CoronaRays() {
           width={r.len}
           height={4}
           rx={2}
-          fill="url(#stage-ray)"
+          fill={`url(#stage-ray-${i % RAY_HUES.length})`}
           transform={`rotate(${r.angle} 320 320)`}
         />
       ))}
@@ -62,11 +64,18 @@ function CoronaRays() {
   );
 }
 
+/** Prismatic ray colours cycled around the corona wheel. */
+const RAY_HUES = ["#ffb020", "#ff6a1a", "#ff4d8d", "#d61f9f", "#9b5cff", "#6a5cff", "#29d8e6", "#34e0b4"];
+
+/** Layered nebula corona — violet/magenta/cyan aurora around a warm-gold core. */
+const NEBULA_CORONA =
+  "radial-gradient(circle, rgba(255,176,32,0.5) 24%, rgba(255,77,141,0.34) 40%, rgba(214,31,159,0.26) 52%, rgba(155,92,255,0.22) 64%, rgba(41,216,230,0.12) 76%, rgba(41,216,230,0) 84%)";
+
 function TinyShip() {
   return (
     <svg width={44} height={26} viewBox="0 0 44 26" fill="none" aria-hidden>
-      <path d="M12 13 H1" stroke="#ffedd7" strokeWidth="1.1" strokeLinecap="round" opacity="0.45" />
-      <path d="M12 13 H6" stroke="#ffa000" strokeWidth="1.8" strokeLinecap="round" opacity="0.9" />
+      <path d="M12 13 H1" stroke="#29d8e6" strokeWidth="1.1" strokeLinecap="round" opacity="0.5" />
+      <path d="M12 13 H6" stroke="#b06bff" strokeWidth="1.8" strokeLinecap="round" opacity="0.95" />
       <path
         d="M42 13 C 39.5 8.6 32.5 7.9 23 9.2 L 18 13 L 23 16.8 C 32.5 18.1 39.5 17.4 42 13 Z"
         fill="#ffedd7"
@@ -95,24 +104,21 @@ function StaticStage() {
     <div className="eclipse-stage">
       <CoronaRays />
       <div
-        className="eclipse-corona absolute left-1/2 top-1/2 h-[460px] w-[460px] -translate-x-1/2 -translate-y-1/2 rounded-full"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(255,160,0,0.55) 34%, rgba(230,80,10,0.3) 52%, rgba(230,80,10,0) 72%)",
-        }}
+        className="eclipse-corona absolute left-1/2 top-1/2 h-[480px] w-[480px] -translate-x-1/2 -translate-y-1/2 rounded-full"
+        style={{ background: NEBULA_CORONA }}
       />
       <div
         className="absolute left-1/2 top-1/2 h-[268px] w-[268px] -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
           boxShadow:
-            "0 0 0 2.5px rgba(255,160,0,0.95), 0 0 0 3.5px rgba(255,237,215,0.5), var(--glow-corona)",
+            "0 0 0 2.5px rgba(255,176,32,0.95), 0 0 0 3.5px rgba(244,236,255,0.55), var(--glow-corona)",
         }}
       />
       <div
         className="absolute left-1/2 top-1/2 h-[264px] w-[264px] -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
           background:
-            "radial-gradient(circle at 36% 32%, #2c1c0e 0%, #150c05 55%, #100904 100%)",
+            "radial-gradient(circle at 36% 32%, #251a30 0%, #120b1c 55%, #0b0713 100%)",
         }}
       />
       <div className="eclipse-ship absolute left-1/2 top-1/2 -ml-[22px] -mt-[13px]">
@@ -141,6 +147,11 @@ export default function EclipseStage() {
   // Totality factor: 1 when the moon is seated, 0 when the sun is open.
   const totality = useTransform(moonX, [0, 70], [1, 0]);
   const sunOpacity = useTransform(totality, [0, 1], [1, 0]);
+
+  // Mystical hue drift — the aurora sweeps violet→magenta→cyan→gold as you
+  // scroll, giving each scene its own colour without touching the geometry.
+  const hue = useTransform(p, [0, 0.25, 0.5, 0.75, 1], [0, 90, 180, 260, 340]);
+  const coronaFilter = useTransform(hue, (h) => `hue-rotate(${h}deg)`);
 
   // Two scrubbed ship transits: hero and finale.
   const ship1X = useTransform(p, [0.015, 0.1], [-360, 360]);
@@ -175,38 +186,46 @@ export default function EclipseStage() {
         className="absolute left-1/2 top-1/2 h-[640px] w-[640px] -ml-[320px] -mt-[320px]"
         style={{ scale, x, y, willChange: "transform" }}
       >
-        {/* Corona rays + breathing glow — totality only */}
-        <motion.div style={{ opacity: totality }}>
-          <CoronaRays />
-          <div
-            className="eclipse-corona absolute left-1/2 top-1/2 h-[460px] w-[460px] -translate-x-1/2 -translate-y-1/2 rounded-full"
+        {/* Prismatic aurora group — hue-rotates with scroll for the mystical
+            colour drift. Wraps rays, nebula glow, sun and ring together so
+            they shift in perfect sync; the dark moon stays outside.
+            NOTE: a `filter` establishes a containing block for absolute
+            descendants, so this wrapper must fill the stage (inset-0) or the
+            centred children would anchor to a zero-height box. */}
+        <motion.div
+          className="absolute inset-0"
+          style={{ filter: coronaFilter, willChange: "filter" }}
+        >
+          {/* Corona rays + nebula glow — totality only */}
+          <motion.div style={{ opacity: totality }}>
+            <CoronaRays />
+            <div
+              className="eclipse-corona absolute left-1/2 top-1/2 h-[480px] w-[480px] -translate-x-1/2 -translate-y-1/2 rounded-full"
+              style={{ background: NEBULA_CORONA }}
+            />
+          </motion.div>
+
+          {/* Open sun — visible while the moon is away */}
+          <motion.div
+            className="absolute left-1/2 top-1/2 h-[264px] w-[264px] -translate-x-1/2 -translate-y-1/2 rounded-full"
             style={{
+              opacity: sunOpacity,
               background:
-                "radial-gradient(circle, rgba(255,160,0,0.55) 34%, rgba(230,80,10,0.3) 52%, rgba(230,80,10,0) 72%)",
+                "radial-gradient(circle at 42% 38%, #ffd24a 0%, #ff9e2c 44%, #ff4d8d 78%, #d61f9f 100%)",
+              boxShadow: "0 0 90px rgba(255,176,32,0.4), 0 0 200px rgba(214,31,159,0.28)",
+            }}
+          />
+
+          {/* Chromosphere ring — totality only */}
+          <motion.div
+            className="absolute left-1/2 top-1/2 h-[268px] w-[268px] -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{
+              opacity: totality,
+              boxShadow:
+                "0 0 0 2.5px rgba(255,176,32,0.95), 0 0 0 3.5px rgba(244,236,255,0.55), var(--glow-corona)",
             }}
           />
         </motion.div>
-
-        {/* Open sun — visible while the moon is away */}
-        <motion.div
-          className="absolute left-1/2 top-1/2 h-[264px] w-[264px] -translate-x-1/2 -translate-y-1/2 rounded-full"
-          style={{
-            opacity: sunOpacity,
-            background:
-              "radial-gradient(circle at 42% 38%, #ffbf02 0%, #ffa000 55%, #e6500a 100%)",
-            boxShadow: "0 0 90px rgba(255,160,0,0.45), 0 0 200px rgba(230,80,10,0.25)",
-          }}
-        />
-
-        {/* Chromosphere ring — totality only */}
-        <motion.div
-          className="absolute left-1/2 top-1/2 h-[268px] w-[268px] -translate-x-1/2 -translate-y-1/2 rounded-full"
-          style={{
-            opacity: totality,
-            boxShadow:
-              "0 0 0 2.5px rgba(255,160,0,0.95), 0 0 0 3.5px rgba(255,237,215,0.5), var(--glow-corona)",
-          }}
-        />
 
         {/* The moon — scroll slides it across the sun */}
         <motion.div
@@ -215,8 +234,8 @@ export default function EclipseStage() {
             x: moonX,
             y: moonY,
             background:
-              "radial-gradient(circle at 36% 32%, #2c1c0e 0%, #150c05 55%, #100904 100%)",
-            boxShadow: "0 0 40px rgba(0,0,0,0.8)",
+              "radial-gradient(circle at 36% 32%, #251a30 0%, #120b1c 55%, #0b0713 100%)",
+            boxShadow: "0 0 40px rgba(0,0,0,0.85)",
             willChange: "transform",
           }}
         />
@@ -230,9 +249,9 @@ export default function EclipseStage() {
             top: "calc(50% - 102px)",
             width: 10,
             height: 10,
-            background: "#ffedd7",
+            background: "#ffffff",
             boxShadow:
-              "0 0 14px 5px rgba(255,237,215,0.75), 0 0 44px 16px rgba(255,160,0,0.4)",
+              "0 0 14px 5px rgba(244,236,255,0.85), 0 0 44px 16px rgba(155,92,255,0.45), 0 0 70px 22px rgba(41,216,230,0.25)",
           }}
         />
 

@@ -28,7 +28,17 @@ export default function Hero() {
             Your content,
             <br />
             operated by{" "}
-            <span style={{ color: "var(--color-accent)" }}>AI.</span>
+            <span
+              style={{
+                background:
+                  "linear-gradient(110deg, #ffb020 0%, #ff4d8d 38%, #b06bff 68%, #29d8e6 100%)",
+                WebkitBackgroundClip: "text",
+                backgroundClip: "text",
+                color: "transparent",
+              }}
+            >
+              AI.
+            </span>
           </h1>
           <p
             className="font-serif-body mx-auto mt-6 max-w-[470px]"
