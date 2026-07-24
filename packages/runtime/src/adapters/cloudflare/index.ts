@@ -10,6 +10,7 @@ import { CloudflareRealtimeProvider, type DurableObjectNamespaceLike } from './r
 
 export { CloudflareRealtimeProvider } from './realtime';
 export { CloudflareCacheProvider } from './cache';
+export { CloudflarePageviewCounter } from './counter';
 export { CloudflareStorageProvider } from './storage';
 export { CloudflareDatabaseProvider } from './database';
 export { CloudflareSearchProvider } from './search';
@@ -33,6 +34,8 @@ interface CloudflareEnv {
   MEDIA_BASE_URL?: string;
   /** SiteRoom Durable Object namespace — realtime fan-out hub. */
   SITE_ROOM?: DurableObjectNamespaceLike;
+  /** PageviewCounter Durable Object namespace — atomic hot-counter/HLL backend. */
+  PAGEVIEW_COUNTER?: DurableObjectNamespaceLike;
 }
 
 /**
@@ -73,7 +76,7 @@ export function createCloudflareRuntime(env: Record<string, unknown>): RuntimeCo
   const cfEnv = env as unknown as CloudflareEnv;
 
   return {
-    cache: new CloudflareCacheProvider(cfEnv.CONFIG_CACHE),
+    cache: new CloudflareCacheProvider(cfEnv.CONFIG_CACHE, cfEnv.PAGEVIEW_COUNTER),
     storage: new CloudflareStorageProvider(cfEnv.MEDIA),
     database: new CloudflareDatabaseProvider(cfEnv.HYPERDRIVE),
     search: new CloudflareSearchProvider(

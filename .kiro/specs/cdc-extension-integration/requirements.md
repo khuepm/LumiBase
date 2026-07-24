@@ -35,7 +35,7 @@ Spec này xây trực tiếp trên các lớp đã ship, không phát minh lại
 - **Change_Feed**: Tổng thể năng lực mô tả trong spec này — log sự kiện thay đổi nội dung + các đường phân phối.
 - **Change_Event**: Một bản ghi bất biến mô tả một mutation (create/update/delete) trên một item. Bảng `lumibase_cdc_change_events` (transactional outbox, append-only).
 - **Event_Envelope**: Cấu trúc JSON chuẩn hoá, có `schemaVersion`, bao ngoài mỗi Change_Event khi deliver (CloudEvents-inspired).
-- **Cursor**: Con trỏ vị trí đọc trong feed — chính là `id` (UUIDv7, k-sortable theo thời gian) của Change_Event cuối cùng đã xử lý.
+- **Cursor**: Con trỏ vị trí đọc trong feed — token opaque (base64url) mã hoá keyset `(occurredAt, id)` của Change_Event cuối cùng đã xử lý. *Chốt 2026-07-10 (phương án B):* PK dùng `nanoid` theo convention bảng audit của repo (xem note `regulated.ts` — codebase chủ ý không mang dependency uuidv7); thứ tự feed suy từ keyset `(occurred_at, id)` với `occurred_at` do Postgres `now()` đóng dấu (một đồng hồ duy nhất), `id` làm tie-breaker. Codec: `encodeCdcCursor`/`decodeCdcCursor` (`@lumibase/shared/schemas`).
 - **Subscription**: Bản ghi đăng ký một consumer (pull / webhook / extension) kèm filter và checkpoint cursor. Bảng `lumibase_cdc_subscriptions`.
 - **Dispatcher**: Relay đọc Change_Event sau cursor của từng Subscription và phân phối (outbox-relay pattern), chạy trên `QueueProvider` + sweep định kỳ.
 - **Delivery**: Một lần thử phân phối một batch event tới một Subscription, có kết quả và attempt. Bảng `lumibase_cdc_deliveries` (append-only).
@@ -52,12 +52,12 @@ Spec này xây trực tiếp trên các lớp đã ship, không phát minh lại
 
 #### Acceptance Criteria
 
-1. THE Change_Feed SHALL cung cấp bảng `lumibase_cdc_change_events` với các cột: `id` (uuidv7, PK — vừa là Cursor, k-sortable theo thời gian, tuân rule #1 `CLAUDE.md` cho bảng audit/append-only), `siteId` (text, NOT NULL, FK), `collection` (text, NOT NULL), `itemId` (text, NOT NULL), `operation` (text, NOT NULL, `'create' | 'update' | 'delete'`), `payload` (jsonb, nullable — snapshot sau mutation, đã mask), `changedFields` (jsonb, nullable — danh sách field đổi với update), `schemaVersion` (integer, NOT NULL, default 1), `actorType` (text, NOT NULL, `'user' | 'api_key' | 'agent' | 'system'`), `actorId` (text, nullable), `source` (text, NOT NULL, `'api' | 'agent' | 'flow' | 'system'`), `occurredAt` (timestamptz, NOT NULL). Index theo `(siteId, id)` và `(siteId, collection, id)`.
+1. THE Change_Feed SHALL cung cấp bảng `lumibase_cdc_change_events` với các cột: `id` (nanoid, PK — theo convention bảng audit của repo; KHÔNG kiêm cursor), `siteId` (text, NOT NULL, FK), `collection` (text, NOT NULL), `itemId` (text, NOT NULL), `operation` (text, NOT NULL, `'create' | 'update' | 'delete'`), `payload` (jsonb, nullable — snapshot sau mutation, đã mask), `changedFields` (jsonb, nullable — danh sách field đổi với update), `schemaVersion` (integer, NOT NULL, default 1), `actorType` (text, NOT NULL, `'user' | 'api_key' | 'agent' | 'system'`), `actorId` (text, nullable), `source` (text, NOT NULL, `'api' | 'agent' | 'flow' | 'system'`), `occurredAt` (timestamptz, NOT NULL, default `now()` của Postgres — khóa chính của keyset). Index theo `(siteId, occurredAt, id)` và `(siteId, collection, occurredAt, id)`.
 2. WHEN một mutation item (create/update/delete) commit thành công qua ItemService và Change_Feed đang bật cho site, THE Change_Feed SHALL ghi đúng MỘT Change_Event tương ứng **trong cùng database transaction** với mutation (transactional outbox).
 3. IF driver database của runtime không hỗ trợ transaction đa-statement (ví dụ HTTP driver trên Cloudflare Workers), THEN THE Change_Feed SHALL ghi Change_Event ngay sau mutation trong cùng request, và IF ghi outbox thất bại THEN ghi một audit warning (`cdc_event_write_failed`) kèm collection + itemId, KHÔNG làm fail mutation đã commit.
 4. THE Change_Feed SHALL mask mọi field có `classification` `pii`/`phi` (theo `regulated-content-readiness`) trong `payload` TRƯỚC khi lưu; giá trị encrypted-at-rest không bao giờ xuất hiện plaintext trong outbox.
 5. THE Change_Feed SHALL chỉ ghi outbox khi site có ít nhất một Subscription `active` HOẶC setting `cdc_feed.enabled=true` — site không dùng feed không trả chi phí ghi (cờ này được cache và invalidate khi Subscription thay đổi).
-6. THE Change_Feed SHALL KHÔNG dùng serial/auto-increment cho bất kỳ cột nào; thứ tự toàn cục per site được suy từ UUIDv7 `id`.
+6. THE Change_Feed SHALL KHÔNG dùng serial/auto-increment cho bất kỳ cột nào; thứ tự toàn cục per site được suy từ keyset `(occurredAt, id)` — `occurredAt` đóng dấu bởi Postgres `now()`, `id` là tie-breaker định danh.
 
 ### Requirement 2: Pull Change Feed API (cursor-based)
 
@@ -65,11 +65,11 @@ Spec này xây trực tiếp trên các lớp đã ship, không phát minh lại
 
 #### Acceptance Criteria
 
-1. THE Change_Feed SHALL cung cấp `GET /api/v1/cdc/events` với query `cursor` (uuidv7, exclusive — trả event có `id > cursor`), `collections` (CSV, optional), `operations` (CSV, optional), `limit` (default 100, max 500), trả về danh sách Change_Event theo thứ tự `id` tăng dần, response format `{ data: T[], meta: { nextCursor, hasMore } }`.
+1. THE Change_Feed SHALL cung cấp `GET /api/v1/cdc/events` với query `cursor` (token opaque, exclusive — trả event có `(occurredAt, id)` lớn hơn keyset trong token), `collections` (CSV, optional), `operations` (CSV, optional), `limit` (default 100, max 500), trả về danh sách Change_Event theo thứ tự `(occurredAt, id)` tăng dần, response format `{ data: T[], meta: { nextCursor, hasMore } }`.
 2. THE Change_Feed SHALL bảo đảm phân trang bằng `nextCursor` là **gap-free và không trùng lặp**: đọc tuần tự từ cursor bất kỳ trả về đúng tập event khớp filter, đúng thứ tự.
 3. THE Change_Feed SHALL yêu cầu principal có capability `cdc:subscribe` (resolve qua PermissionService từ role/policy của user hoặc API key; `adminAccess` thoả mặc nhiên); thiếu capability → 403.
 4. THE Change_Feed SHALL filter mọi truy vấn theo `siteId` của request (multi-tenancy non-negotiable) và thêm cả 3 bảng mới vào `rls-policies.sql` (site_isolation).
-5. IF `cursor` không parse được thành UUID hợp lệ, THEN THE Change_Feed SHALL trả 400 `VALIDATION_ERROR`; IF `cursor` cũ hơn retention floor của site, THEN trả 410 `CURSOR_EXPIRED` kèm `earliestCursor` để consumer resync.
+5. IF `cursor` không decode được thành token hợp lệ (`decodeCdcCursor` trả null), THEN THE Change_Feed SHALL trả 400 `VALIDATION_ERROR`; IF `cursor` cũ hơn retention floor của site, THEN trả 410 `CURSOR_EXPIRED` kèm `earliestCursor` để consumer resync.
 
 ### Requirement 3: Subscription registry & checkpoint
 
@@ -77,7 +77,7 @@ Spec này xây trực tiếp trên các lớp đã ship, không phát minh lại
 
 #### Acceptance Criteria
 
-1. THE Change_Feed SHALL cung cấp bảng `lumibase_cdc_subscriptions` với các cột: `id` (nanoid, PK), `siteId` (FK, NOT NULL), `name` (text, NOT NULL — unique per site), `kind` (text, NOT NULL, `'pull' | 'webhook' | 'extension'`), `collections` (jsonb — filter, rỗng = tất cả), `operations` (jsonb — filter, rỗng = tất cả), `payloadMode` (text, NOT NULL, `'reference' | 'snapshot'`, default `'reference'`), `cursor` (uuid, nullable — checkpoint cuối đã ack/deliver thành công), `status` (text, NOT NULL, `'active' | 'paused' | 'dead' | 'stale'`, default `'active'`), `webhookId` (text, nullable, FK → `lumibase_webhooks`), `extensionName` (text, nullable), `consecutiveFailures` (integer, default 0), `lastDeliveredAt` (timestamptz, nullable), `createdAt`, `updatedAt`.
+1. THE Change_Feed SHALL cung cấp bảng `lumibase_cdc_subscriptions` với các cột: `id` (nanoid, PK), `siteId` (FK, NOT NULL), `name` (text, NOT NULL — unique per site), `kind` (text, NOT NULL, `'pull' | 'webhook' | 'extension'`), `collections` (jsonb — filter, rỗng = tất cả), `operations` (jsonb — filter, rỗng = tất cả), `payloadMode` (text, NOT NULL, `'reference' | 'snapshot'`, default `'reference'`), `cursorOccurredAt` (timestamptz, nullable) + `cursorId` (text, nullable) — checkpoint keyset cuối đã ack/deliver thành công, `status` (text, NOT NULL, `'active' | 'paused' | 'dead' | 'stale'`, default `'active'`), `webhookId` (text, nullable, FK → `lumibase_webhooks`), `extensionName` (text, nullable), `consecutiveFailures` (integer, default 0), `lastDeliveredAt` (timestamptz, nullable), `createdAt`, `updatedAt`.
 2. THE Change_Feed SHALL cung cấp REST CRUD tại `/api/v1/cdc/subscriptions` (quản trị — `requireSiteAdmin`), tối đa 50 Subscription per site; trùng `name` per site → 409.
 3. THE Change_Feed SHALL cung cấp `POST /api/v1/cdc/subscriptions/:id/ack` nhận `{ cursor }` cho consumer `kind='pull'` commit checkpoint; cursor mới PHẢI ≥ cursor hiện tại (không lùi qua ack), lùi cursor chỉ được phép qua replay (Requirement 6).
 4. WHEN một CDC_Subscriber_Extension được enable, THE Change_Feed SHALL tự động tạo (hoặc kích hoạt lại) Subscription `kind='extension'` tương ứng theo manifest; disable extension → Subscription chuyển `paused`.
@@ -94,7 +94,7 @@ Spec này xây trực tiếp trên các lớp đã ship, không phát minh lại
 3. THE Dispatcher SHALL áp SSRF guard (`validateOutboundUrl`) và timeout 30 giây cho mọi outbound request, cùng chính sách với operation `http`/deployment providers.
 4. WHEN delivery nhận HTTP 2xx, THE Dispatcher SHALL advance `cursor` của Subscription tới event cuối của batch và reset `consecutiveFailures=0`; delivery KHÔNG 2xx hoặc lỗi mạng → KHÔNG advance cursor (không mất event — at-least-once).
 5. IF một batch delivery thất bại, THEN THE Dispatcher SHALL retry với exponential backoff bắt đầu 30 giây, tối đa 5 lần cho batch đó; IF `consecutiveFailures` của Subscription đạt 10, THEN chuyển Subscription sang `status='dead'` và phát notification qua notifications module.
-6. THE Dispatcher SHALL ghi mỗi lần thử vào bảng `lumibase_cdc_deliveries` với các cột: `id` (uuidv7, PK), `siteId` (FK, NOT NULL), `subscriptionId` (FK, NOT NULL), `eventIdFrom` (uuid), `eventIdTo` (uuid), `eventCount` (integer), `attempt` (integer), `status` (text, `'success' | 'failed'`), `httpStatus` (integer, nullable), `errorMessage` (text, nullable — masked), `durationMs` (integer), `createdAt`. Index `(siteId, subscriptionId, createdAt)`.
+6. THE Dispatcher SHALL ghi mỗi lần thử vào bảng `lumibase_cdc_deliveries` với các cột: `id` (uuidv7, PK), `siteId` (FK, NOT NULL), `subscriptionId` (FK, NOT NULL), `eventIdFrom` (text — nanoid), `eventIdTo` (text — nanoid), `eventCount` (integer), `attempt` (integer), `status` (text, `'success' | 'failed'`), `httpStatus` (integer, nullable), `errorMessage` (text, nullable — masked), `durationMs` (integer), `createdAt`. Index `(siteId, subscriptionId, createdAt)`.
 7. THE Dispatcher SHALL chạy qua `QueueProvider` (BullMQ trên Docker; CF Queues/Cron Trigger trên Workers) được trigger best-effort sau mỗi mutation, VÀ một sweep định kỳ (mặc định 30 giây, pattern `scheduler-worker`) làm lưới an toàn; IF runtime không có queue adapter, THEN sweep định kỳ + `POST /api/v1/cdc/subscriptions/:id/dispatch` (on-demand, admin) vẫn bảo đảm delivery.
 
 ### Requirement 5: Extension subscriber (SDK + sandbox)
@@ -131,11 +131,11 @@ Spec này xây trực tiếp trên các lớp đã ship, không phát minh lại
 2. THE Change_Feed SHALL bảo đảm event của site A không bao giờ xuất hiện trong feed/delivery của site B (two-site smoke test bắt buộc theo DoD §2b).
 3. THE Change_Feed SHALL định nghĩa capability mới: `cdc:subscribe` (đọc feed / nhận delivery) và `cdc:manage` (CRUD subscription, replay, dispatch on-demand); routes quản trị dùng `requireSiteAdmin` như `deployments`.
 7. THE Change_Feed SHALL coi feed là realm control-plane/integration (ADR-011): chỉ chấp nhận principal realm `studio` hoặc API key — token Custom JWT audience `frontend` (role `subscriber`) PHẢI bị từ chối (nhất quán `withStudioAccess`), vì feed lộ thay đổi xuyên collection vượt quyền của một end-user frontend.
-4. THE Change_Feed SHALL bổ sung AI skills: `listCdcSubscriptions`, `getCdcSubscriptionStatus` (capability `cdc:manage`), `createCdcSubscription`, `replayCdcSubscription` (capability `cdc:manage`), `deleteCdcSubscription`; THE Harness SHALL coi `deleteCdcSubscription` là skill nguy hiểm (tên bắt đầu `delete` → HITL qua `ai_approvals` theo rule #4 `CLAUDE.md`).
+4. THE Change_Feed SHALL bổ sung AI skills: `listCdcSubscriptions`, `getCdcSubscriptionStatus` (capability `cdc:manage`), `createCdcSubscription`, `replayCdcSubscription` (capability `cdc:manage`), `deleteCdcSubscription`; THE Harness SHALL coi `createCdcSubscription`, `replayCdcSubscription`, `deleteCdcSubscription` là skill nguy hiểm (control-plane → HITL qua `ai_approvals`): `createCdcSubscription`/`replayCdcSubscription` mang cờ `dangerous` tường minh, `deleteCdcSubscription` phân loại qua tiền tố tên `delete` (rule #4 `CLAUDE.md`). Lý do: toàn bộ mặt REST `/api/v1/cdc` đã chỉ-cho-admin (control-plane), nên thao tác mutate change feed qua skill trên đường agent/MCP cũng phải control-plane cho nhất quán.
 5. THE Change_Feed SHALL mask secret/token trong mọi log, audit, `errorMessage` của delivery; `webhooks.secret` không bao giờ trả về qua API (write-only, giống pattern `serializePipeline` của module cdc).
 6. THE Change_Feed SHALL KHÔNG import CF bindings trong business logic — mọi queue/cache/schedule đi qua `c.get('runtime')` (rule #3).
 8. THE Change_Feed SHALL bổ sung **MCP tool coverage** cho feed: đăng ký `packages/mcp-server/src/tools/cdc.ts` (wire vào `registerAllTools`) dùng `registerCrud`/`registerTool` để MCP client (agent) `list/get/create/delete` subscription và đọc `/cdc/events` — nhất quán chính sách `mcp-full-coverage` (registry #21); tool gọi qua `LumiBaseClient` (REST passthrough) nên **thừa hưởng nguyên vẹn** capability guard + HITL của route/harness, không bypass.
-9. THE Change_Feed SHALL wire AI skill vào Agent Harness đúng contract `SkillDefinition` hiện có (`requiredCapabilities: string[]`, cờ `dangerous?`): `deleteCdcSubscription` được `isControlPlaneSkill` tự phân loại control-plane qua tiền tố tên `delete` (không cần cờ thủ công) → HITL `ai_approvals`; các skill `cdc:manage` mang capability tương ứng để harness `checkCapabilities` enforce.
+9. THE Change_Feed SHALL wire AI skill vào Agent Harness đúng contract `SkillDefinition` hiện có (`requiredCapabilities: string[]`, cờ `dangerous?`): `createCdcSubscription`/`replayCdcSubscription` mang cờ `dangerous: true` và `deleteCdcSubscription` (tiền tố tên `delete`) đều được `isControlPlaneSkill` phân loại control-plane → HITL `ai_approvals` + MCP admin backstop; các skill `cdc:manage` mang capability tương ứng để harness `checkCapabilities` enforce; các skill read (`list*`/`get*Status`) giữ safe.
 
 ### Requirement 8: Observability & Studio panel
 
@@ -163,7 +163,7 @@ Spec này xây trực tiếp trên các lớp đã ship, không phát minh lại
 
 - **Dual-runtime**: mọi thành phần chạy được trên cả Cloudflare Workers và Docker/Node. Workers không có long-lived connection → capture dùng transactional outbox (không WAL-tailing first-party); dispatch dùng CF Queues/Cron Trigger. WAL-based replication cho analytics đã có ở spec `clickhouse-cdc` — không trùng phạm vi.
 - **Hiệu năng**: ghi outbox thêm ≤ 1 INSERT trong transaction mutation; site không có subscriber không trả chi phí (Req 1.5). Đọc feed dùng index `(siteId, id)`.
-- **Semantics**: at-least-once, không exactly-once; ordering toàn cục per site theo UUIDv7; consumer chịu trách nhiệm idempotency theo `event.id`.
+- **Semantics**: at-least-once, không exactly-once; ordering toàn cục per site theo keyset `(occurredAt, id)`; consumer chịu trách nhiệm idempotency theo `event.id`.
 - **TypeScript strict**, `import type`, không `any`; Zod schemas dùng chung ở `packages/shared`.
 
 ## Out of scope (phiên bản đầu)

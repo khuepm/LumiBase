@@ -40,6 +40,9 @@ describe('POST /realtime/ticket (studio)', () => {
     const body = (await res.json()) as { data: { ticket: string } };
     const payload = await decode(body.data.ticket);
     expect(payload).toMatchObject({ plane: 'studio', userId: 'u1', siteId: 'site-1' });
+    // No db/runtime in this harness → the collection allowlist resolves
+    // fail-closed to [] (never a wide-open ticket on error).
+    expect(payload.collections).toEqual([]);
   });
 });
 

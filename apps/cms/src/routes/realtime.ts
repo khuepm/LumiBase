@@ -19,9 +19,12 @@
 
 import { Hono, type Context } from 'hono';
 import { SignJWT, jwtVerify } from 'jose';
+import { formatSafeError } from '@lumibase/shared/utils';
 import type { AppEnv } from '../env';
 import { getLocationHint, resolveRoomName } from '../realtime/shard-config';
 import { resolveAudienceGrant } from '../realtime/audience-grant';
+import { readableCollections } from '../realtime/studio-grant';
+import { permissionServiceForRequest } from '../services/item-service-factory';
 
 export const realtimeRouter = new Hono<AppEnv>();
 
@@ -44,10 +47,23 @@ realtimeRouter.post('/ticket', async (c) => {
     return c.json({ errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET missing' }] }, 500);
   }
 
+  // Subscription read-gate: resolve the collections this principal can `read`
+  // and embed them in the SIGNED ticket. The hub enforces the allowlist on
+  // every `subscribe` (it has no DB context of its own). Fail-closed: if the
+  // bundle cannot be resolved, the ticket carries an empty allowlist and every
+  // subscribe is denied — never a wide-open ticket on error.
+  let collections: string[] = [];
+  try {
+    collections = readableCollections(await permissionServiceForRequest(c).bundle());
+  } catch (err) {
+    console.warn('[realtime] readable-collections resolution failed; issuing fail-closed ticket', formatSafeError(err));
+  }
+
   const ticket = await new SignJWT({
     plane: 'studio',
     userId: auth.userId || auth.externalId || 'anon',
     roles: auth.roles || [],
+    collections,
     siteId: c.get('siteId'),
   })
     .setProtectedHeader({ alg: 'HS256' })
@@ -185,6 +201,8 @@ realtimeRouter.get('/', async (c) => {
   url.searchParams.set('siteId', siteId);
   if (plane === 'studio') {
     url.searchParams.set('userId', String(payload.userId ?? 'anon'));
+    const collections = Array.isArray(payload.collections) ? (payload.collections as string[]) : [];
+    url.searchParams.set('collections', collections.join(','));
   } else {
     url.searchParams.set('subjectId', String(payload.subjectId ?? ''));
     const channels = Array.isArray(payload.channels) ? (payload.channels as string[]) : [];

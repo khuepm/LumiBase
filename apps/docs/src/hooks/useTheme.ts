@@ -75,14 +75,25 @@ export function useTheme(): {
   /** Advance to the next preference (light → dark → auto → light). */
   cycle: () => void;
 } {
-  const [theme, setThemeState] = useState<ThemeMode>(() => {
+  // Seed state with the same deterministic defaults the server uses (`auto` /
+  // DEFAULT_RESOLVED) rather than reading localStorage/matchMedia here. Doing
+  // the environment-dependent read during the initial render makes the
+  // client's first paint diverge from the prerendered HTML whenever the
+  // visitor has a stored preference or an OS scheme different from
+  // DEFAULT_RESOLVED, which throws a hydration mismatch (React error #418)
+  // on every doc page. The real preference is applied client-side in the
+  // effect below, after hydration has already committed.
+  const [theme, setThemeState] = useState<ThemeMode>('auto');
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(DEFAULT_RESOLVED);
+
+  // On mount, read the actual stored/OS preference and apply it — this runs
+  // only on the client, after hydration, so it can safely diverge from the
+  // server-rendered default.
+  useEffect(() => {
     const mode = readStoredMode();
-    // Config may disable auto; fall back to the resolved concrete theme.
-    return mode === 'auto' && !AUTO_ENABLED ? resolve('auto') : mode;
-  });
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
-    resolve(readStoredMode()),
-  );
+    const resolvedMode = mode === 'auto' && !AUTO_ENABLED ? resolve('auto') : mode;
+    setThemeState(resolvedMode);
+  }, []);
 
   // Apply + re-resolve whenever the preference changes.
   useEffect(() => {

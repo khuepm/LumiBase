@@ -100,4 +100,26 @@ describe('JSON field search — DB integration', () => {
     if (!canConnect) return;
     await expect(titles({ "metadata->>'x';drop table items;--": { _eq: 'x' } })).rejects.toMatchObject({ code: 'INVALID_FILTER' });
   });
+
+  it('nested-path filters stay scoped to the site (tenant isolation, Req 7.5)', async () => {
+    if (!canConnect) return;
+    // A second site with a row that WOULD match the same nested filter.
+    const SITE_B = `${SITE}_b`;
+    await db.delete(sites).where(eq(sites.id, SITE_B));
+    await db.insert(sites).values({ id: SITE_B, name: 'JSON Search IT B' });
+    const collB = (await db.insert(collections).values({ siteId: SITE_B, name: COLLECTION, label: 'P' }).returning({ id: collections.id }))[0]!.id;
+    await db.insert(fields).values([
+      { siteId: SITE_B, collectionId: collB, name: 'title', type: 'string', interface: 'input' },
+      { siteId: SITE_B, collectionId: collB, name: 'metadata', type: 'json', interface: 'input' },
+    ]);
+    const svcB = new ItemService({ db, siteId: SITE_B });
+    await svcB.create(COLLECTION, { data: { title: 'B-LEAK', metadata: { author: { country: 'VN' } } } });
+
+    try {
+      // Site A's query returns only A/C — never site B's VN row.
+      expect(await titles({ 'metadata.author.country': { _eq: 'VN' } })).toEqual(['A', 'C']);
+    } finally {
+      await db.delete(sites).where(eq(sites.id, SITE_B)).catch(() => undefined);
+    }
+  });
 });

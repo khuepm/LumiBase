@@ -103,6 +103,15 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [deployment/local-development.md](./deployment/local-development.md) — Local dev workflow and pre-deploy checks.
 - **Operations** (`operations/`)
   - [operations/upgrades.md](./operations/upgrades.md) — Fixed-version upgrade policy, Cloudflare/Docker flows, backup, migrations, and rollback limits.
+- **Security** (`security/`)
+  - [security/anti-abuse.md](./security/anti-abuse.md) — Anti-abuse mechanisms & best practices: defense-in-depth registry (rate-limiting, brute-force, anomaly, control-plane guard, RLS, body/upload limits, SSRF, AI load-guard, audit) + known gaps.
+  - [security/route-guards.md](./security/route-guards.md) — Route / control-plane guard catalogue.
+  - [security/runtime-security-guards-plan.md](./security/runtime-security-guards-plan.md) — Runtime security foundation: guard responsibilities and pipeline mount points.
+  - [security/cwe-top-100-audit.md](./security/cwe-top-100-audit.md) — CWE-mapped security audit.
+  - [security/idor-testing.md](./security/idor-testing.md) — Cross-tenant (IDOR) testing guidelines.
+  - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — External JWT issuer authentication.
+  - [security/user-management.md](./security/user-management.md) — User management & auth realms (ADR-010).
+  - [security/dependency-overrides.md](./security/dependency-overrides.md) — Supply-chain / dependency-override hardening.
 - **Compliance & User Rights** (`compliance/`)
   - [compliance/README.md](./compliance/README.md) — Overview + rights × market matrix (EU/US/VN, Google/Apple) mapped to LumiBase. **Not legal advice.**
   - [compliance/user-rights-catalog.md](./compliance/user-rights-catalog.md) — Plain-language catalog of each right (right to be forgotten, access, portability, consent, unsubscribe, account deletion…).

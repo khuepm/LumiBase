@@ -44,6 +44,14 @@ import type { KeyProvider } from '@lumibase/runtime';
 import { nanoid } from 'nanoid';
 import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
+import { buildSandboxVerifyOptions } from './extension-verifier';
+import type { Bindings } from '../env';
+import {
+  OutboxWriter,
+  type OutboxActor,
+} from '../modules/cdc/change-feed/outbox-writer';
+import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
+import type { CdcOperation } from '@lumibase/shared/schemas';
 import { AuditLogger } from '../modules/audit/logger';
 import { FirebaseSyncService } from '../modules/lumibase-firebase-sync';
 import { WriteCoalescer } from './load-guard-service';
@@ -124,6 +132,14 @@ export interface DeepRelationOptions {
 }
 
 export type DeepQuery = Record<string, DeepRelationOptions>;
+
+/**
+ * Relation aliases that must never be used as object keys: reading or writing
+ * them walks the prototype chain (`obj['__proto__']` resolves to
+ * `Object.prototype`), which turns a user-controlled `deep[<alias>][...]` query
+ * param into a prototype-pollution sink. No real relation is ever named these.
+ */
+const UNSAFE_ALIASES = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
  * Per-record crypto threading for {@link ItemService.processCrypto}.
@@ -215,6 +231,14 @@ export interface ItemServiceDeps {
   suppressExtensionHooks?: boolean;
   /** Revision provenance; defaults to `{ authorType: 'human' }` when omitted. */
   provenance?: ItemProvenance;
+  /**
+   * Change Feed actor override (spec cdc-extension-integration, Req 1.1).
+   * Lets the request factory attribute outbox events to an API key
+   * (`{ type: 'api_key', id }`) — ItemService itself only knows `userId`.
+   * When omitted the actor is derived: agent provenance → agent, userId →
+   * user, otherwise system.
+   */
+  cdcActor?: OutboxActor;
 }
 
 const STRUCTURAL_FIELDS = new Set([
@@ -423,6 +447,7 @@ export class ItemService {
   /** KEK provider for envelope mode (wrap/unwrap per-record DEKs). */
   private readonly keyProvider: KeyProvider | null;
   private hookDispatcher: HookDispatcher | null = null;
+  private outboxWriter: OutboxWriter | null = null;
   private provenance: ItemProvenance;
   private writeCoalescer: WriteCoalescer | null = null;
   /** Memoized per-site envelope-write decision (resolved at most once). */
@@ -524,11 +549,79 @@ export class ItemService {
           });
         },
       );
-      this.hookDispatcher = new HookDispatcher(sandbox, rows);
+      this.hookDispatcher = new HookDispatcher(sandbox, rows, undefined, (ext) =>
+        buildSandboxVerifyOptions(ext, this.deps.db, this.deps.extensionEnv as unknown as Bindings),
+      );
     } catch {
       /* non-critical — return null if extensions can't be loaded */
     }
     return this.hookDispatcher;
+  }
+
+  /**
+   * Append a Change Feed outbox event for a committed mutation (spec
+   * cdc-extension-integration, Req 1.2–1.6). Sits in the same post-mutation
+   * side-effect cluster as indexing/realtime/flows; the writer never throws
+   * (a failed insert emits a `cdc_event_write_failed` audit warning instead
+   * — Req 1.3) and returns immediately for sites without the feed enabled.
+   */
+  private async writeCdcEvent(
+    collection: string,
+    operation: CdcOperation,
+    itemId: string,
+    payload: Record<string, unknown> | null,
+    changedFields?: string[] | null,
+  ): Promise<void> {
+    if (!this.outboxWriter) {
+      this.outboxWriter = new OutboxWriter({
+        db: this.deps.db,
+        siteId: this.deps.siteId,
+        cache: this.deps.cache,
+        getSensitiveFields: async (coll) => {
+          const compiled = await this.schemaService.getCompiled(coll);
+          return new Set(
+            (compiled?.fields ?? [])
+              .filter((f) => f.classification === 'pii' || f.classification === 'phi')
+              .map((f) => f.name),
+          );
+        },
+        auditWarn: async (warning) => {
+          await new AuditLogger({ db: this.deps.db, siteId: this.deps.siteId }).write({
+            event: warning.event,
+            actorEmail: null,
+            ip: this.deps.permissionCtx?.ip ?? null,
+            userAgent: null,
+            requestId: null,
+            metadata: { ...warning },
+          });
+        },
+      });
+    }
+    const actor: OutboxActor =
+      this.provenance.authorType === 'agent'
+        ? { type: 'agent', id: this.provenance.runId ?? null }
+        : this.deps.cdcActor ??
+          (this.deps.userId
+            ? { type: 'user', id: this.deps.userId }
+            : { type: 'system' });
+    const source =
+      this.provenance.authorType === 'agent'
+        ? ('agent' as const)
+        : actor.type === 'system'
+          ? ('system' as const)
+          : ('api' as const);
+    const result = await this.outboxWriter.write(
+      { collection, itemId, operation, payload, changedFields },
+      actor,
+      source,
+    );
+    if (result.written && this.deps.queue) {
+      // Latency optimization only — the 30s sweep is the correctness backstop
+      // (Req 4.7), so a lost enqueue is harmless.
+      this.deps.queue
+        .enqueue(CDC_DISPATCH_QUEUE, 'dispatch', { siteId: this.deps.siteId })
+        .catch(() => {});
+    }
   }
 
   private actorDataAccess(): ExtensionActorDataAccess {
@@ -739,9 +832,10 @@ export class ItemService {
     await this.writeActivity('create', coll.name, row.id, { data: payload.data });
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
-    await this.publishRealtimeEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
+    await this.publishRealtimeEvent(collectionName, 'create', row.id);
     await this.dispatchFirebaseSync(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     await this.dispatchFlowEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
+    await this.writeCdcEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -918,9 +1012,16 @@ export class ItemService {
     
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
-    await this.publishRealtimeEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
+    await this.publishRealtimeEvent(collectionName, 'update', row.id);
     await this.dispatchFirebaseSync(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     await this.dispatchFlowEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
+    await this.writeCdcEvent(
+      collectionName,
+      'update',
+      row.id,
+      row.data as Record<string, unknown>,
+      Object.keys(patch.data ?? {}),
+    );
     // After hook — fire-and-forget.
     hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -994,9 +1095,10 @@ export class ItemService {
     if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
     await this.writeActivity('delete', coll.name, id, {});
     await this.deindexItem(collectionName, id);
-    await this.publishRealtimeEvent(collectionName, 'delete', id, {});
+    await this.publishRealtimeEvent(collectionName, 'delete', id);
     await this.dispatchFirebaseSync(collectionName, 'delete', id, {});
     await this.dispatchFlowEvent(collectionName, 'delete', id, {});
+    await this.writeCdcEvent(collectionName, 'delete', id, null);
     // After hook — fire-and-forget.
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -1423,12 +1525,21 @@ export class ItemService {
   /**
    * Publish an item mutation event to SiteRoom for realtime fan-out.
    * Non-critical: errors are caught and logged, never blocking the main response.
+   *
+   * SECURITY (spec realtime-subscriptions Req 2, §fan-out): a studio
+   * collection-broadcast reaches every session subscribed to `collection`,
+   * whose per-collection read grant and field mask are NOT re-evaluated at the
+   * hub. So the event carries ONLY the change signal (`collection`/`action`/
+   * `itemId`) — never `row.data`. The Studio client treats it as an
+   * invalidation trigger and re-fetches through the permission-enforced
+   * `/items` API, which applies row RBAC + field masking. This makes
+   * fan-out masking correct by construction: no row content ever crosses the
+   * wire (or sits in hub/DO memory) without going through authorization.
    */
   private async publishRealtimeEvent(
     collection: string,
     action: 'create' | 'update' | 'delete',
     itemId: string,
-    payload: unknown,
   ): Promise<void> {
     const event = {
       type: 'event' as const,
@@ -1436,7 +1547,9 @@ export class ItemService {
       collection,
       action,
       itemId,
-      payload,
+      // Empty payload: subscribers re-fetch under their own RBAC (see doc-block).
+      // Never `row.data` — that would bypass per-subscriber field masking.
+      payload: null,
       actorUserId: this.deps.userId ?? undefined,
     };
     try {
@@ -2081,7 +2194,7 @@ export function parseRelationFieldSelections(fields: string[], deep: DeepQuery =
   const limits = new Map<string, number>();
   for (const token of fields) {
     const [alias, ...path] = token.split('.');
-    if (!alias || path.length === 0) continue;
+    if (!alias || UNSAFE_ALIASES.has(alias) || path.length === 0) continue;
     const field = path.join('.');
     if (!field) continue;
     const selected = byAlias.get(alias) ?? new Set<string>();
@@ -2089,7 +2202,7 @@ export function parseRelationFieldSelections(fields: string[], deep: DeepQuery =
     byAlias.set(alias, selected);
   }
   for (const [alias, options] of Object.entries(deep)) {
-    if (!alias) continue;
+    if (!alias || UNSAFE_ALIASES.has(alias)) continue;
     const selected = byAlias.get(alias) ?? new Set<string>();
     const deepFields = options.fields?.length ? options.fields : ['*'];
     for (const field of deepFields) {
@@ -2125,6 +2238,7 @@ export function parseDeepQueryParams(searchParams: URLSearchParams): DeepQuery |
     if (!match) continue;
     const [, alias, option] = match;
     if (!alias || !option) continue;
+    if (UNSAFE_ALIASES.has(alias)) continue;
     const current = deep[alias] ?? {};
     if (option === 'fields') {
       current.fields = value.split(',').map((field) => field.trim()).filter(Boolean);

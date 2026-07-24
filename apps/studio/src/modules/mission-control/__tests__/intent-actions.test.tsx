@@ -80,7 +80,10 @@ afterEach(() => {
 describe('IntentDetail actions', () => {
   it('runs a manual scan and renders the cycle result (Req 17.1)', async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: /scan now/i }));
+    // The page gates on the async `intents` query (renders "Loading intent…"
+    // first), so wait past the 1000ms default for the initial render on a
+    // slow/loaded CI runner before the Scan button exists.
+    fireEvent.click(await screen.findByRole('button', { name: /scan now/i }, { timeout: 5000 }));
 
     await waitFor(() => expect(api.scanIntent).toHaveBeenCalledWith('int_1'));
     expect(await screen.findByText(/reconciliation cycle complete/i)).toBeInTheDocument();
@@ -89,7 +92,7 @@ describe('IntentDetail actions', () => {
 
   it('saves edits through PATCH with parsed JSON (Req 17.2)', async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: /edit/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /edit/i }, { timeout: 5000 }));
 
     const nameInput = screen.getByLabelText(/name/i);
     fireEvent.change(nameInput, { target: { value: 'articles-fresher' } });
@@ -108,7 +111,7 @@ describe('IntentDetail actions', () => {
 
   it('deletes only after the confirm step, then navigates back (Req 17.3)', async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete intent' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete intent' }, { timeout: 5000 }));
     expect(api.deleteIntent).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }));

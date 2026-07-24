@@ -34,6 +34,7 @@ import {
   agentAutonomyGrants,
   agentRoles,
   constitutions,
+  publisherKeys,
   roles,
   settings,
   sites,
@@ -236,6 +237,19 @@ export interface SetupServiceDeps {
    * failed audit write can never roll back or fail the setup (Req 1.5).
    */
   readonly audit?: AuditLoggerLike;
+  /**
+   * Official LumiBase signing key to seed into `lumibase_publisher_keys` during
+   * bootstrap so official `lumibase-*` extensions verify out of the box.
+   * OPTIONAL: when omitted (e.g. tests, or an env with no key configured), the
+   * seed is skipped and official verification simply has no key until one is
+   * added later — auto-install then fails-soft. Resolved from
+   * `MARKETPLACE_PUBLIC_KEYS`/config at the wiring layer.
+   */
+  readonly officialPublisherKey?: {
+    keyId: string;
+    publicKeyPem: string;
+    publisher: string;
+  };
 }
 
 /**
@@ -738,6 +752,25 @@ export class SetupService {
             createdBy: newUser.id,
           })
           .onConflictDoNothing();
+
+        // ── 9d. Seed the official signing key (Setup Impact Registry — signing
+        //        track). Present only when the deploy configured an official
+        //        key; seeding it here lets official `lumibase-*` extensions
+        //        verify out of the box. Idempotent (key_id unique). Auto-install
+        //        of official extensions runs post-commit / on site-create via
+        //        the reconciler, which fails-soft if no published row exists.
+        if (this.deps.officialPublisherKey) {
+          await tx
+            .insert(publisherKeys)
+            .values({
+              keyId: this.deps.officialPublisherKey.keyId,
+              publicKeyPem: this.deps.officialPublisherKey.publicKeyPem,
+              publisher: this.deps.officialPublisherKey.publisher,
+              official: true,
+              revoked: false,
+            })
+            .onConflictDoNothing();
+        }
 
         // ── 10. Lockout policy persistence (Req 6.6, 6.7; Setup Impact
         //        Registry #5 — resolves open-question-8). The policy row

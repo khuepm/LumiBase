@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-11T06:26:11.804Z",
+  "generatedAt": "2026-07-24T04:02:55.999Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -7,9 +7,9 @@
   "summary": {
     "translated": 0,
     "preserved": 0,
-    "conflicts": 1,
-    "upToDate": 47,
-    "planned": 85
+    "conflicts": 3,
+    "upToDate": 45,
+    "planned": 93
   },
   "actions": [
     {
@@ -38,13 +38,13 @@
     },
     {
       "rel": "agent-setup/claude-code.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -86,13 +86,13 @@
     },
     {
       "rel": "agent-setup/index.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -781,6 +781,30 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "deployment/meilisearch-aws.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "deployment/multi-tenant-topologies.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "deployment/overview.md",
       "type": "translate",
       "reason": "source changed since last sync",
@@ -901,6 +925,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/cdc-change-feed.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/cloudflare-auth.md",
       "type": "translate",
       "reason": "en duplicates vi content; replace en with English translation",
@@ -945,6 +981,18 @@
       "sourceLocale": "en",
       "targetLocale": "vi",
       "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/data-import.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1041,6 +1089,18 @@
       "sourceLocale": "vi",
       "targetLocale": "en",
       "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/git-integration.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1269,7 +1329,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-11T06-26-11-938Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-24T04-02-56-158Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1286,13 +1346,13 @@
     },
     {
       "rel": "getting-started.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1310,26 +1370,26 @@
     },
     {
       "rel": "mcp/index.md",
-      "type": "translate",
-      "reason": "en duplicates vi content; replace en with English translation",
+      "type": "conflict",
+      "reason": "en file holds Vietnamese that differs from existing docs/vi",
       "enLang": "vi",
       "viLang": "vi",
-      "sourceLocale": "vi",
-      "targetLocale": "en",
-      "willTranslate": true,
-      "preservedTo": null,
+      "sourceLocale": null,
+      "targetLocale": null,
+      "willTranslate": false,
+      "preservedTo": ".i18n/preserved/mcp/index.md.2026-07-24T04-02-56-158Z.bak.md",
       "missingPlaceholders": 0
     },
     {
       "rel": "mcp/mcp-application-analysis.md",
-      "type": "translate",
-      "reason": "en duplicates vi content; replace en with English translation",
+      "type": "conflict",
+      "reason": "en file holds Vietnamese that differs from existing docs/vi",
       "enLang": "vi",
       "viLang": "vi",
-      "sourceLocale": "vi",
-      "targetLocale": "en",
-      "willTranslate": true,
-      "preservedTo": null,
+      "sourceLocale": null,
+      "targetLocale": null,
+      "willTranslate": false,
+      "preservedTo": ".i18n/preserved/mcp/mcp-application-analysis.md.2026-07-24T04-02-56-158Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1389,6 +1449,18 @@
       "sourceLocale": "vi",
       "targetLocale": "en",
       "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "roadmap/git-integration.md",
+      "type": "translate",
+      "reason": "en duplicates vi content; replace en with English translation",
+      "enLang": "vi",
+      "viLang": "vi",
+      "sourceLocale": "vi",
+      "targetLocale": "en",
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1477,6 +1549,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "security/anti-abuse.md",
+      "type": "translate",
+      "reason": "source changed since last sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "security/cwe-top-100-audit.md",
       "type": "translate",
       "reason": "source changed since last sync",
@@ -1518,6 +1602,18 @@
       "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/owasp-api-top-10-audit.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
       "sourceLocale": "en",
       "targetLocale": "vi",
       "willTranslate": true,

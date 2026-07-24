@@ -108,6 +108,7 @@ describe('security guard wiring — control-plane path coverage', () => {
     '/api/v1/agent',
     '/api/v1/cdc',
     '/api/v1/flows',
+    '/api/v1/integrations/git',
     '/api/v1/permissions',
     '/api/v1/policies',
     '/api/v1/roles',
@@ -118,5 +119,47 @@ describe('security guard wiring — control-plane path coverage', () => {
 
   it('does not classify the content surface as control-plane', () => {
     expect(isControlPlanePath('/api/v1/items/posts')).toBe(false);
+  });
+});
+
+/**
+ * Git integration surface (spec `git-integration`). The authenticated
+ * management router is admin-gated in-router AND backed by the control-plane
+ * guard above. The PUBLIC webhook + OAuth-callback routes are safe by
+ * construction: they never read a session principal — the webhook rejects any
+ * request whose signature does not verify (before touching state), and the
+ * OAuth callback is bound to a single-use cache `state`. This block pins those
+ * invariants so a refactor cannot silently drop the signature check or the
+ * admin gate.
+ */
+describe('security guard wiring — git integration surface', () => {
+  it('keeps requireSiteAdmin on the authenticated git router', () => {
+    expect(read('modules/git-integration/routes.ts')).toMatch(
+      /gitRouter\.use\('\*',\s*requireSiteAdmin\(\)\)/,
+    );
+  });
+
+  it('rejects an unverified webhook before processing (auth-independent)', () => {
+    const handler = read('modules/git-integration/webhook/handler.ts');
+    // The signature is verified and a 401 returned before processEvent runs.
+    expect(handler).toMatch(/verifyWebhookSignature\(/);
+    expect(handler).toMatch(/INVALID_SIGNATURE/);
+    const verifyIdx = handler.indexOf('verifyWebhookSignature(');
+    const processIdx = handler.indexOf('processEvent(');
+    expect(verifyIdx).toBeGreaterThan(-1);
+    expect(processIdx).toBeGreaterThan(verifyIdx);
+  });
+
+  it('mounts the public git surface (webhook + oauth callback) before the api sub-app', () => {
+    const source = read('index.ts');
+    const publicIdx = source.indexOf(
+      "app.route('/api/v1/integrations/git', gitPublicRouter);",
+    );
+    // Match the statement (with semicolon) — a comment above also mentions
+    // `app.route('/api/v1', api)` in backticks without one.
+    const apiMountIdx = source.indexOf("app.route('/api/v1', api);");
+    expect(publicIdx).toBeGreaterThan(-1);
+    expect(apiMountIdx).toBeGreaterThan(-1);
+    expect(publicIdx).toBeLessThan(apiMountIdx);
   });
 });

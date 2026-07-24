@@ -152,3 +152,4 @@ Runtime factory (`createRuntime(env)`) khởi tạo bộ adapter phù hợp khi 
 - [Hướng dẫn triển khai Docker](./docker.md) — Deploy với Docker
 - [Phát triển Local](./local-development.md) — Bắt đầu phát triển local với Docker Compose
 - [Biến môi trường](./environment-variables.md) — Tham chiếu cấu hình đầy đủ
+- [Các topology triển khai đa tenant](./multi-tenant-topologies.md) — Bố trí cell, database và domain khi một deployment phục vụ nhiều tenant

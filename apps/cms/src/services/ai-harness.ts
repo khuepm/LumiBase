@@ -8,6 +8,7 @@ import type { ConfigService } from './config-service';
 import type { ExtensionsService } from './extensions-service';
 import type { IntentService } from './intent-service';
 import { runFlow, type FlowGraph } from './flow-service';
+import { ContentVersionService } from './content-version-service';
 import type { ConfiguredLLM } from './llm-provider';
 import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
@@ -31,7 +32,7 @@ export interface SkillDefinition {
   description: string;
   requiredCapabilities: string[];
   /** Service this skill connects to (for documentation/tracing). */
-  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows' | 'deployments';
+  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows' | 'deployments' | 'cdc-feed';
   handler: (args: Record<string, unknown>) => Promise<unknown>;
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
@@ -444,6 +445,39 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     return new DeploymentService({ db: services.db, siteId: services.siteId, keys: services.keys });
   };
 
+  const cdcFeedService = async () => {
+    if (!services.db || !services.siteId) {
+      throw new Error('CDC_FEED_NOT_CONFIGURED: change-feed skills require a tenant db context');
+    }
+    // Lazy import keeps the harness decoupled from the change-feed module.
+    const [{ SubscriptionService }, { DrizzleCdcEventStore }, { readRetentionDays }] =
+      await Promise.all([
+        import('../modules/cdc/change-feed/subscription-service'),
+        import('../modules/cdc/change-feed/feed-reader'),
+        import('../modules/cdc/change-feed/retention'),
+      ]);
+    const retentionDays = await readRetentionDays(services.db, services.siteId);
+    return new SubscriptionService({
+      db: services.db,
+      siteId: services.siteId,
+      eventStore: new DrizzleCdcEventStore(services.db),
+      retentionDays,
+    });
+  };
+
+  /**
+   * Content-version service for the versioning skills. Needs item access (to
+   * snapshot/promote main) plus a tenant db context; without them (offline
+   * registry) the skill returns a stub so the shared CORE_SKILLS registry
+   * stays offline-safe.
+   */
+  const contentVersionService = (): ContentVersionService | null => {
+    if (!itemService || !db || !siteId) return null;
+    // Agent-authored versions: createdBy stays null (the run stamps revision
+    // provenance separately via ItemService.setProvenance on promote).
+    return new ContentVersionService({ db, siteId, userId: null, items: itemService });
+  };
+
   return {
     listCollections: {
       name: 'listCollections',
@@ -600,6 +634,164 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         const id = args['id'] as string;
         const result = await itemService.softDelete(collection, id);
         return { deleted: true, result };
+      },
+    },
+
+    // ── Content versions — named parallel draft branches of an item ──────────
+    // Reads (list/compare) are safe. Writes are forced dangerous so they run
+    // through the HITL + autonomy gradient (Wave 2, `docs/en/mcp/`): a version
+    // create/update/delete guards the draft branch, and `promoteVersion` applies
+    // a branch to main — the highest-risk step (autonomy hard-capped ≤ L2 unless
+    // a role earns higher). Mirrors the REST surface in `routes/items.ts`.
+
+    listVersions: {
+      name: 'listVersions',
+      description: 'List the named version branches of an item (with a mainChanged flag per branch).',
+      requiredCapabilities: ['items:read'],
+      service: 'items',
+      inputSchema: {
+        type: 'object',
+        properties: { collection: { type: 'string' }, itemId: { type: 'string' } },
+        required: ['collection', 'itemId'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) return { versions: [] };
+        const versions = await svc.list(args['collection'] as string, args['itemId'] as string);
+        return { versions };
+      },
+    },
+
+    compareVersion: {
+      name: 'compareVersion',
+      description: 'Compare a version branch against the item’s current main data (returns field-level changes).',
+      requiredCapabilities: ['items:read'],
+      service: 'items',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string' },
+          itemId: { type: 'string' },
+          key: { type: 'string' },
+        },
+        required: ['collection', 'itemId', 'key'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) return { main: {}, version: {}, changes: [] };
+        return svc.compare(args['collection'] as string, args['itemId'] as string, args['key'] as string);
+      },
+    },
+
+    createVersion: {
+      name: 'createVersion',
+      description: 'Snapshot the item’s current data into a new named version branch.',
+      requiredCapabilities: ['items:write'],
+      service: 'items',
+      dangerous: true,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string' },
+          itemId: { type: 'string' },
+          key: { type: 'string' },
+          name: { type: 'string' },
+        },
+        required: ['collection', 'itemId', 'key', 'name'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) return { created: true };
+        const version = await svc.create(
+          args['collection'] as string,
+          args['itemId'] as string,
+          args['key'] as string,
+          args['name'] as string,
+        );
+        return { created: true, version };
+      },
+    },
+
+    updateVersion: {
+      name: 'updateVersion',
+      description: 'Update a version branch’s draft data and/or display name.',
+      requiredCapabilities: ['items:write'],
+      service: 'items',
+      dangerous: true,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string' },
+          itemId: { type: 'string' },
+          key: { type: 'string' },
+          data: { type: 'object' },
+          name: { type: 'string' },
+        },
+        required: ['collection', 'itemId', 'key'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) return { updated: true };
+        const patch: { data?: Record<string, unknown>; name?: string } = {};
+        if (args['data'] !== undefined) patch.data = args['data'] as Record<string, unknown>;
+        if (args['name'] !== undefined) patch.name = args['name'] as string;
+        const version = await svc.update(
+          args['collection'] as string,
+          args['itemId'] as string,
+          args['key'] as string,
+          patch,
+        );
+        return { updated: true, version };
+      },
+    },
+
+    deleteVersion: {
+      name: 'deleteVersion',
+      description: 'Delete a version branch (does not touch main).',
+      requiredCapabilities: ['items:write'],
+      service: 'items',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string' },
+          itemId: { type: 'string' },
+          key: { type: 'string' },
+        },
+        required: ['collection', 'itemId', 'key'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) return { deleted: true };
+        await svc.remove(args['collection'] as string, args['itemId'] as string, args['key'] as string);
+        return { deleted: true, key: args['key'] };
+      },
+    },
+
+    promoteVersion: {
+      name: 'promoteVersion',
+      description:
+        'Apply a version branch’s data to main (writes a revision + invalidates caches), then delete the branch. Reports whether main had diverged from the snapshot.',
+      requiredCapabilities: ['items:write'],
+      service: 'items',
+      dangerous: true,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string' },
+          itemId: { type: 'string' },
+          key: { type: 'string' },
+        },
+        required: ['collection', 'itemId', 'key'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) return { promoted: true };
+        const result = await svc.promote(
+          args['collection'] as string,
+          args['itemId'] as string,
+          args['key'] as string,
+        );
+        return { promoted: true, ...result };
       },
     },
 
@@ -1612,6 +1804,85 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           triggeredBy: args['__runId'] ? String(args['__runId']) : undefined,
         });
         return { deploymentId: row.id, status: row.status, provider: row.provider };
+      },
+    },
+
+    // ── Change Feed (spec: cdc-extension-integration, Req 7.4) ─────────────
+    // `deleteCdcSubscription` is control-plane purely via the `delete` name
+    // prefix in `isControlPlaneSkill` — no manual `dangerous` flag needed.
+    // `createCdcSubscription`/`replayCdcSubscription` carry an explicit
+    // `dangerous` flag so the agent/MCP path matches the REST posture: the
+    // whole `/api/v1/cdc` surface is admin-only (CONTROL_PLANE_PATHS +
+    // `authorizeSiteAdmin`), so mutating the change feed via a skill must
+    // likewise be control-plane (MCP admin backstop + pre-execute HITL).
+
+    listCdcSubscriptions: {
+      name: 'listCdcSubscriptions',
+      description: 'List the change-feed subscriptions for the site with their status and lag.',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async () => {
+        const service = await cdcFeedService();
+        return { subscriptions: await service.list() };
+      },
+    },
+    getCdcSubscriptionStatus: {
+      name: 'getCdcSubscriptionStatus',
+      description: 'Get one change-feed subscription (status, checkpoint cursor, lag).',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async (args) => {
+        const service = await cdcFeedService();
+        return await service.get(String(args['subscriptionId'] ?? ''));
+      },
+    },
+    createCdcSubscription: {
+      name: 'createCdcSubscription',
+      description:
+        'Create a change-feed subscription (pull, webhook, or extension) with optional filters. Control-plane: requires HITL approval below autopilot.',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      dangerous: true,
+      handler: async (args) => {
+        const service = await cdcFeedService();
+        const { CdcSubscriptionCreateSchema } = await import('@lumibase/shared/schemas');
+        const input = CdcSubscriptionCreateSchema.parse({
+          name: String(args['name'] ?? ''),
+          kind: String(args['kind'] ?? 'pull'),
+          collections: Array.isArray(args['collections']) ? args['collections'] : [],
+          operations: Array.isArray(args['operations']) ? args['operations'] : [],
+          webhook_id: args['webhookId'] ? String(args['webhookId']) : undefined,
+          extension_name: args['extensionName'] ? String(args['extensionName']) : undefined,
+        });
+        return await service.create(input);
+      },
+    },
+    replayCdcSubscription: {
+      name: 'replayCdcSubscription',
+      description:
+        'Rewind a subscription checkpoint inside the retention window (resets dead/stale to active). Control-plane: requires HITL approval below autopilot.',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      dangerous: true,
+      handler: async (args) => {
+        const service = await cdcFeedService();
+        return await service.replay(
+          String(args['subscriptionId'] ?? ''),
+          { occurredAfter: String(args['occurredAfter'] ?? '') },
+          { type: 'agent', id: args['__runId'] ? String(args['__runId']) : null },
+        );
+      },
+    },
+    deleteCdcSubscription: {
+      name: 'deleteCdcSubscription',
+      description:
+        'Delete a change-feed subscription. Control-plane: requires HITL approval below autopilot.',
+      requiredCapabilities: ['cdc:manage'],
+      service: 'cdc-feed',
+      handler: async (args) => {
+        const service = await cdcFeedService();
+        await service.remove(String(args['subscriptionId'] ?? ''));
+        return { ok: true };
       },
     },
   };

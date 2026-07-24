@@ -3,6 +3,7 @@ import { apiKeys, users, userSites } from '@lumibase/database';
 import { and, eq, sql } from 'drizzle-orm';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
+import { runDetached } from '../lib/detached';
 import { AuditLogger } from '../modules/audit/logger';
 import { tryExternalJwt } from '../modules/external-auth/adapter';
 import { formatSafeError } from '@lumibase/shared/utils';
@@ -31,25 +32,6 @@ export function shouldTouchApiKey(lastUsedAt: Date | null | undefined, now: Date
   if (intervalMs === 0) return true;
   if (!lastUsedAt) return true;
   return now.getTime() - lastUsedAt.getTime() >= intervalMs;
-}
-
-/**
- * Run `promise` detached from the response. On Workers it hands off to
- * `executionCtx.waitUntil`; on Node/tests it's fire-and-forget. Hono's
- * `c.executionCtx` getter *throws* when no context is bound (Node / tests),
- * so the probe is wrapped in try/catch — mirrors `scheduleWorkersDrain`.
- */
-function runDetached(c: Parameters<MiddlewareHandler<AppEnv>>[0], promise: Promise<unknown>): void {
-  try {
-    const ctx = c.executionCtx as { waitUntil?: (p: Promise<unknown>) => void } | undefined;
-    if (ctx && typeof ctx.waitUntil === 'function') {
-      ctx.waitUntil(promise);
-      return;
-    }
-  } catch {
-    // No execution context bound — fall through to fire-and-forget.
-  }
-  void promise;
 }
 
 const getJwks = (certsUrl: string) => {
@@ -370,6 +352,16 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       // Generic outward code; the specific reason is for server logs only.
       const outward = ext.status === 403 ? 'FORBIDDEN' : 'UNAUTHENTICATED';
       console.warn('[withAuth] external JWT rejected:', ext.code, ext.reason);
+      // Audit the denial with the classification code only — never the token,
+      // claims, or the server-side reason string (best-effort; never throws).
+      await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
+        event: 'external_auth_denied',
+        actorEmail: null,
+        ip: c.get('ip') ?? null,
+        userAgent: c.get('userAgent') ?? null,
+        requestId: c.get('requestId') ?? null,
+        metadata: { code: ext.code, status: ext.status },
+      });
       return c.json({ errors: [{ code: outward, message: ext.status === 403 ? 'Access denied.' : 'Authentication required.' }] }, ext.status);
     }
     // ext.kind === 'skip' → continue to custom JWT below.

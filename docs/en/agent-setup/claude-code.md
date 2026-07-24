@@ -24,7 +24,7 @@ Read docs/en/agent-setup/prompt.md and follow all setup instructions.
 Or if you're on a remote copy of the docs:
 
 ```
-Fetch https://raw.githubusercontent.com/lumibase/lumibase/main/docs/en/agent-setup/prompt.md
+Fetch https://raw.githubusercontent.com/khuepm/lumibase/main/docs/en/agent-setup/prompt.md
 ```
 
 ---

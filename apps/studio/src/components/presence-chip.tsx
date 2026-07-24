@@ -4,6 +4,11 @@
  *
  * Shows up to 4 avatars. When more users are present, shows a +N badge.
  * Each avatar has a tooltip with the userId.
+ *
+ * PresenceStack is the presentational core (takes an already-resolved peer
+ * list); PresenceChip wraps it with its own presence connection. Use the stack
+ * directly when the parent already holds a presence subscription, to avoid
+ * opening a second WebSocket for the same page.
  */
 
 import { usePresence } from '@/hooks/use-presence';
@@ -12,6 +17,13 @@ import type { PresenceEntry } from '@/types/realtime';
 interface PresenceChipProps {
   collection: string;
   itemId?: string;
+  /** Maximum avatars to display before showing +N. Default: 4 */
+  maxVisible?: number;
+}
+
+interface PresenceStackProps {
+  /** Peers to render — already scoped/de-duped by the caller. */
+  peers: PresenceEntry[];
   /** Maximum avatars to display before showing +N. Default: 4 */
   maxVisible?: number;
 }
@@ -56,10 +68,16 @@ function Avatar({ user }: { user: PresenceEntry }) {
   );
 }
 
-export function PresenceChip({ collection, itemId, maxVisible = 4 }: PresenceChipProps) {
-  const { peers, connected } = usePresence({ collection, itemId });
+/** Scope a raw peer list to one item (when given) and de-dupe by userId. */
+function scopePeers(peers: PresenceEntry[], itemId?: string): PresenceEntry[] {
+  const scoped = itemId ? peers.filter((p) => p.itemId === itemId) : peers;
+  const seen = new Set<string>();
+  return scoped.filter((p) => (seen.has(p.userId) ? false : (seen.add(p.userId), true)));
+}
 
-  if (!connected || peers.length === 0) return null;
+/** Presentational avatar stack — no presence connection of its own. */
+export function PresenceStack({ peers, maxVisible = 4 }: PresenceStackProps) {
+  if (peers.length === 0) return null;
 
   const visible = peers.slice(0, maxVisible);
   const overflow = peers.length - maxVisible;
@@ -102,4 +120,12 @@ export function PresenceChip({ collection, itemId, maxVisible = 4 }: PresenceChi
       )}
     </span>
   );
+}
+
+export function PresenceChip({ collection, itemId, maxVisible = 4 }: PresenceChipProps) {
+  const { peers, connected } = usePresence({ collection, itemId });
+  if (!connected) return null;
+  // When an itemId is supplied, only count peers on the *same* item — otherwise
+  // the chip shows everyone in the collection, which misrepresents "here".
+  return <PresenceStack peers={scopePeers(peers, itemId)} maxVisible={maxVisible} />;
 }

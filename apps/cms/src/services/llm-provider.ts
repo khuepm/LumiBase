@@ -7,11 +7,14 @@
  * structured tool calls.
  *
  * Configuration:
- *   LLM_PROVIDER = 'openai' | 'anthropic' | 'claude' | 'gemini' | 'workers-ai' | 'echo'
+ *   LLM_PROVIDER = 'openai' | 'anthropic' | 'claude' | 'gemini' | 'nvidia'
+ *                | 'vertex' | 'workers-ai' | 'echo'
  *   LLM_MODEL          — optional provider-specific model override
  *   OPENAI_API_KEY       — required when LLM_PROVIDER = 'openai'
  *   ANTHROPIC_API_KEY    — required when LLM_PROVIDER = 'anthropic' or 'claude'
  *   GEMINI_API_KEY       — required when LLM_PROVIDER = 'gemini'
+ *   NVIDIA_API_KEY       — required when LLM_PROVIDER = 'nvidia'
+ *   VERTEX_ACCESS_TOKEN  — required when LLM_PROVIDER = 'vertex' (+ VERTEX_PROJECT_ID)
  *   WORKERS_AI_GATEWAY   — optional Workers AI gateway URL
  *
  * The `echo` provider is a no-LLM fallback that uses the legacy keyword
@@ -114,17 +117,100 @@ function normalizeGeminiModel(model: string): string {
   return model.startsWith('models/') ? model.slice('models/'.length) : model;
 }
 
+/**
+ * Shape of a Gemini `:generateContent` response — identical for the public
+ * Generative Language API and for Vertex AI, which is why both providers can
+ * share {@link parseGeminiResponse}.
+ */
+interface GeminiGenerateContentResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+        functionCall?: {
+          name?: string;
+          args?: Record<string, unknown>;
+        };
+      }>;
+    };
+  }>;
+}
+
+/**
+ * Builds the `:generateContent` request body shared by the public Gemini API
+ * and Vertex AI: system instruction, mapped turns, and CORE_SKILLS exposed as
+ * function declarations with automatic function-calling.
+ */
+function buildGeminiRequestBody(messages: LLMMessage[]): Record<string, unknown> {
+  const contents = messages.map((message) => ({
+    role: message.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: message.content }],
+  }));
+
+  return {
+    systemInstruction: {
+      parts: [{ text: SYSTEM_PROMPT }],
+    },
+    contents,
+    tools: [
+      {
+        functionDeclarations: skillsToGeminiFunctionDeclarations(),
+      },
+    ],
+    toolConfig: {
+      functionCallingConfig: {
+        mode: 'AUTO',
+      },
+    },
+    generationConfig: {
+      maxOutputTokens: 1024,
+    },
+  };
+}
+
+/** Extracts text content and tool calls from a Gemini/Vertex response. */
+function parseGeminiResponse(data: GeminiGenerateContentResponse): LLMResponse {
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  const content =
+    parts
+      .map((part) => part.text)
+      .filter((text): text is string => typeof text === 'string')
+      .join('\n') || null;
+  const toolCalls: LLMToolCall[] = parts
+    .map((part) => part.functionCall)
+    .filter((call): call is { name: string; args?: Record<string, unknown> } =>
+      typeof call?.name === 'string',
+    )
+    .map((call) => ({
+      name: call.name,
+      arguments: call.args ?? {},
+    }));
+
+  return { content, toolCalls };
+}
+
 // ---------------------------------------------------------------------------
 // OpenAI Provider
 // ---------------------------------------------------------------------------
 
 export class OpenAIProvider implements LLMProvider {
-  private readonly apiKey: string;
-  private readonly model: string;
+  protected readonly apiKey: string;
+  protected readonly model: string;
+  /** API root without a trailing slash. `/chat/completions` is appended per call. */
+  protected readonly baseUrl: string;
+  /** Human-readable provider name used in error messages. */
+  protected readonly label: string;
 
-  constructor(apiKey: string, model = 'gpt-4o-mini') {
+  constructor(
+    apiKey: string,
+    model = 'gpt-4o-mini',
+    baseUrl = 'https://api.openai.com/v1',
+    label = 'OpenAI',
+  ) {
     this.apiKey = apiKey;
     this.model = model;
+    this.baseUrl = baseUrl.replace(/\/+$/, '');
+    this.label = label;
   }
 
   async chat(messages: LLMMessage[]): Promise<LLMResponse> {
@@ -136,7 +222,7 @@ export class OpenAIProvider implements LLMProvider {
       max_tokens: 1024,
     };
 
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -147,7 +233,7 @@ export class OpenAIProvider implements LLMProvider {
 
     if (!res.ok) {
       const err = await res.text().catch(() => 'Unknown error');
-      throw new Error(`OpenAI API error ${res.status}: ${err}`);
+      throw new Error(`${this.label} API error ${res.status}: ${err}`);
     }
 
     const data = (await res.json()) as {
@@ -172,6 +258,32 @@ export class OpenAIProvider implements LLMProvider {
       content: choice?.content ?? null,
       toolCalls,
     };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// NVIDIA Provider
+// ---------------------------------------------------------------------------
+
+/**
+ * NVIDIA hosted inference (build.nvidia.com / NVIDIA NIM). The endpoint is
+ * OpenAI-compatible, so this reuses {@link OpenAIProvider} end-to-end and only
+ * swaps the base URL, the default model, and the error label.
+ *
+ * Note: this calls NVIDIA's hosted API — it is billed by NVIDIA, not by AWS.
+ * Self-hosting a NIM container on an AWS GPU instance also exposes the same
+ * OpenAI-compatible surface; point `NVIDIA_BASE_URL` at that container instead.
+ *
+ * `[Inference]` The default model id is a commonly-available NIM model but the
+ * live catalogue changes over time — override with `LLM_MODEL` as needed.
+ */
+export class NvidiaProvider extends OpenAIProvider {
+  constructor(
+    apiKey: string,
+    model = 'meta/llama-3.1-8b-instruct',
+    baseUrl = 'https://integrate.api.nvidia.com/v1',
+  ) {
+    super(apiKey, model, baseUrl, 'NVIDIA');
   }
 }
 
@@ -254,30 +366,7 @@ export class GeminiProvider implements LLMProvider {
   }
 
   async chat(messages: LLMMessage[]): Promise<LLMResponse> {
-    const contents = messages.map((message) => ({
-      role: message.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: message.content }],
-    }));
-
-    const body = {
-      systemInstruction: {
-        parts: [{ text: SYSTEM_PROMPT }],
-      },
-      contents,
-      tools: [
-        {
-          functionDeclarations: skillsToGeminiFunctionDeclarations(),
-        },
-      ],
-      toolConfig: {
-        functionCallingConfig: {
-          mode: 'AUTO',
-        },
-      },
-      generationConfig: {
-        maxOutputTokens: 1024,
-      },
-    };
+    const body = buildGeminiRequestBody(messages);
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
@@ -296,36 +385,72 @@ export class GeminiProvider implements LLMProvider {
       throw new Error(`Gemini API error ${res.status}: ${err}`);
     }
 
-    const data = (await res.json()) as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{
-            text?: string;
-            functionCall?: {
-              name?: string;
-              args?: Record<string, unknown>;
-            };
-          }>;
-        };
-      }>;
-    };
+    const data = (await res.json()) as GeminiGenerateContentResponse;
+    return parseGeminiResponse(data);
+  }
+}
 
-    const parts = data.candidates?.[0]?.content?.parts ?? [];
-    const content = parts
-      .map((part) => part.text)
-      .filter((text): text is string => typeof text === 'string')
-      .join('\n') || null;
-    const toolCalls: LLMToolCall[] = parts
-      .map((part) => part.functionCall)
-      .filter((call): call is { name: string; args?: Record<string, unknown> } =>
-        typeof call?.name === 'string',
-      )
-      .map((call) => ({
-        name: call.name,
-        arguments: call.args ?? {},
-      }));
+// ---------------------------------------------------------------------------
+// Vertex AI Provider (Google Cloud)
+// ---------------------------------------------------------------------------
 
-    return { content, toolCalls };
+/**
+ * Google Cloud Vertex AI. Serves the same Gemini models via the same
+ * `:generateContent` contract as the public Gemini API, so this reuses
+ * {@link buildGeminiRequestBody} and {@link parseGeminiResponse}; only the
+ * endpoint and the auth scheme differ.
+ *
+ * Vertex is a Google Cloud service — it is billed against GCP, NOT AWS credit.
+ *
+ * Auth: Vertex uses OAuth 2.0 bearer tokens rather than a static API key. The
+ * simplest path for evaluation is a short-lived access token
+ * (`gcloud auth print-access-token`) supplied via `VERTEX_ACCESS_TOKEN`. Tokens
+ * expire (~1h), so for long-running deployments mint one from a service account
+ * and refresh it out-of-band. Requires `VERTEX_PROJECT_ID`; `VERTEX_LOCATION`
+ * defaults to `us-central1`.
+ */
+export class VertexProvider implements LLMProvider {
+  private readonly accessToken: string;
+  private readonly projectId: string;
+  private readonly location: string;
+  private readonly model: string;
+
+  constructor(opts: {
+    accessToken: string;
+    projectId: string;
+    location?: string;
+    model?: string;
+  }) {
+    this.accessToken = opts.accessToken;
+    this.projectId = opts.projectId;
+    this.location = opts.location || 'us-central1';
+    this.model = normalizeGeminiModel(opts.model ?? 'gemini-3.5-flash');
+  }
+
+  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
+    const body = buildGeminiRequestBody(messages);
+
+    const url =
+      `https://${this.location}-aiplatform.googleapis.com/v1/projects/` +
+      `${this.projectId}/locations/${this.location}/publishers/google/models/` +
+      `${this.model}:generateContent`;
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.accessToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const err = await res.text().catch(() => 'Unknown error');
+      throw new Error(`Vertex AI API error ${res.status}: ${err}`);
+    }
+
+    const data = (await res.json()) as GeminiGenerateContentResponse;
+    return parseGeminiResponse(data);
   }
 }
 
@@ -478,6 +603,15 @@ export interface LLMProviderEnv {
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  NVIDIA_API_KEY?: string;
+  /** Optional NVIDIA endpoint override (e.g. a self-hosted NIM container). */
+  NVIDIA_BASE_URL?: string;
+  /** OAuth 2.0 bearer for Vertex AI (e.g. `gcloud auth print-access-token`). */
+  VERTEX_ACCESS_TOKEN?: string;
+  /** Google Cloud project id that owns the Vertex AI models. */
+  VERTEX_PROJECT_ID?: string;
+  /** Vertex AI region. Defaults to `us-central1`. */
+  VERTEX_LOCATION?: string;
   WORKERS_AI_ACCOUNT_ID?: string;
   WORKERS_AI_API_TOKEN?: string;
   WORKERS_AI_GATEWAY?: string;
@@ -523,6 +657,33 @@ export function createLLMProvider(env: LLMProviderEnv): LLMProvider {
       return new GeminiProvider(env.GEMINI_API_KEY, env.LLM_MODEL);
     }
 
+    case 'nvidia': {
+      if (!env.NVIDIA_API_KEY) {
+        console.warn('[llm] NVIDIA_API_KEY not set, falling back to echo provider');
+        return new EchoProvider();
+      }
+      return new NvidiaProvider(
+        env.NVIDIA_API_KEY,
+        env.LLM_MODEL,
+        env.NVIDIA_BASE_URL ?? undefined,
+      );
+    }
+
+    case 'vertex': {
+      if (!env.VERTEX_ACCESS_TOKEN || !env.VERTEX_PROJECT_ID) {
+        console.warn(
+          '[llm] VERTEX_ACCESS_TOKEN / VERTEX_PROJECT_ID not set, falling back to echo provider',
+        );
+        return new EchoProvider();
+      }
+      return new VertexProvider({
+        accessToken: env.VERTEX_ACCESS_TOKEN,
+        projectId: env.VERTEX_PROJECT_ID,
+        location: env.VERTEX_LOCATION,
+        model: env.LLM_MODEL,
+      });
+    }
+
     case 'workers-ai': {
       if (!env.WORKERS_AI_ACCOUNT_ID || !env.WORKERS_AI_API_TOKEN) {
         console.warn('[llm] Workers AI credentials not set, falling back to echo provider');
@@ -550,6 +711,8 @@ const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
   anthropic: 'claude-sonnet-4-20250514',
   claude: 'claude-sonnet-4-20250514',
   gemini: 'gemini-3.5-flash',
+  nvidia: 'meta/llama-3.1-8b-instruct',
+  vertex: 'gemini-3.5-flash',
   'workers-ai': '@cf/meta/llama-3.1-8b-instruct',
 };
 
@@ -575,6 +738,8 @@ export function createConfiguredLLMProvider(env: LLMProviderEnv): ConfiguredLLM 
     (name === 'openai' && Boolean(env.OPENAI_API_KEY)) ||
     ((name === 'anthropic' || name === 'claude') && Boolean(env.ANTHROPIC_API_KEY)) ||
     (name === 'gemini' && Boolean(env.GEMINI_API_KEY)) ||
+    (name === 'nvidia' && Boolean(env.NVIDIA_API_KEY)) ||
+    (name === 'vertex' && Boolean(env.VERTEX_ACCESS_TOKEN) && Boolean(env.VERTEX_PROJECT_ID)) ||
     (name === 'workers-ai' && Boolean(env.WORKERS_AI_ACCOUNT_ID) && Boolean(env.WORKERS_AI_API_TOKEN));
   if (!hasCredentials) return null;
 

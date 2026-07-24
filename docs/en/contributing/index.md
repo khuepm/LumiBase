@@ -27,7 +27,7 @@ Thank you for your interest in contributing to LumiBase! This guide covers how t
 ### Clone and install
 
 ```bash
-git clone https://github.com/lumibase/lumibase.git
+git clone https://github.com/khuepm/lumibase.git
 cd lumibase
 pnpm install
 ```

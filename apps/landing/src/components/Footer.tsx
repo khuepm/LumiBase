@@ -29,7 +29,7 @@ const columns = [
     links: [
       { label: "Privacy", href: "/privacy", external: false },
       { label: "Terms", href: "/tos", external: false },
-      { label: "License (MIT)", href: "/license", external: false },
+      { label: "License (Apache 2.0)", href: "/license", external: false },
     ],
   },
 ];
@@ -60,7 +60,7 @@ export default function Footer() {
               color: "var(--color-text-muted)",
             }}
           >
-            The Content Operating System for the AI era. Open source under MIT.
+            The Content Operating System for the AI era. Open source under Apache 2.0.
           </p>
           <Link
             href="https://github.com/khuepm/lumibase"
@@ -116,7 +116,7 @@ export default function Footer() {
           color: "var(--color-text-muted)",
         }}
       >
-        <span>© {new Date().getFullYear()} LumiBase · MIT · [ SEE YOU AT THE NEXT ECLIPSE ]</span>
+        <span>© {new Date().getFullYear()} LumiBase · Apache 2.0 · [ SEE YOU AT THE NEXT ECLIPSE ]</span>
         <div className="flex gap-[18px]">
           <Link
             href="https://twitter.com/khuephamminh"

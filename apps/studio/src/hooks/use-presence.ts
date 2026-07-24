@@ -137,3 +137,32 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceResult
 
   return { peers, connected };
 }
+
+/**
+ * useCoEditors — peers who have the *same item* open, not merely the same
+ * collection. Powers the "multiple people are working on this item" warning.
+ *
+ * `usePresence` returns every peer in the collection; here we narrow to those
+ * whose `itemId` matches, then de-duplicate by `userId` (one person may have
+ * the item open in several tabs, i.e. several sessions).
+ */
+export function useCoEditors(collection: string, itemId: string): {
+  coEditors: PresenceEntry[];
+  connected: boolean;
+} {
+  const { peers, connected } = usePresence({ collection, itemId });
+
+  const coEditors = (() => {
+    const seen = new Set<string>();
+    const out: PresenceEntry[] = [];
+    for (const peer of peers) {
+      if (peer.itemId !== itemId) continue;
+      if (seen.has(peer.userId)) continue;
+      seen.add(peer.userId);
+      out.push(peer);
+    }
+    return out;
+  })();
+
+  return { coEditors, connected };
+}

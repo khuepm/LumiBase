@@ -71,6 +71,11 @@ function fakeCache(): CacheProvider {
     async delete(key: string) {
       store.delete(key);
     },
+    async increment(key: string, by = 1) {
+      const next = Number(store.get(key) ?? '0') + by;
+      store.set(key, String(next));
+      return next;
+    },
   };
 }
 

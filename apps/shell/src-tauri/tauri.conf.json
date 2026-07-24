@@ -1,0 +1,64 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LumiBase Studio",
+  "version": "0.24.1",
+  "identifier": "com.lumibase.studio",
+  "build": {
+    "beforeDevCommand": "pnpm -F @lumibase/studio dev",
+    "devUrl": "http://localhost:2026",
+    "beforeBuildCommand": "pnpm -F @lumibase/studio build",
+    "frontendDist": "../../studio/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "LumiBase Studio",
+        "label": "main",
+        "width": 1280,
+        "height": 832,
+        "minWidth": 960,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "LumiBase Studio — Content OS admin",
+    "longDescription": "Unified desktop and mobile shell for LumiBase Studio, the no-code admin for the LumiBase Content OS.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/khuepm/lumibase/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM4NDU0Q0NBODgxQUJDNDgKUldSSXZCcUl5a3hGT09KQU1yNnNOZWZGNzlXSjB3bE1WR1lZR2dwQUt3Nm0zSjl0bWFUc2tpZTYK"
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["lumibase"]
+      },
+      "mobile": [
+        {
+          "host": "studio.lumibase.dev",
+          "pathPrefix": ["/oauth", "/auth"]
+        }
+      ]
+    }
+  }
+}

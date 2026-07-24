@@ -18,10 +18,17 @@ import type { AppEnv } from '../env';
  * Keying: authenticated principal (userId or API-key id) when available, else
  * client IP. Scoped per site so one tenant cannot exhaust another's budget.
  *
+ * Fail mode: by default the throttle is defence-in-depth and fails OPEN when the
+ * cache is missing or errors, so a cache outage never takes the API down. In a
+ * hardened deployment where the throttle is a load-bearing control, set
+ * LUMIBASE_RATE_LIMIT_FAIL_CLOSED='true' so those same conditions return 503
+ * (RATE_LIMIT_UNAVAILABLE) instead of silently letting traffic through.
+ *
  * Config (env, all optional):
- *   - LUMIBASE_RATE_LIMIT_DISABLED = 'true'  → disable entirely
- *   - LUMIBASE_RATE_LIMIT_MAX      = integer → requests per window (default 300)
- *   - LUMIBASE_RATE_LIMIT_WINDOW_S = integer → window seconds (default 60)
+ *   - LUMIBASE_RATE_LIMIT_DISABLED    = 'true'  → disable entirely
+ *   - LUMIBASE_RATE_LIMIT_MAX         = integer → requests per window (default 300)
+ *   - LUMIBASE_RATE_LIMIT_WINDOW_S    = integer → window seconds (default 60)
+ *   - LUMIBASE_RATE_LIMIT_FAIL_CLOSED = 'true'  → 503 on cache unavailability
  */
 
 const DEFAULT_MAX = 300;
@@ -55,12 +62,24 @@ export function withRateLimit() {
 
     const max = envInt(env.LUMIBASE_RATE_LIMIT_MAX, DEFAULT_MAX);
     const windowS = envInt(env.LUMIBASE_RATE_LIMIT_WINDOW_S, DEFAULT_WINDOW_S);
+    const failClosed = env.LUMIBASE_RATE_LIMIT_FAIL_CLOSED === 'true';
+
+    const unavailable = () =>
+      c.json(
+        {
+          errors: [
+            { code: 'RATE_LIMIT_UNAVAILABLE', message: 'Rate limiter is temporarily unavailable.' },
+          ],
+        },
+        503,
+      );
 
     const runtime = c.get('runtime');
     const cache = runtime?.cache;
-    // No cache available (some test harnesses): fail open — the throttle is
-    // defence-in-depth, never the sole control.
-    if (!cache) return next();
+    // No cache available (some test harnesses): fail open by default — the
+    // throttle is defence-in-depth, never the sole control. Fail closed when
+    // explicitly configured to treat the throttle as load-bearing.
+    if (!cache) return failClosed ? unavailable() : next();
 
     const siteId = c.get('siteId') ?? 'global';
     const principal = resolvePrincipalKey(c);
@@ -73,7 +92,7 @@ export function withRateLimit() {
     try {
       state = await cache.get<WindowState>(key);
     } catch {
-      return next(); // cache read failure → fail open
+      return failClosed ? unavailable() : next(); // cache read failure
     }
 
     let next429 = false;
@@ -92,8 +111,9 @@ export function withRateLimit() {
     try {
       await cache.set(key, JSON.stringify(current), { ttl });
     } catch {
-      // Best-effort: if we cannot persist, do not block the request.
-      return next();
+      // Cannot persist the window. Fail open by default (best-effort); fail
+      // closed when the throttle is configured as a load-bearing control.
+      return failClosed ? unavailable() : next();
     }
 
     const remaining = Math.max(0, max - current.count);

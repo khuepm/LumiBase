@@ -159,6 +159,37 @@ core code:
   || { echo "core must not import @lumibase/enterprise"; exit 1; }
 ```
 
+## 8. Cloudflare Pages (and other Git-integration builders)
+
+> ⚠️ **Gotcha that will break your Pages deploys.** Cloudflare Pages' Git
+> integration clones **submodules by default** when it builds. It has no
+> credentials for the private `enterprise-core` repo, so every Pages project
+> fails at the *Building* stage — verified: `lumibase-docs`, `lumibase-landing`,
+> and `lumibase-marketplace` all flipped success → failure at the exact commit
+> that introduced the submodule, and were green on its parent.
+
+**Fix — a dashboard toggle, not a repo file** (there is no `wrangler.toml` /
+`.cloudflare` setting for this). For **each** affected Pages project:
+
+1. Cloudflare Dashboard → **Workers & Pages** → select the project.
+2. **Settings** → **Builds & deployments** (a.k.a. *Build configuration*).
+3. Disable **"Include submodules when cloning"**.
+4. Save, then **Retry deployment** on the failed build.
+
+This is safe because none of the Pages apps import `@lumibase/enterprise`
+(guard it the same way as §7 if you want CI to enforce it):
+
+```bash
+# fails if any Pages app references the enterprise submodule
+! grep -rES "@lumibase/enterprise|apps/enterprise" \
+    apps/docs apps/landing apps/marketplace \
+  || { echo "Pages apps must not reference apps/enterprise"; exit 1; }
+```
+
+The same applies to **any** external builder that clones via Git integration
+(Vercel, Netlify, Amplify): either disable submodule fetching or give it a
+read token for the private repo.
+
 ---
 
 ## Recap
@@ -168,4 +199,5 @@ core code:
 | Source visible? | No (empty pointer) | Yes |
 | `pnpm install` | Skips empty dir | Treats as workspace |
 | CI checkout | `submodules: false` | `submodules: recursive` + token |
+| Cloudflare Pages | Disable "Include submodules when cloning" | n/a |
 | Deploy | n/a | `wrangler deploy --env production` |

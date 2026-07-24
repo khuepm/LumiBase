@@ -55,4 +55,17 @@ export function registerSearchMediaTools(server: McpServer, client: LumiBaseClie
         return okText(`Media asset "${key}" deleted.`);
       }),
   );
+
+  // ── Transform presets (named image-transform recipes for delivery) ────────
+  // Read-only: an agent lists the presets so it can reference `?preset=<key>`
+  // when embedding a media URL. Signed delivery URLs are built at the edge with
+  // a server secret, so no URL-signing tool is exposed here.
+  server.registerTool(
+    'list_transform_presets',
+    {
+      description: 'List named image-transform presets available for media delivery (key + DSL).',
+      inputSchema: {},
+    },
+    async () => run(() => client.get<unknown>('/transform-presets')),
+  );
 }

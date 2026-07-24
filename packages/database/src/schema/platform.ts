@@ -205,6 +205,19 @@ export const extensions = pgTable(
     submissionStatus: text('submission_status'),
     /** User who submitted this extension via the community submit flow. */
     submittedBy: text('submitted_by').references(() => users.id),
+    // Signing / auto-install (lumibase-pageview-counter track B).
+    /**
+     * Server-DERIVED official flag: true only when the name is in the
+     * `lumibase-` namespace AND the bundle verified against a key flagged
+     * `official`. Never set from a client/manifest claim.
+     */
+    isOfficial: boolean('is_official').default(false).notNull(),
+    /** Install automatically during setup bootstrap / site-create reconcile. */
+    autoInstall: boolean('auto_install').default(false).notNull(),
+    /** Initial `enabled` value at install time (admin can toggle off after). */
+    enabledByDefault: boolean('enabled_by_default').default(false).notNull(),
+    /** Timestamp of the last successful signature verification (drives badge). */
+    verifiedAt: timestamp('verified_at'),
   },
   (t) => ({
     siteNameIdx: index('extensions_site_name_idx').on(t.siteId, t.name),
@@ -214,6 +227,33 @@ export const extensions = pgTable(
     submissionStatusIdx: index('extensions_submission_status_idx').on(
       t.submissionStatus,
     ),
+  }),
+);
+
+/**
+ * Publisher signing keys registry. Merged with the `MARKETPLACE_PUBLIC_KEYS`
+ * env map at verification time, with DB rows overriding env for the `official`
+ * and `revoked` flags (a tampered env var cannot mark a key official or
+ * un-revoke it). The official LumiBase key is seeded here during setup.
+ */
+export const publisherKeys = pgTable(
+  'lumibase_publisher_keys',
+  {
+    id: id(),
+    /** Stable key id referenced by `extensions.publisher_key_id`. */
+    keyId: text('key_id').notNull(),
+    /** SPKI PEM public key. */
+    publicKeyPem: text('public_key_pem').notNull(),
+    /** Human-readable publisher / organization name. */
+    publisher: text('publisher').notNull(),
+    /** Trusted to sign official `lumibase-*` extensions. */
+    official: boolean('official').default(false).notNull(),
+    /** Revoked keys always fail verification. */
+    revoked: boolean('revoked').default(false).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    keyIdUnique: uniqueIndex('publisher_keys_key_id_unique').on(t.keyId),
   }),
 );
 

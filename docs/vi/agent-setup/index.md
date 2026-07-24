@@ -21,7 +21,7 @@ LumiBase cung cấp một [prompt template](./prompt.md), các cấu hình MCP s
 Đã có sẵn agent? Dán nội dung này vào bất kỳ AI coding agent nào để nạp ngữ cảnh dự án LumiBase chỉ trong một bước:
 
 ```
-Fetch https://raw.githubusercontent.com/lumibase/lumibase/main/docs/en/agent-setup/prompt.md
+Fetch https://raw.githubusercontent.com/khuepm/lumibase/main/docs/en/agent-setup/prompt.md
 ```
 
 Hoặc nếu bạn đang làm việc cục bộ, hãy bảo agent của bạn:

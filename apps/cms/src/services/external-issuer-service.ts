@@ -6,6 +6,9 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { authExternalIssuers, scopeSite, type Database } from '@lumibase/database';
 import { makeExternalIssuerConfigSchema, makeExternalIssuerUpdateSchema } from '@lumibase/shared/schemas';
+import type { CacheProvider } from '@lumibase/runtime';
+import { AuditLogger } from '../modules/audit/logger';
+import { issuerCacheKey } from '../modules/external-auth/adapter';
 
 export class ExternalIssuerError extends Error {
   constructor(public code: string, message: string, public status = 400) {
@@ -14,15 +17,53 @@ export class ExternalIssuerError extends Error {
   }
 }
 
+/** Request actor context for audit enrichment (all optional). */
+export interface ExternalIssuerActor {
+  email?: string | null;
+  ip?: string | null;
+  userAgent?: string | null;
+  requestId?: string | null;
+}
+
 export interface ExternalIssuerServiceDeps {
   db: Database;
   siteId: string;
   /** Relax https requirement for localhost (development only). */
   allowLocalHttp?: boolean;
+  /** Actor context for `external_issuer_*` audit rows (never logs config secrets). */
+  actor?: ExternalIssuerActor;
+  /** Runtime cache — CRUD drops `auth:issuers:<siteId>` so verifiers re-read fresh config. */
+  cache?: CacheProvider;
 }
 
 export class ExternalIssuerService {
   constructor(private readonly deps: ExternalIssuerServiceDeps) {}
+
+  /**
+   * Record an issuer lifecycle change. Metadata is deliberately limited to the
+   * issuer URL + id — never the JWKS/discovery config or any claim/role mapping
+   * (best-effort; the AuditLogger never throws).
+   */
+  private async audit(event: string, issuer: string, id: string): Promise<void> {
+    await new AuditLogger({ db: this.deps.db, siteId: this.deps.siteId }).write({
+      event,
+      actorEmail: this.deps.actor?.email ?? null,
+      ip: this.deps.actor?.ip ?? null,
+      userAgent: this.deps.actor?.userAgent ?? null,
+      requestId: this.deps.actor?.requestId ?? null,
+      metadata: { issuer, issuerId: id },
+    });
+  }
+
+  /** Drop the trusted-issuer cache entry so the next verify re-reads config. */
+  private async invalidateCache(): Promise<void> {
+    if (!this.deps.cache) return;
+    try {
+      await this.deps.cache.delete(issuerCacheKey(this.deps.siteId));
+    } catch {
+      // Best-effort: TTL (≤60s) bounds staleness if the cache is unreachable.
+    }
+  }
 
   async list() {
     return this.deps.db
@@ -73,6 +114,10 @@ export class ExternalIssuerService {
         enabled: cfg.enabled,
       })
       .returning();
+    if (row) {
+      await this.invalidateCache();
+      await this.audit('external_issuer_created', row.issuer, row.id);
+    }
     return row;
   }
 
@@ -104,13 +149,19 @@ export class ExternalIssuerService {
       .set(set)
       .where(and(scopeSite(authExternalIssuers.siteId, this.deps.siteId), eq(authExternalIssuers.id, id)))
       .returning();
+    if (row) {
+      await this.invalidateCache();
+      await this.audit('external_issuer_updated', row.issuer, row.id);
+    }
     return row;
   }
 
   async delete(id: string): Promise<void> {
-    await this.get(id);
+    const existing = await this.get(id);
     await this.deps.db
       .delete(authExternalIssuers)
       .where(and(scopeSite(authExternalIssuers.siteId, this.deps.siteId), eq(authExternalIssuers.id, id)));
+    await this.invalidateCache();
+    await this.audit('external_issuer_deleted', existing.issuer, existing.id);
   }
 }

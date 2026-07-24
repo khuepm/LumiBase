@@ -87,7 +87,13 @@ import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
+import { cdcFeedRouter } from './modules/cdc/change-feed/routes';
 import { lumibaseFirebaseSyncRouter } from './modules/lumibase-firebase-sync';
+import { pageviewsRouter, pageviewsPublicRouter } from './modules/pageviews/routes';
+import {
+  gitRouter,
+  gitPublicRouter,
+} from './modules/git-integration/routes';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 const app = new Hono<AppEnv>();
@@ -193,6 +199,15 @@ app.route('/scim/v2', scimRouter);
 app.use('/api/v1/deployments/webhook/*', withTenant(), withDb());
 app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
 
+// Git integration public surface — OAuth callback + signature-verified webhook
+// receiver. PUBLIC on purpose: providers and OAuth redirects cannot carry a
+// session. The router applies only `withDb()` internally (like `setupRouter`).
+// Mounted BEFORE the authenticated `api` so its leaf paths
+// (`/oauth/:provider/callback`, `/webhook/:provider/:siteId/:integrationId`)
+// win; all other `/integrations/git/*` paths fall through to the authenticated
+// `gitRouter` below.
+app.route('/api/v1/integrations/git', gitPublicRouter);
+
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
 api.use('*', withTenant(), withDb(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
@@ -252,6 +267,7 @@ api.route('/activity', activityRouter);
 api.route('/realtime', realtimeRouter);
 api.route('/push', pushRouter);
 api.route('/extensions', extensionsRouter);
+api.route('/pageviews', pageviewsRouter);
 api.route('/admin', adminRouter);
 // Admin Security surface (admin-setup-wizard task 6.4; Req 7.6, 7.7,
 // 8.7, 8.8, 8.9; design §4.5, §4.6). Mounted *under* `withAuth` so the
@@ -310,12 +326,25 @@ api.route('/mcp', mcpRouter);
 // the SECURITY note in `modules/cdc/routes.ts`). Because `api` is mounted at
 // `/api/v1` below, mounting `cdcRouter` at `/cdc` yields the intended
 // `/api/v1/cdc/*` prefix — matching how every sibling module above is wired.
+// Change Feed (spec cdc-extension-integration) shares the `/cdc` prefix but
+// carries its own guards (capability for reads, site-admin for management).
+// It MUST be mounted BEFORE `cdcRouter`: the control-plane router registers a
+// blanket `use('*')` admin gate, and Hono composes matched handlers in
+// registration order — feed handlers respond first, everything else falls
+// through to the control-plane chain.
+api.route('/cdc', cdcFeedRouter);
 api.route('/cdc', cdcRouter);
 
 // LumiBase Firebase Sync — outbound content mirroring to Firestore/RTDB.
 // Same auth posture as CDC: upstream tenant/auth/db/rls + the router's own
 // site-scoped admin gate. Yields `/api/v1/firebase-sync/*`.
 api.route('/firebase-sync', lumibaseFirebaseSyncRouter);
+
+// Git integration (GitHub / GitLab) authenticated surface — `/api/v1/integrations/git/*`.
+// Same posture as CDC: upstream tenant/auth/db/rls + the router's own
+// `requireSiteAdmin()` gate. The public OAuth-callback + webhook routes are
+// mounted above on the top-level `app` and win for their disjoint leaf paths.
+api.route('/integrations/git', gitRouter);
 
 // Share links are public. The opaque token resolves the site and share role.
 app.use('/api/v1/shares/*', withDb());
@@ -333,6 +362,12 @@ app.route('/api/v1', api);
 // Delivery (public) routes — tenancy is encoded in the URL.
 app.use('/api/v1/deliver/*', withDb());
 app.route('/api/v1/deliver', deliverRouter);
+
+// Public pageview beacon — tenancy in the URL, unauthenticated. `withRuntime`
+// ran globally; add `withDb` + the general rate limiter (keyed by IP since no
+// principal exists) so a single client can't flood the ingest endpoint.
+app.use('/api/v1/pageviews/*', withDb(), withRateLimit());
+app.route('/api/v1/pageviews', pageviewsPublicRouter);
 
 app.notFound((c) =>
   c.json({ errors: [{ code: 'NOT_FOUND', message: 'Route not found.' }] }, 404),

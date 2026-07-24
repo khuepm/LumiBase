@@ -92,6 +92,18 @@ export const ExtensionManifestSchema = z.object({
   compatibleWith: z.string().optional(),
   /** Field types an `interface`/`display` extension binds to (e.g. `["string"]`). */
   fieldTypes: z.array(z.string()).optional(),
+  /**
+   * Install this extension automatically during setup bootstrap / site-create
+   * reconcile. Only honoured for verified official `lumibase-*` extensions.
+   */
+  autoInstall: z.boolean().default(false),
+  /** Whether an auto-installed extension starts enabled (admin can toggle off). */
+  enabledByDefault: z.boolean().default(false),
+  /**
+   * ADVISORY ONLY — ignored server-side. Official status is derived from the
+   * name namespace + a signature by an official key (never self-asserted here).
+   */
+  isOfficial: z.boolean().optional(),
 });
 
 export type ExtensionManifest = z.infer<typeof ExtensionManifestSchema>;

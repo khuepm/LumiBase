@@ -9,6 +9,338 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [0.24.1] - 2026-07-21
+
+### Version
+
+- `v0.24.1`
+
+### Date
+
+- `2026-07-21`
+
+### Highlights
+
+- **Shell version alignment.** The Tauri desktop/mobile app (`@lumibase/shell`)
+  `src-tauri` version metadata is brought in lockstep with the monorepo release,
+  so the auto-updater compares against the correct version. (#287)
+
+### Fixed
+
+- **Shell version drift.** `apps/shell/src-tauri` (`tauri.conf.json`,
+  `Cargo.toml`, `Cargo.lock`) lagged the `@lumibase/shell` package version; all
+  are now synced to the monorepo release version. The `tauri.conf.json` version
+  is the value the desktop auto-updater compares against, so keeping it in
+  lockstep with the release avoids stale/incorrect update checks. (#287)
+
+### Migrations
+
+- None
+
+## [0.24.0] - 2026-07-21
+
+### Version
+
+- `v0.24.0`
+
+### Date
+
+- `2026-07-21`
+
+### Highlights
+
+- **Unified Tauri 2 desktop + mobile app.** A native shell (`@lumibase/shell`)
+  wraps the Studio SPA for desktop (signed auto-update) and mobile (Android/iOS),
+  with hybrid bundled/remote asset delivery. (#171)
+- **More LLM providers + read-only MCP insights.** NVIDIA and Vertex AI join the
+  provider set, and the MCP server gains its first read-only insights tools. (#273, #274)
+- **Security & abuse hardening.** GraphQL query cost limits, a per-IP brake on
+  setup-complete, prototype-pollution blocking on `deep[]` query aliases, and a
+  tighter AI-harness capability classification. (#278, #280, #276)
+
+### Added
+
+- **Unified Tauri 2 desktop + mobile shell** (`apps/shell`, `@lumibase/shell`).
+  Thin native wrapper around the Studio SPA: desktop builds add signed
+  auto-update; mobile builds target Android/iOS. Hybrid delivery bundles
+  `apps/studio/dist` for instant/offline load and probes the remote Studio
+  deployment on release builds. Adds `shell-check.yml` (Rust `cargo check`,
+  desktop + Android) and `release-apps.yml` (multi-platform signed bundles via
+  `tauri-action`). (#171)
+- **GraphQL query cost limit + setup-complete per-IP rate brake** (`cms`). (#278)
+- **Read-only insights tools for the MCP server** (Wave 1). (#274)
+- **NVIDIA + Vertex AI LLM providers**, plus a MeiliSearch-on-AWS guide. (#273)
+- **Idempotency-keys spec** (requirements, design, tasks). (#281)
+
+### Fixed
+
+- **`ci`:** Exclude `@lumibase/shell` from the root `turbo run build`. The
+  shell's `build` script is `tauri build`, so `pnpm build` in the CI `checks`
+  job attempted to bundle the Tauri desktop app on a runner without native GTK
+  libraries (`glib-2.0` / `gobject-2.0`). The shell's native build stays covered
+  by `shell-check.yml` and `release-apps.yml`; `pnpm -F @lumibase/shell build`
+  remains available for local desktop builds. (#285)
+- **`item-service`:** Block prototype-pollution via `deep[]` query aliases. (#280)
+- **`ai-harness`:** Classify `createCdcSubscription` / `replayCdcSubscription`
+  as control-plane capabilities. (#276)
+- **`docs`:** Stop doc pages 404ing after hydration. (#282)
+
+### Notes
+
+- Ongoing en/vi documentation translation sync.
+
+### Migrations
+
+- None
+
+## [0.23.0] - 2026-07-14
+
+### Version
+
+- `v0.23.0`
+
+### Date
+
+- `2026-07-14`
+
+### Highlights
+
+- **License changed to Apache License, Version 2.0.** `v0.22.0` remains the
+  final MIT-licensed release; see Changed below.
+- **Git integration (GitHub / GitLab).** Per-site repository connections with
+  PR/CI tracking, GitOps reconcile, and opt-in preview environments.
+- **Change Feed: schema-change capture + long-poll, plus a documented API/SDK
+  surface.**
+- **Visitor / pageview counting** and **extension signing + verify-everywhere**
+  land as first-party modules.
+
+### Added
+
+- **Git integration (GitHub / GitLab).** Per-site repository connections with
+  GitHub App / GitLab App or OAuth/PAT auth (tokens encrypted at rest). Tracks
+  pull requests + CI, stores CI logs for replay, posts a
+  `lumibase/content-validation` commit status, runs GitOps reconcile of
+  `lumibase/intents.json` into content intents, records commit↔content
+  provenance, and provisions opt-in ephemeral preview environments per PR. New
+  `git-sync` agent role with conservative L1 autonomy. Studio: **Settings →
+  Integrations → Git repositories**. Migration `0009_git_integration` is additive
+  (`CREATE TABLE IF NOT EXISTS`, tables prefixed `lumibase_git_*` per ADR-010) —
+  no backfill needed. Registry row #70.
+
+  Optional env: `GITHUB_CLIENT_ID/SECRET`, `GITHUB_APP_ID/PRIVATE_KEY` (PKCS#8),
+  `GITLAB_CLIENT_ID/SECRET`, `LUMIBASE_PUBLIC_URL`. Requires existing
+  `ENCRYPTION_KEY` to manage integrations.
+- **Change Feed API contract + SDK.** `apps/cms/openapi.yaml` now documents
+  every `/cdc/events` and `/cdc/subscriptions/*` endpoint (schemas
+  `EventEnvelope`, `ChangeFeedSubscription`, `ChangeFeedDelivery`, …), and
+  `@lumibase/sdk` ships typed command resources — `readCdcEvents`,
+  `listCdcSubscriptions`, `createCdcSubscription`, `updateCdcSubscription`,
+  `deleteCdcSubscription`, `ackCdcSubscription`, `replayCdcSubscription`,
+  `dispatchCdcSubscription`, `listCdcSubscriptionDeliveries` — with the
+  matching `Cdc*` result/input types.
+- **Change Feed captures schema changes + long-polls.** The outbox gained a
+  `resource` discriminator (migration `0008_cdc_resource_column`, default
+  `item`), so collection/field DDL now emits `collections.*` / `fields.*`
+  events alongside `items.*` (envelope `type` is `<plural-resource>.<operation>`;
+  schema payloads are stored verbatim — masking stays item-only). `GET
+  /cdc/events` accepts `?wait=<seconds>` (≤25) to long-poll: the server holds an
+  empty first read until an event arrives, cutting idle polls. `settings.*`
+  capture, realtime WS fan-out, consumer-group parallelism, inbound/two-way
+  sync, and outbox partitioning are specced in `.kiro/specs/cdc-feed-roadmap/`.
+- **Visitor / pageview counting (`lumibase-pageview-counter`).** Built-in
+  pageview module with four per-site strategies (`db-rollup` default,
+  `hot-counter`, `cdc`, `hll`), selectable via the `pageviews` settings key. Adds
+  an atomic counter to the runtime (`CacheProvider.increment`; Redis `INCRBY` on
+  Docker, a new `PageviewCounter` Durable Object on Cloudflare) plus a public
+  beacon `POST /api/v1/pageviews/:site_id/hit` and authenticated
+  `GET /api/v1/pageviews/stats`. Attribution is consent-gated (`analytics`) and
+  privacy-preserving (salted visitor hash, never a raw IP). Counters flush to
+  `lumibase_pageview_daily` every 5 minutes.
+- **Extension signing + verify-everywhere.** Detached Ed25519 signatures are now
+  verified at every install/load path (marketplace install, generic CRUD, the
+  dynamic endpoint mount, hook dispatch) — official `lumibase-*` extensions are
+  fail-closed. New `lumibase_publisher_keys` registry (DB overrides env for
+  `official`/`revoked`), server-derived `isOfficial`, and a signing CLI
+  (`@lumibase/extension-cli`: `keygen`/`sign`/`verify`). Official extensions with
+  `autoInstall`/`enabledByDefault` are installed during setup / on site-create.
+
+### Changed
+
+- **Project license updated to the Apache License, Version 2.0 (from MIT),
+  effective this release.** `v0.22.0` is the final MIT-licensed release; no
+  further `0.22.x` patch will be issued under MIT. `LICENSE` and the
+  publishable packages' `package.json` (`create-lumibase`, `@lumibase/sdk`,
+  `@lumibase/mcp-server`, `@lumibase/extension-sdk`) now declare
+  `Apache-2.0`.
+
+### Fixed
+
+- **Release Docker image could lose its arm64 variant.** `release.yml`
+  (amd64-only, no QEMU) and `docker-publish.yml` (multi-arch) raced to push
+  the same semver tag; the amd64-only build could win and clobber the
+  multi-arch manifest (forcing Rosetta on Apple Silicon). `release.yml` now
+  builds `linux/amd64,linux/arm64` via QEMU; `docker-publish.yml` only
+  publishes `edge` from `main`, so semver/`latest` tags come solely from
+  `release.yml`.
+
+### Notes
+
+- Docs: anti-abuse mechanisms & best practices guide, OpenAPI setup-endpoint
+  documentation, and a data-import guide.
+
+### Migrations
+
+- `0008_cdc_resource_column`, `0009_git_integration`, `0010_pageviews`,
+  `0011_extension_signing` — all additive (`CREATE TABLE IF NOT EXISTS` /
+  `ADD COLUMN IF NOT EXISTS`, all defaulted). No data backfill required.
+
+### Upgrade steps
+
+- **Cloudflare only:** deploy the new `PAGEVIEW_COUNTER` Durable Object binding +
+  DO migration `tag="v2"` (`new_sqlite_classes`) and the added `*/5 * * * *` cron
+  trigger (already in `wrangler.toml` for every env). Missing the DO binding
+  degrades `hot-counter`/`hll` to `db-rollup` (fail-soft).
+- **For official extensions to verify on an existing instance:** set
+  `MARKETPLACE_PUBLIC_KEYS` to include the official key (`lumibase-official-v1`)
+  and run setup key-seed / a one-time reconcile. `LUMIBASE_EXT_SIGNATURE_POLICY`
+  defaults to `require` (set `warn` to soften third-party enforcement).
+- **For Git integration:** set `ENCRYPTION_KEY` (if not already) plus the
+  provider env vars above to enable connecting repositories.
+
+## [0.22.0] - 2026-07-12
+
+### Version
+
+- `v0.22.0`
+
+### Date
+
+- `2026-07-12`
+
+### Highlights
+
+- **CDC Change Feed (Phases A–H).** Outbox capture, pull API, dispatcher,
+  extension integration, retention, and Studio surface — plus skills/MCP
+  coverage. The change-data-capture pipeline lands end to end (#244).
+- **Realtime studio co-editing, hardened.** A read-gated, filterable realtime
+  plane: subscribe is permission-scoped and fail-closed, broadcasts are
+  signal-only (no row data on the wire), and the item editor shows a live
+  co-editing warning (#249).
+- **Security hardening pass.** Settings writes admin-gated with secret reads
+  redacted, external-JWT DoS guards + denial/issuer auditing, scheduled-release
+  publishes now audited, and an out-of-scope findings backlog wired into the
+  Definition of Done (#251).
+- **v1 readiness groundwork.** Golden-path E2E gate + dependency-audit in CI,
+  "Upgrading to 1.0" runbook, SECURITY.md, and the versioning policy — staging
+  the remaining work before the v1.0.0 tag (#243, #239).
+
+### Security
+
+- **Realtime subscribe is read-gated and filterable.** A studio session could
+  previously subscribe to any collection name and receive change signals for
+  collections it had no `read` grant on (metadata leak: which collections
+  change, when, and which item ids). The studio realtime ticket now embeds the
+  collections the principal can `read` (computed by PermissionService at ticket
+  issuance — admin bypass gets `*`), and the hub rejects any other `subscribe`
+  with `SUBSCRIBE_FORBIDDEN`, fail-closed on a missing/empty allowlist. The
+  `subscribe` message also accepts an optional Directus-style `filter`,
+  evaluated server-side per subscription over the event envelope
+  (`collection`/`action`/`itemId` — the wire is signal-only, so row data is
+  never filterable or leakable).
+- **Scheduled release publishes are now audited.** The scheduler sweep
+  published due releases without writing any audit row — only manual publishes
+  were recorded. The sweep now writes the same `release_published` /
+  `release_partially_published` / `release_publish_failed` vocabulary
+  (shared helpers, counts-only metadata) with `trigger: 'scheduled'`.
+
+- **Realtime studio broadcasts are signal-only.** An item mutation used to
+  fan out the full `row.data` to every studio session subscribed to the
+  collection, without re-checking that session's read grant or field mask —
+  a client could read row content (including masked fields) straight off the
+  WebSocket. The broadcast now carries only the change signal
+  (`collection`/`action`/`itemId`, `payload: null`); the Studio client
+  re-fetches through the permission-enforced `/items` API, so field masking and
+  row RBAC apply by construction and no row content crosses the wire.
+- **External JWT auth: DoS guards + denial/issuer auditing.** The verifier now
+  rejects an oversized bearer (`> 8192` chars) before parsing it and caps the
+  role-claim list it resolves (`≤ 50`), bounding attacker-controlled parse/query
+  work. Denied external authentications now write an `external_auth_denied`
+  audit row (classification code only — never the token, claims, or reason), and
+  issuer create/update/delete write `external_issuer_*` audit rows.
+
+- **FK dependent-records now enforce the caller's RBAC.** The
+  `POST /api/v1/items/:collection/:id/resolve-dependents` and
+  `GET …/dependents` endpoints previously ran the batch `set_null` / `reassign`
+  / `delete` and the preflight report without the caller's permission context —
+  any authenticated tenant member could clear, reassign, or delete records in a
+  collection they had no `update`/`delete` grant on, and read dependent ids they
+  could not otherwise see. The resolve path now gates each action against
+  `update`/`delete` on the dependent collection (403 `FORBIDDEN`), scopes batch
+  writes to the caller's row-level grant, delegates deletes through a
+  permission-carrying `ItemService`, and the preflight requires `read` on the
+  target and only samples rows the caller may read. A source-independent
+  tripwire (`dependents-service-rbac.test.ts`) locks the gate, and Definition of
+  Done §2c gains a rule for request-path services that delegate to `ItemService`
+  or write content tables directly. No schema or setup change.
+
+- **`/api/v1/settings` writes are now admin-only.** `POST /api/v1/settings` and
+  `DELETE /api/v1/settings/:key` were open to any authenticated site member,
+  letting a non-admin overwrite arbitrary settings keys (including
+  `upload_policy` and `media.signedTransform`) and bypass the admin gates on
+  dedicated config endpoints. Both now require `requireSiteAdmin`; reads stay
+  open because non-admin editors legitimately read keys like `locales`.
+- **Settings reads redact secret-bearing fields.** `GET /api/v1/settings` and
+  `/:key` previously returned raw values including secrets such as
+  `media.signedTransform.secret`. Secret-named fields (secret/token/password/
+  apiKey/…) are now redacted (`[redacted]`) on read for every caller; code that
+  needs the real value reads it directly from the DB, not this HTTP endpoint.
+
+### Performance
+
+- **Trusted external-JWT issuers are cached.** `getTrustedIssuers` queried the
+  DB on every bearer-token request; it now reads through `runtime.cache`
+  (`auth:issuers:<siteId>`, TTL 60s) and issuer create/update/delete drop the
+  key, so config changes apply within the TTL bound.
+
+### Added
+
+- **Change Feed (CDC Extension Integration).** First-party transactional
+  outbox + relay over content mutations: `lumibase_cdc_change_events` /
+  `_subscriptions` / `_deliveries` (migration `0007_cdc_change_feed`, RLS
+  site-isolated), cursor-paginated `GET /api/v1/cdc/events`, HMAC-signed
+  webhook dispatcher with retry/dead handling, sandboxed extension
+  subscribers (`defineCdcSubscriber`, manifest capability
+  `cdc:subscribe:<collection>`), retention + replay, Studio → Settings →
+  Change Feed panel, five governed AI skills and MCP tools.
+  **Upgrade note:** two new capability strings exist — `cdc:subscribe`
+  (read the feed / ack) and `cdc:manage` (AI-skill subscription
+  management). Admin roles satisfy them implicitly (`adminAccess`
+  wildcard); grant them explicitly only for narrow integration tokens.
+  `deleteCdcSubscription` is control-plane → HITL below autopilot.
+  Feed is off-by-default per site (`cdc_feed.enabled` or first active
+  subscription turns it on). No backfill: three new empty tables.
+- **Registry-numbering tripwire (`pnpm registry:check`).** A CI check
+  (`scripts/check-registry-numbering.mjs`, wired into the CI `checks` job) fails
+  the build when the Setup Impact Registry `#` column contains a duplicate —
+  mechanizing the Definition of Done §2 uniqueness rule per §6 ("cơ giới hóa"),
+  replacing the manual `grep`.
+- **Out-of-scope findings backlog + Definition of Done §7.** A single place
+  (`.kiro/steering/out-of-scope-backlog.md`) to log vulnerabilities, bugs, and
+  follow-up tasks discovered while working a PR but outside its scope, so they
+  are not lost after merge. DoD §7 makes logging them a required review step.
+
+### Fixed
+
+- **`build-release-manifest.mjs` is now idempotent.** Regenerating
+  `apps/docs/public/releases.json` on a plain `docs:build` no longer dirties the
+  working tree: editorial fields (`migrationWarning`, `minimumSafeUpgradeVersion`)
+  and `releaseDate` are preserved from the committed manifest unless explicitly
+  overridden (env var, or a matching CHANGELOG heading for the date). This also
+  fixes a latent bug where a deploy build could clobber a hand-set editorial
+  value back to its default.
+
 ### Changed
 
 - **Setup Impact Registry `#` column deduplicated.** Parallel branches had kept
@@ -16,13 +348,10 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   through #38). Colliding rows were renumbered to fresh ids (45–68), keeping the
   occurrence that other rows cite by number so cross-references stay valid.
 
-### Added
+### Migrations
 
-- **Registry-numbering tripwire (`pnpm registry:check`).** A CI check
-  (`scripts/check-registry-numbering.mjs`, wired into the CI `checks` job) fails
-  the build when the Setup Impact Registry `#` column contains a duplicate —
-  mechanizing the Definition of Done §2 uniqueness rule per §6 ("cơ giới hóa"),
-  replacing the manual `grep`.
+- `0007_cdc_change_feed` — Change Feed outbox/capture tables (additive,
+  idempotent). No destructive changes.
 
 ## [1.0.0] - 2026-07-11
 

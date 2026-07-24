@@ -1,7 +1,8 @@
 {
   "name": "@lumibase/extension-sdk",
-  "version": "0.21.0",
+  "version": "0.24.1",
   "description": "Types + helpers for building LumiBase extensions (hooks, endpoints, UI).",
+  "license": "Apache-2.0",
   "type": "module",
   "repository": {
     "type": "git",

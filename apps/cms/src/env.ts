@@ -94,6 +94,10 @@ export interface Bindings {
   ENCRYPTION_KEY?: string;
   /** Comma-separated trusted origins for executable extension bundles. */
   EXTENSION_BUNDLE_ORIGINS?: string;
+  /** JSON map `{ keyId: pem }` of publisher public keys (merged with the DB registry). */
+  MARKETPLACE_PUBLIC_KEYS?: string;
+  /** Signature enforcement for third-party extensions: `'require'` (default) | `'warn'`. */
+  LUMIBASE_EXT_SIGNATURE_POLICY?: string;
   /** Comma-separated frontend origins allowed by CORS. */
   CORS_ALLOWED_ORIGINS?: string;
   /** Data-retention horizon (days) for the `activity` log. 0/unset = disabled. */
@@ -121,6 +125,18 @@ export interface Bindings {
   /** Window length in seconds for the general API rate limiter (default 60). */
   LUMIBASE_RATE_LIMIT_WINDOW_S?: string;
   /**
+   * Set to 'true' to make the general API rate limiter fail CLOSED (503) when
+   * the runtime cache is missing or errors, instead of the default fail-open
+   * behaviour. Use in hardened deployments where the throttle is load-bearing.
+   */
+  LUMIBASE_RATE_LIMIT_FAIL_CLOSED?: string;
+  /** Max static cost accepted per GraphQL operation (default 1000). */
+  LUMIBASE_GQL_MAX_COST?: string;
+  /** List multiplier for GraphQL list fields lacking a literal pagination arg (default 20). */
+  LUMIBASE_GQL_DEFAULT_LIST_SIZE?: string;
+  /** Upper clamp on a GraphQL list field's cost multiplier (default 100). */
+  LUMIBASE_GQL_MAX_LIST_MULTIPLIER?: string;
+  /**
    * Sentry DSN for the Cloudflare Workers build. When unset, `withSentry`
    * in `cloudflare.ts` initializes with an empty DSN and Sentry becomes a
    * no-op — so local dev / Docker / tests stay clean. Set per environment
@@ -133,13 +149,26 @@ export interface Bindings {
    */
   SENTRY_TRACES_SAMPLE_RATE?: string;
   // ── LLM Provider (POST-GA Task #1) ──────────────────────────────────────
-  /** `'openai'` | `'anthropic'` | `'claude'` | `'gemini'` | `'workers-ai'` | `'echo'` (default). */
+  /**
+   * `'openai'` | `'anthropic'` | `'claude'` | `'gemini'` | `'nvidia'`
+   * | `'vertex'` | `'workers-ai'` | `'echo'` (default).
+   */
   LLM_PROVIDER?: string;
   /** Provider-specific model override. */
   LLM_MODEL?: string;
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  /** NVIDIA hosted inference (build.nvidia.com / NIM) API key. */
+  NVIDIA_API_KEY?: string;
+  /** Optional NVIDIA endpoint override (e.g. a self-hosted NIM container). */
+  NVIDIA_BASE_URL?: string;
+  /** OAuth 2.0 bearer for Vertex AI (e.g. `gcloud auth print-access-token`). Billed to GCP, not AWS. */
+  VERTEX_ACCESS_TOKEN?: string;
+  /** Google Cloud project id that owns the Vertex AI models. */
+  VERTEX_PROJECT_ID?: string;
+  /** Vertex AI region. Defaults to `us-central1`. */
+  VERTEX_LOCATION?: string;
   WORKERS_AI_ACCOUNT_ID?: string;
   WORKERS_AI_API_TOKEN?: string;
   /** Optional Workers AI gateway URL override. */
@@ -153,6 +182,21 @@ export interface Bindings {
   LUMIBASE_SAAS_FALLBACK?: string;
   /** Reserved suffix offered for free subdomains. Defaults to `lumibase.dev`. */
   LUMIBASE_FREE_DOMAIN_SUFFIX?: string;
+  // ── Git integration (modules/git-integration) ───────────────────────────
+  /** Public origin used to build operator-facing webhook URLs (e.g. https://api.example.com). */
+  LUMIBASE_PUBLIC_URL?: string;
+  /** GitHub OAuth app client id (for PAT/OAuth connect flow). */
+  GITHUB_CLIENT_ID?: string;
+  /** GitHub OAuth app client secret. */
+  GITHUB_CLIENT_SECRET?: string;
+  /** GitHub App id (for installation-token minting). */
+  GITHUB_APP_ID?: string;
+  /** GitHub App private key, PKCS#8 PEM. */
+  GITHUB_APP_PRIVATE_KEY?: string;
+  /** GitLab OAuth application id. */
+  GITLAB_CLIENT_ID?: string;
+  /** GitLab OAuth application secret. */
+  GITLAB_CLIENT_SECRET?: string;
 }
 
 /**
@@ -241,6 +285,24 @@ export interface Variables {
     } | null>;
     forgotPath(email: string, ip: string): Promise<void>;
     validateUnlockToken(token: string): Promise<{ readonly userId: string } | null>;
+  };
+  /**
+   * Test-only injection seam for the public setup routes. When set via
+   * `c.set('setupServiceOverride', stub)` *before* the setup router runs,
+   * `modules/setup/routes.ts` uses the stub instead of constructing a real
+   * `SetupService` — so `POST /setup/complete` can be exercised without a
+   * live Postgres. Declared structurally (only the `complete` method the
+   * route calls) to keep `env.ts` free of route/service imports, mirroring
+   * `recoveryServiceOverride`. The real `SetupService` satisfies this shape.
+   */
+  setupServiceOverride?: {
+    complete(
+      input: unknown,
+      ctx: unknown,
+    ): Promise<
+      | { readonly ok: true; readonly value: unknown }
+      | { readonly ok: false; readonly error: unknown }
+    >;
   };
 }
 

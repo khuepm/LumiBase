@@ -109,4 +109,14 @@ export function registerAgentTools(server: McpServer, client: LumiBaseClient) {
     { description: 'List recent runs of a flow.', inputSchema: { id: idPathSegmentSchema } },
     async ({ id }) => run(() => client.get<unknown>(`/flows/${encodePathSegment(id)}/runs`)),
   );
+
+  server.registerTool(
+    'get_flow_run',
+    {
+      description: 'Get a single flow run by id (status, per-step results, error) for diagnosis.',
+      inputSchema: { id: idPathSegmentSchema, runId: idPathSegmentSchema },
+    },
+    async ({ id, runId }) =>
+      run(() => client.get<unknown>(`/flows/${encodePathSegment(id)}/runs/${encodePathSegment(runId)}`)),
+  );
 }

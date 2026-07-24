@@ -208,6 +208,7 @@ function makePermissionCache(entries: Record<string, unknown>): CacheProvider {
     get: async (key: string) => entries[key] ?? null,
     set: async () => undefined,
     delete: async () => undefined,
+    increment: async () => 1,
   } as CacheProvider;
 }
 

@@ -1,7 +1,8 @@
 {
   "name": "@lumibase/sdk",
-  "version": "0.21.0",
+  "version": "0.24.1",
   "description": "LumiBase JS SDK (REST + WebSocket) + typegen core. Isomorphic ESM.",
+  "license": "Apache-2.0",
   "type": "module",
   "repository": {
     "type": "git",
