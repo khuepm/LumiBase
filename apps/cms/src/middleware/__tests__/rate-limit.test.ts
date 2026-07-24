@@ -94,4 +94,22 @@ describe('withRateLimit (CWE-400)', () => {
       expect(res.status).toBe(200);
     }
   });
+
+  it('fails closed with 503 when no cache is available and FAIL_CLOSED is set', async () => {
+    const app = buildApp({ auth: null, ip: '5.5.5.5' }); // no cache set
+    const res = await app.request('/x', {}, env({ LUMIBASE_RATE_LIMIT_FAIL_CLOSED: 'true' }));
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { errors: Array<{ code: string }> };
+    expect(body.errors[0]?.code).toBe('RATE_LIMIT_UNAVAILABLE');
+  });
+
+  it('fails closed with 503 when the cache read throws and FAIL_CLOSED is set', async () => {
+    const cache = makeCache();
+    cache.get = async () => {
+      throw new Error('cache down');
+    };
+    const app = buildApp({ cache, ip: '6.6.6.6', auth: null });
+    const res = await app.request('/x', {}, env({ LUMIBASE_RATE_LIMIT_FAIL_CLOSED: 'true' }));
+    expect(res.status).toBe(503);
+  });
 });

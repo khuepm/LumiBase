@@ -683,6 +683,23 @@ const htmlContent = `<!DOCTYPE html>
 </body>
 </html>`;
 
+/**
+ * Interactive auth-playground surface. Developer tooling only — it must never
+ * be reachable in production (OWASP API9: Improper Inventory Management —
+ * shadow/debug endpoints). Return an indistinguishable 404 when the runtime is
+ * production so the surface is neither served nor advertised.
+ */
+testAuthRouter.use('*', async (c, next) => {
+  const isProduction =
+    c.env?.LUMIBASE_ENV === 'production' ||
+    process.env.LUMIBASE_ENV === 'production' ||
+    process.env.NODE_ENV === 'production';
+  if (isProduction) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Not found.' }] }, 404);
+  }
+  return next();
+});
+
 testAuthRouter.get('/', (c) => {
   return c.html(htmlContent);
 });

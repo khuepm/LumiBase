@@ -124,6 +124,12 @@ export interface Bindings {
   LUMIBASE_RATE_LIMIT_MAX?: string;
   /** Window length in seconds for the general API rate limiter (default 60). */
   LUMIBASE_RATE_LIMIT_WINDOW_S?: string;
+  /**
+   * Set to 'true' to make the general API rate limiter fail CLOSED (503) when
+   * the runtime cache is missing or errors, instead of the default fail-open
+   * behaviour. Use in hardened deployments where the throttle is load-bearing.
+   */
+  LUMIBASE_RATE_LIMIT_FAIL_CLOSED?: string;
   /** Max static cost accepted per GraphQL operation (default 1000). */
   LUMIBASE_GQL_MAX_COST?: string;
   /** List multiplier for GraphQL list fields lacking a literal pagination arg (default 20). */
