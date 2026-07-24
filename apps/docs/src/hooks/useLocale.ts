@@ -2,8 +2,7 @@ import { useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { locales, defaultLocale } from 'virtual:docs-registry';
 import { pathFor, parseUrl } from '../lib/url';
-
-const STORAGE_KEY = 'lumibase-docs:locale';
+import { LOCALE_STORAGE_KEY } from '../lib/locale-storage';
 
 /**
  * Hook providing the current locale derived from the URL, along with
@@ -43,7 +42,7 @@ export function useLocale(): {
 
       // Persist preference for next visit to `/`
       try {
-        localStorage.setItem(STORAGE_KEY, next);
+        localStorage.setItem(LOCALE_STORAGE_KEY, next);
       } catch {
         // Gracefully ignore storage errors (private browsing, quota exceeded)
       }
