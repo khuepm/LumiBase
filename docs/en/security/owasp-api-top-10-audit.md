@@ -282,6 +282,7 @@ response is validated against a declared response schema before persistence.
 | API7 | SSRF guard validates hostname string only (no DNS-rebinding defence) | `resolveAndValidateOutboundUrl()` resolves DNS and re-checks every resolved IP; wired into `guardedFetch()` | `services/ssrf-guard.ts`, `services/__tests__/ssrf-guard.test.ts` |
 | API9 | `/test-auth` debug surface mountable in production | Indistinguishable `404` in production | `routes/test-auth.ts` |
 | API9 | No endpoint deprecation mechanism | `withDeprecation` middleware (RFC 8594 `Deprecation`/`Sunset`/`Link`) | `middleware/deprecation.ts`, `middleware/__tests__/deprecation.test.ts` |
+| API7/API8 | Known-vulnerable dependencies flagged by the CI audit gate (Next.js SSRF/DoS/middleware-bypass, `sharp`, `fast-uri`) — pre-existing, in the frontend apps (`landing`/`consumer`) and transitive, **not** in the CMS API path | Bumped `next` → `16.2.11`; pnpm `overrides` `fast-uri >=3.1.4` and `sharp >=0.35.0`. `pnpm audit --prod --audit-level high` now passes | `package.json`, `apps/{consumer,landing}/package.json`, `pnpm-lock.yaml` |
 
 ## Accepted residuals (not fixed here — deliberate)
 
