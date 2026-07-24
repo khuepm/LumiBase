@@ -8,8 +8,8 @@
   --background: #0b0713;
   --foreground: #f4ecff;
 
-  /* Deep aubergine-to-indigo nebula base */
-  --gradient-page: linear-gradient(160deg, #170a24 0%, #0b0713 46%, #08060f 100%);
+  /* Aubergine-to-indigo nebula base — luminous enough that colour reads */
+  --gradient-page: linear-gradient(150deg, #331a5e 0%, #1c1140 44%, #0e0a1e 100%);
 
   --color-surface-1: #17111f;
   --color-surface-2: #1d1526;
@@ -73,28 +73,27 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Multi-hue nebula floor on <html> — distinct colour zones (violet / magenta /
+   blue / teal) at moderate luminance so the page never reads as one flat dark.
+   Lives on html (not body) so nothing opaque paints over it; the animated
+   blobs + aurora in <CosmicBackground> drift on top. */
 html {
-  background: var(--background);
+  background-color: var(--background);
+  background-image:
+    radial-gradient(90% 70% at 12% 2%, #4a2585 0%, transparent 52%),
+    radial-gradient(85% 75% at 100% 14%, #8a2578 0%, transparent 50%),
+    radial-gradient(95% 85% at 88% 100%, #1d4f7e 0%, transparent 54%),
+    radial-gradient(80% 80% at -4% 92%, #175a55 0%, transparent 54%),
+    linear-gradient(160deg, #201545 0%, #130c26 55%, #0d0a1c 100%);
+  /* All layers viewport-anchored so the nebula is consistent at every scroll
+     position (a single value applies background-attachment to every layer). */
+  background-attachment: fixed;
+  background-repeat: no-repeat;
 }
 
 body {
   color: var(--foreground);
-  background: var(--color-bg, #100904);
-}
-
-/* Viewport-fixed nebula gradient — deep base plus drifting colour clouds */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: -1;
-  background:
-    radial-gradient(60% 50% at 82% 12%, rgba(155, 92, 255, 0.16), transparent 70%),
-    radial-gradient(55% 45% at 12% 68%, rgba(214, 31, 159, 0.13), transparent 70%),
-    radial-gradient(50% 50% at 62% 88%, rgba(41, 216, 230, 0.1), transparent 72%),
-    radial-gradient(45% 40% at 30% 24%, rgba(52, 224, 180, 0.08), transparent 72%),
-    var(--gradient-page);
+  background: transparent;
 }
 
 /* Prismatic starfield — the mystical eclipse sky */
@@ -115,6 +114,123 @@ body::before {
     radial-gradient(1px 1px at 64% 54%, rgba(255, 160, 210, 0.4), transparent);
   background-repeat: repeat;
   background-size: 100% 1100px;
+  animation: star-twinkle 7s ease-in-out infinite;
+}
+
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* ── Animated cosmic background — drifting aurora nebula ─────────
+   A fixed layer of blurred colour clouds that slowly wander and pulse,
+   plus a very slow rotating aurora sheen. Sits behind all content and the
+   eclipse stage. Pure transform/opacity so it composites on the GPU. */
+.cosmic-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  /* Transparent — the nebula floor lives on <html>; this layer only carries
+     the animated blobs and aurora that drift over it. */
+  background: transparent;
+}
+.cosmic-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(65px);
+  opacity: 0.6;
+  will-change: transform;
+}
+.cosmic-blob-1 {
+  width: 50vw; height: 50vw;
+  top: -6vh; left: 58vw;
+  background: radial-gradient(circle, rgba(155,92,255,0.95), transparent 70%);
+  animation: blob-drift-1 34s var(--ease-out) infinite;
+}
+.cosmic-blob-2 {
+  width: 46vw; height: 46vw;
+  top: 42vh; left: -14vw;
+  background: radial-gradient(circle, rgba(214,31,159,0.9), transparent 70%);
+  animation: blob-drift-2 42s var(--ease-out) infinite;
+}
+.cosmic-blob-3 {
+  width: 48vw; height: 48vw;
+  top: 58vh; left: 56vw;
+  background: radial-gradient(circle, rgba(41,216,230,0.82), transparent 70%);
+  animation: blob-drift-3 38s var(--ease-out) infinite;
+}
+.cosmic-blob-4 {
+  width: 42vw; height: 42vw;
+  top: -6vh; left: -8vw;
+  background: radial-gradient(circle, rgba(52,224,180,0.75), transparent 70%);
+  animation: blob-drift-4 46s var(--ease-out) infinite;
+}
+.cosmic-blob-5 {
+  width: 40vw; height: 40vw;
+  top: 30vh; left: 34vw;
+  background: radial-gradient(circle, rgba(255,106,26,0.6), transparent 72%);
+  animation: blob-drift-3 52s var(--ease-out) infinite;
+}
+.cosmic-blob-6 {
+  width: 40vw; height: 40vw;
+  top: 76vh; left: 6vw;
+  background: radial-gradient(circle, rgba(106,92,255,0.78), transparent 70%);
+  animation: blob-drift-2 48s var(--ease-out) infinite;
+}
+/* Slow rotating aurora sheen — a conic wash over everything */
+.cosmic-aurora {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 170vmax; height: 170vmax;
+  margin-left: -85vmax; margin-top: -85vmax;
+  opacity: 0.38;
+  will-change: transform;
+  background: conic-gradient(
+    from 0deg,
+    rgba(155,92,255,0.6), rgba(214,31,159,0.55), rgba(255,106,26,0.45),
+    rgba(41,216,230,0.5), rgba(52,224,180,0.55), rgba(155,92,255,0.6));
+  mask-image: radial-gradient(circle, #000 0%, transparent 74%);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 74%);
+  animation: aurora-spin 70s linear infinite;
+}
+/* One drifting shooting star */
+.cosmic-shooting-star {
+  position: absolute;
+  top: 12%; left: -10%;
+  width: 140px; height: 1.5px;
+  background: linear-gradient(90deg, transparent, rgba(244,236,255,0.9));
+  opacity: 0;
+  border-radius: 2px;
+  animation: shoot 14s ease-in infinite;
+}
+
+@keyframes blob-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-8vw, 10vh) scale(1.15); }
+}
+@keyframes blob-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(10vw, -8vh) scale(1.2); }
+}
+@keyframes blob-drift-3 {
+  0%, 100% { transform: translate(0, 0) scale(1.05); }
+  50% { transform: translate(-12vw, -10vh) scale(0.9); }
+}
+@keyframes blob-drift-4 {
+  0%, 100% { transform: translate(0, 0) scale(0.95); }
+  50% { transform: translate(9vw, 8vh) scale(1.15); }
+}
+@keyframes aurora-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes shoot {
+  0%, 82% { transform: translate(0, 0) rotate(18deg); opacity: 0; }
+  84% { opacity: 0; }
+  86% { opacity: 0.9; }
+  96% { transform: translate(120vw, 42vh) rotate(18deg); opacity: 0; }
+  100% { opacity: 0; }
 }
 
 @layer utilities {

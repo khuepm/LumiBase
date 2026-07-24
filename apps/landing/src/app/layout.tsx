@@ -3,6 +3,7 @@ import { Archivo, Literata, DM_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import CosmicBackground from "@/components/CosmicBackground";
 import SmoothScroll from "@/components/scroll/SmoothScroll";
 
 const archivo = Archivo({ subsets: ["latin"], variable: "--font-sans" });
@@ -100,6 +101,7 @@ export default function RootLayout({
         />
       </head>
       <body className={`${archivo.className} text-foreground antialiased`}>
+        <CosmicBackground />
         <SmoothScroll>
           <div className="relative z-[1]">
             <Header />
