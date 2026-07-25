@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z, type ZodRawShape } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { buildQs, confirmDescription, okText, run } from './_shared.js';
+import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 export interface CrudModuleOptions {
   /** REST base path under `/api/v1`, e.g. `/roles`. */
@@ -73,10 +74,12 @@ export function registerCrud(
       `get_${namePrefix}`,
       {
         description: `Get a single ${resource} by ${idParam}.`,
-        inputSchema: { [idParam]: z.string().min(1) },
+        inputSchema: { [idParam]: idPathSegmentSchema },
       },
       async (args: Record<string, unknown>) =>
-        run(() => client.get<unknown>(`${basePath}/${String(args[idParam])}`)),
+        run(() =>
+          client.get<unknown>(`${basePath}/${encodePathSegment(String(args[idParam]))}`),
+        ),
     );
   }
 
@@ -97,11 +100,13 @@ export function registerCrud(
       `update_${namePrefix}`,
       {
         description: `Update an existing ${resource} (partial PATCH).`,
-        inputSchema: { [idParam]: z.string().min(1), ...updateSchema },
+        inputSchema: { [idParam]: idPathSegmentSchema, ...updateSchema },
       },
       async (args: Record<string, unknown>) => {
         const { [idParam]: id, ...patch } = args;
-        return run(() => client.patch<unknown>(`${basePath}/${String(id)}`, patch));
+        return run(() =>
+          client.patch<unknown>(`${basePath}/${encodePathSegment(String(id))}`, patch),
+        );
       },
     );
   }
@@ -112,14 +117,14 @@ export function registerCrud(
       {
         description: `Delete a ${resource}. DESTRUCTIVE — warn the user first and pass confirm=true.`,
         inputSchema: {
-          [idParam]: z.string().min(1),
+          [idParam]: idPathSegmentSchema,
           confirm: z.literal(true).describe(confirmDescription),
         },
       },
       async (args: Record<string, unknown>) => {
         const id = String(args[idParam]);
         return run(async () => {
-          await client.delete(`${basePath}/${id}`);
+          await client.delete(`${basePath}/${encodePathSegment(id)}`);
           return okText(`${resource} "${id}" deleted.`);
         });
       },

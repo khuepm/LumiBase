@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import type { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { registerAllTools } from '../tools/index.js';
+import {
+  collectionNameSchema,
+  encodePath,
+  encodePathSegment,
+  idPathSegmentSchema,
+  mediaKeySchema,
+} from '../tools/path.js';
 
 interface CapturedTool {
   config: { description?: string; inputSchema?: Record<string, z.ZodTypeAny> };
@@ -133,5 +140,69 @@ describe('tool handlers call the right endpoints', () => {
     registerAllTools(server as never, client);
     await tools.get('export_backup')!.handler({});
     expect(calls).toContainEqual({ method: 'GET_TEXT', path: '/admin/backup' });
+  });
+});
+
+describe('path parameter hardening', () => {
+  describe('idPathSegmentSchema', () => {
+    it('accepts ordinary ids', () => {
+      for (const ok of ['r1', 'nano_id-123', 'a.b', 'AbC']) {
+        expect(idPathSegmentSchema.safeParse(ok).success, ok).toBe(true);
+      }
+    });
+
+    it('rejects traversal and path separators', () => {
+      for (const bad of ['', '.', '..', 'a/b', 'a\\b', '../etc']) {
+        expect(idPathSegmentSchema.safeParse(bad).success, bad).toBe(false);
+      }
+    });
+  });
+
+  describe('collectionNameSchema', () => {
+    it('accepts lowercase snake_case', () => {
+      expect(collectionNameSchema.safeParse('blog_posts').success).toBe(true);
+    });
+
+    it('rejects names with separators, uppercase, or leading digit', () => {
+      for (const bad of ['Posts', 'a/b', '1posts', 'po sts', '../x']) {
+        expect(collectionNameSchema.safeParse(bad).success, bad).toBe(false);
+      }
+    });
+  });
+
+  describe('mediaKeySchema / encodePath', () => {
+    it('allows nested keys but rejects traversal and leading slash', () => {
+      expect(mediaKeySchema.safeParse('posts/2024/img.png').success).toBe(true);
+      expect(mediaKeySchema.safeParse('../secret').success).toBe(false);
+      expect(mediaKeySchema.safeParse('/abs').success).toBe(false);
+    });
+
+    it('encodePath preserves separators but encodes segments', () => {
+      expect(encodePath('posts/my file.png')).toBe('posts/my%20file.png');
+    });
+  });
+
+  it('encodePathSegment percent-encodes a whole segment', () => {
+    expect(encodePathSegment('a b/c')).toBe('a%20b%2Fc');
+  });
+
+  it('get_item encodes path segments before calling the API', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    // The handler trusts the framework for schema validation; a value that
+    // slips through with a space must still be percent-encoded in the path.
+    await tools.get('get_item')!.handler({ collection: 'posts', id: 'id with space' });
+    expect(calls.some((c) => c.path === '/items/posts/id%20with%20space')).toBe(true);
+  });
+
+  it('delete_media keeps nested key slashes but encodes segments', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('delete_media')!.handler({ key: 'posts/my file.png', confirm: true });
+    expect(calls.some((c) => c.method === 'DELETE' && c.path === '/media/posts/my%20file.png')).toBe(
+      true,
+    );
   });
 });

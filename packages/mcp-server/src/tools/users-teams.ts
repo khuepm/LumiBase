@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { confirmDescription, okText, run } from './_shared.js';
+import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 export function registerUsersTeamsTools(server: McpServer, client: LumiBaseClient) {
   // ── Users ─────────────────────────────────────────────────────────────────
@@ -13,8 +14,8 @@ export function registerUsersTeamsTools(server: McpServer, client: LumiBaseClien
 
   server.registerTool(
     'get_user',
-    { description: 'Get a single user in the active site by id.', inputSchema: { id: z.string().min(1) } },
-    async ({ id }) => run(() => client.get<unknown>(`/users/${id}`)),
+    { description: 'Get a single user in the active site by id.', inputSchema: { id: idPathSegmentSchema } },
+    async ({ id }) => run(() => client.get<unknown>(`/users/${encodePathSegment(id)}`)),
   );
 
   server.registerTool(
@@ -34,23 +35,23 @@ export function registerUsersTeamsTools(server: McpServer, client: LumiBaseClien
     {
       description: "Update a user's site membership (role and/or status).",
       inputSchema: {
-        id: z.string().min(1),
+        id: idPathSegmentSchema,
         roleId: z.string().nullable().optional(),
         status: z.string().optional().describe('e.g. active, suspended.'),
       },
     },
-    async ({ id, ...patch }) => run(() => client.patch<unknown>(`/users/${id}`, patch)),
+    async ({ id, ...patch }) => run(() => client.patch<unknown>(`/users/${encodePathSegment(id)}`, patch)),
   );
 
   server.registerTool(
     'remove_user',
     {
       description: 'Remove a user from the site. DESTRUCTIVE — pass confirm=true.',
-      inputSchema: { id: z.string().min(1), confirm: z.literal(true).describe(confirmDescription) },
+      inputSchema: { id: idPathSegmentSchema, confirm: z.literal(true).describe(confirmDescription) },
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/users/${id}`);
+        await client.delete(`/users/${encodePathSegment(id)}`);
         return okText(`User "${id}" removed from the site.`);
       }),
   );
@@ -64,8 +65,8 @@ export function registerUsersTeamsTools(server: McpServer, client: LumiBaseClien
 
   server.registerTool(
     'get_team',
-    { description: 'Get a single team by id.', inputSchema: { id: z.string().min(1) } },
-    async ({ id }) => run(() => client.get<unknown>(`/teams/${id}`)),
+    { description: 'Get a single team by id.', inputSchema: { id: idPathSegmentSchema } },
+    async ({ id }) => run(() => client.get<unknown>(`/teams/${encodePathSegment(id)}`)),
   );
 
   server.registerTool(
@@ -82,40 +83,40 @@ export function registerUsersTeamsTools(server: McpServer, client: LumiBaseClien
     {
       description: 'Update a team (partial PATCH).',
       inputSchema: {
-        id: z.string().min(1),
+        id: idPathSegmentSchema,
         name: z.string().min(1).max(128).optional(),
         description: z.string().nullable().optional(),
       },
     },
-    async ({ id, ...patch }) => run(() => client.patch<unknown>(`/teams/${id}`, patch)),
+    async ({ id, ...patch }) => run(() => client.patch<unknown>(`/teams/${encodePathSegment(id)}`, patch)),
   );
 
   server.registerTool(
     'delete_team',
     {
       description: 'Delete a team. DESTRUCTIVE — pass confirm=true.',
-      inputSchema: { id: z.string().min(1), confirm: z.literal(true).describe(confirmDescription) },
+      inputSchema: { id: idPathSegmentSchema, confirm: z.literal(true).describe(confirmDescription) },
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/teams/${id}`);
+        await client.delete(`/teams/${encodePathSegment(id)}`);
         return okText(`Team "${id}" deleted.`);
       }),
   );
 
   server.registerTool(
     'list_team_members',
-    { description: 'List members of a team.', inputSchema: { id: z.string().min(1).describe('Team id.') } },
-    async ({ id }) => run(() => client.get<unknown>(`/teams/${id}/members`)),
+    { description: 'List members of a team.', inputSchema: { id: idPathSegmentSchema.describe('Team id.') } },
+    async ({ id }) => run(() => client.get<unknown>(`/teams/${encodePathSegment(id)}/members`)),
   );
 
   server.registerTool(
     'add_team_member',
     {
       description: 'Add a user to a team.',
-      inputSchema: { id: z.string().min(1).describe('Team id.'), userId: z.string().min(1) },
+      inputSchema: { id: idPathSegmentSchema.describe('Team id.'), userId: z.string().min(1) },
     },
-    async ({ id, userId }) => run(() => client.post<unknown>(`/teams/${id}/members`, { userId })),
+    async ({ id, userId }) => run(() => client.post<unknown>(`/teams/${encodePathSegment(id)}/members`, { userId })),
   );
 
   server.registerTool(
@@ -123,14 +124,14 @@ export function registerUsersTeamsTools(server: McpServer, client: LumiBaseClien
     {
       description: 'Remove a user from a team. DESTRUCTIVE — pass confirm=true.',
       inputSchema: {
-        id: z.string().min(1).describe('Team id.'),
-        userId: z.string().min(1),
+        id: idPathSegmentSchema.describe('Team id.'),
+        userId: idPathSegmentSchema,
         confirm: z.literal(true).describe(confirmDescription),
       },
     },
     async ({ id, userId }) =>
       run(async () => {
-        await client.delete(`/teams/${id}/members/${userId}`);
+        await client.delete(`/teams/${encodePathSegment(id)}/members/${encodePathSegment(userId)}`);
         return okText(`User "${userId}" removed from team "${id}".`);
       }),
   );

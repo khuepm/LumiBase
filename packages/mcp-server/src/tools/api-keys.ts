@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { confirmDescription, okText, run } from './_shared.js';
+import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
   server.registerTool(
@@ -12,8 +13,8 @@ export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
 
   server.registerTool(
     'get_api_key',
-    { description: 'Get a single API key by id.', inputSchema: { id: z.string().min(1) } },
-    async ({ id }) => run(() => client.get<unknown>(`/api-keys/${id}`)),
+    { description: 'Get a single API key by id.', inputSchema: { id: idPathSegmentSchema } },
+    async ({ id }) => run(() => client.get<unknown>(`/api-keys/${encodePathSegment(id)}`)),
   );
 
   server.registerTool(
@@ -39,22 +40,22 @@ export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
         'Rotate an API key — issues a new token (returned once) and invalidates the old one. ' +
         'DESTRUCTIVE for existing integrations — pass confirm=true.',
       inputSchema: {
-        id: z.string().min(1),
+        id: idPathSegmentSchema,
         expiresAt: z.string().datetime().nullable().optional(),
         confirm: z.literal(true).describe(confirmDescription),
       },
     },
     async ({ id, expiresAt }) =>
-      run(() => client.post<unknown>(`/api-keys/${id}/rotate`, expiresAt !== undefined ? { expiresAt } : {})),
+      run(() => client.post<unknown>(`/api-keys/${encodePathSegment(id)}/rotate`, expiresAt !== undefined ? { expiresAt } : {})),
   );
 
   server.registerTool(
     'revoke_api_key',
     {
       description: 'Revoke an API key permanently. DESTRUCTIVE — pass confirm=true.',
-      inputSchema: { id: z.string().min(1), confirm: z.literal(true).describe(confirmDescription) },
+      inputSchema: { id: idPathSegmentSchema, confirm: z.literal(true).describe(confirmDescription) },
     },
-    async ({ id }) => run(() => client.post<unknown>(`/api-keys/${id}/revoke`, {})),
+    async ({ id }) => run(() => client.post<unknown>(`/api-keys/${encodePathSegment(id)}/revoke`, {})),
   );
 
   server.registerTool(
@@ -62,13 +63,13 @@ export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Attach a role to an API key (grants the role’s policies to the key).',
       inputSchema: {
-        id: z.string().min(1).describe('API key id.'),
+        id: idPathSegmentSchema.describe('API key id.'),
         roleId: z.string().min(1),
         priority: z.number().int().optional(),
         overrideWarnings: z.boolean().optional(),
       },
     },
-    async ({ id, ...body }) => run(() => client.post<unknown>(`/api-keys/${id}/roles`, body)),
+    async ({ id, ...body }) => run(() => client.post<unknown>(`/api-keys/${encodePathSegment(id)}/roles`, body)),
   );
 
   server.registerTool(
@@ -76,14 +77,14 @@ export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Detach a role from an API key. DESTRUCTIVE — pass confirm=true.',
       inputSchema: {
-        id: z.string().min(1).describe('API key id.'),
-        roleId: z.string().min(1),
+        id: idPathSegmentSchema.describe('API key id.'),
+        roleId: idPathSegmentSchema,
         confirm: z.literal(true).describe(confirmDescription),
       },
     },
     async ({ id, roleId }) =>
       run(async () => {
-        await client.delete(`/api-keys/${id}/roles/${roleId}`);
+        await client.delete(`/api-keys/${encodePathSegment(id)}/roles/${encodePathSegment(roleId)}`);
         return okText(`Role "${roleId}" detached from API key "${id}".`);
       }),
   );
@@ -93,13 +94,13 @@ export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Attach a policy directly to an API key.',
       inputSchema: {
-        id: z.string().min(1).describe('API key id.'),
+        id: idPathSegmentSchema.describe('API key id.'),
         policyId: z.string().min(1),
         priority: z.number().int().optional(),
         overrideWarnings: z.boolean().optional(),
       },
     },
-    async ({ id, ...body }) => run(() => client.post<unknown>(`/api-keys/${id}/policies`, body)),
+    async ({ id, ...body }) => run(() => client.post<unknown>(`/api-keys/${encodePathSegment(id)}/policies`, body)),
   );
 
   server.registerTool(
@@ -107,14 +108,14 @@ export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
     {
       description: 'Detach a policy from an API key. DESTRUCTIVE — pass confirm=true.',
       inputSchema: {
-        id: z.string().min(1).describe('API key id.'),
-        policyId: z.string().min(1),
+        id: idPathSegmentSchema.describe('API key id.'),
+        policyId: idPathSegmentSchema,
         confirm: z.literal(true).describe(confirmDescription),
       },
     },
     async ({ id, policyId }) =>
       run(async () => {
-        await client.delete(`/api-keys/${id}/policies/${policyId}`);
+        await client.delete(`/api-keys/${encodePathSegment(id)}/policies/${encodePathSegment(policyId)}`);
         return okText(`Policy "${policyId}" detached from API key "${id}".`);
       }),
   );

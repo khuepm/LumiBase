@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { buildQs, confirmDescription, okText, run } from './_shared.js';
+import { collectionNameSchema, encodePath, mediaKeySchema } from './path.js';
 
 export function registerSearchMediaTools(server: McpServer, client: LumiBaseClient) {
   // ── Full-text search ──────────────────────────────────────────────────────
@@ -13,7 +14,7 @@ export function registerSearchMediaTools(server: McpServer, client: LumiBaseClie
         'The `collection` parameter is required.',
       inputSchema: {
         q: z.string().min(1).describe('Query string.'),
-        collection: z.string().min(1).describe('Collection to search.'),
+        collection: collectionNameSchema.describe('Collection to search.'),
         filter: z.string().optional().describe('Backend filter expression.'),
         sort: z.string().optional().describe('Comma-separated sort fields.'),
         limit: z.number().int().min(1).max(200).optional(),
@@ -33,7 +34,7 @@ export function registerSearchMediaTools(server: McpServer, client: LumiBaseClie
     'list_media',
     {
       description: 'List media asset keys, optionally filtered by key prefix.',
-      inputSchema: { prefix: z.string().optional() },
+      inputSchema: { prefix: mediaKeySchema.optional() },
     },
     async ({ prefix }) =>
       run(() => client.get<unknown>(`/media${prefix ? `?prefix=${encodeURIComponent(prefix)}` : ''}`)),
@@ -44,13 +45,13 @@ export function registerSearchMediaTools(server: McpServer, client: LumiBaseClie
     {
       description: 'Delete a media asset by key. DESTRUCTIVE — warn the user first and pass confirm=true.',
       inputSchema: {
-        key: z.string().min(1).describe('Full storage key of the asset.'),
+        key: mediaKeySchema.describe('Full storage key of the asset.'),
         confirm: z.literal(true).describe(confirmDescription),
       },
     },
     async ({ key }) =>
       run(async () => {
-        await client.delete(`/media/${key}`);
+        await client.delete(`/media/${encodePath(key)}`);
         return okText(`Media asset "${key}" deleted.`);
       }),
   );
