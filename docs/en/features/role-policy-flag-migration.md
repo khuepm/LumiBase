@@ -1,4 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:11:36.295Z
+sourceLang: en
+contentHash: dfe37d468d6dd7e6
+---
+
 # Role Flag to Policy Flag Migration
+
+<!-- verify-code-refs: planned LUMIBASE_RBAC_LEGACY_ROLE_FLAGS -->
 
 > Scope: backward-compatible migration design from `roles.admin_access/app_access` to policy-level `admin_access/app_access/enforce_tfa/ip_allow/ip_deny/valid_from/valid_until`.
 

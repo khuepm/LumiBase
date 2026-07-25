@@ -120,6 +120,37 @@ function walk(dir, onFile) {
   }
 }
 
+/**
+ * Per-doc opt-out for references that are deliberately aspirational.
+ *
+ * Plan and design docs legitimately name things that do not exist yet — "Create
+ * a helper at `apps/cms/src/services/realtime-config.ts`", or an env var the
+ * feature will read once built. Those are not stale claims, and rewriting them
+ * to satisfy a checker would damage correct documentation.
+ *
+ * Rather than have the verifier guess at English ("Create" vs "See"), the doc
+ * declares them:
+ *
+ *   <!-- verify-code-refs: planned apps/cms/src/x.ts LUMIBASE_FOO -->
+ *
+ * Declared claims are counted as `planned` and reported separately — visible,
+ * never silently passing. Making the intent explicit in the doc also tells the
+ * reader the thing is unbuilt, which is the more useful outcome.
+ */
+const PLANNED_DIRECTIVE = /<!--\s*verify-code-refs:\s*planned\s+([^>]+?)\s*-->/g;
+
+function readPlannedClaims(raw) {
+  const planned = new Set();
+  PLANNED_DIRECTIVE.lastIndex = 0;
+  let m;
+  while ((m = PLANNED_DIRECTIVE.exec(raw)) !== null) {
+    for (const token of m[1].split(/\s+/)) {
+      if (token) planned.add(token);
+    }
+  }
+  return planned;
+}
+
 /** Strip fenced code blocks that are illustrative output rather than claims. */
 function stripIgnorableFences(body) {
   // Keep the text — we still want refs inside shell/ts examples — but drop
@@ -187,10 +218,12 @@ const CHECKS = [
 /** Verify one doc file. Returns { findings, checked, skipped }. */
 export function verifyDoc(absPath) {
   const raw = fs.readFileSync(absPath, 'utf8');
+  const plannedClaims = readPlannedClaims(raw);
   const body = stripIgnorableFences(raw);
   const findings = [];
   let checked = 0;
   let skipped = 0;
+  let planned = 0;
   const seen = new Set();
 
   for (const { kind, pattern, run } of CHECKS) {
@@ -206,11 +239,15 @@ export function verifyDoc(absPath) {
         skipped += 1;
         continue;
       }
+      if (verdict === 'fail' && plannedClaims.has(claim)) {
+        planned += 1;
+        continue;
+      }
       checked += 1;
       if (verdict === 'fail') findings.push({ kind, claim, detail });
     }
   }
-  return { findings, checked, skipped };
+  return { findings, checked, skipped, planned };
 }
 
 /**
@@ -244,8 +281,8 @@ for (const rel of targets) {
   for (const locale of LOCALES) {
     const abs = path.join(DOCS_ROOT, locale, rel);
     if (!fs.existsSync(abs)) continue;
-    const { findings, checked, skipped } = verifyDoc(abs);
-    results.push({ rel, locale, checked, skipped, findings });
+    const { findings, checked, skipped, planned } = verifyDoc(abs);
+    results.push({ rel, locale, checked, skipped, planned, findings });
   }
 }
 
@@ -254,6 +291,7 @@ const unverifiable = results.filter((r) => isUnverifiable(r));
 const totalFindings = withFindings.reduce((n, r) => n + r.findings.length, 0);
 const totalChecked = results.reduce((n, r) => n + r.checked, 0);
 const totalSkipped = results.reduce((n, r) => n + r.skipped, 0);
+const totalPlanned = results.reduce((n, r) => n + (r.planned ?? 0), 0);
 
 if (AS_JSON) {
   console.log(
@@ -262,6 +300,7 @@ if (AS_JSON) {
         docs: results.length,
         claimsChecked: totalChecked,
         claimsSkipped: totalSkipped,
+        claimsPlanned: totalPlanned,
         findings: totalFindings,
         unverifiable: unverifiable.map((r) => `docs/${r.locale}/${r.rel}`),
         results: withFindings,
@@ -273,7 +312,7 @@ if (AS_JSON) {
 } else {
   console.log(
     `[verify-code-refs] docs=${results.length} claims=${totalChecked} skipped=${totalSkipped} ` +
-      `findings=${totalFindings} unverifiable=${unverifiable.length}`,
+      `planned=${totalPlanned} findings=${totalFindings} unverifiable=${unverifiable.length}`,
   );
   for (const r of withFindings) {
     console.log(`\n  docs/${r.locale}/${r.rel}`);

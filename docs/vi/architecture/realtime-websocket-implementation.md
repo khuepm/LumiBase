@@ -1,3 +1,16 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:11:35.843Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 0582bd39b6bfd061
+mtEngine: claude
+syncStatus: machine-translated
+codeVerified: 2026-07-25T08:11:35.843Z
+codeVerifiedHash: 0582bd39b6bfd061
+codeVerifiedClaims: 20
+---
+
 # Realtime WebSocket Implementation
 
 Tài liệu này mô tả cách hoàn thiện tích hợp WebSocket trong codebase hiện tại. Repo đã có nền tảng ban đầu:
@@ -89,6 +102,8 @@ type CollectionRealtimeMeta = {
 Default: disabled.
 
 ## Backend implementation
+
+<!-- verify-code-refs: planned apps/cms/src/services/realtime-config.ts -->
 
 ### 1. Thêm realtime config service
 
