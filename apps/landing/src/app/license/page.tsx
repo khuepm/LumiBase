@@ -11,32 +11,28 @@ export const metadata: Metadata = {
 export default function License() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-16">
-      <h1 className="text-4xl font-bold">MIT License</h1>
+      <h1 className="text-4xl font-bold">Apache License 2.0</h1>
       <p className="mt-4 text-gray-400">
-        LumiBase is open-source software released under the MIT License.
+        LumiBase is open-source software released under the Apache License,
+        Version 2.0. The relicense from MIT took effect in <code className="rounded bg-ink-800 px-2 py-1 text-signal-400">v0.23.0</code>;{" "}
+        <code className="rounded bg-ink-800 px-2 py-1 text-signal-400">v0.22.0</code> was the final MIT-licensed release.
       </p>
 
       <div className="mt-12 rounded-xl border border-ink-700 bg-ink-900 p-8">
         <pre className="whitespace-pre-wrap font-mono text-sm text-gray-300">
-          {`Copyright (c) 2025-2026 LumiBase Contributors
+          {`Copyright (c) 2026 LumiBase Contributors
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+    http://www.apache.org/licenses/LICENSE-2.0
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.`}
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.`}
         </pre>
       </div>
 
@@ -44,7 +40,7 @@ SOFTWARE.`}
         <section>
           <h2 className="text-2xl font-semibold">What This Means</h2>
           <p>
-            The MIT License is a permissive license that allows you to:
+            The Apache License 2.0 is a permissive license that allows you to:
           </p>
           <ul>
             <li>Use LumiBase for personal and commercial projects</li>
@@ -53,21 +49,28 @@ SOFTWARE.`}
             <li>Sublicense the code under different terms</li>
             <li>Use the code in proprietary software</li>
           </ul>
+          <p>
+            It also grants an express patent license from contributors, and lets
+            you place your own copyright statement on your modifications.
+          </p>
         </section>
 
         <section>
           <h2 className="text-2xl font-semibold">Requirements</h2>
           <p>
-            The only requirement is to include the original copyright notice and license text in any
-            substantial portions of the Software that you distribute.
+            When you distribute the Software (original or modified), you must
+            include a copy of the license, retain existing copyright, patent,
+            trademark, and attribution notices, and state any significant changes
+            you made to the files.
           </p>
         </section>
 
         <section>
           <h2 className="text-2xl font-semibold">No Warranty</h2>
           <p>
-            The software is provided "as is" without warranty of any kind. The authors and copyright holders
-            are not liable for any damages arising from the use of this software.
+            The software is provided "as is" without warranties or conditions of
+            any kind. The authors and copyright holders are not liable for any
+            damages arising from the use of this software.
           </p>
         </section>
 
@@ -83,7 +86,7 @@ SOFTWARE.`}
         <section>
           <h2 className="text-2xl font-semibold">Contributing</h2>
           <p>
-            By contributing to LumiBase, you agree that your contributions will be licensed under the MIT License.
+            By contributing to LumiBase, you agree that your contributions will be licensed under the Apache License 2.0.
             See our contributing guidelines for more information.
           </p>
         </section>
@@ -92,7 +95,7 @@ SOFTWARE.`}
           <h2 className="text-2xl font-semibold">Questions?</h2>
           <p>
             If you have questions about licensing or need clarification, please open an issue on our
-            <a href="https://github.com/khuepm/lumibase" target="_blank" rel="noopener noreferrer" className="text-signal-400 hover:underline">GitHub repository</a>.
+            <a href="https://github.com/khuepm/LumiBase" target="_blank" rel="noopener noreferrer" className="text-signal-400 hover:underline">GitHub repository</a>.
           </p>
         </section>
       </div>

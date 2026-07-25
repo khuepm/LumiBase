@@ -1,13 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { ToolRegistryService } from '../services/tool-registry-service';
-import { isControlPlaneSkill, type SkillDefinition } from '../services/ai-harness';
+import {
+  isControlPlaneSkill,
+  CORE_SKILLS as HARNESS_SKILLS,
+  type SkillDefinition,
+} from '../services/ai-harness';
 import { CORE_SKILLS } from '@lumibase/ai-skills';
 
 /**
  * Change Feed skills — risk/HITL classification (Req 7.4, task 12.2).
- * `deleteCdcSubscription` must be control-plane purely via the `delete` name
- * prefix (rule #4 CLAUDE.md); the manage/read skills stay safe. `coreTool`
- * does not touch the DB, so a bare stub suffices (deploy-skill-risk pattern).
+ * `deleteCdcSubscription` is control-plane via the `delete` name prefix
+ * (rule #4 CLAUDE.md). `createCdcSubscription`/`replayCdcSubscription` are
+ * control-plane via an explicit `dangerous` flag so the agent/MCP path
+ * matches the REST posture (whole `/api/v1/cdc` surface is admin-only). Only
+ * the read skills (`list*`/`get*Status`) stay safe. `coreTool` does not touch
+ * the DB, so a bare stub suffices (deploy-skill-risk pattern).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const registry = new ToolRegistryService({} as any, 'site1', {});
@@ -38,13 +45,22 @@ describe('cdc-feed skill risk policy (HITL)', () => {
     expect(tool.riskPolicy.approvalPolicy).toBe('before_execute');
   });
 
-  it('keeps list/get/create/replay skills out of the control-plane class', () => {
-    for (const name of [
-      'listCdcSubscriptions',
-      'getCdcSubscriptionStatus',
-      'createCdcSubscription',
-      'replayCdcSubscription',
-    ]) {
+  it('classifies create/replay as control-plane via the explicit dangerous flag', () => {
+    // Risk classification lives on the harness registry (`buildCoreSkills`),
+    // not the `@lumibase/ai-skills` metadata registry (which never carries
+    // `dangerous` — same as every other governed skill).
+    for (const name of ['createCdcSubscription', 'replayCdcSubscription'] as const) {
+      const def = HARNESS_SKILLS[name] as SkillDefinition;
+      expect(def.dangerous, name).toBe(true);
+      expect(isControlPlaneSkill(def, name), name).toBe(true);
+      const tool = registry.coreTool(name, def);
+      expect(tool.riskPolicy.level, name).toBe('dangerous');
+      expect(tool.riskPolicy.approvalPolicy, name).toBe('before_execute');
+    }
+  });
+
+  it('keeps read skills (list/get) out of the control-plane class', () => {
+    for (const name of ['listCdcSubscriptions', 'getCdcSubscriptionStatus']) {
       expect(
         isControlPlaneSkill({ requiredCapabilities: ['cdc:manage'], dangerous: undefined }, name),
         name,

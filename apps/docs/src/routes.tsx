@@ -1,11 +1,19 @@
 import { Navigate, type RouteObject } from 'react-router-dom';
-import { defaultLocale } from 'virtual:docs-registry';
 import { Layout } from './components/Layout';
 import { LegacyRedirect } from './components/LegacyRedirect';
 import { LocaleGuard } from './components/LocaleGuard';
 import { DocPage } from './pages/DocPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { pathFor } from './lib/url';
+import { getPreferredLocale } from './lib/locale-storage';
+
+/**
+ * Root → previously chosen locale's README (defaultLocale on first visit,
+ * during SSR, or when no preference is stored).
+ */
+function RootRedirect() {
+  return <Navigate to={pathFor(getPreferredLocale(), 'README')} replace />;
+}
 
 /**
  * Shared route configuration used by both the client (createBrowserRouter)
@@ -18,7 +26,7 @@ export const routes: RouteObject[] = [
   // Root → default locale README
   {
     path: '/',
-    element: <Navigate to={pathFor(defaultLocale, 'README')} replace />,
+    element: <RootRedirect />,
   },
 
   // Legacy prefix-less URL → redirect to default locale

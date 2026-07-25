@@ -11,6 +11,90 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [0.24.1] - 2026-07-21
+
+### Version
+
+- `v0.24.1`
+
+### Date
+
+- `2026-07-21`
+
+### Highlights
+
+- **Shell version alignment.** The Tauri desktop/mobile app (`@lumibase/shell`)
+  `src-tauri` version metadata is brought in lockstep with the monorepo release,
+  so the auto-updater compares against the correct version. (#287)
+
+### Fixed
+
+- **Shell version drift.** `apps/shell/src-tauri` (`tauri.conf.json`,
+  `Cargo.toml`, `Cargo.lock`) lagged the `@lumibase/shell` package version; all
+  are now synced to the monorepo release version. The `tauri.conf.json` version
+  is the value the desktop auto-updater compares against, so keeping it in
+  lockstep with the release avoids stale/incorrect update checks. (#287)
+
+### Migrations
+
+- None
+
+## [0.24.0] - 2026-07-21
+
+### Version
+
+- `v0.24.0`
+
+### Date
+
+- `2026-07-21`
+
+### Highlights
+
+- **Unified Tauri 2 desktop + mobile app.** A native shell (`@lumibase/shell`)
+  wraps the Studio SPA for desktop (signed auto-update) and mobile (Android/iOS),
+  with hybrid bundled/remote asset delivery. (#171)
+- **More LLM providers + read-only MCP insights.** NVIDIA and Vertex AI join the
+  provider set, and the MCP server gains its first read-only insights tools. (#273, #274)
+- **Security & abuse hardening.** GraphQL query cost limits, a per-IP brake on
+  setup-complete, prototype-pollution blocking on `deep[]` query aliases, and a
+  tighter AI-harness capability classification. (#278, #280, #276)
+
+### Added
+
+- **Unified Tauri 2 desktop + mobile shell** (`apps/shell`, `@lumibase/shell`).
+  Thin native wrapper around the Studio SPA: desktop builds add signed
+  auto-update; mobile builds target Android/iOS. Hybrid delivery bundles
+  `apps/studio/dist` for instant/offline load and probes the remote Studio
+  deployment on release builds. Adds `shell-check.yml` (Rust `cargo check`,
+  desktop + Android) and `release-apps.yml` (multi-platform signed bundles via
+  `tauri-action`). (#171)
+- **GraphQL query cost limit + setup-complete per-IP rate brake** (`cms`). (#278)
+- **Read-only insights tools for the MCP server** (Wave 1). (#274)
+- **NVIDIA + Vertex AI LLM providers**, plus a MeiliSearch-on-AWS guide. (#273)
+- **Idempotency-keys spec** (requirements, design, tasks). (#281)
+
+### Fixed
+
+- **`ci`:** Exclude `@lumibase/shell` from the root `turbo run build`. The
+  shell's `build` script is `tauri build`, so `pnpm build` in the CI `checks`
+  job attempted to bundle the Tauri desktop app on a runner without native GTK
+  libraries (`glib-2.0` / `gobject-2.0`). The shell's native build stays covered
+  by `shell-check.yml` and `release-apps.yml`; `pnpm -F @lumibase/shell build`
+  remains available for local desktop builds. (#285)
+- **`item-service`:** Block prototype-pollution via `deep[]` query aliases. (#280)
+- **`ai-harness`:** Classify `createCdcSubscription` / `replayCdcSubscription`
+  as control-plane capabilities. (#276)
+- **`docs`:** Stop doc pages 404ing after hydration. (#282)
+
+### Notes
+
+- Ongoing en/vi documentation translation sync.
+
+### Migrations
+
+- None
+
 ## [0.23.0] - 2026-07-14
 
 ### Version

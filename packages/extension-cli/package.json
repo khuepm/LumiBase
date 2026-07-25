@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/extension-cli",
-  "version": "0.23.0",
+  "version": "0.24.1",
   "private": true,
   "description": "CLI to generate signing keys and sign LumiBase extension bundles.",
   "type": "module",

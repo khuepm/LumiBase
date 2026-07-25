@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Baseline capability for the main window on every platform: core webview, relaunch, and deep-link handling.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "process:default",
+    "process:allow-restart",
+    "deep-link:default"
+  ]
+}

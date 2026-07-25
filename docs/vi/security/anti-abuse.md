@@ -61,6 +61,16 @@ kèm `Retry-After`, và không bao giờ để một request bị từ chối k�
   (key theo IP đơn thuần, nên kẻ tấn công không thể nhân đôi ngân sách bằng cách
   chia đều qua hai path). Cửa sổ cố định; `Retry-After` giảm đơn điệu. Limiter này
   **in-memory theo từng process** (xem phần Khoảng trống & khuyến nghị bên dưới).
+- **Brake cho setup** — bề mặt setup công khai (mount *trước* auth, chỉ truy cập
+  được khi chưa khởi tạo) bị throttle theo IP trong
+  `apps/cms/src/modules/setup/routes.ts`: `GET /setup/state` ở 60 req / 60 s, và
+  `POST /setup/complete` ở **10 req / 60 s** trên bucket riêng. Brake của
+  `/complete` chạy *trước* khi parse body hay hash mật khẩu, nên nó chặn
+  brute-force `setupToken` và spam CPU-hashing trong cửa sổ bootstrap với chi phí
+  bằng 0 cho mỗi request bị chặn. Trả `429 RATE_LIMITED` + `Retry-After`. Hàng rào
+  cứng chống tạo trùng admin đầu tiên vẫn là `SELECT … FOR UPDATE` trên singleton
+  `system_state` cộng unique index — brake này là defence-in-depth. Nó **in-memory
+  theo từng isolate** (xem phần Khoảng trống & khuyến nghị bên dưới).
 - **Throttle API chung** — `apps/cms/src/middleware/rate-limit.ts`
   (`withRateLimit`) là một lưới an toàn cửa sổ-cố-định thô trên bề mặt REST/GraphQL
   đã xác thực: mặc định 300 req / 60 s (`LUMIBASE_RATE_LIMIT_MAX` / `_WINDOW_S`),
@@ -136,8 +146,15 @@ lập trong database để một `.where()` bị thiếu không làm rò rỉ d�
   từ chối request JSON mutating vượt 1 MiB (`LUMIBASE_MAX_JSON_BODY`) với
   `413 PAYLOAD_TOO_LARGE`, kiểm tra trên `Content-Length` trước khi đọc body. Đây
   là "thắt lưng" bổ trợ cho "dây đeo quần" Caddy `request_body max_size` ở upstream.
-- **GraphQL depth** — `apps/cms/src/graphql/yoga.ts` đặt `MAX_QUERY_DEPTH = 12` qua
-  `depthLimitRule`, và tắt introspection khi `LUMIBASE_ENV` là `production`.
+- **GraphQL depth & cost** — `apps/cms/src/graphql/yoga.ts` chặn độ sâu lồng nhau
+  của field ở `MAX_QUERY_DEPTH = 12` (`depthLimitRule`) *và* chi phí query tĩnh ở
+  `LUMIBASE_GQL_MAX_COST` (mặc định 1000, `costLimitRule`). Chi phí bắt các query
+  nông-nhưng-rộng mà riêng độ sâu bỏ lọt — nhiều field song song, `limit` lớn, hoặc
+  một field bị alias lặp lại — tính mỗi field 1 điểm và nhân subtree của một list
+  với argument phân trang (`LUMIBASE_GQL_DEFAULT_LIST_SIZE` khi vắng mặt/variable,
+  clamp về `LUMIBASE_GQL_MAX_LIST_MULTIPLIER`). Cả hai chạy ở mọi môi trường,
+  validate trước mọi resolver; introspection bị tắt khi `LUMIBASE_ENV` là
+  `production`. Xem [`graphql-api-spec.md`](../api/graphql-api-spec.md#chống-lạm-dụng).
 - **Phân trang** — các query list clamp kích thước trang (vd
   `Math.min(params.limit ?? 25, 200)` trong `item-service.ts`; `PANEL_MAX_LIMIT`,
   CDC feed `max(500)`), nên caller không thể yêu cầu trang không giới hạn.

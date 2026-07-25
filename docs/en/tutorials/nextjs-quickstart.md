@@ -391,8 +391,87 @@ schema — see [SDK type generation](../sdk/typegen.md).
 <tr><td>Empty <code>data: []</code></td><td>No <strong>published</strong> posts</td><td>Set items to <code>published</code> in Studio</td></tr>
 <tr><td><code>404</code> on items</td><td>Collection name mismatch</td><td>Collection must be named exactly <code>posts</code></td></tr>
 <tr><td>CORS error in browser</td><td>Fetching from client code</td><td>Fetch from a <strong>Server Component</strong> (as above)</td></tr>
+<tr><td><code>429 RATE_LIMITED</code></td><td>Too many requests from one key/IP</td><td>Back off; honour the <code>Retry-After</code> header (see below)</td></tr>
+<tr><td><code>503 RATE_LIMIT_UNAVAILABLE</code></td><td>Server's rate-limit cache is down (fail-closed deployments)</td><td>Transient — retry with backoff; not your app's fault</td></tr>
 </tbody>
 </table>
+
+---
+
+## Production & security notes for frontends
+
+The happy path above works on localhost. Before you ship, wire in the contracts a
+LumiBase client is expected to respect. These matter more once your frontend is a
+public deployment (Next.js on Vercel/Cloudflare, etc.).
+
+### 1. Keep the API key on the server — always
+
+The `lbk_…` key is a **bearer credential**. Read it only in Server Components, Route
+Handlers, or Server Actions — never in a `'use client'` component and never behind a
+`NEXT_PUBLIC_` env var (those are inlined into the browser bundle). If the browser
+genuinely needs data, proxy it through your own Route Handler so the key stays server-side.
+
+### 2. Handle rate limiting (`429`) and, if fail-closed, `503`
+
+LumiBase throttles per principal/IP and per site. Two responses your fetch layer should
+handle:
+
+- **`429 RATE_LIMITED`** — you're over the window. The response carries `Retry-After`
+  (seconds) and `X-RateLimit-Reset`. Back off; don't hammer.
+- **`503 RATE_LIMIT_UNAVAILABLE`** *(LumiBase ≥ 0.24.0)* — only in deployments that run
+  the limiter **fail-closed** (`LUMIBASE_RATE_LIMIT_FAIL_CLOSED=true`): the limiter's cache
+  is momentarily down. It's transient and not your app's fault — retry with backoff.
+
+```ts
+async function lumibaseFetch(url: string | URL, init?: RequestInit, attempt = 0): Promise<Response> {
+  const res = await fetch(url, init)
+  if ((res.status === 429 || res.status === 503) && attempt < 3) {
+    const retryAfter = Number(res.headers.get('Retry-After')) || 2 ** attempt
+    await new Promise((r) => setTimeout(r, retryAfter * 1000))
+    return lumibaseFetch(url, init, attempt + 1)
+  }
+  return res
+}
+```
+
+### 3. Watch for `Deprecation` / `Sunset` headers *(LumiBase ≥ 0.24.0)*
+
+A retiring endpoint returns RFC 8594 headers: `Deprecation`, `Sunset` (a date), and a
+`Link rel="deprecation"` to the changelog. Log them in your client so an endpoint doesn't
+disappear on you:
+
+```ts
+if (res.headers.get('Deprecation')) {
+  console.warn('[LumiBase] deprecated endpoint; sunset:', res.headers.get('Sunset'))
+}
+```
+
+### 4. Calling from the browser? Configure CORS deliberately
+
+The Server-Component pattern above needs no CORS. If you must call the API from client
+code, the CMS only allows **exact-match** origins listed in `CORS_ALLOWED_ORIGINS` — a
+credentialed response is **never** returned for a wildcard `*`. Add your frontend origin
+explicitly (e.g. `https://app.example.com`), and remember client calls expose whatever
+token they carry, so use a short-lived/narrow-scoped token, not the `lbk_…` key.
+
+### 5. `/test-auth` is a dev-only playground
+
+The interactive auth page at `/test-auth` is developer tooling. From **LumiBase ≥ 0.24.0**
+it returns `404` in production — don't build anything that depends on it being reachable
+on a production host.
+
+### 6. Keep Next.js patched — SSRF advisories
+
+Frontend framework hygiene is part of your API's attack surface. Recent Next.js releases
+fixed **server-side request forgery** issues:
+
+- `GHSA-89xv-2m56-2m9x` — SSRF in Server Actions on custom servers.
+- `GHSA-p9j2-gv94-2wf4` — SSRF in `rewrites` via an attacker-controlled destination host.
+
+Use **`next` ≥ 16.2.11**, and never build a `rewrites`/Server-Action destination from
+unvalidated user input (a user-supplied hostname or full URL). If you must fetch a
+user-provided URL server-side, validate it against an allowlist and block private/metadata
+IP ranges — the same discipline LumiBase applies in its own SSRF guard.
 
 ---
 
@@ -419,6 +498,10 @@ the table above and re-verify — see DoD §5):
   `filter[field][_op]=value` bracket form (JSON wins if both sent); `sort=<csv>`
 - `GET /api/v1/site` returns the active tenant; default id `__default__`
 - `@lumibase/sdk` `createClient({ url, siteId, token }).items(c).readMany(...)`
+- Rate limiting returns `429 RATE_LIMITED` with `Retry-After`; the "Production &
+  security" section additionally covers `503 RATE_LIMIT_UNAVAILABLE` and
+  `Deprecation`/`Sunset` headers, both **added in `0.24.0`** (the core flow above still
+  works unchanged from `0.9.0`)
 
 ---
 

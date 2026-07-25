@@ -21,7 +21,7 @@ title: Next.js Quickstart — Hiển thị nội dung LumiBase
 
 <h1>🟡 Hiển thị nội dung LumiBase trên app Next.js</h1>
 
-<p><strong>Đi từ máy trống đến một trang Next.js render nội dung từ LumiBase.</strong></p>
+<p><strong>Xây dựng trang Next.js đầu tiên với nội dung được phân phối từ LumiBase.</strong></p>
 
 <p>
   <img alt="LumiBase version" src="https://img.shields.io/badge/LumiBase-%E2%89%A5%200.9.0%20%C2%B7%20verified%200.10.0-F5A623?style=for-the-badge">
@@ -387,8 +387,84 @@ xem [SDK type generation](../sdk/typegen.md).
 <tr><td><code>data: []</code> rỗng</td><td>Chưa có bài <strong>published</strong></td><td>Đặt item là <code>published</code> trong Studio</td></tr>
 <tr><td><code>404</code> ở items</td><td>Sai tên collection</td><td>Collection phải đặt đúng tên <code>posts</code></td></tr>
 <tr><td>Lỗi CORS trên browser</td><td>Fetch từ code client</td><td>Fetch trong <strong>Server Component</strong> (như trên)</td></tr>
+<tr><td><code>429 RATE_LIMITED</code></td><td>Quá nhiều request từ một key/IP</td><td>Backoff; tôn trọng header <code>Retry-After</code> (xem dưới)</td></tr>
+<tr><td><code>503 RATE_LIMIT_UNAVAILABLE</code></td><td>Cache rate-limit của server đang lỗi (deployment fail-closed)</td><td>Tạm thời — retry có backoff; không phải lỗi app của bạn</td></tr>
 </tbody>
 </table>
+
+---
+
+## Ghi chú production & bảo mật cho frontend
+
+Happy path ở trên chạy tốt trên localhost. Trước khi lên production, hãy tuân thủ các
+contract mà một client LumiBase nên tôn trọng — đặc biệt quan trọng khi frontend của bạn
+là một deployment public (Next.js trên Vercel/Cloudflare…).
+
+### 1. Luôn giữ API key ở phía server
+
+Key `lbk_…` là **bearer credential**. Chỉ đọc trong Server Component, Route Handler hay
+Server Action — KHÔNG bao giờ trong component `'use client'` và KHÔNG đặt sau env
+`NEXT_PUBLIC_` (những biến đó bị inline vào bundle trình duyệt). Nếu browser thực sự cần
+dữ liệu, hãy proxy qua Route Handler của chính bạn để key nằm lại server.
+
+### 2. Xử lý rate limiting (`429`) và, nếu fail-closed, `503`
+
+LumiBase throttle theo principal/IP và theo site. Hai response tầng fetch nên xử lý:
+
+- **`429 RATE_LIMITED`** — vượt cửa sổ. Response kèm `Retry-After` (giây) và
+  `X-RateLimit-Reset`. Backoff, đừng dội request.
+- **`503 RATE_LIMIT_UNAVAILABLE`** *(LumiBase ≥ 0.24.0)* — chỉ ở deployment chạy limiter
+  **fail-closed** (`LUMIBASE_RATE_LIMIT_FAIL_CLOSED=true`): cache của limiter tạm lỗi.
+  Tạm thời và không phải lỗi app của bạn — retry có backoff.
+
+```ts
+async function lumibaseFetch(url: string | URL, init?: RequestInit, attempt = 0): Promise<Response> {
+  const res = await fetch(url, init)
+  if ((res.status === 429 || res.status === 503) && attempt < 3) {
+    const retryAfter = Number(res.headers.get('Retry-After')) || 2 ** attempt
+    await new Promise((r) => setTimeout(r, retryAfter * 1000))
+    return lumibaseFetch(url, init, attempt + 1)
+  }
+  return res
+}
+```
+
+### 3. Theo dõi header `Deprecation` / `Sunset` *(LumiBase ≥ 0.24.0)*
+
+Một endpoint sắp gỡ sẽ trả header RFC 8594: `Deprecation`, `Sunset` (một ngày) và
+`Link rel="deprecation"` trỏ changelog. Log lại ở client để endpoint không "biến mất" bất ngờ:
+
+```ts
+if (res.headers.get('Deprecation')) {
+  console.warn('[LumiBase] endpoint deprecated; sunset:', res.headers.get('Sunset'))
+}
+```
+
+### 4. Gọi từ browser? Cấu hình CORS có chủ đích
+
+Pattern Server-Component ở trên không cần CORS. Nếu buộc phải gọi API từ code client, CMS
+chỉ cho phép origin **khớp chính xác** trong `CORS_ALLOWED_ORIGINS` — response có credential
+**không bao giờ** trả cho wildcard `*`. Thêm origin frontend của bạn một cách tường minh
+(vd `https://app.example.com`); và nhớ call từ client sẽ lộ token nó mang theo, nên dùng
+token ngắn hạn/scope hẹp, KHÔNG dùng key `lbk_…`.
+
+### 5. `/test-auth` chỉ dành cho dev
+
+Trang auth tương tác ở `/test-auth` là công cụ dev. Từ **LumiBase ≥ 0.24.0** nó trả `404`
+ở production — đừng xây thứ gì phụ thuộc việc nó truy cập được trên host production.
+
+### 6. Vá Next.js kịp thời — advisory SSRF
+
+Vệ sinh framework frontend là một phần bề mặt tấn công của API. Các bản Next.js gần đây đã
+vá lỗi **server-side request forgery**:
+
+- `GHSA-89xv-2m56-2m9x` — SSRF trong Server Actions trên custom server.
+- `GHSA-p9j2-gv94-2wf4` — SSRF trong `rewrites` qua destination host do attacker kiểm soát.
+
+Dùng **`next` ≥ 16.2.11**, và đừng bao giờ dựng destination `rewrites`/Server-Action từ
+input chưa kiểm chứng (hostname hay URL do người dùng cung cấp). Nếu buộc phải fetch một URL
+do người dùng cung cấp ở phía server, validate theo allowlist và chặn dải IP private/metadata
+— đúng kỷ luật LumiBase áp dụng trong SSRF guard của chính nó.
 
 ---
 
@@ -415,6 +491,9 @@ trên và verify lại — xem DoD §5):
   `filter[field][_op]=value` (JSON thắng nếu gửi cả hai); `sort=<csv>`
 - `GET /api/v1/site` trả tenant đang hoạt động; id mặc định `__default__`
 - `@lumibase/sdk` `createClient({ url, siteId, token }).items(c).readMany(...)`
+- Rate limiting trả `429 RATE_LIMITED` kèm `Retry-After`; mục "Production & bảo mật" còn
+  phủ `503 RATE_LIMIT_UNAVAILABLE` và header `Deprecation`/`Sunset`, cả hai **thêm ở
+  `0.24.0`** (luồng chính ở trên vẫn chạy nguyên vẹn từ `0.9.0`)
 
 ---
 

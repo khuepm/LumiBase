@@ -12,7 +12,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 const TITLE = "LumiBase — The Content Operating System";
 const DESCRIPTION =
-  "LumiBase is a Content Operating System: declare your content's desired state, let governed AI agents reconcile it continuously, and keep human veto. Edge-native, AI-native, open source under MIT.";
+  "LumiBase is a Content Operating System: declare your content's desired state, let governed AI agents reconcile it continuously, and keep human veto. Edge-native, AI-native, open source under Apache 2.0.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://lumibase.dev"),

@@ -13,6 +13,7 @@ const ROOT_PACKAGE_PATH = path.join(REPO_ROOT, 'package.json');
 const APP_PACKAGE_PATHS = [
   'apps/cms/package.json',
   'apps/studio/package.json',
+  'apps/shell/package.json',
   'apps/docs/package.json',
   'apps/landing/package.json',
   'apps/consumer/package.json',

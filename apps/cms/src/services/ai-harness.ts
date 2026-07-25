@@ -1810,6 +1810,11 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     // ── Change Feed (spec: cdc-extension-integration, Req 7.4) ─────────────
     // `deleteCdcSubscription` is control-plane purely via the `delete` name
     // prefix in `isControlPlaneSkill` — no manual `dangerous` flag needed.
+    // `createCdcSubscription`/`replayCdcSubscription` carry an explicit
+    // `dangerous` flag so the agent/MCP path matches the REST posture: the
+    // whole `/api/v1/cdc` surface is admin-only (CONTROL_PLANE_PATHS +
+    // `authorizeSiteAdmin`), so mutating the change feed via a skill must
+    // likewise be control-plane (MCP admin backstop + pre-execute HITL).
 
     listCdcSubscriptions: {
       name: 'listCdcSubscriptions',
@@ -1834,9 +1839,10 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     createCdcSubscription: {
       name: 'createCdcSubscription',
       description:
-        'Create a change-feed subscription (pull, webhook, or extension) with optional filters.',
+        'Create a change-feed subscription (pull, webhook, or extension) with optional filters. Control-plane: requires HITL approval below autopilot.',
       requiredCapabilities: ['cdc:manage'],
       service: 'cdc-feed',
+      dangerous: true,
       handler: async (args) => {
         const service = await cdcFeedService();
         const { CdcSubscriptionCreateSchema } = await import('@lumibase/shared/schemas');
@@ -1854,9 +1860,10 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     replayCdcSubscription: {
       name: 'replayCdcSubscription',
       description:
-        'Rewind a subscription checkpoint inside the retention window (resets dead/stale to active).',
+        'Rewind a subscription checkpoint inside the retention window (resets dead/stale to active). Control-plane: requires HITL approval below autopilot.',
       requiredCapabilities: ['cdc:manage'],
       service: 'cdc-feed',
+      dangerous: true,
       handler: async (args) => {
         const service = await cdcFeedService();
         return await service.replay(

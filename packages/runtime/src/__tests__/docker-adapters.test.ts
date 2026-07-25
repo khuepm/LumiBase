@@ -56,8 +56,9 @@ const mockMeiliClient = {
   index: vi.fn(() => mockIndex),
 };
 
+// meilisearch >=0.50 renamed the client export to `Meilisearch` (lowercase s).
 vi.mock('meilisearch', () => ({
-  MeiliSearch: vi.fn(function () {
+  Meilisearch: vi.fn(function () {
     return mockMeiliClient;
   }),
 }));

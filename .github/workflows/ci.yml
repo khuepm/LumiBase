@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -135,7 +135,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -189,6 +189,10 @@ jobs:
     name: Lint stable packages
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # `secrets` context is not allowed in step-level `if:`, so surface the token's
+    # presence as an env var the steps below can gate on.
+    env:
+      MARKETPLACE_SUBMODULE_TOKEN: ${{ secrets.MARKETPLACE_SUBMODULE_TOKEN }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -200,16 +204,20 @@ jobs:
       # MARKETPLACE_SUBMODULE_TOKEN PAT via a scoped insteadOf rewrite. Init ONLY
       # this path — enterprise/extensions are private too and a blanket
       # `submodules: true` checkout would abort with "repository not found".
+      #
+      # Dependabot runs and forked-PR runs do NOT receive repository secrets, so
+      # the token is empty there and the private clone would fail. Skip the fetch
+      # (and the marketplace lint below) in that case — the workspace packages
+      # still lint fine without it.
       - name: Fetch marketplace submodule
-        env:
-          MARKETPLACE_SUBMODULE_TOKEN: ${{ secrets.MARKETPLACE_SUBMODULE_TOKEN }}
+        if: ${{ env.MARKETPLACE_SUBMODULE_TOKEN != '' }}
         run: |
           git config --global url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf "https://github.com/lumibase-ai/"
           git submodule update --init --depth=1 apps/marketplace
           git config --global --unset url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -262,6 +270,7 @@ jobs:
       # linted standalone with its own deps, exactly as pages-deploy.yml builds
       # it. The Fetch marketplace submodule step above makes its source present.
       - name: Lint marketplace (standalone submodule)
+        if: ${{ env.MARKETPLACE_SUBMODULE_TOKEN != '' }}
         working-directory: apps/marketplace
         run: |
           pnpm install --no-frozen-lockfile --ignore-workspace
@@ -276,7 +285,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false

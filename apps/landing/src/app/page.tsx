@@ -24,7 +24,7 @@ const softwareApplicationJsonLd = {
   operatingSystem: "Cloudflare Workers, Docker, Node.js",
   description:
     "LumiBase is a Content Operating System: an edge-native, AI-native headless CMS where governed agents operate content against declarative SLOs while humans set intent, taste, and accountability.",
-  softwareVersion: "0.23.0",
+  softwareVersion: "0.24.1",
   codeRepository: "https://github.com/khuepm/lumibase",
   license: "https://lumibase.dev/license",
   isAccessibleForFree: true,
@@ -34,7 +34,7 @@ const softwareApplicationJsonLd = {
       name: "Community",
       price: "0",
       priceCurrency: "USD",
-      description: "Self-hosted, open-source, free forever under MIT license.",
+      description: "Self-hosted, open-source, free forever under the Apache 2.0 license.",
       url: "https://lumibase.dev/pricing/",
     },
     {
@@ -80,7 +80,7 @@ const faqs = [
   {
     question: "Is it open source?",
     answer:
-      "Yes. The core LumiBase is free forever under the MIT license. It runs edge-native on Cloudflare Workers and can also be self-hosted with Docker via a shared runtime abstraction.",
+      "Yes. The core LumiBase is free forever under the Apache 2.0 license. It runs edge-native on Cloudflare Workers and can also be self-hosted with Docker via a shared runtime abstraction.",
   },
 ];
 
@@ -324,7 +324,7 @@ export default function Home() {
               }}
             >
               Declare the desired state. Let governed agents converge it. Keep
-              the veto. Free forever under MIT.
+              the veto. Free forever under Apache 2.0.
             </p>
           </div>
           <div className="relative flex flex-wrap gap-3">

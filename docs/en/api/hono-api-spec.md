@@ -49,11 +49,17 @@ Error response:
 | `RECORD_NOT_FOUND` | 404 | Item does not exist or not visible to this role |
 | `VALIDATION_FAILED` | 400 | Input schema validation error |
 | `CONFLICT` | 409 | Unique constraint violated |
-| `RATE_LIMITED` | 429 | Rate limit exceeded |
+| `RATE_LIMITED` | 429 | Rate limit exceeded — honour `Retry-After` |
+| `RATE_LIMIT_UNAVAILABLE` | 503 | Rate limiter's backing cache is unavailable and the deployment runs the throttle in **fail-closed** mode (`LUMIBASE_RATE_LIMIT_FAIL_CLOSED=true`). Transient — retry with backoff. Not emitted in the default fail-open configuration |
 | `SITE_NOT_FOUND` | 404 | `X-Lumi-Site` header resolves to unknown tenant |
 | `TOKEN_EXPIRED` | 401 | JWT has expired — refresh and retry |
 | `SKILL_DENIED` | 403 | AI skill requires a capability the session lacks |
 | `HITL_REQUIRED` | 202 | Dangerous operation gated for human approval |
+
+> **Deprecation signalling.** A retiring endpoint returns the IETF `Deprecation`
+> and `Sunset` response headers (RFC 8594) plus a `Link rel="deprecation"` to the
+> changelog. Clients should log these and migrate before the `Sunset` date. See
+> `docs/en/security/owasp-api-top-10-audit.md` (API9).
 
 ---
 

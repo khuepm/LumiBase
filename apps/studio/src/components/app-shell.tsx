@@ -51,6 +51,12 @@ const MODULES: ModuleDef[] = [
 ];
 
 /**
+ * The modules surfaced directly in the mobile Bottom Nav (app-shell spec
+ * §1.2). Everything else lives behind the "More" sheet.
+ */
+const MOBILE_PRIMARY_IDS = ['content', 'files', 'automation', 'settings'] as const;
+
+/**
  * Exception count on the Mission Control icon (content-os-ui task 7; Req
  * 6.1-6.4). Editors working in other modules must not miss a ticking veto
  * window. Shares the inbox query cache with Mission Control, hides itself
@@ -191,10 +197,11 @@ export function AppShell({ children }: AppShellProps) {
         Skip to content
       </a>
 
-      {/* Module navigation sidebar */}
+      {/* Module navigation sidebar (desktop; hidden on mobile in favor of the
+          Bottom Nav — app-shell spec §1.2) */}
       <nav
         aria-label="Module navigation"
-        className="flex w-16 flex-col items-center gap-2 border-r bg-muted/30 py-4"
+        className="hidden w-16 flex-col items-center gap-2 border-r bg-muted/30 py-4 md:flex"
       >
         {MODULES.map(({ id, label, icon: Icon, to }) => {
           const isActive = activeModule === id;
@@ -264,11 +271,18 @@ export function AppShell({ children }: AppShellProps) {
           </div>
         </header>
 
-        <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto p-6">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 overflow-auto p-4 pb-24 sm:p-6 md:pb-6"
+        >
           {children}
         </main>
         <VersionInfoFooter />
       </div>
+
+      {/* Mobile Bottom Nav — replaces the sidebar on small screens */}
+      <BottomNav activeModule={activeModule} adminBase={adminBase} />
 
       <CommandPalette
         open={paletteOpen}
@@ -278,5 +292,113 @@ export function AppShell({ children }: AppShellProps) {
 
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
+  );
+}
+
+interface BottomNavProps {
+  activeModule: string;
+  adminBase: string;
+}
+
+/**
+ * Fixed bottom navigation for phone-sized viewports (app-shell spec §1.2):
+ * the four primary modules plus a "More" sheet holding the rest. Respects the
+ * iOS home-indicator safe area so tap targets never sit under the gesture bar.
+ */
+function BottomNav({ activeModule, adminBase }: BottomNavProps) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const primary = MOBILE_PRIMARY_IDS.map((id) => MODULES.find((m) => m.id === id)!).filter(Boolean);
+  const overflow = MODULES.filter((m) => !MOBILE_PRIMARY_IDS.includes(m.id as never));
+  const moreActive = overflow.some((m) => m.id === activeModule);
+
+  const linkTo = (to: string) => `${adminBase}${to === '/' ? '' : to}` || '/';
+
+  return (
+    <>
+      <nav
+        aria-label="Primary navigation"
+        className="fixed inset-x-0 bottom-0 z-30 flex border-t bg-background/95 backdrop-blur md:hidden"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        {primary.map(({ id, label, icon: Icon, to }) => {
+          const isActive = activeModule === id;
+          return (
+            <Link
+              key={id}
+              to={linkTo(to)}
+              aria-label={label}
+              aria-current={isActive ? 'page' : undefined}
+              className={cn(
+                'flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition',
+                isActive ? 'text-primary' : 'text-muted-foreground',
+              )}
+            >
+              <Icon className="h-5 w-5" aria-hidden="true" />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setMoreOpen(true)}
+          aria-label="More modules"
+          aria-haspopup="dialog"
+          aria-expanded={moreOpen}
+          className={cn(
+            'relative flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition',
+            moreActive ? 'text-primary' : 'text-muted-foreground',
+          )}
+        >
+          <Layers className="h-5 w-5" aria-hidden="true" />
+          <span>More</span>
+          <MissionControlBadge />
+        </button>
+      </nav>
+
+      {moreOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="More modules"
+          className="fixed inset-0 z-40 flex flex-col justify-end md:hidden"
+        >
+          <button
+            type="button"
+            aria-label="Close"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setMoreOpen(false)}
+          />
+          <div
+            className="relative max-h-[70vh] overflow-auto rounded-t-2xl border-t bg-background p-4"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-muted" aria-hidden="true" />
+            <div className="grid grid-cols-3 gap-2">
+              {overflow.map(({ id, label, icon: Icon, to }) => {
+                const isActive = activeModule === id;
+                return (
+                  <Link
+                    key={id}
+                    to={linkTo(to)}
+                    aria-current={isActive ? 'page' : undefined}
+                    onClick={() => setMoreOpen(false)}
+                    className={cn(
+                      'relative flex flex-col items-center justify-center gap-1.5 rounded-lg border p-3 text-xs font-medium transition',
+                      isActive
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border text-muted-foreground hover:bg-accent',
+                    )}
+                  >
+                    <Icon className="h-5 w-5" aria-hidden="true" />
+                    <span className="text-center leading-tight">{label}</span>
+                    {id === 'mission-control' && <MissionControlBadge />}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
