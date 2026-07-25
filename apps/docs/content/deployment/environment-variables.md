@@ -1,6 +1,6 @@
 # Environment Variables Reference
 
-Complete reference for all Lumibase CMS environment variables across both runtimes.
+Complete reference for all LumiBase CMS environment variables across both runtimes.
 
 ## Runtime Selection
 

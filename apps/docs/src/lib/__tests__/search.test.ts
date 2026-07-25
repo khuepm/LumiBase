@@ -8,11 +8,11 @@ function makeDoc(slug: string, title: string, content: string): DocEntry {
 
 describe('search service', () => {
   const docs: DocEntry[] = [
-    makeDoc('getting-started', 'Getting Started', 'Welcome to Lumibase. This guide helps you set up the project quickly.'),
+    makeDoc('getting-started', 'Getting Started', 'Welcome to LumiBase. This guide helps you set up the project quickly.'),
     makeDoc('features/collections', 'Collections Builder', 'Create and manage collections with the visual builder interface.'),
     makeDoc('features/relations', 'Relations', 'Define relationships between collections using foreign keys and references.'),
     makeDoc('api/authentication', 'Authentication', 'Authenticate using JWT tokens. Supports bearer token and API key methods.'),
-    makeDoc('README', 'Lumibase Documentation', 'Overview of the Lumibase platform and its features.'),
+    makeDoc('README', 'LumiBase Documentation', 'Overview of the LumiBase platform and its features.'),
   ];
 
   const { search } = createSearchIndex(docs);

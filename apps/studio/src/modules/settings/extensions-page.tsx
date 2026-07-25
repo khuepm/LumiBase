@@ -50,7 +50,7 @@ export function ExtensionsPage() {
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">{t('extensions', 'Extensions')}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Extend Lumibase with custom panels, modules, displays, and endpoints.
+          Extend LumiBase with custom panels, modules, displays, and endpoints.
         </p>
       </header>
 

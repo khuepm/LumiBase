@@ -156,7 +156,7 @@ Create a `lumibase-extension.json` file at the extension's root. This file defin
 *Explanation:*
 - `"type": "hook"`: Specifies this is a Hook running on the backend (CMS Worker).
 - `"capabilities"`: The extension requires read and update permissions on the `posts` collection. Any action beyond these is blocked by the sandbox (`CapabilityDenied`).
-- `"config"`: Configuration that lets the admin change the minimum word threshold (`minWords`) directly from the Lumibase Studio UI without editing code.
+- `"config"`: Configuration that lets the admin change the minimum word threshold (`minWords`) directly from the LumiBase Studio UI without editing code.
 
 ### Step 3: Write the Extension source (`src/index.ts`)
 
@@ -226,9 +226,9 @@ npm run build
 
 After a successful build, the final bundled file will be at `dist/index.js`.
 
-### Step 5: Upload and install in Lumibase Studio
+### Step 5: Upload and install in LumiBase Studio
 
-1. Open your **Lumibase Studio**.
+1. Open your **LumiBase Studio**.
 2. Go to **Settings** -> **Extensions**.
 3. In the upload UI, enter the bundle URL (e.g. pointing to the `dist/index.js` file uploaded to your test host) or upload the file directly to the system.
 4. The system automatically scans the `lumibase-extension.json` config file to read the list of capabilities (`items:read:posts`, `items:update:posts`).

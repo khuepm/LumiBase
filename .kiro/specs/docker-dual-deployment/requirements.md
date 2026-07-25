@@ -2,11 +2,11 @@
 
 ## Introduction
 
-Lumibase is an edge-native headless CMS currently tightly coupled to Cloudflare Workers (Hyperdrive, KV, R2). This feature introduces a Docker-based deployment option and a runtime abstraction layer so that Lumibase can run both on Cloudflare's edge infrastructure and on self-hosted Docker environments (local development, staging, production). Additionally, comprehensive documentation will guide users through both deployment paths and recommend complementary tools/services for a production-grade headless CMS.
+LumiBase is an edge-native headless CMS currently tightly coupled to Cloudflare Workers (Hyperdrive, KV, R2). This feature introduces a Docker-based deployment option and a runtime abstraction layer so that LumiBase can run both on Cloudflare's edge infrastructure and on self-hosted Docker environments (local development, staging, production). Additionally, comprehensive documentation will guide users through both deployment paths and recommend complementary tools/services for a production-grade headless CMS.
 
 ## Glossary
 
-- **CMS_API**: The Lumibase Hono.js API application that serves content management endpoints.
+- **CMS_API**: The LumiBase Hono.js API application that serves content management endpoints.
 - **Abstraction_Layer**: A set of TypeScript interfaces and adapter implementations that decouple the CMS_API from specific infrastructure providers (Cloudflare vs Docker/self-hosted).
 - **Docker_Compose_Stack**: A docker-compose configuration that orchestrates all services needed for local development (PostgreSQL, Redis, MinIO, CMS_API).
 - **Production_Image**: An optimized, multi-stage Docker image of the CMS_API suitable for production deployment.
@@ -14,7 +14,7 @@ Lumibase is an edge-native headless CMS currently tightly coupled to Cloudflare 
 - **Cache_Provider**: An interface abstracting key-value caching operations (backed by Cloudflare KV or Redis).
 - **Storage_Provider**: An interface abstracting object/blob storage operations (backed by Cloudflare R2 or S3-compatible storage like MinIO).
 - **Connection_Pool**: A database connection pooling mechanism (Hyperdrive on Cloudflare, or pg-pool/pgBouncer on Docker).
-- **Deployment_Docs**: Documentation pages explaining how to deploy and operate Lumibase on each supported platform.
+- **Deployment_Docs**: Documentation pages explaining how to deploy and operate LumiBase on each supported platform.
 - **Tooling_Guide**: Documentation recommending additional services (search, queues, media processing, monitoring) for a production headless CMS.
 - **Search_Provider**: An interface abstracting full-text search operations (backed by MeiliSearch in both runtimes).
 - **Queue_Provider**: An interface abstracting async job queue operations (backed by BullMQ/Redis in Docker, Cloudflare Queues on edge).
@@ -40,7 +40,7 @@ Lumibase is an edge-native headless CMS currently tightly coupled to Cloudflare 
 
 ### Requirement 2: Docker Image for CMS API
 
-**User Story:** As a DevOps engineer, I want a production-ready Docker image for the CMS API, so that I can deploy Lumibase on any container orchestration platform.
+**User Story:** As a DevOps engineer, I want a production-ready Docker image for the CMS API, so that I can deploy LumiBase on any container orchestration platform.
 
 #### Acceptance Criteria
 
@@ -55,7 +55,7 @@ Lumibase is an edge-native headless CMS currently tightly coupled to Cloudflare 
 
 ### Requirement 3: Docker Compose for Local Development
 
-**User Story:** As a developer, I want a single `docker-compose up` command to spin up the entire Lumibase stack locally, so that I can develop and test without a Cloudflare account.
+**User Story:** As a developer, I want a single `docker-compose up` command to spin up the entire LumiBase stack locally, so that I can develop and test without a Cloudflare account.
 
 #### Acceptance Criteria
 
@@ -81,7 +81,7 @@ Lumibase is an edge-native headless CMS currently tightly coupled to Cloudflare 
 
 ### Requirement 5: Deployment Documentation
 
-**User Story:** As a user evaluating Lumibase, I want clear documentation explaining both deployment options, so that I can choose the approach that fits my infrastructure.
+**User Story:** As a user evaluating LumiBase, I want clear documentation explaining both deployment options, so that I can choose the approach that fits my infrastructure.
 
 #### Acceptance Criteria
 
@@ -143,7 +143,7 @@ Lumibase is an edge-native headless CMS currently tightly coupled to Cloudflare 
 
 1. THE CMS_API SHALL expose a `/metrics` endpoint in Prometheus exposition format with metrics: request count, request duration histogram, error rate, active connections, cache hit/miss ratio.
 2. THE Docker_Compose_Stack SHALL include Prometheus (port `9090`) configured to scrape the CMS_API metrics endpoint.
-3. THE Docker_Compose_Stack SHALL include Grafana (port `3002`) with a pre-configured Lumibase dashboard showing: request rate, latency percentiles (p50, p95, p99), error rate, queue depth, and cache hit ratio.
+3. THE Docker_Compose_Stack SHALL include Grafana (port `3002`) with a pre-configured LumiBase dashboard showing: request rate, latency percentiles (p50, p95, p99), error rate, queue depth, and cache hit ratio.
 4. THE CMS_API SHALL use structured JSON logging with fields: timestamp, level, requestId, method, path, status, duration.
 5. THE Docker_Compose_Stack SHALL include Loki for log aggregation, connected to Grafana as a data source.
 6. WHEN running in Cloudflare mode, THE CMS_API SHALL emit metrics via Workers Analytics Engine (documentation only, no self-hosted Prometheus needed).

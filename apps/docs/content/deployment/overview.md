@@ -1,6 +1,6 @@
 # Deployment Overview
 
-Lumibase supports two deployment modes: **Cloudflare Workers** (edge) and **Docker** (self-hosted). Both modes share the same CMS API codebase and business logic — only the infrastructure adapters differ.
+LumiBase supports two deployment modes: **Cloudflare Workers** (edge) and **Docker** (self-hosted). Both modes share the same CMS API codebase and business logic — only the infrastructure adapters differ.
 
 ## Choosing a Deployment Mode
 
@@ -24,7 +24,7 @@ Lumibase supports two deployment modes: **Cloudflare Workers** (edge) and **Dock
 │                        Cloudflare Edge                           │
 │                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │              Lumibase CMS (Hono.js Worker)                │  │
+│  │              LumiBase CMS (Hono.js Worker)                │  │
 │  │                                                           │  │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐  │  │
 │  │  │   Routes    │  │ Middleware  │  │    Services      │  │  │
@@ -62,7 +62,7 @@ External Services:
 │                     Docker Host / Cluster                         │
 │                                                                   │
 │  ┌───────────────────────────────────────────────────────────┐   │
-│  │              Lumibase CMS (Node.js + Hono)                │   │
+│  │              LumiBase CMS (Node.js + Hono)                │   │
 │  │              Port 1989                                    │   │
 │  │                                                           │   │
 │  │              ┌────────────────────────────┐               │   │

@@ -16,7 +16,7 @@ Trong nhiều framework, khi nhận request body từ client, dev hay làm kiể
 
 ---
 
-Lumibase là CMS nhận content từ khắp nơi: dashboard editor, AI skill, webhook, extension. Mọi nơi đều gọi API với JSON body. Nếu service layer dùng spread hay Object.assign để merge request body vào entity thì bất kỳ field nào trong model đều có thể bị ghi đè — kể cả siteId, createdBy, permissions. (4/7)
+LumiBase là CMS nhận content từ khắp nơi: dashboard editor, AI skill, webhook, extension. Mọi nơi đều gọi API với JSON body. Nếu service layer dùng spread hay Object.assign để merge request body vào entity thì bất kỳ field nào trong model đều có thể bị ghi đè — kể cả siteId, createdBy, permissions. (4/7)
 
 ---
 
@@ -28,4 +28,4 @@ Cách m vá thứ hai: service layer chỉ nhận object đã typed, không nh�
 
 ---
 
-Mass Assignment trông hiền nhưng nguy hiểm vì nó khai thác đúng sự tiện lợi của framework. Cái giúp dev code nhanh lại là cái mở cửa cho attacker. Whitelist field thay vì blacklist. Validate schema từ cổng vào, đừng tin req.body. M đang build Lumibase — Content OS cho agent, bảo mật làm nền từ đầu. Ghé lumibase.dev 🌱 (7/7)
+Mass Assignment trông hiền nhưng nguy hiểm vì nó khai thác đúng sự tiện lợi của framework. Cái giúp dev code nhanh lại là cái mở cửa cho attacker. Whitelist field thay vì blacklist. Validate schema từ cổng vào, đừng tin req.body. M đang build LumiBase — Content OS cho agent, bảo mật làm nền từ đầu. Ghé lumibase.dev 🌱 (7/7)

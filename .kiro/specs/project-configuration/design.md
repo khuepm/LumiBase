@@ -107,7 +107,7 @@ Canonical JSON:
 {
   "defaultLanguage": "en",
   "siteUrl": "https://example.com",
-  "displayTitle": "Lumibase",
+  "displayTitle": "LumiBase",
   "theme": null
 }
 ```

@@ -302,12 +302,12 @@ See [TypeGen reference](./typegen.md) for how to generate types.
 ## Error handling
 
 ```typescript
-import { LumibaseError } from '@lumibase/sdk'
+import { LumiBaseError } from '@lumibase/sdk'
 
 try {
   await lumibase.items('articles').createOne({ title: '' })
 } catch (error) {
-  if (error instanceof LumibaseError) {
+  if (error instanceof LumiBaseError) {
     console.error(error.code)    // 'VALIDATION_FAILED'
     console.error(error.message) // 'title is required'
     console.error(error.errors)  // [{ code, message, path }]

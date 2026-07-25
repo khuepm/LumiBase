@@ -1,6 +1,6 @@
 # Tooling Recommendations
 
-This guide covers the tools integrated with Lumibase and recommends alternatives for different use cases. Tools are categorized as:
+This guide covers the tools integrated with LumiBase and recommends alternatives for different use cases. Tools are categorized as:
 
 - **Integrated** — Included in the Docker Compose stack, configured out of the box
 - **Alternative** — Drop-in replacements with different trade-offs
@@ -35,7 +35,7 @@ meilisearch:
     - meilidata:/meili_data
 ```
 
-**Usage in Lumibase:**
+**Usage in LumiBase:**
 
 Content is automatically indexed on create/update and removed on delete via the `SearchProvider` interface. The `/search` endpoint provides query access.
 
@@ -270,7 +270,7 @@ Full observability stack with metrics collection, dashboards, and log aggregatio
 | Prometheus port | 9090 |
 | Grafana port | 3002 |
 | Loki port | 3100 |
-| Dashboard | Pre-configured Lumibase dashboard |
+| Dashboard | Pre-configured LumiBase dashboard |
 
 **Enable monitoring:**
 
@@ -345,7 +345,7 @@ For production deployments, add a CDN in front of the CMS API:
 **Recommended pattern:**
 
 ```
-Client → CDN → Lumibase CMS → Database
+Client → CDN → LumiBase CMS → Database
                     ↓
               Redis (L1 cache)
 ```

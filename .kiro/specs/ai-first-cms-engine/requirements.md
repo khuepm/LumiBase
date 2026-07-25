@@ -2,7 +2,7 @@
 
 ## Introduction
 
-Tài liệu yêu cầu cho hệ thống **AI-First CMS Engine** của Lumibase. Hệ thống cho phép AI Agent tương tác an toàn với CMS thông qua cơ chế Human-in-the-Loop (HITL), bao gồm: lớp điều phối an toàn (AI Secure Harness), API HTTP cho giao tiếp AI, và giao diện Studio cho quản trị viên chat với AI cũng như phê duyệt hành động nguy hiểm.
+Tài liệu yêu cầu cho hệ thống **AI-First CMS Engine** của LumiBase. Hệ thống cho phép AI Agent tương tác an toàn với CMS thông qua cơ chế Human-in-the-Loop (HITL), bao gồm: lớp điều phối an toàn (AI Secure Harness), API HTTP cho giao tiếp AI, và giao diện Studio cho quản trị viên chat với AI cũng như phê duyệt hành động nguy hiểm.
 
 ## Glossary
 
@@ -12,10 +12,10 @@ Tài liệu yêu cầu cho hệ thống **AI-First CMS Engine** của Lumibase. 
 - **Skill**: Một hành động cụ thể mà AI có thể thực thi (ví dụ: tạo collection, xóa item, đọc dữ liệu).
 - **Capability**: Quyền hạn được cấp cho người dùng hoặc phiên làm việc (ví dụ: `schema:write`, `items:read`).
 - **Risk_Evaluator**: Thành phần trong AI_Harness đánh giá mức độ rủi ro của một Skill dựa trên Capability yêu cầu.
-- **Studio_UI**: Giao diện quản trị web của Lumibase dành cho quản trị viên.
+- **Studio_UI**: Giao diện quản trị web của LumiBase dành cho quản trị viên.
 - **AI_Chat_Panel**: Component giao diện chat nổi (floating) trong Studio_UI cho phép quản trị viên giao tiếp với AI bằng ngôn ngữ tự nhiên.
 - **Approvals_Dashboard**: Màn hình trong Studio_UI hiển thị danh sách hành động AI đang chờ phê duyệt.
-- **Site**: Đơn vị multi-tenancy trong Lumibase — mỗi site là một tenant độc lập.
+- **Site**: Đơn vị multi-tenancy trong LumiBase — mỗi site là một tenant độc lập.
 
 ## Requirements
 
@@ -145,7 +145,7 @@ Tài liệu yêu cầu cho hệ thống **AI-First CMS Engine** của Lumibase. 
 
 ### Requirement 10: Tuân thủ quy chuẩn kỹ thuật dự án
 
-**User Story:** Là một lập trình viên, tôi muốn mã nguồn AI-First CMS Engine tuân thủ các quy chuẩn kỹ thuật của dự án Lumibase, để đảm bảo tính nhất quán và khả năng bảo trì.
+**User Story:** Là một lập trình viên, tôi muốn mã nguồn AI-First CMS Engine tuân thủ các quy chuẩn kỹ thuật của dự án LumiBase, để đảm bảo tính nhất quán và khả năng bảo trì.
 
 #### Acceptance Criteria
 
