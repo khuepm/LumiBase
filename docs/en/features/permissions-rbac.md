@@ -1,9 +1,9 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 3
+lastUpdated: 2026-07-25T07:47:22.511Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: ad255fa4351bf7f9
+sourceHash: 2a8277f7ae1ace80
 mtEngine: claude
 syncStatus: machine-translated
 ---
