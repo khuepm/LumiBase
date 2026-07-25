@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:13:22.051Z
+sourceLang: vi
+contentHash: 851d0c3d29a694cb
+codeVerified: 2026-07-25T08:13:22.051Z
+codeVerifiedHash: 851d0c3d29a694cb
+codeVerifiedClaims: 2
+---
+
 # Publish npm packages
 
 LumiBase giữ toàn bộ package trong source control ở trạng thái `private: true` cho đến khi dự án sẵn sàng public. Quy trình publish npm chỉ mở package trong bản copy tạm thời của workflow release; manifest trong repository vẫn private để tránh publish nhầm trong giai đoạn chưa public.
