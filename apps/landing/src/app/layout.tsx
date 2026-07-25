@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    site: "@lumibase",
+    site: "@khuephamminh",
     title: TITLE,
     description: DESCRIPTION,
   },

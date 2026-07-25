@@ -20,7 +20,7 @@ export default function License() {
 
       <div className="mt-12 rounded-xl border border-ink-700 bg-ink-900 p-8">
         <pre className="whitespace-pre-wrap font-mono text-sm text-gray-300">
-          {`Copyright 2025 LumiBase Contributors
+          {`Copyright (c) 2026 LumiBase Contributors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -95,7 +95,7 @@ limitations under the License.`}
           <h2 className="text-2xl font-semibold">Questions?</h2>
           <p>
             If you have questions about licensing or need clarification, please open an issue on our
-            <a href="https://github.com/khuepm/lumibase" target="_blank" rel="noopener noreferrer" className="text-signal-400 hover:underline">GitHub repository</a>.
+            <a href="https://github.com/khuepm/LumiBase" target="_blank" rel="noopener noreferrer" className="text-signal-400 hover:underline">GitHub repository</a>.
           </p>
         </section>
       </div>
