@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:25.860Z
+sourceLang: en
+contentHash: 26c4353b91d32cc8
+---
+
 # Cursor — LumiBase Agent Setup
 
 > **Cursor** is an AI-first IDE built on VS Code with multi-file Composer edits and background agents. Made by Cursor.
@@ -20,7 +27,7 @@ Read docs/en/agent-setup/prompt.md and follow all setup instructions.
 
 ### Step 1 — Open the project
 
-Open the `Lumibase` folder in Cursor (`File → Open Folder`).
+Open the `LumiBase` folder in Cursor (`File → Open Folder`).
 
 ### Step 2 — Configure `.cursorrules`
 

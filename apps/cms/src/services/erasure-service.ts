@@ -8,7 +8,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { AuditLogger } from '../modules/audit/logger';
-import { ItemService } from './item-service';
+import { itemServiceForSystem } from './item-service-factory';
 import { dispatchRevalidation, parseTargets } from './revalidation';
 
 /**
@@ -53,8 +53,14 @@ async function hashSubject(scope: ErasureScope): Promise<string> {
 export class ErasureService {
   constructor(private readonly deps: ErasureServiceDeps) {}
 
-  private itemService(): ItemService {
-    return new ItemService({ db: this.deps.db, siteId: this.deps.siteId, userId: this.deps.userId ?? null });
+  private itemService() {
+    // System context: erasure/SAR is gated by admin access + optional
+    // dual-control at this service layer, so the ItemService runs with system
+    // privileges to reach records the requesting admin may not own row-wise.
+    return itemServiceForSystem(
+      { db: this.deps.db, siteId: this.deps.siteId, userId: this.deps.userId ?? null },
+      'compliance-erasure',
+    );
   }
 
   private async dualControlEnabled(): Promise<boolean> {

@@ -60,7 +60,7 @@ Nếu client nhận HTTP `503` với nội dung tương tự:
   "errors": [
     {
       "code": "SERVICE_UNAVAILABLE",
-      "message": "Lumibase API is temporarily unavailable because this instance is under pressure. Retry later.",
+      "message": "LumiBase API is temporarily unavailable because this instance is under pressure. Retry later.",
       "details": { "reason": "event_loop_delay" }
     }
   ]

@@ -4,16 +4,26 @@ This document describes the tables declared in `packages/database/src/schema/`. 
 
 Every tenant-scoped domain table has `site_id`.
 
+> **Physical table names carry a `lumibase_` prefix.** Every LumiBase system table
+> is physically named `lumibase_<name>` (e.g. the logical `users` table is physically
+> `lumibase_users`), created by the `0000_lumibase_init` migration. This reserves the
+> `lumibase_` namespace for the platform,
+> so any table WITHOUT that prefix is unambiguously user-created (or a `mat_*`
+> materialization). See [ADR-010](./architecture/decisions/adr-010-lumibase-table-prefix.md).
+> The section headings below use the short logical name for readability; the
+> summary table lists the physical names.
+
 Schema files are split by domain:
 
-| File | Bảng |
+| File | Bảng (physical) |
 |------|------|
-| `core.ts` | `sites`, `users`, `user_sites`, `teams`, `team_members`, `notifications` |
-| `access.ts` | `roles`, `policies`, `role_policies`, `user_policies`, `permissions` |
-| `cms.ts` | `pages`, `collections`, `fields`, `relations`, `items`, `revisions`, `activity`, `flows`, `flow_runs`, `operations`, `materialized_collections` |
-| `platform.ts` | `folders`, `files`, `presets`, `translations`, `settings`, `webhooks`, `extensions`, `translation_memory`, `glossary` |
-| `ai.ts` | `ai_approvals` |
+| `core.ts` | `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
+| `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
+| `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
+| `external-auth.ts` | `lumibase_auth_external_issuers` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
 
@@ -22,7 +32,7 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 ## 1. Core tenancy & identity (`core.ts`)
 
 ### `sites`
-- `id`, `name`, `domain`, `createdAt`.
+- `id`, `name`, `domain`, `createdAt`, plus identity/branding/theme columns and `defaultLanguage`, `defaultAppearance`, and `defaultSaveAction` (`stay`|`return`|`create_new`, default `stay` — the site-wide default Studio save action; per-user override lives in `users.preferences.saveAction`).
 
 ### `users`
 | Column | Type | Note |
@@ -32,8 +42,12 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 | `email`, `firstName`, `lastName`, `avatar` | text |
 | `status` | text | `active`/`invited`/`suspended` |
 | `language`, `theme`, `tfa` | jsonb | preferences |
+| `preferences` | jsonb | per-user UI prefs: `{ language, theme, timezone, defaultPresets, saveAction }`. `saveAction` (`stay`/`return`/`create_new`) overrides `sites.default_save_action`. |
 | `lastSeenAt` | timestamp |
+| `passwordChangedAt` | timestamp | Set on every reset/change (migration `0006`). A password-reset token whose `iat` predates it is rejected → single-use reset links. |
 | `createdAt`, `updatedAt` | timestamp |
+
+Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), and `users_email_lower_unique` on `lower(email)` (migration `0006`) — email is identity-global, one account per address. ⚠️ Migrating an existing instance fails if it already holds case-insensitive duplicate emails; de-duplicate first.
 
 ### `user_sites` (membership N-N)
 - `userId`, `siteId`, `roleId`, `joinedAt`. PK composite.
@@ -138,6 +152,14 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publ
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
 
+### `releases` (Content Releases)
+- A cross-collection publish bundle. `id`, `siteId`, `name`, `description`, `status` (`draft`|`scheduled`|`published`|`failed`|`partially_failed`), `atomicityMode` (`all_or_nothing`|`best_effort`), `publishAt`, `publishedAt`, `maintenanceWindow jsonb`, `statusReason`, `createdBy → users.id (set null)`, `createdAt`, `updatedAt`.
+- Indexes: `releases_site_status_idx (siteId, status)`, `releases_publish_due_idx (siteId, status, publishAt)` (mirrors `items.publishDueIdx` for the scheduler sweep).
+
+### `release_items` (Content Releases)
+- Junction release ↔ item, optionally pinned to one revision. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `itemId → items.id (cascade)`, `targetStatus` (default `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
+- Unique `(releaseId, collection, itemId)` (upsert key); index `(siteId, releaseId)`.
+
 ### `activity`
 - `id`, `siteId`, `action`, `userId`, `collection`, `itemId`, `ip`, `userAgent`, `comment`, `payload jsonb`, `createdAt`.
 
@@ -199,6 +221,10 @@ SDK generation uses this manifest to emit base collection interfaces and `Collec
 
 ### `permissions`
 - `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (row-level rule DSL), `validation jsonb`, `presets jsonb`, `fields text[]` (field-level allow list, `*` = all).
+
+### `refresh_tokens` (migration `0005`, physical `lumibase_refresh_tokens`)
+- `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — plaintext never stored), `familyId` (rotation chain), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
+- Rotating, revocable session-renewal tokens. Reuse of a revoked row revokes the whole `familyId` (theft detection). Swept on the hourly cron once expired. See [`security/user-management.md`](./security/user-management.md) §4d.
 
 ### System collections seed permissions
 
@@ -339,10 +365,27 @@ Content OS columns on existing tables:
 | `content_versions` | Named parallel draft branches of an item, distinct from linear `revisions`. Snapshots item `data` + a `hash` of main at snapshot time (divergence detection). Promote applies a version to main via ItemService (writes a revision). Unique `(siteId, collectionId, itemId, key)`. See `.kiro/specs/content-versioning`. |
 | `dashboards` | Insights dashboard container per site (name/icon/color/note). |
 | `panels` | One visualization on a dashboard: `type` (metric/timeSeries/bar/pie/list/table), `position` (`{x,y,w,h}`), `query` (a `PanelQuery`), `options`. Aggregates run safely (field whitelist + siteId scope). See `.kiro/specs/insights-dashboard`. |
+| `transform_presets` | Named image-transform presets: URL-safe `key` → a `TransformDsl` (`{ width?, height?, format?, quality?, fit?, focal? }`). Resolved by `GET /media/:key?preset=<key>`. Unique `(siteId, key)`. Migration `0004_transform_presets`. See `.kiro/specs/image-transform-dsl`. |
 
 ## 11. Firebase Sync (`firebase-sync.ts`)
 
-Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0029_lumibase_firebase_sync`.
+Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0000_lumibase_init` (consolidated).
+
+## 11d. Change Feed (`cdc.ts` — spec cdc-extension-integration)
+
+| Table | Purpose |
+|---|---|
+| `lumibase_cdc_change_events` | Append-only transactional outbox: one row per committed mutation (`resource` `item`/`collection`/`field`/`setting` — default `item`, migration `0008`; `collection`, `item_id`, `operation`, masked `payload`, `changed_fields`, actor/source, `occurred_at`). The envelope `type` is `<plural-resource>.<operation>`. Feed order = keyset `(occurred_at, id)` — nanoid PKs carry no order. Indexes `(site_id, occurred_at, id)` and `(site_id, collection, occurred_at, id)`. |
+| `lumibase_cdc_subscriptions` | Consumer registry + checkpoint (`cursor_occurred_at` + `cursor_id`), kind `pull`/`webhook`/`extension`, status `active`/`paused`/`dead`/`stale`, filters, `consecutive_failures`. Unique `(site_id, name)`. |
+| `lumibase_cdc_deliveries` | Append-only delivery-attempt log per batch (attempt, status, http status, bounded error message, duration). Pruned on the same retention window as the outbox. |
+
+All three are `site_id`-scoped with `site_isolation` RLS. See `docs/en/features/cdc-change-feed.md`.
+
+## 11c. External JWT auth (`external-auth.ts`)
+
+### `auth_external_issuers`
+- Per-site trusted external JWT issuer. **Public config only — no secrets** (signatures verify against the issuer's JWKS). `id`, `siteId` (FK sites, cascade), `issuer` (matches the `iss` claim), `jwksUri`/`discoveryUrl` (one required), `audience` (jsonb: string|string[]), `algorithms` (jsonb: asymmetric allowlist), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
+- Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0000_lumibase_init` (consolidated). See [security/external-jwt-auth.md](./security/external-jwt-auth.md).
 
 ### `lumibase_firebase_sync_pipelines`
 | Column | Type | Note |
@@ -437,6 +480,25 @@ GDPR right-to-erasure lifecycle (Req 11). Stores a **hash** of the subject ident
 Index: `(siteId, status)`.
 
 ---
+
+## 11d. Git Integration (`git-integration.ts`)
+
+Per-tenant GitHub/GitLab connections + cached PR/CI state, raw webhook log,
+ephemeral preview environments, and commit↔content provenance. All tables carry
+`site_id` (cascade) and are registered for RLS. Physical names carry the
+`lumibase_` prefix (ADR-010). Migration `0009_git_integration`.
+
+| Table (physical) | Purpose | Key columns |
+|-------|---------|-------------|
+| `lumibase_git_integrations` | One repo connection per `(site, provider, repo)` | `provider`, `repo_full_name`, `auth_method` (app\|pat), `installation_id`, `encrypted_token`, `webhook_secret_enc`, `status`, `scopes`, `sync_config` |
+| `lumibase_git_pull_requests` | Cached PR/MR state | unique `(integration_id, number)`; `state`, `ci_status`, `mergeable`, `head_sha`, `preview_url`, `raw` |
+| `lumibase_git_ci_runs` | CI run + jobs + stored-log ref | unique `(integration_id, provider_run_id)`; `status`, `jobs`, `duration_ms`, `log_ref` (runtime blob) |
+| `lumibase_git_webhook_events` | Raw inbound events (replay-able) | unique `(provider, delivery_id)`; `event`, `payload`, `processed`, `error` |
+| `lumibase_git_preview_envs` | Ephemeral preview site per PR | unique `(pr_id)`; `ephemeral_site_id`, `status`, `url`, `expires_at` |
+| `lumibase_git_provenance` | Commit/PR → content/schema/intent link | `commit_sha`, `pr_number`, `collection`, `item_id`, `change_type` |
+
+Tokens + webhook secrets are encrypted at rest via `CryptoService` (AES-GCM,
+AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
 
 ## 12. Indexing & RLS
 

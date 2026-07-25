@@ -1,12 +1,13 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
-import { docTreeUnion } from 'virtual:docs-registry';
+import { defaultLocale, docIndexByLocale } from 'virtual:docs-registry';
 import { Sidebar } from './Sidebar';
 import { SearchDialog } from './SearchDialog';
 import { TableOfContents } from './TableOfContents';
 import { LocaleSwitcher } from './LocaleSwitcher';
-import { siteConfig, resolveLabel } from '../lib/site-config';
+import { ThemeToggle } from './ThemeToggle';
+import { siteConfig, resolveLabel, buildSidebarTreeFromConfig } from '../lib/site-config';
 import { useLocale } from '../hooks/useLocale';
 import { useCurrentSlug } from '../hooks/useCurrentSlug';
 import { useT } from '../hooks/useT';
@@ -18,6 +19,8 @@ import { pathFor } from '../lib/url';
  * - Left: Sidebar (hidden on mobile <768px, togglable via hamburger)
  * - Center: Content area (renders child routes via Outlet)
  * - Right: Table of Contents panel (visible only on screens >1024px)
+ *
+ * Styled after the LumiBase "dark cosmic" design system (see Docs.dc.html).
  *
  * Requirements: 3.6, 6.2
  */
@@ -31,6 +34,13 @@ export function Layout() {
   // Extract the active slug from the current route path using parseUrl
   const activeSlug = useCurrentSlug();
 
+  // Sidebar tree is built from the curated docs.config.json category list,
+  // not the full auto-discovered doc set — internal-only docs stay out of nav.
+  const sidebarTree = useMemo(
+    () => buildSidebarTreeFromConfig(docIndexByLocale, defaultLocale, locale),
+    [locale],
+  );
+
   const handleNavigate = (slug: string) => {
     navigate(pathFor(locale, slug));
     // Close sidebar on mobile after navigation
@@ -38,169 +48,180 @@ export function Layout() {
   };
 
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden">
-      {/* Mobile overlay when sidebar is open */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/50 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+    <div className="relative flex h-screen w-screen flex-col overflow-hidden">
+      {/* Top bar — sticky 72px cosmic glass header */}
+      <header className="z-40 flex h-[72px] shrink-0 items-center gap-4 border-b border-border bg-background/70 px-4 backdrop-blur-[12px] md:px-8">
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground md:hidden"
+          aria-label="Open sidebar"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
 
-      {/* Sidebar — left column */}
-      <aside
-        className={`
-          fixed inset-y-0 left-0 z-40 w-64 transform border-r bg-background transition-transform duration-200 ease-in-out
-          md:relative md:translate-x-0
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        `}
-      >
-        {/* Close button for mobile */}
-        <div className="flex h-14 items-center justify-between border-b px-4 md:hidden">
-          <span className="text-sm font-semibold">Navigation</span>
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(false)}
-            className="rounded-md p-1 text-muted-foreground hover:bg-accent"
-            aria-label="Close sidebar"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Sidebar navigation tree */}
-        <div className="overflow-y-auto h-full">
-          <Sidebar
-            tree={docTreeUnion}
-            activeSlug={activeSlug}
-            onNavigate={handleNavigate}
-            locale={locale}
+        {/* Brand: glossy sphere logo + wordmark + hairline-divided app label */}
+        <div className="flex items-center gap-[9px]">
+          <div
+            aria-hidden="true"
+            className="h-[22px] w-[22px] rounded-full bg-[radial-gradient(circle_at_32%_28%,#fff,var(--color-violet))] shadow-[0_0_18px_rgba(123,97,255,0.45)] dark:bg-[linear-gradient(180deg,#fff,#cfcfcf)] dark:shadow-[0_0_18px_rgba(123,97,255,0.6)]"
           />
+          <span className="text-[18px] font-bold tracking-[-0.3px] text-foreground">
+            {siteConfig.title}
+          </span>
+          <span className="ml-1.5 border-l border-[var(--color-border-strong)] pl-3 text-[13px] font-semibold text-muted-foreground">
+            Docs
+          </span>
         </div>
-      </aside>
 
-      {/* Main content area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Top bar with hamburger toggle (mobile) and search (all screens) */}
-        <header className="flex h-14 items-center border-b px-4">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            className="rounded-md p-1 text-muted-foreground hover:bg-accent md:hidden"
-            aria-label="Open sidebar"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-          <span className="ml-3 text-sm font-semibold md:hidden">{siteConfig.title} Docs</span>
-          <span className="hidden text-sm font-semibold md:inline">{siteConfig.title} Docs</span>
-          <nav aria-label="Primary" className="ml-6 hidden items-center gap-4 md:flex">
-            {siteConfig.navbar.items
-              .filter((item) => item.position !== 'right')
-              .map((item) => {
-                const label = resolveLabel(item.label, locale);
-                return item.href ? (
-                  <a
-                    key={label}
-                    href={item.href}
-                    className="text-sm text-muted-foreground hover:text-foreground"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {label}
-                  </a>
-                ) : (
-                  <a
-                    key={label}
-                    href={item.to}
-                    className="text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    {label}
-                  </a>
-                );
-              })}
-          </nav>
-          <div className="ml-auto flex items-center gap-3">
-            <SearchDialog />
-            <LocaleSwitcher />
-            {siteConfig.navbar.items
-              .filter((item) => item.position === 'right')
-              .map((item) => {
-                const label = resolveLabel(item.label, locale);
-                return (
-                  <a
-                    key={label}
-                    href={item.href ?? item.to}
-                    target={item.href ? '_blank' : undefined}
-                    rel={item.href ? 'noreferrer' : undefined}
-                    className="hidden text-sm text-muted-foreground hover:text-foreground md:inline"
-                  >
-                    {label}
-                  </a>
-                );
-              })}
+        <a
+          href={`https://github.com/khuepm/lumibase/releases/tag/v${__APP_VERSION__}`}
+          target="_blank"
+          rel="noreferrer"
+          title={t('version.badge-tooltip')}
+          className="hidden items-center rounded-full bg-primary/15 px-2.5 py-0.5 text-[11px] font-semibold text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.3)] transition-colors hover:bg-primary/25 sm:inline-flex dark:text-[#c9bcff]"
+        >
+          v{__APP_VERSION__}
+        </a>
+
+        <nav aria-label="Primary" className="ml-4 hidden items-center gap-5 md:flex">
+          {siteConfig.navbar.items
+            .filter((item) => item.position !== 'right')
+            .map((item) => {
+              const label = resolveLabel(item.label, locale);
+              return item.href ? (
+                <a
+                  key={label}
+                  href={item.href}
+                  className="text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {label}
+                </a>
+              ) : (
+                <a
+                  key={label}
+                  href={item.to}
+                  className="text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {label}
+                </a>
+              );
+            })}
+        </nav>
+
+        <div className="ml-auto flex items-center gap-2.5">
+          <SearchDialog />
+          <ThemeToggle />
+          <LocaleSwitcher />
+          {siteConfig.navbar.items
+            .filter((item) => item.position === 'right')
+            .map((item) => {
+              const label = resolveLabel(item.label, locale);
+              return (
+                <a
+                  key={label}
+                  href={item.href ?? item.to}
+                  target={item.href ? '_blank' : undefined}
+                  rel={item.href ? 'noreferrer' : undefined}
+                  className="hidden text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground md:inline"
+                >
+                  {label}
+                </a>
+              );
+            })}
+        </div>
+      </header>
+
+      <div className="relative flex flex-1 overflow-hidden">
+        {/* Mobile overlay when sidebar is open */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-black/50 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Sidebar — left column */}
+        <aside
+          className={`
+            fixed inset-y-0 left-0 z-40 w-64 transform border-r border-border bg-background transition-transform duration-200 ease-in-out
+            md:relative md:translate-x-0 md:bg-transparent
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          `}
+        >
+          {/* Close button for mobile */}
+          <div className="flex h-14 items-center justify-between border-b border-border px-4 md:hidden">
+            <span className="text-sm font-semibold text-foreground">Navigation</span>
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(false)}
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+              aria-label="Close sidebar"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
-        </header>
+
+          {/* Sidebar navigation tree */}
+          <div className="h-full overflow-y-auto">
+            <Sidebar
+              tree={sidebarTree}
+              activeSlug={activeSlug}
+              onNavigate={handleNavigate}
+              locale={locale}
+            />
+          </div>
+        </aside>
 
         {/* Content + ToC wrapper */}
         <div className="flex flex-1 overflow-hidden">
           {/* Center column — page content */}
           <main ref={contentRef} className="flex flex-1 flex-col overflow-y-auto">
             <Outlet />
-            <footer
-              className={`mt-auto border-t px-6 py-6 text-xs ${siteConfig.footer.style === 'dark'
-                ? 'border-zinc-800 bg-zinc-900 text-zinc-400'
-                : 'bg-muted text-muted-foreground'
-                }`}
-            >
+            <footer className="mt-auto border-t border-border px-6 py-8 md:px-10">
               <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {siteConfig.footer.links.map((col, colIdx) => (
-              <div key={colIdx}>
-                <h3
-                  className={`mb-2 text-sm font-semibold ${siteConfig.footer.style === 'dark'
-                    ? 'text-zinc-100'
-                    : 'text-foreground'
-                    }`}
-                >
-                  {resolveLabel(col.title, locale)}
-                </h3>
-                <ul className="space-y-1">
-                  {col.items.map((item, itemIdx) => (
-                    <li key={itemIdx}>
-                      <a
-                        className={`hover:underline ${siteConfig.footer.style === 'dark'
-                          ? 'hover:text-zinc-100'
-                          : 'hover:text-foreground'
-                          }`}
-                        href={item.href ?? item.to}
-                        target={item.href ? '_blank' : undefined}
-                        rel={item.href ? 'noreferrer' : undefined}
-                      >
-                        {resolveLabel(item.label, locale)}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
+                {siteConfig.footer.links.map((col, colIdx) => (
+                  <div key={colIdx}>
+                    <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">
+                      {resolveLabel(col.title, locale)}
+                    </h3>
+                    <ul className="space-y-2">
+                      {col.items.map((item, itemIdx) => (
+                        <li key={itemIdx}>
+                          <a
+                            className="text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                            href={item.href ?? item.to}
+                            target={item.href ? '_blank' : undefined}
+                            rel={item.href ? 'noreferrer' : undefined}
+                          >
+                            {resolveLabel(item.label, locale)}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <p
-            className={`mt-6 border-t pt-4 text-center ${siteConfig.footer.style === 'dark' ? 'border-zinc-800' : ''
-              }`}
-          >
-            {siteConfig.footer.copyright.split('LumiBase').map((part, i, arr) =>
-              i < arr.length - 1 ? (
-                <span key={i}>
-                  {part}
-                  <a
-                    href="https://lumibase.dev"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:underline"
-                  >
-                    LumiBase
-                  </a>
-                </span>
+              <p className="mt-8 border-t border-border pt-5 text-center text-[13px] font-medium text-muted-foreground">
+                {siteConfig.footer.copyright
+                  .replace('{year}', String(new Date().getFullYear()))
+                  .split('LumiBase')
+                  .map((part, i, arr) =>
+                  i < arr.length - 1 ? (
+                    <span key={i}>
+                      {part}
+                      <a
+                        href="https://lumibase.dev"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="transition-colors hover:text-foreground hover:underline"
+                      >
+                        LumiBase
+                      </a>
+                    </span>
                   ) : (
                     <span key={i}>{part}</span>
                   ),
@@ -210,7 +231,7 @@ export function Layout() {
           </main>
 
           {/* Right column — Table of Contents (visible only >1024px) */}
-          <aside className="hidden w-56 shrink-0 overflow-y-auto border-l p-4 lg:block">
+          <aside className="hidden w-56 shrink-0 overflow-y-auto p-6 lg:block">
             <div className="sticky top-4">
               <TableOfContents contentRef={contentRef} />
             </div>

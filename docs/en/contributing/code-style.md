@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:56.047Z
+sourceLang: en
+contentHash: ae71218c5e9ee3ac
+---
+
 # Code Style Guide
 
 LumiBase follows consistent coding conventions across the monorepo. This guide documents the key rules enforced by our linter and formatter.

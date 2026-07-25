@@ -5,6 +5,7 @@ import type { SearchProvider } from './search';
 import type { QueueProvider } from './queue';
 import type { MediaProcessor } from './media';
 import type { KeyProvider } from './keys';
+import type { RealtimeProvider } from './realtime';
 
 export interface RuntimeContext {
   cache: CacheProvider;
@@ -14,5 +15,6 @@ export interface RuntimeContext {
   queue: QueueProvider;
   media: MediaProcessor;
   keys: KeyProvider;
+  realtime: RealtimeProvider;
   runtime: 'cloudflare' | 'docker';
 }

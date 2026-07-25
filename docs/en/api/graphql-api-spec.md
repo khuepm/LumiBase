@@ -1,3 +1,10 @@
+---
+version: 2
+lastUpdated: 2026-07-18T20:49:50.811Z
+sourceLang: en
+contentHash: 69fb55e16335b41b
+---
+
 # GraphQL API Specification
 
 > **Status:** v1 — content items only (query + mutation). See
@@ -82,8 +89,8 @@ query {
 ```
 
 `m2m` / `m2a` relations are not yet nested — use the `_data` JSON escape hatch
-to read their raw values. Query depth is capped (default 12) to bound nested
-relation traversal.
+to read their raw values. Query depth is capped (see [Abuse guards](#abuse-guards))
+to bound nested relation traversal.
 
 ## Arguments
 
@@ -95,6 +102,37 @@ relation traversal.
 - **`limit`** / **`offset`** — pagination (max limit 200).
 - **`status`** — filter by workflow status.
 - **`search`** — full-text search via the configured SearchProvider.
+
+## Abuse guards
+
+Every operation is validated *before* it runs against two static limits, so an
+abusively expensive query is rejected at parse time without touching a
+resolver (CWE-770). Both run in all environments; introspection is additionally
+disabled outside development.
+
+- **Depth limit** — caps field nesting depth. A query deeper than the limit is
+  rejected with `Query exceeds the maximum depth of N.`
+- **Cost limit** — caps a static *cost* score, catching queries that are
+  shallow yet wide (many parallel fields, large `limit`s, or the same field
+  aliased repeatedly) which the depth limit alone lets through. Each field
+  costs 1; a list field's subtree is multiplied by its pagination argument
+  (`limit`/`first`/`last`/`pageSize`), or a default when that argument is
+  absent or passed as a variable. Nested lists multiply through. Over-budget
+  queries are rejected with `Query exceeds the maximum cost of N.`
+
+| Guard | Default | Env override |
+| --- | --- | --- |
+| Max depth | 12 | — (compile-time constant) |
+| Max cost | 1000 | `LUMIBASE_GQL_MAX_COST` |
+| Default list size (cost multiplier when no literal pagination arg) | 20 | `LUMIBASE_GQL_DEFAULT_LIST_SIZE` |
+| Max list multiplier (upper clamp per list field) | 100 | `LUMIBASE_GQL_MAX_LIST_MULTIPLIER` |
+
+> A large literal `limit` is clamped to *max list multiplier* for scoring, so a
+> single `articles(limit: 999999)` deterministically exceeds the cost budget
+> rather than overflowing it. Because the cost is static, a `limit` passed as a
+> variable (`$n`) is scored at *default list size*, not its runtime value — a
+> deliberately conservative estimate. Raise `LUMIBASE_GQL_MAX_COST` if a
+> legitimate query is rejected.
 
 ## Examples
 

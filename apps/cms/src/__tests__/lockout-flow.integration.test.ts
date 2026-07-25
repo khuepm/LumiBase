@@ -102,7 +102,7 @@ describe('Lockout flow — integration', () => {
     // settings → sites, login_attempts → users) so we don't have to
     // enumerate every dependent.
     await db.execute(
-      sql`TRUNCATE TABLE login_attempts, audit_log, system_state, settings, user_sites, sites, users RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE TABLE lumibase_login_attempts, lumibase_audit_log, lumibase_system_state, lumibase_settings, lumibase_user_sites, lumibase_sites, lumibase_users RESTART IDENTITY CASCADE`,
     );
   });
 

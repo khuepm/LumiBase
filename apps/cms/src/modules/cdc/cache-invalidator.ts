@@ -237,6 +237,15 @@ export class InMemoryCacheProvider implements CacheProvider {
     }
     this.store.delete(key);
   }
+
+  async increment(key: string, by = 1, _opts?: { ttl?: number }): Promise<number> {
+    if (!this.available) {
+      throw new Error('Redis unavailable');
+    }
+    const next = Number(this.store.get(key) ?? '0') + by;
+    this.store.set(key, String(next));
+    return next;
+  }
 }
 
 /**

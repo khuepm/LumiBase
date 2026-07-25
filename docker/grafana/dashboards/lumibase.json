@@ -168,7 +168,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Lumibase CMS",
+  "title": "LumiBase CMS",
   "uid": "lumibase-cms",
   "version": 1
 }

@@ -5,6 +5,7 @@ import { AuditLogger } from '../modules/audit/logger';
 import { buildAccessConflictReport } from '../services/access-conflict-report';
 import { AccessExportService } from '../services/access-export';
 import { AccessImportService, type AccessImportMode } from '../services/access-import';
+import { bumpPermissionVersion } from '../services/permission-invalidation';
 
 export const accessRouter = new Hono<AppEnv>();
 
@@ -43,6 +44,11 @@ accessRouter.post('/import', async (c) => {
   if (!result.valid) {
     return c.json({ data: result }, 400);
   }
+
+  // Config import rewrites roles/policies/bindings wholesale — every cached
+  // bundle for the site is potentially stale (Req 2.3: bump when the affected
+  // principals cannot be enumerated).
+  await bumpPermissionVersion(c);
 
   await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
     event: result.audit.event,

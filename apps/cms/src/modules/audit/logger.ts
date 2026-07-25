@@ -246,6 +246,28 @@ const SENSITIVE_HASH_KEYS = new Set<string>([
   'apiKeyToken',
 ]);
 
+/**
+ * Keys whose value is a raw content payload that must never be copied verbatim
+ * into an audit trail (CWE-359). Item bodies can contain arbitrary user PII, so
+ * we replace them with a redaction marker rather than storing them. Correlation
+ * to the underlying record is still possible via ids (recordId, collection).
+ */
+const PII_PAYLOAD_KEYS = new Set<string>(['data', 'payload', 'content', 'body']);
+const REDACTED_MARKER = '[redacted]';
+
+/**
+ * Defensive cap on any string value stored in audit metadata. Long free-form
+ * strings are the most likely accidental PII carrier; truncating bounds the blast
+ * radius without dropping short, useful diagnostic values.
+ */
+const MAX_AUDIT_STRING_LENGTH = 256;
+
+function capString(value: string): string {
+  return value.length > MAX_AUDIT_STRING_LENGTH
+    ? `${value.slice(0, MAX_AUDIT_STRING_LENGTH)}…[truncated]`
+    : value;
+}
+
 const textEncoder = new TextEncoder();
 
 /** Hex-encode bytes (lowercase). */
@@ -314,6 +336,10 @@ async function maskValue(value: unknown): Promise<unknown> {
   if (isPlainObject(value)) {
     return maskObject(value);
   }
+  // Cap long free-form strings defensively (CWE-359).
+  if (typeof value === 'string') {
+    return capString(value);
+  }
   return value;
 }
 
@@ -335,6 +361,9 @@ async function maskObject(
       out[key] = null;
     } else if (SENSITIVE_HASH_KEYS.has(key)) {
       out[key] = await maskSecretValue(value);
+    } else if (PII_PAYLOAD_KEYS.has(key)) {
+      // Never copy a raw content payload into the audit trail (CWE-359).
+      out[key] = REDACTED_MARKER;
     } else {
       out[key] = await maskValue(value);
     }

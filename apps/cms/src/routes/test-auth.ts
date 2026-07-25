@@ -8,7 +8,7 @@ const htmlContent = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lumibase Auth Playground</title>
+  <title>LumiBase Auth Playground</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
@@ -397,7 +397,7 @@ const htmlContent = `<!DOCTYPE html>
 
   <div class="container">
     <header>
-      <h1>Lumibase Auth Playground</h1>
+      <h1>LumiBase Auth Playground</h1>
       <p>Interactive client to test custom user registration, login, and profile authorization</p>
     </header>
 
@@ -682,6 +682,23 @@ const htmlContent = `<!DOCTYPE html>
   </script>
 </body>
 </html>`;
+
+/**
+ * Interactive auth-playground surface. Developer tooling only — it must never
+ * be reachable in production (OWASP API9: Improper Inventory Management —
+ * shadow/debug endpoints). Return an indistinguishable 404 when the runtime is
+ * production so the surface is neither served nor advertised.
+ */
+testAuthRouter.use('*', async (c, next) => {
+  const isProduction =
+    c.env?.LUMIBASE_ENV === 'production' ||
+    process.env.LUMIBASE_ENV === 'production' ||
+    process.env.NODE_ENV === 'production';
+  if (isProduction) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Not found.' }] }, 404);
+  }
+  return next();
+});
 
 testAuthRouter.get('/', (c) => {
   return c.html(htmlContent);

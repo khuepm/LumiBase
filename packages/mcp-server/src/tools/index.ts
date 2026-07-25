@@ -4,11 +4,17 @@ import { registerAccessTools } from './access.js';
 import { registerAdminTools } from './admin.js';
 import { registerAgentTools } from './agent.js';
 import { registerApiKeyTools } from './api-keys.js';
+import { registerCdcTools } from './cdc.js';
 import { registerCollectionTools } from './collections.js';
 import { registerContentConfigTools } from './content-config.js';
+import { registerDeploymentTools } from './deployments.js';
+import { registerEditorialTools } from './editorial.js';
 import { registerExtensionTools } from './extensions.js';
 import { registerFieldTools } from './fields.js';
+import { registerInsightsTools } from './insights.js';
 import { registerItemTools } from './items.js';
+import { registerReleaseTools } from './releases.js';
+import { registerShareTools } from './shares.js';
 import { registerOpsTools } from './ops.js';
 import { registerPermissionTools } from './permissions.js';
 import { registerRelationTools } from './relations.js';
@@ -32,6 +38,10 @@ export function registerAllTools(server: McpServer, client: LumiBaseClient): voi
   registerContentConfigTools(server, client);
   registerSearchMediaTools(server, client);
   registerTranslationMemoryTools(server, client);
+  registerInsightsTools(server, client);
+  registerEditorialTools(server, client);
+  registerReleaseTools(server, client);
+  registerShareTools(server, client);
 
   // Access control & identity
   registerPermissionTools(server, client);
@@ -41,10 +51,12 @@ export function registerAllTools(server: McpServer, client: LumiBaseClient): voi
 
   // Automation & governance
   registerWebhookTools(server, client);
+  registerCdcTools(server, client);
   registerAgentTools(server, client);
 
   // Operations & administration
   registerOpsTools(server, client);
   registerAdminTools(server, client);
   registerExtensionTools(server, client);
+  registerDeploymentTools(server, client);
 }

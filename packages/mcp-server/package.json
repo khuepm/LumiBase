@@ -1,7 +1,8 @@
 {
   "name": "@lumibase/mcp-server",
-  "version": "0.11.0",
-  "description": "LumiBase MCP server — lets AI assistants manage the full LumiBase Content OS: collections, fields, items, relations, RBAC (roles/policies/permissions/API keys), users & teams, intents, flows, webhooks, translations, search, media, extensions, and site administration.",
+  "version": "0.24.1",
+  "description": "LumiBase MCP server — lets AI assistants manage the full LumiBase Content OS: collections, fields, items, relations, RBAC (roles/policies/permissions/API keys), users & teams, intents, flows, webhooks, translations & translation memory, search, media & transform presets, read-only insights, presets, editorial workflow, content releases, share links, read-only deployments, extensions, and site administration.",
+  "license": "Apache-2.0",
   "type": "module",
   "repository": {
     "type": "git",
@@ -39,7 +40,7 @@
     "@types/node": "^22.0.0",
     "tsup": "^8.5.1",
     "typescript": "^5.6.2",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.10"
   },
   "files": [
     "dist"

@@ -3,7 +3,28 @@ import { useTranslation } from 'react-i18next';
 import { Folder, File as FileIcon, Upload, Trash2, HardDrive, Search, Plus, ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
-import type { FolderResource, FileResource } from '@lumibase/sdk';
+import type { FolderResource, FileResource, UploadConfigResource } from '@lumibase/sdk';
+
+/**
+ * Client-side pre-check mirroring the server upload guard so the user gets an
+ * immediate, friendly reason instead of a failed request. The server remains
+ * the source of truth — this only avoids obviously-doomed uploads.
+ */
+function rejectFile(file: File, cfg: UploadConfigResource | undefined): string | null {
+  if (!cfg) return null;
+  if (file.size > cfg.maxBytes) {
+    const mb = (cfg.maxBytes / (1024 * 1024)).toFixed(cfg.maxBytes % (1024 * 1024) === 0 ? 0 : 1);
+    return `"${file.name}" exceeds the ${mb} MB upload limit.`;
+  }
+  const dot = file.name.lastIndexOf('.');
+  const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
+  const extOk = ext !== '' && cfg.allowedExtensions.includes(ext);
+  const mimeOk = file.type !== '' && cfg.allowedMimeTypes.includes(file.type);
+  if (!extOk && !mimeOk) {
+    return `"${file.name}" is not an allowed file type. Allowed: ${cfg.allowedExtensions.join(', ')}.`;
+  }
+  return null;
+}
 
 export function FilesPage() {
   const { t } = useTranslation();
@@ -19,6 +40,17 @@ export function FilesPage() {
     queryKey: ['files'],
     queryFn: async () => (await client.files.list()).data,
   });
+
+  // Effective upload policy — constrains the picker and pre-checks client-side.
+  // The server enforces the same policy regardless of what the picker allows.
+  const uploadConfigQuery = useQuery({
+    queryKey: ['upload-config'],
+    queryFn: async () => (await client.uploads.getConfig()).data,
+  });
+  const uploadConfig = uploadConfigQuery.data;
+  const acceptAttr = uploadConfig
+    ? [...uploadConfig.allowedMimeTypes, ...uploadConfig.allowedExtensions].join(',')
+    : undefined;
 
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -77,8 +109,15 @@ export function FilesPage() {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
     for (const f of fileList) {
+      const rejection = rejectFile(f, uploadConfig);
+      if (rejection) {
+        alert(rejection);
+        continue;
+      }
       uploadFileMutation.mutate(f);
     }
+    // Allow re-selecting the same file after a rejection.
+    e.target.value = '';
   };
 
   return (
@@ -112,7 +151,7 @@ export function FilesPage() {
           </button>
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
             <Upload className="h-4 w-4" /> Upload
-            <input type="file" className="hidden" multiple onChange={handleFileUpload} />
+            <input type="file" className="hidden" multiple accept={acceptAttr} onChange={handleFileUpload} />
           </label>
         </div>
       </header>

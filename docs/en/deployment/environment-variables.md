@@ -88,12 +88,22 @@ For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `LLM_PROVIDER` | ✗ | LLM provider: `openai`, `anthropic`, `claude`, `gemini`, `workers-ai`, `echo` (default: `echo`) |
+| `LLM_PROVIDER` | ✗ | LLM provider: `openai`, `anthropic`, `claude`, `gemini`, `nvidia`, `vertex`, `workers-ai`, `echo` (default: `echo`) |
 | `OPENAI_API_KEY` | If `openai` provider | OpenAI API key |
 | `ANTHROPIC_API_KEY` | If `anthropic` / `claude` provider | Anthropic API key |
 | `GEMINI_API_KEY` | If `gemini` provider | Google Gemini API key |
-| `LLM_MODEL` | ✗ | Model name override (e.g., `gpt-4.1-nano`, `claude-3-5-haiku-latest`, `gemini-3.5-flash`) |
+| `NVIDIA_API_KEY` | If `nvidia` provider | NVIDIA hosted-inference key (build.nvidia.com / NIM). Billed by NVIDIA. |
+| `NVIDIA_BASE_URL` | ✗ | Override the NVIDIA endpoint — e.g. a self-hosted NIM container (`http://nim:8000/v1`). Defaults to `https://integrate.api.nvidia.com/v1`. |
+| `VERTEX_ACCESS_TOKEN` | If `vertex` provider | Google Cloud OAuth 2.0 bearer (`gcloud auth print-access-token`). Tokens expire (~1h). **Billed to Google Cloud, not AWS.** |
+| `VERTEX_PROJECT_ID` | If `vertex` provider | Google Cloud project id that owns the Vertex AI models. |
+| `VERTEX_LOCATION` | ✗ | Vertex AI region (default: `us-central1`). |
+| `LLM_MODEL` | ✗ | Model name override (e.g., `gpt-4.1-nano`, `claude-3-5-haiku-latest`, `gemini-3.5-flash`, `meta/llama-3.1-8b-instruct`) |
 | `WORKERS_AI_GATEWAY` | Workers AI only | CF Workers AI gateway URL |
+
+> **Provider ↔ billing:** `nvidia` and `vertex` call *external* clouds — NVIDIA
+> and Google Cloud respectively — so their usage is **not** covered by AWS
+> credit. `nvidia` (or a self-hosted NIM via `NVIDIA_BASE_URL`) and MeiliSearch
+> are the pieces that pair naturally with AWS-hosted infrastructure.
 
 ---
 
@@ -126,6 +136,32 @@ The Docker CMS process includes an overload guard for the Node.js event loop. Wh
 | `LUMIBASE_PRESSURE_LIMITER_MAX_EVENT_LOOP_UTILIZATION` | ✗ | `false` | Optional utilization threshold such as `0.99`. Disabled by default because sustained useful CPU work can otherwise produce noisy rejections. |
 | `LUMIBASE_PRESSURE_LIMITER_RETRY_AFTER` | ✗ | `5` | Seconds advertised in the `Retry-After` response header. |
 | `LUMIBASE_PRESSURE_LIMITER_EXCLUDED_PATHS` | ✗ | `/health,/metrics` | Comma-separated path prefixes that should keep serving during overload checks. |
+
+---
+
+## Rate limiting
+
+A fixed-window throttle guards the authenticated API. It keys per principal (user → API key → IP) and is scoped per site. When exceeded it returns HTTP `429` with a `RATE_LIMITED` envelope plus `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `Retry-After`. It fails open if the cache is unavailable, so it is defence-in-depth rather than a hard quota.
+
+Large imports can trip the default budget. Raise `LUMIBASE_RATE_LIMIT_MAX` and prefer the bulk endpoint — see [Data import](../features/data-import.md).
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LUMIBASE_RATE_LIMIT_MAX` | ✗ | `300` | Max requests per window per principal, per site. |
+| `LUMIBASE_RATE_LIMIT_WINDOW_S` | ✗ | `60` | Window length in seconds. |
+| `LUMIBASE_RATE_LIMIT_DISABLED` | ✗ | (unset) | Set to `true` to disable the throttle entirely. |
+
+---
+
+## GraphQL
+
+Every GraphQL operation is validated before it runs against a depth limit and a static cost limit, rejecting abusively deep or wide queries at parse time (CWE-770). Depth is a compile-time constant (12); cost is tunable. Raise `LUMIBASE_GQL_MAX_COST` if a legitimate query is rejected. See [`graphql-api-spec.md`](../api/graphql-api-spec.md#abuse-guards).
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LUMIBASE_GQL_MAX_COST` | ✗ | `1000` | Max static cost accepted per operation. |
+| `LUMIBASE_GQL_DEFAULT_LIST_SIZE` | ✗ | `20` | Cost multiplier for a list field with no literal pagination argument (or a variable one). |
+| `LUMIBASE_GQL_MAX_LIST_MULTIPLIER` | ✗ | `100` | Upper clamp on any single list field's cost multiplier. |
 
 ---
 

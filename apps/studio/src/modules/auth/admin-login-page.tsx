@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { LogIn } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { getActiveSite, hasActiveToken, setActiveToken, setActiveSite } from '@/lib/api';
+import { getActiveSite, hasActiveToken, setActiveToken, setActiveRefreshToken, setActiveSite } from '@/lib/api';
 import { ADMIN_PATH_REGEX } from '@/modules/setup/schemas/admin-path';
 
 interface AdminLoginPageProps {
@@ -48,7 +48,7 @@ export function AdminLoginPage({ adminPath }: AdminLoginPageProps) {
         });
 
         const body = await response.json().catch(() => null) as {
-          data?: { token?: string };
+          data?: { token?: string; refreshToken?: string };
           errors?: Array<{ message?: string }>;
         } | null;
 
@@ -60,6 +60,9 @@ export function AdminLoginPage({ adminPath }: AdminLoginPageProps) {
 
         setActiveSite(getActiveSite());
         setActiveToken(body.data.token);
+        if (body.data.refreshToken) {
+          setActiveRefreshToken(body.data.refreshToken);
+        }
         navigate({ to: normalizedAdminPath });
       } catch {
         setStatus('error');

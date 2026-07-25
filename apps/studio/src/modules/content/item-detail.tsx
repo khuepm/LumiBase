@@ -1,20 +1,30 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Check, ChevronLeft, Copy, Lock, Pin, Save, Share2, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, Copy, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
+import type { SaveAction } from '@lumibase/shared/schemas';
+import { useSaveAction, saveActionLabel } from './use-save-action';
 import { useEffect, useMemo, useState } from 'react';
 import type { FieldResource, ItemRow, RevisionRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePermissions, type PermissionHelpers } from '@/lib/use-permissions';
-import { PresenceChip } from '@/components/presence-chip';
+import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
+import { PresenceStack } from '@/components/presence-chip';
+import { CoEditingBanner } from '@/components/co-editing-banner';
+import { useCoEditors } from '@/hooks/use-presence';
 import { resolveInterface } from './interfaces/registry';
+import { GroupContainer, type GroupVariant } from './interfaces/group';
 import { RawToggle } from './interfaces/raw-toggle';
 import { ProvenanceBadge } from './provenance-badge';
 import { RevisionsPanel } from './revisions-panel';
 import { RawJsonPanel } from './raw-json-panel';
 import { VersionPanel } from './version-panel';
+import { DependentRecordsDialog, type DependentGroup } from './dependent-records-dialog';
+import { TranslationMode } from './translation-mode';
+import { translatableFields, tmLearnEntries } from './translatable-fields';
+import { useSiteLocales } from './use-site-locales';
 
-type Tab = 'fields' | 'revisions' | 'versions' | 'raw';
+type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
 
 /**
  * Content module detail editor.
@@ -27,13 +37,29 @@ export function ItemDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const perms = usePermissions();
+  const saveAction = useSaveAction();
+  // The action a one-off save click requested; null → use the effective default.
+  const [pendingAction, setPendingAction] = useState<SaveAction | null>(null);
+  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
+
+  // Real-time co-editing: one presence subscription feeds both the header
+  // avatar stack and the warning banner (peers on this same item, not self).
+  const { coEditors } = useCoEditors(collection, id);
 
   const [tab, setTab] = useState<Tab>('fields');
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
+  // Translation mode (translation-memory-ui): the site's default is the source
+  // locale; the user picks a target to translate into.
+  const locales = useSiteLocales();
+  const [targetLocale, setTargetLocale] = useState<string | null>(null);
+  // Translatable fields the user set by hand (or applied a human TM match) in
+  // this session — learned into TM on save when `translations.learnTm` is on.
+  const [learnFields, setLearnFields] = useState<Set<string>>(() => new Set());
   // Content scheduling (Publish_Window) — datetime-local strings, '' = unset.
   const [publishAt, setPublishAt] = useState<string | null>(null);
   const [unpublishAt, setUnpublishAt] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [dependentGroups, setDependentGroups] = useState<DependentGroup[] | null>(null);
   const [shareRoleId, setShareRoleId] = useState('');
   const [sharePassword, setSharePassword] = useState('');
   const [shareValidUntil, setShareValidUntil] = useState('');
@@ -50,6 +76,19 @@ export function ItemDetailPage() {
     queryKey: ['fields', collection],
     queryFn: async () => (await client.schema.listFields(collection)).data,
   });
+
+  // Learn-on-save toggle (Req 6.1). Defaults ON when the key is unset.
+  const learnTmQuery = useQuery({
+    queryKey: ['settings', 'translations.learnTm'],
+    queryFn: async () => {
+      try {
+        return (await client.settings.get('translations.learnTm')).data;
+      } catch {
+        return null;
+      }
+    },
+  });
+  const learnTmEnabled = (learnTmQuery.data?.value?.enabled as boolean | undefined) ?? true;
 
   const itemQuery = useQuery({
     queryKey: ['item', collection, id],
@@ -127,6 +166,17 @@ export function ItemDetailPage() {
     [fields, perms, collection],
   );
 
+  // Source locale = site default (first supported); target defaults to the
+  // first other locale. Both derive from the same `locales` setting the
+  // translatable-text interface uses, so lists never diverge.
+  const sourceLocale = locales[0] ?? 'en';
+  useEffect(() => {
+    if (targetLocale === null) {
+      setTargetLocale(locales.find((l) => l !== sourceLocale) ?? sourceLocale);
+    }
+  }, [locales, sourceLocale, targetLocale]);
+  const hasTranslatableFields = translatableFields(editable).length > 0;
+
   const isDirty = useMemo(() => {
     if (!itemQuery.data || draft === null) return false;
     if (JSON.stringify(draft) !== JSON.stringify(itemQuery.data.data ?? {})) return true;
@@ -144,22 +194,60 @@ export function ItemDetailPage() {
         publishAt: localInputToIso(publishAt),
         unpublishAt: localInputToIso(unpublishAt),
       });
+      // Learn human-edited translations into TM (Req 6.1). Best-effort: a TM
+      // write failure must not fail the save that already succeeded.
+      const toLearn = tmLearnEntries({
+        enabled: learnTmEnabled,
+        editedFields: learnFields,
+        data: draft,
+        sourceLocale,
+        targetLocale: targetLocale ?? '',
+      });
+      if (toLearn.length > 0) {
+        await Promise.allSettled(
+          toLearn.map((entry) => client.tm.upsert({ ...entry, source: 'human', quality: 100 })),
+        );
+        setLearnFields(new Set());
+      }
       return res.data as ItemRow;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['item', collection, id] });
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
       queryClient.invalidateQueries({ queryKey: ['revisions', collection, id] });
+      // Navigate per the save action (one-off override, else effective default).
+      const action = pendingAction ?? saveAction.effective;
+      setPendingAction(null);
+      if (action === 'return') {
+        navigate({ to: '/content/$collection', params: { collection } });
+      } else if (action === 'create_new') {
+        navigate({ to: '/content/$collection/$id', params: { collection, id: 'new' } });
+      }
+      // 'stay' → remain on the form (current behavior).
     },
   });
+
+  // Cmd/Ctrl+S → save and stay. Mirrors the Save button's gating exactly.
+  useSaveHandler(
+    () => saveMutation.mutate(),
+    isDirty && canUpdate && !saveMutation.isPending,
+  );
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
       await client.items(collection as never).delete(id);
     },
     onSuccess: () => {
+      setDependentGroups(null);
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
       navigate({ to: '/content/$collection', params: { collection } });
+    },
+    onError: (err: unknown) => {
+      // 409 DEPENDENT_RECORDS_EXIST → open the resolution dialog with the groups.
+      const e = err as { status?: number; body?: { errors?: Array<{ code?: string; dependents?: DependentGroup[] }> } };
+      if (e?.status === 409 && e.body?.errors?.[0]?.code === 'DEPENDENT_RECORDS_EXIST') {
+        setDependentGroups(e.body.errors[0].dependents ?? []);
+      }
     },
   });
 
@@ -234,8 +322,8 @@ export function ItemDetailPage() {
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          {/* Presence chip — shows other users currently editing this item */}
-          <PresenceChip collection={collection} itemId={id} />
+          {/* Avatar stack — other users currently editing this same item */}
+          <PresenceStack peers={coEditors} />
           <button
             type="button"
             onClick={() => setShareOpen(true)}
@@ -266,28 +354,98 @@ export function ItemDetailPage() {
             {canDelete ? <Trash2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
             Delete
           </button>
-          <button
-            type="button"
-            onClick={() => saveMutation.mutate()}
-            disabled={!isDirty || saveMutation.isPending || !canUpdate}
-            title={canUpdate ? undefined : 'You do not have update permission on this collection.'}
-            className={cn(
-              'inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-medium',
-              isDirty && canUpdate
-                ? 'bg-primary text-primary-foreground hover:opacity-90'
-                : 'bg-muted text-muted-foreground',
+          <div className="relative inline-flex">
+            <button
+              type="button"
+              onClick={() => {
+                setPendingAction(null); // use effective default
+                saveMutation.mutate();
+              }}
+              disabled={!isDirty || saveMutation.isPending || !canUpdate}
+              title={canUpdate ? saveActionLabel(saveAction.effective) : 'You do not have update permission on this collection.'}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-l-md px-3 py-1 text-xs font-medium',
+                isDirty && canUpdate
+                  ? 'bg-primary text-primary-foreground hover:opacity-90'
+                  : 'bg-muted text-muted-foreground',
+              )}
+            >
+              {canUpdate ? <Save className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+              {saveMutation.isPending
+                ? 'Saving…'
+                : isDirty
+                  ? saveActionLabel(saveAction.effective)
+                  : 'Saved'}
+            </button>
+            <button
+              type="button"
+              aria-label="Save options"
+              onClick={() => setSaveMenuOpen((v) => !v)}
+              disabled={saveMutation.isPending || !canUpdate}
+              className={cn(
+                'inline-flex items-center rounded-r-md border-l border-primary-foreground/20 px-1.5 py-1',
+                canUpdate ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-muted text-muted-foreground',
+              )}
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+            {saveMenuOpen && (
+              <div
+                className="absolute right-0 top-full z-20 mt-1 w-52 rounded-md border border-border bg-background py-1 text-xs shadow-md"
+                onMouseLeave={() => setSaveMenuOpen(false)}
+              >
+                {(['stay', 'return', 'create_new'] as const).map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    disabled={!isDirty || !canUpdate}
+                    onClick={() => {
+                      setSaveMenuOpen(false);
+                      setPendingAction(a);
+                      saveMutation.mutate();
+                    }}
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-muted disabled:opacity-50"
+                  >
+                    {saveActionLabel(a)}
+                    {saveAction.effective === a && <Check className="h-3 w-3" />}
+                  </button>
+                ))}
+                <div className="my-1 border-t border-border" />
+                <button
+                  type="button"
+                  disabled={saveAction.isSettingDefault}
+                  onClick={() => {
+                    setSaveMenuOpen(false);
+                    saveAction.setDefault(saveAction.effective);
+                  }}
+                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-muted-foreground hover:bg-muted"
+                >
+                  <Star className="h-3 w-3" />
+                  Set “{saveActionLabel(saveAction.effective)}” as default
+                </button>
+              </div>
             )}
-          >
-            {canUpdate ? <Save className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-            {saveMutation.isPending ? 'Saving…' : isDirty ? 'Save changes' : 'Saved'}
-          </button>
+          </div>
         </div>
       </header>
+
+      {/* Real-time warning when more than one person has this item open. */}
+      <CoEditingBanner coEditors={coEditors} />
 
       {saveMutation.error && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
           Save failed.
         </div>
+      )}
+
+      {dependentGroups && (
+        <DependentRecordsDialog
+          collection={collection}
+          itemId={id}
+          groups={dependentGroups}
+          onClose={() => setDependentGroups(null)}
+          onAllResolved={() => deleteMutation.mutate()}
+        />
       )}
 
       {shareOpen && (
@@ -413,6 +571,40 @@ export function ItemDetailPage() {
               onReleasePin={canUpdate ? (field) => releasePinMutation.mutate(field) : undefined}
             />
           )}
+          {tab === 'translation' && draft && targetLocale && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-muted-foreground" htmlFor="tm-target-locale">
+                  Target locale
+                </label>
+                <select
+                  id="tm-target-locale"
+                  value={targetLocale}
+                  onChange={(e) => setTargetLocale(e.target.value)}
+                  className="rounded-md border bg-background px-2 py-1 font-mono text-xs"
+                >
+                  {locales
+                    .filter((l) => l !== sourceLocale)
+                    .map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <TranslationMode
+                fields={editable}
+                draft={draft}
+                onChange={setDraft}
+                sourceLocale={sourceLocale}
+                targetLocale={targetLocale}
+                readOnly={!canUpdate}
+                onFieldEdited={(name) =>
+                  setLearnFields((prev) => new Set(prev).add(name))
+                }
+              />
+            </div>
+          )}
           {tab === 'revisions' && (
             <RevisionsPanel
               collection={collection}
@@ -436,6 +628,9 @@ export function ItemDetailPage() {
           <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Tabs</h2>
           <ul className="space-y-1 text-sm">
             <TabButton current={tab} value="fields" onClick={setTab}>Fields</TabButton>
+            {hasTranslatableFields && (
+              <TabButton current={tab} value="translation" onClick={setTab}>Translation</TabButton>
+            )}
             <TabButton current={tab} value="revisions" onClick={setTab}>Revisions</TabButton>
             <TabButton current={tab} value="versions" onClick={setTab}>Versions</TabButton>
             <TabButton current={tab} value="raw" onClick={setTab}>Raw JSON</TabButton>
@@ -563,56 +758,82 @@ function FieldsTab({
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">No editable fields.</p>;
   }
-  return (
-    <div className="space-y-4">
-      {fields.map((f) => {
-        const Interface = resolveInterface(f);
-        const cellValue = value?.[f.name];
-        const writable = perms.fieldAllowed(collection, 'update', f.name);
-        const pinned = pinnedFields.includes(f.name);
-        const setCell = (next: unknown) => {
-          if (!writable) return;
-          onChange({ ...value, [f.name]: next });
-        };
-        return (
-          <div key={f.id}>
-            <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
-              <span>{f.name}</span>
-              {f.required && <span className="text-destructive">*</span>}
-              <span className="text-[10px] uppercase">{f.interface || f.type}</span>
-              {pinned && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
-                  title="Pinned by a human edit — agents cannot overwrite this field."
-                >
-                  <Pin className="h-3 w-3" /> Pinned
-                  {onReleasePin && (
-                    <button
-                      type="button"
-                      onClick={() => onReleasePin(f.name)}
-                      className="ml-0.5 rounded-full px-1 hover:bg-sky-100"
-                      aria-label={`Release pin on ${f.name}`}
-                      title="Release pin — allow agents to write this field again."
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </button>
-                  )}
-                </span>
-              )}
-              {!writable && (
-                <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
-                  <Lock className="h-3 w-3" /> read-only
-                </span>
-              )}
-            </label>
-            <div className={cn(!writable && 'pointer-events-none opacity-70')}>
-              <RawToggle value={cellValue} onChange={setCell}>
-                <Interface field={f} value={cellValue} onChange={setCell} />
-              </RawToggle>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+
+  // Group fields (interface `group-*`) act as containers; their `name` is the
+  // key that child fields reference via `field.group`.
+  const groupFieldNames = new Set(
+    fields.filter((f) => f.interface?.startsWith('group-')).map((f) => f.name),
   );
+  const bySort = (a: FieldResource, b: FieldResource) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+  const widthClass = (w?: FieldResource['width']) =>
+    w === 'half' ? 'sm:col-span-1' : 'col-span-1 sm:col-span-2';
+
+  const renderField = (f: FieldResource): React.ReactNode => {
+    // Group container — render its children in a nested grid.
+    if (f.interface?.startsWith('group-')) {
+      const variant = f.interface.replace('group-', '') as GroupVariant;
+      const children = fields.filter((c) => c.group === f.name).sort(bySort);
+      return (
+        <div key={f.id} className="col-span-1 sm:col-span-2">
+          <GroupContainer variant={variant} field={f}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children.map(renderField)}</div>
+          </GroupContainer>
+        </div>
+      );
+    }
+
+    const Interface = resolveInterface(f);
+    const cellValue = value?.[f.name];
+    const writable = perms.fieldAllowed(collection, 'update', f.name);
+    const pinned = pinnedFields.includes(f.name);
+    const setCell = (next: unknown) => {
+      if (!writable) return;
+      onChange({ ...value, [f.name]: next });
+    };
+    return (
+      <div key={f.id} className={widthClass(f.width)}>
+        <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+          <span>{f.name}</span>
+          {f.required && <span className="text-destructive">*</span>}
+          <span className="text-[10px] uppercase">{f.interface || f.type}</span>
+          {pinned && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
+              title="Pinned by a human edit — agents cannot overwrite this field."
+            >
+              <Pin className="h-3 w-3" /> Pinned
+              {onReleasePin && (
+                <button
+                  type="button"
+                  onClick={() => onReleasePin(f.name)}
+                  className="ml-0.5 rounded-full px-1 hover:bg-sky-100"
+                  aria-label={`Release pin on ${f.name}`}
+                  title="Release pin — allow agents to write this field again."
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              )}
+            </span>
+          )}
+          {!writable && (
+            <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
+              <Lock className="h-3 w-3" /> read-only
+            </span>
+          )}
+        </label>
+        <div className={cn(!writable && 'pointer-events-none opacity-70')}>
+          <RawToggle value={cellValue} onChange={setCell}>
+            <Interface field={f} value={cellValue} onChange={setCell} />
+          </RawToggle>
+        </div>
+      </div>
+    );
+  };
+
+  // Top-level fields = everything not nested inside a group container.
+  const topLevel = fields
+    .filter((f) => !f.group || !groupFieldNames.has(f.group))
+    .sort(bySort);
+
+  return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{topLevel.map(renderField)}</div>;
 }

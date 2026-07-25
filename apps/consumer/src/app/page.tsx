@@ -77,9 +77,9 @@ export default async function Home() {
     <main className="min-h-screen bg-slate-50 text-slate-900 py-12 px-6">
       <div className="max-w-4xl mx-auto space-y-12">
         <header className="space-y-4 text-center">
-          <h1 className="text-5xl font-extrabold tracking-tight text-slate-900">Lumibase Consumer App</h1>
+          <h1 className="text-5xl font-extrabold tracking-tight text-slate-900">LumiBase Consumer App</h1>
           <p className="text-slate-500 text-lg max-w-2xl mx-auto">
-            Giao diện Next.js App Router (Consumer frontend) để thử nghiệm Lumibase SDK với mô hình Composable.
+            Giao diện Next.js App Router (Consumer frontend) để thử nghiệm LumiBase SDK với mô hình Composable.
           </p>
         </header>
 

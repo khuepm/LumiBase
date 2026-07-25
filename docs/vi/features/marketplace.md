@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-06-23T12:59:56.000Z
+sourceLang: vi
+contentHash: f47ac6b8c1d63092
+---
+
 # Marketplace cho Extensions
 
 LumiBase Marketplace cho phép publish và install extension đã được **ký số** (signed bundle). Bundle bị verify bằng SHA-256 + ed25519/RSA-PSS qua WebCrypto trước khi mount.
@@ -66,41 +73,41 @@ Chỉ admin (capability `marketplace:publish`) được phép.
 
 - [x] Studio UI marketplace browser (browse + 1-click install).
 - [x] Versioning + auto-update notifications.
-- [x] Public marketplace site (apps/marketplace) dùng catalog API thật.
-- [x] Revenue sharing cho commercial extensions: chốt hướng **Free-first** cho launch; checkout/payout nằm trong backlog thương mại riêng.
+- [x] Public marketplace site (apps/marketplace) backed by the real catalog API.
+- [x] Revenue sharing for commercial extensions: launch is **Free-first**; checkout/payout work is tracked as a separate commercial backlog.
 
 ## Public marketplace launch
 
-`apps/marketplace` là site Next.js static export để publish lên Cloudflare Pages. Site đọc dữ liệu từ CMS qua:
+`apps/marketplace` is a Next.js static export deployed to Cloudflare Pages. It reads catalog data from CMS through:
 
 ```
 GET /api/v1/marketplace/extensions?q=&category=&tags=&page=&perPage=&sort=
 GET /api/v1/marketplace/extensions/:slug
 ```
 
-Response public catalog được project từ `extensions.manifest.marketplace` trước, fallback về row `extensions` hiện có. Các field public ổn định gồm `slug`, `name`, `description`, `readme`, `category`, `tags`, `publisherName`, `latestVersion`, `publishedAt`, `updatedAt`, `licenseType`, `repositoryUrl`, `documentationUrl`. Các field cũ (`marketplaceSlug`, `publisher`, `version`, `type`) vẫn được giữ để Studio không vỡ.
+The public catalog response is projected from `extensions.manifest.marketplace` first, then falls back to the existing `extensions` row. Stable public fields include `slug`, `name`, `description`, `readme`, `category`, `tags`, `publisherName`, `latestVersion`, `publishedAt`, `updatedAt`, `licenseType`, `repositoryUrl`, and `documentationUrl`. Existing fields (`marketplaceSlug`, `publisher`, `version`, `type`) remain for Studio compatibility.
 
-Checklist launch:
+Launch checklist:
 
 - Set `NEXT_PUBLIC_USE_REAL_API=true`.
-- Set `NEXT_PUBLIC_CMS_API_URL` trỏ tới CMS production.
-- Build bằng `pnpm marketplace:build`.
-- Deploy bằng `pnpm marketplace:deploy` hoặc Cloudflare Pages với output `apps/marketplace/out`.
-- Smoke test `/`, `/extensions/`, `/categories/seo/`, và `/extensions/<slug>/`.
-- Seed đủ metadata listing trong `manifest.marketplace` nếu production DB còn thiếu description/category/tags/license/link.
+- Set `NEXT_PUBLIC_CMS_API_URL` to the production CMS URL.
+- Build with `pnpm marketplace:build`.
+- Deploy with `pnpm marketplace:deploy` or Cloudflare Pages using `apps/marketplace/out`.
+- Smoke test `/`, `/extensions/`, `/categories/seo/`, and `/extensions/<slug>/`.
+- Seed listing metadata in `manifest.marketplace` if production rows are missing description/category/tags/license/link data.
 
 ## Revenue sharing status
 
-Launch hiện tại là marketplace miễn phí. LumiBase chưa xử lý mua bán extension trả phí, license entitlement, payout, refund hoặc thuế trong vòng này.
+The launch marketplace is free-first. LumiBase does not process paid extension checkout, license entitlement, payout, refund, or tax handling in this phase.
 
-Backlog commercial extensions pha sau:
+Commercial extensions backlog:
 
-- Pricing fields cho extension listing.
-- Publisher accounts và payout profile.
-- Platform commission mặc định theo phần trăm.
-- License entitlement khi install paid extension.
+- Pricing fields for extension listings.
+- Publisher accounts and payout profile.
+- Default percentage-based platform commission.
+- License entitlement for paid extension installs.
 - Checkout provider integration.
-- Revenue ledger, payout lifecycle, refund lifecycle.
+- Revenue ledger, payout lifecycle, and refund lifecycle.
 
 ## Cấu trúc Phiên bản & Thông báo Cập nhật (Versioning & Auto-update)
 

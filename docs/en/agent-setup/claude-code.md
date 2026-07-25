@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:25.753Z
+sourceLang: en
+contentHash: 24a4ff7faa0c8795
+---
+
 # Claude Code — LumiBase Agent Setup
 
 > **Claude Code** is a terminal-based coding agent made by Anthropic. It understands your codebase, runs commands, edits files, and manages git.
@@ -17,7 +24,7 @@ Read docs/en/agent-setup/prompt.md and follow all setup instructions.
 Or if you're on a remote copy of the docs:
 
 ```
-Fetch https://raw.githubusercontent.com/lumibase/lumibase/main/docs/en/agent-setup/prompt.md
+Fetch https://raw.githubusercontent.com/khuepm/lumibase/main/docs/en/agent-setup/prompt.md
 ```
 
 ---
@@ -36,7 +43,7 @@ claude
 Paste the following into Claude Code:
 
 ```
-Read docs/en/README.md to understand the Lumibase monorepo structure.
+Read docs/en/README.md to understand the LumiBase monorepo structure.
 Then read docs/en/data-model.md for the database schema.
 Then read docs/en/ai-skills.md for the skill system conventions.
 ```

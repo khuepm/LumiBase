@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:25.695Z
+sourceLang: en
+contentHash: de67be004c86190c
+---
+
 These are official instructions from LumiBase to configure an AI coding agent to work effectively with the LumiBase headless CMS codebase.
 
 Complete all steps yourself. Do not ask the user to run these commands.

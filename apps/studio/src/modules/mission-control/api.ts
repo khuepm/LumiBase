@@ -14,8 +14,12 @@ async function agentFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(site ? { 'x-site-id': site } : {}),
+      ...(site ? { 'X-Lumi-Site': site } : {}),
       ...(init?.headers ?? {}),
+      // Mission Control is the primary Studio control-plane UI for the Agent
+      // Harness; assert the Studio client signal so withStudioAccess enforces
+      // appAccess/TFA (mirrors agent-harness-page.tsx).
+      'X-Lumi-Client': 'studio',
     },
   });
   const body = (await res.json().catch(() => ({}))) as {

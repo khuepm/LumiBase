@@ -1,42 +1,111 @@
 # Full-text Search
 
-LumiBase tích hợp **MeiliSearch** làm full-text search backend, qua `SearchProvider` interface trong `@lumibase/runtime`.
+LumiBase integrates **MeiliSearch** as its full-text search backend, behind the
+`SearchProvider` interface in `@lumibase/runtime`.
 
-## Backend theo runtime
+## Backend per runtime
 
 | Runtime | Backend |
 |---------|---------|
-| Cloudflare | MeiliSearch Cloud qua HTTP |
-| Docker | MeiliSearch self-host (port 7700, persistent volume) |
+| Cloudflare | MeiliSearch Cloud over HTTP |
+| Docker | Self-hosted MeiliSearch (port 7700, persistent volume) |
 
-Cả hai cùng implement `SearchProvider` interface — code application không cần biết.
+Both implement the same `SearchProvider` interface — application code never
+needs to know which one is active.
+
+To self-host the Docker backend on AWS (Lightsail / ECS Fargate) instead of
+running it alongside the CMS, see
+[Deploying MeiliSearch on AWS](../deployment/meilisearch-aws.md).
 
 ## API endpoint
 
 `GET /api/v1/search?q=...&collection=...&filter=...&sort=...&limit=...&offset=...`
 
-| Param | Mô tả |
-|-------|-------|
+| Param | Description |
+|-------|-------------|
 | `q` (required) | Query string |
-| `collection` | Limit theo collection name |
+| `collection` | Restrict to one collection. **Omit for cross-collection (global) search.** |
 | `filter` | MeiliSearch filter expression |
-| `sort` | Field name + direction |
+| `sort` | Sort directives, comma-separated (e.g. `_updatedAt:desc`) |
 | `limit` | Default 20, max 200 |
 | `offset` | Pagination cursor |
 
-Response: `{ data: [{ id, score, ...fields }], meta: { total, limit, offset } }`.
+### Single-collection response
+
+```jsonc
+{
+  "data": [ { "id": "...", "_collection": "articles", "_title": "...", "_updatedAt": "...", /* ...fields */ } ],
+  "meta": { "totalHits": 12, "processingTimeMs": 3, "collection": "articles", "query": "ha noi", "limit": 20, "offset": 0 }
+}
+```
+
+The requested `collection` is validated against the caller's own collections; an
+unknown collection returns `404`.
+
+### Cross-collection (global) response
+
+When `collection` is omitted, the query fans out across every collection of the
+caller's site (one scoped search each) and the hits are merged, each tagged with
+its `_collection`. The fan-out is capped at 20 collections per request.
+
+```jsonc
+{
+  "data": [ { "_collection": "articles", "id": "...", "_title": "..." }, { "_collection": "pages", "id": "...", "_title": "..." } ],
+  "meta": { "totalHits": 7, "query": "ha noi", "collections": ["articles", "pages"], "truncated": false, "limit": 20, "offset": 0 }
+}
+```
+
+This powers the Studio global command palette (⌘K).
+
+### SDK
+
+```typescript
+import { search } from "@lumibase/sdk";
+
+// Cross-collection (global)
+const { data, meta } = await client.request(search("ha noi"));
+// Single collection
+await client.request(search("ha noi", { collection: "articles", limit: 10 }));
+```
+
+## Vietnamese support
+
+MeiliSearch normalizes diacritics out of the box, so a query typed **without
+diacritics matches text with diacritics** — `ha noi` → "Hà Nội", `da nang` →
+"Đà Nẵng". No extra configuration is needed for this.
+
+On top of that, indexes are configured (`defaultIndexSettings`) with:
+
+- **Vietnamese stop words** (`và`, `của`, `là`, `các`, …) to improve relevance.
+- **Raised typo-tolerance thresholds** (`oneTypo: 4`, `twoTypos: 8`) — Vietnamese
+  has many short tokens where aggressive fuzzy matching adds noise.
+- A normalized **`_title`** boosted ahead of the collection's own searchable fields.
 
 ## Auto-indexing
 
-Hooks tự động:
+Hooks run automatically:
 
-- **Item create** → enqueue index job qua `QueueProvider`.
+- **Item create** → enqueue an index job via `QueueProvider`.
 - **Item update** → re-index.
-- **Item delete** → remove khỏi index.
+- **Item delete** → remove from the index.
 
-Worker đọc từ queue, gọi `searchProvider.index(collection, [doc])` hoặc `delete(collection, ids)`.
+The `content-indexing` worker (`registerContentIndexingWorker`, wired in
+`serve.ts`) consumes the queue and calls `searchProvider.index(...)` /
+`delete(...)`. When no queue is configured, `ItemService` indexes inline.
 
-Initial bulk index cho collection mới: `apps/cms/scripts/cli.ts reindex <collection>`.
+### Reindex CLI
+
+Rebuild indexes from the database (bootstrap a new instance, or rebuild after
+changes):
+
+```bash
+lumibase reindex                      # every collection of every site
+lumibase reindex --site <siteId>      # one site
+lumibase reindex --site <siteId> --collection posts
+```
+
+Requires the same env as the server (`DATABASE_URL`, `MEILISEARCH_HOST`,
+`MEILISEARCH_API_KEY`, `LUMIBASE_RUNTIME`).
 
 ## SearchProvider interface
 
@@ -46,6 +115,7 @@ interface SearchProvider {
   search(collection: string, query: string, options?: SearchOptions): Promise<SearchResult>;
   delete(collection: string, ids: string[]): Promise<void>;
   getIndex(collection: string): Promise<IndexInfo>;
+  configureIndex(collection: string, settings: SearchIndexSettings): Promise<void>;
 }
 
 interface SearchOptions {
@@ -53,32 +123,35 @@ interface SearchOptions {
   sort?: string[];
   limit?: number;
   offset?: number;
-  attributesToHighlight?: string[];
+  attributesToRetrieve?: string[];
 }
 ```
 
-Filter, sort, pagination được forward trực tiếp xuống MeiliSearch — xem [MeiliSearch query rules](https://www.meilisearch.com/docs/reference/api/search) để biết syntax.
+Filter, sort and pagination are forwarded directly to MeiliSearch — see the
+[MeiliSearch search reference](https://www.meilisearch.com/docs/reference/api/search)
+for syntax.
 
 ## Multi-tenancy
 
-Index name format: `{siteId}__{collection}`. Mỗi site có index riêng, không cross-leak.
-
-## Permissions
-
-Trước khi trả results, áp dụng permission filter (như Item layer): nếu role không có quyền `read` field nào đó, field đó bị strip khỏi document trong response.
+The physical index name is always `{siteId}__{collection}` (see
+`searchIndexName`). Every index/search/delete call goes through this helper, and
+the `/search` route additionally validates the requested collection belongs to
+the caller's site — so a tenant can neither name nor reach another tenant's index.
 
 ## Configuration
 
 ```bash
 # Docker
-MEILI_HOST=http://meilisearch:7700
-MEILI_API_KEY=<master key>
+MEILISEARCH_HOST=http://meilisearch:7700
+MEILISEARCH_API_KEY=<master key>
 
 # Cloudflare (MeiliSearch Cloud)
-MEILI_HOST=https://<your-instance>.meilisearch.io
-MEILI_API_KEY=<cloud api key>
+MEILISEARCH_HOST=https://<your-instance>.meilisearch.io
+MEILISEARCH_API_KEY=<cloud api key>
 ```
 
 ## Alternatives
 
-Xem `apps/docs/content/guides/tooling-recommendations.md` để biết các alternative search backend (Typesense, Elasticsearch) — có thể swap bằng cách viết adapter mới cho `SearchProvider`.
+See `apps/docs/content/guides/tooling-recommendations.md` for alternative search
+backends (Typesense, Elasticsearch) — swap by writing a new `SearchProvider`
+adapter.

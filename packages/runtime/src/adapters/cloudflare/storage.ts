@@ -48,6 +48,13 @@ export class CloudflareStorageProvider implements StorageProvider {
     const options: R2PutOptions = {};
     if (metadata) {
       options.customMetadata = metadata;
+      // Map the logical content type onto R2's native `httpMetadata` so
+      // `get()` (which reads `httpMetadata.contentType`) round-trips it. Left
+      // only in `customMetadata`, the served Content-Type would come back
+      // undefined.
+      if (metadata.contentType) {
+        options.httpMetadata = { contentType: metadata.contentType };
+      }
     }
     // Convert Buffer to ArrayBuffer for R2 compatibility
     const body = Buffer.isBuffer(data) ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer : data;

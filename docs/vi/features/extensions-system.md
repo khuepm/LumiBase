@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-06-23T13:05:48.000Z
+sourceLang: vi
+contentHash: 380b330ad8455252
+---
+
 # Extension System
 
 > Mục tiêu: cho phép cộng đồng viết extension như Directus nhưng **an toàn ở edge** nhờ capability sandbox.
@@ -146,7 +153,7 @@ Tạo file `lumibase-extension.json` ở thư mục gốc của extension. File 
 *Giải thích:*
 - `"type": "hook"`: Xác định đây là một Hook chạy ở backend (CMS Worker).
 - `"capabilities"`: Extension yêu cầu quyền đọc và cập nhật đối với collection `posts`. Bất kỳ hành động nào vượt ngoài quyền này sẽ bị sandbox chặn (`CapabilityDenied`).
-- `"config"`: Cấu hình cho phép admin thay đổi ngưỡng số từ tối thiểu (`minWords`) trực tiếp từ giao diện Lumibase Studio mà không cần sửa code.
+- `"config"`: Cấu hình cho phép admin thay đổi ngưỡng số từ tối thiểu (`minWords`) trực tiếp từ giao diện LumiBase Studio mà không cần sửa code.
 
 ### Step 3: Viết mã nguồn Extension (`src/index.ts`)
 
@@ -216,9 +223,9 @@ npm run build
 
 Sau khi build thành công, file đóng gói cuối cùng sẽ nằm tại `dist/index.js`.
 
-### Step 5: Upload và cài đặt trên Lumibase Studio
+### Step 5: Upload và cài đặt trên LumiBase Studio
 
-1. Truy cập vào **Lumibase Studio** của bạn.
+1. Truy cập vào **LumiBase Studio** của bạn.
 2. Vào phần **Settings** -> **Extensions**.
 3. Tại giao diện upload, bạn nhập đường dẫn bundle URL (ví dụ trỏ đến file `dist/index.js` đã upload lên host thử nghiệm của bạn) hoặc tải trực tiếp file lên hệ thống.
 4. Hệ thống sẽ tự động quét file cấu hình `lumibase-extension.json` để lấy danh sách capabilities (`items:read:posts`, `items:update:posts`).

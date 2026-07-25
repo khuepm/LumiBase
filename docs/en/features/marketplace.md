@@ -1,24 +1,45 @@
-# Marketplace cho Extensions
+---
+version: 1
+lastUpdated: 2026-06-23T12:59:56.000Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: f47ac6b8c1d63092
+mtEngine: claude
+syncStatus: machine-translated
+---
 
-LumiBase Marketplace cho phép publish và install extension đã được **ký số** (signed bundle). Bundle bị verify bằng SHA-256 + ed25519/RSA-PSS qua WebCrypto trước khi mount.
+# Marketplace for Extensions
+
+The LumiBase Marketplace lets you publish and install **digitally signed** extensions (signed bundles). A bundle is verified with SHA-256 + ed25519/RSA-PSS via WebCrypto before it is mounted.
 
 ## Tables
 
-`extensions` (xem `data-model.md` mục 7) có thêm các cột marketplace từ POST-GA5:
+`extensions` (see `data-model.md` section 7) gained marketplace columns as of POST-GA5:
 
-| Column | Mục đích |
+| Column | Purpose |
 |--------|----------|
-| `signature` | Detached signature (base64) trên SHA-256 của bundle |
-| `signatureAlg` | Algorithm: `ed25519` hoặc `rsa-pss-sha256` |
-| `publisherKeyId` | Key ID dùng để sign — lookup vào registry |
-| `publisher` | Tên organization/author |
-| `marketplaceSlug` | Slug để build public detail URL |
-| `publishedAt` | Null khi chưa publish |
-| `bundleSha256` | SHA-256 hex của bundle để verify integrity |
+| `signature` | Detached signature (base64) over the bundle's SHA-256 |
+| `signatureAlg` | Algorithm: `ed25519` or `rsa-pss-sha256` |
+| `publisherKeyId` | The key ID used to sign — looked up in the registry |
+| `publisher` | Organization/author name |
+| `marketplaceSlug` | Slug used to build the public detail URL |
+| `publishedAt` | Null when not yet published |
+| `bundleSha256` | The bundle's SHA-256 hex, to verify integrity |
+| `downloadCount` | Cumulative package downloads (bumped by `/download`) |
+| `submissionStatus` | Community submission state: `pending` / `approved` / `rejected` (null = not a submission) |
+| `submittedBy` | User who submitted the extension via the community flow |
+
+`extension_votes` records marketplace upvotes — one row per `(userId, marketplaceSlug)`, enforced by a unique index so voting is idempotent. Votes are keyed by slug so they survive version bumps.
+
+| Column | Purpose |
+|--------|----------|
+| `marketplaceSlug` | The listing being voted for |
+| `userId` | The voter (FK → `users`, cascade delete) |
+| `createdAt` | When the vote was cast |
 
 ## Public keys registry
 
-Public keys được khai báo trong env var `MARKETPLACE_PUBLIC_KEYS` dưới dạng JSON map:
+Public keys are declared in the `MARKETPLACE_PUBLIC_KEYS` env var as a JSON map:
 
 ```json
 {
@@ -27,40 +48,78 @@ Public keys được khai báo trong env var `MARKETPLACE_PUBLIC_KEYS` dưới d
 }
 ```
 
-Loaded một lần khi router init, không cache lâu dài (có thể rotate qua env update + redeploy).
+Loaded once at router init, not cached long-term (can be rotated via an env update + redeploy).
 
 ## API endpoints
 
 ```
-GET  /api/v1/marketplace/extensions             List published extensions
-GET  /api/v1/marketplace/extensions/:slug       Detail (kèm signature)
-POST /api/v1/marketplace/extensions/:slug/install   Install vào site hiện tại
-POST /api/v1/marketplace/publish                Publish một extension đã upload
+GET    /api/v1/marketplace/extensions              List published extensions
+GET    /api/v1/marketplace/extensions/:slug        Detail (with signature)
+GET    /api/v1/marketplace/extensions/:slug/download   Download package (302 → bundle; ?redirect=0 → JSON)
+POST   /api/v1/marketplace/extensions/:slug/install    Install into the current site
+POST   /api/v1/marketplace/extensions/:slug/vote       Upvote (auth; idempotent)
+DELETE /api/v1/marketplace/extensions/:slug/vote       Remove upvote (auth)
+POST   /api/v1/marketplace/publish                 Publish an uploaded (signed) extension
+POST   /api/v1/marketplace/submit                  Community-submit an extension for review (auth)
+GET    /api/v1/marketplace/submissions?status=     List submissions for moderation (extensions:configure)
+POST   /api/v1/marketplace/submissions/:id/review  Approve / reject a submission (extensions:configure)
 ```
 
 Implementation: `apps/cms/src/routes/marketplace.ts`.
 
+The catalog projection adds three derived fields on top of the stable public
+fields: `verified` (true when the listing carries a signature + registered
+publisher key + integrity hash — drives the "Verified" badge and the trusted
+install path), `voteCount`, and `hasVoted` (for the authenticated caller).
+`totalDownloads` now reflects `downloadCount`.
+
+## Download
+
+`GET /extensions/:slug/download` bumps `downloadCount` on the latest published
+version and, by default, `302`-redirects to the signed `bundleUrl` so large
+bundles never transit the Worker. Programmatic clients pass `?redirect=0` to get
+the bundle metadata (URL, hash, signature, key id, new count) as JSON instead.
+
+## Voting
+
+Any authenticated user can upvote a listing. `POST …/vote` inserts a row with
+`ON CONFLICT DO NOTHING` against the unique `(userId, marketplaceSlug)` index, so
+repeat votes are no-ops; `DELETE …/vote` retracts it. Both return the fresh
+`{ voteCount, hasVoted }`.
+
+## Community submissions
+
+`POST /submit` lets any authenticated user propose an extension for the public
+catalog. It validates the payload (name, SemVer `version`, `type`, slug, bundle
+URL, optional description/publisher/repo/capabilities), rejects a slug that is
+already live in the catalog (`409 SLUG_TAKEN`), and creates a **global,
+unpublished** row (`siteId = null`, `publishedAt = null`) with
+`submissionStatus = 'pending'` and `submittedBy = <user>`. Because it is
+unpublished, it never appears in the public catalog until a moderator approves
+it (`/submissions/:id/review`) **and** a signed bundle is published via
+`/publish`. Moderation endpoints require the `extensions:configure` permission.
+
 ## Verification flow
 
-Khi `POST /install`:
+On `POST /install`:
 
-1. Fetch bundle từ `bundleUrl` (R2/S3/external).
-2. Recompute SHA-256 → so sánh với `bundleSha256`.
-3. Lookup `publisherKeyId` trong `MARKETPLACE_PUBLIC_KEYS`.
-4. Verify `signature` qua `crypto.subtle.verify(algorithm, key, signatureBytes, sha256Bytes)`.
-5. Nếu thất bại → reject install, không mount.
-6. Nếu thành công → ghi extension vào DB cho `siteId` hiện tại với `enabled: false` mặc định, admin enable thủ công.
+1. Fetch the bundle from `bundleUrl` (R2/S3/external).
+2. Recompute SHA-256 → compare against `bundleSha256`.
+3. Look up `publisherKeyId` in `MARKETPLACE_PUBLIC_KEYS`.
+4. Verify `signature` via `crypto.subtle.verify(algorithm, key, signatureBytes, sha256Bytes)`.
+5. On failure → reject the install, do not mount.
+6. On success → write the extension to the DB for the current `siteId` with `enabled: false` by default; the admin enables it manually.
 
 ## Publish flow
 
-`POST /publish` yêu cầu:
+`POST /publish` requires:
 
-- Bundle đã upload (URL trong R2/S3).
-- SHA-256 hex chính xác.
-- Signature + `publisherKeyId`.
-- Slug duy nhất + `publisher` info.
+- An uploaded bundle (URL in R2/S3).
+- The exact SHA-256 hex.
+- A signature + `publisherKeyId`.
+- A unique slug + `publisher` info.
 
-Chỉ admin (capability `marketplace:publish`) được phép.
+Only an admin (capability `marketplace:publish`) is allowed.
 
 ## Roadmap
 
@@ -102,29 +161,29 @@ Commercial extensions backlog:
 - Checkout provider integration.
 - Revenue ledger, payout lifecycle, and refund lifecycle.
 
-## Cấu trúc Phiên bản & Thông báo Cập nhật (Versioning & Auto-update)
+## Versioning & Auto-update
 
-### 1. Mô hình Phiên bản (Versioning Model)
-Để hỗ trợ nhiều phiên bản của một tiện ích mở rộng trong hệ thống:
-* **Định danh Tiện ích (Identity):** `marketplaceSlug` đại diện cho định danh duy nhất của tiện ích mở rộng trên Marketplace (ví dụ: `custom-analytics`).
-* **Phiên bản (SemVer):** Cột `version` tuân thủ chuẩn Semantic Versioning (ví dụ: `1.0.0`, `1.1.0`).
-* **Global Extensions (Marketplace Registry):** Các hàng có `siteId IS NULL` lưu trữ các phiên bản được xuất bản trên Marketplace. Một tiện ích có thể có nhiều hàng global đại diện cho các phiên bản khác nhau. Phiên bản mới nhất được xác định là phiên bản có số SemVer cao nhất có `publishedAt IS NOT NULL`.
-* **Installed Extensions (Tenant):** Khi cài đặt, phiên bản cụ thể được sao chép vào site của tenant (`siteId = activeSiteId`). Tại một thời điểm, một site chỉ có tối đa một phiên bản hoạt động của tiện ích đó.
+### 1. Versioning Model
+To support multiple versions of an extension in the system:
+* **Identity:** `marketplaceSlug` represents the unique identity of an extension on the Marketplace (e.g. `custom-analytics`).
+* **Version (SemVer):** The `version` column follows Semantic Versioning (e.g. `1.0.0`, `1.1.0`).
+* **Global Extensions (Marketplace Registry):** Rows with `siteId IS NULL` store the versions published to the Marketplace. One extension can have multiple global rows representing different versions. The latest version is the one with the highest SemVer that has `publishedAt IS NOT NULL`.
+* **Installed Extensions (Tenant):** On install, the specific version is copied into the tenant's site (`siteId = activeSiteId`). At any given time a site has at most one active version of that extension.
 
-### 2. Luồng Kiểm tra Cập nhật (Update Check Flow)
-Hệ thống cung cấp một API kiểm tra cập nhật khả dụng cho các tiện ích đã cài đặt trên site:
+### 2. Update Check Flow
+The system provides an API to check for available updates for the extensions installed on a site:
 
 ```
 GET /api/v1/marketplace/updates
 ```
 
-**Thuật toán xử lý:**
-1. Lấy danh sách các tiện ích đã cài đặt trên site hiện tại từ bảng `extensions` (các hàng có `siteId = activeSiteId`).
-2. Với mỗi tiện ích đã cài đặt, truy vấn bảng `extensions` các hàng global (`siteId IS NULL`) có cùng `marketplaceSlug`.
-3. Lọc ra các phiên bản global được xuất bản (`publishedAt IS NOT NULL`) có số phiên bản lớn hơn phiên bản hiện tại.
-4. Trả về danh sách các tiện ích có bản cập nhật mới nhất, bao gồm `version`, `bundleUrl`, và `manifest` mới.
+**Algorithm:**
+1. Get the list of extensions installed on the current site from the `extensions` table (rows with `siteId = activeSiteId`).
+2. For each installed extension, query the `extensions` table for global rows (`siteId IS NULL`) with the same `marketplaceSlug`.
+3. Filter the published global versions (`publishedAt IS NOT NULL`) whose version number is greater than the current version.
+4. Return the list of extensions that have a newer update, including the new `version`, `bundleUrl`, and `manifest`.
 
-### 3. Thông báo tự động (Auto-update Notifications)
-* **Kích hoạt (Trigger):** Khi gọi `POST /api/v1/marketplace/publish` để xuất bản một phiên bản tiện ích mới thành công.
-* **Bộ điều phối (Dispatcher):** Hệ thống quét toàn bộ các site đang cài đặt tiện ích đó ở phiên bản cũ hơn.
-* **Kênh thông báo:** Gửi thông báo bảo mật loại `marketplace.extension.update_available` vào hòm thư nội bộ của các quản trị viên site (inbox notification) và kích hoạt webhook thông báo.
+### 3. Auto-update Notifications
+* **Trigger:** When `POST /api/v1/marketplace/publish` successfully publishes a new extension version.
+* **Dispatcher:** The system scans all sites that have that extension installed at an older version.
+* **Notification channel:** Sends a security notification of type `marketplace.extension.update_available` to the inbox of the site's administrators (inbox notification) and triggers a notification webhook.

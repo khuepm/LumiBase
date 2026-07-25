@@ -2,7 +2,7 @@
 
 ## Overview
 
-Triển khai hệ thống AI-First CMS Engine cho Lumibase gồm 4 module: Database schema (bảng `ai_approvals`), AI Secure Harness service, AI HTTP API routes, và Studio UI components. Sử dụng TypeScript strict mode, Hono framework, Drizzle ORM, Zod validation, React, và fast-check cho property-based testing.
+Triển khai hệ thống AI-First CMS Engine cho LumiBase gồm 4 module: Database schema (bảng `ai_approvals`), AI Secure Harness service, AI HTTP API routes, và Studio UI components. Sử dụng TypeScript strict mode, Hono framework, Drizzle ORM, Zod validation, React, và fast-check cho property-based testing.
 
 ## Tasks
 

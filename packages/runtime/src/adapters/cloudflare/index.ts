@@ -6,8 +6,11 @@ import { CloudflareSearchProvider } from './search';
 import { CloudflareQueueProvider, type CloudflareQueue } from './queue';
 import { CloudflareMediaProcessor } from './media';
 import { createCloudflareKeyProvider } from './keys';
+import { CloudflareRealtimeProvider, type DurableObjectNamespaceLike } from './realtime';
 
+export { CloudflareRealtimeProvider } from './realtime';
 export { CloudflareCacheProvider } from './cache';
+export { CloudflarePageviewCounter } from './counter';
 export { CloudflareStorageProvider } from './storage';
 export { CloudflareDatabaseProvider } from './database';
 export { CloudflareSearchProvider } from './search';
@@ -29,6 +32,10 @@ interface CloudflareEnv {
   QUEUES?: Record<string, CloudflareQueue>;
   REALTIME_QUEUE?: CloudflareQueue;
   MEDIA_BASE_URL?: string;
+  /** SiteRoom Durable Object namespace — realtime fan-out hub. */
+  SITE_ROOM?: DurableObjectNamespaceLike;
+  /** PageviewCounter Durable Object namespace — atomic hot-counter/HLL backend. */
+  PAGEVIEW_COUNTER?: DurableObjectNamespaceLike;
 }
 
 /**
@@ -69,7 +76,7 @@ export function createCloudflareRuntime(env: Record<string, unknown>): RuntimeCo
   const cfEnv = env as unknown as CloudflareEnv;
 
   return {
-    cache: new CloudflareCacheProvider(cfEnv.CONFIG_CACHE),
+    cache: new CloudflareCacheProvider(cfEnv.CONFIG_CACHE, cfEnv.PAGEVIEW_COUNTER),
     storage: new CloudflareStorageProvider(cfEnv.MEDIA),
     database: new CloudflareDatabaseProvider(cfEnv.HYPERDRIVE),
     search: new CloudflareSearchProvider(
@@ -79,6 +86,7 @@ export function createCloudflareRuntime(env: Record<string, unknown>): RuntimeCo
     queue: new CloudflareQueueProvider(collectQueues(env)),
     media: new CloudflareMediaProcessor(cfEnv.MEDIA_BASE_URL ?? ''),
     keys: createCloudflareKeyProvider(env),
+    realtime: new CloudflareRealtimeProvider(cfEnv.SITE_ROOM),
     runtime: 'cloudflare',
   };
 }

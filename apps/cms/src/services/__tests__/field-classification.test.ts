@@ -33,14 +33,16 @@ vi.mock('../schema-service', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../schema-service')>();
   return {
     ...actual,
-    SchemaService: vi.fn().mockImplementation(() => ({
-      getCompiled: vi.fn().mockResolvedValue({
-        fields: [
-          { name: 'name', type: 'string' },
-          { name: 'ssn', type: 'string', encrypted: true, classification: 'phi' },
-        ],
-      }),
-    })),
+    SchemaService: vi.fn().mockImplementation(function () {
+      return {
+        getCompiled: vi.fn().mockResolvedValue({
+          fields: [
+            { name: 'name', type: 'string' },
+            { name: 'ssn', type: 'string', encrypted: true, classification: 'phi' },
+          ],
+        }),
+      };
+    }),
   };
 });
 

@@ -1,4 +1,5 @@
-export type { CacheProvider } from './cache';
+export type { CacheProvider, UniqueCounterProvider } from './cache';
+export { CounterUnavailableError } from './cache';
 export type { StorageObject, StorageProvider } from './storage';
 export type { DatabaseProvider } from './database';
 export type { SearchResult, SearchOptions, SearchProvider, SearchIndexSettings } from './search';
@@ -11,4 +12,10 @@ export {
 export type { JobOptions, Job, QueueProvider } from './queue';
 export type { TransformOptions, MediaProcessor } from './media';
 export type { KeyStatus, KeyMeta, ResolvedKey, KeyProvider } from './keys';
+export type {
+  RealtimePlane,
+  RealtimeTargetLike,
+  RealtimeEventLike,
+  RealtimeProvider,
+} from './realtime';
 export type { RuntimeContext } from './runtime';

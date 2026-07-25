@@ -58,7 +58,7 @@
  *     §10.1).
  *
  *   - It does NOT walk class instances, Maps, Sets, Errors, or other
- *     non-plain objects. Audit metadata in Lumibase is always plain
+ *     non-plain objects. Audit metadata in LumiBase is always plain
  *     JSON-shaped data (Req 15.2) — log lines that flow through this
  *     helper are likewise JSON-serialisable. Adding generic walking
  *     would force us to materialise/clone objects we don't own,

@@ -67,7 +67,7 @@ describe('pressure limiter', () => {
         {
           code: 'SERVICE_UNAVAILABLE',
           message:
-            'Lumibase API is temporarily unavailable because this instance is under pressure. Retry later.',
+            'LumiBase API is temporarily unavailable because this instance is under pressure. Retry later.',
           details: {
             reason: 'event_loop_delay',
             eventLoopDelayMs: 1235,

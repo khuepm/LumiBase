@@ -1,0 +1,49 @@
+[package]
+name = "lumibase-shell"
+version = "0.24.1"
+description = "LumiBase Shell — unified desktop + mobile app wrapping the Studio SPA"
+authors = ["LumiBase"]
+edition = "2021"
+rust-version = "1.77.2"
+
+# The `_lib` suffix is a Tauri 2 convention: on mobile the app entry point links
+# against this library, so it must not collide with the binary crate name.
+[lib]
+name = "lumibase_shell_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-process = "2"
+tauri-plugin-deep-link = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+tauri-plugin-log = "2"
+
+# The updater is desktop-only; mobile auto-update is handled by the app stores.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-dialog = "2"
+# Forwards deep links to the already-running instance instead of spawning a new
+# one (desktop only; mobile routes deep links to the live app automatically).
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+# OS keychain for session tokens (macOS Keychain / Windows Credential Manager /
+# Linux Secret Service). Desktop only; mobile falls back to sandboxed webview
+# storage. `crypto-rust` avoids a system OpenSSL build dependency on Linux.
+keyring = { version = "3", features = [
+  "apple-native",
+  "windows-native",
+  "sync-secret-service",
+  "crypto-rust",
+] }
+# Lightweight probe for the hybrid "remote-first" connectivity check. rustls
+# avoids a system OpenSSL build dependency across platforms.
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+
+[features]
+# Used by `tauri dev`/`tauri build` to toggle custom-protocol asset serving.
+custom-protocol = ["tauri/custom-protocol"]

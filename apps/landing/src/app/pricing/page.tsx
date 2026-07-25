@@ -6,7 +6,7 @@ import { Zap, Shield, Fingerprint, GitBranch, ScrollText, Headphones } from "luc
 export const metadata: Metadata = {
   title: "Pricing — LumiBase Content OS",
   description:
-    "Open-source core, free forever under MIT. Optional managed hosting and enterprise support for the LumiBase Content Operating System.",
+    "Open-source core, free forever under Apache 2.0. Optional managed hosting and enterprise support for the LumiBase Content Operating System.",
   alternates: {
     canonical: "/pricing/",
   },
@@ -16,12 +16,12 @@ const faqs = [
   {
     question: "What's the difference between self-hosted and managed?",
     answer:
-      "Self-hosted means you deploy LumiBase on your own infrastructure (free, MIT). Managed means we host the Content OS for you with automatic updates, backups, and support (paid tiers).",
+      "Self-hosted means you deploy LumiBase on your own infrastructure (free, Apache 2.0). Managed means we host the Content OS for you with automatic updates, backups, and support (paid tiers).",
   },
   {
     question: "Is the Content OS core free?",
     answer:
-      "Yes. The full Content OS — intents, the reconciliation loop, the trust ledger, the constitution, provenance, and the multi-agent newsroom — is open-source under MIT. Premium tiers add managed hosting and support, not core capabilities.",
+      "Yes. The full Content OS — intents, the reconciliation loop, the trust ledger, the constitution, provenance, and the multi-agent newsroom — is open-source under Apache 2.0. Premium tiers add managed hosting and support, not core capabilities.",
   },
   {
     question: "Can I switch plans anytime?",
@@ -90,7 +90,7 @@ export default function PricingPage() {
             Simple, transparent pricing
           </h1>
           <p className="mt-6 text-lg leading-8 text-gray-400">
-            The Content OS core is free forever under MIT. Pay only when you want
+            The Content OS core is free forever under Apache 2.0. Pay only when you want
             us to run it for you.
           </p>
         </Reveal>
@@ -111,7 +111,7 @@ export default function PricingPage() {
                 "Constitution + provenance",
                 "Full REST/MCP API access",
                 "Self-hosted (Workers or Docker)",
-                "MIT License",
+                "Apache 2.0 License",
               ]}
               unavailableFeatures={[
                 "Managed hosting",

@@ -124,7 +124,7 @@ export function SetupLayout({ children, activeStep }: SetupLayoutProps) {
                 Advanced setup
               </p>
               <h1 className="text-2xl font-semibold tracking-tight">
-                Set up Lumibase with full controls
+                Set up LumiBase with full controls
               </h1>
               <p className="max-w-2xl text-sm text-muted-foreground">
                 Use the full wizard when you want to tune admin path,

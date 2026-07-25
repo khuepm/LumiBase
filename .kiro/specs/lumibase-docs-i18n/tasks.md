@@ -174,8 +174,8 @@ Tasks ordered theo dependency: migration trước (build mới chạy được),
   - [x] 6.5 Update `DocPage` render TranslationBanner khi `isFallback`
     - _Requirements: 4.2_
 
-  - [x] 6.6 Update browser title qua `useT()` cho suffix " — Lumibase Docs"
-    - Vẫn giữ tên doc; chỉ "Lumibase Docs" có thể giữ tiếng Anh hoặc dịch theo locale
+  - [x] 6.6 Update browser title qua `useT()` cho suffix " — LumiBase Docs"
+    - Vẫn giữ tên doc; chỉ "LumiBase Docs" có thể giữ tiếng Anh hoặc dịch theo locale
     - _Requirements: 6.5_
 
 - [x] 7. Internal link rewriting với locale awareness

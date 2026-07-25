@@ -1,120 +1,137 @@
+---
+version: 1
+lastUpdated: 2026-06-23T09:48:37.000Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: 56a6f2279ce458d8
+mtEngine: claude
+syncStatus: machine-translated
+---
+
 # Email Service
 
-> Mục tiêu: cung cấp một **dịch vụ gửi email dùng chung** ở tầng core, có template/layout store, để Studio và các extension đều dùng được — hoặc cấu hình hoàn toàn bằng env nếu không cần UI.
+> **Availability:** The full HTTP email module documented here — templates,
+> layouts, preview, and `POST /api/v1/email/send` — ships in recent CMS images.
+> Older images (reported around `0.5.0`) only carried the internal
+> security-notification channel and do **not** expose the `/api/v1/email/*`
+> routes; verify against your deployed image's version if `/email/send` returns
+> `404`.
 
-## 1. Kiến trúc tổng quan
+> Goal: provide a **shared email-sending service** at the core layer, with a template/layout store, so that both Studio and extensions can use it — or configure it entirely via env when no UI is needed.
 
-LumiBase tách email thành hai tầng rõ ràng:
+## 1. Overall architecture
 
-| Tầng | Trách nhiệm | Vị trí |
+LumiBase splits email into two clear layers:
+
+| Layer | Responsibility | Location |
 |---|---|---|
-| **Transport** (gửi byte) | SMTP (Nodemailer) cho Docker/Node, MailChannels HTTP cho Cloudflare Workers | `apps/cms/src/services/email/transport.ts` |
-| **EmailService** | Chọn transport theo runtime, áp default `from`/`replyTo`, expose `send()` | `apps/cms/src/services/email/email-service.ts` |
-| **Render engine** | Thay biến `{{var}}` an toàn (escape HTML mặc định), ghép body vào layout | `apps/cms/src/services/email/render.ts` |
-| **Template/layout store** | Bảng `email_templates`, `email_layouts` (site-scoped, RLS) | `packages/database/src/schema/platform.ts` |
-| **HTTP module** | CRUD + preview + send dưới `/api/v1/email/*` | `apps/cms/src/modules/email/` |
-| **UI** | Trang Studio quản lý template/layout + gửi test | `apps/studio/src/modules/settings/email-page.tsx` |
+| **Transport** (sends bytes) | SMTP (Nodemailer) for Docker/Node, MailChannels HTTP for Cloudflare Workers | `apps/cms/src/services/email/transport.ts` |
+| **EmailService** | Picks the transport by runtime, applies default `from`/`replyTo`, exposes `send()` | `apps/cms/src/services/email/email-service.ts` |
+| **Render engine** | Safely substitutes `{{var}}` (HTML-escaped by default), composes the body into a layout | `apps/cms/src/services/email/render.ts` |
+| **Template/layout store** | Tables `email_templates`, `email_layouts` (site-scoped, RLS) | `packages/database/src/schema/platform.ts` |
+| **HTTP module** | CRUD + preview + send under `/api/v1/email/*` | `apps/cms/src/modules/email/` |
+| **UI** | Studio page to manage templates/layouts + send tests | `apps/studio/src/modules/settings/email-page.tsx` |
 
-Luồng gửi: caller (UI hoặc extension) → `POST /api/v1/email/send` → module render template (nếu có `templateKey`) → `EmailService.send()` → transport phù hợp với runtime → audit log (`email_sent` / `email_send_failed`).
+Send flow: caller (UI or extension) → `POST /api/v1/email/send` → module renders the template (if a `templateKey` is given) → `EmailService.send()` → the transport appropriate for the runtime → audit log (`email_sent` / `email_send_failed`).
 
-> Kênh security-notification cũ (`modules/notifications/email-channel.ts`) nay **dùng chung transport** này; nó chỉ còn giữ template subject/body cố định theo spec (Req 13.2).
+> The legacy security-notification channel (`modules/notifications/email-channel.ts`) now **shares this transport**; it only retains a fixed subject/body template per spec (Req 13.2).
 
-## 2. Cấu hình bằng env (không cần UI)
+## 2. Configuration via env (no UI required)
 
-EmailService cấu hình hoàn toàn qua biến môi trường. Thêm vào `apps/cms/.dev.vars` (local) hoặc `wrangler secret put` (deploy).
+EmailService can be configured entirely through environment variables. Add them to `apps/cms/.dev.vars` (local) or `wrangler secret put` (deploy).
 
-| Biến | Bắt buộc | Mô tả |
+| Variable | Required | Description |
 |---|---|---|
-| `LUMIBASE_SMTP_URL` | Docker: có | Chuỗi kết nối SMTP dạng nodemailer, vd `smtps://user:pass@smtp.example.com:465`. Không set ⇒ email ở chế độ degraded (không gửi). |
-| `LUMIBASE_MAIL_FROM` | nên có | Địa chỉ gửi mặc định. Mặc định fallback `no-reply@lumibase.local`. |
-| `LUMIBASE_MAIL_REPLY_TO` | không | Reply-To mặc định. |
-| `LUMIBASE_MAIL_ENABLED` | không | Đặt `"false"` để tắt toàn bộ gửi email (kill switch). |
-| `LUMIBASE_RUNTIME` | không | `"cloudflare"` ⇒ dùng MailChannels; còn lại ⇒ SMTP. Mặc định `"docker"`. |
+| `LUMIBASE_SMTP_URL` | Docker: yes | Nodemailer-style SMTP connection string, e.g. `smtps://user:pass@smtp.example.com:465`. If unset ⇒ email runs in degraded mode (no sending). |
+| `LUMIBASE_MAIL_FROM` | recommended | Default sender address. Defaults to `no-reply@lumibase.local`. |
+| `LUMIBASE_MAIL_REPLY_TO` | no | Default Reply-To. |
+| `LUMIBASE_MAIL_ENABLED` | no | Set to `"false"` to disable all email sending (kill switch). |
+| `LUMIBASE_RUNTIME` | no | `"cloudflare"` ⇒ use MailChannels; otherwise ⇒ SMTP. Defaults to `"docker"`. |
 
-### Quyết định transport
+### Transport decision
 
 ```
 LUMIBASE_RUNTIME === 'cloudflare' → MailChannels (HTTP)
-ngược lại                         → SMTP qua LUMIBASE_SMTP_URL (null nếu chưa set → degraded)
+otherwise                         → SMTP via LUMIBASE_SMTP_URL (null if unset → degraded)
 ```
 
-> **Deliverability:** trên Cloudflare/MailChannels cần cấu hình SPF/DKIM/DMARC ở tầng DNS; adapter không tự kiểm tra. Trên SMTP, deliverability phụ thuộc nhà cung cấp.
+> **Deliverability:** on Cloudflare/MailChannels you must configure SPF/DKIM/DMARC at the DNS layer; the adapter does not check this itself. On SMTP, deliverability depends on the provider.
 
-### Chế độ degraded
+### Degraded mode
 
-Khi không có transport (Workers thiếu MailChannels, hoặc Docker thiếu `LUMIBASE_SMTP_URL`, hoặc `LUMIBASE_MAIL_ENABLED=false`), `EmailService.fromEnv()` trả về `null`. Khi đó:
-- `GET /api/v1/email/capabilities` trả `configured: false` để UI hiển thị cảnh báo.
-- `POST /api/v1/email/send` trả `503 EMAIL_NOT_CONFIGURED`.
-- Luồng mời teammate **degrade im lặng** (vẫn tạo user `invited`, chỉ không gửi mail).
+When there is no transport (Workers without MailChannels, or Docker without `LUMIBASE_SMTP_URL`, or `LUMIBASE_MAIL_ENABLED=false`), `EmailService.fromEnv()` returns `null`. In that case:
+- `GET /api/v1/email/capabilities` returns `configured: false` so the UI can show a warning.
+- `POST /api/v1/email/send` returns `503 EMAIL_NOT_CONFIGURED`.
+- The teammate-invite flow **degrades silently** (it still creates the `invited` user, it just does not send mail).
 
-## 3. Template & layout
+## 3. Templates & layouts
 
-- **Layout** = vỏ HTML tái dùng, bắt buộc chứa slot `{{content}}`. Branding/header/footer/style đặt một chỗ.
-- **Template** = thông điệp có địa chỉ (`key`, vd `teammate_invite`) gồm `subject` + `bodyHtml`, tùy chọn `bodyText`, tùy chọn gắn một layout.
+- **Layout** = a reusable HTML shell, required to contain the `{{content}}` slot. Branding/header/footer/style live in one place.
+- **Template** = an addressable message (`key`, e.g. `teammate_invite`) made of `subject` + `bodyHtml`, with optional `bodyText` and an optional attached layout.
 
-### Cú pháp biến (render engine)
+### Variable syntax (render engine)
 
-| Cú pháp | Hành vi |
+| Syntax | Behavior |
 |---|---|
-| `{{ name }}` | Thay + **escape HTML** (mặc định, an toàn cho biến không tin cậy). |
-| `{{{ name }}}` | Thay **không escape** (chỉ dùng cho HTML đã tin cậy). |
-| `{{content}}` | Slot trong layout để chèn body template đã render. |
+| `{{ name }}` | Substitute + **HTML-escape** (default, safe for untrusted variables). |
+| `{{{ name }}}` | Substitute **without escaping** (only for already-trusted HTML). |
+| `{{content}}` | Slot in the layout where the rendered template body is inserted. |
 
-Biến được tham chiếu nhưng không có trong `variables` ⇒ render thành chuỗi rỗng và được gom vào `missing` (không bao giờ để lại literal `{{x}}` trong mail). Nếu không có `bodyText`, engine tự suy ra text/plain từ HTML.
+A variable that is referenced but absent from `variables` ⇒ renders to an empty string and is collected into `missing` (a literal `{{x}}` is never left in the mail). If there is no `bodyText`, the engine derives text/plain from the HTML automatically.
 
 ## 4. HTTP API
 
-Mount dưới `/api/v1/email/*`, **trong** stack đã xác thực, gated bởi `requireSiteAdmin()`. Mọi query đều scoped theo `site_id`. Envelope chuẩn `{ data }` / `{ errors: [...] }`.
+Mounted under `/api/v1/email/*`, **inside** the authenticated stack, gated by `requireSiteAdmin()`. Every query is scoped by `site_id`. Standard envelope `{ data }` / `{ errors: [...] }`.
 
-| Method | Path | Mô tả |
+| Method | Path | Description |
 |---|---|---|
-| GET | `/email/capabilities` | Báo transport có sẵn + `from`. |
-| GET/POST | `/email/layouts` | List / tạo layout. |
-| PATCH/DELETE | `/email/layouts/:id` | Sửa / xóa layout. |
-| GET/POST | `/email/templates` | List / tạo template. |
-| PATCH/DELETE | `/email/templates/:id` | Sửa / xóa template. |
-| POST | `/email/templates/:key/preview` | Render thử (không gửi), trả `{ subject, html, text, missing }`. |
-| POST | `/email/send` | Render (nếu `templateKey`) + gửi. **Điểm tích hợp cho extension.** |
-| POST | `/email/test` | Gửi một mail test tới một địa chỉ. |
+| GET | `/email/capabilities` | Reports the available transport + `from`. |
+| GET/POST | `/email/layouts` | List / create a layout. |
+| PATCH/DELETE | `/email/layouts/:id` | Edit / delete a layout. |
+| GET/POST | `/email/templates` | List / create a template. |
+| PATCH/DELETE | `/email/templates/:id` | Edit / delete a template. |
+| POST | `/email/templates/:key/preview` | Trial render (no send), returns `{ subject, html, text, missing }`. |
+| POST | `/email/send` | Render (if `templateKey`) + send. **Integration point for extensions.** |
+| POST | `/email/test` | Send a test mail to an address. |
 
 ### `POST /email/send`
 
 ```jsonc
 {
-  "to": ["teammate@example.com"],          // bắt buộc, 1..50
-  "cc": ["lead@example.com"],              // tùy chọn
-  "replyTo": "support@example.com",        // tùy chọn
-  // chọn ĐÚNG MỘT trong hai:
-  "templateKey": "teammate_invite",        // render template đã lưu
+  "to": ["teammate@example.com"],          // required, 1..50
+  "cc": ["lead@example.com"],              // optional
+  "replyTo": "support@example.com",        // optional
+  // choose EXACTLY ONE of the two:
+  "templateKey": "teammate_invite",        // render a stored template
   "inline": { "subject": "Hi", "html": "<p>…</p>", "text": "…" },
   "variables": { "name": "Sam" }
 }
 ```
 
-Phản hồi: `{ data: { sent: true, subject } }`, hoặc `502 DELIVERY_FAILED` (kèm `retryable`), `404 NOT_FOUND` (template), `503 EMAIL_NOT_CONFIGURED`.
+Response: `{ data: { sent: true, subject } }`, or `502 DELIVERY_FAILED` (with `retryable`), `404 NOT_FOUND` (template), `503 EMAIL_NOT_CONFIGURED`.
 
-## 5. Quản lý qua UI
+## 5. Management via the UI
 
 Studio → **Settings → Email**:
-- **Status**: hiển thị transport đã cấu hình hay chưa.
-- **Templates**: tạo/sửa key, subject, layout, body HTML; pane **Preview** gọi `/preview` với JSON biến mẫu, render trong iframe; cảnh báo biến thiếu.
-- **Layouts**: vỏ HTML có slot `{{content}}`.
-- **Send test**: gửi mail test nhanh.
+- **Status**: shows whether a transport is configured.
+- **Templates**: create/edit key, subject, layout, HTML body; the **Preview** pane calls `/preview` with sample variable JSON, renders in an iframe, and warns about missing variables.
+- **Layouts**: HTML shells with a `{{content}}` slot.
+- **Send test**: quickly send a test mail.
 
-## 6. Mời teammate (invite email)
+## 6. Inviting a teammate (invite email)
 
-Route `POST /api/v1/users/invite` sau khi tạo bản ghi `invited` sẽ gửi email best-effort (qua `ctx.waitUntil` trên Workers, fire-and-forget trên Node — không bao giờ làm hỏng invite):
-- Nếu site có template `teammate_invite` (enabled) ⇒ dùng nó.
-- Nếu không ⇒ dùng message dựng sẵn trong `apps/cms/src/modules/email/invite.ts`.
+The `POST /api/v1/users/invite` route, after creating the `invited` record, sends an email best-effort (via `ctx.waitUntil` on Workers, fire-and-forget on Node — it never breaks the invite):
+- If the site has a `teammate_invite` template (enabled) ⇒ use it.
+- Otherwise ⇒ use the built-in message in `apps/cms/src/modules/email/invite.ts`.
 
-> Lưu ý: invite **trong wizard setup** vẫn chỉ tạo bản ghi, **không** gửi email — vì ở thời điểm setup transport thường chưa cấu hình. Muốn tùy biến nội dung, tạo template `teammate_invite` trong Studio rồi mời lại qua trang Users.
+> Note: invites **in the setup wizard** still only create the record and **do not** send email — because at setup time the transport is usually not yet configured. To customize the content, create a `teammate_invite` template in Studio, then re-invite from the Users page.
 
-## 7. Tích hợp từ extension
+## 7. Integrating from an extension
 
-Extension **không** tự gửi SMTP — nó gọi `POST /api/v1/email/send` của core với một `templateKey`. Xem ví dụ đầy đủ ở [`examples/extension-email-setup`](../../../examples/extension-email-setup/README.md) và hướng dẫn ở [contributing/extension-dev.md](../contributing/extension-dev.md).
+An extension does **not** send SMTP itself — it calls the core's `POST /api/v1/email/send` with a `templateKey`. See the full example at [`examples/extension-email-setup`](../../../examples/extension-email-setup/README.md) and the guide in [contributing/extension-dev.md](../contributing/extension-dev.md).
 
-## 8. Bảo mật & ghi chú
+## 8. Security & notes
 
-- Template không bao giờ nhúng secret: payload không mang password hash/token (đảm bảo bởi kiểu dữ liệu).
-- Biến được escape HTML mặc định ⇒ tránh injection từ dữ liệu người dùng.
-- Mọi lần gửi đều ghi audit (`email_sent` / `email_send_failed`) kèm `templateKey`, số người nhận, subject (không log nội dung body).
+- Templates never embed secrets: the payload carries no password hash/token (guaranteed by the data types).
+- Variables are HTML-escaped by default ⇒ avoids injection from user data.
+- Every send is audited (`email_sent` / `email_send_failed`) with `templateKey`, recipient count, and subject (the body content is not logged).

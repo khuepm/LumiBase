@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:22:25.961Z
+sourceLang: en
+contentHash: 424c130dc0d3e319
+---
+
 # Windsurf — LumiBase Agent Setup
 
 > **Windsurf** is an agentic IDE with Cascade context engine and Flows automation for multi-step tasks. Made by Cognition.
@@ -20,7 +27,7 @@ Read docs/en/agent-setup/prompt.md and follow all setup instructions.
 
 ### Step 1 — Open the project
 
-Open the `Lumibase` root folder in Windsurf.
+Open the `LumiBase` root folder in Windsurf.
 
 ### Step 2 — Configure the MCP server (optional)
 

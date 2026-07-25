@@ -8,6 +8,7 @@ Thank you for your interest in contributing to LumiBase! This guide covers how t
 - [Code style](./code-style.md)
 - [Testing guide](./testing.md)
 - [Writing extensions](./extension-dev.md)
+- [Versioning policy](./versioning-policy.md)
 - [Submitting a PR](#submitting-a-pr)
 
 ---
@@ -26,7 +27,7 @@ Thank you for your interest in contributing to LumiBase! This guide covers how t
 ### Clone and install
 
 ```bash
-git clone https://github.com/lumibase/lumibase.git
+git clone https://github.com/khuepm/lumibase.git
 cd lumibase
 pnpm install
 ```

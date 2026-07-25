@@ -19,6 +19,7 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { PasswordSchema } from '@lumibase/shared/schemas';
 import type { AppEnv } from '../../env';
 import { withDb } from '../../middleware/db';
 import {
@@ -26,20 +27,31 @@ import {
   type SetupCompleteContext,
   type SetupServiceError,
 } from './service';
-import { lockoutPolicySchema } from './policy-codec';
+import { STANDARD_LOCKOUT_POLICY, lockoutPolicySchema } from './policy-codec';
+import { OFFICIAL_KEY_ID } from './official-extensions';
 
 // ── input schema ────────────────────────────────────────────────────────
 
-const completeBodySchema = z.object({
+// Exported for unit tests (see __tests__/complete-body-schema.test.ts). Not a
+// public API surface.
+export const completeBodySchema = z.object({
   setupToken: z.string().min(1).max(256).optional(),
   account: z.object({
     email: z.string().email().max(254),
-    password: z.string().min(12).max(256),
+    // Shared strength policy (min 12 + complexity) — consistent with register
+    // and recovery (CWE-521).
+    password: PasswordSchema,
     firstName: z.string().min(1).max(100),
     lastName: z.string().min(1).max(100),
   }),
   adminPath: z.string().min(1).max(128),
-  policy: lockoutPolicySchema,
+  // Optional: omit to apply the "Standard" lockout preset. A fresh mutable copy
+  // (incl. a fresh notifyChannels array) is passed so Zod's default never holds
+  // a reference to the frozen preset.
+  policy: lockoutPolicySchema.default(() => ({
+    ...STANDARD_LOCKOUT_POLICY,
+    notifyChannels: [...STANDARD_LOCKOUT_POLICY.notifyChannels],
+  })),
   project: z
     .object({
       defaultLanguage: z.string().min(2).max(16),
@@ -72,11 +84,22 @@ interface RateBucket {
 const STATE_RATE_LIMIT = 60; // req/min/IP
 const STATE_RATE_WINDOW_MS = 60_000;
 
+// `POST /complete` is an expensive, one-shot mutation (password hashing +
+// DB lock), so it gets a tighter per-IP brake than the cheap `/state` read.
+// It guards the pre-initialized window against setupToken brute-force and
+// CPU-exhaustion spam (analog of Strapi #26494). The DB advisory lock +
+// unique index remain the hard guard against duplicate admins; this is
+// defence-in-depth, in-memory per isolate (see design "known limits").
+const COMPLETE_RATE_LIMIT = 10; // req/min/IP
+const COMPLETE_RATE_WINDOW_MS = 60_000;
+
 /** Module-level so tests can reset between runs. */
 const stateRateBuckets = new Map<string, RateBucket>();
+const completeRateBuckets = new Map<string, RateBucket>();
 
 export function __resetSetupRateLimitForTests(): void {
   stateRateBuckets.clear();
+  completeRateBuckets.clear();
 }
 
 function checkStateRateLimit(ip: string): boolean {
@@ -87,6 +110,19 @@ function checkStateRateLimit(ip: string): boolean {
     return true;
   }
   if (bucket.count >= STATE_RATE_LIMIT) return false;
+  bucket.count += 1;
+  return true;
+}
+
+function checkCompleteRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const key = ip || 'unknown'; // always key deterministically
+  const bucket = completeRateBuckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    completeRateBuckets.set(key, { count: 1, resetAt: now + COMPLETE_RATE_WINDOW_MS });
+    return true;
+  }
+  if (bucket.count >= COMPLETE_RATE_LIMIT) return false;
   bucket.count += 1;
   return true;
 }
@@ -106,7 +142,32 @@ function buildService(c: {
   const db = c.get('db');
   const requireSetupToken = readBoolEnv(c.env, 'LUMIBASE_REQUIRE_SETUP_TOKEN');
   const smtpAvailable = !!readStringEnv(c.env, 'LUMIBASE_SMTP_URL');
-  return new SetupService({ db, requireSetupToken, smtpAvailable });
+  return new SetupService({
+    db,
+    requireSetupToken,
+    smtpAvailable,
+    officialPublisherKey: resolveOfficialPublisherKey(c.env),
+  });
+}
+
+/**
+ * Resolve the official signing key from `MARKETPLACE_PUBLIC_KEYS` (JSON
+ * `{ keyId: pem }`) by the well-known official key id, to seed it into
+ * `lumibase_publisher_keys` at bootstrap. Returns undefined when unconfigured.
+ */
+function resolveOfficialPublisherKey(
+  env: AppEnv['Bindings'],
+): { keyId: string; publicKeyPem: string; publisher: string } | undefined {
+  const raw = (env as unknown as Record<string, string | undefined>).MARKETPLACE_PUBLIC_KEYS;
+  if (!raw) return undefined;
+  try {
+    const map = JSON.parse(raw) as Record<string, string>;
+    const pem = map[OFFICIAL_KEY_ID];
+    if (!pem) return undefined;
+    return { keyId: OFFICIAL_KEY_ID, publicKeyPem: pem, publisher: 'LumiBase' };
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -241,6 +302,17 @@ setupRouter.get('/capabilities', async (c) => {
 });
 
 setupRouter.post('/complete', async (c) => {
+  // Rate-brake *before* parsing the body or hashing a password, so a
+  // blocked request costs nothing (CWE-770; analog of Strapi #26494).
+  const ip = extractClientIp(c.req.raw);
+  if (!checkCompleteRateLimit(ip)) {
+    return c.json(
+      { errors: [{ code: 'RATE_LIMITED' }] },
+      429,
+      { 'retry-after': Math.ceil(COMPLETE_RATE_WINDOW_MS / 1000).toString() },
+    );
+  }
+
   // Parse body first so a malformed payload yields a clean 400 before
   // we touch the DB.
   let raw: unknown;
@@ -271,17 +343,21 @@ setupRouter.post('/complete', async (c) => {
     );
   }
 
-  const svc = buildService(c);
+  // Honor the test-only injection seam (mirrors recoveryServiceOverride);
+  // falls back to a real SetupService bound to the request db.
+  const svc = c.get('setupServiceOverride') ?? buildService(c);
   const ctx: SetupCompleteContext = {
     requestId: c.get('requestId'),
-    ip: extractClientIp(c.req.raw),
+    ip, // reuse the IP computed for the rate brake
     userAgent: c.req.header('user-agent') ?? undefined,
   };
 
   const outcome = await svc.complete(parsed.data, ctx);
 
   if (!outcome.ok) {
-    const mapped = errorToHttp(outcome.error);
+    // `outcome.error` is `SetupServiceError` from the real service; the
+    // override seam types it as `unknown`, so narrow at this one call site.
+    const mapped = errorToHttp(outcome.error as SetupServiceError);
     // mapped.status is 4xx/5xx in our taxonomy.
     return c.json(mapped.body, mapped.status as 400 | 401 | 404 | 409 | 422 | 500);
   }

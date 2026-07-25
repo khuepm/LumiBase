@@ -61,7 +61,7 @@ If a client receives HTTP `503` with a body similar to:
   "errors": [
     {
       "code": "SERVICE_UNAVAILABLE",
-      "message": "Lumibase API is temporarily unavailable because this instance is under pressure. Retry later.",
+      "message": "LumiBase API is temporarily unavailable because this instance is under pressure. Retry later.",
       "details": { "reason": "event_loop_delay" }
     }
   ]
@@ -96,6 +96,38 @@ LUMIBASE_PRESSURE_LIMITER_ENABLED=false
 ```
 
 The long-term fix is to identify the endpoint causing spikes, optimize query/index/pagination/export streaming, or add CMS replicas/CPU.
+
+## Request size & rate limits
+
+The Caddy reverse proxy caps request bodies before they reach the CMS
+(`docker/Caddyfile`): 10 MB for the general API and 50 MB for media/asset
+upload routes (`/api/v1/media*`, `/api/v1/files*`). Keep the media cap in
+sync with `FILE_UPLOAD_MAX_BYTES` if you change either. Tune the general cap
+for your workload — most JSON APIs never need more than a few MB.
+
+As defense-in-depth for deployments that don't front the CMS with Caddy
+(a bare Node process, or a different proxy), the app also rejects oversized
+JSON bodies itself:
+
+```env
+# Max JSON request body in bytes for the app-level guard (default 1 MiB).
+# Returns 413 { errors: [{ code: "PAYLOAD_TOO_LARGE" }] } when exceeded.
+LUMIBASE_MAX_JSON_BODY=1048576
+```
+
+## Caching & write-amplification knobs
+
+```env
+# Delivery API shared-cache lifetime, seconds (default 60). 0 disables
+# public caching (responses become private, no-store).
+LUMIBASE_DELIVER_SMAXAGE=60
+# Delivery API stale-while-revalidate window, seconds (default 300).
+LUMIBASE_DELIVER_SWR=300
+# Debounce window (seconds) for API-key lastUsedAt writes (default 60).
+# Under read load, an API key's last-used timestamp is refreshed at most
+# once per window instead of on every request. 0 = write on every request.
+LUMIBASE_APIKEY_TOUCH_INTERVAL=60
+```
 
 ## Roll back
 

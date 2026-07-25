@@ -1,7 +1,8 @@
 {
   "name": "create-lumibase",
-  "version": "0.11.0",
+  "version": "0.24.1",
   "description": "Scaffold a new LumiBase project — Edge-native Headless CMS",
+  "license": "Apache-2.0",
   "type": "module",
   "bin": {
     "create-lumibase": "./bin/create-lumibase.js"
@@ -29,7 +30,7 @@
     "@types/prompts": "^2.4.9",
     "tsup": "^8.5.1",
     "typescript": "^5.6.2",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.10"
   },
   "files": [
     "dist",

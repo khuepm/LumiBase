@@ -136,7 +136,7 @@ const DEFAULT_ACCOUNT = {
 const DEFAULT_PROJECT = {
   defaultLanguage: 'en',
   siteUrl: 'http://localhost:2026',
-  displayTitle: 'Lumibase',
+  displayTitle: 'LumiBase',
   theme: null,
 };
 
@@ -283,7 +283,7 @@ export function SimpleSetupWizard() {
                 Quick setup
               </p>
               <h1 className="text-2xl font-semibold tracking-tight">
-                Set up Lumibase in 3 steps
+                Set up LumiBase in 3 steps
               </h1>
               <p className="max-w-2xl text-sm text-muted-foreground">
                 The quick path applies the same production defaults as the full
@@ -410,7 +410,7 @@ function EssentialsStep({
         </h2>
         <p className="text-sm text-muted-foreground">
           These are the setup values that cannot be inferred safely. Project
-          identity uses Lumibase defaults in quick setup and can be tuned in
+          identity uses LumiBase defaults in quick setup and can be tuned in
           Advanced setup.
         </p>
       </header>

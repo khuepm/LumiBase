@@ -1,8 +1,8 @@
 {
   "name": "@lumibase/ai-skills",
-  "version": "0.11.0",
+  "version": "0.24.1",
   "private": true,
-  "description": "Lumibase AI Skills Registry - JSON Schema definitions and tools for LLM integration.",
+  "description": "LumiBase AI Skills Registry - JSON Schema definitions and tools for LLM integration.",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

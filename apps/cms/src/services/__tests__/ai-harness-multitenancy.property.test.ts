@@ -61,8 +61,16 @@ function createMockDbForSite(recordSiteId: string) {
     from: mockFrom,
   });
 
-  // For update operations — should also be scoped by siteId
-  const mockUpdateWhere = vi.fn().mockResolvedValue([]);
+  // For update operations — should also be scoped by siteId. The result is
+  // awaitable AND exposes .returning() (guarded status-transition writes chain
+  // .where(...).returning(...)).
+  const mockUpdateWhere = vi.fn().mockImplementation(() => {
+    const thenable = Promise.resolve([] as unknown[]) as Promise<unknown[]> & {
+      returning: () => Promise<unknown[]>;
+    };
+    thenable.returning = () => Promise.resolve([] as unknown[]);
+    return thenable;
+  });
   const mockSet = vi.fn().mockReturnValue({
     where: mockUpdateWhere,
   });
@@ -201,7 +209,13 @@ describe('Feature: ai-first-cms-engine, Property 8: Multi-tenancy isolation', ()
 
           const mockUpdateWhere = vi.fn().mockImplementation((...args: unknown[]) => {
             updateWhereArgs = args;
-            return Promise.resolve([]);
+            // rejectApproval chains .where(...).returning(...); the result is
+            // also awaitable for callers that don't chain.
+            const thenable = Promise.resolve([] as unknown[]) as Promise<unknown[]> & {
+              returning: () => Promise<unknown[]>;
+            };
+            thenable.returning = () => Promise.resolve([] as unknown[]);
+            return thenable;
           });
 
           const mockSet = vi.fn().mockReturnValue({

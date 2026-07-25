@@ -18,8 +18,8 @@ import type { NotificationPayload } from '../types';
  *
  *   1. Canonical body — fixed key order matching Req 13.3, byte
  *      stable across calls.
- *   2. HMAC signing — `X-Lumibase-Signature: sha256=<hex>` and
- *      `X-Lumibase-Timestamp` are computed over `${timestamp}.${body}`
+ *   2. HMAC signing — `X-LumiBase-Signature: sha256=<hex>` and
+ *      `X-LumiBase-Timestamp` are computed over `${timestamp}.${body}`
  *      with the operator-supplied secret (design §7.4).
  *   3. Status code branches — 2xx ok, 4xx non-retryable, 5xx
  *      retryable, network / timeout retryable (design §9.3).

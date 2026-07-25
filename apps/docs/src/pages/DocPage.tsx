@@ -4,9 +4,10 @@
  * Responsibilities:
  * - Load doc content via `resolveDoc(locale, slug)` with fallback to default locale
  * - Pass content to MarkdownRenderer with `currentLocale` for link rewriting
- * - Display document title as H1 at top of content area
- * - Display last-modified date below title in DD/MM/YYYY format (if available)
- * - Set browser <title> to `{document title} — Lumibase Docs`
+ *   (the markdown's own H1 is the visible page title — no duplicate header)
+ * - Display last-modified date in a footer at the bottom of the page,
+ *   in DD/MM/YYYY format (if available)
+ * - Set browser <title> to `{document title} — LumiBase Docs`
  * - If slug not found in any locale, redirect to NotFoundPage
  * - Expose `isFallback` for TranslationBanner (task 6.5)
  *
@@ -23,20 +24,37 @@ import { resolveDoc } from '../lib/resolveDoc';
 /**
  * Formats an ISO date string to DD/MM/YYYY format.
  * Returns undefined if the input is not a valid date.
+ *
+ * Uses UTC getters rather than local-time ones: this value is baked into the
+ * prerendered HTML at build time (in whatever timezone CI runs in) and must
+ * render identically when the client hydrates in the visitor's own timezone.
+ * Local-time getters shift the calendar day near midnight UTC depending on
+ * the reader's offset, which diverges from the server-rendered string and
+ * throws a hydration mismatch (React error #418).
  */
 export function formatDate(isoDate: string | undefined): string | undefined {
   if (!isoDate) return undefined;
   const date = new Date(isoDate);
   if (isNaN(date.getTime())) return undefined;
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const year = date.getUTCFullYear();
   return `${day}/${month}/${year}`;
 }
 
 export function DocPage() {
-  const { '*': slug } = useParams();
+  const { '*': rawSlug } = useParams();
   const { locale } = useLocale();
+
+  // Cloudflare Pages 308-redirects every prerendered route to its
+  // trailing-slash form (see scripts/prerender.mjs), so the URL the browser
+  // actually loads is ".../slug/" — but SSR renders each page for the
+  // no-trailing-slash slug from pathFor(), and the registry's slugs never
+  // have one either. Without stripping it here, the splat param picked up
+  // by the client router includes the trailing slash, resolveDoc() fails to
+  // find a match, and the page falls back to /404 only on the client —
+  // diverging from the prerendered HTML (React error #418).
+  const slug = rawSlug?.replace(/\/+$/, '');
 
   // Resolve document with locale fallback
   const resolved = slug ? resolveDoc(locale, slug) : null;
@@ -57,10 +75,10 @@ export function DocPage() {
   // Set browser title
   useEffect(() => {
     if (entry) {
-      document.title = `${entry.title} — Lumibase Docs`;
+      document.title = `${entry.title} — LumiBase Docs`;
     }
     return () => {
-      document.title = 'Lumibase Docs';
+      document.title = 'LumiBase Docs';
     };
   }, [entry]);
 
@@ -72,15 +90,7 @@ export function DocPage() {
   const formattedDate = formatDate(entry!.lastModified);
 
   return (
-    <article className="p-8 max-w-4xl mx-auto">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground">{entry!.title}</h1>
-        {formattedDate && (
-          <p className="mt-2 text-sm text-muted-foreground">
-            Last modified: {formattedDate}
-          </p>
-        )}
-      </header>
+    <article className="mx-auto w-full max-w-[768px] px-6 py-12 md:px-10">
       {isFallback && <TranslationBanner filePath={entry!.filePath} />}
       <MarkdownRenderer
         content={entry!.content}
@@ -88,6 +98,11 @@ export function DocPage() {
         knownSlugs={knownSlugs}
         currentLocale={locale}
       />
+      {formattedDate && (
+        <footer className="mt-12 border-t border-border pt-6 text-[13px] font-medium text-muted-foreground">
+          Last modified: {formattedDate}
+        </footer>
+      )}
     </article>
   );
 }

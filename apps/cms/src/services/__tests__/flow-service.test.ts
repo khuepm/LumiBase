@@ -78,3 +78,62 @@ describe('flow http operation — SSRF guard', () => {
     expect((init as RequestInit).body).toBe(JSON.stringify({ hello: 'world' }));
   });
 });
+
+/**
+ * Deployment flow operations (deployment-integrations Req 5.2): `deploy:trigger`
+ * and `deploy:status` are runtime-bound — they require `db`/`siteId`/`keys` in
+ * the run environment (supplied by routes/flows.ts) and a target/deployment id.
+ * These guards fail closed with a clear error before any DeploymentService is
+ * constructed, so they are deterministic to assert without a database.
+ */
+describe('flow deploy operations — env + option guards', () => {
+  const triggerHandler = getHandler('deploy:trigger')!;
+  const statusHandler = getHandler('deploy:status')!;
+
+  // A minimal env that satisfies the runtime-binding checks. `keys` only needs
+  // to be truthy for the guard; the handlers never reach it in these cases.
+  const fullEnv = { db: {}, siteId: 'site1', keys: {} };
+
+  it('registers both deploy handlers', () => {
+    expect(triggerHandler).toBeTypeOf('function');
+    expect(statusHandler).toBeTypeOf('function');
+  });
+
+  it('deploy:trigger requires env.db, env.siteId and env.keys', async () => {
+    const ctx: FlowRunContext = { input: {}, steps: {}, env: { db: {}, siteId: 'site1' } };
+    await expect(triggerHandler(ctx, { targetId: 'dpt_1' })).rejects.toThrow(
+      'deploy:trigger requires env.db, env.siteId and env.keys',
+    );
+  });
+
+  it('deploy:trigger requires a targetId option', async () => {
+    const ctx: FlowRunContext = { input: {}, steps: {}, env: fullEnv };
+    await expect(triggerHandler(ctx, {})).rejects.toThrow(
+      'deploy:trigger requires a targetId option',
+    );
+  });
+
+  it('deploy:status requires env.db, env.siteId and env.keys', async () => {
+    const ctx: FlowRunContext = { input: {}, steps: {}, env: { siteId: 'site1', keys: {} } };
+    await expect(statusHandler(ctx, { deploymentId: 'dpl_1' })).rejects.toThrow(
+      'deploy:status requires env.db, env.siteId and env.keys',
+    );
+  });
+
+  it('deploy:status requires a deploymentId option', async () => {
+    const ctx: FlowRunContext = { input: {}, steps: {}, env: fullEnv };
+    await expect(statusHandler(ctx, {})).rejects.toThrow(
+      'deploy:status requires a deploymentId option',
+    );
+  });
+
+  it('deploy:trigger reads targetId from flow input when option is absent', async () => {
+    // With targetId present in input the option guard passes; the call then
+    // proceeds to construct the service against the stub env (which throws a
+    // different, downstream error) — proving the id was resolved from input.
+    const ctx: FlowRunContext = { input: { targetId: 'dpt_from_input' }, steps: {}, env: fullEnv };
+    await expect(triggerHandler(ctx, {})).rejects.not.toThrow(
+      'deploy:trigger requires a targetId option',
+    );
+  });
+});

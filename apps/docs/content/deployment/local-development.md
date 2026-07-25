@@ -1,6 +1,6 @@
 # Local Development Guide
 
-Get Lumibase running locally with a single command using Docker Compose. This provides a full development stack without needing a Cloudflare account.
+Get LumiBase running locally with a single command using Docker Compose. This provides a full development stack without needing a Cloudflare account.
 
 ## Prerequisites
 
@@ -235,9 +235,17 @@ For Prometheus metrics and Grafana dashboards:
 docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
 ```
 
-Access Grafana at http://localhost:3002 (admin / admin). A pre-configured Lumibase dashboard is available showing request rates, latency, and error rates.
+Access Grafana at http://localhost:3002 (admin / admin). A pre-configured LumiBase dashboard is available showing request rates, latency, and error rates.
 
 ## Resetting the Environment
+
+> **Required after the `lumibase_` table-prefix change.** The schema was rebuilt
+> greenfield (a single `0000_lumibase_init` migration, no upgrade path — see
+> ADR-010). If your `pgdata` volume predates that change, the boot-time migrator
+> will detect the old migration history and refuse to start. Do a full reset
+> (`docker compose down -v`) before `up`. Escape hatches: `SKIP_MIGRATIONS=true`
+> skips the boot-time migrate; `FORCE_MIGRATE=true` bypasses the guard at your
+> own risk.
 
 ### Reset a Single Service
 

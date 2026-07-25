@@ -17,7 +17,11 @@ const collectionInputSchema = z.object({
     .string()
     .min(1)
     .max(63)
-    .regex(/^[a-z][a-z0-9_]{0,62}$/),
+    .regex(/^[a-z][a-z0-9_]{0,62}$/)
+    // `lumibase_` = system tables (ADR-010); `mat_` = materialized tables.
+    .refine((name) => !name.startsWith('lumibase_') && !name.startsWith('mat_'), {
+      message: 'Names starting with "lumibase_" or "mat_" are reserved for system tables.',
+    }),
   label: z.string().nullable().optional(),
   pluralLabel: z.string().nullable().optional(),
   hidden: z.boolean().optional(),
@@ -76,6 +80,7 @@ const fieldInputSchema = z.object({
   readonly: z.boolean().optional(),
   hidden: z.boolean().optional(),
   encrypted: z.boolean().optional(),
+  classification: z.enum(['none', 'internal', 'pii', 'phi']).optional(),
   versioned: z.boolean().optional(),
   rawEnabled: z.boolean().optional(),
   width: z.enum(['half', 'full', 'fill']).optional(),
@@ -107,17 +112,27 @@ const schemaInputSchema = collectionInputSchema
     })).optional(),
   });
 
-const buildService = (c: Context<AppEnv>) =>
-  new SchemaService({
+const buildService = (c: Context<AppEnv>) => {
+  const auth = c.get('auth');
+  return new SchemaService({
     db: c.get('db') as never,
     siteId: c.get('siteId') as unknown as string,
     cache: c.get('runtime').cache,
+    // Change-feed capture of schema DDL (collections.* / fields.*). The queue
+    // is the latency path; the dispatcher sweep is the correctness backstop.
+    queue: c.get('runtime').queue,
+    cdcActor: auth?.apiKeyId
+      ? { type: 'api_key', id: auth.apiKeyId }
+      : auth?.userId
+        ? { type: 'user', id: auth.userId }
+        : undefined,
     events: {
       emit: async (event) => {
         await c.get('runtime').queue.enqueue('schema-events', event.type, event, { priority: 'normal' });
       },
     },
   });
+};
 
 const toError = (err: unknown) => {
   if (err instanceof SchemaServiceError) {

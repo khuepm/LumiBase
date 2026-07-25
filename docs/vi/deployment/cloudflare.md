@@ -1,6 +1,6 @@
 # Triển khai Cloudflare
 
-Lumibase dùng hai target Cloudflare chính: CMS API chạy trên Workers và site tài liệu chạy trên Cloudflare Pages.
+LumiBase dùng hai target Cloudflare chính: CMS API chạy trên Workers và site tài liệu chạy trên Cloudflare Pages.
 
 ## Điều kiện trước khi deploy
 
