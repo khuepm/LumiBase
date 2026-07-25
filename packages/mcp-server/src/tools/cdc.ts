@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { registerCrud } from './_crud.js';
+import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 /**
  * Change Feed tools (spec cdc-extension-integration, Req 7.8 / task 12.3).
@@ -67,7 +68,7 @@ export function registerCdcTools(server: McpServer, client: LumiBaseClient) {
       description:
         'Rewind a subscription checkpoint inside the retention window (resets dead/stale back to active).',
       inputSchema: {
-        subscription_id: z.string().describe('Subscription id.'),
+        subscription_id: idPathSegmentSchema.describe('Subscription id.'),
         occurred_after: z
           .string()
           .optional()
@@ -80,7 +81,7 @@ export function registerCdcTools(server: McpServer, client: LumiBaseClient) {
       if (args.cursor) body.cursor = args.cursor;
       if (args.occurred_after) body.occurred_after = args.occurred_after;
       const result = await client.post(
-        `/cdc/subscriptions/${encodeURIComponent(args.subscription_id)}/replay`,
+        `/cdc/subscriptions/${encodePathSegment(args.subscription_id)}/replay`,
         body,
       );
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
