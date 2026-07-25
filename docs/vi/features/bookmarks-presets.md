@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:16:45.742Z
+sourceLang: vi
+contentHash: e0c7e090b16fd941
+codeVerified: 2026-07-25T08:16:45.742Z
+codeVerifiedHash: e0c7e090b16fd941
+codeVerifiedClaims: 6
+---
+
 # Bookmarks & Presets
 
 > Preset = trạng thái list view có thể chia sẻ. Bookmark = preset có tên + icon hiện ở navigation.
