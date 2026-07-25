@@ -8,6 +8,7 @@ import { AuditLogger } from '../modules/audit/logger';
 import { tryExternalJwt } from '../modules/external-auth/adapter';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { TOKEN_AUDIENCE, audienceValues } from '../services/auth/token-audience';
+import { resolvePublicRoleIdCached } from '../services/auth/public-role';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -451,8 +452,66 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     }
   }
 
+  // 4. Anonymous (`public` realm). No credential was presented at all.
+  //
+  // Historically this was an unconditional 401. It still is unless BOTH hold:
+  // the request is a read on an allow-listed content path, AND the site has
+  // explicitly enabled public access (which is what creates the `public`
+  // role). Resolving to a real role — rather than skipping the permission
+  // layer — keeps row filters and field masks in force for anonymous callers.
+  if (await allowsAnonymous(c)) {
+    const publicRoleId = await resolvePublicRoleIdCached(
+      c.get('db'),
+      c.get('siteId'),
+      c.get('runtime')?.cache,
+    );
+    if (publicRoleId) {
+      const principal: AuthPrincipal = {
+        type: 'anonymous',
+        roleId: publicRoleId,
+        roles: [publicRoleId],
+        raw: { anonymous: true },
+      };
+      c.set('auth', principal);
+      return next();
+    }
+  }
+
   return c.json(
     { errors: [{ code: 'UNAUTHENTICATED', message: 'Authentication required.' }] },
     401,
   );
 };
+
+/**
+ * Content paths an unauthenticated caller may reach once a site enables
+ * public access.
+ *
+ * Deliberately an allowlist, not a denylist: every other route keeps its
+ * pre-existing 401. Studio management paths are excluded here AND blocked
+ * again by `withStudioAccess` (an anonymous principal has no `userId`), so
+ * neither guard is load-bearing alone.
+ *
+ * `/graphql` is absent on purpose — its operations arrive over POST, so it
+ * cannot be covered by the read-method rule below. Opening it to anonymous
+ * callers needs read-only operation validation alongside the cost limiter and
+ * is a separate change.
+ */
+const ANONYMOUS_ALLOWED_PREFIXES = [
+  '/api/v1/items',
+  '/api/v1/search',
+  '/api/v1/media',
+  '/api/v1/files',
+];
+
+/** Only side-effect-free methods are ever eligible for the anonymous realm. */
+const ANONYMOUS_ALLOWED_METHODS = new Set(['GET', 'HEAD']);
+
+async function allowsAnonymous(c: Parameters<MiddlewareHandler<AppEnv>>[0]): Promise<boolean> {
+  if (!ANONYMOUS_ALLOWED_METHODS.has(c.req.method.toUpperCase())) return false;
+  if (!c.get('siteId') || !c.get('db')) return false;
+  const path = c.req.path;
+  return ANONYMOUS_ALLOWED_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+  );
+}
