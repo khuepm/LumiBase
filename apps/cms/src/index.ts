@@ -21,6 +21,7 @@ import { withTenant } from './middleware/tenant';
 import { withTracing } from './middleware/tracing';
 import { activityRouter } from './routes/activity';
 import { accessRouter } from './routes/access';
+import { accessGrantsRouter } from './routes/access-grants';
 import { adminRouter } from './routes/admin';
 import { configRouter } from './routes/config';
 import { authRouter, meRouter } from './routes/auth';
@@ -242,6 +243,11 @@ api.route('/typegen', typegenRouter);
 api.route('/roles', rolesRouter);
 api.route('/policies', policiesRouter);
 api.route('/permissions', permissionsRouter);
+// Non-staff permission picker (`/api/v1/access/grants/*`). Mounted BEFORE
+// `accessRouter` so its `/grants*` leaf paths win; every other `/access/*`
+// path falls through to the import/export router, whose leaf paths
+// (`/export`, `/import`, `/conflicts/check`) are disjoint from these.
+api.route('/access', accessGrantsRouter);
 api.route('/access', accessRouter);
 api.route('/config', configRouter);
 api.route('/api-keys', apiKeysRouter);

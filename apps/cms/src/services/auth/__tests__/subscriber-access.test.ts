@@ -56,6 +56,7 @@ describe('grantSubscriberRead', () => {
       collection: 'articles',
       action: 'read',
       publishedOnly: true,
+      ownOnly: false,
       fields: ['*'],
     });
 
