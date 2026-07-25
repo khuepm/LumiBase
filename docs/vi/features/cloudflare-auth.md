@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:20:25.676Z
+sourceLang: vi
+contentHash: 93f67c7fed15b9bc
+codeVerified: 2026-07-25T08:20:25.676Z
+codeVerifiedHash: 93f67c7fed15b9bc
+codeVerifiedClaims: 6
+---
+
 # Cloudflare Access & Custom JWT Authentication
 
 Tài liệu này hướng dẫn chi tiết cách cấu hình và hoạt động của hệ thống xác thực (Authentication) và phân quyền (Authorization) kết hợp giữa **Cloudflare Access** (dành cho Admin/Studio) và **Custom JWT** (dành cho Frontend End-Users).
