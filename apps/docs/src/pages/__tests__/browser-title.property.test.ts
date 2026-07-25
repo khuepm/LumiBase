@@ -5,7 +5,7 @@ import * as fc from 'fast-check';
  * Feature: lumibase-docs-viewer, Property 7: Browser title formatting
  *
  * For any document with a resolved title, the browser `<title>` tag SHALL be set to
- * `{document title} — Lumibase Docs`.
+ * `{document title} — LumiBase Docs`.
  *
  * **Validates: Requirements 9.4**
  */
@@ -13,13 +13,13 @@ describe('Feature: lumibase-docs-viewer, Property 7: Browser title formatting', 
   /**
    * Formats the browser title given a document title.
    * This mirrors the logic in DocPage's useEffect:
-   *   document.title = `${entry.title} — Lumibase Docs`
+   *   document.title = `${entry.title} — LumiBase Docs`
    */
   function formatBrowserTitle(title: string): string {
-    return `${title} — Lumibase Docs`;
+    return `${title} — LumiBase Docs`;
   }
 
-  it('should format browser title as "{title} — Lumibase Docs" for any non-empty title', () => {
+  it('should format browser title as "{title} — LumiBase Docs" for any non-empty title', () => {
     fc.assert(
       fc.property(
         // Generate non-empty title strings (trimmed to avoid whitespace-only)
@@ -27,18 +27,18 @@ describe('Feature: lumibase-docs-viewer, Property 7: Browser title formatting', 
         (title) => {
           const browserTitle = formatBrowserTitle(title);
 
-          // The browser title must end with ' — Lumibase Docs'
-          expect(browserTitle).toBe(`${title} — Lumibase Docs`);
+          // The browser title must end with ' — LumiBase Docs'
+          expect(browserTitle).toBe(`${title} — LumiBase Docs`);
 
           // The suffix uses an em dash (—), not a regular hyphen (-)
           expect(browserTitle).toContain('—');
-          expect(browserTitle.endsWith('— Lumibase Docs')).toBe(true);
+          expect(browserTitle.endsWith('— LumiBase Docs')).toBe(true);
 
           // The title portion is preserved exactly at the start
           expect(browserTitle.startsWith(title)).toBe(true);
 
           // The separator is exactly ' — ' (space + em dash + space)
-          const separatorIndex = browserTitle.indexOf(' — Lumibase Docs');
+          const separatorIndex = browserTitle.indexOf(' — LumiBase Docs');
           expect(separatorIndex).toBe(title.length);
         },
       ),
@@ -59,13 +59,13 @@ describe('Feature: lumibase-docs-viewer, Property 7: Browser title formatting', 
           .map((words) => words.join(' ')),
         (title) => {
           // Simulate what DocPage's useEffect does
-          document.title = `${title} — Lumibase Docs`;
+          document.title = `${title} — LumiBase Docs`;
 
           expect(document.title).toBe(formatBrowserTitle(title));
-          expect(document.title).toBe(`${title} — Lumibase Docs`);
+          expect(document.title).toBe(`${title} — LumiBase Docs`);
 
           // Reset
-          document.title = 'Lumibase Docs';
+          document.title = 'LumiBase Docs';
         },
       ),
       { numRuns: 100 },

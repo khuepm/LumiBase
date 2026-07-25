@@ -1,4 +1,4 @@
-# Implementation Plan: Lumibase Docs Viewer
+# Implementation Plan: LumiBase Docs Viewer
 
 ## Overview
 
@@ -130,13 +130,13 @@ Build a standalone documentation viewer app at `apps/docs` using Vite + React + 
     - Pass content to `MarkdownRenderer`
     - Display document title as H1 at top of content area
     - Display last-modified date below title in `DD/MM/YYYY` format (if available)
-    - Set browser `<title>` to `{document title} — Lumibase Docs`
+    - Set browser `<title>` to `{document title} — LumiBase Docs`
     - If slug not found in `docIndex`, redirect to NotFoundPage
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 5.2_
 
   - [x] 7.2 Write property test for browser title formatting (Property 7)
     - **Property 7: Browser title formatting**
-    - Generate random title strings, verify browser title is `{title} — Lumibase Docs`
+    - Generate random title strings, verify browser title is `{title} — LumiBase Docs`
     - **Validates: Requirements 9.4**
 
   - [x] 7.3 Write property test for date formatting (Property 8)

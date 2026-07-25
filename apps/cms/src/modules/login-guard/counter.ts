@@ -4,7 +4,7 @@
  * Counts the number of `result='fail'` rows in `login_attempts` for a
  * given email or client IP within the last `windowSeconds` seconds.
  * The Postgres-backed implementation is the default — Self-hosted
- * Lumibase ships without Redis (design §6.4) and the
+ * LumiBase ships without Redis (design §6.4) and the
  * `(email_lower, created_at)` / `(ip, created_at)` indexes added in
  * task 5.1 make these range scans cheap (≤5ms with <100k rows/hour).
  *

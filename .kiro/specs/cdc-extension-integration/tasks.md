@@ -43,7 +43,7 @@
   - [x] 6.3 Property test **P6 Cursor advance có điều kiện** + **P7 Retry/backoff đúng lịch**. (Req 4.4, 4.5)
 
 - [x] 7. Webhook sender (Req 4.2, 4.3)
-  - [x] 7.1 `webhook-sender.ts` (+ verifyCdcWebhookSignature cho docs/P5; redirect: 'error'): HMAC-SHA256 (WebCrypto) header `X-Lumibase-Signature: t=...,v1=...`; `guardedFetch` (validateOutboundUrl + timeout 30s + no-redirect); merge `webhooks.headers` không cho override chữ ký; subscription webhook không secret → 400 khi tạo.
+  - [x] 7.1 `webhook-sender.ts` (+ verifyCdcWebhookSignature cho docs/P5; redirect: 'error'): HMAC-SHA256 (WebCrypto) header `X-LumiBase-Signature: t=...,v1=...`; `guardedFetch` (validateOutboundUrl + timeout 30s + no-redirect); merge `webhooks.headers` không cho override chữ ký; subscription webhook không secret → 400 khi tạo.
   - [x] 7.2 Property test **P5 HMAC verify round-trip** + unit test header merge/SSRF reject. (Req 4.2, 4.3)
 
 - [x] 8. Checkpoint 2026-07-11 — dispatcher/webhook tests 9/9; full suite ở checkpoint 17.

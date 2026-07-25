@@ -9,7 +9,25 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Fixed
+
+- **Security / mcp-server:** `cdc_subscription_replay` accepted its
+  `subscription_id` as a bare `z.string()` and encoded it with
+  `encodeURIComponent`, which leaves `..` intact — a crafted id reached
+  `/cdc/subscriptions/../replay` and re-pointed the call at a sibling endpoint.
+  The argument now uses `idPathSegmentSchema` + `encodePathSegment`. This is the
+  same path-traversal / confused-deputy class closed in 0.13.x; the CDC tools
+  landed afterwards and reintroduced it.
+
+### Added
+
+- **Path-traversal tripwire (mcp-server).** `path-hardening.wiring.test.ts`
+  locks the class instead of the individual call sites: a source scan requires
+  every `/${…}` path interpolation in `tools/*.ts` to go through
+  `encodePathSegment`/`encodeMediaKey`, and a registry scan walks every
+  registered tool and fails if an argument that reaches a path segment accepts
+  `..`. Both halves are needed — encoding alone cannot neutralize `..`. The scan
+  found the CDC gap above.
 
 ## [0.24.1] - 2026-07-21
 
@@ -2336,7 +2354,7 @@ changelog and the published GitHub Release notes:
 
 - Added extension permission targets plus enforcement for extension management,
   extension endpoint execution, and extension data access.
-- Documented Lumibase extension access behavior against Directus and recorded
+- Documented LumiBase extension access behavior against Directus and recorded
   product-differentiating permission controls for future marketing.
 
 #### Admin Setup & Recovery

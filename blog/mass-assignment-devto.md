@@ -65,9 +65,9 @@ The incident was a watershed moment for the Rails community. Mass Assignment had
 
 **Subtle escalation paths.** Sometimes the dangerous field isn't `isAdmin`. It's `planId`, `ownerId`, `verifiedAt`, `emailVerified`, or `stripeCustomerId`. Attackers probe every field in a response body and try to send each one back in the next write request. Any field that sticks is a potential attack surface.
 
-## Where Lumibase is exposed
+## Where LumiBase is exposed
 
-Lumibase is a Content OS — a headless CMS that accepts writes from multiple surfaces simultaneously: the Studio editor UI, AI skill output piped through the agent harness, incoming webhooks from external platforms, and third-party extension callbacks. Every one of those surfaces eventually calls the same Hono route handlers and lands in the same service layer.
+LumiBase is a Content OS — a headless CMS that accepts writes from multiple surfaces simultaneously: the Studio editor UI, AI skill output piped through the agent harness, incoming webhooks from external platforms, and third-party extension callbacks. Every one of those surfaces eventually calls the same Hono route handlers and lands in the same service layer.
 
 The schema for a content item looks roughly like this (simplified):
 
@@ -223,4 +223,4 @@ One extra field in a JSON body should not hand someone a Presidential Suite. Or 
 
 Three layers working together: Zod parses and strips at the HTTP boundary, typed DTOs constrain what the service can receive, and system fields are never in the DTO at all. Each layer catches what the previous one might miss. Any one of them alone is useful; all three together make Mass Assignment effectively impossible to sneak through.
 
-I'm building [Lumibase](https://lumibase.dev) — a Content OS designed for AI agents operating at the edge. Security is structural from day one: multi-tenant isolation, typed service contracts, and strict schema validation at every entry point — whether the write comes from a human editor, an AI skill, a webhook, or an extension. If that sounds interesting, come take a look at [lumibase.dev](https://lumibase.dev) 🌱
+I'm building [LumiBase](https://lumibase.dev) — a Content OS designed for AI agents operating at the edge. Security is structural from day one: multi-tenant isolation, typed service contracts, and strict schema validation at every entry point — whether the write comes from a human editor, an AI skill, a webhook, or an extension. If that sounds interesting, come take a look at [lumibase.dev](https://lumibase.dev) 🌱

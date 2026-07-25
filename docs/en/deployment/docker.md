@@ -61,7 +61,7 @@ If a client receives HTTP `503` with a body similar to:
   "errors": [
     {
       "code": "SERVICE_UNAVAILABLE",
-      "message": "Lumibase API is temporarily unavailable because this instance is under pressure. Retry later.",
+      "message": "LumiBase API is temporarily unavailable because this instance is under pressure. Retry later.",
       "details": { "reason": "event_loop_delay" }
     }
   ]

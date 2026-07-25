@@ -27,7 +27,7 @@ Read docs/en/agent-setup/prompt.md and follow all setup instructions.
 
 ### Step 1 — Open the project
 
-Open the `Lumibase` folder in Cursor (`File → Open Folder`).
+Open the `LumiBase` folder in Cursor (`File → Open Folder`).
 
 ### Step 2 — Configure `.cursorrules`
 

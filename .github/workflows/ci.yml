@@ -306,5 +306,11 @@ jobs:
       # … then fail only on HIGH/CRITICAL advisories so a known-exploitable
       # dependency blocks the merge while noisy low/moderate transitive
       # advisories do not (CWE-1104).
+      #
+      # Advisories deliberately excluded from this gate live in
+      # `pnpm.auditConfig.ignoreGhsas` (root package.json). Each entry needs a
+      # written justification + revisit trigger in the "Audit ignore registry"
+      # of `docs/en/security/dependency-overrides.md` — never add one just to
+      # make CI green.
       - name: Audit (fail on high/critical)
         run: pnpm audit --prod --audit-level high

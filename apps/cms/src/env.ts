@@ -17,7 +17,7 @@ export interface Bindings {
   /** SiteRoom Durable Object namespace — one DO instance per siteId. */
   SITE_ROOM?: DurableObjectNamespace;
   LUMIBASE_ENV: string;
-  /** Semver package/application version for the deployed Lumibase build. */
+  /** Semver package/application version for the deployed LumiBase build. */
   LUMIBASE_VERSION?: string;
   /** Source-control revision used for this build. */
   LUMIBASE_GIT_SHA?: string;

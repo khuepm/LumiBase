@@ -92,7 +92,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 - **API**
   - [api/hono-api-spec.md](./api/hono-api-spec.md) — Standardized REST/WS endpoints with full request/response examples.
 - **UI Studio**
-  - [ui/README.md](../ui/README.md) — Spec for the redesigned Lumibase Studio and detailed screen specifications.
+  - [ui/README.md](../ui/README.md) — Spec for the redesigned LumiBase Studio and detailed screen specifications.
   - [en/ui/studio-ui-spec.md](./ui/studio-ui-spec.md) — Original page structure, modules, layouts, components, and state.
 - **Deployment** (`deployment/`)
   - [deployment/overview.md](./deployment/overview.md) — Overview of the Cloudflare Workers, Cloudflare Pages, and Docker targets.

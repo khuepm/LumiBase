@@ -2,13 +2,13 @@
 
 ## Introduction
 
-Lumibase Docs Viewer là một ứng dụng web tích hợp vào monorepo Lumibase, cho phép đọc và điều hướng toàn bộ tài liệu kỹ thuật của dự án (các file `.md` trong thư mục `docs/`) trực tiếp trên trình duyệt. Ứng dụng được xây dựng như một app mới trong monorepo (`apps/docs`), sử dụng React + Vite + Tailwind — nhất quán với `apps/studio` — và phục vụ file Markdown trực tiếp từ filesystem thông qua Vite plugin, không cần database hay backend riêng.
+LumiBase Docs Viewer là một ứng dụng web tích hợp vào monorepo LumiBase, cho phép đọc và điều hướng toàn bộ tài liệu kỹ thuật của dự án (các file `.md` trong thư mục `docs/`) trực tiếp trên trình duyệt. Ứng dụng được xây dựng như một app mới trong monorepo (`apps/docs`), sử dụng React + Vite + Tailwind — nhất quán với `apps/studio` — và phục vụ file Markdown trực tiếp từ filesystem thông qua Vite plugin, không cần database hay backend riêng.
 
 Mục tiêu cốt lõi là tạo nền tảng vững chắc (routing, sidebar điều hướng, render Markdown, code highlighting) để mọi tài liệu tính năng mới viết ra đều hiển thị được ngay mà không cần cấu hình thêm.
 
 ## Glossary
 
-- **Docs Viewer**: Ứng dụng web (`apps/docs`) dùng để đọc tài liệu Markdown của Lumibase.
+- **Docs Viewer**: Ứng dụng web (`apps/docs`) dùng để đọc tài liệu Markdown của LumiBase.
 - **Doc File**: Một file `.md` nằm trong thư mục `docs/` của workspace.
 - **Doc Tree**: Cây thư mục phản ánh cấu trúc `docs/` — dùng để render sidebar điều hướng.
 - **Doc Page**: Một trang hiển thị nội dung đã render của một Doc File.
@@ -147,7 +147,7 @@ Mục tiêu cốt lõi là tạo nền tảng vững chắc (routing, sidebar đ
 1. THE Doc_Page SHALL display the document title at the top of the content area as an H1 element.
 2. WHEN a Doc File contains a Front Matter `title` field, THE Doc_Page SHALL use that value as the page title.
 3. WHEN a Doc File does not contain a Front Matter `title` field, THE Doc_Page SHALL derive the title from the filename (same rule as Doc_Loader in Requirement 2).
-4. THE Doc_Page SHALL set the browser `<title>` tag to `{document title} — Lumibase Docs`.
+4. THE Doc_Page SHALL set the browser `<title>` tag to `{document title} — LumiBase Docs`.
 5. WHERE the build tooling provides file modification timestamps, THE Doc_Page SHALL display the last-modified date below the document title in the format `DD/MM/YYYY`.
 
 ---

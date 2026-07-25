@@ -1,9 +1,9 @@
 # Insecure Direct Object References (IDOR) Testing Guidelines
 
 ## Overview
-This document outlines the testing guidelines for preventing Insecure Direct Object References (IDOR) in Lumibase. IDOR occurs when an application provides direct access to objects based on user-supplied input. As a result, attackers can bypass authorization and access resources in the system directly, for example, database records or files.
+This document outlines the testing guidelines for preventing Insecure Direct Object References (IDOR) in LumiBase. IDOR occurs when an application provides direct access to objects based on user-supplied input. As a result, attackers can bypass authorization and access resources in the system directly, for example, database records or files.
 
-In Lumibase, it's crucial to ensure strict tenant isolation. Data belonging to one tenant (site) must never be accessible or modifiable by a user from another tenant, even if they know or guess the internal ID.
+In LumiBase, it's crucial to ensure strict tenant isolation. Data belonging to one tenant (site) must never be accessible or modifiable by a user from another tenant, even if they know or guess the internal ID.
 
 ## Scope
 *   **Target Collections:** All built-in tables/collections prefixed with `lumibase_`. (Note: Custom collections created by users have their own role/policy-based permission system).

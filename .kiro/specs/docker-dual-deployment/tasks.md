@@ -2,7 +2,7 @@
 
 ## Overview
 
-This plan implements the Docker dual-deployment feature for Lumibase, including the runtime abstraction layer, Docker infrastructure, integrated tooling (MeiliSearch, BullMQ, Imgproxy, Prometheus/Grafana), and comprehensive documentation. Tasks are ordered by dependency — abstraction layer first, then adapters, then infrastructure, then tooling integration, then docs.
+This plan implements the Docker dual-deployment feature for LumiBase, including the runtime abstraction layer, Docker infrastructure, integrated tooling (MeiliSearch, BullMQ, Imgproxy, Prometheus/Grafana), and comprehensive documentation. Tasks are ordered by dependency — abstraction layer first, then adapters, then infrastructure, then tooling integration, then docs.
 
 ## Tasks
 

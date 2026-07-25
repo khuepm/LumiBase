@@ -90,7 +90,7 @@ Spec này xây trực tiếp trên các lớp đã ship, không phát minh lại
 #### Acceptance Criteria
 
 1. THE Dispatcher SHALL đọc Change_Event sau `cursor` của từng Subscription `kind='webhook'` `status='active'` (theo batch, tối đa 100 event/batch) và POST Event_Envelope batch tới `webhooks.url`, kèm headers cấu hình trong `webhooks.headers`.
-2. THE Dispatcher SHALL ký mỗi request bằng HMAC-SHA256 trên raw body với `webhooks.secret`, gửi header `X-Lumibase-Signature: t=<unix_ts>,v1=<hex>`; IF webhook không có `secret` THEN Subscription webhook không được tạo (400 — chữ ký là bắt buộc).
+2. THE Dispatcher SHALL ký mỗi request bằng HMAC-SHA256 trên raw body với `webhooks.secret`, gửi header `X-LumiBase-Signature: t=<unix_ts>,v1=<hex>`; IF webhook không có `secret` THEN Subscription webhook không được tạo (400 — chữ ký là bắt buộc).
 3. THE Dispatcher SHALL áp SSRF guard (`validateOutboundUrl`) và timeout 30 giây cho mọi outbound request, cùng chính sách với operation `http`/deployment providers.
 4. WHEN delivery nhận HTTP 2xx, THE Dispatcher SHALL advance `cursor` của Subscription tới event cuối của batch và reset `consecutiveFailures=0`; delivery KHÔNG 2xx hoặc lỗi mạng → KHÔNG advance cursor (không mất event — at-least-once).
 5. IF một batch delivery thất bại, THEN THE Dispatcher SHALL retry với exponential backoff bắt đầu 30 giây, tối đa 5 lần cho batch đó; IF `consecutiveFailures` của Subscription đạt 10, THEN chuyển Subscription sang `status='dead'` và phát notification qua notifications module.

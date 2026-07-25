@@ -2,7 +2,7 @@
   "name": "@lumibase/runtime",
   "version": "0.24.1",
   "private": true,
-  "description": "Lumibase runtime abstraction layer — adapters for Cloudflare Workers and Docker/Node.js environments.",
+  "description": "LumiBase runtime abstraction layer — adapters for Cloudflare Workers and Docker/Node.js environments.",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

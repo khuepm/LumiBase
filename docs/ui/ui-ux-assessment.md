@@ -1,6 +1,6 @@
-# Đánh giá UI/UX và Định hướng Cải tiến Lumibase Studio
+# Đánh giá UI/UX và Định hướng Cải tiến LumiBase Studio
 
-Tài liệu này đánh giá hiện trạng trải nghiệm người dùng (UX) và giao diện (UI) của Lumibase Studio hiện tại, chỉ ra các điểm nghẽn (Friction Points) và đưa ra các đề xuất thiết kế cụ thể để nâng cao chất lượng sản phẩm.
+Tài liệu này đánh giá hiện trạng trải nghiệm người dùng (UX) và giao diện (UI) của LumiBase Studio hiện tại, chỉ ra các điểm nghẽn (Friction Points) và đưa ra các đề xuất thiết kế cụ thể để nâng cao chất lượng sản phẩm.
 
 ---
 
@@ -25,7 +25,7 @@ Qua phân tích cấu trúc mã nguồn của `apps/studio` và đặc tả cũ,
 
 ## 2. Giải pháp Cải tiến UI/UX Toàn diện
 
-Để khắc phục các điểm nghẽn trên, Lumibase thiết kế lại trải nghiệm với các cải tiến cụ thể:
+Để khắc phục các điểm nghẽn trên, LumiBase thiết kế lại trải nghiệm với các cải tiến cụ thể:
 
 ### 2.1 Thiết kế Thích ứng Thông minh (Adaptive Design)
 

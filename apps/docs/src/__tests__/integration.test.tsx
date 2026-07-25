@@ -1,5 +1,5 @@
 /**
- * Integration tests for the Lumibase Docs Viewer.
+ * Integration tests for the LumiBase Docs Viewer.
  *
  * Tests end-to-end flows:
  * - Full app render with test markdown files
@@ -64,14 +64,14 @@ afterEach(() => {
 // matches this test suite's fixture slugs, independent of the real site config.
 vi.mock('../../docs.config.json', () => ({
   default: {
-    title: 'Lumibase',
+    title: 'LumiBase',
     tagline: '',
     url: 'https://example.com',
     baseUrl: '/',
     organizationName: 'test',
     projectName: 'test',
     i18n: { defaultLocale: 'en', locales: ['en', 'vi'], localeNames: { en: 'English', vi: 'Tiếng Việt' } },
-    navbar: { title: 'Lumibase', items: [] },
+    navbar: { title: 'LumiBase', items: [] },
     sidebar: {
       docs: [
         { type: 'category', label: 'features', items: ['features/collections', 'features/relations'] },
@@ -95,9 +95,9 @@ vi.mock('virtual:docs-registry', () => {
     README: {
       slug: 'README',
       locale: 'en',
-      title: 'Lumibase Documentation',
+      title: 'LumiBase Documentation',
       filePath: 'en/README.md',
-      content: '# Lumibase Documentation\n\nThis is the main documentation page.\n\n## Getting Started\n\nRead the [Collections Guide](./features/collections.md) to begin.\n\nVisit [External Site](https://example.com) for more info.',
+      content: '# LumiBase Documentation\n\nThis is the main documentation page.\n\n## Getting Started\n\nRead the [Collections Guide](./features/collections.md) to begin.\n\nVisit [External Site](https://example.com) for more info.',
       lastModified: '2024-06-15T10:00:00Z',
     },
     'features/collections': {
@@ -126,7 +126,7 @@ vi.mock('virtual:docs-registry', () => {
         { type: 'file' as const, name: 'Relations', slug: 'features/relations' },
       ],
     },
-    { type: 'file' as const, name: 'Lumibase Documentation', slug: 'README' },
+    { type: 'file' as const, name: 'LumiBase Documentation', slug: 'README' },
   ];
 
   const testDocList = Object.values(testDocIndex);
@@ -201,7 +201,7 @@ describe('Integration: Full app render', () => {
 
     // Should show the document title
     await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: 'Lumibase Documentation' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'LumiBase Documentation' })).toBeInTheDocument();
     });
   });
 
@@ -221,11 +221,11 @@ describe('Integration: Full app render', () => {
     });
   });
 
-  it('sets the browser title to "{title} — Lumibase Docs"', async () => {
+  it('sets the browser title to "{title} — LumiBase Docs"', async () => {
     renderApp('/en/docs/README');
 
     await waitFor(() => {
-      expect(document.title).toBe('Lumibase Documentation — Lumibase Docs');
+      expect(document.title).toBe('LumiBase Documentation — LumiBase Docs');
     });
   });
 
@@ -263,7 +263,7 @@ describe('Integration: Sidebar navigation', () => {
     const navTexts = navButtons.map((btn) => btn.textContent?.trim());
     expect(navTexts).toContain('Collections Builder');
     expect(navTexts).toContain('Relations');
-    expect(navTexts.some((t) => t?.includes('Lumibase Documentation'))).toBe(true);
+    expect(navTexts.some((t) => t?.includes('LumiBase Documentation'))).toBe(true);
   });
 
   it('navigates to a document when clicking a sidebar link', async () => {
@@ -296,7 +296,7 @@ describe('Integration: Sidebar navigation', () => {
 
     // Browser title should update
     await waitFor(() => {
-      expect(document.title).toBe('Collections Builder — Lumibase Docs');
+      expect(document.title).toBe('Collections Builder — LumiBase Docs');
     });
   });
 
@@ -310,7 +310,7 @@ describe('Integration: Sidebar navigation', () => {
     // The README entry should be marked as current page
     const activeButton = screen.getByRole('button', { current: 'page' });
     expect(activeButton).toBeInTheDocument();
-    expect(activeButton).toHaveTextContent('Lumibase Documentation');
+    expect(activeButton).toHaveTextContent('LumiBase Documentation');
   });
 
   it('toggles directory expanded/collapsed state', async () => {
@@ -446,7 +446,7 @@ describe('Integration: Internal link navigation', () => {
     renderApp('/en/docs/README');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: 'Lumibase Documentation' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'LumiBase Documentation' })).toBeInTheDocument();
     });
 
     // The markdown content has a link to ./features/collections.md
@@ -461,7 +461,7 @@ describe('Integration: Internal link navigation', () => {
     renderApp('/en/docs/README');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: 'Lumibase Documentation' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'LumiBase Documentation' })).toBeInTheDocument();
     });
 
     // Click the internal link
@@ -478,7 +478,7 @@ describe('Integration: Internal link navigation', () => {
 
     // Browser title should update
     await waitFor(() => {
-      expect(document.title).toBe('Collections Builder — Lumibase Docs');
+      expect(document.title).toBe('Collections Builder — LumiBase Docs');
     });
   });
 
@@ -486,7 +486,7 @@ describe('Integration: Internal link navigation', () => {
     renderApp('/en/docs/README');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: 'Lumibase Documentation' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'LumiBase Documentation' })).toBeInTheDocument();
     });
 
     await waitFor(() => {
@@ -530,11 +530,11 @@ describe('Integration: Internal link navigation', () => {
 
     // Should navigate to README page
     await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: 'Lumibase Documentation' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'LumiBase Documentation' })).toBeInTheDocument();
     });
 
     await waitFor(() => {
-      expect(document.title).toBe('Lumibase Documentation — Lumibase Docs');
+      expect(document.title).toBe('LumiBase Documentation — LumiBase Docs');
     });
   });
 });

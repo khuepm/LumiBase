@@ -49,7 +49,7 @@ export function StepProject({ onSubmitted }: StepProjectProps) {
     defaultValues: projectDraft ?? {
       defaultLanguage: 'en',
       siteUrl: 'http://localhost:2026',
-      displayTitle: 'Lumibase',
+      displayTitle: 'LumiBase',
       theme: null,
     },
   });
@@ -153,7 +153,7 @@ export function StepProject({ onSubmitted }: StepProjectProps) {
             type="text"
             className={inputClass(Boolean(errors.displayTitle))}
             aria-invalid={errors.displayTitle ? 'true' : 'false'}
-            placeholder="Lumibase"
+            placeholder="LumiBase"
             {...register('displayTitle')}
           />
         </Field>

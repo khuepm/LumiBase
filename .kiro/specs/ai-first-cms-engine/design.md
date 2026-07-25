@@ -2,7 +2,7 @@
 
 ## Overview
 
-AI-First CMS Engine là hệ thống cho phép AI Agent tương tác an toàn với Lumibase CMS thông qua cơ chế Human-in-the-Loop (HITL). Hệ thống bao gồm 4 module chính:
+AI-First CMS Engine là hệ thống cho phép AI Agent tương tác an toàn với LumiBase CMS thông qua cơ chế Human-in-the-Loop (HITL). Hệ thống bao gồm 4 module chính:
 
 - **Module A**: Database schema (`ai_approvals` table) — lưu trữ bản ghi phê duyệt
 - **Module B**: AI Secure Harness — lớp điều phối an toàn kiểm tra quyền hạn, đánh giá rủi ro

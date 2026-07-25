@@ -30,7 +30,7 @@ Read docs/en/agent-setup/prompt.md and follow all setup instructions.
 
 ### Bước 1 — Mở dự án
 
-Mở thư mục `Lumibase` trong Cursor (`File → Open Folder`).
+Mở thư mục `LumiBase` trong Cursor (`File → Open Folder`).
 
 ### Bước 2 — Cấu hình `.cursorrules`
 

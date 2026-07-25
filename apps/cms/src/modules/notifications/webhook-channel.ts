@@ -10,8 +10,8 @@
  * Wire format pinned by design §7.4:
  *
  *   ```
- *   X-Lumibase-Signature: sha256=<hex>
- *   X-Lumibase-Timestamp: <unix-seconds>
+ *   X-LumiBase-Signature: sha256=<hex>
+ *   X-LumiBase-Timestamp: <unix-seconds>
  *   Content-Type:         application/json
  *   body =                canonical JSON
  *   hex  =                HMAC_SHA256(secret, `${timestamp}.${body}`)
@@ -20,7 +20,7 @@
  * The timestamp is included in the signed bytes (not just an
  * unsigned header) so a downstream replay-protection rule —
  * "reject if `|now - timestamp| > 5 min`" per design §7.4 — can be
- * enforced safely: an attacker cannot move the `X-Lumibase-Timestamp`
+ * enforced safely: an attacker cannot move the `X-LumiBase-Timestamp`
  * header forward without invalidating the signature.
  *
  * **Canonical body**: the payload object is serialised with a fixed
@@ -76,7 +76,7 @@ import type {
  * different MAC (e.g. `sha512=`) is forward-compatible — receivers
  * just match on the prefix.
  */
-export const SIGNATURE_HEADER = 'X-Lumibase-Signature' as const;
+export const SIGNATURE_HEADER = 'X-LumiBase-Signature' as const;
 
 /**
  * Header name carrying the unix-seconds timestamp the signature was
@@ -85,7 +85,7 @@ export const SIGNATURE_HEADER = 'X-Lumibase-Signature' as const;
  * {@link SIGNATURE_HEADER} — and reject if the skew exceeds the
  * design §7.4 cap (5 minutes).
  */
-export const TIMESTAMP_HEADER = 'X-Lumibase-Timestamp' as const;
+export const TIMESTAMP_HEADER = 'X-LumiBase-Timestamp' as const;
 
 /**
  * Default per-call timeout (design §9.3). Operators can override on
