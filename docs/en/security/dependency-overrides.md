@@ -1,8 +1,9 @@
 # Dependency Overrides & Patches
 
-This document tracks every `pnpm.overrides` pin and `pnpm.patchedDependencies` patch
-in the root [`package.json`](../../../package.json), why each exists, and the condition
-under which it can be safely removed.
+This document tracks every `pnpm.overrides` pin, `pnpm.patchedDependencies` patch, and
+`pnpm.auditConfig.ignoreGhsas` exclusion in the root
+[`package.json`](../../../package.json), why each exists, and the condition under which
+it can be safely removed.
 
 > **Why this file exists:** overrides and patches are invisible footguns — they silently
 > change what version of a transitive dependency the whole workspace resolves. Without a
@@ -18,6 +19,11 @@ under which it can be safely removed.
 - **`pnpm.patchedDependencies`** apply a local source patch to an installed package.
   Patches live in [`patches/`](../../../patches/) and are referenced by exact version.
   Regenerate with `pnpm patch <pkg>@<version>` → edit → `pnpm patch-commit <dir>`.
+- **`pnpm.auditConfig.ignoreGhsas`** excludes a specific advisory from the
+  `pnpm audit --prod --audit-level high` gate in
+  [`ci.yml`](../../../.github/workflows/ci.yml). Use this **only** when the advisory is
+  structurally inapplicable to how we consume the package and no patched version is
+  installable — never to silence a real risk. Every entry needs a row below.
 
 After changing either, run `pnpm install` so the lockfile (`pnpm-lock.yaml`) records the
 new resolution / patch hash.
@@ -36,6 +42,38 @@ new resolution / patch hash.
 | `vite` | `^7.3.5` | Unify on Vite 7 and pull esbuild past the `0.28.1` RCE advisory. | The workspace no longer needs a single forced Vite major. |
 | `@types/react` | `18.3.3` | **Not a security pin** — enforces React 18 types workspace-wide to prevent type drift between apps. | The workspace migrates to a single React major where drift can't occur. |
 | `@types/react-dom` | `18.3.0` | Same as `@types/react` — React 18 type consistency. | Same as `@types/react`. |
+
+## Audit ignore registry
+
+| Advisory | Package | Reason | Remove when |
+| --- | --- | --- | --- |
+| [GHSA-qwww-vcr4-c8h2](https://github.com/advisories/GHSA-qwww-vcr4-c8h2) | `react-router` `7.18.1` (via `apps/docs > react-router-dom@7.18.1`) | **High — RSC Mode CSRF bypass allows action execution before the 400 response.** Not applicable to how `apps/docs` consumes the router, and not fixable in place. See the analysis below. | `apps/docs` can move to `react-router@>=8.3.0`, which requires React `>=19.2.7` (see analysis). Then drop `react-router-dom`, migrate imports, and delete this row. |
+
+### Why GHSA-qwww-vcr4-c8h2 is not exploitable here
+
+**The vulnerable code path requires RSC mode with server actions.** `apps/docs` uses
+neither:
+
+- **No RSC mode.** The app is a plain Vite SPA using `createBrowserRouter`, plus
+  `createStaticHandler` / `createStaticRouter` / `StaticRouterProvider` for build-time
+  prerendering. None of React Router's RSC entry points are imported anywhere.
+- **No actions to execute.** The advisory's impact is *action execution*; the docs viewer
+  is read-only and defines no route `action`, `Form`, `useFetcher`, or `useSubmit`.
+- **No server at runtime.** `pnpm build` renders to static HTML and then deletes the SSR
+  bundle (`&& rm -rf dist-ssr` in [`apps/docs/package.json`](../../../apps/docs/package.json)),
+  so the deployed artifact has no request-handling surface for CSRF to target.
+
+**Why it can't simply be upgraded.** The advisory's patched range is `>=8.3.0`, and
+`react-router-dom` was discontinued after `7.18.1` — no 8.x exists under that name, and
+7.x received no backport (`7.18.1` is the final 7.x release). The fix therefore means
+migrating `apps/docs` off `react-router-dom` onto `react-router@8`, which declares peers
+`react >=19.2.7` / `react-dom >=19.2.7` and `engines.node >=22.22.0`. The workspace is on
+React 18 (`@types/react` is pinned to `18.3.3` workspace-wide by the override above) and
+`engines.node >=20`, and `apps/docs` shares [`@lumibase/ui`](../../../packages/ui) with
+other React 18 apps — so this is a coordinated React 19 migration, not a version bump.
+
+**Scope check:** `apps/studio` is unaffected — it uses `@tanstack/react-router`, an
+unrelated package. `react-router-dom` appears in `apps/docs` only.
 
 ## Patches registry
 
