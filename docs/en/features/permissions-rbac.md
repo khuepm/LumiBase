@@ -6,6 +6,9 @@ translatedFrom: vi
 sourceHash: 2a8277f7ae1ace80
 mtEngine: claude
 syncStatus: machine-translated
+codeVerified: 2026-07-25T07:56:30.140Z
+codeVerifiedHash: 2a8277f7ae1ace80
+codeVerifiedClaims: 22
 ---
 
 # Permissions, Roles & Policies

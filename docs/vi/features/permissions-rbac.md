@@ -3,6 +3,9 @@ version: 3
 lastUpdated: 2026-07-25T07:47:22.511Z
 sourceLang: vi
 contentHash: 2a8277f7ae1ace80
+codeVerified: 2026-07-25T07:56:30.140Z
+codeVerifiedHash: 2a8277f7ae1ace80
+codeVerifiedClaims: 22
 ---
 
 # Permissions, Roles & Policies
