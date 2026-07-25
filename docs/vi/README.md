@@ -88,7 +88,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **API**
   - [api/hono-api-spec.md](./api/hono-api-spec.md) — REST/WS endpoints chuẩn hoá với đầy đủ request/response examples.
 - **UI Studio**
-  - [ui/README.md](../ui/README.md) — Spec for the redesigned Lumibase Studio and detailed screen specifications.
+  - [ui/README.md](../ui/README.md) — Spec for the redesigned LumiBase Studio and detailed screen specifications.
   - [en/ui/studio-ui-spec.md](./ui/studio-ui-spec.md) — Original page structure, modules, layouts, components, and state.
 - **Triển khai** (`deployment/`)
   - [deployment/overview.md](./deployment/overview.md) — Tổng quan các target Cloudflare Workers, Cloudflare Pages và Docker.

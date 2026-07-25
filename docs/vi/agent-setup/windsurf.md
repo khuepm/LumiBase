@@ -30,7 +30,7 @@ Read docs/en/agent-setup/prompt.md and follow all setup instructions.
 
 ### Bước 1 — Mở dự án
 
-Mở thư mục gốc `Lumibase` trong Windsurf.
+Mở thư mục gốc `LumiBase` trong Windsurf.
 
 ### Bước 2 — Cấu hình MCP server (tùy chọn)
 

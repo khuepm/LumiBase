@@ -6,7 +6,7 @@ Tài liệu này đặc tả chi tiết giao diện cho hai luồng bảo mật 
 
 ## 1. Trình cài đặt hệ thống (Setup Wizard)
 
-Setup Wizard là giao diện bắt buộc xuất hiện khi hệ thống Lumibase chưa được khởi tạo. Giao diện sử dụng cấu trúc `BareLayout` (không chứa App Shell) để tạo không gian sạch sẽ, giúp người dùng tập trung tối đa.
+Setup Wizard là giao diện bắt buộc xuất hiện khi hệ thống LumiBase chưa được khởi tạo. Giao diện sử dụng cấu trúc `BareLayout` (không chứa App Shell) để tạo không gian sạch sẽ, giúp người dùng tập trung tối đa.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -30,7 +30,7 @@ Setup Wizard là giao diện bắt buộc xuất hiện khi hệ thống Lumibas
   * Nút "Tiếp tục" chỉ sáng lên khi tất cả dữ liệu hợp lệ.
 
 ### 1.2 Bước 2: Thiết lập Đường dẫn ẩn danh (`/setup/path`)
-* **Mô tả tính năng**: Để ngăn chặn các cuộc tấn công quét bot tự động, Lumibase ẩn trang đăng nhập đằng sau một đường dẫn tùy chỉnh (Custom Admin Path, ví dụ: `/my-secret-admin-login-path`).
+* **Mô tả tính năng**: Để ngăn chặn các cuộc tấn công quét bot tự động, LumiBase ẩn trang đăng nhập đằng sau một đường dẫn tùy chỉnh (Custom Admin Path, ví dụ: `/my-secret-admin-login-path`).
 * **Thiết kế màn hình**:
   * Trường nhập liệu dạng Prefix tĩnh: `https://ten-mien.com/` + `[ Ô nhập custom path ]`.
   * Có nút "Tự động tạo ngẫu nhiên" (Generate Random) tạo ra chuỗi an toàn như `admin-7f8a-9c2b`.

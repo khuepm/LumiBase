@@ -1,12 +1,12 @@
-# Tài liệu Thiết kế Giao diện Lumibase Studio (UI Redesign Specification)
+# Tài liệu Thiết kế Giao diện LumiBase Studio (UI Redesign Specification)
 
-Tài liệu này định nghĩa hệ thống thiết kế (Design System) và đặc tả chi tiết giao diện người dùng (UI/UX Specification) cho **Lumibase Studio** — Ứng dụng quản trị (Admin SPA) của hệ thống Edge-native Headless CMS.
+Tài liệu này định nghĩa hệ thống thiết kế (Design System) và đặc tả chi tiết giao diện người dùng (UI/UX Specification) cho **LumiBase Studio** — Ứng dụng quản trị (Admin SPA) của hệ thống Edge-native Headless CMS.
 
 ---
 
 ## 1. Trụ cột Thiết kế UI/UX (Design Pillars)
 
-Để đạt mục tiêu vượt qua Directus và mang lại trải nghiệm đột phá cho người vận hành không chuyên lẫn lập trình viên, giao diện Lumibase Studio được xây dựng dựa trên 5 trụ cột:
+Để đạt mục tiêu vượt qua Directus và mang lại trải nghiệm đột phá cho người vận hành không chuyên lẫn lập trình viên, giao diện LumiBase Studio được xây dựng dựa trên 5 trụ cột:
 
 1. **Rich Aesthetics & Premium Feel**:
    * Thiết kế giao diện phẳng kết hợp kính mờ (glassmorphic panels) với độ tương phản cao, tối giản viền (borderless) và sử dụng đổ bóng mềm (ambient shadows) để phân cấp thông tin.
@@ -32,7 +32,7 @@ Hệ thống token được triển khai qua CSS Variables (`index.css`) tích h
 
 ### 2.1 Bảng màu (Color Palette - HSL Tailored)
 
-Lumibase sử dụng bảng màu HSL hiện đại giúp dễ dàng tinh chỉnh độ sáng/tương phản giữa hai chế độ Light và Dark Mode.
+LumiBase sử dụng bảng màu HSL hiện đại giúp dễ dàng tinh chỉnh độ sáng/tương phản giữa hai chế độ Light và Dark Mode.
 
 | Token | Light Mode (CSS HSL) | Dark Mode (CSS HSL) | Mục đích sử dụng |
 | :--- | :--- | :--- | :--- |

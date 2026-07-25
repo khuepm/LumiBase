@@ -1,6 +1,6 @@
 # Đặc tả Giao diện Quản lý Tệp tin (File Manager Spec)
 
-File Manager là nơi lưu trữ, tổ chức thư mục và xử lý tài nguyên đa phương tiện (hình ảnh, video, tài liệu) được sử dụng trong các bảng nội dung của Lumibase.
+File Manager là nơi lưu trữ, tổ chức thư mục và xử lý tài nguyên đa phương tiện (hình ảnh, video, tài liệu) được sử dụng trong các bảng nội dung của LumiBase.
 
 ---
 

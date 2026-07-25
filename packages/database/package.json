@@ -2,7 +2,7 @@
   "name": "@lumibase/database",
   "version": "0.24.1",
   "private": true,
-  "description": "Lumibase Drizzle ORM schema and migrations (PostgreSQL via Cloudflare Hyperdrive).",
+  "description": "LumiBase Drizzle ORM schema and migrations (PostgreSQL via Cloudflare Hyperdrive).",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

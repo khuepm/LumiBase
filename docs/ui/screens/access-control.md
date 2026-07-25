@@ -61,7 +61,7 @@ Policy Editor cung cấp hai chế độ soạn thảo song song tùy chọn ph�
 
 ### 2.2 Chế độ Mã nguồn (JSON Code Mode)
 * Chuyển đổi sang Monaco Editor hỗ trợ đầy đủ tính năng:
-  * Tự động hoàn thành mã (Autocomplete) dựa trên JSON Schema của chính sách Lumibase.
+  * Tự động hoàn thành mã (Autocomplete) dựa trên JSON Schema của chính sách LumiBase.
   * Làm nổi bật cú pháp (Syntax Highlighting) và báo lỗi cú pháp trực tiếp (Linter).
   * Định dạng code nhanh (Auto format) giúp các nhà phát triển copy-paste hoặc chỉnh sửa các policy phức tạp nhanh chóng.
 

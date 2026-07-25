@@ -177,10 +177,10 @@ Index: `(siteId, subscriptionId, createdAt)`. Prune cùng chính sách retention
 
 ## 7. Webhook sender
 
-- HMAC-SHA256 trên raw body, key = `webhooks.secret`; header `X-Lumibase-Signature: t=<unix>,v1=<hex(hmac(t + "." + body))>` — chống replay bằng timestamp (consumer nên từ chối |now−t| > 5 phút; ghi docs kèm code verify mẫu).
+- HMAC-SHA256 trên raw body, key = `webhooks.secret`; header `X-LumiBase-Signature: t=<unix>,v1=<hex(hmac(t + "." + body))>` — chống replay bằng timestamp (consumer nên từ chối |now−t| > 5 phút; ghi docs kèm code verify mẫu).
 - WebCrypto (`crypto.subtle`) — chạy cả Workers lẫn Node, cùng cách token-vault/Web Push đã làm.
 - `guardedFetch`: `validateOutboundUrl` (SSRF — chặn private IP/metadata endpoints) + timeout 30s + không follow redirect. Response body không được log (chỉ status).
-- `webhooks.headers` được merge nhưng KHÔNG cho phép override `X-Lumibase-Signature`/`Content-Type`.
+- `webhooks.headers` được merge nhưng KHÔNG cho phép override `X-LumiBase-Signature`/`Content-Type`.
 
 ## 8. Extension subscriber surface
 

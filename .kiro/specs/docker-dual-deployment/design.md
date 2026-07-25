@@ -2,7 +2,7 @@
 
 ## Overview
 
-This design introduces a runtime abstraction layer and Docker-based deployment infrastructure for Lumibase, enabling the CMS to run on both Cloudflare Workers (edge) and standard Node.js/Docker environments (self-hosted). The architecture follows an adapter pattern where infrastructure concerns (caching, storage, database pooling) are abstracted behind interfaces, with concrete implementations selected at startup based on the target runtime.
+This design introduces a runtime abstraction layer and Docker-based deployment infrastructure for LumiBase, enabling the CMS to run on both Cloudflare Workers (edge) and standard Node.js/Docker environments (self-hosted). The architecture follows an adapter pattern where infrastructure concerns (caching, storage, database pooling) are abstracted behind interfaces, with concrete implementations selected at startup based on the target runtime.
 
 ## Architecture
 

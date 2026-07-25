@@ -56,7 +56,7 @@ Trình biên tập chi tiết được thiết kế theo tỷ lệ 2 cột để
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ Back ── Sửa bài viết: "Giới thiệu Lumibase"              │
+│ Back ── Sửa bài viết: "Giới thiệu LumiBase"              │
 ├───────────────────────────────┬──────────────────────────┤
 │                               │ TAB PANEL (Right Drawer)  │
 │  [ FORM NHẬP LIỆU CHÍNH ]      │ ┌──────────────────────┐ │

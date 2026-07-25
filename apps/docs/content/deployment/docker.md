@@ -1,6 +1,6 @@
 # Docker Deployment Guide
 
-Deploy Lumibase as a Docker container on any platform that supports containers. This guide covers building the production image, configuring it, and deploying to popular container platforms.
+Deploy LumiBase as a Docker container on any platform that supports containers. This guide covers building the production image, configuring it, and deploying to popular container platforms.
 
 ## Prerequisites
 
@@ -90,7 +90,7 @@ This starts:
 - **MinIO** on ports 9000 (API) / 9001 (console)
 - **MeiliSearch** on port 7700
 - **Imgproxy** on port 8080
-- **Lumibase CMS** on port 1989
+- **LumiBase CMS** on port 1989
 - **Bull Board** on port 3001
 
 ### With Monitoring Stack
@@ -357,7 +357,7 @@ networks.
 
 ### TLS Termination
 
-Lumibase terminates HTTP inside the container. Terminate HTTPS at a cloud load
+LumiBase terminates HTTP inside the container. Terminate HTTPS at a cloud load
 balancer or reverse proxy and forward traffic to `cms:1989`.
 
 The repository includes a production Caddy overlay:

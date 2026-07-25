@@ -2354,7 +2354,7 @@ changelog and the published GitHub Release notes:
 
 - Added extension permission targets plus enforcement for extension management,
   extension endpoint execution, and extension data access.
-- Documented Lumibase extension access behavior against Directus and recorded
+- Documented LumiBase extension access behavior against Directus and recorded
   product-differentiating permission controls for future marketing.
 
 #### Admin Setup & Recovery

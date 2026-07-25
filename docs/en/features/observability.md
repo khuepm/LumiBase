@@ -140,7 +140,7 @@ Config: `docker/prometheus/prometheus.yml`, `docker/grafana/provisioning/`, `doc
 
 ## Pre-provisioned Grafana dashboard
 
-The `Lumibase` dashboard (auto-loaded) includes:
+The `LumiBase` dashboard (auto-loaded) includes:
 
 - **Request rate** (req/s) over time, broken down by status class.
 - **Latency percentiles** p50, p95, p99.
@@ -150,7 +150,7 @@ The `Lumibase` dashboard (auto-loaded) includes:
 - **DB pool utilization** (active vs idle).
 - **CPU / Memory** of the CMS container.
 
-The `Lumibase Agent Harness` dashboard includes run success/fail rate, budget stop reason, tool latency, approval latency, evaluation outcome, token/cost estimate, and dead-letter enqueue rate. Repeatedly failing runs are pushed to the `agent-dead-letter` queue when the runtime queue adapter is available.
+The `LumiBase Agent Harness` dashboard includes run success/fail rate, budget stop reason, tool latency, approval latency, evaluation outcome, token/cost estimate, and dead-letter enqueue rate. Repeatedly failing runs are pushed to the `agent-dead-letter` queue when the runtime queue adapter is available.
 
 ## Backup monitoring
 

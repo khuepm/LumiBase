@@ -38,7 +38,7 @@ function escapeXml(value) {
 
 /** Build the per-page <head> tags injected before </head>. */
 function buildHead({ title, description, url, lastModified }) {
-  const fullTitle = `${title} — Lumibase Docs`;
+  const fullTitle = `${title} — LumiBase Docs`;
   const canonical = `${SITE_ORIGIN}${withTrailingSlash(url)}`;
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -54,7 +54,7 @@ function buildHead({ title, description, url, lastModified }) {
     },
     isPartOf: {
       '@type': 'WebSite',
-      name: 'Lumibase Docs',
+      name: 'LumiBase Docs',
       url: SITE_ORIGIN,
     },
   };
@@ -156,7 +156,7 @@ async function main() {
   for (const page of paths) {
     const appHtml = await render(page.url);
 
-    const fullTitle = `${page.title} — Lumibase Docs`;
+    const fullTitle = `${page.title} — LumiBase Docs`;
     const html = template
       // <html lang="en"> → correct locale
       .replace(/<html lang="[^"]*">/, `<html lang="${escapeAttr(page.locale)}">`)

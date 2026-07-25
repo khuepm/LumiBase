@@ -1,9 +1,9 @@
 # Hướng dẫn kiểm thử Insecure Direct Object References (IDOR)
 
 ## Tổng quan
-Tài liệu này nêu hướng dẫn kiểm thử để ngăn Insecure Direct Object References (IDOR) trong Lumibase. IDOR xảy ra khi ứng dụng cho phép truy cập trực tiếp vào đối tượng dựa trên input do người dùng cung cấp. Hệ quả là kẻ tấn công có thể bỏ qua phân quyền và truy cập thẳng vào tài nguyên trong hệ thống, ví dụ bản ghi database hoặc file.
+Tài liệu này nêu hướng dẫn kiểm thử để ngăn Insecure Direct Object References (IDOR) trong LumiBase. IDOR xảy ra khi ứng dụng cho phép truy cập trực tiếp vào đối tượng dựa trên input do người dùng cung cấp. Hệ quả là kẻ tấn công có thể bỏ qua phân quyền và truy cập thẳng vào tài nguyên trong hệ thống, ví dụ bản ghi database hoặc file.
 
-Trong Lumibase, việc bảo đảm cô lập tenant nghiêm ngặt là tối quan trọng. Dữ liệu thuộc một tenant (site) TUYỆT ĐỐI không được để người dùng của tenant khác truy cập hay sửa đổi, kể cả khi họ biết hoặc đoán được ID nội bộ.
+Trong LumiBase, việc bảo đảm cô lập tenant nghiêm ngặt là tối quan trọng. Dữ liệu thuộc một tenant (site) TUYỆT ĐỐI không được để người dùng của tenant khác truy cập hay sửa đổi, kể cả khi họ biết hoặc đoán được ID nội bộ.
 
 ## Phạm vi
 *   **Collection mục tiêu:** Mọi bảng/collection built-in có tiền tố `lumibase_`. (Lưu ý: collection tùy chỉnh do người dùng tạo có hệ thống phân quyền riêng dựa trên role/policy).

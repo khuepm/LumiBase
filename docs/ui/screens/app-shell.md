@@ -1,6 +1,6 @@
 # Đặc tả App Shell & Điều hướng (App Shell & Navigation Spec)
 
-App Shell là khung giao diện bao bọc toàn bộ ứng dụng Lumibase Studio, chịu trách nhiệm điều hướng, tìm kiếm toàn cục, quản lý phiên làm việc và hiển thị cộng tác thời gian thực.
+App Shell là khung giao diện bao bọc toàn bộ ứng dụng LumiBase Studio, chịu trách nhiệm điều hướng, tìm kiếm toàn cục, quản lý phiên làm việc và hiển thị cộng tác thời gian thực.
 
 ---
 
@@ -78,7 +78,7 @@ Kết quả tìm kiếm được trả về cực nhanh và phân loại thành 
 3. **Hành động nhanh (Quick Actions)**:
    * Thực hiện trực tiếp các lệnh hệ thống: "Create New Collection", "Clear System Cache", "Generate API SDK Types", "Toggle Dark Mode"...
 4. **Tài liệu hướng dẫn (Docs)**:
-   * Tìm nhanh hướng dẫn sử dụng Lumibase tích hợp sẵn: "How to configure field policy", "Connecting to S3"...
+   * Tìm nhanh hướng dẫn sử dụng LumiBase tích hợp sẵn: "How to configure field policy", "Connecting to S3"...
 
 ---
 

@@ -156,7 +156,7 @@ Add to homepage `<head>` only:
 
 ### C3 — Docs Site Is a JavaScript SPA (Invisible to All AI Crawlers)
 
-**Impact:** docs.lumibase.dev returned only `<title>Lumibase Docs</title>` to HTTP fetchers. Every AI crawler, every search bot, every citation system that fetches the URL via HTTP receives no meaningful content. The entire technical documentation corpus — API reference, data model, architecture decisions, AI skills — is trapped behind client-side JavaScript.
+**Impact:** docs.lumibase.dev returned only `<title>LumiBase Docs</title>` to HTTP fetchers. Every AI crawler, every search bot, every citation system that fetches the URL via HTTP receives no meaningful content. The entire technical documentation corpus — API reference, data model, architecture decisions, AI skills — is trapped behind client-side JavaScript.
 
 For a developer tool, documentation is the highest-value content for AI citation. It's where users ask "how do I do X" queries that AI assistants answer. The docs being a SPA means LumiBase cannot be cited for any technical how-to query.
 
@@ -585,7 +585,7 @@ These 5 actions can be completed in under 4 hours total and will move the AIO sc
 | https://lumibase.dev/tos | (Terms of Service) | No meta desc, no contact email |
 | https://lumibase.dev/privacy | (Privacy Policy) | No meta desc, no contact email |
 | https://lumibase.dev/license | (License) | Low priority issues only |
-| https://docs.lumibase.dev | Lumibase Docs | SPA — returns only title to HTTP fetchers |
+| https://docs.lumibase.dev | LumiBase Docs | SPA — returns only title to HTTP fetchers |
 
 ---
 

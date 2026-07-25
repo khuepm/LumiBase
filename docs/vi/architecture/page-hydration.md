@@ -46,7 +46,7 @@ public page intentionally needs a different item status.
         "spacing": "large"
       },
       "data": {
-        "heading": "Welcome to Lumibase",
+        "heading": "Welcome to LumiBase",
         "cta_link": "/about"
       }
     },

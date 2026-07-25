@@ -27,7 +27,7 @@ Read docs/en/agent-setup/prompt.md and follow all setup instructions.
 
 ### Step 1 — Open the project
 
-Open the `Lumibase` root folder in Windsurf.
+Open the `LumiBase` root folder in Windsurf.
 
 ### Step 2 — Configure the MCP server (optional)
 

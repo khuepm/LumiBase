@@ -6,7 +6,7 @@ Module Thiết lập & Tiện ích mở rộng cung cấp các công cụ cấu 
 
 ## 1. Tùy biến Thương hiệu & Giao diện (Branding Customizer)
 
-Đây là nơi quản trị viên tùy biến giao diện của chính Lumibase Studio để đồng bộ với nhận diện thương hiệu của công ty.
+Đây là nơi quản trị viên tùy biến giao diện của chính LumiBase Studio để đồng bộ với nhận diện thương hiệu của công ty.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -35,7 +35,7 @@ Module Thiết lập & Tiện ích mở rộng cung cấp các công cụ cấu 
 
 ## 2. Quản lý Tiện ích mở rộng & Chợ ứng dụng (Extensions & Marketplace)
 
-Lumibase hỗ trợ cài đặt các extension từ bên thứ ba chạy trong môi trường sandbox an toàn để mở rộng tính năng của CMS.
+LumiBase hỗ trợ cài đặt các extension từ bên thứ ba chạy trong môi trường sandbox an toàn để mở rộng tính năng của CMS.
 
 ### 2.1 Quản lý Extension đã cài đặt (Extensions Manager - `/settings/extensions`)
 * Danh sách tiện ích hiển thị dưới dạng lưới thẻ. Mỗi thẻ gồm: Tên extension, Tác giả, Phiên bản, và Mô tả ngắn.
@@ -49,9 +49,9 @@ Lumibase hỗ trợ cài đặt các extension từ bên thứ ba chạy trong m
 ┌──────────────────────────────────────────────────────────┐
 │ Chi tiết Extension: Shopify Sync                         │
 ├──────────────────────────────────────────────────────────┤
-│ Tác giả: Lumibase Team | Phiên bản: v1.2.0               │
+│ Tác giả: LumiBase Team | Phiên bản: v1.2.0               │
 │                                                          │
-│ Mô tả: Đồng bộ sản phẩm từ Shopify về Lumibase tự động. │
+│ Mô tả: Đồng bộ sản phẩm từ Shopify về LumiBase tự động. │
 │                                                          │
 │ Mã cài đặt (Extension Slug):                             │
 │ ┌───────────────────────────────────────────────┬──────┐ │

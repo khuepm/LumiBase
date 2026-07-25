@@ -110,7 +110,7 @@ export function buildPressureUnavailableResponse(
       {
         code: 'SERVICE_UNAVAILABLE',
         message:
-          'Lumibase API is temporarily unavailable because this instance is under pressure. Retry later.',
+          'LumiBase API is temporarily unavailable because this instance is under pressure. Retry later.',
         details: {
           reason: sample.reason,
           eventLoopDelayMs: Math.round(sample.eventLoopDelayMs),
