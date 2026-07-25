@@ -22,13 +22,24 @@ const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
   .filter(([name, skill]) => {
     const requiresSchemaWrite = skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read');
     const startsWithDelete = name.startsWith('delete');
-    return !requiresSchemaWrite && !startsWithDelete;
+    // Deployment/cdc-feed skills have no offline handler behaviour (they
+    // require a runtime KeyProvider / real tenant db, absent here) and
+    // deliberately error instead of stubbing — they are covered by
+    // deployment/__tests__ and cdc-feed-skills-hitl.test.ts instead.
+    const noOffline = ['deployments', 'cdc-feed'].includes(skill.service);
+    return !requiresSchemaWrite && !startsWithDelete && !noOffline;
   })
   .map(([name]) => name);
 
 // All skill names (including dangerous ones) — the executeApproved method
-// runs any skill stored in the approval record regardless of risk classification
-const ALL_SKILL_NAMES = Object.keys(CORE_SKILLS);
+// runs any skill stored in the approval record regardless of risk
+// classification. Deployment/cdc-feed skills are excluded: they have no
+// offline handler behaviour (require a runtime KeyProvider / real tenant db),
+// so they can't be executed in this mock harness; their approval/execution
+// paths are covered in deployment tests and cdc-feed-skills-hitl.test.ts.
+const ALL_SKILL_NAMES = Object.entries(CORE_SKILLS)
+  .filter(([, skill]) => !['deployments', 'cdc-feed'].includes(skill.service))
+  .map(([name]) => name);
 
 // Arbitrary: approvalId — nanoid-like string (21 alphanumeric chars)
 const approvalIdArb = fc.string({ minLength: 21, maxLength: 21, unit: fc.constantFrom(
@@ -71,8 +82,17 @@ function createMockDbForApproval(record: {
   const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
   const mockSelect = vi.fn().mockReturnValue({ from: mockFrom });
 
-  // Mock: db.update().set().where() → resolves (captures set args)
-  const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
+  // Mock: db.update().set().where() → resolves; .where().returning() → [{id}]
+  // (a successful status='pending' claim). The where() result is both awaitable
+  // (for callers that don't chain .returning()) and exposes .returning().
+  const mockReturning = vi.fn().mockResolvedValue([{ id: record.id }]);
+  const mockUpdateWhere = vi.fn().mockImplementation(() => {
+    const thenable = Promise.resolve(undefined) as Promise<undefined> & {
+      returning: typeof mockReturning;
+    };
+    thenable.returning = mockReturning;
+    return thenable;
+  });
   const mockSet = vi.fn().mockImplementation((setData: Record<string, unknown>) => {
     updateSetArgs.push(setData);
     return { where: mockUpdateWhere };
@@ -217,5 +237,40 @@ describe('Feature: ai-first-cms-engine, Property 5: Approval execution flow — 
       message: 'Insufficient capabilities',
     });
     expect(updateSetArgs).toHaveLength(0);
+  });
+
+  it('denies when a concurrent decision already claimed the approval (CWE-362/367)', async () => {
+    // Simulate the race: the record reads as pending, but the guarded commit
+    // UPDATE (status='pending') affects zero rows because another request won.
+    const pendingRecord = {
+      id: 'concurrent-approval-id-01',
+      siteId: 'site-1',
+      skillName: SAFE_SKILL_NAMES[0]!,
+      arguments: {},
+      status: 'pending' as const,
+      agentName: 'lumibase-copilot',
+      context: null,
+      createdAt: new Date(),
+      decidedAt: null,
+      decidedBy: null,
+    };
+
+    const { db } = createMockDbForApproval(pendingRecord);
+    // Override .returning() to report "no rows updated" (lost the race).
+    (db as unknown as { update: ReturnType<typeof vi.fn> }).update = vi
+      .fn()
+      .mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      });
+
+    const harness = new AISecureHarness({ db, siteId: pendingRecord.siteId });
+    const result = await harness.executeApproved(pendingRecord.id, 'user-b', ['*']);
+
+    expect(result.status).toBe('denied');
+    expect(result.message).toMatch(/already processed/i);
   });
 });

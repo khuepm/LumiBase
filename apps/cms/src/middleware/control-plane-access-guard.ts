@@ -6,7 +6,14 @@ const CONTROL_PLANE_PATHS = [
   '/api/v1/access',
   '/api/v1/api-keys',
   '/api/v1/admin',
+  '/api/v1/agent',
   '/api/v1/cdc',
+  '/api/v1/flows',
+  // Git integration: manage repo connections, OAuth, and GitOps sync (creates
+  // agent goals) — admin-only. The PUBLIC webhook + OAuth-callback routes are
+  // mounted on the top-level app BEFORE the `api` sub-app, so they never reach
+  // this guard; only the authenticated management surface is gated here.
+  '/api/v1/integrations/git',
   '/api/v1/materialize',
   '/api/v1/permissions',
   '/api/v1/policies',

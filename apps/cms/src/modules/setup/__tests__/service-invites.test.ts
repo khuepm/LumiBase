@@ -45,12 +45,12 @@ function makeFakeDb(inserts: RecordedInsert[]) {
           inserts.push({ table: tableName, values: vals });
           const builder = {
             async returning() {
-              if (tableName === 'roles') {
+              if (tableName === 'lumibase_roles') {
                 // Distinct ids per system role so admin/member don't collide.
                 const v = vals as { systemKey?: string };
                 return [{ id: `role_${v.systemKey ?? 'x'}` }];
               }
-              if (tableName === 'users') {
+              if (tableName === 'lumibase_users') {
                 userSeq += 1;
                 const v = vals as Record<string, unknown>;
                 return [
@@ -67,7 +67,7 @@ function makeFakeDb(inserts: RecordedInsert[]) {
             onConflictDoNothing() {
               return {
                 async returning() {
-                  if (tableName === 'roles') {
+                  if (tableName === 'lumibase_roles') {
                     const v = vals as { systemKey?: string };
                     return [{ id: `role_${v.systemKey ?? 'x'}` }];
                   }
@@ -168,11 +168,11 @@ describe('SetupService.complete() → invites', () => {
     if (outcome.ok) expect(outcome.value.invitedCount).toBe(0);
     expect(calls.filter((c) => c.event === 'user_invited')).toHaveLength(0);
     // No Member role seeded, no user_sites rows when there are no invites.
-    expect(inserts.some((i) => i.table === 'user_sites')).toBe(false);
+    expect(inserts.some((i) => i.table === 'lumibase_user_sites')).toBe(false);
     expect(
       inserts.some(
         (i) =>
-          i.table === 'roles' &&
+          i.table === 'lumibase_roles' &&
           (i.values as { systemKey?: string }).systemKey === 'member',
       ),
     ).toBe(false);
@@ -202,7 +202,7 @@ describe('SetupService.complete() → invites', () => {
     // Two invited users created with status 'invited' + shadow externalId.
     const invitedUsers = inserts.filter(
       (i) =>
-        i.table === 'users' &&
+        i.table === 'lumibase_users' &&
         (i.values as { status?: string }).status === 'invited',
     );
     expect(invitedUsers).toHaveLength(2);
@@ -217,13 +217,13 @@ describe('SetupService.complete() → invites', () => {
     expect(
       inserts.filter(
         (i) =>
-          i.table === 'roles' &&
+          i.table === 'lumibase_roles' &&
           (i.values as { systemKey?: string }).systemKey === 'member',
       ),
     ).toHaveLength(1);
 
     // Two user_sites bindings: admin invite → administrator role, member → member role.
-    const bindings = inserts.filter((i) => i.table === 'user_sites');
+    const bindings = inserts.filter((i) => i.table === 'lumibase_user_sites');
     expect(bindings).toHaveLength(2);
     const roleIds = bindings.map((b) => (b.values as { roleId?: string }).roleId);
     expect(roleIds).toContain('role_administrator');
@@ -254,7 +254,7 @@ describe('SetupService.complete() → invites', () => {
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.error.code).toBe('VALIDATION_ERROR');
     // No user/site writes should have happened — rejected before the tx.
-    expect(inserts.some((i) => i.table === 'user_sites')).toBe(false);
+    expect(inserts.some((i) => i.table === 'lumibase_user_sites')).toBe(false);
   });
 
   it('de-duplicates repeated invite emails (case-insensitive)', async () => {
@@ -275,6 +275,6 @@ describe('SetupService.complete() → invites', () => {
 
     expect(outcome.ok).toBe(true);
     if (outcome.ok) expect(outcome.value.invitedCount).toBe(1);
-    expect(inserts.filter((i) => i.table === 'user_sites')).toHaveLength(1);
+    expect(inserts.filter((i) => i.table === 'lumibase_user_sites')).toHaveLength(1);
   });
 });

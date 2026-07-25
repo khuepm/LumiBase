@@ -1,17 +1,23 @@
 import { createLumiClient, legacyRest } from '@lumibase/sdk';
 import { getAdminBase } from '@/lib/admin-base';
 import { getApiBaseUrl } from '@/lib/api-base';
+import {
+  clearTokens,
+  readRefresh,
+  readToken,
+  writeRefresh,
+  writeToken,
+} from '@/lib/token-store';
 
 /**
  * Studio API client. The base URL is resolved by `getApiBaseUrl()`:
  * same-origin in dev (Vite proxy) and Docker, or the absolute CMS origin
  * (`VITE_API_URL`) when the Studio is deployed standalone (Cloudflare
- * Pages). Token + site come from localStorage in dev; production wires
- * Logto's access token and the site switcher.
+ * Pages). Token + site come from localStorage in the browser; in the desktop
+ * shell tokens are kept in the OS keychain (see `lib/token-store.ts`).
  */
 
 const STORAGE_KEY = {
-  token: 'lumibase.dev.token',
   site: 'lumibase.dev.site',
 };
 
@@ -26,17 +32,51 @@ export function setActiveSite(siteId: string): void {
 }
 
 export function getActiveToken(): string {
-  return localStorage.getItem(STORAGE_KEY.token) || '';
+  return readToken();
 }
 
 export function setActiveToken(token: string): void {
-  localStorage.setItem(STORAGE_KEY.token, token);
+  writeToken(token);
+  cached = null;
+}
+
+export function getActiveRefreshToken(): string {
+  return readRefresh();
+}
+
+export function setActiveRefreshToken(token: string): void {
+  writeRefresh(token);
   cached = null;
 }
 
 export function clearActiveToken(): void {
-  localStorage.removeItem(STORAGE_KEY.token);
+  clearTokens();
   cached = null;
+}
+
+/**
+ * Revoke the session server-side (best-effort) and clear local tokens.
+ * The refresh token travels in the body (CSRF-exempt); the same-origin
+ * cookie is cleared by the endpoint. Always resolves — a network error
+ * must not block the local logout.
+ */
+export async function logout(): Promise<void> {
+  const refreshToken = getActiveRefreshToken();
+  try {
+    await fetch(`${getApiBaseUrl()}/api/v1/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Lumi-Site': getActiveSite(),
+        'X-LumiBase-Refresh': '1',
+      },
+      body: JSON.stringify(refreshToken ? { refreshToken } : {}),
+    });
+  } catch {
+    /* best-effort; clear locally regardless */
+  }
+  clearActiveToken();
 }
 
 export function hasActiveToken(): boolean {
@@ -81,8 +121,18 @@ function createApiClient(token: string, site: string) {
   return createLumiClient({
     url: getApiBaseUrl(),
     token,
+    refreshToken: getActiveRefreshToken(),
     siteId: site,
     headers: { 'X-Lumi-Client': 'studio' },
+    // Persist the rotated pair so a page reload keeps the renewed session.
+    onTokensRefreshed: ({ token: next, refreshToken }) => {
+      writeToken(next);
+      writeRefresh(refreshToken);
+      // Reflect the live token in the cache key so getApiClient() doesn't
+      // rebuild a client around the now-stale token on the next call.
+      if (cached) cached.token = next;
+    },
+    // Fires only after a refresh attempt has also failed.
     onUnauthorized: handleUnauthorized,
   }).with(legacyRest());
 }

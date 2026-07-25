@@ -6,7 +6,7 @@
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/lumibase/lumibase.git
+git clone https://github.com/khuepm/lumibase.git
 cd lumibase
 
 # 2. Install dependencies

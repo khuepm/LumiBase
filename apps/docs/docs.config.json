@@ -16,6 +16,7 @@
     "logo": { "alt": "LumiBase logo", "src": "img/logo.svg" },
     "items": [
       { "label": "Docs", "to": "/docs/README", "position": "left" },
+      { "label": "Tutorials", "to": "/docs/tutorials/index", "position": "left" },
       { "label": "API", "to": "/docs/api", "position": "left" },
       { "label": "Roadmap", "to": "/docs/roadmap/tasks", "position": "left" },
       { "label": "GitHub", "href": "https://github.com/khuepm/lumibase", "position": "right" }
@@ -27,6 +28,11 @@
         "type": "category",
         "label": "Getting Started",
         "items": ["README", "vision-and-positioning", "data-model", "ai-skills"]
+      },
+      {
+        "type": "category",
+        "label": "Tutorials",
+        "items": ["tutorials/index", "tutorials/nextjs-quickstart"]
       },
       {
         "type": "category",
@@ -69,6 +75,11 @@
       },
       {
         "type": "category",
+        "label": "Operations",
+        "items": ["operations/upgrades"]
+      },
+      {
+        "type": "category",
         "label": "ClickHouse CDC",
         "items": [
           "cdc/README",
@@ -86,6 +97,20 @@
         "type": "category",
         "label": "Guides",
         "items": ["guides/backup-recovery", "guides/tooling-recommendations"]
+      },
+      {
+        "type": "category",
+        "label": "Security",
+        "items": [
+          "security/anti-abuse",
+          "security/route-guards",
+          "security/runtime-security-guards-plan",
+          "security/cwe-top-100-audit",
+          "security/idor-testing",
+          "security/external-jwt-auth",
+          "security/user-management",
+          "security/dependency-overrides"
+        ]
       },
       {
         "type": "category",
@@ -131,10 +156,10 @@
         "items": [{ "label": "GitHub", "href": "https://github.com/khuepm/lumibase" }]
       }
     ],
-    "copyright": "Copyright (c) 2025 LumiBase."
+    "copyright": "Copyright (c) {year} LumiBase."
   },
   "themeConfig": {
-    "colorMode": { "defaultMode": "light", "respectPrefersColorScheme": true },
+    "colorMode": { "defaultMode": "dark", "respectPrefersColorScheme": true },
     "prism": { "theme": "github-light", "darkTheme": "github-dark" }
   }
 }

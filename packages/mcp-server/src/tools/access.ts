@@ -56,7 +56,7 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
       description: 'Attach a policy to a role. Conflicts/warnings may require overrideWarnings=true.',
       inputSchema: {
         id: idPathSegmentSchema.describe('Role id.'),
-        policyId: z.string().min(1),
+        policyId: idPathSegmentSchema,
         priority: z.number().int().optional(),
         overrideWarnings: z.boolean().optional(),
       },
@@ -85,7 +85,7 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     'assign_role_user',
     {
       description: "Assign a role to a user (sets the user's primary role for this site).",
-      inputSchema: { id: idPathSegmentSchema.describe('Role id.'), userId: z.string().min(1) },
+      inputSchema: { id: idPathSegmentSchema.describe('Role id.'), userId: idPathSegmentSchema },
     },
     async ({ id, userId }) => run(() => client.post<unknown>(`/roles/${encodePathSegment(id)}/users`, { userId })),
   );
@@ -163,7 +163,7 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
       description: 'Attach a policy directly to a user. Warnings may require overrideWarnings=true.',
       inputSchema: {
         id: idPathSegmentSchema.describe('Policy id.'),
-        userId: z.string().min(1),
+        userId: idPathSegmentSchema,
         priority: z.number().int().optional(),
         overrideWarnings: z.boolean().optional(),
       },

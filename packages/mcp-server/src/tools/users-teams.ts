@@ -114,7 +114,7 @@ export function registerUsersTeamsTools(server: McpServer, client: LumiBaseClien
     'add_team_member',
     {
       description: 'Add a user to a team.',
-      inputSchema: { id: idPathSegmentSchema.describe('Team id.'), userId: z.string().min(1) },
+      inputSchema: { id: idPathSegmentSchema.describe('Team id.'), userId: idPathSegmentSchema },
     },
     async ({ id, userId }) => run(() => client.post<unknown>(`/teams/${encodePathSegment(id)}/members`, { userId })),
   );

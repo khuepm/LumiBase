@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-05T10:56:37.201Z
+sourceLang: en
+contentHash: 63a2d80683a535b3
+---
+
 # ADR-007: Logto for Authentication
 
 **Date:** 2024-02-01

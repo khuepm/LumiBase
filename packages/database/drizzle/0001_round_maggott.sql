@@ -1,1 +1,0 @@
-CREATE INDEX IF NOT EXISTS "items_data_gin_idx" ON "items" USING gin ("data") WHERE "items"."deleted_at" is null;

@@ -25,22 +25,22 @@ export function encodePathSegment(segment: string): string {
 }
 
 /**
- * Storage key for a media asset. Unlike an id, a key may legitimately contain
- * nested `/` separators (the server route is `/media/:key{.+}`), so slashes are
- * allowed — but `..` traversal and leading `/` are rejected, mirroring the
- * server-side `isInvalidKey` guard.
+ * Storage keys are multi-segment (`folder/sub/asset.png`), so unlike opaque ids
+ * they may legitimately contain `/`. Mirror the server-side guard
+ * (`apps/cms/src/routes/media.ts` → `isInvalidKey`): reject `..` traversal,
+ * leading `/`, and backslashes, while preserving internal `/`.
  */
 export const mediaKeySchema = z
   .string()
   .min(1)
   .refine((value) => !value.includes('..'), 'Must not contain ".."')
-  .refine((value) => !value.startsWith('/'), 'Must not start with "/"');
+  .refine((value) => !value.startsWith('/'), 'Must not start with "/"')
+  .refine((value) => !value.includes('\\'), 'Must not contain backslashes');
 
-/**
- * Encodes a multi-segment path (e.g. a media key) for safe interpolation:
- * percent-encodes each segment while preserving the `/` separators so nested
- * keys keep their structure.
- */
-export function encodePath(path: string): string {
-  return path.split('/').map(encodeURIComponent).join('/');
+/** Percent-encode each `/`-delimited segment of a storage key, preserving separators. */
+export function encodeMediaKey(key: string): string {
+  return key
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
 }

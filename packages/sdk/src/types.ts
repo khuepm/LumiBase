@@ -429,11 +429,19 @@ export type ItemFilterOp =
   | "_starts_with"
   | "_ends_with"
   | "_null"
-  | "_nnull";
+  | "_nnull"
+  // JSON field search: query into nested JSONB. A dotted field key
+  // (e.g. "metadata.author.country") addresses a nested path; these operators
+  // act on JSON containment / key existence.
+  | "_json_contains"
+  | "_has_key"
+  | "_has_any_keys"
+  | "_has_all_keys";
 
 export interface ItemFilter {
   _and?: ItemFilter[];
   _or?: ItemFilter[];
+  /** Field key; may be a dotted path into nested JSON, e.g. "meta.author.country". */
   [key: string]: { [op in ItemFilterOp]?: unknown } | ItemFilter[] | undefined;
 }
 
@@ -444,7 +452,52 @@ export interface ListItemsParams {
   limit?: number;
   offset?: number;
   status?: string | null;
-  search?: string;
+  /**
+   * Controls whether the server computes the `count(*)` total. `'total_count'`
+   * (default) returns `meta.total`; `'none'` skips the extra aggregate query
+   * for a cheaper list (e.g. infinite scroll) and omits `meta.total`.
+   */
+  meta?: 'total_count' | 'none';
+}
+
+/** Reserved metadata attributes present on every search hit. */
+export interface SearchHitMeta {
+  /** Which collection the hit belongs to. */
+  _collection?: string;
+  /** Human-readable display title derived at index time. */
+  _title?: string;
+  /** Item update timestamp, if available. */
+  _updatedAt?: string | number;
+}
+
+export type SearchHit = SearchHitMeta & Record<string, unknown>;
+
+export interface SearchParams {
+  /** Restrict to one collection. Omit for cross-collection (global) search. */
+  collection?: string;
+  /** MeiliSearch filter expression. */
+  filter?: string;
+  /** Sort directives, e.g. `["_updatedAt:desc"]`. */
+  sort?: string[];
+  limit?: number;
+  offset?: number;
+}
+
+export interface SearchResponse {
+  data: SearchHit[];
+  meta: {
+    query: string;
+    limit: number;
+    offset: number;
+    totalHits?: number;
+    processingTimeMs?: number;
+    /** Single-collection search: the collection searched. */
+    collection?: string;
+    /** Cross-collection search: the collections fanned out over. */
+    collections?: string[];
+    /** Cross-collection search: true when the collection set was capped. */
+    truncated?: boolean;
+  };
 }
 
 export interface ItemRow<
@@ -877,6 +930,69 @@ export interface SettingResource {
   updatedAt: string;
 }
 
+/** A named parallel draft branch of a content item (content-versioning). */
+export interface ContentVersion {
+  id: string;
+  siteId: string;
+  itemId: string;
+  collectionId: string;
+  /** Stable slug, unique per item. */
+  key: string;
+  /** Human-readable label. */
+  name: string;
+  /** Snapshot of the item data for this branch. */
+  data: Record<string, unknown>;
+  /** Hash of main's data at snapshot time — detects divergence before promote. */
+  hash: string;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** True when main's data changed since this version branched (list only). */
+  mainChanged?: boolean;
+}
+
+/** One changed field between main and a version. */
+export interface VersionFieldChange {
+  field: string;
+  main: unknown;
+  version: unknown;
+}
+
+/** `GET …/versions/:key/compare` payload. */
+export interface VersionCompare {
+  main: Record<string, unknown>;
+  version: Record<string, unknown>;
+  changes: VersionFieldChange[];
+}
+
+/** Origin of a translation-memory entry. */
+export type TmSource = "human" | "mt" | "imported";
+
+/** A stored translation-memory pair for a language pair. */
+export interface TmEntry {
+  id: string;
+  siteId: string;
+  sourceLang: string;
+  targetLang: string;
+  sourceText: string;
+  targetText: string;
+  context: string | null;
+  quality: number | null;
+  source: TmSource;
+  provider: string | null;
+  hits: number;
+  updatedAt: string;
+}
+
+/** A fuzzy-match suggestion surfaced from the TM store (score normalized to `similarity`). */
+export interface TmSuggestion {
+  targetText: string;
+  /** Levenshtein similarity 0–100. */
+  similarity: number;
+  source: TmSource;
+  entryId?: string;
+}
+
 /** Site (tenant) configuration row — identity, branding and theme defaults. */
 export interface SiteResource {
   id: string;
@@ -887,6 +1003,8 @@ export interface SiteResource {
   descriptor: string | null;
   defaultLanguage: string;
   defaultAppearance: string;
+  /** Default Studio save action: `stay` | `return` | `create_new`. */
+  defaultSaveAction: string;
   branding: { logoUrl?: string; faviconUrl?: string; brandColor?: string };
   themeOverrides: {
     light?: Record<string, string>;
@@ -901,6 +1019,38 @@ export interface SiteResource {
 export type SiteConfigUpdate = Partial<
   Omit<SiteResource, 'id' | 'createdAt' | 'updatedAt'>
 >;
+
+/* ---------------- Custom domains ---------------- */
+
+/** One DNS record the operator must publish, surfaced verbatim in the UI. */
+export interface DomainVerificationRecord {
+  type: 'CNAME' | 'TXT';
+  name: string;
+  value: string;
+  purpose?: string;
+}
+
+/** A hostname registered for a site (free subdomain or custom domain). */
+export interface DomainResource {
+  id: string;
+  hostname: string;
+  kind: 'subdomain' | 'custom';
+  isPrimary: boolean;
+  status: 'pending_dns' | 'verifying' | 'active' | 'failed';
+  statusReason: string | null;
+  sslStatus: string | null;
+  verification: { records: DomainVerificationRecord[] };
+  verifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Body for `POST /api/v1/domains`. */
+export interface DomainCreateInput {
+  kind: 'subdomain' | 'custom';
+  /** Full FQDN for `custom`; bare DNS label for `subdomain`. */
+  hostname: string;
+}
 
 /* ---------------- CDC ---------------- */
 
@@ -1033,6 +1183,110 @@ export interface CdcRollbackResult {
   error?: string | Record<string, unknown>;
 }
 
+/* -------- Change Feed (first-party outbox+relay; distinct from the
+ * ClickHouse CDC pipelines above). Mirrors packages/shared/schemas/cdc-feed.ts
+ * and the serialized SubscriptionRecord/delivery shapes. -------- */
+
+export type CdcOperation = "create" | "update" | "delete";
+export type CdcActorType = "user" | "api_key" | "agent" | "system";
+export type CdcSource = "api" | "agent" | "flow" | "system";
+export type CdcPayloadMode = "reference" | "snapshot";
+export type CdcSubscriptionKind = "pull" | "webhook" | "extension";
+export type CdcSubscriptionStatus = "active" | "paused" | "dead" | "stale";
+
+/** A change-feed event envelope (schemaVersion 1). `id` is the idempotency key. */
+export interface CdcEventEnvelope {
+  id: string;
+  type: string;
+  schemaVersion: number;
+  siteId: string;
+  collection: string;
+  itemId: string;
+  operation: CdcOperation;
+  occurredAt: string;
+  actor: { type: CdcActorType; id?: string };
+  source: CdcSource;
+  changedFields?: string[];
+  /** Present only in snapshot payload mode; pii/phi already masked. */
+  data?: Record<string, unknown> | null;
+  /** This event's keyset token — ack/resume marker. */
+  cursor: string;
+}
+
+export interface CdcFeedPage {
+  data: CdcEventEnvelope[];
+  meta: { nextCursor: string | null; hasMore: boolean };
+}
+
+export interface CdcFeedReadParams {
+  cursor?: string;
+  collections?: string[];
+  operations?: CdcOperation[];
+  limit?: number;
+  /** Long-poll budget in seconds (0/omitted = return immediately; server caps at 25). */
+  wait?: number;
+}
+
+export interface CdcSubscriptionResource {
+  id: string;
+  siteId: string;
+  name: string;
+  kind: CdcSubscriptionKind;
+  collections: string[];
+  operations: CdcOperation[];
+  payloadMode: CdcPayloadMode;
+  cursor: string | null;
+  status: CdcSubscriptionStatus;
+  webhookId: string | null;
+  extensionName: string | null;
+  consecutiveFailures: number;
+  lastDeliveredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lag: { events: number; behindMs: number | null };
+}
+
+export interface CdcSubscriptionCreateInput {
+  name: string;
+  kind: CdcSubscriptionKind;
+  collections?: string[];
+  operations?: CdcOperation[];
+  payload_mode?: CdcPayloadMode;
+  /** Required when kind=webhook (webhook must have a secret). */
+  webhook_id?: string;
+  /** Required when kind=extension. */
+  extension_name?: string;
+}
+
+export interface CdcSubscriptionPatchInput {
+  name?: string;
+  collections?: string[];
+  operations?: CdcOperation[];
+  payload_mode?: CdcPayloadMode;
+  /** Admin flip only between active/paused; dead/stale exit via replay. */
+  status?: "active" | "paused";
+}
+
+/** Provide exactly one of cursor or occurredAfter (within retention). */
+export interface CdcReplayInput {
+  cursor?: string;
+  occurredAfter?: string;
+}
+
+export interface CdcDeliveryResource {
+  id: string;
+  subscriptionId: string;
+  eventIdFrom: string | null;
+  eventIdTo: string | null;
+  eventCount: number;
+  attempt: number;
+  status: "success" | "failed";
+  httpStatus: number | null;
+  errorMessage: string | null;
+  durationMs: number;
+  createdAt: string;
+}
+
 export interface UserResource {
   id: string;
   email: string;
@@ -1082,6 +1336,24 @@ export interface FileResource {
   metadata: Record<string, unknown>;
   uploadedBy: string | null;
   createdAt: string;
+}
+
+export interface UploadTypeCatalogueEntry {
+  mime: string;
+  extensions: string[];
+  label: string;
+  note?: string;
+}
+
+export interface UploadConfigResource {
+  /** Maximum accepted upload size, in bytes. */
+  maxBytes: number;
+  /** Allowed MIME types (the enforced allowlist). */
+  allowedMimeTypes: string[];
+  /** Extensions derived from the allowlist, for the file picker `accept`. */
+  allowedExtensions: string[];
+  /** Full catalogue of selectable types (label + extensions per MIME). */
+  catalogue: UploadTypeCatalogueEntry[];
 }
 
 export interface WebhookResource {
@@ -1324,4 +1596,37 @@ export interface CreateSCIMTokenParams {
   label: string;
   /** Number of days until expiry. Default: 90. Max: 365. */
   lifespanDays?: number;
+}
+
+/** Deployment integrations (spec: deployment-integrations). Token never serialized. */
+export interface DeploymentTargetResource {
+  id: string;
+  provider: "vercel" | "netlify";
+  name: string;
+  projectId: string;
+  defaultBranch: string | null;
+  productionUrl: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DeploymentResource {
+  id: string;
+  siteId: string;
+  targetId: string;
+  provider: string;
+  providerDeploymentId: string | null;
+  status: "queued" | "building" | "ready" | "error" | "canceled";
+  branch: string | null;
+  commitSha: string | null;
+  commitMessage: string | null;
+  url: string | null;
+  triggeredBy: string | null;
+  triggerSource: "manual" | "auto" | "agent";
+  errorMessage: string | null;
+  logExcerpt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
 }

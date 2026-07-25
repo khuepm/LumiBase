@@ -1,10 +1,47 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { z } from 'zod';
 import { SignJWT } from 'jose';
 import { and, eq, sql } from 'drizzle-orm';
-import { systemState, users, userSites } from '@lumibase/database';
+import { roles, systemState, users, userSites } from '@lumibase/database';
 import type { AppEnv } from '../env';
+import { runDetached } from '../lib/detached';
 import { hashPassword, verifyPassword } from '../services/auth/password';
+import { ensureSubscriberRole } from '../services/auth/frontend-role';
+import {
+  TOKEN_AUDIENCE,
+  sessionTtlFor,
+  refreshTtlFor,
+  ttlToSeconds,
+} from '../services/auth/token-audience';
+import {
+  issueRefreshToken,
+  rotateRefreshToken,
+  revokeRefreshToken,
+  revokeAllRefreshTokens,
+  refreshCookieSettings,
+  refreshCsrfOk,
+  REFRESH_CSRF_HEADER,
+  listUserSessions,
+  revokeSessionById,
+} from '../services/auth/refresh-token';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import {
+  signVerificationToken,
+  verifyVerificationToken,
+} from '../services/auth/email-verification';
+import {
+  signPasswordResetToken,
+  verifyPasswordResetToken,
+  isResetTokenStale,
+} from '../services/auth/password-reset';
+import { sendVerificationEmail } from '../modules/email/verify-email';
+import { sendPasswordResetEmail } from '../modules/email/password-reset';
+import {
+  checkRegistrationRate,
+  checkIpRateLimit,
+  DEFAULT_REGISTRATION_RATE_LIMIT,
+} from '../modules/auth/registration-guard';
 import {
   loginGuardMiddleware,
   loadLockoutPolicyFromSettings,
@@ -31,7 +68,19 @@ import { getSecurityNotificationDispatcher, scheduleWorkersDrain } from '../modu
 import type { NotificationDeps } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';
 import { formatSafeError } from '@lumibase/shared/utils';
-import { UserPreferencesUpdateSchema } from '@lumibase/shared/schemas';
+import { UserPreferencesUpdateSchema, PasswordSchema } from '@lumibase/shared/schemas';
+
+/**
+ * True for a Postgres unique-constraint violation (SQLSTATE 23505),
+ * however the driver surfaces it (postgres-js sets `.code`; some layers
+ * nest it under `.cause`). Used by `/auth/register` to treat a lost
+ * insert race on `users_email_lower_unique` as "email already exists".
+ */
+function isUniqueViolation(err: unknown): boolean {
+  const code = (e: unknown): string | undefined =>
+    e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : undefined;
+  return code(err) === '23505' || code((err as { cause?: unknown })?.cause) === '23505';
+}
 
 export const authRouter = new Hono<AppEnv>();
 
@@ -110,6 +159,77 @@ meRouter.get('/admin-path', async (c) => {
   }
 
   return c.json({ data: { adminPath } });
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  // Shared strength policy (min 12 + complexity) — CWE-521.
+  newPassword: PasswordSchema,
+});
+
+/**
+ * `POST /api/v1/me/change-password` — authenticated self-service password
+ * change. Verifies the current password, sets the new hash, revokes all
+ * refresh tokens, and bumps `tokenVersion` so every outstanding access JWT
+ * dies immediately (CWE-613/620). The caller must sign in again.
+ */
+meRouter.post('/change-password', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  const userId = auth.userId;
+  if (!userId) {
+    return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
+  }
+
+  const input = changePasswordSchema.parse(await c.req.json());
+
+  const [user] = await db
+    .select({ id: users.id, email: users.email, passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  // Accounts without a local password (SSO / CF Access) can't change one here.
+  if (!user || !user.passwordHash) {
+    return c.json(
+      { errors: [{ code: 'NO_PASSWORD', message: 'This account does not use a password.' }] },
+      400,
+    );
+  }
+
+  if (!(await verifyPassword(input.currentPassword, user.passwordHash))) {
+    return c.json(
+      { errors: [{ code: 'INVALID_CREDENTIALS', message: 'Current password is incorrect.' }] },
+      401,
+    );
+  }
+
+  const passwordHash = await hashPassword(input.newPassword);
+  const now = new Date();
+  await db
+    .update(users)
+    .set({
+      passwordHash,
+      passwordChangedAt: now,
+      // Bump the session generation: every outstanding access JWT (which
+      // embeds the old tokenVersion) dies immediately (CWE-613/620).
+      tokenVersion: sql`${users.tokenVersion} + 1`,
+      updatedAt: now,
+    })
+    .where(eq(users.id, user.id));
+  await revokeAllRefreshTokens(db, siteId, user.id);
+
+  await new AuditLogger({ db, siteId }).write({
+    event: 'password_changed',
+    actorEmail: user.email,
+    ip: extractClientIp(c),
+    userAgent: c.req.header('user-agent') ?? null,
+    requestId: c.get('requestId') ?? null,
+    metadata: { userId: user.id, siteId, selfService: true },
+  });
+
+  return c.json({ data: { status: 'password_changed' } });
 });
 
 /**
@@ -193,20 +313,133 @@ meRouter.patch('/preferences', async (c) => {
   return c.json({ data: merged });
 });
 
-// Helper to sign Custom JWT (HS256)
-async function signCustomJwt(payload: any, secret: string): Promise<string> {
+/** `GET /api/v1/me/sessions` — the caller's active sessions (live refresh tokens). */
+meRouter.get('/sessions', async (c) => {
+  const auth = c.get('auth');
+  if (!auth.userId) {
+    return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
+  }
+  const data = await listUserSessions(c.get('db'), c.get('siteId'), auth.userId);
+  return c.json({ data });
+});
+
+/** `DELETE /api/v1/me/sessions/:id` — revoke one of the caller's own sessions. */
+meRouter.delete('/sessions/:id', async (c) => {
+  const auth = c.get('auth');
+  if (!auth.userId) {
+    return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
+  }
+  const removed = await revokeSessionById(
+    c.get('db'),
+    c.get('siteId'),
+    auth.userId,
+    c.req.param('id'),
+  );
+  if (!removed) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Session not found.' }] }, 404);
+  }
+  return c.json({ data: { id: c.req.param('id'), revoked: true } });
+});
+
+/** `DELETE /api/v1/me/sessions` — revoke ALL of the caller's sessions (logout everywhere). */
+meRouter.delete('/sessions', async (c) => {
+  const auth = c.get('auth');
+  if (!auth.userId) {
+    return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
+  }
+  await revokeAllRefreshTokens(c.get('db'), c.get('siteId'), auth.userId);
+  clearRefreshCookie(c);
+  return c.json({ data: { status: 'all_sessions_revoked' } });
+});
+
+// Helper to sign Custom JWT (HS256).
+//
+// The `audience` (`aud` claim) pins which realm the session token belongs
+// to — `studio` for staff with Studio access, `frontend` for self-service
+// subscribers. `withStudioAccess` rejects `frontend` tokens outright, so a
+// subscriber token can never be replayed against the management surface
+// even if a policy were misconfigured (defense-in-depth). See
+// `services/auth/token-audience.ts`.
+/**
+ * httpOnly cookie carrying the refresh token. Scoped to the auth routes so
+ * it is only ever sent to `/refresh` and `/logout`. We ALSO return the
+ * token in the response body (the chosen "both" transport), so SPA/SDK
+ * clients on a different origin — where the cookie may be dropped — can
+ * still drive refresh explicitly.
+ */
+const REFRESH_COOKIE = 'lumibase_refresh';
+const REFRESH_COOKIE_PATH = '/api/v1/auth';
+
+/** Shared cookie attributes (path + cross-domain settings) for set/delete. */
+function refreshCookieBase(c: Context<AppEnv>) {
+  const { sameSite, secure, domain } = refreshCookieSettings(c.env);
+  return {
+    httpOnly: true,
+    secure,
+    sameSite,
+    path: REFRESH_COOKIE_PATH,
+    ...(domain ? { domain } : {}),
+  } as const;
+}
+
+function setRefreshCookie(c: Context<AppEnv>, token: string, audience: string): void {
+  setCookie(c, REFRESH_COOKIE, token, {
+    ...refreshCookieBase(c),
+    maxAge: ttlToSeconds(refreshTtlFor(audience, c.env)),
+  });
+}
+
+/** Clear the refresh cookie using the same path/domain it was set with. */
+function clearRefreshCookie(c: Context<AppEnv>): void {
+  const { path, domain } = refreshCookieBase(c);
+  deleteCookie(c, REFRESH_COOKIE, { path, ...(domain ? { domain } : {}) });
+}
+
+/**
+ * Refresh token from the request body (`refreshToken`) or the cookie, with
+ * its source. The source drives CSRF handling: a cookie is an *ambient*
+ * credential the browser attaches automatically (CSRF-reachable under
+ * `SameSite=None`), whereas a body token is supplied explicitly by the
+ * caller and cannot be sent by a cross-site simple request.
+ */
+function readRefreshToken(
+  c: Context<AppEnv>,
+  body?: { refreshToken?: unknown },
+): { token: string; source: 'body' | 'cookie' | 'none' } {
+  const fromBody = typeof body?.refreshToken === 'string' ? body.refreshToken.trim() : '';
+  if (fromBody) return { token: fromBody, source: 'body' };
+  const fromCookie = getCookie(c, REFRESH_COOKIE) || '';
+  if (fromCookie) return { token: fromCookie, source: 'cookie' };
+  return { token: '', source: 'none' };
+}
+
+/** True when the request satisfies the cookie-path CSRF requirement. */
+function cookieCsrfOk(c: Context<AppEnv>, source: 'body' | 'cookie' | 'none'): boolean {
+  return refreshCsrfOk(source, c.req.header(REFRESH_CSRF_HEADER));
+}
+
+async function signCustomJwt(
+  payload: any,
+  secret: string,
+  audience: string,
+  /** Session lifetime, per realm — see {@link sessionTtlFor}. */
+  ttl: string,
+): Promise<string> {
   const encoder = new TextEncoder();
   const secretKey = encoder.encode(secret);
   return new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
+    .setAudience(audience)
     .setIssuedAt()
-    .setExpirationTime('24h')
+    .setExpirationTime(ttl)
     .sign(secretKey);
 }
 
 const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  // Enforce the shared strength policy (min 12 + complexity) instead of the
+  // former weak min(6) (CWE-521).
+  password: PasswordSchema,
   firstName: z.string().optional(),
   lastName: z.string().optional(),
 });
@@ -216,71 +449,520 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
-// Custom Register (for Frontend Users)
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+const resendVerificationSchema = z.object({
+  email: z.string().email(),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  // Shared strength policy so the reset path can't drift below the min(12) +
+  // complexity rules the other password paths enforce (CWE-521).
+  password: PasswordSchema,
+});
+
+/**
+ * Public self-service registration for FRONTEND end-users (the people who
+ * sign up on the consumer Next.js site to read content). This is a
+ * separate realm from staff onboarding: staff are created invite-only via
+ * `POST /api/v1/users/invite` (admin-gated, `member`/`administrator`
+ * roles with Studio access). This endpoint is intentionally
+ * unauthenticated and is bypassed by `withAuth` / `withStudioAccess` like
+ * `/login`.
+ *
+ * Guardrails (see ADR-011 — user-management realms):
+ *   1. Least-privilege role is resolved SERVER-SIDE
+ *      ({@link ensureSubscriberRole}) — the request body can never choose
+ *      a role, so a self-registered visitor can never get Studio/admin.
+ *   2. The account starts `status: 'invited'` (inactive) and must verify
+ *      its email before `/login` will issue a token (login already gates
+ *      on `status === 'active'`).
+ *   3. Per-IP rate limit brakes scripted mass-registration.
+ *   4. Anti-enumeration: the response is an identical generic 202 whether
+ *      or not the email already exists. We only create + email on a new,
+ *      valid email.
+ */
 authRouter.post('/register', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
-  const auth = c.get('auth');
-  if (!auth.roles?.includes('admin')) {
+  const ip = extractClientIp(c);
+  const userAgent = c.req.header('user-agent') ?? null;
+
+  // (3) Best-effort per-IP abuse brake. Runs before body parse / hashing
+  // so a flood is cheap to reject.
+  const rate = await checkRegistrationRate(c.get('runtime').cache, siteId, ip);
+  if (!rate.allowed) {
     return c.json(
-      { errors: [{ code: 'FORBIDDEN', message: 'Only administrators can register users for a site.' }] },
+      {
+        errors: [
+          {
+            code: 'RATE_LIMITED',
+            message: 'Too many registration attempts. Please try again later.',
+            retryAfterSeconds: rate.retryAfterSeconds,
+          },
+        ],
+      },
+      429,
+    );
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const parsedInput = registerSchema.safeParse(body);
+  if (!parsedInput.success) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'VALIDATION',
+            message: parsedInput.error.message,
+            issues: parsedInput.error.issues,
+          },
+        ],
+      },
+      400,
+    );
+  }
+  const input = parsedInput.data;
+  const emailLower = normalizeEmail(input.email);
+
+  const audit = new AuditLogger({ db, siteId });
+
+  // (4) Anti-enumeration: look the user up but DON'T branch the response on
+  // it. Only a brand-new email triggers the create + verification email;
+  // an existing email silently falls through to the same generic 202.
+  const [existing] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(sql`lower(${users.email}) = ${emailLower}`)
+    .limit(1);
+
+  if (!existing) {
+    const passwordHash = await hashPassword(input.password);
+    // (1) Server-resolved least-privilege role. Never from the body.
+    const subscriberRoleId = await ensureSubscriberRole(db, siteId);
+
+    // The SELECT above is advisory; the `users_email_lower_unique` index
+    // (migration 0006) is the real guard. A concurrent registration for the
+    // same email loses the INSERT race with a unique violation — swallow it
+    // and fall through to the identical generic 202 so the outcome (and the
+    // response) is the same as "email already existed" (H3 + anti-enum).
+    let newUser: { id: string; email: string } | undefined;
+    try {
+      [newUser] = await db
+        .insert(users)
+        .values({
+          email: input.email,
+          passwordHash,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          // (2) Inactive until email verification flips it to 'active'.
+          status: 'invited',
+        })
+        .returning({ id: users.id, email: users.email });
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      newUser = undefined;
+    }
+
+    if (newUser) {
+      await db
+        .insert(userSites)
+        .values({ userId: newUser.id, siteId, roleId: subscriberRoleId })
+        .onConflictDoNothing();
+
+      // Stateless verification token (no DB row); emailed inside the link.
+      const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+      if (jwtSecret) {
+        const token = await signVerificationToken(
+          { userId: newUser.id, siteId },
+          jwtSecret,
+        );
+        // Best-effort, fire-and-forget AFTER the row is committed so a mail
+        // failure can't roll the registration back.
+        const sendMail = sendVerificationEmail({
+          db,
+          siteId,
+          env: c.env,
+          email: input.email,
+          token,
+        });
+        runDetached(c, sendMail);
+      }
+
+      await audit.write({
+        event: 'user_registered',
+        actorEmail: input.email,
+        ip,
+        userAgent,
+        requestId: c.get('requestId') ?? null,
+        metadata: {
+          userId: newUser.id,
+          siteId,
+          roleId: subscriberRoleId,
+          selfService: true,
+        },
+      });
+    }
+  }
+
+  return c.json(
+    {
+      data: {
+        status: 'pending_verification',
+        message:
+          'If this email is eligible, a verification link has been sent. ' +
+          'Confirm it to activate your account.',
+      },
+    },
+    202,
+  );
+});
+
+/**
+ * Public email-verification endpoint. Completes self-service
+ * registration by flipping the user from `invited` → `active`.
+ *
+ * The token is a stateless HS256 JWT minted at registration
+ * ({@link signVerificationToken}); single-use is enforced by the state
+ * transition (an already-`active` account returns `already_verified`).
+ * Bypassed by `withAuth` / `withStudioAccess` like `/login` + `/register`.
+ */
+authRouter.post('/verify-email', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const ip = extractClientIp(c);
+  const userAgent = c.req.header('user-agent') ?? null;
+
+  const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return c.json(
+      { errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET configuration missing.' }] },
+      500,
+    );
+  }
+
+  const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+  const token =
+    typeof body?.token === 'string' && body.token.length > 0
+      ? body.token
+      : c.req.query('token') ?? '';
+
+  const claims = token ? await verifyVerificationToken(token, jwtSecret) : null;
+  // The token is bound to the site it was issued for; reject expired,
+  // tampered, wrong-audience, or cross-tenant tokens with one generic code.
+  if (!claims || claims.siteId !== siteId) {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Verification link is invalid or has expired.' }] },
+      400,
+    );
+  }
+
+  const [user] = await db
+    .select({ id: users.id, status: users.status, email: users.email })
+    .from(users)
+    .where(eq(users.id, claims.userId))
+    .limit(1);
+
+  if (!user) {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Verification link is invalid or has expired.' }] },
+      400,
+    );
+  }
+
+  if (user.status === 'active') {
+    return c.json({ data: { status: 'already_verified' } });
+  }
+  if (user.status === 'suspended') {
+    return c.json(
+      { errors: [{ code: 'ACCOUNT_DISABLED', message: 'This account is not active.' }] },
       403,
     );
   }
 
-  const body = await c.req.json();
-  const input = registerSchema.parse(body);
+  await db
+    .update(users)
+    .set({ status: 'active', updatedAt: new Date() })
+    .where(eq(users.id, user.id));
 
-  // Check if user exists by email
-  const [existingUser] = await db
-    .select()
+  await new AuditLogger({ db, siteId }).write({
+    event: 'email_verified',
+    actorEmail: user.email,
+    ip,
+    userAgent,
+    requestId: c.get('requestId') ?? null,
+    metadata: { userId: user.id, siteId, selfService: true },
+  });
+
+  return c.json({ data: { status: 'verified' } });
+});
+
+/**
+ * Public "resend verification" endpoint — re-issues the activation email
+ * when the original was lost. Same guardrails as forgot-password:
+ * per-IP rate-limited and a generic `202` regardless of outcome (no
+ * enumeration). Only an existing, NOT-yet-active, password-based account
+ * (i.e. a self-service registrant still at `invited`) is re-emailed; an
+ * already-active or non-password (SSO/staff-invite) account silently falls
+ * through. Bypassed by `withAuth` / `withStudioAccess` like the other
+ * public auth routes.
+ */
+authRouter.post('/resend-verification', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const ip = extractClientIp(c);
+  const userAgent = c.req.header('user-agent') ?? null;
+
+  const rate = await checkIpRateLimit(
+    c.get('runtime').cache,
+    'resend-rate',
+    siteId,
+    ip,
+    DEFAULT_REGISTRATION_RATE_LIMIT,
+  );
+  if (!rate.allowed) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'RATE_LIMITED',
+            message: 'Too many requests. Please try again later.',
+            retryAfterSeconds: rate.retryAfterSeconds,
+          },
+        ],
+      },
+      429,
+    );
+  }
+
+  const body = await c.req.json();
+  const input = resendVerificationSchema.parse(body);
+  const emailLower = normalizeEmail(input.email);
+
+  const [user] = await db
+    .select({ id: users.id, status: users.status, passwordHash: users.passwordHash, email: users.email })
     .from(users)
-    .where(eq(users.email, input.email))
+    .where(sql`lower(${users.email}) = ${emailLower}`)
     .limit(1);
 
-  if (existingUser) {
+  // Eligible = exists, not yet activated, and password-based (a self-service
+  // registrant). Active accounts have nothing to verify; passwordless
+  // accounts (SSO / staff invite) use a different onboarding path.
+  if (user && user.status !== 'active' && user.passwordHash) {
+    const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+    if (jwtSecret) {
+      const token = await signVerificationToken({ userId: user.id, siteId }, jwtSecret);
+      const sendMail = sendVerificationEmail({
+        db,
+        siteId,
+        env: c.env,
+        email: user.email,
+        token,
+      });
+      runDetached(c, sendMail);
+      await new AuditLogger({ db, siteId }).write({
+        event: 'verification_resent',
+        actorEmail: user.email,
+        ip,
+        userAgent,
+        requestId: c.get('requestId') ?? null,
+        metadata: { userId: user.id, siteId },
+      });
+    }
+  }
+
+  return c.json(
+    {
+      data: {
+        status: 'verification_resent',
+        message: 'If this email needs verification, a new link has been sent.',
+      },
+    },
+    202,
+  );
+});
+
+/**
+ * Public "forgot password" endpoint for self-service end-users.
+ *
+ * Anti-enumeration: always returns the same generic `202` regardless of
+ * whether the email exists or is eligible. Only an existing, active,
+ * password-based account actually gets a reset email. Per-IP rate-limited.
+ * Bypassed by `withAuth` / `withStudioAccess` like the other public auth
+ * routes.
+ */
+authRouter.post('/forgot-password', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const ip = extractClientIp(c);
+  const userAgent = c.req.header('user-agent') ?? null;
+
+  const rate = await checkIpRateLimit(
+    c.get('runtime').cache,
+    'forgot-rate',
+    siteId,
+    ip,
+    DEFAULT_REGISTRATION_RATE_LIMIT,
+  );
+  if (!rate.allowed) {
     return c.json(
-      { errors: [{ code: 'EMAIL_ALREADY_EXISTS', message: 'Email is already registered.' }] },
-      400
+      {
+        errors: [
+          {
+            code: 'RATE_LIMITED',
+            message: 'Too many requests. Please try again later.',
+            retryAfterSeconds: rate.retryAfterSeconds,
+          },
+        ],
+      },
+      429,
+    );
+  }
+
+  const body = await c.req.json();
+  const input = forgotPasswordSchema.parse(body);
+  const emailLower = normalizeEmail(input.email);
+
+  const [user] = await db
+    .select({ id: users.id, status: users.status, passwordHash: users.passwordHash, email: users.email })
+    .from(users)
+    .where(sql`lower(${users.email}) = ${emailLower}`)
+    .limit(1);
+
+  // Only mint + email for an eligible account. A non-existent, inactive, or
+  // passwordless (SSO/CF Access) account silently falls through to the same
+  // generic response — no enumeration, no reset for accounts that don't use
+  // password auth.
+  if (user && user.status === 'active' && user.passwordHash) {
+    const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+    if (jwtSecret) {
+      const token = await signPasswordResetToken({ userId: user.id, siteId }, jwtSecret);
+      const sendMail = sendPasswordResetEmail({
+        db,
+        siteId,
+        env: c.env,
+        email: user.email,
+        token,
+      });
+      runDetached(c, sendMail);
+      await new AuditLogger({ db, siteId }).write({
+        event: 'password_reset_requested',
+        actorEmail: user.email,
+        ip,
+        userAgent,
+        requestId: c.get('requestId') ?? null,
+        metadata: { userId: user.id, siteId },
+      });
+    }
+  }
+
+  return c.json(
+    {
+      data: {
+        status: 'reset_requested',
+        message: 'If an account exists for this email, a reset link has been sent.',
+      },
+    },
+    202,
+  );
+});
+
+/**
+ * Public "reset password" endpoint. Consumes a stateless `password-reset`
+ * token ({@link signPasswordResetToken}) and sets the new password hash.
+ * Bypassed by `withAuth` / `withStudioAccess` like the other public auth
+ * routes.
+ */
+authRouter.post('/reset-password', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const ip = extractClientIp(c);
+  const userAgent = c.req.header('user-agent') ?? null;
+
+  const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return c.json(
+      { errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET configuration missing.' }] },
+      500,
+    );
+  }
+
+  const body = await c.req.json();
+  const input = resetPasswordSchema.parse(body);
+
+  const claims = await verifyPasswordResetToken(input.token, jwtSecret);
+  // Reject expired / tampered / wrong-audience / cross-tenant tokens with
+  // one generic code.
+  if (!claims || claims.siteId !== siteId) {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Reset link is invalid or has expired.' }] },
+      400,
+    );
+  }
+
+  const [user] = await db
+    .select({
+      id: users.id,
+      status: users.status,
+      email: users.email,
+      passwordChangedAt: users.passwordChangedAt,
+    })
+    .from(users)
+    .where(eq(users.id, claims.userId))
+    .limit(1);
+
+  if (!user) {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Reset link is invalid or has expired.' }] },
+      400,
+    );
+  }
+  if (user.status === 'suspended') {
+    return c.json(
+      { errors: [{ code: 'ACCOUNT_DISABLED', message: 'This account is not active.' }] },
+      403,
+    );
+  }
+
+  // Single-use enforcement (H1) — see `isResetTokenStale`.
+  if (isResetTokenStale(claims.issuedAt, user.passwordChangedAt)) {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Reset link is invalid or has expired.' }] },
+      400,
     );
   }
 
   const passwordHash = await hashPassword(input.password);
-
-  // Insert user
-  const [newUser] = await db
-    .insert(users)
-    .values({
-      email: input.email,
-      passwordHash,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      status: 'active',
-    })
-    .returning();
-
-  if (!newUser) {
-    return c.json({ errors: [{ code: 'REGISTRATION_FAILED', message: 'Failed to create user.' }] }, 500);
-  }
-
-  // Bind new user to the current site (default 'member' role)
+  const now = new Date();
   await db
-    .insert(userSites)
-    .values({
-      userId: newUser.id,
-      siteId,
-      roleId: 'member',
+    .update(users)
+    .set({
+      passwordHash,
+      passwordChangedAt: now,
+      // Bump the session generation: every outstanding access JWT (which
+      // embeds the old tokenVersion) dies immediately (CWE-613/620).
+      tokenVersion: sql`${users.tokenVersion} + 1`,
+      updatedAt: now,
     })
-    .onConflictDoNothing();
+    .where(eq(users.id, user.id));
 
-  return c.json({
-    data: {
-      id: newUser.id,
-      email: newUser.email,
-      firstName: newUser.firstName,
-      lastName: newUser.lastName,
-    },
+  // Revoke all refresh tokens so a stolen session cannot be silently
+  // renewed after the owner resets their password.
+  await revokeAllRefreshTokens(db, siteId, user.id);
+
+  await new AuditLogger({ db, siteId }).write({
+    event: 'password_reset_completed',
+    actorEmail: user.email,
+    ip,
+    userAgent,
+    requestId: c.get('requestId') ?? null,
+    metadata: { userId: user.id, siteId },
   });
+
+  return c.json({ data: { status: 'reset' } });
 });
 
 // Login Guard middleware (admin-setup-wizard task 6.1; Req 7.3, 8.3;
@@ -503,6 +1185,23 @@ authRouter.post('/login', async (c) => {
 
   const tokenRoles = user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'];
 
+  // Resolve the token AUDIENCE (`aud` claim) from the principal's realm.
+  // The bootstrap admin and any role with `appAccess` get a `studio`
+  // token; everyone else (subscribers / appAccess-less roles) gets a
+  // `frontend` token that `withStudioAccess` refuses. This is computed
+  // here — at sign time — so the wall holds regardless of how the policy
+  // bundle is later evaluated. See `services/auth/token-audience.ts`.
+  let appAccess = user.isBootstrap;
+  if (!appAccess && membership?.roleId) {
+    const [roleRow] = await db
+      .select({ appAccess: roles.appAccess })
+      .from(roles)
+      .where(and(eq(roles.id, membership.roleId), eq(roles.siteId, siteId)))
+      .limit(1);
+    appAccess = roleRow?.appAccess ?? false;
+  }
+  const audience = appAccess ? TOKEN_AUDIENCE.studio : TOKEN_AUDIENCE.frontend;
+
   // ── Anomaly detection (task 8.1; Req 12.2-12.5; design §8.5) ───────
   //
   // The credentials are valid, but before we issue the JWT we need to
@@ -643,9 +1342,23 @@ authRouter.post('/login', async (c) => {
       email: user.email,
       roles: tokenRoles,
       siteId,
+      // Session generation at sign time; auth rejects tokens whose value is
+      // older than the stored one (revocation on password change/reset).
+      tokenVersion: user.tokenVersion ?? 0,
     },
-    jwtSecret
+    jwtSecret,
+    audience,
+    sessionTtlFor(audience, c.env),
   );
+
+  // Mint the rotating refresh token (new family) that silently renews the
+  // short access token above. Delivered via httpOnly cookie AND the body.
+  const refresh = await issueRefreshToken(
+    db,
+    { siteId, userId: user.id, audience, ip, userAgent },
+    c.env,
+  );
+  setRefreshCookie(c, refresh.token, audience);
 
   // Workers runtime: keep any queued notification (e.g. an
   // anomaly_triggered from the notify_only path) alive past the
@@ -655,6 +1368,8 @@ authRouter.post('/login', async (c) => {
   return c.json({
     data: {
       token,
+      refreshToken: refresh.token,
+      refreshTokenExpiresAt: refresh.expiresAt.toISOString(),
       user: {
         id: user.id,
         email: user.email,
@@ -664,6 +1379,182 @@ authRouter.post('/login', async (c) => {
       },
     },
   });
+});
+
+/**
+ * Silent session renewal. Verifies + rotates the presented refresh token
+ * (cookie or body) and returns a fresh access JWT plus the rotated refresh
+ * token. Public (the refresh token itself is the credential). Reuse of a
+ * revoked token revokes the whole family and clears the cookie.
+ */
+authRouter.post('/refresh', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const ip = extractClientIp(c);
+  const userAgent = c.req.header('user-agent') ?? null;
+
+  const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return c.json(
+      { errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET configuration missing.' }] },
+      500,
+    );
+  }
+
+  // Body is optional — the token may arrive only via the cookie.
+  let body: { refreshToken?: unknown } | undefined;
+  try {
+    body = await c.req.json();
+  } catch {
+    body = undefined;
+  }
+  const presented = readRefreshToken(c, body);
+  if (!presented.token) {
+    return c.json(
+      { errors: [{ code: 'NO_REFRESH_TOKEN', message: 'No refresh token provided.' }] },
+      401,
+    );
+  }
+  if (!cookieCsrfOk(c, presented.source)) {
+    return c.json(
+      {
+        errors: [
+          { code: 'CSRF_REQUIRED', message: `Missing ${REFRESH_CSRF_HEADER} header for cookie-based refresh.` },
+        ],
+      },
+      403,
+    );
+  }
+
+  const outcome = await rotateRefreshToken(db, { rawToken: presented.token, siteId, ip, userAgent }, c.env);
+  if (!outcome.ok) {
+    clearRefreshCookie(c);
+    if (outcome.reason === 'reuse') {
+      await new AuditLogger({ db, siteId }).write({
+        event: 'refresh_token_reuse_detected',
+        ip,
+        userAgent,
+        requestId: c.get('requestId') ?? null,
+        metadata: { siteId },
+      });
+    }
+    return c.json(
+      { errors: [{ code: 'INVALID_REFRESH_TOKEN', message: 'Refresh token is invalid or expired.' }] },
+      401,
+    );
+  }
+
+  // Re-resolve the user so the new access token reflects current state
+  // (e.g. a now-suspended account cannot keep renewing).
+  const [user] = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      status: users.status,
+      isBootstrap: users.isBootstrap,
+      tokenVersion: users.tokenVersion,
+    })
+    .from(users)
+    .where(eq(users.id, outcome.userId))
+    .limit(1);
+  if (!user || user.status !== 'active') {
+    await revokeAllRefreshTokens(db, siteId, outcome.userId);
+    clearRefreshCookie(c);
+    return c.json(
+      { errors: [{ code: 'ACCOUNT_DISABLED', message: 'This account is not active.' }] },
+      403,
+    );
+  }
+
+  const [membership] = await db
+    .select({ roleId: userSites.roleId })
+    .from(userSites)
+    .where(and(eq(userSites.userId, user.id), eq(userSites.siteId, siteId)))
+    .limit(1);
+
+  // Re-check tenant membership on every renewal (M4): a user removed from
+  // the site must not keep minting access tokens for it. Bootstrap admin is
+  // exempt (it has no per-site membership row), mirroring login.
+  if (!membership && !user.isBootstrap) {
+    await revokeAllRefreshTokens(db, siteId, outcome.userId);
+    clearRefreshCookie(c);
+    return c.json(
+      { errors: [{ code: 'TENANT_ACCESS_DENIED', message: 'This account is not a member of the selected site.' }] },
+      403,
+    );
+  }
+
+  const tokenRoles = user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'];
+
+  // Recompute the realm from the role's CURRENT `appAccess` (M4) rather than
+  // trusting the audience frozen into the refresh row at login: a role
+  // demoted out of Studio since then must renew as a `frontend` token, and
+  // a promoted one as `studio`. Keeps the audience wall honest over time.
+  let appAccess = user.isBootstrap;
+  if (!appAccess && membership?.roleId) {
+    const [roleRow] = await db
+      .select({ appAccess: roles.appAccess })
+      .from(roles)
+      .where(and(eq(roles.id, membership.roleId), eq(roles.siteId, siteId)))
+      .limit(1);
+    appAccess = roleRow?.appAccess ?? false;
+  }
+  const audience = appAccess ? TOKEN_AUDIENCE.studio : TOKEN_AUDIENCE.frontend;
+
+  const token = await signCustomJwt(
+    {
+      userId: user.id,
+      email: user.email,
+      roles: tokenRoles,
+      siteId,
+      // Session generation at sign time; auth rejects tokens whose value is
+      // older than the stored one (revocation on password change/reset).
+      tokenVersion: user.tokenVersion ?? 0,
+    },
+    jwtSecret,
+    audience,
+    sessionTtlFor(audience, c.env),
+  );
+  setRefreshCookie(c, outcome.token, audience);
+
+  return c.json({
+    data: {
+      token,
+      refreshToken: outcome.token,
+      refreshTokenExpiresAt: outcome.expiresAt.toISOString(),
+    },
+  });
+});
+
+/**
+ * Logout — revoke the presented refresh token's whole family and clear the
+ * cookie. Public + idempotent (a missing/已-revoked token still returns ok).
+ */
+authRouter.post('/logout', async (c) => {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  let body: { refreshToken?: unknown } | undefined;
+  try {
+    body = await c.req.json();
+  } catch {
+    body = undefined;
+  }
+  const presented = readRefreshToken(c, body);
+  if (!cookieCsrfOk(c, presented.source)) {
+    return c.json(
+      {
+        errors: [
+          { code: 'CSRF_REQUIRED', message: `Missing ${REFRESH_CSRF_HEADER} header for cookie-based logout.` },
+        ],
+      },
+      403,
+    );
+  }
+  if (presented.token) {
+    await revokeRefreshToken(db, presented.token, siteId);
+  }
+  clearRefreshCookie(c);
+  return c.json({ data: { status: 'logged_out' } });
 });
 
 /**
@@ -717,3 +1608,7 @@ authRouter.get('/me', async (c) => {
     },
   });
 });
+
+// Preference reads/writes live on `meRouter` (`GET/PATCH /api/v1/me/preferences`
+// above) — the save-default-preference `saveAction` key is validated there via
+// UserPreferencesSchema, alongside keybindings/language/theme.

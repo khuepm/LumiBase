@@ -23,10 +23,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -35,7 +35,7 @@ jobs:
         run: corepack enable
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
           version: 9.12.0
           run_install: false
@@ -52,7 +52,7 @@ jobs:
           mkdir -p .turbo
 
       - name: Restore pnpm cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
@@ -60,7 +60,7 @@ jobs:
             ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-
 
       - name: Restore Turbo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-turbo-${{ github.sha }}
@@ -72,6 +72,9 @@ jobs:
 
       - name: Check package versions
         run: pnpm version:check
+
+      - name: Check registry numbering
+        run: pnpm registry:check
 
       - name: Typecheck
         run: pnpm -r typecheck
@@ -85,16 +88,55 @@ jobs:
       - name: Build
         run: pnpm build
 
-  lint-allowlist:
-    name: Lint stable packages
+  e2e-golden-path:
+    name: E2E golden path
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    # v1 release criteria §3: the content happy path must never be verified by
+    # hand. Boots the CMS against a real Postgres and drives, over HTTP through
+    # the full middleware stack: setup wizard → create collection → create item
+    # → publish → read back, plus a two-site tenant-isolation check.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lumibase
+          POSTGRES_PASSWORD: lumibase_ci
+          POSTGRES_DB: lumibase
+        ports:
+          - 5432:5432
+        # Gate the job start on the DB actually accepting connections.
+        options: >-
+          --health-cmd "pg_isready -U lumibase"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # The docker runtime uses Redis for cache + the BullMQ queue; the login
+      # and audit paths enqueue work, so a reachable Redis is required or those
+      # awaits stall. Provide one rather than mock the runtime.
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://lumibase:lumibase_ci@localhost:5432/lumibase
+      REDIS_URL: redis://localhost:6379
+      LUMIBASE_RUNTIME: docker
+      LUMIBASE_ENV: development
+      # Non-secret CI-only signing key: the test logs in as the bootstrap admin
+      # and reuses the returned JWT. Never a real deployment secret.
+      JWT_SECRET: ci_e2e_golden_path_secret
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
@@ -103,7 +145,7 @@ jobs:
         run: corepack enable
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
           version: 9.12.0
           run_install: false
@@ -120,7 +162,81 @@ jobs:
           mkdir -p .turbo
 
       - name: Restore pnpm cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply database migrations
+        run: pnpm --filter @lumibase/database migrate
+
+      - name: Run golden-path E2E
+        run: pnpm --filter @lumibase/cms exec vitest --run src/__tests__/golden-path.e2e.test.ts
+
+  lint-allowlist:
+    name: Lint stable packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # `secrets` context is not allowed in step-level `if:`, so surface the token's
+    # presence as an env var the steps below can gate on.
+    env:
+      MARKETPLACE_SUBMODULE_TOKEN: ${{ secrets.MARKETPLACE_SUBMODULE_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      # marketplace (apps/marketplace) lives in the private lumibase-ai/marketplace
+      # repo; without it the `--filter @lumibase/marketplace` lint target resolves
+      # to an empty directory and pnpm silently skips it. The runner's GITHUB_TOKEN
+      # can't read another org's repo, so authenticate with the
+      # MARKETPLACE_SUBMODULE_TOKEN PAT via a scoped insteadOf rewrite. Init ONLY
+      # this path — enterprise/extensions are private too and a blanket
+      # `submodules: true` checkout would abort with "repository not found".
+      #
+      # Dependabot runs and forked-PR runs do NOT receive repository secrets, so
+      # the token is empty there and the private clone would fail. Skip the fetch
+      # (and the marketplace lint below) in that case — the workspace packages
+      # still lint fine without it.
+      - name: Fetch marketplace submodule
+        if: ${{ env.MARKETPLACE_SUBMODULE_TOKEN != '' }}
+        run: |
+          git config --global url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf "https://github.com/lumibase-ai/"
+          git submodule update --init --depth=1 apps/marketplace
+          git config --global --unset url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      - name: Get pnpm store directory
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare cache directories
+        shell: bash
+        run: |
+          mkdir -p "${{ steps.pnpm-store.outputs.path }}"
+          mkdir -p .turbo
+
+      - name: Restore pnpm cache
+        uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
@@ -128,7 +244,7 @@ jobs:
             ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-
 
       - name: Restore Turbo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-turbo-lint-${{ github.sha }}
@@ -140,4 +256,48 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Lint allowlisted packages
-        run: pnpm --filter @lumibase/landing --filter @lumibase/marketplace --filter @lumibase/studio --filter @lumibase/docs --filter @lumibase/cms lint
+        run: pnpm --filter @lumibase/landing --filter @lumibase/studio --filter @lumibase/docs --filter @lumibase/cms lint
+
+      # marketplace is excluded from the pnpm workspace (see pnpm-workspace.yaml),
+      # so a root `--filter @lumibase/marketplace` never matches — it must be
+      # linted standalone with its own deps, exactly as pages-deploy.yml builds
+      # it. The Fetch marketplace submodule step above makes its source present.
+      - name: Lint marketplace (standalone submodule)
+        if: ${{ env.MARKETPLACE_SUBMODULE_TOKEN != '' }}
+        working-directory: apps/marketplace
+        run: |
+          pnpm install --no-frozen-lockfile --ignore-workspace
+          pnpm lint
+
+  dependency-audit:
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      # Report the full audit for visibility (never fails the build) …
+      - name: Audit (report, non-blocking)
+        run: pnpm audit --prod || true
+
+      # … then fail only on HIGH/CRITICAL advisories so a known-exploitable
+      # dependency blocks the merge while noisy low/moderate transitive
+      # advisories do not (CWE-1104).
+      - name: Audit (fail on high/critical)
+        run: pnpm audit --prod --audit-level high

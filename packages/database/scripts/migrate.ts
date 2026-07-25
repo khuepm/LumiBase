@@ -19,6 +19,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import type { Sql } from 'postgres';
+import { detectHistoryMismatch, formatHistoryMismatchError } from '../src/migration-guard';
 
 type Command = 'apply' | 'preflight' | 'version';
 
@@ -192,13 +193,31 @@ async function main() {
   const client = postgres(url, { max: 1 });
 
   try {
+    // Refuse to run a squashed history on top of a database migrated with the
+    // pre-squash history (would strand data in tables the app no longer reads).
+    const mismatch = detectHistoryMismatch(readLocalMigrations(), await getAppliedMigrations(client));
+
     if (command === 'preflight' || command === 'version') {
       const status = await getMigrationStatus(client);
       printStatus(status, command);
+      if (mismatch) {
+        console.warn(formatHistoryMismatchError(mismatch));
+      }
       if (command === 'preflight') {
         console.log('[migrate] Preflight complete; no migrations were applied.');
       }
       return;
+    }
+
+    if (mismatch) {
+      if (process.env.FORCE_MIGRATE === 'true') {
+        console.warn(formatHistoryMismatchError(mismatch));
+        console.warn('[migrate] FORCE_MIGRATE=true set — continuing anyway.');
+      } else {
+        console.error(formatHistoryMismatchError(mismatch));
+        process.exitCode = 1;
+        return;
+      }
     }
 
     const db = drizzle(client);

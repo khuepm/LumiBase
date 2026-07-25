@@ -6,6 +6,10 @@ import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ExtensionSandbox } from '../extensions/sandbox';
 import { PermissionService, type PermissionAction } from '../services/permission-service';
+import {
+  ExtensionVerifierService,
+  buildSandboxVerifyOptions,
+} from '../services/extension-verifier';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 export const extensionsRouter = new Hono<AppEnv>();
@@ -166,6 +170,34 @@ extensionsRouter.post('/', adminOnly, async (c) => {
     if (denied) return denied;
   }
 
+  // Verify the bundle signature and DERIVE the official flag server-side — the
+  // request body cannot self-assert official status. `lumibase-*` must be
+  // signed by an official key; third-party follows the site signature policy.
+  const verifier = new ExtensionVerifierService(db, c.env);
+  const verdict = await verifier.verifyByMetadata(input.name, {
+    bundleUrl: input.bundleUrl,
+    bundleSha256: null,
+    signature: null,
+    publisherKeyId: null,
+    signatureAlg: null,
+  });
+  const isReserved = ExtensionVerifierService.isReservedName(input.name);
+  const requireSignature =
+    isReserved || (c.env.LUMIBASE_EXT_SIGNATURE_POLICY ?? 'require') !== 'warn';
+
+  if (isReserved && !verdict.isOfficial) {
+    return c.json(
+      { errors: [{ code: 'RESERVED_NAMESPACE', message: 'lumibase-* requires an official signature.' }] },
+      400,
+    );
+  }
+  if (requireSignature && !verdict.ok) {
+    return c.json(
+      { errors: [{ code: 'SIGNATURE_REQUIRED', message: `Signature check failed: ${verdict.reason}` }] },
+      400,
+    );
+  }
+
   const [row] = await db
     .insert(extensions)
     .values({
@@ -173,6 +205,8 @@ extensionsRouter.post('/', adminOnly, async (c) => {
       key: extensionKey(input),
       siteId,
       installedBy: auth?.userId,
+      isOfficial: verdict.isOfficial,
+      verifiedAt: verdict.ok ? new Date() : null,
     })
     .returning();
 
@@ -189,6 +223,23 @@ extensionsRouter.patch('/:id', adminOnly, async (c) => {
     if (denied) return denied;
   }
 
+  const [current] = await db
+    .select()
+    .from(extensions)
+    .where(and(eq(extensions.siteId, siteId), eq(extensions.id, id)))
+    .limit(1);
+  if (!current) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+
+  // Enabling an official extension whose signature does not currently verify is
+  // refused (fail-closed). `verifiedAt` is the persisted proof of a prior check.
+  const willEnable = input.enabled === true;
+  if (willEnable && current.isOfficial && !current.verifiedAt) {
+    return c.json(
+      { errors: [{ code: 'SIGNATURE_REQUIRED', message: 'Cannot enable an unverified official extension.' }] },
+      400,
+    );
+  }
+
   const [row] = await db
     .update(extensions)
     .set(input)
@@ -196,6 +247,35 @@ extensionsRouter.patch('/:id', adminOnly, async (c) => {
     .returning();
 
   if (!row) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+
+  // A bundle/version change invalidates the cached module and any prior
+  // verification — evict the sandbox cache so the next load re-verifies.
+  if (input.bundleUrl !== undefined || input.version !== undefined) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    new ExtensionSandbox(c.env as unknown as Record<string, unknown>).evict(row.name);
+  }
+
+  // Change Feed (Req 3.4): enabling a hook extension with cdc:subscribe:*
+  // capabilities upserts its `ext:<name>` subscription; disabling pauses it.
+  // Best-effort — a sync failure must not fail the admin's enable/disable.
+  try {
+    const { syncExtensionCdcSubscription } = await import(
+      '../modules/cdc/change-feed/extension-sender'
+    );
+    await syncExtensionCdcSubscription(
+      db,
+      siteId,
+      {
+        name: row.name,
+        type: row.type,
+        enabled: row.enabled,
+        capabilities: (row.capabilities as string[]) ?? [],
+      },
+      c.get('runtime')?.cache,
+    );
+  } catch (err) {
+    console.error('[extensions] cdc subscription sync failed:', err instanceof Error ? err.message : err);
+  }
   return c.json({ data: row });
 });
 
@@ -225,7 +305,7 @@ extensionsRouter.delete('/:id', adminOnly, async (c) => {
  * The extension bundle is loaded lazily via ExtensionSandbox and cached.
  * If the extension does not exist, is not enabled, or has no handler, 404 is returned.
  */
-extensionsRouter.all('/:name/*', async (c) => {
+extensionsRouter.all('/:name/*', adminOnly, async (c) => {
   const denied = await requireExtensionPermission(c, 'execute');
   if (denied) return denied;
 
@@ -251,6 +331,7 @@ extensionsRouter.all('/:name/*', async (c) => {
     name: ext.name,
     bundleUrl: ext.bundleUrl,
     capabilities: (ext.capabilities as string[]) ?? [],
+    ...buildSandboxVerifyOptions(ext, db, c.env),
   });
 
   if (!mod?.handler) {

@@ -40,10 +40,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           # The scripts run on plain `node` (only node builtins + local .mjs);
@@ -56,7 +56,7 @@ jobs:
         run: node scripts/docs-i18n/sync.mjs
 
       - name: Upload sync report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docs-i18n-report
           path: |
@@ -65,8 +65,8 @@ jobs:
           if-no-files-found: warn
 
   # ---------------------------------------------------------------------------
-  # main: full sync. Preserves Vietnamese content, machine-translates, versions,
-  # and commits back. Requires DEEPL_API_KEY (or GOOGLE_TRANSLATE_API_KEY) secret.
+  # main: full sync. Preserves Vietnamese content, translates with Claude,
+  # versions, and commits back. Requires the ANTHROPIC_API_KEY secret.
   # If no key is configured the run degrades to preservation + versioning only.
   # ---------------------------------------------------------------------------
   sync:
@@ -78,12 +78,12 @@ jobs:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           # The scripts run on plain `node` (only node builtins + local .mjs);
@@ -94,10 +94,8 @@ jobs:
 
       - name: Run sync (apply mode)
         env:
-          DOCS_MT_ENGINE: ${{ vars.DOCS_MT_ENGINE || 'deepl' }}
-          DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
-          DEEPL_API_HOST: ${{ vars.DEEPL_API_HOST || 'api-free.deepl.com' }}
-          GOOGLE_TRANSLATE_API_KEY: ${{ secrets.GOOGLE_TRANSLATE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
         run: node scripts/docs-i18n/sync.mjs --apply
 
       - name: Commit synced docs

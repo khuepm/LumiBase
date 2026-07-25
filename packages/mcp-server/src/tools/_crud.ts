@@ -77,9 +77,7 @@ export function registerCrud(
         inputSchema: { [idParam]: idPathSegmentSchema },
       },
       async (args: Record<string, unknown>) =>
-        run(() =>
-          client.get<unknown>(`${basePath}/${encodePathSegment(String(args[idParam]))}`),
-        ),
+        run(() => client.get<unknown>(`${basePath}/${encodePathSegment(String(args[idParam]))}`)),
     );
   }
 
@@ -104,9 +102,7 @@ export function registerCrud(
       },
       async (args: Record<string, unknown>) => {
         const { [idParam]: id, ...patch } = args;
-        return run(() =>
-          client.patch<unknown>(`${basePath}/${encodePathSegment(String(id))}`, patch),
-        );
+        return run(() => client.patch<unknown>(`${basePath}/${encodePathSegment(String(id))}`, patch));
       },
     );
   }

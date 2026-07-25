@@ -1,0 +1,253 @@
+name: Release Apps (desktop + mobile)
+
+# Builds the LumiBase Shell (apps/shell) into signed desktop bundles and mobile
+# packages, and uploads them — together with the `latest.json` updater manifest
+# — to the GitHub Release for the pushed `v*.*.*` tag (created by release.yml).
+#
+# Required secrets:
+#   TAURI_SIGNING_PRIVATE_KEY           minisign private key (see apps/shell/README.md)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password ("" if none)
+# Optional platform code-signing secrets (builds run unsigned when absent):
+#   macOS:   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+#            APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+#   Android: ANDROID_KEY_BASE64, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD,
+#            ANDROID_KEY_STORE_PASSWORD
+#   iOS:     APPLE_* (as above) + provisioning profile
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build & attach assets to (e.g. v0.23.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24
+
+jobs:
+  desktop:
+    name: Desktop (${{ matrix.platform }})
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: "--target universal-apple-darwin"
+          - platform: ubuntu-22.04
+            rust-targets: ""
+            args: ""
+          - platform: windows-latest
+            rust-targets: ""
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev libsoup-3.0-dev patchelf
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/shell/src-tauri -> target
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build, sign & publish desktop bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS notarization / signing (no-ops when the secrets are empty).
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: apps/shell
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: LumiBase ${{ github.event.inputs.tag || github.ref_name }}
+          releaseDraft: false
+          prerelease: false
+          # Emit + upload latest.json so tauri-plugin-updater can find updates.
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
+
+  android:
+    name: Mobile (Android)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: sdkmanager "ndk;27.2.12479018"
+
+      - name: Setup Rust (Android targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/shell/src-tauri -> target
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check Android signing secrets
+        id: android-secrets
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEY_BASE64 }}" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::ANDROID_KEY_BASE64 not set — building an unsigned APK for validation only."
+          fi
+
+      - name: Initialize Android project
+        run: pnpm -F @lumibase/shell exec tauri android init --ci
+        env:
+          NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
+
+      - name: Configure signing keystore
+        if: steps.android-secrets.outputs.signed == 'true'
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.ANDROID_KEY_BASE64 }}" | base64 -d > "$RUNNER_TEMP/keystore.jks"
+          KEY_DIR="apps/shell/src-tauri/gen/android/app"
+          cat > "$KEY_DIR/keystore.properties" <<PROPS
+          storeFile=$RUNNER_TEMP/keystore.jks
+          storePassword=${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          PROPS
+
+      - name: Build Android bundle
+        run: pnpm -F @lumibase/shell exec tauri android build --apk --aab
+        env:
+          NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
+
+      - name: Upload Android artifacts to release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          fail_on_unmatched_files: false
+          files: |
+            apps/shell/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            apps/shell/src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
+
+  ios:
+    name: Mobile (iOS)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check iOS signing secrets
+        id: ios-secrets
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
+            echo "can_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "can_build=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Apple signing secrets not set — skipping iOS build. Configure APPLE_* secrets to enable."
+          fi
+
+      - name: Setup pnpm
+        if: steps.ios-secrets.outputs.can_build == 'true'
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        if: steps.ios-secrets.outputs.can_build == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Setup Rust (iOS targets)
+        if: steps.ios-secrets.outputs.can_build == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Install dependencies
+        if: steps.ios-secrets.outputs.can_build == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Initialize iOS project
+        if: steps.ios-secrets.outputs.can_build == 'true'
+        run: pnpm -F @lumibase/shell exec tauri ios init --ci
+
+      - name: Build iOS app
+        if: steps.ios-secrets.outputs.can_build == 'true'
+        run: pnpm -F @lumibase/shell exec tauri ios build
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload iOS artifacts to release
+        if: steps.ios-secrets.outputs.can_build == 'true' && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch')
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          fail_on_unmatched_files: false
+          files: apps/shell/src-tauri/gen/apple/build/**/*.ipa

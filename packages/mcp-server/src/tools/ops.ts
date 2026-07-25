@@ -22,6 +22,15 @@ export function registerOpsTools(server: McpServer, client: LumiBaseClient) {
   );
 
   server.registerTool(
+    'get_site',
+    {
+      description: 'Get the current site’s configuration record (name, domain, settings).',
+      inputSchema: {},
+    },
+    async () => run(() => client.get<unknown>('/site')),
+  );
+
+  server.registerTool(
     'get_health',
     { description: 'Check the CMS health endpoint.', inputSchema: {} },
     async () => run(async () => okText(await client.getRootText('/health'))),

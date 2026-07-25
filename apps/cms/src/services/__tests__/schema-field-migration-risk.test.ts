@@ -87,7 +87,7 @@ describe('SchemaService field deletion risk', () => {
       siteId: 'site-1',
     });
     vi.spyOn(service, 'getCollection').mockResolvedValue(collection as never);
-    vi.spyOn(service as never, 'countFieldDataRows').mockResolvedValue(3);
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'countFieldDataRows').mockResolvedValue(3);
 
     await expect(service.deleteField('posts', 'title')).rejects.toMatchObject({
       code: 'FIELD_DELETE_REQUIRES_FORCE',
@@ -109,11 +109,12 @@ describe('SchemaService field deletion risk', () => {
         delete: async (key: string) => {
           deletedCacheKeys.push(key);
         },
+        increment: vi.fn(async () => 1),
       },
     });
     vi.spyOn(service, 'getCollection').mockResolvedValue(collection as never);
-    vi.spyOn(service as never, 'countFieldDataRows').mockResolvedValue(3);
-    vi.spyOn(service as never, 'backupFieldDataToRevisions').mockImplementation(async (collectionId: unknown, fieldName: unknown) => {
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'countFieldDataRows').mockResolvedValue(3);
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'backupFieldDataToRevisions').mockImplementation(async (collectionId: unknown, fieldName: unknown) => {
       backups.push({ collectionId: collectionId as string, fieldName: fieldName as string });
     });
 
@@ -130,8 +131,8 @@ describe('SchemaService field deletion risk', () => {
       siteId: 'site-1',
     });
     vi.spyOn(service, 'getCollection').mockResolvedValue(collection as never);
-    vi.spyOn(service as never, 'countFieldDataRows').mockResolvedValue(3);
-    const backup = vi.spyOn(service as never, 'backupFieldDataToRevisions');
+    vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'countFieldDataRows').mockResolvedValue(3);
+    const backup = vi.spyOn(service as unknown as Record<string, (...a: never[]) => Promise<unknown>>, 'backupFieldDataToRevisions');
 
     await expect(service.deleteField('posts', 'title', { force: true })).rejects.toMatchObject({
       code: 'FIELD_DELETE_REQUIRES_BACKUP',

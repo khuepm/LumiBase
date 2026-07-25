@@ -23,7 +23,7 @@ const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
 export const folders = pgTable(
-  'folders',
+  'lumibase_folders',
   {
     id: id(),
     siteId: text('site_id')
@@ -39,7 +39,7 @@ export const folders = pgTable(
 );
 
 export const files = pgTable(
-  'files',
+  'lumibase_files',
   {
     id: id(),
     siteId: text('site_id')
@@ -65,7 +65,7 @@ export const files = pgTable(
 );
 
 export const presets = pgTable(
-  'presets',
+  'lumibase_presets',
   {
     id: id(),
     siteId: text('site_id')
@@ -95,7 +95,7 @@ export const presets = pgTable(
 );
 
 export const translations = pgTable(
-  'translations',
+  'lumibase_translations',
   {
     id: id(),
     siteId: text('site_id')
@@ -121,7 +121,7 @@ export const translations = pgTable(
 );
 
 export const settings = pgTable(
-  'settings',
+  'lumibase_settings',
   {
     id: id(),
     siteId: text('site_id')
@@ -139,7 +139,7 @@ export const settings = pgTable(
 );
 
 export const webhooks = pgTable(
-  'webhooks',
+  'lumibase_webhooks',
   {
     id: id(),
     siteId: text('site_id')
@@ -161,7 +161,7 @@ export const webhooks = pgTable(
 );
 
 export const extensions = pgTable(
-  'extensions',
+  'lumibase_extensions',
   {
     id: id(),
     /** Null = globally available; otherwise scoped to a single site. */
@@ -195,12 +195,92 @@ export const extensions = pgTable(
     publishedAt: timestamp('published_at'),
     /** SHA-256 of the bundle for integrity verification at install time. */
     bundleSha256: text('bundle_sha256'),
+    /** Cumulative package downloads (increments on the /download endpoint). */
+    downloadCount: integer('download_count').default(0).notNull(),
+    /**
+     * User-submission review state for community-contributed extensions:
+     * null = not a submission, `pending` = awaiting review, `approved`,
+     * `rejected`. Publishing to the catalog still goes through /publish.
+     */
+    submissionStatus: text('submission_status'),
+    /** User who submitted this extension via the community submit flow. */
+    submittedBy: text('submitted_by').references(() => users.id),
+    // Signing / auto-install (lumibase-pageview-counter track B).
+    /**
+     * Server-DERIVED official flag: true only when the name is in the
+     * `lumibase-` namespace AND the bundle verified against a key flagged
+     * `official`. Never set from a client/manifest claim.
+     */
+    isOfficial: boolean('is_official').default(false).notNull(),
+    /** Install automatically during setup bootstrap / site-create reconcile. */
+    autoInstall: boolean('auto_install').default(false).notNull(),
+    /** Initial `enabled` value at install time (admin can toggle off after). */
+    enabledByDefault: boolean('enabled_by_default').default(false).notNull(),
+    /** Timestamp of the last successful signature verification (drives badge). */
+    verifiedAt: timestamp('verified_at'),
   },
   (t) => ({
     siteNameIdx: index('extensions_site_name_idx').on(t.siteId, t.name),
     siteKeyIdx: index('extensions_site_key_idx').on(t.siteId, t.key),
     publisherIdx: index('extensions_publisher_idx').on(t.publisher, t.publishedAt),
     marketplaceSlugIdx: index('extensions_marketplace_slug_idx').on(t.marketplaceSlug),
+    submissionStatusIdx: index('extensions_submission_status_idx').on(
+      t.submissionStatus,
+    ),
+  }),
+);
+
+/**
+ * Publisher signing keys registry. Merged with the `MARKETPLACE_PUBLIC_KEYS`
+ * env map at verification time, with DB rows overriding env for the `official`
+ * and `revoked` flags (a tampered env var cannot mark a key official or
+ * un-revoke it). The official LumiBase key is seeded here during setup.
+ */
+export const publisherKeys = pgTable(
+  'lumibase_publisher_keys',
+  {
+    id: id(),
+    /** Stable key id referenced by `extensions.publisher_key_id`. */
+    keyId: text('key_id').notNull(),
+    /** SPKI PEM public key. */
+    publicKeyPem: text('public_key_pem').notNull(),
+    /** Human-readable publisher / organization name. */
+    publisher: text('publisher').notNull(),
+    /** Trusted to sign official `lumibase-*` extensions. */
+    official: boolean('official').default(false).notNull(),
+    /** Revoked keys always fail verification. */
+    revoked: boolean('revoked').default(false).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    keyIdUnique: uniqueIndex('publisher_keys_key_id_unique').on(t.keyId),
+  }),
+);
+
+/**
+ * Marketplace upvotes. One row per (user, marketplace listing); the unique
+ * index makes voting idempotent and prevents ballot-stuffing. Votes are keyed
+ * by `marketplaceSlug` (not extension row id) so they persist across version
+ * bumps of the same listing.
+ */
+export const extensionVotes = pgTable(
+  'lumibase_extension_votes',
+  {
+    id: id(),
+    /** Marketplace listing slug the vote is cast for. */
+    marketplaceSlug: text('marketplace_slug').notNull(),
+    /** Voter. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    userSlugIdx: uniqueIndex('extension_votes_user_slug_idx').on(
+      t.userId,
+      t.marketplaceSlug,
+    ),
+    slugIdx: index('extension_votes_slug_idx').on(t.marketplaceSlug),
   }),
 );
 
@@ -216,7 +296,7 @@ export const extensions = pgTable(
  * one place and templates stay focused on their message.
  */
 export const emailLayouts = pgTable(
-  'email_layouts',
+  'lumibase_email_layouts',
   {
     id: id(),
     siteId: text('site_id')
@@ -243,7 +323,7 @@ export const emailLayouts = pgTable(
  * engine for missing-variable warnings.
  */
 export const emailTemplates = pgTable(
-  'email_templates',
+  'lumibase_email_templates',
   {
     id: id(),
     siteId: text('site_id')
@@ -281,7 +361,7 @@ export const emailTemplates = pgTable(
  * during translation work and as a corpus to fine-tune MT output.
  */
 export const translationMemory = pgTable(
-  'translation_memory',
+  'lumibase_translation_memory',
   {
     id: id(),
     siteId: text('site_id')
@@ -315,7 +395,7 @@ export const translationMemory = pgTable(
  * (or kept verbatim). Higher priority than fuzzy TM matches.
  */
 export const glossary = pgTable(
-  'glossary',
+  'lumibase_glossary',
   {
     id: id(),
     siteId: text('site_id')
@@ -333,5 +413,42 @@ export const glossary = pgTable(
   (t) => ({
     sitePairIdx: index('glossary_site_pair_idx').on(t.siteId, t.sourceLang, t.targetLang),
     termIdx: index('glossary_term_idx').on(t.siteId, t.term),
+  }),
+);
+
+/**
+ * Web Push subscriptions (push-noti feature). One row per browser/device
+ * `PushSubscription` an authenticated Studio user has granted. Stores the
+ * W3C Push API endpoint plus the two RFC 8291 keys (`p256dh`, `auth`)
+ * needed to encrypt payloads for that endpoint.
+ *
+ * Multi-tenant: every row carries `site_id` (Strict Rule #2). A single
+ * physical browser may hold one subscription per site the user works in,
+ * so uniqueness is scoped to `(site_id, endpoint)`. `user_id` is nullable
+ * (set-null on user delete) so a stale subscription is cleaned up by the
+ * push dispatcher on a 404/410 from the push service rather than by FK.
+ */
+export const pushSubscriptions = pgTable(
+  'lumibase_push_subscriptions',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** W3C Push API endpoint URL the push service assigned to this client. */
+    endpoint: text('endpoint').notNull(),
+    /** Client ECDH P-256 public key, base64url (RFC 8291 `p256dh`). */
+    p256dh: text('p256dh').notNull(),
+    /** Client auth secret, base64url (RFC 8291 `auth`). */
+    auth: text('auth').notNull(),
+    /** User-Agent at subscribe time — purely informational for the UI. */
+    userAgent: text('user_agent'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteEndpointIdx: uniqueIndex('push_subscriptions_site_endpoint_idx').on(t.siteId, t.endpoint),
+    siteUserIdx: index('push_subscriptions_site_user_idx').on(t.siteId, t.userId),
   }),
 );

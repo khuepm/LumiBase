@@ -1,8 +1,24 @@
+---
+version: 1
+lastUpdated: 2026-07-08T20:21:03.641Z
+sourceLang: en
+contentHash: 9c6c07b7161c8e59
+---
+
 # Getting Started — Scaffold a new project with `create-lumibase`
 
 `create-lumibase` is the official project bootstrapper for LumiBase. From an
 empty directory you run a single command and get a ready-to-run project,
 similar to `create-next-app` or `create-vite`.
+
+> **Two different things share the "LumiBase" name — pick the right one:**
+>
+> | You want… | Use | What you get |
+> |-----------|-----|--------------|
+> | A starter app to build on | `create-lumibase` (this page) | A minimal **Hono + Drizzle** project with a demo `posts` resource. No Collections API, Studio, Email, or the rest of the platform. |
+> | The full Content OS platform | The CMS image `ghcr.io/khuepm/lumibase-cms` or a clone of the [monorepo](https://github.com/khuepm/lumibase) | The complete platform: Collections API, Studio admin, Email, Flows, AI, multi-tenancy, etc. See [Local development](./deployment/local-development.md) and [Deployment overview](./deployment/overview.md). |
+>
+> The scaffold below is the **starter**, not the platform.
 
 > **Package:** [`create-lumibase`](../../packages/create-lumibase) ·
 > **Published as:** `create-lumibase` on npm ·

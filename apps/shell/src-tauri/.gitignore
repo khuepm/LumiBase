@@ -1,0 +1,5 @@
+# Rust / Cargo build output
+/target
+
+# Tauri-generated platform projects + schemas
+/gen

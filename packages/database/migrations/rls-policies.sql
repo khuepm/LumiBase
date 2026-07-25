@@ -6,7 +6,9 @@
 -- primary gate; RLS is a safety net if those checks are ever bypassed.
 --
 -- Prerequisites:
---   1. Run this migration AFTER all table-creation migrations.
+--   1. Run this migration AFTER the schema migration (0000_lumibase_init),
+--      which creates every system table in the `lumibase_` namespace — these
+--      policies target those names.
 --   2. The Postgres role used by Hyperdrive must NOT be a superuser.
 --      Use a dedicated `lumibase_app` role with GRANT on all tables.
 --   3. Declare the custom setting in postgresql.conf or via ALTER DATABASE:
@@ -37,17 +39,28 @@ DO $$
 DECLARE
   tbl text;
   tables text[] := ARRAY[
-    'collections', 'fields', 'relations',
-    'items', 'revisions', 'activity',
-    'files', 'folders', 'presets', 'translations',
-    'settings', 'webhooks', 'extensions',
-    'email_layouts', 'email_templates',
-    'roles', 'policies', 'user_policies',
-    'permissions', 'audit_log',
+    'lumibase_collections', 'lumibase_fields', 'lumibase_relations',
+    'lumibase_items', 'lumibase_revisions', 'lumibase_activity',
+    'lumibase_files', 'lumibase_folders', 'lumibase_presets', 'lumibase_translations',
+    'lumibase_settings', 'lumibase_webhooks', 'lumibase_extensions',
+    'lumibase_email_layouts', 'lumibase_email_templates', 'lumibase_push_subscriptions',
+    'lumibase_roles', 'lumibase_policies', 'lumibase_user_policies',
+    'lumibase_permissions', 'lumibase_audit_log',
     -- Regulated / sensitive content readiness (site-isolated).
-    'field_access_log', 'content_reviews', 'erasure_requests', 'encryption_keys',
+    'lumibase_field_access_log', 'lumibase_content_reviews', 'lumibase_erasure_requests', 'lumibase_encryption_keys',
     -- Privacy / data-subject rights (site-isolated).
-    'user_consents', 'email_suppressions', 'processing_restrictions'
+    'lumibase_user_consents', 'lumibase_email_suppressions', 'lumibase_processing_restrictions',
+    -- Deployment integrations (site-isolated).
+    'lumibase_deployment_targets', 'lumibase_deployments',
+    -- Custom domains & free subdomains (site-isolated).
+    'lumibase_site_domains',
+    -- Auth session store (site-isolated; holds session-equivalent secrets).
+    'lumibase_refresh_tokens',
+    -- Change Feed (outbox + subscriptions + delivery log, site-isolated).
+    'lumibase_cdc_change_events', 'lumibase_cdc_subscriptions', 'lumibase_cdc_deliveries',
+    -- Git integration (GitHub / GitLab) — site-isolated.
+    'lumibase_git_integrations', 'lumibase_git_pull_requests', 'lumibase_git_ci_runs',
+    'lumibase_git_webhook_events', 'lumibase_git_preview_envs', 'lumibase_git_provenance'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
@@ -61,20 +74,22 @@ BEGIN
 
     -- Read isolation: rows visible only when site_id matches session var.
     -- app_site_id() returning NULL → no rows visible (fail-safe).
-    EXECUTE format($$
+    -- Use a distinct dollar-quote tag (dollar-pol-dollar) so it does not clash
+    -- with the outer DO block; nested identical tags are a syntax error.
+    EXECUTE format($pol$
       CREATE POLICY site_isolation ON %I
         AS RESTRICTIVE
         USING (site_id = app_site_id())
         WITH CHECK (site_id = app_site_id())
-    $$, tbl);
+    $pol$, tbl);
   END LOOP;
 END $$;
 
 -- =============================================================================
 -- Tables with nullable site_id (extensions can be global) — special policy.
 -- =============================================================================
-DROP POLICY IF EXISTS site_isolation ON extensions;
-CREATE POLICY site_isolation ON extensions
+DROP POLICY IF EXISTS site_isolation ON lumibase_extensions;
+CREATE POLICY site_isolation ON lumibase_extensions
   AS RESTRICTIVE
   USING (site_id IS NULL OR site_id = app_site_id())
   WITH CHECK (site_id IS NULL OR site_id = app_site_id());
@@ -83,12 +98,12 @@ CREATE POLICY site_isolation ON extensions
 -- role_policies junction table — no site_id column; inherit via roles.
 -- We allow unrestricted access here (policy check happens at role level).
 -- =============================================================================
-ALTER TABLE role_policies DISABLE ROW LEVEL SECURITY;
+ALTER TABLE lumibase_role_policies DISABLE ROW LEVEL SECURITY;
 
 -- =============================================================================
--- core tables (sites, users) — managed by platform, no RLS needed.
+-- core tables (lumibase_sites, lumibase_users) — managed by platform, no RLS needed.
 -- =============================================================================
--- sites, users: intentionally excluded from site-scoped RLS.
+-- lumibase_sites, lumibase_users: intentionally excluded from site-scoped RLS.
 
 COMMENT ON FUNCTION app_site_id IS
   'Returns the current request site_id from SET LOCAL app.site_id.

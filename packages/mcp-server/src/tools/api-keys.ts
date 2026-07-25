@@ -64,7 +64,7 @@ export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
       description: 'Attach a role to an API key (grants the role’s policies to the key).',
       inputSchema: {
         id: idPathSegmentSchema.describe('API key id.'),
-        roleId: z.string().min(1),
+        roleId: idPathSegmentSchema,
         priority: z.number().int().optional(),
         overrideWarnings: z.boolean().optional(),
       },
@@ -95,7 +95,7 @@ export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
       description: 'Attach a policy directly to an API key.',
       inputSchema: {
         id: idPathSegmentSchema.describe('API key id.'),
-        policyId: z.string().min(1),
+        policyId: idPathSegmentSchema,
         priority: z.number().int().optional(),
         overrideWarnings: z.boolean().optional(),
       },

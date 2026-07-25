@@ -1,8 +1,10 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { ItemService, ItemServiceError, parseDeepQueryParams } from '../services/item-service';
+import { ItemServiceError, parseDeepQueryParams, parseFilterQueryParams } from '../services/item-service';
+import { itemServiceForRequest, permissionServiceForRequest } from '../services/item-service-factory';
 import { ContentVersionError, ContentVersionService } from '../services/content-version-service';
+import { DependentsError, DependentsService, type ResolveAction } from '../services/dependents-service';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
@@ -23,7 +25,9 @@ const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
   status: z.string().optional(),
-  search: z.string().optional(),
+  // Opt out of the `count(*)` total (high-load-cache-readiness Req 5).
+  // Defaults to `total_count` to preserve the historical response shape.
+  meta: z.enum(['total_count', 'none']).optional(),
 });
 
 const scheduleSchema = {
@@ -50,38 +54,7 @@ const bulkSchema = z.object({
   items: z.array(z.record(z.unknown())),
 });
 
-const buildService = (c: Context<AppEnv>) => {
-  const auth = c.get('auth');
-  const runtime = c.get('runtime');
-  const headers: Record<string, string> = {};
-  c.req.raw.headers.forEach((value, key) => {
-    headers[key.toLowerCase()] = value;
-  });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const realtimeNamespace = (c.env as unknown as Record<string, any>)['SITE_ROOM'] as DurableObjectNamespace | undefined;
-  return new ItemService({
-    db: c.get('db'),
-    siteId: c.get('siteId'),
-    userId: auth?.userId ?? null,
-    cache: runtime.cache,
-    search: runtime.search,
-    queue: runtime.queue,
-    realtimeNamespace,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    extensionEnv: c.env as unknown as Record<string, unknown>,
-    permissionCtx: {
-      userId: auth?.userId ?? null,
-      siteId: c.get('siteId'),
-      roleId: null,
-      user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
-      ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-      headers,
-      apiKey: auth?.apiKey ?? null,
-    },
-    keyProvider: runtime.keys,
-    encryptionKey: c.env.ENCRYPTION_KEY || (typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : undefined),
-  });
-};
+const buildService = (c: Context<AppEnv>) => itemServiceForRequest(c);
 
 const toError = (err: unknown) => {
   if (err instanceof ItemServiceError || err instanceof ContentVersionError) {
@@ -102,8 +75,14 @@ itemsRouter.get('/:collection', async (c) => {
   if (!parsed.success) {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
+  let filter: never | undefined;
   try {
-    const filter = parsed.data.filter ? (JSON.parse(parsed.data.filter) as never) : undefined;
+    // Accepts both `?filter={json}` and `?filter[field][_op]=value` forms.
+    filter = parseFilterQueryParams(searchParams, parsed.data.filter) as never | undefined;
+  } catch {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Invalid filter: expected JSON or filter[field][_op]=value syntax.' }] }, 400);
+  }
+  try {
     const fields = parsed.data.fields ? parsed.data.fields.split(',') : undefined;
     const deep = parseDeepQueryParams(searchParams);
     const sort = parsed.data.sort ? parsed.data.sort.split(',') : undefined;
@@ -115,7 +94,7 @@ itemsRouter.get('/:collection', async (c) => {
       limit: parsed.data.limit,
       offset: parsed.data.offset,
       status: parsed.data.status,
-      search: parsed.data.search,
+      withTotal: parsed.data.meta !== 'none',
     });
     return c.json(result);
   } catch (err) {
@@ -193,11 +172,83 @@ itemsRouter.put('/:collection/:id', async (c) => {
   }
 });
 
+function buildDependents(c: Context<AppEnv>): DependentsService {
+  const auth = c.get('auth');
+  // Request path: DependentsService gets the caller's PermissionService (the
+  // authority for its read/update/delete gates) and a permission-carrying
+  // ItemService factory rebindable to the batch transaction, so delegated
+  // deletes enforce the caller's per-item RBAC — never a system bypass.
+  return new DependentsService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    userId: auth?.userId ?? null,
+    permissions: permissionServiceForRequest(c),
+    itemServiceFactory: (db) => itemServiceForRequest(c, { db }),
+  });
+}
+
+// DependentsError carries a stable code + HTTP status (403 FORBIDDEN, etc.).
+const dependentsError = (err: unknown) =>
+  err instanceof DependentsError
+    ? { status: err.status, body: { errors: [{ code: err.code, message: err.message }] } }
+    : toError(err);
+
 itemsRouter.delete('/:collection/:id', async (c) => {
+  const collection = c.req.param('collection');
+  const id = c.req.param('id');
   try {
-    await buildService(c).softDelete(c.req.param('collection'), c.req.param('id'));
+    // Require delete on the target before revealing dependents, then block the
+    // delete if a `restrict` relation still has dependents (Req 3).
+    const report = await buildDependents(c).report(collection, id, { requireTarget: 'delete' });
+    if (report.blocking) {
+      return c.json({ errors: [{ code: 'DEPENDENT_RECORDS_EXIST', dependents: report.dependents }] }, 409);
+    }
+    await buildService(c).softDelete(collection, id);
     return c.body(null, 204);
   } catch (err) {
+    const { status, body } = dependentsError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+// Preflight: what references this item? (Req 2) — requires read on the target.
+itemsRouter.get('/:collection/:id/dependents', async (c) => {
+  try {
+    const report = await buildDependents(c).report(c.req.param('collection'), c.req.param('id'), {
+      requireTarget: 'read',
+    });
+    return c.json({ data: report });
+  } catch (err) {
+    const { status, body } = dependentsError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+// Batch-resolve a relation's dependents before re-deleting. (Req 5-7)
+const resolveSchema = z.object({
+  action: z.enum(['set_null', 'delete', 'reassign']),
+  relation: z.string().min(1),
+  newTargetId: z.string().optional(),
+  hard: z.boolean().optional(),
+});
+itemsRouter.post('/:collection/:id/resolve-dependents', async (c) => {
+  const parsed = resolveSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ errors: [{ code: 'VALIDATION_FAILED', message: parsed.error.issues[0]?.message ?? 'Invalid body.' }] }, 422);
+  }
+  try {
+    const result = await buildDependents(c).applyResolution(
+      c.req.param('collection'),
+      c.req.param('id'),
+      parsed.data.action as ResolveAction,
+      parsed.data.relation,
+      { newTargetId: parsed.data.newTargetId, hard: parsed.data.hard },
+    );
+    return c.json({ data: result });
+  } catch (err) {
+    if (err instanceof DependentsError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    }
     const { status, body } = toError(err);
     return c.json(body, status as 400);
   }

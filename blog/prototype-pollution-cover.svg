@@ -1,0 +1,80 @@
+<svg width="1000" height="420" viewBox="0 0 1000 420" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1120"/>
+      <stop offset="1" stop-color="#0f1a2e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f97316"/>
+      <stop offset="1" stop-color="#ef4444"/>
+    </linearGradient>
+    <linearGradient id="safe-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#34d399"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <filter id="glow-red" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-green" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="3" stdDeviation="8" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <rect width="1000" height="420" fill="url(#bg)"/>
+  <g stroke="#1a2540" stroke-width="1" opacity="0.5">
+    <line x1="0" y1="105" x2="1000" y2="105"/>
+    <line x1="0" y1="210" x2="1000" y2="210"/>
+    <line x1="0" y1="315" x2="1000" y2="315"/>
+    <line x1="333" y1="0" x2="333" y2="420"/>
+    <line x1="666" y1="0" x2="666" y2="420"/>
+  </g>
+  <ellipse cx="700" cy="200" rx="220" ry="160" fill="#7f1d1d" opacity="0.10"/>
+  <text x="52" y="82" fill="url(#accent)" font-size="16" font-weight="700" letter-spacing="3">SECURITY · JAVASCRIPT</text>
+  <text x="52" y="144" fill="#f1f5f9" font-size="48" font-weight="800">Prototype</text>
+  <text x="52" y="198" fill="#f1f5f9" font-size="48" font-weight="800">Pollution</text>
+  <text x="52" y="236" fill="#94a3b8" font-size="17">One JSON key poisons every</text>
+  <text x="52" y="258" fill="#94a3b8" font-size="17">object in your entire runtime</text>
+  <rect x="52" y="280" width="60" height="4" rx="2" fill="url(#accent)"/>
+  <g font-size="12" font-weight="600">
+    <g transform="translate(52,296)">
+      <rect width="126" height="26" rx="13" fill="#431407" stroke="#f97316" stroke-width="1"/>
+      <text x="63" y="18" text-anchor="middle" fill="#fb923c">CWE-1321</text>
+    </g>
+    <g transform="translate(188,296)">
+      <rect width="126" height="26" rx="13" fill="#1a0a0a" stroke="#ef4444" stroke-width="1"/>
+      <text x="63" y="18" text-anchor="middle" fill="#f87171">Prototype Chain</text>
+    </g>
+  </g>
+  <g transform="translate(380,44)" filter="url(#shadow)">
+    <rect x="0" y="0" width="574" height="332" rx="12" fill="#0d1424" stroke="#1e2a3f" stroke-width="1.5"/>
+    <rect x="0" y="0" width="574" height="34" rx="12" fill="#131e30"/>
+    <rect x="0" y="22" width="574" height="12" fill="#131e30"/>
+    <circle cx="22" cy="17" r="6" fill="#f87171" opacity="0.8"/>
+    <circle cx="42" cy="17" r="6" fill="#fbbf24" opacity="0.8"/>
+    <circle cx="62" cy="17" r="6" fill="#34d399" opacity="0.8"/>
+    <text x="287" y="22" text-anchor="middle" fill="#475569" font-size="12">prototype-pollution.ts</text>
+    <text x="20" y="60" fill="#ef4444" font-size="11" font-weight="700" font-family="monospace" opacity="0.9">// ATTACK</text>
+    <text x="20" y="82" fill="#475569" font-size="13" font-family="monospace">const payload = JSON.parse(userInput);</text>
+    <rect x="12" y="92" width="550" height="28" rx="4" fill="#3b0a0a" opacity="0.7"/>
+    <text x="20" y="112" fill="#ef4444" font-size="13" font-family="monospace" filter="url(#glow-red)">// { "__proto__": { "isAdmin": true } }</text>
+    <text x="20" y="140" fill="#475569" font-size="13" font-family="monospace">merge({}, payload); // Object.prototype poisoned</text>
+    <line x1="12" y1="158" x2="562" y2="158" stroke="#1e2a3f" stroke-width="1"/>
+    <text x="20" y="178" fill="#ef4444" font-size="11" font-weight="700" font-family="monospace" opacity="0.9">// RESULT: every new object is tainted</text>
+    <text x="20" y="200" fill="#94a3b8" font-size="13" font-family="monospace">const a = {};</text>
+    <text x="200" y="200" fill="#ef4444" font-size="13" font-family="monospace" filter="url(#glow-red)">a.isAdmin // true !</text>
+    <text x="20" y="224" fill="#94a3b8" font-size="13" font-family="monospace">const b = Object.create(null);</text>
+    <text x="340" y="224" fill="#34d399" font-size="13" font-family="monospace">b.isAdmin // undefined</text>
+    <line x1="12" y1="242" x2="562" y2="242" stroke="#1e2a3f" stroke-width="1"/>
+    <text x="20" y="262" fill="#34d399" font-size="11" font-weight="700" font-family="monospace" filter="url(#glow-green)">// FIX: Zod strips __proto__ before merge</text>
+    <text x="20" y="284" fill="#94a3b8" font-size="13" font-family="monospace">const safe = </text>
+    <text x="116" y="284" fill="#34d399" font-size="13" font-family="monospace" filter="url(#glow-green)">Schema.parse</text>
+    <text x="260" y="284" fill="#e2e8f0" font-size="13" font-family="monospace">(userInput);</text>
+    <text x="20" y="308" fill="#64748b" font-size="13" font-family="monospace">// __proto__ key? stripped. Never reaches merge.</text>
+    <rect x="0" y="316" width="574" height="16" rx="12" fill="#0a0f1e"/>
+  </g>
+  <text x="52" y="392" fill="#475569" font-size="15">lumibase.dev — Content OS · build in public</text>
+</svg>

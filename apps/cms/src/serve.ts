@@ -1,10 +1,12 @@
 import { serve } from '@hono/node-server';
-import { createRuntime } from '@lumibase/runtime';
+import type { Server as HttpServer } from 'node:http';
+import { createRuntime, getSharedRealtimeHub } from '@lumibase/runtime';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { schema } from '@lumibase/database';
 import cron from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
+import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
 import { bootstrapNodeObservability } from './observability/node';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { createPressureLimiter } from './pressure-limiter';
@@ -43,6 +45,25 @@ async function main() {
   });
   console.log(`[lumibase-cms] Started in ${runtime.runtime} mode on port ${port}`);
 
+  // ── Realtime WebSocket server (realtime-audience-channels) ──────────────────
+  // On Node/Docker there is no Durable Object, so attach a `ws` server to the
+  // HTTP server. It shares the in-process hub with the runtime's realtime
+  // provider, so `runtime.realtime.publish()` reaches live WS sessions here.
+  const jwtSecret = process.env.JWT_SECRET;
+  if (jwtSecret) {
+    const { attachNodeRealtime } = await import('./realtime/node-hub');
+    const maxPerSubject = parseInt(process.env.LUMIBASE_REALTIME_MAX_CONNECTIONS_PER_SUBJECT || '0', 10);
+    attachNodeRealtime({
+      server: server as unknown as HttpServer,
+      hub: getSharedRealtimeHub(),
+      jwtSecret,
+      maxConnectionsPerSubject: Number.isFinite(maxPerSubject) ? maxPerSubject : 0,
+    });
+    console.log('[lumibase-cms] Realtime WebSocket server attached at /api/v1/realtime');
+  } else {
+    console.warn('[lumibase-cms] JWT_SECRET unset — realtime WebSocket server disabled');
+  }
+
   // ── Audit-log retention rotation (admin-setup-wizard task 11.4; Req 15.5;
   //    design §10.2) ─────────────────────────────────────────────────────────
   //
@@ -77,6 +98,15 @@ async function main() {
   // ticks.
   const rotationTask = cron.schedule('0 * * * *', () => {
     void runScheduledRotation(rotatorDb);
+    // Sweep expired refresh-token rows on the same hourly tick (best-effort).
+    void runScheduledRefreshTokenPrune(rotatorDb);
+  });
+
+  // Pageview flush — every 5 minutes, roll up raw events and drain hot counters
+  // into the daily rollup. Best-effort; never throws (see the module doc).
+  const { runScheduledPageviewFlush } = await import('./modules/pageviews/scheduled');
+  const pageviewFlushTask = cron.schedule('*/5 * * * *', () => {
+    void runScheduledPageviewFlush(rotatorDb, runtime);
   });
 
   // ── Load-aware autonomy (content-os task 9; Req 9.4/9.5) ─────────────────
@@ -119,6 +149,69 @@ async function main() {
   registerContentIndexingWorker({
     search: runtime.search,
     queue: runtime.queue,
+  });
+
+  // ── Change Feed dispatch (cdc-extension-integration Req 4.7) ────────────
+  //
+  // Consumes the `cdc-dispatch` queue (latency path) and runs the 30s sweep
+  // (correctness backstop) that delivers outbox events to webhook/extension
+  // subscriptions. Without it, push subscriptions never receive events —
+  // pull consumers are unaffected.
+  const {
+    registerCdcDispatchWorker,
+    CdcDispatcher,
+    createWebhookEnvelopeSender,
+    DrizzleDeliveryLog,
+    DrizzleSubscriptionDispatchStore,
+  } = await import('./modules/cdc/change-feed/dispatcher');
+  const { DrizzleCdcEventStore } = await import('./modules/cdc/change-feed/feed-reader');
+  const { ExtensionEnvelopeSender, SandboxCdcSubscriberLoader } = await import(
+    './modules/cdc/change-feed/extension-sender'
+  );
+  const cdcSubscriptionStore = new DrizzleSubscriptionDispatchStore(rotatorDb);
+  const { DrizzleRetentionStore, pruneChangeFeed, readRetentionDays } = await import(
+    './modules/cdc/change-feed/retention'
+  );
+  registerCdcDispatchWorker({
+    queue: runtime.queue,
+    subscriptions: cdcSubscriptionStore,
+    prune: async (siteId) => {
+      await pruneChangeFeed(
+        {
+          store: new DrizzleRetentionStore(rotatorDb),
+          retentionDays: await readRetentionDays(rotatorDb, siteId),
+        },
+        siteId,
+      );
+    },
+    buildDispatcher: () =>
+      new CdcDispatcher({
+        eventStore: new DrizzleCdcEventStore(rotatorDb),
+        subscriptions: cdcSubscriptionStore,
+        deliveryLog: new DrizzleDeliveryLog(rotatorDb),
+        senders: {
+          webhook: createWebhookEnvelopeSender(rotatorDb),
+          extension: new ExtensionEnvelopeSender({
+            loader: new SandboxCdcSubscriberLoader(
+              rotatorDb,
+              process.env as Record<string, unknown>,
+            ),
+          }),
+        },
+        cache: runtime.cache,
+      }),
+  });
+
+  // ── Flow event trigger (visual-flow-builder Req 1) ───────────────────────
+  //
+  // Consumes the `flow-events` queue: ItemService enqueues one job per
+  // matching active event-flow on create/update/delete; this worker executes
+  // the flow and records the run. Without it, event flows never fire.
+  const { registerFlowEventWorker } = await import('./services/flow-dispatch');
+  registerFlowEventWorker({
+    db: rotatorDb,
+    queue: runtime.queue,
+    keys: runtime.keys,
   });
 
   // ── Veto-window commits (content-os task 14; Req 13.3/13.5) ─────────────
@@ -165,6 +258,34 @@ async function main() {
     });
   });
 
+  // ── Deployment status poller (deployment-integrations task 9; Req 3.4) ──
+  //
+  // A 30-second sweep syncs every non-terminal deployment from its Provider.
+  // Each sync is a guarded conditional update (only flips queued/building),
+  // and a single provider error never aborts the sweep, so re-running is a
+  // no-op (idempotent).
+  const { registerStatusPoller, sweepAllSites } = await import('./services/deployment/status-poller');
+  const deployPollerDeps = { db: rotatorDb, keys: runtime.keys, queue: runtime.queue };
+  registerStatusPoller(deployPollerDeps);
+  const deploymentPollTask = cron.schedule('*/30 * * * * *', () => {
+    void sweepAllSites(deployPollerDeps).catch((err) => {
+      console.error('[deployment-poll] sweep failed', formatSafeError(err));
+    });
+  });
+
+  // ── Flow schedule tick (visual-flow-builder task 4.x) ───────────────────
+  //
+  // The event-triggered flow consumer is `registerFlowEventWorker` (above).
+  // Schedule flows need a periodic sweep: a 1-minute tick enqueues every flow
+  // whose `next_run_at` is due onto the same `flow-events` queue (nextRunAt is
+  // advanced before enqueue so a slow job never re-fires the same flow).
+  const { runDueScheduledFlows } = await import('./services/flow-scheduler');
+  const flowScheduleTask = cron.schedule('* * * * *', () => {
+    void runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
+      console.error('[flow-schedule] tick failed', formatSafeError(err));
+    });
+  });
+
   // ── Envelope migration consumer (regulated-content-readiness task 3.6) ──
   //
   // Drains background migrations enqueued when an operator toggles
@@ -179,9 +300,12 @@ async function main() {
     // Stop the hourly audit-rotation cron and pressure sampler so their timers
     // can't keep the event loop alive past the server close (task 11.4).
     rotationTask.stop();
+    pageviewFlushTask.stop();
     vetoSweepTask.stop();
     schedulerTask.stop();
     retentionTask.stop();
+    deploymentPollTask.stop();
+    flowScheduleTask.stop();
     pressureLimiter.stop();
     clearInterval(loadGuardTimer);
 

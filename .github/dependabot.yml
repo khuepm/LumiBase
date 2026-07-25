@@ -1,0 +1,32 @@
+# Dependabot keeps dependencies patched so the codebase does not drift onto
+# unmaintained / known-vulnerable versions (CWE-1104). Weekly cadence with
+# grouped minor/patch PRs to keep the noise manageable.
+version: 2
+updates:
+  # JavaScript/TypeScript dependencies. `directory: "/"` covers the whole pnpm
+  # workspace (Dependabot reads the root lockfile and updates every package).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+    groups:
+      # Batch non-major bumps into a single PR per week to reduce churn.
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    # Majors still get their own PR (excluded from the group above by default).
+
+  # Keep GitHub Actions pinned to current, maintained versions.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "ci"

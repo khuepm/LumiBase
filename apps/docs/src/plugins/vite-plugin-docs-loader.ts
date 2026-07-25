@@ -47,9 +47,27 @@ export function toTitleCase(filename: string): string {
 /**
  * Derive the slug from a file path relative to the docs directory.
  * Removes the .md extension and uses forward slashes.
+ *
+ * An `index.md` is the landing page for its directory, so the trailing
+ * `index` segment is collapsed to the parent path (e.g. `sdk/index.md` →
+ * `sdk`, served at `/…/docs/sdk/`). This is deliberate: Cloudflare Pages
+ * treats `index` as a directory-index segment and 308-redirects any request
+ * for `/…/docs/sdk/index` to `/…/docs/sdk/`. If the slug kept the `index`
+ * segment the page would be prerendered at `…/sdk/index/index.html` and the
+ * redirect target `…/sdk/` would have no static file — a hard 404 on every
+ * direct load / refresh of a section landing page.
+ *
+ * The match is case-sensitive **on purpose**: Cloudflare only collapses the
+ * lowercase `index` segment (it mirrors `index.html`). A file named
+ * `Index.md` is served fine as `…/sdk/Index/` and must NOT be rewritten —
+ * making this case-insensitive would break URLs that already work.
  */
 export function deriveSlug(relativePath: string): string {
-  return relativePath.replace(/\.md$/, '').split(path.sep).join('/');
+  const withoutExt = relativePath.replace(/\.md$/, '').split(path.sep).join('/');
+  const collapsed = withoutExt.replace(/(^|\/)index$/, '');
+  // A top-level `index.md` collapses to '' — keep the literal `index` so the
+  // entry still has a routable, non-empty slug.
+  return collapsed === '' ? withoutExt : collapsed;
 }
 
 /**
@@ -62,6 +80,13 @@ export function deriveTitle(
 ): string {
   if (frontMatterTitle) return frontMatterTitle;
   const basename = path.basename(filePath, '.md');
+  // `index.md` has no meaningful filename — it is the landing page for its
+  // directory, so title it after the directory (e.g. agent-setup/index.md →
+  // "Agent Setup") instead of the literal, useless "Index".
+  if (basename === 'index') {
+    const dir = path.basename(path.dirname(filePath));
+    if (dir && dir !== '.' && dir !== '..') return toTitleCase(dir);
+  }
   return toTitleCase(basename);
 }
 

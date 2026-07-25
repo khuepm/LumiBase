@@ -60,7 +60,11 @@ export class ToolRegistryService {
   coreTool(name: string, skill: SkillDefinition): AgentToolDefinition {
     const mutatesSchema = skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read');
     const deletes = name.startsWith('delete');
-    const level: AgentRiskLevel = skill.dangerous || mutatesSchema || deletes ? 'dangerous' : 'safe';
+    // Deployment writes are outward-facing side effects (trigger a build on an
+    // external host), so they are dangerous → HITL before_execute below
+    // autopilot autonomy (deployment-integrations Req 6.2).
+    const mutatesDeployment = skill.requiredCapabilities.includes('deployments:write');
+    const level: AgentRiskLevel = skill.dangerous || mutatesSchema || deletes || mutatesDeployment ? 'dangerous' : 'safe';
 
     return {
       ...skill,

@@ -1,7 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { buildQs, run } from './_shared.js';
+import { buildQs, confirmDescription, okText, run } from './_shared.js';
+import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 export function registerTranslationMemoryTools(server: McpServer, client: LumiBaseClient) {
   server.registerTool(
@@ -63,5 +64,37 @@ export function registerTranslationMemoryTools(server: McpServer, client: LumiBa
       },
     },
     async (input) => run(() => client.post<unknown>('/tm/translate', input)),
+  );
+
+  server.registerTool(
+    'update_tm',
+    {
+      description: 'Edit an existing translation-memory entry (partial PATCH).',
+      inputSchema: {
+        id: idPathSegmentSchema,
+        targetText: z.string().min(1).optional(),
+        quality: z.number().min(0).max(100).optional(),
+        context: z.string().nullable().optional(),
+        source: z.enum(['human', 'mt', 'imported']).optional(),
+      },
+    },
+    async ({ id, ...patch }) =>
+      run(() => client.patch<unknown>(`/tm/${encodePathSegment(id)}`, patch)),
+  );
+
+  server.registerTool(
+    'delete_tm',
+    {
+      description: 'Delete a translation-memory entry. DESTRUCTIVE — warn the user first and pass confirm=true.',
+      inputSchema: {
+        id: idPathSegmentSchema,
+        confirm: z.literal(true).describe(confirmDescription),
+      },
+    },
+    async ({ id }) =>
+      run(async () => {
+        await client.delete(`/tm/${encodePathSegment(id)}`);
+        return okText(`Translation-memory entry "${id}" deleted.`);
+      }),
   );
 }

@@ -202,7 +202,8 @@ export async function buildSiteSchema(schemaService: SchemaService): Promise<Gra
     const name = coll.name;
     const itemType = registry.get(name)!;
 
-    // Query.<collection> — list with filter/sort/paginate/search.
+    // Query.<collection> — list with filter/sort/paginate. Full-text search is
+    // served by the dedicated /api/v1/search endpoint, not this list resolver.
     queryFields[name] = {
       type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(itemType))),
       args: {
@@ -211,7 +212,6 @@ export async function buildSiteSchema(schemaService: SchemaService): Promise<Gra
         limit: { type: GraphQLInt },
         offset: { type: GraphQLInt },
         status: { type: GraphQLString },
-        search: { type: GraphQLString },
       },
       resolve: async (_src, args, ctx) => {
         try {
@@ -221,7 +221,6 @@ export async function buildSiteSchema(schemaService: SchemaService): Promise<Gra
             limit: args.limit,
             offset: args.offset,
             status: args.status,
-            search: args.search,
           });
           return res.data;
         } catch (err) {

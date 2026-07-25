@@ -3,8 +3,7 @@ import type { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { registerAllTools } from '../tools/index.js';
 import {
-  collectionNameSchema,
-  encodePath,
+  encodeMediaKey,
   encodePathSegment,
   idPathSegmentSchema,
   mediaKeySchema,
@@ -89,6 +88,24 @@ describe('registerAllTools', () => {
       'list_extensions',
       'lookup_tm',
       'get_my_permissions',
+      'list_dashboards',
+      'run_panel',
+      'query_insights',
+      'update_tm',
+      'delete_tm',
+      'get_flow_run',
+      'list_transform_presets',
+      'get_effective_preset',
+      'list_preset_bookmarks',
+      'list_reviews',
+      'approve_content',
+      'list_releases',
+      'publish_release',
+      'list_deployments',
+      'get_deployment_logs',
+      'create_share',
+      'revoke_share',
+      'get_site',
     ]) {
       expect(tools.has(name), `missing tool: ${name}`).toBe(true);
     }
@@ -141,68 +158,199 @@ describe('tool handlers call the right endpoints', () => {
     await tools.get('export_backup')!.handler({});
     expect(calls).toContainEqual({ method: 'GET_TEXT', path: '/admin/backup' });
   });
+
+  it('list_dashboards → GET /dashboards', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('list_dashboards')!.handler({});
+    expect(calls).toContainEqual({ method: 'GET', path: '/dashboards', body: undefined });
+  });
+
+  it('run_panel → POST /dashboards/:id/panels/:panelId/data with override body', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('run_panel')!.handler({
+      dashboardId: 'd1',
+      panelId: 'p1',
+      filter: { status: { _eq: 'published' } },
+    });
+    expect(calls).toContainEqual({
+      method: 'POST',
+      path: '/dashboards/d1/panels/p1/data',
+      body: { filter: { status: { _eq: 'published' } } },
+    });
+  });
+
+  it('query_insights → POST /dashboards/:id/panels/preview with query body only', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('query_insights')!.handler({
+      dashboardId: 'd1',
+      collection: 'posts',
+      aggregate: 'count',
+    });
+    expect(calls).toContainEqual({
+      method: 'POST',
+      path: '/dashboards/d1/panels/preview',
+      body: { collection: 'posts', aggregate: 'count' },
+    });
+  });
+
+  it('update_tm → PATCH /tm/:id with the id stripped from the body', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('update_tm')!.handler({ id: 't1', targetText: 'xin chào' });
+    expect(calls).toContainEqual({ method: 'PATCH', path: '/tm/t1', body: { targetText: 'xin chào' } });
+  });
+
+  it('delete_tm → DELETE /tm/:id and confirms', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('delete_tm')!.handler({ id: 't1', confirm: true });
+    expect(calls).toContainEqual({ method: 'DELETE', path: '/tm/t1', body: undefined });
+  });
+
+  it('get_flow_run → GET /flows/:id/runs/:runId', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('get_flow_run')!.handler({ id: 'f1', runId: 'r9' });
+    expect(calls).toContainEqual({ method: 'GET', path: '/flows/f1/runs/r9', body: undefined });
+  });
+
+  it('list_transform_presets → GET /transform-presets', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('list_transform_presets')!.handler({});
+    expect(calls).toContainEqual({ method: 'GET', path: '/transform-presets', body: undefined });
+  });
+
+  it('get_effective_preset → GET /presets/effective?collection=', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('get_effective_preset')!.handler({ collection: 'posts' });
+    expect(calls).toContainEqual({ method: 'GET', path: '/presets/effective?collection=posts', body: undefined });
+  });
+
+  it('approve_content → POST /editorial/:collection/:id/approve', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('approve_content')!.handler({ collection: 'posts', id: 'p1', reason: 'ok' });
+    expect(calls).toContainEqual({
+      method: 'POST',
+      path: '/editorial/posts/p1/approve',
+      body: { reason: 'ok' },
+    });
+  });
+
+  it('publish_release → POST /releases/:id/publish', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('publish_release')!.handler({ id: 'rel1' });
+    expect(calls).toContainEqual({ method: 'POST', path: '/releases/rel1/publish', body: {} });
+  });
+
+  it('delete_release → DELETE /releases/:id and confirms', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('delete_release')!.handler({ id: 'rel1', confirm: true });
+    expect(calls).toContainEqual({ method: 'DELETE', path: '/releases/rel1', body: undefined });
+  });
+
+  it('get_deployment_logs → GET /deployments/:id/logs', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('get_deployment_logs')!.handler({ id: 'd1' });
+    expect(calls).toContainEqual({ method: 'GET', path: '/deployments/d1/logs', body: undefined });
+  });
+
+  it('create_share → POST /shares; revoke_share → POST /shares/:id/revoke (confirmed)', async () => {
+    const { server, tools } = fakeServer();
+    const { client, calls } = fakeClient();
+    registerAllTools(server as never, client);
+    await tools.get('create_share')!.handler({ collection: 'posts', itemId: 'p1', roleId: 'r1' });
+    await tools.get('revoke_share')!.handler({ id: 's1', confirm: true });
+    expect(calls).toContainEqual({
+      method: 'POST',
+      path: '/shares',
+      body: { collection: 'posts', itemId: 'p1', roleId: 'r1' },
+    });
+    expect(calls).toContainEqual({ method: 'POST', path: '/shares/s1/revoke', body: {} });
+  });
 });
 
-describe('path parameter hardening', () => {
+describe('path-parameter hardening', () => {
   describe('idPathSegmentSchema', () => {
-    it('accepts ordinary ids', () => {
-      for (const ok of ['r1', 'nano_id-123', 'a.b', 'AbC']) {
-        expect(idPathSegmentSchema.safeParse(ok).success, ok).toBe(true);
+    it('accepts opaque ids', () => {
+      for (const id of ['r1', 'nano_id-123', '0191f2e8-7b3a-7c1d-9f0e-abcdef012345']) {
+        expect(idPathSegmentSchema.safeParse(id).success, id).toBe(true);
       }
     });
 
     it('rejects traversal and path separators', () => {
-      for (const bad of ['', '.', '..', 'a/b', 'a\\b', '../etc']) {
+      for (const bad of ['.', '..', '../roles', 'a/b', 'a\\b', '']) {
         expect(idPathSegmentSchema.safeParse(bad).success, bad).toBe(false);
       }
     });
   });
 
-  describe('collectionNameSchema', () => {
-    it('accepts lowercase snake_case', () => {
-      expect(collectionNameSchema.safeParse('blog_posts').success).toBe(true);
+  describe('mediaKeySchema', () => {
+    it('accepts multi-segment storage keys', () => {
+      for (const key of ['asset.txt', 'folder/sub/file.png']) {
+        expect(mediaKeySchema.safeParse(key).success, key).toBe(true);
+      }
     });
 
-    it('rejects names with separators, uppercase, or leading digit', () => {
-      for (const bad of ['Posts', 'a/b', '1posts', 'po sts', '../x']) {
-        expect(collectionNameSchema.safeParse(bad).success, bad).toBe(false);
+    it('rejects traversal, absolute, and backslash keys', () => {
+      for (const bad of ['../secret', 'a/../b', '/abs/path', 'a\\b', '']) {
+        expect(mediaKeySchema.safeParse(bad).success, bad).toBe(false);
       }
     });
   });
 
-  describe('mediaKeySchema / encodePath', () => {
-    it('allows nested keys but rejects traversal and leading slash', () => {
-      expect(mediaKeySchema.safeParse('posts/2024/img.png').success).toBe(true);
-      expect(mediaKeySchema.safeParse('../secret').success).toBe(false);
-      expect(mediaKeySchema.safeParse('/abs').success).toBe(false);
-    });
-
-    it('encodePath preserves separators but encodes segments', () => {
-      expect(encodePath('posts/my file.png')).toBe('posts/my%20file.png');
-    });
+  it('encodePathSegment percent-encodes the whole segment', () => {
+    expect(encodePathSegment('a b')).toBe('a%20b');
+    expect(encodePathSegment('a/b')).toBe('a%2Fb');
   });
 
-  it('encodePathSegment percent-encodes a whole segment', () => {
-    expect(encodePathSegment('a b/c')).toBe('a%20b%2Fc');
+  it('encodeMediaKey encodes each segment but preserves separators', () => {
+    expect(encodeMediaKey('folder/a b.png')).toBe('folder/a%20b.png');
   });
 
-  it('get_item encodes path segments before calling the API', async () => {
+  it('id path segments are encoded before reaching the client', async () => {
     const { server, tools } = fakeServer();
     const { client, calls } = fakeClient();
     registerAllTools(server as never, client);
-    // The handler trusts the framework for schema validation; a value that
-    // slips through with a space must still be percent-encoded in the path.
-    await tools.get('get_item')!.handler({ collection: 'posts', id: 'id with space' });
-    expect(calls.some((c) => c.path === '/items/posts/id%20with%20space')).toBe(true);
+    await tools.get('delete_role')!.handler({ id: 'a b', confirm: true });
+    expect(calls).toContainEqual({ method: 'DELETE', path: '/roles/a%20b', body: undefined });
   });
 
-  it('delete_media keeps nested key slashes but encodes segments', async () => {
+  it('media keys are encoded per segment before reaching the client', async () => {
     const { server, tools } = fakeServer();
     const { client, calls } = fakeClient();
     registerAllTools(server as never, client);
-    await tools.get('delete_media')!.handler({ key: 'posts/my file.png', confirm: true });
-    expect(calls.some((c) => c.method === 'DELETE' && c.path === '/media/posts/my%20file.png')).toBe(
-      true,
-    );
+    await tools.get('delete_media')!.handler({ key: 'folder/a b.png', confirm: true });
+    expect(calls).toContainEqual({ method: 'DELETE', path: '/media/folder/a%20b.png', body: undefined });
+  });
+
+  it('setting keys allow dots but reject traversal', () => {
+    const { server, tools } = fakeServer();
+    const { client } = fakeClient();
+    registerAllTools(server as never, client);
+    const keySchema = tools.get('get_setting')!.config.inputSchema!['key']!;
+    expect(keySchema.safeParse('contentOs.mcp').success).toBe(true);
+    expect(keySchema.safeParse('..').success).toBe(false);
+    expect(keySchema.safeParse('a/b').success).toBe(false);
   });
 });

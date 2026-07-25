@@ -1,9 +1,18 @@
+---
+version: 1
+lastUpdated: 2026-06-23T12:59:56.000Z
+sourceLang: vi
+contentHash: b248c46ccbdab911
+---
+
 # Consumer App & SDK Roadmap
 
 > **Scope:** Xây dựng SDK đa nền tảng và ứng dụng Consumer demo để kiểm thử, đảm bảo public API hoạt động trơn tru.
 
 ## Mục tiêu
 1. **SDK Composable Architecture**: Lấy cảm hứng từ Directus SDK. SDK có thể mở rộng (`.with(rest())`, `.with(graphql())`), hỗ trợ Typegen.
+
+> **GraphQL (v1):** adapter `.with(graphql())` đã được triển khai (items: query + mutation). Xem [GraphQL API Spec](../api/graphql-api-spec.md) và [ADR-009](../architecture/decisions/adr-009-graphql-yoga.md).
 2. **NPM Package**: Xây dựng build system (tsup) để đóng gói thư viện với định dạng ESM, CJS, DTS chuẩn bị publish.
 3. **Consumer Demo**: Ứng dụng Next.js làm ví dụ hướng dẫn sử dụng SDK (fetch data, hiển thị).
 
