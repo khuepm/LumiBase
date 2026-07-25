@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-24T04:02:55.999Z",
+  "generatedAt": "2026-07-25T08:30:55.720Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -1329,7 +1329,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-24T04-02-56-158Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-25T08-30-55-872Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1377,7 +1377,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/mcp/index.md.2026-07-24T04-02-56-158Z.bak.md",
+      "preservedTo": ".i18n/preserved/mcp/index.md.2026-07-25T08-30-55-872Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1389,7 +1389,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/mcp/mcp-application-analysis.md.2026-07-24T04-02-56-158Z.bak.md",
+      "preservedTo": ".i18n/preserved/mcp/mcp-application-analysis.md.2026-07-25T08-30-55-872Z.bak.md",
       "missingPlaceholders": 0
     },
     {
