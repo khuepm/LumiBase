@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:19:21.531Z
+sourceLang: vi
+contentHash: 5bfafd0745c87140
+codeVerified: 2026-07-25T08:19:21.531Z
+codeVerifiedHash: 5bfafd0745c87140
+codeVerifiedClaims: 8
+---
+
 # SCIM 2.0 Provisioning
 
 LumiBase implement subset của RFC 7644 đủ để Okta, Azure AD, Logto, Google Workspace tự động provision/deprovision users và groups.
