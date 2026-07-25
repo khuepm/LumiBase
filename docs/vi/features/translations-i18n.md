@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:15:55.423Z
+sourceLang: vi
+contentHash: 23c08db0a48a13c5
+codeVerified: 2026-07-25T08:15:55.423Z
+codeVerifiedHash: 23c08db0a48a13c5
+codeVerifiedClaims: 6
+---
+
 # Translations & i18n
 
 ## 1. Ba lớp i18n
