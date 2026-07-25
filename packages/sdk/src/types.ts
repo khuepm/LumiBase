@@ -872,6 +872,15 @@ export interface ApiKeyResource {
   lastUsedIp: string | null;
   lastUsedUserAgent: string | null;
   metadata: Record<string, unknown>;
+  /**
+   * True for a client-embeddable `lbk_pub_…` key. Derived from the prefix
+   * server-side, so it always matches the token the client actually holds.
+   *
+   * A publishable key is NOT a secret — treat its scope as fully public.
+   */
+  publishable: boolean;
+  /** Origins the key may be used from in a browser. Empty = no constraint. */
+  allowedOrigins: string[];
   createdAt: string;
   roles: Array<{ roleId: string; priority: number }>;
   policies: Array<{ policyId: string; priority: number }>;
@@ -882,6 +891,10 @@ export interface ApiKeyCreateInput {
   description?: string;
   expiresAt?: string | Date | null;
   metadata?: Record<string, unknown>;
+  /** Mint a client-embeddable `lbk_pub_…` token. Defaults to false. */
+  publishable?: boolean;
+  /** Browser origins the key may be used from. Empty/omitted = no constraint. */
+  allowedOrigins?: string[];
 }
 
 export interface ApiKeyRotateInput {

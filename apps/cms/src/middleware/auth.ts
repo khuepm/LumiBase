@@ -9,6 +9,11 @@ import { tryExternalJwt } from '../modules/external-auth/adapter';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { TOKEN_AUDIENCE, audienceValues } from '../services/auth/token-audience';
 import { resolvePublicRoleIdCached } from '../services/auth/public-role';
+import {
+  checkOrigin,
+  isPublishablePrefix,
+  readAllowedOrigins,
+} from '../services/api-key-publishable';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -83,7 +88,7 @@ function apiKeySnapshot(row: typeof apiKeys.$inferSelect): Record<string, unknow
 async function auditApiKeyUseDenied(
   c: Parameters<MiddlewareHandler<AppEnv>>[0],
   row: typeof apiKeys.$inferSelect,
-  reason: 'site_mismatch' | 'revoked' | 'expired',
+  reason: 'site_mismatch' | 'revoked' | 'expired' | 'origin_not_allowed',
 ): Promise<void> {
   await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
     event: 'api_key_use_denied',
@@ -294,6 +299,36 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
           { errors: [{ code: 'UNAUTHENTICATED', message: 'API key is expired or revoked.' }] },
           401,
         );
+      }
+
+      // Origin allowlist for publishable (client-embeddable) keys. Scoped to
+      // publishable keys only: a secret key is used server-to-server where no
+      // `Origin` exists, so applying this there would reject every caller.
+      //
+      // This is not a confidentiality control — a publishable key is public by
+      // construction. It stops another *website* from using the key in a
+      // browser, which is the failure mode operators actually hit. See
+      // `services/api-key-publishable.ts` for the full verdict semantics.
+      if (isPublishablePrefix(apiKey.prefix)) {
+        const verdict = checkOrigin(
+          c.req.header('origin'),
+          c.req.header('referer'),
+          readAllowedOrigins(apiKey.metadata),
+        );
+        if (verdict === 'denied') {
+          await auditApiKeyUseDenied(c, apiKey, 'origin_not_allowed');
+          return c.json(
+            {
+              errors: [
+                {
+                  code: 'ORIGIN_NOT_ALLOWED',
+                  message: 'This key is not allowed for the requesting origin.',
+                },
+              ],
+            },
+            403,
+          );
+        }
       }
 
       // Debounced, off-path last-used touch (Req 3): skip the write entirely

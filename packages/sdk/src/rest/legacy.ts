@@ -839,6 +839,15 @@ export function legacyRest() {
           method: "POST",
           body: JSON.stringify(input),
         }),
+      /**
+       * Replace the key's browser-origin allowlist without rotating the token.
+       * Pass `[]` to remove the constraint entirely.
+       */
+      setAllowedOrigins: (id: string, allowedOrigins: string[]) =>
+        client.rawRequest<ApiKeyResource>(`/api/v1/api-keys/${id}/allowed-origins`, {
+          method: "PATCH",
+          body: JSON.stringify({ allowedOrigins }),
+        }),
       revoke: (id: string) =>
         client.rawRequest<ApiKeyResource>(`/api/v1/api-keys/${id}/revoke`, {
           method: "POST",
