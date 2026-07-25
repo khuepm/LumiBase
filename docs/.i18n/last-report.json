@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T08:41:43.869Z",
+  "generatedAt": "2026-07-25T12:57:10.096Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,8 +8,8 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 3,
-    "upToDate": 41,
-    "planned": 97
+    "upToDate": 40,
+    "planned": 98
   },
   "actions": [
     {
@@ -1329,7 +1329,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-25T08-41-43-983Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-25T12-57-10-246Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1377,7 +1377,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/mcp/index.md.2026-07-25T08-41-43-983Z.bak.md",
+      "preservedTo": ".i18n/preserved/mcp/index.md.2026-07-25T12-57-10-247Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1389,18 +1389,18 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/mcp/mcp-application-analysis.md.2026-07-25T08-41-43-983Z.bak.md",
+      "preservedTo": ".i18n/preserved/mcp/mcp-application-analysis.md.2026-07-25T12-57-10-247Z.bak.md",
       "missingPlaceholders": 0
     },
     {
       "rel": "operations/upgrades.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
