@@ -2,6 +2,8 @@
 
 LumiBase hỗ trợ hai chế độ triển khai: **Cloudflare Workers** (edge) và **Docker** (tự host). Cả hai chế độ đều dùng chung codebase CMS API và logic nghiệp vụ — chỉ khác nhau ở tầng adapter hạ tầng.
 
+Nếu muốn tự host trên cloud có sẵn, xem [Google Cloud (single VM)](./google-cloud-vm.md) — cách rẻ nhất để chạy toàn bộ stack Docker trên Google Cloud với Gemini làm LLM provider, vẫn giữ nguyên các background job dài hạn của CMS.
+
 ## Chọn chế độ triển khai
 
 | Tiêu chí | Cloudflare Workers | Docker (Tự host) |

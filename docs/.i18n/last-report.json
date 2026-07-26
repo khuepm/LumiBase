@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T12:57:10.096Z",
+  "generatedAt": "2026-07-25T23:32:57.559Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -9,7 +9,7 @@
     "preserved": 0,
     "conflicts": 3,
     "upToDate": 40,
-    "planned": 98
+    "planned": 99
   },
   "actions": [
     {
@@ -769,6 +769,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "deployment/google-cloud-vm.md",
+      "type": "translate",
+      "reason": "source changed since last sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "deployment/local-development.md",
       "type": "translate",
       "reason": "source changed since last sync",
@@ -1329,7 +1341,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-25T12-57-10-246Z.bak.md",
+      "preservedTo": ".i18n/preserved/features/user-management.md.2026-07-25T23-32-57-707Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1377,7 +1389,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/mcp/index.md.2026-07-25T12-57-10-247Z.bak.md",
+      "preservedTo": ".i18n/preserved/mcp/index.md.2026-07-25T23-32-57-707Z.bak.md",
       "missingPlaceholders": 0
     },
     {
@@ -1389,7 +1401,7 @@
       "sourceLocale": null,
       "targetLocale": null,
       "willTranslate": false,
-      "preservedTo": ".i18n/preserved/mcp/mcp-application-analysis.md.2026-07-25T12-57-10-247Z.bak.md",
+      "preservedTo": ".i18n/preserved/mcp/mcp-application-analysis.md.2026-07-25T23-32-57-707Z.bak.md",
       "missingPlaceholders": 0
     },
     {
