@@ -12,7 +12,9 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    const result = claimReward(token);
+    // Atomic in the store: two requests racing on the same token yield one
+    // success and one "already claimed".
+    const result = await claimReward(token);
     
     return NextResponse.json(result);
     

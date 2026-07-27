@@ -83,6 +83,55 @@ wrangler login
 wrangler pages deploy out
 ```
 
+## Sponsor rewards store
+
+`src/lib/rewards/` implements the GitHub Sponsors reward-token flow behind a
+single `SponsorStore` interface, so every read and write (record a sponsorship,
+look a token up, claim it) goes through one store:
+
+| Implementation | Persistence | Use |
+| --- | --- | --- |
+| `InMemorySponsorStore` | process-local, lost on restart, not shared across instances | local dev and tests (**default**) |
+| `D1SponsorStore` | Cloudflare D1 (SQLite) | deployed environments |
+
+Claiming is atomic in both: given N concurrent requests with the same valid
+token, exactly one succeeds and the rest get `Reward already claimed`. In D1
+that is a single `UPDATE … WHERE reward_token = ? AND claimed = 0 RETURNING tier`
+compare-and-set — no read-then-write race.
+
+### Enabling persistence
+
+The landing app currently builds as a static export (`output: 'export'`), so the
+route handlers that use this module live in `src/_api-routes-disabled/` and are
+not part of the build. Persistence is therefore wired up only when those routes
+are re-enabled on a server runtime (e.g. `@cloudflare/next-on-pages`):
+
+1. Create the database and apply the migration:
+
+   ```bash
+   wrangler d1 create lumibase-sponsors
+   wrangler d1 migrations apply lumibase-sponsors --remote
+   ```
+
+2. Add the binding to `wrangler.toml` (a commented block is already there) using
+   the `database_id` printed by `d1 create`.
+
+3. Install the store once at request/boot time, before any rewards helper runs:
+
+   ```ts
+   import { getRequestContext } from '@cloudflare/next-on-pages';
+   import { configureSponsorStore, resolveSponsorStore } from '@/lib/rewards';
+
+   configureSponsorStore(resolveSponsorStore(getRequestContext().env));
+   ```
+
+`resolveSponsorStore(env)` returns a `D1SponsorStore` when `env.SPONSORS_DB` is
+present and otherwise falls back to the in-memory store, logging a warning in
+production. Without step 3 the module keeps working, but only in memory.
+
+The table DDL lives in `migrations/0001_sponsors.sql` and is mirrored by
+`SPONSORS_TABLE_DDL` in `src/lib/rewards/d1-store.ts` — keep the two in sync.
+
 ## Environment Variables
 
 Copy `.env.example` to `.env.local` and configure:
