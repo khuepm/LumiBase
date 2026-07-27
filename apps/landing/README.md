@@ -9,7 +9,7 @@ Official landing page for lumibase.dev - built with Next.js, TypeScript, and Tai
 - **Legal Pages**: Terms of Service, Privacy Policy, and License pages (MIT License)
 - **Cloudflare Ready**: Configured for deployment on Cloudflare Pages
 - **Type-Safe**: Built with TypeScript for better developer experience
-- **Dark Mode Support**: Automatic dark mode based on system preferences
+- **Dark Theme**: Ships as a dark-only theme (the root layout sets `class="dark"`)
 
 ## Development
 
@@ -151,12 +151,19 @@ apps/landing/
 │   │   ├── page.tsx            # Landing page
 │   │   ├── globals.css         # Global styles
 │   │   ├── sitemap.ts          # Sitemap generation
+│   │   ├── opengraph-image.tsx # Social share card
+│   │   ├── pricing/            # Pricing page
 │   │   ├── tos/                # Terms of Service
 │   │   ├── privacy/            # Privacy Policy
 │   │   └── license/            # License page
 │   └── components/
 │       ├── Header.tsx          # Site header with navigation
-│       └── Footer.tsx          # Site footer with links
+│       ├── Footer.tsx          # Site footer with links
+│       ├── Hero.tsx            # Hero headline + orbital stage
+│       ├── ProductSection.tsx  # Product pillar sections
+│       ├── SectionVisuals.tsx  # Per-pillar mini-visuals
+│       ├── TrustViz.tsx        # Trust-ladder visual
+│       └── PricingCard.tsx     # Pricing tier card
 ├── public/
 │   └── robots.txt              # SEO robots.txt
 ├── next.config.ts              # Next.js configuration

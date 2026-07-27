@@ -135,6 +135,9 @@ async function main() {
     cache: runtime.cache,
     search: runtime.search,
     queue: runtime.queue,
+    // Same KeyProvider the request path uses, so deployment skills work
+    // identically whether a run is executed sync or off the queue.
+    keys: runtime.keys,
     env: process.env as Record<string, string | undefined>,
   });
 

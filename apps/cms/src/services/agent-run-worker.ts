@@ -1,5 +1,5 @@
 import type { Database } from '@lumibase/database';
-import type { CacheProvider, QueueProvider, SearchProvider } from '@lumibase/runtime';
+import type { CacheProvider, KeyProvider, QueueProvider, SearchProvider } from '@lumibase/runtime';
 import { AISecureHarness } from './ai-harness';
 import { AgentRunService } from './agent-run-service';
 import { itemServiceForSystem } from './item-service-factory';
@@ -35,6 +35,13 @@ export interface AgentRunWorkerDeps {
   cache?: CacheProvider;
   search?: SearchProvider;
   queue?: QueueProvider;
+  /**
+   * KeyProvider for skills that decrypt stored provider secrets (deployment
+   * targets). Without it the harness fails those skills with
+   * `DEPLOYMENTS_NOT_CONFIGURED`, so a queued run must receive the same
+   * provider the request path gets from `c.get('runtime').keys`.
+   */
+  keys?: KeyProvider;
   env: LLMProviderEnv & Record<string, string | undefined>;
 }
 
@@ -83,6 +90,9 @@ export async function processAgentRunJob(
     itemService,
     llm: createConfiguredLLMProvider(deps.env),
     queue: deps.queue,
+    // Deployment skills need the KeyProvider to decrypt target tokens; a
+    // queued run must be able to do exactly what the sync path does.
+    keys: deps.keys,
   });
 
   try {
@@ -103,8 +113,11 @@ export async function processAgentRunJob(
 
 /**
  * Registers the agent-runs consumer on a long-lived runtime (Docker/Node).
- * Cloudflare Workers wire the same handler through their queue consumer
- * export instead of `process()`.
+ *
+ * Cloudflare Workers would wire the same handler through a `queue()` consumer
+ * export instead of `process()` — that export does not exist yet, so async
+ * runs are Node/Docker-only for now (backlog `B9`). Whoever adds it must pass
+ * `keys` (`createCloudflareKeyProvider(env)`) alongside the other providers.
  */
 export function registerAgentRunWorker(deps: AgentRunWorkerDeps): void {
   deps.queue?.process<AgentRunJobPayload>(AGENT_RUNS_QUEUE, async (job) => {

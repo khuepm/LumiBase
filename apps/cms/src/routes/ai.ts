@@ -208,6 +208,8 @@ aiRouter.post('/chat', async (c) => {
       llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
       queue: runtime.queue,
       notify: buildAgentNotifier(c),
+      // Enables the deployment skills, which decrypt target tokens.
+      keys: runtime.keys,
     });
     const result = await harness.execute(
       toolCall.name,
@@ -471,6 +473,9 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
       llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
       queue: runtime.queue,
       notify: buildAgentNotifier(c),
+      // An approved `triggerDeployment` executes here — without the
+      // KeyProvider the approval would resolve into a configuration error.
+      keys: runtime.keys,
     });
     const result = await authorizedHarness.executeApproved(
       approvalId,

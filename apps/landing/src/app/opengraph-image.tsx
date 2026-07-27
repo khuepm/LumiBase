@@ -22,7 +22,7 @@ export default function Image() {
           justifyContent: "center",
           background: "#05070a",
           color: "white",
-          fontFamily: "monospace",
+          fontFamily: "sans-serif",
         }}
       >
         <div
@@ -32,26 +32,19 @@ export default function Image() {
             gap: 24,
           }}
         >
+          {/* Sphere mark — matches the site header (white→grey orb, violet glow). */}
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 96,
-              height: 96,
-              borderRadius: 20,
-              background: "rgba(34,197,94,0.12)",
-              border: "2px solid rgba(34,197,94,0.4)",
-              fontSize: 60,
-              fontWeight: 700,
-              color: "#4ade80",
+              width: 88,
+              height: 88,
+              borderRadius: "50%",
+              background: "linear-gradient(180deg, #ffffff 0%, #cfcfcf 100%)",
+              boxShadow: "0 0 48px rgba(123,97,255,0.75)",
             }}
-          >
-            {">_"}
-          </div>
+          />
           <div style={{ display: "flex", fontSize: 80, fontWeight: 700 }}>
             <span>Lumi</span>
-            <span style={{ color: "#4ade80" }}>Base</span>
+            <span style={{ color: "#7B61FF" }}>Base</span>
           </div>
         </div>
         <div

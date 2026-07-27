@@ -28,7 +28,32 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   tokens (they are credentials). No upgrade step: the landing app is a static
   export, the route handlers that use this live in `src/_api-routes-disabled/`,
   and persistence activates only when a `SPONSORS_DB` D1 binding is configured
-  (see "Sponsor rewards store" in `apps/landing/README.md`).
+  (see "Sponsor rewards store" in `apps/landing/README.md`). The `/rewards/claim`
+  page that used to POST at this module was removed separately as dead,
+  always-failing UI; the store now waits, correct, for the managed backend that
+  removal note anticipated.
+
+- **Deployment skills never had a KeyProvider.** The deployment skills
+  (`triggerDeployment`, `listDeploymentTargets`, `listDeployments`,
+  `getDeploymentStatus`) build a site-scoped `DeploymentService` from
+  `db + siteId + keys`, but *no* `AISecureHarness` construction site passed
+  `keys` — so every call failed closed with `DEPLOYMENTS_NOT_CONFIGURED`: the AI
+  chat path and MCP endpoint (`routes/ai.ts`, `routes/mcp.ts`), the
+  approval-execution path (an approved `triggerDeployment` resolved into a
+  configuration error), and queued agent runs. All four now pass the runtime
+  KeyProvider; `AgentRunWorkerDeps` gained an optional `keys: KeyProvider`,
+  threaded from `runtime.keys` where the Node/Docker consumer is registered
+  (`serve.ts`). Flow-driven deploys (`deploy:trigger`) were unaffected — the
+  flow run environment already supplied `keys`.
+
+- **Studio / Deployments page was unreachable.** `settings/deployments-page.tsx`
+  shipped complete — targets list, deploy trigger, status polling, build logs,
+  against the already-mounted `/api/v1/deployments` — but nothing linked to it:
+  no route in `router.tsx` and no entry in the settings sidebar, so the whole
+  feature was dead code from the client side. Registered
+  `/settings/deployments` (plus the `/$adminPath/settings/deployments` variant)
+  and added **Deployments** to the Integrations group of Settings. No API,
+  schema, or setup change — the page is reachable as soon as Studio updates.
 
 - **Security / mcp-server:** `cdc_subscription_replay` accepted its
   `subscription_id` as a bare `z.string()` and encoded it with
@@ -39,6 +64,26 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   landed afterwards and reintroduced it.
 
 ### Added
+
+- **Harness KeyProvider tripwire.** `ai-harness-keys-context.test.ts` locks the
+  class rather than the four call sites: a source scan requires every
+  `new AISecureHarness({…})` that wires real services to also pass `keys`
+  (registry-only constructions, which never run a handler, are exempt), and a
+  registry check asserts each deployment skill really does fail with
+  `DEPLOYMENTS_NOT_CONFIGURED` without one — so the scan cannot pass vacuously
+  if the guard moves. Companion behavioural test
+  `agent-run-worker-keys.test.ts` drives a deployment skill through
+  `processAgentRunJob` end to end. Same shape as the ItemService RBAC-context
+  guard: a construction that silently degrades is caught at CI, not at runtime.
+  DoD §2b gains a matching checklist line for background/queue workers.
+
+- **Orphaned-page tripwire (Studio settings).** `settings/__tests__/deployments-page.test.tsx`
+  locks the class behind the fix above rather than the single page: a source scan
+  requires every `*-page.tsx` in `modules/settings/` to be referenced by
+  `router.tsx`, and every sidebar `to:` target to have a matching route path.
+  `deployments-route.test.tsx` complements it by driving the real route tree over
+  a memory history, so "the URL resolves to the page and the nav link points at
+  it" is asserted rather than assumed.
 
 - **Path-traversal tripwire (mcp-server).** `path-hardening.wiring.test.ts`
   locks the class instead of the individual call sites: a source scan requires
