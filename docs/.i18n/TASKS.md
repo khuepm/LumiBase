@@ -117,7 +117,25 @@ Nếu bạn là agent DUY NHẤT (chạy tuần tự qua nhiều phiên), vẫn 
 (bỏ qua bước "claim trước", cứ đánh `DONE` sau khi xong) để phiên sau biết tiến độ
 chính xác mà không cần chạy lại detect.
 
-## 3. Bảng nhiệm vụ (94 file)
+## 3. Bảng nhiệm vụ
+
+> ⚠️ **Số liệu trong bảng này là ảnh chụp tháng 7 và ĐÃ LỆCH.** Nguồn sự thật là
+> `pnpm docs:i18n:detect` → `docs/.i18n/last-report.json`. Chạy nó trước khi claim
+> file, đừng tin cột Trạng thái ở đây.
+>
+> **Ảnh chụp 2026-07-25** (sau đợt làm trên branch `claude/role-permission-hierarchy-vny49f`):
+> 141 cặp — **62 up-to-date**, **79 còn lại**. Đã xong trong đợt đó:
+>
+> - 3 file thiếu bản EN → còn 1 (`features/permission-builder-directus-investigation.md`, 1051 dòng)
+> - 16 file `docs/en/` chứa tiếng Việt → còn 6: `features/ai-first-specification.md` (315),
+>   `roadmap/post-ga-walkthrough.md` (234), `roadmap/studio-content-slices.md` (211),
+>   `features/collection-preview.md` (157), `ui/studio-ui-spec.md` (138)
+> - Chưa chạm: 28 file thiếu bản VI (~5700 dòng), 42 cặp `source changed` (~5854 dòng),
+>   3 conflict cần người quyết (`features/user-management.md`, `mcp/index.md`,
+>   `mcp/mcp-application-analysis.md`)
+>
+> Nhóm `docs/en/` chứa tiếng Việt được ưu tiên trước vì EN là locale mặc định — người
+> đọc English đang bị phục vụ tiếng Việt, đó là lỗi lộ ra ngoài nặng nhất trong backlog.
 
 Sắp theo nhóm rồi theo độ dài tăng dần trong nhóm. Ưu tiên làm nhóm A/D trước (an
 toàn — chỉ tạo file mới hoặc dịch chiều hiếm, không ghi đè). Nhóm B/C ghi đè nội
