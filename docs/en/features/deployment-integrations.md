@@ -85,6 +85,8 @@ Four governed skills let the AI Copilot operate deployments (`packages/ai-skills
 
 `triggerDeployment` triggers an outward-facing side effect (a build on an external host), so it is classified dangerous: below autopilot autonomy it is routed through human approval (`ai_approvals`) instead of executing directly.
 
+Like the flow operations above, all four skills are runtime-bound: their handler builds a site-scoped `DeploymentService` from `db`, `siteId` and the **KeyProvider** (`keys`), so every harness construction that can execute skills must pass `keys` — the request paths (`routes/ai.ts` chat + approval execution, `routes/mcp.ts`) take it from `c.get('runtime').keys`, and the queued `agent-runs` worker (`execution: 'async'`) takes it from its worker deps. Without it the skill fails closed with `DEPLOYMENTS_NOT_CONFIGURED` before any provider call. A source-scan tripwire (`apps/cms/src/__tests__/ai-harness-keys-context.test.ts`) fails CI if a new construction site omits it.
+
 ## 8. Studio
 
 A **Settings → Deployments** page (`apps/studio/src/modules/settings/deployments-page.tsx`) lists targets and recent deployments, with controls to add a target, trigger a deploy, refresh status, and view logs.

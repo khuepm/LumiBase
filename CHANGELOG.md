@@ -11,6 +11,19 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **Deployment skills never had a KeyProvider.** The deployment skills
+  (`triggerDeployment`, `listDeploymentTargets`, `listDeployments`,
+  `getDeploymentStatus`) build a site-scoped `DeploymentService` from
+  `db + siteId + keys`, but *no* `AISecureHarness` construction site passed
+  `keys` — so every call failed closed with `DEPLOYMENTS_NOT_CONFIGURED`: the AI
+  chat path and MCP endpoint (`routes/ai.ts`, `routes/mcp.ts`), the
+  approval-execution path (an approved `triggerDeployment` resolved into a
+  configuration error), and queued agent runs. All four now pass the runtime
+  KeyProvider; `AgentRunWorkerDeps` gained an optional `keys: KeyProvider`,
+  threaded from `runtime.keys` where the Node/Docker consumer is registered
+  (`serve.ts`). Flow-driven deploys (`deploy:trigger`) were unaffected — the
+  flow run environment already supplied `keys`.
+
 - **Security / mcp-server:** `cdc_subscription_replay` accepted its
   `subscription_id` as a bare `z.string()` and encoded it with
   `encodeURIComponent`, which leaves `..` intact — a crafted id reached
@@ -20,6 +33,18 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   landed afterwards and reintroduced it.
 
 ### Added
+
+- **Harness KeyProvider tripwire.** `ai-harness-keys-context.test.ts` locks the
+  class rather than the four call sites: a source scan requires every
+  `new AISecureHarness({…})` that wires real services to also pass `keys`
+  (registry-only constructions, which never run a handler, are exempt), and a
+  registry check asserts each deployment skill really does fail with
+  `DEPLOYMENTS_NOT_CONFIGURED` without one — so the scan cannot pass vacuously
+  if the guard moves. Companion behavioural test
+  `agent-run-worker-keys.test.ts` drives a deployment skill through
+  `processAgentRunJob` end to end. Same shape as the ItemService RBAC-context
+  guard: a construction that silently degrades is caught at CI, not at runtime.
+  DoD §2b gains a matching checklist line for background/queue workers.
 
 - **Path-traversal tripwire (mcp-server).** `path-hardening.wiring.test.ts`
   locks the class instead of the individual call sites: a source scan requires
