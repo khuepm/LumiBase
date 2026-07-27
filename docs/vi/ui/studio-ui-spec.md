@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-27T23:51:24.891Z
+sourceLang: vi
+contentHash: 3063b8b0f3d50f6c
+---
+
 # Studio UI Specification (apps/studio)
 
 > Stack: **React 18 + Vite + TypeScript**, **TailwindCSS + shadcn/ui + CVA**, **TanStack Query + Router**, **Zustand** cho local state, **Monaco** cho raw editor, **dnd-kit** cho drag-drop.
