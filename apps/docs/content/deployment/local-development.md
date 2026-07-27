@@ -1,6 +1,6 @@
 # Local Development Guide
 
-Get Lumibase running locally with a single command using Docker Compose. This provides a full development stack without needing a Cloudflare account.
+Get LumiBase running locally with a single command using Docker Compose. This provides a full development stack without needing a Cloudflare account.
 
 ## Prerequisites
 
@@ -235,7 +235,7 @@ For Prometheus metrics and Grafana dashboards:
 docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
 ```
 
-Access Grafana at http://localhost:3002 (admin / admin). A pre-configured Lumibase dashboard is available showing request rates, latency, and error rates.
+Access Grafana at http://localhost:3002 (admin / admin). A pre-configured LumiBase dashboard is available showing request rates, latency, and error rates.
 
 ## Resetting the Environment
 

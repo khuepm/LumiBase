@@ -183,7 +183,7 @@ Of the **78 applicable** weaknesses: **78 mitigated (100%)**, 0 partial, 0 not a
 | 548 | Directory listing | — | No static directory serving. |
 | 668 | Resource exposed to wrong sphere | ✅ | **Fixed 2026-07-06.** `/health` reveals per-subsystem detail only to callers with the observability token; anonymous probes get `{ status }` only. `/metrics` enforces `METRICS_TOKEN` in all environments when set. |
 | 1104 | Unmaintained third-party components | ✅ | **Fixed 2026-07-06.** Added `.github/dependabot.yml` (weekly npm + github-actions, grouped minor/patch) and a `dependency-audit` CI job that reports the full `pnpm audit` and fails on high/critical advisories. |
-| 359 | Privacy violation | ✅ | **Fixed 2026-07-06.** The audit masker now redacts raw content-payload keys (`data`/`payload`/`content`/`body` → `[redacted]`) and caps long free-form strings, so item PII cannot land verbatim in audit metadata (`modules/audit/logger.ts`). Item audit events already logged only ids + redacted SQL. |
+| 359 | Privacy violation | ✅ | **Fixed 2026-07-06.** The audit masker now redacts raw content-payload keys (`data`/`payload`/`content`/`body` → `[redacted]`) and caps long free-form strings, so item PII cannot land verbatim in audit metadata (`modules/audit/logger.ts`). Item audit events already logged only ids + redacted SQL. **Accepted for v1.0 (2026-07-16, owner: khuepm):** the erasure workflow deliberately does NOT sweep audit rows — the chosen policy is redact-on-write, so audit metadata never carries plaintext PII in the first place (erasure events store only ids, counts and a `subjectHash`). Including audit logs in the erasure workflow, or a published retention/rotation policy, stays on the post-1.0 hardening list below. |
 
 ---
 

@@ -219,7 +219,7 @@ Wizard chỉ truy cập được khi instance ở trạng thái **Uninitialized*
 
 1. WHEN một event thuộc tập `{user_locked, ip_blocked, anomaly_triggered, anomaly_lock}` xảy ra, THE Login_Guard SHALL gửi notification đồng thời tới mọi Notification_Channel trong `Lockout_Policy.notifyChannels`.
 2. WHERE Notification_Channel chứa `'email'` AND email server được cấu hình (env `LUMIBASE_SMTP_URL` hoặc tương đương), THE Login_Guard SHALL gửi email tới Bootstrap_Admin (và tới user bị ảnh hưởng nếu khác Bootstrap_Admin) với subject chứa event code và body chứa: thời gian (ISO 8601 UTC), email user bị ảnh hưởng, IP, country, User-Agent, anomalyScore, link recovery (nếu có).
-3. WHERE Notification_Channel chứa `'webhook'` AND `Lockout_Policy.webhookUrl` đã set, THE Login_Guard SHALL POST JSON `{ event, timestamp, email, ip, country, userAgent, anomalyScore, action }` tới webhookUrl với HMAC-SHA256 signature trong header `X-Lumibase-Signature`.
+3. WHERE Notification_Channel chứa `'webhook'` AND `Lockout_Policy.webhookUrl` đã set, THE Login_Guard SHALL POST JSON `{ event, timestamp, email, ip, country, userAgent, anomalyScore, action }` tới webhookUrl với HMAC-SHA256 signature trong header `X-LumiBase-Signature`.
 4. WHEN gửi notification thất bại, THE Login_Guard SHALL không block login attempt ngay cả với event nghiêm trọng (`user_locked`, `anomaly_lock`); lỗi gửi notification SHALL được ghi vào Audit_Log với `event='notification_delivery_failed'` và sẽ retry tối đa 3 lần với exponential backoff.
 5. THE Login_Guard SHALL rate-limit notification cùng `(event, email)` xuống tối đa 1 notification mỗi 60 giây để tránh notification spam khi attacker liên tục trigger.
 

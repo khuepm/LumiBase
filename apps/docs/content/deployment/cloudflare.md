@@ -1,6 +1,6 @@
 # Cloudflare Deployment Guide
 
-Deploy Lumibase to Cloudflare Workers for ultra-low latency edge delivery. This guide covers setting up all required Cloudflare services.
+Deploy LumiBase to Cloudflare Workers for ultra-low latency edge delivery. This guide covers setting up all required Cloudflare services.
 
 ## Prerequisites
 

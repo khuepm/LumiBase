@@ -476,7 +476,7 @@ interface NotificationDispatcher {
 
 ### 6.4. Sliding-window counter
 
-Self-hosted Lumibase mặc định **không có Redis**. Thiết kế: `LoginGuard.counter` dùng query trên `login_attempts` index `(email_lower, created_at)` và `(ip, created_at)`:
+Self-hosted LumiBase mặc định **không có Redis**. Thiết kế: `LoginGuard.counter` dùng query trên `login_attempts` index `(email_lower, created_at)` và `(ip, created_at)`:
 
 ```sql
 -- userFailedCount trong cửa sổ trượt
@@ -558,8 +558,8 @@ Khi path nằm trong `Default_Admin_Paths` nhưng không khớp `adminPath`, gua
 ### 7.4. HMAC webhook signing
 
 ```
-X-Lumibase-Signature: sha256=<hex>
-X-Lumibase-Timestamp: <unix-seconds>
+X-LumiBase-Signature: sha256=<hex>
+X-LumiBase-Timestamp: <unix-seconds>
 body = canonical JSON
 hex = HMAC_SHA256(secret, `${timestamp}.${body}`).toString('hex')
 ```

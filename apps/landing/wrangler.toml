@@ -11,3 +11,15 @@ cwd = "."
 
 # Site configuration for Cloudflare Pages
 pages_build_output_dir = "out"
+
+# Persistent store for GitHub Sponsors reward tokens (src/lib/rewards).
+# Only needed once the route handlers in src/_api-routes-disabled/ are enabled
+# on a server runtime — the static export has no server to bind it to.
+# Create it with `wrangler d1 create lumibase-sponsors`, apply
+# `migrations/0001_sponsors.sql`, then uncomment with the printed database_id.
+# See "Sponsor rewards store" in README.md.
+# [[d1_databases]]
+# binding = "SPONSORS_DB"
+# database_name = "lumibase-sponsors"
+# database_id = "<from wrangler d1 create>"
+# migrations_dir = "migrations"

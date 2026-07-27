@@ -86,7 +86,7 @@ export default function (data) {
       },
     }
   );
-  // In Lumibase, if token does not have access to siteB (no userSites row), it returns 403.
+  // In LumiBase, if token does not have access to siteB (no userSites row), it returns 403.
   check(crossSiteRes, {
     'site_a token rejected on site_b': (r) => r.status === 403,
   });

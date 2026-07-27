@@ -5,6 +5,10 @@ LumiBase supports two deployment modes from the same CMS codebase:
 - **Cloudflare Workers** for the edge API runtime.
 - **Docker self-hosting** for teams that want to operate the full stack in containers.
 
+For a managed-cloud self-host, see [Google Cloud (single VM)](./google-cloud-vm.md) —
+the cheapest way to run the full Docker stack on Google Cloud with Gemini as the
+LLM provider, while keeping the CMS's long-lived background jobs working.
+
 The public documentation site is a static Vite app deployed separately to **Cloudflare Pages**.
 The public Marketplace site is also deployed to **Cloudflare Pages** and reads the CMS marketplace catalog at build/runtime revalidation.
 The **Studio** admin SPA is a static Vite app deployed to **Cloudflare Pages** as well — see [Studio API connectivity](#studio-api-connectivity).

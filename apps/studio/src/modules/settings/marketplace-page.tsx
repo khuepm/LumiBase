@@ -390,7 +390,7 @@ export function MarketplacePage() {
             {t('marketplace', 'Extension Marketplace')}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Browse and install verified third-party extensions to extend Lumibase's capabilities.
+            Browse and install verified third-party extensions to extend LumiBase's capabilities.
           </p>
         </div>
         <div className="flex items-center gap-2 self-start">

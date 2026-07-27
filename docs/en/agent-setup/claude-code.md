@@ -43,7 +43,7 @@ claude
 Paste the following into Claude Code:
 
 ```
-Read docs/en/README.md to understand the Lumibase monorepo structure.
+Read docs/en/README.md to understand the LumiBase monorepo structure.
 Then read docs/en/data-model.md for the database schema.
 Then read docs/en/ai-skills.md for the skill system conventions.
 ```

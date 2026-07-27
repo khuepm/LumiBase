@@ -1,0 +1,106 @@
+# Google Cloud single-VM production overlay.
+#
+# Target: one Compute Engine VM (e.g. e2-small) running the full stack via
+# docker compose. Cheapest deployment that satisfies the "runs on Google Cloud"
+# requirement while keeping the long-lived Node process intact — the CMS drives
+# node-cron jobs (scheduler tick, veto-commit sweep, audit rotation, async
+# agent-run worker) that a scale-to-zero / multi-instance serverless target
+# would either skip (idle) or double-fire (>1 instance).
+#
+# Usage:
+#   cp .env.prod.example .env        # then fill in every secret
+#   docker compose -f docker-compose.yml -f docker-compose.gcp.yml up -d --build
+#
+# Why this overlay exists instead of docker-compose.prod.yml:
+#   - prod.yml pulls a published image; here we BUILD on the VM (no registry
+#     auth / Artifact Registry setup needed for a solo deploy).
+#   - prod.yml leaves S3 / MeiliSearch / imgproxy credentials at their base dev
+#     defaults (minioadmin / lumibase_dev_key / 736563726574). Those exact
+#     strings are rejected by validateProductionConfig() (apps/cms/src/config/
+#     production.ts), so a real production boot fails. This overlay threads
+#     non-default secrets from .env into every service that shares them.
+#
+# All secrets are read from .env — see .env.prod.example.
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  minio:
+    # MinIO root credentials double as the S3 access/secret key pair the CMS,
+    # imgproxy, and minio-init all authenticate with — keep them in sync.
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+    ports: !reset []
+
+  minio-init:
+    # Re-alias with the production credentials so bucket creation succeeds.
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY} &&
+      mc mb --ignore-existing local/lumibase-media
+      "
+
+  meilisearch:
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY:?set MEILISEARCH_API_KEY in .env}
+    ports: !reset []
+
+  imgproxy:
+    environment:
+      IMGPROXY_KEY: ${IMGPROXY_KEY:?set IMGPROXY_KEY in .env}
+      IMGPROXY_SALT: ${IMGPROXY_SALT:?set IMGPROXY_SALT in .env}
+      IMGPROXY_USE_S3: "true"
+      IMGPROXY_S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+    ports: !reset []
+
+  cms:
+    # Build the production image (multi-stage docker/Dockerfile) on the VM
+    # instead of pulling from a registry. Drops the dev source-mount volumes.
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    volumes: !reset []
+    environment:
+      NODE_ENV: production
+      LUMIBASE_ENV: production
+      LUMIBASE_RUNTIME: docker
+      # Internal Compose network — Postgres/Redis are not exposed and carry no
+      # TLS, so SSL verification is disabled for the in-cluster hop only.
+      DATABASE_URL: postgresql://lumibase:${POSTGRES_PASSWORD}@postgres:5432/lumibase
+      DATABASE_SSL_MODE: disable
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?set CORS_ALLOWED_ORIGINS in .env}
+      # Storage / search / image-proxy secrets (must differ from dev defaults).
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: lumibase-media
+      MEILISEARCH_HOST: http://meilisearch:7700
+      MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY}
+      IMGPROXY_URL: http://imgproxy:8080
+      IMGPROXY_KEY: ${IMGPROXY_KEY}
+      IMGPROXY_SALT: ${IMGPROXY_SALT}
+      PORT: "1989"
+      # ── LLM / Gemini (Google AI) ──────────────────────────────────────────
+      # Satisfies the "≥1 LLM call routed through Gemini" requirement.
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      # Falls back to the provider default in llm-provider.ts when unset.
+      LLM_MODEL: ${LLM_MODEL:-gemini-3.5-flash}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
+    ports:
+      - "${CMS_PORT:-1989}:1989"
+
+  bull-board:
+    ports: !reset []

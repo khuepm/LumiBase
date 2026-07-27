@@ -1,6 +1,6 @@
 ## @lumibase/cms
 
-Hono.js API for Lumibase, deployed to Cloudflare Workers.
+Hono.js API for LumiBase, deployed to Cloudflare Workers.
 
 ### Bindings (configure in `wrangler.toml`)
 

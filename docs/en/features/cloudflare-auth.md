@@ -19,7 +19,7 @@ This document explains in detail how to configure — and how the system behaves
 
 ## 1. Architecture overview
 
-Lumibase uses a hybrid authentication model:
+LumiBase uses a hybrid authentication model:
 1. **Studio admins (the management surface)**: protected by Cloudflare Zero Trust (Access). On successful sign-in, Cloudflare Access automatically attaches a JWT assertion in the `Cf-Access-Jwt-Assertion` header.
 2. **Frontend end-users**: register and sign in directly through the Hono CMS API's custom auth endpoints (`/auth/register`, `/auth/login`). These return a Custom JWT signed with the Web Crypto API (HS256).
 3. **Bypassing Cloudflare Access for API calls**: frontend clients calling the API need to bypass Cloudflare Access using a **Cloudflare Service Token** (sent in the `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers).
@@ -134,7 +134,7 @@ How a user's permissions are checked:
    - By default, after a successful sign-in an end-user is assigned the `member` role bound to the request's `site_id`.
 
 ### B. Multi-tenancy security (row-level security)
-Lumibase enforces strict multi-tenancy at the database layer, using Hono's `withRls()` middleware together with PostgreSQL row-level security (RLS):
+LumiBase enforces strict multi-tenancy at the database layer, using Hono's `withRls()` middleware together with PostgreSQL row-level security (RLS):
 
 1. **Resolve the site**: the `withTenant()` middleware reads the `X-Lumi-Site` header to get the current `siteId`.
 2. **Set the DB context**: `withRls()` executes:

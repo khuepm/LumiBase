@@ -87,7 +87,7 @@ Create a webhook (Settings → Webhooks) **with a secret** — unsigned delivery
 ```
 POST <webhook.url>
 Content-Type: application/json
-X-Lumibase-Signature: t=<unix_seconds>,v1=<hmac_sha256_hex>
+X-LumiBase-Signature: t=<unix_seconds>,v1=<hmac_sha256_hex>
 
 { "events": [<envelope>…], "subscription": { "id": "…", "name": "…" } }
 ```

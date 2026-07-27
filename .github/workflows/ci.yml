@@ -76,11 +76,10 @@ jobs:
       - name: Check registry numbering
         run: pnpm registry:check
 
+      # `pnpm -r` runs tsc in every workspace package directly — no turbo cache
+      # in between — so a stale cache can never mask a type error on CI.
       - name: Typecheck
         run: pnpm -r typecheck
-
-      - name: Typecheck
-        run: pnpm typecheck
 
       - name: Test
         run: pnpm test
@@ -177,6 +176,14 @@ jobs:
 
       - name: Run golden-path E2E
         run: pnpm --filter @lumibase/cms exec vitest --run src/__tests__/golden-path.e2e.test.ts
+
+      # v1 release criteria §4: the 0.x → 1.0 upgrade path must be tested for
+      # real, not verified by hand. Seeds a pre-policy (0.6.x-shape) RBAC
+      # fixture and runs the actual role→policy backfill + documented
+      # post-check against the same Postgres. Sequential with the golden-path
+      # step on purpose — both suites share the database.
+      - name: Run upgrade-path E2E (0.x → 1.0 RBAC backfill)
+        run: pnpm --filter @lumibase/cms exec vitest --run src/__tests__/upgrade-path.e2e.test.ts
 
   lint-allowlist:
     name: Lint stable packages
@@ -299,5 +306,11 @@ jobs:
       # … then fail only on HIGH/CRITICAL advisories so a known-exploitable
       # dependency blocks the merge while noisy low/moderate transitive
       # advisories do not (CWE-1104).
+      #
+      # Advisories deliberately excluded from this gate live in
+      # `pnpm.auditConfig.ignoreGhsas` (root package.json). Each entry needs a
+      # written justification + revisit trigger in the "Audit ignore registry"
+      # of `docs/en/security/dependency-overrides.md` — never add one just to
+      # make CI green.
       - name: Audit (fail on high/critical)
         run: pnpm audit --prod --audit-level high

@@ -178,7 +178,7 @@ function SiteSettingsForm({ site, onSave, saving, saved, errorCode }: FormProps)
       <Section icon={<Globe className="h-4 w-4" />} title="Identity">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field id={titleId} label="Display title" error={errors.displayTitle?.message}>
-            <input id={titleId} className={inputClass(!!errors.displayTitle)} placeholder="Lumibase" {...register('displayTitle')} />
+            <input id={titleId} className={inputClass(!!errors.displayTitle)} placeholder="LumiBase" {...register('displayTitle')} />
           </Field>
           <Field id={langId} label="Default language" error={errors.defaultLanguage?.message}>
             <select id={langId} className={inputClass(!!errors.defaultLanguage)} {...register('defaultLanguage')}>

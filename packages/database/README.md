@@ -1,6 +1,6 @@
 # @lumibase/database
 
-Drizzle ORM schema and migration tooling for Lumibase.
+Drizzle ORM schema and migration tooling for LumiBase.
 
 ## Layout
 

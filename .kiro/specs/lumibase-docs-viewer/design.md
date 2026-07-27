@@ -1,8 +1,8 @@
-# Design Document: Lumibase Docs Viewer
+# Design Document: LumiBase Docs Viewer
 
 ## Overview
 
-Lumibase Docs Viewer is a standalone, statically-built documentation app that lives at `apps/docs` in the monorepo. It reads Markdown files from the `docs/` directory at build time using Vite's `import.meta.glob`, renders them client-side with syntax highlighting, and provides sidebar navigation, a table of contents, and full-text search — all without a backend or database.
+LumiBase Docs Viewer is a standalone, statically-built documentation app that lives at `apps/docs` in the monorepo. It reads Markdown files from the `docs/` directory at build time using Vite's `import.meta.glob`, renders them client-side with syntax highlighting, and provides sidebar navigation, a table of contents, and full-text search — all without a backend or database.
 
 The app mirrors the tech stack of `apps/studio` (React 18 + Vite 5 + Tailwind CSS 3) to maintain consistency across the monorepo, and consumes shared packages (`@lumibase/ui`, `@lumibase/shared`) via workspace dependencies.
 
@@ -291,7 +291,7 @@ interface SearchResult {
 
 ### Property 7: Browser title formatting
 
-*For any* document with a resolved title, the browser `<title>` tag SHALL be set to `{document title} — Lumibase Docs`.
+*For any* document with a resolved title, the browser `<title>` tag SHALL be set to `{document title} — LumiBase Docs`.
 
 **Validates: Requirements 9.4**
 

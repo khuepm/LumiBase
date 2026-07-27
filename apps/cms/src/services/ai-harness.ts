@@ -997,7 +997,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
                 title: 'Generated API spec',
                 content: {
                   openapi: '3.1.0',
-                  info: { title: 'Lumibase generated API', version: '0.1.0' },
+                  info: { title: 'LumiBase generated API', version: '0.1.0' },
                   paths: Object.fromEntries(collections.map((collection) => [`/items/${collection}`, { get: { summary: `List ${collection}` } }])),
                 },
               },
@@ -1044,7 +1044,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
               title: 'Generated API spec',
               content: {
                 openapi: '3.1.0',
-                info: { title: 'Lumibase generated API', version: '0.1.0' },
+                info: { title: 'LumiBase generated API', version: '0.1.0' },
                 paths,
                 components: { schemas },
               },

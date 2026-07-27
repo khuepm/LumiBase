@@ -88,12 +88,13 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **API**
   - [api/hono-api-spec.md](./api/hono-api-spec.md) — REST/WS endpoints chuẩn hoá với đầy đủ request/response examples.
 - **UI Studio**
-  - [ui/README.md](../ui/README.md) — Spec for the redesigned Lumibase Studio and detailed screen specifications.
+  - [ui/README.md](../ui/README.md) — Spec for the redesigned LumiBase Studio and detailed screen specifications.
   - [en/ui/studio-ui-spec.md](./ui/studio-ui-spec.md) — Original page structure, modules, layouts, components, and state.
 - **Triển khai** (`deployment/`)
   - [deployment/overview.md](./deployment/overview.md) — Tổng quan các target Cloudflare Workers, Cloudflare Pages và Docker.
   - [deployment/cloudflare.md](./deployment/cloudflare.md) — Lệnh build/deploy CMS Worker và docs Pages.
   - [deployment/docker.md](./deployment/docker.md) — Chạy CMS API ở Docker/self-hosted mode.
+  - [deployment/google-cloud-vm.md](./deployment/google-cloud-vm.md) — Một VM Compute Engine chạy toàn bộ stack Docker với Gemini làm LLM provider.
   - [deployment/private-admin-path.md](./deployment/private-admin-path.md) — Quy tắc bảo mật cho private admin path và production no-redirect.
   - [deployment/environment-variables.md](./deployment/environment-variables.md) — Biến môi trường và bindings.
   - [deployment/local-development.md](./deployment/local-development.md) — Quy trình local dev và kiểm tra trước deploy.

@@ -2,7 +2,7 @@
   "name": "@lumibase/cms",
   "version": "0.24.1",
   "private": true,
-  "description": "Lumibase CMS API — Hono.js on Cloudflare Workers.",
+  "description": "LumiBase CMS API — Hono.js on Cloudflare Workers.",
   "type": "module",
   "main": "src/index.ts",
   "bin": {

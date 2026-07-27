@@ -46,7 +46,7 @@ Create one legacy policy for every role where `admin_access=true` or `app_access
 
 Contract:
 
-- Policy key: `legacy_role_flags_<stable_role_key>`.
+- Policy key: `legacy_role_flags_<stable_role_key>_<role_id>`. The role id suffix is required: the readable `<stable_role_key>` is a lossy normalization (`content-editor` and `Content Editor` both collapse to `content_editor`), so two distinct roles in one site can derive the same readable key. Without the id suffix they would share one policy row and a low-privilege role could inherit a colliding admin role's flags. The id guarantees a 1:1 role↔policy mapping.
 - Name: `Legacy role flags: <role name>`.
 - `admin_access` = current role value.
 - `app_access` = current role value.
@@ -97,6 +97,8 @@ Only after a clear release boundary:
 - production migration verification has passed
 
 ## 4. Idempotent SQL Strategy
+
+> **Implementation:** `packages/database/src/backfill/role-policies.ts` (run via `pnpm --filter @lumibase/database backfill:role-policies`), tested end-to-end in `apps/cms/src/__tests__/upgrade-path.e2e.test.ts`. The pseudo-SQL below documents the intended shape; the shipped code uses a Drizzle transaction and `nanoid()` IDs.
 
 This is pseudo-SQL, not the final migration. The implementation should use a Drizzle/SQL transaction and the same ID generator as the rest of the project.
 

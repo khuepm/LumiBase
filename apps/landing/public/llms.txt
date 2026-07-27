@@ -1,8 +1,8 @@
 # LumiBase
 
-> Edge-native headless CMS built for modern web development. Open-source (MIT), deployed on Cloudflare Workers, privacy-first, multi-tenant by default.
+> LumiBase is a Content Operating System — an edge-native, AI-native headless CMS where governed AI agents operate content against declarative SLOs (intents) while humans set intent, taste, and hold the veto. Open-source (MIT), multi-tenant by default, runs on Cloudflare Workers or self-hosted Docker.
 
-LumiBase runs content APIs at the edge — close to users — instead of on a central server. It supports dual deployment (Cloudflare Workers and Docker), delivers content through a type-safe REST API, and includes an AI Copilot with human-in-the-loop approval for dangerous operations.
+LumiBase runs content APIs at the edge — close to users — instead of on a central server, with dual deployment (Cloudflare Workers and Docker) and a type-safe REST + GraphQL surface. Beyond storage, agents reconcile content toward the intents you declare, earning autonomy on a trust ladder (L0 human-in-the-loop → L4 autopilot) as they prove reliable, and every change carries full provenance. It exposes an MCP server for agent integrations, a Change Data Capture (CDC) change feed, and signed extensions.
 
 ## Documentation
 

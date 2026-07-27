@@ -8,7 +8,7 @@ This document contains the structured AI prompts and skills used to guide AI-ass
 
 **Objective:** Help AI understand the essence and vision of the project.
 
-* **Project Name:** Lumibase.
+* **Project Name:** LumiBase.
 * **Philosophy:** "Directus-inspired, Edge-native, Production-ready".
 * **Problem Solved:** Overcome Directus weaknesses in Multi-tenancy, ID collision, poor cache management, and CI/CD difficulties.
 * **Core Architecture:** Headless CMS supporting dynamic data management combined with UI configuration (Page-builder mindset) returned in a single API call.
