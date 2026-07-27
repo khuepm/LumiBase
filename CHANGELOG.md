@@ -11,6 +11,28 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **Landing / sponsor rewards ([#296](https://github.com/khuepm/LumiBase/issues/296)):**
+  `saveToDatabase()` in `apps/landing/src/lib/rewards.ts` was an exported no-op
+  — its body held only a `// TODO: Implement database save` comment, so nothing
+  a caller "saved" was ever written anywhere. The module also kept two
+  independent in-memory `Map`s (one in the lib, one in the GitHub Sponsors
+  webhook route), and `updateClaimStatus()` flipped `claimed` with no guard, so
+  a token could be claimed twice. The module is now `src/lib/rewards/` behind a
+  single `SponsorStore` interface: `InMemorySponsorStore` (default; dev/tests)
+  and `D1SponsorStore` (Cloudflare D1, persistent). Claiming is atomic in both —
+  D1 does it as one `UPDATE … WHERE reward_token = ? AND claimed = 0 RETURNING
+  tier` compare-and-set — so N concurrent claims of a valid token yield exactly
+  one success. The no-op `saveToDatabase()` and the unguarded
+  `updateClaimStatus()` are gone; `createSponsor()` persists and `claimReward()`
+  is the only claim path. The webhook's debug `GET` no longer lists reward
+  tokens (they are credentials). No upgrade step: the landing app is a static
+  export, the route handlers that use this live in `src/_api-routes-disabled/`,
+  and persistence activates only when a `SPONSORS_DB` D1 binding is configured
+  (see "Sponsor rewards store" in `apps/landing/README.md`). The `/rewards/claim`
+  page that used to POST at this module was removed separately as dead,
+  always-failing UI; the store now waits, correct, for the managed backend that
+  removal note anticipated.
+
 - **Deployment skills never had a KeyProvider.** The deployment skills
   (`triggerDeployment`, `listDeploymentTargets`, `listDeployments`,
   `getDeploymentStatus`) build a site-scoped `DeploymentService` from
