@@ -24,6 +24,15 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   (`serve.ts`). Flow-driven deploys (`deploy:trigger`) were unaffected — the
   flow run environment already supplied `keys`.
 
+- **Studio / Deployments page was unreachable.** `settings/deployments-page.tsx`
+  shipped complete — targets list, deploy trigger, status polling, build logs,
+  against the already-mounted `/api/v1/deployments` — but nothing linked to it:
+  no route in `router.tsx` and no entry in the settings sidebar, so the whole
+  feature was dead code from the client side. Registered
+  `/settings/deployments` (plus the `/$adminPath/settings/deployments` variant)
+  and added **Deployments** to the Integrations group of Settings. No API,
+  schema, or setup change — the page is reachable as soon as Studio updates.
+
 - **Security / mcp-server:** `cdc_subscription_replay` accepted its
   `subscription_id` as a bare `z.string()` and encoded it with
   `encodeURIComponent`, which leaves `..` intact — a crafted id reached
@@ -45,6 +54,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `processAgentRunJob` end to end. Same shape as the ItemService RBAC-context
   guard: a construction that silently degrades is caught at CI, not at runtime.
   DoD §2b gains a matching checklist line for background/queue workers.
+
+- **Orphaned-page tripwire (Studio settings).** `settings/__tests__/deployments-page.test.tsx`
+  locks the class behind the fix above rather than the single page: a source scan
+  requires every `*-page.tsx` in `modules/settings/` to be referenced by
+  `router.tsx`, and every sidebar `to:` target to have a matching route path.
+  `deployments-route.test.tsx` complements it by driving the real route tree over
+  a memory history, so "the URL resolves to the page and the nav link points at
+  it" is asserted rather than assumed.
 
 - **Path-traversal tripwire (mcp-server).** `path-hardening.wiring.test.ts`
   locks the class instead of the individual call sites: a source scan requires

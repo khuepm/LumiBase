@@ -89,7 +89,7 @@ Like the flow operations above, all four skills are runtime-bound: their handler
 
 ## 8. Studio
 
-A **Settings → Deployments** page (`apps/studio/src/modules/settings/deployments-page.tsx`) lists targets and recent deployments, with controls to add a target, trigger a deploy, refresh status, and view logs.
+A **Settings → Deployments** page (`apps/studio/src/modules/settings/deployments-page.tsx`) lists targets and recent deployments, with controls to add a target, trigger a deploy, refresh status, and view logs. It lives at `/settings/deployments` (and `/<adminPath>/settings/deployments` on instances with a custom admin path), reachable from the **Integrations** group of the settings sidebar.
 
 ## 9. Setup notes
 
