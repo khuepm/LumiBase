@@ -257,12 +257,51 @@ Chương trình chia 3 phase (xem `roadmap.md`): P0 vá nhanh (Req 1–6), P1 n�
 3. THE workflow SHALL upload kết quả (JSON summary) làm artifact để so sánh lịch sử.
 4. THE docs contributing SHALL mô tả cách chạy suite local và cách cập nhật threshold khi có thay đổi hiệu năng CÓ CHỦ ĐÍCH (threshold đổi phải đi cùng PR giải thích).
 
+### Requirement 19: Chống cache penetration trên đường đọc công khai
+
+**User Story:** Là operator, tôi muốn request tới tài nguyên KHÔNG tồn tại bị chặn ở tầng cache/biên thay vì đi xuống Postgres mỗi lần, để một kẻ tấn công (hoặc một crawler hỏng) bắn hàng trăm nghìn slug/ID ngẫu nhiên không hạ được database dù Redis/KV vẫn khoẻ.
+
+Ba requirement liền kề dễ nhầm — phân biệt rõ: **Req 9** xử lý *cache breakdown* (khoá nóng CÓ dữ liệu hết hạn → herd), requirement này xử lý *cache penetration* (khoá KHÔNG có dữ liệu ở cả hai tầng → cache không bao giờ được điền, nên không tầng nào hấp thụ được), **Req 12** là rate limit chung cho surface đã xác thực.
+
+#### Acceptance Criteria
+
+**Tầng 1 — chặn hình dạng khoá sai trước khi chạm DB**
+
+1. WHEN một request public mang tham số định danh sai hình dạng đã biết (`site_id` không phải nanoid 21 ký tự thuộc alphabet nanoid; `slug` vượt độ dài tối đa hoặc chứa ký tự ngoài `[a-z0-9/_-]`; tên collection không khớp `^[A-Za-z_][A-Za-z0-9_]*$`), THE CMS SHALL trả 404 (không phải 400, để không tiết lộ khoá nào đúng hình dạng) mà KHÔNG thực thi bất kỳ truy vấn DB nào.
+2. THE tenant middleware SHALL validate hình dạng `X-Lumi-Site` trước khi ghi vào context (`middleware/tenant.ts:25-29` hiện tin tuyệt đối giá trị header) — giá trị sai hình dạng → 400 `TENANT_INVALID`, không đi tiếp xuống chuỗi middleware.
+3. THE validation SHALL là kiểm tra hình dạng thuần tuý (regex/độ dài), KHÔNG tra cứu sự tồn tại — nó là bộ lọc rẻ đứng trước cache, không thay thế tầng 2.
+
+**Tầng 2 — negative cache entry (tombstone)**
+
+4. THE Cache_Provider_V2 (Req 7) SHALL bổ sung một phép đọc phân biệt được ba trạng thái: *hit có giá trị*, *hit rỗng (tombstone)*, *miss*. Interface hiện tại `get<T>(key): Promise<T | null>` KHÔNG biểu diễn được trạng thái giữa — cả hai adapter trả `null` cho cả ba trường hợp (`docker/cache.ts:28-37` `val ? JSON.parse(val) : null`; `cloudflare/cache.ts:34-36` `kv.get(key,'json')`), nên hôm nay không caller nào cache được kết quả âm dù muốn.
+5. WHEN một đường đọc public phân giải một định danh và DB xác nhận không tồn tại, THE CMS SHALL ghi một tombstone vào cache với TTL ngắn `LUMIBASE_NEGATIVE_CACHE_TTL` (default 30 giây) cộng jitter ngẫu nhiên ±20%, để các request lặp lại cùng khoá được trả 404 từ cache mà không chạm DB.
+6. THE tombstone key SHALL mang `siteId` (non-negotiable rule #2, DoD 2b): `neg:${siteId}:${kind}:${identifier}` với `kind` ∈ `page|collection|site|item`.
+7. WHEN tài nguyên tương ứng được tạo (page mới, collection mới, item mới) hoặc slug được đổi thành giá trị đang bị tombstone, THE write path SHALL xoá tombstone tương ứng sau commit, trước khi trả response — TTL ngắn ở AC-5 là lưới an toàn, không phải cơ chế chính.
+8. THE tombstone SHALL KHÔNG bao giờ được serve cho request mang credentials hoặc ở chế độ preview/draft (cùng ranh giới với Req 1.4) — một item draft không nhìn thấy được ở delivery không phải là "không tồn tại".
+9. WHEN cache backend không khả dụng, THE đường đọc SHALL degrade về hành vi hiện tại (query DB, trả 404 thật) — negative cache là lớp giảm tải, không được biến sự cố Redis thành sự cố API.
+
+**Tầng 3 — giới hạn tốc độ trên đường public**
+
+10. THE Delivery_API SHALL nằm trong phạm vi rate limit, keyed theo IP client (đường này chưa xác thực nên không có principal): `LUMIBASE_DELIVER_RATE_LIMIT` (default 1200 req/phút/IP, `0` = tắt). Điều này **sửa** quyết định "skip health/metrics/deliver" ở `tasks.md` task 13.2 và chốt open question `design.md` §21.2 theo hướng CÓ.
+11. WHEN một IP vượt ngưỡng, THE CMS SHALL trả 429 kèm `Retry-After` và `Cache-Control: no-store`, và SHALL KHÔNG ghi tombstone từ request bị chặn (tránh biến rate-limit thành kênh đầu độc cache).
+
+**Phạm vi & đo đạc**
+
+12. THE requirement SHALL phủ tối thiểu các đường đã audit: `GET /deliver/page/:site_id/:slug` (`routes/deliver.ts:411-420`), `GET /deliver/llms.txt/:site_id` (`routes/deliver.ts:287-294`), `SchemaService.getCompiled` (`schema-service.ts:1074-1080` — miss trả `null` và không ghi gì), `ItemService.resolveCollection` (`item-service.ts:642-652` — query thẳng DB, không qua cache).
+13. THE k6 suite SHALL có scenario `load-penetration.js`: 95% request mang slug/ID ngẫu nhiên không tồn tại, 5% hợp lệ; đo số DB query per request (qua query counter hoặc `pg_stat_statements`) trước/sau.
+14. THE tỷ lệ DB-query-per-404 SHALL giảm xuống ≤ 0.05 (tức ≥95% request rác được hấp thụ bởi validate + tombstone) trên scenario ở AC-13, đo bằng số thực chứ không ước lượng.
+15. THE cache metrics (Req 13) SHALL tách riêng counter cho tombstone: `cache_negative_hits_total`, `cache_negative_writes_total` — để operator phân biệt "cache hit vì có dữ liệu" và "cache hit vì đã biết là không có".
+
+**Quyết định kiến trúc cần chốt**
+
+16. THE design phase SHALL ghi rõ quyết định về Bloom filter (giải pháp kinh điển thứ hai cho penetration) — chọn hay không, kèm lý do và điều kiện tái mở. Ràng buộc bắt buộc cân nhắc: dual-runtime (RedisBloom không có trên Cloudflare KV), chi phí rebuild filter khi tạo/xoá tài nguyên, và false-positive nghĩa là vẫn phải chạm DB.
+
 ## Setup impact (rà soát sơ bộ — chốt lại khi hoàn thành, theo DoD mục 2)
 
 Trả lời 6 câu hỏi registry (`admin-setup-wizard/setup-impact.md`):
 
 1. **Seed mặc định?** Không — không bảng mới cần seed (bảng `flow_runs` Req 15 rỗng khi khởi tạo).
-2. **Settings key/feature flag operator cần biết?** Không key trong `settings`; toàn bộ knob là **env** (`LUMIBASE_DELIVER_SMAXAGE`, `LUMIBASE_APIKEY_TOUCH_INTERVAL`, `LUMIBASE_API_RATE_LIMIT`, `LUMIBASE_PROCESS_ROLE`, `LUMIBASE_MAX_JSON_BODY`, `LUMIBASE_BULK_MAX`, `LUMIBASE_FLOW_SYNC_TIMEOUT`) — cập nhật docs env reference.
+2. **Settings key/feature flag operator cần biết?** Không key trong `settings`; toàn bộ knob là **env** (`LUMIBASE_DELIVER_SMAXAGE`, `LUMIBASE_APIKEY_TOUCH_INTERVAL`, `LUMIBASE_API_RATE_LIMIT`, `LUMIBASE_PROCESS_ROLE`, `LUMIBASE_MAX_JSON_BODY`, `LUMIBASE_BULK_MAX`, `LUMIBASE_FLOW_SYNC_TIMEOUT`, `LUMIBASE_NEGATIVE_CACHE_TTL`, `LUMIBASE_DELIVER_RATE_LIMIT`) — cập nhật docs env reference.
 3. **Policy/grant mặc định trong DB?** Không.
 4. **Bước UI wizard mới?** Không.
 5. **Capability flag mới trong `/setup/capabilities`?** Không (health/metrics đã phản ánh cache/queue availability).
