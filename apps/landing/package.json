@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ext .ts,.tsx --max-warnings 0",
+    "lint": "eslint --max-warnings 0",
     "test": "vitest --run",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next .turbo dist"
