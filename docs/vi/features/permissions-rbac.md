@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-07-28T16:58:18.283Z
+version: 5
+lastUpdated: 2026-07-28T17:03:56.341Z
 sourceLang: vi
-contentHash: 9b9235ba0ab030a8
-codeVerified: 2026-07-28T16:58:18.283Z
-codeVerifiedHash: 9b9235ba0ab030a8
+contentHash: 9de5270da8542048
+codeVerified: 2026-07-28T17:03:56.341Z
+codeVerifiedHash: 9de5270da8542048
 codeVerifiedClaims: 24
 ---
 
@@ -178,7 +178,7 @@ Một API key có thể được mint dưới dạng **publishable** (`lbk_pub_�
 Publishable key **không phải secret**. Bất cứ thứ gì ship xuống client đều trích xuất được, nên posture đúng duy nhất là scope nó y như thể nó đã công khai. Nó mua được gì so với việc phục vụ cùng dữ liệu đó hoàn toàn ẩn danh: quota rate-limit theo từng key (limiter đã key theo `k:{apiKeyId}`), revoke và rotate mà không cần redeploy, audit attribution, và scope theo key (staging vs production). Nó **không** mua được: confidentiality. Nếu để lộ mà thấy đau thì keep một secret key ở server và proxy qua backend của bạn.
 
 - Prefix `lbk_pub_` là source of truth — derive từ token nên không thể lệch khỏi metadata flag, và secret scanner có thể báo động với key `lbk_` bị lộ trong khi im lặng với key publishable. Rotation giữ nguyên tính chất này.
-- **Origin allowlist** — `metadata.allowedOrigins`, sửa trực tiếp qua `PATCH /api-keys/:id/allowed-origins`. Rỗng = không ràng buộc.
+- **Origin allowlist** — `metadata.allowedOrigins`, sửa trực tiếp qua `PATCH /api-keys/:id/allowed-origins`. Rỗng = không ràng buộc. Studio cho sửa ngay trên key đang chạy tại **Access control → API keys**, chọn key rồi dùng ô *Allowed origins* trong panel chi tiết — siết chặt danh sách hoặc sửa một origin gõ sai không cần rotate token và redeploy thứ đang ship key đó. Lưu ô rỗng sẽ hỏi xác nhận, vì đó là mở rộng quyền truy cập.
 - Enforcement chỉ áp cho publishable key (secret key dùng server-to-server, nơi không có `Origin`). `Origin`/`Referer` không khớp → `403 ORIGIN_NOT_ALLOWED` và được audit; origin **vắng mặt** thì cho qua. Đây là chủ đích: control này chặn một *website khác* dùng key của bạn trong browser, tức đúng failure mode thực tế. Nó không phải phòng tuyến chống `curl` — thứ có thể set bất kỳ `Origin` nào — nên từ chối request thiếu origin chỉ làm hỏng caller native/server hợp lệ mà không thêm bảo mật.
 - `adminAccess`/`appAccess` không thể attach vào publishable key (`PUBLISHABLE_KEY_ELEVATION`), và **cả hai nửa** của một role binding đều được screen. Điều này quan trọng vì `PermissionService` cấp admin khi **hoặc** cột `roles.admin_access` **hoặc** `admin_access` của một policy đang active được set — nên chỉ soi policy là chưa đủ: một role gắn cờ trên cột của chính nó, không kèm policy elevate nào (hoặc không policy nào cả), sẽ lọt qua screen rồi cấp admin ở thời điểm request.
 

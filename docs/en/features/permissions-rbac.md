@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-07-28T16:58:18.283Z
+version: 5
+lastUpdated: 2026-07-28T17:03:56.341Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 9b9235ba0ab030a8
+sourceHash: 9de5270da8542048
 mtEngine: claude
 syncStatus: machine-translated
-codeVerified: 2026-07-28T16:58:18.283Z
-codeVerifiedHash: 9b9235ba0ab030a8
+codeVerified: 2026-07-28T17:03:56.341Z
+codeVerifiedHash: 9de5270da8542048
 codeVerifiedClaims: 24
 ---
 
@@ -243,7 +243,11 @@ backend.
   cannot drift from a metadata flag, and a secret scanner can alert on leaked
   `lbk_` keys while staying quiet about publishable ones. Rotation preserves it.
 - **Origin allowlist** — `metadata.allowedOrigins`, editable live via
-  `PATCH /api-keys/:id/allowed-origins`. Empty = no constraint.
+  `PATCH /api-keys/:id/allowed-origins`. Empty = no constraint. Studio exposes
+  this on a live key at **Access control → API keys**: select the key and use the
+  *Allowed origins* box in the detail panel — tightening the list, or fixing a
+  mistyped origin, needs no token rotation and no redeploy of whatever ships the
+  key. Saving an empty box asks for confirmation, since that widens access.
 - Enforcement is scoped to publishable keys (a secret key is used
   server-to-server, where no `Origin` exists). A non-matching `Origin`/`Referer`
   is `403 ORIGIN_NOT_ALLOWED` and audited; an **absent** origin is allowed.

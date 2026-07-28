@@ -95,6 +95,17 @@ export function ApiKeysPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['access', 'api-keys'] }),
   });
 
+  /**
+   * The whole point of the origin allowlist is that it is adjustable on a live
+   * key — a mistyped origin, or a new frontend domain, must not force a token
+   * rotation and a redeploy of whatever ships the key.
+   */
+  const setAllowedOrigins = useMutation({
+    mutationFn: async (input: { id: string; allowedOrigins: string[] }) =>
+      (await client.apiKeys.setAllowedOrigins(input.id, input.allowedOrigins)).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['access', 'api-keys'] }),
+  });
+
   const attachRole = useMutation({
     mutationFn: async (roleId: string) => {
       if (!selectedKey) throw new Error('Select an API key first.');
@@ -302,6 +313,19 @@ export function ApiKeysPage() {
                 <Info label="Last IP" value={selectedKey.lastUsedIp ?? '—'} />
               </dl>
 
+              {selectedKey.publishable && (
+                <AllowedOriginsSection
+                  // Remount on key change so the textarea shows the selected
+                  // key's origins rather than carrying over unsaved edits.
+                  key={selectedKey.id}
+                  origins={selectedKey.allowedOrigins}
+                  isPending={setAllowedOrigins.isPending}
+                  onSave={(allowedOrigins) =>
+                    setAllowedOrigins.mutate({ id: selectedKey.id, allowedOrigins })
+                  }
+                />
+              )}
+
               <AttachmentSection
                 title="Roles"
                 empty="No roles attached."
@@ -342,7 +366,15 @@ export function ApiKeysPage() {
                   warnings={conflictReport.warnings}
                 />
               )}
-              <MutationError error={attachRole.error ?? attachPolicy.error ?? rotateKey.error ?? revokeKey.error} />
+              <MutationError
+                error={
+                  attachRole.error ??
+                  attachPolicy.error ??
+                  rotateKey.error ??
+                  revokeKey.error ??
+                  setAllowedOrigins.error
+                }
+              />
             </aside>
           )}
         </div>
@@ -402,6 +434,79 @@ function StatusBadge({ apiKey }: { apiKey: ApiKeyResource }) {
     >
       {label}
     </span>
+  );
+}
+
+/**
+ * Edit a publishable key's browser-origin allowlist in place.
+ *
+ * Previously the allowlist could only be set at create time, so tightening it —
+ * or fixing a typo — meant rotating the token and redeploying whatever ships it.
+ * That defeats the purpose of the control, which exists precisely because the
+ * key is already out in clients.
+ *
+ * Saving an empty box removes the constraint. That widens access, so it is
+ * confirmed rather than silently accepted.
+ */
+function AllowedOriginsSection({
+  origins,
+  isPending,
+  onSave,
+}: {
+  origins: string[];
+  isPending: boolean;
+  onSave: (allowedOrigins: string[]) => void;
+}) {
+  const saved = origins.join('\n');
+  const [draft, setDraft] = useState(saved);
+  const parsed = parseOriginList(draft);
+  const dirty = parsed.join('\n') !== origins.join('\n');
+
+  return (
+    <section className="space-y-2">
+      <h4 className="text-xs font-semibold uppercase text-muted-foreground">Allowed origins</h4>
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        rows={2}
+        placeholder="https://app.example.com"
+        aria-label="Allowed origins, one per line"
+        className="w-full rounded-md border bg-background px-2 py-1.5 font-mono text-xs"
+      />
+      <p className="text-xs text-muted-foreground">
+        One per line. Empty means <strong>any origin</strong>. Requests without an
+        origin — native or server-side callers — are always allowed, so this is
+        not a defence against <code>curl</code>.
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={!dirty || isPending}
+          onClick={() => {
+            if (
+              parsed.length === 0 &&
+              origins.length > 0 &&
+              !confirm('Remove the origin allowlist? This key will then work from any website.')
+            ) {
+              return;
+            }
+            onSave(parsed);
+          }}
+          className="rounded-md border px-2 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+        >
+          {isPending ? 'Saving…' : 'Save origins'}
+        </button>
+        {dirty && !isPending && (
+          <button
+            type="button"
+            onClick={() => setDraft(saved)}
+            className="text-xs text-muted-foreground hover:underline"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
 
