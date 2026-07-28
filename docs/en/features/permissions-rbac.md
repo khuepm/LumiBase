@@ -1,14 +1,14 @@
 ---
-version: 3
-lastUpdated: 2026-07-25T07:47:22.511Z
+version: 4
+lastUpdated: 2026-07-28T16:58:18.283Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 2a8277f7ae1ace80
+sourceHash: 9b9235ba0ab030a8
 mtEngine: claude
 syncStatus: machine-translated
-codeVerified: 2026-07-25T07:56:30.140Z
-codeVerifiedHash: 2a8277f7ae1ace80
-codeVerifiedClaims: 22
+codeVerified: 2026-07-28T16:58:18.283Z
+codeVerifiedHash: 9b9235ba0ab030a8
+codeVerifiedClaims: 24
 ---
 
 # Permissions, Roles & Policies
@@ -89,6 +89,19 @@ too, because a grant added there lands in the same compiled bundle.
 `role:{id}`), and the role lookup itself is cached with negative results
 included — the anonymous path is the highest-volume one.
 
+**`ctx.roleId` is the anonymous realm's only route in.**
+`PermissionService.compile()` resolves roles from four sources: `user_sites`,
+`user_roles`, `api_key_roles` and `ctx.roleId`. An anonymous principal has
+neither a user row nor an API-key row, so the first three are empty by
+definition — `ctx.roleId` is the only one left. `withAuth` sets it to the
+`public` role's id, and every call site that builds a `MagicContext` **must**
+forward `auth.roleId` rather than writing a literal `null`; otherwise every
+public grant compiles to an empty policy set and the feature silently does
+nothing. Note `ctx.user.roles` is **not** a fallback: `compile()` overwrites
+`ctx.user` with a snapshot read from the users table, which is null when there
+is no `userId`. A source-scan test rejects literal `roleId: null` in production
+source, with an allowlist for contexts that genuinely have no principal.
+
 **API** (`/api/v1/access/grants`, site-admin only):
 
 ```
@@ -105,6 +118,31 @@ may be combined, composing to an `_and`. Studio surfaces all of this at
 
 `POST /users/subscriber-access` keeps its original published-only-read contract
 when `action` is omitted.
+
+**How a grant is refused.** Every refusal from `POST /access/grants/:realm` is a
+*request body* error, so all of them answer **400** — an unchanged retry fails
+identically, which is what 400 means and 409 does not:
+
+| Code | Meaning |
+|---|---|
+| `COLLECTION_REQUIRED` | `collection` is missing |
+| `ACTION_NOT_ALLOWED` | the realm does not allow that action (e.g. `create` on `public`) |
+| `ROW_SCOPE_NOT_SUPPORTED` | the realm cannot express the requested row scope (`ownOnly` on `public`) |
+
+`COLLECTION_NOT_GRANTABLE` is the one **404**: the `collection` must exist on the
+site and be neither a system nor a hidden collection — exactly the set
+`GET /access/grants` lists. Without this check a typo was accepted with 200 and
+wrote a permission row that could never match anything: invisible in the picker
+and silently inert.
+
+**The `public` role cannot be deleted through the role editor.**
+`DELETE /roles/:id` refuses it with **409** `PUBLIC_ROLE_NOT_DELETABLE`. "Public
+access is enabled" is not a flag — it *is* the existence of the `public` role, so
+a raw delete here turns anonymous access off while skipping the two things
+`POST /access/grants/public/disable` also does: clearing the realm policy and its
+permission rows (so a later re-enable starts from a clean slate rather than
+silently restoring grants the operator has since forgotten), and writing the
+`public_access_disabled` audit event.
 
 ## 2. Permission record (JSON DSL)
 
@@ -213,8 +251,13 @@ backend.
   a browser, which is the real failure mode. It is not a defence against `curl`,
   which can set any `Origin` — rejecting absent-origin requests would only break
   legitimate native/server callers without adding security.
-- A policy with `adminAccess`/`appAccess` cannot be attached to a publishable
-  key (`PUBLISHABLE_KEY_ELEVATION`).
+- `adminAccess`/`appAccess` cannot be attached to a publishable key
+  (`PUBLISHABLE_KEY_ELEVATION`), and **both halves** of a role binding are
+  screened. That matters because `PermissionService` grants admin when
+  **either** the `roles.admin_access` column **or** an active policy's
+  `admin_access` is set — so screening policies alone is not enough: a role
+  carrying the flag on its own column, with no elevated policy (or no policy at
+  all), would pass the screen and then grant admin at request time.
 
 ## 7. API
 

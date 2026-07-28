@@ -32,7 +32,7 @@ async function isAdmin(c: Context<AppEnv>): Promise<boolean> {
     ctx: {
       userId: auth?.userId ?? null,
       siteId: c.get('siteId'),
-      roleId: null,
+      roleId: auth?.roleId ?? null,
       user: null,
       ip: c.get('ip') ?? null,
       headers,

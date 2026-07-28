@@ -92,7 +92,9 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
     ctx: {
       userId: auth.userId,
       siteId: c.get('siteId'),
-      roleId: null,
+      // Always forward it — `ctx.roleId` is the only role source
+      // `PermissionService` has for a principal with no user/API-key row.
+      roleId: auth.roleId ?? null,
       user: { id: auth.userId, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) },
       ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
       headers: collectHeaders(c.req.raw.headers),

@@ -24,6 +24,12 @@ interface Captured {
 function stubDb(captured: Captured[], opts: {
   publicRoleExists?: boolean;
   permissionRows?: unknown[];
+  /**
+   * Whether the grant target resolves in the site's grantable-collection
+   * lookup. Defaults to true; set false to exercise the
+   * `COLLECTION_NOT_GRANTABLE` path (unknown name, or a system/hidden one).
+   */
+  grantableCollection?: boolean;
 } = {}) {
   const collectionRows = [
     { name: 'articles', label: 'Articles' },
@@ -65,6 +71,11 @@ function stubDb(captured: Captured[], opts: {
             return Promise.resolve(opts.publicRoleExists ? [{ id: 'role_public' }] : []);
           }
           if (table === policies) return Promise.resolve([{ id: 'policy_x' }]);
+          if (table === collections) {
+            return Promise.resolve(
+              opts.grantableCollection === false ? [] : [{ name: 'articles' }],
+            );
+          }
           return Promise.resolve([]);
         },
         then(resolve: (v: unknown) => void) {
@@ -226,7 +237,9 @@ describe('POST /grants/:realm', () => {
         {},
       );
 
-      expect(res.status).toBe(409);
+      // 400, not 409: the body is what is wrong, and an unchanged retry cannot
+      // succeed — there is no server state to reconcile.
+      expect(res.status).toBe(400);
       await expect(res.json()).resolves.toMatchObject({
         errors: [{ code: 'ACTION_NOT_ALLOWED' }],
       });
@@ -249,10 +262,37 @@ describe('POST /grants/:realm', () => {
       {},
     );
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({
       errors: [{ code: 'ROW_SCOPE_NOT_SUPPORTED' }],
     });
+  });
+
+  /**
+   * A grant naming a collection that does not exist (typo) — or one the picker
+   * deliberately hides (system/hidden) — used to be accepted with 200 and write
+   * a permission row that could never match anything: invisible in the picker
+   * and silently inert. Refuse it at the write path instead.
+   */
+  it('refuses a collection that is not grantable on this site', async () => {
+    grantAdmin();
+    const { app, captured } = buildApp({ grantableCollection: false });
+
+    const res = await app.request(
+      '/grants/public',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ collection: 'artcles' }),
+      },
+      {},
+    );
+
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toMatchObject({
+      errors: [{ code: 'COLLECTION_NOT_GRANTABLE' }],
+    });
+    expect(captured.some((c) => c.table === permissions)).toBe(false);
   });
 
   it('grants a scoped subscriber write', async () => {

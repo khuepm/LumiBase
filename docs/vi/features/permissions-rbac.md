@@ -1,11 +1,11 @@
 ---
-version: 3
-lastUpdated: 2026-07-25T07:47:22.511Z
+version: 4
+lastUpdated: 2026-07-28T16:58:18.283Z
 sourceLang: vi
-contentHash: 2a8277f7ae1ace80
-codeVerified: 2026-07-25T07:56:30.140Z
-codeVerifiedHash: 2a8277f7ae1ace80
-codeVerifiedClaims: 22
+contentHash: 9b9235ba0ab030a8
+codeVerified: 2026-07-28T16:58:18.283Z
+codeVerifiedHash: 9b9235ba0ab030a8
+codeVerifiedClaims: 24
 ---
 
 # Permissions, Roles & Policies
@@ -63,6 +63,8 @@ Có hai realm least-privilege dành cho người không phải staff. Cả hai �
 
 **Caching.** Các principal ẩn danh dùng chung một compiled bundle cho mỗi site (cache key `role:{id}`), và bản thân lookup role cũng được cache kèm cả kết quả âm — đường ẩn danh là đường có lưu lượng cao nhất.
 
+**`ctx.roleId` là đường duy nhất của realm ẩn danh.** `PermissionService.compile()` resolve role từ bốn nguồn: `user_sites`, `user_roles`, `api_key_roles` và `ctx.roleId`. Một principal ẩn danh không có user row cũng không có API-key row, nên ba nguồn đầu rỗng theo định nghĩa — `ctx.roleId` là nguồn duy nhất còn lại. `withAuth` set nó thành id của role `public`; mọi call site dựng `MagicContext` **phải** forward `auth.roleId` thay vì viết literal `null`, nếu không toàn bộ grant public compile ra một policy set rỗng và tính năng âm thầm không làm gì. Lưu ý `ctx.user.roles` **không** phải phương án dự phòng: `compile()` ghi đè `ctx.user` bằng snapshot đọc từ table users, và snapshot đó là null khi không có `userId`. Một source-scan test chặn literal `roleId: null` trong source production, với allowlist cho các context thật sự không có principal.
+
 **API** (`/api/v1/access/grants`, chỉ site-admin):
 
 ```
@@ -76,6 +78,18 @@ DELETE /access/grants/:realm/:collection/:action
 `publishedOnly` mặc định **bật** cho `read` và **tắt** cho write. Hai scope có thể kết hợp, compose thành `_and`. Studio hiển thị toàn bộ ở **Access control → Public & subscribers**.
 
 `POST /users/subscriber-access` giữ nguyên contract published-only-read ban đầu khi bỏ qua `action`.
+
+**Cách grant bị từ chối.** Mọi refusal của `POST /access/grants/:realm` đều là lỗi về *request body*, nên đều trả **400** — retry y nguyên sẽ thất bại giống hệt, đó là điều 400 nói và 409 thì không:
+
+| Code | Nghĩa |
+|---|---|
+| `COLLECTION_REQUIRED` | thiếu `collection` |
+| `ACTION_NOT_ALLOWED` | realm không cho phép action đó (ví dụ `create` trên `public`) |
+| `ROW_SCOPE_NOT_SUPPORTED` | realm không diễn đạt được row scope đã yêu cầu (`ownOnly` trên `public`) |
+
+Riêng `COLLECTION_NOT_GRANTABLE` trả **404**: `collection` phải tồn tại trên site và không phải collection system hay hidden — đúng tập mà `GET /access/grants` liệt kê. Không có kiểm tra này, một cú đánh máy được nhận với 200 rồi ghi một permission row không bao giờ khớp được gì: không hiện trong picker và âm thầm vô tác dụng.
+
+**Role `public` không xoá được qua editor role.** `DELETE /roles/:id` từ chối nó với **409** `PUBLIC_ROLE_NOT_DELETABLE`. "Public access đang bật" không phải một cờ — nó *chính là* sự tồn tại của role `public`, nên xoá thẳng ở đây sẽ tắt truy cập ẩn danh nhưng bỏ qua hai việc mà `POST /access/grants/public/disable` làm: dọn realm policy cùng các permission row của nó (để lần enable sau bắt đầu từ trạng thái sạch, không âm thầm phục hồi grant mà operator đã quên), và ghi audit event `public_access_disabled`.
 
 ## 2. Permission record (JSON DSL)
 
@@ -166,7 +180,7 @@ Publishable key **không phải secret**. Bất cứ thứ gì ship xuống clie
 - Prefix `lbk_pub_` là source of truth — derive từ token nên không thể lệch khỏi metadata flag, và secret scanner có thể báo động với key `lbk_` bị lộ trong khi im lặng với key publishable. Rotation giữ nguyên tính chất này.
 - **Origin allowlist** — `metadata.allowedOrigins`, sửa trực tiếp qua `PATCH /api-keys/:id/allowed-origins`. Rỗng = không ràng buộc.
 - Enforcement chỉ áp cho publishable key (secret key dùng server-to-server, nơi không có `Origin`). `Origin`/`Referer` không khớp → `403 ORIGIN_NOT_ALLOWED` và được audit; origin **vắng mặt** thì cho qua. Đây là chủ đích: control này chặn một *website khác* dùng key của bạn trong browser, tức đúng failure mode thực tế. Nó không phải phòng tuyến chống `curl` — thứ có thể set bất kỳ `Origin` nào — nên từ chối request thiếu origin chỉ làm hỏng caller native/server hợp lệ mà không thêm bảo mật.
-- Policy có `adminAccess`/`appAccess` không thể attach vào publishable key (`PUBLISHABLE_KEY_ELEVATION`).
+- `adminAccess`/`appAccess` không thể attach vào publishable key (`PUBLISHABLE_KEY_ELEVATION`), và **cả hai nửa** của một role binding đều được screen. Điều này quan trọng vì `PermissionService` cấp admin khi **hoặc** cột `roles.admin_access` **hoặc** `admin_access` của một policy đang active được set — nên chỉ soi policy là chưa đủ: một role gắn cờ trên cột của chính nó, không kèm policy elevate nào (hoặc không policy nào cả), sẽ lọt qua screen rồi cấp admin ở thời điểm request.
 
 ## 7. API
 

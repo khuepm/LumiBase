@@ -54,7 +54,9 @@ export const requireSiteAdmin = (): MiddlewareHandler<AppEnv> => async (c, next)
       ctx: {
         userId: auth.userId ?? null,
         siteId,
-        roleId: null,
+        // Always forward it — `ctx.roleId` is the only role source
+        // `PermissionService` has for a principal with no user/API-key row.
+        roleId: auth.roleId ?? null,
         user: auth.userId
           ? { id: auth.userId, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) }
           : undefined,

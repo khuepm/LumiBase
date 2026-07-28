@@ -150,9 +150,35 @@ rolesRouter.patch('/:id', async (c) => {
 
 rolesRouter.delete('/:id', async (c) => {
   const db = c.get('db');
-  await db
+  const id = c.req.param('id');
+  // The public role is not a generic role: dropping it here would disable the
+  // anonymous realm through the back door, skipping `disablePublicAccess` —
+  // which also deletes the realm policy and its permission rows so a later
+  // re-enable starts clean — and skipping the `public_access_disabled` audit
+  // event. Route the operator to the endpoint that does both.
+  if (await isPublicRole(db, c.get('siteId'), id)) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'PUBLIC_ROLE_NOT_DELETABLE',
+            message:
+              'The public (anonymous) role is managed by the access-grants API. ' +
+              'Use POST /access/grants/public/disable to turn anonymous access off; ' +
+              'it also clears the realm policy and its grants, and records an audit event.',
+          },
+        ],
+      },
+      409,
+    );
+  }
+  const deleted = await db
     .delete(roles)
-    .where(and(scopeSite(roles.siteId, c.get('siteId')), eq(roles.id, c.req.param('id'))));
+    .where(and(scopeSite(roles.siteId, c.get('siteId')), eq(roles.id, id)))
+    .returning({ id: roles.id });
+  if (deleted.length === 0) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Role not found.' }] }, 404);
+  }
   await bumpPermissionVersion(c);
   return c.body(null, 204);
 });

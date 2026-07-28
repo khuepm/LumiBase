@@ -82,17 +82,26 @@ function withAllowedOrigins(
 }
 
 /**
- * Refuse attaching an elevated policy to a publishable key.
+ * Refuse attaching elevated access to a publishable key.
  *
  * A publishable key is shipped to clients, so `adminAccess` on it would be an
  * unauthenticated admin bypass. Returns a response to send, or null to proceed.
+ *
+ * Both halves of a role binding must be screened, not just the policies it
+ * carries. `PermissionService.compile()` grants admin when *either*
+ * `roles.admin_access` OR any active policy's `admin_access` is set
+ * (`roleRows.some(r => r.adminAccess) || activePolicies.some(...)`), so a role
+ * whose own column is flagged but which carries no elevated policy — or no
+ * policy at all — used to slip through: an empty `policyIds` short-circuited
+ * the whole check.
  */
 async function screenPublishableAttachment(
   c: Context<AppEnv>,
   apiKeyId: string,
   policyIds: string[],
+  roleId?: string,
 ): Promise<Response | null> {
-  if (policyIds.length === 0) return null;
+  if (policyIds.length === 0 && !roleId) return null;
 
   const [key] = await c
     .get('db')
@@ -102,18 +111,31 @@ async function screenPublishableAttachment(
     .limit(1);
   if (!key || !isPublishablePrefix(key.prefix)) return null;
 
-  const rows = await c
-    .get('db')
-    .select({
-      id: policies.id,
-      name: policies.name,
-      adminAccess: policies.adminAccess,
-      appAccess: policies.appAccess,
-    })
-    .from(policies)
-    .where(and(scopeSite(policies.siteId, c.get('siteId')), inArray(policies.id, policyIds)));
+  const policyRows = policyIds.length
+    ? await c
+        .get('db')
+        .select({
+          name: policies.name,
+          adminAccess: policies.adminAccess,
+          appAccess: policies.appAccess,
+        })
+        .from(policies)
+        .where(and(scopeSite(policies.siteId, c.get('siteId')), inArray(policies.id, policyIds)))
+    : [];
 
-  const offenders = rows
+  const roleRows = roleId
+    ? await c
+        .get('db')
+        .select({
+          name: roles.name,
+          adminAccess: roles.adminAccess,
+          appAccess: roles.appAccess,
+        })
+        .from(roles)
+        .where(and(scopeSite(roles.siteId, c.get('siteId')), eq(roles.id, roleId)))
+    : [];
+
+  const offenders = [...roleRows, ...policyRows]
     .map((row) => ({ name: row.name, flags: screenPolicyForPublishableKey(row) }))
     .filter((entry) => entry.flags.length > 0);
   if (offenders.length === 0) return null;
@@ -523,7 +545,7 @@ apiKeysRouter.post('/:id/roles', async (c) => {
     .from(rolePolicies)
     .where(eq(rolePolicies.roleId, parsed.data.roleId));
   const addPolicies = rolePolicyRows.map((r) => r.policyId);
-  const elevation = await screenPublishableAttachment(c, apiKeyId, addPolicies);
+  const elevation = await screenPublishableAttachment(c, apiKeyId, addPolicies, parsed.data.roleId);
   if (elevation) return elevation;
   const report = await buildAccessConflictReport({
     db: c.get('db'),

@@ -98,10 +98,13 @@ const unknownRealm = (key: string | undefined) => ({
   ],
 });
 
-/** Map a realm-service refusal onto its HTTP status. */
-function realmErrorStatus(code: RealmAccessError['code']): 400 | 409 {
-  return code === 'COLLECTION_REQUIRED' ? 400 : 409;
-}
+/*
+ * Note on status: every `RealmAccessError` code rejects the *request body* — a
+ * missing collection, an action the realm never allows, a row scope it cannot
+ * express. None describes a conflict with server state, so all are 400.
+ * `ACTION_NOT_ALLOWED` / `ROW_SCOPE_NOT_SUPPORTED` previously answered 409,
+ * which told clients an unchanged retry might succeed; it cannot.
+ */
 
 async function audit(
   c: Context<AppEnv>,
@@ -241,8 +244,48 @@ accessGrantsRouter.post('/grants/:realm', async (c) => {
   }
 
   const siteId = c.get('siteId');
+  const db = c.get('db');
+
+  // The collection must be one the picker actually offers (GET /grants lists
+  // non-system, non-hidden collections of this site). Without this a typo wrote
+  // a permission row keyed to a collection that does not exist — accepted with
+  // 200, invisible in the picker, and silently doing nothing. Screening system
+  // and hidden collections here also keeps the write path from granting
+  // visitors access to infrastructure tables the picker deliberately hides.
+  const collectionName = parsed.data.collection.trim();
+  if (collectionName) {
+    const [grantable] = await db
+      .select({ name: collections.name })
+      .from(collections)
+      .where(
+        and(
+          scopeSite(collections.siteId, siteId),
+          eq(collections.name, collectionName),
+          eq(collections.system, false),
+          eq(collections.hidden, false),
+        ),
+      )
+      .limit(1);
+    if (!grantable) {
+      return c.json(
+        {
+          errors: [
+            {
+              code: 'COLLECTION_NOT_GRANTABLE',
+              message:
+                `Collection '${collectionName}' is not grantable on this site. ` +
+                'It must exist and be neither a system nor a hidden collection — ' +
+                'see GET /access/grants for the grantable list.',
+            },
+          ],
+        },
+        404,
+      );
+    }
+  }
+
   try {
-    const grant = await grantRealmAccess(c.get('db'), siteId, realm, parsed.data);
+    const grant = await grantRealmAccess(db, siteId, realm, parsed.data);
     if (realm.key === PUBLIC_REALM.key) {
       // A first grant provisions the realm, so the cached "is public enabled"
       // pointer can be stale here too.
@@ -253,10 +296,7 @@ accessGrantsRouter.post('/grants/:realm', async (c) => {
     return c.json({ data: grant });
   } catch (error) {
     if (error instanceof RealmAccessError) {
-      return c.json(
-        { errors: [{ code: error.code, message: error.message }] },
-        realmErrorStatus(error.code),
-      );
+      return c.json({ errors: [{ code: error.code, message: error.message }] }, 400);
     }
     throw error;
   }

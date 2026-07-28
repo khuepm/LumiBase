@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
-import { PermissionService, type PermissionAction } from '../services/permission-service';
+import { type PermissionAction } from '../services/permission-service';
+import { permissionServiceForRequest } from '../services/item-service-factory';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { scopeSite, settings, transformPresets } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
@@ -116,32 +117,11 @@ function sanitizeDownloadFilename(key: string): string {
   return cleaned.length > 0 ? cleaned : 'download';
 }
 
-function permissionCtx(c: Context<AppEnv>) {
-  const auth = c.get('auth');
-  const headers: Record<string, string> = {};
-  c.req.raw.headers.forEach((value, key) => {
-    headers[key.toLowerCase()] = value;
-  });
-  return {
-    userId: auth?.userId ?? null,
-    siteId: c.get('siteId'),
-    roleId: null,
-    user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
-    ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-    headers,
-    apiKey: auth?.apiKey ?? null,
-  };
-}
-
 async function requireMediaPermission(
   c: Context<AppEnv>,
   action: Extract<PermissionAction, 'create' | 'read' | 'delete'>,
 ): Promise<Response | null> {
-  const perm = await new PermissionService({
-    db: c.get('db'),
-    cache: c.get('runtime').cache,
-    ctx: permissionCtx(c),
-  }).canAccess('media', action);
+  const perm = await permissionServiceForRequest(c).canAccess('media', action);
 
   if (perm) return null;
   return c.json(
