@@ -80,8 +80,8 @@ pnpm test           # all packages
 
 ### Add a migration
 ```bash
-pnpm -F @lumibase/database db:generate
-pnpm -F @lumibase/database db:migrate
+pnpm db:generate    # root scripts; the package itself defines `generate`/`migrate`,
+pnpm db:migrate     # so `-F @lumibase/database db:migrate` is not a valid script
 ```
 
 ### Run local dev
