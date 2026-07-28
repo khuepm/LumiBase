@@ -2,28 +2,36 @@
 version: 2
 lastUpdated: 2026-07-28T10:23:38.159Z
 sourceLang: en
-contentHash: 6324a8666929b9d6
+translatedFrom: en
+sourceHash: 6324a8666929b9d6
+mtEngine: claude
+syncStatus: machine-translated
 codeVerified: 2026-07-28T10:23:38.159Z
 codeVerifiedHash: 6324a8666929b9d6
 codeVerifiedClaims: 4
 ---
 
-# Build with Gemini XPRIZE — Devpost Submission Draft (LumiBase)
+# Build with Gemini XPRIZE — Bản nháp submission Devpost (LumiBase)
 
-> Draft prepared 2026-06-13. Category: **Small Business Services**.
-> ⚠️ Items marked `[TODO]` need real evidence from the founder before final submission (judges verify repo, logs, revenue).
+> Nháp soạn ngày 2026-06-13. Hạng mục: **Small Business Services**.
+> ⚠️ Các mục đánh dấu `[TODO]` cần bằng chứng thật từ founder trước khi submit lần cuối (ban giám khảo có verify repo, log, doanh thu).
+>
+> **Lưu ý về ngôn ngữ:** phần narrative và các trường "About the project" bên dưới
+> là **văn bản sẽ nộp nguyên văn cho Devpost**, nên được giữ nguyên tiếng Anh.
+> Chỉ phần khung, hướng dẫn và checklist được dịch — đó là phần bạn cần đọc để
+> biết mình phải chuẩn bị gì.
 
 ---
 
-## Project name
+## Tên project
 
 LumiBase — The Content Operating System
 
-## Elevator pitch (≤200 chars)
+## Elevator pitch (≤200 ký tự)
 
-AI agents run your content operations — writing, translating, SEO, cleanup — against declarative SLOs, with earned autonomy and full provenance. Humans set intent; agents do the work.
+> AI agents run your content operations — writing, translating, SEO, cleanup — against declarative SLOs, with earned autonomy and full provenance. Humans set intent; agents do the work.
 
-## Category
+## Hạng mục
 
 Small Business Services
 
@@ -33,13 +41,13 @@ gemini, google-cloud, typescript, hono, cloudflare-workers, postgresql, drizzle-
 
 ## Links
 
-- GitHub repo: https://github.com/khuepm/lumibase (share with testing@devpost.com and judging@hacker.fund) `[TODO: add collaborators]`
+- GitHub repo: https://github.com/khuepm/lumibase (chia sẻ với testing@devpost.com và judging@hacker.fund) `[TODO: thêm collaborator]`
 - Docs: https://docs.lumibase.dev
-- Demo video (3 min): `[TODO: record — must show AI live in production executing key decisions]`
+- Video demo (3 phút): `[TODO: ghi lại — bắt buộc phải cho thấy AI chạy thật trên production, đang thực thi các quyết định then chốt]`
 
 ---
 
-## Written narrative (500–1000 words)
+## Narrative (500–1000 từ) — nộp nguyên văn tiếng Anh
 
 ### How AI runs this business, day to day
 
@@ -67,45 +75,45 @@ LumiBase began as an edge-native headless CMS. Partway through, we confronted an
 
 Building a business this way means the founding team stays tiny while the operating capacity scales with compute. The hard problems turned out not to be generation quality but governance: how to let agents act without letting them act *wrongly*, and how to make silence-means-consent safe. The trust ledger, the constitution gate, and provenance-first revisions are our answers — and they are also why a small business can trust an AI-operated system with its public voice.
 
-`[Word count target: 500–1000. Current ≈ 760]`
+`[Mục tiêu số từ: 500–1000. Hiện tại ≈ 760]`
 
 ---
 
-## Revenue evidence
+## Bằng chứng doanh thu
 
-`[TODO — must be real:]`
-- Pricing: open-source MIT core (free) · Hobby $29/mo managed hosting · Enterprise $99/mo (SSO, dedicated support)
-- ⚠️ `[TODO]` **Verify the license before submitting.** This draft says MIT in two
-  places, but the repo ships Apache-2.0 (root `LICENSE` + every published
-  `package.json`). Judges verify the repo, so submitting the wrong license is a
-  factual error against evidence they will check.
-- Stripe dashboard export / bank statement / simple P&L (template: https://docs.google.com/spreadsheets/d/1pAJrEMo7_QID6V62sA4C8XwGBHkxDTVX3wtYNE2fulI/edit)
-- Corporate ID if available
+`[TODO — phải là số thật:]`
+- Giá: core open-source MIT (free) · Hobby $29/tháng managed hosting · Enterprise $99/tháng (SSO, hỗ trợ riêng)
+- ⚠️ `[TODO]` **Kiểm tra license trước khi nộp.** Bản nháp này nói MIT ở hai chỗ,
+  nhưng repo đang dùng Apache-2.0 (`LICENSE` ở gốc + mọi `package.json` được
+  publish). Ban giám khảo có verify repo, nên nộp sai license là một lỗi sự thật
+  đối chiếu được với chính bằng chứng họ sẽ kiểm tra.
+- Export dashboard Stripe / sao kê ngân hàng / P&L đơn giản (template: https://docs.google.com/spreadsheets/d/1pAJrEMo7_QID6V62sA4C8XwGBHkxDTVX3wtYNE2fulI/edit)
+- Mã số doanh nghiệp nếu có
 
-## Expenses (hackathon period)
+## Chi phí (trong kỳ hackathon)
 
-`[TODO — must be disclosed even if zero:]`
-- Marketing & customer acquisition spend: $___
-- Infrastructure (Cloudflare, Google Cloud/Gemini API): $___
-- Other: $___
+`[TODO — phải khai kể cả khi bằng 0:]`
+- Chi cho marketing & thu hút khách hàng: $___
+- Hạ tầng (Cloudflare, Google Cloud/Gemini API): $___
+- Khác: $___
 
-## Product evidence (AI running in production)
+## Bằng chứng sản phẩm (AI đang chạy trên production)
 
-`[TODO — export from live system:]`
-- Agent execution logs (`agent_runs`, `agent_goals`, `agent_evaluations` tables)
-- Gemini API usage records (Google Cloud console billing/quota screenshots)
-- Studio Mission Control screenshots: exception inbox, trust ledger, reconciler runs
-- Provenance API responses (`?provenance=true`)
+`[TODO — export từ hệ thống đang chạy:]`
+- Log thực thi của agent (các bảng `agent_runs`, `agent_goals`, `agent_evaluations`)
+- Bản ghi sử dụng Gemini API (screenshot billing/quota trong Google Cloud console)
+- Screenshot Studio Mission Control: exception inbox, trust ledger, các lần reconciler chạy
+- Response của Provenance API (`?provenance=true`)
 
-## Customer evidence
+## Bằng chứng khách hàng
 
-`[TODO — real customers only:]`
-- Name / email / phone of real customers
-- Testimonials or feedback
+`[TODO — chỉ khách hàng thật:]`
+- Tên / email / điện thoại của khách hàng thật
+- Testimonial hoặc feedback
 
 ---
 
-## Devpost "About the project" sections (if form uses standard fields)
+## Các trường "About the project" của Devpost — nộp nguyên văn tiếng Anh
 
 **Inspiration:** Content teams at small businesses drown in operational labor — translation, tagging, SEO, cleanup — that AI can now do, but no CMS was built for agents to *operate* safely.
 

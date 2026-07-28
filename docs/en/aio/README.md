@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-28T10:23:38.100Z
+sourceLang: en
+contentHash: 6566a4891f71eb1a
+---
+
 # AIO (AI Overviews Optimization) — LumiBase
 
 Tracking document for AIO improvements to lumibase.dev and docs.lumibase.dev, plus the plan for a built-in AIO evaluation module.
@@ -34,7 +41,15 @@ The repo's `apps/landing/public/robots.txt` is clean (`Allow: /` for all). The A
 
 #### 2. GitHub repository metadata
 
-- Commit a `LICENSE` file to repo root (GitHub API currently reports `license: null` despite MIT references).
+- ~~Commit a `LICENSE` file to repo root~~ — **done**; the root `LICENSE` is tracked.
+- ⚠️ **License identity mismatch (open).** The committed `LICENSE` is the **Apache
+  License 2.0**, and all four published packages (`sdk`, `mcp-server`,
+  `extension-sdk`, `create-lumibase`) declare `"license": "Apache-2.0"`. But the
+  landing-site copy, the AIO audit report, and the Devpost draft all say **MIT**.
+  One side is wrong and it is a legal claim, not a wording preference — decide
+  which license is intended, then make the site copy, `package.json` fields, and
+  `LICENSE` agree. AI systems read the license from the repo, so a mismatch also
+  costs the trust signal this item was meant to fix.
 - Add topics: `headless-cms`, `cloudflare-workers`, `edge`, `typescript`, `cms`, `open-source`.
 - Set the Homepage field to `https://lumibase.dev`.
 
