@@ -1,8 +1,12 @@
 ---
-version: 1
-lastUpdated: 2026-06-29T15:52:20.000Z
+version: 2
+lastUpdated: 2026-07-28T10:20:15.340Z
 sourceLang: en
 syncStatus: source
+contentHash: 0ba8c0326e531abc
+codeVerified: 2026-07-28T10:20:15.340Z
+codeVerifiedHash: 0ba8c0326e531abc
+codeVerifiedClaims: 32
 ---
 
 # Deployment Integrations (Vercel / Netlify)
