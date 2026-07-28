@@ -12,7 +12,6 @@
 
 ## PR #303 (2026-07-28)
 
-- Dependabot minor-and-patch group was `CONFLICTING` after #305 (`eslint-config-next` 16.2.12) and again after #316.
-- Resolution: merge `main` into dependabot branch; keep `eslint-config-next@^16.2.12` + Dependabot bumps; regenerate lockfile.
-- Conflict files: `apps/landing/package.json`, `pnpm-lock.yaml`, then `memory.md`.
-- Companion branch: `cursor/resolve-dependabot-303-20f4` (same tip pushed to Dependabot ref).
+- Dependabot minor-and-patch group was `CONFLICTING` after #305 (`eslint-config-next` 16.2.12) and again after #316; Dependabot closed #303 during rebase.
+- Resolution via #318 (`cursor/resolve-dependabot-303-20f4`): merge `main`, keep bumps, regen lockfile, bump `pnpm.overrides.postcss` to `^8.5.24`.
+- Landing lint: `eslint-config-next@16` + eslintrc → circular JSON; migrate `apps/landing` to flat `eslint.config.mjs` (same pattern as consumer).
