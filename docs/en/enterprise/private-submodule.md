@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-28T11:42:32.998Z
+sourceLang: en
+contentHash: 69dad91518affbf1
+---
+
 # Private enterprise app via git submodule
 
 This guide sets up `apps/enterprise/` as a **private-only** app: its source
