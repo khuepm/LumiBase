@@ -43,7 +43,7 @@
     "jose": "^5.9.6",
     "maxmind": "5.0.6",
     "nanoid": "^5.0.7",
-    "node-cron": "^3.0.3",
+    "node-cron": "^4.6.0",
     "nodemailer": "9.0.3",
     "postgres": "^3.4.9",
     "prom-client": "^15.1.0",
