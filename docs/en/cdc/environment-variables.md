@@ -1,5 +1,12 @@
 ---
 title: CDC Environment Variables
+version: 1
+lastUpdated: 2026-07-28T11:36:50.940Z
+sourceLang: en
+contentHash: 33f9bb09f337356a
+codeVerified: 2026-07-28T11:36:50.940Z
+codeVerifiedHash: 33f9bb09f337356a
+codeVerifiedClaims: 60
 ---
 
 # CDC Environment Variables
