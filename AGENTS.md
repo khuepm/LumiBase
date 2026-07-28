@@ -104,3 +104,27 @@ chore(deps): update drizzle-orm
 | Change runtime behavior | `packages/runtime/src/adapters/` |
 | Update Zod validation | `packages/shared/src/schemas/` |
 | Read architecture decisions | `docs/en/architecture/decisions/` |
+
+## Cursor Cloud specific instructions
+
+Standard commands: see **Environment setup** / **Testing** above and `docs/en/deployment/local-development.md`. Cloud gotchas:
+
+### Infra + env
+- Start **infra only** (avoid the compose `cms` service stealing `:1989`):  
+  `docker compose -f docker/docker-compose.yml up -d postgres redis minio minio-init meilisearch imgproxy`
+- Postgres URL from compose is `postgresql://lumibase:lumibase_dev@localhost:5432/lumibase` (password `lumibase_dev`, not `lumibase`).
+- `pnpm db:migrate` does **not** auto-load `packages/database/.env` — export `DATABASE_URL` (or pass it inline) before migrating.
+- There is **no root `.env.example`**. Use `docs/en/deployment/local-development.md` + `docker/.env.example`. For Wrangler, put secrets in `apps/cms/.dev.vars` (gitignored). Logto is **not** in compose; local auth uses JWT + setup wizard (`LUMIBASE_DEV_AUTH=true` in wrangler `[vars]`).
+
+### Running CMS + Studio
+- `pnpm lumibase` / `turbo run dev` needs an interactive TUI (`interactive: true` in `turbo.json`). In non-TUI agents, run separately:
+  - **Preferred for Docker infra (full `/health`):**  
+    `cd apps/cms && LUMIBASE_RUNTIME=docker LUMIBASE_ENV=development DATABASE_URL=... JWT_SECRET=... REDIS_URL=redis://localhost:6379 S3_ENDPOINT=http://localhost:9000 S3_ACCESS_KEY=minioadmin S3_SECRET_KEY=minioadmin S3_BUCKET=lumibase-media MEILISEARCH_HOST=http://localhost:7700 MEILISEARCH_API_KEY=lumibase_dev_key pnpm exec tsx src/serve.ts`
+  - **Wrangler** (`pnpm -F @lumibase/cms dev`): works for API + setup, but `/health` often reports **storage/cache/queue unhealthy** (no R2/MEDIA binding).
+  - Studio: `cd apps/studio && pnpm exec vite --host 0.0.0.0 --port 2026` (default Vite may bind IPv6-only `::1`, which breaks `127.0.0.1` clients).
+- Ports: CMS `:1989`, Studio `:2026`. First-run: `POST /api/v1/setup/complete` then login; Studio UI at `http://localhost:2026/<adminPath>/login`.
+
+### Lint / test notes
+- Many packages’ `lint` scripts are stubs (`echo … && exit 0`); `pnpm lint` still exits 0.
+- Full `pnpm -F @lumibase/cms test` is long and **DB integration tests reset setup state** — do not run them against a shared local DB you care about. Prefer focused Vitest paths for smoke.
+- Husky `.husky/pre-commit` runs `pnpm test` (full suite).
