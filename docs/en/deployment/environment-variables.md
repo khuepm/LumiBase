@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-25T08:11:35.651Z
+version: 2
+lastUpdated: 2026-07-28T10:30:25.628Z
 sourceLang: en
-contentHash: 5aa458edfad15186
-codeVerified: 2026-07-25T08:11:35.651Z
-codeVerifiedHash: 5aa458edfad15186
-codeVerifiedClaims: 56
+contentHash: 9d27520c67af75a0
+codeVerified: 2026-07-28T10:30:25.628Z
+codeVerifiedHash: 9d27520c67af75a0
+codeVerifiedClaims: 60
 ---
 
 # Environment Variables Reference
@@ -94,7 +94,7 @@ For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `MEILISEARCH_URL` | If search enabled | MeiliSearch instance URL |
+| `MEILISEARCH_HOST` | If search enabled | MeiliSearch instance URL, e.g. `http://meilisearch:7700` |
 | `MEILISEARCH_API_KEY` | If search enabled | MeiliSearch master or search API key |
 
 ---

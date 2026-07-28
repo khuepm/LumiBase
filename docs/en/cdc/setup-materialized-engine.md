@@ -1,5 +1,12 @@
 ---
 title: Setup — Materialized Engine
+version: 1
+lastUpdated: 2026-07-28T10:30:24.871Z
+sourceLang: en
+contentHash: e6d11afc17895892
+codeVerified: 2026-07-28T10:30:24.871Z
+codeVerifiedHash: e6d11afc17895892
+codeVerifiedClaims: 16
 ---
 
 # Setup Guide: ClickHouse Materialized Engine

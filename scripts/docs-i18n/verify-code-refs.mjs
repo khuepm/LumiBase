@@ -61,7 +61,7 @@ const SKIP_DIRS = new Set(['node_modules', 'dist', '.turbo', 'build', '.next', '
  * keywords inside code fences and drown the real findings.
  */
 const ENV_PATTERN =
-  /`(LUMIBASE_[A-Z0-9_]+|VAPID_[A-Z0-9_]+|CF_ACCESS_[A-Z0-9_]+|STUDIO_[A-Z0-9_]+|FRONTEND_[A-Z0-9_]+|REFRESH_COOKIE_[A-Z0-9_]+|ANTHROPIC_[A-Z0-9_]+|GITHUB_[A-Z0-9_]+|GITLAB_[A-Z0-9_]+|CLOUDFLARE_[A-Z0-9_]+|WORKERS_AI_[A-Z0-9_]+|VERTEX_[A-Z0-9_]+|OPENAI_API_KEY|GEMINI_API_KEY|NVIDIA_[A-Z0-9_]+|JWT_SECRET|ENCRYPTION_KEY|DATABASE_URL|CORS_ALLOWED_ORIGINS|METRICS_TOKEN|SENTRY_[A-Z0-9_]+)`/g;
+  /`(LUMIBASE_[A-Z0-9_]+|VAPID_[A-Z0-9_]+|CF_ACCESS_[A-Z0-9_]+|STUDIO_[A-Z0-9_]+|FRONTEND_[A-Z0-9_]+|REFRESH_COOKIE_[A-Z0-9_]+|ANTHROPIC_[A-Z0-9_]+|GITHUB_[A-Z0-9_]+|GITLAB_[A-Z0-9_]+|CLOUDFLARE_[A-Z0-9_]+|WORKERS_AI_[A-Z0-9_]+|VERTEX_[A-Z0-9_]+|OPENAI_API_KEY|GEMINI_API_KEY|NVIDIA_[A-Z0-9_]+|JWT_SECRET|ENCRYPTION_KEY|DATABASE_URL|CORS_ALLOWED_ORIGINS|METRICS_TOKEN|SENTRY_[A-Z0-9_]+|CDC_[A-Z0-9_]+|KAFKA_[A-Z0-9_]+|DEBEZIUM_[A-Z0-9_]+|AIRBYTE_[A-Z0-9_]+|MATERIALIZED_[A-Z0-9_]+|CLICKHOUSE_[A-Z0-9_]+|MEILISEARCH_[A-Z0-9_]+|SOURCE_DATABASE_URL)`/g;
 
 const FILE_REF_PATTERN = /`([a-zA-Z0-9_./@-]+\.(?:ts|tsx|mjs|sql|yaml|yml))`/g;
 
@@ -85,6 +85,20 @@ const API_RELATIVE_ROUTE_PATTERN =
  */
 const TABLE_ROUTE_PATTERN =
   /`(?:GET|POST|PATCH|PUT|DELETE)`\s*\|\s*`(\/[A-Za-z0-9/_:{}.-]+)`/g;
+
+/**
+ * Routes written as a full URL, which is how every runbook shows them — inside a
+ * `curl` invocation: `curl -X POST https://your-cms-host/api/v1/cdc/pipelines`.
+ * The method sits behind `-X` and the path behind a hostname, so none of the
+ * patterns above match. Without this the entire `docs/cdc/` tree (8 files, all
+ * of it curl runbooks) reported zero assertable claims.
+ *
+ * `$VAR` path segments are shell variables standing in for an id; `checkRoute`
+ * already drops non-literal segments, and `$` is admitted here only so the match
+ * does not truncate mid-path and lose the segments after it.
+ */
+const URL_ROUTE_PATTERN =
+  /https?:\/\/[^/\s'"]+(\/api\/v1\/[A-Za-z0-9/_:{}.$-]+)/g;
 
 /** Example values in docs — an ID stands in for real data, not a real mount. */
 const EXAMPLE_ID = /(?:^|\/)(?:[a-z]{2,4}_[A-Za-z0-9]{6,}|\d{4,})(?:\/|$)/;
@@ -196,7 +210,7 @@ function checkRoute(route) {
   const segments = route
     .replace(/^\/api\/v1\//, '/')
     .split('/')
-    .filter((s) => s && !s.startsWith(':') && !s.startsWith('{'));
+    .filter((s) => s && !s.startsWith(':') && !s.startsWith('{') && !s.startsWith('$'));
   if (segments.length === 0) return { verdict: 'skip' };
   // Match the mount prefix, not the full path: routers register `/items` and
   // handlers add `/:collection`, so the full string never appears verbatim.
@@ -213,6 +227,7 @@ const CHECKS = [
   { kind: 'route', pattern: ROUTE_PATTERN, run: checkRoute },
   { kind: 'route', pattern: API_RELATIVE_ROUTE_PATTERN, run: checkRoute },
   { kind: 'route', pattern: TABLE_ROUTE_PATTERN, run: checkRoute },
+  { kind: 'route', pattern: URL_ROUTE_PATTERN, run: checkRoute },
 ];
 
 /** Verify one doc file. Returns { findings, checked, skipped }. */

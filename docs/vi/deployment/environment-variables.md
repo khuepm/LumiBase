@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-25T08:11:35.651Z
+version: 2
+lastUpdated: 2026-07-28T10:30:25.628Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5aa458edfad15186
+sourceHash: 9d27520c67af75a0
 mtEngine: claude
 syncStatus: machine-translated
-codeVerified: 2026-07-25T08:11:35.651Z
-codeVerifiedHash: 5aa458edfad15186
-codeVerifiedClaims: 56
+codeVerified: 2026-07-28T10:30:25.628Z
+codeVerifiedHash: 9d27520c67af75a0
+codeVerifiedClaims: 60
 ---
 
 # Tham chiếu biến môi trường
@@ -94,7 +94,7 @@ Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#
 
 | Biến | Bắt buộc | Mô tả |
 |------|----------|-------|
-| `MEILISEARCH_URL` | Nếu bật search | URL instance MeiliSearch |
+| `MEILISEARCH_HOST` | Nếu bật search | URL instance MeiliSearch |
 | `MEILISEARCH_API_KEY` | Nếu bật search | Master key hoặc search API key của MeiliSearch |
 
 ---
