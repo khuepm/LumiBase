@@ -2,7 +2,10 @@
 version: 1
 lastUpdated: 2026-07-28T11:30:17.385Z
 sourceLang: en
-contentHash: e95bb0d2807f2a97
+translatedFrom: en
+sourceHash: e95bb0d2807f2a97
+mtEngine: claude
+syncStatus: machine-translated
 codeVerified: 2026-07-28T11:30:17.385Z
 codeVerifiedHash: e95bb0d2807f2a97
 codeVerifiedClaims: 4
@@ -10,23 +13,23 @@ codeVerifiedClaims: 4
 
 # TypeScript TypeGen
 
-> Generate fully-typed TypeScript interfaces from your LumiBase schema.
+> Sinh các interface TypeScript có type đầy đủ từ schema LumiBase của bạn.
 
-## Overview
+## Tổng quan
 
-LumiBase can generate a `lumibase-types.ts` file from your live schema, similar to what Directus provides. This gives you autocomplete and type safety for all your collections and fields.
+LumiBase có thể sinh một file `lumibase-types.ts` từ schema đang chạy của bạn, tương tự như Directus cung cấp. Việc này cho bạn autocomplete và an toàn kiểu cho mọi collection và field.
 
-## Setup
+## Thiết lập
 
-### Install the SDK
+### Cài SDK
 
 ```bash
 pnpm add -D @lumibase/sdk
 ```
 
-### Generate types
+### Sinh type
 
-Create a local script that uses the SDK you installed instead of invoking an unscoped `npx` package:
+Hãy tạo một script cục bộ dùng SDK bạn vừa cài, thay vì gọi một package `npx` không có scope:
 
 ```typescript
 // scripts/typegen.ts
@@ -52,7 +55,7 @@ const types = generateTypes(manifest)
 await writeFile('./src/lumibase-types.ts', types)
 ```
 
-Then add a package script that runs the local file:
+Rồi thêm một package script chạy file cục bộ đó:
 
 ```json
 {
@@ -66,7 +69,7 @@ Then add a package script that runs the local file:
 }
 ```
 
-### Generated output
+### Output được sinh ra
 
 ```typescript
 // lumibase-types.ts (auto-generated, do not edit)
@@ -83,7 +86,7 @@ export interface Article {
   title: string
   content: string | null
   status: 'draft' | 'published' | 'archived'
-  author: string | DirectusUser   // relation (ID or expanded)
+  author: string | DirectusUser   // relation (ID hoặc đã expand)
   tags: string[]
   published_at: string | null
   created_at: string
@@ -100,7 +103,7 @@ export interface Product {
 }
 ```
 
-### Use with the SDK
+### Dùng cùng SDK
 
 ```typescript
 import { createClient } from '@lumibase/sdk'
@@ -108,12 +111,12 @@ import type { Collections } from './lumibase-types'
 
 const lumibase = createClient<Collections>({ url: '...', siteId: '...' })
 
-// Fully typed responses
+// Response có type đầy đủ
 const article = await lumibase.items('articles').readOne('art_abc123')
 article.title         // string ✓
-article.nonexistent   // TypeScript error ✓
+article.nonexistent   // lỗi TypeScript ✓
 
-// Filter keys are typed
+// Các key filter cũng có type
 const articles = await lumibase.items('articles').readMany({
   filter: {
     status: { _eq: 'published' },  // 'draft' | 'published' | 'archived' ✓
@@ -121,7 +124,7 @@ const articles = await lumibase.items('articles').readMany({
 })
 ```
 
-## API-based typegen (programmatic)
+## Typegen qua API (programmatic)
 
 ```typescript
 import { writeFile } from 'node:fs/promises'
@@ -145,9 +148,9 @@ const types = generateTypes(manifest)
 await writeFile('./src/lumibase-types.ts', types)
 ```
 
-## CI integration
+## Tích hợp CI
 
-Add typegen to your CI pipeline to catch breaking schema changes:
+Thêm typegen vào CI pipeline để bắt các thay đổi schema gây phá vỡ:
 
 ```yaml
 # .github/workflows/typegen.yml
@@ -158,20 +161,19 @@ Add typegen to your CI pipeline to catch breaking schema changes:
   run: git diff --exit-code src/lumibase-types.ts
 ```
 
-If the schema changes without updating the types file, CI fails and alerts the team.
+Nếu schema đổi mà file type không được cập nhật, CI fail và báo cho cả nhóm.
 
-## Options reference
+## Tham chiếu options
 
-There is **no typegen CLI** — `@lumibase/sdk` ships no `bin`, which is why the
-setup above writes a local script. `generateTypes(manifest, options)` takes the
-manifest returned by `GET /api/v1/typegen/schema` plus a `GenerateOptions`
-object (`packages/sdk/src/typegen/index.ts`):
+**Không có typegen CLI** — `@lumibase/sdk` không ship `bin` nào, và đó chính là lý
+do phần thiết lập ở trên viết một script cục bộ. `generateTypes(manifest, options)`
+nhận manifest do `GET /api/v1/typegen/schema` trả về, cộng một object
+`GenerateOptions` (`packages/sdk/src/typegen/index.ts`):
 
-| Option | Type | Default | Description |
+| Option | Type | Mặc định | Mô tả |
 |--------|------|---------|-------------|
-| `format` | `'single' \| 'per-collection'` | `'single'` | One file with every interface, or one module per collection |
-| `branded` | `boolean` | `true` | Emit branded primary-key types instead of bare `string` |
+| `format` | `'single' \| 'per-collection'` | `'single'` | Một file chứa mọi interface, hoặc một module cho mỗi collection |
+| `branded` | `boolean` | `true` | Phát ra kiểu primary-key dạng branded thay vì `string` trơn |
 
-Everything else — which URL to call, which site, which token, where to write the
-file — is ordinary code in your own script, so it is configured there rather than
-through flags.
+Mọi thứ còn lại — gọi URL nào, site nào, token nào, ghi file ra đâu — là code
+thông thường trong script của bạn, nên được cấu hình ở đó chứ không qua flag.
