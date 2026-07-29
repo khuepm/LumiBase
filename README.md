@@ -8,6 +8,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/khuepm/lumibase?style=social)](https://github.com/khuepm/lumibase)
 <!-- [![GitHub Sponsors](https://img.shields.io/github/sponsors/khuepm)](https://github.com/sponsors/khuepm) -->
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/khuepm/lumibase/blob/main/LICENSE)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/khuepm/LumiBase/badge)](https://scorecard.dev/viewer/?uri=github.com/khuepm/LumiBase)
 
 [Documentation](https://docs.lumibase.dev) • [Agent Setup](https://docs.lumibase.dev/en/agent-setup/) • [Community](https://github.com/khuepm/lumibase/discussions)
 
