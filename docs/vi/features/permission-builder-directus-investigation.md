@@ -1,6 +1,23 @@
+---
+version: 1
+lastUpdated: 2026-07-29T02:34:50.049Z
+sourceLang: vi
+contentHash: e9a6e1734723c15d
+codeVerified: 2026-07-29T02:34:50.049Z
+codeVerifiedHash: e9a6e1734723c15d
+codeVerifiedClaims: 8
+---
+
 # Permission Builder & RBAC: điều tra Directus và thiết kế cho LumiBase
 
 > Ngày điều tra: 2026-06-03. Tài liệu này tổng hợp kết quả đọc DB Directus mẫu, đối chiếu tài liệu Directus chính thức, và đề xuất thiết kế Role / Policy / Permission / API Key cho LumiBase.
+
+> **Đây là ảnh chụp tại một thời điểm, không phải tài liệu trạng thái hiện tại.** Số liệu Directus và mọi mục "LumiBase hiện có" đều đúng ở thời điểm 2026-06-03 và đã cũ. Kiểm lại vào 2026-07-29:
+>
+> - Phần lớn **Phase 1, 3, 4** trong §13 đã ship: unique index `permissions_policy_collection_action_unique`, `POST /access/conflicts/check`, `GET /access/export` + `POST /access/import`, và các bảng `api_keys` / `api_key_roles` / `api_key_policies`. Các bảng `user_roles` và `shares` cũng đã tồn tại.
+> - Danh sách system collections ở §9 giờ chỉ là **một tập con**: 44 tên, trong khi schema Drizzle hiện có 103 bảng. Mọi tên trong danh sách vẫn là bảng thật — không có tên nào bịa — nhưng thiếu 59 bảng, gồm cả `api_keys`, `user_roles`, `shares` mà chính tài liệu này đề xuất thêm.
+>
+> Muốn biết hệ phân quyền **đang** hoạt động thế nào, đọc [permissions-rbac.md](./permissions-rbac.md). Giữ tài liệu này làm ghi chép điều tra và lý do đằng sau thiết kế.
 
 ## 1. Mục tiêu
 

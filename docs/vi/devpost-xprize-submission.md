@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-07-28T10:23:38.159Z
+version: 3
+lastUpdated: 2026-07-29T05:25:40.643Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6324a8666929b9d6
+sourceHash: 4d31db03699da2d2
 mtEngine: claude
 syncStatus: machine-translated
-codeVerified: 2026-07-28T10:23:38.159Z
-codeVerifiedHash: 6324a8666929b9d6
+codeVerified: 2026-07-29T05:25:40.643Z
+codeVerifiedHash: 4d31db03699da2d2
 codeVerifiedClaims: 4
 ---
 
@@ -67,7 +67,7 @@ Everything else — data entry, translation, tagging, SEO fixes, description wri
 
 LumiBase targets the small businesses that can least afford content operations: the local retailer who needs a bilingual product catalog, the agency serving ten such retailers, the solo founder who cannot hire an editor, a translator, and an SEO specialist. By replacing operational content labor, it lets these businesses compete with the content quality of much larger players.
 
-It also creates new, higher-value work. The "editor" role shifts to **constitution author** — a person who encodes editorial judgment once and leverages it across every agent action thereafter, a 1→N multiplier instead of 1→1 editing. Agencies on LumiBase can serve more clients per head and sell governance (constitutions, SLO design, exception review) as a recurring service. Because the core is MIT-licensed and the skill registry is exposed as a standard MCP server, third-party developers can build and sell agents, skills, and extensions on top of the platform — an ecosystem of small AI-native service businesses. `[TODO: add actual numbers — pilot customers, agencies onboarded, marketplace contributors]`
+It also creates new, higher-value work. The "editor" role shifts to **constitution author** — a person who encodes editorial judgment once and leverages it across every agent action thereafter, a 1→N multiplier instead of 1→1 editing. Agencies on LumiBase can serve more clients per head and sell governance (constitutions, SLO design, exception review) as a recurring service. Because the core is Apache-2.0-licensed and the skill registry is exposed as a standard MCP server, third-party developers can build and sell agents, skills, and extensions on top of the platform — an ecosystem of small AI-native service businesses. `[TODO: add actual numbers — pilot customers, agencies onboarded, marketplace contributors]`
 
 ### The story of building this way
 
@@ -82,11 +82,14 @@ Building a business this way means the founding team stays tiny while the operat
 ## Bằng chứng doanh thu
 
 `[TODO — phải là số thật:]`
-- Giá: core open-source MIT (free) · Hobby $29/tháng managed hosting · Enterprise $99/tháng (SSO, hỗ trợ riêng)
-- ⚠️ `[TODO]` **Kiểm tra license trước khi nộp.** Bản nháp này nói MIT ở hai chỗ,
-  nhưng repo đang dùng Apache-2.0 (`LICENSE` ở gốc + mọi `package.json` được
-  publish). Ban giám khảo có verify repo, nên nộp sai license là một lỗi sự thật
-  đối chiếu được với chính bằng chứng họ sẽ kiểm tra.
+- Giá: core open-source Apache-2.0 (free) · Hobby $29/tháng managed hosting · Enterprise $99/tháng (SSO, hỗ trợ riêng)
+- ~~⚠️ Kiểm tra license trước khi nộp.~~ **Đã giải quyết.** License là
+  **Apache-2.0**, không phải MIT, và đây là việc đã chốt chứ không còn mở:
+  `CHANGELOG.md` ghi việc đổi license ở mục `[0.23.0]` (2026-07-14) — "Project
+  license updated to the Apache License, Version 2.0 (from MIT), effective this
+  release", với `v0.22.0` là bản MIT cuối cùng. Repo đang ở `0.24.1`, `LICENSE` ở
+  gốc là Apache-2.0, và cả bốn package được publish đều khai `"Apache-2.0"`. Các
+  chỗ nhắc MIT trong bản nháp này đã được sửa.
 - Export dashboard Stripe / sao kê ngân hàng / P&L đơn giản (template: https://docs.google.com/spreadsheets/d/1pAJrEMo7_QID6V62sA4C8XwGBHkxDTVX3wtYNE2fulI/edit)
 - Mã số doanh nghiệp nếu có
 

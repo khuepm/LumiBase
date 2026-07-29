@@ -1,9 +1,9 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:52:57.096Z
+version: 3
+lastUpdated: 2026-07-29T05:26:14.674Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3a333996415f2fab
+sourceHash: 0434e76bd6629620
 mtEngine: claude
 syncStatus: machine-translated
 ---
@@ -25,9 +25,11 @@ syncStatus: machine-translated
 > `public/llms.txt` đã tồn tại (H1); `/pricing` đã có trong `sitemap.ts` (H4);
 > tuyên bố "Join thousands of developers" đã bị bỏ (H6); `metadataBase`/canonical
 > đã được đặt (M5); `opengraph-image.tsx` sinh ảnh OG (H2); và một file `LICENSE`
-> đã được commit ở gốc repo (M3 — dù vậy xem phần sai lệch về danh tính license
-> được ghi trong [`README.md`](./README.md), vì nội dung site ở đây nói MIT trong
-> khi license đã commit là Apache-2.0).
+> đã được commit ở gốc repo (M3). Lưu ý license được trích dẫn xuyên suốt báo cáo
+> này là **MIT** vì đó là điều site nói ở thời điểm 2026-06-10; project đã đổi sang
+> **Apache-2.0** ở `v0.23.0` và nội dung site đã được cập nhật cho khớp, nên mọi
+> chỗ nhắc MIT bên dưới là mốc cơ sở *trước* khi đổi license, không phải tuyên bố
+> hiện hành.
 > **Vẫn còn mở:** C1 (các block AI-crawler do managed robots.txt của Cloudflare
 > chèn vào, không phải do file trong repo) và C3 (`apps/docs` vẫn là một SPA Vite).
 > Về trạng thái sống, hãy đọc [`aio/README.md`](./README.md) — file này được giữ
@@ -405,8 +407,15 @@ Việc được nhắc tới trên các nền tảng này mạnh hơn backlink 3
 
 Metadata của repo GitHub hiện `license: None` dù MIT được nhắc tới trên site. Chưa đặt topic nào. Đây là các tín hiệu chất lượng cho tập dữ liệu training của AI.
 
+> **Mục này đã lỗi thời theo cách nó được viết.** File `LICENSE` giờ đã có ở gốc
+> repo và là **Apache-2.0**, không phải MIT — việc đổi license được ghi trong
+> `CHANGELOG.md` ở mục `[0.23.0]`. Nội dung site đã được cập nhật cho khớp. Hãy
+> đọc phần "Cách sửa" bên dưới theo nghĩa "commit `LICENSE` để GitHub hiện đúng
+> license"; chỗ nhắc MIT là trạng thái *trước* khi đổi license mà báo cáo này ghi
+> lại, không phải mục tiêu cần đạt.
+
 **Cách sửa:**
-- Commit một file `LICENSE` vào gốc repository (GitHub khi đó sẽ hiện MIT đúng)
+- Commit một file `LICENSE` vào gốc repository (GitHub khi đó sẽ hiện đúng license)
 - Thêm topic: `headless-cms`, `cloudflare-workers`, `edge`, `typescript`, `cms`, `open-source`
 - Điền trường Homepage trong settings của repo bằng `https://lumibase.dev`
 

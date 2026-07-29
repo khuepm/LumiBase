@@ -6,7 +6,7 @@ Official landing page for lumibase.dev - built with Next.js, TypeScript, and Tai
 
 - **Modern Design**: Clean, responsive landing page with hero section, features, and CTAs
 - **SEO Optimized**: Meta tags, sitemap.xml, and robots.txt for search engines
-- **Legal Pages**: Terms of Service, Privacy Policy, and License pages (MIT License)
+- **Legal Pages**: Terms of Service, Privacy Policy, and License pages (Apache License 2.0)
 - **Cloudflare Ready**: Configured for deployment on Cloudflare Pages
 - **Type-Safe**: Built with TypeScript for better developer experience
 - **Dark Theme**: Ships as a dark-only theme (the root layout sets `class="dark"`)
@@ -195,4 +195,4 @@ Modify the color scheme in `src/app/globals.css` and `tailwind.config.ts`.
 
 ## License
 
-This project is open-source and available under the MIT License. See the [License page](/license) for details.
+This project is open-source and available under the Apache License, Version 2.0. See the [License page](/license) for details. `v0.22.0` was the final release under the MIT License; the relicense to Apache 2.0 took effect in `v0.23.0`.
