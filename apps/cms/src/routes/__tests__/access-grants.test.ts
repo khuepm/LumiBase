@@ -202,7 +202,7 @@ describe('GET /grants', () => {
 describe('POST /grants/:realm', () => {
   it('grants public read', async () => {
     grantAdmin();
-    const { app, captured } = buildApp();
+    const { app, captured } = buildApp({ publicRoleExists: true });
 
     const res = await app.request(
       '/grants/public',
@@ -225,7 +225,7 @@ describe('POST /grants/:realm', () => {
     'refuses public %s with ACTION_NOT_ALLOWED',
     async (action) => {
       grantAdmin();
-      const { app, captured } = buildApp();
+      const { app, captured } = buildApp({ publicRoleExists: true });
 
       const res = await app.request(
         '/grants/public',
@@ -250,7 +250,7 @@ describe('POST /grants/:realm', () => {
 
   it('refuses an own-rows scope on the public realm', async () => {
     grantAdmin();
-    const { app } = buildApp();
+    const { app } = buildApp({ publicRoleExists: true });
 
     const res = await app.request(
       '/grants/public',
@@ -274,9 +274,59 @@ describe('POST /grants/:realm', () => {
    * a permission row that could never match anything: invisible in the picker
    * and silently inert. Refuse it at the write path instead.
    */
+  /**
+   * Enable before grant, for the togglable realm.
+   *
+   * A grant used to provision the realm as a side effect, which made `/disable`
+   * non-sticky: an operator who deliberately closed anonymous access could have
+   * it silently reopened by any later grant. The Studio picker already assumed
+   * this ordering — it renders a disabled togglable realm read-only — so the
+   * server was the side out of step.
+   */
+  it('refuses a public grant while public access is off', async () => {
+    grantAdmin();
+    const { app, captured } = buildApp({ publicRoleExists: false });
+
+    const res = await app.request(
+      '/grants/public',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ collection: 'articles' }),
+      },
+      {},
+    );
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as any;
+    expect(body.errors[0].code).toBe('PUBLIC_ACCESS_DISABLED');
+    expect(body.errors[0].message).toContain('/access/grants/public/enable');
+    // Nothing provisioned, nothing written — that is the whole point.
+    expect(captured.some((c) => c.table === permissions)).toBe(false);
+    expect(captured.some((c) => c.table === roles)).toBe(false);
+  });
+
+  it('does not gate the subscriber realm, which has no enable step', async () => {
+    grantAdmin();
+    // `publicRoleExists: false` — irrelevant here, and that is what is asserted.
+    const { app } = buildApp({ publicRoleExists: false });
+
+    const res = await app.request(
+      '/grants/subscriber',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ collection: 'articles' }),
+      },
+      {},
+    );
+
+    expect(res.status).toBe(200);
+  });
+
   it('refuses a collection that is not grantable on this site', async () => {
     grantAdmin();
-    const { app, captured } = buildApp({ grantableCollection: false });
+    const { app, captured } = buildApp({ grantableCollection: false, publicRoleExists: true });
 
     const res = await app.request(
       '/grants/public',

@@ -2853,19 +2853,29 @@ paths:
                 properties:
                   data: { $ref: '#/components/schemas/RealmAccessGrant' }
         '400':
-          description: Validation error
+          description: >-
+            Rejected request body — `VALIDATION`, `COLLECTION_REQUIRED`,
+            `ACTION_NOT_ALLOWED` (e.g. a write on `public`) or
+            `ROW_SCOPE_NOT_SUPPORTED` (`ownOnly` on `public`). All are body
+            errors: an unchanged retry fails identically.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '409':
           description: >-
-            Refused by the realm's limits — `ACTION_NOT_ALLOWED` (e.g. a write
-            on `public`) or `ROW_SCOPE_NOT_SUPPORTED` (`ownOnly` on `public`).
+            `PUBLIC_ACCESS_DISABLED` — the `public` realm is off for this site,
+            so it cannot be granted anything. Call
+            `POST /access/grants/public/enable` first; enabling the anonymous
+            realm is a deliberate, audited step rather than a side effect of a
+            grant. Not raised for `subscriber`, which has no enable step.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '404':
-          description: Unknown realm
+          description: >-
+            Unknown realm, or `COLLECTION_NOT_GRANTABLE` — the collection must
+            exist on the site and be neither system nor hidden (the set
+            `GET /access/grants` lists).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

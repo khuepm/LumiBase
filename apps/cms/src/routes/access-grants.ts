@@ -246,6 +246,35 @@ accessGrantsRouter.post('/grants/:realm', async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
 
+  // Enable before grant, for the togglable realm only.
+  //
+  // A grant used to provision the realm as a side effect, which made
+  // `/enable` a courtesy and — worse — made `/disable` non-sticky: an operator
+  // who deliberately closed anonymous access could have it silently reopened by
+  // any later grant call. Turning the anonymous realm on is a decision that
+  // deserves its own audited act (`public_access_enabled`), so refuse here and
+  // name the endpoint that does it.
+  //
+  // Only `public` is gated: `subscriber` is provisioned on first registration
+  // and is not operator-togglable (`togglable: false` in the picker payload),
+  // so there is no enable step to require.
+  if (realm.key === PUBLIC_REALM.key && !(await isPublicAccessEnabled(db, siteId))) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'PUBLIC_ACCESS_DISABLED',
+            message:
+              'Public access is off for this site, so it cannot be granted anything. ' +
+              'Call POST /access/grants/public/enable first — turning the anonymous ' +
+              'realm on is a deliberate, audited step, not a side effect of a grant.',
+          },
+        ],
+      },
+      409,
+    );
+  }
+
   // The collection must be one the picker actually offers (GET /grants lists
   // non-system, non-hidden collections of this site). Without this a typo wrote
   // a permission row keyed to a collection that does not exist — accepted with
@@ -287,8 +316,10 @@ accessGrantsRouter.post('/grants/:realm', async (c) => {
   try {
     const grant = await grantRealmAccess(db, siteId, realm, parsed.data);
     if (realm.key === PUBLIC_REALM.key) {
-      // A first grant provisions the realm, so the cached "is public enabled"
-      // pointer can be stale here too.
+      // The realm is already enabled by the time we get here (checked above), so
+      // this no longer covers a first-grant provision. It still matters: the
+      // anonymous hot path caches the role pointer, and a stale *negative* entry
+      // would outlive the grant for the rest of its TTL.
       await invalidatePublicRoleCache(c.get('runtime')?.cache, siteId);
     }
     await bumpPermissionVersion(c, siteId);

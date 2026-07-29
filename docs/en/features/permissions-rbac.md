@@ -1,14 +1,14 @@
 ---
-version: 5
-lastUpdated: 2026-07-28T17:03:56.341Z
+version: 6
+lastUpdated: 2026-07-29T00:18:05.194Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 9de5270da8542048
+sourceHash: b42656099b8c2f3b
 mtEngine: claude
 syncStatus: machine-translated
-codeVerified: 2026-07-28T17:03:56.341Z
-codeVerifiedHash: 9de5270da8542048
-codeVerifiedClaims: 24
+codeVerified: 2026-07-29T00:18:05.194Z
+codeVerifiedHash: b42656099b8c2f3b
+codeVerifiedClaims: 26
 ---
 
 # Permissions, Roles & Policies
@@ -128,6 +128,17 @@ identically, which is what 400 means and 409 does not:
 | `COLLECTION_REQUIRED` | `collection` is missing |
 | `ACTION_NOT_ALLOWED` | the realm does not allow that action (e.g. `create` on `public`) |
 | `ROW_SCOPE_NOT_SUPPORTED` | the realm cannot express the requested row scope (`ownOnly` on `public`) |
+
+**Enable before grant.** `POST /access/grants/public` answers **409**
+`PUBLIC_ACCESS_DISABLED` while the site has public access off — call
+`POST /access/grants/public/enable` first. A grant used to provision the realm as
+a side effect, which made `/disable` non-sticky: an operator who deliberately
+closed anonymous access could have it silently reopened by any later grant.
+Turning the anonymous realm on deserves its own audited act
+(`public_access_enabled`). Only `public` is gated; `subscriber` is provisioned on
+first registration and is not operator-togglable (`togglable: false`), so it has
+no enable step to require. The Studio picker already rendered a disabled togglable
+realm read-only, so the server was the side out of step.
 
 `COLLECTION_NOT_GRANTABLE` is the one **404**: the `collection` must exist on the
 site and be neither a system nor a hidden collection — exactly the set

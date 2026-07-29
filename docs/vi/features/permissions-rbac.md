@@ -1,11 +1,11 @@
 ---
-version: 5
-lastUpdated: 2026-07-28T17:03:56.341Z
+version: 6
+lastUpdated: 2026-07-29T00:18:05.194Z
 sourceLang: vi
-contentHash: 9de5270da8542048
-codeVerified: 2026-07-28T17:03:56.341Z
-codeVerifiedHash: 9de5270da8542048
-codeVerifiedClaims: 24
+contentHash: b42656099b8c2f3b
+codeVerified: 2026-07-29T00:18:05.194Z
+codeVerifiedHash: b42656099b8c2f3b
+codeVerifiedClaims: 26
 ---
 
 # Permissions, Roles & Policies
@@ -86,6 +86,8 @@ DELETE /access/grants/:realm/:collection/:action
 | `COLLECTION_REQUIRED` | thiếu `collection` |
 | `ACTION_NOT_ALLOWED` | realm không cho phép action đó (ví dụ `create` trên `public`) |
 | `ROW_SCOPE_NOT_SUPPORTED` | realm không diễn đạt được row scope đã yêu cầu (`ownOnly` trên `public`) |
+
+**Phải bật trước khi cấp.** `POST /access/grants/public` trả **409** `PUBLIC_ACCESS_DISABLED` khi site chưa bật public access — hãy gọi `POST /access/grants/public/enable` trước. Trước đây một grant tự provision realm như một tác dụng phụ, khiến `/disable` không sticky: operator đã cố ý đóng truy cập ẩn danh vẫn có thể bị một lệnh grant sau đó mở lại im lặng. Bật realm ẩn danh là một quyết định xứng đáng có hành động riêng và được audit (`public_access_enabled`). Chỉ realm `public` bị gate; `subscriber` được provision ngay lần đăng ký đầu và không operator-togglable (`togglable: false`), nên không có bước enable nào để đòi. Picker Studio vốn đã render realm togglable đang tắt ở chế độ read-only, nên phía server mới là bên lệch nhịp.
 
 Riêng `COLLECTION_NOT_GRANTABLE` trả **404**: `collection` phải tồn tại trên site và không phải collection system hay hidden — đúng tập mà `GET /access/grants` liệt kê. Không có kiểm tra này, một cú đánh máy được nhận với 200 rồi ghi một permission row không bao giờ khớp được gì: không hiện trong picker và âm thầm vô tác dụng.
 
