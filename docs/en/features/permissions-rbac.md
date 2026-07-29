@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 6
+lastUpdated: 2026-07-29T00:18:05.194Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: ad255fa4351bf7f9
+sourceHash: b42656099b8c2f3b
 mtEngine: claude
 syncStatus: machine-translated
+codeVerified: 2026-07-29T00:18:05.194Z
+codeVerifiedHash: b42656099b8c2f3b
+codeVerifiedClaims: 26
 ---
 
 # Permissions, Roles & Policies
@@ -21,16 +24,136 @@ syncStatus: machine-translated
 ## 1. Model
 
 ```
-User ──┬─► UserPolicy (direct attach, override)
-       └─► UserSite (role per site)
-Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per (collection, action)
+Realm (staff / subscriber / public / integration)   ← authentication boundary
+  └─ Site (tenant; every access table is site_id-scoped)
+       └─ User ──┬─► UserPolicy (direct attach, override)
+                 └─► UserSite (role per site)
+          Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per (collection, action)
+                                                          └─ fields / row rule / validation / presets
 ```
 
+- **Realm**: which authentication boundary the principal came through. Staff
+  and subscribers are separated by role + token audience (ADR-011); `public` is
+  the anonymous realm (§1.1); integrations authenticate with an API key.
 - **Role**: a fixed set assigned to a user (per site).
 - **Policy**: a reusable unit, attachable to multiple roles/users, with a priority order (lower `priority` = runs first, higher ones override later).
 - **Permission**: a specific `(collection, action)` rule with `permissions`, `validation`, `presets`, `fields`.
 
 > Design note 2026-06-03: Directus v11 moved `admin_access`, `app_access`, `enforce_tfa`, `ip_access` off the role and onto the policy. LumiBase still has `roles.adminAccess/appAccess`; treat this as a compatibility layer and migrate to policy flags so the role is only a grouping. For the detailed strategy see [Migrating role flags to policy flags](./role-policy-flag-migration.md).
+
+> `roles.parentId` exists in the schema but the permission evaluator does not
+> read it — there is **no role inheritance**. A child role does not receive its
+> parent's policies. Treat the column as grouping metadata until an evaluator
+> change lands.
+
+### 1.1. Non-staff realms: `public` and `subscriber`
+
+Two least-privilege realms exist for people who are not staff. Both start
+**empty** — they grant nothing until an operator says so.
+
+| | `public` | `subscriber` |
+|---|---|---|
+| Who | anyone, no credential | registered + signed in on your frontend |
+| Exists by default | ❌ opt-in per site | ✅ on first registration |
+| Grantable actions | `read` only | `read`/`create`/`update`/`delete` |
+| Row scopes | published-only | published-only, own-rows-only |
+| Studio | never | never (`appAccess: false`) |
+
+**Anonymous resolution.** With public access enabled, a credential-less request
+resolves to the site's `public` role rather than skipping authorization — so row
+filters and field masks stay in force. Two conditions gate it, both
+load-bearing:
+
+1. the site has a `public` role (creating it *is* enabling the realm), and
+2. the request is a `GET`/`HEAD` on an allow-listed content prefix
+   (`/items`, `/search`, `/media`, `/files`).
+
+`/graphql` is excluded: operations arrive over POST, so the read-method rule
+cannot cover it. Opening it needs read-only operation validation alongside the
+existing cost limiter.
+
+**Why `public` is read-only.** A generic write grant would hand every
+unauthenticated caller an unmetered write path. A public write surface (contact
+form, anonymous comment) needs its own throttle/captcha story behind a
+purpose-built endpoint, not a permission row.
+
+**Hard guards.** `adminAccess`/`appAccess` on the `public` role and policy are
+pinned off by check constraints (migration `0012`) — an elevation flag there
+would be an unauthenticated admin bypass. Route guards refuse the same edits
+with a readable 4xx. Policies attached to the public role by hand are screened
+at the attach point, since a table check cannot see across the `role_policies`
+join. The generic policy-permission editor is screened for the read-only limit
+too, because a grant added there lands in the same compiled bundle.
+
+**Caching.** Anonymous principals share one compiled bundle per site (cache key
+`role:{id}`), and the role lookup itself is cached with negative results
+included — the anonymous path is the highest-volume one.
+
+**`ctx.roleId` is the anonymous realm's only route in.**
+`PermissionService.compile()` resolves roles from four sources: `user_sites`,
+`user_roles`, `api_key_roles` and `ctx.roleId`. An anonymous principal has
+neither a user row nor an API-key row, so the first three are empty by
+definition — `ctx.roleId` is the only one left. `withAuth` sets it to the
+`public` role's id, and every call site that builds a `MagicContext` **must**
+forward `auth.roleId` rather than writing a literal `null`; otherwise every
+public grant compiles to an empty policy set and the feature silently does
+nothing. Note `ctx.user.roles` is **not** a fallback: `compile()` overwrites
+`ctx.user` with a snapshot read from the users table, which is null when there
+is no `userId`. A source-scan test rejects literal `roleId: null` in production
+source, with an allowlist for contexts that genuinely have no principal.
+
+**API** (`/api/v1/access/grants`, site-admin only):
+
+```
+GET    /access/grants                             # collections + both realms' limits & grants
+POST   /access/grants/public/enable               # provision the realm
+POST   /access/grants/public/disable              # tear it down (removes all its grants)
+POST   /access/grants/:realm                      # { collection, action?, publishedOnly?, ownOnly?, fields? }
+DELETE /access/grants/:realm/:collection/:action
+```
+
+`publishedOnly` defaults **on** for `read` and **off** for writes. Both scopes
+may be combined, composing to an `_and`. Studio surfaces all of this at
+**Access control → Public & subscribers**.
+
+`POST /users/subscriber-access` keeps its original published-only-read contract
+when `action` is omitted.
+
+**How a grant is refused.** Every refusal from `POST /access/grants/:realm` is a
+*request body* error, so all of them answer **400** — an unchanged retry fails
+identically, which is what 400 means and 409 does not:
+
+| Code | Meaning |
+|---|---|
+| `COLLECTION_REQUIRED` | `collection` is missing |
+| `ACTION_NOT_ALLOWED` | the realm does not allow that action (e.g. `create` on `public`) |
+| `ROW_SCOPE_NOT_SUPPORTED` | the realm cannot express the requested row scope (`ownOnly` on `public`) |
+
+**Enable before grant.** `POST /access/grants/public` answers **409**
+`PUBLIC_ACCESS_DISABLED` while the site has public access off — call
+`POST /access/grants/public/enable` first. A grant used to provision the realm as
+a side effect, which made `/disable` non-sticky: an operator who deliberately
+closed anonymous access could have it silently reopened by any later grant.
+Turning the anonymous realm on deserves its own audited act
+(`public_access_enabled`). Only `public` is gated; `subscriber` is provisioned on
+first registration and is not operator-togglable (`togglable: false`), so it has
+no enable step to require. The Studio picker already rendered a disabled togglable
+realm read-only, so the server was the side out of step.
+
+`COLLECTION_NOT_GRANTABLE` is the one **404**: the `collection` must exist on the
+site and be neither a system nor a hidden collection — exactly the set
+`GET /access/grants` lists. Without this check a typo was accepted with 200 and
+wrote a permission row that could never match anything: invisible in the picker
+and silently inert.
+
+**The `public` role cannot be deleted through the role editor.**
+`DELETE /roles/:id` refuses it with **409** `PUBLIC_ROLE_NOT_DELETABLE`. "Public
+access is enabled" is not a flag — it *is* the existence of the `public` role, so
+a raw delete here turns anonymous access off while skipping the two things
+`POST /access/grants/public/disable` also does: clearing the realm policy and its
+permission rows (so a later re-enable starts from a clean slate rather than
+silently restoring grants the operator has since forgotten), and writing the
+`public_access_disabled` audit event.
 
 ## 2. Permission record (JSON DSL)
 
@@ -112,6 +235,45 @@ New recommendation: do not silently OR/union when attaching policies via Studio.
 - Warn if it only widens fields or OR-adds a conditional rule; the admin must confirm and it is audited.
 - The DB should have a unique `(policyId, collection, action)` so a policy cannot have multiple permission rows with the same key.
 
+### 6.1. Publishable API keys
+
+An API key can be minted as **publishable** (`lbk_pub_…`) for embedding in a
+browser bundle or mobile app, as opposed to a secret `lbk_…` key held
+server-side.
+
+A publishable key is **not a secret**. Anything shipped to a client is
+extractable, so the only correct posture is to scope it exactly as if it were
+already public. What it buys over serving the same data fully anonymously:
+per-key rate-limit quota (the limiter already keys on `k:{apiKeyId}`),
+revocation and rotation without redeploying, audit attribution, and per-key
+scope (staging vs production). What it does **not** buy: confidentiality. If
+leaking it would hurt, keep a secret key server-side and proxy through your own
+backend.
+
+- The `lbk_pub_` prefix is the source of truth — derived from the token, so it
+  cannot drift from a metadata flag, and a secret scanner can alert on leaked
+  `lbk_` keys while staying quiet about publishable ones. Rotation preserves it.
+- **Origin allowlist** — `metadata.allowedOrigins`, editable live via
+  `PATCH /api-keys/:id/allowed-origins`. Empty = no constraint. Studio exposes
+  this on a live key at **Access control → API keys**: select the key and use the
+  *Allowed origins* box in the detail panel — tightening the list, or fixing a
+  mistyped origin, needs no token rotation and no redeploy of whatever ships the
+  key. Saving an empty box asks for confirmation, since that widens access.
+- Enforcement is scoped to publishable keys (a secret key is used
+  server-to-server, where no `Origin` exists). A non-matching `Origin`/`Referer`
+  is `403 ORIGIN_NOT_ALLOWED` and audited; an **absent** origin is allowed.
+  This is deliberate: the control stops another *website* from using your key in
+  a browser, which is the real failure mode. It is not a defence against `curl`,
+  which can set any `Origin` — rejecting absent-origin requests would only break
+  legitimate native/server callers without adding security.
+- `adminAccess`/`appAccess` cannot be attached to a publishable key
+  (`PUBLISHABLE_KEY_ELEVATION`), and **both halves** of a role binding are
+  screened. That matters because `PermissionService` grants admin when
+  **either** the `roles.admin_access` column **or** an active policy's
+  `admin_access` is set — so screening policies alone is not enough: a role
+  carrying the flag on its own column, with no elevated policy (or no policy at
+  all), would pass the screen and then grant admin at request time.
+
 ## 7. API
 
 - `GET /permissions/me` — returns the matrix `{collection: { create, read, update, delete, share, fields, presets }}` so Studio can render the UI (hide buttons, disable fields).
@@ -120,6 +282,12 @@ New recommendation: do not silently OR/union when attaching policies via Studio.
 ## 8. Studio UI
 
 - The **Access Control** module:
+  - Public & subscribers page: enable/disable anonymous access and check off
+    `collection × action` grants per non-staff realm. Limits are read from
+    `GET /access/grants` rather than hard-coded client-side, so a server-side
+    tightening cannot be contradicted by a stale client assumption. A togglable
+    realm that is off renders read-only, so a first checkbox click cannot
+    quietly switch anonymous access on.
   - Roles page: list + create + assign users + attach policies.
   - Policies page: list + JSON editor + GUI builder (a form per row).
   - Permission Matrix page: a `collection × action` grid; click a cell to open the detail (fields, rules, presets, validation).

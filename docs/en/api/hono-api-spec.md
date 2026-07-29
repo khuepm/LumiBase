@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:11:35.148Z
+sourceLang: en
+contentHash: 42b4c9322dccd73d
+codeVerified: 2026-07-25T08:11:35.148Z
+codeVerifiedHash: 42b4c9322dccd73d
+codeVerifiedClaims: 208
+---
+
 # Hono API Specification — LumiBase
 
 > **For AI agents:** This page is also available as clean Markdown. Append `/index.md` to any LumiBase docs URL.
@@ -542,7 +552,7 @@ Scheduled releases publish via the shared `content-scheduler` tick
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/v1/files/upload-url` | Get presigned R2/S3 PUT URL |
+| `POST` | `/api/v1/files/presigned-url` | Get presigned R2/S3 PUT URL |
 | `POST` | `/api/v1/files` | Register file metadata after upload |
 | `GET` | `/api/v1/files` | List files (filterable) |
 | `GET` | `/api/v1/files/:id` | File metadata |

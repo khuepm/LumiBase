@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:11:35.843Z
+sourceLang: en
+contentHash: 0582bd39b6bfd061
+codeVerified: 2026-07-25T08:11:35.843Z
+codeVerifiedHash: 0582bd39b6bfd061
+codeVerifiedClaims: 20
+---
+
 # Realtime WebSocket Implementation
 
 This document describes how to complete the WebSocket integration in the current codebase. The repository already has the initial foundation:
@@ -89,6 +99,8 @@ type CollectionRealtimeMeta = {
 Default: disabled.
 
 ## Backend implementation
+
+<!-- verify-code-refs: planned apps/cms/src/services/realtime-config.ts -->
 
 ### 1. Add a realtime config service
 

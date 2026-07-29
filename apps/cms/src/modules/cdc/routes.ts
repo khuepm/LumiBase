@@ -402,7 +402,7 @@ async function authorizeCurrentPrincipalForSite(
     ctx: {
       userId,
       siteId,
-      roleId: null,
+      roleId: auth?.roleId ?? null,
       ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
       headers,
       apiKey: auth?.apiKey ?? null,

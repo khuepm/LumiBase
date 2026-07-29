@@ -1,49 +1,62 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:15:55.423Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: 23c08db0a48a13c5
+mtEngine: claude
+syncStatus: machine-translated
+codeVerified: 2026-07-25T08:15:55.423Z
+codeVerifiedHash: 23c08db0a48a13c5
+codeVerifiedClaims: 6
+---
+
 # Translations & i18n
 
-## 1. Ba lớp i18n
+## 1. Three layers of i18n
 
-1. **UI strings** — Studio interface, dịch qua bảng `translations` namespace `ui` + fallback packs đi kèm bundle.
-2. **Schema labels** — `fields.translations.<locale>.label/help`, `collections.translations` (qua field `meta.translations`).
-3. **Content** — dịch giá trị field. Hai chiến lược:
-   - **Field-level repeat** (Directus translations pattern): tạo collection liên kết `<col>_translations` (m2o → parent, m2o → languages).
-   - **JSONB locale map** (đơn giản hơn cho content nhỏ): field type `text` + interface `translatable-text` lưu `{ en: "...", vi: "..." }`.
+1. **UI strings** — the Studio interface, translated through the `translations` table under the `ui` namespace, plus fallback packs shipped with the bundle.
+2. **Schema labels** — `fields.translations.<locale>.label/help` and `collections.translations` (via the `meta.translations` field).
+3. **Content** — translating field values. Two strategies:
+   - **Field-level repeat** (the Directus translations pattern): create a linked `<col>_translations` collection (m2o → parent, m2o → languages).
+   - **JSONB locale map** (simpler for small content): a `text` field with the `translatable-text` interface storing `{ en: "...", vi: "..." }`.
 
-LumiBase hỗ trợ **cả hai**, mặc định JSONB cho field đơn lẻ, collection-link cho item phức tạp.
+LumiBase supports **both** — JSONB by default for a single field, collection-link for complex items.
 
 ## 2. Locale management
 
 - `settings.locales.available = ["en","vi","ja"]`, `settings.locales.default = "en"`.
-- Trang **Settings → Locales**: thêm/xoá locale, set default, fallback chain.
+- **Settings → Locales** page: add/remove a locale, set the default, configure the fallback chain.
 
 ## 3. Glossary & Translation Memory (USP)
 
-- Bảng `translation_memory` (Phase 2): `siteId`, `sourceLang`, `targetLang`, `source`, `target`, `context`.
-- Glossary: thuật ngữ cố định không được dịch.
+- A `translation_memory` table (Phase 2): `siteId`, `sourceLang`, `targetLang`, `source`, `target`, `context`.
+- Glossary: fixed terms that must not be translated.
 
 ## 4. Machine translation plug-in
 
-- Interface `MTProvider`: `translate(text, from, to, glossary?)`.
-- Built-in: DeepL, OpenAI, Workers AI. Cấu hình ở Settings.
-- Editor có nút "Translate from <lang>" → gọi MT, đánh dấu `status: machine-translated` để reviewer duyệt.
+- An `MTProvider` interface: `translate(text, from, to, glossary?)`.
+- Built-in: DeepL, OpenAI, Workers AI. Configured in Settings.
+- The editor gets a "Translate from <lang>" button → calls MT and marks the result `status: machine-translated` for a reviewer to approve.
 
 ## 5. Workflow status per locale
 
-- Mỗi giá trị dịch có `status`: `missing | machine | draft | review | approved`.
-- List view có badge phần trăm hoàn thành dịch.
+- Every translated value carries a `status`: `missing | machine | draft | review | approved`.
+- The list view shows a badge with the translation completion percentage.
 
 ## 6. API
 
 - `GET /translations?namespace=ui&language=vi`
 - `POST /translations/bulk` (upsert)
-- `POST /translations/auto` body: `{ collection, item, fromLocale, toLocale }` → trả candidates.
+- `POST /translations/auto` with body `{ collection, item, fromLocale, toLocale }` → returns candidates.
 
 ## 7. UI
 
-- Module **Translations**:
-  - Tab *UI Strings* — bảng key/value per locale, search, missing filter.
-  - Tab *Content* — chọn collection → ma trận item × locale → click cell mở editor.
-  - Tab *Glossary*.
-  - Tab *Memory*.
-- Editor item: tab locale dọc bên trái, side-by-side compare với default locale.
+- The **Translations** module:
+  - *UI Strings* tab — a key/value table per locale, with search and a missing-only filter.
+  - *Content* tab — pick a collection → an item × locale matrix → click a cell to open the editor.
+  - *Glossary* tab.
+  - *Memory* tab.
+- Item editor: locale tabs down the left side, side-by-side comparison against the default locale.
 
 ## 8. Tasks: Phase MVP-C2 (UI strings + JSONB content) → POST-MVP-F (MT, memory).

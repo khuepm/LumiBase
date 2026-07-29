@@ -12,6 +12,11 @@ import {
   revokeSubscriberRead,
   listSubscriberRead,
 } from '../services/auth/subscriber-access';
+import {
+  GRANT_ACTIONS,
+  RealmAccessError,
+  type GrantAction,
+} from '../services/auth/realm-access';
 import { bumpPermissionVersion } from '../services/permission-invalidation';
 
 export const usersRouter = new Hono<AppEnv>();
@@ -55,33 +60,64 @@ usersRouter.get('/subscriber-access', async (c) => {
 
 const subscriberAccessSchema = z.object({
   collection: z.string().min(1),
+  // Optional so the original published-only-read contract still holds when
+  // omitted. `/access/grants/subscriber` is the fuller surface.
+  action: z.enum(GRANT_ACTIONS).optional(),
   publishedOnly: z.boolean().optional(),
+  ownOnly: z.boolean().optional(),
   fields: z.array(z.string()).optional(),
 });
 
-// Grant (or update) subscriber read on a collection.
+// Grant (or update) a subscriber permission on a collection.
 usersRouter.post('/subscriber-access', async (c) => {
   const body = await c.req.json();
   const input = subscriberAccessSchema.parse(body);
   const siteId = c.get('siteId');
-  const grant = await grantSubscriberRead(c.get('db'), siteId, input);
-  // Policy mutation → drop compiled permission bundles at once instead of
-  // waiting out the cache TTL.
-  await bumpPermissionVersion(c, siteId);
-  return c.json({ data: grant });
+  try {
+    const grant = await grantSubscriberRead(c.get('db'), siteId, input);
+    // Policy mutation → drop compiled permission bundles at once instead of
+    // waiting out the cache TTL.
+    await bumpPermissionVersion(c, siteId);
+    return c.json({ data: grant });
+  } catch (error) {
+    if (error instanceof RealmAccessError) {
+      return c.json({ errors: [{ code: error.code, message: error.message }] }, 400);
+    }
+    throw error;
+  }
 });
 
-// Revoke subscriber read on a collection.
+// Revoke a subscriber grant on a collection. `action` defaults to `read` so
+// the original single-action URL keeps working.
 usersRouter.delete('/subscriber-access/:collection', async (c) => {
   const collection = c.req.param('collection');
   const siteId = c.get('siteId');
-  const removed = await revokeSubscriberRead(c.get('db'), siteId, collection);
+  const actionParam = c.req.query('action') ?? 'read';
+  if (!(GRANT_ACTIONS as readonly string[]).includes(actionParam)) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'VALIDATION',
+            message: `Unknown action '${actionParam}'. Expected one of: ${GRANT_ACTIONS.join(', ')}.`,
+          },
+        ],
+      },
+      400,
+    );
+  }
+  const removed = await revokeSubscriberRead(
+    c.get('db'),
+    siteId,
+    collection,
+    actionParam as GrantAction,
+  );
   if (!removed) {
     return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
   }
   // Revoked grant must stop applying immediately, not after the cache TTL.
   await bumpPermissionVersion(c, siteId);
-  return c.json({ data: { collection, removed: true } });
+  return c.json({ data: { collection, action: actionParam, removed: true } });
 });
 
 // Get a specific user in the active site

@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T00:15:09.926Z
+sourceLang: vi
+contentHash: c3fccd8c6549cd9a
+codeVerified: 2026-07-28T00:15:09.926Z
+codeVerifiedHash: c3fccd8c6549cd9a
+codeVerifiedClaims: 14
+---
+
 # User Management
 
 ## 1. Mô hình
@@ -44,3 +54,11 @@
 - Module **Teams**: list + drag-drop user vào team.
 
 ## 7. Tasks: Phase MVP-D.
+
+## 8. Compliance & quyền của người dùng
+
+Account người dùng chứa dữ liệu cá nhân thuộc phạm vi GDPR / CCPA / PDPD và
+chính sách app-store. Về các quyền pháp lý mà người dùng được hưởng (xoá, truy
+cập, tính khả chuyển, đồng thuận, xoá account) và cách chúng map vào các tính
+năng user-management hiện tại, xem [Compliance & User Rights](../compliance/README.md)
+— đặc biệt là [gap-analysis](../compliance/gap-analysis.md).

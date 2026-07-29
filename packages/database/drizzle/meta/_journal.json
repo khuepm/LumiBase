@@ -85,6 +85,13 @@
       "when": 1783500400000,
       "tag": "0011_extension_signing",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783500500000,
+      "tag": "0012_public_role_least_privilege",
+      "breakpoints": true
     }
   ]
 }

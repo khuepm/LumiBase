@@ -1,5 +1,12 @@
 ---
 title: Deployment — Cloudflare Workers (Edge Components Only)
+version: 1
+lastUpdated: 2026-07-28T11:34:33.128Z
+sourceLang: en
+contentHash: 3a7f4f65f8ffeea8
+codeVerified: 2026-07-28T11:34:33.128Z
+codeVerifiedHash: 3a7f4f65f8ffeea8
+codeVerifiedClaims: 10
 ---
 
 # Deployment Guide: Cloudflare Workers (Edge Components Only)

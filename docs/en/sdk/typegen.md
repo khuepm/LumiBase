@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T11:30:17.385Z
+sourceLang: en
+contentHash: e95bb0d2807f2a97
+codeVerified: 2026-07-28T11:30:17.385Z
+codeVerifiedHash: e95bb0d2807f2a97
+codeVerifiedClaims: 4
+---
+
 # TypeScript TypeGen
 
 > Generate fully-typed TypeScript interfaces from your LumiBase schema.
@@ -152,11 +162,16 @@ If the schema changes without updating the types file, CI fails and alerts the t
 
 ## Options reference
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--url` | — | CMS API base URL (required) |
-| `--site-id` | — | Site identifier (required) |
-| `--token` | — | Static API token (required) |
-| `--output` | `./lumibase-types.ts` | Output file path |
-| `--system` | `false` | Include system collections (files, users, etc.) |
-| `--sdk-types` | `true` | Import base types from `@lumibase/sdk` |
+There is **no typegen CLI** — `@lumibase/sdk` ships no `bin`, which is why the
+setup above writes a local script. `generateTypes(manifest, options)` takes the
+manifest returned by `GET /api/v1/typegen/schema` plus a `GenerateOptions`
+object (`packages/sdk/src/typegen/index.ts`):
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `format` | `'single' \| 'per-collection'` | `'single'` | One file with every interface, or one module per collection |
+| `branded` | `boolean` | `true` | Emit branded primary-key types instead of bare `string` |
+
+Everything else — which URL to call, which site, which token, where to write the
+file — is ordinary code in your own script, so it is configured there rather than
+through flags.

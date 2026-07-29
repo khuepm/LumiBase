@@ -11,6 +11,24 @@ import type { AppEnv } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
 import { buildAccessConflictReport } from '../services/access-conflict-report';
 import { bumpPermissionVersion } from '../services/permission-invalidation';
+import {
+  PUBLIC_SYSTEM_KEY,
+  isPublicRole,
+  screenPolicyForPublicRole,
+} from '../services/auth/public-role';
+
+/** 400 body for an edit that would elevate the anonymous realm. */
+const publicElevationError = (flags: string[]) => ({
+  errors: [
+    {
+      code: 'PUBLIC_ROLE_ELEVATION',
+      message:
+        `The public (anonymous) role cannot carry ${flags.join(', ')}. ` +
+        'Unauthenticated requests resolve to this role, so an elevation flag ' +
+        'here would grant that access to every visitor.',
+    },
+  ],
+});
 
 /**
  * /roles — manage RBAC role definitions and their bound users/policies.
@@ -65,6 +83,10 @@ rolesRouter.post('/', async (c) => {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
   const db = c.get('db');
+  if (parsed.data.systemKey === PUBLIC_SYSTEM_KEY) {
+    const flags = elevationFlags(parsed.data);
+    if (flags.length) return c.json(publicElevationError(flags), 400);
+  }
   const [row] = await db
     .insert(roles)
     .values({ ...parsed.data, siteId: c.get('siteId') })
@@ -72,6 +94,14 @@ rolesRouter.post('/', async (c) => {
   await bumpPermissionVersion(c);
   return c.json({ data: row }, 201);
 });
+
+/** Elevation flags the payload is turning ON. */
+function elevationFlags(input: { adminAccess?: boolean; appAccess?: boolean }): string[] {
+  const flags: string[] = [];
+  if (input.adminAccess) flags.push('adminAccess');
+  if (input.appAccess) flags.push('appAccess');
+  return flags;
+}
 
 rolesRouter.get('/:id', async (c) => {
   const db = c.get('db');
@@ -104,6 +134,10 @@ rolesRouter.patch('/:id', async (c) => {
   }
   const db = c.get('db');
   const id = c.req.param('id');
+  const flags = elevationFlags(parsed.data);
+  if (flags.length && (await isPublicRole(db, c.get('siteId'), id))) {
+    return c.json(publicElevationError(flags), 400);
+  }
   const [row] = await db
     .update(roles)
     .set(parsed.data)
@@ -116,9 +150,35 @@ rolesRouter.patch('/:id', async (c) => {
 
 rolesRouter.delete('/:id', async (c) => {
   const db = c.get('db');
-  await db
+  const id = c.req.param('id');
+  // The public role is not a generic role: dropping it here would disable the
+  // anonymous realm through the back door, skipping `disablePublicAccess` —
+  // which also deletes the realm policy and its permission rows so a later
+  // re-enable starts clean — and skipping the `public_access_disabled` audit
+  // event. Route the operator to the endpoint that does both.
+  if (await isPublicRole(db, c.get('siteId'), id)) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'PUBLIC_ROLE_NOT_DELETABLE',
+            message:
+              'The public (anonymous) role is managed by the access-grants API. ' +
+              'Use POST /access/grants/public/disable to turn anonymous access off; ' +
+              'it also clears the realm policy and its grants, and records an audit event.',
+          },
+        ],
+      },
+      409,
+    );
+  }
+  const deleted = await db
     .delete(roles)
-    .where(and(scopeSite(roles.siteId, c.get('siteId')), eq(roles.id, c.req.param('id'))));
+    .where(and(scopeSite(roles.siteId, c.get('siteId')), eq(roles.id, id)))
+    .returning({ id: roles.id });
+  if (deleted.length === 0) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Role not found.' }] }, 404);
+  }
   await bumpPermissionVersion(c);
   return c.body(null, 204);
 });
@@ -132,6 +192,12 @@ rolesRouter.post('/:id/policies', async (c) => {
   }
   const db = c.get('db');
   const roleId = c.req.param('id');
+  // Screened before the generic conflict report: an elevated policy on the
+  // public role is not a mergeable conflict, it is a refusal.
+  if (await isPublicRole(db, c.get('siteId'), roleId)) {
+    const flags = await screenPolicyForPublicRole(db, c.get('siteId'), parsed.data.policyId);
+    if (flags.length) return c.json(publicElevationError(flags), 400);
+  }
   const report = await buildAccessConflictReport({
     db,
     siteId: c.get('siteId'),

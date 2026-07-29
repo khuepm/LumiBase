@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T00:03:40.920Z
+sourceLang: vi
+contentHash: b23fd7e3785f142b
+codeVerified: 2026-07-28T00:03:40.920Z
+codeVerifiedHash: b23fd7e3785f142b
+codeVerifiedClaims: 68
+---
+
 # POST-GA Walkthrough — Đã hoàn thành
 
 ## Tổng quan

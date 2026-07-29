@@ -27,6 +27,7 @@ const AccessLayout = lazy(() => import('./modules/access/layout').then((m) => ({
 const SettingsLayout = lazy(() => import('./modules/settings/layout').then((m) => ({ default: m.SettingsLayout })));
 const ApiKeysPage = lazy(() => import('./modules/access/api-keys-page').then((m) => ({ default: m.ApiKeysPage })));
 const AccessImportExportPage = lazy(() => import('./modules/access/import-export-page').then((m) => ({ default: m.AccessImportExportPage })));
+const PublicAccessPage = lazy(() => import('./modules/access/public-access-page').then((m) => ({ default: m.PublicAccessPage })));
 const PermissionMatrixPage = lazy(() => import('./modules/access/permission-matrix').then((m) => ({ default: m.PermissionMatrixPage })));
 const PoliciesListPage = lazy(() => import('./modules/access/policies-page').then((m) => ({ default: m.PoliciesListPage })));
 const PolicyDetailPage = lazy(() => import('./modules/access/policy-detail').then((m) => ({ default: m.PolicyDetailPage })));
@@ -1136,6 +1137,12 @@ const accessPolicyDetailRoute = createRoute({
   component: withSuspense(PolicyDetailPage),
 });
 
+const accessPublicRoute = createRoute({
+  getParentRoute: () => accessRoute,
+  path: 'public',
+  component: withSuspense(PublicAccessPage),
+});
+
 const accessApiKeysRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: 'api-keys',
@@ -1198,6 +1205,12 @@ const adminPathAccessPolicyDetailRoute = createRoute({
   getParentRoute: () => adminPathAccessRoute,
   path: 'policies/$id',
   component: withSuspense(PolicyDetailPage),
+});
+
+const adminPathAccessPublicRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'public',
+  component: withSuspense(PublicAccessPage),
 });
 
 const adminPathAccessApiKeysRoute = createRoute({
@@ -1290,6 +1303,7 @@ const routeTree = rootRoute.addChildren([
       accessRoleDetailRoute,
       accessPoliciesRoute,
       accessPolicyDetailRoute,
+      accessPublicRoute,
       accessApiKeysRoute,
       accessImportExportRoute,
       accessMatrixRoute,
@@ -1337,6 +1351,7 @@ const routeTree = rootRoute.addChildren([
       adminPathAccessRoleDetailRoute,
       adminPathAccessPoliciesRoute,
       adminPathAccessPolicyDetailRoute,
+      adminPathAccessPublicRoute,
       adminPathAccessApiKeysRoute,
       adminPathAccessImportExportRoute,
       adminPathAccessMatrixRoute,

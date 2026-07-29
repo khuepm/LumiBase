@@ -1,25 +1,35 @@
+---
+version: 1
+lastUpdated: 2026-07-28T00:13:52.452Z
+sourceLang: en
+contentHash: 872e80cfb4e04a65
+codeVerified: 2026-07-28T00:13:52.452Z
+codeVerifiedHash: 872e80cfb4e04a65
+codeVerifiedClaims: 6
+---
+
 # Directus Data Model Parity Tasks
 
-> Mục tiêu: đưa LumiBase Data Model / Collections Builder lên mức đáp ứng các thành phần cơ bản khi so sánh với Directus: tạo collection, tạo field/model, quan hệ, quyền schema, metadata, validation, item API, SDK và trải nghiệm Studio. Tài liệu này tập trung vào phần còn thiếu hoặc chưa đủ chặt trong codebase hiện tại.
+> Goal: bring the LumiBase Data Model / Collections Builder up to a level that covers the basic components when compared with Directus: creating a collection, creating a field/model, relations, schema permissions, metadata, validation, the item API, the SDK, and the Studio experience. This document focuses on what is still missing or not yet tight enough in the current codebase.
 
-## 1. Baseline hiện tại
+## 1. Current baseline
 
-LumiBase đã có nền tảng chính:
+LumiBase already has the main foundations:
 
-- `[DB]` `collections`, `fields`, `relations`, `items`, `revisions`, `activity` trong `packages/database/src/schema/cms.ts`.
-- `[BE]` `SchemaService` quản lý CRUD collection, field, relation và compiled schema cache.
-- `[BE]` `ItemService` CRUD item trên JSONB store, có validation, encryption, revisions, activity, realtime/search hooks.
+- `[DB]` `collections`, `fields`, `relations`, `items`, `revisions`, `activity` in `packages/database/src/schema/cms.ts`.
+- `[BE]` `SchemaService` manages CRUD for collections, fields, relations, and the compiled schema cache.
+- `[BE]` `ItemService` does item CRUD on the JSONB store, with validation, encryption, revisions, activity, and realtime/search hooks.
 - `[BE]` Routes `/api/v1/collections`, `/api/v1/collections/:name/fields`, `/api/v1/relations`, `/api/v1/items/:collection`.
-- `[FE]` Studio Data Model có collection wizard, detail tabs, field inspector, display tab, raw JSON tab.
-- `[SDK]` Client có nhóm schema/items cơ bản.
+- `[FE]` Studio Data Model has a collection wizard, detail tabs, field inspector, display tab, and raw JSON tab.
+- `[SDK]` The client has the basic schema/items groups.
 
-Điểm khác biệt kiến trúc cần giữ rõ: Directus tạo hoặc introspect table vật lý trong database; LumiBase MVP hiện dùng virtual schema + `items.data` JSONB, materialized collections là opt-in optimization. Nếu muốn cạnh tranh trực tiếp, phải hoặc hỗ trợ DDL/introspection, hoặc biến virtual schema thành lợi thế sản phẩm với contract rõ ràng.
+One architectural difference to keep clearly in mind: Directus creates or introspects a physical table in the database; the LumiBase MVP currently uses a virtual schema + `items.data` JSONB, with materialized collections as an opt-in optimization. To compete head-on we must either support DDL/introspection, or turn the virtual schema into a product advantage with a clear contract.
 
-## 2. Product contract cần đạt
+## 2. The product contract to reach
 
-Một collection trong LumiBase phải là một "model" đầy đủ, gồm:
+A collection in LumiBase must be a complete "model", comprising:
 
-- Machine identity: `name`, immutable sau khi tạo.
+- Machine identity: `name`, immutable after creation.
 - Display identity: `label`, `pluralLabel`, `icon`, `color`, `note`, translations.
 - Storage identity: `storageMode`, `primaryKey`, optional materialized target.
 - Behavior: `singleton`, `accountability`, `versioning`, `archiveField`, `archiveValue`, `unarchiveValue`, `sortField`.

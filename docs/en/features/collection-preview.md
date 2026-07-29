@@ -1,25 +1,38 @@
+---
+version: 1
+lastUpdated: 2026-07-27T23:52:33.645Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: da33d4283b788ba9
+mtEngine: claude
+syncStatus: machine-translated
+codeVerified: 2026-07-27T23:52:33.645Z
+codeVerifiedHash: da33d4283b788ba9
+codeVerifiedClaims: 20
+---
+
 # Collection Preview (iframe)
 
-> Preview = nhúng một `<iframe>` trong màn edit record của Studio, trỏ tới URL template do collection cấu hình, nội suy bằng field của record đang edit — để tác giả xem trước trang web thật ngay trong admin. Lấy cảm hứng từ tính năng Live Preview của Directus.
+> Preview = embedding an `<iframe>` in Studio's record editor, pointed at a URL template configured on the collection and interpolated with the fields of the record being edited — so an author can see the real website inside the admin. Inspired by Directus' Live Preview feature.
 
-**Trạng thái:** Đề xuất thiết kế (chưa implement). Không cần migration cho MVP.
+**Status:** design proposal (not implemented). No migration needed for the MVP.
 
-## 1. Ý tưởng
+## 1. The idea
 
-Mỗi collection cấu hình **một URL template**, ví dụ:
+Each collection configures **one URL template**, for example:
 
 ```
 https://staging.mysite.com/blog/{{slug}}
 https://mysite.com/posts/{{id}}?preview=1
 ```
 
-Khi user mở màn edit một record, Studio nội suy template bằng giá trị field của record (client-side, tái dùng renderer Mustache sẵn có), rồi nhúng URL kết quả vào `<iframe>` cạnh form. Đổi field → iframe reload (debounce).
+When a user opens a record editor, Studio interpolates the template with the record's field values (client-side, reusing the existing Mustache renderer) and embeds the resulting URL in an `<iframe>` beside the form. Change a field → the iframe reloads (debounced).
 
-Điểm mấu chốt về bảo mật: **URL template (do editor cấu hình) tách khỏi allowlist origin (do operator cấu hình qua env)**. Editor chọn *đường dẫn*; operator quyết định *origin nào được phép nhúng*. Kể cả khi tài khoản editor bị chiếm, iframe vẫn không thể trỏ ra origin lạ để lừa đảo hay rò token.
+The key security point: **the URL template (configured by an editor) is separate from the origin allowlist (configured by an operator via env)**. The editor picks the *path*; the operator decides *which origins may be embedded*. Even if an editor account is compromised, the iframe still cannot point at an unfamiliar origin to phish or leak a token.
 
 ## 2. Data model
 
-Không thêm cột/migration. Dùng `collections.meta` (jsonb "UI hints", `packages/database/src/schema/cms.ts`), thêm namespace `preview` — cùng pattern với `meta.systemFields` sẵn có (`schema-service.ts`). Dữ liệu round-trip sẵn: DB → `CompiledCollection.meta` → SDK `Collection.meta` → Studio, không cần đụng route/service/diff.
+No new column, no migration. Use `collections.meta` (the jsonb "UI hints" blob, `packages/database/src/schema/cms.ts`) with a new `preview` namespace — the same pattern as the existing `meta.systemFields` (`schema-service.ts`). The data already round-trips: DB → `CompiledCollection.meta` → SDK `Collection.meta` → Studio, with no route/service/diff changes needed.
 
 ```jsonc
 // collections.meta
@@ -27,13 +40,13 @@ Không thêm cột/migration. Dùng `collections.meta` (jsonb "UI hints", `packa
   "preview": {
     "enabled": true,
     "url": "https://staging.mysite.com/blog/{{slug}}",
-    "refreshField": "*",       // "*" = mọi field đổi thì reload; hoặc tên 1 field
+    "refreshField": "*",       // "*" = reload on any field change; or a single field name
     "width": "responsive"       // responsive | mobile | desktop
   }
 }
 ```
 
-Zod (đặt trong `packages/shared/src/schemas/`, export cho CMS + Studio):
+Zod (placed in `packages/shared/src/schemas/`, exported for both CMS and Studio):
 
 ```ts
 export const previewConfigSchema = z.object({
@@ -44,9 +57,9 @@ export const previewConfigSchema = z.object({
 });
 ```
 
-> Phương án thay thế (không dùng cho MVP): cột `previewUrl text('preview_url')` riêng, mirror `displayTemplate` khắp `CollectionInput` / `collectionInputSchema` / `CollectionConfigSchema` (`.strict()`) / compiled shape / `buildSchemaDiff`. Typed & discoverable hơn nhưng nhiều việc + cần migration.
+> Alternative (not chosen for the MVP): a dedicated `previewUrl text('preview_url')` column mirroring `displayTemplate` across `CollectionInput` / `collectionInputSchema` / `CollectionConfigSchema` (`.strict()`) / the compiled shape / `buildSchemaDiff`. More typed and discoverable, but considerably more work and it needs a migration.
 
-## 3. Luồng render (Studio, React)
+## 3. Render flow (Studio, React)
 
 ```
 draft record (item-detail.tsx state)
@@ -55,52 +68,52 @@ draft record (item-detail.tsx state)
   ─► <iframe src={resolvedUrl} sandbox=... />
 ```
 
-- **UI:** thêm tab `preview` vào bộ tab của `apps/studio/src/modules/content/item-detail.tsx` (hiện `'fields' | 'revisions' | 'versions' | 'raw'`). Chỉ hiện khi `meta.preview.enabled`. Nút bật/tắt đặt cạnh nút Share trên toolbar.
-- Nội suy hoàn toàn client-side (không thêm API call) — tái dùng renderer đồng bộ với `content/mustache-template-editor.tsx` + `displays/mustache.tsx`.
-- Debounce reload iframe khi `draft` đổi (~500ms), theo `refreshField`.
-- Hiện URL đã resolve + nút "Open in new tab". Field trống → render `[fieldName]` để tác giả biết thiếu dữ liệu.
-- Preview **phải** là component first-class, KHÔNG đi qua `sanitize-html` (sanitizer strip thẻ iframe).
+- **UI:** add a `preview` tab to the tab set in `apps/studio/src/modules/content/item-detail.tsx` (currently `'fields' | 'revisions' | 'versions' | 'raw'`). Shown only when `meta.preview.enabled`. The toggle sits next to the Share button in the toolbar.
+- Interpolation is entirely client-side (no extra API call) — reusing the renderer shared with `content/mustache-template-editor.tsx` and `displays/mustache.tsx`.
+- Debounce the iframe reload as `draft` changes (~500ms), honouring `refreshField`.
+- Show the resolved URL plus an "Open in new tab" button. An empty field renders as `[fieldName]` so the author can see what data is missing.
+- The preview **must** be a first-class component and must NOT pass through `sanitize-html` (the sanitizer strips iframe tags).
 
-## 4. Bảo mật iframe
+## 4. iframe security
 
-Hai lớp tin cậy:
+Two trust layers:
 
-| Lớp | Ai kiểm soát | Rủi ro nếu buông |
+| Layer | Who controls it | Risk if left open |
 |---|---|---|
-| **URL template** (`meta.preview.url`) | editor có quyền sửa data-model | trỏ iframe tới origin lạ → phishing trong admin, rò token qua Referer, tabnabbing |
-| **Origin allowlist** (env) | operator/DevOps lúc deploy | — (hàng rào cứng) |
+| **URL template** (`meta.preview.url`) | an editor with data-model edit rights | point the iframe at an unfamiliar origin → phishing inside the admin, token leakage via Referer, tabnabbing |
+| **Origin allowlist** (env) | operator/DevOps at deploy time | — (this is the hard boundary) |
 
-### 4.1 Allowlist origin qua env
+### 4.1 Origin allowlist via env
 
-Thêm biến (khớp precedent `CORS_ALLOWED_ORIGINS`, `EXTENSION_BUNDLE_ORIGINS` trong `apps/cms/src/env.ts`):
+Add a variable (matching the `CORS_ALLOWED_ORIGINS` and `EXTENSION_BUNDLE_ORIGINS` precedent in `apps/cms/src/env.ts`):
 
 ```
-# nhiều origin cách nhau bằng dấu phẩy
+# comma-separated for multiple origins
 PREVIEW_ALLOWED_ORIGINS=https://staging.mysite.com,https://mysite.com
 ```
 
-- Khai báo trong `Bindings` (`env.ts`), set per-env trong `apps/cms/wrangler.toml` (`[env.staging.vars]` / `[env.production.vars]`).
-- Parse bằng `parseAllowedOrigins` sẵn có (`apps/cms/src/config/cors.ts`, đã có test).
-- **Production guard:** validate trong `apps/cms/src/config/production.ts` — cấm `*` khi `LUMIBASE_ENV=production` (giống `CORS_ALLOWED_ORIGINS`).
+- Declare it in `Bindings` (`env.ts`) and set it per environment in `apps/cms/wrangler.toml` (`[env.staging.vars]` / `[env.production.vars]`).
+- Parse it with the existing `parseAllowedOrigins` (`apps/cms/src/config/cors.ts`, already tested).
+- **Production guard:** validate in `apps/cms/src/config/production.ts` — forbid `*` when `LUMIBASE_ENV=production` (same as `CORS_ALLOWED_ORIGINS`).
 
-**Enforcement 2 tầng:**
+**Two-tier enforcement:**
 
-1. **Backend (nguồn sự thật):** khi lưu `meta.preview.url`, parse origin của template và chặn nếu không thuộc allowlist → `VALIDATION_FAILED`. Ngăn cấu hình xấu được lưu ngay từ đầu.
-2. **Frontend (defense-in-depth):** Studio nhận allowlist (expose qua endpoint config công khai sẵn có, không hardcode) để (a) chỉ render iframe khi origin hợp lệ, (b) khớp với `frame-src` CSP.
+1. **Backend (source of truth):** when saving `meta.preview.url`, parse the template's origin and reject it if it is not in the allowlist → `VALIDATION_FAILED`. This stops a bad configuration from ever being stored.
+2. **Frontend (defense-in-depth):** Studio receives the allowlist (exposed through the existing public config endpoint, never hard-coded) so it can (a) render the iframe only for a valid origin and (b) stay consistent with the `frame-src` CSP.
 
-### 4.2 CSP `frame-src` — **bắt buộc**
+### 4.2 CSP `frame-src` — **required**
 
-`apps/cms/src/middleware/security-headers.ts` hiện đặt `default-src 'none'` và **không có `frame-src`** → mọi iframe remote bị chặn. Phải thêm directive `frame-src` = danh sách allowlist:
+`apps/cms/src/middleware/security-headers.ts` currently sets `default-src 'none'` and has **no `frame-src`** → every remote iframe is blocked. A `frame-src` directive set to the allowlist must be added:
 
 ```ts
 'frame-src': parseAllowedOrigins(env.PREVIEW_ALLOWED_ORIGINS),
 ```
 
-- Hiện `serializeContentSecurityPolicy` là const tĩnh, không đọc `c.env`. Cần thread env vào middleware (chỉ khi build directive).
-- **KHÔNG** đụng `frame-ancestors 'none'` và `X-Frame-Options: DENY` — chúng bảo vệ Studio *khỏi bị* nhúng (chống clickjacking), không liên quan tới việc Studio *đi* nhúng.
-- **Deploy topology:** nếu Studio serve standalone trên Cloudflare Pages (không qua CMS worker — xem `apps/studio/src/lib/api-base.ts`), CSP `frame-src` phải thêm ở phía Pages (`_headers`). Nếu CMS worker serve Studio HTML (đánh dấu `responseType: 'STUDIO_HTML'` qua `admin-path-guard.ts`), có thể áp `frame-src` riêng chỉ cho surface đó.
+- `serializeContentSecurityPolicy` is currently a static const and does not read `c.env`. The env needs threading into the middleware (only for building this directive).
+- Do **NOT** touch `frame-ancestors 'none'` or `X-Frame-Options: DENY` — those protect Studio *from being* embedded (anti-clickjacking) and have nothing to do with Studio *doing* the embedding.
+- **Deploy topology:** if Studio is served standalone on Cloudflare Pages (not through the CMS worker — see `apps/studio/src/lib/api-base.ts`), the `frame-src` CSP must be added on the Pages side (`_headers`). If the CMS worker serves the Studio HTML (marked `responseType: 'STUDIO_HTML'` via `admin-path-guard.ts`), `frame-src` can be applied to that surface alone.
 
-### 4.3 Thuộc tính iframe cứng
+### 4.3 Hardened iframe attributes
 
 ```html
 <iframe
@@ -111,40 +124,40 @@ PREVIEW_ALLOWED_ORIGINS=https://staging.mysite.com,https://mysite.com
   allow="" />
 ```
 
-- `referrerpolicy="no-referrer"` → không rò URL admin (có thể chứa id/token) sang site preview.
-- `sandbox` tối thiểu. `allow-scripts` + `allow-same-origin` chỉ an toàn vì preview origin luôn **khác** origin Studio (đảm bảo bởi allowlist là origin ngoài) — iframe không chọc ngược vào Studio được.
-- `allow=""` tắt camera/mic/geolocation.
-- **Không bao giờ** nhét access token / API key vào URL template — chỉ nội suy field của record.
+- `referrerpolicy="no-referrer"` → the admin URL (which may contain an id or token) never leaks to the preview site.
+- Minimal `sandbox`. `allow-scripts` + `allow-same-origin` are only safe because the preview origin is always **different** from Studio's origin (guaranteed by the allowlist holding external origins) — the iframe cannot reach back into Studio.
+- `allow=""` disables camera/mic/geolocation.
+- **Never** put an access token or API key in the URL template — only interpolate the record's fields.
 
-## 5. UX cấu hình
+## 5. Configuration UX
 
-Trong màn settings collection (`apps/studio/src/modules/data-model/detail.tsx`, thêm tab "Preview" cạnh `display`/`archive`/`raw`), copy pattern từ `display-tab.tsx`:
+In the collection settings screen (`apps/studio/src/modules/data-model/detail.tsx`, adding a "Preview" tab alongside `display`/`archive`/`raw`), copying the pattern from `display-tab.tsx`:
 
-- Toggle **Enable preview**.
-- Ô nhập URL **tái dùng `MustacheTemplateEditor`**: autocomplete field bằng `{{`, live preview URL với sample record.
-- Origin không thuộc allowlist → cảnh báo inline dẫn thẳng cách sửa: *"Origin chưa được phép. Liên hệ operator để thêm vào `PREVIEW_ALLOWED_ORIGINS`."*
-- Chọn khung Responsive / Mobile / Desktop.
+- An **Enable preview** toggle.
+- A URL input that **reuses `MustacheTemplateEditor`**: field autocomplete on `{{`, with a live URL preview against a sample record.
+- An origin outside the allowlist → an inline warning that states the fix directly: *"Origin not allowed yet. Ask your operator to add it to `PREVIEW_ALLOWED_ORIGINS`."*
+- A Responsive / Mobile / Desktop frame selector.
 
-## 6. Phạm vi triển khai
+## 6. Implementation scope
 
-**Giai đoạn 1 (MVP):**
+**Stage 1 (MVP):**
 
 1. `packages/shared`: `previewConfigSchema`.
-2. `apps/cms`: env `PREVIEW_ALLOWED_ORIGINS` (`env.ts` + `wrangler.toml`) · validate origin khi lưu `meta.preview.url` · production guard · expose allowlist cho Studio · `frame-src` CSP trong `security-headers.ts`.
-3. `apps/studio/data-model`: tab cấu hình Preview (tái dùng Mustache editor).
-4. `apps/studio/content`: tab Preview trong `item-detail.tsx` + component iframe (sandbox + debounce reload).
-5. Docs + Setup Impact Registry (`.kiro/specs/admin-setup-wizard/setup-impact.md`) theo Definition of Done.
+2. `apps/cms`: the `PREVIEW_ALLOWED_ORIGINS` env (`env.ts` + `wrangler.toml`) · origin validation when saving `meta.preview.url` · the production guard · exposing the allowlist to Studio · `frame-src` CSP in `security-headers.ts`.
+3. `apps/studio/data-model`: the Preview configuration tab (reusing the Mustache editor).
+4. `apps/studio/content`: the Preview tab in `item-detail.tsx` plus the iframe component (sandbox + debounced reload).
+5. Docs + the Setup Impact Registry (`.kiro/specs/admin-setup-wizard/setup-impact.md`) per the Definition of Done.
 
-**Giai đoạn 2 (tùy chọn):**
+**Stage 2 (optional):**
 
-- **Draft preview token:** preview secret ngắn hạn, read-only, do CMS phát cho phiên preview (KHÔNG phải session token admin) để site FE render bản draft — giống preview mode của Directus/Next.js.
-- **postMessage:** đồng bộ scroll / hot-reload không cần reload cả iframe.
+- **Draft preview token:** a short-lived, read-only preview secret issued by the CMS for a preview session (NOT the admin session token) so the frontend can render the draft version — like Directus'/Next.js' preview mode.
+- **postMessage:** sync scroll / hot-reload without reloading the whole iframe.
 
-## 7. So với Directus
+## 7. Compared with Directus
 
-| | Directus | LumiBase (đề xuất) |
+| | Directus | LumiBase (proposed) |
 |---|---|---|
-| Nơi lưu | `collections.preview_url` (meta) | `collections.meta.preview.url` |
-| Template | `{{ field }}` | Mustache `{{ field }}` (tái dùng display template) |
-| Chặn origin | (không có allowlist env) | `PREVIEW_ALLOWED_ORIGINS` + `frame-src` CSP + validate lúc lưu |
-| Draft | preview mode + token | Giai đoạn 2 |
+| Storage | `collections.preview_url` (meta) | `collections.meta.preview.url` |
+| Template | `{{ field }}` | Mustache `{{ field }}` (reusing the display template) |
+| Origin blocking | (no env allowlist) | `PREVIEW_ALLOWED_ORIGINS` + `frame-src` CSP + validation on save |
+| Draft | preview mode + token | Stage 2 |

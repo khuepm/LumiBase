@@ -1,3 +1,13 @@
+---
+version: 2
+lastUpdated: 2026-07-28T10:23:38.159Z
+sourceLang: en
+contentHash: 6324a8666929b9d6
+codeVerified: 2026-07-28T10:23:38.159Z
+codeVerifiedHash: 6324a8666929b9d6
+codeVerifiedClaims: 4
+---
+
 # Build with Gemini XPRIZE — Devpost Submission Draft (LumiBase)
 
 > Draft prepared 2026-06-13. Category: **Small Business Services**.
@@ -65,6 +75,10 @@ Building a business this way means the founding team stays tiny while the operat
 
 `[TODO — must be real:]`
 - Pricing: open-source MIT core (free) · Hobby $29/mo managed hosting · Enterprise $99/mo (SSO, dedicated support)
+- ⚠️ `[TODO]` **Verify the license before submitting.** This draft says MIT in two
+  places, but the repo ships Apache-2.0 (root `LICENSE` + every published
+  `package.json`). Judges verify the repo, so submitting the wrong license is a
+  factual error against evidence they will check.
 - Stripe dashboard export / bank statement / simple P&L (template: https://docs.google.com/spreadsheets/d/1pAJrEMo7_QID6V62sA4C8XwGBHkxDTVX3wtYNE2fulI/edit)
 - Corporate ID if available
 

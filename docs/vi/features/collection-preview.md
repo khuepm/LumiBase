@@ -3,6 +3,9 @@ version: 1
 lastUpdated: 2026-07-07T12:01:03.930Z
 sourceLang: vi
 contentHash: da33d4283b788ba9
+codeVerified: 2026-07-27T23:52:33.645Z
+codeVerifiedHash: da33d4283b788ba9
+codeVerifiedClaims: 20
 ---
 
 # Collection Preview (iframe)

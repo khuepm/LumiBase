@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:15:55.058Z
+sourceLang: vi
+contentHash: 7753c4091c7b68a7
+codeVerified: 2026-07-25T08:15:55.058Z
+codeVerifiedHash: 7753c4091c7b68a7
+codeVerifiedClaims: 8
+---
+
 # Extension Marketplace UI
 
 LumiBase Studio đi kèm giao diện **Extension Marketplace** trực quan giúp nhà quản trị tìm kiếm, xem chi tiết và cài đặt các tiện ích mở rộng (extensions) nhằm nâng cao sức mạnh cho hệ thống CMS.

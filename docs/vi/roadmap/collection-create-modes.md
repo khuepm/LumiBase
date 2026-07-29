@@ -3,6 +3,9 @@ version: 1
 lastUpdated: 2026-07-03T18:40:47.776Z
 sourceLang: vi
 contentHash: a3533e728f9d8446
+codeVerified: 2026-07-25T08:17:41.283Z
+codeVerifiedHash: a3533e728f9d8446
+codeVerifiedClaims: 10
 ---
 
 # Collection Create Modes — Roadmap Overview

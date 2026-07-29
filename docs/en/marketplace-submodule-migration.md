@@ -1,12 +1,27 @@
+---
+version: 1
+lastUpdated: 2026-07-28T10:18:03.865Z
+sourceLang: en
+contentHash: 5acaa937f36c1fe7
+---
+
 # Moving the marketplace app to a submodule
 
-The public marketplace site (`apps/marketplace`) is being extracted into its own
+> **Status: applied.** `.gitmodules` already carries the `apps/marketplace`
+> submodule entry. This page is kept as the runbook of record — for auditing what
+> the move did, or for repeating the same extraction on another app.
+
+The public marketplace site (`apps/marketplace`) was extracted into its own
 repository and re-attached to this monorepo as a git submodule:
 
 - **Target repo:** `git@github.com:lumibase-ai/marketplace.git`
-- **Mount path:** `apps/marketplace` (unchanged — the `@lumibase/marketplace`
-  workspace package keeps its path, so `pnpm-workspace.yaml`'s `apps/*` glob
-  still picks it up once the submodule is checked out).
+- **Mount path:** `apps/marketplace` (unchanged).
+- **Workspace membership:** the submodule is deliberately **excluded** from the
+  pnpm workspace — `pnpm-workspace.yaml` carries `- "!apps/marketplace"` after
+  the `apps/*` glob. It builds independently with its own dependencies, so the
+  root `pnpm-lock.yaml` stays free of them and a frozen install here never
+  depends on the submodule being checked out. CI installs and builds it
+  standalone inside `apps/marketplace`.
 
 ## Why this isn't done automatically
 
@@ -67,7 +82,7 @@ The script stops before touching the monorepo, so a rejected push leaves
 
 ## After the move
 
-- `.gitmodules` will list **both** `extensions` and `apps/marketplace`.
+- `.gitmodules` lists `extensions`, `apps/marketplace`, and `apps/enterprise`.
 - Contributors: `git submodule update --init --recursive` after pulling.
 - CI: enable submodule checkout (`actions/checkout` with `submodules: recursive`).
 - Bumping the app = committing a new submodule SHA in the monorepo (or a

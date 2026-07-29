@@ -55,12 +55,28 @@ jobs:
       - name: Run detection (plan mode)
         run: node scripts/docs-i18n/sync.mjs
 
+      # Verify the docs' claims about the repo still hold. `sync.mjs` above only
+      # compares hashes between the en/vi pair, which cannot catch both sides
+      # being wrong together — a deleted endpoint documented identically in both
+      # languages reads as perfectly "in sync".
+      #
+      # Report-only for now (`|| true`): the check is being introduced against a
+      # tree that already carries findings, and failing here would block PRs that
+      # never touched the offending docs. Drop the `|| true` once the backlog is
+      # clear so a newly-stale reference cannot land.
+      - name: Verify code references (report only)
+        run: node scripts/docs-i18n/verify-code-refs.mjs || true
+
+      - name: Write code-reference report
+        run: node scripts/docs-i18n/verify-code-refs.mjs --json > docs/.i18n/code-refs-report.json || true
+
       - name: Upload sync report
         uses: actions/upload-artifact@v7
         with:
           name: docs-i18n-report
           path: |
             docs/.i18n/last-report.json
+            docs/.i18n/code-refs-report.json
             docs/i18n-sync-log.md
           if-no-files-found: warn
 

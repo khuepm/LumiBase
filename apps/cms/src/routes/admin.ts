@@ -75,7 +75,7 @@ async function hasSiteAdminAccess(c: Context<AppEnv>): Promise<boolean> {
   const ctx: MagicContext = {
     userId,
     siteId,
-    roleId: null,
+    roleId: auth?.roleId ?? null,
     user: auth
       ? {
           id: userId,

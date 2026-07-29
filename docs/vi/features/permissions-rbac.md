@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 6
+lastUpdated: 2026-07-29T00:18:05.194Z
 sourceLang: vi
-contentHash: ad255fa4351bf7f9
+contentHash: b42656099b8c2f3b
+codeVerified: 2026-07-29T00:18:05.194Z
+codeVerifiedHash: b42656099b8c2f3b
+codeVerifiedClaims: 26
 ---
 
 # Permissions, Roles & Policies
@@ -18,16 +21,77 @@ contentHash: ad255fa4351bf7f9
 ## 1. Mô hình
 
 ```
-User ──┬─► UserPolicy (direct attach, override)
-       └─► UserSite (role per site)
-Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per (collection, action)
+Realm (staff / subscriber / public / integration)   ← biên giới xác thực
+  └─ Site (tenant; mọi bảng access đều scope theo site_id)
+       └─ User ──┬─► UserPolicy (direct attach, override)
+                 └─► UserSite (role per site)
+          Role ──► RolePolicy (priority) ──► Policy ──► Permission[] per (collection, action)
+                                                          └─ fields / row rule / validation / presets
 ```
 
+- **Realm**: principal đi vào qua biên giới xác thực nào. Staff và subscriber tách nhau bằng role + token audience (ADR-011); `public` là realm ẩn danh (§1.1); integration xác thực bằng API key.
 - **Role**: tập hợp cố định gán cho user (per site).
 - **Policy**: đơn vị có thể tái sử dụng, gắn vào nhiều role/user, có thứ tự ưu tiên (`priority` thấp = chạy trước, sau cao override).
 - **Permission**: rule cụ thể `(collection, action)` với `permissions`, `validation`, `presets`, `fields`.
 
 > Ghi chú thiết kế 2026-06-03: Directus v11 đã chuyển `admin_access`, `app_access`, `enforce_tfa`, `ip_access` khỏi role và đặt trên policy. LumiBase hiện còn `roles.adminAccess/appAccess`; nên coi đây là compatibility layer và migrate về policy flags để role chỉ còn là grouping. Strategy chi tiết xem [Migration role flags sang policy flags](./role-policy-flag-migration.md).
+
+> `roles.parentId` có trong schema nhưng permission evaluator **không** đọc nó — **không có role inheritance**. Role con không nhận policy của role cha. Coi cột này là metadata grouping cho tới khi evaluator được thay đổi.
+
+### 1.1. Realm ngoài staff: `public` và `subscriber`
+
+Có hai realm least-privilege dành cho người không phải staff. Cả hai đều bắt đầu **rỗng** — không cấp gì cho tới khi operator chỉ định.
+
+| | `public` | `subscriber` |
+|---|---|---|
+| Là ai | bất kỳ ai, không có credential | đã đăng ký + đăng nhập trên frontend của bạn |
+| Tồn tại mặc định | ❌ opt-in theo từng site | ✅ ngay lần đăng ký đầu tiên |
+| Action cấp được | chỉ `read` | `read`/`create`/`update`/`delete` |
+| Row scope | published-only | published-only, own-rows-only |
+| Studio | không bao giờ | không bao giờ (`appAccess: false`) |
+
+**Resolve ẩn danh.** Khi public access được bật, request không credential sẽ resolve về role `public` của site chứ **không** bỏ qua authorization — nên row filter và field mask vẫn còn hiệu lực. Hai điều kiện gate nó, cả hai đều load-bearing:
+
+1. site phải có role `public` (việc tạo role này *chính là* bật realm), và
+2. request phải là `GET`/`HEAD` trên prefix content trong allowlist (`/items`, `/search`, `/media`, `/files`).
+
+`/graphql` bị loại trừ có chủ đích: operation của nó đi qua POST nên quy tắc read-method không phủ được. Muốn mở cần validate operation read-only song song với cost limiter hiện có.
+
+**Vì sao `public` chỉ đọc.** Một write grant tổng quát sẽ trao cho mọi caller ẩn danh một đường ghi không giới hạn. Bề mặt ghi công khai (form liên hệ, comment ẩn danh) cần câu chuyện throttle/captcha riêng, đặt sau một endpoint chuyên dụng — không phải một permission row.
+
+**Guard cứng.** `adminAccess`/`appAccess` trên role và policy `public` bị ghim tắt bằng check constraint (migration `0012`) — cờ elevation ở đó sẽ là một admin bypass không cần xác thực. Route guard từ chối cùng các thao tác đó với 4xx đọc được. Policy do operator tự attach vào role `public` được screen tại điểm attach, vì table check không nhìn được qua join `role_policies`. Editor permission của policy chung cũng được screen theo giới hạn read-only, bởi grant thêm ở đó rơi vào đúng cùng một compiled bundle.
+
+**Caching.** Các principal ẩn danh dùng chung một compiled bundle cho mỗi site (cache key `role:{id}`), và bản thân lookup role cũng được cache kèm cả kết quả âm — đường ẩn danh là đường có lưu lượng cao nhất.
+
+**`ctx.roleId` là đường duy nhất của realm ẩn danh.** `PermissionService.compile()` resolve role từ bốn nguồn: `user_sites`, `user_roles`, `api_key_roles` và `ctx.roleId`. Một principal ẩn danh không có user row cũng không có API-key row, nên ba nguồn đầu rỗng theo định nghĩa — `ctx.roleId` là nguồn duy nhất còn lại. `withAuth` set nó thành id của role `public`; mọi call site dựng `MagicContext` **phải** forward `auth.roleId` thay vì viết literal `null`, nếu không toàn bộ grant public compile ra một policy set rỗng và tính năng âm thầm không làm gì. Lưu ý `ctx.user.roles` **không** phải phương án dự phòng: `compile()` ghi đè `ctx.user` bằng snapshot đọc từ table users, và snapshot đó là null khi không có `userId`. Một source-scan test chặn literal `roleId: null` trong source production, với allowlist cho các context thật sự không có principal.
+
+**API** (`/api/v1/access/grants`, chỉ site-admin):
+
+```
+GET    /access/grants                             # collections + giới hạn & grant của cả hai realm
+POST   /access/grants/public/enable               # provision realm
+POST   /access/grants/public/disable              # tháo bỏ (xoá luôn mọi grant của nó)
+POST   /access/grants/:realm                      # { collection, action?, publishedOnly?, ownOnly?, fields? }
+DELETE /access/grants/:realm/:collection/:action
+```
+
+`publishedOnly` mặc định **bật** cho `read` và **tắt** cho write. Hai scope có thể kết hợp, compose thành `_and`. Studio hiển thị toàn bộ ở **Access control → Public & subscribers**.
+
+`POST /users/subscriber-access` giữ nguyên contract published-only-read ban đầu khi bỏ qua `action`.
+
+**Cách grant bị từ chối.** Mọi refusal của `POST /access/grants/:realm` đều là lỗi về *request body*, nên đều trả **400** — retry y nguyên sẽ thất bại giống hệt, đó là điều 400 nói và 409 thì không:
+
+| Code | Nghĩa |
+|---|---|
+| `COLLECTION_REQUIRED` | thiếu `collection` |
+| `ACTION_NOT_ALLOWED` | realm không cho phép action đó (ví dụ `create` trên `public`) |
+| `ROW_SCOPE_NOT_SUPPORTED` | realm không diễn đạt được row scope đã yêu cầu (`ownOnly` trên `public`) |
+
+**Phải bật trước khi cấp.** `POST /access/grants/public` trả **409** `PUBLIC_ACCESS_DISABLED` khi site chưa bật public access — hãy gọi `POST /access/grants/public/enable` trước. Trước đây một grant tự provision realm như một tác dụng phụ, khiến `/disable` không sticky: operator đã cố ý đóng truy cập ẩn danh vẫn có thể bị một lệnh grant sau đó mở lại im lặng. Bật realm ẩn danh là một quyết định xứng đáng có hành động riêng và được audit (`public_access_enabled`). Chỉ realm `public` bị gate; `subscriber` được provision ngay lần đăng ký đầu và không operator-togglable (`togglable: false`), nên không có bước enable nào để đòi. Picker Studio vốn đã render realm togglable đang tắt ở chế độ read-only, nên phía server mới là bên lệch nhịp.
+
+Riêng `COLLECTION_NOT_GRANTABLE` trả **404**: `collection` phải tồn tại trên site và không phải collection system hay hidden — đúng tập mà `GET /access/grants` liệt kê. Không có kiểm tra này, một cú đánh máy được nhận với 200 rồi ghi một permission row không bao giờ khớp được gì: không hiện trong picker và âm thầm vô tác dụng.
+
+**Role `public` không xoá được qua editor role.** `DELETE /roles/:id` từ chối nó với **409** `PUBLIC_ROLE_NOT_DELETABLE`. "Public access đang bật" không phải một cờ — nó *chính là* sự tồn tại của role `public`, nên xoá thẳng ở đây sẽ tắt truy cập ẩn danh nhưng bỏ qua hai việc mà `POST /access/grants/public/disable` làm: dọn realm policy cùng các permission row của nó (để lần enable sau bắt đầu từ trạng thái sạch, không âm thầm phục hồi grant mà operator đã quên), và ghi audit event `public_access_disabled`.
 
 ## 2. Permission record (JSON DSL)
 
@@ -109,6 +173,17 @@ Khuyến nghị mới: không âm thầm OR/union khi attach policy qua Studio. 
 - Warning nếu chỉ mở rộng field hoặc OR thêm rule có điều kiện; admin phải xác nhận và audit.
 - DB nên có unique `(policyId, collection, action)` để một policy không có nhiều permission rows trùng key.
 
+### 6.1. Publishable API keys
+
+Một API key có thể được mint dưới dạng **publishable** (`lbk_pub_…`) để nhúng vào browser bundle hoặc mobile app, khác với key secret `lbk_…` giữ ở phía server.
+
+Publishable key **không phải secret**. Bất cứ thứ gì ship xuống client đều trích xuất được, nên posture đúng duy nhất là scope nó y như thể nó đã công khai. Nó mua được gì so với việc phục vụ cùng dữ liệu đó hoàn toàn ẩn danh: quota rate-limit theo từng key (limiter đã key theo `k:{apiKeyId}`), revoke và rotate mà không cần redeploy, audit attribution, và scope theo key (staging vs production). Nó **không** mua được: confidentiality. Nếu để lộ mà thấy đau thì keep một secret key ở server và proxy qua backend của bạn.
+
+- Prefix `lbk_pub_` là source of truth — derive từ token nên không thể lệch khỏi metadata flag, và secret scanner có thể báo động với key `lbk_` bị lộ trong khi im lặng với key publishable. Rotation giữ nguyên tính chất này.
+- **Origin allowlist** — `metadata.allowedOrigins`, sửa trực tiếp qua `PATCH /api-keys/:id/allowed-origins`. Rỗng = không ràng buộc. Studio cho sửa ngay trên key đang chạy tại **Access control → API keys**, chọn key rồi dùng ô *Allowed origins* trong panel chi tiết — siết chặt danh sách hoặc sửa một origin gõ sai không cần rotate token và redeploy thứ đang ship key đó. Lưu ô rỗng sẽ hỏi xác nhận, vì đó là mở rộng quyền truy cập.
+- Enforcement chỉ áp cho publishable key (secret key dùng server-to-server, nơi không có `Origin`). `Origin`/`Referer` không khớp → `403 ORIGIN_NOT_ALLOWED` và được audit; origin **vắng mặt** thì cho qua. Đây là chủ đích: control này chặn một *website khác* dùng key của bạn trong browser, tức đúng failure mode thực tế. Nó không phải phòng tuyến chống `curl` — thứ có thể set bất kỳ `Origin` nào — nên từ chối request thiếu origin chỉ làm hỏng caller native/server hợp lệ mà không thêm bảo mật.
+- `adminAccess`/`appAccess` không thể attach vào publishable key (`PUBLISHABLE_KEY_ELEVATION`), và **cả hai nửa** của một role binding đều được screen. Điều này quan trọng vì `PermissionService` cấp admin khi **hoặc** cột `roles.admin_access` **hoặc** `admin_access` của một policy đang active được set — nên chỉ soi policy là chưa đủ: một role gắn cờ trên cột của chính nó, không kèm policy elevate nào (hoặc không policy nào cả), sẽ lọt qua screen rồi cấp admin ở thời điểm request.
+
 ## 7. API
 
 - `GET /permissions/me` — trả ma trận `{collection: { create, read, update, delete, share, fields, presets }}` để Studio render UI (ẩn nút, disable field).
@@ -117,6 +192,7 @@ Khuyến nghị mới: không âm thầm OR/union khi attach policy qua Studio. 
 ## 8. UI Studio
 
 - Module **Access Control**:
+  - Page Public & subscribers: bật/tắt truy cập ẩn danh và tick chọn grant `collection × action` cho từng realm ngoài staff. Các giới hạn được đọc từ `GET /access/grants` thay vì hard-code phía client, nên việc siết chặt ở server không thể bị một giả định client cũ phản bác. Realm togglable đang tắt sẽ render read-only, nên cú click checkbox đầu tiên không thể âm thầm bật truy cập ẩn danh.
   - Page Roles: list + tạo + assign users + đính kèm policies.
   - Page Policies: list + JSON editor + GUI builder (form per row).
   - Page Permission Matrix: bảng grid `collection × action`, click ô để mở chi tiết (fields, rules, presets, validation).
@@ -140,3 +216,9 @@ Khuyến nghị mới: không âm thầm OR/union khi attach policy qua Studio. 
 - Mọi denial log vào `activity` với action `permission_denied` + lý do (rule path).
 
 ## 11. Tasks: Phase MVP-C, C2.
+
+## 12. Compliance & quyền của người dùng
+
+Bộ máy RBAC/audit này là nền cho một số nghĩa vụ pháp lý (access control,
+provenance, phát hiện vi phạm). Về cách nó map sang quyền của chủ thể dữ liệu
+và những chỗ còn thiếu, xem [Compliance — gap analysis](../compliance/gap-analysis.md).

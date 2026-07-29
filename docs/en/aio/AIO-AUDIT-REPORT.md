@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-07-28T11:52:57.096Z
+sourceLang: en
+contentHash: 3a333996415f2fab
+---
+
 # AIO Audit Report: LumiBase
 
 **Audit Date:** 2026-06-10
@@ -8,6 +15,21 @@
 
 ---
 
+> **📌 HISTORICAL SNAPSHOT — do not read the findings below as current state.**
+> This report describes lumibase.dev as it was on **2026-06-10**. Much of it has
+> since been fixed. Verified against `apps/landing` at the time of this note:
+> JSON-LD is now present on the layout, homepage and pricing pages (C2, H3, L1);
+> `public/llms.txt` exists (H1); `/pricing` is in `sitemap.ts` (H4); the
+> "Join thousands of developers" claim is gone (H6); `metadataBase`/canonical are
+> set (M5); `opengraph-image.tsx` generates the OG image (H2); and a `LICENSE`
+> file is committed at the repo root (M3 — though see the license-identity
+> mismatch noted in [`README.md`](./README.md), since the site copy here says MIT
+> while the committed licence is Apache-2.0).
+> **Still open:** C1 (the AI-crawler blocks are injected by Cloudflare's managed
+> robots.txt, not by the repo file) and C3 (`apps/docs` is still a Vite SPA).
+> For live status, read [`aio/README.md`](./README.md) — this file is kept as the
+> baseline the scores were measured against.
+>
 > **⚠️ CORRECTION (2026-06-10, verified by curl raw HTML):** Two findings in this report are WRONG due to a WebFetch tool limitation (it strips `<head>` content):
 > - **C4 "No meta descriptions" is FALSE** — all pages have meta descriptions.
 > - **H2 "Missing OG/Twitter tags" is MOSTLY FALSE** — OG and Twitter Card tags exist; only `og:image` was missing.

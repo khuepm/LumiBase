@@ -204,11 +204,17 @@ export interface Bindings {
  */
 export interface AuthPrincipal {
   /** Principal kind. Defaults to `user` when omitted for legacy callers. */
-  type?: 'user' | 'api_key';
+  type?: 'user' | 'api_key' | 'anonymous';
   /** Users.external_id (resolved from CF Access or OAuth). */
   externalId?: string;
   /** Internal users.id in PostgreSQL database. */
   userId?: string;
+  /**
+   * Role bound directly to the principal rather than through a membership.
+   * Set for `anonymous` principals, which resolve to the site's `public`
+   * role — `PermissionService` reads it as `ctx.roleId`.
+   */
+  roleId?: string;
   /** Internal api_keys.id for API-key principals. */
   apiKeyId?: string;
   /** Audit-safe API key metadata; never contains plaintext token or token hash. */

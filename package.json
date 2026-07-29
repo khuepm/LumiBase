@@ -30,6 +30,8 @@
     "docs:i18n:detect": "node scripts/docs-i18n/sync.mjs",
     "docs:i18n:preserve": "node scripts/docs-i18n/sync.mjs --preserve-only",
     "docs:i18n:sync": "node scripts/docs-i18n/sync.mjs --apply",
+    "docs:i18n:verify": "node scripts/docs-i18n/verify-code-refs.mjs",
+    "docs:i18n:stamp": "node scripts/docs-i18n/stamp-pair.mjs",
     "studio:dev": "pnpm --filter @lumibase/studio dev",
     "cms:dev": "pnpm --filter @lumibase/cms dev",
     "release:check": "node scripts/check-release-env.mjs --env production --config apps/cms/wrangler.toml",

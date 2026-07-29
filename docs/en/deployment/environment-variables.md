@@ -1,4 +1,16 @@
+---
+version: 2
+lastUpdated: 2026-07-28T10:30:25.628Z
+sourceLang: en
+contentHash: 9d27520c67af75a0
+codeVerified: 2026-07-28T10:30:25.628Z
+codeVerifiedHash: 9d27520c67af75a0
+codeVerifiedClaims: 60
+---
+
 # Environment Variables Reference
+
+<!-- verify-code-refs: planned LUMIBASE_REALTIME_ENABLED -->
 
 > **For AI agents:** All required variables must be set before starting the CMS API. Missing required variables will cause startup to fail with an explicit error message.
 
@@ -14,13 +26,16 @@ This page documents every environment variable and Cloudflare binding used by Lu
 | `LUMIBASE_RUNTIME` | Docker only | `cloudflare` | `docker` for Node.js/Docker; Cloudflare Workers infers from bindings |
 | `JWT_SECRET` | ✓ | — | Secret for signing/verifying application JWTs. Min 32 chars. **For Cloudflare production, set with `wrangler secret put JWT_SECRET --env production`; never commit or place in `[env.production.vars]`.** |
 | `LUMIBASE_DEV_AUTH` | Local dev only | `false` | Set to `true` to bypass Logto auth in local dev. **Never enable in production; `pnpm release:check` fails if production resolves to `true`.** |
-| `LUMIBASE_REALTIME_ENABLED` | ✗ | `true` | Set to `false` to disable WebSocket at deployment level |
-| `LUMIBASE_ADMIN_PATH` | ✗ | (random) | Custom path for Studio admin panel (security through obscurity) |
+| `LUMIBASE_REALTIME_ENABLED` | ✗ | — | **Not implemented.** Nothing reads this yet; setting it has no effect. Tracked as the "explicit enablement" goal in [realtime implementation](../architecture/realtime-websocket-implementation.md). |
 | `VITE_LUMIBASE_ALLOW_ADMIN_PATH_REDIRECT` | Setup/debug only | `false` | Client-side opt-in that allows convenience redirects to the private admin path. Keep unset in production except for a temporary controlled setup/debug window. |
 
-The admin path is private operational state. Do not expose it through `VITE_*`
-environment variables or client build metadata, and do not automatically
-redirect public/setup routes to it in production. See
+The admin path is **not** configured by an environment variable. It is chosen during
+the Setup Wizard and stored in the database, so it can be rotated without a
+redeploy — and so it never sits in a build artifact.
+
+It is private operational state. Do not expose it through `VITE_*` environment
+variables or client build metadata, and do not automatically redirect
+public/setup routes to it in production. See
 [Private admin path](./private-admin-path.md).
 
 ---
@@ -79,7 +94,7 @@ For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `MEILISEARCH_URL` | If search enabled | MeiliSearch instance URL |
+| `MEILISEARCH_HOST` | If search enabled | MeiliSearch instance URL, e.g. `http://meilisearch:7700` |
 | `MEILISEARCH_API_KEY` | If search enabled | MeiliSearch master or search API key |
 
 ---

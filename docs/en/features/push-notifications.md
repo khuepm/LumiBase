@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T10:26:33.742Z
+sourceLang: en
+contentHash: 015a30205d060b97
+codeVerified: 2026-07-28T10:26:33.742Z
+codeVerifiedHash: 015a30205d060b97
+codeVerifiedClaims: 28
+---
+
 # Push Notifications
 
 LumiBase pushes operational events to Studio operators the moment they happen,
