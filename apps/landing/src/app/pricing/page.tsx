@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import PricingCard from "@/components/PricingCard";
+import DotField from "@/components/DotField";
 import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
 import { Zap, Shield, Fingerprint, GitBranch, ScrollText, Headphones } from "lucide-react";
 
@@ -84,7 +85,25 @@ export default function PricingPage() {
 
       {/* Hero */}
       <section className="relative overflow-hidden border-b border-ink-700 px-6 py-16 md:py-24">
-        <div className="absolute inset-0 -z-10 bg-grid mask-radial opacity-50" />
+        {/* Same halftone motif as the home page — the pricing hero should read as
+            the same product, not a different site. */}
+        <DotField
+          frequency={2}
+          speed={2}
+          cellSize={24}
+          gamma={5}
+          paletteBias={-2}
+          style={{
+            zIndex: -10,
+            opacity: 0.7,
+            // Cleared through the middle so the headline and lede sit on plain
+            // near-black; the field only frames them.
+            maskImage:
+              "radial-gradient(ellipse 62% 78% at 50% 48%, transparent 30%, #000 85%)",
+            WebkitMaskImage:
+              "radial-gradient(ellipse 62% 78% at 50% 48%, transparent 30%, #000 85%)",
+          }}
+        />
         <Reveal className="mx-auto max-w-3xl text-center">
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
             Simple, transparent pricing

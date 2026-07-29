@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { EclipseMark } from "@/components/EclipseMark";
+import DotField from "@/components/DotField";
 
 const columns = [
   {
@@ -36,8 +37,21 @@ const columns = [
 
 export default function Footer() {
   return (
-    <footer className="mx-auto w-full max-w-[1200px] px-5 pb-14 pt-[100px] md:pt-[140px]">
-      <div className="flex flex-col justify-between gap-12 md:flex-row">
+    <footer className="relative mx-auto w-full max-w-[1200px] overflow-hidden px-5 pb-14 pt-[100px] md:pt-[140px]">
+      {/* The motif signs off the page — faint, bottom-weighted, behind everything. */}
+      <DotField
+        frequency={2}
+        speed={2}
+        cellSize={30}
+        gamma={8}
+        paletteBias={-4}
+        style={{
+          opacity: 0.5,
+          maskImage: "linear-gradient(180deg, transparent 8%, #000 100%)",
+          WebkitMaskImage: "linear-gradient(180deg, transparent 8%, #000 100%)",
+        }}
+      />
+      <div className="relative flex flex-col justify-between gap-12 md:flex-row">
         {/* Brand */}
         <div className="max-w-[280px]">
           <div className="mb-3.5 flex items-center gap-2.5">
@@ -107,7 +121,7 @@ export default function Footer() {
       </div>
 
       <div
-        className="mt-16 flex flex-col items-center justify-between gap-3 pt-6 sm:flex-row"
+        className="relative mt-16 flex flex-col items-center justify-between gap-3 pt-6 sm:flex-row"
         style={{
           borderTop: "1px dashed var(--color-dashline)",
           font: "500 11px/1 var(--font-mono-stack, monospace)",

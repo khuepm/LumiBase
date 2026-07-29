@@ -17,6 +17,8 @@ import { EclipsePhase } from "@/components/EclipseMark";
 import EclipseStage from "@/components/scroll/EclipseStage";
 import Scene from "@/components/scroll/Scene";
 import WipeTitle from "@/components/scroll/WipeTitle";
+import DotBand from "@/components/DotBand";
+import DotField from "@/components/DotField";
 import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
 
 const softwareApplicationJsonLd = {
@@ -259,8 +261,21 @@ export default function Home() {
 
       <Hero />
 
-      {sections.map((s) => (
-        <ProductSection key={s.id} {...s} />
+      {sections.map((s, i) => (
+        <div key={s.id}>
+          <ProductSection {...s} />
+          {/* Halftone interlude after the second pillar */}
+          {i === 1 && (
+            <DotBand
+              items={[
+                "DECLARE INTENT",
+                "RECONCILE CONTINUOUSLY",
+                "EARN AUTONOMY",
+                "KEEP THE VETO",
+              ]}
+            />
+          )}
+        </div>
       ))}
 
       {/* ── FAQ ────────────────────────────────────────────── */}
@@ -303,6 +318,19 @@ export default function Home() {
             boxShadow: "var(--ring-glass-strong)",
           }}
         >
+          {/* Halftone texture inside the card, fading out toward the copy so the
+              headline keeps its contrast. */}
+          <DotField
+            frequency={2}
+            speed={2}
+            cellSize={20}
+            gamma={5}
+            paletteBias={-1}
+            style={{
+              maskImage: "linear-gradient(100deg, transparent 18%, #000 78%)",
+              WebkitMaskImage: "linear-gradient(100deg, transparent 18%, #000 78%)",
+            }}
+          />
           <div
             className="pointer-events-none absolute -right-10 -top-16 opacity-70"
             aria-hidden
