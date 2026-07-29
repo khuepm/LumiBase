@@ -29,9 +29,9 @@ export function EclipseMark({ size = 24 }: { size?: number }) {
           <stop offset="100%" stopColor="#29d8e6" stopOpacity="0" />
         </radialGradient>
         <radialGradient id="em-moon" cx="38%" cy="34%" r="80%">
-          <stop offset="0%" stopColor="#251a30" />
-          <stop offset="60%" stopColor="#120b1c" />
-          <stop offset="100%" stopColor="#0b0713" />
+          <stop offset="0%" stopColor="#1b1926" />
+          <stop offset="60%" stopColor="#0d0c14" />
+          <stop offset="100%" stopColor="#07060c" />
         </radialGradient>
       </defs>
       <circle cx="24" cy="24" r="23" fill="url(#em-corona)" />
@@ -46,7 +46,7 @@ export function EclipseMark({ size = 24 }: { size?: number }) {
         <path d="M 5.2 0 C 4.2 -1.7 1.4 -2 -2.4 -1.5 L -4.4 0 L -2.4 1.5 C 1.4 2 4.2 1.7 5.2 0 Z" fill="#f4ecff" />
         <path d="M -1.4 -1.4 L -3.4 -3 L -4.2 -0.8 Z" fill="#c4a8ff" />
         <path d="M -1.4 1.4 L -3.4 3 L -4.2 0.8 Z" fill="#c4a8ff" />
-        <circle cx="1.6" cy="0" r="0.7" fill="#0b0713" />
+        <circle cx="1.6" cy="0" r="0.7" fill="#07060c" />
       </g>
     </svg>
   );
@@ -90,7 +90,7 @@ export function EclipsePhase({ phase, size = 72 }: { phase: 0 | 1 | 2 | 3; size?
       <circle cx="36" cy="36" r="20" stroke="#f4ecff" strokeWidth="0.8" opacity="0.7" />
       {/* Moon bite, clipped to the sun */}
       <g clipPath={`url(#${id}-c)`}>
-        <circle cx={36 + dx} cy={36 - dx * 0.35} r="19.4" fill="#0b0713" />
+        <circle cx={36 + dx} cy={36 - dx * 0.35} r="19.4" fill="#07060c" />
       </g>
       {total && (
         <>

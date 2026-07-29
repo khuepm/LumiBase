@@ -1,20 +1,29 @@
+import GlitterWarp from "@/components/GlitterWarp";
+
 /**
- * Animated cosmic backdrop — a fixed layer of slowly drifting aurora clouds,
- * a very slow rotating aurora sheen, and an occasional shooting star. Pure
- * CSS (see globals.css); no client JS. Sits behind all content and the
- * eclipse stage. Freezes gracefully under prefers-reduced-motion.
+ * The page backdrop. Deliberately restrained: a near-black field, one warp
+ * starfield doing all the work, and a vignette that pulls focus to the centre
+ * where the eclipse sits. The previous version washed the page in four
+ * competing colour blobs plus a rotating aurora — the colour now comes from
+ * the starfield's own palette and the eclipse corona, not from the floor.
  */
 export default function CosmicBackground() {
   return (
     <div className="cosmic-bg" aria-hidden>
-      <div className="cosmic-aurora" />
-      <div className="cosmic-blob cosmic-blob-1" />
-      <div className="cosmic-blob cosmic-blob-2" />
-      <div className="cosmic-blob cosmic-blob-3" />
-      <div className="cosmic-blob cosmic-blob-4" />
-      <div className="cosmic-blob cosmic-blob-5" />
-      <div className="cosmic-blob cosmic-blob-6" />
-      <div className="cosmic-shooting-star" />
+      <GlitterWarp
+        particleCount={440}
+        color1="#ffffff"
+        color2="#b06bff"
+        color3="#29d8e6"
+        speed={3}
+        density={100}
+        starSize={8}
+        focalDepth={13}
+        brightness={90}
+        glitterIntensity={3}
+        trailAmount={90}
+      />
+      <div className="cosmic-vignette" />
     </div>
   );
 }

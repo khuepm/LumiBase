@@ -2,26 +2,27 @@
 @config '../../tailwind.config.ts';
 
 :root {
-  /* LumiBase eclipse palette — mystical nebula dark, cream ink, prismatic corona.
-     A warm-gold totality core wrapped in a cosmic aurora of violet, magenta,
-     cyan and teal. Legacy var names kept so existing components inherit hues. */
-  --background: #0b0713;
-  --foreground: #f4ecff;
+  /* LumiBase eclipse palette — near-black stage, cool white ink, prismatic
+     accents. Colour is earned: it comes from the warp starfield and the eclipse
+     corona, never from a tinted background. Legacy var names kept so existing
+     components inherit the accent hues. */
+  --background: #07060c;
+  --foreground: #f4f2ff;
 
-  /* Aubergine-to-indigo nebula base — luminous enough that colour reads */
-  --gradient-page: linear-gradient(150deg, #331a5e 0%, #1c1140 44%, #0e0a1e 100%);
+  /* Deep, almost neutral floor with the faintest cool lift */
+  --gradient-page: linear-gradient(180deg, #0a0812 0%, #07060c 100%);
 
-  --color-surface-1: #17111f;
-  --color-surface-2: #1d1526;
-  --color-surface-3: #251a30;
-  --color-surface-4: #33243f;
-  --color-surface-sunken: #100b18;
+  --color-surface-1: #100f18;
+  --color-surface-2: #15141f;
+  --color-surface-3: #1b1926;
+  --color-surface-4: #262433;
+  --color-surface-sunken: #0b0a11;
 
-  --color-glass: rgba(244, 236, 255, 0.07);
-  --color-glass-hover: rgba(244, 236, 255, 0.13);
+  --color-glass: rgba(244, 242, 255, 0.07);
+  --color-glass-hover: rgba(244, 242, 255, 0.13);
 
-  --color-text-secondary: rgba(244, 236, 255, 0.74);
-  --color-text-muted: rgba(244, 236, 255, 0.5);
+  --color-text-secondary: rgba(244, 242, 255, 0.74);
+  --color-text-muted: rgba(244, 242, 255, 0.5);
 
   /* Mystical hue ramp — the aurora that rings the eclipse */
   --hue-gold: #ffb020;
@@ -42,14 +43,14 @@
   --color-green: #34e0b4;
   --color-red: #ff4d8d;
 
-  --color-border: rgba(244, 236, 255, 0.1);
-  --color-border-strong: rgba(244, 236, 255, 0.2);
+  --color-border: rgba(244, 242, 255, 0.1);
+  --color-border-strong: rgba(244, 242, 255, 0.2);
   --color-dashline: rgba(196, 168, 255, 0.28);
 
   --radius-pill: 3em;
   --radius-card: 20px;
 
-  --ring-glass: inset 0 0 0 1px rgba(244, 236, 255, 0.09);
+  --ring-glass: inset 0 0 0 1px rgba(244, 242, 255, 0.09);
   --ring-glass-strong: inset 0 0 0 1px rgba(196, 168, 255, 0.22);
 
   --shadow-sm: 0px 2px 4px 0px rgba(0, 0, 0, 0.32);
@@ -73,20 +74,14 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Multi-hue nebula floor on <html> — distinct colour zones (violet / magenta /
-   blue / teal) at moderate luminance so the page never reads as one flat dark.
-   Lives on html (not body) so nothing opaque paints over it; the animated
-   blobs + aurora in <CosmicBackground> drift on top. */
+/* Near-black field with the faintest cool lift at the top. Restraint is the
+   point: colour comes from the warp starfield and the eclipse corona, not from
+   a tinted floor. Lives on html (not body) so nothing opaque paints over it. */
 html {
   background-color: var(--background);
   background-image:
-    radial-gradient(90% 70% at 12% 2%, #4a2585 0%, transparent 52%),
-    radial-gradient(85% 75% at 100% 14%, #8a2578 0%, transparent 50%),
-    radial-gradient(95% 85% at 88% 100%, #1d4f7e 0%, transparent 54%),
-    radial-gradient(80% 80% at -4% 92%, #175a55 0%, transparent 54%),
-    linear-gradient(160deg, #201545 0%, #130c26 55%, #0d0a1c 100%);
-  /* All layers viewport-anchored so the nebula is consistent at every scroll
-     position (a single value applies background-attachment to every layer). */
+    radial-gradient(120% 70% at 50% -10%, #14101f 0%, transparent 60%),
+    linear-gradient(180deg, #0a0812 0%, #07060c 100%);
   background-attachment: fixed;
   background-repeat: no-repeat;
 }
@@ -96,141 +91,29 @@ body {
   background: transparent;
 }
 
-/* Prismatic starfield — the mystical eclipse sky */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background-image:
-    radial-gradient(1.4px 1.4px at 12% 18%, rgba(196, 168, 255, 0.7), transparent),
-    radial-gradient(1.2px 1.2px at 34% 62%, rgba(255, 180, 220, 0.55), transparent),
-    radial-gradient(1.6px 1.6px at 58% 28%, rgba(150, 240, 255, 0.6), transparent),
-    radial-gradient(1px 1px at 72% 76%, rgba(244, 236, 255, 0.5), transparent),
-    radial-gradient(1.3px 1.3px at 88% 42%, rgba(255, 200, 120, 0.55), transparent),
-    radial-gradient(1px 1px at 22% 88%, rgba(120, 255, 210, 0.42), transparent),
-    radial-gradient(1.5px 1.5px at 46% 8%, rgba(210, 180, 255, 0.55), transparent),
-    radial-gradient(1px 1px at 64% 54%, rgba(255, 160, 210, 0.4), transparent);
-  background-repeat: repeat;
-  background-size: 100% 1100px;
-  animation: star-twinkle 7s ease-in-out infinite;
-}
-
-@keyframes star-twinkle {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
-}
-
-/* ── Animated cosmic background — drifting aurora nebula ─────────
-   A fixed layer of blurred colour clouds that slowly wander and pulse,
-   plus a very slow rotating aurora sheen. Sits behind all content and the
-   eclipse stage. Pure transform/opacity so it composites on the GPU. */
+/* ── Page backdrop — warp starfield + vignette ────────────────────
+   Fixed layer behind all content and the eclipse stage. The stars are drawn on
+   canvas by <GlitterWarp>; this only positions them and adds the vignette. */
 .cosmic-bg {
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
   overflow: hidden;
-  /* Transparent — the nebula floor lives on <html>; this layer only carries
-     the animated blobs and aurora that drift over it. */
   background: transparent;
 }
-.cosmic-blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(65px);
-  opacity: 0.6;
-  will-change: transform;
-}
-.cosmic-blob-1 {
-  width: 50vw; height: 50vw;
-  top: -6vh; left: 58vw;
-  background: radial-gradient(circle, rgba(155,92,255,0.95), transparent 70%);
-  animation: blob-drift-1 34s var(--ease-out) infinite;
-}
-.cosmic-blob-2 {
-  width: 46vw; height: 46vw;
-  top: 42vh; left: -14vw;
-  background: radial-gradient(circle, rgba(214,31,159,0.9), transparent 70%);
-  animation: blob-drift-2 42s var(--ease-out) infinite;
-}
-.cosmic-blob-3 {
-  width: 48vw; height: 48vw;
-  top: 58vh; left: 56vw;
-  background: radial-gradient(circle, rgba(41,216,230,0.82), transparent 70%);
-  animation: blob-drift-3 38s var(--ease-out) infinite;
-}
-.cosmic-blob-4 {
-  width: 42vw; height: 42vw;
-  top: -6vh; left: -8vw;
-  background: radial-gradient(circle, rgba(52,224,180,0.75), transparent 70%);
-  animation: blob-drift-4 46s var(--ease-out) infinite;
-}
-.cosmic-blob-5 {
-  width: 40vw; height: 40vw;
-  top: 30vh; left: 34vw;
-  background: radial-gradient(circle, rgba(255,106,26,0.6), transparent 72%);
-  animation: blob-drift-3 52s var(--ease-out) infinite;
-}
-.cosmic-blob-6 {
-  width: 40vw; height: 40vw;
-  top: 76vh; left: 6vw;
-  background: radial-gradient(circle, rgba(106,92,255,0.78), transparent 70%);
-  animation: blob-drift-2 48s var(--ease-out) infinite;
-}
-/* Slow rotating aurora sheen — a conic wash over everything */
-.cosmic-aurora {
-  position: absolute;
-  top: 50%; left: 50%;
-  width: 170vmax; height: 170vmax;
-  margin-left: -85vmax; margin-top: -85vmax;
-  opacity: 0.38;
-  will-change: transform;
-  background: conic-gradient(
-    from 0deg,
-    rgba(155,92,255,0.6), rgba(214,31,159,0.55), rgba(255,106,26,0.45),
-    rgba(41,216,230,0.5), rgba(52,224,180,0.55), rgba(155,92,255,0.6));
-  mask-image: radial-gradient(circle, #000 0%, transparent 74%);
-  -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 74%);
-  animation: aurora-spin 70s linear infinite;
-}
-/* One drifting shooting star */
-.cosmic-shooting-star {
-  position: absolute;
-  top: 12%; left: -10%;
-  width: 140px; height: 1.5px;
-  background: linear-gradient(90deg, transparent, rgba(244,236,255,0.9));
-  opacity: 0;
-  border-radius: 2px;
-  animation: shoot 14s ease-in infinite;
-}
 
-@keyframes blob-drift-1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(-8vw, 10vh) scale(1.15); }
-}
-@keyframes blob-drift-2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(10vw, -8vh) scale(1.2); }
-}
-@keyframes blob-drift-3 {
-  0%, 100% { transform: translate(0, 0) scale(1.05); }
-  50% { transform: translate(-12vw, -10vh) scale(0.9); }
-}
-@keyframes blob-drift-4 {
-  0%, 100% { transform: translate(0, 0) scale(0.95); }
-  50% { transform: translate(9vw, 8vh) scale(1.15); }
-}
-@keyframes aurora-spin {
-  to { transform: rotate(360deg); }
-}
-@keyframes shoot {
-  0%, 82% { transform: translate(0, 0) rotate(18deg); opacity: 0; }
-  84% { opacity: 0; }
-  86% { opacity: 0.9; }
-  96% { transform: translate(120vw, 42vh) rotate(18deg); opacity: 0; }
-  100% { opacity: 0; }
+/* Darkens the edges so the eye lands centre-stage and text keeps its contrast
+   over the brightest part of the starfield. */
+.cosmic-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    115% 85% at 50% 45%,
+    transparent 34%,
+    rgba(7, 6, 12, 0.55) 74%,
+    rgba(7, 6, 12, 0.88) 100%
+  );
 }
 
 @layer utilities {
@@ -270,8 +153,8 @@ body::before {
   /* Legacy control-room utilities kept for the pricing/legal pages */
   .bg-grid {
     background-image:
-      linear-gradient(to right, rgba(255, 237, 215, 0.04) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255, 237, 215, 0.04) 1px, transparent 1px);
+      linear-gradient(to right, rgba(244, 242, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(244, 242, 255, 0.04) 1px, transparent 1px);
     background-size: 44px 44px;
   }
   .mask-radial {
@@ -312,13 +195,13 @@ body::before {
   }
 
   .btn-glass {
-    background: rgba(28, 18, 10, 0.55);
+    background: rgba(14, 13, 20, 0.5);
     color: var(--foreground);
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
     box-shadow:
-      inset 0 1px 0 rgba(255, 237, 215, 0.24),
-      inset 0 0 0 1px rgba(255, 237, 215, 0.13),
-      inset 0 -7px 14px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(244, 242, 255, 0.22),
+      inset 0 0 0 1px rgba(244, 242, 255, 0.12),
+      inset 0 -7px 14px rgba(0, 0, 0, 0.3),
       0 7px 20px -4px rgba(0, 0, 0, 0.55);
   }
   .btn-glass::before {
@@ -326,9 +209,9 @@ body::before {
     position: absolute;
     inset: 0;
     border-radius: 999px;
-    background: linear-gradient(180deg, rgba(255, 237, 215, 0.09) 0%, rgba(255, 237, 215, 0.02) 100%);
-    -webkit-backdrop-filter: blur(5px) saturate(160%);
-    backdrop-filter: blur(5px) saturate(160%);
+    background: linear-gradient(180deg, rgba(244, 242, 255, 0.08) 0%, rgba(244, 242, 255, 0.02) 100%);
+    -webkit-backdrop-filter: blur(6px) saturate(140%);
+    backdrop-filter: blur(6px) saturate(140%);
   }
   .btn-glass > * {
     position: relative;
@@ -360,10 +243,15 @@ body::before {
   }
 
   /* ── Surface card ──────────────────────────────────────── */
+  /* Translucent + blurred so the warp starfield reads faintly through the
+     panels instead of being blocked by opaque slabs — the field stays one
+     continuous scene. Body text keeps contrast because the tint is near-black. */
   .card-cosmic {
     position: relative;
     border-radius: var(--radius-card);
-    background: var(--color-surface-1);
+    background: rgba(16, 15, 24, 0.66);
+    -webkit-backdrop-filter: blur(14px) saturate(120%);
+    backdrop-filter: blur(14px) saturate(120%);
     box-shadow: var(--ring-glass);
     overflow: hidden;
   }
@@ -372,7 +260,7 @@ body::before {
   .sphere-logo {
     display: inline-block;
     border-radius: 50%;
-    background: radial-gradient(circle at 50% 50%, #0b0713 0%, #0b0713 62%, #251a30 100%);
+    background: radial-gradient(circle at 50% 50%, #07060c 0%, #07060c 62%, #1b1926 100%);
     box-shadow:
       0 0 0 1.5px rgba(196, 168, 255, 0.9),
       0 0 10px rgba(214, 31, 159, 0.75),

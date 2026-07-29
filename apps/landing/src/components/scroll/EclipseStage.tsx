@@ -78,12 +78,12 @@ function TinyShip() {
       <path d="M12 13 H6" stroke="#b06bff" strokeWidth="1.8" strokeLinecap="round" opacity="0.95" />
       <path
         d="M42 13 C 39.5 8.6 32.5 7.9 23 9.2 L 18 13 L 23 16.8 C 32.5 18.1 39.5 17.4 42 13 Z"
-        fill="#ffedd7"
+        fill="#f4f2ff"
       />
-      <path d="M26 9.6 L 21 5.6 L 19 11 Z" fill="#f6e0c6" />
-      <path d="M26 16.4 L 21 20.4 L 19 15 Z" fill="#f6e0c6" />
-      <circle cx="33" cy="13" r="1.8" fill="#100904" />
-      <circle cx="28" cy="13" r="1.4" fill="#100904" opacity="0.75" />
+      <path d="M26 9.6 L 21 5.6 L 19 11 Z" fill="#c4a8ff" />
+      <path d="M26 16.4 L 21 20.4 L 19 15 Z" fill="#c4a8ff" />
+      <circle cx="33" cy="13" r="1.8" fill="#07060c" />
+      <circle cx="28" cy="13" r="1.4" fill="#07060c" opacity="0.75" />
     </svg>
   );
 }
@@ -111,14 +111,14 @@ function StaticStage() {
         className="absolute left-1/2 top-1/2 h-[268px] w-[268px] -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
           boxShadow:
-            "0 0 0 2.5px rgba(255,176,32,0.95), 0 0 0 3.5px rgba(244,236,255,0.55), var(--glow-corona)",
+            "0 0 0 2.5px rgba(255,176,32,0.95), 0 0 0 3.5px rgba(244,242,255,0.55), var(--glow-corona)",
         }}
       />
       <div
         className="absolute left-1/2 top-1/2 h-[264px] w-[264px] -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
           background:
-            "radial-gradient(circle at 36% 32%, #251a30 0%, #120b1c 55%, #0b0713 100%)",
+            "radial-gradient(circle at 36% 32%, #1b1926 0%, #0d0c14 55%, #07060c 100%)",
         }}
       />
       <div className="eclipse-ship absolute left-1/2 top-1/2 -ml-[22px] -mt-[13px]">
@@ -148,9 +148,10 @@ export default function EclipseStage() {
   const totality = useTransform(moonX, [0, 70], [1, 0]);
   const sunOpacity = useTransform(totality, [0, 1], [1, 0]);
 
-  // Mystical hue drift — the aurora sweeps violet→magenta→cyan→gold as you
-  // scroll, giving each scene its own colour without touching the geometry.
-  const hue = useTransform(p, [0, 0.25, 0.5, 0.75, 1], [0, 90, 180, 260, 340]);
+  // Hue drift — a narrow shimmer inside the gold→magenta→violet family, so each
+  // scene reads slightly different without the corona ever flipping to an
+  // off-brand colour (a full 0–340 sweep turned it lime green mid-page).
+  const hue = useTransform(p, [0, 0.3, 0.6, 1], [0, 22, -14, 8]);
   const coronaFilter = useTransform(hue, (h) => `hue-rotate(${h}deg)`);
 
   // Two scrubbed ship transits: hero and finale.
@@ -222,7 +223,7 @@ export default function EclipseStage() {
             style={{
               opacity: totality,
               boxShadow:
-                "0 0 0 2.5px rgba(255,176,32,0.95), 0 0 0 3.5px rgba(244,236,255,0.55), var(--glow-corona)",
+                "0 0 0 2.5px rgba(255,176,32,0.95), 0 0 0 3.5px rgba(244,242,255,0.55), var(--glow-corona)",
             }}
           />
         </motion.div>
@@ -234,7 +235,7 @@ export default function EclipseStage() {
             x: moonX,
             y: moonY,
             background:
-              "radial-gradient(circle at 36% 32%, #251a30 0%, #120b1c 55%, #0b0713 100%)",
+              "radial-gradient(circle at 36% 32%, #1b1926 0%, #0d0c14 55%, #07060c 100%)",
             boxShadow: "0 0 40px rgba(0,0,0,0.85)",
             willChange: "transform",
           }}
@@ -251,7 +252,7 @@ export default function EclipseStage() {
             height: 10,
             background: "#ffffff",
             boxShadow:
-              "0 0 14px 5px rgba(244,236,255,0.85), 0 0 44px 16px rgba(155,92,255,0.45), 0 0 70px 22px rgba(41,216,230,0.25)",
+              "0 0 14px 5px rgba(244,242,255,0.85), 0 0 44px 16px rgba(155,92,255,0.45), 0 0 70px 22px rgba(41,216,230,0.25)",
           }}
         />
 

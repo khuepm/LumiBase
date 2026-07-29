@@ -123,7 +123,7 @@ export default function PillNav({ items, active, onSelect, className }: PillNavP
               letterSpacing: "0.12em",
               textTransform: "uppercase",
               whiteSpace: "nowrap",
-              color: isActive ? "#ffedd7" : "rgba(255,237,215,0.62)",
+              color: isActive ? "#f4f2ff" : "rgba(244,242,255,0.6)",
               textShadow: isActive ? "0 1px 2px rgba(0,0,0,0.35)" : "none",
             }}
           >

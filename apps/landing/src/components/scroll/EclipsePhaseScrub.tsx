@@ -66,7 +66,7 @@ export default function EclipsePhaseScrub({
       <circle cx="36" cy="36" r="20" fill={`url(#${id}-d)`} />
       <circle cx="36" cy="36" r="20" stroke="#f4ecff" strokeWidth="0.8" opacity="0.7" />
       <g clipPath={`url(#${id}-c)`}>
-        <motion.circle cx={cx} cy={cy} r="19.4" fill="#0b0713" />
+        <motion.circle cx={cx} cy={cy} r="19.4" fill="#07060c" />
       </g>
       {total && (
         <motion.g style={{ opacity: totalityOpacity }}>

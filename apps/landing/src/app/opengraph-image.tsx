@@ -20,7 +20,7 @@ export default function Image() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: "#0b0713",
+          background: "#07060c",
           color: "#f4ecff",
           fontFamily: "monospace",
         }}
@@ -45,7 +45,7 @@ export default function Image() {
                 width: 96,
                 height: 96,
                 borderRadius: 9999,
-                background: "#120b1c",
+                background: "#0d0c14",
                 boxShadow:
                   "0 0 0 3px #ffb020, 0 0 40px rgba(214,31,159,0.75), 0 0 90px rgba(155,92,255,0.5)",
               }}

@@ -27,13 +27,13 @@ const config: Config = {
           amber: "#ffa000",
         },
         cream: {
-          DEFAULT: "#ffedd7",
-          soft: "#f6e0c6",
+          DEFAULT: "#f4f2ff",
+          soft: "#c4a8ff",
         },
         // Legacy accent names remapped to the eclipse palette
         violet: {
-          DEFAULT: "#e6500a",
-          soft: "#ff8c00",
+          DEFAULT: "#9b5cff",
+          soft: "#b06bff",
         },
         cosmic: {
           blue: "#ffa000",
@@ -45,12 +45,12 @@ const config: Config = {
         muted: "rgba(255, 237, 215, 0.52)",
         // Legacy control-room ramp (pricing/legal pages)
         ink: {
-          950: "#100904",
-          900: "#150c05",
-          800: "#1c120a",
-          700: "#241709",
-          600: "#2c1c0e",
-          500: "#382416",
+          950: "#07060c",
+          900: "#0b0a11",
+          800: "#100f18",
+          700: "#15141f",
+          600: "#1b1926",
+          500: "#262433",
         },
         // Legacy accents remapped to the eclipse palette
         signal: {

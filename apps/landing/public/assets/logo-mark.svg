@@ -7,9 +7,9 @@
       <stop offset="100%" stop-color="#29d8e6" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="moon" cx="38%" cy="34%" r="80%">
-      <stop offset="0%" stop-color="#251a30"/>
-      <stop offset="60%" stop-color="#120b1c"/>
-      <stop offset="100%" stop-color="#0b0713"/>
+      <stop offset="0%" stop-color="#1b1926"/>
+      <stop offset="60%" stop-color="#0d0c14"/>
+      <stop offset="100%" stop-color="#07060c"/>
     </radialGradient>
   </defs>
 
@@ -35,6 +35,6 @@
     <path d="M -1.4 -1.4 L -3.4 -3 L -4.2 -0.8 Z" fill="#c4a8ff"/>
     <path d="M -1.4 1.4 L -3.4 3 L -4.2 0.8 Z" fill="#c4a8ff"/>
     <!-- porthole -->
-    <circle cx="1.6" cy="0" r="0.7" fill="#0b0713"/>
+    <circle cx="1.6" cy="0" r="0.7" fill="#07060c"/>
   </g>
 </svg>

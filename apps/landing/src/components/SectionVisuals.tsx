@@ -121,7 +121,7 @@ export function NewsroomViz() {
         >
           <span
             className="flex h-[26px] w-[26px] items-center justify-center rounded-lg text-sm text-cream"
-            style={{ background: "linear-gradient(180deg,#251a30,#120b1c)" }}
+            style={{ background: "linear-gradient(180deg,#1b1926,#0d0c14)" }}
           >
             {icon}
           </span>
@@ -199,7 +199,7 @@ export function McpViz() {
         style={{
           width: 70,
           height: 70,
-          background: "linear-gradient(180deg,#251a30,#120b1c)",
+          background: "linear-gradient(180deg,#1b1926,#0d0c14)",
           boxShadow: "var(--ring-glass), 0 0 50px rgba(41,216,230,0.35)",
           font: `700 26px ${sans}`,
         }}
