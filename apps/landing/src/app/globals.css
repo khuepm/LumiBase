@@ -103,6 +103,14 @@ body {
   background: transparent;
 }
 
+/* Cursor takeover for the presence section. Descendants need it too — links
+   and buttons carry their own cursor from the UA and preflight, which would
+   otherwise pop the OS pointer back over exactly the parts you aim at. */
+.cursor-presence,
+.cursor-presence * {
+  cursor: none !important;
+}
+
 /* Darkens the edges so the eye lands centre-stage and text keeps its contrast
    over the brightest part of the starfield. */
 .cosmic-vignette {

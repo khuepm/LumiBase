@@ -107,6 +107,8 @@ const sections: SectionData[] = [
     id: "ai-harness",
     index: 1,
     phase: 0,
+    // Agent cursors share this panel with you — the section's claim, shown.
+    presence: true,
     title: "AI Harness",
     tagline: "Agents operate your content. You set the intent — and hold the veto.",
     cta: "Explore the Harness",

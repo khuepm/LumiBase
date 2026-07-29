@@ -5,6 +5,7 @@ import Scene, { ParallaxItem } from "@/components/scroll/Scene";
 import WipeTitle from "@/components/scroll/WipeTitle";
 import EclipsePhaseScrub from "@/components/scroll/EclipsePhaseScrub";
 import { PHASE_HUES } from "@/components/EclipseMark";
+import PresenceCursors from "@/components/PresenceCursors";
 import { RevealGroup, RevealItem } from "@/components/motion";
 
 export interface SectionFeature {
@@ -27,6 +28,8 @@ export interface SectionData {
   cta: string;
   ctaHref: string;
   features: SectionFeature[];
+  /** Show multiplayer agent cursors over this section (AI Harness). */
+  presence?: boolean;
 }
 
 /** Column-based drift so grid cards parallax at slightly different rates. */
@@ -46,11 +49,16 @@ export default function ProductSection({
   cta,
   ctaHref,
   features,
+  presence,
 }: SectionData) {
   const no = String(index).padStart(2, "0");
   const [hue] = PHASE_HUES[phase] ?? PHASE_HUES[0]!;
   return (
-    <Scene id={id} className="mx-auto max-w-[1200px] px-5 pt-[90px] md:pt-[140px]">
+    <Scene
+      id={id}
+      className="relative mx-auto max-w-[1200px] px-5 pt-[90px] md:pt-[140px]"
+    >
+      {presence && <PresenceCursors />}
       <div className="mb-4 flex items-center justify-center">
         <EclipsePhaseScrub phase={phase} size={84} />
       </div>
