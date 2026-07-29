@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-29T00:47:36.755Z",
+  "generatedAt": "2026-07-29T05:36:03.772Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,8 +8,8 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 92,
-    "planned": 50
+    "upToDate": 93,
+    "planned": 49
   },
   "actions": [
     {
@@ -1166,13 +1166,13 @@
     },
     {
       "rel": "features/permission-builder-directus-investigation.md",
-      "type": "translate",
-      "reason": "missing en translation",
-      "enLang": null,
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
-      "willTranslate": true,
+      "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
