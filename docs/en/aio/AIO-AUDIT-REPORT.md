@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:52:57.096Z
+version: 3
+lastUpdated: 2026-07-29T05:26:14.674Z
 sourceLang: en
-contentHash: 3a333996415f2fab
+contentHash: 0434e76bd6629620
 ---
 
 # AIO Audit Report: LumiBase
@@ -22,9 +22,11 @@ contentHash: 3a333996415f2fab
 > `public/llms.txt` exists (H1); `/pricing` is in `sitemap.ts` (H4); the
 > "Join thousands of developers" claim is gone (H6); `metadataBase`/canonical are
 > set (M5); `opengraph-image.tsx` generates the OG image (H2); and a `LICENSE`
-> file is committed at the repo root (M3 — though see the license-identity
-> mismatch noted in [`README.md`](./README.md), since the site copy here says MIT
-> while the committed licence is Apache-2.0).
+> file is committed at the repo root (M3). Note the licence quoted throughout
+> this report is **MIT** because that is what the site said on 2026-06-10; the
+> project relicensed to **Apache-2.0** at `v0.23.0` and the site copy was updated
+> to match, so every MIT reference below is the pre-relicence baseline, not a
+> current claim.
 > **Still open:** C1 (the AI-crawler blocks are injected by Cloudflare's managed
 > robots.txt, not by the repo file) and C3 (`apps/docs` is still a Vite SPA).
 > For live status, read [`aio/README.md`](./README.md) — this file is kept as the
@@ -402,8 +404,14 @@ Brand mentions on these platforms are 3× stronger than backlinks for AI entity 
 
 The GitHub repo metadata shows `license: None` despite MIT being referenced on the site. No topics are set. These are AI training dataset quality signals.
 
+> **Obsolete as written.** The `LICENSE` file now exists at the repo root and is
+> **Apache-2.0**, not MIT — the relicence is recorded in `CHANGELOG.md` under
+> `[0.23.0]`. The site copy was updated to match. Read the fix below as "commit a
+> LICENSE so GitHub displays the licence"; the MIT reference is the pre-relicence
+> state this report captured, not a target.
+
 **Fix:**
-- Commit a `LICENSE` file to the repository root (GitHub will then display MIT correctly)
+- Commit a `LICENSE` file to the repository root (GitHub will then display the licence correctly)
 - Add topics: `headless-cms`, `cloudflare-workers`, `edge`, `typescript`, `cms`, `open-source`
 - Fill in the Homepage field in the repo settings with `https://lumibase.dev`
 

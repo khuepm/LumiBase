@@ -1,9 +1,9 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T10:23:38.100Z
+version: 2
+lastUpdated: 2026-07-29T05:25:40.844Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6566a4891f71eb1a
+sourceHash: dd5e3a429d798c06
 mtEngine: claude
 syncStatus: machine-translated
 ---
@@ -45,15 +45,24 @@ File `apps/landing/public/robots.txt` trong repo là sạch (`Allow: /` cho tấ
 #### 2. Metadata của GitHub repository
 
 - ~~Commit một file `LICENSE` vào gốc repo~~ — **đã xong**; `LICENSE` ở gốc đã được track.
-- ⚠️ **Sai lệch về danh tính license (còn mở).** File `LICENSE` đã commit là
-  **Apache License 2.0**, và cả bốn package được publish (`sdk`, `mcp-server`,
-  `extension-sdk`, `create-lumibase`) đều khai `"license": "Apache-2.0"`. Nhưng
-  nội dung trên landing site, báo cáo audit AIO, và bản nháp Devpost đều nói
-  **MIT**. Một trong hai phía là sai, và đây là một tuyên bố pháp lý, không phải
-  chuyện chọn từ ngữ — hãy quyết định license nào là đúng ý, rồi làm cho nội dung
-  site, các trường `package.json` và `LICENSE` khớp nhau. Các hệ thống AI đọc
-  license từ repo, nên sai lệch cũng làm mất chính cái tín hiệu tin cậy mà mục
-  này định sửa.
+- ~~⚠️ Sai lệch về danh tính license~~ — **đã giải quyết; không có quyết định nào
+  còn mở.** License là **Apache-2.0**, được ghi trong `CHANGELOG.md` ở mục
+  `[0.23.0]` (2026-07-14): "Project license updated to the Apache License,
+  Version 2.0 (from MIT), effective this release", với `v0.22.0` là bản MIT cuối
+  cùng. Repo đang ở `0.24.1` nên Apache-2.0 là license áp dụng. File `LICENSE` ở
+  gốc, cả bốn package được publish, `README.md`, và chính nội dung của landing app
+  (`layout.tsx`, `page.tsx`, `pricing/page.tsx`, `Footer.tsx`, `/license`) đều đã
+  khớp nhau.
+
+  Bản trước của ghi chú này nói rằng nội dung landing site ghi MIT và rằng còn một
+  quyết định pháp lý chưa chốt. Cả hai đều sai: nội dung site ghi Apache 2.0, và
+  quyết định đã được đưa ra ở v0.23.0. Thứ thực sự bị bỏ lại là văn bản cũ ở ba
+  chỗ, nay đã sửa — `apps/landing/README.md` và bản nháp Devpost, cùng mục M3
+  trong báo cáo audit bên dưới (mục này từng khuyên commit `LICENSE` "để GitHub
+  hiện MIT đúng"). Các chỗ còn nhắc MIT đều hợp lệ: lịch sử changelog, phần giải
+  thích việc đổi license trong `README.md` và trên trang `/license`, license của
+  dependency bên thứ ba, và các đoạn báo cáo audit trích nguyên văn nội dung site
+  trước khi đổi license.
 - Thêm topic: `headless-cms`, `cloudflare-workers`, `edge`, `typescript`, `cms`, `open-source`.
 - Đặt trường Homepage thành `https://lumibase.dev`.
 

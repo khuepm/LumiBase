@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T10:23:38.100Z
+version: 2
+lastUpdated: 2026-07-29T05:25:40.844Z
 sourceLang: en
-contentHash: 6566a4891f71eb1a
+contentHash: dd5e3a429d798c06
 ---
 
 # AIO (AI Overviews Optimization) — LumiBase
@@ -42,14 +42,23 @@ The repo's `apps/landing/public/robots.txt` is clean (`Allow: /` for all). The A
 #### 2. GitHub repository metadata
 
 - ~~Commit a `LICENSE` file to repo root~~ — **done**; the root `LICENSE` is tracked.
-- ⚠️ **License identity mismatch (open).** The committed `LICENSE` is the **Apache
-  License 2.0**, and all four published packages (`sdk`, `mcp-server`,
-  `extension-sdk`, `create-lumibase`) declare `"license": "Apache-2.0"`. But the
-  landing-site copy, the AIO audit report, and the Devpost draft all say **MIT**.
-  One side is wrong and it is a legal claim, not a wording preference — decide
-  which license is intended, then make the site copy, `package.json` fields, and
-  `LICENSE` agree. AI systems read the license from the repo, so a mismatch also
-  costs the trust signal this item was meant to fix.
+- ~~⚠️ License identity mismatch~~ — **resolved; there was no open decision.**
+  The licence is **Apache-2.0**, recorded in `CHANGELOG.md` under `[0.23.0]`
+  (2026-07-14): "Project license updated to the Apache License, Version 2.0 (from
+  MIT), effective this release", with `v0.22.0` the final MIT release. The repo is
+  on `0.24.1`, so Apache-2.0 applies. The root `LICENSE`, all four published
+  packages, `README.md`, and the landing app's own copy (`layout.tsx`,
+  `page.tsx`, `pricing/page.tsx`, `Footer.tsx`, `/license`) already agree.
+
+  An earlier version of this note claimed the landing-site copy said MIT and that
+  a legal decision was outstanding. Both were wrong: the site copy says Apache
+  2.0, and the decision was made at v0.23.0. What actually lagged was stale prose
+  in three places, now corrected — `apps/landing/README.md` and the Devpost
+  draft, plus the M3 item in the audit report below, which recommended committing
+  a `LICENSE` "so GitHub displays MIT correctly". Remaining MIT mentions are
+  legitimate: changelog history, the relicence explanation in `README.md` and on
+  the `/license` page, third-party dependency licences, and the audit report's
+  verbatim quotes of the pre-relicence site copy.
 - Add topics: `headless-cms`, `cloudflare-workers`, `edge`, `typescript`, `cms`, `open-source`.
 - Set the Homepage field to `https://lumibase.dev`.
 
