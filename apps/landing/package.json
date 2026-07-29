@@ -13,7 +13,7 @@
     "clean": "rm -rf .next .turbo dist"
   },
   "dependencies": {
-    "framer-motion": "^12.42.2",
+    "framer-motion": "^12.43.0",
     "lucide-react": "^0.452.0",
     "next": "^16.2.12",
     "react": "^18.3.1",
