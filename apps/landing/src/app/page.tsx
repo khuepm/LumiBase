@@ -12,13 +12,13 @@ import {
   RunsViz,
   SchemaViz,
 } from "@/components/SectionVisuals";
-import TrustViz from "@/components/TrustViz";
 import { EclipsePhase } from "@/components/EclipseMark";
 import EclipseStage from "@/components/scroll/EclipseStage";
 import Scene from "@/components/scroll/Scene";
 import WipeTitle from "@/components/scroll/WipeTitle";
 import DotBand from "@/components/DotBand";
 import DotField from "@/components/DotField";
+import TrustLadderScene from "@/components/TrustLadderScene";
 import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
 
 const softwareApplicationJsonLd = {
@@ -122,9 +122,10 @@ const sections: SectionData[] = [
       },
       {
         title: "Trust gradient · L0–L4",
-        desc: "Autonomy is earned, not granted. Promotion is data — clean runs and passing evaluations. Demotion on incident is automatic.",
-        bg: "var(--color-surface-sunken)",
-        node: <TrustViz />,
+        desc: "Autonomy is earned, not granted. Promotion needs a human and moves one level; demotion on incident is automatic. Play the ledger below.",
+        badge: "L0 → L4 · earned",
+        badgeTone: "accent",
+        vh: 170,
       },
       {
         title: "Human-in-the-loop",
@@ -266,6 +267,8 @@ export default function Home() {
       {sections.map((s, i) => (
         <div key={s.id}>
           <ProductSection {...s} />
+          {/* The trust gradient, playable — right after the section that claims it */}
+          {i === 0 && <TrustLadderScene />}
           {/* Halftone interlude after the second pillar */}
           {i === 1 && (
             <DotBand
