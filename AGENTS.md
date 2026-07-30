@@ -57,6 +57,20 @@ import type { KVNamespace } from '@cloudflare/workers-types'
 // - skill.name.startsWith('delete')
 ```
 
+### Endpoint deprecation (opt-in — do not pre-wire)
+`withDeprecation` in `apps/cms/src/middleware/deprecation.ts` is a reusable RFC 8594 helper (OWASP API9). **Do not** attach it unless an explicit task says to deprecate / retire / sunset a specific endpoint. Having the middleware unwired while no APIs are retiring is correct — wiring healthy routes would falsely mark them deprecated.
+
+```typescript
+import { withDeprecation } from '../middleware/deprecation'
+
+// Attach ONLY to the retiring route/router
+legacyRouter.use('*', withDeprecation({
+  since: '2026-08-01',
+  sunset: '2026-11-01',
+  link: 'https://docs.lumibase.dev/changelog#items-legacy',
+}))
+```
+
 ## Testing
 
 ```bash
@@ -102,5 +116,6 @@ chore(deps): update drizzle-orm
 | Modify permissions | `apps/cms/src/services/permission-dsl.ts` |
 | Add an AI skill | `packages/ai-skills/src/skills.ts` |
 | Change runtime behavior | `packages/runtime/src/adapters/` |
+| Deprecate / sunset an endpoint | `apps/cms/src/middleware/deprecation.ts` (`withDeprecation` — opt-in only) |
 | Update Zod validation | `packages/shared/src/schemas/` |
 | Read architecture decisions | `docs/en/architecture/decisions/` |
