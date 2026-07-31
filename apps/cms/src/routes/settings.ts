@@ -82,7 +82,7 @@ settingsRouter.get('/:key', async (c) => {
 
 const settingSchema = z.object({
   key: z.string(),
-  value: z.record(z.unknown()),
+  value: z.record(z.string(), z.unknown()),
   scope: z.string().optional(),
 });
 

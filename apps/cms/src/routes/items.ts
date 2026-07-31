@@ -36,14 +36,14 @@ const scheduleSchema = {
 };
 
 const createSchema = z.object({
-  data: z.record(z.unknown()),
+  data: z.record(z.string(), z.unknown()),
   status: z.string().optional(),
   sort: z.number().int().optional(),
   ...scheduleSchema,
 });
 
 const patchSchema = z.object({
-  data: z.record(z.unknown()).optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
   status: z.string().optional(),
   sort: z.number().int().optional(),
   ...scheduleSchema,
@@ -51,7 +51,7 @@ const patchSchema = z.object({
 
 const bulkSchema = z.object({
   op: z.enum(['create', 'update', 'delete']),
-  items: z.array(z.record(z.unknown())),
+  items: z.array(z.record(z.string(), z.unknown())),
 });
 
 const buildService = (c: Context<AppEnv>) => itemServiceForRequest(c);
@@ -318,7 +318,7 @@ const buildVersionService = (c: Context<AppEnv>) =>
 
 const versionCreateSchema = z.object({ key: z.string().min(1), name: z.string().min(1) });
 const versionPatchSchema = z.object({
-  data: z.record(z.unknown()).optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
   name: z.string().min(1).optional(),
 });
 

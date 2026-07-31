@@ -48,7 +48,7 @@ permissionsRouter.get('/me', async (c) => {
 const checkSchema = z.object({
   collection: z.string(),
   action: z.enum(['create', 'read', 'update', 'delete', 'share']),
-  item: z.record(z.unknown()).optional(),
+  item: z.record(z.string(), z.unknown()).optional(),
 });
 
 permissionsRouter.post('/check', async (c) => {

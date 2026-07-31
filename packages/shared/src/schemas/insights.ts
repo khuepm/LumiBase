@@ -25,7 +25,7 @@ export const PANEL_MAX_LIMIT = 1000;
 
 /** A condition rule object — validated structurally, evaluated by `evaluateRule`. */
 export const conditionRuleSchema: z.ZodType<Record<string, unknown>> = z
-  .record(z.unknown())
+  .record(z.string(), z.unknown())
   .refine((v) => v !== null && typeof v === 'object', { message: 'filter must be an object' });
 
 export const gridPositionSchema = z.object({
@@ -64,7 +64,7 @@ export const panelCreateSchema = z.object({
   type: z.enum(PANEL_TYPES),
   position: gridPositionSchema,
   query: panelQuerySchema,
-  options: z.record(z.unknown()).optional(),
+  options: z.record(z.string(), z.unknown()).optional(),
 });
 export type PanelCreateInput = z.infer<typeof panelCreateSchema>;
 

@@ -372,7 +372,7 @@ function zodErrorToValidationError(error: z.ZodError): PolicyValidationError {
   return {
     _tag: 'PolicyValidationError',
     issues: error.issues.map((issue) => ({
-      path: [...issue.path],
+      path: issue.path.filter((p): p is string | number => typeof p === 'string' || typeof p === 'number'),
       message: issue.message,
     })),
   };

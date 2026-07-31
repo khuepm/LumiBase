@@ -43,7 +43,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('presence'),
     collection: z.string().optional(),
     itemId: z.string().optional(),
-    meta: z.record(z.unknown()).optional(),
+    meta: z.record(z.string(), z.unknown()).optional(),
   }),
   // audience plane (new)
   z.object({ type: z.literal('join'), channel: z.string().min(1) }),
@@ -61,7 +61,7 @@ export const presenceEntrySchema = z.object({
   subjectId: z.string().optional(),
   collection: z.string().optional(),
   itemId: z.string().optional(),
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
   lastSeen: z.string(),
 });
 export type PresenceEntry = z.infer<typeof presenceEntrySchema>;
@@ -78,7 +78,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     channel: z.string().optional(),
     payload: z.unknown(),
   }),
-  z.object({ type: z.literal('notification'), payload: z.record(z.unknown()) }),
+  z.object({ type: z.literal('notification'), payload: z.record(z.string(), z.unknown()) }),
   z.object({ type: z.literal('presence'), users: z.array(presenceEntrySchema) }),
   z.object({ type: z.literal('error'), code: z.string(), message: z.string() }),
   z.object({ type: z.literal('ping') }),

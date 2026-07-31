@@ -144,7 +144,7 @@ export const accountSchema = z
         code: z.ZodIssueCode.too_small,
         path: ['password'],
         minimum: PASSWORD_MIN_LENGTH,
-        type: 'string',
+        origin: 'string',
         inclusive: true,
         message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`,
       });

@@ -83,6 +83,10 @@ async function main() {
   //   `index.ts` dynamically after observability bootstrap, and `cloudflare.ts`
   //   never imports `serve.ts`, so node-cron can never leak into the Workers bundle.
   //
+  // node-cron v4: `schedule()` still auto-starts; `stop()` remains the graceful
+  // shutdown hook (see SIGTERM below). Six-field expressions (seconds) stay
+  // valid — used by the deployment poll tick.
+  //
   // The rotator needs a Drizzle client. We mirror `middleware/db.ts`'s runtime
   // path: `runtime.database.getConnection()` returns the postgres-js `Sql`
   // instance (cast required — the provider types it as `unknown` to avoid

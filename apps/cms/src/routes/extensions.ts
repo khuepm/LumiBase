@@ -73,7 +73,7 @@ const extensionSchema = z.object({
   type: z.enum(EXTENSION_TYPES),
   enabled: z.boolean().default(false),
   bundleUrl: bundleUrlSchema,
-  manifest: z.record(z.string()).default({}),
+  manifest: z.record(z.string(), z.string()).default({}),
   capabilities: z.array(z.string()).default([]),
 });
 

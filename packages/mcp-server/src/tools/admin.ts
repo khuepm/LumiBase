@@ -12,7 +12,7 @@ const materializeSchema = z.object({
   projection: z
     .object({ fields: z.array(z.string()).optional(), orderBy: z.string().optional() })
     .optional(),
-  filter: z.record(z.unknown()).optional(),
+  filter: z.record(z.string(), z.unknown()).optional(),
 });
 
 export function registerAdminTools(server: McpServer, client: LumiBaseClient) {

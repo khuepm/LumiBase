@@ -78,7 +78,11 @@ export const intentInputSchema = z.object({
   collection: z.string().min(1).max(120),
   rules: z.array(ruleSchema).min(1).max(50),
   schedule: z.string().regex(CRON_PATTERN, 'schedule must be a 5-field cron expression'),
-  budget: budgetSchema.default({}),
+  budget: budgetSchema.default({
+    maxGoalsPerCycle: 10,
+    maxWritesPerMinute: 60,
+    maxCostUsd: 1,
+  }),
   autonomyCap: z.number().int().min(0).max(4).default(2),
   maintenanceWindow: maintenanceWindowSchema.nullish(),
 });
