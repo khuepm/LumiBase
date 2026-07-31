@@ -21,7 +21,7 @@ const createApiKey = z.object({
   name: z.string().min(1).max(96),
   description: z.string().max(512).optional(),
   expiresAt: z.coerce.date().nullable().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   /**
    * Mint a client-embeddable `lbk_pub_…` token instead of a secret one.
    * Defaults to false so the existing contract is unchanged.

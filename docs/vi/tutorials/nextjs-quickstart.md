@@ -48,7 +48,7 @@ Bạn sẽ:
 
 Kết thúc, bạn có trang `http://localhost:3000` liệt kê các bài viết nằm trong LumiBase.
 
-> **Cần có:** Node.js ≥ 20, pnpm ≥ 9, Docker + Docker Compose, Git.
+> **Cần có:** Node.js ≥ 22, pnpm ≥ 9, Docker + Docker Compose, Git.
 
 ---
 

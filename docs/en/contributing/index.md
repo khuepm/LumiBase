@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:30:32.359Z
+version: 2
+lastUpdated: 2026-07-31T19:47:45.247Z
 sourceLang: en
-contentHash: 2de385a752cc3cff
+contentHash: ffb40855e5e59508
 ---
 
 # Contributing to LumiBase
@@ -26,7 +26,7 @@ Thank you for your interest in contributing to LumiBase! This guide covers how t
 
 | Tool | Version | Install |
 |------|---------|---------|
-| Node.js | ≥ 20 LTS | [nodejs.org](https://nodejs.org) |
+| Node.js | ≥ 22 | [nodejs.org](https://nodejs.org) |
 | pnpm | ≥ 9 | `npm i -g pnpm` |
 | Docker + Docker Compose | Latest | [docker.com](https://docker.com) |
 | Git | ≥ 2.40 | System package manager |

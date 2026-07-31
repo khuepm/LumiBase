@@ -114,7 +114,7 @@ export const EventEnvelopeSchema = z.object({
   }),
   source: CdcSourceSchema,
   changedFields: z.array(z.string()).optional(),
-  data: z.record(z.unknown()).optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
   cursor: CdcCursorTokenSchema,
 });
 

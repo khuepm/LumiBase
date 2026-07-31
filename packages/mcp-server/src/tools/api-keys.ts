@@ -27,7 +27,7 @@ export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
         name: z.string().min(1).max(96),
         description: z.string().max(512).optional(),
         expiresAt: z.string().datetime().nullable().optional(),
-        metadata: z.record(z.unknown()).optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
       },
     },
     async (input) => run(() => client.post<unknown>('/api-keys', input)),

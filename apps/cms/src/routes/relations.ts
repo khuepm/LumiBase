@@ -18,7 +18,7 @@ const relationInputSchema = z.object({
   junctionOneField: z.string().nullable().optional(),
   sortField: z.string().nullable().optional(),
   onDelete: z.enum(['restrict', 'cascade', 'set null', 'no action']).optional(),
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 });
 
 const buildService = (c: Context<AppEnv>) =>

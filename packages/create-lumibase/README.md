@@ -75,7 +75,7 @@ pnpm dev                   # http://localhost:8787
 
 ## Requirements
 
-- Node.js `>= 20`
+- Node.js `>= 22` (required by the CLI's `execa` 10 dependency)
 - For the Docker template: Docker + Docker Compose
 - For the Cloudflare template: a Cloudflare account + `wrangler`
 

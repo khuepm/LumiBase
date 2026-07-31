@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
-import { SignJWT, generateKeyPair, type KeyLike } from 'jose';
+import { SignJWT, generateKeyPair } from 'jose';
 import { authExternalIssuers, createDb, roles, sites, userSites, users, type Database } from '@lumibase/database';
 import { ExternalIssuerService } from '../../../services/external-issuer-service';
 import { verifyExternalJwt, type TrustedIssuer, type VerifierDeps } from '../verifier';
@@ -22,8 +22,8 @@ describe('External JWT auth — DB integration', () => {
   let db: Database;
   let canConnect = false;
   let editorRoleId = '';
-  let publicKey: KeyLike;
-  let privateKey: KeyLike;
+  let publicKey: CryptoKey;
+  let privateKey: CryptoKey;
 
   beforeAll(async () => {
     if (!TEST_DATABASE_URL) {

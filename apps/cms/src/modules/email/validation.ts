@@ -32,7 +32,7 @@ export const templateUpdateSchema = templateCreateSchema.partial();
 
 /** Render-without-send (preview). Sample variable values keyed by name. */
 export const previewSchema = z.object({
-  variables: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
+  variables: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
 });
 
 const emailAddress = z.string().email().max(254);
@@ -58,7 +58,7 @@ export const sendSchema = z
       })
       .optional(),
     variables: z
-      .record(z.union([z.string(), z.number(), z.boolean(), z.null()]))
+      .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
       .default({}),
   })
   .refine((v) => Boolean(v.templateKey) !== Boolean(v.inline), {
@@ -70,7 +70,7 @@ export const testSchema = z.object({
   to: emailAddress,
   templateKey: keySchema.optional(),
   variables: z
-    .record(z.union([z.string(), z.number(), z.boolean(), z.null()]))
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
     .default({}),
 });
 

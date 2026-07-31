@@ -22,7 +22,7 @@ export function registerPermissionTools(server: McpServer, client: LumiBaseClien
       inputSchema: {
         collection: z.string().min(1),
         action: z.enum(['create', 'read', 'update', 'delete', 'share']),
-        item: z.record(z.unknown()).optional().describe('Item payload to evaluate row-level rules against.'),
+        item: z.record(z.string(), z.unknown()).optional().describe('Item payload to evaluate row-level rules against.'),
       },
     },
     async (input) => run(() => client.post<unknown>('/permissions/check', input)),

@@ -28,15 +28,15 @@ const policySchema = z.object({
   ipDeny: z.array(z.string()).optional(),
   validFrom: z.string().datetime().nullable().optional(),
   validUntil: z.string().datetime().nullable().optional(),
-  rules: z.record(z.unknown()).optional(),
+  rules: z.record(z.string(), z.unknown()).optional(),
 });
 
 const permissionSchema = z.object({
   collection: z.string().min(1).max(64),
   action: z.enum(['create', 'read', 'update', 'delete', 'share']),
-  permissions: z.record(z.unknown()).optional(),
-  validation: z.record(z.unknown()).optional(),
-  presets: z.record(z.unknown()).optional(),
+  permissions: z.record(z.string(), z.unknown()).optional(),
+  validation: z.record(z.string(), z.unknown()).optional(),
+  presets: z.record(z.string(), z.unknown()).optional(),
   fields: z.array(z.string()).optional(),
 });
 
@@ -199,7 +199,7 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     'dry_run_access_import',
     {
       description: 'Validate an RBAC manifest import without applying it. Returns the planned changes.',
-      inputSchema: { manifest: z.record(z.unknown()).describe('RBAC manifest from export_access.') },
+      inputSchema: { manifest: z.record(z.string(), z.unknown()).describe('RBAC manifest from export_access.') },
     },
     async ({ manifest }) => run(() => client.post<unknown>('/access/import?dryRun=true', manifest)),
   );
@@ -210,7 +210,7 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
       description:
         'Apply an RBAC manifest import. High-impact — changes roles/policies/permissions. Pass confirm=true.',
       inputSchema: {
-        manifest: z.record(z.unknown()).describe('RBAC manifest from export_access.'),
+        manifest: z.record(z.string(), z.unknown()).describe('RBAC manifest from export_access.'),
         mode: z.enum(['merge', 'replace-managed', 'replace-all']).optional().describe('Import mode (default merge).'),
         confirm: z.literal(true).describe(confirmDescription),
       },

@@ -112,7 +112,7 @@ const flowSchema = z.object({
   description: z.string().optional(),
   status: z.enum(['active', 'inactive', 'draft']).default('draft'),
   triggerType: z.enum(['webhook', 'event', 'schedule', 'manual']),
-  triggerOptions: z.record(z.unknown()).default({}),
+  triggerOptions: z.record(z.string(), z.unknown()).default({}),
   graph: z.object({
     entry: z.string().optional(),
     nodes: z
@@ -120,7 +120,7 @@ const flowSchema = z.object({
         z.object({
           id: z.string(),
           key: z.string(),
-          options: z.record(z.unknown()).optional(),
+          options: z.record(z.string(), z.unknown()).optional(),
           next: z.string().nullable().optional(),
           onError: z.string().nullable().optional(),
         }),

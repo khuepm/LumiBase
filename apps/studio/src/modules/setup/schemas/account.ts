@@ -141,12 +141,10 @@ export const accountSchema = z
 
     if (password.length < PASSWORD_MIN_LENGTH) {
       ctx.addIssue({
-        code: z.ZodIssueCode.too_small,
+        code: z.ZodIssueCode.custom,
         path: ['password'],
-        minimum: PASSWORD_MIN_LENGTH,
-        type: 'string',
-        inclusive: true,
         message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`,
+        params: { rule: 'length', minimum: PASSWORD_MIN_LENGTH },
       });
     }
     if (!HAS_LOWER.test(password)) {

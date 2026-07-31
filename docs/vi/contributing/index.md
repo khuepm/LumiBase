@@ -1,9 +1,9 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:30:32.359Z
+version: 2
+lastUpdated: 2026-07-31T19:47:45.247Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2de385a752cc3cff
+sourceHash: ffb40855e5e59508
 mtEngine: claude
 syncStatus: machine-translated
 ---
@@ -29,7 +29,7 @@ Cảm ơn bạn đã quan tâm tới việc đóng góp cho LumiBase! Hướng d
 
 | Tool | Version | Cài đặt |
 |------|---------|---------|
-| Node.js | ≥ 20 LTS | [nodejs.org](https://nodejs.org) |
+| Node.js | ≥ 22 | [nodejs.org](https://nodejs.org) |
 | pnpm | ≥ 9 | `npm i -g pnpm` |
 | Docker + Docker Compose | Mới nhất | [docker.com](https://docker.com) |
 | Git | ≥ 2.40 | Package manager của hệ thống |
