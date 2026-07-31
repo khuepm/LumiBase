@@ -15,7 +15,7 @@
     "build:staging": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env staging --dry-run --outdir=dist",
     "build:demo": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env demo --dry-run --outdir=dist",
     "build:production": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env production --dry-run --outdir=dist",
-    "build:node": "node ../../scripts/with-build-metadata.mjs esbuild src/serve.ts --bundle --platform=node --format=cjs --outfile=dist/serve.cjs --external:pg-native --external:cloudflare:workers && node ../../scripts/with-build-metadata.mjs esbuild ../../packages/database/scripts/migrate.ts --bundle --platform=node --format=cjs --outfile=dist/migrate.cjs --external:pg-native",
+    "build:node": "node ../../scripts/with-build-metadata.mjs esbuild src/serve.ts --bundle --platform=node --format=cjs --outfile=dist/serve.cjs --external:pg-native --external:cloudflare:workers --external:node-cron && node ../../scripts/with-build-metadata.mjs esbuild ../../packages/database/scripts/migrate.ts --bundle --platform=node --format=cjs --outfile=dist/migrate.cjs --external:pg-native && node ./scripts/copy-node-cron.mjs",
     "deploy": "pnpm run deploy:production",
     "deploy:dev": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env dev",
     "deploy:staging": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env staging",
