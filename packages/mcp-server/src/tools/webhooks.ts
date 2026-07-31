@@ -8,7 +8,7 @@ const webhookSchema = z.object({
   url: z.string().url(),
   actions: z.array(z.string()).optional().describe('Item events that trigger the webhook (e.g. create, update, delete).'),
   collections: z.array(z.string()).optional().describe('Collections to filter on (empty = all).'),
-  headers: z.record(z.string()).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
   status: z.enum(['active', 'inactive']).optional(),
   secret: z.string().nullable().optional(),
 });

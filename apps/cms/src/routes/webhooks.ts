@@ -13,7 +13,7 @@ const webhookSchema = z.object({
   url: z.string().url(),
   actions: z.array(z.string()).default([]),
   collections: z.array(z.string()).default([]),
-  headers: z.record(z.string()).default({}),
+  headers: z.record(z.string(), z.string()).default({}),
   status: z.enum(['active', 'inactive']).default('active'),
   secret: z.string().nullable().optional(),
 });

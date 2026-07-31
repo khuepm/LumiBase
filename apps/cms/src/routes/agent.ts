@@ -27,17 +27,17 @@ const createGoalSchema = z.object({
   source: z.enum(['user', 'flow', 'api', 'schedule']).default('api'),
   assigneeAgent: z.string().default('lumibase-copilot'),
   priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
-  successCriteria: z.record(z.unknown()).default({}),
+  successCriteria: z.record(z.string(), z.unknown()).default({}),
   /** `async` enqueues a run via the QueueProvider and returns immediately (Req 3.2). */
   execution: z.enum(['sync', 'async']).default('sync'),
   /** Skill to execute when `execution: 'async'`. */
   task: z
     .object({
       skillName: z.string().min(1).max(120),
-      arguments: z.record(z.unknown()).default({}),
+      arguments: z.record(z.string(), z.unknown()).default({}),
     })
     .optional(),
-  budget: z.record(z.unknown()).default({}),
+  budget: z.record(z.string(), z.unknown()).default({}),
 });
 
 const artifactSchema = z.object({
@@ -45,7 +45,7 @@ const artifactSchema = z.object({
   type: z.enum(['schema_diff', 'page_spec', 'component_spec', 'seed_data', 'api_spec', 'prompt', 'migration']),
   title: z.string().min(1).max(200),
   target: z.string().optional(),
-  content: z.record(z.unknown()),
+  content: z.record(z.string(), z.unknown()),
 });
 
 const memorySchema = z.object({
@@ -60,8 +60,8 @@ const memorySchema = z.object({
 const generateAppSchema = z.object({
   collections: z.array(z.string().min(1)).default(['products', 'orders', 'customers']),
   targetApp: z.string().min(1).default('storefront'),
-  constraints: z.record(z.unknown()).default({}),
-  budget: z.record(z.unknown()).default({ maxToolCalls: 20, timeoutMs: 30000 }),
+  constraints: z.record(z.string(), z.unknown()).default({}),
+  budget: z.record(z.string(), z.unknown()).default({ maxToolCalls: 20, timeoutMs: 30000 }),
   approvalPolicy: z.string().default('before_commit'),
 });
 
@@ -246,7 +246,7 @@ const decomposeSchema = z.object({
         title: z.string().min(1).max(200),
         description: z.string().max(2000).optional(),
         agentRole: z.string().min(1).max(80),
-        acceptance: z.record(z.unknown()).optional(),
+        acceptance: z.record(z.string(), z.unknown()).optional(),
       }),
     )
     .min(1)
@@ -421,7 +421,7 @@ agentRouter.post('/constitution/compile', async (c) => {
   }
 });
 
-const dryRunSchema = z.object({ samples: z.array(z.record(z.unknown())).min(1).max(20) });
+const dryRunSchema = z.object({ samples: z.array(z.record(z.string(), z.unknown())).min(1).max(20) });
 
 /** Evaluates a version against real content samples without activating (Req 15.5). */
 agentRouter.post('/constitution/:id/dry-run', async (c) => {

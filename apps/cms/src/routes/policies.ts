@@ -76,7 +76,7 @@ const policyCreate = z.object({
   ipDeny: z.array(z.string()).optional(),
   validFrom: z.coerce.date().nullable().optional(),
   validUntil: z.coerce.date().nullable().optional(),
-  rules: z.record(z.unknown()).optional(),
+  rules: z.record(z.string(), z.unknown()).optional(),
 });
 
 const policyPatch = policyCreate.partial();
@@ -84,9 +84,9 @@ const policyPatch = policyCreate.partial();
 const permissionUpsert = z.object({
   collection: z.string().min(1).max(64),
   action: z.enum(['create', 'read', 'update', 'delete', 'share']),
-  permissions: z.record(z.unknown()).optional(),
-  validation: z.record(z.unknown()).optional(),
-  presets: z.record(z.unknown()).optional(),
+  permissions: z.record(z.string(), z.unknown()).optional(),
+  validation: z.record(z.string(), z.unknown()).optional(),
+  presets: z.record(z.string(), z.unknown()).optional(),
   fields: z.array(z.string()).optional(),
 });
 

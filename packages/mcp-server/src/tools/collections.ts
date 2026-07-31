@@ -41,7 +41,7 @@ const fieldInputSchema = z.object({
   width: z.enum(['half', 'full', 'fill']).optional(),
   sortOrder: z.number().int().optional(),
   group: z.string().optional(),
-  options: z.record(z.unknown()).optional(),
+  options: z.record(z.string(), z.unknown()).optional(),
   defaultValue: z.unknown().optional(),
 });
 

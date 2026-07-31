@@ -17,7 +17,7 @@
  * provisioning) so it unit-tests with real RS256/ES256 keys and no network/DB.
  */
 
-import { decodeJwt, decodeProtectedHeader, jwtVerify, type JWTPayload, type JWTVerifyGetKey, type KeyLike } from 'jose';
+import { decodeJwt, decodeProtectedHeader, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from 'jose';
 import type { ExternalIssuerClaimMapping, ExternalIssuerRoleMapping } from '@lumibase/shared/schemas';
 
 /** A trusted issuer config row (subset the verifier needs). */
@@ -53,7 +53,7 @@ export interface VerifierDeps {
   /** Trusted, enabled issuers for the request site. */
   getTrustedIssuers: () => Promise<TrustedIssuer[]>;
   /** Resolve a JWKS key-getter for an issuer (cached upstream). */
-  resolveJwks: (issuer: TrustedIssuer) => Promise<JWTVerifyGetKey | KeyLike | Uint8Array>;
+  resolveJwks: (issuer: TrustedIssuer) => Promise<JWTVerifyGetKey | CryptoKey | Uint8Array>;
   /**
    * Resolve external roles → LumiBase role ids for the site. Returns the
    * resolved role ids (may be empty). Bad references are dropped by the impl.

@@ -20,7 +20,7 @@ This guide deploys **only the lightweight edge components** of the CDC system to
 - A completed [Docker Compose / managed-services deployment](./deployment-docker-compose.md) of the stateful stack, reachable over HTTPS. Note its base URL — this is `CDC_STATEFUL_STACK_URL`.
 - A [Cloudflare account](https://dash.cloudflare.com/sign-up) (Workers Paid plan recommended).
 - [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) v3+.
-- Node.js 20+ and pnpm.
+- Node.js 22+ and pnpm.
 - A reachable Redis instance for the Cache_Invalidator (e.g. Upstash) — this is `REDIS_URL`.
 - A strong bearer token to secure the control-plane API — this is `CDC_API_AUTH_TOKEN`.
 

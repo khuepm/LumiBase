@@ -96,7 +96,7 @@ export function validateItem(
     if (options.partial && data[f.name] === undefined) continue;
     shape[f.name] = buildFieldSchema(f);
   }
-  const schema = z.object(shape).passthrough();
+  const schema = z.looseObject(shape);
   const result = schema.safeParse(data);
   if (result.success) return { ok: true, data: result.data };
 

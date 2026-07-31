@@ -5,7 +5,7 @@
   "description": "LumiBase - Edge-native Headless CMS (Turborepo monorepo)",
   "packageManager": "pnpm@9.12.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "turbo run build --filter=!@lumibase/shell",
@@ -60,8 +60,8 @@
   },
   "pnpm": {
     "overrides": {
-      "@types/react": "18.3.3",
-      "@types/react-dom": "18.3.0",
+      "@types/react": "19.2.0",
+      "@types/react-dom": "19.2.0",
       "dompurify": "^3.4.11",
       "esbuild": "^0.28.1",
       "fast-uri": ">=3.1.4",

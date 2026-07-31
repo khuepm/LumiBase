@@ -23,7 +23,7 @@ Hướng dẫn này deploy **chỉ các thành phần edge nhẹ** của hệ th
 - Một [bản deploy Docker Compose / managed services](./deployment-docker-compose.md) đã hoàn tất cho stack có state, kết nối được qua HTTPS. Hãy ghi lại base URL của nó — đó là `CDC_STATEFUL_STACK_URL`.
 - Một [account Cloudflare](https://dash.cloudflare.com/sign-up) (khuyến nghị plan Workers Paid).
 - [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) v3+.
-- Node.js 20+ và pnpm.
+- Node.js 22+ và pnpm.
 - Một instance Redis kết nối được cho Cache_Invalidator (ví dụ Upstash) — đó là `REDIS_URL`.
 - Một bearer token mạnh để bảo vệ control-plane API — đó là `CDC_API_AUTH_TOKEN`.
 

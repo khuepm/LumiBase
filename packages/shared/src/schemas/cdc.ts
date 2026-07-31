@@ -21,7 +21,7 @@ export const PipelineCreateSchema = z.object({
   clickhouse_sink_connection: z.string().min(1),
   replication_tables: z.array(z.string().min(1)).min(1),
   intermediary_connection: z.string().optional(),
-  config: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const SyncScheduleSchema = z.object({

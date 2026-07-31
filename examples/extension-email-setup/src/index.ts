@@ -28,7 +28,7 @@ const app = new Hono();
 /** Body the trigger sends us. `to` + the template variables. */
 const NotifySchema = z.object({
   to: z.array(z.string().email()).min(1),
-  variables: z.record(z.unknown()).default({}),
+  variables: z.record(z.string(), z.unknown()).default({}),
   /** Optional override; otherwise the manifest config `templateKey` is used. */
   templateKey: z.string().optional(),
 });

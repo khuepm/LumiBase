@@ -29,7 +29,7 @@ Cảm ơn bạn đã quan tâm tới việc đóng góp cho LumiBase! Hướng d
 
 | Tool | Version | Cài đặt |
 |------|---------|---------|
-| Node.js | ≥ 20 LTS | [nodejs.org](https://nodejs.org) |
+| Node.js | ≥ 22 | [nodejs.org](https://nodejs.org) |
 | pnpm | ≥ 9 | `npm i -g pnpm` |
 | Docker + Docker Compose | Mới nhất | [docker.com](https://docker.com) |
 | Git | ≥ 2.40 | Package manager của hệ thống |

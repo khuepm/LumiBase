@@ -14,7 +14,7 @@ const WebhookPayloadSchema = z.object({
     id: z.string(),
     [key: string]: z.unknown(),
   }),
-  previousData: z.record(z.unknown()).optional(),
+  previousData: z.record(z.string(), z.unknown()).optional(),
 });
 
 type WebhookPayload = z.infer<typeof WebhookPayloadSchema>;

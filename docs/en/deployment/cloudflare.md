@@ -4,7 +4,7 @@ This guide covers the Cloudflare deployment used by the monorepo: the CMS API ru
 
 ## Prerequisites
 
-- Node.js 20 or newer.
+- Node.js 22 or newer.
 - `pnpm` matching the root `packageManager` field.
 - Wrangler authenticated with an account that can write Workers, Pages, KV, R2, Hyperdrive and Durable Objects.
 - Production values for PostgreSQL, Cloudflare Access and CMS JWT secrets.

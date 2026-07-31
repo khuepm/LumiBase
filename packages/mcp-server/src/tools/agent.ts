@@ -9,18 +9,18 @@ const intentSchema = z.object({
   name: z.string().min(1).max(120),
   collection: z.string().min(1).max(120),
   rules: z
-    .array(z.record(z.unknown()))
+    .array(z.record(z.string(), z.unknown()))
     .describe('SLO rules (required_fields, freshness, translations, link_health, …).'),
   schedule: z.string().describe('5-field cron expression for reconciliation cadence.'),
-  budget: z.record(z.unknown()).optional(),
+  budget: z.record(z.string(), z.unknown()).optional(),
   autonomyCap: z.number().int().min(0).max(4).optional().describe('Max autonomy level L0–L4 for this intent.'),
-  maintenanceWindow: z.record(z.unknown()).nullable().optional(),
+  maintenanceWindow: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const flowNode = z.object({
   id: z.string(),
   key: z.string(),
-  options: z.record(z.unknown()).optional(),
+  options: z.record(z.string(), z.unknown()).optional(),
   next: z.string().nullable().optional(),
   onError: z.string().nullable().optional(),
 });
@@ -30,7 +30,7 @@ const flowSchema = z.object({
   description: z.string().optional(),
   status: z.enum(['active', 'inactive', 'draft']).optional(),
   triggerType: z.enum(['webhook', 'event', 'schedule', 'manual']),
-  triggerOptions: z.record(z.unknown()).optional(),
+  triggerOptions: z.record(z.string(), z.unknown()).optional(),
   graph: z.object({
     entry: z.string().optional(),
     nodes: z.array(flowNode).optional(),
@@ -98,7 +98,7 @@ export function registerAgentTools(server: McpServer, client: LumiBaseClient) {
       description: 'Trigger a manual run of a flow with an optional input payload.',
       inputSchema: {
         id: idPathSegmentSchema,
-        input: z.record(z.unknown()).optional().describe('Initial context passed to the flow.'),
+        input: z.record(z.string(), z.unknown()).optional().describe('Initial context passed to the flow.'),
       },
     },
     async ({ id, input }) => run(() => client.post<unknown>(`/flows/${encodePathSegment(id)}/run`, input ?? {})),

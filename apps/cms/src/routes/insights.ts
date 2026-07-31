@@ -170,7 +170,7 @@ insightsRouter.delete('/:id/panels/:panelId', async (c) => {
 // ── Execution ────────────────────────────────────────────────────────────────
 
 const runOverrideSchema = z
-  .object({ filter: z.record(z.unknown()).optional(), dateRange: z.record(z.unknown()).optional() })
+  .object({ filter: z.record(z.string(), z.unknown()).optional(), dateRange: z.record(z.string(), z.unknown()).optional() })
   .optional();
 
 insightsRouter.post('/:id/panels/:panelId/data', async (c) => {
