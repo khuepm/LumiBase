@@ -256,7 +256,11 @@ Remediation applied:
 2. **Deprecation signalling mechanism** — `middleware/deprecation.ts`
    (`withDeprecation`) emits RFC 8594 `Deprecation`/`Sunset` headers plus a
    `Link rel="deprecation"`, so retiring an endpoint gives consumers a
-   machine-readable warning window.
+   machine-readable warning window. This is an **opt-in toolbox helper**: it is
+   **not** mounted globally. Wire it onto a specific route/router only when that
+   API is actually being retired; leaving it unwired while no endpoints are
+   deprecated is correct (not a gap). Agent wiring instructions live in
+   `docs/en/agent-setup/prompt.md`.
 
 Residual: no single machine-readable OpenAPI/AsyncAPI artifact covering the whole
 REST surface is checked into the repo (the OpenAPI is generated on demand). A
