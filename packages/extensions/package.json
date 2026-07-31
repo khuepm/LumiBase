@@ -15,10 +15,10 @@
   },
   "dependencies": {
     "@lumibase/shared": "workspace:*",
-    "zod": "^3.23.8"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.1.2",
     "typescript": "^5.6.2"
   }
 }
