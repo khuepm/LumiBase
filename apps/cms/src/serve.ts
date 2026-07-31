@@ -85,7 +85,9 @@ async function main() {
   //
   // node-cron v4: `schedule()` still auto-starts; `stop()` remains the graceful
   // shutdown hook (see SIGTERM below). Six-field expressions (seconds) stay
-  // valid — used by the deployment poll tick.
+  // valid — used by the deployment poll tick. v4 removed
+  // `recoverMissedExecutions`: ticks missed while the process was down are
+  // not replayed (audit rotation / pageview flush catch up on the next cron).
   //
   // The rotator needs a Drizzle client. We mirror `middleware/db.ts`'s runtime
   // path: `runtime.database.getConnection()` returns the postgres-js `Sql`

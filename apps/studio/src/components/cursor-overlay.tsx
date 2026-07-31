@@ -30,7 +30,7 @@ interface RenderedCursor {
 
 export function CursorOverlay({ peers, containerRef, getRectForOffset }: CursorOverlayProps) {
   const [rendered, setRendered] = useState<RenderedCursor[]>([]);
-  const rafRef = useRef<number>();
+  const rafRef = useRef<number | undefined>(undefined);
 
   // Recompute positions on every peers change & on container resize.
   useEffect(() => {

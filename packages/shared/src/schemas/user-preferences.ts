@@ -91,21 +91,19 @@ export function resolveSaveAction(userPref: unknown, siteDefault: unknown): Save
 }
 
 /**
- * Full preferences blob. `.passthrough()` so writing one section (e.g.
+ * Full preferences blob. `z.looseObject` so writing one section (e.g.
  * keybindings) never drops keys this version doesn't know about (language,
  * theme, defaultPresets, future additions). The CMS PATCH handler merges the
  * validated patch into the existing blob rather than replacing it.
  */
-export const UserPreferencesSchema = z
-  .object({
-    language: z.string().optional(),
-    theme: z.enum(['auto', 'light', 'dark']).optional(),
-    timezone: z.string().optional(),
-    keybindings: KeybindingMapSchema.optional(),
-    /** Post-save navigation; `null` clears the override → site default. */
-    saveAction: SaveActionSchema.nullable().optional(),
-  })
-  .passthrough();
+export const UserPreferencesSchema = z.looseObject({
+  language: z.string().optional(),
+  theme: z.enum(['auto', 'light', 'dark']).optional(),
+  timezone: z.string().optional(),
+  keybindings: KeybindingMapSchema.optional(),
+  /** Post-save navigation; `null` clears the override → site default. */
+  saveAction: SaveActionSchema.nullable().optional(),
+});
 export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
 
 /** Patch shape for `PATCH /me/preferences` — every top-level key optional. */

@@ -24,16 +24,6 @@ export interface ProjectConfig {
 }
 
 async function main() {
-  const major = Number(process.versions.node.split('.')[0]);
-  if (!Number.isFinite(major) || major < 22) {
-    console.error(
-      pc.red(
-        `create-lumibase requires Node.js 22+ (execa 10). Current: ${process.versions.node}`,
-      ),
-    );
-    process.exit(1);
-  }
-
   const argv = parseArgs(process.argv.slice(2));
 
   console.log();

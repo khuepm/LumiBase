@@ -1,6 +1,6 @@
 # Local Development
 
-> **Prerequisites:** Node.js ≥ 20, pnpm ≥ 9, Docker + Docker Compose, Git ≥ 2.40
+> **Prerequisites:** Node.js ≥ 22, pnpm ≥ 9, Docker + Docker Compose, Git ≥ 2.40
 
 ## Quick start
 

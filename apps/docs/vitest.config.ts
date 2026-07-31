@@ -24,12 +24,8 @@ export default defineConfig({
     // The full-app integration renders and the i18n/front-matter property
     // tests are CPU-heavy under jsdom; they pass in ~2s in isolation but
     // exceed the 5s default when the whole suite runs in parallel under load.
-    // React 19 + jsdom 29 needs more headroom than the previous 30s budget.
-    testTimeout: 90_000,
-    hookTimeout: 60_000,
-    // Under `turbo run test` this package shares the machine with CMS/Studio
-    // jsdom suites; uncapped forks starve and hit "Timeout waiting for worker".
-    maxWorkers: 2,
-    fileParallelism: false,
+    // Give them headroom so they are not flaky in CI / the pre-commit hook.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });
