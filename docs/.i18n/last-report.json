@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-29T05:36:03.772Z",
+  "generatedAt": "2026-07-31T19:11:06.635Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,8 +8,8 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 93,
-    "planned": 49
+    "upToDate": 91,
+    "planned": 51
   },
   "actions": [
     {
@@ -410,13 +410,13 @@
     },
     {
       "rel": "cdc/deployment-cloudflare-workers.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -674,13 +674,13 @@
     },
     {
       "rel": "contributing/index.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
