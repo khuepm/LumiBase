@@ -37,7 +37,7 @@
     "react-hook-form": "^7.83.0",
     "react-i18next": "^17.0.11",
     "tailwind-merge": "^3.6.0",
-    "zod": "^3.23.8",
+    "zod": "^4.4.3",
     "zustand": "^5.0.14",
     "zxcvbn": "^4.4.2"
   },
