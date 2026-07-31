@@ -1,14 +1,14 @@
 ---
 title: Deployment — Cloudflare Workers (Edge Components Only)
-version: 1
-lastUpdated: 2026-07-28T11:34:33.128Z
+version: 2
+lastUpdated: 2026-07-31T19:47:41.911Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3a7f4f65f8ffeea8
+sourceHash: ab6a86693d7baf0e
 mtEngine: claude
 syncStatus: machine-translated
-codeVerified: 2026-07-28T11:34:33.128Z
-codeVerifiedHash: 3a7f4f65f8ffeea8
+codeVerified: 2026-07-31T19:47:41.911Z
+codeVerifiedHash: ab6a86693d7baf0e
 codeVerifiedClaims: 10
 ---
 
