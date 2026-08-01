@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-31T20:44:54.351Z",
+  "generatedAt": "2026-08-01T02:59:56.356Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,8 +8,8 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 91,
-    "planned": 51
+    "upToDate": 90,
+    "planned": 53
   },
   "actions": [
     {
@@ -758,13 +758,13 @@
     },
     {
       "rel": "deployment/environment-variables.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -933,6 +933,18 @@
       "sourceLocale": "vi",
       "targetLocale": "en",
       "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/caching.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
