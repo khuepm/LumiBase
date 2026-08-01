@@ -336,12 +336,6 @@ export default function Home() {
               WebkitMaskImage: "linear-gradient(100deg, transparent 18%, #000 78%)",
             }}
           />
-          <div
-            className="pointer-events-none absolute -right-10 -top-16 opacity-70"
-            aria-hidden
-          >
-            <EclipsePhase phase={3} size={220} />
-          </div>
           <div className="relative max-w-[560px]">
             <p className="label-mono label-mono-accent m-0">
               [ FINAL TRANSMISSION ]

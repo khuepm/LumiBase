@@ -199,11 +199,11 @@ export default function EclipseStage() {
         >
           {/* Corona rays + nebula glow — totality only */}
           <motion.div style={{ opacity: totality }}>
-            <CoronaRays />
-            <div
+            {/* <CoronaRays /> */}
+            {/* <div
               className="eclipse-corona absolute left-1/2 top-1/2 h-[480px] w-[480px] -translate-x-1/2 -translate-y-1/2 rounded-full"
               style={{ background: NEBULA_CORONA }}
-            />
+            /> */}
           </motion.div>
 
           {/* Open sun — visible while the moon is away */}
