@@ -44,3 +44,16 @@ Keep these separate from positive hit/miss so operators can tell “cache hit be
 | `LUMIBASE_DELIVER_RATE_LIMIT` | `1200` | Max Delivery API requests per minute per client IP. `0` disables. |
 
 Trade-off: a short tombstone TTL means a newly created page can still 404 for up to ~TTL if the write path fails to `forget` the tombstone. Prefer fixing the forget hook over raising TTL.
+
+## Multi-tenancy
+
+Cache penetration keys follow the same shared-vs-isolated split as the rest of the cache stack (design §17):
+
+| Resource | Scope | Key / behaviour | Why |
+|----------|-------|-----------------|-----|
+| Page / collection / item tombstones | **Isolated** | `neg:${siteId}:page:${slug}`, `neg:${siteId}:collection:${name}`, `neg:${siteId}:item:${collection}:${id}` | Tenant data — Property P20 asserts site A tombstone never affects site B |
+| Site-level tombstone (llms.txt) | **Isolated (flat)** | `neg:site:${siteId}` | The key *is* the site id; no parent tenant to nest under |
+| Delivery rate limit | **Shared by IP** | `rl:deliver:${ip}` | Public, unauthenticated. Deliberately **not** split by site so one IP attacking N sites shares one budget (same precedent as `rl:recovery:${ip}`) |
+| Shape guard | n/a | Pure regex, no storage | Same 404 body/headers as a real miss — never an oracle for valid shapes |
+
+**How to verify:** unit/integration Properties P17–P20 in `apps/cms/src/__tests__/cache-penetration.test.ts` (two-site tombstone isolation + credential bypass); wiring tripwire for `withDeliverRateLimit` in `security-guards.wiring.test.ts`.

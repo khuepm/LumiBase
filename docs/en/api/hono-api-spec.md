@@ -1125,6 +1125,8 @@ credentials are shared-cacheable so any CDN/proxy can absorb repeat reads.
 | No credentials (default) | `Cache-Control: public, s-maxage=60, stale-while-revalidate=300` · `ETag: W/"…"` · `Vary: X-Lumi-Site` |
 | `Authorization` header present | `Cache-Control: private, no-store` (no shared `ETag`) |
 | Page not found | `404` + `Cache-Control: no-store` |
+| Identifier shape invalid (`site_id` / `slug`) | `404` + `Cache-Control: no-store` (identical body to a real miss — not `400`) |
+| Client IP over `LUMIBASE_DELIVER_RATE_LIMIT` | `429` + `Retry-After` + `Cache-Control: no-store` |
 
 Conditional requests: send `If-None-Match` with the last `ETag`; a match
 returns `304 Not Modified` with an empty body and skips section hydration
@@ -1133,7 +1135,10 @@ scheduled publish/unpublish taking effect) rotates it, so a stale 304 is never
 served at the cost of a lower revalidation hit-rate.
 
 Tunables (env): `LUMIBASE_DELIVER_SMAXAGE` (seconds, default `60`, `0`
-disables public caching), `LUMIBASE_DELIVER_SWR` (seconds, default `300`).
+disables public caching), `LUMIBASE_DELIVER_SWR` (seconds, default `300`),
+`LUMIBASE_NEGATIVE_CACHE_TTL` (seconds, default `30`, `0` disables
+tombstones), `LUMIBASE_DELIVER_RATE_LIMIT` (req/min/IP, default `1200`,
+`0` disables). See [Caching — penetration](../features/caching.md).
 
 ---
 
