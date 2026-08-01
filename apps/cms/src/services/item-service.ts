@@ -1,6 +1,5 @@
 import {
   activity,
-  collections,
   contentIntents,
   extensions as extensionsTable,
   items,
@@ -640,15 +639,20 @@ export class ItemService {
   }
 
   private async resolveCollection(name: string) {
-    const [coll] = await this.deps.db
-      .select()
-      .from(collections)
-      .where(and(scopeSite(collections.siteId, this.deps.siteId), eq(collections.name, name)))
-      .limit(1);
-    if (!coll) {
+    // Route through SchemaService.getCompiled so collection-name probes share
+    // the positive schema cache AND the negative tombstone (Req 19.5 / 19.12).
+    const compiled = await this.schemaService.getCompiled(name);
+    if (!compiled) {
       throw new ItemServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
     }
-    return coll;
+    return {
+      id: compiled.id,
+      name: compiled.name,
+      primaryKeyField: compiled.primaryKeyField,
+      primaryKeyType: compiled.primaryKeyType,
+      storageMode: compiled.storageMode,
+      meta: compiled.meta,
+    };
   }
 
   async list(collectionName: string, params: ListItemsParams = {}) {
@@ -839,6 +843,14 @@ export class ItemService {
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
+    // Drop item tombstone so a just-created id is visible immediately (Req 19.7).
+    if (this.deps.cache) {
+      const { forgetNegative, negativeItemKey } = await import('./negative-cache');
+      await forgetNegative(
+        this.deps.cache,
+        negativeItemKey(this.deps.siteId, collectionName, row.id),
+      );
+    }
     return row;
   }
 

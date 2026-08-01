@@ -93,6 +93,10 @@ describe('External JWT auth — DB integration', () => {
       async increment(): Promise<number> {
         return 1;
       },
+      async getEntry<T>() {
+        return { state: 'miss' as const };
+      },
+      async setNegative(): Promise<void> {},
     };
     const cachedSvc = new ExternalIssuerService({ db, siteId: SITE, allowLocalHttp: true, cache });
 

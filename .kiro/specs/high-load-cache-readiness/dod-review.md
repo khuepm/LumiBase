@@ -5,7 +5,8 @@
 ## Trạng thái đóng phase
 
 - **Phase P0 (tasks 1–6): đã triển khai + rà DoD 2026-07-05.** typecheck workspace sạch; 1838 test CMS pass (24 test P0.1/P0.2 + 27 test P0.3–P0.6 + count opt-in). Setup Impact Registry dòng #37 = `n/a` (mọi knob là env, không seed/wizard/backfill). Tutorial impact: không đổi contract (delivery chỉ thêm header, list `meta` default giữ nguyên) → không tutorial nào bị ảnh hưởng. CHANGELOG [Unreleased] cập nhật. Còn mở: task 1.3 (edge-cache adapter CF), 2.3 (integration test Postgres thật), 7.1 (k6 baseline — cần môi trường load-test).
-- Phase P1, P2: chưa bắt đầu.
+- **Bổ sung Req 19 / tasks 22.x (cache penetration): đã triển khai + rà DoD 2026-08-01.** Shape guard + tombstone (`getEntry`/`setNegative`) + deliver IP rate limit. Setup Impact Registry dòng **#93** = `n/a` (2 env mới). Properties P17–P20 + wiring tripwire deliver limiter. Docs: `docs/en/features/caching.md` (kèm Multi-tenancy) + env reference + hono-api-spec. Còn mở / chưa đo: k6 `load-penetration.js` số thật vào roadmap §2; Grafana panel tách negative hits (task 22.8 partial — counter đã có, panel chưa); pages write-path `forget` (chưa có API tạo page); open questions §21.6–21.7.
+- Phase P1 (tasks 8–15), P2: chưa bắt đầu (22.3 đã ship phần interface âm tối thiểu mà không chờ đủ task 8 tag-based).
 
 ## DoD §1 — Code & test
 
@@ -32,9 +33,9 @@
 |---|---|
 | Phân loại tài nguyên shared vs isolated | Bảng đầy đủ tại design §17, gồm lý do cho từng tài nguyên shared (recovery limiter theo IP pre-auth, cron leader lock cấp deployment, queue topic với payload mang siteId, Prometheus label không siteId để tránh cardinality) |
 | Mọi query mang `site_id` | `flow_runs` có `site_id NOT NULL` + mọi query site-scoped (Req 15.2); bảng mới vào `rls-policies.sql` (design §16.1) |
-| Khoá hạ tầng có tiền tố tenant | Cache key/tag: Req 7.4 + **tripwire P4** (source-scan mọi tag literal phải chứa `${siteId}`). Rate-limit key: `rl:${siteId}:${principal}` (Req 12.3). Ngoại lệ có lý do ghi tại design §17 |
+| Khoá hạ tầng có tiền tố tenant | Cache key/tag: Req 7.4 + **tripwire P4** (source-scan mọi tag literal phải chứa `${siteId}`). Rate-limit key: `rl:${siteId}:${principal}` (Req 12.3). Tombstone: `neg:${siteId}:${kind}:${id}` (Req 19.6). Ngoại lệ có lý do ghi tại design §17 — thêm hai ngoại lệ mới: `neg:site:${siteId}` (khoá LÀ siteId, không có cha để lồng) và `rl:deliver:${ip}` (public pre-auth, cố ý không chia theo site) |
 | Định danh/secret shared không lộ dữ liệu tenant | Purge endpoint ép namespace site (design §15.1); 404 đồng nhất cho cross-site flow run (design §15.3) |
-| Two-site smoke test | Property P6 (purge isolation) + mở rộng k6 `cross-site-leak.js`; bắt buộc trước khi đóng mỗi phase (design §17) |
+| Two-site smoke test | Property P6 (purge isolation) + **P20** (tombstone isolation: cùng slug ở hai site không lẫn; request có Authorization không nhận tombstone) + mở rộng k6 `cross-site-leak.js`; bắt buộc trước khi đóng mỗi phase (design §17) |
 | Background/cron/queue context | Worker resolve `siteId` từ payload (Zod schema payload có siteId required), KHÔNG từ request context; cron job fan-out theo site từ DB (design §17, §10.2) |
 | Tài liệu Multi-tenancy trong docs feature | Task bổ sung khi ship P1: mục Multi-tenancy trong `docs/en/features/caching.md` (mẫu `push-notifications.md`) |
 
@@ -47,7 +48,8 @@
 | Surface mới được phân loại | Bảng design §18: purge = control plane (backstop list + adminOnly); flow runs = plane hiện hành của `/flows` |
 | Không thêm path vào bypass/public list | Cam kết tại design §18; rate-limit middleware đặt SAU withAuth, không đổi guard order |
 | Route thực thi code động → control-plane | Flow run không đổi plane; harness/HITL giữ nguyên (Req 15.6) |
-| Tripwire wiring test | THÊM assertion cho purge endpoint vào `security-guards.wiring.test.ts`, không sửa/xoá assertion cũ; middleware refactor (Req 10) chỉ merge sau khi behavioural matrix P15 merge trước và pass trên code CŨ |
+| Tripwire wiring test | THÊM assertion cho purge endpoint + limiter `/deliver/*` (Req 19.10) vào `security-guards.wiring.test.ts`, không sửa/xoá assertion cũ; middleware refactor (Req 10) chỉ merge sau khi behavioural matrix P15 merge trước và pass trên code CŨ |
+| 404 không thành oracle | Guard hình dạng (Req 19.1) và tombstone (19.5) phải trả 404 **không phân biệt được** với 404 thật (cùng body, cùng header) — nếu không, endpoint public tiết lộ khoá nào đúng hình dạng (design §14.6, §18) |
 
 ## DoD §3 — Spec hygiene
 

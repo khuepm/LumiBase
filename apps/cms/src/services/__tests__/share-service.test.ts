@@ -209,7 +209,12 @@ function makePermissionCache(entries: Record<string, unknown>): CacheProvider {
     set: async () => undefined,
     delete: async () => undefined,
     increment: async () => 1,
-  } as CacheProvider;
+    getEntry: async (key: string) => {
+      const v = entries[key];
+      return v === undefined ? { state: 'miss' as const } : { state: 'hit' as const, value: v };
+    },
+    setNegative: async () => undefined,
+  } as unknown as CacheProvider;
 }
 
 describe('ShareService create links', () => {

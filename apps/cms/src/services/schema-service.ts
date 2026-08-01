@@ -410,6 +410,12 @@ export class SchemaService {
       .values({ ...input, siteId: this.deps.siteId })
       .returning();
     await this.invalidate(input.name);
+    // Drop any collection tombstone so a just-created collection is visible
+    // immediately (Req 19.7) — best-effort, never fails the create.
+    if (this.deps.cache) {
+      const { forgetNegative, negativeCollectionKey } = await import('./negative-cache');
+      await forgetNegative(this.deps.cache, negativeCollectionKey(this.deps.siteId, input.name));
+    }
     await this.emitCdcSchemaEvent(
       'collection',
       'create',
@@ -1070,10 +1076,34 @@ export class SchemaService {
     return compiled;
   }
 
-  /** SWR-style cache read; falls back to live DB compile on miss. */
+  /** SWR-style cache read; falls back to live DB compile on miss.
+   * Confirmed absences are tombstoned (Req 19.5) so repeated probes for
+   * non-existent collections do not re-hit Postgres.
+   */
   async getCompiled(collectionName: string): Promise<CompiledCollection | null> {
     if (this.deps.cache) {
-      const cached = await this.deps.cache.get<CompiledCollection>(cacheKey(this.deps.siteId, collectionName));
+      const { buildNegativeCache, negativeCollectionKey, resolveNegativeTtl } = await import(
+        './negative-cache'
+      );
+      const ttl = resolveNegativeTtl(
+        typeof process !== 'undefined'
+          ? (process.env as { LUMIBASE_NEGATIVE_CACHE_TTL?: string })
+          : undefined,
+      );
+      if (ttl > 0) {
+        const neg = buildNegativeCache(this.deps.cache, ttl);
+        return neg.resolve(negativeCollectionKey(this.deps.siteId, collectionName), async () => {
+          // Positive schema cache first (existing key namespace).
+          const cached = await this.deps.cache!.get<CompiledCollection>(
+            cacheKey(this.deps.siteId, collectionName),
+          );
+          if (cached) return cached;
+          return this.compile(collectionName);
+        });
+      }
+      const cached = await this.deps.cache.get<CompiledCollection>(
+        cacheKey(this.deps.siteId, collectionName),
+      );
       if (cached) return cached;
     }
     return this.compile(collectionName);

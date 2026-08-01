@@ -88,7 +88,7 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
 
 - [ ] 13. Distributed rate limiter
   - [ ] 13.1 Interface `RateLimiterProvider` + adapter Redis (INCR+EXPIRE NX) + adapter CF (binding, fallback memory + warn) trong `packages/runtime` (Req 12.1; design §8)
-  - [ ] 13.2 Middleware `/api/v1`: key `rl:${siteId}:${principal}`, default 600/phút (`LUMIBASE_API_RATE_LIMIT`), 429 + `Retry-After`; skip health/metrics/deliver (Req 12.3)
+  - [ ] 13.2 Middleware `/api/v1`: key `rl:${siteId}:${principal}`, default 600/phút (`LUMIBASE_API_RATE_LIMIT`), 429 + `Retry-After`; skip health/metrics (Req 12.3). **Sửa:** `deliver` KHÔNG còn được skip — nó có limiter riêng keyed theo IP ở task 22.6 (design §14.9 chốt open question §21.2)
   - [ ] 13.3 Migrate recovery limiter + setup `/state` limiter; cập nhật docstring (Req 12.2)
   - [ ] 13.4 Login-guard counter backend Redis qua provider, Postgres fallback (Req 12.4)
   - [ ] 13.5 Two-instance test chia sẻ budget (Req 12.5; design §13.1)
@@ -137,3 +137,21 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
 - [ ] 21. Chốt chương trình
   - [ ] 21.1 Re-run toàn bộ k6, hoàn tất bảng roadmap §2; so sánh với target — chênh lệch ghi nhận công khai, không sửa số
   - [ ] 21.2 Rà DoD lần cuối toàn chương trình theo `dod-review.md`; Setup Impact Registry dòng tổng (dự kiến `n/a` + ghi chú migration index); tutorial impact cho flow 202-contract (dod-review §5); CHANGELOG + README release policy
+
+### Bổ sung — Chống cache penetration (Req 19, design §14)
+
+Nhóm này bổ sung sau khi spec gốc đã lập, nên đánh số nối tiếp (22.x) thay vì chèn giữa — mỗi subtask ghi rõ phase nó thuộc về. 22.1–22.2 độc lập, làm được ngay trong **P0**. 22.3–22.7 **cần task 8** (Cache Provider v2) vì interface hiện tại không biểu diễn được tombstone (design §14.1 F1).
+
+- [ ] 22. Cache penetration defence
+    - [x] 22.1 **[P0]** Module `apps/cms/src/services/identifier-guard.ts`: regex nanoid/slug/collection + `assertShape` trả 404 (không 400); chuyển hằng `SAFE_FIELD_NAME` (`deliver.ts:25`) vào đây và import ngược lại, không nhân bản regex (Req 19.1, 19.3; design §14.6)
+  - [x] 22.2 **[P0]** Áp guard: `routes/deliver.ts` (`page/:site_id/:slug`, `llms.txt/:site_id`) + `middleware/tenant.ts` validate `X-Lumi-Site` → 400 `TENANT_INVALID` trước khi set context (Req 19.1–19.2). Test P17: định danh sai hình dạng → 404 với **0** DB query, đếm qua query counter như task 1.4 đã làm
+  - [x] 22.3 **[P1, cần 8]** Mở rộng `CacheProvider`: `CacheEntry<T>` 4 trạng thái + `getEntry` + `setNegative`; envelope `{"__lumi":"neg","v":1}` trên dây (KHÔNG dùng `null`/chuỗi rỗng — cả 2 adapter coi là falsy); Redis phân biệt lỗi → `unavailable` thay vì nuốt (đi cùng Req 13.2); KV cùng envelope (Req 19.4; design §14.3). Bổ sung vào contract test suite của task 8.5 để chạy trên cả 2 adapter + LRU
+  - [x] 22.4 **[P1, cần 22.3]** Helper `createNegativeCache` trong `packages/runtime/src/cache-helpers.ts` cạnh `createSwrCache`: TTL + jitter ±20%, `resolve`/`forget`; JSDoc ghi rõ KHÔNG gộp single-flight và lý do (Req 19.5; design §14.4). Unit test fake-timer: jitter nằm trong biên, `unavailable` → gọi `load` (không tự coi là miss)
+  - [x] 22.5 **[P1, cần 22.4]** Áp tombstone vào 4 đường đã audit: `deliver.ts:411-420` (page), `deliver.ts:287-294` (site/llms.txt), `SchemaService.getCompiled` (`schema-service.ts:1074-1080`), `ItemService.resolveCollection` (`item-service.ts:642-652` — hiện bỏ qua cache hoàn toàn, cho đi qua `getCompiled`). Request có Authorization/preview KHÔNG bao giờ nhận tombstone (Req 19.5, 19.8, 19.12; design §14.5). Test P18 + P20
+  - [x] 22.6 **[P1, cần 22.4]** `forget` sau commit tại 4 write path (tạo page/đổi slug, tạo collection, tạo item, tạo site) — cùng vị trí và cùng chính sách lỗi với tag purge task 9.1 (lỗi → metric + warn, không fail request) (Req 19.7; design §14.7). Test P19: tạo tài nguyên đang bị tombstone → 200 ngay, không chờ TTL
+  - [x] 22.7 **[P1, cần 13]** Limiter riêng cho `/api/v1/deliver/*`: key `rl:deliver:${ip}`, default 1200/phút (`LUMIBASE_DELIVER_RATE_LIMIT`), 429 + `Retry-After` + `no-store`; KHÔNG ghi tombstone từ request bị 429; đọc IP qua cùng helper limiter hiện hành, không tự parse header. Mount cạnh `withDb()` tại `index.ts:367` (Req 19.10–19.11; design §14.9). Cập nhật `security-guards.wiring.test.ts` thêm assertion (không sửa assertion cũ)
+  - [x] 22.8 **[P1]** Metrics `cache_negative_hits_total` / `cache_negative_writes_total` wire qua `onEvent` (đi cùng task 14.1); panel Grafana tách hit-vì-có-dữ-liệu với hit-vì-tombstone (Req 19.15)
+  - [x] 22.9 **[P1]** k6 `apps/cms/k6/load-penetration.js`: 95% slug/ID ngẫu nhiên không tồn tại + 5% hợp lệ; đo DB-query-per-404, mục tiêu ≤ 0.05; chạy trước/sau, điền số thật vào roadmap §2 (Req 19.13–19.14)
+  - [x] 22.10 **[P1]** Docs: mục "Cache penetration" trong `docs/en/features/caching.md` (ba tầng, quyết định không dùng Bloom filter + điều kiện tái mở, ràng buộc TTL ngắn ↔ độ trễ thấy tài nguyên mới); env reference thêm 2 biến mới (DoD mục 4)
+
+> Task 21 (chốt chương trình) chạy SAU nhóm 22 — 21.1 phải bao gồm cả `load-penetration.js`, 21.2 phải rà DoD 2b cho khoá `neg:*` và `rl:deliver:*`.
