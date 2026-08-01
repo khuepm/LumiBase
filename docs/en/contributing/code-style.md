@@ -36,10 +36,10 @@ Always use `import type` for type-only imports:
 
 ```typescript
 // ✓ Good
-import type { Collection } from '@lumibase/shared'
+import type { Collection } from '@lumibase/contracts'
 
 // ✗ Bad — imports value at runtime
-import { Collection } from '@lumibase/shared'
+import { Collection } from '@lumibase/contracts'
 ```
 
 ### No `any`
@@ -59,7 +59,7 @@ function parseItem(value: any): Item { ... }
 
 ### Zod for runtime validation
 
-All API request/response shapes are validated with Zod. Define schemas in `packages/shared/src/schemas/`:
+All API request/response shapes are validated with Zod. Define schemas in `packages/contracts/src/schemas/`:
 
 ```typescript
 import { z } from 'zod'

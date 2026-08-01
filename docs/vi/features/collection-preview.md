@@ -43,7 +43,7 @@ Không thêm cột/migration. Dùng `collections.meta` (jsonb "UI hints", `packa
 }
 ```
 
-Zod (đặt trong `packages/shared/src/schemas/`, export cho CMS + Studio):
+Zod (đặt trong `packages/contracts/src/schemas/`, export cho CMS + Studio):
 
 ```ts
 export const previewConfigSchema = z.object({
@@ -139,7 +139,7 @@ Trong màn settings collection (`apps/studio/src/modules/data-model/detail.tsx`,
 
 **Giai đoạn 1 (MVP):**
 
-1. `packages/shared`: `previewConfigSchema`.
+1. `packages/contracts`: `previewConfigSchema`.
 2. `apps/cms`: env `PREVIEW_ALLOWED_ORIGINS` (`env.ts` + `wrangler.toml`) · validate origin khi lưu `meta.preview.url` · production guard · expose allowlist cho Studio · `frame-src` CSP trong `security-headers.ts`.
 3. `apps/studio/data-model`: tab cấu hình Preview (tái dùng Mustache editor).
 4. `apps/studio/content`: tab Preview trong `item-detail.tsx` + component iframe (sandbox + debounce reload).

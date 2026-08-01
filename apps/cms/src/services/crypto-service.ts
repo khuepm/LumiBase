@@ -1,4 +1,4 @@
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import type { KeyMeta, KeyProvider, ResolvedKey } from '@lumibase/runtime';
 import { formatEnvelope, parseEnvelope } from './crypto/envelope-codec';
 import { buildAad, type CryptoContext } from './crypto/aad';

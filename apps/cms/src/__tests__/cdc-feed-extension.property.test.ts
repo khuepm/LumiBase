@@ -17,7 +17,7 @@ import {
   InMemoryCdcEventStore,
   type StoredChangeEvent,
 } from '../modules/cdc/change-feed/feed-reader';
-import type { CdcEventEnvelope } from '@lumibase/shared';
+import type { CdcEventEnvelope } from '@lumibase/contracts';
 
 /**
  * Feature: cdc-extension-integration, Property 12: Subscriber isolation

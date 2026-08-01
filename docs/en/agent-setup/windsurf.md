@@ -76,7 +76,7 @@ Flow: Add realtime notifications to the Flows engine
 1. Read docs/en/features/flows-automation.md and docs/en/features/websockets-realtime.md
 2. Add a "notify" operation type to the operation registry in apps/cms/src/services/
 3. Implement the WebSocket push in the existing realtime service
-4. Update types in packages/shared
+4. Update types in packages/contracts
 5. Run pnpm typecheck to confirm no errors
 ```
 

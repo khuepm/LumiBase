@@ -25,7 +25,7 @@ import {
 import { buildSearchDocument } from './search-document';
 import { PermissionService, type CompiledPermission, type PermissionAction } from './permission-service';
 import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
-import type { PolicyRule } from '@lumibase/shared';
+import type { PolicyRule } from '@lumibase/contracts';
 import { CryptoService, DecryptionError, SingleKeyProvider, type CryptoContext } from './crypto-service';
 import {
   newEnvelopeRecordCipher,
@@ -50,12 +50,12 @@ import {
   type OutboxActor,
 } from '../modules/cdc/change-feed/outbox-writer';
 import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
-import type { CdcOperation } from '@lumibase/shared/schemas';
+import type { CdcOperation } from '@lumibase/contracts/schemas';
 import { AuditLogger } from '../modules/audit/logger';
 import { FirebaseSyncService } from '../modules/lumibase-firebase-sync';
 import { WriteCoalescer } from './load-guard-service';
 import type { PrimaryKeyType, StorageMode } from './schema-service';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 /**
  * ItemService — generic CRUD over the `items` JSONB store, driven by the

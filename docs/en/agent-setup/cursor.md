@@ -95,7 +95,7 @@ Cursor's **Composer** mode (`Cmd+I`) works well for multi-file LumiBase tasks:
 @docs/en/features/flows-automation.md
 Add a new "notify-slack" operation type to the Flows engine.
 Follow the existing pattern in apps/cms/src/services/flow-service.ts.
-Create the operation handler, register it in the operation registry, and add types to packages/shared.
+Create the operation handler, register it in the operation registry, and add types to packages/contracts.
 ```
 
 ```

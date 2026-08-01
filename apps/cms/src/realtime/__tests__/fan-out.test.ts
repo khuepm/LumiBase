@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RealtimeEvent } from '@lumibase/shared';
+import type { RealtimeEvent } from '@lumibase/contracts';
 import { canSubscribe, projectPayload, shouldDeliver, toWireMessage, type FanoutSession } from '../fan-out';
 
 function session(partial: Partial<FanoutSession>): FanoutSession {

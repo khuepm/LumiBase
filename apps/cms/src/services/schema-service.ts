@@ -10,7 +10,7 @@ import {
 } from '@lumibase/database';
 import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import type { CacheProvider, QueueProvider } from '@lumibase/runtime';
-import type { CdcOperation, CdcResource, FieldClassification } from '@lumibase/shared';
+import type { CdcOperation, CdcResource, FieldClassification } from '@lumibase/contracts';
 import { AuditLogger } from '../modules/audit/logger';
 import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';
 import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';

@@ -16,7 +16,7 @@ import {
   panelCreateSchema,
   panelQuerySchema,
   type PanelQuery,
-} from '@lumibase/shared';
+} from '@lumibase/contracts';
 import { and, eq } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
 import { z } from 'zod';

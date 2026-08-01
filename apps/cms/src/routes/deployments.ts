@@ -4,7 +4,7 @@ import {
   DeploymentTargetCreateSchema,
   DeploymentTargetUpdateSchema,
   DeployTriggerSchema,
-} from '@lumibase/shared';
+} from '@lumibase/contracts';
 import type { AppEnv } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
 import { DeploymentError, DeploymentService } from '../services/deployment/deployment-service';

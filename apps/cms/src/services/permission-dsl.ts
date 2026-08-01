@@ -1,7 +1,7 @@
 import type { SQL } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { items } from '@lumibase/database';
-import type { PolicyRule } from '@lumibase/shared';
+import type { PolicyRule } from '@lumibase/contracts';
 
 /**
  * Permission rule DSL → SQL where-clause + in-memory predicate.

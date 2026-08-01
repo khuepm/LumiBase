@@ -8,7 +8,7 @@ import { AISecureHarness } from '../services/ai-harness';
 import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest } from '../services/item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 // ---------------------------------------------------------------------------
 // Zod Schemas

@@ -6,7 +6,7 @@ import {
   verifyBundle,
   type BundleSignature,
   type ResolvedKey,
-} from '@lumibase/shared/extensions';
+} from '@lumibase/contracts/extensions';
 
 function makeKeypair(): { pem: string; privateKey: KeyObject } {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');

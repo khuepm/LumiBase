@@ -19,7 +19,7 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { PasswordSchema } from '@lumibase/shared/schemas';
+import { PasswordSchema } from '@lumibase/contracts/schemas';
 import type { AppEnv } from '../../env';
 import { withDb } from '../../middleware/db';
 import {

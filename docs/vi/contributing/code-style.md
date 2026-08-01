@@ -39,10 +39,10 @@ Luôn dùng `import type` cho các import chỉ chứa type:
 
 ```typescript
 // ✓ Good
-import type { Collection } from '@lumibase/shared'
+import type { Collection } from '@lumibase/contracts'
 
 // ✗ Bad — imports value at runtime
-import { Collection } from '@lumibase/shared'
+import { Collection } from '@lumibase/contracts'
 ```
 
 ### Không dùng `any`
@@ -62,7 +62,7 @@ function parseItem(value: any): Item { ... }
 
 ### Zod cho runtime validation
 
-Mọi shape của API request/response đều được validate bằng Zod. Định nghĩa schema trong `packages/shared/src/schemas/`:
+Mọi shape của API request/response đều được validate bằng Zod. Định nghĩa schema trong `packages/contracts/src/schemas/`:
 
 ```typescript
 import { z } from 'zod'

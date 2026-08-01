@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { resolveSaveAction, type SaveAction } from '@lumibase/shared/schemas';
+import { resolveSaveAction, type SaveAction } from '@lumibase/contracts/schemas';
 import { getApiClient } from '@/lib/api';
 
 /** Human label for a save action, e.g. for the save button + menu. */

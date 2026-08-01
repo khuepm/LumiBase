@@ -10,7 +10,7 @@ import {
   ExtensionVerifierService,
   buildSandboxVerifyOptions,
 } from '../services/extension-verifier';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 export const extensionsRouter = new Hono<AppEnv>();
 

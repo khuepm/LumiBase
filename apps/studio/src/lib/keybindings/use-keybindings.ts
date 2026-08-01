@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import type { KeybindingMap } from '@lumibase/shared/schemas';
+import type { KeybindingMap } from '@lumibase/contracts/schemas';
 import { ACTIONS_BY_ID, buildChordLookup } from './actions';
 import { eventToChord } from './chord';
 import { isReserved } from './platform';

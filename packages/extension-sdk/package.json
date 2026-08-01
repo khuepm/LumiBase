@@ -38,5 +38,18 @@
         "require": "./dist/index.cjs"
       }
     }
-  }
+  },
+  "homepage": "https://docs.lumibase.dev",
+  "bugs": {
+    "url": "https://github.com/khuepm/lumibase/issues"
+  },
+  "keywords": [
+    "lumibase",
+    "cms",
+    "headless-cms",
+    "extensions",
+    "hooks",
+    "sdk",
+    "typescript"
+  ]
 }

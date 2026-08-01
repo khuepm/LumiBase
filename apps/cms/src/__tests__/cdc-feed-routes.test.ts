@@ -16,7 +16,7 @@ import {
   type SubscriptionRecord,
 } from '../modules/cdc/change-feed/subscription-service';
 import { CursorExpiredError } from '../modules/cdc/change-feed/feed-reader';
-import { encodeCdcCursor } from '@lumibase/shared';
+import { encodeCdcCursor } from '@lumibase/contracts';
 import type { AppEnv } from '../env';
 
 /**

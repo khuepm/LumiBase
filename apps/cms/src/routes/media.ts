@@ -4,10 +4,10 @@ import type { Context } from 'hono';
 import type { AppEnv } from '../env';
 import { type PermissionAction } from '../services/permission-service';
 import { permissionServiceForRequest } from '../services/item-service-factory';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import { scopeSite, settings, transformPresets } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
-import { type TransformDsl, transformDslSchema, transformKey, verifyTransform } from '@lumibase/shared';
+import { type TransformDsl, transformDslSchema, transformKey, verifyTransform } from '@lumibase/contracts';
 
 type ResolvedTransform = { dsl: TransformDsl; fromPreset: boolean };
 

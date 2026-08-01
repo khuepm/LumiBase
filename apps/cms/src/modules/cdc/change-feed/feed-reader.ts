@@ -19,7 +19,7 @@ import {
   encodeCdcCursor,
   type CdcCursor,
   type CdcOperation,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import { compareKeyset } from './subscription-state';
 
 export const SAFETY_LAG_MS = 2_000;

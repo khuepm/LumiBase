@@ -57,4 +57,4 @@ Toàn bộ code router và middleware nằm trong các file dùng chung, chỉ i
 - Tài liệu ít đầy đủ hơn Express cho các mẫu nâng cao
 
 **Trung tính:**
-- `@hono/zod-validator` được dùng để validate request (khớp tốt với các schema zod của chúng ta trong `packages/shared`)
+- `@hono/zod-validator` được dùng để validate request (khớp tốt với các schema zod của chúng ta trong `packages/contracts`)

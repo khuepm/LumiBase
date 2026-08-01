@@ -69,10 +69,12 @@ lumibase/
 │   └── consumer/           # Next.js delivery API demo
 ├── packages/
 │   ├── database/           # Drizzle ORM schema + migrations
-│   ├── shared/             # Types, zod schemas, policy DSL, field DSL
-│   ├── sdk/                # JS SDK (REST + WS) + typegen core
+│   ├── contracts/          # @lumibase/contracts — Zod schemas, policy/field DSL
+│   ├── sdk/                # @lumibase/sdk — JS SDK (REST + WS) + typegen core
 │   ├── ui/                 # Shared shadcn components + CVA tokens
-│   └── extension-sdk/      # Types/helpers for building extensions
+│   ├── extension-sdk/      # @lumibase/extension-sdk — extension authoring helpers
+│   ├── mcp-server/         # @lumibase/mcp-server — stdio MCP (lumibase-mcp)
+│   └── create-lumibase/    # create-lumibase scaffolder
 ├── docs/                   # Architecture + feature specs + roadmap
 ├── architecture.md         # Root summary (update on structural changes)
 ├── .cursorrules            # AI agent instructions

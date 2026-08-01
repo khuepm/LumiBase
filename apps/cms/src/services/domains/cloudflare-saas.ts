@@ -1,4 +1,4 @@
-import type { DomainVerificationRecord } from '@lumibase/shared/schemas';
+import type { DomainVerificationRecord } from '@lumibase/contracts/schemas';
 import { bearer, guardedFetch } from '../deployment/providers/http';
 
 /**

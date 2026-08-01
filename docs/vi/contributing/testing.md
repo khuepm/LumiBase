@@ -245,7 +245,7 @@ Mục tiêu theo từng package (được thực thi trong CI):
 | `@lumibase/cms` | 80% | 85% |
 | `@lumibase/database` | 70% | 80% |
 | `@lumibase/ai-skills` | 90% | 90% |
-| `@lumibase/shared` | 85% | 90% |
+| `@lumibase/contracts` | 85% | 90% |
 
 Xem coverage report:
 

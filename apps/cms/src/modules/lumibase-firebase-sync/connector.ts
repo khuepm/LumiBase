@@ -14,7 +14,7 @@
  * decrypted blob and the connector holds it only for the call's lifetime.
  */
 
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 /** Coerce any error into a single log-safe string for the {@link SyncResult}. */
 function stringifyError(err: unknown): string {

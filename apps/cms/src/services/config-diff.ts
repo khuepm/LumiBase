@@ -20,7 +20,7 @@ import {
   type SettingConfig,
   type WebhookConfig,
   stableKey,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import { canonicalize } from './config-serialize';
 
 export type ApplyMode = 'merge' | 'replace-managed' | 'replace-all';

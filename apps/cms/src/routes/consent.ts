@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { ConsentSetSchema, ConsentTypeSchema } from '@lumibase/shared/schemas';
+import { ConsentSetSchema, ConsentTypeSchema } from '@lumibase/contracts/schemas';
 import type { AppEnv } from '../env';
 import { ConsentService } from '../modules/consent/service';
 import { resolveCurrentUserId } from '../modules/data-rights/resolve-user';

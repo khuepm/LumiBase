@@ -28,7 +28,7 @@
 
 import type { Database } from '@lumibase/database';
 import { validateOutboundUrl } from '../services/ssrf-guard';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,7 +107,7 @@ export class SandboxLoadError extends Error {
 /**
  * Signature-verification gate for the load path. Returns whether the bundle is
  * trusted; the caller (route) supplies this so the sandbox stays free of DB and
- * `@lumibase/shared/extensions` imports. Resolves `true` to allow load.
+ * `@lumibase/contracts/extensions` imports. Resolves `true` to allow load.
  */
 export type SandboxVerify = () => Promise<boolean>;
 

@@ -118,7 +118,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
-import { PasswordSchema } from '@lumibase/shared/schemas';
+import { PasswordSchema } from '@lumibase/contracts/schemas';
 import { eq, sql } from 'drizzle-orm';
 import { users } from '@lumibase/database';
 

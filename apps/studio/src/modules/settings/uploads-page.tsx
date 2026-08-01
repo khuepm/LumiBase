@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { UploadCloud, Save, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getApiClient } from '@/lib/api';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import type { UploadConfigResource } from '@lumibase/sdk';
 
 const BYTES_PER_MB = 1024 * 1024;

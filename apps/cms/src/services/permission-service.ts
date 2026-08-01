@@ -13,7 +13,7 @@ import {
   users,
   type Database,
 } from '@lumibase/database';
-import type { PolicyRule } from '@lumibase/shared';
+import type { PolicyRule } from '@lumibase/contracts';
 import type { CacheProvider } from '@lumibase/runtime';
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { isIP } from 'node:net';

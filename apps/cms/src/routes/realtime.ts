@@ -19,7 +19,7 @@
 
 import { Hono, type Context } from 'hono';
 import { SignJWT, jwtVerify } from 'jose';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import type { AppEnv } from '../env';
 import { getLocationHint, resolveRoomName } from '../realtime/shard-config';
 import { resolveAudienceGrant } from '../realtime/audience-grant';

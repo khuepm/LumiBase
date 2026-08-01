@@ -13,7 +13,7 @@
  */
 
 import { guardedFetch } from '../../../services/ssrf-guard';
-import type { CdcEventEnvelope } from '@lumibase/shared/schemas';
+import type { CdcEventEnvelope } from '@lumibase/contracts/schemas';
 
 export const SIGNATURE_HEADER = 'X-LumiBase-Signature';
 export const WEBHOOK_TIMEOUT_MS = 30_000;

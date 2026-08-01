@@ -1,6 +1,6 @@
 import type { Database } from '@lumibase/database';
 import type { RuntimeContext } from '@lumibase/runtime';
-import type { PageviewStrategyName } from '@lumibase/shared/schemas';
+import type { PageviewStrategyName } from '@lumibase/contracts/schemas';
 
 /**
  * Normalised context for a single recorded hit. Built by the service from the

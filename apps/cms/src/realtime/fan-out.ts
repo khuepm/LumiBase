@@ -7,7 +7,7 @@
  * `toWireMessage`.
  */
 
-import type { RealtimeEvent } from '@lumibase/shared';
+import type { RealtimeEvent } from '@lumibase/contracts';
 import { evaluateRule, type ConditionRule } from '../services/conditions';
 
 export interface FanoutSession {

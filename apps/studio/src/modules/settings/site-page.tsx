@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { SiteConfigUpdateSchema, normalizeSiteUrl } from '@lumibase/shared/schemas';
+import { SiteConfigUpdateSchema, normalizeSiteUrl } from '@lumibase/contracts/schemas';
 import type { SiteResource } from '@lumibase/sdk';
 import { Globe, Palette, Code2, Save, Check, AlertTriangle } from 'lucide-react';
 import { useEffect, useId, useMemo, type ReactNode } from 'react';

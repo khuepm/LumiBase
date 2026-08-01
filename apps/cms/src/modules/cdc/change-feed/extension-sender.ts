@@ -15,7 +15,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { cdcSubscriptions, extensions, type Database } from '@lumibase/database';
-import type { CdcEventEnvelope } from '@lumibase/shared/schemas';
+import type { CdcEventEnvelope } from '@lumibase/contracts/schemas';
 import type { CacheProvider } from '@lumibase/runtime';
 import { ExtensionSandbox } from '../../../extensions/sandbox';
 import type { DispatchableSubscription, EnvelopeSender } from './dispatcher';

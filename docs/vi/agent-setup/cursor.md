@@ -98,7 +98,7 @@ Chế độ **Composer** của Cursor (`Cmd+I`) hoạt động tốt cho các ta
 @docs/en/features/flows-automation.md
 Add a new "notify-slack" operation type to the Flows engine.
 Follow the existing pattern in apps/cms/src/services/flow-service.ts.
-Create the operation handler, register it in the operation registry, and add types to packages/shared.
+Create the operation handler, register it in the operation registry, and add types to packages/contracts.
 ```
 
 ```

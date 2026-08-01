@@ -181,7 +181,7 @@ import { STANDARD_LOCKOUT_POLICY } from '../setup/policy-codec';
 // the recovery routes (`routes.ts`) and injected via the constructor —
 // admin-setup-wizard task 11.2 / Req 15.1, 15.2.
 import type { AuditLogger, AuditLogWriteInput } from '../audit/logger';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 // ── unlock-token store abstraction ──────────────────────────────────────
 

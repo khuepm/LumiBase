@@ -1,7 +1,7 @@
 {
   "name": "create-lumibase",
   "version": "0.24.1",
-  "description": "Scaffold a new LumiBase project — Edge-native Headless CMS",
+  "description": "Scaffold a new LumiBase project \u2014 Edge-native Headless CMS",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
@@ -50,5 +50,9 @@
     "type": "git",
     "url": "git+https://github.com/khuepm/lumibase.git",
     "directory": "packages/create-lumibase"
+  },
+  "homepage": "https://docs.lumibase.dev",
+  "bugs": {
+    "url": "https://github.com/khuepm/lumibase/issues"
   }
 }

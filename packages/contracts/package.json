@@ -1,0 +1,95 @@
+{
+  "name": "@lumibase/contracts",
+  "version": "0.24.1",
+  "description": "Shared Zod schemas, types, policy DSL, and field DSL for LumiBase. Pure ESM — no Hono/React runtime deps.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khuepm/lumibase.git",
+    "directory": "packages/contracts"
+  },
+  "homepage": "https://docs.lumibase.dev",
+  "bugs": {
+    "url": "https://github.com/khuepm/lumibase/issues"
+  },
+  "keywords": [
+    "lumibase",
+    "cms",
+    "headless-cms",
+    "zod",
+    "schema",
+    "policy",
+    "typescript",
+    "contracts"
+  ],
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./policy": "./src/policy/index.ts",
+    "./field": "./src/field/index.ts",
+    "./schemas": "./src/schemas/index.ts",
+    "./extensions": "./src/extensions/index.ts",
+    "./version": "./src/version.ts",
+    "./utils": "./src/utils/logger.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
+      },
+      "./policy": {
+        "types": "./dist/policy/index.d.ts",
+        "import": "./dist/policy/index.js",
+        "require": "./dist/policy/index.cjs"
+      },
+      "./field": {
+        "types": "./dist/field/index.d.ts",
+        "import": "./dist/field/index.js",
+        "require": "./dist/field/index.cjs"
+      },
+      "./schemas": {
+        "types": "./dist/schemas/index.d.ts",
+        "import": "./dist/schemas/index.js",
+        "require": "./dist/schemas/index.cjs"
+      },
+      "./extensions": {
+        "types": "./dist/extensions/index.d.ts",
+        "import": "./dist/extensions/index.js",
+        "require": "./dist/extensions/index.cjs"
+      },
+      "./version": {
+        "types": "./dist/version.d.ts",
+        "import": "./dist/version.js",
+        "require": "./dist/version.cjs"
+      },
+      "./utils": {
+        "types": "./dist/utils/logger.d.ts",
+        "import": "./dist/utils/logger.js",
+        "require": "./dist/utils/logger.cjs"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo dist"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.6.2"
+  },
+  "files": [
+    "dist"
+  ]
+}

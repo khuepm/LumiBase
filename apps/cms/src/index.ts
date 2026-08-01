@@ -96,7 +96,7 @@ import {
   gitRouter,
   gitPublicRouter,
 } from './modules/git-integration/routes';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 const app = new Hono<AppEnv>();
 

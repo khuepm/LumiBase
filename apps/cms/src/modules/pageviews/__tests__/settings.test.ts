@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePageviewSettings } from '@lumibase/shared/schemas';
+import { parsePageviewSettings } from '@lumibase/contracts/schemas';
 
 describe('parsePageviewSettings', () => {
   it('applies defaults for an empty value', () => {

@@ -1,6 +1,6 @@
 import { GraphQLError } from 'graphql';
 import { ItemServiceError } from '../services/item-service';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 /**
  * Normalises a thrown error into a `GraphQLError` whose `extensions.code`

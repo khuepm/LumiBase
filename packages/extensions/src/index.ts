@@ -27,4 +27,4 @@ export {
   type ExtensionManifest,
   type ExtensionType,
   type UiExtensionType,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';

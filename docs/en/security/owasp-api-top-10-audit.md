@@ -93,7 +93,7 @@ themselves; RLS is the production backstop for any miss.
   `routes/auth.ts:216-217`).
 - **Password handling** — PBKDF2-SHA256, 100k iterations, 16-byte salt
   (`services/auth/password.ts:19-22`); 12+ char policy via shared
-  `PasswordSchema` (`packages/shared/src/schemas/password.ts:12-28`).
+  `PasswordSchema` (`packages/contracts/src/schemas/password.ts:12-28`).
 - **Brute-force/lockout** — Postgres-backed per-IP limiter + account lockout
   (`modules/login-guard/`), enumeration hardening via email normalization +
   uniform timing.

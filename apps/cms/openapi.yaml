@@ -1132,7 +1132,7 @@ components:
           items: { type: string, minLength: 1 }
         config: { type: object, additionalProperties: true }
     # ── Change Feed (first-party outbox+relay; distinct from the ClickHouse
-    #    CDC pipelines above). Source of truth: packages/shared/schemas/cdc-feed.ts
+    #    CDC pipelines above). Source of truth: packages/contracts/schemas/cdc-feed.ts
     EventEnvelope:
       type: object
       description: Change-feed event (schemaVersion 1). `id` is the idempotency key; `cursor` is this event's keyset token.

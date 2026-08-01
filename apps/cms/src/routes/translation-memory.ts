@@ -11,7 +11,7 @@
  */
 
 import { glossary, translationMemory } from '@lumibase/database';
-import { TM_DEFAULT_THRESHOLD } from '@lumibase/shared';
+import { TM_DEFAULT_THRESHOLD } from '@lumibase/contracts';
 import { and, count, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';

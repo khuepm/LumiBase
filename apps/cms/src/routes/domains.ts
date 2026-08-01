@@ -4,7 +4,7 @@ import {
   FREE_DOMAIN_SUFFIX,
   type DomainResource,
   type DomainVerificationRecord,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';

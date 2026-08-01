@@ -104,7 +104,7 @@ An attacker could include `createdBy`, `publishedAt`, or `status: "published"` i
 The first and most important line of defence is to never let raw `req.body` touch business logic. Parse every incoming request through a Zod schema, and let Zod strip fields the schema doesn't declare.
 
 ```typescript
-// packages/shared/src/schemas/items.ts
+// packages/contracts/src/schemas/items.ts
 import { z } from 'zod';
 
 export const createItemSchema = z.object({
@@ -121,7 +121,7 @@ By default, `z.object()` strips unknown keys when it parses (`.parse()` drops th
 
 ```typescript
 // apps/cms/src/routes/items.ts
-import { createItemSchema } from '@lumibase/shared/schemas/items';
+import { createItemSchema } from '@lumibase/contracts/schemas/items';
 
 app.post('/items', async (c) => {
   const raw = await c.req.json();
@@ -143,7 +143,7 @@ Zod at the boundary is excellent, but defence in depth means the service layer s
 
 ```typescript
 // apps/cms/src/services/item-service.ts
-import type { CreateItemInput } from '@lumibase/shared/schemas/items';
+import type { CreateItemInput } from '@lumibase/contracts/schemas/items';
 import { nanoid } from 'nanoid';
 import { items } from '@lumibase/database/schema';
 

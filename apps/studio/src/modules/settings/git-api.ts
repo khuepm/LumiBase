@@ -11,7 +11,7 @@ import type {
   CiRunResource,
   GitIntegrationResource,
   PullRequestResource,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 
 const PREFIX = '/api/v1/integrations/git';
 

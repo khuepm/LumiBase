@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { PanelResult, PanelType } from '@lumibase/shared';
+import type { PanelResult, PanelType } from '@lumibase/contracts';
 import { cn } from '@/lib/cn';
 import { insightsApi, type Panel } from './api';
 

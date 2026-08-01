@@ -5,7 +5,7 @@
 
 import { and, asc, eq } from 'drizzle-orm';
 import { authExternalIssuers, scopeSite, type Database } from '@lumibase/database';
-import { makeExternalIssuerConfigSchema, makeExternalIssuerUpdateSchema } from '@lumibase/shared/schemas';
+import { makeExternalIssuerConfigSchema, makeExternalIssuerUpdateSchema } from '@lumibase/contracts/schemas';
 import type { CacheProvider } from '@lumibase/runtime';
 import { AuditLogger } from '../modules/audit/logger';
 import { issuerCacheKey } from '../modules/external-auth/adapter';

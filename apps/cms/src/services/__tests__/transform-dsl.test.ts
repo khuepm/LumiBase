@@ -1,4 +1,4 @@
-import { MAX_DIM, parseTransformQuery, signTransform, transformDslSchema, transformKey, verifyTransform } from '@lumibase/shared';
+import { MAX_DIM, parseTransformQuery, signTransform, transformDslSchema, transformKey, verifyTransform } from '@lumibase/contracts';
 import { describe, expect, it } from 'vitest';
 
 describe('transform DSL schema', () => {

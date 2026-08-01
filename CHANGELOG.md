@@ -638,7 +638,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   media uploads); the app also rejects oversized JSON bodies with `413`
   (`LUMIBASE_MAX_JSON_BODY`, default 1 MiB) as defense-in-depth.
 - **Image-transform presets.** Shared `TransformDsl` contract in
-  `@lumibase/shared`, a `lumibase_transform_presets` table, site-scoped
+  `@lumibase/contracts`, a `lumibase_transform_presets` table, site-scoped
   `/api/v1/transform-presets` CRUD (media-permission gated), on-the-fly
   delivery transform via `GET /media/:key?preset=|?width=&…` (302 to the
   runtime image URL; no-param path unchanged), and an SDK `mediaUrl` builder.

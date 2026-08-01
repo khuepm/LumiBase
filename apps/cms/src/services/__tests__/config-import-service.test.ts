@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Database } from '@lumibase/database';
-import { CONFIG_MANIFEST_VERSION, type ConfigManifest } from '@lumibase/shared/schemas';
+import { CONFIG_MANIFEST_VERSION, type ConfigManifest } from '@lumibase/contracts/schemas';
 import { ConfigImportService } from '../config-import-service';
 
 /**

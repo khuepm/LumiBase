@@ -15,7 +15,7 @@
  *   - Heartbeat pings every 30 s; disconnect idle sessions after 90 s.
  *   - Per-session rate limiting (max 20 inbound messages / second).
  *
- * Protocol — see `@lumibase/shared` (`realtime/protocol.ts`) for the canonical
+ * Protocol — see `@lumibase/contracts` (`realtime/protocol.ts`) for the canonical
  * Zod definitions shared with every client.
  *   client → server: subscribe | unsubscribe | presence | join | leave | pong
  *   server → client: welcome | ack | joined | left | event | notification |
@@ -24,12 +24,12 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import { nanoid } from 'nanoid';
-import { parseClientMessage, type RealtimeEvent } from '@lumibase/shared';
+import { parseClientMessage, type RealtimeEvent } from '@lumibase/contracts';
 import { canSubscribe, shouldDeliver, toWireMessage } from './fan-out';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type { RealtimeEvent } from '@lumibase/shared';
+export type { RealtimeEvent } from '@lumibase/contracts';
 
 export interface PresenceEntry {
   sessionId: string;

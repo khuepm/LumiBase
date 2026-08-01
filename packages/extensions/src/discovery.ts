@@ -4,7 +4,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import {
   ExtensionManifestSchema,
   type ExtensionManifest,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import {
   MANIFEST_FILENAME,
   type DiscoverOptions,

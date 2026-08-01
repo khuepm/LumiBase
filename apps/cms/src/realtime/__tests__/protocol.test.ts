@@ -5,7 +5,7 @@ import {
   serverMessageSchema,
   realtimeEventSchema,
   parseClientMessage,
-} from '@lumibase/shared';
+} from '@lumibase/contracts';
 
 describe('realtime protocol', () => {
   it('keeps the v1 protocol identifier', () => {

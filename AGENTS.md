@@ -15,7 +15,7 @@ Stack: Hono.js · PostgreSQL · Drizzle ORM · Logto · Cloudflare Workers / Doc
 | `apps/cms/` | Hono API — primary backend |
 | `apps/studio/` | Admin SPA (React + Vite) |
 | `packages/database/` | Drizzle schema + migrations |
-| `packages/shared/` | Zod schemas, types, policy DSL |
+| `packages/contracts/` | Zod schemas, types, policy DSL |
 | `packages/runtime/` | CF Workers ↔ Docker runtime adapters |
 | `packages/ai-skills/` | AI Copilot skill definitions |
 | `packages/sdk/` | @lumibase/sdk JS/TS client |
@@ -117,7 +117,7 @@ chore(deps): update drizzle-orm
 | Add an AI skill | `packages/ai-skills/src/skills.ts` |
 | Change runtime behavior | `packages/runtime/src/adapters/` |
 | Deprecate / sunset an endpoint | `apps/cms/src/middleware/deprecation.ts` (`withDeprecation` — opt-in only) |
-| Update Zod validation | `packages/shared/src/schemas/` |
+| Update Zod validation | `packages/contracts/src/schemas/` |
 | Read architecture decisions | `docs/en/architecture/decisions/` |
 
 ## Cursor Cloud specific instructions

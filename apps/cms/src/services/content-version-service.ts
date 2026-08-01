@@ -12,7 +12,7 @@
 
 import { collections, contentVersions, scopeSite } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
-import { type Change, diffFields } from '@lumibase/shared';
+import { type Change, diffFields } from '@lumibase/contracts';
 import { and, eq } from 'drizzle-orm';
 
 export class ContentVersionError extends Error {

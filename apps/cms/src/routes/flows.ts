@@ -11,7 +11,7 @@
  */
 
 import { flows, flowRuns } from '@lumibase/database';
-import { validateGraph, type FlowGraph as SharedFlowGraph } from '@lumibase/shared';
+import { validateGraph, type FlowGraph as SharedFlowGraph } from '@lumibase/contracts';
 import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';

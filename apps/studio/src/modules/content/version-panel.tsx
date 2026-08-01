@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Change } from '@lumibase/shared';
+import type { Change } from '@lumibase/contracts';
 import { useState } from 'react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';

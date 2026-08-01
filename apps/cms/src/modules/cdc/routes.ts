@@ -88,7 +88,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { cdcDeployments, users } from '@lumibase/database';
-import { PipelineCreateSchema, CdcConnectorTypeSchema } from '@lumibase/shared';
+import { PipelineCreateSchema, CdcConnectorTypeSchema } from '@lumibase/contracts';
 
 import type { AppEnv } from '../../env';
 import { PermissionService } from '../../services/permission-service';

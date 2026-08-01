@@ -8,7 +8,7 @@ import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
 import { bootstrapNodeObservability } from './observability/node';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPressureLimiter } from './pressure-limiter';
 import type { Bindings } from './env';
 

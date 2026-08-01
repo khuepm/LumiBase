@@ -4,7 +4,7 @@ import {
   PipelineCreateSchema,
   SyncScheduleSchema,
   CdcConnectorTypeSchema,
-} from '@lumibase/shared';
+} from '@lumibase/contracts';
 
 /**
  * Feature: clickhouse-cdc, Property 1: Pipeline registration round-trip

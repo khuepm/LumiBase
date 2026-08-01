@@ -30,7 +30,7 @@
 
 import { createMiddleware } from 'hono/factory';
 import type { AppEnv } from '../env';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 export function withRls() {
   return createMiddleware<AppEnv>(async (c, next) => {

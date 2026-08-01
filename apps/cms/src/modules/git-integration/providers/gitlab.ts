@@ -18,7 +18,7 @@ import {
 import type {
   CiRunResource,
   PullRequestResource,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import { constantTimeEqualStr } from '../webhook/constant-time';
 
 const API_BASE = 'https://gitlab.com/api/v4';

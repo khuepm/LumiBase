@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PasswordSchema, PASSWORD_MIN_LENGTH } from '@lumibase/shared/schemas';
+import { PasswordSchema, PASSWORD_MIN_LENGTH } from '@lumibase/contracts/schemas';
 
 describe('PasswordSchema (CWE-521) — shared strength policy', () => {
   it('accepts a strong password', () => {

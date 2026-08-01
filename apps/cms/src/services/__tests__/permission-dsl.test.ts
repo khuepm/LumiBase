@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PolicyRule } from '@lumibase/shared';
+import type { PolicyRule } from '@lumibase/contracts';
 import {
   UNKNOWN_MAGIC,
   evaluate,

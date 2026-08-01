@@ -95,7 +95,7 @@ dev thiếu lớp chốt ở DB. [Inference] các service không phải `ItemSer
   việc đổi/reset password nâng nó lên (`auth.ts:408-417`, `routes/auth.ts:216-217`).
 - **Xử lý password** — PBKDF2-SHA256, 100k iteration, salt 16 byte
   (`services/auth/password.ts:19-22`); policy 12+ ký tự qua `PasswordSchema` dùng
-  chung (`packages/shared/src/schemas/password.ts:12-28`).
+  chung (`packages/contracts/src/schemas/password.ts:12-28`).
 - **Chống brute-force/lockout** — limiter theo IP dựa trên Postgres + lockout
   account (`modules/login-guard/`), làm chặt chống liệt kê qua việc chuẩn hoá
   email + thời gian phản hồi đồng nhất.

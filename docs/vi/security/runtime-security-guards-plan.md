@@ -41,7 +41,7 @@ Chuẩn bị nền bảo mật runtime rõ ràng trước khi AI Harness đượ
    `DB config theo site → env override → default` qua
    `services/upload-policy-service.ts` (có cache, fail-safe — fallback về
    env/default nếu DB/cache không sẵn sàng nên guard không bao giờ fail open).
-   Catalogue các loại chọn được nằm ở `@lumibase/shared/schemas`
+   Catalogue các loại chọn được nằm ở `@lumibase/contracts/schemas`
    (`upload-policy.ts`) để allowlist server và file picker Studio dùng chung một
    nguồn. Admin sửa tại **Studio → Settings → Uploads**, backing bởi
    `GET/PUT /api/v1/uploads/config` (`GET` cho mọi member để cấp `accept` cho

@@ -30,13 +30,13 @@ import {
   settings,
   type Database,
 } from '@lumibase/database';
-import { CdcFeedSettingsSchema } from '@lumibase/shared/schemas';
+import { CdcFeedSettingsSchema } from '@lumibase/contracts/schemas';
 import type {
   CdcActorType,
   CdcOperation,
   CdcResource,
   CdcSource,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import type { CacheProvider } from '@lumibase/runtime';
 
 export const MASKED_VALUE = '[masked]';

@@ -16,7 +16,7 @@ import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 import type {
   GitIntegrationResource,
   PullRequestResource,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import { gitApi, type CreateIntegrationPayload } from './git-api';
 
 const CI_BADGE: Record<string, string> = {

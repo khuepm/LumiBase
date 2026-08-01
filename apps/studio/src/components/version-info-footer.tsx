@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Bug, ExternalLink } from 'lucide-react';
-import type { BuildMetadata } from '@lumibase/shared';
+import type { BuildMetadata } from '@lumibase/contracts';
 import { getApiClient } from '@/lib/api';
 import { studioBuildMetadata } from '@/lib/build-metadata';
 

@@ -1246,7 +1246,7 @@ export interface CdcRollbackResult {
 }
 
 /* -------- Change Feed (first-party outbox+relay; distinct from the
- * ClickHouse CDC pipelines above). Mirrors packages/shared/schemas/cdc-feed.ts
+ * ClickHouse CDC pipelines above). Mirrors packages/contracts/schemas/cdc-feed.ts
  * and the serialized SubscriptionRecord/delivery shapes. -------- */
 
 export type CdcOperation = "create" | "update" | "delete";

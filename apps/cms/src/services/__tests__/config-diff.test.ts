@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CONFIG_MANIFEST_VERSION, type ConfigManifest } from '@lumibase/shared/schemas';
+import { CONFIG_MANIFEST_VERSION, type ConfigManifest } from '@lumibase/contracts/schemas';
 import {
   buildConfigDiff,
   hasDestructiveChange,

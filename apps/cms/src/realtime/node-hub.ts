@@ -18,7 +18,7 @@ import type { Server as HttpServer, IncomingMessage } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { jwtVerify } from 'jose';
 import { nanoid } from 'nanoid';
-import { parseClientMessage, type RealtimeEvent } from '@lumibase/shared';
+import { parseClientMessage, type RealtimeEvent } from '@lumibase/contracts';
 import type { InProcessRealtimeHub, RealtimeEventLike } from '@lumibase/runtime';
 import { canSubscribe, shouldDeliver, toWireMessage } from './fan-out';
 

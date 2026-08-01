@@ -14,7 +14,7 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
-    "@lumibase/shared": "workspace:*",
+    "@lumibase/contracts": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

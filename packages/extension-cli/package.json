@@ -12,7 +12,7 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
-    "@lumibase/shared": "workspace:*"
+    "@lumibase/contracts": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

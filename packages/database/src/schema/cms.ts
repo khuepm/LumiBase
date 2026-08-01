@@ -473,7 +473,7 @@ export const dashboards = pgTable(
 
 /**
  * Insights panels — one visualization on a dashboard. `query` is a
- * `PanelQuery` (see `@lumibase/shared`); `position` is the grid placement.
+ * `PanelQuery` (see `@lumibase/contracts`); `position` is the grid placement.
  */
 export const panels = pgTable(
   'lumibase_panels',
@@ -620,7 +620,7 @@ export const releaseItems = pgTable(
 
 /**
  * Named image-transform presets — a stable slug (`key`) mapped to a
- * `TransformDsl` (@lumibase/shared). The delivery route resolves `?preset=key`
+ * `TransformDsl` (@lumibase/contracts). The delivery route resolves `?preset=key`
  * to these params so callers get canonical derivatives (e.g. `thumbnail`,
  * `hero`) without spelling out every dimension. See
  * `.kiro/specs/image-transform-dsl`.

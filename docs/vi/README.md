@@ -119,7 +119,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **`packages/database`** — Drizzle ORM schema + migrations (Postgres).
 - **`packages/runtime`** — Abstraction layer (CacheProvider, StorageProvider, DatabaseProvider, SearchProvider, QueueProvider, MediaProcessor) với hai bộ adapter (Cloudflare và Docker).
 - **`packages/ai-skills`** — Registry skill cho AI Copilot (CORE_SKILLS) + tool definitions OpenAI-compatible.
-- **`packages/shared`** — Types, zod schemas, policy DSL, field DSL.
+- **`packages/contracts`** — Types, zod schemas, policy DSL, field DSL.
 - **`packages/sdk`** — JS SDK (REST + WS + typegen).
 - **`packages/ui`** — shadcn components + CVA tokens.
 - **`packages/extension-sdk`** — Types và helpers cho dev viết extension.

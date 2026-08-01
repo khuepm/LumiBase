@@ -64,7 +64,7 @@ import { eq } from 'drizzle-orm';
 import { loginBaselines, type Database } from '@lumibase/database';
 
 import { isPrivateOrLoopback } from './private-ip';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import type {
   GeoBaselineSnapshot,
   GeoLookupStatus,

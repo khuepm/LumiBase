@@ -17,7 +17,7 @@ import {
   lumibaseFirebaseSyncPipelines,
   type Database,
 } from '@lumibase/database';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, desc, eq } from 'drizzle-orm';
 import { CryptoService, type CryptoContext } from '../../services/crypto-service';
 import {

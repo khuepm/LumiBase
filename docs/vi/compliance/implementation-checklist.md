@@ -39,7 +39,7 @@
 - **Đã giao:**
   - Schema `packages/database/src/schema/consent.ts` (+ migration
     `drizzle/0000_lumibase_init.sql` (đã gộp), RLS trong `migrations/rls-policies.sql`).
-  - DTO `packages/shared/src/schemas/consent.ts` (`CONSENT_TYPES`, `ConsentSetSchema`).
+  - DTO `packages/contracts/src/schemas/consent.ts` (`CONSENT_TYPES`, `ConsentSetSchema`).
   - `ConsentService` (`apps/cms/src/modules/consent/service.ts`) — upsert theo unique
     index `(site,user,type)`.
   - Route `apps/cms/src/routes/consent.ts` — `GET /api/v1/me/consents`,
@@ -65,7 +65,7 @@
 ## P1 — Nên làm sớm
 
 ### P1.1 Opt-out bán/chia sẻ ("Do Not Sell or Share") — ✅ Đã làm (v0.8.x)
-- Triển khai bằng loại consent `sale_share` (`packages/shared/src/schemas/consent.ts`),
+- Triển khai bằng loại consent `sale_share` (`packages/contracts/src/schemas/consent.ts`),
   ghi qua `PUT /api/v1/me/consents/sale_share`. Ngữ nghĩa: `granted: false` (hoặc không
   có bản ghi) = đã opt-out — mặc định an toàn theo CCPA.
 - **Tiếp theo:** hiển thị link "Do Not Sell or Share" bắt buộc và tôn trọng tín hiệu

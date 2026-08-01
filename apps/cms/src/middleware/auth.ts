@@ -6,7 +6,7 @@ import type { AppEnv, AuthPrincipal } from '../env';
 import { runDetached } from '../lib/detached';
 import { AuditLogger } from '../modules/audit/logger';
 import { tryExternalJwt } from '../modules/external-auth/adapter';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import { TOKEN_AUDIENCE, audienceValues } from '../services/auth/token-audience';
 import { resolvePublicRoleIdCached } from '../services/auth/public-role';
 import {

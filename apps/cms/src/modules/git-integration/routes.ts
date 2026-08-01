@@ -19,7 +19,7 @@ import {
   GitIntegrationUpdateSchema,
   type CiRunResource,
   type PullRequestResource,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import type { AppEnv } from '../../env';
 import { withDb } from '../../middleware/db';
 import { requireSiteAdmin } from '../../middleware/site-admin';

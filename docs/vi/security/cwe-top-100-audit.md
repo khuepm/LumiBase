@@ -70,7 +70,7 @@ Trong **78 điểm yếu có áp dụng**: **78 đã vá (100%)**, 0 một phầ
 | 15 | 502 | Unsafe Deserialization | ✅ | Config import qua Zod strict trước mọi xử lý (`apps/cms/src/services/config-import-service.ts:79`); không có yaml.load/vm/unserialize. |
 | 16 | 122 | Heap Buffer Overflow | — | Lớp lỗi bộ nhớ. |
 | 17 | 863 | Incorrect Authorization | ✅ | Postgres RLS trên 25+ bảng với `SET LOCAL app.site_id` phạm vi transaction (`packages/database/migrations/rls-policies.sql`); scope `siteId` ở tầng service; masking cấp field trong `permission-service.ts`. |
-| 18 | 20 | Improper Input Validation | ✅ | Zod `safeParse()` nhất quán trên mọi input route (schema dùng chung ở `packages/shared/src/schemas`). |
+| 18 | 20 | Improper Input Validation | ✅ | Zod `safeParse()` nhất quán trên mọi input route (schema dùng chung ở `packages/contracts/src/schemas`). |
 | 19 | 284 | Improper Access Control | ✅ | **Đã vá 2026-07-06.** Các bề mặt route (flows, ai, cdc, uploads, shares) đều kiểm admin/permission. `/health` nay chỉ trả `status` tổng cho caller ẩn danh (chi tiết subsystem cần observability token); `/metrics` ép `METRICS_TOKEN` ở **mọi** môi trường khi được cấu hình (trước đây bỏ qua ở non-prod). Xem CWE-668. |
 | 20 | 200 | Lộ thông tin nhạy cảm | ✅ | `formatSafeError()` bỏ object request/response; client chỉ nhận mã lỗi chung; stack trace chỉ log phía server (`apps/cms/src/index.ts:328`). |
 | 21 | 306 | Thiếu xác thực cho chức năng trọng yếu | ✅ | Setup wizard trả 404 khi `system_state = initialized`; recovery công khai chủ đích nhưng 3/IP/giờ; metrics khoá token ở prod. |
@@ -129,7 +129,7 @@ Trong **78 điểm yếu có áp dụng**: **78 đã vá (100%)**, 0 một phầ
 | 384 | Session fixation | ✅ | JWT mới mỗi lần login; không mang session identifier qua các lần xác thực. |
 | 613 | Hết hạn phiên không đủ | ✅ | **Đã vá 2026-07-06.** Thêm cột `users.token_version` (migration `0002_add_user_token_version.sql`) nhúng vào mọi JWT và kiểm khi verify (`middleware/auth.ts`). Đổi/reset mật khẩu sẽ tăng nó, vô hiệu tức thì mọi token đang tồn tại của user. |
 | 307 | Quá nhiều lần thử xác thực | ✅ | Lockout login (`users.lockedUntil`) + cửa sổ trượt per-IP (423/429); recovery 3/IP/giờ; endpoint state setup 60/phút/IP. |
-| 521 | Yêu cầu mật khẩu yếu | ✅ | **Đã vá 2026-07-06.** Thêm `PasswordSchema` dùng chung (min 12 + độ phức tạp) ở `packages/shared/src/schemas/password.ts`, nay dùng bởi register, setup, recovery nên policy đồng nhất và không lệch được. |
+| 521 | Yêu cầu mật khẩu yếu | ✅ | **Đã vá 2026-07-06.** Thêm `PasswordSchema` dùng chung (min 12 + độ phức tạp) ở `packages/contracts/src/schemas/password.ts`, nay dùng bởi register, setup, recovery nên policy đồng nhất và không lệch được. |
 | 620 | Đổi mật khẩu không xác minh | ✅ | **Đã vá 2026-07-06.** Thêm `POST /api/v1/me/change-password` yêu cầu mật khẩu hiện tại (verify constant-time) và tăng `token_version` để thu hồi phiên khác, trả token mới cho caller (`routes/auth.ts`). |
 | 640 | Khôi phục mật khẩu yếu | ✅ | Token CSPRNG 32-byte, TTL 15/30 phút, consume dùng-một-lần nguyên tử, delay đều 200–500ms, phản hồi chung chung (`modules/recovery/service.ts`). |
 | 203 | Phân biệt quan sát được (liệt kê user) | ✅ | Login và recovery đồng nhất (dummy hash, thông báo chung). Register là **chỉ-admin** (admin đã xác thực tạo user cho site của mình), nên `EMAIL_ALREADY_EXISTS` không phải vector liệt kê ẩn danh; endpoint nay còn validate input trả 400 trước khi truy vấn. |

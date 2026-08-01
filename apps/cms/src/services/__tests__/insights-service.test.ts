@@ -1,5 +1,5 @@
 import type { Database } from '@lumibase/database';
-import type { PanelQuery } from '@lumibase/shared';
+import type { PanelQuery } from '@lumibase/contracts';
 import { describe, expect, it } from 'vitest';
 import { InsightsService, InsightsServiceError } from '../insights-service';
 import type { SchemaService } from '../schema-service';

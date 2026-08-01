@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ShareService, ShareServiceError } from '../services/share-service';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 export const sharePublicRouter = new Hono<AppEnv>();
 export const shareAdminRouter = new Hono<AppEnv>();

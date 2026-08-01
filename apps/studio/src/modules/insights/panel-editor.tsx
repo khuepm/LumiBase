@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AGGREGATES, PANEL_TYPES, type Aggregate, type PanelQuery, type PanelType } from '@lumibase/shared';
+import { AGGREGATES, PANEL_TYPES, type Aggregate, type PanelQuery, type PanelType } from '@lumibase/contracts';
 import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
 import { insightsApi, type Panel } from './api';

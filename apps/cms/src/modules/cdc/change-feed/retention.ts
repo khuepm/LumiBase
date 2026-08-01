@@ -19,7 +19,7 @@ import {
   settings,
   type Database,
 } from '@lumibase/database';
-import { CdcFeedSettingsSchema, type CdcCursor } from '@lumibase/shared/schemas';
+import { CdcFeedSettingsSchema, type CdcCursor } from '@lumibase/contracts/schemas';
 
 export const DEFAULT_RETENTION_DAYS = 7;
 

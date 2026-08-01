@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Sparkles, Wand2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { TM_DEFAULT_THRESHOLD } from '@lumibase/shared';
+import { TM_DEFAULT_THRESHOLD } from '@lumibase/contracts';
 import type { TmSource } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';

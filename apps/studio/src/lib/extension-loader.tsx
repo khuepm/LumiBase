@@ -1,4 +1,4 @@
-import { formatSafeError } from "@lumibase/shared/utils";
+import { formatSafeError } from "@lumibase/contracts/utils";
 /**
  * ExtensionLoader — dynamically loads Studio UI extensions at runtime.
  *

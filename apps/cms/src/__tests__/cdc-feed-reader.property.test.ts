@@ -8,7 +8,7 @@ import {
   type StoredChangeEvent,
 } from '../modules/cdc/change-feed/feed-reader';
 import { compareKeyset } from '../modules/cdc/change-feed/subscription-state';
-import { decodeCdcCursor, type CdcOperation } from '@lumibase/shared';
+import { decodeCdcCursor, type CdcOperation } from '@lumibase/contracts';
 
 /**
  * Feature: cdc-extension-integration, Property 2: Cursor pagination gap-free

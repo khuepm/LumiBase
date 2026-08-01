@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../env';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import { requireSiteAdmin } from '../middleware/site-admin';
 import { ExternalIssuerError, ExternalIssuerService } from '../services/external-issuer-service';
 

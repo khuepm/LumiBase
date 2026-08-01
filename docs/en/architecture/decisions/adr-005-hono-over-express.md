@@ -54,4 +54,4 @@ All router and middleware code lives in shared files that import only from `hono
 - Documentation is less extensive than Express for advanced patterns
 
 **Neutral:**
-- `@hono/zod-validator` used for request validation (aligns well with our zod schemas in `packages/shared`)
+- `@hono/zod-validator` used for request validation (aligns well with our zod schemas in `packages/contracts`)

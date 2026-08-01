@@ -4,8 +4,8 @@ import {
   UPLOAD_TYPE_CATALOGUE,
   UploadPolicyUpdateSchema,
   extensionsForMimeTypes,
-} from '@lumibase/shared/schemas';
-import { formatSafeError } from '@lumibase/shared/utils';
+} from '@lumibase/contracts/schemas';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import type { AppEnv } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
 import { resolveUploadPolicy, saveUploadPolicy } from '../services/upload-policy-service';

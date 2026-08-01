@@ -17,7 +17,7 @@
 import type { Database } from '@lumibase/database';
 import { activity, notifications } from '@lumibase/database';
 import { and, eq, inArray, lt } from 'drizzle-orm';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 export interface RetentionHorizons {
   activityRetentionDays?: number;
