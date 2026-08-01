@@ -21,6 +21,7 @@ docker pull grafana/k6
 | `smoke.js` | Quick sanity — 1 VU, 30 s | All main endpoints |
 | `load-items.js` | Item list throughput + create burst | 50 VU ramp + 30 VU burst |
 | `load-realtime.js` | WebSocket subscription ramp | 100 concurrent WS connections |
+| `load-penetration.js` | 95% missing-slug probes + 5% good page (Req 19) | DB-query-per-404 ≤ 0.05 |
 | `login-brute-force.js` | 50 VU login spam + baseline traffic | `/api/v1/auth/login` IP block (Req 8.2/8.3) |
 | `cross-site-leak.js` | Cross-tenant isolation probe | Multi-site data + auth + realtime isolation |
 
@@ -72,6 +73,15 @@ k6 run --env BASE_URL=ws://localhost:1989 \
 k6 run --env BASE_URL=http://localhost:1989 \
        --env LOGIN_EMAIL=bruteforce-target@example.test \
        apps/cms/k6/login-brute-force.js
+
+# Cache penetration (Req 19 — tombstone + shape guard)
+# Seed a published page first. For DB-query-per-404 measurement from one IP,
+# set LUMIBASE_DELIVER_RATE_LIMIT=0 (default 1200/min trips at 50 RPS).
+k6 run --env BASE_URL=http://localhost:1989 \
+       --env SITE_ID=site_test \
+       --env GOOD_SLUG=home \
+       --env MISS_POOL=40 \
+       apps/cms/k6/load-penetration.js
 ```
 
 ## Thresholds

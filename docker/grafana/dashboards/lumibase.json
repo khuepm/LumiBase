@@ -130,7 +130,7 @@
     {
       "title": "Cache Hit Ratio",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
@@ -156,6 +156,35 @@
               { "color": "yellow", "value": 50 },
               { "color": "green", "value": 80 }
             ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Negative cache (tombstone) hits / writes",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_cache_negative_hits_total[5m]))",
+          "legendFormat": "negative hits",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(lumibase_cache_negative_writes_total[5m]))",
+          "legendFormat": "negative writes",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
           }
         },
         "overrides": []

@@ -243,6 +243,44 @@ describe('P20 — tombstone isolation + credentials never receive tombstone', ()
   });
 });
 
+describe('Req 19.14 — DB-query-per-404 ≤ 0.05 (finite miss pool)', () => {
+  it('absorbs ≥95% of repeated missing-slug 404s via tombstones', async () => {
+    const cache = new MemoryCacheProvider();
+    const db = fakeDb(Array.from({ length: 200 }, () => []));
+    const app = deliverApp({
+      db,
+      cache,
+      env: { LUMIBASE_NEGATIVE_CACHE_TTL: '30' },
+    });
+
+    const missPool = 40;
+    const rounds = 25; // 40 × 25 = 1000 miss-pool hits after warm-up
+    let notFound = 0;
+
+    // Warm the pool once (one DB query per key).
+    for (let i = 0; i < missPool; i++) {
+      const res = await app.request(`/api/v1/deliver/page/site-a/miss-${i}`);
+      expect(res.status).toBe(404);
+      notFound += 1;
+    }
+    const warmQueries = db.selectCount();
+    expect(warmQueries).toBe(missPool);
+
+    // Repeat the same keys — must be served from tombstones (0 extra selects).
+    for (let r = 0; r < rounds; r++) {
+      for (let i = 0; i < missPool; i++) {
+        const res = await app.request(`/api/v1/deliver/page/site-a/miss-${i}`);
+        expect(res.status).toBe(404);
+        notFound += 1;
+      }
+    }
+
+    expect(db.selectCount()).toBe(warmQueries);
+    const queriesPer404 = db.selectCount() / notFound;
+    expect(queriesPer404).toBeLessThanOrEqual(0.05);
+  });
+});
+
 describe('createNegativeCache helper (task 22.4)', () => {
   it('applies jitter within ±20% of the base TTL', () => {
     const cache = new MemoryCacheProvider();
