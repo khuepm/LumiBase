@@ -26,9 +26,11 @@ export interface KVNamespace {
  * counter methods throw {@link CounterUnavailableError} so the caller can fall
  * back to the DB-rollup strategy — get/set/delete are unaffected.
  *
- * Negative-cache note (Req 19.4 / open question §21.7): Workers KV typically
- * returns `null` on both miss and some backend failures rather than throwing,
- * so `unavailable` is only observed when `get` actually throws.
+ * Negative-cache note (Req 19.4 / design §21.7 CHỐT 2026-08-01): Workers KV
+ * `get` returns `null` on miss (does not throw). Soft failures that surface as
+ * `null` collapse to `miss` → safe DB fallback. `unavailable` is only observed
+ * when `get` actually throws (infra/runtime exceptions); primarily a Docker/
+ * Redis-observable state.
  */
 export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProvider {
   constructor(

@@ -52,7 +52,7 @@
 | Cửa sổ stale nội dung sau ghi | không xác định (không invalidation) | n/a | ≤ 5s (tag purge + revalidate) | ≤ 5s |
 | Scale ngang Docker | không an toàn (cron nhân bản) | không đổi | không đổi | an toàn với N replica |
 | k6 `load-items` throughput | đo ở task 0 | +x% (đo) | +x% (đo) | +x% (đo) |
-| DB query / request 404 (slug rác) | 1 (mọi request chạm DB) | ≤ 1 (guard hình dạng chặn phần rác thô) | ≤ 0.05 (tombstone) | ≤ 0.05 |
+| DB query / request 404 (slug rác) | 1 (mọi request chạm DB) | ≤ 1 (guard hình dạng chặn phần rác thô) | **0.0308** (k6 `load-penetration.js` 2026-08-01, MISS_POOL=40, 50 RPS × 2m, docker postgres+redis; ≤ 0.05 ✓ — xem `baseline/2026-08-01-penetration-docker-notes.json`) | ≤ 0.05 |
 
 ## 3. Các phase
 
@@ -138,7 +138,7 @@ P2.3, P2.4, P2.5 (độc lập)
 | Tombstone làm tài nguyên vừa tạo "biến mất" tới 30s | Req 19.7: write path xoá tombstone sau commit — TTL chỉ là lưới an toàn; test P19 chặn regression |
 | Tombstone hết hạn hàng loạt → penetration biến thành avalanche | Jitter ±20% trên TTL (design §14.4); tombstone không bao giờ TTL cố định |
 | Guard hình dạng chặn nhầm slug hợp lệ của user hiện có | Regex chốt từ dữ liệu thật trước khi bật; slug ngoài `[a-z0-9/_-]` phải được khảo sát trên DB production-like ở task 22.1, không suy đoán |
-| Rate limit theo IP vô dụng khi traffic đến sau CDN (ít IP egress) | Open question design §21.6 — chốt bằng số đo sau `load-penetration.js`; tầng 1+2 vẫn hiệu quả độc lập với tầng 3 |
+| Rate limit theo IP vô dụng khi traffic đến sau CDN (ít IP egress) | **§21.6 CHỐT:** giữ 1200; tầng 1+2 vẫn hiệu lực; synthetic single-IP load test dùng `LUMIBASE_DELIVER_RATE_LIMIT=0` |
 
 ## 6. Ngoài phạm vi (non-goals)
 
