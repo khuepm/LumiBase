@@ -68,6 +68,20 @@ export const cacheOperationsTotal = new Counter({
   registers: [register],
 });
 
+/** Negative-cache (tombstone) hits — distinct from positive data hits (Req 19.15). */
+export const cacheNegativeHitsTotal = new Counter({
+  name: 'lumibase_cache_negative_hits_total',
+  help: 'Cache reads served from a negative (tombstone) entry',
+  registers: [register],
+});
+
+/** Negative-cache (tombstone) writes after a confirmed DB miss. */
+export const cacheNegativeWritesTotal = new Counter({
+  name: 'lumibase_cache_negative_writes_total',
+  help: 'Tombstone entries written after a confirmed absence',
+  registers: [register],
+});
+
 /** Queue jobs counter by queue name and status. */
 export const queueJobsTotal = new Counter({
   name: 'lumibase_queue_jobs_total',

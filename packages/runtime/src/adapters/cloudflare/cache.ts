@@ -1,4 +1,5 @@
-import type { CacheProvider, UniqueCounterProvider } from '../../interfaces';
+import { classifyCacheValue, negativeCacheWireValue } from '../../cache-entry';
+import type { CacheEntry, CacheProvider, UniqueCounterProvider } from '../../interfaces';
 import { CounterUnavailableError } from '../../interfaces';
 import type { DurableObjectNamespaceLike } from './realtime';
 
@@ -24,6 +25,10 @@ export interface KVNamespace {
  * binding is present. When the binding is absent (`PAGEVIEW_COUNTER` unset), the
  * counter methods throw {@link CounterUnavailableError} so the caller can fall
  * back to the DB-rollup strategy — get/set/delete are unaffected.
+ *
+ * Negative-cache note (Req 19.4 / open question §21.7): Workers KV typically
+ * returns `null` on both miss and some backend failures rather than throwing,
+ * so `unavailable` is only observed when `get` actually throws.
  */
 export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProvider {
   constructor(
@@ -31,8 +36,18 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
     private counterNs?: DurableObjectNamespaceLike,
   ) {}
 
+  async getEntry<T>(key: string): Promise<CacheEntry<T>> {
+    try {
+      const val = await this.kv.get(key, 'json');
+      return classifyCacheValue<T>(val);
+    } catch {
+      return { state: 'unavailable' };
+    }
+  }
+
   async get<T = string>(key: string): Promise<T | null> {
-    return this.kv.get(key, 'json') as Promise<T | null>;
+    const entry = await this.getEntry<T>(key);
+    return entry.state === 'hit' ? entry.value : null;
   }
 
   async set(key: string, value: string, options?: { ttl?: number }): Promise<void> {
@@ -41,6 +56,10 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
       value,
       options?.ttl ? { expirationTtl: options.ttl } : undefined,
     );
+  }
+
+  async setNegative(key: string, options?: { ttl?: number }): Promise<void> {
+    await this.set(key, negativeCacheWireValue(), options);
   }
 
   async delete(key: string): Promise<void> {
@@ -69,7 +88,7 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
     return value;
   }
 
-  async addUnique(key: string, member: string, _opts?: { ttl?: number }): Promise<void> {
+  async addUnique(key: string, member: string, opts?: { ttl?: number }): Promise<void> {
     await this.stub(key).fetch('https://internal/pfadd', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

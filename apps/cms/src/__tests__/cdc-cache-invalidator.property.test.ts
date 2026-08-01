@@ -93,7 +93,7 @@ class RecordingCacheProvider implements CacheProvider {
     return (this.store.get(key) ?? null) as T | null;
   }
 
-  async set(key: string, value: string): Promise<void> {
+  async set(key: string, value: string, _options?: { ttl?: number }): Promise<void> {
     if (!this.available) {
       throw new Error('Redis unavailable');
     }
@@ -113,6 +113,17 @@ class RecordingCacheProvider implements CacheProvider {
     const next = Number(this.store.get(key) ?? '0') + by;
     this.store.set(key, String(next));
     return next;
+  }
+
+  async getEntry<T>(key: string) {
+    if (!this.available) return { state: 'unavailable' as const };
+    const raw = this.store.get(key);
+    if (raw === undefined) return { state: 'miss' as const };
+    return { state: 'hit' as const, value: raw as T };
+  }
+
+  async setNegative(key: string, options?: { ttl?: number }) {
+    await this.set(key, JSON.stringify({ __lumi: 'neg', v: 1 }), options);
   }
 }
 

@@ -7,6 +7,16 @@ import {
   resolveDeliveryCachePolicy,
   weakEtag,
 } from '../services/delivery-cache';
+import {
+  assertPublicIdentifier,
+  SAFE_FIELD_NAME,
+} from '../services/identifier-guard';
+import {
+  buildNegativeCache,
+  negativePageKey,
+  negativeSiteKey,
+  resolveNegativeTtl,
+} from '../services/negative-cache';
 import { buildSeo } from '../services/seo-builder';
 
 /**
@@ -22,7 +32,6 @@ export const deliverRouter = new Hono<AppEnv>();
 
 const DEFAULT_SECTION_LIMIT = 10;
 const MAX_SECTION_LIMIT = 50;
-const SAFE_FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 interface SectionConfig {
   id: string;
@@ -282,13 +291,44 @@ async function hydrateSection(
  */
 deliverRouter.get('/llms.txt/:site_id', async (c) => {
   const siteId = c.req.param('site_id');
-  const db = c.get('db');
+  const shape = assertPublicIdentifier('siteId', siteId);
+  if (!shape.ok) {
+    return c.text('Site not found.', 404);
+  }
 
-  const [site] = await db
-    .select({ id: schema.sites.id, name: schema.sites.name, domain: schema.sites.domain })
-    .from(schema.sites)
-    .where(eq(schema.sites.id, siteId))
-    .limit(1);
+  const db = c.get('db');
+  const cache = c.get('runtime')?.cache;
+  const ttl = resolveNegativeTtl(c.env);
+  const neg =
+    cache && ttl > 0
+      ? buildNegativeCache(cache, ttl, {
+          onNegativeHit: () => {
+            void import('./metrics').then((m) => m.cacheNegativeHitsTotal.inc());
+          },
+          onNegativeWrite: () => {
+            void import('./metrics').then((m) => m.cacheNegativeWritesTotal.inc());
+          },
+        })
+      : null;
+
+  const site = await (neg
+    ? neg.resolve(negativeSiteKey(siteId), async () => {
+        const [row] = await db
+          .select({ id: schema.sites.id, name: schema.sites.name, domain: schema.sites.domain })
+          .from(schema.sites)
+          .where(eq(schema.sites.id, siteId))
+          .limit(1);
+        return row ?? null;
+      })
+    : (async () => {
+        const [row] = await db
+          .select({ id: schema.sites.id, name: schema.sites.name, domain: schema.sites.domain })
+          .from(schema.sites)
+          .where(eq(schema.sites.id, siteId))
+          .limit(1);
+        return row ?? null;
+      })());
+
   if (!site) {
     return c.text('Site not found.', 404);
   }
@@ -396,23 +436,59 @@ async function contentFingerprint(db: Variables['db'], siteId: string) {
 
 deliverRouter.get('/page/:site_id/:slug', async (c) => {
   const { site_id: siteId, slug } = c.req.param();
-  const db = c.get('db');
-  const withProvenance = c.req.query('provenance') === 'true';
 
   // Shared caches must never mix tenants: the site is in the URL here, but
   // other API surfaces route on this header (design §15.4).
   c.header('Vary', 'X-Lumi-Site');
 
+  // Tier 1 — shape guard (Req 19.1): reject before any DB / cache op.
+  // Same 404 body as a real miss so the endpoint is not an oracle.
+  const siteShape = assertPublicIdentifier('siteId', siteId);
+  const slugShape = assertPublicIdentifier('slug', slug);
+  if (!siteShape.ok || !slugShape.ok) {
+    c.header('Cache-Control', 'no-store');
+    return c.json({ error: 'Not found.' }, 404);
+  }
+
+  const db = c.get('db');
+  const withProvenance = c.req.query('provenance') === 'true';
+  const hasCredentials = Boolean(c.req.header('authorization'));
+  const isPreview = c.req.query('preview') === 'true' || c.req.query('draft') === 'true';
+
   const policy = resolveDeliveryCachePolicy({
-    hasCredentials: Boolean(c.req.header('authorization')),
+    hasCredentials,
     env: c.env,
   });
 
-  const [page] = await db
-    .select()
-    .from(schema.pages)
-    .where(and(eq(schema.pages.siteId, siteId), eq(schema.pages.slug, slug)))
-    .limit(1);
+  // Tier 2 — tombstone (Req 19.5/19.8): never serve negative cache to
+  // credentialed / preview traffic (same boundary as Req 1.4).
+  const allowTombstone = !hasCredentials && !isPreview;
+  const cache = c.get('runtime')?.cache;
+  const ttl = resolveNegativeTtl(c.env);
+  const neg =
+    allowTombstone && cache && ttl > 0
+      ? buildNegativeCache(cache, ttl, {
+          onNegativeHit: () => {
+            void import('./metrics').then((m) => m.cacheNegativeHitsTotal.inc());
+          },
+          onNegativeWrite: () => {
+            void import('./metrics').then((m) => m.cacheNegativeWritesTotal.inc());
+          },
+        })
+      : null;
+
+  const loadPage = async () => {
+    const [row] = await db
+      .select()
+      .from(schema.pages)
+      .where(and(eq(schema.pages.siteId, siteId), eq(schema.pages.slug, slug)))
+      .limit(1);
+    return row ?? null;
+  };
+
+  const page = neg
+    ? await neg.resolve(negativePageKey(siteId, slug), loadPage)
+    : await loadPage();
 
   if (!page) {
     c.header('Cache-Control', 'no-store');

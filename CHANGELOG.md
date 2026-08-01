@@ -9,6 +9,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Added
+
+- **Cache penetration defence (Delivery API + schema lookup).** Public reads
+  now stack three cheap filters before Postgres: identifier shape guards
+  (404, zero queries), short-lived negative-cache tombstones on
+  `CacheProvider` (`getEntry` / `setNegative`, TTL
+  `LUMIBASE_NEGATIVE_CACHE_TTL` with ±20% jitter), and a dedicated Delivery
+  IP rate limiter (`LUMIBASE_DELIVER_RATE_LIMIT`, default 1200/min). See
+  `docs/en/features/caching.md`. No schema or setup change.
+
 ### Fixed
 
 - **Landing / sponsor rewards ([#296](https://github.com/khuepm/LumiBase/issues/296)):**

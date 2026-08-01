@@ -14,3 +14,7 @@ export {
   collectKeys,
   resolveActiveKeyId,
 } from './adapters/shared-keys';
+export { MemoryCacheProvider } from './memory-cache';
+export { createNegativeCache } from './cache-helpers';
+export type { NegativeCache, NegativeCacheOptions } from './cache-helpers';
+export { classifyCacheValue, negativeCacheWireValue } from './cache-entry';
