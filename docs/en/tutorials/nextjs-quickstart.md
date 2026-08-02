@@ -50,7 +50,7 @@ You will:
 By the end you'll have a working `http://localhost:3000` page listing posts that live in
 LumiBase.
 
-> **You need:** Node.js ≥ 20, pnpm ≥ 9, Docker + Docker Compose, Git.
+> **You need:** Node.js ≥ 22, pnpm ≥ 9, Docker + Docker Compose, Git.
 
 ---
 

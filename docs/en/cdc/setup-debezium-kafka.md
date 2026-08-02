@@ -1,5 +1,12 @@
 ---
 title: Setup — Debezium + Kafka
+version: 1
+lastUpdated: 2026-07-28T10:30:25.426Z
+sourceLang: en
+contentHash: 55b2746cb07ab931
+codeVerified: 2026-07-28T10:30:25.426Z
+codeVerifiedHash: 55b2746cb07ab931
+codeVerifiedClaims: 16
 ---
 
 # Setup Guide: Debezium + Kafka

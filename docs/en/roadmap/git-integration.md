@@ -1,81 +1,94 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:19:21.699Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: d8c6f58dbfe3b8c0
+mtEngine: claude
+syncStatus: machine-translated
+codeVerified: 2026-07-25T08:19:21.699Z
+codeVerifiedHash: d8c6f58dbfe3b8c0
+codeVerifiedClaims: 6
+---
+
 # Git Integration Roadmap (GitHub / GitLab)
 
-> **Scope:** Cho phép một instance LumiBase production kết nối tới repository GitHub/GitLab **theo từng site/tenant** — kết nối repo qua UI, theo dõi PR + CI, hiển thị & lưu log, tạo preview environment tự động, và đặt nền cho Config-as-Code + Earned autonomy.
+> **Scope:** let a production LumiBase instance connect to a GitHub/GitLab repository **per site/tenant** — connect a repo through the UI, follow PRs + CI, display and store logs, create preview environments automatically, and lay the groundwork for Config-as-Code + earned autonomy.
 >
-> **Spec đầy đủ:** [`.kiro/specs/git-integration/`](../../../.kiro/specs/git-integration/) — `requirements.md` · `design.md` · `tasks.md` · `setup-impact.md`.
+> **Full spec:** [`.kiro/specs/git-integration/`](../../../.kiro/specs/git-integration/) — `requirements.md` · `design.md` · `tasks.md` · `setup-impact.md`.
 
-## Mục tiêu
+## Goals
 
-1. **Kết nối repo per-tenant** — admin của một site kết nối một hoặc nhiều repo, xác thực qua **GitHub App / GitLab App** (installation token) hoặc **OAuth / PAT**.
-2. **PR dashboard + CI log** — khi có PR/MR: hiển thị trạng thái, kết quả CI, reviewers, khả năng merge; kéo & lưu log CI để xem lại; đường dẫn tới trang preview.
-3. **Preview environment tự tạo** — mỗi PR sinh một site preview tạm thời (ephemeral) ngay trong LumiBase, tự dọn khi PR đóng/merge.
-4. **Config-as-Code & Earned autonomy** — đồng bộ schema/intent hai chiều với repo; agent `git-sync` thao tác theo mức autonomy được cấp (L0–L4) với HITL cho thao tác nguy hiểm.
+1. **Per-tenant repo connection** — a site admin connects one or more repos, authenticating via a **GitHub App / GitLab App** (installation token) or **OAuth / PAT**.
+2. **PR dashboard + CI logs** — for each PR/MR: show status, CI results, reviewers, and mergeability; pull and store CI logs for later review; link to the preview page.
+3. **Auto-created preview environments** — every PR spawns a temporary (ephemeral) preview site inside LumiBase, cleaned up when the PR closes or merges.
+4. **Config-as-Code & earned autonomy** — bidirectional schema/intent sync with the repo; a `git-sync` agent operating at its granted autonomy level (L0–L4), with HITL for dangerous operations.
 
-## Phân loại phạm vi v1 (scope freeze — v1-release-criteria §2)
+## v1 scope classification (scope freeze — v1-release-criteria §2)
 
-| Phần | Phân loại | Ghi chú |
+| Area | Classification | Notes |
 |---|---|---|
-| Kết nối repo + auth (App/OAuth/PAT), PR/CI dashboard + log viewer, webhook verify + event log, status-check ngược, provenance, notification/incident, GitOps **intents** sync | **in-v1** | Đã implement (Phase A–E + GitOps intents), DoD 2b/2c đã đóng, test xanh; cần verify DB-backed trên staging trước tag. |
-| Preview environments (ephemeral site) | **in-v1 (opt-in, mặc định off)** | `sync_config.preview`; cross-site provisioning cần verify staging. |
-| GitOps **schema apply** (collections/fields) qua HITL harness | **post-v1** | Hiện chỉ sync intents; schema apply defer. |
-| Vòng lặp thực thi agent `git-sync`; auto-trigger GitOps khi merge `main`; YAML config; notification dispatcher đầy đủ | **post-v1** | Ghi rõ ở "Follow-up" các phase bên dưới. |
+| Repo connection + auth (App/OAuth/PAT), PR/CI dashboard + log viewer, webhook verify + event log, reverse status check, provenance, notification/incident, GitOps **intents** sync | **in-v1** | Implemented (Phase A–E + GitOps intents), DoD 2b/2c closed, tests green; needs DB-backed verification on staging before tagging. |
+| Preview environments (ephemeral site) | **in-v1 (opt-in, off by default)** | `sync_config.preview`; cross-site provisioning needs staging verification. |
+| GitOps **schema apply** (collections/fields) through the HITL harness | **post-v1** | Only intents sync today; schema apply is deferred. |
+| The `git-sync` agent execution loop; auto-triggering GitOps on merge to `main`; YAML config; a complete notification dispatcher | **post-v1** | Called out under "Follow-up" in the phases below. |
 
-> API surface công khai của phần in-v1 (`/api/v1/integrations/git/*`) được chốt trong `docs/en/api/hono-api-spec.md` §12c; thay đổi breaking sau freeze dồn về major kế tiếp (semver). Setup Impact Registry đã có dòng git-integration (`n/a`).
+> The public API surface of the in-v1 portion (`/api/v1/integrations/git/*`) is frozen in `docs/en/api/hono-api-spec.md` §12c; breaking changes after the freeze roll into the next major (semver). The Setup Impact Registry already carries a git-integration row (`n/a`).
 
-## Nguyên tắc kiến trúc
+## Architectural principles
 
-- **Provider abstraction:** interface `GitProvider` chung; adapter `GitHubProvider` / `GitLabProvider`. Business logic không phụ thuộc provider cụ thể.
-- **Tái dùng hạ tầng sẵn có:** webhook HMAC ([`modules/notifications/webhook-channel.ts`](../../../apps/cms/src/modules/notifications/webhook-channel.ts)), mã hoá token (`CryptoService` + `encryption_keys`), audit + masking, intent/reconciler (`content_intents`), autonomy (`AutonomyService`), deployment lifecycle của CDC cho preview.
-- **Non-negotiable:** mọi bảng có `site_id` + RLS; ID `nanoid()`/`uuidv7()`; runtime abstraction; HITL cho `schema:write`/delete; response `{ data, meta? }` / `{ errors }`.
+- **Provider abstraction:** one shared `GitProvider` interface, with `GitHubProvider` / `GitLabProvider` adapters. Business logic never depends on a specific provider.
+- **Reuse existing infrastructure:** webhook HMAC ([`modules/notifications/webhook-channel.ts`](../../../apps/cms/src/modules/notifications/webhook-channel.ts)), token encryption (`CryptoService` + `encryption_keys`), audit + masking, the intent/reconciler (`content_intents`), autonomy (`AutonomyService`), and CDC's deployment lifecycle for previews.
+- **Non-negotiable:** every table has `site_id` + RLS; IDs are `nanoid()`/`uuidv7()`; runtime abstraction; HITL for `schema:write`/delete; responses are `{ data, meta? }` / `{ errors }`.
 
-## Phase Breakdown
+## Phase breakdown
 
-> Trạng thái: ⬜ chưa làm · 🟦 đang làm · ✅ xong. **MVP = Phase A–D (đã xong).**
+> Status: ⬜ not started · 🟦 in progress · ✅ done. **MVP = Phase A–D (done).**
 
 ### Phase A — Foundation ✅
-- Schema `packages/database/src/schema/git-integration.ts` (6 bảng `git_*`) + migration + RLS.
-- Interface `GitProvider` + adapter GitHub/GitLab + factory.
+- Schema `packages/database/src/schema/git-integration.ts` (6 `git_*` tables) + migration + RLS.
+- The `GitProvider` interface + GitHub/GitLab adapters + factory.
 - Token encryption wiring (`CryptoService`, AAD `{ siteId, integrationId }`).
 
-### Phase B — Connect & Auth ✅
-- `GitIntegrationService` + routes CRUD `/api/v1/integrations/git/*`.
-- OAuth flow + App connect (installation token refresh) + rotate secret.
-- Studio: trang **Settings → Integrations / Git** (model theo `webhooks-page.tsx`), nút Authorize, hiển thị scope.
+### Phase B — Connect & auth ✅
+- `GitIntegrationService` + CRUD routes at `/api/v1/integrations/git/*`.
+- OAuth flow + App connect (installation token refresh) + secret rotation.
+- Studio: the **Settings → Integrations / Git** page (modelled on `webhooks-page.tsx`), an Authorize button, and scope display.
 
 ### Phase C — Webhook & PR/CI ✅
-- Webhook endpoint công khai `POST /webhook/:provider` + verify chữ ký (GitHub HMAC-SHA256 / GitLab token) + idempotency.
-- `git_webhook_events` log + async processor cập nhật PR/CI cache.
-- PR dashboard + CI status & log viewer (kéo + lưu log, highlight lỗi).
+- Public webhook endpoint `POST /webhook/:provider` + signature verification (GitHub HMAC-SHA256 / GitLab token) + idempotency.
+- A `git_webhook_events` log + an async processor updating the PR/CI cache.
+- PR dashboard + CI status & log viewer (pull and store logs, highlight errors).
 
-### Phase D — Preview Environments ✅
-- `PreviewEnvManager`: tạo ephemeral site theo PR, cập nhật khi push, huỷ khi đóng/merge, `expiresAt`, cách ly dữ liệu.
-- Gắn `previewUrl` vào PR + (tuỳ chọn) comment/deployment status.
+### Phase D — Preview environments ✅
+- `PreviewEnvManager`: create an ephemeral site per PR, update it on push, tear it down on close/merge, with `expiresAt` and data isolation.
+- Attach `previewUrl` to the PR and (optionally) post a comment/deployment status.
 
-### Phase E — Status Check ngược + Provenance + Notification ✅
-- Validation nội dung/schema trong PR → post `lumibase/content-validation` về provider.
-- Provenance map `commit_sha`/`pr_number` ↔ `item_id`/`collection`.
-- Notification khi CI fail; `agent_incident` khi bất thường lặp lại.
+### Phase E — Reverse status check + provenance + notification ✅
+- Content/schema validation inside the PR → post `lumibase/content-validation` back to the provider.
+- A provenance map of `commit_sha`/`pr_number` ↔ `item_id`/`collection`.
+- Notification on CI failure; an `agent_incident` when an anomaly repeats.
 
-### Phase F — GitOps & Autonomy ✅ (một phần)
-- `syncFromRepo`: đọc `lumibase/intents.json` → `content_intents` (upsert) → drift scan + reconcile (`content_drifts` + `agent_goal`). Route `POST /:id/gitops/sync`.
-- Agent role `git-sync` thêm vào `ROLE_LIBRARY` + autonomy baseline L1 (seed on-connect).
-- **Follow-up:** schema (collections/fields) apply qua HITL harness; vòng lặp thực thi agent `git-sync`; auto-trigger khi merge `main`; YAML config.
+### Phase F — GitOps & autonomy ✅ (partial)
+- `syncFromRepo`: read `lumibase/intents.json` → `content_intents` (upsert) → drift scan + reconcile (`content_drifts` + `agent_goal`). Route `POST /:id/gitops/sync`.
+- The `git-sync` agent role added to `ROLE_LIBRARY` with an L1 autonomy baseline (seeded on connect).
+- **Follow-up:** schema (collections/fields) apply through the HITL harness; the `git-sync` agent execution loop; auto-trigger on merge to `main`; YAML config.
 
-## Kịch bản kết hợp với GitHub/GitLab log
+## Scenarios built on GitHub/GitLab logs
 
-Ngoài dashboard + log viewer cốt lõi, các kịch bản xoay quanh log/sự kiện Git:
+Beyond the core dashboard + log viewer, these scenarios revolve around Git logs/events:
 
-- **CI run timeline per PR** — dựng timeline từng job (queued → in_progress → completed) kèm thời lượng; highlight dòng lỗi.
-- **Log ingestion + lưu trữ** — kéo log về, lưu để xem lại kể cả khi provider đã xoá.
-- **Log → audit trail** — mọi webhook ghi vào `git_webhook_events` + nối audit để truy vết "PR nào đổi content gì".
-- **Status check ngược** — LumiBase validate rồi post check run kèm summary về provider.
-- **Log-driven alerting / anomaly** — CI fail liên tục → notifications/incident; tái dùng `modules/anomaly` cho build-time bất thường.
-- **Provenance map** — trả lời "commit này tác động field nào, ai merge".
-- **Agent đọc log auto-fix** — autonomy L1+: agent đọc log fail, đề xuất PR sửa (gate HITL).
-- **Unified activity feed** — trộn log Git (PR/commit/CI) + sự kiện CMS (publish/agent run) theo `site_id`.
-- **Webhook replay** — log lưu payload thô → replay idempotent khi xử lý lỗi.
+- **CI run timeline per PR** — build a per-job timeline (queued → in_progress → completed) with durations; highlight the failing lines.
+- **Log ingestion + storage** — pull logs down and keep them so they remain reviewable even after the provider has deleted them.
+- **Log → audit trail** — every webhook is written to `git_webhook_events` and joined to audit, so you can trace "which PR changed which content".
+- **Reverse status check** — LumiBase validates, then posts a check run with a summary back to the provider.
+- **Log-driven alerting / anomaly** — repeated CI failures → notifications/incident; reuse `modules/anomaly` for build-time anomalies.
+- **Provenance map** — answers "which fields did this commit touch, and who merged it".
+- **Agent reads logs to auto-fix** — autonomy L1+: the agent reads a failure log and proposes a fixing PR (HITL-gated).
+- **Unified activity feed** — interleave Git logs (PR/commit/CI) with CMS events (publish/agent run) by `site_id`.
+- **Webhook replay** — the log keeps the raw payload, so a failed processing run can be replayed idempotently.
 
-## Liên quan
+## Related
 
-- Setup impact: [`.kiro/specs/git-integration/setup-impact.md`](../../../.kiro/specs/git-integration/setup-impact.md) + registry chung trong `admin-setup-wizard/setup-impact.md` (#30).
+- Setup impact: [`.kiro/specs/git-integration/setup-impact.md`](../../../.kiro/specs/git-integration/setup-impact.md) plus the shared registry in `admin-setup-wizard/setup-impact.md` (#30).
 - Definition of Done: [`.kiro/steering/definition-of-done.md`](../../../.kiro/steering/definition-of-done.md).

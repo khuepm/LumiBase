@@ -571,6 +571,74 @@ components:
           type: object
           nullable: true
           additionalProperties: true
+    RealmAccessGrant:
+      type: object
+      required: [collection, action, publishedOnly, ownOnly, fields]
+      properties:
+        collection: { type: string }
+        action: { type: string, enum: [read, create, update, delete] }
+        publishedOnly:
+          type: boolean
+          description: Row scope restricting to `status = 'published'`.
+        ownOnly:
+          type: boolean
+          description: >-
+            Row scope restricting to rows the principal created. Never true for
+            `public`, which has no `$CURRENT_USER` to resolve.
+        fields:
+          type: array
+          description: Field whitelist; `["*"]` = all, `["-secret"]` excludes.
+          items: { type: string }
+    RealmAccessDescriptor:
+      type: object
+      required: [key, label, summary, allowedActions, supportsOwnOnly, togglable, enabled, grants]
+      properties:
+        key: { type: string, enum: [public, subscriber] }
+        label: { type: string }
+        summary: { type: string }
+        allowedActions:
+          type: array
+          description: Actions an operator may grant in this realm.
+          items: { type: string, enum: [read, create, update, delete] }
+        supportsOwnOnly: { type: boolean }
+        togglable:
+          type: boolean
+          description: Whether an operator can enable/disable the realm (public only).
+        enabled: { type: boolean }
+        grants:
+          type: array
+          items: { $ref: '#/components/schemas/RealmAccessGrant' }
+    RealmAccessState:
+      type: object
+      required: [collections, realms]
+      properties:
+        collections:
+          type: array
+          description: Grantable collections — non-system and non-hidden.
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              label: { type: string, nullable: true }
+        realms:
+          type: array
+          items: { $ref: '#/components/schemas/RealmAccessDescriptor' }
+    RealmGrantRequest:
+      type: object
+      required: [collection]
+      properties:
+        collection: { type: string, minLength: 1, maxLength: 64 }
+        action:
+          type: string
+          enum: [read, create, update, delete]
+          default: read
+        publishedOnly:
+          type: boolean
+          description: Defaults to true for `read` and false for writes.
+        ownOnly: { type: boolean, default: false }
+        fields:
+          type: array
+          items: { type: string }
     ApiKeyResource:
       type: object
       required: [id, siteId, name, prefix, revokedAt, roles, policies]
@@ -590,6 +658,19 @@ components:
         lastUsedIp: { type: string, nullable: true }
         lastUsedUserAgent: { type: string, nullable: true }
         metadata: { type: object, additionalProperties: true }
+        publishable:
+          type: boolean
+          description: >-
+            True for a client-embeddable `lbk_pub_…` key. Derived from the
+            prefix, so it always matches the token in the wild. A publishable
+            key is NOT a secret — scope it as if it were already public.
+        allowedOrigins:
+          type: array
+          description: >-
+            Browser origins the key may be used from. Empty = no constraint.
+            Enforced only for publishable keys; a request with no Origin or
+            Referer is allowed (non-browser callers send neither).
+          items: { type: string }
         createdAt: { type: string, format: date-time }
         roles:
           type: array
@@ -614,6 +695,22 @@ components:
         description: { type: string, maxLength: 512 }
         expiresAt: { type: string, format: date-time, nullable: true }
         metadata: { type: object, additionalProperties: true }
+        publishable:
+          type: boolean
+          default: false
+          description: Mint a client-embeddable `lbk_pub_…` token instead of a secret one.
+        allowedOrigins:
+          type: array
+          description: Browser origins the key may be used from. Omit for no constraint.
+          items: { type: string }
+    ApiKeyAllowedOriginsRequest:
+      type: object
+      required: [allowedOrigins]
+      properties:
+        allowedOrigins:
+          type: array
+          description: Replaces the existing list. Pass `[]` to remove the constraint.
+          items: { type: string }
     ApiKeyRotateRequest:
       type: object
       properties:
@@ -2651,6 +2748,170 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /access/grants:
+    parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+    get:
+      summary: Picker state for the non-staff realms (public, subscriber)
+      description: >-
+        Site-admin only. Returns the grantable collections plus, per realm, the
+        actions it may hold, whether a row scope is expressible, whether it can
+        be toggled, and the grants it currently has.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RealmAccessState' }
+        '403':
+          description: Admin access for the requested site is required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /access/grants/{realm}/enable:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: realm, in: path, required: true, schema: { type: string, enum: [public] } }
+    post:
+      summary: Provision a togglable realm (public only)
+      description: >-
+        Creates the realm's role and policy. Creating the `public` role is what
+        enables anonymous access — until then unauthenticated requests are 401.
+      responses:
+        '200':
+          description: Enabled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      enabled: { type: boolean }
+                      roleId: { type: string }
+                      policyId: { type: string }
+        '400':
+          description: Realm cannot be toggled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Unknown realm
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /access/grants/{realm}/disable:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: realm, in: path, required: true, schema: { type: string, enum: [public] } }
+    post:
+      summary: Tear down a togglable realm and every grant on it
+      responses:
+        '200':
+          description: Disabled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      enabled: { type: boolean }
+                      removed: { type: boolean }
+        '400':
+          description: Realm cannot be toggled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Unknown realm
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /access/grants/{realm}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: realm, in: path, required: true, schema: { type: string, enum: [public, subscriber] } }
+    post:
+      summary: Grant or update one (collection, action) permission for a realm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RealmGrantRequest' }
+      responses:
+        '200':
+          description: Grant applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RealmAccessGrant' }
+        '400':
+          description: >-
+            Rejected request body — `VALIDATION`, `COLLECTION_REQUIRED`,
+            `ACTION_NOT_ALLOWED` (e.g. a write on `public`) or
+            `ROW_SCOPE_NOT_SUPPORTED` (`ownOnly` on `public`). All are body
+            errors: an unchanged retry fails identically.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: >-
+            `PUBLIC_ACCESS_DISABLED` — the `public` realm is off for this site,
+            so it cannot be granted anything. Call
+            `POST /access/grants/public/enable` first; enabling the anonymous
+            realm is a deliberate, audited step rather than a side effect of a
+            grant. Not raised for `subscriber`, which has no enable step.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: >-
+            Unknown realm, or `COLLECTION_NOT_GRANTABLE` — the collection must
+            exist on the site and be neither system nor hidden (the set
+            `GET /access/grants` lists).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /access/grants/{realm}/{collection}/{action}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: realm, in: path, required: true, schema: { type: string, enum: [public, subscriber] } }
+      - { name: collection, in: path, required: true, schema: { type: string } }
+      - { name: action, in: path, required: true, schema: { type: string, enum: [read, create, update, delete] } }
+    delete:
+      summary: Revoke one grant
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      realm: { type: string }
+                      collection: { type: string }
+                      action: { type: string }
+                      removed: { type: boolean }
+        '400':
+          description: Unknown action
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Unknown realm or grant not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /access/export:
     parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
     get:
@@ -2750,6 +3011,36 @@ paths:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/ApiKeyResource' }
+        '404':
+          description: API key not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api-keys/{id}/allowed-origins:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    patch:
+      summary: Replace a key's browser-origin allowlist without rotating the token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiKeyAllowedOriginsRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ApiKeyResource' }
+        '400':
+          description: Unparseable origin
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '404':
           description: API key not found
           content:

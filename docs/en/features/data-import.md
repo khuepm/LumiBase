@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T10:17:03.297Z
+sourceLang: en
+contentHash: 152cf39aee864f38
+codeVerified: 2026-07-28T10:17:03.297Z
+codeVerifiedHash: 152cf39aee864f38
+codeVerifiedClaims: 4
+---
+
 # Data import
 
 Bulk-loading many items — a migration, a seed, a one-off backfill — goes through

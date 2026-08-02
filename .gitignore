@@ -39,3 +39,4 @@ Thumbs.db
 
 # Coverage
 coverage/
+docs/.i18n/code-refs-report.json

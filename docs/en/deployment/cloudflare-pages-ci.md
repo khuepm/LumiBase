@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T10:20:14.923Z
+sourceLang: en
+contentHash: 574553a580a51075
+codeVerified: 2026-07-28T10:20:14.923Z
+codeVerifiedHash: 574553a580a51075
+codeVerifiedClaims: 4
+---
+
 # Cloudflare Pages CI Deployment Setup
 
 The `pages-deploy.yml` (and `deploy-cms.yml`, `release.yml`) workflows deploy to

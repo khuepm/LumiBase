@@ -1,4 +1,4 @@
-import { generateKeyPairSync, sign as nodeSign } from 'node:crypto';
+import { generateKeyPairSync, sign as nodeSign, type KeyObject } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   deriveIsOfficial,
@@ -8,13 +8,13 @@ import {
   type ResolvedKey,
 } from '@lumibase/shared/extensions';
 
-function makeKeypair() {
+function makeKeypair(): { pem: string; privateKey: KeyObject } {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const pem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
   return { pem, privateKey };
 }
 
-async function sign(bundle: Uint8Array, privateKey: ReturnType<typeof generateKeyPairSync>['privateKey']) {
+async function sign(bundle: Uint8Array, privateKey: KeyObject): Promise<string> {
   return nodeSign(null, bundle, privateKey).toString('base64');
 }
 

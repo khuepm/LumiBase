@@ -9,7 +9,15 @@ function makeCache(seed: Record<string, string> = {}): CacheProvider {
   const store = new Map<string, string>(Object.entries(seed));
   return {
     get: async <T = string>(key: string) => (store.get(key) ?? null) as T | null,
+    getEntry: async <T>(key: string) => {
+      const raw = store.get(key);
+      if (raw === undefined) return { state: 'miss' as const };
+      return { state: 'hit' as const, value: raw as T };
+    },
     set: async (key, value) => void store.set(key, value),
+    setNegative: async (key) => {
+      store.set(key, JSON.stringify({ __lumi: 'neg', v: 1 }));
+    },
     delete: async (key) => void store.delete(key),
     increment: async (key, by = 1) => {
       const next = Number(store.get(key) ?? '0') + by;

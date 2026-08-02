@@ -4,6 +4,8 @@
  * identically. Web Crypto only (works on both Workers and Node ≥20).
  */
 
+import { PUBLISHABLE_TOKEN_PREFIX } from './api-key-publishable';
+
 export interface PlaintextToken {
   /** Full plaintext token — returned to the caller exactly once. */
   token: string;
@@ -13,11 +15,25 @@ export interface PlaintextToken {
   tokenHash: string;
 }
 
-export async function createPlaintextToken(): Promise<PlaintextToken> {
+export interface CreateTokenOptions {
+  /**
+   * Mint a client-embeddable token (`lbk_pub_…`) instead of a secret one.
+   *
+   * The prefix is the source of truth for whether a key is publishable — it is
+   * derived from the token itself, so it cannot drift from a metadata flag.
+   * See `services/api-key-publishable.ts`.
+   */
+  publishable?: boolean;
+}
+
+export async function createPlaintextToken(
+  options: CreateTokenOptions = {},
+): Promise<PlaintextToken> {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   const secret = base64Url(bytes);
-  const token = `lbk_${secret}`;
+  // Secret keys keep the bare `lbk_` prefix so existing tokens stay valid.
+  const token = options.publishable ? `${PUBLISHABLE_TOKEN_PREFIX}${secret}` : `lbk_${secret}`;
   return {
     token,
     prefix: token.slice(0, 16),

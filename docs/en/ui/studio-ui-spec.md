@@ -1,6 +1,16 @@
+---
+version: 1
+lastUpdated: 2026-07-27T23:51:24.891Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: 3063b8b0f3d50f6c
+mtEngine: claude
+syncStatus: machine-translated
+---
+
 # Studio UI Specification (apps/studio)
 
-> Stack: **React 18 + Vite + TypeScript**, **TailwindCSS + shadcn/ui + CVA**, **TanStack Query + Router**, **Zustand** cho local state, **Monaco** cho raw editor, **dnd-kit** cho drag-drop.
+> Stack: **React 18 + Vite + TypeScript**, **TailwindCSS + shadcn/ui + CVA**, **TanStack Query + Router**, **Zustand** for local state, **Monaco** for the raw editor, **dnd-kit** for drag-and-drop.
 
 ## 1. App shell
 
@@ -19,9 +29,9 @@
 └──────────┴───────────────────────────────────────────────┘
 ```
 
-- ModuleBar: icon vertical, hỗ trợ extension module mount.
-- Cmd-K: search collections, items, users, settings, docs.
-- Presence chip hiện avatar realtime người đang xem cùng trang.
+- ModuleBar: a vertical icon rail that also hosts mounted extension modules.
+- Cmd-K: search collections, items, users, settings, and docs.
+- The presence chip shows realtime avatars of everyone viewing the same page.
 
 ## 2. Routing (TanStack Router)
 
@@ -49,90 +59,90 @@
   /apps/:extensionId           // extension modules
 ```
 
-## 3. Modules chi tiết
+## 3. Modules in detail
 
 ### 3.1 Content module
 
 - **List page** (`/content/:collection`):
-  - Layout switcher: tabular / cards / kanban / calendar / map (registry mở rộng).
+  - Layout switcher: tabular / cards / kanban / calendar / map (an extensible registry).
   - Toolbar: search, filter builder, sort, preset dropdown, refresh, "Subscribe realtime" toggle.
   - Bulk actions: edit, delete, export, change status.
-  - Empty state với "Create first item".
+  - Empty state with "Create first item".
 
 - **Detail editor** (`/content/:collection/:itemId`):
-  - Layout 2 cột: form chính + side panel (Comments, Activity, Revisions, Translations, Raw JSON).
+  - Two-column layout: the main form plus a side panel (Comments, Activity, Revisions, Translations, Raw JSON).
   - Sticky action bar: Save / Save & Stay / Save as Draft / Discard.
-  - Tabs theo `group` field hoặc tabs theo locale (translations).
-  - Realtime presence: hiển thị ai đang edit, lock cảnh báo conflict.
+  - Tabs by field `group`, or tabs per locale (translations).
+  - Realtime presence: show who is editing, with a lock warning on conflict.
 
-### 3.2 Collection Builder (`Settings → Data model` hoặc `/access?`)
+### 3.2 Collection Builder (`Settings → Data model`)
 
-Xem `features/collections-builder.md`. UI dùng canvas + inspector + JSON pane.
+See `features/collections-builder.md`. The UI is a canvas + inspector + JSON pane.
 
 ### 3.3 Access Control
 
-- **Roles list**: card grid, drag user vào.
-- **Policy editor**: 2 chế độ
+- **Roles list**: a card grid you can drag users onto.
+- **Policy editor**: two modes
   - GUI: rows per (collection, action), field whitelist, rule builder (block-based query), preset form, validation form.
-  - JSON: Monaco với schema autocomplete.
-- **Matrix**: bảng tổng quan, click ô mở drawer.
-- **Test sandbox**: chọn user, simulate request → log allow/deny.
+  - JSON: Monaco with schema autocomplete.
+- **Matrix**: an overview grid; click a cell to open the drawer.
+- **Test sandbox**: pick a user, simulate a request → log allow/deny.
 
 ### 3.4 Users / Teams
 
-Xem `features/user-management.md`.
+See `features/user-management.md`.
 
 ### 3.5 Files
 
-- Grid + tree folder.
-- Upload: drag-drop, multi, progress bar (presigned R2).
-- Detail: preview (image/video/pdf), metadata edit, replace file, focal point, usage list.
+- Grid + folder tree.
+- Upload: drag-and-drop, multi-file, progress bar (presigned R2).
+- Detail: preview (image/video/pdf), metadata editing, replace file, focal point, usage list.
 
 ### 3.6 Settings
 
-Tab-based, mỗi tab map sang category trong `system-config.md`.
+Tab-based; each tab maps to a category in `system-config.md`.
 
 ### 3.7 Insights (Phase 2)
 
-Dashboard panel registry (extension type `panel`).
+A dashboard panel registry (extension type `panel`).
 
 ## 4. Component library (packages/ui)
 
-- Re-export shadcn + custom: `FormField`, `RawToggle`, `JsonEditor`, `FilterBuilder`, `MustachePreview`, `PresenceAvatars`, `RevisionDiff`, `RelationPicker`, `ConditionalFieldRenderer`.
+- Re-exports shadcn plus custom components: `FormField`, `RawToggle`, `JsonEditor`, `FilterBuilder`, `MustachePreview`, `PresenceAvatars`, `RevisionDiff`, `RelationPicker`, `ConditionalFieldRenderer`.
 
 ## 5. State
 
-- **TanStack Query** cho server state, key bao gồm `siteId`.
+- **TanStack Query** for server state, with `siteId` in every key.
 - **Zustand stores**:
-  - `useAuthStore` — user, token, permissions matrix.
+  - `useAuthStore` — user, token, permission matrix.
   - `useSiteStore` — current site, settings.
   - `useRealtimeStore` — subscriptions.
   - `usePresetStore` — current view state per collection.
 
 ## 6. Realtime hooks
 
-- `useRealtimeSubscription(collection, query)` — return list cập nhật live.
-- `usePresence(scope)` — danh sách user đang ở scope.
+- `useRealtimeSubscription(collection, query)` — returns a list that updates live.
+- `usePresence(scope)` — the users currently in that scope.
 
 ## 7. Theming
 
-- CSS variables driven (light/dark), token branding lấy từ `settings.branding`.
-- CVA cho variant component.
+- Driven by CSS variables (light/dark); branding tokens come from `settings.branding`.
+- CVA for component variants.
 
 ## 8. Accessibility
 
-- Tất cả interactive đạt WCAG AA, focus ring rõ ràng.
-- Cmd-K + keyboard navigation đầy đủ.
-- Form lỗi đọc được bởi screen reader (`aria-describedby`).
+- Every interactive element meets WCAG AA, with a clearly visible focus ring.
+- Full Cmd-K and keyboard navigation.
+- Form errors are readable by screen readers (`aria-describedby`).
 
 ## 9. Performance budgets
 
-- Bundle initial < 300KB gz (lazy load modules).
-- Studio TTI < 2s với 1k collections.
-- List 50 rows render < 100ms (virtualize > 50).
+- Initial bundle < 300KB gz (modules lazy-loaded).
+- Studio TTI < 2s with 1k collections.
+- A 50-row list renders in < 100ms (virtualized above 50).
 
 ## 10. Tests
 
-- Unit: Vitest cho hooks, util.
-- Integration: React Testing Library cho mỗi module trang chính.
-- E2E: Playwright cho luồng: tạo collection → field → role → policy → item CRUD → realtime → raw edit.
+- Unit: Vitest for hooks and utilities.
+- Integration: React Testing Library for each module's main page.
+- E2E: Playwright covering the flow create collection → field → role → policy → item CRUD → realtime → raw edit.

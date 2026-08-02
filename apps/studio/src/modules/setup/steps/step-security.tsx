@@ -9,6 +9,7 @@ import {
 import {
   useForm,
   type FieldPath,
+  type Resolver,
   type SubmitHandler,
   type UseFormReturn,
 } from 'react-hook-form';
@@ -275,8 +276,10 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
     return inferActivePreset(policyDraft) ?? 'standard';
   }, []);
 
+  // Zod 4 makes `.default()` fields optional on input and required on output;
+  // this form always starts from full preset/draft defaults, so pin both sides.
   const form = useForm<SecurityFormValues>({
-    resolver: zodResolver(lockoutPolicySchema),
+    resolver: zodResolver(lockoutPolicySchema) as Resolver<SecurityFormValues>,
     mode: 'onBlur',
     reValidateMode: 'onChange',
     shouldUnregister: false,

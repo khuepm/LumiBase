@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T11:34:33.530Z
+sourceLang: en
+contentHash: f22cd1fddd83f8e8
+codeVerified: 2026-07-28T11:34:33.530Z
+codeVerifiedHash: f22cd1fddd83f8e8
+codeVerifiedClaims: 10
+---
+
 # Change Feed (CDC Extension Integration)
 
 > Spec: `.kiro/specs/cdc-extension-integration/` · Module: `apps/cms/src/modules/cdc/change-feed/`

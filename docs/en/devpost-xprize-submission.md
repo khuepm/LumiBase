@@ -1,3 +1,13 @@
+---
+version: 3
+lastUpdated: 2026-07-29T05:25:40.643Z
+sourceLang: en
+contentHash: 4d31db03699da2d2
+codeVerified: 2026-07-29T05:25:40.643Z
+codeVerifiedHash: 4d31db03699da2d2
+codeVerifiedClaims: 4
+---
+
 # Build with Gemini XPRIZE — Devpost Submission Draft (LumiBase)
 
 > Draft prepared 2026-06-13. Category: **Small Business Services**.
@@ -49,7 +59,7 @@ Everything else — data entry, translation, tagging, SEO fixes, description wri
 
 LumiBase targets the small businesses that can least afford content operations: the local retailer who needs a bilingual product catalog, the agency serving ten such retailers, the solo founder who cannot hire an editor, a translator, and an SEO specialist. By replacing operational content labor, it lets these businesses compete with the content quality of much larger players.
 
-It also creates new, higher-value work. The "editor" role shifts to **constitution author** — a person who encodes editorial judgment once and leverages it across every agent action thereafter, a 1→N multiplier instead of 1→1 editing. Agencies on LumiBase can serve more clients per head and sell governance (constitutions, SLO design, exception review) as a recurring service. Because the core is MIT-licensed and the skill registry is exposed as a standard MCP server, third-party developers can build and sell agents, skills, and extensions on top of the platform — an ecosystem of small AI-native service businesses. `[TODO: add actual numbers — pilot customers, agencies onboarded, marketplace contributors]`
+It also creates new, higher-value work. The "editor" role shifts to **constitution author** — a person who encodes editorial judgment once and leverages it across every agent action thereafter, a 1→N multiplier instead of 1→1 editing. Agencies on LumiBase can serve more clients per head and sell governance (constitutions, SLO design, exception review) as a recurring service. Because the core is Apache-2.0-licensed and the skill registry is exposed as a standard MCP server, third-party developers can build and sell agents, skills, and extensions on top of the platform — an ecosystem of small AI-native service businesses. `[TODO: add actual numbers — pilot customers, agencies onboarded, marketplace contributors]`
 
 ### The story of building this way
 
@@ -64,7 +74,14 @@ Building a business this way means the founding team stays tiny while the operat
 ## Revenue evidence
 
 `[TODO — must be real:]`
-- Pricing: open-source MIT core (free) · Hobby $29/mo managed hosting · Enterprise $99/mo (SSO, dedicated support)
+- Pricing: open-source Apache-2.0 core (free) · Hobby $29/mo managed hosting · Enterprise $99/mo (SSO, dedicated support)
+- ~~⚠️ Verify the license before submitting.~~ **Resolved.** The licence is
+  **Apache-2.0**, not MIT, and this is settled rather than open: `CHANGELOG.md`
+  records the relicense under `[0.23.0]` (2026-07-14) — "Project license updated
+  to the Apache License, Version 2.0 (from MIT), effective this release", with
+  `v0.22.0` the final MIT release. The repo is on `0.24.1`, the root `LICENSE` is
+  Apache-2.0, and all four published packages declare `"Apache-2.0"`. The MIT
+  mentions in this draft have been corrected.
 - Stripe dashboard export / bank statement / simple P&L (template: https://docs.google.com/spreadsheets/d/1pAJrEMo7_QID6V62sA4C8XwGBHkxDTVX3wtYNE2fulI/edit)
 - Corporate ID if available
 

@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T00:04:58.104Z
+sourceLang: vi
+contentHash: bb3a4908115a8717
+codeVerified: 2026-07-28T00:04:58.104Z
+codeVerifiedHash: bb3a4908115a8717
+codeVerifiedClaims: 16
+---
+
 # Đặc tả Kỹ thuật: Phát triển AI-First CMS Engine cho LumiBase
 
 Tài liệu này cung cấp hướng dẫn lập trình chi tiết, thiết kế kiến trúc, ranh giới mã nguồn và cấu trúc API/Database để các **AI Agent** khác có thể độc lập triển khai các mảnh ghép của hệ thống **AI-First CMS Engine** trên LumiBase mà không gây xung đột code.

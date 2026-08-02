@@ -72,10 +72,10 @@ export const CollectionConfigSchema = z
     archiveValue: z.string().nullable().optional(),
     unarchiveValue: z.string().nullable().optional(),
     itemDuplicationFields: z.array(z.unknown()).optional(),
-    translations: z.record(z.unknown()).optional(),
+    translations: z.record(z.string(), z.unknown()).optional(),
     accountability: z.enum(['all', 'activity', 'none']).optional(),
     versioning: z.boolean().optional(),
-    meta: z.record(z.unknown()).optional(),
+    meta: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -98,9 +98,9 @@ export const FieldConfigSchema = z
     precision: z.number().int().nullable().optional(),
     scale: z.number().int().nullable().optional(),
     special: z.array(z.unknown()).optional(),
-    options: z.record(z.unknown()).optional(),
-    displayOptions: z.record(z.unknown()).optional(),
-    validation: z.record(z.unknown()).optional(),
+    options: z.record(z.string(), z.unknown()).optional(),
+    displayOptions: z.record(z.string(), z.unknown()).optional(),
+    validation: z.record(z.string(), z.unknown()).optional(),
     conditions: z.array(z.unknown()).optional(),
     required: z.boolean().optional(),
     readonly: z.boolean().optional(),
@@ -133,7 +133,7 @@ export const RelationConfigSchema = z
     junctionOneField: z.string().nullable().optional(),
     sortField: z.string().nullable().optional(),
     onDelete: OnDeleteSchema.optional(),
-    meta: z.record(z.unknown()).optional(),
+    meta: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -144,7 +144,7 @@ export const WebhookConfigSchema = z
     url: z.string().min(1),
     actions: z.array(z.string()).default([]),
     collections: z.array(z.string()).default([]),
-    headers: z.record(z.string()).default({}),
+    headers: z.record(z.string(), z.string()).default({}),
     status: z.enum(['active', 'inactive']).default('active'),
   })
   .strict();

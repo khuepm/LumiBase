@@ -1,4 +1,16 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:11:36.295Z
+sourceLang: en
+translatedFrom: en
+sourceHash: dfe37d468d6dd7e6
+mtEngine: claude
+syncStatus: machine-translated
+---
+
 # Migration role flags sang policy flags
+
+<!-- verify-code-refs: planned LUMIBASE_RBAC_LEGACY_ROLE_FLAGS -->
 
 > Scope: thiết kế migration backward-compatible cho `roles.admin_access/app_access` sang policy-level `admin_access/app_access/enforce_tfa/ip_allow/ip_deny/valid_from/valid_until`.
 

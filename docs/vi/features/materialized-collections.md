@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:17:41.116Z
+sourceLang: vi
+contentHash: c61cc42cd8d3e734
+codeVerified: 2026-07-25T08:17:41.116Z
+codeVerifiedHash: c61cc42cd8d3e734
+codeVerifiedClaims: 8
+---
+
 # Materialized Collections
 
 POST-GA6: tối ưu hot read path bằng cách cache pre-computed projection của collection ra một denormalized table riêng.

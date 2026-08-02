@@ -68,8 +68,13 @@ export function ApiKeysPage() {
   const previewRows = useMemo(() => buildPreviewRows(policyDetails), [policyDetails]);
 
   const createKey = useMutation({
-    mutationFn: async (input: { name: string; description?: string; expiresAt?: string | null }) =>
-      (await client.apiKeys.create(input)).data,
+    mutationFn: async (input: {
+      name: string;
+      description?: string;
+      expiresAt?: string | null;
+      publishable?: boolean;
+      allowedOrigins?: string[];
+    }) => (await client.apiKeys.create(input)).data,
     onSuccess: (data) => {
       setSecret(data);
       setSelectedId(data.id);
@@ -87,6 +92,17 @@ export function ApiKeysPage() {
 
   const revokeKey = useMutation({
     mutationFn: (id: string) => client.apiKeys.revoke(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['access', 'api-keys'] }),
+  });
+
+  /**
+   * The whole point of the origin allowlist is that it is adjustable on a live
+   * key — a mistyped origin, or a new frontend domain, must not force a token
+   * rotation and a redeploy of whatever ships the key.
+   */
+  const setAllowedOrigins = useMutation({
+    mutationFn: async (input: { id: string; allowedOrigins: string[] }) =>
+      (await client.apiKeys.setAllowedOrigins(input.id, input.allowedOrigins)).data,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['access', 'api-keys'] }),
   });
 
@@ -235,6 +251,18 @@ export function ApiKeysPage() {
                         {key.name}
                       </button>
                       <p className="text-xs text-muted-foreground">{key.description ?? '—'}</p>
+                      {key.publishable && (
+                        <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-400">
+                            Publishable
+                          </span>
+                          <span className="text-muted-foreground">
+                            {key.allowedOrigins.length > 0
+                              ? key.allowedOrigins.join(', ')
+                              : 'any origin'}
+                          </span>
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-2 font-mono text-xs">{key.prefix}</td>
                     <td className="px-4 py-2 text-xs">
@@ -285,6 +313,19 @@ export function ApiKeysPage() {
                 <Info label="Last IP" value={selectedKey.lastUsedIp ?? '—'} />
               </dl>
 
+              {selectedKey.publishable && (
+                <AllowedOriginsSection
+                  // Remount on key change so the textarea shows the selected
+                  // key's origins rather than carrying over unsaved edits.
+                  key={selectedKey.id}
+                  origins={selectedKey.allowedOrigins}
+                  isPending={setAllowedOrigins.isPending}
+                  onSave={(allowedOrigins) =>
+                    setAllowedOrigins.mutate({ id: selectedKey.id, allowedOrigins })
+                  }
+                />
+              )}
+
               <AttachmentSection
                 title="Roles"
                 empty="No roles attached."
@@ -325,7 +366,15 @@ export function ApiKeysPage() {
                   warnings={conflictReport.warnings}
                 />
               )}
-              <MutationError error={attachRole.error ?? attachPolicy.error ?? rotateKey.error ?? revokeKey.error} />
+              <MutationError
+                error={
+                  attachRole.error ??
+                  attachPolicy.error ??
+                  rotateKey.error ??
+                  revokeKey.error ??
+                  setAllowedOrigins.error
+                }
+              />
             </aside>
           )}
         </div>
@@ -385,6 +434,79 @@ function StatusBadge({ apiKey }: { apiKey: ApiKeyResource }) {
     >
       {label}
     </span>
+  );
+}
+
+/**
+ * Edit a publishable key's browser-origin allowlist in place.
+ *
+ * Previously the allowlist could only be set at create time, so tightening it —
+ * or fixing a typo — meant rotating the token and redeploying whatever ships it.
+ * That defeats the purpose of the control, which exists precisely because the
+ * key is already out in clients.
+ *
+ * Saving an empty box removes the constraint. That widens access, so it is
+ * confirmed rather than silently accepted.
+ */
+function AllowedOriginsSection({
+  origins,
+  isPending,
+  onSave,
+}: {
+  origins: string[];
+  isPending: boolean;
+  onSave: (allowedOrigins: string[]) => void;
+}) {
+  const saved = origins.join('\n');
+  const [draft, setDraft] = useState(saved);
+  const parsed = parseOriginList(draft);
+  const dirty = parsed.join('\n') !== origins.join('\n');
+
+  return (
+    <section className="space-y-2">
+      <h4 className="text-xs font-semibold uppercase text-muted-foreground">Allowed origins</h4>
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        rows={2}
+        placeholder="https://app.example.com"
+        aria-label="Allowed origins, one per line"
+        className="w-full rounded-md border bg-background px-2 py-1.5 font-mono text-xs"
+      />
+      <p className="text-xs text-muted-foreground">
+        One per line. Empty means <strong>any origin</strong>. Requests without an
+        origin — native or server-side callers — are always allowed, so this is
+        not a defence against <code>curl</code>.
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={!dirty || isPending}
+          onClick={() => {
+            if (
+              parsed.length === 0 &&
+              origins.length > 0 &&
+              !confirm('Remove the origin allowlist? This key will then work from any website.')
+            ) {
+              return;
+            }
+            onSave(parsed);
+          }}
+          className="rounded-md border px-2 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+        >
+          {isPending ? 'Saving…' : 'Save origins'}
+        </button>
+        {dirty && !isPending && (
+          <button
+            type="button"
+            onClick={() => setDraft(saved)}
+            className="text-xs text-muted-foreground hover:underline"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -570,6 +692,18 @@ function groupPreviewRows(rows: EffectiveRow[]): Array<{
     .map(([collection, byAction]) => ({ collection, byAction }));
 }
 
+/** Split a textarea of origins into a clean list; blank lines are dropped. */
+export function parseOriginList(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,]/)
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0),
+    ),
+  );
+}
+
 function CreateApiKeyDialog({
   isPending,
   error,
@@ -579,11 +713,19 @@ function CreateApiKeyDialog({
   isPending: boolean;
   error: unknown;
   onClose: () => void;
-  onCreate: (input: { name: string; description?: string; expiresAt?: string | null }) => void;
+  onCreate: (input: {
+    name: string;
+    description?: string;
+    expiresAt?: string | null;
+    publishable?: boolean;
+    allowedOrigins?: string[];
+  }) => void;
 }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
+  const [publishable, setPublishable] = useState(false);
+  const [allowedOrigins, setAllowedOrigins] = useState('');
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
@@ -618,6 +760,45 @@ function CreateApiKeyDialog({
               className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
             />
           </label>
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={publishable}
+              onChange={(event) => setPublishable(event.target.checked)}
+              className="mt-0.5 size-4"
+            />
+            <span>
+              <span className="block text-xs font-medium">
+                Publishable (safe to embed in a browser or app)
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Issues an <code>lbk_pub_…</code> token. It is <strong>not</strong> a
+                secret — anyone who loads your app can read it, so scope it as if
+                it were already public. Buys per-key quota, rotation and audit,
+                not confidentiality.
+              </span>
+            </span>
+          </label>
+          {publishable && (
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                Allowed origins (one per line, optional)
+              </span>
+              <textarea
+                value={allowedOrigins}
+                onChange={(event) => setAllowedOrigins(event.target.value)}
+                rows={2}
+                placeholder={'https://app.example.com'}
+                className="w-full rounded-md border bg-background px-3 py-1.5 font-mono text-xs"
+              />
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Blocks other websites from using this key in a browser. Leave
+                empty for no constraint. Requests without an origin — native or
+                server-side callers — are always allowed, so this is not a
+                defence against <code>curl</code>.
+              </span>
+            </label>
+          )}
           <MutationError error={error} />
         </div>
         <div className="mt-4 flex justify-end gap-2">
@@ -632,6 +813,8 @@ function CreateApiKeyDialog({
                 name: name.trim(),
                 description: description.trim() || undefined,
                 expiresAt: expiresAt ? new Date(`${expiresAt}T23:59:59.999Z`).toISOString() : null,
+                publishable: publishable || undefined,
+                allowedOrigins: publishable ? parseOriginList(allowedOrigins) : undefined,
               })
             }
             className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"

@@ -1,5 +1,6 @@
 import Redis from 'ioredis';
-import type { CacheProvider, UniqueCounterProvider } from '../../interfaces';
+import { classifyCacheValue, negativeCacheWireValue } from '../../cache-entry';
+import type { CacheEntry, CacheProvider, UniqueCounterProvider } from '../../interfaces';
 
 export class RedisCacheProvider implements CacheProvider, UniqueCounterProvider {
   private client: Redis;
@@ -25,15 +26,21 @@ export class RedisCacheProvider implements CacheProvider, UniqueCounterProvider 
     }
   }
 
-  async get<T = string>(key: string): Promise<T | null> {
+  async getEntry<T>(key: string): Promise<CacheEntry<T>> {
     try {
       await this.ensureConnected();
       const val = await this.client.get(key);
-      return val ? (JSON.parse(val) as T) : null;
+      if (val === null) return { state: 'miss' };
+      return classifyCacheValue<T>(JSON.parse(val) as unknown);
     } catch {
-      console.warn('[cache] Redis get failed — skipping cache read');
-      return null;
+      console.warn('[cache] Redis get failed — reporting unavailable');
+      return { state: 'unavailable' };
     }
+  }
+
+  async get<T = string>(key: string): Promise<T | null> {
+    const entry = await this.getEntry<T>(key);
+    return entry.state === 'hit' ? entry.value : null;
   }
 
   async set(key: string, value: string, options?: { ttl?: number }): Promise<void> {
@@ -47,6 +54,10 @@ export class RedisCacheProvider implements CacheProvider, UniqueCounterProvider 
     } catch {
       console.warn('[cache] Redis set failed — skipping cache write');
     }
+  }
+
+  async setNegative(key: string, options?: { ttl?: number }): Promise<void> {
+    await this.set(key, negativeCacheWireValue(), options);
   }
 
   async delete(key: string): Promise<void> {

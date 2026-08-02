@@ -1,5 +1,12 @@
 ---
 title: Setup — Airbyte
+version: 1
+lastUpdated: 2026-07-28T10:30:25.123Z
+sourceLang: en
+contentHash: dca2d909753946f9
+codeVerified: 2026-07-28T10:30:25.123Z
+codeVerifiedHash: dca2d909753946f9
+codeVerifiedClaims: 12
 ---
 
 # Setup Guide: Airbyte

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SignJWT, generateKeyPair, type KeyLike } from 'jose';
+import { SignJWT, generateKeyPair } from 'jose';
 import { normalizeRoles, verifyExternalJwt, type TrustedIssuer, type VerifierDeps } from '../verifier';
 
 /**
@@ -14,7 +14,7 @@ const ISSUER = 'https://idp.example.com/';
 const AUD = 'lumibase-api';
 const SITE = 'site_1';
 
-async function makeIssuer(overrides: Partial<TrustedIssuer> = {}): Promise<{ issuer: TrustedIssuer; publicKey: KeyLike; privateKey: KeyLike }> {
+async function makeIssuer(overrides: Partial<TrustedIssuer> = {}): Promise<{ issuer: TrustedIssuer; publicKey: CryptoKey; privateKey: CryptoKey }> {
   const { publicKey, privateKey } = await generateKeyPair('RS256');
   const issuer: TrustedIssuer = {
     id: 'iss_1',
@@ -44,7 +44,7 @@ interface TokenClaims {
   [k: string]: unknown;
 }
 
-async function sign(privateKey: KeyLike, claims: TokenClaims, alg = 'RS256'): Promise<string> {
+async function sign(privateKey: CryptoKey, claims: TokenClaims, alg = 'RS256'): Promise<string> {
   const jwt = new SignJWT({ email: 'u@x.dev', roles: ['editor'], ...claims })
     .setProtectedHeader({ alg })
     .setIssuer(claims.iss ?? ISSUER)
@@ -57,7 +57,7 @@ async function sign(privateKey: KeyLike, claims: TokenClaims, alg = 'RS256'): Pr
   return jwt.sign(privateKey);
 }
 
-function deps(issuer: TrustedIssuer, publicKey: KeyLike, over: Partial<VerifierDeps> = {}): VerifierDeps {
+function deps(issuer: TrustedIssuer, publicKey: CryptoKey, over: Partial<VerifierDeps> = {}): VerifierDeps {
   return {
     requestSiteId: SITE,
     getTrustedIssuers: async () => [issuer],

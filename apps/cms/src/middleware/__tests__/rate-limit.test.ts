@@ -12,8 +12,28 @@ function makeCache() {
       const raw = store.get(key);
       return raw == null ? null : (JSON.parse(raw) as T);
     },
+    getEntry: async <T>(key: string) => {
+      const raw = store.get(key);
+      if (raw == null) return { state: 'miss' as const };
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (
+          parsed &&
+          typeof parsed === 'object' &&
+          (parsed as { __lumi?: string }).__lumi === 'neg'
+        ) {
+          return { state: 'negative' as const };
+        }
+        return { state: 'hit' as const, value: parsed as T };
+      } catch {
+        return { state: 'unavailable' as const };
+      }
+    },
     set: async (key: string, value: string) => {
       store.set(key, value);
+    },
+    setNegative: async (key: string) => {
+      store.set(key, JSON.stringify({ __lumi: 'neg', v: 1 }));
     },
     delete: async (key: string) => {
       store.delete(key);

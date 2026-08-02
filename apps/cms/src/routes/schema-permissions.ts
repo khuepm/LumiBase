@@ -18,7 +18,7 @@ export function permissionCtx(c: Context<AppEnv>) {
   return {
     userId: auth?.userId ?? null,
     siteId: c.get('siteId'),
-    roleId: null,
+    roleId: auth?.roleId ?? null,
     user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
     ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
     headers,

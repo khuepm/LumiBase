@@ -27,7 +27,7 @@ function permissionCtx(c: Context<AppEnv>) {
   return {
     userId: auth?.userId ?? null,
     siteId: c.get('siteId'),
-    roleId: null,
+    roleId: auth?.roleId ?? null,
     user: null,
     ip: c.get('ip') ?? null,
     headers,

@@ -1,3 +1,16 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:11:35.148Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 42b4c9322dccd73d
+mtEngine: claude
+syncStatus: machine-translated
+codeVerified: 2026-07-25T08:11:35.148Z
+codeVerifiedHash: 42b4c9322dccd73d
+codeVerifiedClaims: 208
+---
+
 # Hono API Specification
 
 > Base URL: `https://api.lumibase.dev` (configurable). Tất cả endpoint phiên bản hoá dưới `/api/v1`. Yêu cầu header `Authorization: Bearer <token>` (token từ login, hoặc API key `lbk_…`) và `X-Lumi-Site: <siteId>` (hoặc subdomain mapping).
@@ -84,7 +97,7 @@ Headers tuỳ chọn:
 
 ## 7. Files
 
-- `POST /files/upload-url` → presigned R2 PUT.
+- `POST /files/presigned-url` → presigned R2 PUT.
 - `POST /files` body metadata sau khi upload xong.
 - `GET /files`, `/files/:id`, `PATCH`, `DELETE`.
 - `GET /assets/:id?width=&height=&format=webp` — transform (Workers image).

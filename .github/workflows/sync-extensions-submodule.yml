@@ -32,10 +32,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout (with submodules)
+      - name: Checkout (extensions only)
         uses: actions/checkout@v7
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 0
           # Use a token that can push back to main. Falls back to the default
           # GITHUB_TOKEN; set EXTENSIONS_SYNC_TOKEN as a repo secret if branch
@@ -46,6 +46,10 @@ jobs:
         id: bump
         run: |
           set -euo pipefail
+          # Only `extensions` is public. apps/marketplace and apps/enterprise are
+          # private, so the checkout above must not fetch submodules recursively
+          # (it would abort with "repository not found"). Init just this one.
+          git submodule update --init extensions
           before="$(git -C extensions rev-parse HEAD)"
           git submodule update --remote --recursive extensions
           after="$(git -C extensions rev-parse HEAD)"

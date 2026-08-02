@@ -1,15 +1,29 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:13:22.051Z
+sourceLang: vi
+contentHash: 851d0c3d29a694cb
+codeVerified: 2026-07-25T08:13:22.051Z
+codeVerifiedHash: 851d0c3d29a694cb
+codeVerifiedClaims: 2
+---
+
 # Publish npm packages
 
 LumiBase giữ toàn bộ package trong source control ở trạng thái `private: true` cho đến khi dự án sẵn sàng public. Quy trình publish npm chỉ mở package trong bản copy tạm thời của workflow release; manifest trong repository vẫn private để tránh publish nhầm trong giai đoạn chưa public.
 
 ## Allowlist package public
 
-Workflow `Publish npm packages` chỉ publish các package đã được allowlist trong `scripts/publish-npm.mjs`:
+Không có file allowlist riêng. Job `publish-npm-packages` trong
+`.github/workflows/release.yml` quét `packages/*/package.json` và chỉ publish những
+package **không** có `private: true`. Nói cách khác, cờ `private` trong `package.json`
+của chính package đó *là* allowlist:
 
 - `packages/sdk` (`@lumibase/sdk`)
 - `packages/extension-sdk` (`@lumibase/extension-sdk`)
 
-Nếu cần thêm package public khác, phải thêm package đó vào allowlist trong script và bảo đảm package không phụ thuộc vào dependency nội bộ dùng `workspace:*` chưa public.
+Muốn thêm package public: bỏ `private: true` khỏi `package.json` của package đó, và
+bảo đảm nó không phụ thuộc vào dependency nội bộ dùng `workspace:*` chưa public.
 
 ## Version fixed từ root
 

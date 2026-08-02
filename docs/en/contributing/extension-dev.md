@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:56.148Z
+version: 2
+lastUpdated: 2026-07-25T08:11:35.552Z
 sourceLang: en
-contentHash: 62e0afccda04ab1b
+contentHash: 42e2b8eba52703f7
+codeVerified: 2026-07-25T08:11:35.552Z
+codeVerifiedHash: 42e2b8eba52703f7
+codeVerifiedClaims: 2
 ---
 
 # Extension Development Guide
@@ -243,6 +246,7 @@ or configure the transport purely by env. Full reference:
 
 ## Resources
 
-- `packages/extension-sdk/src/types.ts` — full TypeScript types for all extension APIs
-- `packages/extension-sdk/src/helpers.ts` — utility helpers (`registerInterface`, `registerOperation`, etc.)
+- `packages/extension-sdk/src/index.ts` — the whole SDK surface: TypeScript types for
+  every extension API (`ExtensionManifest`, `HookDefinition`, `InterfaceDefinition`, …)
+  plus the `define*` helpers (`defineHook`, `defineInterface`, …)
 - Example extensions: `apps/studio/src/interfaces/` (built-in interfaces as reference)

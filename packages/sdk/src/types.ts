@@ -673,6 +673,55 @@ export interface AccessConflictCheckInput {
   removePolicies?: string[];
 }
 
+/* ---------------- Non-staff access grants ---------------- */
+
+/** Actions an operator may grant to a non-staff realm. */
+export type GrantAction = "read" | "create" | "update" | "delete";
+
+/** One `(collection, action)` grant held by a realm. */
+export interface RealmAccessGrant {
+  collection: string;
+  action: GrantAction;
+  /** Row scope: only `status = 'published'` rows. */
+  publishedOnly: boolean;
+  /** Row scope: only rows the principal created. Never set for `public`. */
+  ownOnly: boolean;
+  /** Field whitelist; `["*"]` = all, `["-secret"]` excludes. */
+  fields: string[];
+}
+
+/**
+ * A non-staff realm as the picker sees it: what it may be granted, and what it
+ * currently holds. `allowedActions` and `supportsOwnOnly` are served by the
+ * API rather than hard-coded client-side, so a realm's limits are stated once.
+ */
+export interface RealmAccessDescriptor {
+  key: "public" | "subscriber";
+  label: string;
+  summary: string;
+  allowedActions: GrantAction[];
+  supportsOwnOnly: boolean;
+  /** Whether an operator can turn the realm on and off (public only). */
+  togglable: boolean;
+  enabled: boolean;
+  grants: RealmAccessGrant[];
+}
+
+export interface RealmAccessState {
+  /** Grantable collections: non-system, non-hidden. */
+  collections: Array<{ name: string; label: string | null }>;
+  realms: RealmAccessDescriptor[];
+}
+
+export interface RealmGrantInput {
+  collection: string;
+  /** Defaults to `read`. */
+  action?: GrantAction;
+  publishedOnly?: boolean;
+  ownOnly?: boolean;
+  fields?: string[];
+}
+
 /* ---------------- Access Export / Import ---------------- */
 
 export const ACCESS_EXPORT_SCHEMA = "lumibase.access@v1";
@@ -823,6 +872,15 @@ export interface ApiKeyResource {
   lastUsedIp: string | null;
   lastUsedUserAgent: string | null;
   metadata: Record<string, unknown>;
+  /**
+   * True for a client-embeddable `lbk_pub_…` key. Derived from the prefix
+   * server-side, so it always matches the token the client actually holds.
+   *
+   * A publishable key is NOT a secret — treat its scope as fully public.
+   */
+  publishable: boolean;
+  /** Origins the key may be used from in a browser. Empty = no constraint. */
+  allowedOrigins: string[];
   createdAt: string;
   roles: Array<{ roleId: string; priority: number }>;
   policies: Array<{ policyId: string; priority: number }>;
@@ -833,6 +891,10 @@ export interface ApiKeyCreateInput {
   description?: string;
   expiresAt?: string | Date | null;
   metadata?: Record<string, unknown>;
+  /** Mint a client-embeddable `lbk_pub_…` token. Defaults to false. */
+  publishable?: boolean;
+  /** Browser origins the key may be used from. Empty/omitted = no constraint. */
+  allowedOrigins?: string[];
 }
 
 export interface ApiKeyRotateInput {

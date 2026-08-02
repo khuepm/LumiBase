@@ -40,7 +40,15 @@ export function buildRequestPermissionContext(input: {
   return {
     userId: auth?.userId ?? null,
     siteId,
-    roleId: null,
+    // Must be forwarded, not hardcoded null. `PermissionService.compile()`
+    // resolves roles from `user_sites` / `user_roles` / `api_key_roles` /
+    // `ctx.roleId` — and for an anonymous principal the first three are all
+    // empty by definition, so `ctx.roleId` is the *only* path by which the
+    // `public` role reaches the bundle. Dropping it made every public grant
+    // inert on the content API. `ctx.user.roles` is not a fallback: compile()
+    // overwrites `ctx.user` with a DB snapshot, which is null when there is
+    // no `userId`.
+    roleId: auth?.roleId ?? null,
     user: auth
       ? {
           id: auth.userId ?? null,
@@ -116,7 +124,7 @@ export function itemServiceForRequest(
       auth,
       siteId,
       headers: collectRequestHeaders(c),
-      ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+      ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
     }),
   });
 }
@@ -139,7 +147,7 @@ export function permissionServiceForRequest(c: Context<AppEnv>): PermissionServi
       auth: c.get('auth'),
       siteId,
       headers: collectRequestHeaders(c),
-      ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+      ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
     }),
   });
 }

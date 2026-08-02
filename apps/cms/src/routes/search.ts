@@ -1,10 +1,11 @@
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { collections, scopeSite } from '@lumibase/database';
 import { searchIndexName, SEARCH_META_ATTRS } from '@lumibase/runtime';
-import type { AppEnv, AuthPrincipal } from '../env';
-import { PermissionService, type CompiledPermission } from '../services/permission-service';
+import type { AppEnv } from '../env';
+import { type CompiledPermission } from '../services/permission-service';
+import { permissionServiceForRequest } from '../services/item-service-factory';
 import { formatSafeError } from '@lumibase/shared/utils';
 
 /**
@@ -51,10 +52,6 @@ const SEARCH_META_KEYS: readonly string[] = [
   SEARCH_META_ATTRS.updatedAt,
 ];
 
-const principalUser = (auth?: AuthPrincipal) => auth
-  ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) }
-  : null;
-
 /**
  * Mask a search hit down to the fields the caller may read. `id` and the
  * reserved `_collection` / `_title` / `_updatedAt` meta attributes are always
@@ -64,28 +61,6 @@ function maskSearchHit(hit: Record<string, unknown>, permission: CompiledPermiss
   if (permission.fields.length === 1 && permission.fields[0] === '*') return hit;
   const allowed = new Set<string>(['id', ...SEARCH_META_KEYS, ...permission.fields]);
   return Object.fromEntries(Object.entries(hit).filter(([key]) => allowed.has(key)));
-}
-
-function buildPermissionService(c: Context<AppEnv>) {
-  const auth = c.get('auth');
-  const headers: Record<string, string> = {};
-  c.req.raw.headers.forEach((value, key) => {
-    headers[key.toLowerCase()] = value;
-  });
-
-  return new PermissionService({
-    db: c.get('db'),
-    cache: c.get('runtime').cache,
-    ctx: {
-      userId: auth?.userId ?? null,
-      siteId: c.get('siteId'),
-      roleId: null,
-      user: principalUser(auth),
-      ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-      headers,
-      apiKey: auth?.apiKey ?? null,
-    },
-  });
 }
 
 searchRouter.get('/', async (c) => {
@@ -130,7 +105,7 @@ searchRouter.get('/', async (c) => {
     offset,
   };
 
-  const permissionService = buildPermissionService(c);
+  const permissionService = permissionServiceForRequest(c);
 
   try {
     // ── Cross-collection: fan out across every collection of the site ──────

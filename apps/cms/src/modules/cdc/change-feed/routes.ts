@@ -156,7 +156,7 @@ export const defaultCdcFeedServicesFactory = (
       ctx: {
         siteId: ctx.get('siteId'),
         userId: auth.userId ?? null,
-        roleId: null,
+        roleId: auth.roleId ?? null,
         apiKey: (auth.apiKey as Record<string, unknown> | null) ?? null,
         headers: {},
         ip: null,

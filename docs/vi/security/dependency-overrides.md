@@ -34,8 +34,8 @@ resolution / patch hash mới.
 | `undici` | `^7.28.0` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=7.28.0`. |
 | `uuid` | `^11.1.1` | Hợp nhất phiên bản / advisory (đã xử lý qua Dependabot). | Trôi lệch phiên bản giữa các package không còn là mối lo. |
 | `vite` | `^7.3.5` | Hợp nhất về Vite 7 và kéo esbuild vượt advisory RCE `0.28.1`. | Workspace không còn cần ép một major Vite duy nhất. |
-| `@types/react` | `18.3.3` | **Không phải pin bảo mật** — ép React 18 types trên toàn workspace để tránh trôi lệch type giữa các app. | Workspace migrate sang một React major duy nhất, không thể xảy ra trôi lệch. |
-| `@types/react-dom` | `18.3.0` | Giống `@types/react` — nhất quán type React 18. | Giống `@types/react`. |
+| `@types/react` | `19.2.0` | **Không phải pin bảo mật** — ép React 19 types toàn workspace để Studio/Docs/Landing/`@lumibase/ui` typecheck cùng major với runtime React 19. | Trôi lệch giữa các app không còn là mối lo, hoặc workspace cố ý tách React major trở lại. |
+| `@types/react-dom` | `19.2.0` | Giống `@types/react` — nhất quán type React 19. | Giống `@types/react`. |
 
 ## Registry patches
 
