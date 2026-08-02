@@ -396,17 +396,20 @@ Jitter dùng nguồn ngẫu nhiên của runtime; mục đích là tránh biến
 
 `resolve` cố ý **không** gộp single-flight: hai cơ chế giải hai bài toán khác nhau (§5.2 lo khoá nóng chung, cái này lo khoá rác phân tán). Ai cần cả hai thì bọc `createSwrCache` bên trong `load`.
 
+**TTL phải được caller truyền vào, service không tự đọc `process.env`.** Trên Cloudflare Workers `process.env` không mang biến của wrangler, nên đọc trực tiếp trong service là bỏ qua knob `LUMIBASE_NEGATIVE_CACHE_TTL` trên đúng một trong hai runtime được hỗ trợ — kể cả `0` (tắt tombstone) cũng không có tác dụng (vi phạm non-negotiable rule #3). Đường đi: `resolveNegativeTtl(c.env)` tại biên request → `ItemServiceDeps.negativeCacheTtl` → `SchemaServiceDeps.negativeCacheTtl`. Route `deliver.ts` đã đọc `c.env` trực tiếp nên không cần thread. Các construction site không có `c` (worker, config-import, rewrap) giữ fallback `process.env` — chúng chạy trên Node và không phải mục tiêu penetration.
+
 ### 14.5 Key namespace (DoD 2b)
 
 ```
 neg:${siteId}:page:${slug}          ← deliver page 404
 neg:${siteId}:collection:${name}    ← SchemaService.getCompiled / ItemService.resolveCollection
-neg:${siteId}:item:${collection}:${id}
 neg:site:${siteId}                  ← site không tồn tại (llms.txt); không có siteId cha nên
                                        namespace phẳng — đây là ngoại lệ duy nhất, xem §17
 ```
 
-`slug` được normalize (lowercase, trim) và cắt tại `LUMIBASE_NEGATIVE_KEY_MAXLEN` = 256 ký tự trước khi ghép — slug dài hơn đã bị guard §14.6 loại từ trước, giới hạn này chỉ là chặn trên cho kích thước khoá.
+**Đã bỏ `neg:${siteId}:item:${collection}:${id}` (rà code 2026-08-02).** Mọi đường đọc item-by-id đều nằm sau auth, và Req 19.8 cấm serve tombstone cho request có credentials — nên phía đọc không bao giờ wire được. Bản implement đầu tiên vẫn gọi `forget` cho khoá này ở `ItemService.create`, tức mỗi lần tạo item tốn một round-trip Redis để xoá thứ không đường nào ghi. Đã xoá cả helper lẫn call-site. Mở lại chỉ khi có surface item-by-id công khai, không xác thực.
+
+`slug`, tên collection và mọi thành phần khoá chịu ảnh hưởng từ input đều được cắt tại `LUMIBASE_NEGATIVE_KEY_MAXLEN` = 256 ký tự (slug thêm lowercase + trim). Lý do cắt cả tên collection: `SAFE_FIELD_NAME` giới hạn **alphabet** nhưng không giới hạn **độ dài**, nên `GET /items/<tên 10KB>` sẽ sinh khoá Redis 10KB. Cắt an toàn cho key material — hai tên trùng 256 ký tự đầu dồn vào một tombstone chỉ khiến tên dài hơn tốn thêm một lần probe DB, và không tên collection thật nào tới gần mức đó (schema create cap 63 ký tự).
 
 ### 14.6 Shape guard (`apps/cms/src/services/identifier-guard.ts` — module mới)
 
@@ -428,10 +431,12 @@ TTL 30s là lưới an toàn, không phải cơ chế chính — một tác gi�
 |---|---|
 | Tạo page / đổi `pages.slug` | `forget('neg:'+siteId+':page:'+slug)` cho slug mới (và slug cũ nếu đổi) |
 | Tạo collection | `forget('neg:'+siteId+':collection:'+name)` |
-| Tạo item | `forget('neg:'+siteId+':item:'+collection+':'+id)` |
 | Tạo site | `forget('neg:site:'+siteId)` |
+| ~~Tạo item~~ | ~~`forget('neg:…:item:…')`~~ — bỏ, xem §14.5 (khoá item không tồn tại) |
 
 Cùng vị trí và cùng chính sách lỗi với tag purge của Req 8.1: lỗi → metric + warn, **không** fail request.
+
+**Thứ tự tra cứu ở `SchemaService.getCompiled`: positive cache TRƯỚC, tombstone SAU.** Bản đầu tiên probe tombstone trước, nên mọi request tới collection *có thật* phải trả thêm một round-trip cache — mà `resolveCollection` chạy trên mọi item list/detail/patch, tức đường nóng nhất của content plane. Đảo lại: hit dương = 1 op (trước là 2); traffic penetration vẫn **không** chạm Postgres, chỉ trả thêm một lần đọc cache — đúng phía rẻ của trade-off. Nguyên tắc chung cho các call-site sau: tombstone là lớp bảo vệ cho đường *lạnh*, không được nằm chắn trước đường nóng.
 
 ### 14.8 Bloom filter — quyết định (Req 19.16)
 

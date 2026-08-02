@@ -17,7 +17,9 @@ import {
 import {
   buildNegativeCache,
   forgetNegative,
+  negativeCollectionKey,
   negativePageKey,
+  NEGATIVE_KEY_MAXLEN,
 } from '../services/negative-cache';
 import { createNegativeCache } from '@lumibase/runtime';
 
@@ -126,6 +128,49 @@ describe('P17 — bad-shape identifiers → 404 with 0 DB queries', () => {
     const res = await deliverApp({ db }).request('/api/v1/deliver/llms.txt/not valid!');
     expect(res.status).toBe(404);
     expect(db.selectCount()).toBe(0);
+  });
+});
+
+describe('404 must not be an oracle (design §14.6, dod-review §2c)', () => {
+  it('returns a byte-identical 404 for bad shape and for a real miss', async () => {
+    // Bad shape → rejected by the guard, zero DB queries.
+    const badShape = fakeDb([]);
+    const shapeRes = await deliverApp({ db: badShape }).request(
+      '/api/v1/deliver/page/site-a/Has%20Spaces',
+    );
+
+    // Well-formed but absent → guard passes, DB queried, still 404.
+    const realMiss = fakeDb([[]]);
+    const missRes = await deliverApp({ db: realMiss }).request(
+      '/api/v1/deliver/page/site-a/no-such-page',
+    );
+
+    expect(shapeRes.status).toBe(404);
+    expect(missRes.status).toBe(404);
+    expect(badShape.selectCount()).toBe(0);
+    expect(realMiss.selectCount()).toBeGreaterThan(0);
+
+    // The whole point: a prober cannot tell the two apart. If these ever
+    // diverge, the endpoint leaks which identifiers are well-formed.
+    expect(await shapeRes.text()).toBe(await missRes.text());
+    expect(shapeRes.headers.get('cache-control')).toBe(
+      missRes.headers.get('cache-control'),
+    );
+  });
+});
+
+describe('negative key material is bounded (design §14.5)', () => {
+  it('clamps an oversized collection name instead of minting a giant key', () => {
+    // SAFE_FIELD_NAME bounds the alphabet but not the length, so an
+    // authenticated caller could otherwise mint multi-KB Redis keys.
+    const huge = 'a'.repeat(10_000);
+    const key = negativeCollectionKey('site-a', huge);
+    expect(key.length).toBeLessThanOrEqual(`neg:site-a:collection:`.length + NEGATIVE_KEY_MAXLEN);
+    expect(key.startsWith('neg:site-a:collection:aaa')).toBe(true);
+  });
+
+  it('leaves a normal collection name untouched', () => {
+    expect(negativeCollectionKey('site-a', 'posts')).toBe('neg:site-a:collection:posts');
   });
 });
 

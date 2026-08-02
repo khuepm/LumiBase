@@ -192,6 +192,13 @@ export interface ItemServiceDeps {
   db: Database;
   /** Optional cache used by SchemaService for compiled manifests. */
   cache?: CacheProvider;
+  /**
+   * Negative-cache TTL (seconds) forwarded to SchemaService (Req 19.5).
+   * Resolved from the runtime env by the caller — see the note on
+   * `SchemaServiceDeps.negativeCacheTtl` for why it is not read from
+   * `process.env` inside the service.
+   */
+  negativeCacheTtl?: number;
   /** Optional search provider for auto-indexing content on create/update/delete. */
   search?: SearchProvider;
   /** Optional queue provider for enqueuing background jobs. */
@@ -458,6 +465,7 @@ export class ItemService {
       db: deps.db,
       siteId: deps.siteId,
       cache: deps.cache,
+      negativeCacheTtl: deps.negativeCacheTtl,
     });
     this.permissions = deps.permissionCtx
       ? new PermissionService({ db: deps.db, cache: deps.cache, ctx: deps.permissionCtx })
@@ -843,14 +851,11 @@ export class ItemService {
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
-    // Drop item tombstone so a just-created id is visible immediately (Req 19.7).
-    if (this.deps.cache) {
-      const { forgetNegative, negativeItemKey } = await import('./negative-cache');
-      await forgetNegative(
-        this.deps.cache,
-        negativeItemKey(this.deps.siteId, collectionName, row.id),
-      );
-    }
+    // No item-id tombstone to forget here: nothing writes `neg:{site}:item:*`.
+    // Item-by-id reads are all authenticated, and Req 19.8 forbids serving a
+    // tombstone to a credentialed request — so the read side cannot be wired as
+    // design §14.5/§14.7 originally sketched. Dropping the key on every create
+    // was a Redis round-trip that deleted something no code path ever wrote.
     return row;
   }
 
