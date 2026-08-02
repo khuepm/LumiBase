@@ -5,7 +5,7 @@
 ## Trạng thái đóng phase
 
 - **Phase P0 (tasks 1–6): đã triển khai + rà DoD 2026-07-05.** typecheck workspace sạch; 1838 test CMS pass (24 test P0.1/P0.2 + 27 test P0.3–P0.6 + count opt-in). Setup Impact Registry dòng #37 = `n/a` (mọi knob là env, không seed/wizard/backfill). Tutorial impact: không đổi contract (delivery chỉ thêm header, list `meta` default giữ nguyên) → không tutorial nào bị ảnh hưởng. CHANGELOG [Unreleased] cập nhật. Còn mở: task 1.3 (edge-cache adapter CF), 2.3 (integration test Postgres thật), 7.1 (k6 baseline — cần môi trường load-test).
-- **Bổ sung Req 19 / tasks 22.x (cache penetration): follow-up DoD 2026-08-01.** k6 `load-penetration.js` trên docker postgres+redis: **DB-query-per-404 = 0.0308** (≤ 0.05) → điền roadmap §2; Grafana panel negative hits/writes; §21.6 giữ `LUMIBASE_DELIVER_RATE_LIMIT=1200`; §21.7 CHỐT (KV `get` → `null` on miss; `unavailable` chủ yếu Docker). Pages `forgetNegative` **deferred** (B16 — chưa có pages CRUD).
+- **Bổ sung Req 19 / tasks 22.x (cache penetration): follow-up DoD 2026-08-01.** k6 `load-penetration.js` trên docker postgres+redis: **DB-query-per-404 = 0.0308** (≤ 0.05) → điền roadmap §2; Grafana panel negative hits/writes; §21.6 giữ `LUMIBASE_DELIVER_RATE_LIMIT=1200`; §21.7 CHỐT (KV `get` → `null` on miss; `unavailable` chủ yếu Docker). Pages `forgetNegative` **closed** (B16 — `PageService` + `/api/v1/pages`).
 - Phase P1 (tasks 8–15), P2: chưa bắt đầu (22.3 đã ship phần interface âm tối thiểu mà không chờ đủ task 8 tag-based).
 
 ## DoD §1 — Code & test

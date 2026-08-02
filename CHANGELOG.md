@@ -11,6 +11,18 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
+- **Pages CRUD API (`/api/v1/pages`).** Studio-authenticated create / list /
+  get / patch / delete for `lumibase_pages`. Create and slug rename call
+  `forgetNegative` so Delivery tombstones clear immediately (closes
+  high-load B16 / task 22.6).
+- **Cache Provider v2 (tags + purge).** `CacheSetOptions.tags`,
+  `invalidateByTag`, optional `onEvent` on Redis / KV / `MemoryCacheProvider`
+  (LRU); admin `POST /api/v1/utils/cache/purge` (control-plane,
+  tenant-scoped). ADR-004 → Implemented (partial) pending write-path tag
+  callers (task 9).
+- **Delivery edge cache adapter.** `runtime.edgeCache` — Cloudflare
+  `caches.default` match/put; Docker no-op — wired on cacheable deliver
+  page responses (task 1.3).
 - **Cache penetration defence (Delivery API + schema lookup).** Public reads
   now stack three cheap filters before Postgres: identifier shape guards
   (404, zero queries), short-lived negative-cache tombstones on

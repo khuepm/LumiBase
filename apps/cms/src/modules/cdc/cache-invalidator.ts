@@ -45,6 +45,7 @@
  */
 
 import type { CacheProvider } from '@lumibase/runtime';
+import { MemoryCacheProvider } from '@lumibase/runtime';
 
 // ── constants ────────────────────────────────────────────────────────────
 
@@ -194,13 +195,10 @@ export function cacheActionForOperation(operation: CdcOperation): CacheActionKin
 // ── default collaborators ─────────────────────────────────────────────────
 
 /**
- * In-memory {@link CacheProvider} suitable as a default in environments
- * without a real Redis and as a test double. Exposes {@link setAvailable} so
- * tests can simulate a Redis outage: while unavailable, all operations reject
- * (mirroring a dropped connection).
+ * In-memory {@link CacheProvider} with simulated Redis availability for CDC
+ * tests. Extends the shared LRU {@link MemoryCacheProvider} from runtime.
  */
-export class InMemoryCacheProvider implements CacheProvider {
-  readonly store = new Map<string, string>();
+export class InMemoryCacheProvider extends MemoryCacheProvider {
   private available = true;
 
   /** Toggle simulated Redis availability (test/diagnostic helper). */
@@ -215,55 +213,46 @@ export class InMemoryCacheProvider implements CacheProvider {
 
   async getEntry<T>(key: string): Promise<import('@lumibase/runtime').CacheEntry<T>> {
     if (!this.available) return { state: 'unavailable' };
-    const raw = this.store.get(key);
-    if (raw === undefined) return { state: 'miss' };
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      const { classifyCacheValue } = await import('@lumibase/runtime');
-      return classifyCacheValue<T>(parsed);
-    } catch {
-      // Non-JSON payloads (legacy CDC tests store plain strings) count as hits.
-      return { state: 'hit', value: raw as T };
-    }
+    return super.getEntry<T>(key);
   }
 
   async get<T = string>(key: string): Promise<T | null> {
     if (!this.available) {
       throw new Error('Redis unavailable');
     }
-    return (this.store.get(key) ?? null) as T | null;
+    return super.get<T>(key);
   }
 
   async set(
     key: string,
     value: string,
-    _options?: { ttl?: number },
+    options?: { ttl?: number; tags?: string[] },
   ): Promise<void> {
     if (!this.available) {
       throw new Error('Redis unavailable');
     }
-    this.store.set(key, value);
+    await super.set(key, value, options);
   }
 
   async setNegative(key: string, options?: { ttl?: number }): Promise<void> {
-    const { negativeCacheWireValue } = await import('@lumibase/runtime');
-    await this.set(key, negativeCacheWireValue(), options);
+    if (!this.available) {
+      throw new Error('Redis unavailable');
+    }
+    await super.setNegative(key, options);
   }
 
   async delete(key: string): Promise<void> {
     if (!this.available) {
       throw new Error('Redis unavailable');
     }
-    this.store.delete(key);
+    await super.delete(key);
   }
 
-  async increment(key: string, by = 1, _opts?: { ttl?: number }): Promise<number> {
+  async increment(key: string, by = 1, opts?: { ttl?: number }): Promise<number> {
     if (!this.available) {
       throw new Error('Redis unavailable');
     }
-    const next = Number(this.store.get(key) ?? '0') + by;
-    this.store.set(key, String(next));
-    return next;
+    return super.increment(key, by, opts);
   }
 }
 

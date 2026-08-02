@@ -70,6 +70,9 @@ function makeFakeCache(preload: Record<string, unknown> = {}): FakeCache {
     async setNegative(key: string, options?: { ttl?: number }) {
       await cache.set(key, JSON.stringify({ __lumi: 'neg', v: 1 }), options);
     },
+    async invalidateByTag() {
+      // not used
+    },
   };
   return cache;
 }

@@ -1,5 +1,6 @@
 import type { RuntimeContext } from '../../interfaces';
 import { CloudflareCacheProvider, type KVNamespace } from './cache';
+import { CloudflareEdgeCacheProvider } from './edge-cache';
 import { CloudflareStorageProvider, type R2Bucket } from './storage';
 import { CloudflareDatabaseProvider, type Hyperdrive } from './database';
 import { CloudflareSearchProvider } from './search';
@@ -10,6 +11,7 @@ import { CloudflareRealtimeProvider, type DurableObjectNamespaceLike } from './r
 
 export { CloudflareRealtimeProvider } from './realtime';
 export { CloudflareCacheProvider } from './cache';
+export { CloudflareEdgeCacheProvider } from './edge-cache';
 export { CloudflarePageviewCounter } from './counter';
 export { CloudflareStorageProvider } from './storage';
 export { CloudflareDatabaseProvider } from './database';
@@ -77,6 +79,7 @@ export function createCloudflareRuntime(env: Record<string, unknown>): RuntimeCo
 
   return {
     cache: new CloudflareCacheProvider(cfEnv.CONFIG_CACHE, cfEnv.PAGEVIEW_COUNTER),
+    edgeCache: new CloudflareEdgeCacheProvider(),
     storage: new CloudflareStorageProvider(cfEnv.MEDIA),
     database: new CloudflareDatabaseProvider(cfEnv.HYPERDRIVE),
     search: new CloudflareSearchProvider(

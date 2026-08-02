@@ -43,7 +43,7 @@ Keep these separate from positive hit/miss so operators can tell “cache hit be
 | `LUMIBASE_NEGATIVE_CACHE_TTL` | `30` | Tombstone TTL in seconds before ±20% jitter. `0` disables tombstones. |
 | `LUMIBASE_DELIVER_RATE_LIMIT` | `1200` | Max Delivery API requests per minute per client IP. `0` disables. |
 
-Trade-off: a short tombstone TTL means a newly created page can still 404 for up to ~TTL if the write path fails to `forget` the tombstone. Prefer fixing the forget hook over raising TTL.
+Trade-off: a short tombstone TTL means a newly created page can still 404 for up to ~TTL if the write path fails to `forget` the tombstone. Prefer fixing the forget hook over raising TTL. Page create / slug rename go through `POST|PATCH /api/v1/pages` (`PageService`), which calls `forgetNegative` for the new slug and the previous slug on rename.
 
 ## Multi-tenancy
 

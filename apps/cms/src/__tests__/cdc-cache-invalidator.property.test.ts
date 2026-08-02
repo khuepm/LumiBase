@@ -125,6 +125,10 @@ class RecordingCacheProvider implements CacheProvider {
   async setNegative(key: string, options?: { ttl?: number }) {
     await this.set(key, JSON.stringify({ __lumi: 'neg', v: 1 }), options);
   }
+
+  async invalidateByTag(_tag: string): Promise<void> {
+    // recording only — tag purge not exercised in CDC property tests
+  }
 }
 
 /** Mirror of the invalidator's payload serialization (`JSON.stringify(p ?? null)`). */

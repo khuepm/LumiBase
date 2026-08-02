@@ -394,6 +394,28 @@ CLI: `pnpm --filter @lumibase/cms config export|diff|apply` — see
 
 ---
 
+## 3a. Pages (Delivery page-builder rows)
+
+Studio-authenticated CRUD over `lumibase_pages` (consumed by
+`GET /api/v1/deliver/page/:site_id/:slug`). Create and slug rename clear
+matching negative-cache tombstones immediately.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/pages` | List pages for the active site |
+| `POST` | `/api/v1/pages` | Create `{ slug, title, layoutConfig? }` |
+| `GET` | `/api/v1/pages/:id` | Get one page |
+| `PATCH` | `/api/v1/pages/:id` | Partial update (`slug` / `title` / `layoutConfig`) |
+| `DELETE` | `/api/v1/pages/:id` | Delete page |
+
+Slug shape matches the Delivery guard (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).
+
+Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` with
+`{ tags?: string[], keys?: string[] }` — every tag/key must include the
+active `siteId`.
+
+---
+
 ## 3. Items (Generic CRUD)
 
 | Method | Path | Description |

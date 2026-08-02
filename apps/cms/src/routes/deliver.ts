@@ -460,10 +460,19 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
     env: c.env,
   });
 
+  const runtime = c.get('runtime');
+  const edgeCache = runtime?.edgeCache;
+
+  // Tier 1b — HTTP edge cache (Req 1.6): only for cacheable public traffic.
+  if (policy.cacheable && edgeCache) {
+    const cached = await edgeCache.match(c.req.raw);
+    if (cached) return cached;
+  }
+
   // Tier 2 — tombstone (Req 19.5/19.8): never serve negative cache to
   // credentialed / preview traffic (same boundary as Req 1.4).
   const allowTombstone = !hasCredentials && !isPreview;
-  const cache = c.get('runtime')?.cache;
+  const cache = runtime?.cache;
   const ttl = resolveNegativeTtl(c.env);
   const neg =
     allowTombstone && cache && ttl > 0
@@ -513,8 +522,16 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
   c.header('ETag', etag);
   c.header('Cache-Control', policy.cacheControl);
   if (etagMatches(c.req.header('if-none-match'), etag)) {
-    return c.body(null, 304);
+    const notModified = c.body(null, 304);
+    if (edgeCache) {
+      await edgeCache.put(c.req.raw, notModified.clone());
+    }
+    return notModified;
   }
 
-  return c.json(await buildPagePayload(db, siteId, page, withProvenance));
+  const response = c.json(await buildPagePayload(db, siteId, page, withProvenance));
+  if (edgeCache) {
+    await edgeCache.put(c.req.raw, response.clone());
+  }
+  return response;
 });

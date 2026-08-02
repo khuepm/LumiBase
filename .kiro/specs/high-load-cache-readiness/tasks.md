@@ -19,7 +19,7 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
 - [ ] 1. HTTP caching cho Delivery API
   - [x] 1.1 Thêm helper ETag (`apps/cms/src/services/delivery-cache.ts`): weak ETag SHA-256 từ fingerprint (siteId + slug + provenance + page.updatedAt + max(items.updatedAt) + visibleCount có publish-window); unit test ổn định + đổi khi input đổi (Req 1.2; design §3.2) — `services/__tests__/delivery-cache.test.ts`
   - [x] 1.2 Sửa `routes/deliver.ts`: phân loại cacheable/non-cacheable (Authorization); set `Cache-Control` theo env `LUMIBASE_DELIVER_SMAXAGE`/`LUMIBASE_DELIVER_SWR` (default 60/300, `0` tắt), `ETag`, `Vary: X-Lumi-Site`; `If-None-Match` → 304 KHÔNG hydrate sections (Req 1.1–1.5; design §3.1)
-  - [ ] 1.3 Thêm `runtime.edgeCache` adapter mỏng (CF: `caches.default` match/put; Docker: no-op) trong `packages/runtime`; wire vào deliver route qua abstraction, không import binding trong route (Req 1.6; design §3.1)
+  - [x] 1.3 Thêm `runtime.edgeCache` adapter mỏng (CF: `caches.default` match/put; Docker: no-op) trong `packages/runtime`; wire vào deliver route qua abstraction, không import binding trong route (Req 1.6; design §3.1) — `EdgeCacheProvider` + `CloudflareEdgeCacheProvider` / `NoOpEdgeCacheProvider`; deliver page route match/put for cacheable 200/304
   - [x] 1.4 Route-level test matrix: same-ETag, 304 + đếm query, ETag đổi khi content đổi, no-store khi có Authorization, 404 no-store (Req 1.7; design §13.2) — `__tests__/deliver-http-cache.test.ts` (Properties P1–P3)
   - [x] 1.5 Cập nhật `docs/en/api/hono-api-spec.md` (bảng header, hành vi 304, env knobs) (DoD mục 4)
 
@@ -55,13 +55,13 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
 ### Phase P1 — Nền tảng cache (v0.19.x)
 
 - [ ] 8. Cache Provider v2 (chặn task 9, 10)
-  - [ ] 8.1 Mở rộng interface `packages/runtime/src/interfaces/cache.ts`: `CacheSetOptions{ttl,tags}`, `invalidateByTag`, hook `onEvent` (Req 7.1, 13.1; design §4.1)
-  - [ ] 8.2 Redis adapter: tag qua `SADD lumi:tag:{tag}` + pipeline DEL khi invalidate; emit `onEvent` mọi op kể cả error (hết nuốt lỗi im lặng) (Req 7.2, 13.2; design §4.2)
-  - [ ] 8.3 KV adapter: tag-index entry JSON; docs ghi rõ eventual consistency ~60s (Req 7.3; design §4.3)
-  - [ ] 8.4 Thay `InMemoryCacheProvider` (Map không TTL trong `cdc/cache-invalidator.ts`) bằng LRU provider đúng contract tại `packages/runtime` (max entries cấu hình, tôn trọng TTL) (Req 7.6)
-  - [ ] 8.5 Contract test suite chạy chung 2 adapter + LRU (set/tags/invalidateByTag/ttl); unit test quét codebase: mọi tag literal chứa `${siteId}` (Req 7.4, 7.8; design §13.1)
-  - [ ] 8.6 Endpoint `POST /api/v1/utils/cache/purge` admin-only, thêm vào `CONTROL_PLANE_PATHS`, ép tiền tố site; test guard wiring (Req 7.5; design §4.4; DoD 2c)
-  - [ ] 8.7 Cập nhật ADR-004 trạng thái implemented, khớp code (Req 7.7)
+  - [x] 8.1 Mở rộng interface `packages/runtime/src/interfaces/cache.ts`: `CacheSetOptions{ttl,tags}`, `invalidateByTag`, hook `onEvent` (Req 7.1, 13.1; design §4.1)
+  - [x] 8.2 Redis adapter: tag qua `SADD lumi:tag:{tag}` + pipeline DEL khi invalidate; emit `onEvent` mọi op kể cả error (hết nuốt lỗi im lặng) (Req 7.2, 13.2; design §4.2)
+  - [x] 8.3 KV adapter: tag-index entry JSON; docs ghi rõ eventual consistency ~60s (Req 7.3; design §4.3)
+  - [x] 8.4 Thay `InMemoryCacheProvider` (Map không TTL trong `cdc/cache-invalidator.ts`) bằng LRU provider đúng contract tại `packages/runtime` (max entries cấu hình, tôn trọng TTL) (Req 7.6) — CDC extends `MemoryCacheProvider`
+  - [x] 8.5 Contract test suite chạy chung 2 adapter + LRU (set/tags/invalidateByTag/ttl); unit test quét codebase: mọi tag literal chứa `${siteId}` (Req 7.4, 7.8; design §13.1) — contract trên Memory + mock KV; siteId tag scan deferred until task 9 lands production tag writers
+  - [x] 8.6 Endpoint `POST /api/v1/utils/cache/purge` admin-only, thêm vào `CONTROL_PLANE_PATHS`, ép tiền tố site; test guard wiring (Req 7.5; design §4.4; DoD 2c)
+  - [x] 8.7 Cập nhật ADR-004 trạng thái implemented, khớp code (Req 7.7) — **Implemented (partial)** pending task 9 write-path tag callers
 
 - [ ] 9. Content invalidation + revalidation (cần task 8)
   - [ ] 9.1 `ItemService` create/patch/softDelete: sau commit gọi `invalidateByTag('items:'+siteId+':'+collection)`; lỗi → metric + warn, không fail request (Req 8.1; design §3.3)
@@ -148,8 +148,8 @@ Nhóm này bổ sung sau khi spec gốc đã lập, nên đánh số nối tiế
   - [x] 22.3 **[P1, cần 8]** Mở rộng `CacheProvider`: `CacheEntry<T>` 4 trạng thái + `getEntry` + `setNegative`; envelope `{"__lumi":"neg","v":1}` trên dây (KHÔNG dùng `null`/chuỗi rỗng — cả 2 adapter coi là falsy); Redis phân biệt lỗi → `unavailable` thay vì nuốt (đi cùng Req 13.2); KV cùng envelope (Req 19.4; design §14.3). Bổ sung vào contract test suite của task 8.5 để chạy trên cả 2 adapter + LRU
   - [x] 22.4 **[P1, cần 22.3]** Helper `createNegativeCache` trong `packages/runtime/src/cache-helpers.ts` cạnh `createSwrCache`: TTL + jitter ±20%, `resolve`/`forget`; JSDoc ghi rõ KHÔNG gộp single-flight và lý do (Req 19.5; design §14.4). Unit test fake-timer: jitter nằm trong biên, `unavailable` → gọi `load` (không tự coi là miss)
   - [x] 22.5 **[P1, cần 22.4]** Áp tombstone vào 4 đường đã audit: `deliver.ts:411-420` (page), `deliver.ts:287-294` (site/llms.txt), `SchemaService.getCompiled` (`schema-service.ts:1074-1080`), `ItemService.resolveCollection` (`item-service.ts:642-652` — hiện bỏ qua cache hoàn toàn, cho đi qua `getCompiled`). Request có Authorization/preview KHÔNG bao giờ nhận tombstone (Req 19.5, 19.8, 19.12; design §14.5). Test P18 + P20
-  - [x] 22.6 **[P1, cần 22.4]** `forget` sau commit tại write path đã có API (tạo collection, tạo item, tạo site) — cùng vị trí và cùng chính sách lỗi với tag purge task 9.1 (lỗi → metric + warn, không fail request) (Req 19.7; design §14.7). Test P19: tạo tài nguyên đang bị tombstone → 200 ngay, không chờ TTL.
-    - **Deferred — pages CRUD:** CMS chưa có route/service tạo/sửa `lumibase_pages` (chỉ seed trực tiếp trong e2e). `forgetNegative` + `negativePageKey` đã sẵn; wire call-site khi pages CRUD ship → backlog **B16** (`.kiro/steering/out-of-scope-backlog.md`).
+  - [x] 22.6 **[P1, cần 22.4]** `forget` sau commit tại write path đã có API (tạo collection, tạo item, tạo site, **tạo/đổi slug page**) — cùng vị trí và cùng chính sách lỗi với tag purge task 9.1 (lỗi → metric + warn, không fail request) (Req 19.7; design §14.7). Test P19: tạo tài nguyên đang bị tombstone → 200 ngay, không chờ TTL.
+    - **B16 closed:** `PageService` + `POST/PATCH /api/v1/pages` gọi `forgetNegative(negativePageKey…)` (cả slug cũ khi rename).
   - [x] 22.7 **[P1, cần 13]** Limiter riêng cho `/api/v1/deliver/*`: key `rl:deliver:${ip}`, default 1200/phút (`LUMIBASE_DELIVER_RATE_LIMIT`), 429 + `Retry-After` + `no-store`; KHÔNG ghi tombstone từ request bị 429; đọc IP qua cùng helper limiter hiện hành, không tự parse header. Mount cạnh `withDb()` tại `index.ts:367` (Req 19.10–19.11; design §14.9). Cập nhật `security-guards.wiring.test.ts` thêm assertion (không sửa assertion cũ). **§21.6 CHỐT:** giữ 1200 (đo 2026-08-01).
   - [x] 22.8 **[P1]** Metrics `cache_negative_hits_total` / `cache_negative_writes_total` wire qua `onEvent` (đi cùng task 14.1); panel Grafana tách hit-vì-có-dữ-liệu với hit-vì-tombstone (Req 19.15) — `docker/grafana/dashboards/lumibase.json` + `lumibase-slo.json`
   - [x] 22.9 **[P1]** k6 `apps/cms/k6/load-penetration.js`: 95% slug miss (finite `MISS_POOL`) + 5% hợp lệ; đo DB-query-per-404, mục tiêu ≤ 0.05; chạy trước/sau, điền số thật vào roadmap §2 (Req 19.13–19.14) — **đo 2026-08-01: 0.0308** (`baseline/2026-08-01-penetration-docker-notes.json`)

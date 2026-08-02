@@ -1,6 +1,7 @@
 import Redis from 'ioredis';
 import type { RuntimeContext } from '../../interfaces';
 import { RedisCacheProvider } from './cache';
+import { NoOpEdgeCacheProvider } from './edge-cache';
 import { S3StorageProvider } from './storage';
 import { PostgresDatabaseProvider } from './database';
 import { MeiliSearchProvider } from './search';
@@ -15,6 +16,7 @@ export {
   getSharedRealtimeHub,
 } from './realtime';
 export { RedisCacheProvider } from './cache';
+export { NoOpEdgeCacheProvider } from './edge-cache';
 export { S3StorageProvider } from './storage';
 export { PostgresDatabaseProvider } from './database';
 export { MeiliSearchProvider } from './search';
@@ -57,6 +59,7 @@ export function createDockerRuntime(env: Record<string, unknown>): RuntimeContex
 
   return {
     cache: new RedisCacheProvider(redis),
+    edgeCache: new NoOpEdgeCacheProvider(),
     storage: new S3StorageProvider({
       endpoint: s3Endpoint,
       accessKeyId: s3AccessKey,

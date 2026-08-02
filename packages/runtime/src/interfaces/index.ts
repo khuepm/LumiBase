@@ -1,5 +1,7 @@
+export type { EdgeCacheProvider } from './edge-cache';
 export type {
   CacheEntry,
+  CacheEvent,
   CacheProvider,
   CacheSetOptions,
   NegativeCacheEnvelope,
