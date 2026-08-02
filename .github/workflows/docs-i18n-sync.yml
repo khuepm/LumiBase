@@ -2,8 +2,14 @@ name: Docs i18n Sync
 
 # Keeps docs/en and docs/vi in sync. On pull requests it only reports language
 # detection + planned actions (no writes). On push to main it preserves any
-# mislabelled content, machine-translates stale/missing targets, stamps version +
-# lastUpdated front matter, and commits the result back.
+# mislabelled content, stamps version + lastUpdated front matter, and commits the
+# result back.
+#
+# It does NOT translate. Translations are written by hand (an LLM reading the
+# source in the editor), a deliberate project decision recorded in
+# `docs/.i18n/TASKS.md` §6 — there is no ANTHROPIC_API_KEY secret and none is
+# wanted. Wiring the machine-translation path back in here would need that
+# decision reversed first, not just a secret added.
 
 on:
   pull_request:
@@ -81,12 +87,13 @@ jobs:
           if-no-files-found: warn
 
   # ---------------------------------------------------------------------------
-  # main: full sync. Preserves Vietnamese content, translates with Claude,
-  # versions, and commits back. Requires the ANTHROPIC_API_KEY secret.
-  # If no key is configured the run degrades to preservation + versioning only.
+  # main: preservation + versioning. Rescues Vietnamese content that lives in an
+  # en-labelled file, stamps version/lastUpdated front matter, commits back. No
+  # translation happens here (see the header) — outstanding pairs stay listed in
+  # `docs/i18n-sync-log.md` until someone translates them by hand.
   # ---------------------------------------------------------------------------
   sync:
-    name: Sync and translate
+    name: Preserve and version (no translation)
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -108,13 +115,20 @@ jobs:
           # convention in ci.yml / release.yml.
           package-manager-cache: false
 
-      - name: Run sync (apply mode)
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
-        run: node scripts/docs-i18n/sync.mjs --apply
+      # Preservation + version stamps only. The outstanding-translation count is
+      # echoed into the job summary so the backlog is visible on every run
+      # instead of being buried in the log file this job commits.
+      - name: Run preservation + versioning
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            echo '```'
+            node scripts/docs-i18n/sync.mjs --preserve-only
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - name: Commit synced docs
+      - name: Commit preserved docs
         run: |
           git config user.name "Javier"
           git config user.email "javier@genuis.app"
@@ -123,5 +137,5 @@ jobs:
             exit 0
           fi
           git add docs
-          git commit -m "docs(i18n): sync en/vi translations and bump versions [skip ci]"
+          git commit -m "docs(i18n): preserve mislabelled content + bump doc versions [skip ci]"
           git push

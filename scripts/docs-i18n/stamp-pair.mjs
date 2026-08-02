@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-// Stamp a manually-translated doc pair with the SAME provenance that
-// `sync.mjs --apply` would write, so a later `detect` run classifies the pair
-// as up-to-date. Use this after hand-writing a translation into the target
-// side (you already created/edited docs/<targetLocale>/<rel>).
+// Stamp a manually-translated doc pair with the provenance a later `detect` run
+// needs to classify the pair as up-to-date (`sourceHash` + `translatedFrom`).
+// Use this after hand-writing a translation into the target side (you already
+// created/edited docs/<targetLocale>/<rel>).
+//
+// It records the translation as what it is — `mtEngine: manual`,
+// `syncStatus: human-translated`. It used to copy `sync.mjs --apply`'s
+// machine-translation provenance verbatim, which labelled every hand-written
+// page as produced by an API this project does not call.
 //
 // Usage:
 //   node scripts/docs-i18n/stamp-pair.mjs <rel> <sourceLocale> [--verified]
@@ -132,8 +137,8 @@ fs.writeFileSync(tgtAbs, buildFile(upsertKeys(tgtFm, {
   sourceLang: sourceLocale,
   translatedFrom: sourceLocale,
   sourceHash: srcHash,
-  mtEngine: 'claude',
-  syncStatus: 'machine-translated',
+  mtEngine: 'manual',
+  syncStatus: 'human-translated',
   ...verifiedKeys,
 }), tgtBody), 'utf8');
 
