@@ -19,7 +19,104 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   IP rate limiter (`LUMIBASE_DELIVER_RATE_LIMIT`, default 1200/min). See
   `docs/en/features/caching.md`. No schema or setup change.
 
+- **Studio: edit a publishable key's origin allowlist.**
+  `PATCH /api-keys/:id/allowed-origins` and the SDK's `setAllowedOrigins()`
+  already existed — only the Studio affordance was missing, so an allowlist
+  could be set at create time and never again. Tightening it, or fixing a
+  mistyped origin, meant rotating the token and redeploying whatever ships the
+  key, which defeats a control that exists precisely because the key is already
+  out in clients. The API-key detail panel now has an *Allowed origins* box,
+  shown only for publishable keys (the `Origin` check is browser-only; a secret
+  key is used server-to-server where no `Origin` exists). Save stays disabled
+  until the parsed list actually differs, and clearing the box — which widens
+  access — is confirmed rather than silently accepted. No migration, no seed,
+  no new endpoint.
+
+- **OpenSSF Scorecard** workflow with published results, plus the badge in the
+  README. Supply-chain posture is now measured on a schedule instead of
+  assumed.
+
+### Changed
+
+- **Dependency majors batched ([#326](https://github.com/khuepm/LumiBase/pull/326),
+  follow-ups in [#327](https://github.com/khuepm/LumiBase/pull/327)):** jose 6,
+  zod 4, node-cron 4, execa 10, `@types/node` 26, react/react-dom 19 alignment,
+  graphql 17, tailwind-merge 3, eslint-config-next 16. Two consequences worth
+  knowing about when you upgrade:
+  - **Node 22+ is now required** for `create-lumibase` (execa 10), enforced by
+    an engines field plus a runtime guard.
+  - **jose v6 removed the `KeyLike` export**; key typing moved to `CryptoKey`.
+    Anything importing `KeyLike` from jose transitively through LumiBase needs
+    the same change.
+
+  After pulling this release, run `pnpm install` before `pnpm test` — a stale
+  `node_modules` resolves zod 3 against zod-4 call sites and fails at import
+  time, which looks like broken tests rather than a stale lockfile.
+
+### Removed
+
+- **`apps/enterprise` submodule.** Referenced only by `.gitmodules` and docs —
+  no workflow, build, or workspace target depended on it, and it tracked a
+  stale branch. `apps/marketplace` stays (it is built by `pages-deploy.yml`,
+  `release.yml`, and `ci.yml`).
+
 ### Fixed
+
+- **Public access grants were inert on the content API.**
+  `buildRequestPermissionContext` hardcoded `roleId: null` (two more call sites
+  hand-rolled the same literal). `withAuth` does set `roleId` to the site's
+  `public` role for an anonymous principal, but `PermissionService.compile()`
+  resolves roles from `user_sites`, `user_roles`, `api_key_roles` and
+  `ctx.roleId` — and for an anonymous principal the first three are empty by
+  definition. The role never reached the bundle, so every public grant compiled
+  to an empty policy set and the feature silently did nothing. `auth.roleId` is
+  now forwarded everywhere a principal is in scope.
+
+- **`/disable` for public access was not sticky.** A grant used to provision the
+  anonymous realm as a side effect, and since "enabled" is not a flag here — it
+  *is* the existence of the `public` role — that gave two independent ways to
+  turn anonymous access on. An operator who deliberately closed anonymous access
+  could have it silently reopened by any later grant call, leaving only
+  `realm_access_granted` in the audit trail and no `public_access_enabled`.
+  `POST /access/grants/public` now returns 409 `PUBLIC_ACCESS_DISABLED` while
+  the site has public access off, naming `/access/grants/public/enable` as the
+  way in. Only `public` is gated; `subscriber` is provisioned on first
+  registration and is not operator-togglable.
+
+- **Cache-penetration follow-ups (audit of the Req 19 implementation).** Five
+  defects found reviewing what shipped above:
+  - **The Delivery 404 was an oracle.** A shape-rejected identifier answered
+    `{"error":"Not found."}` while a real miss answered
+    `{"error":"Page not found."}`, so a prober could tell "malformed" from
+    "well-formed but absent" — the one thing the guard is documented not to
+    leak. Both paths now return the same body and headers, with a regression
+    test that fails if they diverge again.
+  - **`LUMIBASE_NEGATIVE_CACHE_TTL` was ignored on Cloudflare Workers.**
+    `SchemaService` read `process.env`, which does not carry wrangler vars, so
+    the TTL was always the 30s default and `0` could not disable tombstones on
+    that runtime. The TTL is now resolved from the request env and threaded
+    through `ItemServiceDeps` / `SchemaServiceDeps`.
+  - **The tombstone sat in front of the hot path.** `getCompiled` probed the
+    tombstone before the positive schema cache, so every lookup of a
+    *real* collection paid a second cache round-trip — and that runs on every
+    item list/detail/patch. Positive cache is checked first now; penetration
+    traffic still never reaches Postgres.
+  - **Half the tombstones were invisible in Prometheus.** Only the Delivery
+    routes incremented `cache_negative_hits_total` /
+    `cache_negative_writes_total`; collection-name tombstones did not, despite
+    being wired. Both now report.
+  - **Unbounded key material, plus a dead key.** Collection names bound the
+    alphabet but not the length, so a long name minted a multi-KB Redis key —
+    now clamped to 256 like slugs. The `neg:*:item:*` key and its `forget` call
+    in `ItemService.create` are gone: nothing ever wrote that key (item-by-id
+    reads are all authenticated, and tombstones are never served to credentialed
+    requests), so each item create spent a Redis round-trip deleting something
+    that never existed.
+
+- **Studio flashed a full-page spinner when the API was down.** `GET
+  /setup/state` kept auto-refetching on window focus/reconnect after a failure,
+  and the error screen was not latched during manual retry, so an unreachable
+  `api.lumibase.dev` looked like continuous refreshing.
 
 - **Landing / sponsor rewards ([#296](https://github.com/khuepm/LumiBase/issues/296)):**
   `saveToDatabase()` in `apps/landing/src/lib/rewards.ts` was an exported no-op
@@ -73,7 +170,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   same path-traversal / confused-deputy class closed in 0.13.x; the CDC tools
   landed afterwards and reintroduced it.
 
-### Added
+### Added — regression tripwires
 
 - **Harness KeyProvider tripwire.** `ai-harness-keys-context.test.ts` locks the
   class rather than the four call sites: a source scan requires every
