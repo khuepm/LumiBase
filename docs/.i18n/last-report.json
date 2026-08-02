@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-02T16:58:23.969Z",
-  "mode": "apply",
+  "generatedAt": "2026-08-02T17:02:36.676Z",
+  "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
   "engineKeyPresent": false,
