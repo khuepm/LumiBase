@@ -19,7 +19,8 @@ docker pull grafana/k6
 | Script | Scenario | Target |
 |---|---|---|
 | `smoke.js` | Quick sanity — 1 VU, 30 s | All main endpoints |
-| `load-items.js` | Item list throughput + create burst | 50 VU ramp + 30 VU burst |
+| `load-items.js` | Item list/detail throughput + create burst | 50 VU list ramp + 10 VU detail + 30 VU burst |
+| `load-deliver.js` | 90% Zipf delivery + 10% item-list mix | Phase 0 baseline workload |
 | `load-realtime.js` | WebSocket subscription ramp | 100 concurrent WS connections |
 | `load-penetration.js` | 95% missing-slug probes + 5% good page (Req 19) | DB-query-per-404 ≤ 0.05 |
 | `login-brute-force.js` | 50 VU login spam + baseline traffic | `/api/v1/auth/login` IP block (Req 8.2/8.3) |
@@ -54,12 +55,20 @@ k6 run --env BASE_URL=http://localhost:1989 \
        --env TOKEN=dev:myuser \
        apps/cms/k6/smoke.js
 
-# Item load test
+# Item load test (list/detail/create against the seeded dataset)
 k6 run --env BASE_URL=http://localhost:1989 \
-       --env SITE_ID=my-site \
-       --env TOKEN=dev:myuser \
-       --env COLLECTION=articles \
+       --env SITE_ID=loadtest-main-00000001 \
+       --env TOKEN=dev:admin@lumibase.dev:admin \
+       --env COLLECTION=loadtest_collection_01 \
        apps/cms/k6/load-items.js
+
+# Delivery baseline (90% Zipf pages + 10% item lists)
+k6 run --summary-export=load-deliver.json \
+       --env BASE_URL=http://localhost:1989 \
+       --env SITE_ID=loadtest-main-00000001 \
+       --env TOKEN=dev:admin@lumibase.dev:admin \
+       --env COLLECTION=loadtest_collection_01 \
+       apps/cms/k6/load-deliver.js
 
 # Realtime WebSocket test
 k6 run --env BASE_URL=ws://localhost:1989 \
@@ -83,6 +92,22 @@ k6 run --env BASE_URL=http://localhost:1989 \
        --env MISS_POOL=40 \
        apps/cms/k6/load-penetration.js
 ```
+
+## Reproducible Phase 0 baseline
+
+Use the pinned runner after starting CMS with `LUMIBASE_RATE_LIMIT_DISABLED=true`:
+
+```bash
+DATABASE_URL=postgresql://lumibase:lumibase_dev@127.0.0.1:55432/lumibase_baseline \
+TOKEN="$LOAD_TEST_TOKEN" \
+BASE_URL=http://127.0.0.1:1989 \
+apps/cms/k6/baseline/run.sh
+```
+
+The runner pins the k6 image digest `grafana/k6@sha256:e7eeddf1ce2361df6920d925297f487c0ba549c44be242c6a9c22f28d9b08efa`, seeds the dataset, uses
+`PAGE_COUNT=100`, `ZIPF_EXPONENT=1.1`, `THINK_TIME=0.1`, `20 VUs` for delivery,
+and exports p50/p95/p99 summaries for all four workloads. It does not stop or
+remove Docker containers.
 
 ## Thresholds
 

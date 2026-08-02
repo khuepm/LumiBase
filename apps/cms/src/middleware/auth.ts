@@ -215,6 +215,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         .get('db')
         .select({
           id: users.id,
+          externalId: users.externalId,
+          email: users.email,
           status: users.status,
           isBootstrap: users.isBootstrap,
         })
@@ -261,6 +263,9 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);
+      // Request_Context_Bundle (Req 10; design §6.4): cache the `users` row +
+      // membership just resolved so `withSiteMembership` reuses them instead of
+      // re-querying for the same request.
       return next();
     } catch (err) {
       console.warn('[withAuth] CF Access verification failed:', formatSafeError(err));
@@ -438,6 +443,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         .get('db')
         .select({
           id: users.id,
+          externalId: users.externalId,
+          email: users.email,
           status: users.status,
           isBootstrap: users.isBootstrap,
           tokenVersion: users.tokenVersion,
@@ -498,6 +505,9 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);
+      // Request_Context_Bundle (Req 10; design §6.4): cache the `users` row +
+      // membership just resolved so `withSiteMembership` reuses them instead of
+      // re-querying for the same request.
       return next();
     } catch (err) {
       console.warn('[withAuth] Custom JWT verification failed:', formatSafeError(err));

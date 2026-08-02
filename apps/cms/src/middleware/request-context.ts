@@ -16,9 +16,15 @@ export interface RequestContextUser {
   readonly isBootstrap: boolean;
 }
 
-/** Site membership row for the active tenant, when known. */
+/**
+ * Site membership row for the active tenant, when known.
+ *
+ * `roleId` is nullable because `user_sites.role_id` is — SCIM provisioning
+ * creates membership without a role. A membership with no role still means
+ * "this user belongs to this site".
+ */
 export interface RequestContextMembership {
-  readonly roleId: string;
+  readonly roleId: string | null;
 }
 
 /**

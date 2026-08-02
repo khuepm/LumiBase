@@ -45,16 +45,16 @@
 
 | Chỉ số | Baseline | Sau P0 | Sau P1 | Sau P2 |
 |--------|----------|--------|--------|--------|
-| Delivery API p95 (cache hit) | pending_env¹ | pending_env¹ | pending_env¹ | pending_env¹ |
-| Origin offload cho delivery đọc lặp | pending_env¹ | pending_env¹ (HTTP ETag/s-maxage landed; offload chưa đo) | pending_env¹ (app-cache + tag purge landed; offload chưa đo) | pending_env¹ |
-| DB round-trip / request authenticated | pending_env¹ | pending_env¹ (setup cache + debounce landed; chưa đo) | pending_env¹ (middleware ≤3-query target landed; chưa đo) | pending_env¹ |
-| Cửa sổ stale sau khi đổi quyền | pending_env¹ | ≤5s (bumpVersion + integration test; TTL 60s safety net) | ≤1s (event-driven bump) | ≤1s |
-| Cửa sổ stale nội dung sau ghi | không xác định (không invalidation) | n/a | ≤5s (tag purge + revalidate landed; E2E latency chưa đo) | ≤5s |
-| Scale ngang Docker | pending_env¹ | không đổi | không đổi | an toàn (leader lock + `cms-web`/`cms-worker` profile landed) |
-| k6 `load-items` throughput | pending_env¹ | pending_env¹ | pending_env¹ | pending_env¹ |
-| DB query / request 404 (slug rác) | 1 (audit inference — mọi request chạm DB) | ≤1 (shape guard chặn rác thô; tombstone chưa có) | **0.0308** (k6 `load-penetration.js` 2026-08-01, MISS_POOL=40, 50 RPS × 2m, docker postgres+redis; ≤ 0.05 ✓ — `baseline/2026-08-01-penetration-docker-notes.json`) | 0.0308 (cùng defence stack; không re-run k6 trong closeout agent) |
+| Delivery API p95 (chưa có cache) | p50 1,659ms / p95 3,146ms / p99 3,681ms @ 9.95 RPS (k6, 2026-08-02; origin-only, chưa có app/edge cache) | ≤ 50ms tại edge/proxy | ≤ 30ms | ≤ 30ms |
+| Origin offload cho delivery đọc lặp | chưa đo (Phase 0 chưa có cache-hit/origin counter) | ≥ 70% (HTTP cache) | ≥ 90% (app + edge cache) | ≥ 90% |
+| DB round-trip / request authenticated | chưa đo (k6 chưa xuất DB query metric) | 4–5 | ≤ 3 | ≤ 3 |
+| Cửa sổ stale sau khi đổi quyền | chưa đo (không thuộc workload Phase 0) | ≤ 5s | ≤ 1s (event-driven) | ≤ 1s |
+| Cửa sổ stale nội dung sau ghi | chưa đo (không invalidation trong workload Phase 0) | n/a | ≤ 5s (tag purge + revalidate) | ≤ 5s |
+| Scale ngang Docker | chưa đo (baseline chạy 1 CMS process) | không đổi | không đổi | an toàn với N replica |
+| k6 `load-items` throughput | list 42.16 RPS, p50 214ms / p95 675ms / p99 1,042ms; detail 10.15 RPS, p50 120ms / p95 339ms / p99 470ms; create 16.96 RPS, p50 344ms / p95 822ms / p99 1,244ms (2026-08-02; offset pagination; detail đọc **một item cố định** — hot row, không phải random read trên 100k) | +x% (đo) | +x% (đo) | +x% (đo) |
+| DB query / request 404 (slug rác) | 1 (mọi request chạm DB) | ≤ 1 (guard hình dạng chặn phần rác thô) | **0.0308** (k6 `load-penetration.js` 2026-08-01, MISS_POOL=40, 50 RPS × 2m, docker postgres+redis; ≤ 0.05 ✓ — xem `baseline/2026-08-01-penetration-docker-notes.json`) | ≤ 0.05 |
 
-¹ **pending_env** — `smoke.js` / `load-items.js` / `load-realtime.js` / `load-deliver.js` chưa re-run trong CI agent (không có long-lived docker-compose + k6). Cấu hình và lệnh chạy: `baseline/2026-08-02-baseline-notes.json`. Không điền p95/RPS ước lượng (Req 0.3).
+> **Lưu ý đọc bảng (2026-08-02):** cột Baseline là số đo thật từ PR #360. Code của P1 và P2 đã land (PR #336) nhưng **chưa re-measure** — các cột "Sau P1"/"Sau P2" vẫn là target, không phải số đo. Chạy lại `apps/cms/k6/baseline/run.sh` rồi điền số thật; Req 0.3 cấm điền ước lượng.
 
 ## 3. Các phase
 

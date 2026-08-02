@@ -148,13 +148,17 @@ async function loadMembership(
   db: AppEnv['Variables']['db'],
   userId: string,
   siteId: string,
-): Promise<{ roleId: string } | null> {
+): Promise<{ roleId: string | null } | null> {
   const [row] = await db
     .select({ roleId: userSites.roleId })
     .from(userSites)
     .where(and(eq(userSites.userId, userId), eq(userSites.siteId, siteId)))
     .limit(1);
-  return row?.roleId ? { roleId: row.roleId } : null;
+  // Membership is the ROW, not the role. `user_sites.role_id` is nullable and
+  // SCIM provisioning inserts membership without one, so gating on `roleId`
+  // would 403 a real member out of the whole tenant — a lockout, not a
+  // permission decision. Role resolution is `PermissionService`'s job.
+  return row ? { roleId: row.roleId ?? null } : null;
 }
 
 async function attachAccessBundle(
