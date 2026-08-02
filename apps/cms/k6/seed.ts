@@ -25,14 +25,34 @@ const databaseUrl: string = DATABASE_URL;
 const PRIMARY_SITE_ID = 'loadtest-main-00000001';
 const SECONDARY_SITE_ID = 'loadtest-side-00000001';
 const SITE_IDS = [PRIMARY_SITE_ID, SECONDARY_SITE_ID];
-const COLLECTION_COUNT = Number(process.env.COLLECTION_COUNT || 5);
-const ITEMS_PER_COLLECTION = Number(process.env.ITEMS_PER_COLLECTION || 100_000);
-const PAGES_PER_SITE = Number(process.env.PAGES_PER_SITE || 100);
-const BATCH_SIZE = Number(process.env.BATCH_SIZE || 1_000);
+
+function positiveInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  const value = raw === undefined ? fallback : Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive safe integer; received ${raw ?? '(unset)'}`);
+  }
+  return value;
+}
+
+const COLLECTION_COUNT = positiveInt('COLLECTION_COUNT', 5);
+const ITEMS_PER_COLLECTION = positiveInt('ITEMS_PER_COLLECTION', 100_000);
+const PAGES_PER_SITE = positiveInt('PAGES_PER_SITE', 100);
+const BATCH_SIZE = positiveInt('BATCH_SIZE', 1_000);
+const MAX_ID_PART = 999_999;
+if (COLLECTION_COUNT > MAX_ID_PART || ITEMS_PER_COLLECTION > MAX_ID_PART || PAGES_PER_SITE > MAX_ID_PART) {
+  throw new Error(`COLLECTION_COUNT, ITEMS_PER_COLLECTION, and PAGES_PER_SITE must be <= ${MAX_ID_PART}`);
+}
 
 function id(prefix: string, ...parts: number[]) {
-  const suffix = parts.map((part) => String(part).padStart(6, '0')).join('');
-  return `${prefix}${suffix}`.padEnd(21, '0').slice(0, 21);
+  if (parts.some((part) => !Number.isSafeInteger(part) || part < 0 || part > 999_999)) {
+    throw new Error(`ID parts must be safe integers in [0, 999999]; prefix=${prefix}, parts=${parts.join(',')}`);
+  }
+  const value = `${prefix}${parts.map((part) => String(part).padStart(6, '0')).join('')}`;
+  if (value.length > 21) {
+    throw new Error(`Generated ID exceeds nanoid length 21: ${value}`);
+  }
+  return value.padEnd(21, '0');
 }
 
 function placeholders(rowWidth: number, rowCount: number) {
@@ -46,9 +66,10 @@ async function insertBatch(
   table: string,
   columns: string,
   rows: unknown[][],
+  conflictClause = 'ON CONFLICT DO NOTHING',
 ) {
   if (rows.length === 0) return;
-  const query = `INSERT INTO ${table} (${columns}) VALUES ${placeholders(rows[0].length, rows.length)} ON CONFLICT DO NOTHING`;
+  const query = `INSERT INTO ${table} (${columns}) VALUES ${placeholders(rows[0].length, rows.length)} ${conflictClause}`;
   await sql.unsafe(query, rows.flat() as never[]);
 }
 
@@ -107,17 +128,30 @@ async function main() {
 
     for (let siteIndex = 0; siteIndex < SITE_IDS.length; siteIndex += 1) {
       const siteId = SITE_IDS[siteIndex];
+      const siteCollections = collections.filter((collection) => collection.siteId === siteId);
+      const pageRows = [];
       for (let pageIndex = 1; pageIndex <= PAGES_PER_SITE; pageIndex += 1) {
-        const sections = collections
-          .filter((collection) => collection.siteId === siteId)
-          .map((collection) => ({ source: { collection: collection.name, limit: 10, status: 'published' } }));
-        await insertBatch(sql, 'lumibase_pages', 'id,site_id,slug,title,layout_config', [[
+        const sections = siteCollections.map((collection, collectionIndex) => ({
+          id: id('S', siteIndex + 1, pageIndex, collectionIndex + 1),
+          component: 'collection-list',
+          styleConfig: {},
+          data: {},
+          source: { collection: collection.name, limit: 10, status: 'published' },
+        }));
+        pageRows.push([
           id('P', siteIndex + 1, pageIndex), siteId,
           `loadtest-page-${String(pageIndex).padStart(3, '0')}`,
           `Load test page ${pageIndex}`,
           JSON.stringify({ sections }),
-        ]]);
+        ]);
       }
+      await insertBatch(
+        sql,
+        'lumibase_pages',
+        'id,site_id,slug,title,layout_config',
+        pageRows,
+        'ON CONFLICT (site_id,slug) DO UPDATE SET title = EXCLUDED.title, layout_config = EXCLUDED.layout_config, updated_at = now()',
+      );
     }
 
     // Only the primary site's content is large by design; the second site is

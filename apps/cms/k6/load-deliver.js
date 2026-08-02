@@ -9,7 +9,7 @@
  * Run:
  *   k6 run --env BASE_URL=http://localhost:1989 \
  *     --env SITE_ID=loadtest-main-00000001 \
- *     --env TOKEN=dev:user123 \
+ *     --env TOKEN=dev:admin@lumibase.dev:admin \
  *     --env COLLECTION=loadtest_collection_01 \
  *     --env PAGE_COUNT=100 load-deliver.js
  */
@@ -23,7 +23,7 @@ const ZIPF_EXPONENT = Number(__ENV.ZIPF_EXPONENT || 1.1);
 const DELIVERY_RATIO = 0.9;
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:1989';
 const SITE_ID = __ENV.SITE_ID || 'loadtest-main-00000001';
-const TOKEN = __ENV.TOKEN || 'dev:user123';
+const TOKEN = __ENV.TOKEN || 'dev:admin@lumibase.dev:admin';
 const COLLECTION = __ENV.COLLECTION || 'loadtest_collection_01';
 
 export const options = {
@@ -87,7 +87,7 @@ export default function () {
   } else {
     const page = Math.floor(Math.random() * 20) + 1;
     const response = http.get(
-      `${BASE_URL}/api/v1/items/${COLLECTION}?limit=25&page=${page}&meta=none`,
+      `${BASE_URL}/api/v1/items/${COLLECTION}?limit=25&offset=${(page - 1) * 25}&meta=none`,
       { headers: itemHeaders, tags: { operation: 'item_list' } },
     );
     itemListRequests.add(1);

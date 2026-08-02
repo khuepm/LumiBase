@@ -1,8 +1,9 @@
 /**
  * load-items.js — Item list throughput + item create burst tests.
  *
- * Scenario 1 (list-throughput): ramp to 50 VUs reading items lists.
- * Scenario 2 (create-burst):    30 VUs creating items concurrently for 60 s.
+ * Scenario 1 (list-throughput): ramp to 50 VUs reading paginated item lists.
+ * Scenario 2 (detail-throughput): 10 VUs reading a seeded item by id.
+ * Scenario 3 (create-burst):     30 VUs creating items concurrently for 60 s.
  *
  * Run:
  *   k6 run --env BASE_URL=http://localhost:1989 \
@@ -28,36 +29,35 @@ export const options = {
         { duration: '30s', target: 0 },
       ],
       gracefulRampDown: '10s',
-      tags: { scenario: 'list' },
     },
     create_burst: {
       executor: 'constant-vus',
       vus: 30,
       duration: '60s',
       startTime: '30s',           // start after ramp-up begins
-      tags: { scenario: 'create' },
     },
     detail_throughput: {
       executor: 'constant-vus',
       vus: 10,
       duration: '60s',
       startTime: '30s',
-      tags: { scenario: 'detail' },
     },
   },
   thresholds: {
-    'http_req_failed{scenario:list}': ['rate<0.01'],
-    'http_req_failed{scenario:create}': ['rate<0.02'],
-    'http_req_duration{scenario:list}': ['p(95)<800'],
-    'http_req_duration{scenario:create}': ['p(95)<1200'],
-    'items_created': ['count>0'],
+    'http_req_failed{scenario:list_throughput}': ['rate<0.01'],
+    'http_req_failed{scenario:create_burst}': ['rate<0.02'],
+    'http_req_failed{scenario:detail_throughput}': ['rate<0.01'],
+    'item_list_duration_ms': ['p(95)<800'],
+    'item_detail_duration_ms': ['p(95)<800'],
+    'item_create_duration_ms': ['p(95)<1200'],
+    items_created: ['count>0'],
   },
 };
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:1989';
-const SITE_ID = __ENV.SITE_ID || 'site_test';
-const TOKEN = __ENV.TOKEN || 'dev:user123';
-const COLLECTION = __ENV.COLLECTION || 'articles';
+const SITE_ID = __ENV.SITE_ID || 'loadtest-main-00000001';
+const TOKEN = __ENV.TOKEN || 'dev:admin@lumibase.dev:admin';
+const COLLECTION = __ENV.COLLECTION || 'loadtest_collection_01';
 
 const headers = {
   'Authorization': `Bearer ${TOKEN}`,
@@ -82,7 +82,6 @@ export default function () {
     const payload = JSON.stringify({
       data: {
         title: `Load test item ${Date.now()}`,
-        status: 'draft',
       },
       status: 'draft',
     });
@@ -104,7 +103,7 @@ export default function () {
     }
     sleep(0.5);
   } else if (scenario === 'detail_throughput') {
-    const itemId = `I000001${String(Math.floor(Math.random() * 100000) + 1).padStart(6, '0')}00000000`;
+    const itemId = __ENV.DETAIL_ITEM_ID || 'I00000100000100000000';
     const res = http.get(
       `${BASE_URL}/api/v1/items/${COLLECTION}/${itemId}`,
       { headers, tags: { name: 'item_detail' } },
@@ -118,7 +117,7 @@ export default function () {
     const page = Math.floor(Math.random() * 5) + 1;
     const limit = [10, 25, 50][Math.floor(Math.random() * 3)];
     const res = http.get(
-      `${BASE_URL}/api/v1/items/${COLLECTION}?limit=${limit}&page=${page}`,
+      `${BASE_URL}/api/v1/items/${COLLECTION}?limit=${limit}&offset=${(page - 1) * limit}`,
       { headers, tags: { name: 'item_list' } },
     );
     listDuration.add(res.timings.duration);
