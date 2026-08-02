@@ -58,7 +58,14 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
     return next();
   }
 
-  const resolved = await resolveUser(c.get('db'), auth);
+  // Request_Context_Bundle (high-load-cache-readiness Req 10; design §6.4):
+  // reuse the `users` row `withAuth` already resolved for this request instead
+  // of issuing a second identical lookup. Falls back to querying when the
+  // bundle is absent — a principal path that did not populate it, or this
+  // middleware mounted standalone in a unit test — so the guard stays
+  // independently correct.
+  const cachedPrincipal = c.get('principal');
+  const resolved = cachedPrincipal?.user ?? (await resolveUser(c.get('db'), auth));
   if (!resolved) {
     // Cloudflare Access principals authenticate via a trusted CF Access JWT
     // (see `withAuth`'s "Cloudflare Access Assertion" branch) and are not
@@ -92,14 +99,24 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
     return next();
   }
 
-  const [membership] = await c
-    .get('db')
-    .select({ userId: userSites.userId })
-    .from(userSites)
-    .where(and(eq(userSites.userId, resolved.id), eq(userSites.siteId, siteId)))
-    .limit(1);
+  // Reuse the membership `withAuth` already resolved for this same site
+  // (Request_Context_Bundle, Req 10). A non-bootstrap principal that reached
+  // this point through `withAuth` necessarily passed its membership gate, so a
+  // cached membership is authoritative; query only when the bundle is absent.
+  const hasMembership = cachedPrincipal
+    ? cachedPrincipal.membership !== null
+    : Boolean(
+        (
+          await c
+            .get('db')
+            .select({ userId: userSites.userId })
+            .from(userSites)
+            .where(and(eq(userSites.userId, resolved.id), eq(userSites.siteId, siteId)))
+            .limit(1)
+        )[0],
+      );
 
-  if (!membership) {
+  if (!hasMembership) {
     return c.json(
       { errors: [{ code: 'TENANT_FORBIDDEN', message: 'Authenticated user is not a member of the selected site.' }] },
       403,

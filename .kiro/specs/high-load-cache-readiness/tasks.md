@@ -75,10 +75,10 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
   - [ ] 10.2 Chuyển `SchemaService.getCompiled` (300/900) và `PermissionService.bundle` (30/60) sang helper; sửa comment "SWR-style" sai (Req 9.2)
   - [ ] 10.3 Unit test fake-timer: 50 concurrent get = 1 compute; stale-serve trong soft-hard; blocking sau hard (Req 9.3; design §13.1)
 
-- [ ] 11. Middleware consolidation
-  - [ ] 11.1 Viết TRƯỚC behavioural matrix test (principal × route → status) chạy trên code hiện tại, merge riêng (Req 10.3; design §6.4)
-  - [ ] 11.2 Refactor: `withAuth` set Request_Context_Bundle; `withSiteMembership`/`withStudioAccess` đọc từ context, chỉ query khi vắng; tripwire `security-guards.wiring.test.ts` giữ nguyên (Req 10.1–10.2)
-  - [ ] 11.3 Query-count test: đếm query qua logger postgres-js, assert ≤3/request content-plane điển hình (Req 10.4)
+- [x] 11. Middleware consolidation
+  - [x] 11.1 Viết TRƯỚC behavioural matrix test (principal × route → status) chạy trên code hiện tại, merge riêng (Req 10.3; design §6.4)
+  - [x] 11.2 Refactor: `withAuth` set Request_Context_Bundle; `withSiteMembership`/`withStudioAccess` đọc từ context, chỉ query khi vắng; tripwire `security-guards.wiring.test.ts` giữ nguyên (Req 10.1–10.2)
+  - [x] 11.3 Query-count test: đếm query qua logger postgres-js, assert ≤3/request content-plane điển hình (Req 10.4)
 
 - [ ] 12. Async audit
   - [ ] 12.1 Topic `audit-log` + worker batch (100 event/1s, multi-row INSERT, uuidv7) (Req 11.1; design §7)

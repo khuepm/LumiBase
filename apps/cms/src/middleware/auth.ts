@@ -40,6 +40,29 @@ export function shouldTouchApiKey(lastUsedAt: Date | null | undefined, now: Date
   return now.getTime() - lastUsedAt.getTime() >= intervalMs;
 }
 
+/**
+ * Populate the Request_Context_Bundle (`c.set('principal', …)`) from the
+ * `users` row + `user_sites` membership `withAuth` already resolved for this
+ * request (high-load-cache-readiness Req 10; design §6.4). Downstream guards
+ * read this instead of re-querying, so a single request performs at most one
+ * `users` + one `userSites` lookup for identification.
+ */
+function setPrincipalContext(
+  c: Parameters<MiddlewareHandler<AppEnv>>[0],
+  user: { id: string; externalId: string | null; email: string; isBootstrap: boolean | null },
+  membership: { roleId: string | null } | undefined,
+): void {
+  c.set('principal', {
+    user: {
+      id: user.id,
+      externalId: user.externalId,
+      email: user.email,
+      isBootstrap: user.isBootstrap === true,
+    },
+    membership: membership ? { roleId: membership.roleId ?? 'member' } : null,
+  });
+}
+
 const getJwks = (certsUrl: string) => {
   let jwks = JWKS_CACHE.get(certsUrl);
   if (!jwks) {
@@ -214,6 +237,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         .get('db')
         .select({
           id: users.id,
+          externalId: users.externalId,
+          email: users.email,
           status: users.status,
           isBootstrap: users.isBootstrap,
         })
@@ -250,6 +275,10 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);
+      // Request_Context_Bundle (Req 10; design §6.4): cache the `users` row +
+      // membership just resolved so `withSiteMembership` reuses them instead of
+      // re-querying for the same request.
+      setPrincipalContext(c, user, membership);
       return next();
     } catch (err) {
       console.warn('[withAuth] CF Access verification failed:', formatSafeError(err));
@@ -427,6 +456,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         .get('db')
         .select({
           id: users.id,
+          externalId: users.externalId,
+          email: users.email,
           status: users.status,
           isBootstrap: users.isBootstrap,
           tokenVersion: users.tokenVersion,
@@ -477,6 +508,10 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);
+      // Request_Context_Bundle (Req 10; design §6.4): cache the `users` row +
+      // membership just resolved so `withSiteMembership` reuses them instead of
+      // re-querying for the same request.
+      setPrincipalContext(c, user, membership);
       return next();
     } catch (err) {
       console.warn('[withAuth] Custom JWT verification failed:', formatSafeError(err));
