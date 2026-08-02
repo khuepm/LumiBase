@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-02T13:12:37.877Z",
+  "generatedAt": "2026-08-02T16:58:23.969Z",
   "mode": "apply",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -9,7 +9,7 @@
     "preserved": 0,
     "conflicts": 0,
     "upToDate": 88,
-    "planned": 55
+    "planned": 56
   },
   "actions": [
     {
@@ -1509,6 +1509,18 @@
       "sourceLocale": "vi",
       "targetLocale": "en",
       "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "roadmap/post-v1.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
