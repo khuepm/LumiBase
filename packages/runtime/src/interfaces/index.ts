@@ -31,3 +31,4 @@ export type {
   RealtimeProvider,
 } from './realtime';
 export type { RuntimeContext } from './runtime';
+export type { RateLimiterProvider, RateLimitConsumeResult } from './rate-limiter';

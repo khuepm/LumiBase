@@ -14,6 +14,7 @@ import {
   isPublishablePrefix,
   readAllowedOrigins,
 } from '../services/api-key-publishable';
+import { mergeRequestContext } from './request-context';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -242,6 +243,16 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
+      mergeRequestContext(c, {
+        user: {
+          id: user.id,
+          externalId: String(payload.sub),
+          email,
+          isBootstrap: user.isBootstrap,
+        },
+        membership: membership?.roleId ? { roleId: membership.roleId } : null,
+      });
+
       const principal: AuthPrincipal = {
         userId: user.id,
         externalId: String(payload.sub),
@@ -469,6 +480,16 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       // (`studio` vs `frontend`). `isFrontendUser` tracks it for the
       // `/me` surface; `withStudioAccess` enforces the hard wall using
       // the same claim carried on `raw`.
+      mergeRequestContext(c, {
+        user: {
+          id: user.id,
+          externalId: null,
+          email: typeof payload.email === 'string' ? payload.email : user.id,
+          isBootstrap: user.isBootstrap,
+        },
+        membership: membership?.roleId ? { roleId: membership.roleId } : null,
+      });
+
       const principal: AuthPrincipal = {
         userId,
         email: typeof payload.email === 'string' ? payload.email : undefined,

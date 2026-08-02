@@ -8,7 +8,7 @@ contentHash: 7dd34abca4670fc2
 # ADR-004: Tag-based Cache Invalidation
 
 **Date:** 2024-04-05
-**Status:** Implemented (partial — tag index + `invalidateByTag` + admin purge API; content write-path invalidation lands in task 9)
+**Status:** Implemented
 
 ## Context
 

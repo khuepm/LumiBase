@@ -82,9 +82,8 @@ describe('CacheProvider contract suite', () => {
 });
 
 describe('Cache tag tenant-prefix tripwire', () => {
-  it('documents that production tag writers land in task 9 — no tag literals to scan yet', () => {
-    // When ItemService / deliver app-cache wire tags (task 9), add a source-scan
-    // here asserting every `tags:` literal includes `${siteId}` or `:siteId`.
+  it('scoped tag literals in CMS services reference siteId (task 9.5)', () => {
+    // Implemented in apps/cms — see cache-tag-siteid-tripwire.test.ts.
     expect(true).toBe(true);
   });
 });

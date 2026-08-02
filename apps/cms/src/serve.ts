@@ -1,16 +1,30 @@
 import { serve } from '@hono/node-server';
 import type { Server as HttpServer } from 'node:http';
-import { createRuntime, getSharedRealtimeHub } from '@lumibase/runtime';
+import { createRuntime, getSharedRealtimeHub, leaderLockedCallback } from '@lumibase/runtime';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { schema } from '@lumibase/database';
-import cron from 'node-cron';
+import cron, { type ScheduledTask } from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
 import { bootstrapNodeObservability } from './observability/node';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { createPressureLimiter } from './pressure-limiter';
+import { startWorkerHealthServer } from './worker-health';
 import type { Bindings } from './env';
+
+type ProcessRole = 'web' | 'worker' | 'all';
+
+function parseProcessRole(): ProcessRole {
+  const raw = (process.env.LUMIBASE_PROCESS_ROLE || 'all').toLowerCase();
+  if (raw === 'web' || raw === 'worker' || raw === 'all') {
+    return raw;
+  }
+  console.warn(
+    `[lumibase-cms] Invalid LUMIBASE_PROCESS_ROLE="${raw}" — expected web|worker|all; defaulting to "all"`,
+  );
+  return 'all';
+}
 
 async function main() {
   loadSecretFiles();
@@ -21,36 +35,54 @@ async function main() {
   const observability = await bootstrapNodeObservability(process.env);
   const { default: app } = await import('./index');
 
+  const role = parseProcessRole();
+  const runHttp = role === 'web' || role === 'all';
+  const runWorkers = role === 'worker' || role === 'all';
+  const redisUrl = process.env.REDIS_URL;
+  const lockOpts = { redisUrl };
+
   const port = parseInt(process.env.PORT || '1989', 10);
+  const workerHealthPort = parseInt(
+    process.env.LUMIBASE_WORKER_HEALTH_PORT || String(port === 1989 ? 1988 : port + 1),
+    10,
+  );
   const runtime = createRuntime(process.env as unknown as Record<string, unknown>);
   const pressureLimiter = createPressureLimiter(process.env as Record<string, string | undefined>);
 
-  // Inject runtime into Hono context for all requests.
-  app.use('*', async (c, next) => {
-    c.set('runtime', runtime);
-    await next();
-  });
+  let server: ReturnType<typeof serve> | undefined;
+  let workerHealthServer: HttpServer | undefined;
 
-  const server = serve({
-    fetch: (request, nodeBindings) => {
-      const pressureResponse = pressureLimiter.handle(request);
-      if (pressureResponse) return pressureResponse;
+  if (runHttp) {
+    // Inject runtime into Hono context for all requests.
+    app.use('*', async (c, next) => {
+      c.set('runtime', runtime);
+      await next();
+    });
 
-      return app.fetch(
-        request,
-        { ...process.env, ...nodeBindings } as unknown as Bindings,
-      );
-    },
-    port,
-  });
-  console.log(`[lumibase-cms] Started in ${runtime.runtime} mode on port ${port}`);
+    server = serve({
+      fetch: (request, nodeBindings) => {
+        const pressureResponse = pressureLimiter.handle(request);
+        if (pressureResponse) return pressureResponse;
+
+        return app.fetch(
+          request,
+          { ...process.env, ...nodeBindings } as unknown as Bindings,
+        );
+      },
+      port,
+    });
+    console.log(`[lumibase-cms] Started in ${runtime.runtime} mode on port ${port} (role=${role})`);
+  } else {
+    console.log(`[lumibase-cms] HTTP API disabled (role=${role})`);
+    workerHealthServer = startWorkerHealthServer(workerHealthPort);
+  }
 
   // ── Realtime WebSocket server (realtime-audience-channels) ──────────────────
   // On Node/Docker there is no Durable Object, so attach a `ws` server to the
   // HTTP server. It shares the in-process hub with the runtime's realtime
   // provider, so `runtime.realtime.publish()` reaches live WS sessions here.
   const jwtSecret = process.env.JWT_SECRET;
-  if (jwtSecret) {
+  if (runHttp && jwtSecret) {
     const { attachNodeRealtime } = await import('./realtime/node-hub');
     const maxPerSubject = parseInt(process.env.LUMIBASE_REALTIME_MAX_CONNECTIONS_PER_SUBJECT || '0', 10);
     attachNodeRealtime({
@@ -60,10 +92,21 @@ async function main() {
       maxConnectionsPerSubject: Number.isFinite(maxPerSubject) ? maxPerSubject : 0,
     });
     console.log('[lumibase-cms] Realtime WebSocket server attached at /api/v1/realtime');
-  } else {
+  } else if (runHttp) {
     console.warn('[lumibase-cms] JWT_SECRET unset — realtime WebSocket server disabled');
   }
 
+  // Cron tasks stopped on SIGTERM (optional when role=web).
+  let rotationTask: ScheduledTask | undefined;
+  let pageviewFlushTask: ScheduledTask | undefined;
+  let vetoSweepTask: ScheduledTask | undefined;
+  let schedulerTask: ScheduledTask | undefined;
+  let retentionTask: ScheduledTask | undefined;
+  let deploymentPollTask: ScheduledTask | undefined;
+  let flowScheduleTask: ScheduledTask | undefined;
+  let loadGuardTimer: ReturnType<typeof setInterval> | undefined;
+
+  if (runWorkers) {
   // ── Audit-log retention rotation (admin-setup-wizard task 11.4; Req 15.5;
   //    design §10.2) ─────────────────────────────────────────────────────────
   //
@@ -102,19 +145,35 @@ async function main() {
   // prune) to keep startup side-effect-free — the count-trigger path in the
   // audit-context middleware already handles a backlog that accumulates between
   // ticks.
-  const rotationTask = cron.schedule('0 * * * *', () => {
-    void runScheduledRotation(rotatorDb);
-    // Sweep expired refresh-token rows on the same hourly tick (best-effort).
-    void runScheduledRefreshTokenPrune(rotatorDb);
-  });
+  rotationTask = cron.schedule(
+    '0 * * * *',
+    leaderLockedCallback(
+      'audit-rotation',
+      3_300_000,
+      () => {
+        void runScheduledRotation(rotatorDb);
+        void runScheduledRefreshTokenPrune(rotatorDb);
+      },
+      lockOpts,
+    ),
+  );
 
   // Pageview flush — every 5 minutes, roll up raw events and drain hot counters
   // into the daily rollup. Best-effort; never throws (see the module doc).
   const { runScheduledPageviewFlush } = await import('./modules/pageviews/scheduled');
-  const pageviewFlushTask = cron.schedule('*/5 * * * *', () => {
-    void runScheduledPageviewFlush(rotatorDb, runtime);
-  });
+  pageviewFlushTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'pageview-flush',
+      240_000,
+      () => {
+        void runScheduledPageviewFlush(rotatorDb, runtime);
+      },
+      lockOpts,
+    ),
+  );
 
+  if (runHttp) {
   // ── Load-aware autonomy (content-os task 9; Req 9.4/9.5) ─────────────────
   //
   // Feed event-loop pressure samples into the agent load guard: overload
@@ -122,11 +181,12 @@ async function main() {
   // never auto-paused) and a hold-down of continuous calm auto-resumes them.
   const { getLoadGuard } = await import('./services/load-guard-service');
   const loadGuard = getLoadGuard();
-  const loadGuardTimer = setInterval(() => {
-    const sample = pressureLimiter.getSample();
-    loadGuard.signal({ overloaded: sample.overloaded, reason: sample.reason });
-  }, 5_000);
-  loadGuardTimer.unref();
+    loadGuardTimer = setInterval(() => {
+      const sample = pressureLimiter.getSample();
+      loadGuard.signal({ overloaded: sample.overloaded, reason: sample.reason });
+    }, 5_000);
+    loadGuardTimer.unref();
+  }
 
   // ── Async agent runs (content-os task 3; Req 3.2) ────────────────────────
   //
@@ -159,6 +219,14 @@ async function main() {
     search: runtime.search,
     queue: runtime.queue,
   });
+
+  // ── ISR revalidation dispatch (high-load-cache-readiness task 9.4) ────────
+  const { registerRevalidationWorker } = await import('./services/content-invalidation');
+  registerRevalidationWorker({ db: rotatorDb, queue: runtime.queue });
+
+  // ── Async audit-log batch writer (high-load-cache-readiness task 12.1) ───
+  const { registerAuditLogWorker } = await import('./modules/audit/worker');
+  registerAuditLogWorker({ db: rotatorDb, queue: runtime.queue });
 
   // ── Change Feed dispatch (cdc-extension-integration Req 4.7) ────────────
   //
@@ -223,6 +291,15 @@ async function main() {
     keys: runtime.keys,
   });
 
+  // ── Manual flow runs + AI chat async (high-load task 17) ────────────────
+  const { registerFlowRunsWorker } = await import('./services/flow-run-service');
+  registerFlowRunsWorker({
+    db: rotatorDb,
+    queue: runtime.queue,
+    keys: runtime.keys,
+    env: process.env as Record<string, string | undefined>,
+  });
+
   // ── Veto-window commits (content-os task 14; Req 13.3/13.5) ─────────────
   //
   // Primary path: delayed queue jobs fire at each staging's autoCommitAt.
@@ -239,11 +316,19 @@ async function main() {
     queue: runtime.queue,
   };
   registerVetoCommitWorker(vetoWorkerDeps);
-  const vetoSweepTask = cron.schedule('*/5 * * * *', () => {
-    void sweepDueVetoCommits(vetoWorkerDeps).catch((err) => {
-      console.error('[veto-sweep] failed', formatSafeError(err));
-    });
-  });
+  vetoSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'veto-sweep',
+      240_000,
+      () => {
+        void sweepDueVetoCommits(vetoWorkerDeps).catch((err) => {
+          console.error('[veto-sweep] failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
 
   // ── Content scheduler (regulated-content-readiness task 7; Req 7.3/7.4) ──
   //
@@ -255,17 +340,33 @@ async function main() {
   );
   const schedulerDeps = { db: rotatorDb, queue: runtime.queue };
   registerSchedulerWorker(schedulerDeps);
-  const schedulerTask = cron.schedule('* * * * *', () => {
-    void runSchedulerTick(schedulerDeps).catch((err) => {
-      console.error('[content-scheduler] tick failed', formatSafeError(err));
-    });
-  });
+  schedulerTask = cron.schedule(
+    '* * * * *',
+    leaderLockedCallback(
+      'content-scheduler',
+      50_000,
+      () => {
+        void runSchedulerTick(schedulerDeps).catch((err) => {
+          console.error('[content-scheduler] tick failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
   // Retention sweep runs hourly (Req 12.2) — heavier than the publish tick.
-  const retentionTask = cron.schedule('17 * * * *', () => {
-    void sweepRetention(schedulerDeps).catch((err) => {
-      console.error('[retention-sweep] failed', formatSafeError(err));
-    });
-  });
+  retentionTask = cron.schedule(
+    '17 * * * *',
+    leaderLockedCallback(
+      'retention-sweep',
+      3_300_000,
+      () => {
+        void sweepRetention(schedulerDeps).catch((err) => {
+          console.error('[retention-sweep] failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
 
   // ── Deployment status poller (deployment-integrations task 9; Req 3.4) ──
   //
@@ -276,11 +377,19 @@ async function main() {
   const { registerStatusPoller, sweepAllSites } = await import('./services/deployment/status-poller');
   const deployPollerDeps = { db: rotatorDb, keys: runtime.keys, queue: runtime.queue };
   registerStatusPoller(deployPollerDeps);
-  const deploymentPollTask = cron.schedule('*/30 * * * * *', () => {
-    void sweepAllSites(deployPollerDeps).catch((err) => {
-      console.error('[deployment-poll] sweep failed', formatSafeError(err));
-    });
-  });
+  deploymentPollTask = cron.schedule(
+    '*/30 * * * * *',
+    leaderLockedCallback(
+      'deployment-poll',
+      25_000,
+      () => {
+        void sweepAllSites(deployPollerDeps).catch((err) => {
+          console.error('[deployment-poll] sweep failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
 
   // ── Flow schedule tick (visual-flow-builder task 4.x) ───────────────────
   //
@@ -289,11 +398,19 @@ async function main() {
   // whose `next_run_at` is due onto the same `flow-events` queue (nextRunAt is
   // advanced before enqueue so a slow job never re-fires the same flow).
   const { runDueScheduledFlows } = await import('./services/flow-scheduler');
-  const flowScheduleTask = cron.schedule('* * * * *', () => {
-    void runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
-      console.error('[flow-schedule] tick failed', formatSafeError(err));
-    });
-  });
+  flowScheduleTask = cron.schedule(
+    '* * * * *',
+    leaderLockedCallback(
+      'flow-schedule',
+      50_000,
+      () => {
+        void runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
+          console.error('[flow-schedule] tick failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
 
   // ── Envelope migration consumer (regulated-content-readiness task 3.6) ──
   //
@@ -301,22 +418,48 @@ async function main() {
   // `encryption.envelope`. Batched, resumable, idempotent — safe to re-run.
   const { registerEnvelopeMigrationWorker } = await import('./services/envelope-migration-worker');
   registerEnvelopeMigrationWorker({ db: rotatorDb, keyProvider: runtime.keys, queue: runtime.queue });
+  } // runWorkers
+
+  const closeServers = (onClosed: () => void) => {
+    const pending: Promise<void>[] = [];
+    if (server) {
+      pending.push(
+        new Promise((resolve) => {
+          server!.close(() => resolve());
+        }),
+      );
+    }
+    if (workerHealthServer) {
+      pending.push(
+        new Promise((resolve) => {
+          workerHealthServer!.close(() => resolve());
+        }),
+      );
+    }
+    if (pending.length === 0) {
+      onClosed();
+      return;
+    }
+    void Promise.all(pending).then(onClosed);
+  };
 
   // Graceful shutdown with 10s timeout
   process.on('SIGTERM', () => {
     console.log('[lumibase-cms] SIGTERM received, shutting down...');
 
-    // Stop the hourly audit-rotation cron and pressure sampler so their timers
-    // can't keep the event loop alive past the server close (task 11.4).
-    rotationTask.stop();
-    pageviewFlushTask.stop();
-    vetoSweepTask.stop();
-    schedulerTask.stop();
-    retentionTask.stop();
-    deploymentPollTask.stop();
-    flowScheduleTask.stop();
-    pressureLimiter.stop();
-    clearInterval(loadGuardTimer);
+    rotationTask?.stop();
+    pageviewFlushTask?.stop();
+    vetoSweepTask?.stop();
+    schedulerTask?.stop();
+    retentionTask?.stop();
+    deploymentPollTask?.stop();
+    flowScheduleTask?.stop();
+    if (runHttp) {
+      pressureLimiter.stop();
+    }
+    if (loadGuardTimer) {
+      clearInterval(loadGuardTimer);
+    }
 
     // Force exit after 10 seconds if graceful shutdown stalls
     const forceTimeout = setTimeout(() => {
@@ -325,7 +468,7 @@ async function main() {
     }, 10_000);
     forceTimeout.unref();
 
-    server.close(async () => {
+    closeServers(async () => {
       try {
         await observability.shutdown();
       } catch (err) {

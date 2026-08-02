@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { userSites, users } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { PermissionService } from '../services/permission-service';
+import { getRequestContext, mergeRequestContext } from './request-context';
 
 // `/api/v1/auth/register` is NOT public: it is an admin-only user-creation
 // endpoint, so the caller must also be bound to the selected site.
@@ -58,7 +59,10 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
     return next();
   }
 
-  const resolved = await resolveUser(c.get('db'), auth);
+  const ctx = getRequestContext(c);
+  const resolved =
+    ctx.user ??
+    (await resolveUser(c.get('db'), auth));
   if (!resolved) {
     // Cloudflare Access principals authenticate via a trusted CF Access JWT
     // (see `withAuth`'s "Cloudflare Access Assertion" branch) and are not
@@ -78,6 +82,10 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
     );
   }
 
+  if (!ctx.user) {
+    mergeRequestContext(c, { user: resolved });
+  }
+
   const nextAuth: AuthPrincipal = {
     ...auth,
     userId: resolved.id,
@@ -92,12 +100,13 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
     return next();
   }
 
-  const [membership] = await c
-    .get('db')
-    .select({ userId: userSites.userId })
-    .from(userSites)
-    .where(and(eq(userSites.userId, resolved.id), eq(userSites.siteId, siteId)))
-    .limit(1);
+  const membershipKnown = ctx.membership !== undefined;
+  const membership = ctx.membership
+    ?? (await loadMembership(c.get('db'), resolved.id, siteId));
+
+  if (!membershipKnown && membership) {
+    mergeRequestContext(c, { membership });
+  }
 
   if (!membership) {
     return c.json(
@@ -135,10 +144,37 @@ async function resolveUser(
   return null;
 }
 
+async function loadMembership(
+  db: AppEnv['Variables']['db'],
+  userId: string,
+  siteId: string,
+): Promise<{ roleId: string } | null> {
+  const [row] = await db
+    .select({ roleId: userSites.roleId })
+    .from(userSites)
+    .where(and(eq(userSites.userId, userId), eq(userSites.siteId, siteId)))
+    .limit(1);
+  return row?.roleId ? { roleId: row.roleId } : null;
+}
+
 async function attachAccessBundle(
   c: Parameters<MiddlewareHandler<AppEnv>>[0],
   auth: AuthPrincipal,
 ): Promise<void> {
+  const existingAccess = c.get('access');
+  const ctx = getRequestContext(c);
+  if (existingAccess) {
+    if (!ctx.accessBundle) {
+      mergeRequestContext(c, { accessBundle: existingAccess });
+    }
+    return;
+  }
+
+  if (ctx.accessBundle) {
+    c.set('access', ctx.accessBundle);
+    return;
+  }
+
   const runtime = c.get('runtime');
   const headers: Record<string, string> = {};
   c.req.raw.headers.forEach((value, key) => {
@@ -161,4 +197,5 @@ async function attachAccessBundle(
   }).bundle();
 
   c.set('access', bundle);
+  mergeRequestContext(c, { accessBundle: bundle });
 }

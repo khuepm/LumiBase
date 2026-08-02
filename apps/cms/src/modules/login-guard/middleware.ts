@@ -151,10 +151,9 @@ export function loginGuardMiddleware(
     const email = await readEmailFromRequest(c);
     const ip = extractClientIp(c, options.ipExtraction);
     const policy = await loadPolicy(db, options);
-    const counter = (options.counterStore ?? createCounterStore)(
-      db,
-      readEnvForCounter(c),
-    );
+    const counter = options.counterStore
+      ? options.counterStore(db, readEnvForCounter(c))
+      : createCounterStore(db, readEnvForCounter(c), { cache: c.get('runtime')?.cache });
 
     const verdict = await precheckLogin({
       db,

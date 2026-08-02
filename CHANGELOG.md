@@ -11,15 +11,19 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
-- **Pages CRUD API (`/api/v1/pages`).** Studio-authenticated create / list /
-  get / patch / delete for `lumibase_pages`. Create and slug rename call
-  `forgetNegative` so Delivery tombstones clear immediately (closes
-  high-load B16 / task 22.6).
+- **High-load & cache readiness programme closeout (spec tasks 0–22).** P0: Delivery HTTP caching (ETag, `Cache-Control`, edge-cache adapter), permission-cache version bump at every grant mutation, API-key `lastUsedAt` debounce, setup-state process cache, list `meta=total_count|none` opt-in, Caddy/app body limits, identifier shape guards. P1: Cache Provider v2 (`tags`, `invalidateByTag`, `getEntry`/`setNegative`, admin purge), content tag invalidation + deliver app-cache + auto revalidation, SWR/single-flight for schema/permission, middleware query consolidation, async audit queue, distributed rate limiter, cache observability (metrics/health/Grafana), cache penetration defence (tombstones, deliver IP limiter, k6 `load-penetration.js` — measured DB-query-per-404 **0.0308**). P2: `LUMIBASE_PROCESS_ROLE` web/worker split + Redis leader lock, flow/AI async (`202` + poll; `Prefer: respond-async`), migration `0013` + items deliver indexes, transactional item writes, CDC `CacheInvalidator` removed (ADR-012), nightly k6 workflow. ADR-004 → Implemented. DoD §2b gains tag-purge + behavioural-test checklist line. Setup Impact Registry #95 (`n/a` + migration `0013`/index upgrade note). k6 baseline re-run for deliver/items/smoke/realtime: **pending_env** (see `baseline/2026-08-02-baseline-notes.json`).
+- **High-load P2: flow/AI async + DB indexes (tasks 17–18).** `POST
+  /flows/:id/run` returns 202 when a queue worker is available; poll
+  `GET /flows/runs/:runId`. AI chat supports `Prefer: respond-async` (reuses
+  `lumibase_flow_runs.run_type = ai_chat`). Migration `0013` adds flow-run
+  history index + `items_site_coll_updated_idx` / `items_deliver_idx`.
+  **Upgrade note:** on large Postgres instances, create the two `items_*`
+  indexes with `CREATE INDEX CONCURRENTLY` outside the migration transaction
+  (see `docs/en/deployment/performance.md`).
 - **Cache Provider v2 (tags + purge).** `CacheSetOptions.tags`,
   `invalidateByTag`, optional `onEvent` on Redis / KV / `MemoryCacheProvider`
   (LRU); admin `POST /api/v1/utils/cache/purge` (control-plane,
-  tenant-scoped). ADR-004 → Implemented (partial) pending write-path tag
-  callers (task 9).
+  tenant-scoped). ADR-004 → Implemented.
 - **Delivery edge cache adapter.** `runtime.edgeCache` — Cloudflare
   `caches.default` match/put; Docker no-op — wired on cacheable deliver
   page responses (task 1.3).

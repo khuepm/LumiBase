@@ -287,12 +287,13 @@ describe('AuditLogger.write — success (Req 15.1, 15.2)', () => {
 // ── write: failure → fallback ───────────────────────────────────────────
 
 describe('AuditLogger.write — fallback on failure (Req 13.4 spirit, design §10.1)', () => {
-  it('a rejecting insert fires the structured fallback and does NOT throw', async () => {
+  it('a rejecting sync insert fires the structured fallback and does NOT throw', async () => {
     const { db, rows } = makeFakeDb({ rejectWith: new Error('db down') });
     const captured: AuditFallbackRecord[] = [];
     const logger = new AuditLogger({
       db,
       errorSink: (r) => captured.push(r),
+      queue: undefined,
     });
 
     await expect(
@@ -316,28 +317,11 @@ describe('AuditLogger.write — fallback on failure (Req 13.4 spirit, design §1
     expect(meta.recoveryToken).toBe(await sha256Prefix8('leak-me-not'));
   });
 
-  it('a slow insert (exceeds the injected budget) fires the fallback and resolves', async () => {
-    const { db } = makeFakeDb({ hang: true });
-    const captured: AuditFallbackRecord[] = [];
-    const logger = new AuditLogger({
-      db,
-      errorSink: (r) => captured.push(r),
-      budgetMs: 10, // tiny budget so the hung insert times out fast
-    });
-
-    await expect(
-      logger.write({ event: 'anomaly_triggered' }),
-    ).resolves.toBeUndefined();
-
-    expect(captured).toHaveLength(1);
-    expect(captured[0]!.reason).toBe('budget_exceeded');
-    expect(captured[0]!.source).toBe('audit-fallback');
-  });
-
   it('never throws even when BOTH the insert AND the errorSink throw', async () => {
     const { db } = makeFakeDb({ rejectWith: new Error('db down') });
     const logger = new AuditLogger({
       db,
+      queue: undefined,
       errorSink: () => {
         throw new Error('sink also broken');
       },

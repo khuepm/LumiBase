@@ -160,14 +160,27 @@ export function AIAssistant() {
     try {
       const response = await fetch(`${getBaseUrl()}/api/v1/ai/chat`, {
         method: 'POST',
-        headers: getApiHeaders(),
+        headers: {
+          ...getApiHeaders(),
+          Prefer: 'respond-async',
+        },
         body: JSON.stringify({
           message: trimmed,
           ...(conversationId ? { conversationId } : {}),
         }),
       });
 
-      if (!response.ok) {
+      if (response.status === 202) {
+        const body = (await response.json()) as ChatApiResponse;
+        const runId = (body.data as { runId?: string })?.runId;
+        addMessage({
+          role: 'assistant',
+          text: runId
+            ? `Request queued (run ${runId}). Poll GET /api/v1/flows/runs/${runId} for the result.`
+            : 'Request queued for async processing.',
+          status: 'pending',
+        });
+      } else if (!response.ok) {
         const errorBody = (await response.json().catch(() => null)) as ChatApiResponse | null;
         const errorText =
           errorBody?.errors?.[0]?.message ?? `Request failed with status ${response.status}`;

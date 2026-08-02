@@ -10,7 +10,9 @@ import {
 } from '@lumibase/database';
 import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import type { CacheProvider, QueueProvider } from '@lumibase/runtime';
+import { createSwrCache, type SwrCache } from '@lumibase/runtime';
 import type { CdcOperation, CdcResource, FieldClassification } from '@lumibase/shared';
+import { invalidateDeliverTag } from './content-invalidation';
 import { AuditLogger } from '../modules/audit/logger';
 import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';
 import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
@@ -323,6 +325,24 @@ export class SchemaService {
   constructor(private readonly deps: SchemaServiceDeps) {}
 
   private outboxWriter: OutboxWriter | null = null;
+  private schemaSwr: SwrCache<CompiledCollection | null> | null = null;
+
+  private getSchemaSwr(): SwrCache<CompiledCollection | null> | null {
+    if (!this.deps.cache) return null;
+    if (!this.schemaSwr) {
+      this.schemaSwr = createSwrCache({
+        cache: this.deps.cache,
+        softTtl: 300,
+        hardTtl: 900,
+        compute: async (key) => {
+          const prefix = `schema:${this.deps.siteId}:`;
+          const collectionName = key.startsWith(prefix) ? key.slice(prefix.length) : key;
+          return this.compile(collectionName);
+        },
+      });
+    }
+    return this.schemaSwr;
+  }
 
   /**
    * Append a schema change event to the Change Feed (collections.* / fields.*).
@@ -1068,15 +1088,11 @@ export class SchemaService {
       systemFields: compileSystemFields(collection),
       fields: fieldRows.map(compileField),
     };
-    if (this.deps.cache) {
-      await this.deps.cache.set(cacheKey(this.deps.siteId, collectionName), JSON.stringify(compiled), {
-        ttl: 300,
-      });
-    }
     return compiled;
   }
 
-  /** SWR-style cache read; falls back to live DB compile on miss.
+  /**
+   * Cached schema read with single-flight + SWR (Req 9; design §5.2).
    * Confirmed absences are tombstoned (Req 19.5) so repeated probes for
    * non-existent collections do not re-hit Postgres.
    */
@@ -1090,21 +1106,19 @@ export class SchemaService {
           ? (process.env as { LUMIBASE_NEGATIVE_CACHE_TTL?: string })
           : undefined,
       );
+      const swr = this.getSchemaSwr();
       if (ttl > 0) {
         const neg = buildNegativeCache(this.deps.cache, ttl);
         return neg.resolve(negativeCollectionKey(this.deps.siteId, collectionName), async () => {
-          // Positive schema cache first (existing key namespace).
-          const cached = await this.deps.cache!.get<CompiledCollection>(
-            cacheKey(this.deps.siteId, collectionName),
-          );
-          if (cached) return cached;
+          if (swr) {
+            return swr.get(cacheKey(this.deps.siteId, collectionName));
+          }
           return this.compile(collectionName);
         });
       }
-      const cached = await this.deps.cache.get<CompiledCollection>(
-        cacheKey(this.deps.siteId, collectionName),
-      );
-      if (cached) return cached;
+      if (swr) {
+        return swr.get(cacheKey(this.deps.siteId, collectionName));
+      }
     }
     return this.compile(collectionName);
   }
@@ -1123,6 +1137,7 @@ export class SchemaService {
     await this.deps.cache.delete(`typegen:${this.deps.siteId}`);
     await this.deps.cache.delete(`typegen:${this.deps.siteId}:schema`);
     await this.deps.cache.delete(`perm:${this.deps.siteId}:schema`);
+    await invalidateDeliverTag(this.deps.cache, this.deps.siteId);
   }
 
   private assertUniqueSchemaInputs(fieldInputs?: FieldInput[], relationInputs?: RelationInput[]) {

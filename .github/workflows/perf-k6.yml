@@ -1,0 +1,146 @@
+name: Performance (k6)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Nightly smoke + deliver mix against a local stack when enabled.
+    - cron: '0 3 * * *'
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-k6-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24
+  # Set to "true" in repo/org variables to run the full compose + k6 job nightly.
+  PERF_K6_FULL_RUN: ${{ vars.PERF_K6_FULL_RUN || 'false' }}
+
+jobs:
+  validate-scripts:
+    name: Validate k6 scripts exist
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Assert k6 scripts and seed are present
+        run: |
+          test -f apps/cms/k6/smoke.js
+          test -f apps/cms/k6/load-deliver.js
+          test -f apps/cms/k6/load-items.js
+          test -f apps/cms/k6/seed.ts
+          echo "k6 scripts OK"
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 \
+            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | \
+            sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+      - name: k6 dry-run (syntax / threshold wiring)
+        run: |
+          k6 inspect apps/cms/k6/smoke.js
+          k6 inspect apps/cms/k6/load-deliver.js
+
+  perf-gate:
+    name: k6 smoke (+ deliver when stack available)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: validate-scripts
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.label.name == 'perf-k6') ||
+      (github.event_name == 'schedule' && env.PERF_K6_FULL_RUN == 'true')
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Enable Corepack + pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.12.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Start Postgres + Redis
+        run: docker compose -f docker/docker-compose.yml up -d postgres redis
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            docker compose -f docker/docker-compose.yml exec -T postgres pg_isready -U lumibase && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Migrate database
+        env:
+          DATABASE_URL: postgresql://lumibase:lumibase_dev@localhost:5432/lumibase
+        run: pnpm -F @lumibase/database migrate
+
+      - name: Seed load-test dataset (CI size)
+        env:
+          DATABASE_URL: postgresql://lumibase:lumibase_dev@localhost:5432/lumibase
+          SEED_ITEMS: 200
+        run: pnpm exec tsx apps/cms/k6/seed.ts
+
+      - name: Start CMS (web role)
+        env:
+          DATABASE_URL: postgresql://lumibase:lumibase_dev@localhost:5432/lumibase
+          REDIS_URL: redis://localhost:6379
+          LUMIBASE_RUNTIME: docker
+          LUMIBASE_PROCESS_ROLE: web
+          JWT_SECRET: ci-perf-k6-secret
+          PORT: '1989'
+        run: |
+          pnpm -F @lumibase/cms exec tsx src/serve.ts &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:1989/health && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Install k6
+        run: |
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 \
+            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | \
+            sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+      - name: Run k6 smoke
+        env:
+          BASE_URL: http://127.0.0.1:1989
+          SITE_ID: site_load_a
+          TOKEN: dev:user123
+        run: k6 run apps/cms/k6/smoke.js
+
+      - name: Run k6 load-deliver (short CI profile)
+        env:
+          BASE_URL: http://127.0.0.1:1989
+          SITE_ID: site_load_a
+          COLLECTION: articles
+          DURATION: 30s
+          RATE: 10
+        run: k6 run --summary-export=load-deliver-summary.json apps/cms/k6/load-deliver.js
+
+      - name: Upload k6 summary artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-perf-summary
+          path: |
+            load-deliver-summary.json
+            load-deliver-summary-*.json

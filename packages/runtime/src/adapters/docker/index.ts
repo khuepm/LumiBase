@@ -9,6 +9,7 @@ import { BullMQProvider } from './queue';
 import { ImgproxyMediaProcessor } from './media';
 import { createDockerKeyProvider } from './keys';
 import { DockerRealtimeProvider, getSharedRealtimeHub } from './realtime';
+import { RedisRateLimiter } from '../redis-rate-limiter';
 
 export {
   DockerRealtimeProvider,
@@ -23,6 +24,7 @@ export { MeiliSearchProvider } from './search';
 export { BullMQProvider } from './queue';
 export { ImgproxyMediaProcessor } from './media';
 export { createDockerKeyProvider } from './keys';
+export { RedisRateLimiter } from '../redis-rate-limiter';
 
 /**
  * Creates a RuntimeContext configured for Docker/Node.js environments.
@@ -59,6 +61,7 @@ export function createDockerRuntime(env: Record<string, unknown>): RuntimeContex
 
   return {
     cache: new RedisCacheProvider(redis),
+    rateLimiter: new RedisRateLimiter(redis),
     edgeCache: new NoOpEdgeCacheProvider(),
     storage: new S3StorageProvider({
       endpoint: s3Endpoint,

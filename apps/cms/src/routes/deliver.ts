@@ -3,9 +3,14 @@ import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql, type SQL } from 
 import { Hono } from 'hono';
 import type { AppEnv, Variables } from '../env';
 import {
+  DELIVER_APP_CACHE_TTL_SECONDS,
+  deliverAppCacheKey,
+  deliverAppCacheTags,
+  deliveryVariantHash,
   etagMatches,
   resolveDeliveryCachePolicy,
   weakEtag,
+  type DeliverAppCacheEntry,
 } from '../services/delivery-cache';
 import {
   assertPublicIdentifier,
@@ -387,6 +392,18 @@ deliverRouter.get('/llms.txt/:site_id', async (c) => {
   });
 });
 
+function sectionCollections(layoutConfig: unknown): string[] {
+  const layout = (layoutConfig ?? {}) as LayoutConfig;
+  const names = new Set<string>();
+  for (const section of layout.sections ?? []) {
+    const collection = section.source?.collection;
+    if (typeof collection === 'string' && collection.length > 0) {
+      names.add(collection);
+    }
+  }
+  return [...names];
+}
+
 /** Hydrate every section of a page into the delivery payload. */
 async function buildPagePayload(
   db: Variables['db'],
@@ -462,6 +479,15 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
 
   const runtime = c.get('runtime');
   const edgeCache = runtime?.edgeCache;
+  const useDeliverCache = policy.cacheable && !isPreview;
+  const appCache = useDeliverCache ? runtime?.cache : undefined;
+  const variantHash = await deliveryVariantHash({
+    locale: c.req.query('locale'),
+    lang: c.req.query('lang'),
+    provenance: withProvenance ? 'true' : undefined,
+  });
+  const appCacheKey =
+    appCache && useDeliverCache ? deliverAppCacheKey(siteId, slug, variantHash) : null;
 
   // Tier 1b — HTTP edge cache (Req 1.6): only for cacheable public traffic.
   if (policy.cacheable && edgeCache) {
@@ -469,7 +495,28 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
     if (cached) return cached;
   }
 
-  // Tier 2 — tombstone (Req 19.5/19.8): never serve negative cache to
+  // Tier 2a — application cache (Req 8.2): full page payload + ETag metadata.
+  if (appCache && appCacheKey) {
+    const cached = await appCache.get<DeliverAppCacheEntry>(appCacheKey);
+    if (cached) {
+      c.header('ETag', cached.etag);
+      c.header('Cache-Control', policy.cacheControl);
+      if (etagMatches(c.req.header('if-none-match'), cached.etag)) {
+        const notModified = c.body(null, 304);
+        if (edgeCache) {
+          await edgeCache.put(c.req.raw, notModified.clone());
+        }
+        return notModified;
+      }
+      const response = c.json(cached.body);
+      if (edgeCache) {
+        await edgeCache.put(c.req.raw, response.clone());
+      }
+      return response;
+    }
+  }
+
+  // Tier 2b — tombstone (Req 19.5/19.8): never serve negative cache to
   // credentialed / preview traffic (same boundary as Req 1.4).
   const allowTombstone = !hasCredentials && !isPreview;
   const cache = runtime?.cache;
@@ -529,7 +576,19 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
     return notModified;
   }
 
-  const response = c.json(await buildPagePayload(db, siteId, page, withProvenance));
+  const body = await buildPagePayload(db, siteId, page, withProvenance);
+  if (appCache && appCacheKey) {
+    try {
+      await appCache.set(appCacheKey, JSON.stringify({ body, etag } satisfies DeliverAppCacheEntry), {
+        ttl: DELIVER_APP_CACHE_TTL_SECONDS,
+        tags: deliverAppCacheTags(siteId, sectionCollections(page.layoutConfig)),
+      });
+    } catch {
+      // App-cache write is best-effort — never fail the read path.
+    }
+  }
+
+  const response = c.json(body);
   if (edgeCache) {
     await edgeCache.put(c.req.raw, response.clone());
   }
