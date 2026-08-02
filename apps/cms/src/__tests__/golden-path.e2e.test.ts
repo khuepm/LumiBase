@@ -203,8 +203,8 @@ describe('Golden path (setup → collection → item → publish → read) + ten
     // ── 4b. Anonymous public read (Delivery API, no credentials) ────────────
     // The "read via public API" leg of the golden path must not ride on the
     // admin token: the Delivery API is the anonymous public surface. Pages
-    // have no CRUD route, so the page row is seeded directly — the read
-    // itself still travels the full public HTTP stack with zero auth headers.
+    // CRUD lives at `/api/v1/pages`; this path still seeds the row directly
+    // so the read exercise stays independent of Studio auth for page writes.
     await db.insert(pages).values({
       siteId: DEFAULT_SITE,
       slug: 'home',

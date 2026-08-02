@@ -10,7 +10,9 @@ import {
 } from '@lumibase/database';
 import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import type { CacheProvider, QueueProvider } from '@lumibase/runtime';
+import { createSwrCache, type SwrCache } from '@lumibase/runtime';
 import type { CdcOperation, CdcResource, FieldClassification } from '@lumibase/shared';
+import { invalidateDeliverTag } from './content-invalidation';
 import { AuditLogger } from '../modules/audit/logger';
 import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';
 import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
@@ -334,6 +336,24 @@ export class SchemaService {
   constructor(private readonly deps: SchemaServiceDeps) {}
 
   private outboxWriter: OutboxWriter | null = null;
+  private schemaSwr: SwrCache<CompiledCollection | null> | null = null;
+
+  private getSchemaSwr(): SwrCache<CompiledCollection | null> | null {
+    if (!this.deps.cache) return null;
+    if (!this.schemaSwr) {
+      this.schemaSwr = createSwrCache({
+        cache: this.deps.cache,
+        softTtl: 300,
+        hardTtl: 900,
+        compute: async (key) => {
+          const prefix = `schema:${this.deps.siteId}:`;
+          const collectionName = key.startsWith(prefix) ? key.slice(prefix.length) : key;
+          return this.compile(collectionName);
+        },
+      });
+    }
+    return this.schemaSwr;
+  }
 
   /**
    * Append a schema change event to the Change Feed (collections.* / fields.*).
@@ -1079,29 +1099,17 @@ export class SchemaService {
       systemFields: compileSystemFields(collection),
       fields: fieldRows.map(compileField),
     };
-    if (this.deps.cache) {
-      await this.deps.cache.set(cacheKey(this.deps.siteId, collectionName), JSON.stringify(compiled), {
-        ttl: 300,
-      });
-    }
     return compiled;
   }
 
-  /** SWR-style cache read; falls back to live DB compile on miss.
+  /**
+   * Cached schema read with single-flight + SWR (Req 9; design §5.2).
    * Confirmed absences are tombstoned (Req 19.5) so repeated probes for
    * non-existent collections do not re-hit Postgres.
    */
   async getCompiled(collectionName: string): Promise<CompiledCollection | null> {
     const cache = this.deps.cache;
     if (!cache) return this.compile(collectionName);
-
-    // Positive cache FIRST. Real collections are the overwhelming majority of
-    // traffic here (`resolveCollection` runs on every item list/detail/patch),
-    // and probing the tombstone first cost every one of them a second cache
-    // round-trip. Penetration traffic still never reaches Postgres — it just
-    // pays one extra cache read, which is the cheap side of the trade.
-    const cached = await cache.get<CompiledCollection>(cacheKey(this.deps.siteId, collectionName));
-    if (cached) return cached;
 
     const { buildNegativeCache, negativeCollectionKey, resolveNegativeTtl } = await import(
       './negative-cache'
@@ -1113,7 +1121,25 @@ export class SchemaService {
           ? (process.env as { LUMIBASE_NEGATIVE_CACHE_TTL?: string })
           : undefined,
       );
-    if (ttl <= 0) return this.compile(collectionName);
+
+    // SWR now owns the positive key `schema:${siteId}:${name}` (Req 9.2) and
+    // stores an envelope `{ v, softExpiresAt }` there — `compile()` no longer
+    // writes it. So the plain `cache.get<CompiledCollection>(key)` short-circuit
+    // that used to sit here had to go: it would read the envelope and hand it
+    // back cast as a CompiledCollection, leaving every caller with `undefined`
+    // for `id`/`fields`/`primaryKeyField`.
+    //
+    // That also forces the ordering: tombstone BEFORE the SWR read, not after.
+    // `swr.get()` computes on miss, so consulting it first would reach Postgres
+    // before we ever looked at the tombstone — defeating Req 19 exactly on the
+    // traffic it exists to absorb. The cost is one extra cache read per lookup
+    // of a real collection; that is the deliberate price of SWR owning the
+    // positive path, and it is a cache read, not a DB round-trip.
+    const swr = this.getSchemaSwr();
+    const readPositive = () =>
+      swr ? swr.get(cacheKey(this.deps.siteId, collectionName)) : this.compile(collectionName);
+
+    if (ttl <= 0) return readPositive();
 
     const neg = buildNegativeCache(cache, ttl, {
       // Req 19.15: collection tombstones must be observable too, not just the
@@ -1126,9 +1152,7 @@ export class SchemaService {
         void import('../routes/metrics').then((m) => m.cacheNegativeWritesTotal.inc());
       },
     });
-    return neg.resolve(negativeCollectionKey(this.deps.siteId, collectionName), () =>
-      this.compile(collectionName),
-    );
+    return neg.resolve(negativeCollectionKey(this.deps.siteId, collectionName), readPositive);
   }
 
   async invalidate(collectionName: string) {
@@ -1145,6 +1169,7 @@ export class SchemaService {
     await this.deps.cache.delete(`typegen:${this.deps.siteId}`);
     await this.deps.cache.delete(`typegen:${this.deps.siteId}:schema`);
     await this.deps.cache.delete(`perm:${this.deps.siteId}:schema`);
+    await invalidateDeliverTag(this.deps.cache, this.deps.siteId);
   }
 
   private assertUniqueSchemaInputs(fieldInputs?: FieldInput[], relationInputs?: RelationInput[]) {

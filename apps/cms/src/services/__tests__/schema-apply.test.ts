@@ -124,6 +124,7 @@ describe('SchemaService schema apply', () => {
         set: vi.fn(),
         getEntry: vi.fn(async () => ({ state: 'miss' as const })),
         setNegative: vi.fn(),
+        invalidateByTag: vi.fn(),
         delete: async (key: string) => {
           deletedKeys.push(key);
         },
@@ -256,7 +257,7 @@ describe('SchemaService schema apply', () => {
     const service = new SchemaService({
       db: db as never,
       siteId: 'site-1',
-      cache: { get: vi.fn(), set: vi.fn(), delete: vi.fn(), increment: vi.fn(async () => 1), getEntry: vi.fn(async () => ({ state: 'miss' as const })), setNegative: vi.fn() },
+      cache: { get: vi.fn(), set: vi.fn(), delete: vi.fn(), increment: vi.fn(async () => 1), getEntry: vi.fn(async () => ({ state: 'miss' as const })), setNegative: vi.fn(), invalidateByTag: vi.fn() },
       events: { emit: vi.fn() },
     });
 

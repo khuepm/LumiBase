@@ -108,6 +108,7 @@ describe('SchemaService field deletion risk', () => {
         set: vi.fn(),
         getEntry: vi.fn(async () => ({ state: 'miss' as const })),
         setNegative: vi.fn(),
+        invalidateByTag: vi.fn(),
         delete: async (key: string) => {
           deletedCacheKeys.push(key);
         },

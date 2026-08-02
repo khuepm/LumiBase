@@ -120,6 +120,7 @@ describe('security guard wiring — control-plane path coverage', () => {
     '/api/v1/permissions',
     '/api/v1/policies',
     '/api/v1/roles',
+    '/api/v1/utils/cache',
   ])('classifies %s as control-plane', (path) => {
     expect(isControlPlanePath(path)).toBe(true);
     expect(isControlPlanePath(`${path}/anything`)).toBe(true);

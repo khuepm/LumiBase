@@ -1,5 +1,7 @@
+export type { EdgeCacheProvider } from './edge-cache';
 export type {
   CacheEntry,
+  CacheEvent,
   CacheProvider,
   CacheSetOptions,
   NegativeCacheEnvelope,
@@ -29,3 +31,4 @@ export type {
   RealtimeProvider,
 } from './realtime';
 export type { RuntimeContext } from './runtime';
+export type { RateLimiterProvider, RateLimitConsumeResult } from './rate-limiter';

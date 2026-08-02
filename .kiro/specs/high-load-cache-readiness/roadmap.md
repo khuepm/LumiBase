@@ -54,6 +54,8 @@
 | k6 `load-items` throughput | list 42.16 RPS, p50 214ms / p95 675ms / p99 1,042ms; detail 10.15 RPS, p50 120ms / p95 339ms / p99 470ms; create 16.96 RPS, p50 344ms / p95 822ms / p99 1,244ms (2026-08-02; offset pagination; detail đọc **một item cố định** — hot row, không phải random read trên 100k) | +x% (đo) | +x% (đo) | +x% (đo) |
 | DB query / request 404 (slug rác) | 1 (mọi request chạm DB) | ≤ 1 (guard hình dạng chặn phần rác thô) | **0.0308** (k6 `load-penetration.js` 2026-08-01, MISS_POOL=40, 50 RPS × 2m, docker postgres+redis; ≤ 0.05 ✓ — xem `baseline/2026-08-01-penetration-docker-notes.json`) | ≤ 0.05 |
 
+> **Lưu ý đọc bảng (2026-08-02):** cột Baseline là số đo thật từ PR #360. Code của P1 và P2 đã land (PR #336) nhưng **chưa re-measure** — các cột "Sau P1"/"Sau P2" vẫn là target, không phải số đo. Chạy lại `apps/cms/k6/baseline/run.sh` rồi điền số thật; Req 0.3 cấm điền ước lượng.
+
 ## 3. Các phase
 
 ### Phase 0 — Baseline đo đạc (điều kiện tiên quyết, ~1–2 ngày)

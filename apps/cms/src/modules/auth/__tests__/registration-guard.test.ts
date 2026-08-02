@@ -30,6 +30,7 @@ function memoryCache(initial: Record<string, string> = {}): CacheProvider {
     setNegative: vi.fn(async (k: string) => {
       store.set(k, JSON.stringify({ __lumi: 'neg', v: 1 }));
     }),
+    invalidateByTag: vi.fn(async () => undefined),
   };
 }
 
@@ -81,6 +82,7 @@ describe('checkRegistrationRate', () => {
       }),
       getEntry: vi.fn(async () => ({ state: 'unavailable' as const })),
       setNegative: vi.fn(async (): Promise<void> => undefined),
+      invalidateByTag: vi.fn(async (): Promise<void> => undefined),
     };
     const verdict = await checkRegistrationRate(cache, 'site-1', '1.2.3.4');
     expect(verdict.allowed).toBe(true);

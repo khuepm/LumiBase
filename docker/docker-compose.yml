@@ -89,6 +89,7 @@ services:
       dockerfile: docker/Dockerfile.dev
     environment:
       LUMIBASE_RUNTIME: docker
+      LUMIBASE_PROCESS_ROLE: ${LUMIBASE_PROCESS_ROLE:-all}
       DATABASE_URL: postgresql://lumibase:lumibase_dev@postgres:5432/lumibase
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
@@ -123,6 +124,27 @@ services:
         condition: service_completed_successfully
       meilisearch:
         condition: service_healthy
+
+  # Scale-out profile (high-load-cache-readiness task 16.3): HTTP replicas + worker.
+  # Usage: docker compose --profile split up -d cms-web cms-worker
+  cms-web:
+    profiles: ["split"]
+    extends:
+      service: cms
+    environment:
+      LUMIBASE_PROCESS_ROLE: web
+    ports:
+      - "${CMS_PORT:-1989}:1989"
+
+  cms-worker:
+    profiles: ["split"]
+    extends:
+      service: cms
+    environment:
+      LUMIBASE_PROCESS_ROLE: worker
+      LUMIBASE_WORKER_HEALTH_PORT: "1988"
+    ports: !reset
+      - "${CMS_WORKER_HEALTH_PORT:-1988}:1988"
 
   bull-board:
     image: deadly0/bull-board:latest

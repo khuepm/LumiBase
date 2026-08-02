@@ -13,6 +13,7 @@ import {
  */
 export function mapCacheProvider(seed: Record<string, string> = {}): CacheProvider {
   const store = new Map<string, string>(Object.entries(seed));
+  const tagIndex = new Map<string, Set<string>>();
   return {
     get: async <T = string>(key: string) => {
       const entry = await (async (): Promise<CacheEntry<T>> => {
@@ -35,8 +36,18 @@ export function mapCacheProvider(seed: Record<string, string> = {}): CacheProvid
         return { state: 'unavailable' };
       }
     },
-    set: async (key, value) => {
+    set: async (key, value, options) => {
       store.set(key, value);
+      if (options?.tags?.length) {
+        for (const tag of options.tags) {
+          let keys = tagIndex.get(tag);
+          if (!keys) {
+            keys = new Set();
+            tagIndex.set(tag, keys);
+          }
+          keys.add(key);
+        }
+      }
     },
     setNegative: async (key, options) => {
       void options;
@@ -44,6 +55,12 @@ export function mapCacheProvider(seed: Record<string, string> = {}): CacheProvid
     },
     delete: async (key) => {
       store.delete(key);
+    },
+    invalidateByTag: async (tag) => {
+      const keys = tagIndex.get(tag);
+      if (!keys) return;
+      for (const key of keys) store.delete(key);
+      tagIndex.delete(tag);
     },
     increment: async (key, by = 1) => {
       const next = Number(store.get(key) ?? '0') + by;

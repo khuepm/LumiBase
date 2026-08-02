@@ -45,6 +45,9 @@ class FakeCache implements CacheProvider {
     void options;
     this.store.set(key, JSON.stringify({ __lumi: 'neg', v: 1 }));
   }
+  async invalidateByTag(): Promise<void> {
+    // not used in permission-cache tests
+  }
 }
 
 const BUNDLE: PermissionBundle = {

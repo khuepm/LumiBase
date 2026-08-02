@@ -1,5 +1,95 @@
 import type { CacheProvider } from './interfaces/cache';
 
+/** Wire format for {@link createSwrCache} entries stored in CacheProvider. */
+export interface SwrCacheEntry<T> {
+  v: T;
+  /** Milliseconds since epoch when the entry becomes stale (soft TTL). */
+  softExpiresAt: number;
+}
+
+export interface SwrCacheOptions<T> {
+  cache: CacheProvider;
+  /** Seconds after write before serving stale + background refresh. */
+  softTtl: number;
+  /** Seconds before the backend entry expires and reads block on recompute. */
+  hardTtl: number;
+  compute: (key: string) => Promise<T>;
+  /**
+   * Hook for background refresh (e.g. `ctx.waitUntil` on Workers). Defaults to
+   * fire-and-forget when omitted.
+   */
+  schedule?: (p: Promise<unknown>) => void;
+}
+
+export interface SwrCache<T> {
+  get(key: string): Promise<T>;
+}
+
+/**
+ * Single-flight + stale-while-revalidate cache helper (design §5.2).
+ *
+ * **Scope:** in-flight coalescing is per-process instance only. Multiple
+ * instances may still recompute the same key in parallel — acceptable because
+ * herd is reduced from N_requests to N_instances.
+ */
+export function createSwrCache<T>(opts: SwrCacheOptions<T>): SwrCache<T> {
+  const inflight = new Map<string, Promise<T>>();
+  const schedule = opts.schedule ?? ((p: Promise<unknown>) => {
+    void p.catch(() => undefined);
+  });
+
+  async function recompute(key: string): Promise<T> {
+    const existing = inflight.get(key);
+    if (existing) return existing;
+
+    const promise = (async () => {
+      try {
+        const value = await opts.compute(key);
+        const entry: SwrCacheEntry<T> = {
+          v: value,
+          softExpiresAt: Date.now() + opts.softTtl * 1000,
+        };
+        await opts.cache.set(key, JSON.stringify(entry), { ttl: opts.hardTtl });
+        return value;
+      } finally {
+        inflight.delete(key);
+      }
+    })();
+
+    inflight.set(key, promise);
+    return promise;
+  }
+
+  return {
+    async get(key: string): Promise<T> {
+      const raw = await opts.cache.get<string | SwrCacheEntry<T>>(key);
+      if (raw !== null) {
+        try {
+          const parsed: SwrCacheEntry<T> =
+            typeof raw === 'string' ? (JSON.parse(raw) as SwrCacheEntry<T>) : raw;
+          if (
+            parsed &&
+            typeof parsed === 'object' &&
+            'v' in parsed &&
+            typeof parsed.softExpiresAt === 'number'
+          ) {
+            const now = Date.now();
+            if (now < parsed.softExpiresAt) {
+              return parsed.v;
+            }
+            const refresh = recompute(key);
+            schedule(refresh);
+            return parsed.v;
+          }
+        } catch {
+          // Corrupt entry — fall through to blocking recompute.
+        }
+      }
+      return recompute(key);
+    },
+  };
+}
+
 export interface NegativeCacheOptions {
   cache: CacheProvider;
   /** Base TTL in seconds (before jitter). */

@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { deliverRouter } from '../routes/deliver';
+import type { EdgeCacheProvider } from '@lumibase/runtime';
 
 /**
  * Route-level tests for Delivery API HTTP caching
@@ -40,10 +41,13 @@ function fakeDb(queue: Row[][]) {
   return db;
 }
 
-function appWith(db: ReturnType<typeof fakeDb>) {
+function appWith(db: ReturnType<typeof fakeDb>, edgeCache?: EdgeCacheProvider) {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
     c.set('db', db as never);
+    if (edgeCache) {
+      c.set('runtime', { edgeCache } as AppEnv['Variables']['runtime']);
+    }
     await next();
   });
   app.route('/api/v1/deliver', deliverRouter);
@@ -148,5 +152,21 @@ describe('GET /deliver/page — HTTP caching', () => {
 
     expect(res.status).toBe(404);
     expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('calls edgeCache.put on a cacheable 200 response (Req 1.6)', async () => {
+    const db = fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]);
+    const put = vi.fn(async (_req: Request, _response: Response) => undefined);
+    const match = vi.fn(async (_req: Request) => null);
+    const edgeCache: EdgeCacheProvider = { match, put };
+
+    const res = await appWith(db, edgeCache).request(URL);
+
+    expect(res.status).toBe(200);
+    expect(match).toHaveBeenCalledOnce();
+    expect(put).toHaveBeenCalledOnce();
+    const stored = put.mock.calls[0]?.[1];
+    expect(stored).toBeInstanceOf(Response);
+    expect((stored as Response).status).toBe(200);
   });
 });

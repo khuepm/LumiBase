@@ -4,6 +4,7 @@ import { users } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { PermissionService, type PermissionBundle } from '../services/permission-service';
 import { isFrontendAudience } from '../services/auth/token-audience';
+import { getRequestContext, mergeRequestContext } from './request-context';
 
 const STUDIO_CLIENT_HEADER = 'x-lumi-client';
 const STUDIO_CLIENT_VALUE = 'studio';
@@ -86,31 +87,7 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
     );
   }
 
-  // Request_Context_Bundle (high-load-cache-readiness Req 10; design §6.4):
-  // `withSiteMembership` runs earlier in the chain and already resolved the
-  // permission bundle for this exact principal + site (`c.set('access', …)`).
-  // Reuse it rather than calling `PermissionService.bundle()` a second time;
-  // recompute only when it is absent (a principal path that did not attach it,
-  // or this middleware mounted standalone in a unit test).
-  const bundle =
-    c.get('access') ??
-    (await new PermissionService({
-      db: c.get('db'),
-      cache: c.get('runtime').cache,
-      ctx: {
-        userId: auth.userId,
-        siteId: c.get('siteId'),
-        // Always forward it — `ctx.roleId` is the only role source
-        // `PermissionService` has for a principal with no user/API-key row.
-        // Hardcoding `null` here is what made public grants inert on the
-        // content API (fixed in de1691b8); the fallback must not regress it.
-        roleId: auth.roleId ?? null,
-        user: { id: auth.userId, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) },
-        ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-        headers: collectHeaders(c.req.raw.headers),
-        apiKey: auth.apiKey ?? null,
-      },
-    }).bundle());
+  const bundle = await resolveAccessBundle(c, auth);
 
   if (!bundle.appAccess) {
     return c.json(
@@ -136,8 +113,41 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
   }
 
   c.set('access', bundle);
+  mergeRequestContext(c, { accessBundle: bundle });
   return next();
 };
+
+async function resolveAccessBundle(
+  c: Parameters<MiddlewareHandler<AppEnv>>[0],
+  auth: AuthPrincipal,
+): Promise<PermissionBundle> {
+  const existing = c.get('access');
+  if (existing) return existing;
+
+  const ctx = getRequestContext(c);
+  if (ctx.accessBundle) {
+    c.set('access', ctx.accessBundle);
+    return ctx.accessBundle;
+  }
+
+  const bundle = await new PermissionService({
+    db: c.get('db'),
+    cache: c.get('runtime').cache,
+    ctx: {
+      userId: auth.userId ?? null,
+      siteId: c.get('siteId'),
+      roleId: auth.roleId ?? null,
+      user: { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) },
+      ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+      headers: collectHeaders(c.req.raw.headers),
+      apiKey: auth.apiKey ?? null,
+    },
+  }).bundle();
+
+  c.set('access', bundle);
+  mergeRequestContext(c, { accessBundle: bundle });
+  return bundle;
+}
 
 declare module '../env' {
   interface Variables {

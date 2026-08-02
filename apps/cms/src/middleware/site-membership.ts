@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { userSites, users } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { PermissionService } from '../services/permission-service';
+import { getRequestContext, mergeRequestContext } from './request-context';
 
 // `/api/v1/auth/register` is NOT public: it is an admin-only user-creation
 // endpoint, so the caller must also be bound to the selected site.
@@ -58,14 +59,10 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
     return next();
   }
 
-  // Request_Context_Bundle (high-load-cache-readiness Req 10; design §6.4):
-  // reuse the `users` row `withAuth` already resolved for this request instead
-  // of issuing a second identical lookup. Falls back to querying when the
-  // bundle is absent — a principal path that did not populate it, or this
-  // middleware mounted standalone in a unit test — so the guard stays
-  // independently correct.
-  const cachedPrincipal = c.get('principal');
-  const resolved = cachedPrincipal?.user ?? (await resolveUser(c.get('db'), auth));
+  const ctx = getRequestContext(c);
+  const resolved =
+    ctx.user ??
+    (await resolveUser(c.get('db'), auth));
   if (!resolved) {
     // Cloudflare Access principals authenticate via a trusted CF Access JWT
     // (see `withAuth`'s "Cloudflare Access Assertion" branch) and are not
@@ -85,6 +82,10 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
     );
   }
 
+  if (!ctx.user) {
+    mergeRequestContext(c, { user: resolved });
+  }
+
   const nextAuth: AuthPrincipal = {
     ...auth,
     userId: resolved.id,
@@ -99,24 +100,15 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
     return next();
   }
 
-  // Reuse the membership `withAuth` already resolved for this same site
-  // (Request_Context_Bundle, Req 10). A non-bootstrap principal that reached
-  // this point through `withAuth` necessarily passed its membership gate, so a
-  // cached membership is authoritative; query only when the bundle is absent.
-  const hasMembership = cachedPrincipal
-    ? cachedPrincipal.membership !== null
-    : Boolean(
-        (
-          await c
-            .get('db')
-            .select({ userId: userSites.userId })
-            .from(userSites)
-            .where(and(eq(userSites.userId, resolved.id), eq(userSites.siteId, siteId)))
-            .limit(1)
-        )[0],
-      );
+  const membershipKnown = ctx.membership !== undefined;
+  const membership = ctx.membership
+    ?? (await loadMembership(c.get('db'), resolved.id, siteId));
 
-  if (!hasMembership) {
+  if (!membershipKnown && membership) {
+    mergeRequestContext(c, { membership });
+  }
+
+  if (!membership) {
     return c.json(
       { errors: [{ code: 'TENANT_FORBIDDEN', message: 'Authenticated user is not a member of the selected site.' }] },
       403,
@@ -152,10 +144,41 @@ async function resolveUser(
   return null;
 }
 
+async function loadMembership(
+  db: AppEnv['Variables']['db'],
+  userId: string,
+  siteId: string,
+): Promise<{ roleId: string | null } | null> {
+  const [row] = await db
+    .select({ roleId: userSites.roleId })
+    .from(userSites)
+    .where(and(eq(userSites.userId, userId), eq(userSites.siteId, siteId)))
+    .limit(1);
+  // Membership is the ROW, not the role. `user_sites.role_id` is nullable and
+  // SCIM provisioning inserts membership without one, so gating on `roleId`
+  // would 403 a real member out of the whole tenant — a lockout, not a
+  // permission decision. Role resolution is `PermissionService`'s job.
+  return row ? { roleId: row.roleId ?? null } : null;
+}
+
 async function attachAccessBundle(
   c: Parameters<MiddlewareHandler<AppEnv>>[0],
   auth: AuthPrincipal,
 ): Promise<void> {
+  const existingAccess = c.get('access');
+  const ctx = getRequestContext(c);
+  if (existingAccess) {
+    if (!ctx.accessBundle) {
+      mergeRequestContext(c, { accessBundle: existingAccess });
+    }
+    return;
+  }
+
+  if (ctx.accessBundle) {
+    c.set('access', ctx.accessBundle);
+    return;
+  }
+
   const runtime = c.get('runtime');
   const headers: Record<string, string> = {};
   c.req.raw.headers.forEach((value, key) => {
@@ -178,4 +201,5 @@ async function attachAccessBundle(
   }).bundle();
 
   c.set('access', bundle);
+  mergeRequestContext(c, { accessBundle: bundle });
 }

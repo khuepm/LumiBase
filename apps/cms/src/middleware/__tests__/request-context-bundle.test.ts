@@ -235,4 +235,29 @@ describe('Request_Context_Bundle — middleware stay independent when mounted al
     // Two identity reads because there was no cache to reuse.
     expect(reads()).toBe(2);
   });
+
+  it('treats a membership row with no role_id as membership, not a lockout', async () => {
+    // `user_sites.role_id` is nullable and SCIM provisioning inserts membership
+    // without one. Gating the tenant on `roleId` would 403 a real member out of
+    // the whole site — a lockout, not a permission decision. Role resolution
+    // belongs to PermissionService, which runs after this guard.
+    const { db } = makeCountingDb([
+      [{ id: 'user-1', externalId: null, email: 'scim@example.com', isBootstrap: false }],
+      [{ roleId: null }],
+    ]);
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('auth', { userId: 'user-1', email: 'scim@example.com', raw: {} });
+      c.set('siteId', 'site-a');
+      c.set('db', db);
+      c.set('runtime', runtimeStub);
+      await next();
+    });
+    app.use('*', withSiteMembership());
+    app.get('/api/v1/items/posts', (c) => c.json({ ok: true }));
+
+    const res = await app.request('/api/v1/items/posts');
+
+    expect(res.status).toBe(200);
+  });
 });

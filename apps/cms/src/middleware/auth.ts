@@ -14,6 +14,7 @@ import {
   isPublishablePrefix,
   readAllowedOrigins,
 } from '../services/api-key-publishable';
+import { mergeRequestContext } from './request-context';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -38,29 +39,6 @@ export function shouldTouchApiKey(lastUsedAt: Date | null | undefined, now: Date
   if (intervalMs === 0) return true;
   if (!lastUsedAt) return true;
   return now.getTime() - lastUsedAt.getTime() >= intervalMs;
-}
-
-/**
- * Populate the Request_Context_Bundle (`c.set('principal', …)`) from the
- * `users` row + `user_sites` membership `withAuth` already resolved for this
- * request (high-load-cache-readiness Req 10; design §6.4). Downstream guards
- * read this instead of re-querying, so a single request performs at most one
- * `users` + one `userSites` lookup for identification.
- */
-function setPrincipalContext(
-  c: Parameters<MiddlewareHandler<AppEnv>>[0],
-  user: { id: string; externalId: string | null; email: string; isBootstrap: boolean | null },
-  membership: { roleId: string | null } | undefined,
-): void {
-  c.set('principal', {
-    user: {
-      id: user.id,
-      externalId: user.externalId,
-      email: user.email,
-      isBootstrap: user.isBootstrap === true,
-    },
-    membership: membership ? { roleId: membership.roleId ?? 'member' } : null,
-  });
 }
 
 const getJwks = (certsUrl: string) => {
@@ -267,6 +245,16 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
+      mergeRequestContext(c, {
+        user: {
+          id: user.id,
+          externalId: String(payload.sub),
+          email,
+          isBootstrap: user.isBootstrap,
+        },
+        membership: membership?.roleId ? { roleId: membership.roleId } : null,
+      });
+
       const principal: AuthPrincipal = {
         userId: user.id,
         externalId: String(payload.sub),
@@ -278,7 +266,6 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       // Request_Context_Bundle (Req 10; design §6.4): cache the `users` row +
       // membership just resolved so `withSiteMembership` reuses them instead of
       // re-querying for the same request.
-      setPrincipalContext(c, user, membership);
       return next();
     } catch (err) {
       console.warn('[withAuth] CF Access verification failed:', formatSafeError(err));
@@ -500,6 +487,16 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       // (`studio` vs `frontend`). `isFrontendUser` tracks it for the
       // `/me` surface; `withStudioAccess` enforces the hard wall using
       // the same claim carried on `raw`.
+      mergeRequestContext(c, {
+        user: {
+          id: user.id,
+          externalId: null,
+          email: typeof payload.email === 'string' ? payload.email : user.id,
+          isBootstrap: user.isBootstrap,
+        },
+        membership: membership?.roleId ? { roleId: membership.roleId } : null,
+      });
+
       const principal: AuthPrincipal = {
         userId,
         email: typeof payload.email === 'string' ? payload.email : undefined,
@@ -511,7 +508,6 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       // Request_Context_Bundle (Req 10; design §6.4): cache the `users` row +
       // membership just resolved so `withSiteMembership` reuses them instead of
       // re-querying for the same request.
-      setPrincipalContext(c, user, membership);
       return next();
     } catch (err) {
       console.warn('[withAuth] Custom JWT verification failed:', formatSafeError(err));

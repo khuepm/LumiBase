@@ -21,6 +21,7 @@ const CONTROL_PLANE_PATHS = [
   '/api/v1/settings',
   '/api/v1/teams',
   '/api/v1/users',
+  '/api/v1/utils/cache',
 ] as const;
 
 /**

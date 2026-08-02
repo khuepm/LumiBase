@@ -83,6 +83,9 @@ function fakeCache(): CacheProvider {
     async setNegative(key: string) {
       store.set(key, JSON.stringify({ __lumi: 'neg', v: 1 }));
     },
+    async invalidateByTag() {
+      // not used
+    },
   };
 }
 

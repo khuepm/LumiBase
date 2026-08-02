@@ -2,6 +2,7 @@ import { createMiddleware } from 'hono/factory';
 import { createRuntime } from '@lumibase/runtime';
 import type { AppEnv } from '../env';
 import type { RuntimeContext } from '@lumibase/runtime';
+import { recordCacheOperationEvent } from '../services/cache-observability';
 
 /**
  * Cached singleton runtime for Docker mode.
@@ -13,6 +14,19 @@ import type { RuntimeContext } from '@lumibase/runtime';
  * the runtime must be created fresh each time.
  */
 let dockerRuntime: RuntimeContext | null = null;
+
+function wireCacheObservability(runtime: RuntimeContext): void {
+  const previous = runtime.cache.onEvent;
+  runtime.cache.onEvent = (event) => {
+    recordCacheOperationEvent(event);
+    previous?.(event);
+  };
+}
+
+function prepareRuntime(runtime: RuntimeContext): RuntimeContext {
+  wireCacheObservability(runtime);
+  return runtime;
+}
 
 /**
  * Middleware that creates a RuntimeContext and injects it into the Hono
@@ -26,13 +40,13 @@ export const withRuntime = () =>
       // Singleton: reuse the runtime across requests since it holds connections.
       if (!dockerRuntime) {
         const envVars = { ...process.env, ...c.env };
-        dockerRuntime = createRuntime(envVars as unknown as Record<string, unknown>);
+        dockerRuntime = prepareRuntime(createRuntime(envVars as unknown as Record<string, unknown>));
       }
       c.set('runtime', dockerRuntime);
     } else {
       // Cloudflare: create per-request because bindings are request-scoped.
       const envVars = { ...process.env, ...c.env };
-      const runtime = createRuntime(envVars as unknown as Record<string, unknown>);
+      const runtime = prepareRuntime(createRuntime(envVars as unknown as Record<string, unknown>));
       c.set('runtime', runtime);
     }
 
