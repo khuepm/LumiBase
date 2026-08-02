@@ -40,3 +40,4 @@ Thumbs.db
 # Coverage
 coverage/
 docs/.i18n/code-refs-report.json
+docs/.i18n/parity-report.json

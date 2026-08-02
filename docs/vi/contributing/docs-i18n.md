@@ -1,14 +1,14 @@
 ---
 title: Docs i18n Sync
 sourceLang: en
-version: 2
-lastUpdated: 2026-08-02T16:58:45.665Z
+version: 3
+lastUpdated: 2026-08-02T17:29:27.319Z
 translatedFrom: en
-sourceHash: 62d2d2e9de759062
+sourceHash: fe0bd18530a46592
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T16:58:45.665Z
-codeVerifiedHash: 62d2d2e9de759062
+codeVerified: 2026-08-02T17:29:27.319Z
+codeVerifiedHash: fe0bd18530a46592
 codeVerifiedClaims: 10
 ---
 
@@ -63,6 +63,9 @@ và CI commit "sync en/vi translations" mỗi lần push docs trong khi không d
 # Detect only — classify files, write log + report, change no docs.
 pnpm docs:i18n:detect
 
+# Structural parity of every pair (or one rel). Read-only.
+pnpm docs:i18n:parity
+
 # Preserve at-risk Vietnamese content + stamp versions, but do not translate.
 pnpm docs:i18n:preserve
 
@@ -70,25 +73,40 @@ pnpm docs:i18n:preserve
 pnpm docs:i18n:sync
 ```
 
-Dịch một file bằng tay — quy trình thực tế — gồm bốn bước:
+Dịch một file bằng tay — quy trình thực tế — gồm năm bước:
 
 ```bash
 # 1. Đọc docs/<src>/<rel>, viết bản dịch vào docs/<tgt>/<rel>.
-# 2. Kiểm tra các claim của doc so với source tree (bắt buộc, trước khi stamp).
+# 2. Kiểm tra hai bên có còn là cùng một tài liệu.
+pnpm docs:i18n:parity <rel>
+
+# 3. Kiểm tra các claim của doc so với source tree (bắt buộc, trước khi stamp).
 pnpm docs:i18n:verify <rel>
 
-# 3. Ghi provenance cho cả hai locale (đừng tự viết front matter này bằng tay).
+# 4. Ghi provenance cho cả hai locale (đừng tự viết front matter này bằng tay).
 node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> --verified
 
-# 4. Xác nhận cặp đã up-to-date, rồi bỏ các artifact máy sinh.
+# 5. Xác nhận cặp đã up-to-date, rồi bỏ các artifact máy sinh.
 pnpm docs:i18n:detect
 git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md
 ```
 
-`--verified` từ chối ghi cờ `codeVerified` khi còn claim nào stale, và cũng từ chối
-khi một doc không có claim nào tooling kiểm được — "không có gì để kiểm" không phải
-là pass, nên file đó được stamp mà không kèm cờ và cần người đọc lại. Quy tắc từng
-file và backlog còn lại nằm ở `docs/.i18n/TASKS.md`.
+Ba checker, ba câu hỏi khác nhau, và sự phân chia đó là có chủ ý:
+`docs:i18n:detect` hỏi *cùng một source revision?*; `docs:i18n:parity` hỏi *bản dịch
+có phải cùng một tài liệu?*; `docs:i18n:verify` hỏi *những gì nó nói còn đúng với
+code?* Một cặp có thể pass một cái và fail hai cái còn lại.
+
+`stamp-pair.mjs` tự chạy check parity và **từ chối stamp** một cặp đã lệch — phía đích
+còn ở ngôn ngữ nguồn, mất mục, identifier bị dịch, link sai đích, phần cuối bị cắt.
+Stamp là thứ khiến một cặp đọc ra "up-to-date" ở mọi chỗ khác, nên nó là điểm cuối
+cùng còn chặn được một bản dịch tệ, và sau nó không có reviewer nào nữa. Chỉ dùng
+`--allow-structure-drift` cho trường hợp lệch có chủ ý, và nên đặt waiver
+`<!-- check-parity: allow <check> -->` trong doc để lý do nằm ngay cạnh chỗ lệch.
+`--verified` cũng từ chối khi còn claim nào stale, và từ chối khi một doc không có
+claim nào tooling kiểm được — "không có gì để kiểm" không phải là pass, nên file đó
+được stamp mà không kèm cờ và cần người đọc lại.
+
+Quy tắc từng file, thứ tự ưu tiên và backlog còn lại nằm ở `docs/.i18n/TASKS.md`.
 
 Environment variables:
 
@@ -108,8 +126,10 @@ Khi không có API key, `--apply` thoát với mã `2` và chỉ bạn sang
 `.github/workflows/docs-i18n-sync.yml` chạy khi có thay đổi dưới `docs/**` hoặc
 `scripts/docs-i18n/**`:
 
-- **Pull requests:** detect-only. Upload report dưới dạng artifact; không ghi
-  gì cả.
+- **Pull requests:** chạy detect + kiểm code-reference + kiểm parity, tất cả đều
+  report-only. Upload các report dưới dạng artifact; không ghi gì cả. Report-only vì
+  corpus hiện có vẫn còn finding — cửa thực sự chặn hôm nay là `stamp-pair.mjs`, không
+  bản dịch mới nào qua được nó mà chưa được kiểm.
 - **Push lên `main`:** preservation + version stamp, rồi commit trở lại. Nó
   **không** dịch, và số cặp còn tồn đọng được in vào job summary để backlog luôn
   nhìn thấy được.

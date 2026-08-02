@@ -1,293 +1,393 @@
-# Nhiệm vụ: dịch docs EN↔VI — LumiBase
+# Giao việc: dịch docs EN⇄VI — LumiBase
 
-> ⚠️ **CẬP NHẬT 2026-08-02 — quy trình đã được chốt vào tooling.**
-> CI **không còn** giả vờ dịch. Job `push` của `docs-i18n-sync.yml` giờ chạy
-> `--preserve-only` (rescue nội dung dán sai locale + stamp version) và commit với
-> message đúng việc nó làm; `sync.mjs --apply` không còn âm thầm hạ cấp khi thiếu
-> `ANTHROPIC_API_KEY` mà **thoát mã 2**. `stamp-pair.mjs` ghi
-> `mtEngine: manual` / `syncStatus: human-translated` thay vì mạo nhận là output của
-> API. Nghĩa là: mọi file trong bảng dưới đây chỉ giảm đi khi có người thật sự dịch —
-> không có tiến trình nền nào làm hộ. Ảnh chụp tại 0.25.0: **143 cặp, 88 up-to-date,
-> 55 còn lại**.
->
-> ⚠️ **CẬP NHẬT 2026-07-25 — ĐỌC TRƯỚC KHI LÀM.**
-> PR [#205](https://github.com/khuepm/LumiBase/pull/205) **đã merge** ngày 2026-07-06 và
-> chỉ chứa batch 1 (17 file nhóm A). Chỉ dẫn "gộp vào PR #205" bên dưới **đã lạc hậu** —
-> PR đó đóng rồi, không thể thêm commit. 93 file còn lại hiện **không có PR nào đang mở**.
->
-> Việc còn lại phải mở **branch mới từ `main`** (ví dụ `docs/i18n-batch-2`) và một PR mới.
-> Không stack commit lên history đã merge.
->
-> Chạy `pnpm docs:i18n:detect` để lấy danh sách hiện hành thay vì tin bảng ở mục 3 —
-> bảng đó chụp trạng thái tháng 7 và có thể đã lệch.
+> **Ảnh chụp: 2026-08-02, tại `v0.25.0`.** 146 cặp doc — **86 up-to-date, 60 còn việc**,
+> 0 conflict. Con số này lấy từ `pnpm docs:i18n:detect`; chạy lại trước khi bắt đầu vì
+> bảng ở [§7](#7-bảng-nhiệm-vụ) là ảnh chụp, còn detect là sự thật.
 
-**Mục tiêu:** dịch thủ công số file còn lại (+ conflict cần người quyết).
-**Không dùng `ANTHROPIC_API_KEY`** — mọi bản dịch phải được một LLM đọc và viết tay
-(xem "Vì sao thủ công" ở cuối file).
-
-Tài liệu này viết cho **bất kỳ agent/LLM nào** nhận việc tiếp — có thể là một agent
-duy nhất chạy tuần tự qua nhiều phiên, hoặc nhiều agent chạy song song mỗi agent
-nhận một số file. Đọc kỹ mục "Chạy song song" trước khi bắt đầu nếu bạn không phải
-agent duy nhất đang làm việc trên branch này.
+Tài liệu này là **bản giao việc đầy đủ** cho một agent/LLM nhận dịch. Đọc hết §1–§6
+trước khi sửa file đầu tiên. Nó được viết để bạn không cần hỏi ai: mọi quyết định
+thường gặp đều đã có câu trả lời ở đây, và những gì bạn **không** được tự quyết đều
+được ghi rõ ở [§6](#6-khi-nào-dừng-lại-và-báo-lại).
 
 ---
 
-## 0. Việc đã xong (đừng làm lại)
+## 1. Bối cảnh bắt buộc phải biết
 
-17 file nhóm A đã dịch, 3 commit trên branch này (`ae842bd7`, `a463330c`, `07042a56`).
-Không nằm trong bảng nhiệm vụ dưới đây. Nếu bạn thấy chúng vẫn báo `planned` khi chạy
-detect, đó là do bạn chưa `git pull` bản mới nhất của branch — pull trước khi chạy detect.
+**Không có machine translation.** Không có `ANTHROPIC_API_KEY`, sẽ không có, và
+`sync.mjs --apply` thoát mã 2 nếu bạn thử. Bản dịch do bạn — một LLM đọc trực tiếp
+tài liệu nguồn — viết ra. Chi tiết quyết định: [§9](#9-vì-sao-thủ-công).
 
-## 1. Quy trình cho MỖI file (bắt buộc, đã kiểm chứng)
+**Sẽ không có ai review bản dịch của bạn.** Chủ repo đã nói rõ điều này. Không có
+người thứ hai đọc lại tiếng Việt hay tiếng Anh bạn viết trước khi nó lên `main` và
+ra trang docs công khai. Hệ quả trực tiếp, và là điều quan trọng nhất trong tài liệu
+này:
 
-1. **Đọc file nguồn**: `docs/<src>/<rel>` (cột "Nguồn→Đích" trong bảng cho biết `<src>`).
-2. **Viết bản dịch** vào `docs/<tgt>/<rel>`. Quy tắc dịch:
-   - Giữ nguyên: code block, đường dẫn file, tên biến/hàm, URL, tên lệnh CLI, YAML/JSON key.
-   - Dịch: văn xuôi, mô tả, tiêu đề, nội dung bảng (trừ tên cột kỹ thuật).
-   - Thuật ngữ kỹ thuật theo quy ước ngành có thể giữ tiếng Anh nếu bản dịch tiếng Việt
-     kỹ thuật thường giữ nguyên (ví dụ "headless CMS", "Edge", "runtime", "webhook").
-   - Nếu file đích **đã tồn tại** (nhóm B/C) — đây là việc dịch lại/ghi đè, không phải
-     tạo mới. Đọc bản cũ trước để giữ phong cách nhất quán nếu còn phù hợp.
-3. **Kiểm tra claim về source code** — BẮT BUỘC, trước khi stamp:
-   ```bash
-   pnpm docs:i18n:verify <rel>
-   ```
-   Script này trích các khẳng định file/env-var/API-route trong doc rồi đối chiếu
-   với source tree. Vì sao bắt buộc: hash khớp **không** có nghĩa nội dung đúng —
-   hai bản dịch có thể khớp nhau hoàn hảo và cùng sai (cùng mô tả một endpoint đã
-   bị xoá). Nếu có finding, sửa doc (hoặc sửa code) trước khi đi tiếp.
+> **Bạn là reviewer của chính mình, và ba script là đồng nghiệp duy nhất của bạn.**
+> Chúng không đọc được văn phong, nhưng chúng bắt được đúng những lỗi mà việc không
+> có reviewer sẽ để lọt: dịch thiếu một mục, dịch cả tên biến, để nguyên tiếng Anh,
+> cắt mất cái bảng cuối file, tự phát minh một đoạn không có trong nguồn.
 
-   Nếu script báo `unverifiable` cho file của bạn thì nó **không** pass — chỉ nghĩa
-   là tooling không có gì để kiểm. File đó cần người đọc lại bằng mắt, và stamp
-   **không** kèm `--verified`.
+| Script | Trả lời câu hỏi | Chạy khi nào |
+|---|---|---|
+| `pnpm docs:i18n:parity <rel>` | Hai bên **có phải cùng một tài liệu** không? (heading, code, link, ngôn ngữ, độ dài) | Sau khi viết bản dịch |
+| `pnpm docs:i18n:verify <rel>` | Những gì doc **khẳng định về source code** còn đúng không? | Sau parity, trước stamp |
+| `node scripts/docs-i18n/stamp-pair.mjs …` | Ghi provenance. **Tự chạy lại cả hai check trên và từ chối stamp nếu fail.** | Cuối cùng |
 
-4. **Stamp provenance** — BẮT BUỘC, đừng tự viết front matter tay:
-   ```bash
-   node scripts/docs-i18n/stamp-pair.mjs <rel> <src> --verified
-   ```
-   Ví dụ: file #1 `architecture/physical-collections.md` có `src=en` →
-   `node scripts/docs-i18n/stamp-pair.mjs architecture/physical-collections.md en --verified`
-   Script dùng chính các hàm hash/front-matter của `sync.mjs` nên provenance khớp
-   tuyệt đối với cách tooling chính thức ghi. `--verified` chạy lại bước 3 và **từ
-   chối** ghi cờ `codeVerified` nếu còn finding — nên không thể đánh dấu "khớp hoàn
-   toàn" cho một doc chưa được kiểm. Bỏ `--verified` khi file thuộc diện
-   `unverifiable`.
+`stamp-pair` là cửa cuối. Nó không stamp được thì bản dịch **chưa xong** — đừng
+commit rồi tính sau, và đừng dùng `--allow-structure-drift` để đi qua (xem
+[§4](#4-khi-checker-từ-chối)).
 
-   Version được đánh cho **cả hai** locale, và chỉ tăng khi nội dung thực sự đổi —
-   stamp lại nhiều lần không làm version phình lên, nên số version hai bên luôn
-   so sánh được với nhau.
+---
 
-5. **Xác minh cặp EN/VI**:
-   ```bash
-   nvm use 24   # bắt buộc — corepack/pnpm lỗi trên Node cũ hơn
-   node scripts/docs-i18n/sync.mjs
-   ```
-   Chạy chế độ plan (không flag), chỉ đọc. Xem `docs/.i18n/last-report.json`, tìm
-   `rel` của bạn — phải là `"type": "up-to-date"`. Nếu không, đọc lại bước 2/4.
-6. **Dọn artifact máy trước khi commit** — bước này dễ quên và sẽ tạo diff rác:
-   ```bash
-   git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md
-   ```
-   Hai file này bị ghi lại mỗi lần chạy detect ở bước 5. Chúng **không phải** nội
-   dung dịch — không commit chúng cùng bản dịch (nếu cả nhóm đồng ý bạn có thể
-   commit chúng RIÊNG ở cuối, nhưng không bắt buộc và dễ gây conflict nếu nhiều agent
-   cùng ghi).
-7. **Cập nhật bảng nhiệm vụ** (mục 3) — đổi cột Trạng thái của dòng đó thành `DONE`
-   và cột Agent thành tên/id của bạn, trong CÙNG commit với bản dịch.
-8. **Commit**:
-   ```bash
-   git add docs/en/<rel> docs/vi/<rel> docs/.i18n/TASKS.md
-   git commit --no-verify -m "docs(i18n): translate <rel> to <VI|EN>"
-   ```
-   `--no-verify` vì pre-commit hook chạy toàn bộ test suite (chậm, không liên quan
-   tới thay đổi docs-only). Không cần chạy test cho thay đổi chỉ đụng `docs/`.
+## 2. Quy trình cho MỖI file
 
-## 2. Chạy song song — quy tắc bắt buộc để tránh xung đột
+Làm đúng thứ tự. Mỗi bước có lý do, không bước nào là hình thức.
 
-Nếu bạn là một trong nhiều agent làm việc đồng thời trên branch `docs/i18n-full-translation`:
+### Bước 0 — Xác định chiều dịch, đừng đoán
 
-- **Claim trước khi dịch.** Trước khi bắt đầu một file: `git pull --rebase`, mở bảng
-  ở mục 3, chọn một hoặc vài dòng còn `TODO`, đổi ngay thành `CLAIMED` + tên bạn,
-  commit + push ngay lập tức (commit rỗng về nội dung dịch, chỉ đổi bảng). Việc này
-  là "khóa" tạm — agent khác pull thấy `CLAIMED` sẽ bỏ qua dòng đó.
-- **Một file = một unit, không chia nhỏ hơn.** Đừng hai agent cùng sửa một file.
-  Nếu bạn thấy dòng đã `CLAIMED` hoặc `DONE`, chuyển sang file khác.
-- **Commit nhỏ, push thường xuyên.** Mỗi file một commit riêng (như mục 1 bước 7),
-  `git pull --rebase` trước mỗi push để giảm xung đột. Nếu `push` bị từ chối do
-  người khác đã push trước, `git pull --rebase` rồi push lại — không `--force`.
-- **Xung đột chỉ nên xảy ra ở `TASKS.md`** (bảng này) vì mỗi agent chỉ đụng file
-  docs riêng của mình. Nếu conflict xảy ra ở bảng, giữ **cả hai** thay đổi trạng thái
-  (không có dòng nào bị mất) — merge tay theo dòng, đây là bảng text nên dễ resolve.
-- **Không ai được sửa nhóm E** (`features/user-management.md`) — xem mục 4.
-- **Không ai commit `docs/.i18n/last-report.json` hoặc `docs/i18n-sync-log.md`**
-  trừ khi bạn là agent cuối cùng chốt cả PR — tránh nhiều agent giẫm lên artifact
-  máy sinh của nhau.
+```bash
+pnpm docs:i18n:detect          # → docs/.i18n/last-report.json
+```
 
-Nếu bạn là agent DUY NHẤT (chạy tuần tự qua nhiều phiên), vẫn nên cập nhật bảng
-(bỏ qua bước "claim trước", cứ đánh `DONE` sau khi xong) để phiên sau biết tiến độ
-chính xác mà không cần chạy lại detect.
+Tìm `rel` của bạn trong `actions`. Đọc `sourceLocale` / `targetLocale`. **Đây là chiều
+dịch, không phải bảng §7** (bảng có thể lệch). Một số doc là **VI-source** với bản EN
+là bản dịch — sửa sai chiều là ghi đè lên bản gốc do người viết.
 
-## 3. Bảng nhiệm vụ
+Không bao giờ sửa nội dung phía **nguồn** để làm cho parity xanh. Nguồn là sự thật;
+bạn chỉ được sửa nguồn khi chính nó sai về mặt kỹ thuật, và khi đó xem [§6](#6-khi-nào-dừng-lại-và-báo-lại).
 
-> ⚠️ **Số liệu trong bảng này là ảnh chụp tháng 7 và ĐÃ LỆCH.** Nguồn sự thật là
-> `pnpm docs:i18n:detect` → `docs/.i18n/last-report.json`. Chạy nó trước khi claim
-> file, đừng tin cột Trạng thái ở đây.
->
-> **Ảnh chụp 2026-07-25** (sau đợt làm trên branch `claude/role-permission-hierarchy-vny49f`):
-> 141 cặp — **62 up-to-date**, **79 còn lại**. Đã xong trong đợt đó:
->
-> - 3 file thiếu bản EN → còn 1 (`features/permission-builder-directus-investigation.md`, 1051 dòng)
-> - 16 file `docs/en/` chứa tiếng Việt → còn 6: `features/ai-first-specification.md` (315),
->   `roadmap/post-ga-walkthrough.md` (234), `roadmap/studio-content-slices.md` (211),
->   `features/collection-preview.md` (157), `ui/studio-ui-spec.md` (138)
-> - Chưa chạm: 28 file thiếu bản VI (~5700 dòng), 42 cặp `source changed` (~5854 dòng),
->   3 conflict cần người quyết (`features/user-management.md`, `mcp/index.md`,
->   `mcp/mcp-application-analysis.md`)
->
-> Nhóm `docs/en/` chứa tiếng Việt được ưu tiên trước vì EN là locale mặc định — người
-> đọc English đang bị phục vụ tiếng Việt, đó là lỗi lộ ra ngoài nặng nhất trong backlog.
+### Bước 1 — Đọc nguồn hết một lượt trước khi viết chữ nào
 
-Sắp theo nhóm rồi theo độ dài tăng dần trong nhóm. Ưu tiên làm nhóm A/D trước (an
-toàn — chỉ tạo file mới hoặc dịch chiều hiếm, không ghi đè). Nhóm B/C ghi đè nội
-dung đang có ở phía đích — đọc kỹ bước 2 (mục 1) trước khi ghi.
+Đọc `docs/<src>/<rel>` từ đầu đến cuối. Nếu file đích đã tồn tại (nhóm B/C), đọc luôn
+bản cũ: nó có thể chứa thuật ngữ, cách diễn đạt đã dùng nhất quán ở các file khác —
+giữ lại nếu còn đúng. Bạn đang **ghi đè** một bản dịch, không phải tạo mới.
 
-| # | Nhóm | File (rel) | Nguồn→Đích | Dòng | Trạng thái | Agent |
+### Bước 2 — Viết bản dịch
+
+Quy tắc, theo mức độ nghiêm ngặt giảm dần:
+
+**Tuyệt đối giữ nguyên, byte-for-byte:**
+- Nội dung trong code fence có tag ngôn ngữ (` ```bash `, ` ```ts `, ` ```sql `, ` ```json `…).
+  Chỉ **comment** trong đó (`#`, `//`, `--`) được dịch.
+- Mọi thứ trong backtick: tên biến, tên hàm, đường dẫn file, tên bảng, env var,
+  HTTP method + path, tên lệnh CLI, key YAML/JSON. `LUMIBASE_NEGATIVE_CACHE_TTL`
+  không có bản dịch tiếng Việt. `role flags OR active policy flags` nằm trong
+  backtick vì nó là biểu thức code — **không** dịch thành `cờ role OR cờ policy`
+  (lỗi thật đã từng xảy ra ở `operations/upgrades.md`).
+- URL và đích của link. `[text](./features/caching.md)` → dịch `text`, giữ nguyên đường dẫn.
+- Cấu trúc markdown: số lượng và cấp heading, số bảng và số dòng mỗi bảng, số item
+  mỗi list, số code fence.
+
+**Được dịch:** văn xuôi, tiêu đề, nội dung ô bảng (trừ ô chứa code/identifier),
+alt text, label trong sơ đồ ASCII/mermaid, comment trong code fence.
+
+**Giữ tiếng Anh theo quy ước ngành** khi văn viết kỹ thuật tiếng Việt thường giữ:
+headless CMS, Edge, runtime, webhook, middleware, cache, endpoint, deploy, rollback,
+migration, front matter, placeholder. Đừng dịch cưỡng ép ("phần mềm trung gian").
+
+**Không được làm:**
+- Không thêm nội dung không có trong nguồn (không "giải thích thêm cho rõ").
+- Không bỏ mục, bỏ ghi chú, bỏ cảnh báo vì thấy dài.
+- Không tự sửa số liệu, version, tên file, số port cho "hợp lý hơn".
+- Không dịch anchor trong link nội trang thành tiếng Việt rồi để lệch với heading:
+  nếu bạn dịch heading, anchor `#…` trong cùng file phải đổi theo cho khớp slug mới.
+
+### Bước 3 — Tự review, trước khi chạy script
+
+Script không đọc được nghĩa. Bạn tự làm việc này, và làm thật:
+
+- [ ] Đọc lại bản dịch **không nhìn nguồn**. Nó có tự đứng được như một tài liệu không?
+- [ ] Đối chiếu từng heading với nguồn: đủ, đúng thứ tự, đúng cấp.
+- [ ] Mỗi câu khẳng định kỹ thuật ở bản dịch: nó có đúng là điều nguồn nói? Không
+      mạnh hơn, không yếu hơn. Đặc biệt các câu có "phải", "không được", "luôn",
+      "không bao giờ" — dịch lệch một chữ ở đây là đổi nghĩa vận hành.
+- [ ] Con số, version, tên cột, tên constraint: khớp tuyệt đối.
+- [ ] Không còn đoạn nào sót lại ở ngôn ngữ nguồn.
+
+### Bước 4 — Ba script, theo đúng thứ tự
+
+```bash
+pnpm docs:i18n:parity <rel>     # cấu trúc: heading, code, link, ngôn ngữ, độ dài
+pnpm docs:i18n:verify <rel>     # claim về source code còn đúng
+node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> --verified
+```
+
+`<en|vi>` ở lệnh stamp là **locale nguồn** (bước 0), không phải locale bạn vừa viết.
+
+`--verified` chạy lại `verify` và **từ chối** ghi cờ `codeVerified` nếu còn claim
+stale — hoặc nếu doc không có claim nào script kiểm được (`unverifiable`). "Không có
+gì để kiểm" **không phải** là pass: khi đó bỏ `--verified`, và nói rõ trong PR rằng
+file đó chỉ được người đọc bằng mắt.
+
+### Bước 5 — Xác nhận cặp đã sạch
+
+```bash
+pnpm docs:i18n:detect
+```
+
+Mở `docs/.i18n/last-report.json`, tìm `rel` của bạn: phải là `"type": "up-to-date"`.
+Nếu không, quay lại bước 2 — đừng commit.
+
+### Bước 6 — Dọn artifact máy sinh
+
+```bash
+git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md
+```
+
+Hai file này bị ghi lại mỗi lần chạy detect. **Không commit chúng.** Workflow trên
+`main` tự cập nhật. Commit chúng chỉ tạo conflict với các agent khác và với CI.
+
+### Bước 7 — Cập nhật bảng §7 và commit
+
+Đổi `TODO` → `DONE` + ghi tên/id của bạn ở cột Agent, **trong cùng commit với bản dịch**:
+
+```bash
+git add docs/en/<rel> docs/vi/<rel> docs/.i18n/TASKS.md
+git commit --no-verify -m "docs(i18n): translate <rel> to <VI|EN>"
+```
+
+`--no-verify` vì pre-commit hook chạy toàn bộ test suite — chậm và không liên quan
+tới thay đổi chỉ đụng `docs/`. Đây là ngoại lệ duy nhất được phép bỏ hook.
+
+---
+
+## 3. Gom lô và mở PR
+
+**Một lô = một PR = một branch mới từ `main`.** Không stack lên PR đã merge, không
+thêm commit vào PR của người khác.
+
+```bash
+git fetch origin && git checkout -b docs/i18n-batch-<n> origin/main
+```
+
+Kích thước lô: **6–10 file hoặc ~500 dòng nguồn**, cái nào tới trước. Lô nhỏ để nếu
+có gì sai thì phạm vi sai nhỏ — không có reviewer nên đây là biện pháp giảm thiệt hại
+duy nhất còn lại. File > 500 dòng (`api/hono-api-spec.md`, `DEPLOYMENT-CHECKLIST.md`,
+`tutorials/nextjs-quickstart.md`) đi **một mình một PR**.
+
+Mỗi file một commit. `git pull --rebase` trước mỗi push. **Không bao giờ `--force`.**
+
+### Thân PR — bắt buộc có, vì nó là thứ duy nhất được đọc
+
+Chủ repo sẽ merge dựa trên thân PR chứ không đọc từng dòng dịch. Viết nó cho đúng việc đó:
+
+```markdown
+## Files
+| rel | Chiều | Dòng nguồn | parity | verify | stamp |
+|---|---|---|---|---|---|
+| `features/caching.md` | en→vi | 60 | 0 problems | 4 claims, 0 findings | --verified |
+
+## Output của checker
+<dán nguyên output của parity + verify + stamp cho từng file>
+
+## Quyết định dịch cần biết
+- Thuật ngữ giữ tiếng Anh: …
+- File nào `unverifiable` và vì sao chỉ đọc bằng mắt: …
+- Có waiver `check-parity: allow` nào không, ở đâu, vì sao: …
+
+## Tôi KHÔNG làm gì
+- Không sửa phía nguồn (hoặc: có, ở file X, vì claim Y đã sai so với code — chi tiết…)
+- Không commit `last-report.json` / `i18n-sync-log.md`
+```
+
+Đừng tự merge PR. Báo lại và để chủ repo merge.
+
+---
+
+## 4. Khi checker từ chối
+
+| Tình huống | Làm gì |
+|---|---|
+| `parity` báo `language` | Bản dịch còn ở ngôn ngữ nguồn (hoặc bạn copy nguồn sang). Dịch lại thật. |
+| `parity` báo `headings` / `tables` / `code-fences` lệch số lượng | Bạn bỏ sót hoặc nhân đôi một mục. So từng heading với nguồn, tìm chỗ thiếu. |
+| `parity` báo `inline-code` | Bạn đã dịch một identifier, hoặc bỏ mất một đoạn có chứa nó. Trả lại đúng token gốc. |
+| `parity` báo `links` | Bạn dịch đường dẫn file, hoặc bỏ một cross-reference. Anchor nội trang được phép khác — nhưng **số lượng** phải khớp. |
+| `parity` báo `bulk` | Tỉ lệ độ dài lệch quá dải cho phép: gần như luôn là mất phần cuối file. Kiểm tra đoạn cuối. |
+| `verify` báo stale claim **ở bản dịch** | Bạn dịch sai tên file/env/route. Sửa lại cho khớp nguồn. |
+| `verify` báo stale claim **ở cả hai bên** | Doc đang nói sai về code. Xem [§6](#6-khi-nào-dừng-lại-và-báo-lại) — đừng dịch một điều sai cho đẹp. |
+| `verify` báo `unverifiable` | Stamp **không** kèm `--verified`, và ghi vào PR rằng file này chỉ được đọc bằng mắt. |
+
+**`--allow-structure-drift` gần như không bao giờ là câu trả lời.** Nó tồn tại cho
+trường hợp lệch có chủ ý thật (ví dụ một bảng chỉ có nghĩa ở một locale). Khi dùng:
+đặt waiver ngay trong doc để lý do nằm cạnh chỗ lệch, đừng để nó chỉ nằm trong lệnh:
+
+```markdown
+<!-- check-parity: allow tables -->
+```
+
+và nói rõ trong PR. Dùng cờ này để "cho xanh" là làm hỏng chính cái gate thay cho reviewer.
+
+---
+
+## 5. Chạy song song nhiều agent
+
+- **Claim trước khi dịch.** `git pull --rebase`, đổi dòng của bạn ở §7 thành
+  `CLAIMED` + tên, commit + push ngay (commit chỉ đổi bảng). Agent khác thấy
+  `CLAIMED` sẽ bỏ qua.
+- **Một file = một unit.** Không hai agent cùng một file. Thấy `CLAIMED`/`DONE` →
+  chuyển file khác.
+- Conflict chỉ nên xảy ra ở `TASKS.md`. Khi conflict, **giữ cả hai** thay đổi trạng
+  thái, merge tay theo dòng.
+- Không ai commit `last-report.json` / `i18n-sync-log.md`.
+
+---
+
+## 6. Khi nào DỪNG LẠI và báo lại
+
+Không tự quyết những việc dưới đây. Dừng, mô tả tình huống, hỏi chủ repo:
+
+1. **Hai bên đã trôi độc lập** — cả `docs/en` và `docs/vi` đều có nội dung được viết
+   riêng, không bên nào là bản dịch của bên kia. Không có cách máy nào biết bên nào
+   đúng. `parity` sẽ báo rất nhiều thứ; đừng "hợp nhất" bằng cách chọn bừa. (Hiện
+   detect báo **0 conflict**, nhưng tình huống này sẽ tái xuất khi có người sửa một
+   phía.)
+2. **Doc nói sai về code** (`verify` báo stale ở cả hai locale). Sửa doc cho khớp code
+   là việc đúng, nhưng nó là thay đổi **nội dung**, không phải dịch — và nó cần người
+   biết feature đó xác nhận. Báo lại kèm claim cụ thể + chỗ trong code chứng minh.
+3. **Nguồn tự mâu thuẫn** hoặc rõ ràng lạc hậu (ví dụ nói về endpoint đã bỏ). Đừng
+   dịch trung thành một điều sai, cũng đừng tự viết lại.
+4. **Bạn phải sửa phía nguồn** vì bất kỳ lý do gì.
+5. **File thuộc surface release** (`api/hono-api-spec.md`, `data-model.md`,
+   `agent-setup/prompt.md`, `DEPLOYMENT-CHECKLIST.md`) mà bạn phát hiện nội dung
+   không khớp code: đây là mục §5 của `.kiro/steering/v1-release-criteria.md`, ảnh
+   hưởng điều kiện tag 1.0.0. Báo ngay, đừng gộp vào commit dịch.
+
+---
+
+## 7. Bảng nhiệm vụ
+
+Ảnh chụp `pnpm docs:i18n:detect` tại 2026-08-02 (`v0.25.0`): 60 file. Sắp theo thứ tự
+ưu tiên đề xuất — **làm từ trên xuống**.
+
+Cột **parity** = số vấn đề cấu trúc mà cặp đó **đang** có trước khi bạn chạm vào
+(`—` = phía đích chưa tồn tại nên không so được). Số càng cao thì bản dịch cũ càng
+lệch, và `stamp-pair` sẽ không cho stamp tới khi bạn sửa hết — tính vào công sức.
+
+### Ưu tiên 1 — bản VI thực chất đang là tiếng Anh (3 file)
+
+Người đọc chọn tiếng Việt và nhận về tiếng Anh. Đây là lỗi lộ ra ngoài nặng nhất
+trong backlog.
+
+| # | File (rel) | Chiều | Dòng nguồn | parity | Trạng thái | Agent |
 |---|---|---|---|---|---|---|
-| 1 | A | `architecture/physical-collections.md` | en→vi | 81 | TODO | — |
-| 2 | A | `deployment/cloudflare-pages-ci.md` | en→vi | 92 | TODO | — |
-| 3 | A | `contributing/code-first-config.md` | en→vi | 95 | TODO | — |
-| 4 | A | `features/deployment-integrations.md` | en→vi | 100 | TODO | — |
-| 5 | A | `agent-setup/index.md` | en→vi | 106 | TODO | — |
-| 6 | A | `contributing/docs-i18n.md` | en→vi | 109 | TODO | — |
-| 7 | A | `devpost-xprize-submission.md` | en→vi | 109 | TODO | — |
-| 8 | A | `aio/README.md` | en→vi | 115 | TODO | — |
-| 9 | A | `agent-setup/codex.md` | en→vi | 119 | TODO | — |
-| 10 | A | `agent-setup/windsurf.md` | en→vi | 125 | TODO | — |
-| 11 | A | `agent-setup/claude-code.md` | en→vi | 130 | TODO | — |
-| 12 | A | `deployment/shared-domain-environments.md` | en→vi | 135 | TODO | — |
-| 13 | A | `agent-setup/cursor.md` | en→vi | 140 | TODO | — |
-| 14 | A | `features/push-notifications.md` | en→vi | 146 | TODO | — |
-| 15 | A | `cdc/setup-materialized-engine.md` | en→vi | 153 | TODO | — |
-| 16 | A | `contributing/index.md` | en→vi | 153 | TODO | — |
-| 17 | A | `cdc/setup-airbyte.md` | en→vi | 155 | TODO | — |
-| 18 | A | `getting-started.md` | en→vi | 157 | TODO | — |
-| 19 | A | `cdc/setup-debezium-kafka.md` | en→vi | 158 | TODO | — |
-| 20 | A | `agent-setup/github-copilot.md` | en→vi | 159 | TODO | — |
-| 21 | A | `sdk/typegen.md` | en→vi | 163 | TODO | — |
-| 22 | A | `cdc/deployment-cloudflare-workers.md` | en→vi | 170 | TODO | — |
-| 23 | A | `agent-setup/prompt.md` | en→vi | 175 | TODO | — |
-| 24 | A | `api/graphql-api-spec.md` | en→vi | 188 | TODO | — |
-| 25 | A | `contributing/code-style.md` | en→vi | 188 | TODO | — |
-| 26 | A | `cdc/deployment-docker-compose.md` | en→vi | 193 | TODO | — |
-| 27 | A | `cdc/troubleshooting.md` | en→vi | 198 | TODO | — |
-| 28 | A | `cdc/architecture.md` | en→vi | 201 | TODO | — |
-| 29 | A | `cdc/environment-variables.md` | en→vi | 224 | TODO | — |
-| 30 | A | `contributing/extension-dev.md` | en→vi | 242 | TODO | — |
-| 31 | A | `contributing/testing.md` | en→vi | 261 | TODO | — |
-| 32 | A | `sdk/javascript.md` | en→vi | 353 | TODO | — |
-| 33 | A | `DEPLOYMENT-CHECKLIST.md` | en→vi | 530 | TODO | — |
-| 34 | A | `features/directus-data-model-parity-tasks.md` | en→vi | 562 | TODO | — |
-| 35 | A | `aio/AIO-AUDIT-REPORT.md` | en→vi | 668 | TODO | — |
-| 36 | D | `release/npm-publishing.md` | vi→en | 42 | TODO | — |
-| 37 | D | `roadmap/agent-harness-implementation.md` | vi→en | 123 | TODO | — |
-| 38 | D | `features/permission-builder-directus-investigation.md` | vi→en | 1052 | TODO | — |
-| 39 | B | `roadmap/phase-d1-users.md` | en→vi | 21 | TODO | — |
-| 40 | B | `tutorials/index.md` | en→vi | 43 | TODO | — |
-| 41 | B | `security/idor-testing.md` | en→vi | 50 | TODO | — |
-| 42 | B | `compliance/data-residency.md` | en→vi | 54 | TODO | — |
-| 43 | B | `architecture/page-hydration.md` | en→vi | 68 | TODO | — |
-| 44 | B | `compliance/data-map.md` | en→vi | 69 | TODO | — |
-| 45 | B | `features/permission-service-compose-audit.md` | en→vi | 72 | TODO | — |
-| 46 | B | `security/dependency-overrides.md` | en→vi | 72 | TODO | — |
-| 47 | B | `compliance/dpa-template.md` | en→vi | 77 | TODO | — |
-| 48 | B | `compliance/market-us.md` | en→vi | 77 | TODO | — |
-| 49 | B | `deployment/overview.md` | en→vi | 78 | TODO | — |
-| 50 | B | `deployment/cloudflare.md` | en→vi | 81 | TODO | — |
-| 51 | B | `compliance/market-vietnam.md` | en→vi | 83 | TODO | — |
-| 52 | B | `compliance/provider-google-apple.md` | en→vi | 84 | TODO | — |
-| 53 | B | `compliance/market-eu-gdpr.md` | en→vi | 89 | TODO | — |
-| 54 | B | `compliance/README.md` | en→vi | 90 | TODO | — |
-| 55 | B | `compliance/gap-analysis.md` | en→vi | 91 | TODO | — |
-| 56 | B | `features/access-manifest-v1.md` | en→vi | 98 | TODO | — |
-| 57 | B | `features/firebase-sync.md` | vi→en | 108 | TODO | — |
-| 58 | B | `features/system-collections-access.md` | en→vi | 118 | TODO | — |
-| 59 | B | `deployment/docker.md` | en→vi | 126 | TODO | — |
-| 60 | B | `compliance/implementation-checklist.md` | en→vi | 127 | TODO | — |
-| 61 | B | `README.md` | vi→en | 136 | TODO | — |
-| 62 | B | `ai-skills.md` | en→vi | 141 | TODO | — |
-| 63 | B | `operations/upgrades.md` | en→vi | 144 | TODO | — |
-| 64 | B | `features/collections-builder.md` | en→vi | 150 | TODO | — |
-| 65 | B | `features/search.md` | en→vi | 154 | TODO | — |
-| 66 | B | `compliance/user-rights-catalog.md` | en→vi | 161 | TODO | — |
-| 67 | B | `security/runtime-security-guards-plan.md` | en→vi | 169 | TODO | — |
-| 68 | B | `features/typegen.md` | en→vi | 171 | TODO | — |
-| 69 | B | `features/field-types-and-config.md` | en→vi | 178 | TODO | — |
-| 70 | B | `deployment/environment-variables.md` | en→vi | 184 | TODO | — |
-| 71 | B | `features/websockets-realtime.md` | en→vi | 191 | TODO | — |
-| 72 | B | `deployment/local-development.md` | en→vi | 203 | TODO | — |
-| 73 | B | `architecture/realtime-websocket-implementation.md` | en→vi | 256 | TODO | — |
-| 74 | B | `features/role-policy-flag-migration.md` | en→vi | 258 | TODO | — |
-| 75 | B | `features/agent-harness-layer.md` | en→vi | 307 | TODO | — |
-| 76 | B | `tutorials/nextjs-quickstart.md` | en→vi | 431 | TODO | — |
-| 77 | B | `data-model.md` | en→vi | 471 | TODO | — |
-| 78 | B | `api/hono-api-spec.md` | en→vi | 1007 | TODO | — |
-| 79 | C | `features/marketplace-ui.md` | vi→en | 37 | TODO | — |
-| 80 | C | `features/raw-data-editing.md` | vi→en | 49 | TODO | — |
-| 81 | C | `features/translations-i18n.md` | vi→en | 50 | TODO | — |
-| 82 | C | `features/bookmarks-presets.md` | vi→en | 57 | TODO | — |
-| 83 | C | `features/display-templates.md` | vi→en | 57 | TODO | — |
-| 84 | C | `roadmap/collection-create-modes.md` | vi→en | 76 | TODO | — |
-| 85 | C | `features/materialized-collections.md` | vi→en | 77 | TODO | — |
-| 86 | C | `features/translation-memory.md` | vi→en | 82 | TODO | — |
-| 87 | C | `features/scim-provisioning.md` | vi→en | 89 | TODO | — |
-| 88 | C | `mcp/index.md` | vi→en | 93 | TODO | — |
-| 89 | C | `mcp/mcp-application-analysis.md` | vi→en | 134 | TODO | — |
-| 90 | C | `features/cloudflare-auth.md` | vi→en | 137 | TODO | — |
-| 91 | C | `ui/studio-ui-spec.md` | vi→en | 139 | TODO | — |
-| 92 | C | `roadmap/studio-content-slices.md` | vi→en | 212 | TODO | — |
-| 93 | C | `roadmap/post-ga-walkthrough.md` | vi→en | 235 | TODO | — |
-| 94 | C | `features/ai-first-specification.md` | vi→en | 316 | TODO | — |
+| 1 | `roadmap/phase-d1-users.md` | en→vi | 21 | 3 | TODO | — |
+| 2 | `architecture/page-hydration.md` | en→vi | 68 | 3 | TODO | — |
+| 3 | `ai-skills.md` | en→vi | 148 | 8 | TODO | — |
 
-**Định nghĩa nhóm** (để hiểu vì sao hướng dịch/rủi ro khác nhau):
-- **A** — `docs/vi/<rel>` chưa tồn tại. Chỉ tạo file mới, không đè gì. An toàn nhất.
-- **D** — `docs/en/<rel>` chưa tồn tại (hiếm, đối xứng với A). Chỉ tạo file mới.
-- **B** — cả hai bên tồn tại nhưng nguồn đã đổi sau lần sync trước; bạn đang **ghi đè**
-  bản dịch cũ ở phía đích. Đọc bản cũ trước để không làm mất context/quyết định đã có.
-- **C** — file phía `docs/en/<rel>` thực ra được viết bằng tiếng Việt (trùng nội dung
-  với `docs/vi/<rel>`). Việc của bạn là **viết lại phía EN** thành tiếng Anh thật,
-  dịch từ nội dung VI hiện có (đó là lý do cột Nguồn→Đích ghi `vi→en`) — không sửa
-  file VI.
+### Ưu tiên 2 — thiếu hẳn bản VI, đều là doc mới của 0.25.0 (4 file)
 
-## 4. Nhóm E — KHÔNG tự động xử lý
+An toàn nhất: chỉ tạo file mới, không ghi đè gì.
 
-`features/user-management.md` — cả `docs/en` và `docs/vi` đã tồn tại, đều là tiếng
-Việt, nhưng **nội dung khác nhau** (không phải một là bản dịch của bên còn lại — có
-khả năng là hai phiên bản đã trôi độc lập). Không có cách máy nào chọn đúng "cái nào
-là sự thật". Không có agent nào được tự quyết và ghi đè. Nếu bạn là agent được giao
-xử lý mục này: dừng lại, so sánh hai file (`git diff --no-index docs/en/features/user-management.md
-docs/vi/features/user-management.md` sau khi dịch tạm một bên sang ngôn ngữ chung để
-so), tóm tắt khác biệt, và báo lại cho người điều phối (không tự commit).
+| # | File (rel) | Chiều | Dòng nguồn | parity | Trạng thái | Agent |
+|---|---|---|---|---|---|---|
+| 4 | `architecture/decisions/adr-012-remove-cdc-cache-invalidator.md` | en→vi | 48 | — | TODO | — |
+| 5 | `features/caching.md` | en→vi | 60 | — | TODO | — |
+| 6 | `roadmap/post-v1.md` | en→vi | 71 | — | TODO | — |
+| 7 | `deployment/performance.md` | en→vi | 97 | — | TODO | — |
 
-## 5. Khi bảng hết TODO
+### Ưu tiên 3 — surface release, chặn tag 1.0.0 (4 file, mỗi file một PR)
 
-1. Chạy detect lần cuối: `nvm use 24 && node scripts/docs-i18n/sync.mjs`.
-2. Xác nhận `planned: 0` (trừ nhóm E nếu chưa được người quyết) trong output.
-3. `git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md` (không commit).
-4. Không tự merge PR #205 — báo lại cho người điều phối (chủ repo) để họ review và merge.
+`v1-release-criteria.md` §5 yêu cầu các doc này khớp code **tại thời điểm tag**, và
+docs/en ⇄ docs/vi sync. Chúng dài; đừng gom lô.
 
-## 6. Vì sao thủ công (đừng "tối ưu" bằng cách bật API key)
+| # | File (rel) | Chiều | Dòng nguồn | parity | Trạng thái | Agent |
+|---|---|---|---|---|---|---|
+| 8 | `getting-started.md` | en→vi | 173 | 2 | TODO | — |
+| 9 | `tutorials/nextjs-quickstart.md` | en→vi | 514 | 3 | TODO | — |
+| 10 | `DEPLOYMENT-CHECKLIST.md` | en→vi | 563 | 3 | TODO | — |
+| 11 | `api/hono-api-spec.md` | en→vi | 1239 | 7 | TODO | — |
 
-`scripts/docs-i18n/sync.mjs --apply` **có thể** tự dịch bằng Claude API nếu
-`ANTHROPIC_API_KEY` được set — nhưng quyết định của người điều phối dự án là **không**
-dùng đường đó (đã cân nhắc chi phí API + muốn kiểm soát chất lượng dịch qua LLM đọc
-hiểu trực tiếp thay vì pipeline không giám sát). Đừng tự thêm key vào môi trường hoặc
-đề xuất chạy `--apply` để "xong nhanh hơn" — nếu bạn thấy cách đó rõ ràng tốt hơn,
-hỏi người điều phối, không tự quyết.
+### Ưu tiên 4 — phần còn lại, nhỏ trước (49 file)
 
-Quyết định này giờ được tooling thi hành, không chỉ nằm trong văn bản:
+| # | File (rel) | Chiều | Dòng nguồn | parity | Trạng thái | Agent |
+|---|---|---|---|---|---|---|
+| 12 | `tutorials/index.md` | en→vi | 43 | 2 | TODO | — |
+| 13 | `architecture/decisions/index.md` | en→vi | 48 | 2 | TODO | — |
+| 14 | `security/idor-testing.md` | en→vi | 50 | 3 | TODO | — |
+| 15 | `compliance/data-residency.md` | en→vi | 54 | 2 | TODO | — |
+| 16 | `compliance/data-map.md` | en→vi | 69 | 2 | TODO | — |
+| 17 | `features/permission-service-compose-audit.md` | en→vi | 72 | 6 | TODO | — |
+| 18 | `architecture/decisions/adr-004-tag-based-cache-invalidation.md` | en→vi | 74 | 0 | TODO | — |
+| 19 | `compliance/dpa-template.md` | en→vi | 77 | 2 | TODO | — |
+| 20 | `compliance/market-us.md` | en→vi | 77 | 2 | TODO | — |
+| 21 | `security/route-guards.md` | en→vi | 80 | 1 | TODO | — |
+| 22 | `deployment/cloudflare.md` | en→vi | 81 | 4 | TODO | — |
+| 23 | `compliance/market-vietnam.md` | en→vi | 83 | 2 | TODO | — |
+| 24 | `deployment/overview.md` | en→vi | 83 | 8 | TODO | — |
+| 25 | `compliance/provider-google-apple.md` | en→vi | 84 | 2 | TODO | — |
+| 26 | `compliance/market-eu-gdpr.md` | en→vi | 89 | 2 | TODO | — |
+| 27 | `compliance/README.md` | en→vi | 90 | 3 | TODO | — |
+| 28 | `compliance/gap-analysis.md` | en→vi | 91 | 2 | TODO | — |
+| 29 | `features/access-manifest-v1.md` | en→vi | 98 | 6 | TODO | — |
+| 30 | `features/firebase-sync.md` | vi→en | 108 | 0 | TODO | — |
+| 31 | `security/dependency-overrides.md` | en→vi | 110 | 6 | TODO | — |
+| 32 | `agent-setup/index.md` | en→vi | 113 | 0 | TODO | — |
+| 33 | `features/system-collections-access.md` | en→vi | 118 | 3 | TODO | — |
+| 34 | `devpost-xprize-submission.md` | en→vi | 126 | 1 | TODO | — |
+| 35 | `compliance/implementation-checklist.md` | en→vi | 127 | 2 | TODO | — |
+| 36 | `agent-setup/windsurf.md` | en→vi | 132 | 0 | TODO | — |
+| 37 | `README.md` | vi→en | 137 | 2 | TODO | — |
+| 38 | `agent-setup/claude-code.md` | en→vi | 137 | 0 | TODO | — |
+| 39 | `aio/README.md` | en→vi | 139 | 0 | TODO | — |
+| 40 | `agent-setup/cursor.md` | en→vi | 147 | 0 | TODO | — |
+| 41 | `features/collections-builder.md` | en→vi | 150 | 2 | TODO | — |
+| 42 | `features/search.md` | en→vi | 158 | 4 | TODO | — |
+| 43 | `compliance/user-rights-catalog.md` | en→vi | 161 | 2 | TODO | — |
+| 44 | `deployment/docker.md` | en→vi | 163 | 6 | TODO | — |
+| 45 | `deployment/google-cloud-vm.md` | en→vi | 165 | 4 | TODO | — |
+| 46 | `features/typegen.md` | en→vi | 171 | 2 | TODO | — |
+| 47 | `features/field-types-and-config.md` | en→vi | 178 | 4 | TODO | — |
+| 48 | `security/runtime-security-guards-plan.md` | en→vi | 189 | 3 | TODO | — |
+| 49 | `features/websockets-realtime.md` | en→vi | 191 | 2 | TODO | — |
+| 50 | `features/observability.md` | vi→en | 195 | 0 | TODO | — |
+| 51 | `agent-setup/prompt.md` | en→vi | 202 | 3 | TODO | — |
+| 52 | `deployment/local-development.md` | en→vi | 203 | 7 | TODO | — |
+| 53 | `security/cwe-top-100-audit.md` | en→vi | 217 | 1 | TODO | — |
+| 54 | `deployment/environment-variables.md` | en→vi | 237 | 3 | TODO | — |
+| 55 | `features/extensions-system.md` | vi→en | 260 | 2 | TODO | — |
+| 56 | `features/role-policy-flag-migration.md` | en→vi | 269 | 1 | TODO | — |
+| 57 | `security/anti-abuse.md` | en→vi | 303 | 5 | TODO | — |
+| 58 | `features/agent-harness-layer.md` | en→vi | 310 | 8 | TODO | — |
+| 59 | `contributing/testing.md` | en→vi | 312 | 4 | TODO | — |
+| 60 | `security/owasp-api-top-10-audit.md` | en→vi | 327 | 1 | TODO | — |
 
-- CI không truyền secret nào cho `sync.mjs` nữa; job `push` chạy `--preserve-only`.
-- `--apply` không có key → **exit 2** kèm hướng dẫn, thay vì im lặng hạ xuống
+Ba file `agent-setup/*` và `aio/README.md` có `parity 0` nhưng vẫn ở đây vì nguồn đã
+đổi sau lần sync trước — bản dịch cũ đúng cấu trúc nhưng nội dung lạc hậu. Cấu trúc
+sạch không có nghĩa nội dung đúng; đó là lý do `parity` và `verify` là hai script khác nhau.
+
+---
+
+## 8. Definition of done
+
+**Một file xong** khi: parity 0 problem · verify 0 finding (hoặc `unverifiable` đã
+được ghi rõ) · stamp thành công · detect báo `up-to-date` · bảng §7 đã đổi `DONE` ·
+artifact máy sinh không nằm trong commit.
+
+**Một lô xong** khi: mọi file trong lô xong · PR có thân theo mẫu §3 kèm output
+checker · không tự merge.
+
+**Toàn bộ backlog xong** khi: `pnpm docs:i18n:detect` báo `planned: 0` và
+`pnpm docs:i18n:parity` (không tham số) báo 0 problem trên toàn bộ 146 cặp. Lúc đó
+bỏ `|| true` ở hai step parity/verify trong `.github/workflows/docs-i18n-sync.yml`
+để từ đó về sau CI chặn thẳng — và mục *docs/en ⇄ docs/vi sync* của
+`.kiro/steering/v1-release-criteria.md` §5 được tick.
+
+---
+
+## 9. Vì sao thủ công
+
+`sync.mjs --apply` **có thể** dịch bằng Claude API nếu `ANTHROPIC_API_KEY` được set,
+nhưng quyết định của chủ repo là **không** dùng đường đó: chi phí API, cộng với việc
+muốn chất lượng dịch đến từ một LLM đọc hiểu trực tiếp thay vì một pipeline không ai
+giám sát. Đừng tự thêm key vào môi trường và đừng đề xuất `--apply` để "xong nhanh
+hơn" — nếu bạn tin cách đó tốt hơn, hỏi chủ repo, không tự quyết.
+
+Quyết định này được **tooling thi hành**, không chỉ nằm trong văn bản:
+
+- CI không truyền secret nào cho `sync.mjs`; job `push` chỉ chạy `--preserve-only`.
+- `--apply` không có key → **exit 2** kèm hướng dẫn, thay vì âm thầm hạ xuống
   `--preserve-only`. Chính cái hạ cấp im lặng đó khiến CI commit "sync en/vi
   translations" hàng tuần trong khi backlog không giảm một file nào.
 - Front matter nói thật về xuất xứ: `mtEngine: manual`, `syncStatus: human-translated`.
+- `stamp-pair` từ chối đóng dấu một cặp không đạt parity, nên không bản dịch mới nào
+  vào được repo mà chưa qua kiểm — đúng chỗ mà một reviewer con người sẽ đứng.

@@ -51,10 +51,11 @@ a release ago.
 So verification against source code comes **before** any full-match marking:
 
 ```bash
-pnpm docs:i18n:verify <rel>                         # 1. check claims vs source tree
-node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> --verified   # 2. version + flag both locales
-pnpm docs:i18n:detect                               # 3. confirm the pair reads up-to-date
-git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md   # 4. drop detect artifacts
+pnpm docs:i18n:parity <rel>                         # 1. same document? (structure, code, language)
+pnpm docs:i18n:verify <rel>                         # 2. check claims vs source tree
+node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> --verified   # 3. version + flag both locales
+pnpm docs:i18n:detect                               # 4. confirm the pair reads up-to-date
+git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md   # 5. drop detect artifacts
 ```
 
 - **You write the translation yourself.** There is no `ANTHROPIC_API_KEY` and no
@@ -71,9 +72,13 @@ git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md   # 4. drop de
   assurance instead of carrying it forward.
 - Two separate markers, deliberately: `syncStatus`/`sourceHash` answer "same
   revision?"; `codeVerified` answers "claims checked?". A full match needs both.
+- `stamp-pair` **refuses** on structural drift (`check-parity`): target still in the
+  source language, dropped sections, translated identifiers, broken link targets,
+  truncated tail. No reviewer stands after the stamp, so fix the translation —
+  `--allow-structure-drift` is for a deliberate divergence and needs a stated reason.
 
-Backlog and per-file rules: `docs/.i18n/TASKS.md`. Do not add commits to a merged
-translation PR — branch from `main` and open a new one.
+Backlog, priority order and the full delegation brief: `docs/.i18n/TASKS.md`. Do not
+add commits to a merged translation PR — branch from `main` and open a new one.
 
 ## Common tasks
 

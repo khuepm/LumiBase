@@ -19,6 +19,22 @@
 //                    `verify-code-refs.mjs` and REFUSES to write the marker if
 //                    anything is stale — or if the doc makes no claim the
 //                    tooling can test, since "nothing to check" is not a pass.
+//     --allow-structure-drift
+//                    stamp even though `check-parity.mjs` reports the two sides
+//                    are not the same document. Only for a deliberate divergence,
+//                    and say why in the commit message — prefer a
+//                    `<!-- check-parity: allow <check> -->` waiver in the doc so
+//                    the reason lives next to the divergence.
+//
+// STRUCTURAL GATE
+// ---------------
+// Stamping is what makes a pair read "up-to-date" to every other tool, so it is
+// the last point at which a bad translation can be stopped. Translations here are
+// hand-written and land without a second reviewer, so this runs
+// `check-parity.mjs` first and refuses on a mismatch: a target still in the
+// source language, dropped sections, translated code, broken link targets or a
+// truncated tail. Without that gate the stamp launders a broken translation into
+// "in sync".
 //
 // Assumes both docs/en/<rel> and docs/vi/<rel> already exist.
 //
@@ -35,6 +51,7 @@
 // assurance forward. Marking a translation as a full match requires both.
 
 import { splitFrontMatter, contentHash, upsertKeys, buildFile, readKey } from './frontmatter.mjs';
+import { checkPair } from './check-parity.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -45,9 +62,12 @@ const REPO = path.resolve(__dirname, '..', '..');
 
 const argv = process.argv.slice(2);
 const WANT_VERIFIED = argv.includes('--verified');
+const ALLOW_DRIFT = argv.includes('--allow-structure-drift');
 const [rel, sourceLocale] = argv.filter((a) => !a.startsWith('--'));
 if (!rel || !['en', 'vi'].includes(sourceLocale)) {
-  console.error('usage: node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> [--verified]');
+  console.error(
+    'usage: node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> [--verified] [--allow-structure-drift]',
+  );
   process.exit(1);
 }
 const targetLocale = sourceLocale === 'en' ? 'vi' : 'en';
@@ -83,6 +103,22 @@ const srcAbs = path.join(REPO, 'docs', sourceLocale, rel);
 const tgtAbs = path.join(REPO, 'docs', targetLocale, rel);
 for (const p of [srcAbs, tgtAbs]) {
   if (!fs.existsSync(p)) { console.error('missing:', p); process.exit(2); }
+}
+
+// Structural gate, before anything is written. `check-parity` is imported rather
+// than shelled out to: it needs both files on disk, which they already are.
+const parity = checkPair(rel);
+if (parity.problems.length > 0) {
+  const label = ALLOW_DRIFT ? 'structure drift (allowed)' : 'refusing to stamp';
+  console.error(`${label}: ${rel} — the two locales are not the same document`);
+  for (const p of parity.problems) console.error(`  [${p.check}] ${p.detail}`);
+  if (!ALLOW_DRIFT) {
+    console.error(
+      'Fix the translation, or pass --allow-structure-drift / add a\n' +
+        '  <!-- check-parity: allow <check> --> waiver if the divergence is deliberate.',
+    );
+    process.exit(6);
+  }
 }
 
 // source hash from its body
