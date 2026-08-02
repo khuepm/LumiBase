@@ -2,6 +2,74 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
+## 2026-08-02T13:12:37.877Z — mode `apply` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 143
+
+Summary — up-to-date: 88, translated: 0, preserved: 0, conflicts: 0, planned: 55
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `README.md` | vi → en | source changed since last sync |
+| `agent-setup/claude-code.md` | en → vi | source changed since last sync |
+| `agent-setup/cursor.md` | en → vi | source changed since last sync |
+| `agent-setup/index.md` | en → vi | source changed since last sync |
+| `agent-setup/prompt.md` | en → vi | source changed since last sync |
+| `agent-setup/windsurf.md` | en → vi | source changed since last sync |
+| `ai-skills.md` | en → vi | source changed since last sync |
+| `aio/README.md` | en → vi | source changed since last sync |
+| `api/hono-api-spec.md` | en → vi | source changed since last sync |
+| `architecture/decisions/index.md` | en → vi | source changed since last sync |
+| `architecture/page-hydration.md` | en → vi | source changed since last sync |
+| `compliance/README.md` | en → vi | source changed since last sync |
+| `compliance/data-map.md` | en → vi | source changed since last sync |
+| `compliance/data-residency.md` | en → vi | source changed since last sync |
+| `compliance/dpa-template.md` | en → vi | source changed since last sync |
+| `compliance/gap-analysis.md` | en → vi | source changed since last sync |
+| `compliance/implementation-checklist.md` | en → vi | source changed since last sync |
+| `compliance/market-eu-gdpr.md` | en → vi | source changed since last sync |
+| `compliance/market-us.md` | en → vi | source changed since last sync |
+| `compliance/market-vietnam.md` | en → vi | source changed since last sync |
+| `compliance/provider-google-apple.md` | en → vi | source changed since last sync |
+| `compliance/user-rights-catalog.md` | en → vi | source changed since last sync |
+| `deployment/cloudflare.md` | en → vi | source changed since last sync |
+| `deployment/docker.md` | en → vi | source changed since last sync |
+| `deployment/environment-variables.md` | en → vi | source changed since last sync |
+| `deployment/google-cloud-vm.md` | en → vi | source changed since last sync |
+| `deployment/local-development.md` | en → vi | source changed since last sync |
+| `deployment/overview.md` | en → vi | source changed since last sync |
+| `devpost-xprize-submission.md` | en → vi | source changed since last sync |
+| `features/access-manifest-v1.md` | en → vi | source changed since last sync |
+| `features/agent-harness-layer.md` | en → vi | source changed since last sync |
+| `features/caching.md` | en → vi | missing vi translation |
+| `features/collections-builder.md` | en → vi | source changed since last sync |
+| `features/extensions-system.md` | vi → en | source changed since last sync |
+| `features/field-types-and-config.md` | en → vi | source changed since last sync |
+| `features/firebase-sync.md` | vi → en | source changed since last sync |
+| `features/observability.md` | vi → en | source changed since last sync |
+| `features/permission-service-compose-audit.md` | en → vi | source changed since last sync |
+| `features/role-policy-flag-migration.md` | en → vi | source changed since last sync |
+| `features/search.md` | en → vi | source changed since last sync |
+| `features/system-collections-access.md` | en → vi | source changed since last sync |
+| `features/typegen.md` | en → vi | source changed since last sync |
+| `features/websockets-realtime.md` | en → vi | source changed since last sync |
+| `getting-started.md` | en → vi | source changed since last sync |
+| `operations/upgrades.md` | en → vi | source changed since last sync |
+| `roadmap/phase-d1-users.md` | en → vi | source changed since last sync |
+| `security/anti-abuse.md` | en → vi | source changed since last sync |
+| `security/cwe-top-100-audit.md` | en → vi | source changed since last sync |
+| `security/dependency-overrides.md` | en → vi | source changed since last sync |
+| `security/idor-testing.md` | en → vi | source changed since last sync |
+| `security/owasp-api-top-10-audit.md` | en → vi | source changed since last sync |
+| `security/route-guards.md` | en → vi | source changed since last sync |
+| `security/runtime-security-guards-plan.md` | en → vi | source changed since last sync |
+| `tutorials/index.md` | en → vi | source changed since last sync |
+| `tutorials/nextjs-quickstart.md` | en → vi | source changed since last sync |
+
+---
+
 ## 2026-08-01T02:59:56.356Z — mode `apply` (effective `preserve-only`)
 
 Engine: `claude` · API key: absent · files scanned: 143
