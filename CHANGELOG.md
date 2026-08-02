@@ -9,7 +9,54 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [0.25.0] - 2026-08-02
+
+### Version
+
+- `v0.25.0`
+
+### Date
+
+- `2026-08-02`
+
+### Highlights
+
+- **Public (anonymous) realm — the third authorization realm from ADR-011.**
+  An unauthenticated request now resolves to the site's `public` role instead
+  of a blanket 401, so content can be served publicly *through* the permission
+  layer rather than around it. Opt-in per site, GET/HEAD on allow-listed
+  content paths only, and structurally least-privilege (migration `0012`).
+
+- **Cache penetration defence.** Public reads stack identifier shape guards,
+  negative-cache tombstones, and a Delivery IP rate limiter in front of
+  Postgres, so a flood of nonexistent slugs no longer becomes database load.
+
+- **Dependency majors batched — this release requires Node 22+.** jose 6,
+  zod 4, node-cron 4, execa 10, react 19 alignment, graphql 17 and others land
+  together. Two breaking consequences for consumers: `create-lumibase` now
+  requires Node 22+, and jose v6 removed the `KeyLike` export. See *Changed*.
+
 ### Added
+
+- **Public (anonymous) role and principal (ADR-011, migration `0012`).**
+  `withAuth` previously returned an unconditional 401 for a caller with no
+  credential, so there was no way to serve content publicly through the
+  permission layer at all. An unauthenticated request now resolves to the
+  site's `public` role, which keeps row filters and field masks in force. Two
+  conditions gate it: the site has explicitly enabled public access (enabling
+  is what creates the role, so existing deployments are unchanged until an
+  operator turns it on), and the request is a GET/HEAD on an allow-listed
+  content path. The role is least-privilege by construction —
+  `admin_access`/`app_access` are pinned off by check constraints on
+  `lumibase_roles` and `lumibase_policies`, with route guards refusing the same
+  edits as a readable 4xx rather than a constraint violation, and hand-attached
+  policies screened at the attach point (a table check cannot see across the
+  `role_policies` join). Anonymous role lookups are cached per site, negative
+  results included, since every visitor shares one compiled bundle under the
+  `role:{id}` principal key. GraphQL is deliberately excluded: its operations
+  arrive over POST, so the read-method rule cannot cover it.
 
 - **Cache penetration defence (Delivery API + schema lookup).** Public reads
   now stack three cheap filters before Postgres: identifier shape guards
@@ -170,6 +217,27 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   same path-traversal / confused-deputy class closed in 0.13.x; the CDC tools
   landed afterwards and reintroduced it.
 
+- **Shell version drift could recur — `version:sync` now covers `src-tauri`.**
+  v0.24.1 existed only to hand-repair `apps/shell/src-tauri` metadata
+  (`tauri.conf.json`, `Cargo.toml`, `Cargo.lock`) that v0.24.0 shipped stale,
+  but the repair was a one-off edit: `scripts/sync-version.mjs` still swept
+  `package.json` files exclusively, so the three Tauri files drifted again the
+  moment the root version moved. They are now part of the sync (and of
+  `version:check`, which gates the release), with the `Cargo.lock` rewrite
+  pinned to the `lumibase-shell` entry so no third-party crate pin is touched.
+  A file that stops exposing its version where expected is reported as a
+  mismatch rather than skipped — silently syncing nothing is the failure mode
+  this guards against. `tauri.conf.json` is what the desktop auto-updater
+  compares against, so drift here ships a build that will not offer its own
+  update.
+
+- **CI: stale `apps/enterprise` gitlink broke the Scorecard workflow.** The
+  submodule's `.gitmodules` entry was removed without removing the `160000`
+  gitlink from the index, so `git submodule foreach` failed with `No url found
+  for submodule path 'apps/enterprise'`. That aborted checkout in the one
+  workflow using `persist-credentials: false` — Scorecard — which is why only
+  that job was red. The orphaned gitlink is gone.
+
 ### Added — regression tripwires
 
 - **Harness KeyProvider tripwire.** `ai-harness-keys-context.test.ts` locks the
@@ -199,6 +267,19 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   registered tool and fails if an argument that reaches a path segment accepts
   `..`. Both halves are needed — encoding alone cannot neutralize `..`. The scan
   found the CDC gap above.
+
+### Migrations
+
+- **`0012_public_role_least_privilege`** — adds two `CHECK` constraints:
+  `roles_public_least_privilege` on `lumibase_roles` and
+  `policies_public_least_privilege` on `lumibase_policies`. Both pin
+  `admin_access`/`app_access` (and `enforce_tfa` for policies) off for the
+  `public` system key, so an elevation flag on the anonymous role cannot be set
+  even by hand-written SQL or an import. The predicates use `is distinct from`
+  rather than `<>` so they evaluate FALSE-or-TRUE — not NULL — for the many
+  rows with a NULL `system_key`/`key`. Additive and non-destructive; no
+  backfill. If an existing row already carries an elevated `public` role the
+  `ALTER TABLE` will fail — clear those flags first, then re-run.
 
 ## [0.24.1] - 2026-07-21
 

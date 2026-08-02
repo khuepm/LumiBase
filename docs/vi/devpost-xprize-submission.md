@@ -87,7 +87,7 @@ Building a business this way means the founding team stays tiny while the operat
   **Apache-2.0**, không phải MIT, và đây là việc đã chốt chứ không còn mở:
   `CHANGELOG.md` ghi việc đổi license ở mục `[0.23.0]` (2026-07-14) — "Project
   license updated to the Apache License, Version 2.0 (from MIT), effective this
-  release", với `v0.22.0` là bản MIT cuối cùng. Repo đang ở `0.24.1`, `LICENSE` ở
+  release", với `v0.22.0` là bản MIT cuối cùng. Repo đang ở `0.25.0`, `LICENSE` ở
   gốc là Apache-2.0, và cả bốn package được publish đều khai `"Apache-2.0"`. Các
   chỗ nhắc MIT trong bản nháp này đã được sửa.
 - Export dashboard Stripe / sao kê ngân hàng / P&L đơn giản (template: https://docs.google.com/spreadsheets/d/1pAJrEMo7_QID6V62sA4C8XwGBHkxDTVX3wtYNE2fulI/edit)
