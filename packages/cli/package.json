@@ -1,6 +1,6 @@
 {
   "name": "lumibase",
-  "version": "0.24.1",
+  "version": "0.25.0",
   "description": "The LumiBase CLI — scaffold a project, generate TypeScript types from a live schema, and check your setup.",
   "license": "Apache-2.0",
   "type": "module",

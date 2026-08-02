@@ -17,12 +17,31 @@ export function negativePageKey(siteId: string, slug: string): string {
   return `neg:${siteId}:page:${normalizeSlugForKey(slug, NEGATIVE_KEY_MAXLEN)}`;
 }
 
+/**
+ * Collection-name tombstone key.
+ *
+ * The name is clamped like the page slug: `SAFE_FIELD_NAME` bounds the
+ * *alphabet* but not the *length*, so an authenticated caller probing
+ * `GET /items/<10KB name>` would otherwise mint 10KB Redis keys. Clamping is
+ * safe for key material — two names sharing a 256-char prefix collapsing to one
+ * tombstone only costs an extra DB probe for the longer name, and no real
+ * collection name approaches that bound (schema create caps at 63 chars).
+ */
 export function negativeCollectionKey(siteId: string, name: string): string {
-  return `neg:${siteId}:collection:${name}`;
+  return `neg:${siteId}:collection:${clampKeyPart(name)}`;
 }
 
-export function negativeItemKey(siteId: string, collection: string, id: string): string {
-  return `neg:${siteId}:item:${collection}:${id}`;
+/*
+ * There is deliberately no `negativeItemKey`. Design §14.5 sketched
+ * `neg:{site}:item:{collection}:{id}`, but every item-by-id read sits behind
+ * auth and Req 19.8 forbids serving a tombstone to a credentialed request — so
+ * the read side can never be wired, and a write-only key is dead weight. Revisit
+ * only if a public, unauthenticated item-by-id surface ships.
+ */
+
+/** Bound attacker-influenced key material (see {@link negativeCollectionKey}). */
+function clampKeyPart(value: string): string {
+  return value.length > NEGATIVE_KEY_MAXLEN ? value.slice(0, NEGATIVE_KEY_MAXLEN) : value;
 }
 
 /** Site-level tombstone — flat namespace (design §14.5 / §17 exception). */

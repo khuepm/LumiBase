@@ -317,6 +317,17 @@ export interface SchemaServiceDeps {
   queue?: QueueProvider;
   /** Attribution for schema change events written to the feed (defaults to system). */
   cdcActor?: OutboxActor;
+  /**
+   * Negative-cache TTL in seconds (Req 19.5), resolved by the caller from the
+   * runtime env (`resolveNegativeTtl(c.env)`); `0` disables tombstones.
+   *
+   * Passed in rather than read from `process.env` here: on Cloudflare Workers
+   * `process.env` does not carry wrangler vars, so reading it directly would
+   * silently ignore the knob on one of the two supported runtimes
+   * (non-negotiable rule #3). Absent → falls back to `process.env` so Node
+   * callers that have not been threaded through yet keep working.
+   */
+  negativeCacheTtl?: number;
 }
 
 export class SchemaService {
@@ -1081,32 +1092,43 @@ export class SchemaService {
    * non-existent collections do not re-hit Postgres.
    */
   async getCompiled(collectionName: string): Promise<CompiledCollection | null> {
-    if (this.deps.cache) {
-      const { buildNegativeCache, negativeCollectionKey, resolveNegativeTtl } = await import(
-        './negative-cache'
-      );
-      const ttl = resolveNegativeTtl(
+    const cache = this.deps.cache;
+    if (!cache) return this.compile(collectionName);
+
+    // Positive cache FIRST. Real collections are the overwhelming majority of
+    // traffic here (`resolveCollection` runs on every item list/detail/patch),
+    // and probing the tombstone first cost every one of them a second cache
+    // round-trip. Penetration traffic still never reaches Postgres — it just
+    // pays one extra cache read, which is the cheap side of the trade.
+    const cached = await cache.get<CompiledCollection>(cacheKey(this.deps.siteId, collectionName));
+    if (cached) return cached;
+
+    const { buildNegativeCache, negativeCollectionKey, resolveNegativeTtl } = await import(
+      './negative-cache'
+    );
+    const ttl =
+      this.deps.negativeCacheTtl ??
+      resolveNegativeTtl(
         typeof process !== 'undefined'
           ? (process.env as { LUMIBASE_NEGATIVE_CACHE_TTL?: string })
           : undefined,
       );
-      if (ttl > 0) {
-        const neg = buildNegativeCache(this.deps.cache, ttl);
-        return neg.resolve(negativeCollectionKey(this.deps.siteId, collectionName), async () => {
-          // Positive schema cache first (existing key namespace).
-          const cached = await this.deps.cache!.get<CompiledCollection>(
-            cacheKey(this.deps.siteId, collectionName),
-          );
-          if (cached) return cached;
-          return this.compile(collectionName);
-        });
-      }
-      const cached = await this.deps.cache.get<CompiledCollection>(
-        cacheKey(this.deps.siteId, collectionName),
-      );
-      if (cached) return cached;
-    }
-    return this.compile(collectionName);
+    if (ttl <= 0) return this.compile(collectionName);
+
+    const neg = buildNegativeCache(cache, ttl, {
+      // Req 19.15: collection tombstones must be observable too, not just the
+      // delivery ones — otherwise a probe storm on `/items/:collection` is
+      // invisible in Prometheus.
+      onNegativeHit: () => {
+        void import('../routes/metrics').then((m) => m.cacheNegativeHitsTotal.inc());
+      },
+      onNegativeWrite: () => {
+        void import('../routes/metrics').then((m) => m.cacheNegativeWritesTotal.inc());
+      },
+    });
+    return neg.resolve(negativeCollectionKey(this.deps.siteId, collectionName), () =>
+      this.compile(collectionName),
+    );
   }
 
   async invalidate(collectionName: string) {

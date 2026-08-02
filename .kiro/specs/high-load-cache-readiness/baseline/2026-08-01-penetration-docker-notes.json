@@ -1,0 +1,36 @@
+{
+  "date": "2026-08-01",
+  "scenario": "apps/cms/k6/load-penetration.js",
+  "config": {
+    "compose": "docker/docker-compose.yml (postgres + redis only; CMS via pnpm tsx src/serve.ts)",
+    "BASE_URL": "http://127.0.0.1:1989",
+    "SITE_ID": "site_test",
+    "GOOD_SLUG": "home",
+    "MISS_POOL": 40,
+    "RATE": 50,
+    "DURATION": "2m",
+    "LUMIBASE_DELIVER_RATE_LIMIT": "0 (disabled for DB-query sample; see rate-limit probe)",
+    "LUMIBASE_NEGATIVE_CACHE_TTL": 30
+  },
+  "results": {
+    "http_reqs": 6001,
+    "penetration_200_rate": 0.0518,
+    "penetration_404_rate": 0.9481,
+    "penetration_429_rate": 0,
+    "http_req_duration_p95_ms": 14.18,
+    "db_query_per_404": 0.0308,
+    "method": "pg_stat_user_tables scans on lumibase_pages minus 200-path selects; cross-checked with lumibase_cache_negative_writes_total delta / 404 count",
+    "negative_writes": 175,
+    "negative_hits": 5333,
+    "target_db_query_per_404": 0.05,
+    "pass": true
+  },
+  "rate_limit_probe": {
+    "LUMIBASE_DELIVER_RATE_LIMIT": 1200,
+    "RATE": 50,
+    "DURATION": "40s",
+    "http_reqs": 2000,
+    "penetration_429_rate": 0.4,
+    "note": "Single-IP 50 RPS (~3000/min) trips the 1200/min budget after ~24s. Default 1200 kept as anti-abuse floor."
+  }
+}

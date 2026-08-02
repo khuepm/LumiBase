@@ -396,17 +396,20 @@ Jitter dùng nguồn ngẫu nhiên của runtime; mục đích là tránh biến
 
 `resolve` cố ý **không** gộp single-flight: hai cơ chế giải hai bài toán khác nhau (§5.2 lo khoá nóng chung, cái này lo khoá rác phân tán). Ai cần cả hai thì bọc `createSwrCache` bên trong `load`.
 
+**TTL phải được caller truyền vào, service không tự đọc `process.env`.** Trên Cloudflare Workers `process.env` không mang biến của wrangler, nên đọc trực tiếp trong service là bỏ qua knob `LUMIBASE_NEGATIVE_CACHE_TTL` trên đúng một trong hai runtime được hỗ trợ — kể cả `0` (tắt tombstone) cũng không có tác dụng (vi phạm non-negotiable rule #3). Đường đi: `resolveNegativeTtl(c.env)` tại biên request → `ItemServiceDeps.negativeCacheTtl` → `SchemaServiceDeps.negativeCacheTtl`. Route `deliver.ts` đã đọc `c.env` trực tiếp nên không cần thread. Các construction site không có `c` (worker, config-import, rewrap) giữ fallback `process.env` — chúng chạy trên Node và không phải mục tiêu penetration.
+
 ### 14.5 Key namespace (DoD 2b)
 
 ```
 neg:${siteId}:page:${slug}          ← deliver page 404
 neg:${siteId}:collection:${name}    ← SchemaService.getCompiled / ItemService.resolveCollection
-neg:${siteId}:item:${collection}:${id}
 neg:site:${siteId}                  ← site không tồn tại (llms.txt); không có siteId cha nên
                                        namespace phẳng — đây là ngoại lệ duy nhất, xem §17
 ```
 
-`slug` được normalize (lowercase, trim) và cắt tại `LUMIBASE_NEGATIVE_KEY_MAXLEN` = 256 ký tự trước khi ghép — slug dài hơn đã bị guard §14.6 loại từ trước, giới hạn này chỉ là chặn trên cho kích thước khoá.
+**Đã bỏ `neg:${siteId}:item:${collection}:${id}` (rà code 2026-08-02).** Mọi đường đọc item-by-id đều nằm sau auth, và Req 19.8 cấm serve tombstone cho request có credentials — nên phía đọc không bao giờ wire được. Bản implement đầu tiên vẫn gọi `forget` cho khoá này ở `ItemService.create`, tức mỗi lần tạo item tốn một round-trip Redis để xoá thứ không đường nào ghi. Đã xoá cả helper lẫn call-site. Mở lại chỉ khi có surface item-by-id công khai, không xác thực.
+
+`slug`, tên collection và mọi thành phần khoá chịu ảnh hưởng từ input đều được cắt tại `LUMIBASE_NEGATIVE_KEY_MAXLEN` = 256 ký tự (slug thêm lowercase + trim). Lý do cắt cả tên collection: `SAFE_FIELD_NAME` giới hạn **alphabet** nhưng không giới hạn **độ dài**, nên `GET /items/<tên 10KB>` sẽ sinh khoá Redis 10KB. Cắt an toàn cho key material — hai tên trùng 256 ký tự đầu dồn vào một tombstone chỉ khiến tên dài hơn tốn thêm một lần probe DB, và không tên collection thật nào tới gần mức đó (schema create cap 63 ký tự).
 
 ### 14.6 Shape guard (`apps/cms/src/services/identifier-guard.ts` — module mới)
 
@@ -428,10 +431,12 @@ TTL 30s là lưới an toàn, không phải cơ chế chính — một tác gi�
 |---|---|
 | Tạo page / đổi `pages.slug` | `forget('neg:'+siteId+':page:'+slug)` cho slug mới (và slug cũ nếu đổi) |
 | Tạo collection | `forget('neg:'+siteId+':collection:'+name)` |
-| Tạo item | `forget('neg:'+siteId+':item:'+collection+':'+id)` |
 | Tạo site | `forget('neg:site:'+siteId)` |
+| ~~Tạo item~~ | ~~`forget('neg:…:item:…')`~~ — bỏ, xem §14.5 (khoá item không tồn tại) |
 
 Cùng vị trí và cùng chính sách lỗi với tag purge của Req 8.1: lỗi → metric + warn, **không** fail request.
+
+**Thứ tự tra cứu ở `SchemaService.getCompiled`: positive cache TRƯỚC, tombstone SAU.** Bản đầu tiên probe tombstone trước, nên mọi request tới collection *có thật* phải trả thêm một round-trip cache — mà `resolveCollection` chạy trên mọi item list/detail/patch, tức đường nóng nhất của content plane. Đảo lại: hit dương = 1 op (trước là 2); traffic penetration vẫn **không** chạm Postgres, chỉ trả thêm một lần đọc cache — đúng phía rẻ của trade-off. Nguyên tắc chung cho các call-site sau: tombstone là lớp bảo vệ cho đường *lạnh*, không được nằm chắn trước đường nóng.
 
 ### 14.8 Bloom filter — quyết định (Req 19.16)
 
@@ -448,7 +453,7 @@ Cùng vị trí và cùng chính sách lỗi với tag purge của Req 8.1: lỗ
 Chốt theo hướng **CÓ**. Sửa quyết định "skip health/metrics/deliver" ở `tasks.md` task 13.2 — riêng `deliver` vào phạm vi, `health`/`metrics` vẫn ngoài.
 
 - Keying: `rl:deliver:${ip}` — đường này chưa xác thực nên không có principal. **Không** đưa `siteId` vào khoá: ngân sách theo IP là để bảo vệ *origin*, và nếu chia theo site thì một IP đánh N site sẽ có N lần ngân sách. Đây là ngoại lệ có chủ ý với quy tắc "mọi khoá hạ tầng mang siteId" — ghi vào §17 cùng nhóm với `rl:recovery:${ip}` đã có tiền lệ.
-- Ngưỡng mặc định 1200/phút/IP: cao gấp 4 lần `LUMIBASE_API_RATE_LIMIT` vì delivery là đường một-frontend-nhiều-request, và traffic thật thường đến sau CDN (nhiều người dùng chung một IP egress). Đây là lưới chống lạm dụng, không phải quota.
+- Ngưỡng mặc định 1200/phút/IP: cao gấp 4 lần `LUMIBASE_API_RATE_LIMIT` vì delivery là đường một-frontend-nhiều-request, và traffic thật thường đến sau CDN (nhiều người dùng chung một IP egress). Đây là lưới chống lạm dụng, không phải quota. **Chốt 2026-08-01 (§21.6):** giữ 1200 sau đo `load-penetration.js` (50 RPS một IP → 429 sau ~24s).
 - Fail-open theo cùng chính sách `middleware/rate-limit.ts` hiện hành (`LUMIBASE_RATE_LIMIT_FAIL_CLOSED` áp dụng chung).
 - Nguồn IP phải đọc qua cùng helper mà limiter hiện tại dùng (tôn trọng `X-Forwarded-For` sau Caddy) — không tự parse header trong route.
 
@@ -613,5 +618,5 @@ Nguyên tắc: mọi knob là env (không settings row) → không đụng setup
 3. §11 Caddy plugin ratelimit vs app-level only — phụ thuộc chấp nhận custom Caddy build.
 4. §12 tương tác transaction tường minh với `withRls` set_config — cần spike xác nhận trên cả 3 connection path (`db.ts:19-65`) trước khi viết Req 16.5.
 5. §10.3 AI chat async tái dùng `flow_runs` hay bảng riêng.
-6. §14.9 ngưỡng `LUMIBASE_DELIVER_RATE_LIMIT` = 1200/phút/IP là **ước lượng chưa đo** — chốt lại bằng số thật sau `load-penetration.js` (Req 19.13); nếu traffic thật đến sau CDN với ít IP egress thì ngưỡng theo IP mất tác dụng và phải chuyển sang keying theo `CF-Connecting-IP`/`X-Forwarded-For` đầu chuỗi (hoặc bỏ tầng 3, dựa vào tầng 1+2).
-7. §14.3 `unavailable` trên KV chỉ phát khi `get` ném — cần xác nhận Workers KV thực sự ném (chứ không trả `null`) khi namespace lỗi; nếu không, `unavailable` trên CF là không quan sát được và Req 19.9 chỉ có ý nghĩa trên Docker.
+6. ~~§14.9 ngưỡng `LUMIBASE_DELIVER_RATE_LIMIT` = 1200/phút/IP là ước lượng chưa đo.~~ **CHỐT (2026-08-01):** giữ **1200/phút/IP**. Đo bằng `load-penetration.js` (50 RPS ≈ 3000/phút, một IP, cửa sổ 40s): sau ~24s limiter trả **429** (~40% request trong mẫu) — đúng vai trò lưới chống lạm dụng origin, không phải quota CDN. Synthetic single-IP load test đo DB-query-per-404 nên đặt `LUMIBASE_DELIVER_RATE_LIMIT=0` (hoặc nâng tạm). IP đã lấy qua helper XFF/`CF-Connecting-IP` sẵn có; nếu CDN gộp nhiều user vào ít IP egress thì tầng 3 kém hiệu quả — tầng 1+2 (guard + tombstone) vẫn độc lập. Không hạ default dưới 1200 sau phép đo này.
+7. ~~§14.3 `unavailable` trên KV chỉ phát khi `get` ném.~~ **CHỐT (2026-08-01, spike Workers KV docs):** `KVNamespace.get` **trả `null` khi miss** (không ném). Platform docs khuyến nghị `try/catch` cho lỗi hạ tầng/runtime — khi `get` thực sự ném, adapter map sang `unavailable` (đúng). Soft failure nếu surface như `null` sẽ sụp về `miss` → gọi `load`/DB (Req 19.9 degrade an toàn, không 5xx giả). **`unavailable` quan sát được chủ yếu trên Docker/Redis**; trên CF nó là đường hiếm (throw thật), không phải tín hiệu miss.

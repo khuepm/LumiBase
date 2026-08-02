@@ -17,7 +17,9 @@ import {
 import {
   buildNegativeCache,
   forgetNegative,
+  negativeCollectionKey,
   negativePageKey,
+  NEGATIVE_KEY_MAXLEN,
 } from '../services/negative-cache';
 import { createNegativeCache } from '@lumibase/runtime';
 
@@ -126,6 +128,49 @@ describe('P17 — bad-shape identifiers → 404 with 0 DB queries', () => {
     const res = await deliverApp({ db }).request('/api/v1/deliver/llms.txt/not valid!');
     expect(res.status).toBe(404);
     expect(db.selectCount()).toBe(0);
+  });
+});
+
+describe('404 must not be an oracle (design §14.6, dod-review §2c)', () => {
+  it('returns a byte-identical 404 for bad shape and for a real miss', async () => {
+    // Bad shape → rejected by the guard, zero DB queries.
+    const badShape = fakeDb([]);
+    const shapeRes = await deliverApp({ db: badShape }).request(
+      '/api/v1/deliver/page/site-a/Has%20Spaces',
+    );
+
+    // Well-formed but absent → guard passes, DB queried, still 404.
+    const realMiss = fakeDb([[]]);
+    const missRes = await deliverApp({ db: realMiss }).request(
+      '/api/v1/deliver/page/site-a/no-such-page',
+    );
+
+    expect(shapeRes.status).toBe(404);
+    expect(missRes.status).toBe(404);
+    expect(badShape.selectCount()).toBe(0);
+    expect(realMiss.selectCount()).toBeGreaterThan(0);
+
+    // The whole point: a prober cannot tell the two apart. If these ever
+    // diverge, the endpoint leaks which identifiers are well-formed.
+    expect(await shapeRes.text()).toBe(await missRes.text());
+    expect(shapeRes.headers.get('cache-control')).toBe(
+      missRes.headers.get('cache-control'),
+    );
+  });
+});
+
+describe('negative key material is bounded (design §14.5)', () => {
+  it('clamps an oversized collection name instead of minting a giant key', () => {
+    // SAFE_FIELD_NAME bounds the alphabet but not the length, so an
+    // authenticated caller could otherwise mint multi-KB Redis keys.
+    const huge = 'a'.repeat(10_000);
+    const key = negativeCollectionKey('site-a', huge);
+    expect(key.length).toBeLessThanOrEqual(`neg:site-a:collection:`.length + NEGATIVE_KEY_MAXLEN);
+    expect(key.startsWith('neg:site-a:collection:aaa')).toBe(true);
+  });
+
+  it('leaves a normal collection name untouched', () => {
+    expect(negativeCollectionKey('site-a', 'posts')).toBe('neg:site-a:collection:posts');
   });
 });
 
@@ -240,6 +285,44 @@ describe('P20 — tombstone isolation + credentials never receive tombstone', ()
     expect(res.status).toBe(200);
     // Credentialed path still hit the DB despite the tombstone.
     expect(db.selectCount()).toBeGreaterThan(0);
+  });
+});
+
+describe('Req 19.14 — DB-query-per-404 ≤ 0.05 (finite miss pool)', () => {
+  it('absorbs ≥95% of repeated missing-slug 404s via tombstones', async () => {
+    const cache = new MemoryCacheProvider();
+    const db = fakeDb(Array.from({ length: 200 }, () => []));
+    const app = deliverApp({
+      db,
+      cache,
+      env: { LUMIBASE_NEGATIVE_CACHE_TTL: '30' },
+    });
+
+    const missPool = 40;
+    const rounds = 25; // 40 × 25 = 1000 miss-pool hits after warm-up
+    let notFound = 0;
+
+    // Warm the pool once (one DB query per key).
+    for (let i = 0; i < missPool; i++) {
+      const res = await app.request(`/api/v1/deliver/page/site-a/miss-${i}`);
+      expect(res.status).toBe(404);
+      notFound += 1;
+    }
+    const warmQueries = db.selectCount();
+    expect(warmQueries).toBe(missPool);
+
+    // Repeat the same keys — must be served from tombstones (0 extra selects).
+    for (let r = 0; r < rounds; r++) {
+      for (let i = 0; i < missPool; i++) {
+        const res = await app.request(`/api/v1/deliver/page/site-a/miss-${i}`);
+        expect(res.status).toBe(404);
+        notFound += 1;
+      }
+    }
+
+    expect(db.selectCount()).toBe(warmQueries);
+    const queriesPer404 = db.selectCount() / notFound;
+    expect(queriesPer404).toBeLessThanOrEqual(0.05);
   });
 });
 
