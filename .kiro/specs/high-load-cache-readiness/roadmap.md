@@ -51,7 +51,7 @@
 | Cửa sổ stale sau khi đổi quyền | chưa đo (không thuộc workload Phase 0) | ≤ 5s | ≤ 1s (event-driven) | ≤ 1s |
 | Cửa sổ stale nội dung sau ghi | chưa đo (không invalidation trong workload Phase 0) | n/a | ≤ 5s (tag purge + revalidate) | ≤ 5s |
 | Scale ngang Docker | chưa đo (baseline chạy 1 CMS process) | không đổi | không đổi | an toàn với N replica |
-| k6 `load-items` throughput | list 42.16 RPS, p50 214ms / p95 675ms / p99 1,040ms; detail 10.15 RPS, p50 120ms / p95 339ms / p99 470ms; create 16.96 RPS, p50 344ms / p95 822ms / p99 1,240ms (2026-08-02; offset pagination) | +x% (đo) | +x% (đo) | +x% (đo) |
+| k6 `load-items` throughput | list 42.16 RPS, p50 214ms / p95 675ms / p99 1,042ms; detail 10.15 RPS, p50 120ms / p95 339ms / p99 470ms; create 16.96 RPS, p50 344ms / p95 822ms / p99 1,244ms (2026-08-02; offset pagination; detail đọc **một item cố định** — hot row, không phải random read trên 100k) | +x% (đo) | +x% (đo) | +x% (đo) |
 | DB query / request 404 (slug rác) | 1 (mọi request chạm DB) | ≤ 1 (guard hình dạng chặn phần rác thô) | **0.0308** (k6 `load-penetration.js` 2026-08-01, MISS_POOL=40, 50 RPS × 2m, docker postgres+redis; ≤ 0.05 ✓ — xem `baseline/2026-08-01-penetration-docker-notes.json`) | ≤ 0.05 |
 
 ## 3. Các phase

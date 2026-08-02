@@ -35,7 +35,7 @@
   },
   "workloads": {
     "smoke": "smoke.js, 1 VU, 30s",
-    "items": "load-items.js, list ramp 1->50 VUs plus 10 VU detail and 30 VU create burst, 2m",
+    "items": "load-items.js, list ramp 1->50 VUs plus 10 VU detail and 30 VU create burst, 2m. List uses offset pagination (offset 0..4*limit). Detail reads ONE fixed seeded id (DETAIL_ITEM_ID, default I00000100000100000000) for reproducibility — so item_detail_duration_ms is a hot-row read served from the Postgres buffer cache, not a random read across 100k rows. Do not compare it against a future random-read workload.",
     "realtime": "load-realtime.js, 1->100 VUs, 80s stages",
     "deliver": "load-deliver.js, 20 VUs, 2m, 90% delivery / 10% item list"
   },
