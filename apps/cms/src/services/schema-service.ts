@@ -319,6 +319,17 @@ export interface SchemaServiceDeps {
   queue?: QueueProvider;
   /** Attribution for schema change events written to the feed (defaults to system). */
   cdcActor?: OutboxActor;
+  /**
+   * Negative-cache TTL in seconds (Req 19.5), resolved by the caller from the
+   * runtime env (`resolveNegativeTtl(c.env)`); `0` disables tombstones.
+   *
+   * Passed in rather than read from `process.env` here: on Cloudflare Workers
+   * `process.env` does not carry wrangler vars, so reading it directly would
+   * silently ignore the knob on one of the two supported runtimes
+   * (non-negotiable rule #3). Absent → falls back to `process.env` so Node
+   * callers that have not been threaded through yet keep working.
+   */
+  negativeCacheTtl?: number;
 }
 
 export class SchemaService {
@@ -1097,30 +1108,51 @@ export class SchemaService {
    * non-existent collections do not re-hit Postgres.
    */
   async getCompiled(collectionName: string): Promise<CompiledCollection | null> {
-    if (this.deps.cache) {
-      const { buildNegativeCache, negativeCollectionKey, resolveNegativeTtl } = await import(
-        './negative-cache'
-      );
-      const ttl = resolveNegativeTtl(
+    const cache = this.deps.cache;
+    if (!cache) return this.compile(collectionName);
+
+    const { buildNegativeCache, negativeCollectionKey, resolveNegativeTtl } = await import(
+      './negative-cache'
+    );
+    const ttl =
+      this.deps.negativeCacheTtl ??
+      resolveNegativeTtl(
         typeof process !== 'undefined'
           ? (process.env as { LUMIBASE_NEGATIVE_CACHE_TTL?: string })
           : undefined,
       );
-      const swr = this.getSchemaSwr();
-      if (ttl > 0) {
-        const neg = buildNegativeCache(this.deps.cache, ttl);
-        return neg.resolve(negativeCollectionKey(this.deps.siteId, collectionName), async () => {
-          if (swr) {
-            return swr.get(cacheKey(this.deps.siteId, collectionName));
-          }
-          return this.compile(collectionName);
-        });
-      }
-      if (swr) {
-        return swr.get(cacheKey(this.deps.siteId, collectionName));
-      }
-    }
-    return this.compile(collectionName);
+
+    // SWR now owns the positive key `schema:${siteId}:${name}` (Req 9.2) and
+    // stores an envelope `{ v, softExpiresAt }` there — `compile()` no longer
+    // writes it. So the plain `cache.get<CompiledCollection>(key)` short-circuit
+    // that used to sit here had to go: it would read the envelope and hand it
+    // back cast as a CompiledCollection, leaving every caller with `undefined`
+    // for `id`/`fields`/`primaryKeyField`.
+    //
+    // That also forces the ordering: tombstone BEFORE the SWR read, not after.
+    // `swr.get()` computes on miss, so consulting it first would reach Postgres
+    // before we ever looked at the tombstone — defeating Req 19 exactly on the
+    // traffic it exists to absorb. The cost is one extra cache read per lookup
+    // of a real collection; that is the deliberate price of SWR owning the
+    // positive path, and it is a cache read, not a DB round-trip.
+    const swr = this.getSchemaSwr();
+    const readPositive = () =>
+      swr ? swr.get(cacheKey(this.deps.siteId, collectionName)) : this.compile(collectionName);
+
+    if (ttl <= 0) return readPositive();
+
+    const neg = buildNegativeCache(cache, ttl, {
+      // Req 19.15: collection tombstones must be observable too, not just the
+      // delivery ones — otherwise a probe storm on `/items/:collection` is
+      // invisible in Prometheus.
+      onNegativeHit: () => {
+        void import('../routes/metrics').then((m) => m.cacheNegativeHitsTotal.inc());
+      },
+      onNegativeWrite: () => {
+        void import('../routes/metrics').then((m) => m.cacheNegativeWritesTotal.inc());
+      },
+    });
+    return neg.resolve(negativeCollectionKey(this.deps.siteId, collectionName), readPositive);
   }
 
   async invalidate(collectionName: string) {

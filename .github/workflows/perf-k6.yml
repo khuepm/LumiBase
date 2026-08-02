@@ -88,10 +88,15 @@ jobs:
           DATABASE_URL: postgresql://lumibase:lumibase_dev@localhost:5432/lumibase
         run: pnpm -F @lumibase/database migrate
 
+      # Env names and the seeded site/collection ids come from
+      # `apps/cms/k6/seed.ts` (PR #360), which owns Phase 0. Keep them in sync
+      # with that script rather than inventing a second contract.
       - name: Seed load-test dataset (CI size)
         env:
           DATABASE_URL: postgresql://lumibase:lumibase_dev@localhost:5432/lumibase
-          SEED_ITEMS: 200
+          ITEMS_PER_COLLECTION: 200
+          PAGES_PER_SITE: 20
+          COLLECTION_COUNT: 2
         run: pnpm exec tsx apps/cms/k6/seed.ts
 
       - name: Start CMS (web role)
@@ -123,17 +128,22 @@ jobs:
       - name: Run k6 smoke
         env:
           BASE_URL: http://127.0.0.1:1989
-          SITE_ID: site_load_a
-          TOKEN: dev:user123
+          SITE_ID: loadtest-main-00000001
+          TOKEN: dev:admin@lumibase.dev:admin
         run: k6 run apps/cms/k6/smoke.js
 
+      # PAGE_COUNT must match PAGES_PER_SITE above: the Zipf pool indexes
+      # `loadtest-page-001..N`, so a larger pool would request slugs the seed
+      # never created and turn the run into a 404 storm.
       - name: Run k6 load-deliver (short CI profile)
         env:
           BASE_URL: http://127.0.0.1:1989
-          SITE_ID: site_load_a
-          COLLECTION: articles
+          SITE_ID: loadtest-main-00000001
+          TOKEN: dev:admin@lumibase.dev:admin
+          COLLECTION: loadtest_collection_01
           DURATION: 30s
-          RATE: 10
+          VUS: 5
+          PAGE_COUNT: 20
         run: k6 run --summary-export=load-deliver-summary.json apps/cms/k6/load-deliver.js
 
       - name: Upload k6 summary artifact

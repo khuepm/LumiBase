@@ -127,9 +127,27 @@ async function isAdmin(c: Context<AppEnv>): Promise<boolean> {
   return bundle.admin === true;
 }
 
+/**
+ * Namespaces a purge target may live in. The `siteId` must occupy the tenant
+ * *segment* — `items:${siteId}:…`, not merely appear somewhere in the string.
+ *
+ * `value.includes(siteId)` was not enough: site ids are not all 21-char nanoids
+ * (the Req 19 shape survey found `site-a`, `site_test`, `__default__` in live
+ * use), so a tenant named `site-a` would pass the check for
+ * `items:site-abc:posts` and purge a neighbour's cache. Cross-tenant purge is a
+ * DoD 2b violation and a cache-stampede lever against another tenant.
+ */
+const PURGE_NAMESPACES = ['items', 'deliver', 'schema', 'perm', 'neg'] as const;
+
 /** Reject purge targets that do not belong to the active tenant namespace. */
-function isTenantScoped(siteId: string, value: string): boolean {
-  return value.includes(siteId);
+export function isTenantScoped(siteId: string, value: string): boolean {
+  // Anchored on both sides: `<namespace>:<siteId>` followed by `:` or end.
+  for (const namespace of PURGE_NAMESPACES) {
+    const prefix = `${namespace}:${siteId}`;
+    if (value === prefix || value.startsWith(`${prefix}:`)) return true;
+  }
+  // Site-level tombstone is the one flat key (design §14.5 / §17 exception).
+  return value === `neg:site:${siteId}`;
 }
 
 cacheUtilsRouter.post('/purge', async (c) => {

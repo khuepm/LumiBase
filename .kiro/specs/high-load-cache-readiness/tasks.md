@@ -8,11 +8,11 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
 
 ### Phase 0 — Baseline (tiên quyết, chặn mọi phase sau)
 
-- [x] 0. Baseline đo đạc
-  - [x] 0.1 Viết k6 scenario `apps/cms/k6/load-deliver.js`: 90% GET `/deliver/page/:site/:slug` phân phối zipf trên ≥50 slug seed, 10% list items; xuất summary JSON (Req 0.2; design §13.3)
-  - [x] 0.2 Dựng dataset seed chuẩn (script `apps/cms/k6/seed.ts`): 2 site × 5 collection × N items — `SEED_ITEMS` default 1000 (CI), document 100k for full baseline (Req 0.1, 16.2)
-  - [x] 0.3 Chạy `smoke.js`, `load-items.js`, `load-realtime.js`, `load-deliver.js` trên docker-compose chuẩn; lưu kết quả + mô tả cấu hình vào `.kiro/specs/high-load-cache-readiness/baseline/` (Req 0.1) — **partial/pending_env:** `2026-08-02-baseline-notes.json` + penetration 2026-08-01; measured p95/RPS pending full stack run
-  - [x] 0.4 Điền cột Baseline bảng `roadmap.md` §2 bằng số đo thực (Req 0.3) — **partial:** `pending_env` + audit inference; penetration row measured 0.0308 (post-P1 defence)
+- [ ] 0. Baseline đo đạc
+  - [ ] 0.1 Viết k6 scenario `apps/cms/k6/load-deliver.js`: 90% GET `/deliver/page/:site/:slug` phân phối zipf trên ≥50 slug seed, 10% list items; xuất summary JSON (Req 0.2; design §13.3) — **PR #360**
+  - [ ] 0.2 Dựng dataset seed chuẩn (script `apps/cms/k6/seed.ts`): 2 site × 5 collection × 100k items site chính — dùng luôn cho EXPLAIN ở task 18.2 (Req 0.1, 16.2) — **PR #360**
+  - [ ] 0.3 Chạy `smoke.js`, `load-items.js`, `load-realtime.js`, `load-deliver.js` trên docker-compose chuẩn; lưu kết quả + mô tả cấu hình vào `.kiro/specs/high-load-cache-readiness/baseline/` (Req 0.1) — **PR #360**
+  - [ ] 0.4 Điền cột Baseline bảng `roadmap.md` §2 bằng số đo thực (Req 0.3) — **PR #360**
 
 ### Phase P0 — Vá nhanh & quick wins (v0.18.x)
 
@@ -148,10 +148,12 @@ Nhóm này bổ sung sau khi spec gốc đã lập, nên đánh số nối tiế
   - [x] 22.3 **[P1, cần 8]** Mở rộng `CacheProvider`: `CacheEntry<T>` 4 trạng thái + `getEntry` + `setNegative`; envelope `{"__lumi":"neg","v":1}` trên dây (KHÔNG dùng `null`/chuỗi rỗng — cả 2 adapter coi là falsy); Redis phân biệt lỗi → `unavailable` thay vì nuốt (đi cùng Req 13.2); KV cùng envelope (Req 19.4; design §14.3). Bổ sung vào contract test suite của task 8.5 để chạy trên cả 2 adapter + LRU
   - [x] 22.4 **[P1, cần 22.3]** Helper `createNegativeCache` trong `packages/runtime/src/cache-helpers.ts` cạnh `createSwrCache`: TTL + jitter ±20%, `resolve`/`forget`; JSDoc ghi rõ KHÔNG gộp single-flight và lý do (Req 19.5; design §14.4). Unit test fake-timer: jitter nằm trong biên, `unavailable` → gọi `load` (không tự coi là miss)
   - [x] 22.5 **[P1, cần 22.4]** Áp tombstone vào 4 đường đã audit: `deliver.ts:411-420` (page), `deliver.ts:287-294` (site/llms.txt), `SchemaService.getCompiled` (`schema-service.ts:1074-1080`), `ItemService.resolveCollection` (`item-service.ts:642-652` — hiện bỏ qua cache hoàn toàn, cho đi qua `getCompiled`). Request có Authorization/preview KHÔNG bao giờ nhận tombstone (Req 19.5, 19.8, 19.12; design §14.5). Test P18 + P20
-  - [x] 22.6 **[P1, cần 22.4]** `forget` sau commit tại write path đã có API (tạo collection, tạo item, tạo site, **tạo/đổi slug page**) — cùng vị trí và cùng chính sách lỗi với tag purge task 9.1 (lỗi → metric + warn, không fail request) (Req 19.7; design §14.7). Test P19: tạo tài nguyên đang bị tombstone → 200 ngay, không chờ TTL.
+  - [x] 22.6 **[P1, cần 22.4]** `forget` sau commit tại write path đã có API (tạo collection, tạo site, **tạo/đổi slug page**) — cùng vị trí và cùng chính sách lỗi với tag purge task 9.1 (lỗi → metric + warn, không fail request) (Req 19.7; design §14.7). Test P19: tạo tài nguyên đang bị tombstone → 200 ngay, không chờ TTL.
     - **B16 closed:** `PageService` + `POST/PATCH /api/v1/pages` gọi `forgetNegative(negativePageKey…)` (cả slug cũ khi rename).
+    - **Bỏ — item tombstone:** `forget` cho `neg:*:item:*` đã bị xoá khỏi `ItemService.create` **và `bulk()`**. Không đường nào ghi khoá đó (Req 19.8 cấm serve tombstone cho request có credentials, mà mọi đọc item-by-id đều sau auth). Trong `bulk()` nó còn là một Redis DEL **mỗi row** — insert 500 row tốn 500 round-trip xoá khoá không tồn tại. Xem design §14.5.
   - [x] 22.7 **[P1, cần 13]** Limiter riêng cho `/api/v1/deliver/*`: key `rl:deliver:${ip}`, default 1200/phút (`LUMIBASE_DELIVER_RATE_LIMIT`), 429 + `Retry-After` + `no-store`; KHÔNG ghi tombstone từ request bị 429; đọc IP qua cùng helper limiter hiện hành, không tự parse header. Mount cạnh `withDb()` tại `index.ts:367` (Req 19.10–19.11; design §14.9). Cập nhật `security-guards.wiring.test.ts` thêm assertion (không sửa assertion cũ). **§21.6 CHỐT:** giữ 1200 (đo 2026-08-01).
-  - [x] 22.8 **[P1]** Metrics `cache_negative_hits_total` / `cache_negative_writes_total` wire qua `onEvent` (đi cùng task 14.1); panel Grafana tách hit-vì-có-dữ-liệu với hit-vì-tombstone (Req 19.15) — `docker/grafana/dashboards/lumibase.json` + `lumibase-slo.json`
+  - [x] 22.8 **[P1]** Metrics `cache_negative_hits_total` / `cache_negative_writes_total`; panel Grafana tách hit-vì-có-dữ-liệu với hit-vì-tombstone (Req 19.15) — `docker/grafana/dashboards/lumibase.json` + `lumibase-slo.json`
+    - **Sai mô tả ban đầu:** task viết "wire qua `onEvent`", nhưng `onEvent` thuộc task 8.1 và chưa ship — thực tế counter được inc qua hook `onNegativeHit`/`onNegativeWrite` của `createNegativeCache`. Bản đầu chỉ `deliver.ts` truyền hook, nên tombstone của `getCompiled`/`resolveCollection` **vô hình trong Prometheus** dù task 22.5 đã wire tombstone cho chúng. Đã bổ sung hook tại `SchemaService.getCompiled` (rà code 2026-08-02). Khi task 8.1 ship `onEvent`, gom cả hai chỗ về hook trung tâm và bỏ dynamic import.
   - [x] 22.9 **[P1]** k6 `apps/cms/k6/load-penetration.js`: 95% slug miss (finite `MISS_POOL`) + 5% hợp lệ; đo DB-query-per-404, mục tiêu ≤ 0.05; chạy trước/sau, điền số thật vào roadmap §2 (Req 19.13–19.14) — **đo 2026-08-01: 0.0308** (`baseline/2026-08-01-penetration-docker-notes.json`)
   - [x] 22.10 **[P1]** Docs: mục "Cache penetration" trong `docs/en/features/caching.md` (ba tầng, quyết định không dùng Bloom filter + điều kiện tái mở, ràng buộc TTL ngắn ↔ độ trễ thấy tài nguyên mới); env reference thêm 2 biến mới (DoD mục 4)
 

@@ -46,7 +46,7 @@ The repo's `apps/landing/public/robots.txt` is clean (`Allow: /` for all). The A
   The licence is **Apache-2.0**, recorded in `CHANGELOG.md` under `[0.23.0]`
   (2026-07-14): "Project license updated to the Apache License, Version 2.0 (from
   MIT), effective this release", with `v0.22.0` the final MIT release. The repo is
-  on `0.24.1`, so Apache-2.0 applies. The root `LICENSE`, all four published
+  on `0.25.0`, so Apache-2.0 applies. The root `LICENSE`, all four published
   packages, `README.md`, and the landing app's own copy (`layout.tsx`,
   `page.tsx`, `pricing/page.tsx`, `Footer.tsx`, `/license`) already agree.
 

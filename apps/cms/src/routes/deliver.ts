@@ -464,7 +464,10 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
   const slugShape = assertPublicIdentifier('slug', slug);
   if (!siteShape.ok || !slugShape.ok) {
     c.header('Cache-Control', 'no-store');
-    return c.json({ error: 'Not found.' }, 404);
+    // MUST stay byte-identical to the real-miss 404 below (design §14.6,
+    // dod-review §2c "404 không thành oracle") — a distinct body would tell a
+    // prober which identifiers are well-formed.
+    return c.json({ error: 'Page not found.' }, 404);
   }
 
   const db = c.get('db');
