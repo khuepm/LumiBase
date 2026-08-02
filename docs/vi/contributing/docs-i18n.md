@@ -1,25 +1,35 @@
 ---
 title: Docs i18n Sync
 sourceLang: en
-version: 1
-lastUpdated: 2026-07-08T20:22:56.098Z
+version: 2
+lastUpdated: 2026-08-02T16:58:45.665Z
 translatedFrom: en
-sourceHash: e8086806e67522bc
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 62d2d2e9de759062
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T16:58:45.665Z
+codeVerifiedHash: 62d2d2e9de759062
+codeVerifiedClaims: 10
 ---
 
 # Documentation i18n Sync (EN ⇄ VI)
 
 LumiBase phát hành docs ở hai locale: `docs/en` (canonical) và `docs/vi`. Bộ công cụ
 i18n sync nằm trong `scripts/docs-i18n/` giữ chúng đồng bộ, phát hiện khi một
-file được viết sai ngôn ngữ, dịch các target đã stale hoặc bị thiếu, và
-stamp mỗi file được quản lý với một version và update timestamp.
+file được viết sai ngôn ngữ, báo cáo cặp nào đang lệch, và stamp mỗi file được
+quản lý với một version và update timestamp.
 
-Việc dịch do Claude thực hiện (Anthropic Messages API) — không có
-dịch vụ machine-translation của bên thứ ba nào. Việc dịch chạy trong CI, nơi
-`ANTHROPIC_API_KEY` tồn tại dưới dạng secret; ở local bạn có thể chạy detection (và bước
-no-loss preservation) mà không cần key nào.
+**Bản dịch được viết tay, không phải machine translation.** Một người — trên thực
+tế là một LLM đọc tài liệu nguồn trực tiếp trong editor — viết phía đích, rồi
+`stamp-pair.mjs` ghi lại provenance. Đây là quyết định có chủ ý của dự án (chi phí,
+cộng với việc muốn kiểm soát chất lượng thay vì một pipeline không giám sát); nó
+được ghi trong `docs/.i18n/TASKS.md` §6. **Không có secret `ANTHROPIC_API_KEY`
+trong CI và cũng không cần có**, nên không có gì trong repo này tự dịch.
+
+Đường machine-translation (`--apply`, Anthropic Messages API) vẫn còn trong code
+cho ai muốn đảo lại quyết định đó, nhưng nó không được dùng: khi không có key nó
+**báo lỗi rõ ràng** thay vì im lặng không làm gì. Trước đây nó chọn cách im lặng,
+và CI commit "sync en/vi translations" mỗi lần push docs trong khi không dịch gì cả.
 
 ## Nó làm gì
 
@@ -31,17 +41,19 @@ no-loss preservation) mà không cần key nào.
    thực chất chứa tiếng Việt được coi là được author bằng tiếng Việt.
 3. **No-loss preservation.** Khi một file `en` chứa tiếng Việt và không có
    file tương ứng ở `docs/vi`, nội dung tiếng Việt đó được sao chép vào `docs/vi`
-   *trước khi* bất cứ thứ gì dịch đè lên file `en`. Khi một file `en` tiếng Việt
+   *trước khi* phía `en` bị viết lại bằng tiếng Anh. Khi một file `en` tiếng Việt
    xung đột với một file `docs/vi` đang tồn tại và khác biệt, bộ công cụ **không**
    ghi đè bất cứ thứ gì — nó sao chép nội dung có nguy cơ vào
    `docs/.i18n/preserved/` và gắn cờ conflict để review thủ công.
-4. **Machine translation.** Các target đã stale hoặc bị thiếu được dịch với
-   bảo vệ placeholder an toàn cho markdown (code, link, inline code và HTML
-   không bao giờ được gửi tới bộ dịch).
+4. **Translation planning.** Các target đã stale hoặc bị thiếu được liệt kê thành
+   việc cần làm — bộ công cụ báo *cái gì* cần dịch và theo chiều nào; con người
+   viết phần chữ. (Đường `--apply` không dùng sẽ dịch với bảo vệ placeholder an
+   toàn cho markdown, nên code, link, inline code và HTML không bao giờ được gửi
+   tới một API.)
 5. **Versioning.** Mỗi file được ghi ra nhận front matter: `version`,
    `lastUpdated`, `sourceLang`, `translatedFrom`, `sourceHash`, `mtEngine`, và
-   `syncStatus` (`machine-translated` hoặc `needs-review`). Việc dịch lại chỉ
-   xảy ra khi `sourceHash` của source thay đổi, nên output ổn định.
+   `syncStatus`. Một target chỉ bị coi là stale khi `sourceHash` của nguồn thay
+   đổi, nên stamp lại là idempotent và số version hai locale luôn so sánh được.
 6. **Audit trail.** Mỗi lần chạy đều append vào `docs/i18n-sync-log.md` và ghi ra
    một file `docs/.i18n/last-report.json` đọc được bằng máy.
 
@@ -51,26 +63,45 @@ no-loss preservation) mà không cần key nào.
 # Detect only — classify files, write log + report, change no docs.
 pnpm docs:i18n:detect
 
-# Preserve at-risk Vietnamese content + stamp versions, but do not translate
-# (safe to run without an API key).
+# Preserve at-risk Vietnamese content + stamp versions, but do not translate.
 pnpm docs:i18n:preserve
 
-# Full sync: preserve + translate with Claude + version. Needs ANTHROPIC_API_KEY.
-ANTHROPIC_API_KEY=*** pnpm docs:i18n:sync
+# Not used by this project: needs ANTHROPIC_API_KEY and exits 2 without one.
+pnpm docs:i18n:sync
 ```
+
+Dịch một file bằng tay — quy trình thực tế — gồm bốn bước:
+
+```bash
+# 1. Đọc docs/<src>/<rel>, viết bản dịch vào docs/<tgt>/<rel>.
+# 2. Kiểm tra các claim của doc so với source tree (bắt buộc, trước khi stamp).
+pnpm docs:i18n:verify <rel>
+
+# 3. Ghi provenance cho cả hai locale (đừng tự viết front matter này bằng tay).
+node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> --verified
+
+# 4. Xác nhận cặp đã up-to-date, rồi bỏ các artifact máy sinh.
+pnpm docs:i18n:detect
+git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md
+```
+
+`--verified` từ chối ghi cờ `codeVerified` khi còn claim nào stale, và cũng từ chối
+khi một doc không có claim nào tooling kiểm được — "không có gì để kiểm" không phải
+là pass, nên file đó được stamp mà không kèm cờ và cần người đọc lại. Quy tắc từng
+file và backlog còn lại nằm ở `docs/.i18n/TASKS.md`.
 
 Environment variables:
 
 | Variable | Mục đích | Mặc định |
 |----------|---------|---------|
-| `ANTHROPIC_API_KEY` | Anthropic API key (bắt buộc để dịch) | — |
+| `ANTHROPIC_API_KEY` | Anthropic API key — chỉ dành cho đường `--apply` không dùng | — |
 | `ANTHROPIC_MODEL` | Claude model id | `claude-sonnet-4-6` |
 | `ANTHROPIC_BASE_URL` | API base URL (proxy override) | `https://api.anthropic.com` |
 | `ANTHROPIC_MAX_TOKENS` | Số output token tối đa mỗi request | `8192` |
 | `DOCS_ROOT` | Override docs root (testing/CI) | repo `docs/` |
 
-Không có API key, `--apply` tự động hạ xuống thành preservation +
-versioning và ghi lại lý do trong log.
+Khi không có API key, `--apply` thoát với mã `2` và chỉ bạn sang
+`docs:i18n:detect` / `docs:i18n:preserve`. Nó không âm thầm hạ cấp.
 
 ## CI
 
@@ -79,9 +110,13 @@ versioning và ghi lại lý do trong log.
 
 - **Pull requests:** detect-only. Upload report dưới dạng artifact; không ghi
   gì cả.
-- **Push lên `main`:** full sync, sau đó commit kết quả trở lại.
+- **Push lên `main`:** preservation + version stamp, rồi commit trở lại. Nó
+  **không** dịch, và số cặp còn tồn đọng được in vào job summary để backlog luôn
+  nhìn thấy được.
 
-Cấu hình `ANTHROPIC_API_KEY` như một repository secret để việc dịch chạy được.
+Không có repository secret nào tham gia. Bản dịch vào repo qua pull request, viết
+tay, trong cùng commit với thay đổi làm nó cần thiết — xem quy tắc docs song ngữ
+trong `CLAUDE.md`.
 
 ## Front-matter fields
 
@@ -93,8 +128,15 @@ Cấu hình `ANTHROPIC_API_KEY` như một repository secret để việc dịch
 | `translatedFrom` | Locale nguồn mà một file dịch xuất phát từ đó |
 | `sourceHash` | Hash của source body mà bản dịch được dựng từ đó |
 | `contentHash` | Hash của chính body của file được author (phát hiện thay đổi) |
-| `mtEngine` | Engine được dùng (`claude`) |
-| `syncStatus` | `machine-translated` hoặc `needs-review` |
+| `mtEngine` | Bản dịch được tạo ra thế nào: `manual` (viết tay, hiện hành) hoặc `claude` (output cũ của `--apply`) |
+| `syncStatus` | `human-translated` (hiện hành), hoặc `machine-translated` / `needs-review` từ đường cũ |
+| `codeVerified` | Timestamp lúc các claim về source code của doc được kiểm |
+| `codeVerifiedHash` | Body hash mà lần kiểm được ghim vào — sửa body là vô hiệu hoá đảm bảo đó |
+
+`syncStatus`/`sourceHash` trả lời "hai locale có cùng mô tả một source revision
+không?"; `codeVerified` trả lời "các claim của doc này về repo đã được kiểm chưa?".
+Hai câu hỏi khác nhau: hai bản dịch có thể khớp nhau hoàn hảo và cùng sai. Muốn coi
+là khớp hoàn toàn thì cần cả hai cờ.
 
 Docs viewer đọc `lastUpdated` cho ngày "last modified" hiển thị,
 quay về dùng filesystem mtime khi field này vắng mặt.
@@ -107,8 +149,7 @@ quay về dùng filesystem mtime khi field này vắng mặt.
 - Hướng author mặc định cho một cặp đã in-sync là `en → vi`. Các file
   được author bằng tiếng Việt dưới `docs/en` được phát hiện và xử lý, nhưng các cặp
   thông thường giả định tiếng Anh là canonical.
-- Các bản dịch được Claude tạo ra và output `needs-review` nên được
-  đọc soát trước khi release.
-- Mỗi tài liệu được dịch trong một request duy nhất; các doc rất dài có thể chạm
-  giới hạn `ANTHROPIC_MAX_TOKENS` và cần một giá trị cao hơn (lần chạy sẽ thất bại rõ ràng
-  thay vì ghi ra một file bị cắt cụt).
+- Năng suất dịch là năng suất con người, nên backlog lớn tiêu rất chậm: chạy
+  `pnpm docs:i18n:detect` để lấy số hiện hành thay vì cho rằng CI đã đuổi kịp.
+- Các trang `machine-translated` cũ có từ trước chính sách viết tay và chưa được
+  đọc soát hết.

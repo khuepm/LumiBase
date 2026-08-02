@@ -57,9 +57,13 @@ pnpm docs:i18n:detect                               # 3. confirm the pair reads 
 git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md   # 4. drop detect artifacts
 ```
 
+- **You write the translation yourself.** There is no `ANTHROPIC_API_KEY` and no
+  machine-translation step in CI — a deliberate decision (`docs/.i18n/TASKS.md` §6).
+  `--apply` exits 2 without a key; CI's push job only preserves + version-stamps.
+  Nothing translates behind your back, so an untranslated side stays untranslated.
 - **Which side is the source** is per-file, in the front matter (`sourceLang`). Some
-  docs are VI-source with a machine-translated EN side — editing the translated side
-  alone gets silently overwritten on the next `--apply`. Check before editing.
+  docs are VI-source with an EN side that is the translation — edit the source side,
+  then re-translate the other, or the pair reads stale. Check before editing.
 - `--verified` refuses to write `codeVerified` while any claim is stale, and refuses
   when a doc makes no testable claim at all (`unverifiable`) — "nothing to check" is
   not a pass, that file needs human review and is stamped without the flag.

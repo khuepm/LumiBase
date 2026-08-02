@@ -1,5 +1,15 @@
 # Nhiệm vụ: dịch docs EN↔VI — LumiBase
 
+> ⚠️ **CẬP NHẬT 2026-08-02 — quy trình đã được chốt vào tooling.**
+> CI **không còn** giả vờ dịch. Job `push` của `docs-i18n-sync.yml` giờ chạy
+> `--preserve-only` (rescue nội dung dán sai locale + stamp version) và commit với
+> message đúng việc nó làm; `sync.mjs --apply` không còn âm thầm hạ cấp khi thiếu
+> `ANTHROPIC_API_KEY` mà **thoát mã 2**. `stamp-pair.mjs` ghi
+> `mtEngine: manual` / `syncStatus: human-translated` thay vì mạo nhận là output của
+> API. Nghĩa là: mọi file trong bảng dưới đây chỉ giảm đi khi có người thật sự dịch —
+> không có tiến trình nền nào làm hộ. Ảnh chụp tại 0.25.0: **143 cặp, 88 up-to-date,
+> 55 còn lại**.
+>
 > ⚠️ **CẬP NHẬT 2026-07-25 — ĐỌC TRƯỚC KHI LÀM.**
 > PR [#205](https://github.com/khuepm/LumiBase/pull/205) **đã merge** ngày 2026-07-06 và
 > chỉ chứa batch 1 (17 file nhóm A). Chỉ dẫn "gộp vào PR #205" bên dưới **đã lạc hậu** —
@@ -269,7 +279,15 @@ so), tóm tắt khác biệt, và báo lại cho người điều phối (không
 
 `scripts/docs-i18n/sync.mjs --apply` **có thể** tự dịch bằng Claude API nếu
 `ANTHROPIC_API_KEY` được set — nhưng quyết định của người điều phối dự án là **không**
-dùng đường đó cho batch này (đã cân nhắc chi phí API + muốn kiểm soát chất lượng dịch
-qua LLM đọc hiểu trực tiếp thay vì pipeline không giám sát). Đừng tự thêm key vào
-môi trường hoặc đề xuất chạy `--apply` để "xong nhanh hơn" — nếu bạn thấy cách đó rõ
-ràng tốt hơn, hỏi người điều phối, không tự quyết.
+dùng đường đó (đã cân nhắc chi phí API + muốn kiểm soát chất lượng dịch qua LLM đọc
+hiểu trực tiếp thay vì pipeline không giám sát). Đừng tự thêm key vào môi trường hoặc
+đề xuất chạy `--apply` để "xong nhanh hơn" — nếu bạn thấy cách đó rõ ràng tốt hơn,
+hỏi người điều phối, không tự quyết.
+
+Quyết định này giờ được tooling thi hành, không chỉ nằm trong văn bản:
+
+- CI không truyền secret nào cho `sync.mjs` nữa; job `push` chạy `--preserve-only`.
+- `--apply` không có key → **exit 2** kèm hướng dẫn, thay vì im lặng hạ xuống
+  `--preserve-only`. Chính cái hạ cấp im lặng đó khiến CI commit "sync en/vi
+  translations" hàng tuần trong khi backlog không giảm một file nào.
+- Front matter nói thật về xuất xứ: `mtEngine: manual`, `syncStatus: human-translated`.
