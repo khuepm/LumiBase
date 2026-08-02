@@ -11,6 +11,15 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
+- **`lumibase` CLI (`packages/cli`).** The unscoped npm name now carries a real
+  dev tool: `lumibase init` (delegates to `create-lumibase`, so the scaffold has
+  one implementation), `lumibase types` (generates `.d.ts` from
+  `GET /api/v1/typegen/schema` — closing the "there is no typegen CLI" gap in
+  `docs/en/sdk/typegen.md`), and `lumibase doctor` (reports resolved config and
+  probes connectivity). Settings resolve flag > env > `lumibase.config.json`;
+  the token is never read from that file. Typegen output is deterministic, so
+  `lumibase types --check` works as a CI gate. See `docs/en/cli/index.md`.
+
 - **Cache penetration defence (Delivery API + schema lookup).** Public reads
   now stack three cheap filters before Postgres: identifier shape guards
   (404, zero queries), short-lived negative-cache tombstones on
