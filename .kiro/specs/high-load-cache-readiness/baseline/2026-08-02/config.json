@@ -1,0 +1,54 @@
+{
+  "measuredAt": "2026-08-02T15:51:32Z",
+  "runner": {
+    "script": "apps/cms/k6/baseline/run.sh",
+    "k6Image": "grafana/k6@sha256:e7eeddf1ce2361df6920d925297f487c0ba549c44be242c6a9c22f28d9b08efa",
+    "trendStats": ["avg", "min", "med", "max", "p(90)", "p(95)", "p(99)"],
+    "pagination": "offset=(page-1)*limit"
+  },
+  "host": {
+    "platform": "macOS 26.5.2",
+    "architecture": "arm64",
+    "cpuCores": 8,
+    "memoryBytes": 8589934592,
+    "dockerDesktop": "OrbStack",
+    "dockerEngine": "29.4.0"
+  },
+  "services": {
+    "postgres": "postgres:16-alpine / PostgreSQL 16.14",
+    "redis": "redis:7-alpine / Redis 7.4.9",
+    "cms": "Node.js Docker runtime, single process on 127.0.0.1:1989",
+    "k6": "grafana/k6 v2.1.0 (linux/arm64 container; image pinned by digest)",
+    "databaseUrl": "postgresql://lumibase:***@127.0.0.1:55432/lumibase_baseline",
+    "redisUrl": "redis://127.0.0.1:6379",
+    "rateLimit": "disabled for load-items and load-deliver to measure endpoint capacity"
+  },
+  "dataset": {
+    "sites": 2,
+    "collectionsPerSite": 5,
+    "primarySiteId": "loadtest-main-00000001",
+    "secondarySiteId": "loadtest-side-00000001",
+    "itemsPerCollectionPrimarySite": 100000,
+    "itemsPrimarySiteTotal": 500000,
+    "pagesPerSite": 100,
+    "zipfExponent": 1.1
+  },
+  "workloads": {
+    "smoke": "smoke.js, 1 VU, 30s",
+    "items": "load-items.js, list ramp 1->50 VUs plus 10 VU detail and 30 VU create burst, 2m. List uses offset pagination (offset 0..4*limit). Detail reads ONE fixed seeded id (DETAIL_ITEM_ID, default I00000100000100000000) for reproducibility — so item_detail_duration_ms is a hot-row read served from the Postgres buffer cache, not a random read across 100k rows. Do not compare it against a future random-read workload.",
+    "realtime": "load-realtime.js, 1->100 VUs, 80s stages",
+    "deliver": "load-deliver.js, 20 VUs, 2m, 90% delivery / 10% item list"
+  },
+  "artifacts": [
+    "smoke.json",
+    "load-items.json",
+    "load-realtime.json",
+    "load-deliver.json"
+  ],
+  "notes": [
+    "Postgres host port 55432 was used because an unrelated directus_postgres container already occupied host port 5432; the container service itself remains on 5432.",
+    "The generated JWT was passed through the shell only and is not stored in the repository.",
+    "Failed thresholds are retained as measurements, not replaced with estimates. load-deliver showed resource saturation under this single-process setup; see load-deliver.json.",
+    "pg_stat_statements was not available in the standard postgres:16-alpine container, so query-attribution follow-up remains open."
+  ]
+}
