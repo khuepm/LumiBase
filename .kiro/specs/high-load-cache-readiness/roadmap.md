@@ -45,13 +45,13 @@
 
 | Chỉ số | Baseline | Sau P0 | Sau P1 | Sau P2 |
 |--------|----------|--------|--------|--------|
-| Delivery API p95 (cache hit) | đo ở task 0 | ≤ 50ms tại edge/proxy | ≤ 30ms | ≤ 30ms |
-| Origin offload cho delivery đọc lặp | 0% | ≥ 70% (HTTP cache) | ≥ 90% (app + edge cache) | ≥ 90% |
-| DB round-trip / request authenticated | 5–7 | 4–5 | ≤ 3 | ≤ 3 |
-| Cửa sổ stale sau khi đổi quyền | ≤ 60s | ≤ 5s | ≤ 1s (event-driven) | ≤ 1s |
-| Cửa sổ stale nội dung sau ghi | không xác định (không invalidation) | n/a | ≤ 5s (tag purge + revalidate) | ≤ 5s |
-| Scale ngang Docker | không an toàn (cron nhân bản) | không đổi | không đổi | an toàn với N replica |
-| k6 `load-items` throughput | đo ở task 0 | +x% (đo) | +x% (đo) | +x% (đo) |
+| Delivery API p95 (cache hit) | p50 1,819ms / p95 2,728ms / p99 3,096ms @ 9.55 RPS (k6, 2026-08-02) | ≤ 50ms tại edge/proxy | ≤ 30ms | ≤ 30ms |
+| Origin offload cho delivery đọc lặp | chưa đo (Phase 0 chưa có cache-hit/origin counter) | ≥ 70% (HTTP cache) | ≥ 90% (app + edge cache) | ≥ 90% |
+| DB round-trip / request authenticated | chưa đo (k6 chưa xuất DB query metric) | 4–5 | ≤ 3 | ≤ 3 |
+| Cửa sổ stale sau khi đổi quyền | chưa đo (không thuộc workload Phase 0) | ≤ 5s | ≤ 1s (event-driven) | ≤ 1s |
+| Cửa sổ stale nội dung sau ghi | chưa đo (không invalidation trong workload Phase 0) | n/a | ≤ 5s (tag purge + revalidate) | ≤ 5s |
+| Scale ngang Docker | chưa đo (baseline chạy 1 CMS process) | không đổi | không đổi | an toàn với N replica |
+| k6 `load-items` throughput | list 45.34 RPS, p50 187ms / p95 552ms / p99 784ms; detail 10.39 RPS, p50 109ms / p95 286ms / p99 409ms; create 18.01 RPS, p50 304ms / p95 679ms / p99 800ms (2026-08-02) | +x% (đo) | +x% (đo) | +x% (đo) |
 | DB query / request 404 (slug rác) | 1 (mọi request chạm DB) | ≤ 1 (guard hình dạng chặn phần rác thô) | **0.0308** (k6 `load-penetration.js` 2026-08-01, MISS_POOL=40, 50 RPS × 2m, docker postgres+redis; ≤ 0.05 ✓ — xem `baseline/2026-08-01-penetration-docker-notes.json`) | ≤ 0.05 |
 
 ## 3. Các phase

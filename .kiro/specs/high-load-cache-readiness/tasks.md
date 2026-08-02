@@ -8,11 +8,11 @@ Kế hoạch triển khai theo 4 phase tuần tự (0 → P0 → P1 → P2) kh�
 
 ### Phase 0 — Baseline (tiên quyết, chặn mọi phase sau)
 
-- [ ] 0. Baseline đo đạc
-  - [ ] 0.1 Viết k6 scenario `apps/cms/k6/load-deliver.js`: 90% GET `/deliver/page/:site/:slug` phân phối zipf trên ≥50 slug seed, 10% list items; xuất summary JSON (Req 0.2; design §13.3)
-  - [ ] 0.2 Dựng dataset seed chuẩn (script `apps/cms/k6/seed.ts`): 2 site × 5 collection × 100k items site chính — dùng luôn cho EXPLAIN ở task 14.1 (Req 0.1, 16.2)
-  - [ ] 0.3 Chạy `smoke.js`, `load-items.js`, `load-realtime.js`, `load-deliver.js` trên docker-compose chuẩn; lưu kết quả + mô tả cấu hình vào `.kiro/specs/high-load-cache-readiness/baseline/` (Req 0.1)
-  - [ ] 0.4 Điền cột Baseline bảng `roadmap.md` §2 bằng số đo thực (Req 0.3)
+- [x] 0. Baseline đo đạc
+  - [x] 0.1 Viết k6 scenario `apps/cms/k6/load-deliver.js`: 90% GET `/deliver/page/:site/:slug` phân phối zipf trên ≥50 slug seed, 10% list items; xuất summary JSON (Req 0.2; design §13.3)
+  - [x] 0.2 Dựng dataset seed chuẩn (script `apps/cms/k6/seed.ts`): 2 site × 5 collection × 100k items site chính — dùng luôn cho EXPLAIN ở task 14.1 (Req 0.1, 16.2)
+  - [x] 0.3 Chạy `smoke.js`, `load-items.js`, `load-realtime.js`, `load-deliver.js` trên docker-compose chuẩn; lưu kết quả + mô tả cấu hình vào `.kiro/specs/high-load-cache-readiness/baseline/` (Req 0.1)
+  - [x] 0.4 Điền cột Baseline bảng `roadmap.md` §2 bằng số đo thực (Req 0.3)
 
 ### Phase P0 — Vá nhanh & quick wins (v0.18.x)
 

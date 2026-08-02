@@ -19,7 +19,8 @@ docker pull grafana/k6
 | Script | Scenario | Target |
 |---|---|---|
 | `smoke.js` | Quick sanity — 1 VU, 30 s | All main endpoints |
-| `load-items.js` | Item list throughput + create burst | 50 VU ramp + 30 VU burst |
+| `load-items.js` | Item list/detail throughput + create burst | 50 VU list ramp + 10 VU detail + 30 VU burst |
+| `load-deliver.js` | 90% Zipf delivery + 10% item-list mix | Phase 0 baseline workload |
 | `load-realtime.js` | WebSocket subscription ramp | 100 concurrent WS connections |
 | `load-penetration.js` | 95% missing-slug probes + 5% good page (Req 19) | DB-query-per-404 ≤ 0.05 |
 | `login-brute-force.js` | 50 VU login spam + baseline traffic | `/api/v1/auth/login` IP block (Req 8.2/8.3) |
@@ -60,6 +61,14 @@ k6 run --env BASE_URL=http://localhost:1989 \
        --env TOKEN=dev:myuser \
        --env COLLECTION=articles \
        apps/cms/k6/load-items.js
+
+# Delivery baseline (90% Zipf pages + 10% item lists)
+k6 run --summary-export=load-deliver.json \
+       --env BASE_URL=http://localhost:1989 \
+       --env SITE_ID=loadtest-main-00000001 \
+       --env TOKEN=dev:admin@lumibase.dev:admin \
+       --env COLLECTION=loadtest_collection_01 \
+       apps/cms/k6/load-deliver.js
 
 # Realtime WebSocket test
 k6 run --env BASE_URL=ws://localhost:1989 \
