@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-02T17:02:36.676Z",
+  "generatedAt": "2026-08-02T17:04:52.501Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,19 +8,19 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 88,
-    "planned": 56
+    "upToDate": 85,
+    "planned": 61
   },
   "actions": [
     {
       "rel": "DEPLOYMENT-CHECKLIST.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -230,13 +230,13 @@
     },
     {
       "rel": "architecture/decisions/adr-004-tag-based-cache-invalidation.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -321,6 +321,18 @@
       "sourceLocale": "en",
       "targetLocale": "vi",
       "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "architecture/decisions/adr-012-remove-cdc-cache-invalidator.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -686,13 +698,13 @@
     },
     {
       "rel": "contributing/testing.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -822,6 +834,18 @@
       "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": true,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "deployment/performance.md",
+      "type": "translate",
+      "reason": "missing vi translation",
+      "enLang": "en",
+      "viLang": null,
       "sourceLocale": "en",
       "targetLocale": "vi",
       "willTranslate": true,
