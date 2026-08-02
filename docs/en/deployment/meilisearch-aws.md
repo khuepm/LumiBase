@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T10:25:03.615Z
+sourceLang: en
+contentHash: fd79fbc9b05f2fea
+codeVerified: 2026-07-28T10:25:03.615Z
+codeVerifiedHash: fd79fbc9b05f2fea
+codeVerifiedClaims: 8
+---
+
 # Deploying MeiliSearch on AWS
 
 LumiBase already ships a MeiliSearch backend behind the `SearchProvider`

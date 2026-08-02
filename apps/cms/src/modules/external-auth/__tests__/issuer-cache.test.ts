@@ -62,6 +62,14 @@ function makeFakeCache(preload: Record<string, unknown> = {}): FakeCache {
       store.set(key, String(next));
       return next;
     },
+    async getEntry<T>(key: string) {
+      const raw = store.get(key);
+      if (raw === undefined) return { state: 'miss' as const };
+      return { state: 'hit' as const, value: JSON.parse(raw) as T };
+    },
+    async setNegative(key: string, options?: { ttl?: number }) {
+      await cache.set(key, JSON.stringify({ __lumi: 'neg', v: 1 }), options);
+    },
   };
   return cache;
 }

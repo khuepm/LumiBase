@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T10:17:05.104Z
+sourceLang: en
+contentHash: fee0876eebc40c46
+codeVerified: 2026-07-28T10:17:05.104Z
+codeVerifiedHash: fee0876eebc40c46
+codeVerifiedClaims: 2
+---
+
 # Physical and External Collections
 
 Status: decision record for Directus Data Model Parity.

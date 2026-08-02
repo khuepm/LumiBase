@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T11:45:25.135Z
+sourceLang: en
+contentHash: 21badc3a0a607d14
+codeVerified: 2026-07-28T11:45:25.135Z
+codeVerifiedHash: 21badc3a0a607d14
+codeVerifiedClaims: 52
+---
+
 # OWASP API Security Top 10 (2023) — LumiBase Audit
 
 > **Scope.** This document maps the LumiBase CMS API surface against the
@@ -246,7 +256,11 @@ Remediation applied:
 2. **Deprecation signalling mechanism** — `middleware/deprecation.ts`
    (`withDeprecation`) emits RFC 8594 `Deprecation`/`Sunset` headers plus a
    `Link rel="deprecation"`, so retiring an endpoint gives consumers a
-   machine-readable warning window.
+   machine-readable warning window. This is an **opt-in toolbox helper**: it is
+   **not** mounted globally. Wire it onto a specific route/router only when that
+   API is actually being retired; leaving it unwired while no endpoints are
+   deprecated is correct (not a gap). Agent wiring instructions live in
+   `docs/en/agent-setup/prompt.md`.
 
 Residual: no single machine-readable OpenAPI/AsyncAPI artifact covering the whole
 REST surface is checked into the repo (the OpenAPI is generated on demand). A
@@ -283,6 +297,13 @@ response is validated against a declared response schema before persistence.
 | API9 | `/test-auth` debug surface mountable in production | Indistinguishable `404` in production | `routes/test-auth.ts` |
 | API9 | No endpoint deprecation mechanism | `withDeprecation` middleware (RFC 8594 `Deprecation`/`Sunset`/`Link`) | `middleware/deprecation.ts`, `middleware/__tests__/deprecation.test.ts` |
 | API7/API8 | Known-vulnerable dependencies flagged by the CI audit gate (Next.js SSRF/DoS/middleware-bypass, `sharp`, `fast-uri`) — pre-existing, in the frontend apps (`landing`/`consumer`) and transitive, **not** in the CMS API path | Bumped `next` → `16.2.11`; pnpm `overrides` `fast-uri >=3.1.4` and `sharp >=0.35.0`. `pnpm audit --prod --audit-level high` now passes | `package.json`, `apps/{consumer,landing}/package.json`, `pnpm-lock.yaml` |
+
+> **Note on the dependency-audit row.** `pnpm audit --prod --audit-level high`
+> passing is not from version bumps alone: the root `package.json` also carries
+> `pnpm.auditConfig.ignoreGhsas` with `GHSA-qwww-vcr4-c8h2`, which **suppresses**
+> that advisory rather than remediating it. Treat it as an accepted residual with
+> an expiry, not a fix — re-check whether a non-breaking upgrade has since become
+> available.
 
 ## Accepted residuals (not fixed here — deliberate)
 

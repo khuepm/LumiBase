@@ -51,6 +51,16 @@ export const roles = pgTable(
     siteKeyUnique: uniqueIndex('roles_site_key_unique').on(t.siteId, t.key),
     siteSystemKeyUnique: uniqueIndex('roles_site_system_key_unique').on(t.siteId, t.systemKey),
     parentIdx: index('roles_parent_idx').on(t.parentId),
+    /**
+     * The `public` (anonymous) role must never carry an elevation flag. It is
+     * the role unauthenticated requests resolve to, so `admin_access` there
+     * would be an unauthenticated admin bypass. Enforced in the DB so no code
+     * path — route, import, migration or manual SQL — can set it.
+     */
+    publicLeastPrivilege: check(
+      'roles_public_least_privilege',
+      sql`${t.systemKey} is distinct from 'public' or (${t.adminAccess} = false and ${t.appAccess} = false)`,
+    ),
   }),
 );
 
@@ -85,6 +95,17 @@ export const policies = pgTable(
   (t) => ({
     siteIdx: index('policies_site_idx').on(t.siteId),
     siteKeyUnique: uniqueIndex('policies_site_key_unique').on(t.siteId, t.key),
+    /**
+     * Companion to `roles_public_least_privilege`: the flags Directus v11 moved
+     * onto the policy live here, so the canonical `public` policy needs the
+     * same DB-level pin. Policies an operator attaches to the public role by
+     * hand are screened by the route guard instead — a table check cannot see
+     * across the `role_policies` join.
+     */
+    publicLeastPrivilege: check(
+      'policies_public_least_privilege',
+      sql`${t.key} is distinct from 'public' or (${t.adminAccess} = false and ${t.appAccess} = false and ${t.enforceTfa} = false)`,
+    ),
   }),
 );
 

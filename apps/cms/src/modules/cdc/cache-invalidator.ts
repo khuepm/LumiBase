@@ -213,6 +213,20 @@ export class InMemoryCacheProvider implements CacheProvider {
     return this.available;
   }
 
+  async getEntry<T>(key: string): Promise<import('@lumibase/runtime').CacheEntry<T>> {
+    if (!this.available) return { state: 'unavailable' };
+    const raw = this.store.get(key);
+    if (raw === undefined) return { state: 'miss' };
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      const { classifyCacheValue } = await import('@lumibase/runtime');
+      return classifyCacheValue<T>(parsed);
+    } catch {
+      // Non-JSON payloads (legacy CDC tests store plain strings) count as hits.
+      return { state: 'hit', value: raw as T };
+    }
+  }
+
   async get<T = string>(key: string): Promise<T | null> {
     if (!this.available) {
       throw new Error('Redis unavailable');
@@ -229,6 +243,11 @@ export class InMemoryCacheProvider implements CacheProvider {
       throw new Error('Redis unavailable');
     }
     this.store.set(key, value);
+  }
+
+  async setNegative(key: string, options?: { ttl?: number }): Promise<void> {
+    const { negativeCacheWireValue } = await import('@lumibase/runtime');
+    await this.set(key, negativeCacheWireValue(), options);
   }
 
   async delete(key: string): Promise<void> {

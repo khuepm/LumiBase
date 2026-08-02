@@ -1,5 +1,12 @@
 ---
 title: CDC Troubleshooting
+version: 1
+lastUpdated: 2026-07-28T11:32:43.008Z
+sourceLang: en
+contentHash: 554b71767fc0509f
+codeVerified: 2026-07-28T11:32:43.008Z
+codeVerifiedHash: 554b71767fc0509f
+codeVerifiedClaims: 36
 ---
 
 # CDC Troubleshooting

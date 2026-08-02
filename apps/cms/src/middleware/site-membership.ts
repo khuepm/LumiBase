@@ -42,6 +42,15 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
     return next();
   }
 
+  // Anonymous principals have no identity to bind — `withAuth` resolved them
+  // to the site's `public` role, which is per-site by construction. Compile
+  // the bundle from that role so downstream handlers enforce its row filters
+  // and field masks exactly as they do for a logged-in principal.
+  if (auth.type === 'anonymous') {
+    await attachAccessBundle(c, auth);
+    return next();
+  }
+
   // Dev auth is explicitly local-only and historically allowed operators to
   // exercise any tenant. Keep that behaviour for local development while the
   // production paths below require a persisted user/site relationship.
@@ -142,7 +151,8 @@ async function attachAccessBundle(
     ctx: {
       userId: auth.userId ?? null,
       siteId: c.get('siteId'),
-      roleId: null,
+      // Anonymous principals carry their role directly (no membership row).
+      roleId: auth.roleId ?? null,
       user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
       ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
       headers,

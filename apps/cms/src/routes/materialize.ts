@@ -44,7 +44,7 @@ const registerSchema = z.object({
       orderBy: z.string().optional(),
     })
     .default({ fields: ["*"] }),
-  filter: z.record(z.unknown()).default({}),
+  filter: z.record(z.string(), z.unknown()).default({}),
 });
 
 materializeRouter.get("/", async (c) => {

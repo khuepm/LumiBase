@@ -1,5 +1,15 @@
-export type { CacheProvider, UniqueCounterProvider } from './cache';
-export { CounterUnavailableError } from './cache';
+export type {
+  CacheEntry,
+  CacheProvider,
+  CacheSetOptions,
+  NegativeCacheEnvelope,
+  UniqueCounterProvider,
+} from './cache';
+export {
+  CounterUnavailableError,
+  isNegativeCacheEnvelope,
+  NEGATIVE_CACHE_ENVELOPE,
+} from './cache';
 export type { StorageObject, StorageProvider } from './storage';
 export type { DatabaseProvider } from './database';
 export type { SearchResult, SearchOptions, SearchProvider, SearchIndexSettings } from './search';

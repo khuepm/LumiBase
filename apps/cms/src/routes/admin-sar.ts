@@ -20,7 +20,7 @@ export const adminSarRouter = new Hono<AppEnv>();
 const exportSchema = z.object({
   scope: z.object({
     collection: z.string().min(1).max(128),
-    filter: z.record(z.unknown()),
+    filter: z.record(z.string(), z.unknown()),
   }),
 });
 

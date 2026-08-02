@@ -1,16 +1,29 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:16:45.923Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: 966520420fa8b01d
+mtEngine: claude
+syncStatus: machine-translated
+codeVerified: 2026-07-25T08:16:45.923Z
+codeVerifiedHash: 966520420fa8b01d
+codeVerifiedClaims: 2
+---
+
 # Display Templates
 
-> Display Template = quy tắc để render một item thành chuỗi hoặc component, dùng trong list view, relation picker, detail header, breadcrumb.
+> A Display Template is the rule for rendering an item into a string or a component — used in list views, relation pickers, detail headers, and breadcrumbs.
 
-## 1. Hai cấp template
+## 1. Two template tiers
 
-### 1.1 Mustache (simple, mặc định)
-- Lưu ở `collections.displayTemplate`: ví dụ `"{{title}} — {{status | upper}}"`.
-- Filter built-in: `upper`, `lower`, `date('YYYY-MM-DD')`, `truncate(50)`, `default('—')`.
-- Có thể tham chiếu nested: `{{author.first_name}} {{author.last_name}}` (auto join nếu có relation).
+### 1.1 Mustache (simple, the default)
+- Stored in `collections.displayTemplate`, e.g. `"{{title}} — {{status | upper}}"`.
+- Built-in filters: `upper`, `lower`, `date('YYYY-MM-DD')`, `truncate(50)`, `default('—')`.
+- Nested references work: `{{author.first_name}} {{author.last_name}}` (auto-joins when a relation exists).
 
 ### 1.2 Component template (advanced, USP)
-- Lưu JSON DSL:
+- Stored as a JSON DSL:
 ```json
 {
   "kind": "component-template",
@@ -26,31 +39,31 @@
   ]
 }
 ```
-- Renderer client-side dùng CVA tokens (`packages/ui`).
-- Conditions dùng JSONata.
+- The client-side renderer uses CVA tokens (`packages/ui`).
+- Conditions are evaluated with JSONata.
 
-## 2. Nơi dùng
+## 2. Where they are used
 
-- **List view tabular**: cell template per column (override display).
-- **Cards/Kanban layout**: card template = component template.
-- **Detail header**: optional template thay tiêu đề mặc định.
-- **Relation picker**: hiển thị item liên quan.
-- **Delivery API**: trả thêm field `__display` nếu request `?fields=*,__display`.
+- **Tabular list view**: a cell template per column (overriding the display).
+- **Cards/Kanban layout**: the card template *is* a component template.
+- **Detail header**: an optional template replacing the default title.
+- **Relation picker**: rendering the related item.
+- **Delivery API**: returns an extra `__display` field when the request asks for `?fields=*,__display`.
 
 ## 3. UI editor
 
-- Trong Collection settings → tab **Display Template**:
-  - Mustache mode: textarea với autocomplete tên field + filter.
-  - Component mode: GUI block-based editor (drag block, set bindings) + JSON tab.
-- Live preview với 3 item mẫu (first/last/random).
+- In Collection settings → the **Display Template** tab:
+  - Mustache mode: a textarea with autocomplete for field names and filters.
+  - Component mode: a GUI block-based editor (drag a block, set bindings) plus a JSON tab.
+- Live preview against 3 sample items (first/last/random).
 
-## 4. Server-side render
+## 4. Server-side rendering
 
-- Endpoint `POST /utils/render-template` body `{ template, items }` → trả mảng `__display`.
-- Cache theo `(siteId, collectionId, templateHash, itemId, updatedAt)`.
+- `POST /utils/render-template` with body `{ template, items }` → returns an array of `__display` values.
+- Cached by `(siteId, collectionId, templateHash, itemId, updatedAt)`.
 
-## 5. Bảo mật
+## 5. Security
 
-- Template chỉ truy cập field user có quyền read; field bị mask → render `default` filter.
+- A template can only reach fields the user may read; a masked field renders through the `default` filter instead.
 
 ## 6. Tasks: Phase MVP-B (mustache) + POST-MVP-F (component DSL).

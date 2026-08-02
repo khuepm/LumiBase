@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:56.148Z
+version: 2
+lastUpdated: 2026-07-25T08:11:35.552Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 62e0afccda04ab1b
+sourceHash: 42e2b8eba52703f7
 mtEngine: claude
 syncStatus: machine-translated
+codeVerified: 2026-07-25T08:11:35.552Z
+codeVerifiedHash: 42e2b8eba52703f7
+codeVerifiedClaims: 2
 ---
 
 # Extension Development Guide
@@ -246,6 +249,7 @@ hoặc cấu hình transport hoàn toàn bằng env. Tham khảo đầy đủ:
 
 ## Resources
 
-- `packages/extension-sdk/src/types.ts` — đầy đủ TypeScript type cho mọi extension API
-- `packages/extension-sdk/src/helpers.ts` — các utility helper (`registerInterface`, `registerOperation`, v.v.)
+- `packages/extension-sdk/src/index.ts` — toàn bộ bề mặt SDK: TypeScript type cho mọi
+  extension API (`ExtensionManifest`, `HookDefinition`, `InterfaceDefinition`, …) cùng
+  các helper `define*` (`defineHook`, `defineInterface`, …)
 - Extension mẫu: `apps/studio/src/interfaces/` (các built-in interface làm tham chiếu)

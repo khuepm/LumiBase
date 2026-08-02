@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T00:11:35.763Z
+sourceLang: en
+contentHash: 6edecac703c795d3
+codeVerified: 2026-07-28T00:11:35.763Z
+codeVerifiedHash: 6edecac703c795d3
+codeVerifiedClaims: 14
+---
+
 # Data Model (Drizzle / Postgres)
 
 This document describes the tables declared in `packages/database/src/schema/`. Internal database rows use text IDs by default. No-code content collections also carry a logical item primary key strategy through `collections.primaryKeyField` and `collections.primaryKeyType`.
@@ -15,7 +25,7 @@ Every tenant-scoped domain table has `site_id`.
 
 Schema files are split by domain:
 
-| File | Bảng (physical) |
+| File | Tables (physical) |
 |------|------|
 | `core.ts` | `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
@@ -171,14 +181,14 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publ
 | `status` | text | `active` / `inactive` / `draft` |
 | `triggerType` | text | `webhook` / `event` / `schedule` / `manual` |
 | `triggerOptions`, `graph` | jsonb | graph: `{ entry?, nodes: [{ id, key, options, next?, onError? }] }` |
-| `nextRunAt` | timestamp | dùng cho schedule trigger |
+| `nextRunAt` | timestamp | used by the schedule trigger |
 | `accountability` | text |
 
 ### `flow_runs`
-- Mỗi run lưu `status`, `input`, `steps` (per-node output), `output`, `error`, `startedAt`, `finishedAt`.
+- Each run stores `status`, `input`, `steps` (per-node output), `output`, `error`, `startedAt`, `finishedAt`.
 
 ### `operations`
-- Khai báo từng operation node trong flow (key + type + options + position).
+- Declares each operation node in the flow (key + type + options + position).
 - Type: `condition` / `transform` / `http` / `mail` / `log` / `sleep` / `run-extension` / `item.create|update|delete` / `notify`.
 
 ### `materialized_collections` (POST-GA6)
@@ -213,11 +223,11 @@ SDK generation uses this manifest to emit base collection interfaces and `Collec
 - Note: `adminAccess/appAccess` are legacy compatibility flags. New RBAC work migrates these flags to policies so roles remain grouping units. See [Role Flag to Policy Flag Migration](./features/role-policy-flag-migration.md).
 
 ### `policies`
-- `id`, `siteId`, `name`, `description`, `rules jsonb`. Policy độc lập có thể attach vào nhiều roles/users.
+- `id`, `siteId`, `name`, `description`, `rules jsonb`. A standalone policy can be attached to many roles/users.
 - Explicit flags: `adminAccess`, `appAccess`, `enforceTfa`, `ipAllow`, `ipDeny`, `validFrom`, `validUntil`. These are the new source of truth for admin/app/TFA/IP/time guards.
 
 ### `role_policies` / `user_policies`
-- Many-to-many với `priority`. `user_policies` cho phép gán policy trực tiếp user (override role).
+- Many-to-many with `priority`. `user_policies` allows attaching a policy straight to a user (overriding the role).
 
 ### `permissions`
 - `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (row-level rule DSL), `validation jsonb`, `presets jsonb`, `fields text[]` (field-level allow list, `*` = all).
@@ -285,7 +295,7 @@ Indexes: `(siteId, name)`, `(publisher, publishedAt)`, `marketplaceSlug`.
 ### `notifications`
 - `id`, `siteId`, `recipient` (userId), `sender?`, `subject`, `message`, `collection?`, `item?`, `status`, `createdAt`.
 
-> Realtime cursor data (CRDT-lite) **không** persist trong Postgres — chỉ broadcast qua Durable Object/host process. Xem `apps/cms/src/services/cursor-protocol.ts`.
+> Realtime cursor data (CRDT-lite) is **not** persisted in Postgres — it is only broadcast through the Durable Object/host process. See `apps/cms/src/services/cursor-protocol.ts`.
 
 ## 10. AI Copilot and Agent Harness (`ai.ts`)
 
@@ -300,10 +310,10 @@ for the user-facing and runtime contract.
 | `id` | text PK | nanoid(21) |
 | `siteId` | text FK → sites CASCADE |
 | `agentName` | text | default `'lumibase-copilot'` |
-| `skillName` | text | từ `CORE_SKILLS` registry |
-| `arguments` | jsonb | đối số skill |
+| `skillName` | text | from the `CORE_SKILLS` registry |
+| `arguments` | jsonb | the skill's arguments |
 | `status` | text | `pending` / `approved` / `rejected` |
-| `context` | text nullable | message gốc của user |
+| `context` | text nullable | the user's original message |
 | `createdAt`, `decidedAt` | timestamp |
 | `decidedBy` | text FK → users SET NULL |
 
@@ -369,7 +379,7 @@ Content OS columns on existing tables:
 
 ## 11. Firebase Sync (`firebase-sync.ts`)
 
-Xem [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0000_lumibase_init` (consolidated).
+See [features/firebase-sync.md](./features/firebase-sync.md). Migration: `0000_lumibase_init` (consolidated).
 
 ## 11d. Change Feed (`cdc.ts` — spec cdc-extension-integration)
 
@@ -392,16 +402,16 @@ All three are `site_id`-scoped with `site_isolation` RLS. See `docs/en/features/
 |---|---|---|
 | `id` | text PK | nanoid |
 | `siteId` | text | FK `sites.id` (cascade) |
-| `name` | text | unique theo `(siteId, name)` |
+| `name` | text | unique per `(siteId, name)` |
 | `target` | text | `firestore` / `rtdb` |
 | `status` | text | `active` / `paused` / `error` |
-| `statusMessage` | text | lỗi gần nhất (nullable) |
+| `statusMessage` | text | the most recent error (nullable) |
 | `projectId` | text | Firebase project id |
-| `credentialsEncrypted` | text | credential blob mã hoá AES-GCM (write-only) |
-| `collections` | jsonb | machine-names; `[]` = mọi collection |
-| `targetPath` | text | template, mặc định `{collection}` |
-| `syncOnCreate` / `syncOnUpdate` / `syncOnDelete` | integer | 1/0 bật từng action |
-| `lastSyncAt` | timestamp | lần sync thành công gần nhất |
+| `credentialsEncrypted` | text | AES-GCM encrypted credential blob (write-only) |
+| `collections` | jsonb | machine-names; `[]` = every collection |
+| `targetPath` | text | template, defaults to `{collection}` |
+| `syncOnCreate` / `syncOnUpdate` / `syncOnDelete` | integer | 1/0 to enable each action |
+| `lastSyncAt` | timestamp | the most recent successful sync |
 | `lastSyncItemCount` | integer | nullable |
 | `createdAt` / `updatedAt` | timestamp | |
 
@@ -411,11 +421,11 @@ All three are `site_id`-scoped with `site_isolation` RLS. See `docs/en/features/
 | `id` | text PK | nanoid |
 | `pipelineId` | text | FK `lumibase_firebase_sync_pipelines.id` (cascade) |
 | `siteId` | text | FK `sites.id` (cascade) |
-| `collection` / `itemId` | text | nguồn của thay đổi |
+| `collection` / `itemId` | text | the source of the change |
 | `action` | text | `create` / `update` / `delete` |
 | `result` | text | `success` / `error` |
 | `errorMessage` | text | nullable |
-| `durationMs` | integer | round-trip gọi Firebase REST |
+| `durationMs` | integer | round-trip of the Firebase REST call |
 | `recordedAt` | timestamp | index `(pipelineId, recordedAt)` |
 
 ---
@@ -502,6 +512,6 @@ AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
 
 ## 12. Indexing & RLS
 
-- Bắt buộc index `(siteId, …)` ở mọi bảng domain.
-- Áp dụng Drizzle helper `scopeSite(siteId)` ở tầng repo.
-- Postgres RLS được bật qua middleware `withRls()` (`apps/cms/src/middleware/rls.ts`) — set session var để defence-in-depth.
+- An index on `(siteId, …)` is mandatory on every domain table.
+- Apply the Drizzle `scopeSite(siteId)` helper at the repository layer.
+- Postgres RLS is enabled through the `withRls()` middleware (`apps/cms/src/middleware/rls.ts`) — it sets a session variable for defence in depth.

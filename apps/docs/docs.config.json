@@ -69,6 +69,7 @@
           "deployment/overview",
           "deployment/cloudflare",
           "deployment/docker",
+          "deployment/google-cloud-vm",
           "deployment/environment-variables",
           "deployment/local-development"
         ]

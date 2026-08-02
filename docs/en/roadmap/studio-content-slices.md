@@ -1,104 +1,117 @@
+---
+version: 1
+lastUpdated: 2026-07-28T00:00:42.369Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: 0ff1ace0a8b1cf21
+mtEngine: claude
+syncStatus: machine-translated
+codeVerified: 2026-07-28T00:00:42.369Z
+codeVerifiedHash: 0ff1ace0a8b1cf21
+codeVerifiedClaims: 22
+---
+
 # Studio Content Module — Slice Tracking
 
-> Mô-đun Content trong LumiBase Studio quản lý dữ liệu động cho một collection duy nhất. Development được chia thành các "slices" (phát triển tăng dần, mỗi slice xây dựng trên slice trước).
+> The Content module in LumiBase Studio manages the dynamic data of a single collection. Development is split into "slices" (incremental delivery, each slice building on the previous one).
 
-## Tổng quan
+## Overview
 
-| Slice | Mô tả | Trạng thái | Files chính |
-|-------|-------|------------|-------------|
+| Slice | Description | Status | Key files |
+|-------|-------------|--------|-----------|
 | 1 | SDK items API + Content module list view | ✅ Done | `packages/sdk/src/`, `apps/studio/src/modules/content/items-list.tsx` |
 | 2 | Detail editor shell + Revisions tab + Raw JSON tab | ✅ Done | `apps/studio/src/modules/content/item-detail.tsx`, `revisions-panel.tsx`, `raw-json-panel.tsx` |
-| 3 | Interface registry phần 1 (text, number, toggle, select, datetime, json-raw) | ✅ Done | `apps/studio/src/modules/content/interfaces/` |
-| 4 | Interface registry phần 2 (relation, code, wysiwyg, markdown, file, repeater, presentation) | ✅ Done | `apps/studio/src/modules/content/interfaces/` |
+| 3 | Interface registry part 1 (text, number, toggle, select, datetime, json-raw) | ✅ Done | `apps/studio/src/modules/content/interfaces/` |
+| 4 | Interface registry part 2 (relation, code, wysiwyg, markdown, file, repeater, presentation) | ✅ Done | `apps/studio/src/modules/content/interfaces/` |
 | 5 | Display registry + Raw toggle + Bulk raw editor | ✅ Done | `apps/studio/src/modules/content/displays/`, `bulk-raw-editor.tsx`, `raw-toggle.tsx` |
 | 6 | Revisions diff viewer + Mustache display | ✅ Done | `apps/studio/src/modules/content/revisions-diff.tsx`, `displays/mustache.tsx` |
-| 7 | Cập nhật docs/features/field-types-and-config.md | ✅ Done | `docs/features/field-types-and-config.md` |
+| 7 | Update docs/features/field-types-and-config.md | ✅ Done | `docs/features/field-types-and-config.md` |
 
 ---
 
 ## Slice 1 — SDK items API + Content module list view
 
-**Mục tiêu:** Thiết lập SDK items API và view danh sách content.
+**Goal:** establish the SDK items API and the content list view.
 
 ### SDK items API
 - **File:** `packages/sdk/src/client.ts`
 - **APIs:**
-  - `listItems(siteId, collectionId, options)` — danh sách items với filter/sort/pagination
-  - `getItem(siteId, collectionId, itemId)` — chi tiết item
-  - `createItem(siteId, collectionId, data)` — tạo item mới
-  - `updateItem(siteId, collectionId, itemId, data)` — cập nhật item
-  - `deleteItem(siteId, collectionId, itemId)` — xoá item
-  - `listFields(siteId, collectionId)` — danh sách fields của collection
+  - `listItems(siteId, collectionId, options)` — list items with filter/sort/pagination
+  - `getItem(siteId, collectionId, itemId)` — item detail
+  - `createItem(siteId, collectionId, data)` — create a new item
+  - `updateItem(siteId, collectionId, itemId, data)` — update an item
+  - `deleteItem(siteId, collectionId, itemId)` — delete an item
+  - `listFields(siteId, collectionId)` — the collection's fields
 
 ### Content module list view
 - **File:** `apps/studio/src/modules/content/items-list.tsx`
 - **Features:**
-  - Tabular view của items
+  - Tabular view of items
   - Filter, sort, pagination
-  - Click row → navigate đến detail editor
+  - Click a row → navigate to the detail editor
   - PAGE_SIZE = 25
 
 ---
 
 ## Slice 2 — Detail editor shell + Revisions tab + Raw JSON tab
 
-**Mục tiêu:** Xây dựng shell cho detail editor với 3 tab: Fields, Revisions, Raw JSON.
+**Goal:** build the detail editor shell with three tabs: Fields, Revisions, Raw JSON.
 
 ### Item detail editor
 - **File:** `apps/studio/src/modules/content/item-detail.tsx`
 - **Tabs:**
-  - **FieldsTab:** Form edit các field (sẽ được wire vào interface registry ở slice 3+)
-  - **RevisionsTab:** Danh sách revisions với khả năng revert
-  - **RawJsonTab:** Xem/edit raw JSON của item
+  - **FieldsTab:** the field edit form (wired into the interface registry in slice 3+)
+  - **RevisionsTab:** the revision list, with revert
+  - **RawJsonTab:** view/edit the item's raw JSON
 
 ### Revisions panel
 - **File:** `apps/studio/src/modules/content/revisions-panel.tsx`
 - **Features:**
-  - List revisions (từ SDK: `listRevisions()`)
-  - Hiển thị delta JSON (before/after)
-  - Nút revert về revision cũ
-  - Diff viewer (sẽ được thêm ở slice 6)
+  - List revisions (from the SDK: `listRevisions()`)
+  - Show the JSON delta (before/after)
+  - A button to revert to an older revision
+  - Diff viewer (added in slice 6)
 
 ### Raw JSON panel
 - **File:** `apps/studio/src/modules/content/raw-json-panel.tsx`
 - **Features:**
-  - Monaco Editor để xem/edit raw JSON
-  - Validate JSON trước khi save
-  - Sync với FieldsTab
+  - Monaco Editor for viewing/editing raw JSON
+  - Validate the JSON before saving
+  - Stay in sync with FieldsTab
 
 ---
 
-## Slice 3 — Interface registry phần 1
+## Slice 3 — Interface registry part 1
 
-**Mục tiêu:** Xây dựng interface registry và implement các interface cơ bản.
+**Goal:** build the interface registry and implement the basic interfaces.
 
 ### Interface registry
 - **File:** `apps/studio/src/modules/content/interfaces/registry.tsx`
-- **Contract:** `InterfaceComponent<T>` nhận `{ value, onChange, field }`
-- **Helper:** `readOptions<T>(field)` đọc options từ `field.meta.options`
+- **Contract:** `InterfaceComponent<T>` receives `{ value, onChange, field }`
+- **Helper:** `readOptions<T>(field)` reads options out of `field.meta.options`
 
-### Interfaces implement (Phase A + Phase B slice 3)
+### Interfaces implemented (Phase A + Phase B slice 3)
 | Interface | File | Description |
 |-----------|------|-------------|
-| `input` | `text.tsx` | Text input cơ bản |
+| `input` | `text.tsx` | Basic text input |
 | `input-multiline` | `text.tsx` | Textarea |
 | `toggle` | `toggle.tsx` | Boolean toggle |
-| `select-dropdown` | `select.tsx` | Select dropdown với options |
+| `select-dropdown` | `select.tsx` | Select dropdown with options |
 | `datetime` | `datetime.tsx` | Date/time picker |
-| `json-raw` | `json-raw.tsx` | Monaco Editor cho JSON |
+| `json-raw` | `json-raw.tsx` | Monaco Editor for JSON |
 | `input-number` | `number.tsx` | Number input |
-| `slug` | `slug.tsx` | Slug field với auto-generate |
-| `color` | `color.tsx` | Color picker |
+| `slug` | `slug.tsx` | Slug field with auto-generate |
+| `color` | `color.tsx` | Colour picker |
 | `rating` | `rating.tsx` | Star rating |
-| `tags` | `tags.tsx` | Tag input với autocomplete |
+| `tags` | `tags.tsx` | Tag input with autocomplete |
 
 ---
 
-## Slice 4 — Interface registry phần 2
+## Slice 4 — Interface registry part 2
 
-**Mục tiêu:** Implement các interface phức tạp hơn: relation, code, wysiwyg, markdown, file, repeater, presentation.
+**Goal:** implement the more complex interfaces: relation, code, wysiwyg, markdown, file, repeater, presentation.
 
-### Interfaces implement (Phase B slice 4)
+### Interfaces implemented (Phase B slice 4)
 | Interface | File | Description |
 |-----------|------|-------------|
 | `relation-m2o` | `relation-m2o.tsx` | Many-to-one relation selector |
@@ -106,106 +119,106 @@
 | `relation-m2m` | `relation-many.tsx` | Many-to-many relation list |
 | `code` | `code.tsx` | Code editor (Monaco) |
 | `wysiwyg` | `wysiwyg.tsx` | Rich text editor (document.execCommand) |
-| `markdown` | `markdown.tsx` | Markdown editor với preview |
+| `markdown` | `markdown.tsx` | Markdown editor with preview |
 | `file` | `file.tsx` | File upload (drag-and-drop, placeholder URL: `lumibase://pending/<name>`) |
-| `repeater` | `repeater.tsx` | Repeater field với drag-and-drop (dnd-kit) |
+| `repeater` | `repeater.tsx` | Repeater field with drag-and-drop (dnd-kit) |
 | `presentation-divider` | `presentation.tsx` | Divider UI (read-only) |
 | `presentation-notice` | `presentation.tsx` | Notice UI (read-only) |
 
-**Lưu ý:** File interface chỉ stub UI, không thực hiện upload thật. TODO: `phase-e/storage`
+**Note:** the file interface is UI-only — it does not perform a real upload. TODO: `phase-e/storage`
 
 ---
 
 ## Slice 5 — Display registry + Raw toggle + Bulk raw editor
 
-**Mục tiêu:** Xây dựng display registry cho list view, raw toggle per field, và bulk raw editor.
+**Goal:** build the display registry for the list view, a per-field raw toggle, and the bulk raw editor.
 
 ### Display registry
 - **File:** `apps/studio/src/modules/content/displays/registry.tsx`
-- **Contract:** `DisplayProps<T>` nhận `{ value, field, row? }`
-- **Purpose:** Render field values trong list view (read-only, stateless)
+- **Contract:** `DisplayProps<T>` receives `{ value, field, row? }`
+- **Purpose:** render field values in the list view (read-only, stateless)
 
-### Displays implement
+### Displays implemented
 | Display | File | Description |
 |---------|------|-------------|
-| `formatted-value` | `text.tsx` | Text display cơ bản |
-| `boolean-icon` | `boolean-icon.tsx` | Icon cho boolean |
-| `badge` | `badge.tsx` | Badge cho enum/status |
-| `relation-related-values` | `relation.tsx` | Hiển thị related item values |
-| `datetime` | `formatted-date.tsx` | Date/time formatted |
-| `color-swatch` | `color-swatch.tsx` | Color swatch |
+| `formatted-value` | `text.tsx` | Basic text display |
+| `boolean-icon` | `boolean-icon.tsx` | Icon for a boolean |
+| `badge` | `badge.tsx` | Badge for enum/status |
+| `relation-related-values` | `relation.tsx` | Show related item values |
+| `datetime` | `formatted-date.tsx` | Formatted date/time |
+| `color-swatch` | `color-swatch.tsx` | Colour swatch |
 | `rating-stars` | `rating-stars.tsx` | Star rating display |
-| `labels` | `tags-pills.tsx` | Tags pills |
+| `labels` | `tags-pills.tsx` | Tag pills |
 | `mustache-template` | `mustache.tsx` (slice 6) | Mustache template interpolation |
 
-### Raw toggle per field
+### Per-field raw toggle
 - **File:** `apps/studio/src/modules/content/interfaces/raw-toggle.tsx`
 - **Features:**
-  - Toggle giữa interface component và Monaco Editor (raw JSON)
-  - Preserve user edits ngay cả khi JSON invalid
-  - Wire vào FieldsTab của item-detail
+  - Toggle between the interface component and Monaco Editor (raw JSON)
+  - Preserve the user's edits even while the JSON is invalid
+  - Wired into item-detail's FieldsTab
 
 ### Bulk raw editor
 - **File:** `apps/studio/src/modules/content/bulk-raw-editor.tsx`
 - **Features:**
-  - Select multiple items từ list view
-  - Edit raw JSON của tất cả selected items cùng lúc
-  - Validate JSON trước khi save
-  - Wire vào items-list với "Edit raw (N)" button
+  - Select multiple items from the list view
+  - Edit the raw JSON of every selected item at once
+  - Validate the JSON before saving
+  - Wired into items-list behind an "Edit raw (N)" button
 
 ---
 
 ## Slice 6 — Revisions diff viewer + Mustache display
 
-**Mục tiêu:** Implement diff viewer cho revisions và mustache display template.
+**Goal:** implement the revision diff viewer and the mustache display template.
 
 ### Revisions diff viewer
 - **File:** `apps/studio/src/modules/content/revisions-diff.tsx`
 - **Features:**
-  - So sánh `delta.before` và `delta.after` của revision
-  - Highlight thay đổi (added/removed/modified)
-  - Toggle giữa diff view và raw JSON
-  - Filter "Show unchanged"
-  - Wire vào RevisionsPanel
+  - Compare a revision's `delta.before` and `delta.after`
+  - Highlight changes (added/removed/modified)
+  - Toggle between the diff view and raw JSON
+  - A "Show unchanged" filter
+  - Wired into RevisionsPanel
 
 ### Mustache display
 - **File:** `apps/studio/src/modules/content/displays/mustache.tsx`
 - **Features:**
-  - Mustache template interpolation sử dụng `field.meta.displayTemplate`
-  - Truy cập sibling fields thông qua `row` prop
-  - Wire vào display registry
+  - Mustache template interpolation using `field.meta.displayTemplate`
+  - Access to sibling fields through the `row` prop
+  - Wired into the display registry
 
 ---
 
-## Slice 7 — Cập nhật docs/features/field-types-and-config.md
+## Slice 7 — Update docs/features/field-types-and-config.md
 
-**Mục tiêu:** Cập nhật documentation để reflect những gì đã implement.
+**Goal:** update the documentation to reflect what has been implemented.
 
 ### Tasks
-- [x] Cập nhật danh sách interface thực tế (đã implement)
-- [x] Cập nhật danh sách display thực tế (đã implement)
-- [x] Thêm note về raw toggle, bulk raw editor, diff viewer
-- [x] Sync với code hiện tại
+- [x] Update the interface list to what actually exists
+- [x] Update the display list to what actually exists
+- [x] Add a note about the raw toggle, bulk raw editor and diff viewer
+- [x] Sync with the current code
 
 ---
 
-## Dependencies & Tech Stack
+## Dependencies & tech stack
 
-- **React + Vite** — Frontend framework
-- **@tanstack/react-query** — Data fetching & caching
-- **@monaco-editor/react** — Code editor (JSON, code interface)
-- **@lumibase/sdk** — Workspace dependency cho API
-- **dnd-kit** — Drag-and-drop cho repeater
-- **Tailwind CSS** — Styling
-- **Mustache.js** — Template interpolation (mustache display)
+- **React + Vite** — frontend framework
+- **@tanstack/react-query** — data fetching & caching
+- **@monaco-editor/react** — code editor (JSON, code interface)
+- **@lumibase/sdk** — workspace dependency for the API
+- **dnd-kit** — drag-and-drop for the repeater
+- **Tailwind CSS** — styling
+- **Mustache.js** — template interpolation (mustache display)
 
 ---
 
-## Nguồn slice definitions
+## Where the slice definitions came from
 
-Các slice definitions không có trong task docs (`docs/roadmap/tasks.md` chỉ có phases). Slice definitions được tạo bởi AI assistant dựa trên:
-1. Yêu cầu thực tế của LumiBase Studio
-2. Best practices cho incremental development
-3. Tách biệt rõ ràng giữa: SDK → UI shell → Interface registry → Display registry → Advanced features
+The slice definitions are not in the task docs (`docs/roadmap/tasks.md` only has phases). They were produced by an AI assistant based on:
+1. LumiBase Studio's actual requirements
+2. Best practices for incremental development
+3. A clear separation between: SDK → UI shell → interface registry → display registry → advanced features
 
-**Reference:** Design spec tại `docs/features/field-types-and-config.md`
+**Reference:** the design spec at `docs/features/field-types-and-config.md`

@@ -9,6 +9,7 @@ import { withAuth } from './middleware/auth';
 import { withDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
 import { withRateLimit } from './middleware/rate-limit';
+import { withDeliverRateLimit } from './middleware/deliver-rate-limit';
 import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
@@ -21,6 +22,7 @@ import { withTenant } from './middleware/tenant';
 import { withTracing } from './middleware/tracing';
 import { activityRouter } from './routes/activity';
 import { accessRouter } from './routes/access';
+import { accessGrantsRouter } from './routes/access-grants';
 import { adminRouter } from './routes/admin';
 import { configRouter } from './routes/config';
 import { authRouter, meRouter } from './routes/auth';
@@ -242,6 +244,11 @@ api.route('/typegen', typegenRouter);
 api.route('/roles', rolesRouter);
 api.route('/policies', policiesRouter);
 api.route('/permissions', permissionsRouter);
+// Non-staff permission picker (`/api/v1/access/grants/*`). Mounted BEFORE
+// `accessRouter` so its `/grants*` leaf paths win; every other `/access/*`
+// path falls through to the import/export router, whose leaf paths
+// (`/export`, `/import`, `/conflicts/check`) are disjoint from these.
+api.route('/access', accessGrantsRouter);
 api.route('/access', accessRouter);
 api.route('/config', configRouter);
 api.route('/api-keys', apiKeysRouter);
@@ -364,7 +371,7 @@ app.route('/api/v1/email', emailPublicRouter);
 // with 400/401 before it can reach the handler. Registering the public
 // handlers first makes them win for their disjoint paths (same mechanism as
 // the shares/email mounts above).
-app.use('/api/v1/deliver/*', withDb());
+app.use('/api/v1/deliver/*', withDb(), withDeliverRateLimit());
 app.route('/api/v1/deliver', deliverRouter);
 
 // Public pageview beacon — tenancy in the URL, unauthenticated. `withRuntime`

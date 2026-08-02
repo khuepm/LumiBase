@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:14:17.856Z
+sourceLang: vi
+contentHash: 8e804b343329c625
+codeVerified: 2026-07-25T08:14:17.856Z
+codeVerifiedHash: 8e804b343329c625
+codeVerifiedClaims: 2
+---
+
 # Roadmap triển khai Agent Harness Layer
 
 Tài liệu này trả lời câu hỏi: sau khi đã định vị LumiBase là “structured operating layer where humans, agents, data, workflows, and applications co-evolve”, những việc cần làm cụ thể là gì?

@@ -74,7 +74,7 @@ function makeBaseObject(allowLocalHttp: boolean) {
     audience: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
     algorithms: z.array(ExternalJwtAlgorithmSchema).min(1),
     claimMapping: ClaimMappingSchema,
-    roleMapping: z.record(RoleMappingEntrySchema).default({}),
+    roleMapping: z.record(z.string(), RoleMappingEntrySchema).default({}),
     defaultRoleId: z.string().min(1).nullable().optional(),
     jitProvisioning: z.boolean().default(false),
     clockSkewSeconds: z.number().int().min(0).max(300).default(60),

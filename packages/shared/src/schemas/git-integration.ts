@@ -33,7 +33,7 @@ export const GitIntegrationCreateSchema = z
     token: z.string().min(1).max(4096).optional(),
     installationId: z.string().min(1).max(128).optional(),
     scopes: z.array(z.string()).max(64).optional(),
-    syncConfig: z.record(z.unknown()).optional(),
+    syncConfig: z.record(z.string(), z.unknown()).optional(),
   })
   .superRefine((val, ctx) => {
     if (val.authMethod === 'pat' && !val.token) {
@@ -60,7 +60,7 @@ export const GitIntegrationUpdateSchema = z.object({
   installationId: z.string().min(1).max(128).optional(),
   status: z.enum(['connected', 'error', 'disconnected']).optional(),
   scopes: z.array(z.string()).max(64).optional(),
-  syncConfig: z.record(z.unknown()).optional(),
+  syncConfig: z.record(z.string(), z.unknown()).optional(),
 });
 export type GitIntegrationUpdateInput = z.infer<typeof GitIntegrationUpdateSchema>;
 

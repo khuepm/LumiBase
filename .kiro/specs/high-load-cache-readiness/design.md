@@ -71,8 +71,9 @@ Thiết kế cho chương trình High-Load & Cache Readiness (xem `requirements.
 | 16 | DB index + transactional writes | §12 |
 | 17 | CDC invalidator | §4.5 |
 | 18 | CI perf gate | §13.3 |
+| 19 | Chống cache penetration | §14 (validate + tombstone + deliver rate limit) |
 
-Cross-cutting: §15 API contracts (Req 1, 5, 7, 12, 15) · §16 schema chi tiết (Req 15, 16) · §17 multi-tenancy review (DoD 2b) · §18 route-guard security (DoD 2c) · §19 env vars · §13.4 properties đánh số P1–P16.
+Cross-cutting: §15 API contracts (Req 1, 5, 7, 12, 15) · §16 schema chi tiết (Req 15, 16) · §17 multi-tenancy review (DoD 2b) · §18 route-guard security (DoD 2c) · §19 env vars · §13.4 properties đánh số P1–P20.
 
 ## 3. Delivery cache stack (Req 1, 8)
 
@@ -300,6 +301,165 @@ Caddyfile: `request_body max_size 10MB` global; matcher riêng cho `/api/v1/medi
 | P14 | 100 request/60s cùng API key → đúng 1 UPDATE `lastUsedAt` | 3.4 | unit |
 | P15 | Behavioural matrix (principal × route → status) cho kết quả giống nhau trước/sau refactor middleware | 10.3 | integration |
 | P16 | RLS còn hiệu lực bên trong transaction tường minh trên cả 3 connection path | 16.5 | spike/integration |
+| P17 | Định danh sai hình dạng (siteId/slug/collection) → 404 với **0** DB query (assert qua query counter) | 19.1, 19.3 | integration |
+| P18 | N request liên tiếp cùng slug không tồn tại → đúng **1** DB query; N−1 request còn lại serve từ tombstone | 19.5 | integration |
+| P19 | Tạo tài nguyên đang bị tombstone → request kế tiếp trả 200, KHÔNG phải chờ TTL hết hạn | 19.7 | integration |
+| P20 | Tombstone site A không ảnh hưởng cùng slug ở site B; request có Authorization không bao giờ nhận tombstone | 19.6, 19.8 | integration two-site |
+
+## 14. Chống cache penetration (Req 19)
+
+> Section §14 trước đây bỏ trống (đánh số nhảy §13 → §15); requirement này lấp vào đó.
+
+### 14.1 Vấn đề — vì sao ba tầng cache hiện tại đều không hấp thụ được
+
+Toàn bộ §3–§5 là cache **positive**: điền entry khi có dữ liệu. Khoá không tồn tại thì không có gì để điền, nên mỗi tầng chỉ chuyển tiếp xuống tầng dưới và request luôn kết thúc ở Postgres:
+
+```
+GET /deliver/page/{siteId}/{slug-rác}
+  edge/HTTP   → miss (và 404 hiện phát `no-store` → CDN không được phép giữ lại)
+  app cache   → miss (§3.1 chỉ ghi khi build được payload)
+  single-flight/SWR (§5.2) → không giúp: coalesce các miss ĐỒNG THỜI trên CÙNG khoá;
+                             kẻ tấn công dùng khoá KHÁC NHAU nên mỗi request là một khoá mới
+  DB          → 1 query `pages` (routes/deliver.ts:411-415) → 404
+```
+
+Ba sự thật từ audit làm vấn đề nặng hơn:
+
+| # | Phát hiện | Vị trí |
+|---|-----------|--------|
+| F1 | `CacheProvider.get` trả `null` cho *miss*, *giá trị null* và *lỗi backend* như nhau → **không thể** biểu diễn tombstone dù caller muốn | `interfaces/cache.ts:2`; `docker/cache.ts:28-37`; `cloudflare/cache.ts:34-36` |
+| F2 | `/api/v1/deliver/*` mount **chỉ** `withDb()` — không có rate limit nào; đây là surface public, không xác thực | `index.ts:367-368` |
+| F3 | `site_id`/`slug`/tên collection đi thẳng từ URL vào query, không kiểm hình dạng; `X-Lumi-Site` được tin tuyệt đối | `deliver.ts:398`; `tenant.ts:25-29` |
+
+F1 là blocker cấp interface: phải sửa `CacheProvider` trước, nên tầng 2 phụ thuộc task 8 (Cache Provider v2).
+
+Đối chiếu: `resolveUploadPolicy` (`upload-policy-service.ts:50-82`) đã làm đúng một biến thể của việc này — khi settings row vắng, nó vẫn cache **fallback config** thay vì bỏ trống. Pattern "cache cả kết quả rỗng" đã tồn tại trong codebase, chỉ chưa được áp cho đường đọc theo định danh.
+
+### 14.2 Ba tầng phòng thủ
+
+```
+request
+  │
+  ├─[1] shape guard      ── sai hình dạng ────────────► 404, 0 query, 0 cache op
+  │        rẻ nhất, thuần regex, không tra cứu
+  ├─[2] tombstone lookup ── neg:{siteId}:{kind}:{id} ─► 404 từ cache, 0 query
+  │        TTL 30s ± jitter 20%
+  ├─[3] rate limit IP    ── vượt ngưỡng ──────────────► 429, no-store, KHÔNG ghi tombstone
+  │
+  ▼ DB (đường duy nhất còn lại) → không có → ghi tombstone → 404
+```
+
+Thứ tự cố ý: guard hình dạng đứng trước cả cache vì nó không tốn round-trip nào. Rate limit đứng **sau** tombstone lookup để traffic hợp lệ-hình-dạng-nhưng-không-tồn-tại (crawler cũ, link chết) vẫn được phục vụ rẻ thay vì bị 429.
+
+### 14.3 Interface — phân biệt miss với tombstone
+
+Mở rộng `CacheProvider` v2 (§4.1), giữ nguyên `get` cũ để mọi caller hiện tại không phải đổi:
+
+```ts
+export type CacheEntry<T> =
+  | { state: 'hit'; value: T }
+  | { state: 'negative' }        // đã xác nhận không tồn tại (tombstone)
+  | { state: 'miss' }            // chưa biết
+  | { state: 'unavailable' }     // backend lỗi — caller PHẢI fallback DB (Req 19.9)
+
+export interface CacheProvider {
+  // …§4.1…
+  /** Đọc phân biệt bốn trạng thái. `get()` cũ = hit→value, còn lại→null. */
+  getEntry<T>(key: string): Promise<CacheEntry<T>>
+  /** Ghi tombstone. Value trên dây là sentinel, không phải `null` JSON. */
+  setNegative(key: string, options?: { ttl?: number }): Promise<void>
+}
+```
+
+**Encoding trên dây.** Không dùng `null`/chuỗi rỗng làm sentinel — cả hai adapter đã coi chúng là falsy. Dùng envelope tường minh:
+
+- Redis: `SETEX key ttl '{"__lumi":"neg","v":1}'`; `getEntry` phân biệt `null` từ `GET` (miss) với envelope parse được (negative). Lỗi/`catch` → `unavailable`, **không** phải `miss` — đây là chỗ adapter hiện tại đang nuốt lỗi (`docker/cache.ts:33-36`) và Req 13.2 cũng đã yêu cầu sửa.
+- KV: cùng envelope, `kv.get(key, 'json')`. KV không phân biệt được lỗi với vắng mặt ở mức API → `unavailable` chỉ phát khi `get` ném; chấp nhận và ghi vào docs.
+
+`setNegative` không nhận `value` để không ai vô tình cache một payload rỗng thay vì cờ "không tồn tại".
+
+### 14.4 Helper (`packages/runtime/src/cache-helpers.ts`, cạnh `createSwrCache`)
+
+```ts
+export function createNegativeCache(opts: {
+  cache: CacheProvider
+  ttl: number                    // giây, base
+  jitterRatio?: number           // default 0.2 → TTL thực ∈ [0.8·ttl, 1.2·ttl]
+}): {
+  /** miss/unavailable → gọi load; load trả null → ghi tombstone rồi trả null. */
+  resolve<T>(key: string, load: () => Promise<T | null>): Promise<T | null>
+  forget(key: string): Promise<void>   // gọi sau khi tạo tài nguyên (Req 19.7)
+}
+```
+
+Jitter dùng nguồn ngẫu nhiên của runtime; mục đích là tránh biến penetration thành *avalanche* — 100k tombstone ghi trong một burst sẽ hết hạn cùng lúc nếu TTL cố định, và burst thứ hai đi thẳng xuống DB y như lần đầu.
+
+`resolve` cố ý **không** gộp single-flight: hai cơ chế giải hai bài toán khác nhau (§5.2 lo khoá nóng chung, cái này lo khoá rác phân tán). Ai cần cả hai thì bọc `createSwrCache` bên trong `load`.
+
+**TTL phải được caller truyền vào, service không tự đọc `process.env`.** Trên Cloudflare Workers `process.env` không mang biến của wrangler, nên đọc trực tiếp trong service là bỏ qua knob `LUMIBASE_NEGATIVE_CACHE_TTL` trên đúng một trong hai runtime được hỗ trợ — kể cả `0` (tắt tombstone) cũng không có tác dụng (vi phạm non-negotiable rule #3). Đường đi: `resolveNegativeTtl(c.env)` tại biên request → `ItemServiceDeps.negativeCacheTtl` → `SchemaServiceDeps.negativeCacheTtl`. Route `deliver.ts` đã đọc `c.env` trực tiếp nên không cần thread. Các construction site không có `c` (worker, config-import, rewrap) giữ fallback `process.env` — chúng chạy trên Node và không phải mục tiêu penetration.
+
+### 14.5 Key namespace (DoD 2b)
+
+```
+neg:${siteId}:page:${slug}          ← deliver page 404
+neg:${siteId}:collection:${name}    ← SchemaService.getCompiled / ItemService.resolveCollection
+neg:site:${siteId}                  ← site không tồn tại (llms.txt); không có siteId cha nên
+                                       namespace phẳng — đây là ngoại lệ duy nhất, xem §17
+```
+
+**Đã bỏ `neg:${siteId}:item:${collection}:${id}` (rà code 2026-08-02).** Mọi đường đọc item-by-id đều nằm sau auth, và Req 19.8 cấm serve tombstone cho request có credentials — nên phía đọc không bao giờ wire được. Bản implement đầu tiên vẫn gọi `forget` cho khoá này ở `ItemService.create`, tức mỗi lần tạo item tốn một round-trip Redis để xoá thứ không đường nào ghi. Đã xoá cả helper lẫn call-site. Mở lại chỉ khi có surface item-by-id công khai, không xác thực.
+
+`slug`, tên collection và mọi thành phần khoá chịu ảnh hưởng từ input đều được cắt tại `LUMIBASE_NEGATIVE_KEY_MAXLEN` = 256 ký tự (slug thêm lowercase + trim). Lý do cắt cả tên collection: `SAFE_FIELD_NAME` giới hạn **alphabet** nhưng không giới hạn **độ dài**, nên `GET /items/<tên 10KB>` sẽ sinh khoá Redis 10KB. Cắt an toàn cho key material — hai tên trùng 256 ký tự đầu dồn vào một tombstone chỉ khiến tên dài hơn tốn thêm một lần probe DB, và không tên collection thật nào tới gần mức đó (schema create cap 63 ký tự).
+
+### 14.6 Shape guard (`apps/cms/src/services/identifier-guard.ts` — module mới)
+
+```ts
+const NANOID = /^[A-Za-z0-9_-]{21}$/          // khớp nanoid() mặc định (rule #1)
+const SLUG   = /^[a-z0-9]+(?:[/_-][a-z0-9]+)*$/   // ≤200 ký tự
+const COLL   = /^[A-Za-z_][A-Za-z0-9_]*$/     // đã tồn tại inline tại deliver.ts:25
+```
+
+- Sai hình dạng → **404**, không phải 400: 400 nói với kẻ dò rằng "hình dạng này đúng nhưng không có", biến endpoint thành oracle. Ngoại lệ: `X-Lumi-Site` sai hình dạng → 400 `TENANT_INVALID`, vì đây là lỗi client tường minh trên header do client tự đặt, không phải đường dò tài nguyên.
+- Guard **không** tra DB. Một siteId đúng hình dạng nhưng không tồn tại vẫn xuống tầng 2 — đó là việc của tombstone.
+- `COLL` hiện là hằng `SAFE_FIELD_NAME` cục bộ trong `deliver.ts:25`; chuyển vào module chung, `deliver.ts` import lại (không nhân bản regex).
+
+### 14.7 Xoá tombstone khi tài nguyên xuất hiện (Req 19.7)
+
+TTL 30s là lưới an toàn, không phải cơ chế chính — một tác giả tạo page rồi F5 ngay không được nhìn thấy 404 tồn dư.
+
+| Write path | Gọi sau commit |
+|---|---|
+| Tạo page / đổi `pages.slug` | `forget('neg:'+siteId+':page:'+slug)` cho slug mới (và slug cũ nếu đổi) |
+| Tạo collection | `forget('neg:'+siteId+':collection:'+name)` |
+| Tạo site | `forget('neg:site:'+siteId)` |
+| ~~Tạo item~~ | ~~`forget('neg:…:item:…')`~~ — bỏ, xem §14.5 (khoá item không tồn tại) |
+
+Cùng vị trí và cùng chính sách lỗi với tag purge của Req 8.1: lỗi → metric + warn, **không** fail request.
+
+**Thứ tự tra cứu ở `SchemaService.getCompiled`: positive cache TRƯỚC, tombstone SAU.** Bản đầu tiên probe tombstone trước, nên mọi request tới collection *có thật* phải trả thêm một round-trip cache — mà `resolveCollection` chạy trên mọi item list/detail/patch, tức đường nóng nhất của content plane. Đảo lại: hit dương = 1 op (trước là 2); traffic penetration vẫn **không** chạm Postgres, chỉ trả thêm một lần đọc cache — đúng phía rẻ của trade-off. Nguyên tắc chung cho các call-site sau: tombstone là lớp bảo vệ cho đường *lạnh*, không được nằm chắn trước đường nóng.
+
+### 14.8 Bloom filter — quyết định (Req 19.16)
+
+**Không dùng ở P0/P1.** Lý do:
+
+1. **Dual-runtime chặn.** RedisBloom là module Redis (`BF.ADD`/`BF.EXISTS`), không có tương đương trên Cloudflare KV. Tự cài bitmap trong KV nghĩa là read-modify-write một blob lớn mỗi lần thêm khoá — đắt hơn hẳn thứ nó thay thế, và eventually-consistent ~60s làm false-negative xuất hiện (filter nói "không có" cho tài nguyên vừa tạo → 404 sai). False-negative là lỗi *correctness*, khác hẳn false-positive vô hại của Bloom filter đúng nghĩa.
+2. **Chi phí rebuild.** Bloom filter chuẩn không xoá được phần tử; xoá một page buộc rebuild toàn bộ filter của site. Counting/cuckoo filter xoá được nhưng phải tự hiện thực trên KV.
+3. **Lợi ích biên nhỏ.** Bloom chỉ hơn tombstone khi *key space rác quá lớn để tombstone hết* — mỗi khoá rác vẫn tốn một entry Redis 30s. Với 1200 req/phút/IP (§14.9) và TTL 30s, chặn trên số tombstone sống của một IP là ~600 entry ≈ vài chục KB. Ngân sách này chưa đủ đau để đánh đổi lấy độ phức tạp trên.
+
+**Điều kiện tái mở** (ghi để phase sau không phải tranh luận lại): (a) đo được bộ nhớ tombstone > 5% maxmemory Redis trên môi trường thật, HOẶC (b) triển khai Docker-only cho phép bỏ ràng buộc KV, HOẶC (c) xuất hiện use-case tra cứu tồn tại trên tập > 10⁷ khoá.
+
+### 14.9 Rate limit cho Delivery API (Req 19.10; chốt open question §21.2)
+
+Chốt theo hướng **CÓ**. Sửa quyết định "skip health/metrics/deliver" ở `tasks.md` task 13.2 — riêng `deliver` vào phạm vi, `health`/`metrics` vẫn ngoài.
+
+- Keying: `rl:deliver:${ip}` — đường này chưa xác thực nên không có principal. **Không** đưa `siteId` vào khoá: ngân sách theo IP là để bảo vệ *origin*, và nếu chia theo site thì một IP đánh N site sẽ có N lần ngân sách. Đây là ngoại lệ có chủ ý với quy tắc "mọi khoá hạ tầng mang siteId" — ghi vào §17 cùng nhóm với `rl:recovery:${ip}` đã có tiền lệ.
+- Ngưỡng mặc định 1200/phút/IP: cao gấp 4 lần `LUMIBASE_API_RATE_LIMIT` vì delivery là đường một-frontend-nhiều-request, và traffic thật thường đến sau CDN (nhiều người dùng chung một IP egress). Đây là lưới chống lạm dụng, không phải quota. **Chốt 2026-08-01 (§21.6):** giữ 1200 sau đo `load-penetration.js` (50 RPS một IP → 429 sau ~24s).
+- Fail-open theo cùng chính sách `middleware/rate-limit.ts` hiện hành (`LUMIBASE_RATE_LIMIT_FAIL_CLOSED` áp dụng chung).
+- Nguồn IP phải đọc qua cùng helper mà limiter hiện tại dùng (tôn trọng `X-Forwarded-For` sau Caddy) — không tự parse header trong route.
+
+### 14.10 Chi phí một lần chạm DB — vì sao đáng chặn
+
+`GET /deliver/page` không cache mất **2** query trên đường 200 và **1** trên đường 404, nhưng query cache-hit-path `contentFingerprint` (`deliver.ts:386-395`) là một aggregate `count(*) filter (…)` quét theo `siteId` trên bảng `items`. Trên site 100k item (dataset seed task 0.2) đây không phải index lookup. Nghĩa là: chi phí biên của một request rác không phải "một primary-key lookup rẻ" — càng đáng chặn trước khi tới DB. Index của Req 16.2 giảm chi phí này nhưng không xoá nó.
 
 ## 15. API contracts (endpoint mới / thay đổi)
 
@@ -403,6 +563,9 @@ Lưu ý migration: `CONCURRENTLY` không chạy được trong transaction — f
 | Edge/HTTP cache | Cô lập tenant | `Vary: X-Lumi-Site` + URL chứa `site_id` | — | test header matrix (P1–P3) |
 | Rate-limit key API | Cô lập tenant | `rl:${siteId}:${principal}` | — | P10 |
 | Rate-limit recovery/setup | **Shared theo IP** | `rl:recovery:${ip}` | Pre-auth: chưa xác định được tenant; chỉ chứa IP, không chứa dữ liệu tenant | review + unit test key shape |
+| Tombstone (negative cache) | Cô lập tenant | `neg:${siteId}:${kind}:${id}` | — | P20 |
+| Tombstone site-không-tồn-tại | **Namespace phẳng** | `neg:site:${siteId}` | Không có siteId cha để lồng vào — khoá LÀ siteId; giá trị là cờ rỗng, không chứa dữ liệu tenant nào | review key shape; P17 |
+| Rate-limit delivery | **Shared theo IP** | `rl:deliver:${ip}` | Public, chưa xác thực; cố ý không chia theo site để một IP đánh N site không có N lần ngân sách (§14.9) | review + unit test key shape |
 | Cron leader lock | **Shared deployment** | `lumi:cron-lock:${jobName}` | Job cấp deployment (audit rotation, retention…); job tự fan-out theo site từ DB — không "rò" site của request gần nhất | P11 + code review job payload |
 | Queue topic audit/revalidation/flow | **Topic shared, payload cô lập** | mọi payload bắt buộc mang `siteId`; worker resolve site từ payload, không từ context | Topic là hạ tầng; dữ liệu nằm trong payload đã gắn site | schema Zod payload có `siteId` required + test worker |
 | Bảng `flow_runs` | Cô lập tenant | cột `site_id NOT NULL` + RLS `site_isolation` + mọi query `.where(eq(siteId))` | — | RLS test + P16 |
@@ -418,6 +581,8 @@ Two-site smoke bắt buộc trước khi đóng mỗi phase: chạy P6 + kịch 
 | `GET /flows/runs/:runId` | Content/Studio plane (theo `/flows` hiện hành) | chuỗi auth chuẩn + query site-scoped; 404 đồng nhất cho cross-site |
 | `POST /flows/:id/run` (202 mode) | Không đổi plane so với hiện tại | giữ nguyên guard hiện hành |
 | Rate-limit middleware | — | đặt SAU `withAuth` (cần principal); không đổi thứ tự guard phía trước; không thêm path nào vào `PUBLIC_AUTH_PATHS`/bypass |
+| Delivery rate limit (Req 19.10) | **Public plane** (không đổi plane) | Limiter riêng keyed theo IP, mount trên `/api/v1/deliver/*` cùng chỗ `withDb()` (`index.ts:367`); KHÔNG dùng limiter authenticated (không có principal ở đây); không thêm/bớt guard nào khác trên chuỗi delivery |
+| Shape guard + tombstone (Req 19.1–19.8) | **Public plane** | Không phải guard bảo mật — chỉ giảm tải; 404 hình-dạng-sai và 404 không-tồn-tại phải **không phân biệt được** từ ngoài (cùng body, cùng `Cache-Control`) để endpoint không thành oracle liệt kê khoá hợp lệ |
 | Cache/queue/lock | — | không expose endpoint mới nào ngoài purge; worker không nhận lệnh từ request context |
 
 Tripwire: `security-guards.wiring.test.ts` THÊM assertion cho `/utils/cache/purge` (không sửa/xoá assertion cũ). Middleware refactor (Req 10) chỉ merge sau khi behavioural matrix (P15) merge trước và pass trên code cũ.
@@ -434,6 +599,8 @@ Tripwire: `security-guards.wiring.test.ts` THÊM assertion cho `/utils/cache/pur
 | `LUMIBASE_PROCESS_ROLE` | `all` | P2 | 14.1 | `web`\|`worker`\|`all` |
 | `LUMIBASE_FLOW_SYNC_TIMEOUT` | `30000` | P2 | 15.3 | ms, chỉ áp cho sync fallback |
 | `LUMIBASE_BULK_MAX` | `500` | P2 | 16.4 | items/batch |
+| `LUMIBASE_NEGATIVE_CACHE_TTL` | `30` | P1 | 19.5 | giây, base trước jitter ±20%; `0` = tắt tombstone |
+| `LUMIBASE_DELIVER_RATE_LIMIT` | `1200` | P1 | 19.10 | req/phút/IP trên `/deliver/*`; `0` = tắt |
 
 Nguyên tắc: mọi knob là env (không settings row) → không đụng setup wizard (xem setup-impact trong `requirements.md`).
 
@@ -447,7 +614,9 @@ Nguyên tắc: mọi knob là env (không settings row) → không đụng setup
 ## 21. Open questions (chốt trước khi code phase liên quan)
 
 1. §4.5 phương án B (remove CDC invalidator) — cần maintainer xác nhận không có roadmap ghi-ngoài-API.
-2. §8 delivery có nằm trong rate limiter không (hiện: không) — xem lại sau baseline.
+2. ~~§8 delivery có nằm trong rate limiter không (hiện: không) — xem lại sau baseline.~~ **CHỐT: có** — §14.9 (Req 19.10), limiter riêng keyed theo IP. Sửa "skip deliver" ở tasks task 13.2.
 3. §11 Caddy plugin ratelimit vs app-level only — phụ thuộc chấp nhận custom Caddy build.
 4. §12 tương tác transaction tường minh với `withRls` set_config — cần spike xác nhận trên cả 3 connection path (`db.ts:19-65`) trước khi viết Req 16.5.
 5. §10.3 AI chat async tái dùng `flow_runs` hay bảng riêng.
+6. ~~§14.9 ngưỡng `LUMIBASE_DELIVER_RATE_LIMIT` = 1200/phút/IP là ước lượng chưa đo.~~ **CHỐT (2026-08-01):** giữ **1200/phút/IP**. Đo bằng `load-penetration.js` (50 RPS ≈ 3000/phút, một IP, cửa sổ 40s): sau ~24s limiter trả **429** (~40% request trong mẫu) — đúng vai trò lưới chống lạm dụng origin, không phải quota CDN. Synthetic single-IP load test đo DB-query-per-404 nên đặt `LUMIBASE_DELIVER_RATE_LIMIT=0` (hoặc nâng tạm). IP đã lấy qua helper XFF/`CF-Connecting-IP` sẵn có; nếu CDN gộp nhiều user vào ít IP egress thì tầng 3 kém hiệu quả — tầng 1+2 (guard + tombstone) vẫn độc lập. Không hạ default dưới 1200 sau phép đo này.
+7. ~~§14.3 `unavailable` trên KV chỉ phát khi `get` ném.~~ **CHỐT (2026-08-01, spike Workers KV docs):** `KVNamespace.get` **trả `null` khi miss** (không ném). Platform docs khuyến nghị `try/catch` cho lỗi hạ tầng/runtime — khi `get` thực sự ném, adapter map sang `unavailable` (đúng). Soft failure nếu surface như `null` sẽ sụp về `miss` → gọi `load`/DB (Req 19.9 degrade an toàn, không 5xx giả). **`unavailable` quan sát được chủ yếu trên Docker/Redis**; trên CF nó là đường hiếm (throw thật), không phải tín hiệu miss.

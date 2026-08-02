@@ -33,6 +33,7 @@ Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, ba
 - [ ] **Định danh/secret dùng chung không lộ dữ liệu tenant**: endpoint trả tài nguyên dùng chung (vd public key) phải tenant-agnostic; fan-out/gửi đi phải lọc theo `siteId`.
 - [ ] **Two-site smoke test**: với site A và site B, thao tác trên A KHÔNG xuất hiện/ảnh hưởng B (list, count, realtime broadcast, notification, search, file). Ghi lại cách đã kiểm (test tự động ưu tiên; nếu thủ công thì nêu các bước).
 - [ ] **Background/cron/queue context**: job chạy ngoài request vẫn resolve đúng `siteId` từ payload (không "rò" site của request gần nhất, không quét toàn bộ tenant ngoài ý muốn).
+- [ ] **Parity runtime provider giữa request path và worker**: worker/cron/queue chạy **cùng service** với request path phải nhận **đủ** provider mà service đó cần (`keys`, `cache`, `search`, `queue`, `storage`) — deps của worker thiếu một provider thì cả một họ tính năng **fail closed âm thầm**, chỉ trên đường async. Đã xảy ra: `AgentRunWorkerDeps` không có `KeyProvider` ⇒ mọi deployment skill trả `DEPLOYMENTS_NOT_CONFIGURED` khi chạy qua queue (và hoá ra cả 4 call site `new AISecureHarness` đều thiếu). Cùng class "quên, không phải sai" như §2c — khoá bằng source-scan tripwire (mẫu: `apps/cms/src/__tests__/ai-harness-keys-context.test.ts`), đừng chỉ sửa call site vừa phát hiện.
 - [ ] **Tài liệu**: mục Multi-tenancy trong `docs/en/features/<feature>.md` nêu rõ shared-vs-isolated + cách verify (xem `push-notifications.md` làm mẫu).
 
 ## 2c. Route-guard security — BẮT BUỘC khi thêm/đổi route hoặc middleware

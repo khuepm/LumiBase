@@ -1,39 +1,52 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:19:21.531Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: 5bfafd0745c87140
+mtEngine: claude
+syncStatus: machine-translated
+codeVerified: 2026-07-25T08:19:21.531Z
+codeVerifiedHash: 5bfafd0745c87140
+codeVerifiedClaims: 8
+---
+
 # SCIM 2.0 Provisioning
 
-LumiBase implement subset của RFC 7644 đủ để Okta, Azure AD, Logto, Google Workspace tự động provision/deprovision users và groups.
+LumiBase implements a subset of RFC 7644 — enough for Okta, Azure AD, Logto and Google Workspace to provision and deprovision users and groups automatically.
 
 ## Endpoints
 
-Mount tại `/scim/v2/*` (ngoài `/api/v1`):
+Mounted at `/scim/v2/*` (outside `/api/v1`):
 
-| Endpoint | Method | Mục đích |
-|----------|--------|----------|
-| `/scim/v2/Users` | GET | List với filter (e.g. `userName eq "alice@x.com"`) |
-| `/scim/v2/Users/:id` | GET | Get user |
-| `/scim/v2/Users` | POST | Create user |
-| `/scim/v2/Users/:id` | PUT | Replace user |
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/scim/v2/Users` | GET | List with a filter (e.g. `userName eq "alice@x.com"`) |
+| `/scim/v2/Users/:id` | GET | Get a user |
+| `/scim/v2/Users` | POST | Create a user |
+| `/scim/v2/Users/:id` | PUT | Replace a user |
 | `/scim/v2/Users/:id` | PATCH | Partial update |
 | `/scim/v2/Users/:id` | DELETE | Soft delete (`active: false`) |
 | `/scim/v2/Groups` | GET | List groups (= LumiBase teams) |
-| `/scim/v2/Groups` | POST | Create group |
+| `/scim/v2/Groups` | POST | Create a group |
 | `/scim/v2/ServiceProviderConfig` | GET | Capabilities advertisement |
 | `/scim/v2/Schemas` | GET | Schema definitions |
 | `/scim/v2/ResourceTypes` | GET | Resource types |
 
 Implementation: `apps/cms/src/routes/scim.ts`.
 
-## Auth & Security (Token Rotation)
+## Auth & security (token rotation)
 
-SCIM **không dùng** Logto JWT pipeline để xác thực trực tiếp của người dùng. Thay vào đó, nó sử dụng Bearer tokens riêng:
-- **Lưu trữ bảo mật**: Token thực tế được băm bằng thuật toán **SHA-256** trước khi lưu vào bảng `scim_tokens`. Plaintext token chỉ hiển thị duy nhất **một lần** khi tạo mới.
-- **Rotation (Xoay vòng Token)**: Hỗ trợ tạo mới token và thu hồi (revoke) token cũ. Khi rotate, token cũ sẽ có một khoảng thời gian chờ (grace period) là **24 giờ** trước khi hết hạn hoàn toàn, đảm bảo dịch vụ không bị gián đoạn.
-- **Audit Logging**: Tất cả mọi hoạt động thay đổi cấu hình SCIM (tạo user, sửa group, xóa...) đều được tự động ghi nhận vào bảng nhật ký `activity` kèm nhãn (label) của token thực hiện.
+SCIM does **not** authenticate through the Logto JWT pipeline for end-user identity. It uses its own bearer tokens instead:
+- **Stored securely**: the actual token is hashed with **SHA-256** before being written to the `scim_tokens` table. The plaintext token is shown exactly **once**, at creation.
+- **Rotation**: a new token can be issued and the old one revoked. On rotation the old token keeps a **24-hour** grace period before expiring completely, so the integration is not interrupted.
+- **Audit logging**: every SCIM configuration change (create user, edit group, delete, …) is recorded automatically in the `activity` log, tagged with the label of the token that performed it.
 
-### Các API quản lý SCIM Token (yêu cầu Logto JWT):
-- `POST /api/v1/scim-tokens`: Sinh token mới (trả về plaintext một lần duy nhất).
-- `GET /api/v1/scim-tokens`: Danh sách token đã phát hành (mã hóa một phần, chỉ trả metadata).
-- `DELETE /api/v1/scim-tokens/:id`: Thu hồi token ngay lập tức.
-- `POST /api/v1/scim-tokens/:id/rotate`: Rotate token (tạo token mới + set grace period 24h cho token cũ).
+### SCIM token management APIs (require a Logto JWT):
+- `POST /api/v1/scim-tokens`: mint a new token (returns the plaintext once only).
+- `GET /api/v1/scim-tokens`: list issued tokens (partially redacted — metadata only).
+- `DELETE /api/v1/scim-tokens/:id`: revoke a token immediately.
+- `POST /api/v1/scim-tokens/:id/rotate`: rotate a token (issue a new one and set the 24h grace period on the old one).
 
 ## Mapping
 
@@ -42,7 +55,7 @@ SCIM **không dùng** Logto JWT pipeline để xác thực trực tiếp của n
 | `User.userName` | `users.email` |
 | `User.name.givenName` / `familyName` | `users.firstName` / `lastName` |
 | `User.active` | `users.status` (`active` ↔ `suspended`) |
-| `Group` | `teams` row |
+| `Group` | a `teams` row |
 | `Group.members` | `team_members` rows |
 
 ## Schema URNs
@@ -67,22 +80,22 @@ urn:ietf:params:scim:api:messages:2.0:Error
 }
 ```
 
-## Configuration trên IdP
+## IdP configuration
 
 ### Okta
 
 - SCIM 2.0 Connector Base URL: `https://<your-cms>/scim/v2`
-- Auth: HTTP Header `Authorization: Bearer <SCIM_TOKEN>`
-- Push Profile Updates, Push Groups: enabled.
+- Auth: HTTP header `Authorization: Bearer <SCIM_TOKEN>`
+- Push Profile Updates and Push Groups: enabled.
 
 ### Azure AD
 
 - Tenant URL: `https://<your-cms>/scim/v2`
 - Secret token: `<SCIM_TOKEN>`
-- Mappings mặc định work với LumiBase user/group.
+- The default mappings work with LumiBase users/groups.
 
-## Multi-tenancy & Isolation
+## Multi-tenancy & isolation
 
-SCIM được thiết kế hoàn toàn cô lập giữa các tenant (multi-tenancy):
-- **Token-based Site Extraction**: Middleware tự động trích xuất trực tiếp `siteId` được liên kết với token được tìm thấy từ database.
-- **Spoofing Prevention**: Hệ thống bỏ qua bất kỳ header `X-Lumi-Site` nào được gửi từ phía client để tránh việc giả mạo tenant (spoofing). Tất cả tài nguyên (Users, Groups) được tạo/sửa đổi đều bị cô lập chặt chẽ trong phạm vi site của token đó.
+SCIM is designed to be fully isolated between tenants:
+- **Token-based site extraction**: the middleware resolves the `siteId` bound to the token directly from the database.
+- **Spoofing prevention**: the system ignores any client-supplied `X-Lumi-Site` header, so a tenant cannot be spoofed. Every resource (Users, Groups) created or modified is strictly confined to that token's site.

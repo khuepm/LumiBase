@@ -24,6 +24,7 @@ Key rules:
 - Multi-tenancy: `site_id` on every domain table, every query scoped
 - AI safety: dangerous skills gate through `ai_approvals` (HITL)
 - Cache: tag-based invalidation (`CacheProvider.invalidateByTag`)
+- Deprecation: `withDeprecation` is opt-in — attach only when explicitly retiring a route (see `prompt.md`)
 
 Key entry points:
 - API: `GET/POST /api/v1/items/:collection`, `POST /api/v1/ai/chat`, `POST /api/v1/flows/:id/run`

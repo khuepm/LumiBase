@@ -1,5 +1,12 @@
 ---
 title: CDC Architecture Overview
+version: 1
+lastUpdated: 2026-07-28T11:32:42.873Z
+sourceLang: en
+contentHash: cb0efdb972f07f03
+codeVerified: 2026-07-28T11:32:42.873Z
+codeVerifiedHash: cb0efdb972f07f03
+codeVerifiedClaims: 8
 ---
 
 # CDC Architecture Overview

@@ -1,4 +1,19 @@
+---
+version: 2
+lastUpdated: 2026-07-28T10:30:25.628Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 9d27520c67af75a0
+mtEngine: claude
+syncStatus: machine-translated
+codeVerified: 2026-07-28T10:30:25.628Z
+codeVerifiedHash: 9d27520c67af75a0
+codeVerifiedClaims: 60
+---
+
 # Tham chiếu biến môi trường
+
+<!-- verify-code-refs: planned LUMIBASE_REALTIME_ENABLED -->
 
 > **Dành cho AI agent:** Mọi biến bắt buộc phải được đặt trước khi khởi động CMS API. Thiếu biến bắt buộc sẽ khiến quá trình khởi động thất bại kèm thông báo lỗi rõ ràng.
 
@@ -14,11 +29,14 @@ Trang này liệt kê mọi biến môi trường và binding Cloudflare mà Lum
 | `LUMIBASE_RUNTIME` | Chỉ Docker | `cloudflare` | `docker` cho Node.js/Docker; Cloudflare Workers tự suy ra từ binding |
 | `JWT_SECRET` | ✓ | — | Secret để ký/xác thực JWT ứng dụng. Tối thiểu 32 ký tự. **Với production Cloudflare, đặt bằng `wrangler secret put JWT_SECRET --env production`; không bao giờ commit hay đặt trong `[env.production.vars]`.** |
 | `LUMIBASE_DEV_AUTH` | Chỉ local dev | `false` | Đặt `true` để bỏ qua auth Logto trong local dev. **Không bao giờ bật ở production; `pnpm release:check` sẽ fail nếu production resolve thành `true`.** |
-| `LUMIBASE_REALTIME_ENABLED` | ✗ | `true` | Đặt `false` để tắt WebSocket ở mức deployment |
-| `LUMIBASE_ADMIN_PATH` | ✗ | (ngẫu nhiên) | Path tùy chỉnh cho Studio admin panel (bảo mật qua obscurity) |
+| `LUMIBASE_REALTIME_ENABLED` | ✗ | — | **Chưa implement.** Hiện không code nào đọc biến này; đặt nó không có tác dụng gì. Đang được theo dõi như mục tiêu "explicit enablement" trong [realtime implementation](../architecture/realtime-websocket-implementation.md). |
 | `VITE_LUMIBASE_ALLOW_ADMIN_PATH_REDIRECT` | Chỉ setup/debug | `false` | Opt-in phía client cho phép redirect tiện lợi tới admin path riêng tư. Giữ không đặt ở production, trừ một cửa sổ setup/debug tạm thời có kiểm soát. |
 
-Admin path là trạng thái vận hành riêng tư. Không phơi bày qua biến môi trường `VITE_*` hay client build metadata, và không tự động redirect các route public/setup tới nó ở production. Xem [Admin path riêng tư](./private-admin-path.md).
+Admin path **không** cấu hình bằng biến môi trường. Nó được chọn trong Setup Wizard và
+lưu trong database, nên có thể rotate mà không cần redeploy — và không bao giờ nằm
+trong build artifact.
+
+Đây là trạng thái vận hành riêng tư. Không phơi bày qua biến môi trường `VITE_*` hay client build metadata, và không tự động redirect các route public/setup tới nó ở production. Xem [Admin path riêng tư](./private-admin-path.md).
 
 ---
 
@@ -76,7 +94,7 @@ Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#
 
 | Biến | Bắt buộc | Mô tả |
 |------|----------|-------|
-| `MEILISEARCH_URL` | Nếu bật search | URL instance MeiliSearch |
+| `MEILISEARCH_HOST` | Nếu bật search | URL instance MeiliSearch |
 | `MEILISEARCH_API_KEY` | Nếu bật search | Master key hoặc search API key của MeiliSearch |
 
 ---

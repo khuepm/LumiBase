@@ -4,7 +4,9 @@
 >
 > Nguồn: audit codebase trên nhánh `claude/cms-high-load-evaluation-48fpij` (đọc trực tiếp source, có file:line cho mọi phát hiện). Các nhận định về hành vi dưới tải là [Inference] từ code path — cần xác nhận lại bằng k6 baseline (Phase 0, task đầu tiên) trước khi tối ưu.
 >
-> Bộ spec: `requirements.md` (Req 0–18, EARS) · `design.md` (kiến trúc, traceability, API contracts, properties P1–P16) · `tasks.md` (kế hoạch 4 phase) · `dod-review.md` (rà soát Definition of Done từng mục, rà lại khi đóng mỗi phase).
+> Bộ spec: `requirements.md` (Req 0–19, EARS) · `design.md` (kiến trúc, traceability, API contracts, properties P1–P20) · `tasks.md` (kế hoạch 4 phase + nhóm bổ sung 22) · `dod-review.md` (rà soát Definition of Done từng mục, rà lại khi đóng mỗi phase).
+>
+> **Bổ sung 2026-07-27:** audit vòng hai về *cache penetration* (khoá không tồn tại ở cả cache lẫn DB) → Req 19 + design §14 + tasks 22.x. Spec gốc phủ *cache breakdown* (Req 9, khoá nóng hết hạn) nhưng không phủ penetration; ba lỗ hổng mới ghi trong bảng §1 dưới.
 
 ## 1. Bối cảnh — hiện trạng đã audit
 
@@ -25,6 +27,9 @@
 | Cache | Không có single-flight/SWR — miss đồng thời dồn hết xuống DB | `schema-service.ts:966-972` |
 | Cache | CDC `CacheInvalidator` viết xong nhưng không wire; key thiếu `siteId` | `modules/cdc/cache-invalidator.ts` |
 | Cache | Redis adapter nuốt lỗi im lặng — Redis chết = tắt cache không cảnh báo | `docker/cache.ts:33-58` |
+| Cache | **Penetration:** `CacheProvider.get` trả `null` cho *miss*, *giá trị null* và *lỗi backend* như nhau → không caller nào cache được kết quả âm dù muốn | `interfaces/cache.ts:2`, `docker/cache.ts:28-37`, `cloudflare/cache.ts:34-36` |
+| Cache | **Penetration:** slug/collection không tồn tại → query DB mỗi request, không tombstone; `getCompiled` miss trả `null` và không ghi gì; `resolveCollection` bỏ qua cache hoàn toàn | `deliver.ts:411-420`, `schema-service.ts:1074-1080`, `item-service.ts:642-652` |
+| Infra | **Penetration:** `/api/v1/deliver/*` mount **chỉ** `withDb()` — surface public, không xác thực, không rate limit; định danh từ URL và header `X-Lumi-Site` không kiểm hình dạng trước khi vào query | `index.ts:367-368`, `deliver.ts:398`, `tenant.ts:25-29` |
 | DB | `count(*)` vô điều kiện trên mọi request list | `item-service.ts:577-581` |
 | DB | `UPDATE apiKeys.lastUsedAt` trên MỌI request dùng API key | `middleware/auth.ts:200-208` |
 | DB | `requireSetupComplete` query DB mọi request authenticated | `middleware/setup-required.ts:12-19` |
@@ -47,6 +52,7 @@
 | Cửa sổ stale nội dung sau ghi | không xác định (không invalidation) | n/a | ≤ 5s (tag purge + revalidate) | ≤ 5s |
 | Scale ngang Docker | không an toàn (cron nhân bản) | không đổi | không đổi | an toàn với N replica |
 | k6 `load-items` throughput | đo ở task 0 | +x% (đo) | +x% (đo) | +x% (đo) |
+| DB query / request 404 (slug rác) | 1 (mọi request chạm DB) | ≤ 1 (guard hình dạng chặn phần rác thô) | **0.0308** (k6 `load-penetration.js` 2026-08-01, MISS_POOL=40, 50 RPS × 2m, docker postgres+redis; ≤ 0.05 ✓ — xem `baseline/2026-08-01-penetration-docker-notes.json`) | ≤ 0.05 |
 
 ## 3. Các phase
 
@@ -68,6 +74,7 @@ Nguyên tắc: chỉ các thay đổi nhỏ, rủi ro thấp, không đổi ki�
 | P0.4 | Cache process-level cho `requireSetupComplete` (mẫu `adminPathGuard` 5s TTL) | Req 4 |
 | P0.5 | `meta` query param cho list — cho phép bỏ `count(*)`; delivery không bao giờ count | Req 5 |
 | P0.6 | Body-size limit toàn cục + rate limit cơ bản tầng Caddy | Req 6 |
+| P0.7 | Shape guard định danh (nanoid/slug/collection + `X-Lumi-Site`) — chặn khoá rác trước khi chạm DB | Req 19.1–19.3 |
 
 **Exit:** k6 re-run cho thấy cải thiện đo được trên `load-items` và deliver; không regression test suite; cửa sổ stale quyền ≤ 5s (test tự động).
 
@@ -85,6 +92,7 @@ Nguyên tắc: đầu tư kiến trúc cache một lần, dùng lâu dài. Đây
 | P1.6 | Rate limiter phân tán (Redis trên Docker / CF-native trên Workers) cho API surface | Req 12 |
 | P1.7 | Cache observability: hit/miss/error metrics wired vào adapter, health degraded khi cache backend lỗi | Req 13 |
 | P1.8 | Application-level cache cho delivery page (tag-based, đứng sau HTTP cache) | Req 8 |
+| P1.9 | Negative cache (tombstone) + rate limit theo IP cho `/deliver/*` — cần P1.1 vì interface hiện tại không biểu diễn được "đã biết là không có" | Req 19.4–19.15 |
 
 **Exit:** hai-site smoke test cache isolation pass (DoD 2b); purge-by-tag round-trip test pass trên cả 2 adapter; k6 cho thấy origin offload ≥ 90% cho delivery đọc lặp; cache error rate có alert.
 
@@ -127,6 +135,10 @@ P2.3, P2.4, P2.5 (độc lập)
 | Queue không được cấu hình (minimal deploy) | Mọi async path giữ fallback synchronous hiện có; spec chỉ đổi đường ưu tiên |
 | Middleware refactor (P1.4) đụng security guard | Tripwire `security-guards.wiring.test.ts` phải giữ nguyên; thêm behavioural test trước khi refactor (DoD 2c) |
 | Leader-election lock chết giữa chừng | Lock TTL + renew; cron tick vốn được thiết kế idempotent (`serve.ts:166-201`) làm lưới an toàn thứ hai |
+| Tombstone làm tài nguyên vừa tạo "biến mất" tới 30s | Req 19.7: write path xoá tombstone sau commit — TTL chỉ là lưới an toàn; test P19 chặn regression |
+| Tombstone hết hạn hàng loạt → penetration biến thành avalanche | Jitter ±20% trên TTL (design §14.4); tombstone không bao giờ TTL cố định |
+| Guard hình dạng chặn nhầm slug hợp lệ của user hiện có | Regex chốt từ dữ liệu thật trước khi bật; slug ngoài `[a-z0-9/_-]` phải được khảo sát trên DB production-like ở task 22.1, không suy đoán |
+| Rate limit theo IP vô dụng khi traffic đến sau CDN (ít IP egress) | **§21.6 CHỐT:** giữ 1200; tầng 1+2 vẫn hiệu lực; synthetic single-IP load test dùng `LUMIBASE_DELIVER_RATE_LIMIT=0` |
 
 ## 6. Ngoài phạm vi (non-goals)
 

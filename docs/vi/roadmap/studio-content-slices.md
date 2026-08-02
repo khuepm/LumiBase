@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T00:00:42.369Z
+sourceLang: vi
+contentHash: 0ff1ace0a8b1cf21
+codeVerified: 2026-07-28T00:00:42.369Z
+codeVerifiedHash: 0ff1ace0a8b1cf21
+codeVerifiedClaims: 22
+---
+
 # Studio Content Module — Slice Tracking
 
 > Mô-đun Content trong LumiBase Studio quản lý dữ liệu động cho một collection duy nhất. Development được chia thành các "slices" (phát triển tăng dần, mỗi slice xây dựng trên slice trước).

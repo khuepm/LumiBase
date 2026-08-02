@@ -101,6 +101,35 @@ describe('RedisCacheProvider', () => {
       expect(result).toBeNull();
     });
 
+    it('getEntry distinguishes miss, negative, and hit', async () => {
+      mockRedis.get.mockResolvedValueOnce(null);
+      expect(await provider.getEntry('a')).toEqual({ state: 'miss' });
+
+      mockRedis.get.mockResolvedValueOnce(JSON.stringify({ __lumi: 'neg', v: 1 }));
+      expect(await provider.getEntry('b')).toEqual({ state: 'negative' });
+
+      mockRedis.get.mockResolvedValueOnce(JSON.stringify({ ok: true }));
+      expect(await provider.getEntry<{ ok: boolean }>('c')).toEqual({
+        state: 'hit',
+        value: { ok: true },
+      });
+    });
+
+    it('getEntry reports unavailable when Redis throws', async () => {
+      mockRedis.get.mockRejectedValueOnce(new Error('down'));
+      expect(await provider.getEntry('x')).toEqual({ state: 'unavailable' });
+    });
+
+    it('setNegative writes the envelope sentinel', async () => {
+      mockRedis.setex.mockResolvedValue('OK');
+      await provider.setNegative('neg-key', { ttl: 30 });
+      expect(mockRedis.setex).toHaveBeenCalledWith(
+        'neg-key',
+        30,
+        JSON.stringify({ __lumi: 'neg', v: 1 }),
+      );
+    });
+
     it('should handle string values stored as JSON', async () => {
       mockRedis.get.mockResolvedValue(JSON.stringify('hello'));
 

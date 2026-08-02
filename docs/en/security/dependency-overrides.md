@@ -40,8 +40,8 @@ new resolution / patch hash.
 | `undici` | `^7.28.0` | Security advisory (resolved via Dependabot). | All consumers require `>=7.28.0`. |
 | `uuid` | `^11.1.1` | Version unification / advisory (resolved via Dependabot). | Version drift across packages is no longer a concern. |
 | `vite` | `^7.3.5` | Unify on Vite 7 and pull esbuild past the `0.28.1` RCE advisory. | The workspace no longer needs a single forced Vite major. |
-| `@types/react` | `18.3.3` | **Not a security pin** — enforces React 18 types workspace-wide to prevent type drift between apps. | The workspace migrates to a single React major where drift can't occur. |
-| `@types/react-dom` | `18.3.0` | Same as `@types/react` — React 18 type consistency. | Same as `@types/react`. |
+| `@types/react` | `19.2.0` | **Not a security pin** — enforces React 19 types workspace-wide so Studio/Docs/Landing/`@lumibase/ui` typecheck against the same major as runtime React 19. | Drift between apps is no longer a concern, or the workspace splits React majors again intentionally. |
+| `@types/react-dom` | `19.2.0` | Same as `@types/react` — React 19 type consistency. | Same as `@types/react`. |
 
 ## Audit ignore registry
 
@@ -67,10 +67,10 @@ neither:
 `react-router-dom` was discontinued after `7.18.1` — no 8.x exists under that name, and
 7.x received no backport (`7.18.1` is the final 7.x release). The fix therefore means
 migrating `apps/docs` off `react-router-dom` onto `react-router@8`, which declares peers
-`react >=19.2.7` / `react-dom >=19.2.7` and `engines.node >=22.22.0`. The workspace is on
-React 18 (`@types/react` is pinned to `18.3.3` workspace-wide by the override above) and
-`engines.node >=20`, and `apps/docs` shares [`@lumibase/ui`](../../../packages/ui) with
-other React 18 apps — so this is a coordinated React 19 migration, not a version bump.
+`react >=19.2.7` / `react-dom >=19.2.7` and `engines.node >=22.22.0`. The workspace
+now targets React 19 for Studio/Docs/Landing (`@lumibase/ui` peers
+`^18.3.1 || ^19.0.0`, `engines.node >=22`). Migrating `apps/docs` onto
+`react-router@8` remains a coordinated follow-up (not a straight version bump).
 
 **Scope check:** `apps/studio` is unaffected — it uses `@tanstack/react-router`, an
 unrelated package. `react-router-dom` appears in `apps/docs` only.
