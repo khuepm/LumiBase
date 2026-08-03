@@ -56,7 +56,7 @@
     "husky": "^9.1.7",
     "turbo": "^2.10.7",
     "typescript": "^5.6.2",
-    "wrangler": "^4.115.0"
+    "wrangler": "^4.116.0"
   },
   "pnpm": {
     "overrides": {
