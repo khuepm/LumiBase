@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:19:21.358Z
+sourceLang: vi
+contentHash: 26e55f9bc5735338
+codeVerified: 2026-07-25T08:19:21.358Z
+codeVerifiedHash: 26e55f9bc5735338
+codeVerifiedClaims: 14
+---
+
 # Translation Memory + Glossary + MT Providers
 
 POST-GA1: hỗ trợ workflow dịch nội dung với Translation Memory (TM), Glossary, và machine translation providers theo chain.

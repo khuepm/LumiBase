@@ -54,10 +54,8 @@ export async function dispatchRevalidation(
   tags: string[],
 ): Promise<RevalidationResult[]> {
   const active = targets.filter((t) => t.status === 'active');
-  const results: RevalidationResult[] = [];
-
-  for (const target of active) {
-    for (const tag of tags) {
+  const jobs = active.flatMap((target) =>
+    tags.map(async (tag): Promise<RevalidationResult> => {
       try {
         const url = new URL(target.url);
         url.searchParams.set('tag', tag);
@@ -76,19 +74,29 @@ export async function dispatchRevalidation(
           signal: AbortSignal.timeout(5_000),
         });
 
-        results.push({ targetId: target.id, tag, ok: res.ok, status: res.status });
+        return { targetId: target.id, tag, ok: res.ok, status: res.status };
       } catch (err) {
-        results.push({
+        return {
           targetId: target.id,
           tag,
           ok: false,
           error: err instanceof Error ? err.message : String(err),
-        });
+        };
       }
-    }
-  }
+    }),
+  );
 
-  return results;
+  const settled = await Promise.allSettled(jobs);
+  return settled.map((result) =>
+    result.status === 'fulfilled'
+      ? result.value
+      : {
+          targetId: 'unknown',
+          tag: 'unknown',
+          ok: false,
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        },
+  );
 }
 
 /**

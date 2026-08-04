@@ -9,6 +9,7 @@ import { withAuth } from './middleware/auth';
 import { withDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
 import { withRateLimit } from './middleware/rate-limit';
+import { withDeliverRateLimit } from './middleware/deliver-rate-limit';
 import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
@@ -21,6 +22,7 @@ import { withTenant } from './middleware/tenant';
 import { withTracing } from './middleware/tracing';
 import { activityRouter } from './routes/activity';
 import { accessRouter } from './routes/access';
+import { accessGrantsRouter } from './routes/access-grants';
 import { adminRouter } from './routes/admin';
 import { configRouter } from './routes/config';
 import { authRouter, meRouter } from './routes/auth';
@@ -75,7 +77,8 @@ import { translationsRouter } from './routes/translations';
 import { tmRouter } from './routes/translation-memory';
 import { typegenRouter } from './routes/typegen';
 import { usersRouter } from './routes/users';
-import { utilsRouter } from './routes/utils';
+import { utilsRouter, cacheUtilsRouter } from './routes/utils';
+import { pagesRouter } from './routes/pages';
 import { webhooksRouter } from './routes/webhooks';
 import { testAuthRouter } from './routes/test-auth';
 import { aiRouter } from './routes/ai';
@@ -231,6 +234,7 @@ api.route('/me/automated-decisions', automatedDecisionsRouter);
 api.route('/retention', retentionRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
+api.route('/pages', pagesRouter);
 api.route('/items', itemsRouter);
 api.route('/releases', releasesRouter);
 api.route('/editorial', editorialRouter);
@@ -242,6 +246,11 @@ api.route('/typegen', typegenRouter);
 api.route('/roles', rolesRouter);
 api.route('/policies', policiesRouter);
 api.route('/permissions', permissionsRouter);
+// Non-staff permission picker (`/api/v1/access/grants/*`). Mounted BEFORE
+// `accessRouter` so its `/grants*` leaf paths win; every other `/access/*`
+// path falls through to the import/export router, whose leaf paths
+// (`/export`, `/import`, `/conflicts/check`) are disjoint from these.
+api.route('/access', accessGrantsRouter);
 api.route('/access', accessRouter);
 api.route('/config', configRouter);
 api.route('/api-keys', apiKeysRouter);
@@ -307,6 +316,7 @@ api.route('/tm', tmRouter);
 api.route('/flows', flowsRouter);
 api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
+api.route('/utils/cache', cacheUtilsRouter);
 api.route('/dashboards', insightsRouter);
 api.route('/scim-tokens', scimAdminRouter);
 api.route('/ai', aiRouter);
@@ -357,17 +367,25 @@ app.route('/api/v1/shares', sharePublicRouter);
 app.use('/api/v1/email/unsubscribe', withDb());
 app.route('/api/v1/email', emailPublicRouter);
 
-app.route('/api/v1', api);
-
-// Delivery (public) routes — tenancy is encoded in the URL.
-app.use('/api/v1/deliver/*', withDb());
+// Delivery (public) routes — tenancy is encoded in the URL. MUST be mounted
+// BEFORE `app.route('/api/v1', api)`: the authenticated sub-app's `use('*')`
+// chain flattens to `/api/v1/*`, so any handler registered after that mount
+// runs the tenant/auth middleware first and an anonymous read is rejected
+// with 400/401 before it can reach the handler. Registering the public
+// handlers first makes them win for their disjoint paths (same mechanism as
+// the shares/email mounts above).
+app.use('/api/v1/deliver/*', withDb(), withDeliverRateLimit());
 app.route('/api/v1/deliver', deliverRouter);
 
 // Public pageview beacon — tenancy in the URL, unauthenticated. `withRuntime`
 // ran globally; add `withDb` + the general rate limiter (keyed by IP since no
 // principal exists) so a single client can't flood the ingest endpoint.
-app.use('/api/v1/pageviews/*', withDb(), withRateLimit());
+// Middleware is scoped to the beacon leaf so the authenticated
+// `/api/v1/pageviews/stats` (mounted on `api` below) doesn't run it twice.
+app.use('/api/v1/pageviews/:site_id/hit', withDb(), withRateLimit());
 app.route('/api/v1/pageviews', pageviewsPublicRouter);
+
+app.route('/api/v1', api);
 
 app.notFound((c) =>
   c.json({ errors: [{ code: 'NOT_FOUND', message: 'Route not found.' }] }, 404),

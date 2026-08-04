@@ -85,7 +85,7 @@ The consequences cascade in ways that aren't always obvious:
 
 ## Where it shows up in a headless CMS
 
-A Content OS like Lumibase has rich surface area for this attack:
+A Content OS like LumiBase has rich surface area for this attack:
 
 - **Content items**: editors submit arbitrary field maps as JSON
 - **AI skills**: agent outputs are deserialized into structured objects
@@ -94,13 +94,13 @@ A Content OS like Lumibase has rich surface area for this attack:
 
 Any code path that takes user-supplied JSON and *merges* it — rather than validating it through a strict schema — is a potential injection point.
 
-## How Lumibase shuts it down
+## How LumiBase shuts it down
 
 The fix has three layers, and each layer would have caught it even if the others didn't exist.
 
 ### 1. Zod schema validation strips unknown keys at the boundary
 
-Every API route in Lumibase validates its request body through a Zod schema. Zod's default `z.object({})` behavior is to strip keys that aren't in the schema. `__proto__`, `constructor`, and `prototype` are never declared, so they never reach business logic:
+Every API route in LumiBase validates its request body through a Zod schema. Zod's default `z.object({})` behavior is to strip keys that aren't in the schema. `__proto__`, `constructor`, and `prototype` are never declared, so they never reach business logic:
 
 ```typescript
 const ContentItemSchema = z.object({
@@ -178,4 +178,4 @@ The good news: Prototype Pollution is almost entirely preventable with schema va
 
 **Validate inputs as if your object model depends on it. Because it does.**
 
-We're building all of this in public. Lumibase is a Content OS — a headless, AI-native CMS operated by governed agents against declarative intents, with full provenance and earned autonomy. If security-first, build-in-public engineering is your thing, come see what we're up to at [lumibase.dev](https://lumibase.dev). 🌱
+We're building all of this in public. LumiBase is a Content OS — a headless, AI-native CMS operated by governed agents against declarative intents, with full provenance and earned autonomy. If security-first, build-in-public engineering is your thing, come see what we're up to at [lumibase.dev](https://lumibase.dev). 🌱

@@ -49,6 +49,7 @@
 - 1-roundtrip rule: `/api/v1/deliver/page/:slug` returns layout + data in one payload
 - Middleware order: `logger → metrics → runtime → cors → tenant → auth → db → rls`
 - Route handlers must be thin — delegate business logic to services
+- **Deprecation is opt-in:** `withDeprecation` (`apps/cms/src/middleware/deprecation.ts`) exists as a reusable RFC 8594 tool. **Never** wire it globally or onto healthy endpoints. Attach it **only** when explicitly asked to deprecate / retire / sunset a specific route. Unwired = correct while nothing is being retired.
 
 ### 5. Caching (Tag-based)
 - Use `CacheProvider.set(key, value, { tags: ['schema:siteId', 'item:siteId:collection:id'] })`
@@ -87,6 +88,7 @@
 | HITL harness | `apps/cms/src/services/ai-harness.ts` |
 | Runtime factory | `packages/runtime/src/factory.ts` |
 | Permission DSL | `apps/cms/src/services/permission-dsl.ts` |
+| Deprecation middleware (opt-in) | `apps/cms/src/middleware/deprecation.ts` |
 | API spec | `docs/en/api/hono-api-spec.md` |
 | ADRs | `docs/en/architecture/decisions/` |
 
@@ -121,3 +123,16 @@ await runtime.cache.set(`schema:${siteId}`, JSON.stringify(schema), {
   ttl: 60,
 })
 ```
+
+### Deprecate an endpoint (only when retiring it)
+```typescript
+import { withDeprecation } from '../middleware/deprecation'
+
+// Mount on the retiring router/route ONLY — do not add to the global chain
+legacyRouter.use('*', withDeprecation({
+  since: '2026-08-01',
+  sunset: '2026-11-01',
+  link: 'https://docs.lumibase.dev/changelog#items-legacy',
+}))
+```
+Emits `Deprecation` / optional `Sunset` / optional `Link rel="deprecation"`. Options are all optional (`Deprecation: true` if no `since`). See `docs/en/agent-setup/prompt.md` and OWASP API9 in `docs/en/security/owasp-api-top-10-audit.md`.

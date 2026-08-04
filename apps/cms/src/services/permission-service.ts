@@ -15,6 +15,7 @@ import {
 } from '@lumibase/database';
 import type { PolicyRule } from '@lumibase/shared';
 import type { CacheProvider } from '@lumibase/runtime';
+import { createSwrCache, type SwrCache } from '@lumibase/runtime';
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { isIP } from 'node:net';
 import {
@@ -125,8 +126,22 @@ async function readPermissionVersion(cache: CacheProvider, siteId: string): Prom
 
 export class PermissionService {
   private compiled: PermissionBundle | null = null;
+  private bundleSwr: SwrCache<PermissionBundle> | null = null;
 
   constructor(private readonly deps: PermissionServiceDeps) {}
+
+  private getBundleSwr(): SwrCache<PermissionBundle> | null {
+    if (!this.deps.cache) return null;
+    if (!this.bundleSwr) {
+      this.bundleSwr = createSwrCache({
+        cache: this.deps.cache,
+        softTtl: 30,
+        hardTtl: CACHE_TTL_SECONDS,
+        compute: async () => this.compile(),
+      });
+    }
+    return this.bundleSwr;
+  }
 
   /** Stable principal id used for cache keys ("anon" when no user yet). */
   private get principalKey(): string {
@@ -141,23 +156,16 @@ export class PermissionService {
     if (this.compiled) return this.compiled;
 
     const cache = this.deps.cache;
-    let key: string | null = null;
-    if (cache) {
+    const swr = this.getBundleSwr();
+    if (cache && swr) {
       const version = await readPermissionVersion(cache, this.deps.ctx.siteId);
-      key = cacheKey(this.deps.ctx.siteId, version, this.principalKey);
-      const cached = await cache.get<PermissionBundle>(key);
-      if (cached) {
-        this.compiled = cached;
-        await this.hydrateMagicContext(cached);
-        return this.compiled;
-      }
+      const key = cacheKey(this.deps.ctx.siteId, version, this.principalKey);
+      this.compiled = await swr.get(key);
+      await this.hydrateMagicContext(this.compiled);
+      return this.compiled;
     }
 
     this.compiled = await this.compile();
-
-    if (cache && key) {
-      await cache.set(key, JSON.stringify(this.compiled), { ttl: CACHE_TTL_SECONDS });
-    }
     return this.compiled;
   }
 

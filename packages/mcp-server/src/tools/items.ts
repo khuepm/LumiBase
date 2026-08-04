@@ -83,7 +83,7 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
       description: 'Create a new item in a collection.',
       inputSchema: {
         collection: collectionNameSchema,
-        data: z.record(z.unknown()).describe('Field values for the new item'),
+        data: z.record(z.string(), z.unknown()).describe('Field values for the new item'),
         status: z.enum(['draft', 'published']).optional().default('draft'),
       },
     },
@@ -107,7 +107,7 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
       inputSchema: {
         collection: collectionNameSchema,
         id: idPathSegmentSchema,
-        data: z.record(z.unknown()).describe('Fields to update'),
+        data: z.record(z.string(), z.unknown()).describe('Fields to update'),
       },
     },
     async ({ collection, id, data: itemData }) => {

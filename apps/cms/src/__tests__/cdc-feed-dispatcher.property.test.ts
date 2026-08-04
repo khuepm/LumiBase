@@ -165,7 +165,7 @@ describe('Feature: cdc-extension-integration, Property 5: HMAC verify round-trip
 
   it('configured headers can never override the signature header (Req 4.2)', () => {
     const merged = mergeWebhookHeaders(
-      { 'X-Lumibase-Signature': 'forged', 'x-lumibase-signature': 'forged2', A: 'b' },
+      { 'X-LumiBase-Signature': 'forged', 'x-lumibase-signature': 'forged2', A: 'b' },
       't=1,v1=real',
     );
     expect(merged[SIGNATURE_HEADER]).toBe('t=1,v1=real');

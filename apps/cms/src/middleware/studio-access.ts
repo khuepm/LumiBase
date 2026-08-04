@@ -4,6 +4,7 @@ import { users } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { PermissionService, type PermissionBundle } from '../services/permission-service';
 import { isFrontendAudience } from '../services/auth/token-audience';
+import { getRequestContext, mergeRequestContext } from './request-context';
 
 const STUDIO_CLIENT_HEADER = 'x-lumi-client';
 const STUDIO_CLIENT_VALUE = 'studio';
@@ -86,19 +87,7 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
     );
   }
 
-  const bundle = await new PermissionService({
-    db: c.get('db'),
-    cache: c.get('runtime').cache,
-    ctx: {
-      userId: auth.userId,
-      siteId: c.get('siteId'),
-      roleId: null,
-      user: { id: auth.userId, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) },
-      ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-      headers: collectHeaders(c.req.raw.headers),
-      apiKey: auth.apiKey ?? null,
-    },
-  }).bundle();
+  const bundle = await resolveAccessBundle(c, auth);
 
   if (!bundle.appAccess) {
     return c.json(
@@ -124,8 +113,41 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
   }
 
   c.set('access', bundle);
+  mergeRequestContext(c, { accessBundle: bundle });
   return next();
 };
+
+async function resolveAccessBundle(
+  c: Parameters<MiddlewareHandler<AppEnv>>[0],
+  auth: AuthPrincipal,
+): Promise<PermissionBundle> {
+  const existing = c.get('access');
+  if (existing) return existing;
+
+  const ctx = getRequestContext(c);
+  if (ctx.accessBundle) {
+    c.set('access', ctx.accessBundle);
+    return ctx.accessBundle;
+  }
+
+  const bundle = await new PermissionService({
+    db: c.get('db'),
+    cache: c.get('runtime').cache,
+    ctx: {
+      userId: auth.userId ?? null,
+      siteId: c.get('siteId'),
+      roleId: auth.roleId ?? null,
+      user: { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) },
+      ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+      headers: collectHeaders(c.req.raw.headers),
+      apiKey: auth.apiKey ?? null,
+    },
+  }).bundle();
+
+  c.set('access', bundle);
+  mergeRequestContext(c, { accessBundle: bundle });
+  return bundle;
+}
 
 declare module '../env' {
   interface Variables {

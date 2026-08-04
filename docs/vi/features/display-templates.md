@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:16:45.923Z
+sourceLang: vi
+contentHash: 966520420fa8b01d
+codeVerified: 2026-07-25T08:16:45.923Z
+codeVerifiedHash: 966520420fa8b01d
+codeVerifiedClaims: 2
+---
+
 # Display Templates
 
 > Display Template = quy tắc để render một item thành chuỗi hoặc component, dùng trong list view, relation picker, detail header, breadcrumb.

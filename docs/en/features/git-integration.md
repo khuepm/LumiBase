@@ -1,5 +1,12 @@
 ---
 title: Git Integration (GitHub / GitLab)
+version: 1
+lastUpdated: 2026-07-28T10:20:15.614Z
+sourceLang: en
+contentHash: 00b92c1afa81ad18
+codeVerified: 2026-07-28T10:20:15.614Z
+codeVerifiedHash: 00b92c1afa81ad18
+codeVerifiedClaims: 10
 ---
 
 # Git Integration (GitHub / GitLab)

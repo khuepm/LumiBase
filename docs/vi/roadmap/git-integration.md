@@ -3,6 +3,9 @@ version: 1
 lastUpdated: 2026-07-12T05:50:14.462Z
 sourceLang: vi
 contentHash: d8c6f58dbfe3b8c0
+codeVerified: 2026-07-25T08:19:21.699Z
+codeVerifiedHash: d8c6f58dbfe3b8c0
+codeVerifiedClaims: 6
 ---
 
 # Git Integration Roadmap (GitHub / GitLab)

@@ -1191,7 +1191,7 @@ function validateProject(project: SetupCompleteProject | undefined):
       value: {
         defaultLanguage: 'en',
         siteUrl: 'http://localhost:5173',
-        displayTitle: 'Lumibase',
+        displayTitle: 'LumiBase',
         theme: null,
       },
     };

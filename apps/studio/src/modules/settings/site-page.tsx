@@ -5,7 +5,7 @@ import { SiteConfigUpdateSchema, normalizeSiteUrl } from '@lumibase/shared/schem
 import type { SiteResource } from '@lumibase/sdk';
 import { Globe, Palette, Code2, Save, Check, AlertTriangle } from 'lucide-react';
 import { useEffect, useId, useMemo, type ReactNode } from 'react';
-import { useForm, type SubmitHandler } from 'react-hook-form';
+import { useForm, type Resolver, type SubmitHandler } from 'react-hook-form';
 import { getApiClient } from '@/lib/api';
 import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 
@@ -116,8 +116,11 @@ function SiteSettingsForm({ site, onSave, saving, saved, errorCode }: FormProps)
   const appearanceId = useId();
   const saveActionId = useId();
 
+  // Zod 4 + @hookform/resolvers distinguish input vs output when schemas use
+  // `.default()` / partials; this form always supplies full defaultValues, so
+  // pin both sides to SiteFormValues.
   const form = useForm<SiteFormValues>({
-    resolver: zodResolver(SiteConfigUpdateSchema),
+    resolver: zodResolver(SiteConfigUpdateSchema) as Resolver<SiteFormValues>,
     mode: 'onBlur',
     defaultValues: toFormValues(site),
   });
@@ -178,7 +181,7 @@ function SiteSettingsForm({ site, onSave, saving, saved, errorCode }: FormProps)
       <Section icon={<Globe className="h-4 w-4" />} title="Identity">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field id={titleId} label="Display title" error={errors.displayTitle?.message}>
-            <input id={titleId} className={inputClass(!!errors.displayTitle)} placeholder="Lumibase" {...register('displayTitle')} />
+            <input id={titleId} className={inputClass(!!errors.displayTitle)} placeholder="LumiBase" {...register('displayTitle')} />
           </Field>
           <Field id={langId} label="Default language" error={errors.defaultLanguage?.message}>
             <select id={langId} className={inputClass(!!errors.defaultLanguage)} {...register('defaultLanguage')}>

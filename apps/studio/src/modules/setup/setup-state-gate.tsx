@@ -1,10 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  fetchSetupState,
-  type SetupStateFetchError,
-  type SetupStateResponse,
-} from './setup-state';
+  shouldShowSetupStateError,
+  useSetupStateQuery,
+} from './use-setup-state-query';
 
 /**
  * sessionStorage key under which `readSetupToken` caches the operator-
@@ -83,17 +81,17 @@ interface SetupStateGateProps {
  */
 export function SetupStateGate({ children }: SetupStateGateProps) {
   const [token, setToken] = useState<string | null>(() => readSetupToken());
+  const [hasFailed, setHasFailed] = useState(false);
 
-  const query = useQuery<SetupStateResponse, SetupStateFetchError>({
-    queryKey: ['setup', 'state'],
-    queryFn: fetchSetupState,
-    // Setup state must always be fresh — operators may flip env vars or
-    // complete setup in another tab; cache should never satisfy a check.
-    staleTime: 0,
-    gcTime: 0,
-    retry: false,
-    refetchOnWindowFocus: true,
-  });
+  const query = useSetupStateQuery();
+
+  // Latch failure until the next success so a manual refetch (which can
+  // briefly put the query back into `pending` when there is no cached
+  // data) does not replace the alert with the full-page spinner.
+  useEffect(() => {
+    if (query.isError) setHasFailed(true);
+    if (query.isSuccess) setHasFailed(false);
+  }, [query.isError, query.isSuccess]);
 
   // If the token query param appears later (e.g. user pastes a fresh URL),
   // pick it up so the prompt unblocks without a manual reload.
@@ -103,12 +101,26 @@ export function SetupStateGate({ children }: SetupStateGateProps) {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  if (query.isPending) {
-    return <SetupLoadingScreen />;
+  if (
+    shouldShowSetupStateError({
+      isError: query.isError,
+      isSuccess: query.isSuccess,
+      isFetching: query.isFetching,
+      hasFailed,
+    })
+  ) {
+    return (
+      <SetupRetryScreen
+        isRetrying={query.isFetching}
+        onRetry={() => {
+          void query.refetch();
+        }}
+      />
+    );
   }
 
-  if (query.isError) {
-    return <SetupRetryScreen onRetry={() => query.refetch()} />;
+  if (query.isPending || !query.data) {
+    return <SetupLoadingScreen />;
   }
 
   if (query.data.state === 'initialized') {
@@ -160,9 +172,10 @@ function SetupLoadingScreen() {
 
 interface SetupRetryScreenProps {
   onRetry: () => void;
+  isRetrying?: boolean;
 }
 
-function SetupRetryScreen({ onRetry }: SetupRetryScreenProps) {
+function SetupRetryScreen({ onRetry, isRetrying = false }: SetupRetryScreenProps) {
   return (
     <GateShell>
       <div role="alert" className="space-y-4">
@@ -174,9 +187,17 @@ function SetupRetryScreen({ onRetry }: SetupRetryScreenProps) {
         <button
           type="button"
           onClick={onRetry}
-          className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          disabled={isRetrying}
+          aria-busy={isRetrying}
+          className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
-          Try again
+          {isRetrying ? (
+            <span
+              className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent"
+              aria-hidden
+            />
+          ) : null}
+          {isRetrying ? 'Checking…' : 'Try again'}
         </button>
       </div>
     </GateShell>

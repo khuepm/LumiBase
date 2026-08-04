@@ -6,9 +6,9 @@ import { siteRouter } from '../site';
 
 const BASE_SITE = {
   id: '__default__',
-  name: 'Lumibase',
+  name: 'LumiBase',
   domain: null as string | null,
-  displayTitle: 'Lumibase',
+  displayTitle: 'LumiBase',
   siteUrl: 'https://example.com',
   descriptor: null,
   defaultLanguage: 'en',

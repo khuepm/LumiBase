@@ -1,8 +1,18 @@
+---
+version: 1
+lastUpdated: 2026-07-28T11:42:32.541Z
+sourceLang: en
+contentHash: f4cef639eade1ebc
+codeVerified: 2026-07-28T11:42:32.541Z
+codeVerifiedHash: f4cef639eade1ebc
+codeVerifiedClaims: 4
+---
+
 # LumiBase JavaScript SDK
 
 > **Package:** `@lumibase/sdk`
 >
-> The LumiBase JS SDK provides a typed REST client, WebSocket subscription support, and TypeScript type generation for your collections.
+> A composable, typed REST client for LumiBase, plus realtime subscriptions and TypeScript type generation.
 
 ## Installation
 
@@ -12,218 +22,194 @@ npm install @lumibase/sdk
 pnpm add @lumibase/sdk
 ```
 
+## The shape of this SDK
+
+Two things to know before the examples, because they differ from most CMS clients:
+
+1. **The client is a transport, not a façade.** `createLumiClient` gives you
+   `rawRequest`, `request`, and `with`. Operations are separate **command**
+   functions you pass to `request` — a command is a function that takes the
+   client and returns a promise. This keeps the bundle tree-shakeable: you import
+   only the commands you use.
+2. **There is no `login()`.** The client takes a `token` you already hold. Obtain
+   it through your auth flow (Logto, or `dev:<logtoId>` in dev mode) and pass it
+   in. The client can silently refresh it if you also supply a `refreshToken`.
+
+A convenience plugin, `legacyRest()`, bundles the whole REST surface into grouped
+namespaces if you would rather not import commands individually.
+
 ## Quick start
 
 ```typescript
-import { createClient } from '@lumibase/sdk'
+import { createLumiClient, readItems } from '@lumibase/sdk'
 
-const lumibase = createClient({
+const client = createLumiClient({
   url: 'https://api.mysite.lumibase.dev',
   siteId: 'site_abc123',
+  token: process.env.LUMIBASE_TOKEN!,
 })
 
-// Authenticate
-await lumibase.auth.login({ email: 'admin@example.com', password: 'password' })
-
-// Read items
-const articles = await lumibase.items('articles').readMany({
-  filter: { status: { _eq: 'published' } },
-  sort: ['-created_at'],
-  limit: 10,
-})
-
-// Create an item
-const newArticle = await lumibase.items('articles').createOne({
-  title: 'Hello World',
-  status: 'draft',
-})
+// Commands are curried: build one, hand it to request().
+const articles = await client.request(
+  readItems('articles', {
+    filter: { status: { _eq: 'published' } },
+    sort: ['-created_at'],
+    limit: 10,
+  }),
+)
 ```
 
 ---
 
 ## Client configuration
 
-```typescript
-const lumibase = createClient({
-  url: string              // Required: CMS API base URL
-  siteId: string           // Required: site identifier
-  token?: string           // Optional: static access token (skip auth flow)
-  timeout?: number         // Optional: request timeout in ms (default: 30000)
-  onTokenRefresh?: (token: string) => void  // Optional: callback on token refresh
-})
-```
+`createLumiClient(opts: LumiClientOptions)` (`packages/sdk/src/client.ts`):
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `url` | `string` | Yes | API base URL, e.g. `https://api.lumibase.dev` |
+| `token` | `string` | Yes | Bearer token (Logto access token, or `dev:<logtoId>` in dev mode) |
+| `siteId` | `string` | Yes | Active tenant id; sent as `X-Lumi-Site` |
+| `fetcher` | `typeof fetch` | No | Override fetch (Node/Workers polyfills); defaults to `globalThis.fetch` |
+| `headers` | `Record<string, string>` | No | Extra headers on every request |
+| `onUnauthorized` | `() => void` | No | Fires once on a `401`, before the `LumiError` throws — clear the stale token and route to login. With auto-refresh on, it fires only after a refresh attempt also fails |
+| `refreshToken` | `string` | No | Rotating refresh token. A `401` then triggers one `POST /api/v1/auth/refresh` and retries the original request once |
+| `onTokensRefreshed` | `(tokens) => void` | No | Called after a successful silent refresh with the rotated pair, so the host can persist them — the old refresh token is now revoked |
+
+The returned `LumiClient`:
+
+| Member | Description |
+|--------|-------------|
+| `rawRequest<T>(path, init?)` | One HTTP call; returns `{ data, meta? }` |
+| `request<Output>(command)` | Runs a command function against this client |
+| `with(plugin)` | Returns the client extended by a plugin's members |
+| `url`, `token`, `siteId`, `fetcher` | The resolved configuration |
+
+Refresh is single-flight: a burst of parallel `401`s triggers one refresh, not one per request.
 
 ---
 
-## Authentication
+## Grouped namespaces via `legacyRest()`
 
-### Login with credentials
-
-```typescript
-const { access_token, refresh_token, user } = await lumibase.auth.login({
-  email: 'admin@example.com',
-  password: 'your-password',
-})
-```
-
-### Refresh token
+`legacyRest()` is a plugin. Attach it with `with()` and you get the REST surface
+as namespaces — convenient for application code and for Studio:
 
 ```typescript
-const { access_token } = await lumibase.auth.refresh(refresh_token)
+import { createLumiClient, legacyRest } from '@lumibase/sdk'
+
+const client = createLumiClient({ url, siteId, token }).with(legacyRest())
+
+await client.schema.collections.list()
+await client.items('articles').list({ limit: 20 })
+await client.me.getPreferences()
 ```
 
-### Logout
-
-```typescript
-await lumibase.auth.logout()
-```
-
-### Get current user
-
-```typescript
-const me = await lumibase.auth.me()
-// { id, email, firstName, lastName, role, capabilities }
-```
-
-### Static token (for server-to-server)
-
-```typescript
-const lumibase = createClient({
-  url: '...',
-  siteId: '...',
-  token: process.env.LUMIBASE_API_TOKEN,  // Long-lived token from Settings → API Tokens
-})
-```
+Namespaces exposed: `schema` (`collections`, `fields`, `relations`), `items`,
+`roles`, `policies`, `access`, `apiKeys`, `shares`, `me`, `permissions`,
+`presets`, `translations`, `tm`, `settings`, `uploads`, `site`, `domains`,
+`users`, `teams`, `folders`, `files`, `webhooks`, `activity`, `extensions`,
+`deployments`, `realtime`.
 
 ---
 
-## Items API
+## Items
 
-### Read multiple items
+### The item envelope
+
+An item is **not** a flat record. Field values live under `data`; workflow and
+scheduling columns sit beside it:
 
 ```typescript
-const { data, meta } = await lumibase.items('articles').readMany({
-  fields: ['id', 'title', 'status', 'author.name'],
-  filter: {
-    status: { _eq: 'published' },
-    _and: [
-      { published_at: { _gte: '$NOW(-30 days)' } }
-    ]
-  },
+{ data: { title: 'Hello' }, status: 'draft', sort: 1, publishAt: null, unpublishAt: null }
+```
+
+### List
+
+```typescript
+const res = await client.items('articles').list({
+  fields: ['id', 'title', 'status'],
+  filter: { status: { _eq: 'published' } },
   sort: ['-published_at'],
-  page: 1,
   limit: 20,
-  search: 'lumibase',
-})
-// data: Article[]
-// meta: { total, page, pageSize }
-```
-
-### Read single item
-
-```typescript
-const article = await lumibase.items('articles').readOne('art_abc123', {
-  fields: ['id', 'title', 'content', 'author.name', 'tags'],
-})
-```
-
-### Read singleton
-
-```typescript
-const settings = await lumibase.singleton('site_settings').read({
-  fields: ['*'],
-})
-```
-
-### Create item
-
-```typescript
-const article = await lumibase.items('articles').createOne({
-  title: 'New Article',
-  status: 'draft',
-  author: 'usr_abc123',
-})
-```
-
-### Bulk create
-
-```typescript
-const articles = await lumibase.items('articles').createMany([
-  { title: 'Article 1', status: 'published' },
-  { title: 'Article 2', status: 'draft' },
-])
-```
-
-### Update item
-
-```typescript
-const updated = await lumibase.items('articles').updateOne('art_abc123', {
+  offset: 0,
   status: 'published',
-  published_at: new Date().toISOString(),
 })
 ```
 
-### Delete item
+Supported list params are `fields`, `filter`, `sort`, `limit`, `offset`, and
+`status`. Note there is **no** `page` param — paginate with `limit`/`offset` —
+and no `aggregate`/`groupBy` on this endpoint. Full-text search is the separate
+`search` command.
+
+### Detail
 
 ```typescript
-await lumibase.items('articles').deleteOne('art_abc123')
+const article = await client.items('articles').detail('art_abc123', ['id', 'title', 'content'])
 ```
 
-### Bulk delete
+### Create
 
 ```typescript
-await lumibase.items('articles').deleteMany(['art_abc123', 'art_def456'])
-```
-
-### Aggregate
-
-```typescript
-const stats = await lumibase.items('articles').readMany({
-  aggregate: { count: '*', sum: ['views'] },
-  groupBy: ['status'],
+const created = await client.items('articles').create({
+  data: { title: 'New Article', author: 'usr_abc123' },
+  status: 'draft',
 })
-// [{ status: 'published', count: 42, sum_views: 10000 }, ...]
+```
+
+### Update (patch) and replace
+
+```typescript
+await client.items('articles').patch('art_abc123', {
+  data: { title: 'Updated title' },
+  status: 'published',
+  publishAt: new Date().toISOString(),
+})
+
+// PUT — replaces `data` wholesale
+await client.items('articles').replace('art_abc123', { data: { title: 'Only field left' } })
+```
+
+### Delete and bulk
+
+```typescript
+await client.items('articles').delete('art_abc123')
+
+// op is 'create' | 'update' | 'delete'; see docs/en/features/data-import.md
+await client.items('articles').bulk('create', [{ title: 'A' }, { title: 'B' }])
+```
+
+### Revisions and pins
+
+```typescript
+const revisions = await client.items('articles').listRevisions('art_abc123')
+await client.items('articles').revertRevision('art_abc123', revisions.data[0].id)
+
+// Law Zero pins — fields a human edit locked against agent writes
+await client.items('articles').listPins('art_abc123')
 ```
 
 ---
 
-## Files API
-
-### Upload a file
+## Files
 
 ```typescript
-// Browser: File object
-const file = await lumibase.files.upload(fileInput.files[0], {
-  title: 'My Image',
-  folder: 'fld_images',
-})
-
-// Node.js: Buffer or stream
-const file = await lumibase.files.upload(buffer, {
-  filename: 'image.png',
-  type: 'image/png',
-  title: 'My Image',
-})
+await client.files.list()
+await client.files.create({ /* file metadata */ })
+await client.files.update('fil_abc123', { title: 'My Image' })
+await client.files.delete('fil_abc123')
 ```
 
-### Get asset URL with transforms
+Binary upload goes through the `uploads` namespace, which is the presigned flow —
+the CMS does not accept a file body on `/files`.
 
-```typescript
-const url = lumibase.files.getAssetUrl('fil_abc123', {
-  width: 800,
-  height: 600,
-  format: 'webp',
-  quality: 80,
-  fit: 'cover',
-})
-// Returns: https://api.../assets/fil_abc123?width=800&height=600&format=webp&...
-```
+For a transform URL, use the `mediaUrl` command rather than building the query
+string yourself.
 
 ---
 
 ## Agent Harness API
 
-The SDK exposes the governance lifecycle used by AI runs and generated app artifacts:
+The governance lifecycle used by AI runs and generated app artifacts:
 
 ```typescript
 import {
@@ -238,115 +224,92 @@ const result = await generateAgentApp({
   targetApp: 'storefront',
   approvalPolicy: 'before_commit',
   budget: { maxToolCalls: 20 },
-})(lumibase)
+})(client)
 
 // result.artifacts contains page_spec, component_spec, seed_data, api_spec
-const runs = await listAgentRuns()(lumibase)
-const published = await publishAgentArtifact(result.artifacts[0].id)(lumibase)
-await rollbackAgentArtifact(published.id, 'revert generated storefront')(lumibase)
+const runs = await listAgentRuns()(client)
+const published = await publishAgentArtifact(result.artifacts[0].id)(client)
+await rollbackAgentArtifact(published.id, 'revert generated storefront')(client)
 ```
 
 Publishing is idempotent. Schema and migration artifacts require a passing evaluation unless the caller supplies an override reason.
 
+Other agent commands: `createAgentGoal`, `listAgentGoals`, `retryAgentRun`,
+`listAgentTools`, `listAgentApprovals`, `decideAgentApproval`,
+`createAgentArtifact`, `listAgentArtifacts`, `evaluateAgentArtifact`,
+`readAgentMemoryContext`, `writeAgentMemory`.
+
 ---
 
-## WebSocket / Realtime
+## Change Feed
 
 ```typescript
-const ws = lumibase.realtime()
+import { readCdcEvents, ackCdcSubscription } from '@lumibase/sdk'
 
-// Subscribe to a collection
-const subscription = ws.subscribe('articles', {
-  event: '*',  // 'create' | 'update' | 'delete' | '*'
-  query: {
-    fields: ['id', 'title', 'status'],
-    filter: { status: { _eq: 'published' } },
-  },
-  callback: (event) => {
-    console.log(event.event, event.data)  // 'update', { id: '...', title: '...' }
-  },
-})
-
-// Unsubscribe
-subscription.unsubscribe()
-
-// Presence (who's online)
-ws.joinRoom('articles/art_abc123')
-ws.onPresence((users) => {
-  console.log('Active users:', users)
-})
-
-// Disconnect
-ws.disconnect()
+let cursor: string | undefined
+for (;;) {
+  const { data, meta } = await client.request(readCdcEvents({ collections: ['posts'], cursor }))
+  for (const event of data) await handle(event) // dedupe on event.id
+  cursor = (meta as { nextCursor?: string }).nextCursor ?? cursor
+  if (!(meta as { hasMore?: boolean }).hasMore) break
+}
+await client.request(ackCdcSubscription(subId, cursor!))
 ```
+
+See [Change Feed](../features/cdc-change-feed.md) for the delivery semantics.
+
+---
+
+## Realtime
+
+Realtime is a `RealtimeClient`, created through the `realtime` namespace with a token for the WebSocket handshake:
+
+```typescript
+const rt = client.realtime.create(process.env.LUMIBASE_TOKEN!, {
+  userId: 'usr_abc123',
+  initialBackoffMs: 500,
+  maxBackoffMs: 30_000,
+})
+```
+
+`RealtimeClient` and `AudienceClient` are also exported directly from
+`@lumibase/sdk` if you want to construct one without the plugin.
 
 ---
 
 ## TypeScript types
 
-After running typegen, import auto-generated types:
+The client is generic over your schema, so generated types flow into every call:
 
 ```typescript
+import { createLumiClient } from '@lumibase/sdk'
 import type { Collections } from './lumibase-types'
 
-type Article = Collections['articles']
-// { id: string; title: string; status: 'draft' | 'published'; ... }
-
-const article: Article = await lumibase.items('articles').readOne('art_abc123')
+const client = createLumiClient<Collections>({ url, siteId, token })
 ```
 
-See [TypeGen reference](./typegen.md) for how to generate types.
+See the [TypeGen reference](./typegen.md) for how to generate `lumibase-types.ts`.
 
 ---
 
 ## Error handling
 
+Every non-2xx response throws `LumiError`:
+
 ```typescript
-import { LumibaseError } from '@lumibase/sdk'
+import { LumiError } from '@lumibase/sdk'
 
 try {
-  await lumibase.items('articles').createOne({ title: '' })
+  await client.items('articles').create({ data: { title: '' } })
 } catch (error) {
-  if (error instanceof LumibaseError) {
-    console.error(error.code)    // 'VALIDATION_FAILED'
-    console.error(error.message) // 'title is required'
-    console.error(error.errors)  // [{ code, message, path }]
+  if (error instanceof LumiError) {
+    console.error(error.status)            // 400
+    console.error(error.body.errors[0].code)    // 'VALIDATION_FAILED'
+    console.error(error.body.errors[0].message) // 'title is required'
+    console.error(error.body.errors[0].path)    // optional field path
   }
 }
 ```
 
----
-
-## SDK for Flows
-
-```typescript
-// Trigger a flow
-const run = await lumibase.flows.run('flw_abc123', {
-  userId: 'usr_xyz',
-  action: 'welcome',
-})
-
-// Get run status
-const runDetail = await lumibase.flows.getRun('flw_abc123', run.runId)
-```
-
----
-
-## SDK for AI Copilot
-
-```typescript
-// Send a chat message
-const response = await lumibase.ai.chat('Create a collection called "events"')
-
-if (response.status === 'executed') {
-  console.log('Done:', response.data)
-} else if (response.status === 'pending_approval') {
-  console.log('Waiting for approval:', response.approvalId)
-}
-
-// List pending approvals
-const approvals = await lumibase.ai.listApprovals()
-
-// Approve
-await lumibase.ai.decide(approvals[0].id, 'approved')
-```
+A non-JSON or bodyless failure is still normalized into the same envelope, with
+code `HTTP_ERROR`.

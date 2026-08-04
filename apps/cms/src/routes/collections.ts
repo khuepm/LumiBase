@@ -44,10 +44,10 @@ const collectionInputSchema = z.object({
   archiveValue: z.string().nullable().optional(),
   unarchiveValue: z.string().nullable().optional(),
   itemDuplicationFields: z.array(z.string()).optional(),
-  translations: z.record(z.unknown()).optional(),
+  translations: z.record(z.string(), z.unknown()).optional(),
   accountability: z.enum(['all', 'activity', 'none']).optional(),
   versioning: z.boolean().optional(),
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 });
 
 const collectionPatchSchema = collectionInputSchema.partial().omit({ name: true });
@@ -72,9 +72,9 @@ const fieldInputSchema = z.object({
   precision: z.number().int().positive().nullable().optional(),
   scale: z.number().int().min(0).nullable().optional(),
   special: z.array(z.string()).optional(),
-  options: z.record(z.unknown()).optional(),
-  displayOptions: z.record(z.unknown()).optional(),
-  validation: z.record(z.unknown()).optional(),
+  options: z.record(z.string(), z.unknown()).optional(),
+  displayOptions: z.record(z.string(), z.unknown()).optional(),
+  validation: z.record(z.string(), z.unknown()).optional(),
   conditions: z.array(z.unknown()).optional(),
   required: z.boolean().optional(),
   readonly: z.boolean().optional(),
@@ -87,7 +87,7 @@ const fieldInputSchema = z.object({
   group: z.string().nullable().optional(),
   sortOrder: z.number().int().optional(),
   renameFrom: z.string().min(1).max(63).regex(/^[a-z][a-z0-9_]{0,62}$/).optional(),
-  migrationPlan: z.record(z.unknown()).optional(),
+  migrationPlan: z.record(z.string(), z.unknown()).optional(),
   confirmRiskyChange: z.boolean().optional(),
 });
 
@@ -108,7 +108,7 @@ const schemaInputSchema = collectionInputSchema
       junctionOneField: z.string().nullable().optional(),
       sortField: z.string().nullable().optional(),
       onDelete: z.enum(['restrict', 'cascade', 'set null', 'no action']).optional(),
-      meta: z.record(z.unknown()).optional(),
+      meta: z.record(z.string(), z.unknown()).optional(),
     })).optional(),
   });
 

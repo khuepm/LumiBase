@@ -146,8 +146,8 @@ export function normalizeAdminPath(input: string): string | null {
  */
 export const adminPathSchema = z.object({
   adminPath: z
-    .string({ required_error: 'Admin path is required.' })
-    .min(1, { message: 'Admin path is required.' })
+    .string({ error: 'Admin path is required.' })
+    .min(1, { error: 'Admin path is required.' })
     .transform((value, ctx) => {
       const normalized = normalizeAdminPath(value);
       if (normalized === null) {

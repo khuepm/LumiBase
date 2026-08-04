@@ -17,7 +17,7 @@ export interface Bindings {
   /** SiteRoom Durable Object namespace — one DO instance per siteId. */
   SITE_ROOM?: DurableObjectNamespace;
   LUMIBASE_ENV: string;
-  /** Semver package/application version for the deployed Lumibase build. */
+  /** Semver package/application version for the deployed LumiBase build. */
   LUMIBASE_VERSION?: string;
   /** Source-control revision used for this build. */
   LUMIBASE_GIT_SHA?: string;
@@ -114,10 +114,20 @@ export interface Bindings {
   LUMIBASE_DELIVER_SMAXAGE?: string;
   /** Delivery API stale-while-revalidate window in seconds. Default 300. */
   LUMIBASE_DELIVER_SWR?: string;
+  /** Negative-cache (tombstone) TTL in seconds before ±20% jitter. Default 30; `0` = off. */
+  LUMIBASE_NEGATIVE_CACHE_TTL?: string;
+  /** Delivery API IP rate limit (req/min). Default 1200; `0` = off. */
+  LUMIBASE_DELIVER_RATE_LIMIT?: string;
+  /** Authenticated API rate limit (req/min per principal). Default 600; `0` = off. */
+  LUMIBASE_API_RATE_LIMIT?: string;
   /** Debounce window (seconds) for API-key `lastUsedAt` writes. Default 60; `0` = touch every request. */
   LUMIBASE_APIKEY_TOUCH_INTERVAL?: string;
   /** Max JSON request body in bytes for the app-level guard. Default 1 MiB. */
   LUMIBASE_MAX_JSON_BODY?: string;
+  /** Sync flow run ceiling in ms when no queue worker (default 30000). */
+  LUMIBASE_FLOW_SYNC_TIMEOUT?: string;
+  /** Max items per bulk() batch (default 500). */
+  LUMIBASE_BULK_MAX?: string;
   /** Set to 'true' to disable the general API rate limiter (CWE-400). */
   LUMIBASE_RATE_LIMIT_DISABLED?: string;
   /** Max requests per window for the general API rate limiter (default 300). */
@@ -204,11 +214,17 @@ export interface Bindings {
  */
 export interface AuthPrincipal {
   /** Principal kind. Defaults to `user` when omitted for legacy callers. */
-  type?: 'user' | 'api_key';
+  type?: 'user' | 'api_key' | 'anonymous';
   /** Users.external_id (resolved from CF Access or OAuth). */
   externalId?: string;
   /** Internal users.id in PostgreSQL database. */
   userId?: string;
+  /**
+   * Role bound directly to the principal rather than through a membership.
+   * Set for `anonymous` principals, which resolve to the site's `public`
+   * role — `PermissionService` reads it as `ctx.roleId`.
+   */
+  roleId?: string;
   /** Internal api_keys.id for API-key principals. */
   apiKeyId?: string;
   /** Audit-safe API key metadata; never contains plaintext token or token hash. */

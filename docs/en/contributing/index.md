@@ -1,3 +1,10 @@
+---
+version: 2
+lastUpdated: 2026-07-31T19:47:45.247Z
+sourceLang: en
+contentHash: ffb40855e5e59508
+---
+
 # Contributing to LumiBase
 
 Thank you for your interest in contributing to LumiBase! This guide covers how to set up your development environment, code style conventions, testing requirements, and the PR process.
@@ -19,7 +26,7 @@ Thank you for your interest in contributing to LumiBase! This guide covers how t
 
 | Tool | Version | Install |
 |------|---------|---------|
-| Node.js | ≥ 20 LTS | [nodejs.org](https://nodejs.org) |
+| Node.js | ≥ 22 | [nodejs.org](https://nodejs.org) |
 | pnpm | ≥ 9 | `npm i -g pnpm` |
 | Docker + Docker Compose | Latest | [docker.com](https://docker.com) |
 | Git | ≥ 2.40 | System package manager |
@@ -115,6 +122,7 @@ Before opening a PR, verify:
 - [ ] `pnpm test` passes (or new tests added for changed behavior)
 - [ ] `pnpm lint` passes
 - [ ] Docs updated if the change affects public APIs, configuration, or behavior
+- [ ] Every user-facing doc change lands in **both** `docs/en/` and `docs/vi/` in the same commit, stamped with `node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> --verified`. Check `sourceLang` in the front matter first — some docs are VI-source, and editing the translated side alone gets overwritten on the next sync. See the i18n workflow in `CLAUDE.md`
 - [ ] Release notes include a `Migrations` section for every release, even if it says `None`
 - [ ] Database migrations are backward-compatible for at least one release window: add nullable/defaults first, backfill separately, and defer destructive drops to a later cleanup release
 - [ ] PR title follows Conventional Commits format

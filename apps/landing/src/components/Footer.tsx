@@ -19,7 +19,7 @@ const columns = [
       { label: "Docs", href: "https://docs.lumibase.dev", external: true },
       {
         label: "Content OS vision",
-        href: "https://docs.lumibase.dev/en/ai-native-vision.md",
+        href: "https://docs.lumibase.dev/en/docs/ai-native-vision",
         external: true,
       },
       { label: "GitHub", href: "https://github.com/khuepm/lumibase", external: true },

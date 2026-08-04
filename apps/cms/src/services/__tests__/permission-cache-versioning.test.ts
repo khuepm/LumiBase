@@ -32,6 +32,22 @@ class FakeCache implements CacheProvider {
     this.store.set(key, String(next));
     return next;
   }
+  async getEntry<T>(key: string) {
+    const raw = this.store.get(key);
+    if (raw === undefined) return { state: 'miss' as const };
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === 'object' && (parsed as { __lumi?: string }).__lumi === 'neg') {
+      return { state: 'negative' as const };
+    }
+    return { state: 'hit' as const, value: parsed as T };
+  }
+  async setNegative(key: string, options?: { ttl?: number }) {
+    void options;
+    this.store.set(key, JSON.stringify({ __lumi: 'neg', v: 1 }));
+  }
+  async invalidateByTag(): Promise<void> {
+    // not used in permission-cache tests
+  }
 }
 
 const BUNDLE: PermissionBundle = {
@@ -133,6 +149,9 @@ describe('PermissionService cache versioning', () => {
       get: vi.fn().mockRejectedValue(new Error('redis down')),
       set: vi.fn().mockRejectedValue(new Error('redis down')),
       delete: vi.fn(),
+      getEntry: vi.fn().mockResolvedValue({ state: 'unavailable' }),
+      setNegative: vi.fn().mockRejectedValue(new Error('redis down')),
+      increment: vi.fn(),
     } as unknown as CacheProvider;
     await expect(PermissionService.bumpVersion(broken, 'site-a')).resolves.toBeUndefined();
   });

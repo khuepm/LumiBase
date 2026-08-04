@@ -1,3 +1,10 @@
+---
+version: 3
+lastUpdated: 2026-07-29T05:26:14.674Z
+sourceLang: en
+contentHash: 0434e76bd6629620
+---
+
 # AIO Audit Report: LumiBase
 
 **Audit Date:** 2026-06-10
@@ -8,6 +15,23 @@
 
 ---
 
+> **📌 HISTORICAL SNAPSHOT — do not read the findings below as current state.**
+> This report describes lumibase.dev as it was on **2026-06-10**. Much of it has
+> since been fixed. Verified against `apps/landing` at the time of this note:
+> JSON-LD is now present on the layout, homepage and pricing pages (C2, H3, L1);
+> `public/llms.txt` exists (H1); `/pricing` is in `sitemap.ts` (H4); the
+> "Join thousands of developers" claim is gone (H6); `metadataBase`/canonical are
+> set (M5); `opengraph-image.tsx` generates the OG image (H2); and a `LICENSE`
+> file is committed at the repo root (M3). Note the licence quoted throughout
+> this report is **MIT** because that is what the site said on 2026-06-10; the
+> project relicensed to **Apache-2.0** at `v0.23.0` and the site copy was updated
+> to match, so every MIT reference below is the pre-relicence baseline, not a
+> current claim.
+> **Still open:** C1 (the AI-crawler blocks are injected by Cloudflare's managed
+> robots.txt, not by the repo file) and C3 (`apps/docs` is still a Vite SPA).
+> For live status, read [`aio/README.md`](./README.md) — this file is kept as the
+> baseline the scores were measured against.
+>
 > **⚠️ CORRECTION (2026-06-10, verified by curl raw HTML):** Two findings in this report are WRONG due to a WebFetch tool limitation (it strips `<head>` content):
 > - **C4 "No meta descriptions" is FALSE** — all pages have meta descriptions.
 > - **H2 "Missing OG/Twitter tags" is MOSTLY FALSE** — OG and Twitter Card tags exist; only `og:image` was missing.
@@ -156,7 +180,7 @@ Add to homepage `<head>` only:
 
 ### C3 — Docs Site Is a JavaScript SPA (Invisible to All AI Crawlers)
 
-**Impact:** docs.lumibase.dev returned only `<title>Lumibase Docs</title>` to HTTP fetchers. Every AI crawler, every search bot, every citation system that fetches the URL via HTTP receives no meaningful content. The entire technical documentation corpus — API reference, data model, architecture decisions, AI skills — is trapped behind client-side JavaScript.
+**Impact:** docs.lumibase.dev returned only `<title>LumiBase Docs</title>` to HTTP fetchers. Every AI crawler, every search bot, every citation system that fetches the URL via HTTP receives no meaningful content. The entire technical documentation corpus — API reference, data model, architecture decisions, AI skills — is trapped behind client-side JavaScript.
 
 For a developer tool, documentation is the highest-value content for AI citation. It's where users ask "how do I do X" queries that AI assistants answer. The docs being a SPA means LumiBase cannot be cited for any technical how-to query.
 
@@ -380,8 +404,14 @@ Brand mentions on these platforms are 3× stronger than backlinks for AI entity 
 
 The GitHub repo metadata shows `license: None` despite MIT being referenced on the site. No topics are set. These are AI training dataset quality signals.
 
+> **Obsolete as written.** The `LICENSE` file now exists at the repo root and is
+> **Apache-2.0**, not MIT — the relicence is recorded in `CHANGELOG.md` under
+> `[0.23.0]`. The site copy was updated to match. Read the fix below as "commit a
+> LICENSE so GitHub displays the licence"; the MIT reference is the pre-relicence
+> state this report captured, not a target.
+
 **Fix:**
-- Commit a `LICENSE` file to the repository root (GitHub will then display MIT correctly)
+- Commit a `LICENSE` file to the repository root (GitHub will then display the licence correctly)
 - Add topics: `headless-cms`, `cloudflare-workers`, `edge`, `typescript`, `cms`, `open-source`
 - Fill in the Homepage field in the repo settings with `https://lumibase.dev`
 
@@ -585,7 +615,7 @@ These 5 actions can be completed in under 4 hours total and will move the AIO sc
 | https://lumibase.dev/tos | (Terms of Service) | No meta desc, no contact email |
 | https://lumibase.dev/privacy | (Privacy Policy) | No meta desc, no contact email |
 | https://lumibase.dev/license | (License) | Low priority issues only |
-| https://docs.lumibase.dev | Lumibase Docs | SPA — returns only title to HTTP fetchers |
+| https://docs.lumibase.dev | LumiBase Docs | SPA — returns only title to HTTP fetchers |
 
 ---
 

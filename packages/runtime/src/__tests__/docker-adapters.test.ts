@@ -9,8 +9,24 @@ const mockRedis = {
   set: vi.fn(),
   setex: vi.fn(),
   del: vi.fn(),
+  sadd: vi.fn(),
+  smembers: vi.fn(),
+  expire: vi.fn(),
   quit: vi.fn(),
+  pipeline: vi.fn(),
 };
+
+function mockPipeline() {
+  const chain = {
+    set: vi.fn().mockReturnThis(),
+    setex: vi.fn().mockReturnThis(),
+    sadd: vi.fn().mockReturnThis(),
+    expire: vi.fn().mockReturnThis(),
+    exec: vi.fn().mockResolvedValue([]),
+  };
+  mockRedis.pipeline.mockReturnValue(chain);
+  return chain;
+}
 
 // Use `function` (not arrow) for classes instantiated with `new`: vitest 4
 // invokes the mock implementation as a constructor, and arrow functions are
@@ -101,6 +117,35 @@ describe('RedisCacheProvider', () => {
       expect(result).toBeNull();
     });
 
+    it('getEntry distinguishes miss, negative, and hit', async () => {
+      mockRedis.get.mockResolvedValueOnce(null);
+      expect(await provider.getEntry('a')).toEqual({ state: 'miss' });
+
+      mockRedis.get.mockResolvedValueOnce(JSON.stringify({ __lumi: 'neg', v: 1 }));
+      expect(await provider.getEntry('b')).toEqual({ state: 'negative' });
+
+      mockRedis.get.mockResolvedValueOnce(JSON.stringify({ ok: true }));
+      expect(await provider.getEntry<{ ok: boolean }>('c')).toEqual({
+        state: 'hit',
+        value: { ok: true },
+      });
+    });
+
+    it('getEntry reports unavailable when Redis throws', async () => {
+      mockRedis.get.mockRejectedValueOnce(new Error('down'));
+      expect(await provider.getEntry('x')).toEqual({ state: 'unavailable' });
+    });
+
+    it('setNegative writes the envelope sentinel', async () => {
+      const pipe = mockPipeline();
+      await provider.setNegative('neg-key', { ttl: 30 });
+      expect(pipe.setex).toHaveBeenCalledWith(
+        'neg-key',
+        30,
+        JSON.stringify({ __lumi: 'neg', v: 1 }),
+      );
+    });
+
     it('should handle string values stored as JSON', async () => {
       mockRedis.get.mockResolvedValue(JSON.stringify('hello'));
 
@@ -140,39 +185,51 @@ describe('RedisCacheProvider', () => {
 
   describe('set', () => {
     it('should set value without TTL using set command', async () => {
-      mockRedis.set.mockResolvedValue('OK');
+      const pipe = mockPipeline();
 
       await provider.set('key1', 'value1');
 
-      expect(mockRedis.set).toHaveBeenCalledWith('key1', 'value1');
-      expect(mockRedis.setex).not.toHaveBeenCalled();
+      expect(pipe.set).toHaveBeenCalledWith('key1', 'value1');
+      expect(pipe.setex).not.toHaveBeenCalled();
+      expect(pipe.exec).toHaveBeenCalled();
     });
 
     it('should set value with TTL using setex command', async () => {
-      mockRedis.setex.mockResolvedValue('OK');
+      const pipe = mockPipeline();
 
       await provider.set('key2', 'value2', { ttl: 60 });
 
-      expect(mockRedis.setex).toHaveBeenCalledWith('key2', 60, 'value2');
-      expect(mockRedis.set).not.toHaveBeenCalled();
+      expect(pipe.setex).toHaveBeenCalledWith('key2', 60, 'value2');
+      expect(pipe.set).not.toHaveBeenCalled();
+      expect(pipe.exec).toHaveBeenCalled();
     });
 
     it('should use set when options object has no ttl', async () => {
-      mockRedis.set.mockResolvedValue('OK');
+      const pipe = mockPipeline();
 
       await provider.set('key3', 'value3', {});
 
-      expect(mockRedis.set).toHaveBeenCalledWith('key3', 'value3');
-      expect(mockRedis.setex).not.toHaveBeenCalled();
+      expect(pipe.set).toHaveBeenCalledWith('key3', 'value3');
+      expect(pipe.setex).not.toHaveBeenCalled();
     });
 
     it('should use set when ttl is 0 (falsy)', async () => {
-      mockRedis.set.mockResolvedValue('OK');
+      const pipe = mockPipeline();
 
       await provider.set('key4', 'value4', { ttl: 0 });
 
-      expect(mockRedis.set).toHaveBeenCalledWith('key4', 'value4');
-      expect(mockRedis.setex).not.toHaveBeenCalled();
+      expect(pipe.set).toHaveBeenCalledWith('key4', 'value4');
+      expect(pipe.setex).not.toHaveBeenCalled();
+    });
+
+    it('indexes tags via SADD on the tag set', async () => {
+      const pipe = mockPipeline();
+
+      await provider.set('entry', 'payload', { ttl: 120, tags: ['items:site-a:posts'] });
+
+      expect(pipe.setex).toHaveBeenCalledWith('entry', 120, 'payload');
+      expect(pipe.sadd).toHaveBeenCalledWith('lumi:tag:items:site-a:posts', 'entry');
+      expect(pipe.expire).toHaveBeenCalledWith('lumi:tag:items:site-a:posts', 120);
     });
   });
 

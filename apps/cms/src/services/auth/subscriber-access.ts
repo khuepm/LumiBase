@@ -3,204 +3,102 @@
  *
  * The `subscriber` role (see {@link import('./frontend-role')}) is empty by
  * design — a freshly registered visitor can authenticate but sees nothing
- * until an operator grants content read. This module is the small, explicit
- * primitive for that: it attaches a reusable `subscriber` policy to the role
- * and upserts `read` permissions on specific collections, expressed with the
- * existing Policy DSL (ADR-008).
+ * until an operator grants content access. This module is the subscriber-realm
+ * face of the shared grant primitive in {@link import('./realm-access')}.
  *
- * Why an operator action (not an auto-grant): collections are user-defined,
- * so the platform cannot guess which ones subscribers should read. Granting
+ * Why an operator action (not an auto-grant): collections are user-defined, so
+ * the platform cannot guess which ones subscribers should reach. Granting
  * "published-only read on collection X" is a one-call decision the operator
  * makes via `POST /api/v1/users/subscriber-access`.
  *
- * Cache note: PermissionService caches effective bundles ~60s, so a grant
- * may take up to that long to take effect for already-authenticated
- * subscribers. Acceptable for this management operation.
+ * Unlike the anonymous `public` realm, subscribers are authenticated, so this
+ * realm can hold writes (`create`/`update`/`delete`) and can express an "own
+ * rows only" scope — the shape behind the common "a subscriber may edit their
+ * own comments" grant.
+ *
+ * Cache note: PermissionService caches effective bundles ~60s, so a grant may
+ * take up to that long to take effect for already-authenticated subscribers
+ * unless the caller bumps the permission version.
  */
 
+import type { Database } from '@lumibase/database';
+import { SUBSCRIBER_SYSTEM_KEY } from './frontend-role';
 import {
-  permissions,
-  policies,
-  rolePolicies,
-  type Database,
-} from '@lumibase/database';
-import { and, eq } from 'drizzle-orm';
-import { ensureSubscriberRole } from './frontend-role';
+  GRANT_ACTIONS,
+  type AccessGrant,
+  type GrantAction,
+  type GrantInput,
+  type RealmDefinition,
+  ensureRealmPolicy,
+  grantRealmAccess,
+  listRealmAccess,
+  revokeRealmAccess,
+} from './realm-access';
 
 /** Stable per-site key for the subscriber content policy. */
-export const SUBSCRIBER_POLICY_KEY = 'subscriber';
+export const SUBSCRIBER_POLICY_KEY = SUBSCRIBER_SYSTEM_KEY;
 
-/** A `_eq: 'published'` row-level filter (Policy DSL). */
-const PUBLISHED_ONLY_RULE = { status: { _eq: 'published' } } as const;
+export const SUBSCRIBER_REALM: RealmDefinition = {
+  key: SUBSCRIBER_SYSTEM_KEY,
+  // Subscribers are authenticated principals, so a scoped write is a
+  // legitimate grant — the row scope is what keeps it safe.
+  allowedActions: GRANT_ACTIONS,
+  supportsOwnOnly: true,
+  roleName: 'Subscriber',
+  roleDescription:
+    'Self-service frontend end-user. No Studio or admin access; ' +
+    'content access is granted by attaching policies to this role.',
+  policyName: 'Subscriber',
+  policyDescription: 'Content access granted to self-service frontend subscribers.',
+  icon: 'user-round',
+};
 
-export interface GrantSubscriberReadInput {
-  collection: string;
-  /** Restrict to rows with `status = 'published'` (default true). */
-  publishedOnly?: boolean;
-  /** Field whitelist; `['*']` = all (default). */
-  fields?: string[];
-}
+export type { AccessGrant, GrantAction, GrantInput };
 
-export interface SubscriberReadGrant {
-  collection: string;
-  action: 'read';
-  publishedOnly: boolean;
-  fields: string[];
-}
+/** Back-compat alias for the pre-multi-action grant shape. */
+export type GrantSubscriberReadInput = GrantInput;
+export type SubscriberReadGrant = AccessGrant;
 
 /**
- * Ensure the site has a `subscriber` policy attached to the subscriber
- * role, and return its id. Idempotent via `policies_site_key_unique` +
- * the `role_policies` PK.
+ * Ensure the site has a `subscriber` policy attached to the subscriber role,
+ * and return both ids.
  */
 export async function ensureSubscriberPolicy(
   db: Database,
   siteId: string,
 ): Promise<{ roleId: string; policyId: string }> {
-  const roleId = await ensureSubscriberRole(db, siteId);
-
-  const inserted = await db
-    .insert(policies)
-    .values({
-      siteId,
-      key: SUBSCRIBER_POLICY_KEY,
-      name: 'Subscriber',
-      description: 'Content access granted to self-service frontend subscribers.',
-      icon: 'user-round',
-      adminAccess: false,
-      appAccess: false,
-      enforceTfa: false,
-    })
-    .onConflictDoNothing()
-    .returning({ id: policies.id });
-
-  let policyId = inserted[0]?.id;
-  if (!policyId) {
-    const [existing] = await db
-      .select({ id: policies.id })
-      .from(policies)
-      .where(and(eq(policies.siteId, siteId), eq(policies.key, SUBSCRIBER_POLICY_KEY)))
-      .limit(1);
-    policyId = existing?.id;
-  }
-  if (!policyId) {
-    throw new Error(`Failed to provision subscriber policy for site ${siteId}`);
-  }
-
-  await db
-    .insert(rolePolicies)
-    .values({ roleId, policyId, priority: 0 })
-    .onConflictDoNothing();
-
-  return { roleId, policyId };
+  return ensureRealmPolicy(db, siteId, SUBSCRIBER_REALM);
 }
 
 /**
- * Grant (or update) subscriber `read` on a collection. Upserts the
- * `(policyId, collection, 'read')` permission row.
+ * Grant (or update) a subscriber permission on a collection. Defaults to
+ * published-only `read`, which is the original single-action behaviour.
  */
 export async function grantSubscriberRead(
   db: Database,
   siteId: string,
-  input: GrantSubscriberReadInput,
-): Promise<SubscriberReadGrant> {
-  const collection = input.collection.trim();
-  if (!collection) {
-    throw new Error('collection is required');
-  }
-  const publishedOnly = input.publishedOnly ?? true;
-  const fields = input.fields && input.fields.length > 0 ? input.fields : ['*'];
-  const rule = publishedOnly ? PUBLISHED_ONLY_RULE : {};
-
-  const { policyId } = await ensureSubscriberPolicy(db, siteId);
-
-  await db
-    .insert(permissions)
-    .values({
-      siteId,
-      policyId,
-      collection,
-      action: 'read',
-      permissions: rule,
-      validation: {},
-      presets: {},
-      fields,
-    })
-    .onConflictDoUpdate({
-      target: [permissions.policyId, permissions.collection, permissions.action],
-      set: { permissions: rule, fields },
-    });
-
-  return { collection, action: 'read', publishedOnly, fields };
+  input: GrantInput,
+): Promise<AccessGrant> {
+  return grantRealmAccess(db, siteId, SUBSCRIBER_REALM, input);
 }
 
 /**
- * Revoke subscriber `read` on a collection. Returns true when a row was
- * removed. No-op (false) when the policy or permission doesn't exist.
+ * Revoke a subscriber grant on a collection. Returns true when a row was
+ * removed; false when the policy or permission does not exist.
  */
 export async function revokeSubscriberRead(
   db: Database,
   siteId: string,
   collection: string,
+  action: GrantAction = 'read',
 ): Promise<boolean> {
-  const [existing] = await db
-    .select({ id: policies.id })
-    .from(policies)
-    .where(and(eq(policies.siteId, siteId), eq(policies.key, SUBSCRIBER_POLICY_KEY)))
-    .limit(1);
-  if (!existing?.id) return false;
-
-  const deleted = await db
-    .delete(permissions)
-    .where(
-      and(
-        eq(permissions.siteId, siteId),
-        eq(permissions.policyId, existing.id),
-        eq(permissions.collection, collection.trim()),
-        eq(permissions.action, 'read'),
-      ),
-    )
-    .returning({ id: permissions.id });
-
-  return deleted.length > 0;
+  return revokeRealmAccess(db, siteId, SUBSCRIBER_REALM, collection, action);
 }
 
-/**
- * List the collections subscribers can currently read on this site.
- */
+/** List everything subscribers can currently do on this site. */
 export async function listSubscriberRead(
   db: Database,
   siteId: string,
-): Promise<SubscriberReadGrant[]> {
-  const [policy] = await db
-    .select({ id: policies.id })
-    .from(policies)
-    .where(and(eq(policies.siteId, siteId), eq(policies.key, SUBSCRIBER_POLICY_KEY)))
-    .limit(1);
-  if (!policy?.id) return [];
-
-  const rows = await db
-    .select({
-      collection: permissions.collection,
-      permissions: permissions.permissions,
-      fields: permissions.fields,
-    })
-    .from(permissions)
-    .where(
-      and(
-        eq(permissions.siteId, siteId),
-        eq(permissions.policyId, policy.id),
-        eq(permissions.action, 'read'),
-      ),
-    );
-
-  return rows.map((r) => ({
-    collection: r.collection,
-    action: 'read' as const,
-    publishedOnly:
-      !!r.permissions &&
-      typeof r.permissions === 'object' &&
-      'status' in (r.permissions as Record<string, unknown>),
-    fields: Array.isArray(r.fields) ? (r.fields as string[]) : ['*'],
-  }));
+): Promise<AccessGrant[]> {
+  return listRealmAccess(db, siteId, SUBSCRIBER_REALM);
 }

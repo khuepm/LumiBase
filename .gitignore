@@ -18,6 +18,7 @@ drizzle/
 .env
 .env.*
 !.env.example
+!.env.prod.example
 
 # Logs
 *.log
@@ -38,3 +39,4 @@ Thumbs.db
 
 # Coverage
 coverage/
+docs/.i18n/code-refs-report.json

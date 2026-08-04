@@ -4,6 +4,7 @@ import {
   collections,
   createDb,
   items,
+  pages,
   sites,
   systemState,
   users,
@@ -199,6 +200,31 @@ describe('Golden path (setup → collection → item → publish → read) + ten
     expect(found, 'published item is readable back').toBeTruthy();
     expect(found?.data).toMatchObject({ title: 'Hello, v1' });
 
+    // ── 4b. Anonymous public read (Delivery API, no credentials) ────────────
+    // The "read via public API" leg of the golden path must not ride on the
+    // admin token: the Delivery API is the anonymous public surface. Pages
+    // CRUD lives at `/api/v1/pages`; this path still seeds the row directly
+    // so the read exercise stays independent of Studio auth for page writes.
+    await db.insert(pages).values({
+      siteId: DEFAULT_SITE,
+      slug: 'home',
+      title: 'Golden Home',
+      layoutConfig: {
+        sections: [{ id: 'main', component: 'article-list', source: { collection: COLLECTION } }],
+      },
+    });
+    const anon = await request(`/api/v1/deliver/page/${DEFAULT_SITE}/home`, { method: 'GET' });
+    expect(anon.status).toBe(200);
+    const anonBody = (await anon.json()) as {
+      page: { slug: string };
+      sections: Array<{ data: { items?: Array<{ id: string; title?: unknown }> } }>;
+    };
+    const anonItems = anonBody.sections[0]?.data.items ?? [];
+    expect(
+      anonItems.some((row) => row.id === itemId),
+      'published item is readable anonymously via the Delivery API',
+    ).toBe(true);
+
     // ── 5. Tenant isolation ─────────────────────────────────────────────────
     // Two independent boundaries are asserted.
 
@@ -249,5 +275,16 @@ describe('Golden path (setup → collection → item → publish → read) + ten
       { method: 'GET', headers: authHeaders(DEFAULT_SITE) },
     );
     expect(detailCross.status).toBe(404);
+
+    // 5c. The anonymous Delivery surface is tenant-scoped too: site A's public
+    //     page never surfaces site B's same-named collection content.
+    const anonAfterB = await request(`/api/v1/deliver/page/${DEFAULT_SITE}/home`, { method: 'GET' });
+    expect(anonAfterB.status).toBe(200);
+    const anonAfterBBody = (await anonAfterB.json()) as {
+      sections: Array<{ data: { items?: Array<{ id: string }> } }>;
+    };
+    const anonAfterBItems = anonAfterBBody.sections[0]?.data.items ?? [];
+    expect(anonAfterBItems.some((row) => row.id === itemId)).toBe(true);
+    expect(anonAfterBItems.some((row) => row.id === itemB!.id)).toBe(false);
   });
 });

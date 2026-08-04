@@ -1,30 +1,44 @@
-# Đặc tả Kỹ thuật: Phát triển AI-First CMS Engine cho Lumibase
+---
+version: 1
+lastUpdated: 2026-07-28T00:04:58.104Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: bb3a4908115a8717
+mtEngine: claude
+syncStatus: machine-translated
+codeVerified: 2026-07-28T00:04:58.104Z
+codeVerifiedHash: bb3a4908115a8717
+codeVerifiedClaims: 16
+---
 
-Tài liệu này cung cấp hướng dẫn lập trình chi tiết, thiết kế kiến trúc, ranh giới mã nguồn và cấu trúc API/Database để các **AI Agent** khác có thể độc lập triển khai các mảnh ghép của hệ thống **AI-First CMS Engine** trên Lumibase mà không gây xung đột code.
+# Technical Specification: Building the AI-First CMS Engine for LumiBase
+
+This document gives detailed implementation guidance — architecture, source-code boundaries, and API/database shapes — so that other **AI agents** can independently build the pieces of the **AI-First CMS Engine** on LumiBase without their code colliding.
 
 ---
 
-## 1. Ranh giới Phân chia Công việc (Task Breakdown for Agents)
+## 1. Work boundaries (task breakdown for agents)
 
-Hệ thống được chia làm 4 Module độc lập. Mỗi Agent có thể nhận 1 Module để lập trình:
+The system splits into 4 independent modules. Each agent can take one module:
 
-| Module | Tên Công việc | Tệp tin Tác động | Trách nhiệm |
+| Module | Task | Files touched | Responsibility |
 |---|---|---|---|
-| **Module A** | Database & HITL Approvals | `packages/database/src/schema/platform.ts` | Tạo bảng `ai_approvals` và viết các migrations tương ứng. |
-| **Module B** | AI Secure Harness Service | `apps/cms/src/services/ai-harness.ts` | Triển khai bộ khung kiểm tra Capabilities, phân tích payload và xử lý chặn duyệt HITL. |
-| **Module C** | AI HTTP API Routes | `apps/cms/src/routes/ai.ts` | Tạo các endpoints `/ai/chat`, `/ai/approvals` để Studio tương tác. |
-| **Module D** | Studio AI Assistant & Approvals UI | `apps/studio/src/...` | Giao diện Chat Assistant nổi và màn hình phê duyệt hành động của AI. |
+| **Module A** | Database & HITL approvals | `packages/database/src/schema/platform.ts` | Create the `ai_approvals` table and write the matching migrations. |
+| **Module B** | AI Secure Harness service | `apps/cms/src/services/ai-harness.ts` | Build the capability-checking harness, analyse the payload, and handle the HITL approval gate. |
+| **Module C** | AI HTTP API routes | `apps/cms/src/routes/ai.ts` | Create the `/ai/chat` and `/ai/approvals` endpoints that Studio talks to. |
+| **Module D** | Studio AI Assistant & approvals UI | `apps/studio/src/...` | The floating chat assistant plus the screen for approving AI actions. |
 
 ---
 
-## 2. Chi tiết Kỹ thuật từng Module
+## 2. Per-module technical detail
 
-### ── Module A: Database Schema cho AI Approvals (HITL) ──
+### ── Module A: database schema for AI approvals (HITL) ──
 
-Để đảm bảo an toàn tuyệt đối, các hành động nguy hiểm của AI (như sửa schema, xóa dữ liệu) phải được lưu vào hàng đợi chờ duyệt (HITL - Human in the Loop).
+For absolute safety, dangerous AI actions (editing the schema, deleting data) must land in an approval queue (HITL — human in the loop).
 
-#### Bảng `ai_approvals`
-Được định nghĩa trong `packages/database/src/schema/platform.ts` (hoặc tạo file mới `ai.ts` cùng thư mục):
+#### The `ai_approvals` table
+
+Defined in `packages/database/src/schema/platform.ts` (or in a new `ai.ts` in the same directory):
 
 ```typescript
 import { pgTable, text, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
@@ -40,11 +54,11 @@ export const aiApprovals = pgTable(
       .references(() => sites.id, { onDelete: 'cascade' }),
     agentName: text('agent_name').default('lumibase-copilot').notNull(),
     skillName: text('skill_name').notNull(),
-    /** Lưu trữ đối số của hàm AI định gọi dưới dạng JSON (ví dụ: { name: 'posts', fields: [...] }) */
+    /** Stores the arguments the AI intends to call the function with, as JSON (e.g. { name: 'posts', fields: [...] }) */
     arguments: jsonb('arguments').notNull(),
-    /** Trạng thái duyệt: 'pending' | 'approved' | 'rejected' */
+    /** Approval state: 'pending' | 'approved' | 'rejected' */
     status: text('status').default('pending').notNull(),
-    /** Lý do hoặc ngữ cảnh yêu cầu của AI (để hiển thị cho admin) */
+    /** The AI's reason or request context (shown to the admin) */
     context: text('context'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     decidedAt: timestamp('decided_at'),
@@ -56,18 +70,18 @@ export const aiApprovals = pgTable(
 );
 ```
 
-**Yêu cầu đối với Agent Module A:**
-1. Khai báo bảng `aiApprovals` và export tại `packages/database/src/schema/index.ts`.
-2. Chạy lệnh: `DATABASE_URL=... pnpm --filter @lumibase/database generate` để sinh file migration.
-3. Chạy `pnpm --filter @lumibase/database migrate` để áp dụng vào PostgreSQL.
+**What the Module A agent must do:**
+1. Declare the `aiApprovals` table and export it from `packages/database/src/schema/index.ts`.
+2. Run `DATABASE_URL=... pnpm --filter @lumibase/database generate` to produce the migration file.
+3. Run `pnpm --filter @lumibase/database migrate` to apply it to PostgreSQL.
 
 ---
 
-### ── Module B: AI Secure Harness Service ──
+### ── Module B: the AI Secure Harness service ──
 
-Harness là bộ não điều phối an toàn. Nó nhận yêu cầu gọi Skill từ AI, kiểm tra quyền hạn (Capabilities) và quyết định thực thi hay tạm giữ chờ duyệt.
+The harness is the safety brain. It receives the AI's request to call a skill, checks its capabilities, and decides whether to execute it or hold it for approval.
 
-#### Vị trí file: `apps/cms/src/services/ai-harness.ts`
+#### File: `apps/cms/src/services/ai-harness.ts`
 
 ```typescript
 import type { Database } from '@lumibase/database';
@@ -86,7 +100,7 @@ export class AISecureHarness {
   constructor(private db: Database, private siteId: string) {}
 
   /**
-   * Đánh giá và thực thi một skill do AI yêu cầu.
+   * Evaluate and execute a skill the AI has requested.
    */
   async execute(
     skillName: string,
@@ -96,26 +110,26 @@ export class AISecureHarness {
   ): Promise<HarnessExecutionResult> {
     const skill = CORE_SKILLS[skillName];
     if (!skill) {
-      return { status: 'denied', message: `Skill ${skillName} không tồn tại.` };
+      return { status: 'denied', message: `Skill ${skillName} does not exist.` };
     }
 
-    // 1. Kiểm tra quyền của User/Session so với yêu cầu của Skill
+    // 1. Check the user's/session's capabilities against what the skill requires
     const hasCapabilities = skill.requiredCapabilities.every((cap) =>
       userCapabilities.includes(cap) || userCapabilities.includes('*')
     );
 
     if (!hasCapabilities) {
-      return { status: 'denied', message: `Thiếu quyền (Capabilities) để thực hiện hành động này.` };
+      return { status: 'denied', message: `Missing the capabilities needed for this action.` };
     }
 
-    // 2. Phân loại mức độ rủi ro (Risk Evaluation)
-    // Các skill làm thay đổi Schema hoặc Xóa dữ liệu bắt buộc phải duyệt (HITL)
-    const requiresApproval = 
-      skill.requiredCapabilities.includes('schema:write') || 
+    // 2. Risk evaluation
+    // Skills that change the schema or delete data always require approval (HITL)
+    const requiresApproval =
+      skill.requiredCapabilities.includes('schema:write') ||
       skillName.startsWith('delete');
 
     if (requiresApproval) {
-      // Ghi nhận vào hàng đợi chờ duyệt trong DB
+      // Record it in the DB approval queue
       const [approval] = await this.db
         .insert(aiApprovals)
         .values({
@@ -130,17 +144,17 @@ export class AISecureHarness {
       return {
         status: 'pending_approval',
         approvalId: approval.id,
-        message: `Hành động này cần sự phê duyệt của quản trị viên hệ thống.`,
+        message: `This action needs a system administrator's approval.`,
       };
     }
 
-    // 3. Thực thi trực tiếp các skill an toàn (Ví dụ: Read hoặc List)
+    // 3. Execute safe skills directly (e.g. read or list)
     const result = await this.runSkillDirectly(skillName, args);
     return { status: 'executed', data: result };
   }
 
   /**
-   * Thực thi trực tiếp sau khi đã được phê duyệt.
+   * Execute directly, after approval has been granted.
    */
   async executeApproved(approvalId: string, userId: string): Promise<HarnessExecutionResult> {
     const [approval] = await this.db
@@ -150,13 +164,13 @@ export class AISecureHarness {
       .limit(1);
 
     if (!approval || approval.status !== 'pending') {
-      return { status: 'denied', message: 'Yêu cầu không hợp lệ hoặc đã được xử lý.' };
+      return { status: 'denied', message: 'Invalid request, or it has already been handled.' };
     }
 
-    // Thực thi trực tiếp
+    // Execute directly
     const data = await this.runSkillDirectly(approval.skillName, approval.arguments as Record<string, any>);
 
-    // Cập nhật trạng thái duyệt
+    // Update the approval state
     await this.db
       .update(aiApprovals)
       .set({
@@ -170,10 +184,10 @@ export class AISecureHarness {
   }
 
   private async runSkillDirectly(skillName: string, args: Record<string, any>): Promise<any> {
-    // Agent lập trình phần này sẽ kết nối trực tiếp đến:
-    // - SchemaService (nếu là schema:write)
-    // - ItemService (nếu là items:read/write)
-    // Ví dụ:
+    // The agent implementing this part wires it straight into:
+    // - SchemaService (for schema:write)
+    // - ItemService (for items:read/write)
+    // For example:
     // if (skillName === 'listCollections') return schemaService.listCollections();
     return { success: true, executed: skillName, args };
   }
@@ -182,12 +196,12 @@ export class AISecureHarness {
 
 ---
 
-### ── Module C: AI HTTP API Routes ──
+### ── Module C: AI HTTP API routes ──
 
-API Route cung cấp cổng giao tiếp HTTP JSON để gửi lệnh từ giao diện Studio.
+The API route is the HTTP/JSON gateway for sending commands from the Studio UI.
 
-#### Vị trí file: `apps/cms/src/routes/ai.ts`
-Và được mount vào `index.ts` dưới path `/api/v1/ai`.
+#### File: `apps/cms/src/routes/ai.ts`
+Mounted in `index.ts` under the path `/api/v1/ai`.
 
 ```typescript
 import { Hono } from 'hono';
@@ -201,21 +215,21 @@ export const aiRouter = new Hono<AppEnv>();
 
 const chatSchema = z.object({
   message: z.string(),
-  // Có thể truyền thêm ngữ cảnh hoặc lịch sử hội thoại
+  // Extra context or conversation history can also be passed
 });
 
-// 1. Nhận câu lệnh tự nhiên từ Admin Chat UI
+// 1. Take a natural-language command from the admin chat UI
 aiRouter.post('/chat', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
   const auth = c.get('auth');
   const { message } = chatSchema.parse(await c.req.json());
 
-  // Giả lập Mock LLM phân tích Intent -> gọi Skill.
-  // Trong phiên bản sau, tích hợp Gemini/OpenAI API tại đây.
-  // Ví dụ mock: User gõ "tạo bảng posts" -> LLM nhận diện skill 'createCollection'
+  // Mock LLM intent analysis -> skill call.
+  // In a later version, integrate the Gemini/OpenAI API here.
+  // Mock example: the user types "create a posts table" -> the LLM recognises the 'createCollection' skill
   let parsedSkill = 'createCollection';
-  let parsedArgs = { name: 'posts', description: 'Tạo bởi AI Copilot' };
+  let parsedArgs = { name: 'posts', description: 'Created by the AI Copilot' };
 
   const harness = new AISecureHarness(db, siteId);
   const userCapabilities = auth.roles?.includes('admin') ? ['*'] : ['items:read'];
@@ -224,7 +238,7 @@ aiRouter.post('/chat', async (c) => {
   return c.json({ data: result });
 });
 
-// 2. Lấy danh sách yêu cầu chờ duyệt (HITL)
+// 2. List the requests awaiting approval (HITL)
 aiRouter.get('/approvals', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
@@ -237,7 +251,7 @@ aiRouter.get('/approvals', async (c) => {
   return c.json({ data: pending });
 });
 
-// 3. Phê duyệt hoặc từ chối hành động của AI
+// 3. Approve or reject an AI action
 aiRouter.post('/approvals/:id/decide', async (c) => {
   const id = c.req.param('id');
   const { decision } = await c.req.json(); // 'approved' | 'rejected'
@@ -261,15 +275,15 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
 
 ---
 
-### ── Module D: Studio AI Assistant & Approvals UI ──
+### ── Module D: Studio AI Assistant & approvals UI ──
 
-Giao diện trực quan để Admin tương tác với AI và duyệt yêu cầu.
+The visual surface where an admin talks to the AI and approves its requests.
 
-#### Component 1: Floating AI Chat Panel (`apps/studio/src/components/ai-assistant.tsx`)
-Hiển thị một nút bong bóng góc phải màn hình, click sẽ mở khung chat. Giao diện tối giản, hiện đại bằng CSS Glassmorphism:
+#### Component 1: floating AI chat panel (`apps/studio/src/components/ai-assistant.tsx`)
+A bubble button in the bottom-right corner; clicking it opens the chat frame. A minimal, modern look using CSS glassmorphism:
 
 ```typescript
-// Gợi ý cấu trúc Component:
+// Suggested component structure:
 export function AIAssistant() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant', text: string }>>([]);
@@ -277,18 +291,18 @@ export function AIAssistant() {
 
   const send = async () => {
     // POST /api/v1/ai/chat
-    // Nhận về: { status: 'pending_approval', message: 'Cần duyệt...' }
-    // Thêm vào messages.
+    // Returns: { status: 'pending_approval', message: 'Needs approval...' }
+    // Append to messages.
   };
 
   return (
     <div className="fixed bottom-6 right-6 z-50">
-      {/* Bong bóng chat */}
+      {/* Chat bubble */}
       <button onClick={() => setOpen(!open)} className="rounded-full bg-primary p-4 text-white shadow-lg">
         AI
       </button>
-      
-      {/* Khung chat */}
+
+      {/* Chat frame */}
       {open && (
         <div className="absolute bottom-16 right-0 w-80 rounded-2xl border bg-background/80 p-4 shadow-xl backdrop-blur-md">
           {/* Messages list & input form */}
@@ -299,17 +313,17 @@ export function AIAssistant() {
 }
 ```
 
-#### Component 2: AI Approvals Dashboard (`apps/studio/src/modules/settings/ai-approvals.tsx`)
-Hiển thị danh sách các hành động AI đang đề xuất (ở trạng thái `pending`).
-- Giao diện dạng thẻ (Card) ghi rõ: **"AI Copilot muốn thực thi kỹ năng: createCollection với đối số: { name: 'posts' }"**.
-- Kèm theo lý do ngữ cảnh: **"Yêu cầu từ tin nhắn: 'Tạo bảng posts cho tôi'"**.
-- Cung cấp 2 nút bấm nổi bật: **[ Approve ]** (gửi `decision: 'approved'`) và **[ Reject ]** (gửi `decision: 'rejected'`).
+#### Component 2: AI approvals dashboard (`apps/studio/src/modules/settings/ai-approvals.tsx`)
+Lists the AI actions currently being proposed (status `pending`).
+- A card layout spelling it out: **"AI Copilot wants to run the skill createCollection with arguments: { name: 'posts' }"**.
+- Plus the context reason: **"Requested by the message: 'Create a posts table for me'"**.
+- Two prominent buttons: **[ Approve ]** (sends `decision: 'approved'`) and **[ Reject ]** (sends `decision: 'rejected'`).
 
 ---
 
-## 3. Quy chuẩn Kiểm thử & Review
+## 3. Testing & review standards
 
-Mọi Agent khi hoàn thành phần việc của mình phải đáp ứng:
-1. **TypeScript strict mode**: Không được phép sử dụng kiểu `any` trừ trường hợp bắt buộc (cần có comment giải thích rõ).
-2. **Không phá vỡ cấu trúc tenancy**: Mọi câu lệnh truy vấn dữ liệu từ database bắt buộc phải có điều kiện `eq(table.siteId, siteId)`.
-3. **Chạy kiểm thử build**: Đảm bảo dự án tổng build bình thường thông qua lệnh `pnpm build` trước khi đề xuất gộp nhánh.
+Every agent finishing its share of the work must satisfy:
+1. **TypeScript strict mode**: no `any` unless unavoidable (and then with a comment explaining why).
+2. **Do not break tenancy**: every database query must carry the `eq(table.siteId, siteId)` condition.
+3. **Run the build**: make sure the whole project still builds via `pnpm build` before proposing a merge.

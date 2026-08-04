@@ -1,6 +1,5 @@
 import {
   activity,
-  collections,
   contentIntents,
   extensions as extensionsTable,
   items,
@@ -8,7 +7,6 @@ import {
   revisions,
   scopeSite,
   materializedCollections,
-  fieldAccessLog,
   type Database,
 } from '@lumibase/database';
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
@@ -53,10 +51,24 @@ import {
 import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
 import type { CdcOperation } from '@lumibase/shared/schemas';
 import { AuditLogger } from '../modules/audit/logger';
+import { writeFieldAccessLog as enqueueFieldAccessLog } from '../modules/audit/field-access';
 import { FirebaseSyncService } from '../modules/lumibase-firebase-sync';
 import { WriteCoalescer } from './load-guard-service';
 import type { PrimaryKeyType, StorageMode } from './schema-service';
 import { formatSafeError } from '@lumibase/shared/utils';
+import {
+  dispatchItemRevalidation,
+  invalidateItemsTag,
+} from './content-invalidation';
+import { runSiteTransaction } from './rls-transaction';
+
+const BULK_INSERT_CHUNK = 100;
+
+export function bulkMaxItems(env?: Record<string, string | undefined>): number {
+  const raw = env?.LUMIBASE_BULK_MAX ?? process.env.LUMIBASE_BULK_MAX ?? '500';
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 500;
+}
 
 /**
  * ItemService — generic CRUD over the `items` JSONB store, driven by the
@@ -193,6 +205,13 @@ export interface ItemServiceDeps {
   db: Database;
   /** Optional cache used by SchemaService for compiled manifests. */
   cache?: CacheProvider;
+  /**
+   * Negative-cache TTL (seconds) forwarded to SchemaService (Req 19.5).
+   * Resolved from the runtime env by the caller — see the note on
+   * `SchemaServiceDeps.negativeCacheTtl` for why it is not read from
+   * `process.env` inside the service.
+   */
+  negativeCacheTtl?: number;
   /** Optional search provider for auto-indexing content on create/update/delete. */
   search?: SearchProvider;
   /** Optional queue provider for enqueuing background jobs. */
@@ -459,6 +478,7 @@ export class ItemService {
       db: deps.db,
       siteId: deps.siteId,
       cache: deps.cache,
+      negativeCacheTtl: deps.negativeCacheTtl,
     });
     this.permissions = deps.permissionCtx
       ? new PermissionService({ db: deps.db, cache: deps.cache, ctx: deps.permissionCtx })
@@ -640,15 +660,20 @@ export class ItemService {
   }
 
   private async resolveCollection(name: string) {
-    const [coll] = await this.deps.db
-      .select()
-      .from(collections)
-      .where(and(scopeSite(collections.siteId, this.deps.siteId), eq(collections.name, name)))
-      .limit(1);
-    if (!coll) {
+    // Route through SchemaService.getCompiled so collection-name probes share
+    // the positive schema cache AND the negative tombstone (Req 19.5 / 19.12).
+    const compiled = await this.schemaService.getCompiled(name);
+    if (!compiled) {
       throw new ItemServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
     }
-    return coll;
+    return {
+      id: compiled.id,
+      name: compiled.name,
+      primaryKeyField: compiled.primaryKeyField,
+      primaryKeyType: compiled.primaryKeyType,
+      storageMode: compiled.storageMode,
+      meta: compiled.meta,
+    };
   }
 
   async list(collectionName: string, params: ListItemsParams = {}) {
@@ -811,25 +836,47 @@ export class ItemService {
     if (primaryKey.id) {
       await this.assertItemIdAvailable(coll.id, primaryKey.id);
     }
-    const [row] = await this.deps.db
-      .insert(items)
-      .values({
-        id: recordId,
+    const row = await runSiteTransaction(this.deps.db, this.deps.siteId, async (tx) => {
+      const [inserted] = await tx
+        .insert(items)
+        .values({
+          id: recordId,
+          siteId: this.deps.siteId,
+          collectionId: coll.id,
+          data: encryptedData,
+          status,
+          sort,
+          publishAt,
+          unpublishAt,
+          dekWrapped: cryptoOut.wrappedDek ?? null,
+          userCreated: this.deps.userId ?? null,
+          userUpdated: this.deps.userId ?? null,
+        })
+        .returning();
+      if (!inserted) throw new ItemServiceError('CREATE_FAILED', 'Failed to insert item.');
+      await tx.insert(revisions).values({
         siteId: this.deps.siteId,
         collectionId: coll.id,
-        data: encryptedData,
-        status,
-        sort,
-        publishAt,
-        unpublishAt,
-        dekWrapped: cryptoOut.wrappedDek ?? null,
-        userCreated: this.deps.userId ?? null,
-        userUpdated: this.deps.userId ?? null,
-      })
-      .returning();
-    if (!row) throw new ItemServiceError('CREATE_FAILED', 'Failed to insert item.');
-    await this.writeRevision(coll.id, row.id, encryptedData, null);
-    await this.writeActivity('create', coll.name, row.id, { data: payload.data });
+        itemId: inserted.id,
+        delta: { before: null, after: encryptedData },
+        userId: this.deps.userId ?? null,
+        authorType: this.provenance.authorType,
+        createdByRunId: this.provenance.runId ?? null,
+        model: this.provenance.model ?? null,
+        constitutionHash: this.provenance.constitutionHash ?? null,
+        sources: this.provenance.sources ?? null,
+        confidence: this.provenance.confidence ?? null,
+      });
+      await tx.insert(activity).values({
+        siteId: this.deps.siteId,
+        action: 'create',
+        userId: this.deps.userId ?? null,
+        collection: coll.name,
+        itemId: inserted.id,
+        payload: { data: payload.data },
+      });
+      return inserted;
+    });
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'create', row.id);
@@ -839,6 +886,11 @@ export class ItemService {
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
+    // No item-id tombstone to forget here: nothing writes `neg:{site}:item:*`.
+    // Item-by-id reads are all authenticated, and Req 19.8 forbids serving a
+    // tombstone to a credentialed request — so the read side cannot be wired as
+    // design §14.5/§14.7 originally sketched. Dropping the key on every create
+    // was a Redis round-trip that deleted something no code path ever wrote.
     return row;
   }
 
@@ -974,42 +1026,68 @@ export class ItemService {
         )
       : pinnedFields;
 
-    const [row] = await this.deps.db
-      .update(items)
-      .set({
-        data: encryptedFinal,
-        status: finalStatus,
-        sort: finalSort,
-        pinnedFields: nextPinned,
-        // A write re-encrypts every encrypted field under one cipher, so the
-        // record's mode (and its wrapped DEK) is rewritten wholesale.
-        dekWrapped: cryptoOut.wrappedDek ?? null,
-        ...(effectiveWindow
-          ? { publishAt: effectiveWindow.publishAt, unpublishAt: effectiveWindow.unpublishAt }
-          : {}),
-        userUpdated: this.deps.userId ?? null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          scopeSite(items.siteId, this.deps.siteId),
-          eq(items.collectionId, coll.id),
-          eq(items.id, id),
-          isNull(items.deletedAt),
-          permClause,
-        ),
-      )
-      .returning();
+    const [row] = await runSiteTransaction(this.deps.db, this.deps.siteId, async (tx) => {
+      const [updated] = await tx
+        .update(items)
+        .set({
+          data: encryptedFinal,
+          status: finalStatus,
+          sort: finalSort,
+          pinnedFields: nextPinned,
+          dekWrapped: cryptoOut.wrappedDek ?? null,
+          ...(effectiveWindow
+            ? { publishAt: effectiveWindow.publishAt, unpublishAt: effectiveWindow.unpublishAt }
+            : {}),
+          userUpdated: this.deps.userId ?? null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            scopeSite(items.siteId, this.deps.siteId),
+            eq(items.collectionId, coll.id),
+            eq(items.id, id),
+            isNull(items.deletedAt),
+            permClause,
+          ),
+        )
+        .returning();
+      if (!updated) throw new ItemServiceError('UPDATE_FAILED', 'Failed to update item.');
+      await tx.insert(revisions).values({
+        siteId: this.deps.siteId,
+        collectionId: coll.id,
+        itemId: id,
+        delta: { before: rawRow.data as Record<string, unknown>, after: encryptedFinal },
+        userId: this.deps.userId ?? null,
+        authorType: this.provenance.authorType,
+        createdByRunId: this.provenance.runId ?? null,
+        model: this.provenance.model ?? null,
+        constitutionHash: this.provenance.constitutionHash ?? null,
+        sources: this.provenance.sources ?? null,
+        confidence: this.provenance.confidence ?? null,
+      });
+      await tx.insert(activity).values({
+        siteId: this.deps.siteId,
+        action: 'update',
+        userId: this.deps.userId ?? null,
+        collection: coll.name,
+        itemId: id,
+        payload: { patch },
+      });
+      const addedPins = nextPinned.filter((field) => !pinnedFields.includes(field));
+      if (addedPins.length > 0) {
+        await tx.insert(activity).values({
+          siteId: this.deps.siteId,
+          action: 'pin',
+          userId: this.deps.userId ?? null,
+          collection: coll.name,
+          itemId: id,
+          payload: { fields: addedPins },
+        });
+      }
+      return [updated] as const;
+    });
 
     if (!row) throw new ItemServiceError('UPDATE_FAILED', 'Failed to update item.');
-
-    await this.writeRevision(coll.id, id, encryptedFinal, rawRow.data as Record<string, unknown>);
-    await this.writeActivity('update', coll.name, id, { patch });
-    const addedPins = nextPinned.filter((field) => !pinnedFields.includes(field));
-    if (addedPins.length > 0) {
-      await this.writeActivity('pin', coll.name, id, { fields: addedPins });
-    }
-    
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
     await this.publishRealtimeEvent(collectionName, 'update', row.id);
@@ -1199,12 +1277,24 @@ export class ItemService {
     collectionName: string,
     op: 'create' | 'update' | 'delete',
     payload: Array<Record<string, unknown>>,
+    opts?: { bulkMax?: number },
   ) {
+    const max = opts?.bulkMax ?? bulkMaxItems();
+    if (payload.length > max) {
+      throw new ItemServiceError(
+        'BULK_TOO_LARGE',
+        `Bulk batch exceeds limit of ${max} items.`,
+        413,
+      );
+    }
+
+    if (op === 'create' && payload.length > 0) {
+      return this.bulkCreate(collectionName, payload);
+    }
+
     const out: unknown[] = [];
     for (const entry of payload) {
-      if (op === 'create') {
-        out.push(await this.create(collectionName, { data: entry as Record<string, unknown> }));
-      } else if (op === 'update') {
+      if (op === 'update') {
         const id = entry.id as string;
         out.push(await this.patch(collectionName, id, { data: entry as Record<string, unknown> }));
       } else {
@@ -1213,6 +1303,150 @@ export class ItemService {
       }
     }
     return out;
+  }
+
+  /**
+   * Bulk create with chunked multi-row INSERT inside one transaction; side
+   * effects run once after commit (high-load Req 16.4).
+   */
+  private async bulkCreate(
+    collectionName: string,
+    payload: Array<Record<string, unknown>>,
+  ) {
+    const coll = await this.resolveCollection(collectionName);
+    const perm = await this.perm(collectionName, 'create');
+    const knownFields = await this.getKnownWritableFields(collectionName);
+
+    type Prepared = {
+      recordId: string;
+      encryptedData: Record<string, unknown>;
+      status: string;
+      sort: number;
+      publishAt: Date | null;
+      unpublishAt: Date | null;
+      wrappedDek: string | null;
+      rawData: Record<string, unknown>;
+    };
+    const prepared: Prepared[] = [];
+
+    for (const entry of payload) {
+      const primaryKey = resolvePrimaryKey(
+        {
+          field: coll.primaryKeyField,
+          type: coll.primaryKeyType,
+          storageMode: coll.storageMode,
+        },
+        entry ?? {},
+      );
+      const withPresets = this.permissions?.applyPresets(perm, entry ?? {}) ?? entry ?? {};
+      const status = 'draft';
+      const sort = 0;
+      assertWritablePermissionFields(perm, knownFields, withPresets, { status, sort });
+      const data = await this.runValidation(collectionName, withPresets, false);
+      const recordId = primaryKey.id ?? nanoid();
+      const { publishAt, unpublishAt } = normalizePublishWindow(null, null);
+      const cryptoOut: CryptoRecordOpts = {};
+      const encryptedData = await this.processCrypto(
+        collectionName,
+        data,
+        'encrypt',
+        recordId,
+        true,
+        false,
+        undefined,
+        cryptoOut,
+      );
+      if (primaryKey.id) {
+        await this.assertItemIdAvailable(coll.id, primaryKey.id);
+      }
+      prepared.push({
+        recordId,
+        encryptedData,
+        status,
+        sort,
+        publishAt,
+        unpublishAt,
+        wrappedDek: cryptoOut.wrappedDek ?? null,
+        rawData: data,
+      });
+    }
+
+    const rows = await runSiteTransaction(this.deps.db, this.deps.siteId, async (tx) => {
+      const inserted: ItemRow[] = [];
+      for (let i = 0; i < prepared.length; i += BULK_INSERT_CHUNK) {
+        const chunk = prepared.slice(i, i + BULK_INSERT_CHUNK);
+        const itemRows = await tx
+          .insert(items)
+          .values(
+            chunk.map((p) => ({
+              id: p.recordId,
+              siteId: this.deps.siteId,
+              collectionId: coll.id,
+              data: p.encryptedData,
+              status: p.status,
+              sort: p.sort,
+              publishAt: p.publishAt,
+              unpublishAt: p.unpublishAt,
+              dekWrapped: p.wrappedDek,
+              userCreated: this.deps.userId ?? null,
+              userUpdated: this.deps.userId ?? null,
+            })),
+          )
+          .returning();
+        inserted.push(...(itemRows as ItemRow[]));
+
+        await tx.insert(revisions).values(
+          chunk.map((p) => ({
+            siteId: this.deps.siteId,
+            collectionId: coll.id,
+            itemId: p.recordId,
+            delta: { before: null, after: p.encryptedData },
+            userId: this.deps.userId ?? null,
+            authorType: this.provenance.authorType,
+            createdByRunId: this.provenance.runId ?? null,
+            model: this.provenance.model ?? null,
+            constitutionHash: this.provenance.constitutionHash ?? null,
+            sources: this.provenance.sources ?? null,
+            confidence: this.provenance.confidence ?? null,
+          })),
+        );
+        await tx.insert(activity).values(
+          chunk.map((p) => ({
+            siteId: this.deps.siteId,
+            action: 'create',
+            userId: this.deps.userId ?? null,
+            collection: coll.name,
+            itemId: p.recordId,
+            payload: { data: p.rawData },
+          })),
+        );
+      }
+      return inserted;
+    });
+
+    for (const row of rows) {
+      const decrypted = await this.processCrypto(
+        collectionName,
+        row.data as Record<string, unknown>,
+        'decrypt',
+        row.id,
+        false,
+        false,
+      );
+      row.data = decrypted;
+      await this.indexItem(collectionName, row.id, decrypted);
+      await this.publishRealtimeEvent(collectionName, 'create', row.id);
+      await this.dispatchFirebaseSync(collectionName, 'create', row.id, decrypted);
+      await this.dispatchFlowEvent(collectionName, 'create', row.id, decrypted);
+      await this.writeCdcEvent(collectionName, 'create', row.id, decrypted);
+    }
+    await this.afterWriteInvalidation(collectionName);
+    // No item-id tombstone to forget: `negativeItemKey` was removed because
+    // nothing ever writes `neg:{site}:item:*` — item-by-id reads all sit behind
+    // auth and Req 19.8 forbids serving a tombstone to a credentialed request.
+    // In `bulk()` the dead call was also one Redis DEL *per row*, so a 500-row
+    // insert spent 500 round-trips deleting keys that never existed.
+    return rows;
   }
 
   async listRevisions(collectionName: string, itemId: string) {
@@ -1767,15 +2001,17 @@ export class ItemService {
           : null) ??
         this.deps.userId ??
         null;
-      await this.deps.db.insert(fieldAccessLog).values({
-        siteId: this.deps.siteId,
-        collection,
-        recordIds,
-        fields,
-        actor,
-        action: 'read_decrypted',
-        requestId: null,
-      });
+      await enqueueFieldAccessLog(
+        { db: this.deps.db, siteId: this.deps.siteId, queue: this.deps.queue },
+        {
+          collection,
+          recordIds,
+          fields,
+          actor,
+          action: 'read_decrypted',
+          requestId: null,
+        },
+      );
     } catch (err) {
       console.error('[item-service] field access log write failed', formatSafeError(err));
     }
@@ -1831,6 +2067,7 @@ export class ItemService {
     this.writeCoalescer = null;
     for (const collection of collections) {
       await this.triggerMaterializeRefresh(collection);
+      await this.invalidateContentCache(collection);
     }
     return collections;
   }
@@ -1842,6 +2079,18 @@ export class ItemService {
       return;
     }
     await this.triggerMaterializeRefresh(collectionName);
+    await this.invalidateContentCache(collectionName);
+  }
+
+  /** Tag purge + ISR revalidation after published content changes (Req 8). */
+  private async invalidateContentCache(collectionName: string): Promise<void> {
+    await invalidateItemsTag(this.deps.cache, this.deps.siteId, collectionName);
+    await dispatchItemRevalidation({
+      db: this.deps.db,
+      queue: this.deps.queue,
+      siteId: this.deps.siteId,
+      collection: collectionName,
+    });
   }
 
   private async triggerMaterializeRefresh(collectionName: string): Promise<void> {

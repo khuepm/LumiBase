@@ -6,7 +6,7 @@
  * platform SSRF guard. The signing/verify pair is exported pure so property
  * P5 and consumer docs exercise the exact production code.
  *
- * Header: `X-Lumibase-Signature: t=<unix_seconds>,v1=<hex>` where
+ * Header: `X-LumiBase-Signature: t=<unix_seconds>,v1=<hex>` where
  * `v1 = HMAC_SHA256(secret, `${t}.${rawBody}`)` — timestamp inside the MAC
  * keeps a captured request from being replayed later (consumers should
  * reject |now - t| beyond a few minutes).
@@ -15,7 +15,7 @@
 import { guardedFetch } from '../../../services/ssrf-guard';
 import type { CdcEventEnvelope } from '@lumibase/shared/schemas';
 
-export const SIGNATURE_HEADER = 'X-Lumibase-Signature';
+export const SIGNATURE_HEADER = 'X-LumiBase-Signature';
 export const WEBHOOK_TIMEOUT_MS = 30_000;
 
 const encoder = new TextEncoder();

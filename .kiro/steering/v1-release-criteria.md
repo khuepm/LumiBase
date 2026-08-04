@@ -32,7 +32,7 @@ Nguồn: `docs/en/security/cwe-top-100-audit.md`. Mỗi mục Partial/Not-addres
 ## 2. Scope freeze — BẮT BUỘC
 
 - [ ] **Quyết định M2A relations**: hiện `schema-service.ts` trả "reserved but not implemented". Hoặc ship trong v1, hoặc tuyên bố chính thức out-of-scope trong docs + roadmap (một dòng "coming in 1.x", không để mập mờ). Reserved-surface không được đổi shape sau v1 nếu đã public.
-- [ ] **Rà `.kiro/specs/`**: mọi spec đang partial hoặc mở phải được phân loại **in-v1 / post-v1** — spec in-v1 phải qua đủ DoD; spec post-v1 ghi rõ vào roadmap. Không dùng checkbox tasks.md làm bằng chứng — đối chiếu Implementation-status footer + code.
+- [ ] **Rà `.kiro/specs/`**: mọi spec đang partial hoặc mở phải được phân loại **in-v1 / post-v1** — spec in-v1 phải qua đủ DoD; spec post-v1 ghi rõ vào roadmap. Không dùng checkbox tasks.md làm bằng chứng — đối chiếu Implementation-status footer + code. → Kết quả: `.kiro/steering/v1-scope-classification.md` (2026-07-16).
 - [ ] **Setup Impact Registry** (`.kiro/specs/admin-setup-wizard/setup-impact.md`) không còn feature in-v1 nào thiếu dòng registry.
 - [ ] **API surface freeze**: chốt danh sách endpoint/params/response-shape công khai trong `docs/en/api/hono-api-spec.md` + GraphQL spec + chữ ký `@lumibase/sdk`. Từ thời điểm freeze, mọi thay đổi breaking dồn về v2 (xem mục 6).
 

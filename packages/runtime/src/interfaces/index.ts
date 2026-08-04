@@ -1,5 +1,17 @@
-export type { CacheProvider, UniqueCounterProvider } from './cache';
-export { CounterUnavailableError } from './cache';
+export type { EdgeCacheProvider } from './edge-cache';
+export type {
+  CacheEntry,
+  CacheEvent,
+  CacheProvider,
+  CacheSetOptions,
+  NegativeCacheEnvelope,
+  UniqueCounterProvider,
+} from './cache';
+export {
+  CounterUnavailableError,
+  isNegativeCacheEnvelope,
+  NEGATIVE_CACHE_ENVELOPE,
+} from './cache';
 export type { StorageObject, StorageProvider } from './storage';
 export type { DatabaseProvider } from './database';
 export type { SearchResult, SearchOptions, SearchProvider, SearchIndexSettings } from './search';
@@ -19,3 +31,4 @@ export type {
   RealtimeProvider,
 } from './realtime';
 export type { RuntimeContext } from './runtime';
+export type { RateLimiterProvider, RateLimitConsumeResult } from './rate-limiter';

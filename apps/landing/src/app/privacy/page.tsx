@@ -12,7 +12,7 @@ export default function PrivacyPolicy() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-16">
       <h1 className="text-4xl font-bold">Privacy Policy</h1>
-      <p className="mt-4 text-gray-400">Last updated: {new Date().toLocaleDateString()}</p>
+      <p className="mt-4 text-gray-400">Last updated: June 7, 2026</p>
 
       <div className="mt-12 space-y-8 [&_h2]:text-2xl [&_h2]:font-semibold [&_h2]:text-foreground [&_p]:mt-2 [&_p]:leading-7 [&_p]:text-gray-400 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1 [&_li]:text-gray-400">
         <section>

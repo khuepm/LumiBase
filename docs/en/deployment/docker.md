@@ -61,7 +61,7 @@ If a client receives HTTP `503` with a body similar to:
   "errors": [
     {
       "code": "SERVICE_UNAVAILABLE",
-      "message": "Lumibase API is temporarily unavailable because this instance is under pressure. Retry later.",
+      "message": "LumiBase API is temporarily unavailable because this instance is under pressure. Retry later.",
       "details": { "reason": "event_loop_delay" }
     }
   ]
@@ -123,6 +123,11 @@ LUMIBASE_MAX_JSON_BODY=1048576
 LUMIBASE_DELIVER_SMAXAGE=60
 # Delivery API stale-while-revalidate window, seconds (default 300).
 LUMIBASE_DELIVER_SWR=300
+# Negative-cache (tombstone) TTL in seconds before ±20% jitter (default 30).
+# 0 disables tombstones. See docs/en/features/caching.md.
+LUMIBASE_NEGATIVE_CACHE_TTL=30
+# Delivery API IP rate limit, requests per minute (default 1200). 0 = off.
+LUMIBASE_DELIVER_RATE_LIMIT=1200
 # Debounce window (seconds) for API-key lastUsedAt writes (default 60).
 # Under read load, an API key's last-used timestamp is refreshed at most
 # once per window instead of on every request. 0 = write on every request.

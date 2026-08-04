@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Lock } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, type ReactNode } from 'react';
-import { useForm, type SubmitHandler } from 'react-hook-form';
+import { useForm, type Resolver, type SubmitHandler } from 'react-hook-form';
 import {
   projectConfigurationSchema,
   normalizeSiteUrl,
@@ -41,15 +41,17 @@ export function StepProject({ onSubmitted }: StepProjectProps) {
   const siteUrlId = useId();
   const titleId = useId();
 
+  // Zod 4 input/output diverge on `theme.default(null)`; form defaults always
+  // provide a full ProjectFormFields value.
   const form = useForm<ProjectFormFields>({
-    resolver: zodResolver(projectConfigurationSchema),
+    resolver: zodResolver(projectConfigurationSchema) as Resolver<ProjectFormFields>,
     mode: 'onBlur',
     reValidateMode: 'onChange',
     shouldUnregister: false,
     defaultValues: projectDraft ?? {
       defaultLanguage: 'en',
       siteUrl: 'http://localhost:2026',
-      displayTitle: 'Lumibase',
+      displayTitle: 'LumiBase',
       theme: null,
     },
   });
@@ -153,7 +155,7 @@ export function StepProject({ onSubmitted }: StepProjectProps) {
             type="text"
             className={inputClass(Boolean(errors.displayTitle))}
             aria-invalid={errors.displayTitle ? 'true' : 'false'}
-            placeholder="Lumibase"
+            placeholder="LumiBase"
             {...register('displayTitle')}
           />
         </Field>

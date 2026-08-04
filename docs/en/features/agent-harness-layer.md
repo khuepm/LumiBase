@@ -252,7 +252,7 @@ The harness service layer runs inside the CMS request/runtime boundary and uses 
 - **Cloudflare Workers**: CMS routes and Drizzle-backed harness services run in the Worker runtime.
 - **Docker / Node.js**: the same API routes and services run in self-hosted mode.
 - **Queues**: repeated run failure uses the runtime `QueueProvider` to enqueue `agent-dead-letter`; if no queue adapter is available, the failed run remains fully audited in `agent_runs` and `agent_tool_calls`.
-- **Observability**: Prometheus metrics cover run status, stop reason, tool latency, approval latency, evaluation status, estimated token/cost usage, and dead-letter enqueue rate. Docker mode auto-loads the `Lumibase Agent Harness` Grafana dashboard.
+- **Observability**: Prometheus metrics cover run status, stop reason, tool latency, approval latency, evaluation status, estimated token/cost usage, and dead-letter enqueue rate. Docker mode auto-loads the `LumiBase Agent Harness` Grafana dashboard.
 - Long-running generation/evaluation jobs that exceed request runtime limits should be moved behind queue/workflow execution in a later phase. Until then, the MVP keeps evaluation runners short and synchronous.
 
 If future evaluation runners depend on runtime-specific APIs, they must be feature-flagged and documented in [`runtime-abstraction.md`](./runtime-abstraction.md).

@@ -11,6 +11,292 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [0.25.0] - 2026-08-02
+
+### Version
+
+- `v0.25.0`
+
+### Date
+
+- `2026-08-02`
+
+### Highlights
+
+- **Public (anonymous) realm — the third authorization realm from ADR-011.**
+  An unauthenticated request now resolves to the site's `public` role instead
+  of a blanket 401, so content can be served publicly *through* the permission
+  layer rather than around it. Opt-in per site, GET/HEAD on allow-listed
+  content paths only, and structurally least-privilege (migration `0012`).
+
+- **Cache penetration defence.** Public reads stack identifier shape guards,
+  negative-cache tombstones, and a Delivery IP rate limiter in front of
+  Postgres, so a flood of nonexistent slugs no longer becomes database load.
+
+- **Dependency majors batched — this release requires Node 22+.** jose 6,
+  zod 4, node-cron 4, execa 10, react 19 alignment, graphql 17 and others land
+  together. Two breaking consequences for consumers: `create-lumibase` now
+  requires Node 22+, and jose v6 removed the `KeyLike` export. See *Changed*.
+
+### Added
+
+- **High-load & cache readiness programme closeout (spec tasks 0–22).** P0: Delivery HTTP caching (ETag, `Cache-Control`, edge-cache adapter), permission-cache version bump at every grant mutation, API-key `lastUsedAt` debounce, setup-state process cache, list `meta=total_count|none` opt-in, Caddy/app body limits, identifier shape guards. P1: Cache Provider v2 (`tags`, `invalidateByTag`, `getEntry`/`setNegative`, admin purge), content tag invalidation + deliver app-cache + auto revalidation, SWR/single-flight for schema/permission, middleware query consolidation, async audit queue, distributed rate limiter, cache observability (metrics/health/Grafana), cache penetration defence (tombstones, deliver IP limiter, k6 `load-penetration.js` — measured DB-query-per-404 **0.0308**). P2: `LUMIBASE_PROCESS_ROLE` web/worker split + Redis leader lock, flow/AI async (`202` + poll; `Prefer: respond-async`), migration `0013` + items deliver indexes, transactional item writes, CDC `CacheInvalidator` removed (ADR-012), nightly k6 workflow. ADR-004 → Implemented. DoD §2b gains tag-purge + behavioural-test checklist line. Setup Impact Registry #95 (`n/a` + migration `0013`/index upgrade note). k6 baseline re-run for deliver/items/smoke/realtime: **pending_env** (see `baseline/2026-08-02-baseline-notes.json`).
+- **High-load P2: flow/AI async + DB indexes (tasks 17–18).** `POST
+  /flows/:id/run` returns 202 when a queue worker is available; poll
+  `GET /flows/runs/:runId`. AI chat supports `Prefer: respond-async` (reuses
+  `lumibase_flow_runs.run_type = ai_chat`). Migration `0013` adds flow-run
+  history index + `items_site_coll_updated_idx` / `items_deliver_idx`.
+  **Upgrade note:** on large Postgres instances, create the two `items_*`
+  indexes with `CREATE INDEX CONCURRENTLY` outside the migration transaction
+  (see `docs/en/deployment/performance.md`).
+- **Cache Provider v2 (tags + purge).** `CacheSetOptions.tags`,
+  `invalidateByTag`, optional `onEvent` on Redis / KV / `MemoryCacheProvider`
+  (LRU); admin `POST /api/v1/utils/cache/purge` (control-plane,
+  tenant-scoped). ADR-004 → Implemented.
+- **Delivery edge cache adapter.** `runtime.edgeCache` — Cloudflare
+  `caches.default` match/put; Docker no-op — wired on cacheable deliver
+  page responses (task 1.3).
+- **Public (anonymous) role and principal (ADR-011, migration `0012`).**
+  `withAuth` previously returned an unconditional 401 for a caller with no
+  credential, so there was no way to serve content publicly through the
+  permission layer at all. An unauthenticated request now resolves to the
+  site's `public` role, which keeps row filters and field masks in force. Two
+  conditions gate it: the site has explicitly enabled public access (enabling
+  is what creates the role, so existing deployments are unchanged until an
+  operator turns it on), and the request is a GET/HEAD on an allow-listed
+  content path. The role is least-privilege by construction —
+  `admin_access`/`app_access` are pinned off by check constraints on
+  `lumibase_roles` and `lumibase_policies`, with route guards refusing the same
+  edits as a readable 4xx rather than a constraint violation, and hand-attached
+  policies screened at the attach point (a table check cannot see across the
+  `role_policies` join). Anonymous role lookups are cached per site, negative
+  results included, since every visitor shares one compiled bundle under the
+  `role:{id}` principal key. GraphQL is deliberately excluded: its operations
+  arrive over POST, so the read-method rule cannot cover it.
+
+- **Cache penetration defence (Delivery API + schema lookup).** Public reads
+  now stack three cheap filters before Postgres: identifier shape guards
+  (404, zero queries), short-lived negative-cache tombstones on
+  `CacheProvider` (`getEntry` / `setNegative`, TTL
+  `LUMIBASE_NEGATIVE_CACHE_TTL` with ±20% jitter), and a dedicated Delivery
+  IP rate limiter (`LUMIBASE_DELIVER_RATE_LIMIT`, default 1200/min). See
+  `docs/en/features/caching.md`. No schema or setup change.
+
+- **Studio: edit a publishable key's origin allowlist.**
+  `PATCH /api-keys/:id/allowed-origins` and the SDK's `setAllowedOrigins()`
+  already existed — only the Studio affordance was missing, so an allowlist
+  could be set at create time and never again. Tightening it, or fixing a
+  mistyped origin, meant rotating the token and redeploying whatever ships the
+  key, which defeats a control that exists precisely because the key is already
+  out in clients. The API-key detail panel now has an *Allowed origins* box,
+  shown only for publishable keys (the `Origin` check is browser-only; a secret
+  key is used server-to-server where no `Origin` exists). Save stays disabled
+  until the parsed list actually differs, and clearing the box — which widens
+  access — is confirmed rather than silently accepted. No migration, no seed,
+  no new endpoint.
+
+- **OpenSSF Scorecard** workflow with published results, plus the badge in the
+  README. Supply-chain posture is now measured on a schedule instead of
+  assumed.
+
+### Changed
+
+- **Dependency majors batched ([#326](https://github.com/khuepm/LumiBase/pull/326),
+  follow-ups in [#327](https://github.com/khuepm/LumiBase/pull/327)):** jose 6,
+  zod 4, node-cron 4, execa 10, `@types/node` 26, react/react-dom 19 alignment,
+  graphql 17, tailwind-merge 3, eslint-config-next 16. Two consequences worth
+  knowing about when you upgrade:
+  - **Node 22+ is now required** for `create-lumibase` (execa 10), enforced by
+    an engines field plus a runtime guard.
+  - **jose v6 removed the `KeyLike` export**; key typing moved to `CryptoKey`.
+    Anything importing `KeyLike` from jose transitively through LumiBase needs
+    the same change.
+
+  After pulling this release, run `pnpm install` before `pnpm test` — a stale
+  `node_modules` resolves zod 3 against zod-4 call sites and fails at import
+  time, which looks like broken tests rather than a stale lockfile.
+
+### Removed
+
+- **`apps/enterprise` submodule.** Referenced only by `.gitmodules` and docs —
+  no workflow, build, or workspace target depended on it, and it tracked a
+  stale branch. `apps/marketplace` stays (it is built by `pages-deploy.yml`,
+  `release.yml`, and `ci.yml`).
+
+### Fixed
+
+- **Public access grants were inert on the content API.**
+  `buildRequestPermissionContext` hardcoded `roleId: null` (two more call sites
+  hand-rolled the same literal). `withAuth` does set `roleId` to the site's
+  `public` role for an anonymous principal, but `PermissionService.compile()`
+  resolves roles from `user_sites`, `user_roles`, `api_key_roles` and
+  `ctx.roleId` — and for an anonymous principal the first three are empty by
+  definition. The role never reached the bundle, so every public grant compiled
+  to an empty policy set and the feature silently did nothing. `auth.roleId` is
+  now forwarded everywhere a principal is in scope.
+
+- **`/disable` for public access was not sticky.** A grant used to provision the
+  anonymous realm as a side effect, and since "enabled" is not a flag here — it
+  *is* the existence of the `public` role — that gave two independent ways to
+  turn anonymous access on. An operator who deliberately closed anonymous access
+  could have it silently reopened by any later grant call, leaving only
+  `realm_access_granted` in the audit trail and no `public_access_enabled`.
+  `POST /access/grants/public` now returns 409 `PUBLIC_ACCESS_DISABLED` while
+  the site has public access off, naming `/access/grants/public/enable` as the
+  way in. Only `public` is gated; `subscriber` is provisioned on first
+  registration and is not operator-togglable.
+
+- **Cache-penetration follow-ups (audit of the Req 19 implementation).** Five
+  defects found reviewing what shipped above:
+  - **The Delivery 404 was an oracle.** A shape-rejected identifier answered
+    `{"error":"Not found."}` while a real miss answered
+    `{"error":"Page not found."}`, so a prober could tell "malformed" from
+    "well-formed but absent" — the one thing the guard is documented not to
+    leak. Both paths now return the same body and headers, with a regression
+    test that fails if they diverge again.
+  - **`LUMIBASE_NEGATIVE_CACHE_TTL` was ignored on Cloudflare Workers.**
+    `SchemaService` read `process.env`, which does not carry wrangler vars, so
+    the TTL was always the 30s default and `0` could not disable tombstones on
+    that runtime. The TTL is now resolved from the request env and threaded
+    through `ItemServiceDeps` / `SchemaServiceDeps`.
+  - **The tombstone sat in front of the hot path.** `getCompiled` probed the
+    tombstone before the positive schema cache, so every lookup of a
+    *real* collection paid a second cache round-trip — and that runs on every
+    item list/detail/patch. Positive cache is checked first now; penetration
+    traffic still never reaches Postgres.
+  - **Half the tombstones were invisible in Prometheus.** Only the Delivery
+    routes incremented `cache_negative_hits_total` /
+    `cache_negative_writes_total`; collection-name tombstones did not, despite
+    being wired. Both now report.
+  - **Unbounded key material, plus a dead key.** Collection names bound the
+    alphabet but not the length, so a long name minted a multi-KB Redis key —
+    now clamped to 256 like slugs. The `neg:*:item:*` key and its `forget` call
+    in `ItemService.create` are gone: nothing ever wrote that key (item-by-id
+    reads are all authenticated, and tombstones are never served to credentialed
+    requests), so each item create spent a Redis round-trip deleting something
+    that never existed.
+
+- **Studio flashed a full-page spinner when the API was down.** `GET
+  /setup/state` kept auto-refetching on window focus/reconnect after a failure,
+  and the error screen was not latched during manual retry, so an unreachable
+  `api.lumibase.dev` looked like continuous refreshing.
+
+- **Landing / sponsor rewards ([#296](https://github.com/khuepm/LumiBase/issues/296)):**
+  `saveToDatabase()` in `apps/landing/src/lib/rewards.ts` was an exported no-op
+  — its body held only a `// TODO: Implement database save` comment, so nothing
+  a caller "saved" was ever written anywhere. The module also kept two
+  independent in-memory `Map`s (one in the lib, one in the GitHub Sponsors
+  webhook route), and `updateClaimStatus()` flipped `claimed` with no guard, so
+  a token could be claimed twice. The module is now `src/lib/rewards/` behind a
+  single `SponsorStore` interface: `InMemorySponsorStore` (default; dev/tests)
+  and `D1SponsorStore` (Cloudflare D1, persistent). Claiming is atomic in both —
+  D1 does it as one `UPDATE … WHERE reward_token = ? AND claimed = 0 RETURNING
+  tier` compare-and-set — so N concurrent claims of a valid token yield exactly
+  one success. The no-op `saveToDatabase()` and the unguarded
+  `updateClaimStatus()` are gone; `createSponsor()` persists and `claimReward()`
+  is the only claim path. The webhook's debug `GET` no longer lists reward
+  tokens (they are credentials). No upgrade step: the landing app is a static
+  export, the route handlers that use this live in `src/_api-routes-disabled/`,
+  and persistence activates only when a `SPONSORS_DB` D1 binding is configured
+  (see "Sponsor rewards store" in `apps/landing/README.md`). The `/rewards/claim`
+  page that used to POST at this module was removed separately as dead,
+  always-failing UI; the store now waits, correct, for the managed backend that
+  removal note anticipated.
+
+- **Deployment skills never had a KeyProvider.** The deployment skills
+  (`triggerDeployment`, `listDeploymentTargets`, `listDeployments`,
+  `getDeploymentStatus`) build a site-scoped `DeploymentService` from
+  `db + siteId + keys`, but *no* `AISecureHarness` construction site passed
+  `keys` — so every call failed closed with `DEPLOYMENTS_NOT_CONFIGURED`: the AI
+  chat path and MCP endpoint (`routes/ai.ts`, `routes/mcp.ts`), the
+  approval-execution path (an approved `triggerDeployment` resolved into a
+  configuration error), and queued agent runs. All four now pass the runtime
+  KeyProvider; `AgentRunWorkerDeps` gained an optional `keys: KeyProvider`,
+  threaded from `runtime.keys` where the Node/Docker consumer is registered
+  (`serve.ts`). Flow-driven deploys (`deploy:trigger`) were unaffected — the
+  flow run environment already supplied `keys`.
+
+- **Studio / Deployments page was unreachable.** `settings/deployments-page.tsx`
+  shipped complete — targets list, deploy trigger, status polling, build logs,
+  against the already-mounted `/api/v1/deployments` — but nothing linked to it:
+  no route in `router.tsx` and no entry in the settings sidebar, so the whole
+  feature was dead code from the client side. Registered
+  `/settings/deployments` (plus the `/$adminPath/settings/deployments` variant)
+  and added **Deployments** to the Integrations group of Settings. No API,
+  schema, or setup change — the page is reachable as soon as Studio updates.
+
+- **Security / mcp-server:** `cdc_subscription_replay` accepted its
+  `subscription_id` as a bare `z.string()` and encoded it with
+  `encodeURIComponent`, which leaves `..` intact — a crafted id reached
+  `/cdc/subscriptions/../replay` and re-pointed the call at a sibling endpoint.
+  The argument now uses `idPathSegmentSchema` + `encodePathSegment`. This is the
+  same path-traversal / confused-deputy class closed in 0.13.x; the CDC tools
+  landed afterwards and reintroduced it.
+
+- **Shell version drift could recur — `version:sync` now covers `src-tauri`.**
+  v0.24.1 existed only to hand-repair `apps/shell/src-tauri` metadata
+  (`tauri.conf.json`, `Cargo.toml`, `Cargo.lock`) that v0.24.0 shipped stale,
+  but the repair was a one-off edit: `scripts/sync-version.mjs` still swept
+  `package.json` files exclusively, so the three Tauri files drifted again the
+  moment the root version moved. They are now part of the sync (and of
+  `version:check`, which gates the release), with the `Cargo.lock` rewrite
+  pinned to the `lumibase-shell` entry so no third-party crate pin is touched.
+  A file that stops exposing its version where expected is reported as a
+  mismatch rather than skipped — silently syncing nothing is the failure mode
+  this guards against. `tauri.conf.json` is what the desktop auto-updater
+  compares against, so drift here ships a build that will not offer its own
+  update.
+
+- **CI: stale `apps/enterprise` gitlink broke the Scorecard workflow.** The
+  submodule's `.gitmodules` entry was removed without removing the `160000`
+  gitlink from the index, so `git submodule foreach` failed with `No url found
+  for submodule path 'apps/enterprise'`. That aborted checkout in the one
+  workflow using `persist-credentials: false` — Scorecard — which is why only
+  that job was red. The orphaned gitlink is gone.
+
+### Added — regression tripwires
+
+- **Harness KeyProvider tripwire.** `ai-harness-keys-context.test.ts` locks the
+  class rather than the four call sites: a source scan requires every
+  `new AISecureHarness({…})` that wires real services to also pass `keys`
+  (registry-only constructions, which never run a handler, are exempt), and a
+  registry check asserts each deployment skill really does fail with
+  `DEPLOYMENTS_NOT_CONFIGURED` without one — so the scan cannot pass vacuously
+  if the guard moves. Companion behavioural test
+  `agent-run-worker-keys.test.ts` drives a deployment skill through
+  `processAgentRunJob` end to end. Same shape as the ItemService RBAC-context
+  guard: a construction that silently degrades is caught at CI, not at runtime.
+  DoD §2b gains a matching checklist line for background/queue workers.
+
+- **Orphaned-page tripwire (Studio settings).** `settings/__tests__/deployments-page.test.tsx`
+  locks the class behind the fix above rather than the single page: a source scan
+  requires every `*-page.tsx` in `modules/settings/` to be referenced by
+  `router.tsx`, and every sidebar `to:` target to have a matching route path.
+  `deployments-route.test.tsx` complements it by driving the real route tree over
+  a memory history, so "the URL resolves to the page and the nav link points at
+  it" is asserted rather than assumed.
+
+- **Path-traversal tripwire (mcp-server).** `path-hardening.wiring.test.ts`
+  locks the class instead of the individual call sites: a source scan requires
+  every `/${…}` path interpolation in `tools/*.ts` to go through
+  `encodePathSegment`/`encodeMediaKey`, and a registry scan walks every
+  registered tool and fails if an argument that reaches a path segment accepts
+  `..`. Both halves are needed — encoding alone cannot neutralize `..`. The scan
+  found the CDC gap above.
+
+### Migrations
+
+- **`0012_public_role_least_privilege`** — adds two `CHECK` constraints:
+  `roles_public_least_privilege` on `lumibase_roles` and
+  `policies_public_least_privilege` on `lumibase_policies`. Both pin
+  `admin_access`/`app_access` (and `enforce_tfa` for policies) off for the
+  `public` system key, so an elevation flag on the anonymous role cannot be set
+  even by hand-written SQL or an import. The predicates use `is distinct from`
+  rather than `<>` so they evaluate FALSE-or-TRUE — not NULL — for the many
+  rows with a NULL `system_key`/`key`. Additive and non-destructive; no
+  backfill. If an existing row already carries an elevated `public` role the
+  `ALTER TABLE` will fail — clear those flags first, then re-run.
+
 ## [0.24.1] - 2026-07-21
 
 ### Version
@@ -352,83 +638,6 @@ _No unreleased changes yet._
 
 - `0007_cdc_change_feed` — Change Feed outbox/capture tables (additive,
   idempotent). No destructive changes.
-
-## [1.0.0] - 2026-07-11
-
-### Version
-
-- `v1.0.0`
-
-### Date
-
-- `2026-07-11`
-
-### Highlights
-
-- **First release under a semver stability guarantee.** `1.0.0` freezes the
-  public surface — REST/GraphQL API, `@lumibase/sdk` exports, the
-  `{ data, meta }` / `{ errors }` response format, header contracts
-  (`X-Lumi-Site`…), environment variable names/semantics, and setup-wizard
-  flags. From here, breaking changes are deferred to `2.0.0`; additive changes
-  ship in minors and bug/security fixes in patches. See the versioning policy in
-  the README.
-- **Policies are the source of truth for access.** The role→policy migration
-  reaches its stable shape: `admin_access`/`app_access` (plus `enforce_tfa`, IP
-  guards, and time windows) are owned by policies. Legacy role flags remain as a
-  compatibility fallback through 1.0 for rollback safety. A verified,
-  idempotent backfill materializes legacy role flags into policies on upgrade.
-- **Backward-compatible upgrade path from `0.6.x`.** Instances on `0.6.x`–
-  `0.21.x` upgrade in place; the full "Upgrading to 1.0" runbook documents which
-  sources go direct, which need an intermediate stop, and the pre-`0.17.0`
-  re-import boundary. See Upgrade notes below.
-- **Golden-path E2E gate in CI.** No tag ships on hand-verified flows: CI now
-  drives setup wizard → create site → create collection → CRUD item → publish →
-  read via the public API, with a two-site isolation check.
-
-### Added
-
-- **CI golden-path E2E gate.** A new `e2e-golden-path` job in
-  `.github/workflows/ci.yml` exercises the end-to-end content lifecycle
-  (setup → site → collection → item CRUD → publish → public read) plus
-  cross-tenant isolation, on every PR and push to `main`. The v1 release
-  criteria (§3) require this gate to be green before tagging.
-- **"Upgrading to 1.0" operations runbook.** `docs/en/operations/upgrades.md`
-  (VI mirror in `docs/vi/`) gains a version-specific section: a supported-source
-  matrix, the RBAC role→policy backfill with its idempotent SQL and zero-row
-  verification query, and rollback guidance. Surfaced under a new "Operations"
-  docs category.
-
-### Changed
-
-- **RBAC access model finalized on policies.** Effective access continues to be
-  computed as `role flags OR active policy flags` during the 1.0 compatibility
-  window; the role flag columns are retained (not dropped) so rollback stays
-  safe. They are scheduled to drop in a later release only after
-  `LUMIBASE_RBAC_LEGACY_ROLE_FLAGS=false` has shipped and been verified.
-
-### Security
-
-- No new advisories in this release. The v1 security audit
-  (`docs/en/security/cwe-top-100-audit.md`) is the release gate: every
-  Partial/Not-addressed CWE must be fixed or accepted-with-rationale before the
-  `v1.0.0` tag. CWE-521 (password-policy alignment, `register` → 12-char
-  minimum) is tracked as a required v1 fix.
-
-### Upgrade notes
-
-- **Read `docs/en/operations/upgrades.md` → "Upgrading to 1.0" before
-  upgrading.** Summary:
-  - `0.18.x`–`0.21.x` → direct, no manual data step.
-  - `0.6.x`–`0.17.x` → direct, plus the RBAC role→policy backfill (run against
-    staging, verify the post-check returns zero rows).
-  - Before `0.17.0` (unprefixed tables) → **not an in-place upgrade**; export and
-    re-import into a fresh `1.0.0` install.
-  - Before `0.6.0` → upgrade to an intermediate `0.17.x`–`0.21.x` release first,
-    verify, then upgrade to `1.0.0`.
-- **No destructive schema change over `0.21.x`.** Application rollback to the
-  previous `0.21.x` deployment remains compatible with the 1.0 database. The
-  backfill is separately reversible during the compatibility window (delete the
-  `legacy_role_flags_%` policies; role flags are untouched).
 
 ## [0.21.0] - 2026-07-08
 
@@ -2336,7 +2545,7 @@ changelog and the published GitHub Release notes:
 
 - Added extension permission targets plus enforcement for extension management,
   extension endpoint execution, and extension data access.
-- Documented Lumibase extension access behavior against Directus and recorded
+- Documented LumiBase extension access behavior against Directus and recorded
   product-differentiating permission controls for future marketing.
 
 #### Admin Setup & Recovery

@@ -1,10 +1,10 @@
 # Triển khai Cloudflare
 
-Lumibase dùng hai target Cloudflare chính: CMS API chạy trên Workers và site tài liệu chạy trên Cloudflare Pages.
+LumiBase dùng hai target Cloudflare chính: CMS API chạy trên Workers và site tài liệu chạy trên Cloudflare Pages.
 
 ## Điều kiện trước khi deploy
 
-- Node.js 20 trở lên.
+- Node.js 22 trở lên.
 - Cài dependencies bằng `pnpm install`.
 - Wrangler đã đăng nhập với quyền ghi Workers, Pages, KV, R2, Hyperdrive và Durable Objects.
 - Đã chuẩn bị secret production cho PostgreSQL, Cloudflare Access và JWT.

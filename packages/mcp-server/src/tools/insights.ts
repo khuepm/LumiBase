@@ -42,7 +42,7 @@ const panelQueryShape = {
   field: z.string().min(1).optional().describe('Field to aggregate (required unless aggregate=count).'),
   groupBy: z.string().min(1).optional().describe('Field to group rows by (produces a series).'),
   filter: z
-    .record(z.unknown())
+    .record(z.string(), z.unknown())
     .optional()
     .describe('Directus-style condition rule, e.g. { status: { _eq: "published" } }.'),
   dateRange: dateRangeSchema.optional(),
@@ -86,7 +86,7 @@ export function registerInsightsTools(server: McpServer, client: LumiBaseClient)
         dashboardId: idPathSegmentSchema,
         panelId: idPathSegmentSchema,
         filter: z
-          .record(z.unknown())
+          .record(z.string(), z.unknown())
           .optional()
           .describe('Override the panel filter for this run (Directus-style condition rule).'),
         dateRange: dateRangeSchema.optional().describe('Override the panel date range for this run.'),

@@ -54,6 +54,26 @@ packages/
 5. **HITL for dangerous AI actions**: Skills requiring `schema:write` or `delete*` must create an `ai_approvals` row and wait for human approval before executing.
 6. **Config-as-code**: Collections, fields, and permissions can be exported/imported as JSON/YAML (`apps/cms/scripts/config-cli.ts`).
 7. **Cache tagging**: When data changes, invalidate all cache keys tagged with that entity.
+8. **Endpoint deprecation (opt-in only)**: `withDeprecation` in `apps/cms/src/middleware/deprecation.ts` is a reusable RFC 8594 helper. **Do not** mount it on live endpoints. Attach it **only** when an explicit instruction says to retire / deprecate / sunset a specific route (or router). Leaving it unwired is correct when nothing is being retired.
+
+### When an instruction says to deprecate an endpoint
+
+1. Import `withDeprecation` from `apps/cms/src/middleware/deprecation.ts`.
+2. Attach it to **only** the retiring route or sub-router (never the global app middleware chain).
+3. Prefer full dates + a changelog `link` so clients get a migration window:
+
+```typescript
+import { withDeprecation } from '../middleware/deprecation'
+
+// Attach ONLY to the route/router being retired — not globally
+legacyRouter.use('*', withDeprecation({
+  since: '2026-08-01',
+  sunset: '2026-11-01',
+  link: 'https://docs.lumibase.dev/changelog#items-legacy',
+}))
+```
+
+Headers emitted: `Deprecation` (HTTP-date or `true`), optional `Sunset`, optional `Link rel="deprecation"`. All options are optional — omit dates to emit only `Deprecation: true`. Document the change in the changelog and, if consumers exist, mention FE handling in `docs/en/tutorials/nextjs-quickstart.md` § Production & security notes.
 
 ---
 

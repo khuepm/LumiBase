@@ -19,6 +19,31 @@ const APP_PACKAGE_PATHS = [
   'apps/consumer/package.json',
 ];
 
+// The Tauri shell carries the release version in three files that are not
+// package.json, so the package sweep above cannot see them. tauri.conf.json is
+// the value the desktop auto-updater compares against, which is why drifting
+// here is not cosmetic — v0.24.1 exists solely to repair that drift after
+// v0.24.0 shipped with stale metadata. Syncing them here rather than by hand
+// is what keeps that from recurring.
+const EXTRA_VERSION_FILES = [
+  {
+    path: 'apps/shell/src-tauri/tauri.conf.json',
+    // Top-level "version" — the first such key in the file.
+    pattern: /^(\s*"version"\s*:\s*")([^"]*)(")/m,
+  },
+  {
+    path: 'apps/shell/src-tauri/Cargo.toml',
+    // [package] version — the first bare `version = "…"` at column 0.
+    pattern: /^(version\s*=\s*")([^"]*)(")/m,
+  },
+  {
+    path: 'apps/shell/src-tauri/Cargo.lock',
+    // Only the lumibase-shell entry; every other [[package]] block pins a
+    // third-party crate whose version must not be touched.
+    pattern: /^(name = "lumibase-shell"\nversion = ")([^"]*)(")/m,
+  },
+];
+
 async function readJson(filePath) {
   const content = await fs.readFile(filePath, 'utf8');
   return { content, data: JSON.parse(content) };
@@ -106,6 +131,35 @@ for (const relativePackagePath of await packagePaths()) {
   if (!CHECK_MODE) {
     await fs.writeFile(absolutePackagePath, withSyncedVersion(content, rootVersion));
     synced.push(relativePackagePath);
+  }
+}
+
+for (const { path: relativePath, pattern } of EXTRA_VERSION_FILES) {
+  const absolutePath = path.join(REPO_ROOT, relativePath);
+  if (!(await pathExists(absolutePath))) {
+    continue;
+  }
+
+  const content = await fs.readFile(absolutePath, 'utf8');
+  const match = content.match(pattern);
+
+  if (!match) {
+    // A file that no longer exposes the version where we expect it would sync
+    // silently and ship stale metadata, which is the exact failure this list
+    // exists to prevent — so treat it as a mismatch rather than skipping.
+    mismatches.push({ packagePath: relativePath, version: '(version field not found)' });
+    continue;
+  }
+
+  if (match[2] === rootVersion) {
+    continue;
+  }
+
+  mismatches.push({ packagePath: relativePath, version: match[2] });
+
+  if (!CHECK_MODE) {
+    await fs.writeFile(absolutePath, content.replace(pattern, `$1${rootVersion}$3`));
+    synced.push(relativePath);
   }
 }
 

@@ -1,15 +1,28 @@
+---
+version: 2
+lastUpdated: 2026-07-27T23:50:23.218Z
+sourceLang: vi
+translatedFrom: vi
+sourceHash: 00f15e0eb7ed5ea0
+mtEngine: claude
+syncStatus: machine-translated
+codeVerified: 2026-07-27T23:50:23.218Z
+codeVerifiedHash: 00f15e0eb7ed5ea0
+codeVerifiedClaims: 6
+---
+
 # Cloudflare Access & Custom JWT Authentication
 
-Tài liệu này hướng dẫn chi tiết cách cấu hình và hoạt động của hệ thống xác thực (Authentication) và phân quyền (Authorization) kết hợp giữa **Cloudflare Access** (dành cho Admin/Studio) và **Custom JWT** (dành cho Frontend End-Users).
+This document explains in detail how to configure — and how the system behaves for — authentication and authorization combining **Cloudflare Access** (for Admin/Studio) with **Custom JWT** (for frontend end-users).
 
 ---
 
-## 1. Tổng quan Kiến trúc (Architecture Overview)
+## 1. Architecture overview
 
-Lumibase sử dụng mô hình xác thực Hybrid:
-1. **Studio Admins (Môi trường Quản lý)**: Được bảo vệ bởi Cloudflare Zero Trust (Access). Khi đăng nhập thành công, Cloudflare Access tự động đính kèm JWT assertion trong header `Cf-Access-Jwt-Assertion`.
-2. **Frontend End-Users (Người dùng cuối)**: Đăng ký và đăng nhập trực tiếp qua Custom Auth endpoints (`/auth/register`, `/auth/login`) của Hono CMS API. Trả về Custom JWT ký bằng Web Crypto API (HS256).
-3. **Bypass Cloudflare Access cho API**: Các client ở frontend gọi API cần bypass Cloudflare Access thông qua **Cloudflare Service Token** (được đính kèm trong header `CF-Access-Client-Id` và `CF-Access-Client-Secret`).
+LumiBase uses a hybrid authentication model:
+1. **Studio admins (the management surface)**: protected by Cloudflare Zero Trust (Access). On successful sign-in, Cloudflare Access automatically attaches a JWT assertion in the `Cf-Access-Jwt-Assertion` header.
+2. **Frontend end-users**: register and sign in directly through the Hono CMS API's custom auth endpoints (`/auth/register`, `/auth/login`). These return a Custom JWT signed with the Web Crypto API (HS256).
+3. **Bypassing Cloudflare Access for API calls**: frontend clients calling the API need to bypass Cloudflare Access using a **Cloudflare Service Token** (sent in the `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers).
 
 ```mermaid
 sequenceDiagram
@@ -20,117 +33,117 @@ sequenceDiagram
     participant BE as CMS Worker (Hono)
     participant DB as PostgreSQL (Drizzle)
 
-    Note over Admin, CF: ── Luồng Xác thực Admin (Studio) ──
-    Admin->>CF: Truy cập Studio / Gọi API Admin
-    CF->>CF: Yêu cầu đăng nhập SSO/MFA
-    CF->>BE: Chuyển tiếp Request + Cf-Access-Jwt-Assertion
-    BE->>BE: Xác thực CF JWT qua JWKS Certificates
-    BE->>DB: Truy vấn User theo Email & kiểm tra Quyền
-    BE-->>Admin: Cho phép truy cập Studio / Thực thi API
+    Note over Admin, CF: ── Admin (Studio) authentication flow ──
+    Admin->>CF: Open Studio / call an Admin API
+    CF->>CF: Require SSO/MFA sign-in
+    CF->>BE: Forward request + Cf-Access-Jwt-Assertion
+    BE->>BE: Verify the CF JWT against the JWKS certificates
+    BE->>DB: Look the user up by email and check permissions
+    BE-->>Admin: Allow Studio access / execute the API call
 
-    Note over User, CF: ── Luồng Xác thực Người dùng cuối (Frontend) ──
-    User->>CF: Đăng ký / Đăng nhập / Lấy tin (Đính kèm Client-Id/Secret)
-    CF->>CF: Bypass Cloudflare Access nhờ Service Token
-    CF->>BE: Chuyển tiếp Request tới CMS API
-    alt Đăng ký / Đăng nhập (Public)
-        BE->>DB: Kiểm tra mật khẩu (PBKDF2) / Tạo Custom JWT
-        BE-->>User: Trả về Custom JWT Token
-    else Gọi API yêu cầu quyền (Private)
-        User->>BE: Đính kèm Authorization: Bearer <Custom-JWT>
-        BE->>BE: Verify Custom JWT qua JWT_SECRET
-        BE->>DB: RLS Query theo user_id & site_id
-        BE-->>User: Trả về Dữ liệu
+    Note over User, CF: ── End-user (frontend) authentication flow ──
+    User->>CF: Register / sign in / fetch content (with Client-Id/Secret)
+    CF->>CF: Bypass Cloudflare Access via the Service Token
+    CF->>BE: Forward the request to the CMS API
+    alt Register / sign in (public)
+        BE->>DB: Verify the password (PBKDF2) / mint a Custom JWT
+        BE-->>User: Return the Custom JWT token
+    else Permission-gated API call (private)
+        User->>BE: Send Authorization: Bearer <Custom-JWT>
+        BE->>BE: Verify the Custom JWT against JWT_SECRET
+        BE->>DB: RLS query scoped by user_id & site_id
+        BE-->>User: Return the data
     end
 ```
 
 ---
 
-## 2. Phần Xác thực (Authentication)
+## 2. Authentication
 
-### A. Cấu hình Cloudflare Access (Cho Studio & Admin API)
+### A. Configuring Cloudflare Access (for Studio & the Admin API)
 
-Để cấu hình Cloudflare Access trên Cloudflare Dashboard:
+To configure Cloudflare Access in the Cloudflare dashboard:
 
-1. **Tạo Application**:
-   - Truy cập **Zero Trust** -> **Access** -> **Applications**.
-   - Nhấp vào **Add an application** -> Chọn **Self-hosted**.
-   - Cấu hình Domain:
-     - Application URL: `studio.yourdomain.com` (Tên miền của Studio).
-     - Application URL: `api.yourdomain.com/api/v1/admin/*` (Các endpoints Admin nguy hiểm).
-2. **Cấu hình Identity Providers**:
-   - Thêm các nhà cung cấp như Google Workspace, GitHub, Microsoft AzureAD, hoặc Email OTP.
-3. **Cấu hình Policy**:
-   - Chọn đối tượng được truy cập (ví dụ: chỉ cho phép email thuộc domain công ty `@yourcompany.com`).
-4. **Lấy tham số cấu hình cho CMS Worker**:
-   - **Audience (AUD)**: Lấy từ mục **Application Audience (AUD)** ở phần settings của Application trên Cloudflare.
-   - **Certificates URL**: Địa chỉ JWKS công khai của Cloudflare để xác thực chữ ký của token:
+1. **Create an application**:
+   - Go to **Zero Trust** → **Access** → **Applications**.
+   - Click **Add an application** → choose **Self-hosted**.
+   - Configure the domains:
+     - Application URL: `studio.yourdomain.com` (your Studio hostname).
+     - Application URL: `api.yourdomain.com/api/v1/admin/*` (the dangerous admin endpoints).
+2. **Configure identity providers**:
+   - Add providers such as Google Workspace, GitHub, Microsoft Azure AD, or Email OTP.
+3. **Configure a policy**:
+   - Choose who may access it (for example, only emails on your company domain `@yourcompany.com`).
+4. **Collect the configuration values for the CMS Worker**:
+   - **Audience (AUD)**: taken from **Application Audience (AUD)** in the application's settings in Cloudflare.
+   - **Certificates URL**: Cloudflare's public JWKS address, used to verify the token signature:
      `https://<your-team-domain>.cloudflareaccess.com/cdn-cgi/access/certs`
-   - Cấu hình các tham số này vào file `.dev.vars` (khi chạy local) hoặc Cloudflare Environment Variables:
+   - Put these into `.dev.vars` (for local runs) or into Cloudflare environment variables:
      - `CF_ACCESS_CERTS_URL`
      - `CF_ACCESS_AUDIENCE`
 
-### B. Cấu hình Bypass Service Token (Cho Frontend Client)
+### B. Configuring a bypass Service Token (for frontend clients)
 
-Để các ứng dụng Frontend của bạn có thể gọi API tới CMS (ví dụ: lấy bài viết, đăng ký người dùng) mà không bị Cloudflare Access chặn lại hiển thị trang login:
+So your frontend applications can call the CMS API (fetch articles, register a user, …) without Cloudflare Access intercepting them with a login page:
 
-1. **Tạo Service Token**:
-   - Tại Cloudflare Zero Trust -> **Access** -> **Service Tokens** -> Chọn **Create Service Token**.
-   - Đặt tên (ví dụ: `lumibase-frontend-api`) và copy lấy `Client ID` cùng `Client Secret`.
-2. **Cấu hình Policy cho Endpoint công khai**:
-   - Mở Application đã cấu hình bảo vệ API của bạn.
-   - Tạo một Policy mới có Action là **Bypass**.
-   - Trong phần **Rules** -> Chọn **Include** -> Chọn **Service Token** -> Chọn Token `lumibase-frontend-api` vừa tạo.
-3. **Gọi API từ Frontend**:
-   - Mọi request từ ứng dụng Frontend gửi lên API của CMS bắt buộc phải đính kèm 2 headers sau:
+1. **Create a Service Token**:
+   - In Cloudflare Zero Trust → **Access** → **Service Tokens** → choose **Create Service Token**.
+   - Name it (e.g. `lumibase-frontend-api`) and copy the `Client ID` and `Client Secret`.
+2. **Add a policy for the public endpoints**:
+   - Open the application protecting your API.
+   - Create a new policy with the action **Bypass**.
+   - Under **Rules** → choose **Include** → choose **Service Token** → select the `lumibase-frontend-api` token you just created.
+3. **Call the API from the frontend**:
+   - Every request your frontend sends to the CMS API must carry these two headers:
      ```http
      CF-Access-Client-Id: <client-id>
      CF-Access-Client-Secret: <client-secret>
      ```
 
-### C. Môi trường Local Development (Dev Mock)
-Khi chạy local dev (với biến `LUMIBASE_DEV_AUTH="true"` trong file `.dev.vars`), bạn có thể bỏ qua hoàn toàn Cloudflare Access bằng cách đính kèm token giả lập:
-- Gửi header: `Authorization: Bearer dev:<email>:<role>` (ví dụ: `Authorization: Bearer dev:admin@lumibase.dev:admin`).
-- CMS Worker sẽ tự động giải mã thành một Admin User thuộc site đang thao tác.
+### C. Local development (dev mock)
+When running locally (with `LUMIBASE_DEV_AUTH="true"` in `.dev.vars`), you can skip Cloudflare Access entirely by sending a mock token:
+- Send the header `Authorization: Bearer dev:<email>:<role>` (e.g. `Authorization: Bearer dev:admin@lumibase.dev:admin`).
+- The CMS Worker resolves it to an admin user on the site being operated on.
 
 ---
 
-## 3. Phần Phân quyền (Authorization)
+## 3. Authorization
 
-Khi một request đi qua middleware `withAuth()`, hệ thống sẽ thiết lập đối tượng xác thực đồng nhất vào context `c.get('auth')` (Interface `AuthPrincipal`):
+Once a request passes through the `withAuth()` middleware, the system sets a uniform authentication object on the context at `c.get('auth')` (the `AuthPrincipal` interface):
 
 ```typescript
 export interface AuthPrincipal {
-  externalId?: string; // Dành cho Admin (chứa sub/email từ Cloudflare Access)
-  userId?: string;     // Dành cho Frontend User (chứa id gốc trong PostgreSQL)
-  email?: string;      // Email định danh
-  roles?: string[];    // Danh sách vai trò (ví dụ: ['admin'] hoặc ['member'])
-  isFrontendUser?: boolean; // true nếu đăng nhập qua Custom JWT
+  externalId?: string; // For admins (holds sub/email from Cloudflare Access)
+  userId?: string;     // For frontend users (holds the underlying PostgreSQL id)
+  email?: string;      // Identifying email
+  roles?: string[];    // Role list (e.g. ['admin'] or ['member'])
+  isFrontendUser?: boolean; // true when signed in via Custom JWT
 }
 ```
 
-### A. Phân quyền ở mức Căn bản (Role-Based Access Control)
-Quy trình kiểm tra quyền hạn của User:
+### A. Baseline authorization (role-based access control)
+How a user's permissions are checked:
 1. **Admin (isFrontendUser = false)**:
-   - Hệ thống so khớp `externalId` (hoặc email) lấy từ Cloudflare Access JWT với bảng `users` trong Postgres.
-   - Nếu user chưa tồn tại trong DB, hệ thống sẽ tự động đăng ký mới (JIT provisioning) với trạng thái `active`.
-   - Quyền hạn (Roles/Policies) được cấu hình trực tiếp từ trang quản trị Studio.
-2. **End-Users (isFrontendUser = true)**:
-   - Các API đăng ký và đăng nhập được miễn kiểm tra xác thực nhờ cấu hình bypass đường dẫn:
-     `/api/v1/auth/register` và `/api/v1/auth/login`.
-   - Các API còn lại kiểm tra tính hợp lệ của chữ ký Custom JWT (`JWT_SECRET`).
-   - Mặc định sau khi đăng nhập thành công, End-user được gán vai trò `member` gắn với `site_id` của request.
+   - The system matches the `externalId` (or email) from the Cloudflare Access JWT against the `users` table in Postgres.
+   - If the user does not exist in the DB yet, it is registered automatically (JIT provisioning) with status `active`.
+   - Roles/policies are configured directly from the Studio admin pages.
+2. **End-users (isFrontendUser = true)**:
+   - The register and sign-in APIs are exempt from the auth check via path bypasses:
+     `/api/v1/auth/register` and `/api/v1/auth/login`.
+   - All other APIs verify the Custom JWT signature (`JWT_SECRET`).
+   - By default, after a successful sign-in an end-user is assigned the `member` role bound to the request's `site_id`.
 
-### B. Bảo mật Multi-Tenancy (Row-Level Security)
-Lumibase thực thi multi-tenancy nghiêm ngặt ở tầng database nhờ middleware `withRls()` của Hono kết hợp với cơ chế Row-Level Security (RLS) của PostgreSQL:
+### B. Multi-tenancy security (row-level security)
+LumiBase enforces strict multi-tenancy at the database layer, using Hono's `withRls()` middleware together with PostgreSQL row-level security (RLS):
 
-1. **Xác định Site**: `withTenant()` middleware đọc header `X-Lumi-Site` để lấy `siteId` hiện tại.
-2. **Thiết lập DB context**: `withRls()` thực thi câu lệnh SQL:
+1. **Resolve the site**: the `withTenant()` middleware reads the `X-Lumi-Site` header to get the current `siteId`.
+2. **Set the DB context**: `withRls()` executes:
    ```sql
    SELECT set_config('app.site_id', '<siteId>', true);
    ```
-3. **RLS Policy**: Mọi câu lệnh truy vấn dữ liệu sau đó (Drizzle ORM) sẽ được Postgres tự động lọc điều kiện RLS dựa trên cấu hình:
+3. **RLS policy**: every subsequent query (via Drizzle ORM) is filtered automatically by Postgres according to:
    ```sql
    CREATE POLICY tenant_isolation_policy ON <table_name>
    FOR ALL USING (site_id = current_setting('app.site_id'));
    ```
-   *Điều này đảm bảo người dùng hoặc admin của site này hoàn toàn không thể đọc/ghi dữ liệu của site khác, ngay cả khi viết code lỗi thiếu điều kiện WHERE.*
+   *This means a user or admin of one site cannot read or write another site's data at all — even if some code is buggy and omits its WHERE clause.*

@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T10:26:33.340Z
+sourceLang: en
+contentHash: 2d9ebb23bcc28c05
+codeVerified: 2026-07-28T10:26:33.340Z
+codeVerifiedHash: 2d9ebb23bcc28c05
+codeVerifiedClaims: 14
+---
+
 # Shared-domain environments (dev / staging / demo)
 
 LumiBase's non-production environments serve **Studio and the CMS API from a

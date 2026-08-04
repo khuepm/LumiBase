@@ -1,8 +1,27 @@
 # Nhiệm vụ: dịch docs EN↔VI — LumiBase
 
-**Branch:** `docs/i18n-full-translation` (PR [#205](https://github.com/khuepm/LumiBase/pull/205))
-**Mục tiêu:** dịch thủ công 94 file còn lại (+ 1 conflict cần người quyết), gộp vào PR #205
-duy nhất. **Không mở PR mới, không đẩy vào `main` trực tiếp.**
+> ⚠️ **CẬP NHẬT 2026-08-02 — quy trình đã được chốt vào tooling.**
+> CI **không còn** giả vờ dịch. Job `push` của `docs-i18n-sync.yml` giờ chạy
+> `--preserve-only` (rescue nội dung dán sai locale + stamp version) và commit với
+> message đúng việc nó làm; `sync.mjs --apply` không còn âm thầm hạ cấp khi thiếu
+> `ANTHROPIC_API_KEY` mà **thoát mã 2**. `stamp-pair.mjs` ghi
+> `mtEngine: manual` / `syncStatus: human-translated` thay vì mạo nhận là output của
+> API. Nghĩa là: mọi file trong bảng dưới đây chỉ giảm đi khi có người thật sự dịch —
+> không có tiến trình nền nào làm hộ. Ảnh chụp tại 0.25.0: **143 cặp, 88 up-to-date,
+> 55 còn lại**.
+>
+> ⚠️ **CẬP NHẬT 2026-07-25 — ĐỌC TRƯỚC KHI LÀM.**
+> PR [#205](https://github.com/khuepm/LumiBase/pull/205) **đã merge** ngày 2026-07-06 và
+> chỉ chứa batch 1 (17 file nhóm A). Chỉ dẫn "gộp vào PR #205" bên dưới **đã lạc hậu** —
+> PR đó đóng rồi, không thể thêm commit. 93 file còn lại hiện **không có PR nào đang mở**.
+>
+> Việc còn lại phải mở **branch mới từ `main`** (ví dụ `docs/i18n-batch-2`) và một PR mới.
+> Không stack commit lên history đã merge.
+>
+> Chạy `pnpm docs:i18n:detect` để lấy danh sách hiện hành thay vì tin bảng ở mục 3 —
+> bảng đó chụp trạng thái tháng 7 và có thể đã lệch.
+
+**Mục tiêu:** dịch thủ công số file còn lại (+ conflict cần người quyết).
 **Không dùng `ANTHROPIC_API_KEY`** — mọi bản dịch phải được một LLM đọc và viết tay
 (xem "Vì sao thủ công" ở cuối file).
 
@@ -29,32 +48,53 @@ detect, đó là do bạn chưa `git pull` bản mới nhất của branch — p
      kỹ thuật thường giữ nguyên (ví dụ "headless CMS", "Edge", "runtime", "webhook").
    - Nếu file đích **đã tồn tại** (nhóm B/C) — đây là việc dịch lại/ghi đè, không phải
      tạo mới. Đọc bản cũ trước để giữ phong cách nhất quán nếu còn phù hợp.
-3. **Stamp provenance** — BẮT BUỘC, đừng tự viết front matter tay:
+3. **Kiểm tra claim về source code** — BẮT BUỘC, trước khi stamp:
    ```bash
-   node scripts/docs-i18n/stamp-pair.mjs <rel> <src>
+   pnpm docs:i18n:verify <rel>
+   ```
+   Script này trích các khẳng định file/env-var/API-route trong doc rồi đối chiếu
+   với source tree. Vì sao bắt buộc: hash khớp **không** có nghĩa nội dung đúng —
+   hai bản dịch có thể khớp nhau hoàn hảo và cùng sai (cùng mô tả một endpoint đã
+   bị xoá). Nếu có finding, sửa doc (hoặc sửa code) trước khi đi tiếp.
+
+   Nếu script báo `unverifiable` cho file của bạn thì nó **không** pass — chỉ nghĩa
+   là tooling không có gì để kiểm. File đó cần người đọc lại bằng mắt, và stamp
+   **không** kèm `--verified`.
+
+4. **Stamp provenance** — BẮT BUỘC, đừng tự viết front matter tay:
+   ```bash
+   node scripts/docs-i18n/stamp-pair.mjs <rel> <src> --verified
    ```
    Ví dụ: file #1 `architecture/physical-collections.md` có `src=en` →
-   `node scripts/docs-i18n/stamp-pair.mjs architecture/physical-collections.md en`
-   Script này dùng chính các hàm hash/front-matter của `sync.mjs` nên provenance
-   khớp tuyệt đối với cách tooling chính thức ghi.
-4. **Xác minh**:
+   `node scripts/docs-i18n/stamp-pair.mjs architecture/physical-collections.md en --verified`
+   Script dùng chính các hàm hash/front-matter của `sync.mjs` nên provenance khớp
+   tuyệt đối với cách tooling chính thức ghi. `--verified` chạy lại bước 3 và **từ
+   chối** ghi cờ `codeVerified` nếu còn finding — nên không thể đánh dấu "khớp hoàn
+   toàn" cho một doc chưa được kiểm. Bỏ `--verified` khi file thuộc diện
+   `unverifiable`.
+
+   Version được đánh cho **cả hai** locale, và chỉ tăng khi nội dung thực sự đổi —
+   stamp lại nhiều lần không làm version phình lên, nên số version hai bên luôn
+   so sánh được với nhau.
+
+5. **Xác minh cặp EN/VI**:
    ```bash
    nvm use 24   # bắt buộc — corepack/pnpm lỗi trên Node cũ hơn
    node scripts/docs-i18n/sync.mjs
    ```
    Chạy chế độ plan (không flag), chỉ đọc. Xem `docs/.i18n/last-report.json`, tìm
-   `rel` của bạn — phải là `"type": "up-to-date"`. Nếu không, đọc lại bước 2/3.
-5. **Dọn artifact máy trước khi commit** — bước này dễ quên và sẽ tạo diff rác:
+   `rel` của bạn — phải là `"type": "up-to-date"`. Nếu không, đọc lại bước 2/4.
+6. **Dọn artifact máy trước khi commit** — bước này dễ quên và sẽ tạo diff rác:
    ```bash
    git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md
    ```
-   Hai file này bị ghi lại mỗi lần chạy detect ở bước 4. Chúng **không phải** nội
+   Hai file này bị ghi lại mỗi lần chạy detect ở bước 5. Chúng **không phải** nội
    dung dịch — không commit chúng cùng bản dịch (nếu cả nhóm đồng ý bạn có thể
    commit chúng RIÊNG ở cuối, nhưng không bắt buộc và dễ gây conflict nếu nhiều agent
    cùng ghi).
-6. **Cập nhật bảng nhiệm vụ** (mục 3) — đổi cột Trạng thái của dòng đó thành `DONE`
+7. **Cập nhật bảng nhiệm vụ** (mục 3) — đổi cột Trạng thái của dòng đó thành `DONE`
    và cột Agent thành tên/id của bạn, trong CÙNG commit với bản dịch.
-7. **Commit**:
+8. **Commit**:
    ```bash
    git add docs/en/<rel> docs/vi/<rel> docs/.i18n/TASKS.md
    git commit --no-verify -m "docs(i18n): translate <rel> to <VI|EN>"
@@ -87,7 +127,25 @@ Nếu bạn là agent DUY NHẤT (chạy tuần tự qua nhiều phiên), vẫn 
 (bỏ qua bước "claim trước", cứ đánh `DONE` sau khi xong) để phiên sau biết tiến độ
 chính xác mà không cần chạy lại detect.
 
-## 3. Bảng nhiệm vụ (94 file)
+## 3. Bảng nhiệm vụ
+
+> ⚠️ **Số liệu trong bảng này là ảnh chụp tháng 7 và ĐÃ LỆCH.** Nguồn sự thật là
+> `pnpm docs:i18n:detect` → `docs/.i18n/last-report.json`. Chạy nó trước khi claim
+> file, đừng tin cột Trạng thái ở đây.
+>
+> **Ảnh chụp 2026-07-25** (sau đợt làm trên branch `claude/role-permission-hierarchy-vny49f`):
+> 141 cặp — **62 up-to-date**, **79 còn lại**. Đã xong trong đợt đó:
+>
+> - 3 file thiếu bản EN → còn 1 (`features/permission-builder-directus-investigation.md`, 1051 dòng)
+> - 16 file `docs/en/` chứa tiếng Việt → còn 6: `features/ai-first-specification.md` (315),
+>   `roadmap/post-ga-walkthrough.md` (234), `roadmap/studio-content-slices.md` (211),
+>   `features/collection-preview.md` (157), `ui/studio-ui-spec.md` (138)
+> - Chưa chạm: 28 file thiếu bản VI (~5700 dòng), 42 cặp `source changed` (~5854 dòng),
+>   3 conflict cần người quyết (`features/user-management.md`, `mcp/index.md`,
+>   `mcp/mcp-application-analysis.md`)
+>
+> Nhóm `docs/en/` chứa tiếng Việt được ưu tiên trước vì EN là locale mặc định — người
+> đọc English đang bị phục vụ tiếng Việt, đó là lỗi lộ ra ngoài nặng nhất trong backlog.
 
 Sắp theo nhóm rồi theo độ dài tăng dần trong nhóm. Ưu tiên làm nhóm A/D trước (an
 toàn — chỉ tạo file mới hoặc dịch chiều hiếm, không ghi đè). Nhóm B/C ghi đè nội
@@ -221,7 +279,15 @@ so), tóm tắt khác biệt, và báo lại cho người điều phối (không
 
 `scripts/docs-i18n/sync.mjs --apply` **có thể** tự dịch bằng Claude API nếu
 `ANTHROPIC_API_KEY` được set — nhưng quyết định của người điều phối dự án là **không**
-dùng đường đó cho batch này (đã cân nhắc chi phí API + muốn kiểm soát chất lượng dịch
-qua LLM đọc hiểu trực tiếp thay vì pipeline không giám sát). Đừng tự thêm key vào
-môi trường hoặc đề xuất chạy `--apply` để "xong nhanh hơn" — nếu bạn thấy cách đó rõ
-ràng tốt hơn, hỏi người điều phối, không tự quyết.
+dùng đường đó (đã cân nhắc chi phí API + muốn kiểm soát chất lượng dịch qua LLM đọc
+hiểu trực tiếp thay vì pipeline không giám sát). Đừng tự thêm key vào môi trường hoặc
+đề xuất chạy `--apply` để "xong nhanh hơn" — nếu bạn thấy cách đó rõ ràng tốt hơn,
+hỏi người điều phối, không tự quyết.
+
+Quyết định này giờ được tooling thi hành, không chỉ nằm trong văn bản:
+
+- CI không truyền secret nào cho `sync.mjs` nữa; job `push` chạy `--preserve-only`.
+- `--apply` không có key → **exit 2** kèm hướng dẫn, thay vì im lặng hạ xuống
+  `--preserve-only`. Chính cái hạ cấp im lặng đó khiến CI commit "sync en/vi
+  translations" hàng tuần trong khi backlog không giảm một file nào.
+- Front matter nói thật về xuất xứ: `mtEngine: manual`, `syncStatus: human-translated`.

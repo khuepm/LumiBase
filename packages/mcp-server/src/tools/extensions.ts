@@ -13,7 +13,7 @@ const extensionSchema = z.object({
   type: z.enum(EXTENSION_TYPES),
   enabled: z.boolean().optional(),
   bundleUrl: z.string().min(1).describe('https:, http:, or data:text/javascript bundle URL.'),
-  manifest: z.record(z.string()).optional(),
+  manifest: z.record(z.string(), z.string()).optional(),
   capabilities: z.array(z.string()).optional(),
 });
 
@@ -109,7 +109,7 @@ export function registerExtensionTools(server: McpServer, client: LumiBaseClient
       inputSchema: {
         extensionId: z.string().min(1),
         marketplaceSlug: z.string().min(1),
-        publisher: z.record(z.unknown()).optional(),
+        publisher: z.record(z.string(), z.unknown()).optional(),
         signature: z.string().optional(),
         signatureAlg: z.string().optional(),
         publisherKeyId: z.string().optional(),

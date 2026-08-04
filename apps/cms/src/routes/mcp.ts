@@ -57,6 +57,9 @@ mcpRouter.post('/', async (c) => {
     llm,
     queue: runtime.queue,
     notify: buildAgentNotifier(c),
+    // Deployment skills are part of the MCP tool surface; the KeyProvider is
+    // what lets them decrypt target tokens (capabilities still gate access).
+    keys: runtime.keys,
   });
 
   const port: McpHarnessPort = {

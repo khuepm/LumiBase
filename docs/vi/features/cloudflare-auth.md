@@ -1,3 +1,13 @@
+---
+version: 2
+lastUpdated: 2026-07-27T23:50:23.218Z
+sourceLang: vi
+contentHash: 00f15e0eb7ed5ea0
+codeVerified: 2026-07-27T23:50:23.218Z
+codeVerifiedHash: 00f15e0eb7ed5ea0
+codeVerifiedClaims: 6
+---
+
 # Cloudflare Access & Custom JWT Authentication
 
 Tài liệu này hướng dẫn chi tiết cách cấu hình và hoạt động của hệ thống xác thực (Authentication) và phân quyền (Authorization) kết hợp giữa **Cloudflare Access** (dành cho Admin/Studio) và **Custom JWT** (dành cho Frontend End-Users).
@@ -6,7 +16,7 @@ Tài liệu này hướng dẫn chi tiết cách cấu hình và hoạt động 
 
 ## 1. Tổng quan Kiến trúc (Architecture Overview)
 
-Lumibase sử dụng mô hình xác thực Hybrid:
+LumiBase sử dụng mô hình xác thực Hybrid:
 1. **Studio Admins (Môi trường Quản lý)**: Được bảo vệ bởi Cloudflare Zero Trust (Access). Khi đăng nhập thành công, Cloudflare Access tự động đính kèm JWT assertion trong header `Cf-Access-Jwt-Assertion`.
 2. **Frontend End-Users (Người dùng cuối)**: Đăng ký và đăng nhập trực tiếp qua Custom Auth endpoints (`/auth/register`, `/auth/login`) của Hono CMS API. Trả về Custom JWT ký bằng Web Crypto API (HS256).
 3. **Bypass Cloudflare Access cho API**: Các client ở frontend gọi API cần bypass Cloudflare Access thông qua **Cloudflare Service Token** (được đính kèm trong header `CF-Access-Client-Id` và `CF-Access-Client-Secret`).
@@ -121,7 +131,7 @@ Quy trình kiểm tra quyền hạn của User:
    - Mặc định sau khi đăng nhập thành công, End-user được gán vai trò `member` gắn với `site_id` của request.
 
 ### B. Bảo mật Multi-Tenancy (Row-Level Security)
-Lumibase thực thi multi-tenancy nghiêm ngặt ở tầng database nhờ middleware `withRls()` của Hono kết hợp với cơ chế Row-Level Security (RLS) của PostgreSQL:
+LumiBase thực thi multi-tenancy nghiêm ngặt ở tầng database nhờ middleware `withRls()` của Hono kết hợp với cơ chế Row-Level Security (RLS) của PostgreSQL:
 
 1. **Xác định Site**: `withTenant()` middleware đọc header `X-Lumi-Site` để lấy `siteId` hiện tại.
 2. **Thiết lập DB context**: `withRls()` thực thi câu lệnh SQL:

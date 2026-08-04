@@ -130,11 +130,11 @@
     {
       "title": "Cache Hit Ratio",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(rate(lumibase_cache_operations_total{hit=\"true\"}[5m])) / sum(rate(lumibase_cache_operations_total[5m])) * 100",
+          "expr": "sum(rate(lumibase_cache_operations_total{result=\"hit\"}[5m])) / sum(rate(lumibase_cache_operations_total{op=~\"get|getEntry\"}[5m])) * 100",
           "legendFormat": "Hit Ratio %",
           "refId": "A"
         }
@@ -160,6 +160,91 @@
         },
         "overrides": []
       }
+    },
+    {
+      "title": "Cache Error Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_cache_operations_total{result=~\"error|unavailable\"}[5m])) / sum(rate(lumibase_cache_operations_total[5m])) * 100",
+          "legendFormat": "Error %",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 25 },
+              { "color": "red", "value": 50 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Cache invalidateByTag",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_cache_operations_total{op=\"invalidateByTag\"}[5m])) by (result)",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Negative cache (tombstone) hits / writes",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(lumibase_cache_negative_hits_total[5m]))",
+          "legendFormat": "negative hits",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(lumibase_cache_negative_writes_total[5m]))",
+          "legendFormat": "negative writes",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
     }
   ],
   "schemaVersion": 39,
@@ -168,7 +253,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Lumibase CMS",
+  "title": "LumiBase CMS",
   "uid": "lumibase-cms",
   "version": 1
 }

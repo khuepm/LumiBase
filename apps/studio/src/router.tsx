@@ -27,6 +27,7 @@ const AccessLayout = lazy(() => import('./modules/access/layout').then((m) => ({
 const SettingsLayout = lazy(() => import('./modules/settings/layout').then((m) => ({ default: m.SettingsLayout })));
 const ApiKeysPage = lazy(() => import('./modules/access/api-keys-page').then((m) => ({ default: m.ApiKeysPage })));
 const AccessImportExportPage = lazy(() => import('./modules/access/import-export-page').then((m) => ({ default: m.AccessImportExportPage })));
+const PublicAccessPage = lazy(() => import('./modules/access/public-access-page').then((m) => ({ default: m.PublicAccessPage })));
 const PermissionMatrixPage = lazy(() => import('./modules/access/permission-matrix').then((m) => ({ default: m.PermissionMatrixPage })));
 const PoliciesListPage = lazy(() => import('./modules/access/policies-page').then((m) => ({ default: m.PoliciesListPage })));
 const PolicyDetailPage = lazy(() => import('./modules/access/policy-detail').then((m) => ({ default: m.PolicyDetailPage })));
@@ -46,6 +47,7 @@ const TranslationsPage = lazy(() => import('./modules/translations').then((m) =>
 const WebhooksPage = lazy(() => import('./modules/settings/webhooks-page').then((m) => ({ default: m.WebhooksPage })));
 const GitIntegrationsPage = lazy(() => import('./modules/settings/git-integrations-page').then((m) => ({ default: m.GitIntegrationsPage })));
 const ChangeFeedPage = lazy(() => import('./modules/settings/change-feed-page').then((m) => ({ default: m.ChangeFeedPage })));
+const DeploymentsPage = lazy(() => import('./modules/settings/deployments-page').then((m) => ({ default: m.DeploymentsPage })));
 const EmailSettingsPage = lazy(() => import('./modules/settings/email-page').then((m) => ({ default: m.EmailSettingsPage })));
 const NotificationsSettingsPage = lazy(() => import('./modules/settings/notifications-page').then((m) => ({ default: m.NotificationsSettingsPage })));
 const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then((m) => ({ default: m.SiteSettingsPage })));
@@ -624,6 +626,12 @@ const changeFeedRoute = createRoute({
   component: withSuspense(ChangeFeedPage),
 });
 
+const deploymentsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'deployments',
+  component: withSuspense(DeploymentsPage),
+});
+
 const emailSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'email',
@@ -751,6 +759,12 @@ const adminPathGitIntegrationsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'integrations/git',
   component: withSuspense(GitIntegrationsPage),
+});
+
+const adminPathDeploymentsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'deployments',
+  component: withSuspense(DeploymentsPage),
 });
 
 const adminPathEmailSettingsRoute = createRoute({
@@ -1123,6 +1137,12 @@ const accessPolicyDetailRoute = createRoute({
   component: withSuspense(PolicyDetailPage),
 });
 
+const accessPublicRoute = createRoute({
+  getParentRoute: () => accessRoute,
+  path: 'public',
+  component: withSuspense(PublicAccessPage),
+});
+
 const accessApiKeysRoute = createRoute({
   getParentRoute: () => accessRoute,
   path: 'api-keys',
@@ -1187,6 +1207,12 @@ const adminPathAccessPolicyDetailRoute = createRoute({
   component: withSuspense(PolicyDetailPage),
 });
 
+const adminPathAccessPublicRoute = createRoute({
+  getParentRoute: () => adminPathAccessRoute,
+  path: 'public',
+  component: withSuspense(PublicAccessPage),
+});
+
 const adminPathAccessApiKeysRoute = createRoute({
   getParentRoute: () => adminPathAccessRoute,
   path: 'api-keys',
@@ -1231,6 +1257,7 @@ const routeTree = rootRoute.addChildren([
       webhooksRoute,
       gitIntegrationsRoute,
       changeFeedRoute,
+      deploymentsRoute,
       emailSettingsRoute,
       notificationsSettingsRoute,
       materializeSettingsRoute,
@@ -1276,6 +1303,7 @@ const routeTree = rootRoute.addChildren([
       accessRoleDetailRoute,
       accessPoliciesRoute,
       accessPolicyDetailRoute,
+      accessPublicRoute,
       accessApiKeysRoute,
       accessImportExportRoute,
       accessMatrixRoute,
@@ -1298,6 +1326,7 @@ const routeTree = rootRoute.addChildren([
       adminPathKeyboardSettingsRoute,
       adminPathWebhooksRoute,
       adminPathGitIntegrationsRoute,
+      adminPathDeploymentsRoute,
       adminPathEmailSettingsRoute,
       adminPathNotificationsSettingsRoute,
       adminPathMaterializeSettingsRoute,
@@ -1322,6 +1351,7 @@ const routeTree = rootRoute.addChildren([
       adminPathAccessRoleDetailRoute,
       adminPathAccessPoliciesRoute,
       adminPathAccessPolicyDetailRoute,
+      adminPathAccessPublicRoute,
       adminPathAccessApiKeysRoute,
       adminPathAccessImportExportRoute,
       adminPathAccessMatrixRoute,

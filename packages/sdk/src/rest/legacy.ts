@@ -29,6 +29,10 @@ import {
   PermissionBundle,
   PermissionCheckResult,
   AccessConflictCheckInput,
+  GrantAction,
+  RealmAccessGrant,
+  RealmAccessState,
+  RealmGrantInput,
   AccessConflictReport,
   AccessExportManifest,
   AccessImportApplyResult,
@@ -769,6 +773,35 @@ export function legacyRest() {
     };
 
     const access = {
+      /**
+       * Non-staff permission picker (`/api/v1/access/grants`). One call
+       * returns the site's grantable collections plus every realm's limits and
+       * current grants, so a client never has to hard-code which actions a
+       * realm may hold.
+       */
+      grants: {
+        state: () => client.rawRequest<RealmAccessState>("/api/v1/access/grants"),
+        enable: (realm: string) =>
+          client.rawRequest<{ enabled: boolean; roleId: string; policyId: string }>(
+            `/api/v1/access/grants/${encodeURIComponent(realm)}/enable`,
+            { method: "POST" },
+          ),
+        disable: (realm: string) =>
+          client.rawRequest<{ enabled: boolean; removed: boolean }>(
+            `/api/v1/access/grants/${encodeURIComponent(realm)}/disable`,
+            { method: "POST" },
+          ),
+        grant: (realm: string, input: RealmGrantInput) =>
+          client.rawRequest<RealmAccessGrant>(`/api/v1/access/grants/${encodeURIComponent(realm)}`, {
+            method: "POST",
+            body: JSON.stringify(input),
+          }),
+        revoke: (realm: string, collection: string, action: GrantAction = "read") =>
+          client.rawRequest<{ removed: boolean }>(
+            `/api/v1/access/grants/${encodeURIComponent(realm)}/${encodeURIComponent(collection)}/${encodeURIComponent(action)}`,
+            { method: "DELETE" },
+          ),
+      },
       checkConflicts: (input: AccessConflictCheckInput) =>
         client.rawRequest<AccessConflictReport>("/api/v1/access/conflicts/check", {
           method: "POST",
@@ -805,6 +838,15 @@ export function legacyRest() {
         client.rawRequest<ApiKeySecretResult>(`/api/v1/api-keys/${id}/rotate`, {
           method: "POST",
           body: JSON.stringify(input),
+        }),
+      /**
+       * Replace the key's browser-origin allowlist without rotating the token.
+       * Pass `[]` to remove the constraint entirely.
+       */
+      setAllowedOrigins: (id: string, allowedOrigins: string[]) =>
+        client.rawRequest<ApiKeyResource>(`/api/v1/api-keys/${id}/allowed-origins`, {
+          method: "PATCH",
+          body: JSON.stringify({ allowedOrigins }),
         }),
       revoke: (id: string) =>
         client.rawRequest<ApiKeyResource>(`/api/v1/api-keys/${id}/revoke`, {

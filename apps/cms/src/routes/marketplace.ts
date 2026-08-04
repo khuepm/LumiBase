@@ -39,7 +39,7 @@ function permissionCtx(c: Context<AppEnv>) {
   return {
     userId: auth?.userId ?? null,
     siteId: c.get("siteId"),
-    roleId: null,
+    roleId: auth?.roleId ?? null,
     user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
     ip: c.get("ip") ?? c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? null,
     headers,
@@ -636,6 +636,13 @@ const publishSchema = z.object({
 });
 
 marketplaceRouter.post("/publish", async (c) => {
+  // Publishing writes the SHARED global catalog (siteId null) that every tenant
+  // reads, so it is a moderator action — gate it like /submissions/review.
+  // Without this, any authenticated user with a site membership could publish
+  // or overwrite arbitrary global listings and spoof the "verified" badge.
+  const denied = await requireConfigurePermission(c);
+  if (denied) return denied;
+
   const db = c.get("db");
   const parsed = publishSchema.safeParse(await c.req.json());
   if (!parsed.success) {
@@ -645,6 +652,81 @@ marketplaceRouter.post("/publish", async (c) => {
           code: "VALIDATION",
           message: i.message,
         })),
+      },
+      400,
+    );
+  }
+
+  // Load the target global row first: we need its stored bundle + submission
+  // state to verify against before trusting any client-supplied signature.
+  const [target] = await db
+    .select()
+    .from(extensions)
+    .where(
+      and(eq(extensions.id, parsed.data.extensionId), isNull(extensions.siteId)),
+    );
+
+  if (!target)
+    return c.json(
+      { errors: [{ code: "NOT_FOUND", message: "Extension not found" }] },
+      404,
+    );
+
+  // A community submission must clear moderation before it can go live — a
+  // moderator cannot publish a `pending`/`rejected` row and skip review.
+  // Direct-publish official rows have `submissionStatus` null and are exempt.
+  if (target.submissionStatus && target.submissionStatus !== "approved") {
+    return c.json(
+      {
+        errors: [
+          {
+            code: "NOT_APPROVED",
+            message: "Submission must be approved before it can be published.",
+          },
+        ],
+      },
+      409,
+    );
+  }
+
+  // Verify the supplied signature against the STORED bundle before persisting
+  // it (server-derives `isOfficial`; never trusts a client claim). Mirrors the
+  // install-time gate: reserved `lumibase-*` must be signed by an official key.
+  const verifier = new ExtensionVerifierService(db, c.env);
+  const verdict = await verifier.verifyByMetadata(target.name, {
+    bundleUrl: target.bundleUrl,
+    bundleSha256: parsed.data.bundleSha256,
+    signature: parsed.data.signature,
+    publisherKeyId: parsed.data.publisherKeyId,
+    signatureAlg: parsed.data.signatureAlg,
+  });
+
+  const requireSignature =
+    ExtensionVerifierService.isReservedName(target.name) ||
+    (c.env.LUMIBASE_EXT_SIGNATURE_POLICY ?? "require") !== "warn";
+
+  if (requireSignature && !verdict.ok) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: "SIGNATURE_INVALID",
+            message: `Signature check failed: ${verdict.reason}`,
+          },
+        ],
+      },
+      400,
+    );
+  }
+  if (ExtensionVerifierService.isReservedName(target.name) && !verdict.isOfficial) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: "RESERVED_NAMESPACE",
+            message: "lumibase-* requires an official signature",
+          },
+        ],
       },
       400,
     );
@@ -660,6 +742,10 @@ marketplaceRouter.post("/publish", async (c) => {
       signatureAlg: parsed.data.signatureAlg,
       publisherKeyId: parsed.data.publisherKeyId,
       bundleSha256: parsed.data.bundleSha256,
+      // Server-derived trust signals — drive the "verified" badge, never the
+      // client's word.
+      isOfficial: verdict.isOfficial,
+      verifiedAt: verdict.ok ? new Date() : null,
       publishedAt: new Date(),
     })
     .where(

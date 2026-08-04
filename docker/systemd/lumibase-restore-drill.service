@@ -1,5 +1,5 @@
 [Unit]
-Description=Lumibase restore drill
+Description=LumiBase restore drill
 Documentation=https://github.com/khuepm/LumiBase
 Wants=network-online.target
 After=network-online.target

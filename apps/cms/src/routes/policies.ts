@@ -5,12 +5,46 @@ import {
   userPolicies,
 } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
 import { buildAccessConflictReport } from '../services/access-conflict-report';
 import { bumpPermissionVersion } from '../services/permission-invalidation';
+import {
+  PUBLIC_ALLOWED_ACTIONS,
+  isPolicyBoundToPublicRole,
+} from '../services/auth/public-role';
+
+/**
+ * Refuse a non-read grant on a policy anonymous callers can reach.
+ *
+ * Returns a response to send, or null when the write may proceed. Anonymous
+ * writes are out of scope by design (see `services/auth/public-role.ts`), and
+ * this router is the other door into the same effective bundle.
+ */
+async function screenPublicAction(
+  c: Context<AppEnv>,
+  policyId: string,
+  action: string | undefined,
+): Promise<Response | null> {
+  if (!action || (PUBLIC_ALLOWED_ACTIONS as readonly string[]).includes(action)) return null;
+  if (!(await isPolicyBoundToPublicRole(c.get('db'), c.get('siteId'), policyId))) return null;
+  return c.json(
+    {
+      errors: [
+        {
+          code: 'PUBLIC_ACTION_FORBIDDEN',
+          message:
+            `This policy is attached to the public (anonymous) role, so only ` +
+            `${PUBLIC_ALLOWED_ACTIONS.join('/')} may be granted on it. Detach it ` +
+            'from the public role first, or grant the write to an authenticated role.',
+        },
+      ],
+    },
+    400,
+  );
+}
 
 /**
  * /policies — reusable policies + their permission rows.
@@ -42,7 +76,7 @@ const policyCreate = z.object({
   ipDeny: z.array(z.string()).optional(),
   validFrom: z.coerce.date().nullable().optional(),
   validUntil: z.coerce.date().nullable().optional(),
-  rules: z.record(z.unknown()).optional(),
+  rules: z.record(z.string(), z.unknown()).optional(),
 });
 
 const policyPatch = policyCreate.partial();
@@ -50,9 +84,9 @@ const policyPatch = policyCreate.partial();
 const permissionUpsert = z.object({
   collection: z.string().min(1).max(64),
   action: z.enum(['create', 'read', 'update', 'delete', 'share']),
-  permissions: z.record(z.unknown()).optional(),
-  validation: z.record(z.unknown()).optional(),
-  presets: z.record(z.unknown()).optional(),
+  permissions: z.record(z.string(), z.unknown()).optional(),
+  validation: z.record(z.string(), z.unknown()).optional(),
+  presets: z.record(z.string(), z.unknown()).optional(),
   fields: z.array(z.string()).optional(),
 });
 
@@ -114,6 +148,32 @@ policiesRouter.patch('/:id', async (c) => {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
   const db = c.get('db');
+  // A policy anonymous callers can reach must not gain an elevation flag. The
+  // `0012` constraint pins the canonical `public` policy; this covers any
+  // other policy an operator has attached to the public role.
+  const elevating = [
+    parsed.data.adminAccess ? 'adminAccess' : null,
+    parsed.data.appAccess ? 'appAccess' : null,
+    parsed.data.enforceTfa ? 'enforceTfa' : null,
+  ].filter((flag): flag is string => flag !== null);
+  if (
+    elevating.length &&
+    (await isPolicyBoundToPublicRole(db, c.get('siteId'), c.req.param('id')))
+  ) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'PUBLIC_ROLE_ELEVATION',
+            message:
+              `This policy is attached to the public (anonymous) role, so it cannot ` +
+              `carry ${elevating.join(', ')}. Detach it from the public role first.`,
+          },
+        ],
+      },
+      400,
+    );
+  }
   const [row] = await db
     .update(policies)
     .set(parsed.data)
@@ -141,6 +201,8 @@ policiesRouter.post('/:id/permissions', async (c) => {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
   const db = c.get('db');
+  const refusal = await screenPublicAction(c, c.req.param('id'), parsed.data.action);
+  if (refusal) return refusal;
   const [row] = await db
     .insert(permissionsTable)
     .values({
@@ -164,6 +226,8 @@ policiesRouter.patch('/:id/permissions/:permId', async (c) => {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
   const db = c.get('db');
+  const refusal = await screenPublicAction(c, c.req.param('id'), parsed.data.action);
+  if (refusal) return refusal;
   const [row] = await db
     .update(permissionsTable)
     .set(parsed.data)

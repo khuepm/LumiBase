@@ -1,10 +1,10 @@
 # Backup & Recovery Guide
 
-This guide covers database backup strategies, restore procedures, point-in-time recovery (PITR), and disaster recovery planning for self-hosted Lumibase deployments.
+This guide covers database backup strategies, restore procedures, point-in-time recovery (PITR), and disaster recovery planning for self-hosted LumiBase deployments.
 
 ## Backup Strategy Overview
 
-Lumibase uses PostgreSQL as its primary data store. A robust backup strategy combines:
+LumiBase uses PostgreSQL as its primary data store. A robust backup strategy combines:
 
 1. **Scheduled logical backups** — Daily `pg_dump` snapshots stored in S3
 2. **WAL archiving** — Continuous write-ahead log shipping for point-in-time recovery
@@ -305,7 +305,7 @@ docker compose start cms
 **Recovery steps:**
 
 1. Provision new infrastructure (new Docker host or cluster)
-2. Pull the latest Lumibase Docker image
+2. Pull the latest LumiBase Docker image
 3. Restore PostgreSQL from S3 backup
 4. Restore MinIO data from S3 backup (if using cross-region replication)
 5. Start all services
@@ -658,7 +658,7 @@ drill through a wrapper that sets `PATH` explicitly:
 ```bash
 mkdir -p "$HOME/.config/lumibase" "$HOME/.local/bin"
 mkdir -p "$HOME/Library/Logs/lumibase"
-mkdir -p "$HOME/Library/Application Support/Lumibase/restore-drill-reports"
+mkdir -p "$HOME/Library/Application Support/LumiBase/restore-drill-reports"
 
 cp docker/restore-drill.env.example "$HOME/.config/lumibase/restore-drill.env"
 chmod 600 "$HOME/.config/lumibase/restore-drill.env"
@@ -667,7 +667,7 @@ chmod 600 "$HOME/.config/lumibase/restore-drill.env"
 Set `DRILL_REPORT_DIR` in that env file to a macOS path such as:
 
 ```bash
-DRILL_REPORT_DIR=/Users/khuepm/Library/Application Support/Lumibase/restore-drill-reports
+DRILL_REPORT_DIR=/Users/khuepm/Library/Application Support/LumiBase/restore-drill-reports
 ```
 
 Create the wrapper:
@@ -679,7 +679,7 @@ set -euo pipefail
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-cd /Users/khuepm/workplace/Lumibase
+cd /Users/khuepm/workplace/LumiBase
 
 set -a
 source "$HOME/.config/lumibase/restore-drill.env"
@@ -745,9 +745,9 @@ for a server-like restore environment.
 Create a secret env file outside the repo:
 
 ```powershell
-New-Item -ItemType Directory -Force C:\ProgramData\Lumibase | Out-Null
-Copy-Item .\docker\restore-drill.env.example C:\ProgramData\Lumibase\restore-drill.env
-notepad C:\ProgramData\Lumibase\restore-drill.env
+New-Item -ItemType Directory -Force C:\ProgramData\LumiBase | Out-Null
+Copy-Item .\docker\restore-drill.env.example C:\ProgramData\LumiBase\restore-drill.env
+notepad C:\ProgramData\LumiBase\restore-drill.env
 ```
 
 Create a PowerShell wrapper:
@@ -756,8 +756,8 @@ Create a PowerShell wrapper:
 @'
 $ErrorActionPreference = "Stop"
 
-$Repo = "C:\Lumibase"
-$EnvFile = "C:\ProgramData\Lumibase\restore-drill.env"
+$Repo = "C:\LumiBase"
+$EnvFile = "C:\ProgramData\LumiBase\restore-drill.env"
 $GitBash = "C:\Program Files\Git\bin\bash.exe"
 
 Get-Content $EnvFile | ForEach-Object {
@@ -769,7 +769,7 @@ Get-Content $EnvFile | ForEach-Object {
 Set-Location $Repo
 & $GitBash -lc "./docker/scripts/restore-drill.sh"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-'@ | Set-Content C:\ProgramData\Lumibase\restore-drill.ps1 -Encoding UTF8
+'@ | Set-Content C:\ProgramData\LumiBase\restore-drill.ps1 -Encoding UTF8
 ```
 
 Register a weekly Sunday 03:00 task:
@@ -777,24 +777,24 @@ Register a weekly Sunday 03:00 task:
 ```powershell
 $Action = New-ScheduledTaskAction `
   -Execute "PowerShell.exe" `
-  -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\Lumibase\restore-drill.ps1"
+  -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\LumiBase\restore-drill.ps1"
 
 $Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3:00am
 $Principal = New-ScheduledTaskPrincipal -UserId "$env:USERNAME" -LogonType Interactive -RunLevel Highest
 
 Register-ScheduledTask `
-  -TaskName "Lumibase Restore Drill" `
+  -TaskName "LumiBase Restore Drill" `
   -Action $Action `
   -Trigger $Trigger `
   -Principal $Principal `
-  -Description "Runs the Lumibase restore drill weekly."
+  -Description "Runs the LumiBase restore drill weekly."
 ```
 
 Run it immediately and inspect the result:
 
 ```powershell
-Start-ScheduledTask -TaskName "Lumibase Restore Drill"
-Get-ScheduledTaskInfo -TaskName "Lumibase Restore Drill"
+Start-ScheduledTask -TaskName "LumiBase Restore Drill"
+Get-ScheduledTaskInfo -TaskName "LumiBase Restore Drill"
 ```
 
 ### Manual Verification Checklist

@@ -60,7 +60,9 @@ DECLARE
     'lumibase_cdc_change_events', 'lumibase_cdc_subscriptions', 'lumibase_cdc_deliveries',
     -- Git integration (GitHub / GitLab) — site-isolated.
     'lumibase_git_integrations', 'lumibase_git_pull_requests', 'lumibase_git_ci_runs',
-    'lumibase_git_webhook_events', 'lumibase_git_preview_envs', 'lumibase_git_provenance'
+    'lumibase_git_webhook_events', 'lumibase_git_preview_envs', 'lumibase_git_provenance',
+    -- Flow engine (visual-flow-builder + high-load async runs).
+    'lumibase_flows', 'lumibase_flow_runs'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

@@ -3,10 +3,25 @@ import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql, type SQL } from 
 import { Hono } from 'hono';
 import type { AppEnv, Variables } from '../env';
 import {
+  DELIVER_APP_CACHE_TTL_SECONDS,
+  deliverAppCacheKey,
+  deliverAppCacheTags,
+  deliveryVariantHash,
   etagMatches,
   resolveDeliveryCachePolicy,
   weakEtag,
+  type DeliverAppCacheEntry,
 } from '../services/delivery-cache';
+import {
+  assertPublicIdentifier,
+  SAFE_FIELD_NAME,
+} from '../services/identifier-guard';
+import {
+  buildNegativeCache,
+  negativePageKey,
+  negativeSiteKey,
+  resolveNegativeTtl,
+} from '../services/negative-cache';
 import { buildSeo } from '../services/seo-builder';
 
 /**
@@ -22,7 +37,6 @@ export const deliverRouter = new Hono<AppEnv>();
 
 const DEFAULT_SECTION_LIMIT = 10;
 const MAX_SECTION_LIMIT = 50;
-const SAFE_FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 interface SectionConfig {
   id: string;
@@ -282,13 +296,44 @@ async function hydrateSection(
  */
 deliverRouter.get('/llms.txt/:site_id', async (c) => {
   const siteId = c.req.param('site_id');
-  const db = c.get('db');
+  const shape = assertPublicIdentifier('siteId', siteId);
+  if (!shape.ok) {
+    return c.text('Site not found.', 404);
+  }
 
-  const [site] = await db
-    .select({ id: schema.sites.id, name: schema.sites.name, domain: schema.sites.domain })
-    .from(schema.sites)
-    .where(eq(schema.sites.id, siteId))
-    .limit(1);
+  const db = c.get('db');
+  const cache = c.get('runtime')?.cache;
+  const ttl = resolveNegativeTtl(c.env);
+  const neg =
+    cache && ttl > 0
+      ? buildNegativeCache(cache, ttl, {
+          onNegativeHit: () => {
+            void import('./metrics').then((m) => m.cacheNegativeHitsTotal.inc());
+          },
+          onNegativeWrite: () => {
+            void import('./metrics').then((m) => m.cacheNegativeWritesTotal.inc());
+          },
+        })
+      : null;
+
+  const site = await (neg
+    ? neg.resolve(negativeSiteKey(siteId), async () => {
+        const [row] = await db
+          .select({ id: schema.sites.id, name: schema.sites.name, domain: schema.sites.domain })
+          .from(schema.sites)
+          .where(eq(schema.sites.id, siteId))
+          .limit(1);
+        return row ?? null;
+      })
+    : (async () => {
+        const [row] = await db
+          .select({ id: schema.sites.id, name: schema.sites.name, domain: schema.sites.domain })
+          .from(schema.sites)
+          .where(eq(schema.sites.id, siteId))
+          .limit(1);
+        return row ?? null;
+      })());
+
   if (!site) {
     return c.text('Site not found.', 404);
   }
@@ -347,6 +392,18 @@ deliverRouter.get('/llms.txt/:site_id', async (c) => {
   });
 });
 
+function sectionCollections(layoutConfig: unknown): string[] {
+  const layout = (layoutConfig ?? {}) as LayoutConfig;
+  const names = new Set<string>();
+  for (const section of layout.sections ?? []) {
+    const collection = section.source?.collection;
+    if (typeof collection === 'string' && collection.length > 0) {
+      names.add(collection);
+    }
+  }
+  return [...names];
+}
+
 /** Hydrate every section of a page into the delivery payload. */
 async function buildPagePayload(
   db: Variables['db'],
@@ -396,23 +453,101 @@ async function contentFingerprint(db: Variables['db'], siteId: string) {
 
 deliverRouter.get('/page/:site_id/:slug', async (c) => {
   const { site_id: siteId, slug } = c.req.param();
-  const db = c.get('db');
-  const withProvenance = c.req.query('provenance') === 'true';
 
   // Shared caches must never mix tenants: the site is in the URL here, but
   // other API surfaces route on this header (design §15.4).
   c.header('Vary', 'X-Lumi-Site');
 
+  // Tier 1 — shape guard (Req 19.1): reject before any DB / cache op.
+  // Same 404 body as a real miss so the endpoint is not an oracle.
+  const siteShape = assertPublicIdentifier('siteId', siteId);
+  const slugShape = assertPublicIdentifier('slug', slug);
+  if (!siteShape.ok || !slugShape.ok) {
+    c.header('Cache-Control', 'no-store');
+    // MUST stay byte-identical to the real-miss 404 below (design §14.6,
+    // dod-review §2c "404 không thành oracle") — a distinct body would tell a
+    // prober which identifiers are well-formed.
+    return c.json({ error: 'Page not found.' }, 404);
+  }
+
+  const db = c.get('db');
+  const withProvenance = c.req.query('provenance') === 'true';
+  const hasCredentials = Boolean(c.req.header('authorization'));
+  const isPreview = c.req.query('preview') === 'true' || c.req.query('draft') === 'true';
+
   const policy = resolveDeliveryCachePolicy({
-    hasCredentials: Boolean(c.req.header('authorization')),
+    hasCredentials,
     env: c.env,
   });
 
-  const [page] = await db
-    .select()
-    .from(schema.pages)
-    .where(and(eq(schema.pages.siteId, siteId), eq(schema.pages.slug, slug)))
-    .limit(1);
+  const runtime = c.get('runtime');
+  const edgeCache = runtime?.edgeCache;
+  const useDeliverCache = policy.cacheable && !isPreview;
+  const appCache = useDeliverCache ? runtime?.cache : undefined;
+  const variantHash = await deliveryVariantHash({
+    locale: c.req.query('locale'),
+    lang: c.req.query('lang'),
+    provenance: withProvenance ? 'true' : undefined,
+  });
+  const appCacheKey =
+    appCache && useDeliverCache ? deliverAppCacheKey(siteId, slug, variantHash) : null;
+
+  // Tier 1b — HTTP edge cache (Req 1.6): only for cacheable public traffic.
+  if (policy.cacheable && edgeCache) {
+    const cached = await edgeCache.match(c.req.raw);
+    if (cached) return cached;
+  }
+
+  // Tier 2a — application cache (Req 8.2): full page payload + ETag metadata.
+  if (appCache && appCacheKey) {
+    const cached = await appCache.get<DeliverAppCacheEntry>(appCacheKey);
+    if (cached) {
+      c.header('ETag', cached.etag);
+      c.header('Cache-Control', policy.cacheControl);
+      if (etagMatches(c.req.header('if-none-match'), cached.etag)) {
+        const notModified = c.body(null, 304);
+        if (edgeCache) {
+          await edgeCache.put(c.req.raw, notModified.clone());
+        }
+        return notModified;
+      }
+      const response = c.json(cached.body);
+      if (edgeCache) {
+        await edgeCache.put(c.req.raw, response.clone());
+      }
+      return response;
+    }
+  }
+
+  // Tier 2b — tombstone (Req 19.5/19.8): never serve negative cache to
+  // credentialed / preview traffic (same boundary as Req 1.4).
+  const allowTombstone = !hasCredentials && !isPreview;
+  const cache = runtime?.cache;
+  const ttl = resolveNegativeTtl(c.env);
+  const neg =
+    allowTombstone && cache && ttl > 0
+      ? buildNegativeCache(cache, ttl, {
+          onNegativeHit: () => {
+            void import('./metrics').then((m) => m.cacheNegativeHitsTotal.inc());
+          },
+          onNegativeWrite: () => {
+            void import('./metrics').then((m) => m.cacheNegativeWritesTotal.inc());
+          },
+        })
+      : null;
+
+  const loadPage = async () => {
+    const [row] = await db
+      .select()
+      .from(schema.pages)
+      .where(and(eq(schema.pages.siteId, siteId), eq(schema.pages.slug, slug)))
+      .limit(1);
+    return row ?? null;
+  };
+
+  const page = neg
+    ? await neg.resolve(negativePageKey(siteId, slug), loadPage)
+    : await loadPage();
 
   if (!page) {
     c.header('Cache-Control', 'no-store');
@@ -437,8 +572,28 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
   c.header('ETag', etag);
   c.header('Cache-Control', policy.cacheControl);
   if (etagMatches(c.req.header('if-none-match'), etag)) {
-    return c.body(null, 304);
+    const notModified = c.body(null, 304);
+    if (edgeCache) {
+      await edgeCache.put(c.req.raw, notModified.clone());
+    }
+    return notModified;
   }
 
-  return c.json(await buildPagePayload(db, siteId, page, withProvenance));
+  const body = await buildPagePayload(db, siteId, page, withProvenance);
+  if (appCache && appCacheKey) {
+    try {
+      await appCache.set(appCacheKey, JSON.stringify({ body, etag } satisfies DeliverAppCacheEntry), {
+        ttl: DELIVER_APP_CACHE_TTL_SECONDS,
+        tags: deliverAppCacheTags(siteId, sectionCollections(page.layoutConfig)),
+      });
+    } catch {
+      // App-cache write is best-effort — never fail the read path.
+    }
+  }
+
+  const response = c.json(body);
+  if (edgeCache) {
+    await edgeCache.put(c.req.raw, response.clone());
+  }
+  return response;
 });

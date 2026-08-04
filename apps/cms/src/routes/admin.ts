@@ -75,7 +75,7 @@ async function hasSiteAdminAccess(c: Context<AppEnv>): Promise<boolean> {
   const ctx: MagicContext = {
     userId,
     siteId,
-    roleId: null,
+    roleId: auth?.roleId ?? null,
     user: auth
       ? {
           id: userId,
@@ -387,6 +387,11 @@ adminRouter.post('/sites', async (c) => {
   // never throws, skips when no published/verified source row exists yet.
   if (row) {
     await reconcileOfficialExtensions(db, c.env, row.id).catch(() => undefined);
+    const cache = c.get('runtime')?.cache;
+    if (cache) {
+      const { forgetNegative, negativeSiteKey } = await import('../services/negative-cache');
+      await forgetNegative(cache, negativeSiteKey(row.id));
+    }
   }
 
   return c.json({ data: row }, 201);

@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:56.047Z
+version: 2
+lastUpdated: 2026-07-25T08:11:35.404Z
 sourceLang: en
-contentHash: ae71218c5e9ee3ac
+contentHash: d03ce24e459e0232
+codeVerified: 2026-07-25T08:11:35.404Z
+codeVerifiedHash: d03ce24e459e0232
+codeVerifiedClaims: 4
 ---
 
 # Code Style Guide
@@ -125,15 +128,23 @@ export class ItemService {
 
 ### Error handling
 
-Use the `AppError` class from `packages/shared`:
+Return the error envelope directly from the handler, with the HTTP status:
 
 ```typescript
-import { AppError } from '@lumibase/shared'
-
-throw new AppError('RECORD_NOT_FOUND', `Collection '${name}' not found`, 404)
+if (!row) {
+  return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Collection not found.' }] }, 404)
+}
 ```
 
-The global error handler in `apps/cms/src/middleware/error.ts` converts `AppError` to the standard JSON error envelope.
+The shape is `{ errors: [{ code, message }] }` — see the response-format rule in
+`CLAUDE.md`. Use a stable, machine-readable `code`; the `message` is for humans and
+may change.
+
+`app.onError` in `apps/cms/src/index.ts` is the last-resort handler: it catches
+anything that throws, logs it with the `requestId`, and returns a generic
+`INTERNAL` envelope. Rely on it for unexpected failures, not for expected ones —
+an expected outcome should be an explicit `c.json(..., status)` so the status and
+code are visible at the call site.
 
 ### Multi-tenancy
 
@@ -182,13 +193,14 @@ ComponentName/
 
 ### API calls from Studio
 
-Always use the typed API client from `apps/studio/src/lib/api-client.ts`:
+Always go through the typed client from `apps/studio/src/lib/api.ts`, which resolves
+the base URL, active site and bearer token for you:
 
 ```typescript
 // ✓ Good
-import { apiClient } from '@/lib/api-client'
-const items = await apiClient.items('articles').readMany({ limit: 10 })
+import { getApiClient } from '@/lib/api'
+const items = (await getApiClient().items.list('articles', { limit: 10 })).data
 
-// ✗ Bad — raw fetch bypasses auth/error handling
+// ✗ Bad — raw fetch bypasses base-URL resolution, the site header and auth
 const res = await fetch('/api/v1/items/articles')
 ```

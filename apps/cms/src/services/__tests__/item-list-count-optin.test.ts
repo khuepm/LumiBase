@@ -32,34 +32,33 @@ function fakeDb() {
         limit: () => builder,
         offset: () => builder,
         then: (onF?: (v: unknown[]) => unknown, onR?: (e: unknown) => unknown) => {
-          // Resolve based on what this select targets, inferred from the chain
-          // terminator the caller awaits:
-          //   - count query  → [{ count }]
-          //   - collection    → [COLLECTION]  (terminates at .limit(1))
-          //   - items rows    → ITEM_ROWS     (terminates at .offset())
-          const value = isCount ? [{ count: 99 }] : builder.__target;
+          // count query → [{ count }]; everything else → item rows.
+          // Collection resolution now goes through SchemaService.getCompiled
+          // (cache), so there is no collection select on the list path.
+          const value = isCount ? [{ count: 99 }] : ITEM_ROWS;
           return Promise.resolve(value as unknown[]).then(onF, onR);
         },
       };
-      // Distinguish collection lookup vs item rows by call order.
-      builder.__target = nextTarget();
       return builder;
     },
     countQueries: () => countQueries,
   };
-
-  let call = 0;
-  function nextTarget(): unknown[] {
-    call += 1;
-    // 1st non-count select → resolveCollection; subsequent → item rows.
-    return call === 1 ? [COLLECTION] : ITEM_ROWS;
-  }
   return db;
 }
 
 function fakeCache(): CacheProvider {
   const store = new Map<string, string>();
-  store.set('schema:site-1:posts', JSON.stringify({ fields: [{ name: 'title' }] }));
+  store.set(
+    'schema:site-1:posts',
+    JSON.stringify({
+      id: 'col_posts',
+      name: 'posts',
+      primaryKeyField: 'id',
+      primaryKeyType: 'nanoid',
+      storageMode: 'jsonb',
+      fields: [{ name: 'title' }],
+    }),
+  );
   return {
     async get<T>(key: string): Promise<T | null> {
       const raw = store.get(key);
@@ -75,6 +74,17 @@ function fakeCache(): CacheProvider {
       const next = Number(store.get(key) ?? '0') + by;
       store.set(key, String(next));
       return next;
+    },
+    async getEntry<T>(key: string) {
+      const raw = store.get(key);
+      if (raw === undefined) return { state: 'miss' as const };
+      return { state: 'hit' as const, value: JSON.parse(raw) as T };
+    },
+    async setNegative(key: string) {
+      store.set(key, JSON.stringify({ __lumi: 'neg', v: 1 }));
+    },
+    async invalidateByTag() {
+      // not used
     },
   };
 }

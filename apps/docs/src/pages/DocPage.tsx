@@ -7,7 +7,7 @@
  *   (the markdown's own H1 is the visible page title — no duplicate header)
  * - Display last-modified date in a footer at the bottom of the page,
  *   in DD/MM/YYYY format (if available)
- * - Set browser <title> to `{document title} — Lumibase Docs`
+ * - Set browser <title> to `{document title} — LumiBase Docs`
  * - If slug not found in any locale, redirect to NotFoundPage
  * - Expose `isFallback` for TranslationBanner (task 6.5)
  *
@@ -75,10 +75,10 @@ export function DocPage() {
   // Set browser title
   useEffect(() => {
     if (entry) {
-      document.title = `${entry.title} — Lumibase Docs`;
+      document.title = `${entry.title} — LumiBase Docs`;
     }
     return () => {
-      document.title = 'Lumibase Docs';
+      document.title = 'LumiBase Docs';
     };
   }, [entry]);
 

@@ -211,7 +211,7 @@ const PipelinePatchSchema = z.object({
   clickhouse_sink_connection: z.string().min(1).optional(),
   intermediary_connection: z.string().min(1).nullable().optional(),
   replication_tables: z.array(z.string().min(1)).min(1).optional(),
-  config: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
 });
 
 /** Deployment target enum (mirrors {@link DeploymentTarget}). */
@@ -222,14 +222,14 @@ const DeployBodySchema = z.object({
   approach: CdcConnectorTypeSchema,
   target: DeploymentTargetSchema,
   pipeline_id: z.string().min(1).optional(),
-  env: z.record(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
 });
 
 /** POST /deploy/validate-env body. */
 const ValidateEnvBodySchema = z.object({
   approach: CdcConnectorTypeSchema,
   target: DeploymentTargetSchema,
-  env: z.record(z.string()),
+  env: z.record(z.string(), z.string()),
 });
 
 // ── injectable services (task 12.3) ──────────────────────────────────────
@@ -402,7 +402,7 @@ async function authorizeCurrentPrincipalForSite(
     ctx: {
       userId,
       siteId,
-      roleId: null,
+      roleId: auth?.roleId ?? null,
       ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
       headers,
       apiKey: auth?.apiKey ?? null,

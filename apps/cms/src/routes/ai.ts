@@ -9,6 +9,7 @@ import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest } from '../services/item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
 import { formatSafeError } from '@lumibase/shared/utils';
+import { createPendingRun, FLOW_RUNS_QUEUE } from '../services/flow-run-service';
 
 // ---------------------------------------------------------------------------
 // Zod Schemas
@@ -69,11 +70,18 @@ function requireAdmin(c: Context<AppEnv>) {
 // factory so LLM-driven skills enforce the same row/field RBAC as the normal
 // `/items` API (see item-service-factory.ts).
 
+function prefersAsyncResponse(c: Context<AppEnv>): boolean {
+  const prefer = c.req.header('prefer') ?? '';
+  return prefer.toLowerCase().includes('respond-async');
+}
+
 /**
  * POST /chat
  * Receives a natural language message, analyzes intent via LLM (or echo
  * fallback), and executes via AISecureHarness.
  * Supports conversation history via `conversationId`.
+ * `Prefer: respond-async` enqueues execution and returns 202 + runId when a
+ * queue worker is available (high-load §10.3; reuses `flow_runs`).
  */
 aiRouter.post('/chat', async (c) => {
   // Step 1: Parse and validate input
@@ -139,6 +147,37 @@ aiRouter.post('/chat', async (c) => {
       content: message,
     });
 
+    const userCapabilities = getUserCapabilities(c);
+
+    // Async path: enqueue LLM + harness on worker; HITL still surfaces via poll.
+    if (prefersAsyncResponse(c) && runtime.queue) {
+      const run = await createPendingRun(db, {
+        siteId,
+        runType: 'ai_chat',
+        input: { conversationId, message },
+      });
+      await runtime.queue.enqueue(FLOW_RUNS_QUEUE, 'ai:chat', {
+        kind: 'ai_chat',
+        siteId,
+        runId: run.id,
+        conversationId,
+        message,
+        userCapabilities,
+        userId,
+      });
+      return c.json(
+        {
+          data: {
+            status: 'pending',
+            runId: run.id,
+            conversationId,
+            pollUrl: `/api/v1/flows/runs/${run.id}`,
+          },
+        },
+        202,
+      );
+    }
+
     // Step 4: Load conversation history for LLM context
     const historyRows = await db
       .select({ role: aiMessages.role, content: aiMessages.content })
@@ -191,7 +230,6 @@ aiRouter.post('/chat', async (c) => {
 
     // Execute the first tool call via AISecureHarness
     const toolCall = llmResponse.toolCalls[0]!;
-    const userCapabilities = getUserCapabilities(c);
 
     const schemaService = new SchemaService({
       db,
@@ -208,6 +246,8 @@ aiRouter.post('/chat', async (c) => {
       llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
       queue: runtime.queue,
       notify: buildAgentNotifier(c),
+      // Enables the deployment skills, which decrypt target tokens.
+      keys: runtime.keys,
     });
     const result = await harness.execute(
       toolCall.name,
@@ -471,6 +511,9 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
       llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
       queue: runtime.queue,
       notify: buildAgentNotifier(c),
+      // An approved `triggerDeployment` executes here — without the
+      // KeyProvider the approval would resolve into a configuration error.
+      keys: runtime.keys,
     });
     const result = await authorizedHarness.executeApproved(
       approvalId,

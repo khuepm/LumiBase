@@ -1,5 +1,12 @@
 ---
 title: Deployment — Docker Compose / Managed Services
+version: 1
+lastUpdated: 2026-07-28T11:36:50.546Z
+sourceLang: en
+contentHash: a6feffea289e31e4
+codeVerified: 2026-07-28T11:36:50.546Z
+codeVerifiedHash: a6feffea289e31e4
+codeVerifiedClaims: 14
 ---
 
 # Deployment Guide: Docker Compose / Managed Services (Full Stateful Stack)

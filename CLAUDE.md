@@ -36,6 +36,44 @@ packages/
 4. **HITL:** Skills with `schema:write` capability or starting with `delete` → `ai_approvals` table first.
 5. **Response format:** `{ data: T, meta?: PaginationMeta }` or `{ errors: [...] }`.
 6. **TypeScript:** Strict mode, `import type`, no `any`.
+7. **Docs are bilingual:** every user-facing doc change lands in **both** `docs/en/`
+   and `docs/vi/`, in the same commit. Never edit one locale only.
+8. **Deprecation is opt-in:** `withDeprecation` (`apps/cms/src/middleware/deprecation.ts`) is a reusable RFC 8594 tool. Attach it **only** when explicitly told to deprecate/retire/sunset a specific route — never globally, never on healthy endpoints. Unwired while nothing is retiring is correct.
+
+## Docs i18n — mandatory workflow
+
+Both locales are versioned together and neither may be marked a full match on hash
+equality alone. Hash equality only proves the two sides describe the *same source
+revision*; it cannot tell you either side is *true*. Two translations can agree
+perfectly and be wrong together — both confidently documenting an endpoint deleted
+a release ago.
+
+So verification against source code comes **before** any full-match marking:
+
+```bash
+pnpm docs:i18n:verify <rel>                         # 1. check claims vs source tree
+node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> --verified   # 2. version + flag both locales
+pnpm docs:i18n:detect                               # 3. confirm the pair reads up-to-date
+git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md   # 4. drop detect artifacts
+```
+
+- **You write the translation yourself.** There is no `ANTHROPIC_API_KEY` and no
+  machine-translation step in CI — a deliberate decision (`docs/.i18n/TASKS.md` §6).
+  `--apply` exits 2 without a key; CI's push job only preserves + version-stamps.
+  Nothing translates behind your back, so an untranslated side stays untranslated.
+- **Which side is the source** is per-file, in the front matter (`sourceLang`). Some
+  docs are VI-source with an EN side that is the translation — edit the source side,
+  then re-translate the other, or the pair reads stale. Check before editing.
+- `--verified` refuses to write `codeVerified` while any claim is stale, and refuses
+  when a doc makes no testable claim at all (`unverifiable`) — "nothing to check" is
+  not a pass, that file needs human review and is stamped without the flag.
+- `codeVerified` is pinned to `codeVerifiedHash`, so editing the body invalidates the
+  assurance instead of carrying it forward.
+- Two separate markers, deliberately: `syncStatus`/`sourceHash` answer "same
+  revision?"; `codeVerified` answers "claims checked?". A full match needs both.
+
+Backlog and per-file rules: `docs/.i18n/TASKS.md`. Do not add commits to a merged
+translation PR — branch from `main` and open a new one.
 
 ## Common tasks
 
@@ -47,8 +85,8 @@ pnpm test           # all packages
 
 ### Add a migration
 ```bash
-pnpm -F @lumibase/database db:generate
-pnpm -F @lumibase/database db:migrate
+pnpm db:generate    # root scripts; the package itself defines `generate`/`migrate`,
+pnpm db:migrate     # so `-F @lumibase/database db:migrate` is not a valid script
 ```
 
 ### Run local dev

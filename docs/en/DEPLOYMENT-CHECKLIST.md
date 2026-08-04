@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-28T11:48:31.596Z
+sourceLang: en
+contentHash: bec65a2bb768bb4d
+codeVerified: 2026-07-28T11:48:31.596Z
+codeVerifiedHash: bec65a2bb768bb4d
+codeVerifiedClaims: 22
+---
+
 # LumiBase Production Deployment Checklist
 
 > Complete checklist for deploying LumiBase to production. Supports both **Cloudflare Workers** (edge) and **Docker** (self-hosted) deployments.
@@ -114,7 +124,7 @@ Set via `wrangler secret put --env production`:
 
 ### Docker Environment
 
-- [ ] Copy template: `cp docker/.env.production.example docker/.env`
+- [ ] Copy template: `cp docker/.env.prod.example docker/.env`
 - [ ] Fill all `REPLACE_*` placeholders
 - [ ] Verify no dev values remain:
   ```bash
@@ -150,11 +160,14 @@ Set via `wrangler secret put --env production`:
 ### Run Migrations
 
 ```bash
-# Docker
-pnpm -F @lumibase/database db:migrate
+# From the repo root (db:migrate is a root script)
+pnpm db:migrate
 
-# Or via Docker container
-docker compose exec cms pnpm -F @lumibase/database db:migrate
+# Dry-run the pending migrations first
+pnpm db:migrate:preflight
+
+# Or, filtering to the package — note the script there is `migrate`, not `db:migrate`
+pnpm -F @lumibase/database migrate
 ```
 
 - [ ] Migrations completed without errors
@@ -225,8 +238,8 @@ docker compose exec cms pnpm -F @lumibase/database db:migrate
 ### Deploy
 
 ```bash
-# Build
-pnpm -F @lumibase/cms build:cf
+# Build (dry-run bundle for the production env)
+pnpm -F @lumibase/cms build:production
 
 # Deploy
 wrangler deploy --env production
@@ -250,7 +263,7 @@ curl https://api.yourdomain.com/health
 
 ### Pre-Deploy Checks
 
-- [ ] `docker/.env` configured (from `.env.production.example`)
+- [ ] `docker/.env` configured (from `.env.prod.example`)
 - [ ] Docker images pulled: `docker compose pull`
 - [ ] Volumes created for persistence
 
@@ -266,7 +279,7 @@ docker compose up -d postgres redis meilisearch imgproxy
 docker compose ps
 
 # Run migrations
-docker compose run --rm cms pnpm -F @lumibase/database db:migrate
+docker compose run --rm cms pnpm -F @lumibase/database migrate
 
 # Start CMS
 docker compose up -d cms
@@ -284,10 +297,30 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
 
 ### Scaling (Optional)
 
+**Single process (default)** — one container runs HTTP + cron + queue consumers (`LUMIBASE_PROCESS_ROLE=all`):
+
 ```bash
-# Scale CMS horizontally
-docker compose up -d --scale cms=3
+docker compose up -d cms
 ```
+
+**Split web / worker (recommended for horizontal scale)** — HTTP replicas without duplicated cron; one or more worker replicas with Redis leader locks:
+
+```bash
+# Start infra + split roles (compose profile `split`)
+docker compose --profile split up -d postgres redis minio minio-init meilisearch imgproxy cms-web cms-worker
+
+# Scale HTTP tier (workers stay at 1 unless you add more with shared Redis locks)
+docker compose --profile split up -d --scale cms-web=3
+```
+
+| Service | `LUMIBASE_PROCESS_ROLE` | Listens on |
+|---------|-------------------------|------------|
+| `cms` / `cms-web` | `all` / `web` | `PORT` (default 1989) — Delivery + API |
+| `cms-worker` | `worker` | `LUMIBASE_WORKER_HEALTH_PORT` (default 1988) — `/health` only |
+
+Worker processes consume queues and run `node-cron` jobs; only the Redis lock holder executes each cron tick when `REDIS_URL` is set.
+
+> **Avoid** `docker compose up -d --scale cms=3` on the monolithic `cms` service — that duplicates every cron and queue consumer. Use the split profile instead.
 
 ---
 
@@ -438,8 +471,8 @@ curl https://api.yourdomain.com/api/v1/health
 # Check service logs
 docker compose logs cms --tail=100
 
-# Check database connection
-docker compose exec cms pnpm -F @lumibase/database db:check
+# Check the database connection by dry-running migrations
+docker compose exec cms pnpm -F @lumibase/database migrate:preflight
 
 # Check Redis connection
 docker compose exec redis redis-cli ping

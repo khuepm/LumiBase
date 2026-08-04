@@ -30,6 +30,17 @@ export const requireSiteAdmin = (): MiddlewareHandler<AppEnv> => async (c, next)
     );
   }
 
+  // An anonymous principal can never be a site admin. Rejected explicitly so
+  // the `public` role is never evaluated against the checks below — the
+  // CF-Access carve-out at the end of this function keys off "no userId and no
+  // apiKeyId", which an anonymous principal also satisfies.
+  if (auth?.type === 'anonymous') {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Admin access for the requested site is required.' }] },
+      403,
+    );
+  }
+
   // Preserve the existing local-development escape hatch for explicit admin
   // dev tokens while keeping non-admin dev tokens subject to the tenant gate.
   if (auth?.raw?.dev === true && auth.roles?.includes('admin')) {
@@ -43,7 +54,9 @@ export const requireSiteAdmin = (): MiddlewareHandler<AppEnv> => async (c, next)
       ctx: {
         userId: auth.userId ?? null,
         siteId,
-        roleId: null,
+        // Always forward it — `ctx.roleId` is the only role source
+        // `PermissionService` has for a principal with no user/API-key row.
+        roleId: auth.roleId ?? null,
         user: auth.userId
           ? { id: auth.userId, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) }
           : undefined,

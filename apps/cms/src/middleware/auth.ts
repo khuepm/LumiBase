@@ -8,6 +8,13 @@ import { AuditLogger } from '../modules/audit/logger';
 import { tryExternalJwt } from '../modules/external-auth/adapter';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { TOKEN_AUDIENCE, audienceValues } from '../services/auth/token-audience';
+import { resolvePublicRoleIdCached } from '../services/auth/public-role';
+import {
+  checkOrigin,
+  isPublishablePrefix,
+  readAllowedOrigins,
+} from '../services/api-key-publishable';
+import { mergeRequestContext } from './request-context';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -82,7 +89,7 @@ function apiKeySnapshot(row: typeof apiKeys.$inferSelect): Record<string, unknow
 async function auditApiKeyUseDenied(
   c: Parameters<MiddlewareHandler<AppEnv>>[0],
   row: typeof apiKeys.$inferSelect,
-  reason: 'site_mismatch' | 'revoked' | 'expired',
+  reason: 'site_mismatch' | 'revoked' | 'expired' | 'origin_not_allowed',
 ): Promise<void> {
   await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
     event: 'api_key_use_denied',
@@ -208,6 +215,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         .get('db')
         .select({
           id: users.id,
+          externalId: users.externalId,
+          email: users.email,
           status: users.status,
           isBootstrap: users.isBootstrap,
         })
@@ -236,6 +245,16 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
+      mergeRequestContext(c, {
+        user: {
+          id: user.id,
+          externalId: String(payload.sub),
+          email,
+          isBootstrap: user.isBootstrap,
+        },
+        membership: membership?.roleId ? { roleId: membership.roleId } : null,
+      });
+
       const principal: AuthPrincipal = {
         userId: user.id,
         externalId: String(payload.sub),
@@ -244,6 +263,9 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);
+      // Request_Context_Bundle (Req 10; design §6.4): cache the `users` row +
+      // membership just resolved so `withSiteMembership` reuses them instead of
+      // re-querying for the same request.
       return next();
     } catch (err) {
       console.warn('[withAuth] CF Access verification failed:', formatSafeError(err));
@@ -293,6 +315,36 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
           { errors: [{ code: 'UNAUTHENTICATED', message: 'API key is expired or revoked.' }] },
           401,
         );
+      }
+
+      // Origin allowlist for publishable (client-embeddable) keys. Scoped to
+      // publishable keys only: a secret key is used server-to-server where no
+      // `Origin` exists, so applying this there would reject every caller.
+      //
+      // This is not a confidentiality control — a publishable key is public by
+      // construction. It stops another *website* from using the key in a
+      // browser, which is the failure mode operators actually hit. See
+      // `services/api-key-publishable.ts` for the full verdict semantics.
+      if (isPublishablePrefix(apiKey.prefix)) {
+        const verdict = checkOrigin(
+          c.req.header('origin'),
+          c.req.header('referer'),
+          readAllowedOrigins(apiKey.metadata),
+        );
+        if (verdict === 'denied') {
+          await auditApiKeyUseDenied(c, apiKey, 'origin_not_allowed');
+          return c.json(
+            {
+              errors: [
+                {
+                  code: 'ORIGIN_NOT_ALLOWED',
+                  message: 'This key is not allowed for the requesting origin.',
+                },
+              ],
+            },
+            403,
+          );
+        }
       }
 
       // Debounced, off-path last-used touch (Req 3): skip the write entirely
@@ -391,6 +443,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         .get('db')
         .select({
           id: users.id,
+          externalId: users.externalId,
+          email: users.email,
           status: users.status,
           isBootstrap: users.isBootstrap,
           tokenVersion: users.tokenVersion,
@@ -433,6 +487,16 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       // (`studio` vs `frontend`). `isFrontendUser` tracks it for the
       // `/me` surface; `withStudioAccess` enforces the hard wall using
       // the same claim carried on `raw`.
+      mergeRequestContext(c, {
+        user: {
+          id: user.id,
+          externalId: null,
+          email: typeof payload.email === 'string' ? payload.email : user.id,
+          isBootstrap: user.isBootstrap,
+        },
+        membership: membership?.roleId ? { roleId: membership.roleId } : null,
+      });
+
       const principal: AuthPrincipal = {
         userId,
         email: typeof payload.email === 'string' ? payload.email : undefined,
@@ -441,6 +505,9 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);
+      // Request_Context_Bundle (Req 10; design §6.4): cache the `users` row +
+      // membership just resolved so `withSiteMembership` reuses them instead of
+      // re-querying for the same request.
       return next();
     } catch (err) {
       console.warn('[withAuth] Custom JWT verification failed:', formatSafeError(err));
@@ -451,8 +518,66 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     }
   }
 
+  // 4. Anonymous (`public` realm). No credential was presented at all.
+  //
+  // Historically this was an unconditional 401. It still is unless BOTH hold:
+  // the request is a read on an allow-listed content path, AND the site has
+  // explicitly enabled public access (which is what creates the `public`
+  // role). Resolving to a real role — rather than skipping the permission
+  // layer — keeps row filters and field masks in force for anonymous callers.
+  if (await allowsAnonymous(c)) {
+    const publicRoleId = await resolvePublicRoleIdCached(
+      c.get('db'),
+      c.get('siteId'),
+      c.get('runtime')?.cache,
+    );
+    if (publicRoleId) {
+      const principal: AuthPrincipal = {
+        type: 'anonymous',
+        roleId: publicRoleId,
+        roles: [publicRoleId],
+        raw: { anonymous: true },
+      };
+      c.set('auth', principal);
+      return next();
+    }
+  }
+
   return c.json(
     { errors: [{ code: 'UNAUTHENTICATED', message: 'Authentication required.' }] },
     401,
   );
 };
+
+/**
+ * Content paths an unauthenticated caller may reach once a site enables
+ * public access.
+ *
+ * Deliberately an allowlist, not a denylist: every other route keeps its
+ * pre-existing 401. Studio management paths are excluded here AND blocked
+ * again by `withStudioAccess` (an anonymous principal has no `userId`), so
+ * neither guard is load-bearing alone.
+ *
+ * `/graphql` is absent on purpose — its operations arrive over POST, so it
+ * cannot be covered by the read-method rule below. Opening it to anonymous
+ * callers needs read-only operation validation alongside the cost limiter and
+ * is a separate change.
+ */
+const ANONYMOUS_ALLOWED_PREFIXES = [
+  '/api/v1/items',
+  '/api/v1/search',
+  '/api/v1/media',
+  '/api/v1/files',
+];
+
+/** Only side-effect-free methods are ever eligible for the anonymous realm. */
+const ANONYMOUS_ALLOWED_METHODS = new Set(['GET', 'HEAD']);
+
+async function allowsAnonymous(c: Parameters<MiddlewareHandler<AppEnv>>[0]): Promise<boolean> {
+  if (!ANONYMOUS_ALLOWED_METHODS.has(c.req.method.toUpperCase())) return false;
+  if (!c.get('siteId') || !c.get('db')) return false;
+  const path = c.req.path;
+  return ANONYMOUS_ALLOWED_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+  );
+}

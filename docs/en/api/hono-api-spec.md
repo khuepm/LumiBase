@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-07-25T08:11:35.148Z
+sourceLang: en
+contentHash: 42b4c9322dccd73d
+codeVerified: 2026-07-25T08:11:35.148Z
+codeVerifiedHash: 42b4c9322dccd73d
+codeVerifiedClaims: 208
+---
+
 # Hono API Specification — LumiBase
 
 > **For AI agents:** This page is also available as clean Markdown. Append `/index.md` to any LumiBase docs URL.
@@ -384,6 +394,28 @@ CLI: `pnpm --filter @lumibase/cms config export|diff|apply` — see
 
 ---
 
+## 3a. Pages (Delivery page-builder rows)
+
+Studio-authenticated CRUD over `lumibase_pages` (consumed by
+`GET /api/v1/deliver/page/:site_id/:slug`). Create and slug rename clear
+matching negative-cache tombstones immediately.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/pages` | List pages for the active site |
+| `POST` | `/api/v1/pages` | Create `{ slug, title, layoutConfig? }` |
+| `GET` | `/api/v1/pages/:id` | Get one page |
+| `PATCH` | `/api/v1/pages/:id` | Partial update (`slug` / `title` / `layoutConfig`) |
+| `DELETE` | `/api/v1/pages/:id` | Delete page |
+
+Slug shape matches the Delivery guard (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).
+
+Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` with
+`{ tags?: string[], keys?: string[] }` — every tag/key must include the
+active `siteId`.
+
+---
+
 ## 3. Items (Generic CRUD)
 
 | Method | Path | Description |
@@ -542,7 +574,7 @@ Scheduled releases publish via the shared `content-scheduler` tick
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/v1/files/upload-url` | Get presigned R2/S3 PUT URL |
+| `POST` | `/api/v1/files/presigned-url` | Get presigned R2/S3 PUT URL |
 | `POST` | `/api/v1/files` | Register file metadata after upload |
 | `GET` | `/api/v1/files` | List files (filterable) |
 | `GET` | `/api/v1/files/:id` | File metadata |
@@ -1115,6 +1147,8 @@ credentials are shared-cacheable so any CDN/proxy can absorb repeat reads.
 | No credentials (default) | `Cache-Control: public, s-maxage=60, stale-while-revalidate=300` · `ETag: W/"…"` · `Vary: X-Lumi-Site` |
 | `Authorization` header present | `Cache-Control: private, no-store` (no shared `ETag`) |
 | Page not found | `404` + `Cache-Control: no-store` |
+| Identifier shape invalid (`site_id` / `slug`) | `404` + `Cache-Control: no-store` (identical body to a real miss — not `400`) |
+| Client IP over `LUMIBASE_DELIVER_RATE_LIMIT` | `429` + `Retry-After` + `Cache-Control: no-store` |
 
 Conditional requests: send `If-None-Match` with the last `ETag`; a match
 returns `304 Not Modified` with an empty body and skips section hydration
@@ -1123,7 +1157,10 @@ scheduled publish/unpublish taking effect) rotates it, so a stale 304 is never
 served at the cost of a lower revalidation hit-rate.
 
 Tunables (env): `LUMIBASE_DELIVER_SMAXAGE` (seconds, default `60`, `0`
-disables public caching), `LUMIBASE_DELIVER_SWR` (seconds, default `300`).
+disables public caching), `LUMIBASE_DELIVER_SWR` (seconds, default `300`),
+`LUMIBASE_NEGATIVE_CACHE_TTL` (seconds, default `30`, `0` disables
+tombstones), `LUMIBASE_DELIVER_RATE_LIMIT` (req/min/IP, default `1200`,
+`0` disables). See [Caching — penetration](../features/caching.md).
 
 ---
 
@@ -1198,4 +1235,4 @@ Mounted on the authenticated `api` app BEFORE the ClickHouse CDC control-plane r
 | POST | `/cdc/subscriptions/:id/dispatch` | site admin | On-demand dispatch (no-queue fallback). 202. |
 | GET | `/cdc/subscriptions/:id/deliveries` | site admin | Delivery-attempt history, newest first (`limit`, `page`; `meta.total`). |
 
-Webhook deliveries are signed: `X-Lumibase-Signature: t=<unix>,v1=<hmac_sha256_hex>` over `` `${t}.${rawBody}` `` — see `docs/en/features/cdc-change-feed.md` for the verify snippet and envelope reference.
+Webhook deliveries are signed: `X-LumiBase-Signature: t=<unix>,v1=<hmac_sha256_hex>` over `` `${t}.${rawBody}` `` — see `docs/en/features/cdc-change-feed.md` for the verify snippet and envelope reference.

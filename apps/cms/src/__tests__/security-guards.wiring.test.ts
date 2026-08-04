@@ -40,6 +40,14 @@ describe('security guard wiring — /api/v1 middleware chain (index.ts)', () => 
     );
   });
 
+  it('mounts a dedicated IP rate limiter on the public deliver surface', () => {
+    // Req 19.10 / design §14.9 — deliver must NOT be skipped; it has its own
+    // limiter keyed by IP (task 22.7). Assertion is additive — do not weaken.
+    expect(source).toMatch(
+      /app\.use\('\/api\/v1\/deliver\/\*',\s*withDb\(\),\s*withDeliverRateLimit\(\)\)/,
+    );
+  });
+
   it('keeps withSiteMembership after withAuth (needs a resolved principal)', () => {
     const chain = source.match(/api\.use\('\*',[^\n]*\);/)?.[0] ?? '';
     const authIdx = chain.indexOf('withAuth()');
@@ -112,6 +120,7 @@ describe('security guard wiring — control-plane path coverage', () => {
     '/api/v1/permissions',
     '/api/v1/policies',
     '/api/v1/roles',
+    '/api/v1/utils/cache',
   ])('classifies %s as control-plane', (path) => {
     expect(isControlPlanePath(path)).toBe(true);
     expect(isControlPlanePath(`${path}/anything`)).toBe(true);

@@ -6,10 +6,10 @@ Official landing page for lumibase.dev - built with Next.js, TypeScript, and Tai
 
 - **Modern Design**: Clean, responsive landing page with hero section, features, and CTAs
 - **SEO Optimized**: Meta tags, sitemap.xml, and robots.txt for search engines
-- **Legal Pages**: Terms of Service, Privacy Policy, and License pages (MIT License)
+- **Legal Pages**: Terms of Service, Privacy Policy, and License pages (Apache License 2.0)
 - **Cloudflare Ready**: Configured for deployment on Cloudflare Pages
 - **Type-Safe**: Built with TypeScript for better developer experience
-- **Dark Mode Support**: Automatic dark mode based on system preferences
+- **Dark Theme**: Ships as a dark-only theme (the root layout sets `class="dark"`)
 
 ## Development
 
@@ -83,6 +83,55 @@ wrangler login
 wrangler pages deploy out
 ```
 
+## Sponsor rewards store
+
+`src/lib/rewards/` implements the GitHub Sponsors reward-token flow behind a
+single `SponsorStore` interface, so every read and write (record a sponsorship,
+look a token up, claim it) goes through one store:
+
+| Implementation | Persistence | Use |
+| --- | --- | --- |
+| `InMemorySponsorStore` | process-local, lost on restart, not shared across instances | local dev and tests (**default**) |
+| `D1SponsorStore` | Cloudflare D1 (SQLite) | deployed environments |
+
+Claiming is atomic in both: given N concurrent requests with the same valid
+token, exactly one succeeds and the rest get `Reward already claimed`. In D1
+that is a single `UPDATE … WHERE reward_token = ? AND claimed = 0 RETURNING tier`
+compare-and-set — no read-then-write race.
+
+### Enabling persistence
+
+The landing app currently builds as a static export (`output: 'export'`), so the
+route handlers that use this module live in `src/_api-routes-disabled/` and are
+not part of the build. Persistence is therefore wired up only when those routes
+are re-enabled on a server runtime (e.g. `@cloudflare/next-on-pages`):
+
+1. Create the database and apply the migration:
+
+   ```bash
+   wrangler d1 create lumibase-sponsors
+   wrangler d1 migrations apply lumibase-sponsors --remote
+   ```
+
+2. Add the binding to `wrangler.toml` (a commented block is already there) using
+   the `database_id` printed by `d1 create`.
+
+3. Install the store once at request/boot time, before any rewards helper runs:
+
+   ```ts
+   import { getRequestContext } from '@cloudflare/next-on-pages';
+   import { configureSponsorStore, resolveSponsorStore } from '@/lib/rewards';
+
+   configureSponsorStore(resolveSponsorStore(getRequestContext().env));
+   ```
+
+`resolveSponsorStore(env)` returns a `D1SponsorStore` when `env.SPONSORS_DB` is
+present and otherwise falls back to the in-memory store, logging a warning in
+production. Without step 3 the module keeps working, but only in memory.
+
+The table DDL lives in `migrations/0001_sponsors.sql` and is mirrored by
+`SPONSORS_TABLE_DDL` in `src/lib/rewards/d1-store.ts` — keep the two in sync.
+
 ## Environment Variables
 
 Copy `.env.example` to `.env.local` and configure:
@@ -102,12 +151,19 @@ apps/landing/
 │   │   ├── page.tsx            # Landing page
 │   │   ├── globals.css         # Global styles
 │   │   ├── sitemap.ts          # Sitemap generation
+│   │   ├── opengraph-image.tsx # Social share card
+│   │   ├── pricing/            # Pricing page
 │   │   ├── tos/                # Terms of Service
 │   │   ├── privacy/            # Privacy Policy
 │   │   └── license/            # License page
 │   └── components/
 │       ├── Header.tsx          # Site header with navigation
-│       └── Footer.tsx          # Site footer with links
+│       ├── Footer.tsx          # Site footer with links
+│       ├── Hero.tsx            # Hero headline + orbital stage
+│       ├── ProductSection.tsx  # Product pillar sections
+│       ├── SectionVisuals.tsx  # Per-pillar mini-visuals
+│       ├── TrustViz.tsx        # Trust-ladder visual
+│       └── PricingCard.tsx     # Pricing tier card
 ├── public/
 │   └── robots.txt              # SEO robots.txt
 ├── next.config.ts              # Next.js configuration
@@ -139,4 +195,4 @@ Modify the color scheme in `src/app/globals.css` and `tailwind.config.ts`.
 
 ## License
 
-This project is open-source and available under the MIT License. See the [License page](/license) for details.
+This project is open-source and available under the Apache License, Version 2.0. See the [License page](/license) for details. `v0.22.0` was the final release under the MIT License; the relicense to Apache 2.0 took effect in `v0.23.0`.

@@ -4,16 +4,24 @@ import type { AppEnv } from '../env';
 /**
  * Endpoint deprecation signalling (OWASP API9: Improper Inventory Management).
  *
- * Attach to any route that is being retired so consumers get a machine-readable
- * warning ahead of removal, via the IETF `Deprecation` and `Sunset` response
- * headers (RFC 8594) plus an optional `Link rel="deprecation"` to the changelog.
+ * Opt-in toolbox helper — **do not** mount on the global app chain or on healthy
+ * endpoints. Attach only when an explicit task retires / deprecates / sunsets a
+ * specific route or sub-router. Leaving this unwired while nothing is being
+ * retired is the correct default (wiring early would falsely mark live APIs
+ * as deprecated).
  *
- * Example:
+ * Emits IETF `Deprecation` / `Sunset` headers (RFC 8594) plus optional
+ * `Link rel="deprecation"` to the changelog so consumers get a machine-readable
+ * migration window.
+ *
+ * Example (retiring router only):
  *   legacyRouter.use('*', withDeprecation({
  *     since: '2026-07-01',
  *     sunset: '2026-10-01',
  *     link: 'https://docs.lumibase.dev/changelog#v1-items-legacy',
  *   }));
+ *
+ * Agent guidance: `docs/en/agent-setup/prompt.md` § Endpoint deprecation.
  */
 export interface DeprecationOptions {
   /** ISO-8601 date (or HTTP-date) the endpoint became deprecated. */

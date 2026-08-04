@@ -64,6 +64,11 @@ export function RunHistoryPanel({
   const runsQuery = useQuery({
     queryKey: ['flow-runs', flowId],
     queryFn: () => runsApi<FlowRunSummary[]>(`/${flowId}/runs`),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      const active = data?.some((r) => r.status === 'pending' || r.status === 'running');
+      return active ? 2000 : false;
+    },
   });
 
   const detailQuery = useQuery({

@@ -32,7 +32,7 @@ const faqs = [
   {
     question: "How does GitHub Sponsors work?",
     answer:
-      "When you sponsor us on GitHub, you get access to premium managed features based on your tier. We send you a reward token to unlock them.",
+      "Sponsoring on GitHub funds ongoing development. The full Content OS core is open-source and free — no token or unlock required. Managed hosting on the Hobby and Enterprise tiers is arranged directly; reach out and we'll get you set up.",
   },
   {
     question: "What payment methods do you accept?",

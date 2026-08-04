@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import type { AppEnv } from '../env';
 import { getHostMapping } from '../services/domains/host-cache';
+import { isValidSiteId } from '../services/identifier-guard';
 
 /**
  * Resolve the active `site_id` for the request and pin it on the context.
@@ -24,6 +25,21 @@ export const withTenant = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
   const headerSite = c.req.header('x-lumi-site');
   if (headerSite) {
+    // Req 19.2: shape-check the explicit header before it becomes context.
+    // 400 (not 404) — this is a client-supplied header, not a resource probe.
+    if (!isValidSiteId(headerSite)) {
+      return c.json(
+        {
+          errors: [
+            {
+              code: 'TENANT_INVALID',
+              message: 'X-Lumi-Site header has an invalid format.',
+            },
+          ],
+        },
+        400,
+      );
+    }
     c.set('siteId', headerSite);
     return next();
   }
@@ -57,6 +73,19 @@ export const withTenant = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   if (c.env.LUMIBASE_DEV_AUTH === 'true') {
     const fromQuery = c.req.query('site');
     if (fromQuery) {
+      if (!isValidSiteId(fromQuery)) {
+        return c.json(
+          {
+            errors: [
+              {
+                code: 'TENANT_INVALID',
+                message: 'site query parameter has an invalid format.',
+              },
+            ],
+          },
+          400,
+        );
+      }
       c.set('siteId', fromQuery);
       return next();
     }

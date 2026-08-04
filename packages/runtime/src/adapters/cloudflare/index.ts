@@ -1,5 +1,6 @@
 import type { RuntimeContext } from '../../interfaces';
 import { CloudflareCacheProvider, type KVNamespace } from './cache';
+import { CloudflareEdgeCacheProvider } from './edge-cache';
 import { CloudflareStorageProvider, type R2Bucket } from './storage';
 import { CloudflareDatabaseProvider, type Hyperdrive } from './database';
 import { CloudflareSearchProvider } from './search';
@@ -7,9 +8,12 @@ import { CloudflareQueueProvider, type CloudflareQueue } from './queue';
 import { CloudflareMediaProcessor } from './media';
 import { createCloudflareKeyProvider } from './keys';
 import { CloudflareRealtimeProvider, type DurableObjectNamespaceLike } from './realtime';
+import { CacheBackedRateLimiter } from '../cache-rate-limiter';
+import { MemoryRateLimiter } from '../../memory-rate-limiter';
 
 export { CloudflareRealtimeProvider } from './realtime';
 export { CloudflareCacheProvider } from './cache';
+export { CloudflareEdgeCacheProvider } from './edge-cache';
 export { CloudflarePageviewCounter } from './counter';
 export { CloudflareStorageProvider } from './storage';
 export { CloudflareDatabaseProvider } from './database';
@@ -17,6 +21,7 @@ export { CloudflareSearchProvider } from './search';
 export { CloudflareQueueProvider } from './queue';
 export { CloudflareMediaProcessor } from './media';
 export { createCloudflareKeyProvider } from './keys';
+export { CacheBackedRateLimiter } from '../cache-rate-limiter';
 
 /**
  * Expected Cloudflare Worker environment bindings.
@@ -75,8 +80,11 @@ function collectQueues(env: Record<string, unknown>): Record<string, CloudflareQ
 export function createCloudflareRuntime(env: Record<string, unknown>): RuntimeContext {
   const cfEnv = env as unknown as CloudflareEnv;
 
+  const cache = new CloudflareCacheProvider(cfEnv.CONFIG_CACHE, cfEnv.PAGEVIEW_COUNTER);
   return {
-    cache: new CloudflareCacheProvider(cfEnv.CONFIG_CACHE, cfEnv.PAGEVIEW_COUNTER),
+    cache,
+    rateLimiter: new CacheBackedRateLimiter(cache, new MemoryRateLimiter()),
+    edgeCache: new CloudflareEdgeCacheProvider(),
     storage: new CloudflareStorageProvider(cfEnv.MEDIA),
     database: new CloudflareDatabaseProvider(cfEnv.HYPERDRIVE),
     search: new CloudflareSearchProvider(
