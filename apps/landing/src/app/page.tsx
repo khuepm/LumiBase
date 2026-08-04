@@ -18,6 +18,7 @@ import Scene from "@/components/scroll/Scene";
 import WipeTitle from "@/components/scroll/WipeTitle";
 import DotBand from "@/components/DotBand";
 import DotField from "@/components/DotField";
+import GlassGem from "@/components/GlassGem";
 import TrustLadderScene from "@/components/TrustLadderScene";
 import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
 
@@ -160,11 +161,13 @@ const sections: SectionData[] = [
         node: <EclipsePhase phase={2} size={96} />,
       },
       {
+        // The constitution as a cut crystal: versioned, hashed, immutable —
+        // everything that ships passes through it, and comes out bent by it.
         title: "Tenant Constitution",
         desc: "Versioned, hashed publish gates encode your taste and policy. What fails the constitution never ships — at any autonomy level.",
-        badge: "Publish gate",
-        badgeTone: "accent",
-        vh: 170,
+        span: 2,
+        vh: 280,
+        node: <GlassGem />,
       },
       {
         title: "Multi-agent newsroom",
