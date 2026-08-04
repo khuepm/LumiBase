@@ -1,16 +1,29 @@
-# Page Hydration API Contract
+---
+version: 1
+lastUpdated: 2026-08-04T22:01:12.048Z
+sourceLang: en
+translatedFrom: en
+sourceHash: f0f9348fb05a5190
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-04T22:01:12.048Z
+codeVerifiedHash: f0f9348fb05a5190
+codeVerifiedClaims: 2
+---
 
-To solve the "2-roundtrip" problem, the CMS provides a BFF (Backend-for-Frontend) endpoint for Next.js.
+# Hợp đồng API Page Hydration
+
+Để giải quyết vấn đề "2-roundtrip", CMS cung cấp một endpoint BFF (Backend-for-Frontend) cho Next.js.
 
 ## Endpoint: `GET /api/v1/deliver/page/:site_id/:slug`
 
-### Workflow triggered by API:
-1. **Fetch Page Config:** Retrieve the `pages` record matching `:slug` and `:site_id`.
-2. **Analyze Dependencies:** Read `layoutConfig.sections`. Identify which collections are needed (e.g., "Hero section needs latest 3 items from `posts` collection").
-3. **Parallel Fetch:** Execute Drizzle DB queries to fetch the required collection data.
-4. **Merge & Deliver:** Combine layout configuration and data into one unified JSON response.
+### Luồng xử lý mà API kích hoạt:
+1. **Lấy cấu hình page:** Truy xuất record `pages` khớp với `:slug` và `:site_id`.
+2. **Phân tích dependency:** Đọc `layoutConfig.sections`. Xác định những collection nào cần dùng (ví dụ "Hero section cần 3 item mới nhất từ collection `posts`").
+3. **Fetch song song:** Chạy các query Drizzle DB để lấy dữ liệu collection cần thiết.
+4. **Gộp & trả về:** Kết hợp cấu hình layout và dữ liệu thành một response JSON hợp nhất.
 
-Sections can declare a data source:
+Mỗi section có thể khai báo một nguồn dữ liệu:
 
 ```json
 {
@@ -25,12 +38,12 @@ Sections can declare a data source:
 }
 ```
 
-The delivery resolver scopes the query by `site_id`, defaults to
-`status: "published"` for public delivery, clamps `limit` to 50 items, and
-merges the hydrated rows into `data.items`. Set `source.status` only when a
-public page intentionally needs a different item status.
+Delivery resolver scope query theo `site_id`, mặc định
+`status: "published"` cho public delivery, kẹp `limit` xuống tối đa 50 item, và
+gộp các dòng đã hydrate vào `data.items`. Chỉ đặt `source.status` khi một
+public page thật sự cần một item status khác.
 
-### Expected JSON Response Structure:
+### Cấu trúc JSON response mong đợi:
 ```json
 {
   "page": {
@@ -65,3 +78,4 @@ public page intentionally needs a different item status.
     }
   ]
 }
+```

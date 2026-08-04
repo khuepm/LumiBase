@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-04T22:01:12.048Z
+sourceLang: en
+contentHash: f0f9348fb05a5190
+codeVerified: 2026-08-04T22:01:12.048Z
+codeVerifiedHash: f0f9348fb05a5190
+codeVerifiedClaims: 2
+---
+
 # Page Hydration API Contract
 
 To solve the "2-roundtrip" problem, the CMS provides a BFF (Backend-for-Frontend) endpoint for Next.js.
@@ -65,3 +75,4 @@ public page intentionally needs a different item status.
     }
   ]
 }
+```
