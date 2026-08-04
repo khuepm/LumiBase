@@ -1,6 +1,7 @@
 # Giao việc: dịch docs EN⇄VI — LumiBase
 
-> **Ảnh chụp: 2026-08-02, tại `v0.25.0`.** 146 cặp doc — **86 up-to-date, 60 còn việc**,
+> **Ảnh chụp: 2026-08-02, tại `v0.25.0`.** 146 cặp doc — **86 up-to-date, 60 còn việc**
+> (53 nhận được ngay, 7 chờ upstream — [§7.5](#75-chờ-upstream--đừng-nhận-bây-giờ)),
 > 0 conflict. Con số này lấy từ `pnpm docs:i18n:detect`; chạy lại trước khi bắt đầu vì
 > bảng ở [§7](#7-bảng-nhiệm-vụ) là ảnh chụp, còn detect là sự thật.
 
@@ -256,8 +257,12 @@ Không tự quyết những việc dưới đây. Dừng, mô tả tình huống
 
 ## 7. Bảng nhiệm vụ
 
-Ảnh chụp `pnpm docs:i18n:detect` tại 2026-08-02 (`v0.25.0`): 60 file. Sắp theo thứ tự
-ưu tiên đề xuất — **làm từ trên xuống**.
+Ảnh chụp `pnpm docs:i18n:detect` tại 2026-08-02 (`v0.25.0`): 60 file — 53 nhận được
+ngay, **7 file đang chờ upstream** ([§7.5](#75-chờ-upstream--đừng-nhận-bây-giờ)). Làm
+**từ trên xuống**.
+
+Cột **#** là ID cố định của dòng, **không phải thứ tự** — thứ tự là thứ tự các mục.
+ID không đổi khi một dòng được chuyển nhóm, để một file đã `CLAIMED` vẫn tìm lại được.
 
 Cột **parity** = số vấn đề cấu trúc mà cặp đó **đang** có trước khi bạn chạm vào
 (`—` = phía đích chưa tồn tại nên không so được). Số càng cao thì bản dịch cũ càng
@@ -274,18 +279,19 @@ trong backlog.
 | 2 | `architecture/page-hydration.md` | en→vi | 68 | 3 | TODO | — |
 | 3 | `ai-skills.md` | en→vi | 148 | 8 | TODO | — |
 
-### Ưu tiên 2 — thiếu hẳn bản VI, đều là doc mới của 0.25.0 (4 file)
+### Ưu tiên 2 — thiếu hẳn bản VI, doc mới của 0.25.0 (2 file)
 
 An toàn nhất: chỉ tạo file mới, không ghi đè gì.
 
 | # | File (rel) | Chiều | Dòng nguồn | parity | Trạng thái | Agent |
 |---|---|---|---|---|---|---|
-| 4 | `architecture/decisions/adr-012-remove-cdc-cache-invalidator.md` | en→vi | 48 | — | TODO | — |
 | 5 | `features/caching.md` | en→vi | 60 | — | TODO | — |
 | 6 | `roadmap/post-v1.md` | en→vi | 71 | — | TODO | — |
-| 7 | `deployment/performance.md` | en→vi | 97 | — | TODO | — |
 
-### Ưu tiên 3 — surface release, chặn tag 1.0.0 (4 file, mỗi file một PR)
+Hai doc mới còn lại của 0.25.0 — `architecture/decisions/adr-012-…` (#4) và
+`deployment/performance.md` (#7) — nằm ở §7.5: PR #336 sắp gần như tăng gấp đôi cả hai.
+
+### Ưu tiên 3 — surface release, chặn tag 1.0.0 (2 file, mỗi file một PR)
 
 `v1-release-criteria.md` §5 yêu cầu các doc này khớp code **tại thời điểm tag**, và
 docs/en ⇄ docs/vi sync. Chúng dài; đừng gom lô.
@@ -294,20 +300,20 @@ docs/en ⇄ docs/vi sync. Chúng dài; đừng gom lô.
 |---|---|---|---|---|---|---|
 | 8 | `getting-started.md` | en→vi | 173 | 2 | TODO | — |
 | 9 | `tutorials/nextjs-quickstart.md` | en→vi | 514 | 3 | TODO | — |
-| 10 | `DEPLOYMENT-CHECKLIST.md` | en→vi | 563 | 3 | TODO | — |
-| 11 | `api/hono-api-spec.md` | en→vi | 1239 | 7 | TODO | — |
 
-### Ưu tiên 4 — phần còn lại, nhỏ trước (49 file)
+Hai doc surface còn lại — `DEPLOYMENT-CHECKLIST.md` (#10) và `api/hono-api-spec.md`
+(#11) — cũng ở §7.5. Chúng là 1802 dòng, tức ~19% tổng công của backlog; dịch trước
+khi #336 merge là verify + stamp lại toàn bộ hai cặp đó một lần nữa.
+
+### Ưu tiên 4 — phần còn lại, nhỏ trước (46 file)
 
 | # | File (rel) | Chiều | Dòng nguồn | parity | Trạng thái | Agent |
 |---|---|---|---|---|---|---|
 | 12 | `tutorials/index.md` | en→vi | 43 | 2 | TODO | — |
-| 13 | `architecture/decisions/index.md` | en→vi | 48 | 2 | TODO | — |
 | 14 | `security/idor-testing.md` | en→vi | 50 | 3 | TODO | — |
 | 15 | `compliance/data-residency.md` | en→vi | 54 | 2 | TODO | — |
 | 16 | `compliance/data-map.md` | en→vi | 69 | 2 | TODO | — |
 | 17 | `features/permission-service-compose-audit.md` | en→vi | 72 | 6 | TODO | — |
-| 18 | `architecture/decisions/adr-004-tag-based-cache-invalidation.md` | en→vi | 74 | 0 | TODO | — |
 | 19 | `compliance/dpa-template.md` | en→vi | 77 | 2 | TODO | — |
 | 20 | `compliance/market-us.md` | en→vi | 77 | 2 | TODO | — |
 | 21 | `security/route-guards.md` | en→vi | 80 | 1 | TODO | — |
@@ -348,12 +354,39 @@ docs/en ⇄ docs/vi sync. Chúng dài; đừng gom lô.
 | 56 | `features/role-policy-flag-migration.md` | en→vi | 269 | 1 | TODO | — |
 | 57 | `security/anti-abuse.md` | en→vi | 303 | 5 | TODO | — |
 | 58 | `features/agent-harness-layer.md` | en→vi | 310 | 8 | TODO | — |
-| 59 | `contributing/testing.md` | en→vi | 312 | 4 | TODO | — |
 | 60 | `security/owasp-api-top-10-audit.md` | en→vi | 327 | 1 | TODO | — |
 
 Ba file `agent-setup/*` và `aio/README.md` có `parity 0` nhưng vẫn ở đây vì nguồn đã
 đổi sau lần sync trước — bản dịch cũ đúng cấu trúc nhưng nội dung lạc hậu. Cấu trúc
 sạch không có nghĩa nội dung đúng; đó là lý do `parity` và `verify` là hai script khác nhau.
+
+### 7.5 Chờ upstream — đừng nhận bây giờ
+
+Nguồn EN của 7 file này **đang xếp hàng để đổi** trong PR
+[#336](https://github.com/khuepm/LumiBase/pull/336) (high-load P0–P2, đã bỏ draft
+2026-08-02). Dịch bây giờ là dịch hai lần: `sourceHash` lệch ngay khi #336 merge, cặp
+quay về `planned`, và phải verify + stamp lại từ đầu.
+
+| # | File (rel) | Dòng nguồn | #336 đổi | Vì sao chờ |
+|---|---|---|---|---|
+| 7 | `deployment/performance.md` | 97 | **+96** | Gần như gấp đôi tài liệu |
+| 4 | `architecture/decisions/adr-012-remove-cdc-cache-invalidator.md` | 48 | **+47** | Gần như gấp đôi |
+| 59 | `contributing/testing.md` | 312 | +44 | 14% nội dung mới |
+| 11 | `api/hono-api-spec.md` | 1239 | +22 | Diff nhỏ, nhưng phải verify + stamp lại 1239 dòng |
+| 10 | `DEPLOYMENT-CHECKLIST.md` | 563 | +22 | Như trên |
+| 13 | `architecture/decisions/index.md` | 48 | +1 | Đi cùng adr-004/adr-012 |
+| 18 | `architecture/decisions/adr-004-tag-based-cache-invalidation.md` | 74 | +1 | Đi cùng #13 |
+
+**Khi #336 merge (hoặc đóng):** chạy lại `pnpm docs:i18n:detect`, chuyển 7 dòng này
+lên nhóm ưu tiên phù hợp (#10 và #11 về Ưu tiên 3 — chúng chặn tag; #4 và #7 về Ưu
+tiên 2), rồi xoá mục này.
+
+**Backlog là mục tiêu di động khi còn PR mở chạm `docs/en/`.**
+[#337](https://github.com/khuepm/LumiBase/pull/337) (CLI) sẽ thêm `docs/en/cli/index.md`
+— một doc mới cần bản VI — và làm `release/npm-publishing.md` (đang up-to-date) stale
+lại. Nên `planned: 0` chỉ đóng được sau scope freeze (§2 của
+`.kiro/steering/v1-release-criteria.md`). Đừng coi con số 53 ở trên là cố định; chạy
+detect.
 
 ---
 
