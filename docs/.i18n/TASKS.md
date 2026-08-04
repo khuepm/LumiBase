@@ -275,7 +275,7 @@ trong backlog.
 
 | # | File (rel) | Chiều | Dòng nguồn | parity | Trạng thái | Agent |
 |---|---|---|---|---|---|---|
-| 1 | `roadmap/phase-d1-users.md` | en→vi | 21 | 3 | TODO | — |
+| 1 | `roadmap/phase-d1-users.md` | en→vi | 21 | 3 | DONE | claude-code |
 | 2 | `architecture/page-hydration.md` | en→vi | 68 | 3 | TODO | — |
 | 3 | `ai-skills.md` | en→vi | 148 | 8 | TODO | — |
 

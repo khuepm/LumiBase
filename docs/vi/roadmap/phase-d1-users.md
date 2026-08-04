@@ -1,20 +1,33 @@
-# Phase D1: Users & Teams Management
+---
+version: 1
+lastUpdated: 2026-08-04T21:59:34.150Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 9d561ce21bd8e439
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-04T21:59:34.150Z
+codeVerifiedHash: 9d561ce21bd8e439
+codeVerifiedClaims: 12
+---
 
-This document summarizes the features implemented in Phase D1 for user and team management.
+# Phase D1: Quản lý người dùng & team
 
-## 1. Data Model
-The platform manages users at a global level (identity via Logto) and binds them to specific sites using the `user_sites` junction table. Teams are scoped entirely to a `siteId`, and `team_members` links users to those teams.
+Tài liệu này tóm tắt các tính năng đã triển khai trong Phase D1 cho việc quản lý người dùng và team.
+
+## 1. Mô hình dữ liệu
+Nền tảng quản lý người dùng ở cấp toàn cục (identity qua Logto) và gắn họ vào từng site cụ thể bằng bảng junction `user_sites`. Team được scope hoàn toàn theo `siteId`, và `team_members` liên kết người dùng với các team đó.
 
 ## 2. API Endpoints (`apps/cms`)
-- **`GET /api/v1/users`**: Lists all users belonging to the active site.
-- **`POST /api/v1/users/invite`**: Invites a new user by email. If the user doesn't exist globally, a "shadow" user is created with a dummy `logtoId` until they formally register.
-- **`PATCH /api/v1/users/:id`**: Updates user details and their role within the current site.
-- **`DELETE /api/v1/users/:id`**: Removes a user's access from the site.
-- **`POST /api/v1/users/:id/impersonate`**: Generates a mock impersonation token for admin use.
-- **`GET/POST/PATCH/DELETE /api/v1/teams`**: Standard CRUD for team entities.
-- **`POST/DELETE /api/v1/teams/:id/members`**: Manages team composition.
+- **`GET /api/v1/users`**: Liệt kê toàn bộ người dùng thuộc site đang hoạt động.
+- **`POST /api/v1/users/invite`**: Mời một người dùng mới bằng email. Nếu người dùng chưa tồn tại ở cấp toàn cục, một người dùng "shadow" được tạo với `logtoId` giả cho tới khi họ đăng ký chính thức.
+- **`PATCH /api/v1/users/:id`**: Cập nhật thông tin người dùng và role của họ trong site hiện tại.
+- **`DELETE /api/v1/users/:id`**: Bỏ quyền truy cập của một người dùng khỏi site.
+- **`POST /api/v1/users/:id/impersonate`**: Sinh một token impersonation mô phỏng cho admin dùng.
+- **`GET/POST/PATCH/DELETE /api/v1/teams`**: CRUD tiêu chuẩn cho thực thể team.
+- **`POST/DELETE /api/v1/teams/:id/members`**: Quản lý thành phần của team.
 
-## 3. Frontend Modules (`apps/studio`)
-- **Users List**: A comprehensive table showing avatar, role, status, and last seen data.
-- **Team Management**: Card-based team overview with a dialog-based member assignment interface.
-- **Invitations**: Direct invite UI that hooks into the backend's shadow user creation process.
+## 3. Module Frontend (`apps/studio`)
+- **Users List**: Bảng đầy đủ hiển thị avatar, role, trạng thái và dữ liệu lần cuối truy cập.
+- **Team Management**: Tổng quan team dạng card kèm giao diện gán thành viên bằng dialog.
+- **Invitations**: UI mời trực tiếp, nối vào quy trình tạo shadow user ở backend.
