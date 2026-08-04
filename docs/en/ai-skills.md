@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-04T22:04:09.568Z
+sourceLang: en
+contentHash: 82398215345c6e2e
+codeVerified: 2026-08-04T22:04:09.568Z
+codeVerifiedHash: 82398215345c6e2e
+codeVerifiedClaims: 6
+---
+
 # AI Skills Documentation for LumiBase Development
 
 This document contains the structured AI prompts and skills used to guide AI-assisted development of LumiBase. Copy these sections into your AI assistant's system prompt or use them as reference when working with AI coding assistants.
