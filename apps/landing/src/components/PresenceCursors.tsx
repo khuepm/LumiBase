@@ -7,7 +7,6 @@ import {
   useSpring,
   useTransform,
   useVelocity,
-  type MotionValue,
 } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { useStaticMotion } from "@/components/scroll/useStaticMotion";
@@ -127,13 +126,10 @@ function GhostCursor({
     useTransform(vx, (v) => Math.max(-16, Math.min(16, v / 42))),
     { stiffness: 180, damping: 22 }
   );
-  const [visible, setVisible] = useState(false);
-
+  // No `visible` state: the cursors are shown exactly when the section is on
+  // screen, and they start at -9999 so the first frame is off-canvas anyway.
   useEffect(() => {
-    if (!active) {
-      setVisible(false);
-      return;
-    }
+    if (!active) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let ctrlX: ReturnType<typeof animate> | undefined;
@@ -156,7 +152,6 @@ function GhostCursor({
     const seed = pick();
     x.set(seed.nx);
     y.set(seed.ny);
-    setVisible(true);
 
     const step = () => {
       if (cancelled) return;
@@ -196,7 +191,7 @@ function GhostCursor({
           transformOrigin: "0% 50%",
           translateX: 18,
           translateY: 14,
-          opacity: visible ? 1 : 0,
+          opacity: active ? 1 : 0,
           transition: "opacity 260ms ease",
         }}
       >
@@ -209,7 +204,7 @@ function GhostCursor({
           left: 0,
           x,
           y,
-          opacity: visible ? 1 : 0,
+          opacity: active ? 1 : 0,
           transition: "opacity 260ms ease",
         }}
       >

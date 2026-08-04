@@ -241,8 +241,12 @@ export default function DotField({
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Live config, read at draw time so prop tweaks never rebuild the context.
+  // Written in an effect rather than during render: the draw loop only reads it
+  // from a rAF callback, which always runs after commit.
   const cfgRef = useRef({ frequency, speed, colors, cellSize, gamma, paletteBias });
-  cfgRef.current = { frequency, speed, colors, cellSize, gamma, paletteBias };
+  useEffect(() => {
+    cfgRef.current = { frequency, speed, colors, cellSize, gamma, paletteBias };
+  }, [frequency, speed, colors, cellSize, gamma, paletteBias]);
 
   useEffect(() => {
     const container = containerRef.current;

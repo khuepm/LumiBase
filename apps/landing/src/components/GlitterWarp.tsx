@@ -91,8 +91,12 @@ export default function GlitterWarp(props: Props) {
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 });
 
   // Latest props, read fresh each frame so tweaks don't tear down the loop.
+  // Assigned in an effect, not during render: the draw loop reads it from a rAF
+  // callback, which always runs after commit.
   const propsRef = useRef({ ...DEFAULTS, ...props });
-  propsRef.current = { ...DEFAULTS, ...props };
+  useEffect(() => {
+    propsRef.current = { ...DEFAULTS, ...props };
+  });
 
   // Cached parsed colours — avoids 3 regex parses per frame.
   const colorCacheRef = useRef({
@@ -401,7 +405,6 @@ export default function GlitterWarp(props: Props) {
       ro.disconnect();
     };
     // Single setup — every animated value is read from propsRef each frame.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reduced]);
 
   return (

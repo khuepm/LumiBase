@@ -25,7 +25,7 @@ export default function Header() {
   const [active, setActive] = useState("AI Harness");
   const pathname = usePathname();
   const router = useRouter();
-  const lenis = useLenis();
+  const lenisRef = useLenis();
   const isHome = pathname === "/";
 
   // Scroll-spy: light up the pill of the section in view (home page only)
@@ -57,6 +57,7 @@ export default function Header() {
       const el = document.getElementById(section.slug);
       if (!el) return;
       const top = el.offsetTop - 90;
+      const lenis = lenisRef?.current;
       if (lenis) lenis.scrollTo(top);
       else window.scrollTo({ top, behavior: "smooth" });
     } else {
