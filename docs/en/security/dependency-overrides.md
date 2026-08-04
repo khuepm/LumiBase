@@ -36,6 +36,7 @@ new resolution / patch hash.
 | `dompurify` | `^3.4.11` | Security advisory (resolved via Dependabot). | A direct/transitive consumer requires `>=3.4.11` on its own. |
 | `esbuild` | `^0.28.1` | esbuild dev-server request RCE advisory (`<=0.24.2`). | All consumers (vite, tsx, etc.) require `>=0.28.1`. |
 | `form-data` | `^4.0.6` | Security advisory (unsafe random boundary). | All consumers require `>=4.0.6`. |
+| `fast-uri` | `>=4.1.2` | [GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7) — **high**, host confusion via a backslash authority introducer (`>=4.0.0 <4.1.2`). Reached through `ajv@8` under `@hookform/resolvers` (Studio) and `@modelcontextprotocol/sdk` (`packages/mcp-server`). The pin was `>=3.1.4`, which still admitted the vulnerable 4.1.1. | `ajv` (or whatever consumes it) depends on fast-uri `>=4.1.2` directly, and no other dependency reintroduces a lower range. Verify with `pnpm why fast-uri`. |
 | `postcss` | `^8.5.25` | Security advisory (resolved via Dependabot). | All consumers require `>=8.5.25`. |
 | `undici` | `^7.28.0` | Security advisory (resolved via Dependabot). | All consumers require `>=7.28.0`. |
 | `uuid` | `^14.0.1` | Version unification / advisory (resolved via Dependabot). | Version drift across packages is no longer a concern. |

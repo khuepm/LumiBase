@@ -24,6 +24,22 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `uuid`, `vite`, `postcss`, and `@types/react{,-dom}` pins the bump moves. The `js-yaml`
   and `postcss` rows had already drifted from `package.json`; both now match the pin.
 
+### Security
+
+- **`fast-uri` override raised `>=3.1.4` → `>=4.1.2`**
+  ([GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7), high — host
+  confusion via a backslash authority introducer). The old pin still admitted the
+  vulnerable 4.1.1, which `ajv@8` pulls in under `@hookform/resolvers` (Studio) and
+  `@modelcontextprotocol/sdk` (`packages/mcp-server`). This advisory fails the
+  `pnpm audit --prod --audit-level high` gate on `main` too — the resolved version there is
+  the same 4.1.1. The override now has a row in the overrides registry, which it was
+  missing.
+- **`hono` 4.12.32 → 4.13.0**
+  ([GHSA-8j4g-w8fx-2239](https://github.com/advisories/GHSA-8j4g-w8fx-2239), moderate —
+  ReDoS in the CORS middleware via `Access-Control-Request-Headers`, patched in 4.12.34).
+  Moderate advisories do not fail the audit gate, but the CMS runs this middleware on
+  every request.
+
 ### Fixed
 
 - **fast-check 4 migration in property tests.** v4 removed `fc.stringOf`, `fc.char`, and

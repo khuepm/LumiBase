@@ -30,6 +30,7 @@ resolution / patch hash mới.
 | `dompurify` | `^3.4.11` | Advisory bảo mật (đã xử lý qua Dependabot). | Một consumer trực tiếp/gián tiếp tự yêu cầu `>=3.4.11`. |
 | `esbuild` | `^0.28.1` | Advisory RCE qua request tới dev-server của esbuild (`<=0.24.2`). | Mọi consumer (vite, tsx, v.v.) yêu cầu `>=0.28.1`. |
 | `form-data` | `^4.0.6` | Advisory bảo mật (random boundary không an toàn). | Mọi consumer yêu cầu `>=4.0.6`. |
+| `fast-uri` | `>=4.1.2` | [GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7) — **high**, host confusion qua backslash authority introducer (`>=4.0.0 <4.1.2`). Đi vào qua `ajv@8` dưới `@hookform/resolvers` (Studio) và `@modelcontextprotocol/sdk` (`packages/mcp-server`). Pin cũ là `>=3.1.4`, vẫn cho phép bản 4.1.1 có lỗ hổng. | `ajv` (hoặc thứ tiêu thụ nó) phụ thuộc fast-uri `>=4.1.2` trực tiếp, và không dependency nào khác tái introduce range thấp hơn. Xác minh bằng `pnpm why fast-uri`. |
 | `postcss` | `^8.5.25` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=8.5.25`. |
 | `undici` | `^7.28.0` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=7.28.0`. |
 | `uuid` | `^14.0.1` | Hợp nhất phiên bản / advisory (đã xử lý qua Dependabot). | Trôi lệch phiên bản giữa các package không còn là mối lo. |
