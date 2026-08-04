@@ -222,6 +222,30 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **Security / marketplace:** `POST /api/v1/marketplace/publish` had no
+  permission or ownership check, unlike every sibling write route. Any
+  authenticated user with any site membership could publish or overwrite rows in
+  the shared global catalog that every tenant reads, bypass community
+  moderation, and spoof the `verified` badge by supplying `signature` /
+  `publisherKeyId` / `bundleSha256` in the request body. The route is now gated
+  on `extensions:configure` (the same moderator capability as
+  `/submissions/review`), the supplied signature is verified against the
+  **stored** bundle via `ExtensionVerifierService`, `isOfficial` / `verifiedAt`
+  are server-derived, and publishing a community submission that is not
+  `approved` returns `409`. Upgrade note: automation that published with an
+  ordinary token now receives `403` and must use a principal holding
+  `extensions:configure`.
+- **Delivery API and pageview beacon were unreachable anonymously.** Both are
+  anonymous-by-design (tenancy is in the URL) but were mounted *after*
+  `app.route('/api/v1', api)`. The authenticated sub-app's `use('*')` chain
+  flattens to `/api/v1/*` and Hono runs middleware registered before a handler,
+  so every credential-less request died in `withTenant` / `withAuth` with
+  `400 TENANT_REQUIRED` / `401 UNAUTHENTICATED` before reaching the handler. The
+  public mounts now precede the `api` mount (the same disjoint-leaf mechanism
+  the shares and email-unsubscribe mounts already relied on), and the beacon
+  middleware is scoped to the `/pageviews/:site_id/hit` leaf so the
+  authenticated `/pageviews/stats` no longer runs `withDb` / `withRateLimit`
+  twice. The golden-path E2E gains the anonymous read leg that caught this.
 - **Public access grants were inert on the content API.**
   `buildRequestPermissionContext` hardcoded `roleId: null` (two more call sites
   hand-rolled the same literal). `withAuth` does set `roleId` to the site's
