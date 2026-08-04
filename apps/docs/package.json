@@ -41,7 +41,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
     "autoprefixer": "^10.5.4",
-    "fast-check": "^3.22.0",
+    "fast-check": "^4.9.0",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.24",
     "tailwindcss": "^4.3.3",
