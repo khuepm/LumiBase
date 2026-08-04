@@ -107,7 +107,13 @@ for (const p of [srcAbs, tgtAbs]) {
 
 // Structural gate, before anything is written. `check-parity` is imported rather
 // than shelled out to: it needs both files on disk, which they already are.
+// The `front-matter` check is excluded here, and only here: it reports the
+// absence of the very keys this script is about to write, so honouring it would
+// make a never-stamped pair unstampable forever. The standalone `check-parity`
+// CLI still reports it — there it means "this pair was never stamped", which is
+// exactly the signal you want.
 const parity = checkPair(rel);
+parity.problems = parity.problems.filter((p) => p.check !== 'front-matter');
 if (parity.problems.length > 0) {
   const label = ALLOW_DRIFT ? 'structure drift (allowed)' : 'refusing to stamp';
   console.error(`${label}: ${rel} — the two locales are not the same document`);
