@@ -15,6 +15,12 @@ import {
 import type { DeviceFingerprintEntry, LoginAttemptDraft } from '../types';
 
 /**
+ * A single lowercase hex digit — fast-check 4 dropped `fc.hexaString`, so hex
+ * strings are now built from an explicit unit arbitrary.
+ */
+const hexDigit = fc.constantFrom(...'0123456789abcdef'.split(''));
+
+/**
  * Unit tests for the baseline writer (admin-setup-wizard task 7.5;
  * Req 9.6, 10.5, 11.5, 11.6; design §3.5, §8.1, §8.2, §8.3).
  *
@@ -376,11 +382,11 @@ describe('mergeDevice — Req 11.5, 11.6 (LRU cap 20, MRU at front)', () => {
   it('property: cap holds and new fingerprint lands at MRU position', () => {
     fc.assert(
       fc.property(
-        fc.array(fc.hexaString({ minLength: 16, maxLength: 16 }), {
+        fc.array(fc.string({ unit: hexDigit, minLength: 16, maxLength: 16 }), {
           minLength: 0,
           maxLength: 30,
         }),
-        fc.hexaString({ minLength: 16, maxLength: 16 }),
+        fc.string({ unit: hexDigit, minLength: 16, maxLength: 16 }),
         (seedFps, newFp) => {
           const seed: DeviceFingerprintEntry[] = seedFps.map((fp, i) =>
             entry(fp, new Date(2024, 0, 1, 0, i).toISOString()),

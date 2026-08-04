@@ -57,7 +57,17 @@ function makeDb(state: FakeState): Database {
   } as unknown as Database;
 }
 
-const hashArb = fc.hexaString({ minLength: 8, maxLength: 16 }).map((h) => `sha256:${h}`);
+/**
+ * A single lowercase hex digit — fast-check 4 dropped `fc.hexaString`, so hex
+ * strings are now built from an explicit unit arbitrary.
+ */
+const hexDigit = fc.constantFrom(...'0123456789abcdef'.split(''));
+
+const hashArb = fc.string({
+  unit: hexDigit,
+  minLength: 8,
+  maxLength: 16,
+}).map((h) => `sha256:${h}`);
 
 describe('Feature: content-os, Property 12: constitution pinning', () => {
   it('the hash pinned at run start survives any later activation', async () => {

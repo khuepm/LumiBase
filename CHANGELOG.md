@@ -9,7 +9,38 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Changed
+
+- **Dependency majors batched.** The 13 open Dependabot PRs (#369–#381) land as one
+  workspace-wide bump instead of 13 lockfile races: `uuid` 11 → 14, `nanoid` 5 → 6,
+  `lucide-react` 0.452 → 1.28, `fast-check` 3 → 4, `@testing-library/jest-dom` 6 → 7,
+  `eslint` 9 → 10 (landing; `apps/consumer` was already on 10), `@dnd-kit/sortable`
+  8 → 10, `@cloudflare/workers-types` 4 → 5, the root `vite` override 7 → 8 (the apps
+  already declared 8, so the override was holding them back), the 7-package
+  minor-and-patch group, and three GitHub Actions pins
+  (`actions/upload-artifact` v4 → v7 in `perf-k6.yml`, `ossf/scorecard-action`
+  2.4.3 → 2.4.4, `github/codeql-action/upload-sarif` 4.36.2 → 4.37.4).
+- **Overrides registry updated** (`docs/en|vi/security/dependency-overrides.md`) for the
+  `uuid`, `vite`, `postcss`, and `@types/react{,-dom}` pins the bump moves. The `js-yaml`
+  and `postcss` rows had already drifted from `package.json`; both now match the pin.
+
+### Fixed
+
+- **fast-check 4 migration in property tests.** v4 removed `fc.stringOf`, `fc.char`, and
+  `fc.hexaString`: string arbitraries now pass a `unit` arbitrary to `fc.string({ unit,
+  minLength, maxLength })`, single characters use `fc.string({ minLength: 1, maxLength: 1 })`
+  (default `grapheme-ascii` unit, same domain as the old `fc.char()`), and hex strings build
+  on an explicit `hexDigit` unit. v4 also infers `const` type parameters, so
+  `fc.constant(['*'])` needed an explicit `string[]`.
+- **fast-check 4 generates `Invalid Date`** even when `min`/`max` are supplied — v3.23.2
+  never did (verified: 0 invalid in 2000 samples on v3 vs 6 on v4.9.0). The approvals
+  property tests pass `noInvalidDate: true`; without it the DESC-sort property compared
+  `NaN` and `toISOString()` could throw.
+- **lucide-react v1 dropped brand icons.** The landing header's GitHub button uses a local
+  `GithubMark` inline SVG instead of the removed `Github` export.
+- **`@cloudflare/workers-types` 5 added a required `tracing` member** to the global
+  `ExecutionContext`. `routes/extensions.ts` annotates its optional-context helper with
+  Hono's own execution-context type, which is what `subApp.fetch` consumes anyway.
 
 ## [0.25.0] - 2026-08-02
 

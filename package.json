@@ -56,22 +56,22 @@
     "husky": "^9.1.7",
     "turbo": "^2.10.7",
     "typescript": "^5.6.2",
-    "wrangler": "^4.115.0"
+    "wrangler": "^4.116.0"
   },
   "pnpm": {
     "overrides": {
-      "@types/react": "19.2.0",
-      "@types/react-dom": "19.2.0",
+      "@types/react": "19.2.18",
+      "@types/react-dom": "19.2.4",
       "dompurify": "^3.4.11",
       "esbuild": "^0.28.1",
       "fast-uri": ">=3.1.4",
       "form-data": "^4.0.6",
       "js-yaml": "^4.3.0",
-      "postcss": "^8.5.24",
+      "postcss": "^8.5.25",
       "sharp": ">=0.35.0",
       "undici": "^7.28.0",
-      "uuid": "^11.1.1",
-      "vite": "^7.3.5",
+      "uuid": "^14.0.1",
+      "vite": "^8.2.0",
       "ws": "^8.21.0"
     },
     "patchedDependencies": {

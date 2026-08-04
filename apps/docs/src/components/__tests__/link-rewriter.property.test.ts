@@ -28,10 +28,11 @@ import {
  * Generate a valid slug segment (lowercase alphanumeric + hyphens).
  */
 const slugSegment = fc
-  .stringOf(
-    fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789-'.split('')),
-    { minLength: 1, maxLength: 12 },
-  )
+  .string({
+    unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789-'.split('')),
+    minLength: 1,
+    maxLength: 12,
+  })
   .filter((s) => !s.startsWith('-') && !s.endsWith('-') && !s.includes('--'));
 
 /**

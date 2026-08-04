@@ -55,10 +55,17 @@ function queryPendingApprovals(
 // Arbitraries
 // ---------------------------------------------------------------------------
 
-const siteIdArb = fc.stringOf(
-  fc.char().filter((c) => /[a-zA-Z0-9]/.test(c)),
-  { minLength: 1, maxLength: 21 },
-);
+const siteIdArb = fc.string({
+  unit: fc.string({ minLength: 1, maxLength: 1 }).filter((c) => /[a-zA-Z0-9]/.test(c)),
+  minLength: 1,
+  maxLength: 21,
+});
+
+const dateArb = fc.date({
+  min: new Date('2020-01-01'),
+  max: new Date('2030-12-31'),
+  noInvalidDate: true,
+});
 
 const statusArb = fc.constantFrom('pending', 'approved', 'rejected') as fc.Arbitrary<
   'pending' | 'approved' | 'rejected'
@@ -73,10 +80,11 @@ const approvalRecordArb = (siteIds: string[]): fc.Arbitrary<ApprovalRecord> =>
     arguments: fc.constant({} as Record<string, unknown>),
     status: statusArb,
     context: fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: null }),
-    createdAt: fc.date({ min: new Date('2020-01-01'), max: new Date('2030-12-31') }),
-    decidedAt: fc.option(fc.date({ min: new Date('2020-01-01'), max: new Date('2030-12-31') }), {
-      nil: null,
-    }),
+    // `noInvalidDate` because fast-check 4 generates `Invalid Date` even when
+    // `min`/`max` are given (v3 did not), and the sort property compares
+    // `getTime()`.
+    createdAt: dateArb,
+    decidedAt: fc.option(dateArb, { nil: null }),
     decidedBy: fc.option(fc.string({ minLength: 1, maxLength: 21 }), { nil: null }),
   });
 
@@ -85,7 +93,14 @@ describe('Feature: ai-first-cms-engine, Property 11: Approvals list query', () =
     fc.assert(
       fc.property(
         // Generate 2-5 distinct siteIds
-        fc.array(siteIdArb, { minLength: 2, maxLength: 5 }).chain((siteIds) => {
+        // The return type is spelled out because fast-check 4 infers `const`
+        // type parameters: without it the two branches below widen to
+        // incompatible readonly tuples.
+        fc.array(siteIdArb, { minLength: 2, maxLength: 5 }).chain((siteIds): fc.Arbitrary<{
+          siteIds: string[];
+          records: ApprovalRecord[];
+          currentSiteId: string;
+        }> => {
           const uniqueSiteIds = [...new Set(siteIds)];
           // Ensure at least 2 unique siteIds
           if (uniqueSiteIds.length < 2) {

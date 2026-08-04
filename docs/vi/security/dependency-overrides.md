@@ -26,16 +26,16 @@ resolution / patch hash mới.
 
 | Package | Pin tới | Lý do | Gỡ khi |
 | --- | --- | --- | --- |
-| `js-yaml` | `^4.2.0` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — DoS độ phức tạp bậc hai (quadratic) trong xử lý merge-key của YAML (moderate). Được kéo vào gián tiếp bởi `gray-matter@4.0.3`, vốn hard-pin js-yaml 3.x. Xem ghi chú patch bên dưới. | `gray-matter` (hoặc thứ tiêu thụ nó) phụ thuộc js-yaml `>=4.2.0` trực tiếp, **và** không dependency nào khác tái introduce range 3.x. Xác minh bằng `pnpm why js-yaml`. |
+| `js-yaml` | `^4.3.0` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — DoS độ phức tạp bậc hai (quadratic) trong xử lý merge-key của YAML (moderate). Được kéo vào gián tiếp bởi `gray-matter@4.0.3`, vốn hard-pin js-yaml 3.x. Xem ghi chú patch bên dưới. | `gray-matter` (hoặc thứ tiêu thụ nó) phụ thuộc js-yaml `>=4.2.0` trực tiếp, **và** không dependency nào khác tái introduce range 3.x. Xác minh bằng `pnpm why js-yaml`. |
 | `dompurify` | `^3.4.11` | Advisory bảo mật (đã xử lý qua Dependabot). | Một consumer trực tiếp/gián tiếp tự yêu cầu `>=3.4.11`. |
 | `esbuild` | `^0.28.1` | Advisory RCE qua request tới dev-server của esbuild (`<=0.24.2`). | Mọi consumer (vite, tsx, v.v.) yêu cầu `>=0.28.1`. |
 | `form-data` | `^4.0.6` | Advisory bảo mật (random boundary không an toàn). | Mọi consumer yêu cầu `>=4.0.6`. |
-| `postcss` | `^8.5.14` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=8.5.14`. |
+| `postcss` | `^8.5.25` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=8.5.25`. |
 | `undici` | `^7.28.0` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=7.28.0`. |
-| `uuid` | `^11.1.1` | Hợp nhất phiên bản / advisory (đã xử lý qua Dependabot). | Trôi lệch phiên bản giữa các package không còn là mối lo. |
-| `vite` | `^7.3.5` | Hợp nhất về Vite 7 và kéo esbuild vượt advisory RCE `0.28.1`. | Workspace không còn cần ép một major Vite duy nhất. |
-| `@types/react` | `19.2.0` | **Không phải pin bảo mật** — ép React 19 types toàn workspace để Studio/Docs/Landing/`@lumibase/ui` typecheck cùng major với runtime React 19. | Trôi lệch giữa các app không còn là mối lo, hoặc workspace cố ý tách React major trở lại. |
-| `@types/react-dom` | `19.2.0` | Giống `@types/react` — nhất quán type React 19. | Giống `@types/react`. |
+| `uuid` | `^14.0.1` | Hợp nhất phiên bản / advisory (đã xử lý qua Dependabot). | Trôi lệch phiên bản giữa các package không còn là mối lo. |
+| `vite` | `^8.2.0` | Hợp nhất về Vite 8 và kéo esbuild vượt advisory RCE `0.28.1`. | Workspace không còn cần ép một major Vite duy nhất. |
+| `@types/react` | `19.2.18` | **Không phải pin bảo mật** — ép React 19 types toàn workspace để Studio/Docs/Landing/`@lumibase/ui` typecheck cùng major với runtime React 19. | Trôi lệch giữa các app không còn là mối lo, hoặc workspace cố ý tách React major trở lại. |
+| `@types/react-dom` | `19.2.4` | Giống `@types/react` — nhất quán type React 19. | Giống `@types/react`. |
 
 ## Registry patches
 

@@ -72,13 +72,19 @@ describe('Feature: content-os, Property 13: Provenance round-trip', () => {
   });
 
   const authorTypeArb = fc.constantFrom('human', 'agent');
+  /**
+   * A single lowercase hex digit — fast-check 4 dropped `fc.hexaString`, so hex
+   * strings are now built from an explicit unit arbitrary.
+   */
+  const hexDigit = fc.constantFrom(...'0123456789abcdef'.split(''));
+
   const modelArb = fc.oneof(
     fc.constant(null),
     fc.stringMatching(/^[a-z][a-z0-9.-]{0,40}$/),
   );
   const hashArb = fc.oneof(
     fc.constant(null),
-    fc.hexaString({ minLength: 8, maxLength: 64 }).map((h) => `sha256:${h}`),
+    fc.string({ unit: hexDigit, minLength: 8, maxLength: 64 }).map((h) => `sha256:${h}`),
   );
   const sourcesArb = fc.oneof(
     fc.constant(null),

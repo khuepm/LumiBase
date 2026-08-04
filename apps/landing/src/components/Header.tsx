@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Github, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import GithubMark from "@/components/GithubMark";
 import PillNav from "@/components/cosmic/PillNav";
 
 const SECTIONS = [
@@ -97,7 +98,7 @@ export default function Header() {
           rel="noopener noreferrer"
           className="btn-pill btn-glass h-[38px] px-[18px] text-[13px]"
         >
-          <Github className="h-4 w-4" />
+          <GithubMark className="h-4 w-4" />
           <span>GitHub</span>
         </Link>
       </div>
@@ -152,7 +153,7 @@ export default function Header() {
               className="btn-pill btn-glass h-[38px] w-fit px-[18px] text-[13px]"
               onClick={() => setMobileMenuOpen(false)}
             >
-              <Github className="h-4 w-4" />
+              <GithubMark className="h-4 w-4" />
               <span>GitHub</span>
             </Link>
           </div>

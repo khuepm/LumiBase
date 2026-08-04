@@ -73,13 +73,15 @@ const VALID_STATUSES = ['executed', 'pending_approval', 'denied'] as const;
 // ---------------------------------------------------------------------------
 
 // Collection name generator
-const collectionNameArb = fc.stringOf(fc.char().filter((c) => /\w/.test(c)), {
+const collectionNameArb = fc.string({
+  unit: fc.string({ minLength: 1, maxLength: 1 }).filter((c) => /\w/.test(c)),
   minLength: 1,
   maxLength: 15,
 });
 
 // Item id generator
-const itemIdArb = fc.stringOf(fc.char().filter((c) => /\w/.test(c)), {
+const itemIdArb = fc.string({
+  unit: fc.string({ minLength: 1, maxLength: 1 }).filter((c) => /\w/.test(c)),
   minLength: 1,
   maxLength: 15,
 });
@@ -102,7 +104,9 @@ const intentMessageArb = fc.oneof(
 
 // Capabilities generator: either wildcard or a subset of known capabilities
 const capabilitiesArb = fc.oneof(
-  fc.constant(['*']),
+  // fast-check 4 infers `const` type parameters, so the wildcard needs an
+  // explicit `string[]` or it widens to a readonly tuple the harness rejects.
+  fc.constant<string[]>(['*']),
   fc.subarray(['schema:read', 'schema:create', 'schema:update', 'schema:delete', 'schema:migrate', 'items:read', 'items:write'], {
     minLength: 0,
     maxLength: 7,

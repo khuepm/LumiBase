@@ -46,14 +46,15 @@ const validMessageArb = fc
 const simpleValidMessageArb = fc
   .tuple(
     // Non-whitespace content between 1 and 2000 chars
-    fc.stringOf(
-      fc.char().filter((c) => c.trim().length > 0),
-      { minLength: 1, maxLength: 100 },
-    ),
+    fc.string({
+      unit: fc.string({ minLength: 1, maxLength: 1 }).filter((c) => c.trim().length > 0),
+      minLength: 1,
+      maxLength: 100,
+    }),
     // Optional leading whitespace
-    fc.stringOf(fc.constant(' '), { minLength: 0, maxLength: 5 }),
+    fc.string({ unit: fc.constant(' '), minLength: 0, maxLength: 5 }),
     // Optional trailing whitespace
-    fc.stringOf(fc.constant(' '), { minLength: 0, maxLength: 5 }),
+    fc.string({ unit: fc.constant(' '), minLength: 0, maxLength: 5 }),
   )
   .map(([content, leading, trailing]) => leading + content + trailing)
   .filter((s) => s.trim().length >= 1 && s.trim().length <= 2000);
@@ -68,7 +69,7 @@ const emptyOrWhitespaceArb = fc.oneof(
   // Empty string
   fc.constant(''),
   // Whitespace-only strings of various lengths
-  fc.stringOf(fc.constantFrom(' ', '\t', '\n', '\r'), { minLength: 1, maxLength: 50 }),
+  fc.string({ unit: fc.constantFrom(' ', '\t', '\n', '\r'), minLength: 1, maxLength: 50 }),
 );
 
 const tooLongMessageArb = fc

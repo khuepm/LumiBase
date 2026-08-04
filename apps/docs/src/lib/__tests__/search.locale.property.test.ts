@@ -37,18 +37,20 @@ const WORDS = [
 /**
  * Generate a locale identifier (2-3 lowercase letters).
  */
-const localeArb = fc.stringOf(
-  fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz'.split('')),
-  { minLength: 2, maxLength: 3 },
-);
+const localeArb = fc.string({
+  unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz'.split('')),
+  minLength: 2,
+  maxLength: 3,
+});
 
 /**
  * Generate a valid slug segment.
  */
-const slugSegment = fc.stringOf(
-  fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789'.split('')),
-  { minLength: 2, maxLength: 8 },
-);
+const slugSegment = fc.string({
+  unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789'.split('')),
+  minLength: 2,
+  maxLength: 8,
+});
 
 /**
  * Generate a valid slug (1-3 segments joined by '/').

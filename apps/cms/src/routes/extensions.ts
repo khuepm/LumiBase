@@ -140,7 +140,14 @@ function patchActions(input: Partial<z.infer<typeof extensionSchema>>): Permissi
   return [...actions];
 }
 
-function optionalExecutionCtx(c: Context<AppEnv>): ExecutionContext | undefined {
+/**
+ * Hono's own execution-context type, not the global one from
+ * `@cloudflare/workers-types` — v5 added a required `tracing` member there, and
+ * this value is only ever handed back to `subApp.fetch`, which wants Hono's.
+ */
+type HonoExecutionCtx = Context<AppEnv>['executionCtx'];
+
+function optionalExecutionCtx(c: Context<AppEnv>): HonoExecutionCtx | undefined {
   try {
     return c.executionCtx;
   } catch {
