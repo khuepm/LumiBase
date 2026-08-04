@@ -35,11 +35,14 @@ new resolution / patch hash.
 | `js-yaml` | `^4.2.0` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — quadratic-complexity DoS in YAML merge-key handling (moderate). Pulled in transitively by `gray-matter@4.0.3`, which hard-pins js-yaml 3.x. See the patch note below. | `gray-matter` (or whatever consumes it) depends on js-yaml `>=4.2.0` directly, **and** no other dependency reintroduces a 3.x range. Verify with `pnpm why js-yaml`. |
 | `dompurify` | `^3.4.11` | Security advisory (resolved via Dependabot). | A direct/transitive consumer requires `>=3.4.11` on its own. |
 | `esbuild` | `^0.28.1` | esbuild dev-server request RCE advisory (`<=0.24.2`). | All consumers (vite, tsx, etc.) require `>=0.28.1`. |
+| `fast-uri` | `>=4.1.2` | [GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7) — host confusion via backslash authority introduction (high). Patched per-line at `2.4.4` / `3.1.5` / `4.1.2`; the floor must name the 4.x patch explicitly, because a `>=3.1.5` floor still admits `4.1.1`. Reached transitively through the `ajv` / fastify-family validators. | All consumers require `>=4.1.2` on their own. |
 | `form-data` | `^4.0.6` | Security advisory (unsafe random boundary). | All consumers require `>=4.0.6`. |
 | `postcss` | `^8.5.14` | Security advisory (resolved via Dependabot). | All consumers require `>=8.5.14`. |
 | `undici` | `^7.28.0` | Security advisory (resolved via Dependabot). | All consumers require `>=7.28.0`. |
 | `uuid` | `^11.1.1` | Version unification / advisory (resolved via Dependabot). | Version drift across packages is no longer a concern. |
 | `vite` | `^7.3.5` | Unify on Vite 7 and pull esbuild past the `0.28.1` RCE advisory. | The workspace no longer needs a single forced Vite major. |
+| `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS via exponential-time expansion of consecutive non-expanding `{}` groups (high), backported to the 1.x line in `1.1.16`. Dev-only: reached through `minimatch@3` from ESLint and its plugins. Keyed per-major because two incompatible majors coexist in the tree — see [Known-unfixable alerts](#known-unfixable-alerts) for why 1.x can't be folded into 5.x. | Nothing in the tree resolves `minimatch@3` any more (`pnpm why brace-expansion -r`), at which point both `brace-expansion@*` rows collapse into one. |
+| `brace-expansion@5` | `^5.0.8` | [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) — DoS via unbounded expansion length causing an OOM process crash (high), patched in `5.0.8`. Dev-only: reached through `minimatch@10` from `glob`, `eslint`, `@typescript-eslint/typescript-estree`. | Same as the `@1` row. |
 | `@types/react` | `19.2.0` | **Not a security pin** — enforces React 19 types workspace-wide so Studio/Docs/Landing/`@lumibase/ui` typecheck against the same major as runtime React 19. | Drift between apps is no longer a concern, or the workspace splits React majors again intentionally. |
 | `@types/react-dom` | `19.2.0` | Same as `@types/react` — React 19 type consistency. | Same as `@types/react`. |
 
@@ -74,6 +77,53 @@ now targets React 19 for Studio/Docs/Landing (`@lumibase/ui` peers
 
 **Scope check:** `apps/studio` is unaffected — it uses `@tanstack/react-router`, an
 unrelated package. `react-router-dom` appears in `apps/docs` only.
+
+## Known-unfixable alerts
+
+Advisories that stay open on GitHub but have no installable fix and no effect on the
+`pnpm audit --prod --audit-level high` gate. They get no [audit ignore](#audit-ignore-registry)
+entry — that gate is `--prod` and these live outside the production tree — so this section
+is the only record.
+
+### GHSA-mh99-v99m-4gvg still matches `brace-expansion@1.1.16`
+
+The advisory's affected range is `<= 5.0.7`, which by plain semver **includes every 1.x
+version** — so bumping the 1.x line to `1.1.16` closes
+[GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) but not this one.
+The only version that satisfies it is `>=5.0.8`.
+
+**Folding 1.x into 5.x breaks ESLint.** `brace-expansion@1` exports the function itself
+(`module.exports = expandTop`); the 5.x CommonJS build exports a namespace object
+(`{ EXPANSION_MAX, EXPANSION_MAX_LENGTH, expand }`). `minimatch@3` — pulled in by
+`eslint`, `@eslint/eslintrc`, `eslint-plugin-import`, `eslint-plugin-react`, and
+`eslint-plugin-jsx-a11y` — does `require('brace-expansion')(…)`, which throws
+`TypeError: m is not a function` against 5.x. Verify before revisiting:
+
+```bash
+node -e "const m=require('brace-expansion'); console.log(typeof m, Object.keys(m))"
+```
+
+**Why the residual risk is accepted:** `brace-expansion` is dev-only here (it does not
+appear in `pnpm audit --prod`), and the expansion input is ESLint's own glob patterns from
+repo-owned config — not attacker-controlled. The impact is a slow lint run on a
+hand-crafted pattern, not a production DoS.
+
+**Revisit when** nothing resolves `minimatch@3` any more, or upstream backports the length
+cap to a `1.1.17`.
+
+### `glib` 0.18.5 (Rust / Tauri) — GHSA-wrw7-89jp-8q8g
+
+`apps/shell/src-tauri/Cargo.lock` pins `glib@0.18.5`; the advisory (moderate,
+unsoundness in the `Iterator`/`DoubleEndedIterator` impls for `glib::VariantStrIter`)
+wants `>=0.20.0`. `glib` is not a direct dependency — it arrives through the GTK stack
+(`gtk`, `gdk`, `gdkx11`, `gdk-pixbuf`, `atk`, `pango`, `cairo-rs`, `gio`, `soup3`,
+`webkit2gtk`, `javascriptcore-rs`, `libappindicator`), all of which pin `0.18.x`. `cargo
+update -p glib` therefore cannot cross the minor, and this stack is **compiled only into
+Linux builds** — the macOS (WebKit) and Windows (WebView2) targets never link it. Nothing
+in `apps/shell` constructs a `VariantStrIter`.
+
+**Revisit when** Tauri 2's Linux backend moves to the `glib` 0.20 / `gtk` 0.19+ generation.
+Check with `cargo tree -i glib` after a `tauri` bump.
 
 ## Patches registry
 

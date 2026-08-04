@@ -25,6 +25,28 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   the recorded URL, so an argument is found wherever it is spliced. Guard-only
   change — no tool or runtime behaviour is affected, and no offender exists on
   `main` today (32/32 pass unchanged).
+- **Security / dependencies:** raised the `fast-uri` override floor from `>=3.1.4`
+  to `>=4.1.2` to close
+  [GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7) — host
+  confusion via backslash authority introduction (high), published after the
+  existing floor was written. The advisory patches each line separately
+  (`2.4.4` / `3.1.5` / `4.1.2`), so the floor has to name the 4.x patch: the tree
+  resolved `4.1.1`, which satisfies a `>=3.1.5` floor and stays vulnerable. This
+  was failing `pnpm audit --prod --audit-level high` on `main`.
+- **Security / dependencies:** closed both open `brace-expansion` advisories via
+  `pnpm.overrides` — no source changes, lockfile only. `brace-expansion@1`
+  `1.1.15 → ^1.1.16` ([GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp),
+  high) and `brace-expansion@5` `5.0.7 → ^5.0.8`
+  ([GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg), high),
+  keyed per-major because 1.x exports the function itself while 5.x exports a
+  namespace object — forcing the whole tree to 5.x makes `minimatch@3` (ESLint and
+  its plugins) throw `TypeError: m is not a function`. Both overrides carry a
+  justification and a removal trigger in
+  [`docs/en/security/dependency-overrides.md`](docs/en/security/dependency-overrides.md).
+  Two advisories remain open and unfixable — GHSA-mh99 also matches the 1.x line by
+  range (dev-only, outside the `--prod` audit gate) and `glib@0.18.5` is pinned
+  across the Tauri Linux GTK stack — both now recorded in a "Known-unfixable
+  alerts" section of that doc.
 
 ## [0.25.0] - 2026-08-02
 
