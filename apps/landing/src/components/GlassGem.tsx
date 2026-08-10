@@ -5,7 +5,8 @@ import { Camera, Geometry, Mesh, Plane, Program, Renderer, RenderTarget } from "
 import { useStaticMotion } from "@/components/scroll/useStaticMotion";
 
 /**
- * GlassGem — a faceted crystal that bends the sky behind it.
+ * GlassGem — a rough-cut crystal that bends the sky behind it, surrounded by a
+ * drift of smaller shards that are lit only by the crystal at the centre.
  *
  * Why it is built this way: WebGL cannot read DOM pixels, and pushing a
  * displacement map through an SVG filter every frame is not viable (Safari
@@ -23,68 +24,277 @@ import { useStaticMotion } from "@/components/scroll/useStaticMotion";
  *   · a fixed directional light, so rotation sweeps specular across the facets
  *
  * The hull is opaque (it samples the backdrop rather than alpha-blending), which
- * sidesteps transparency sorting entirely.
+ * sidesteps transparency sorting entirely. The shards are the opposite: they are
+ * additively blended and carry no body of their own, so they only exist where
+ * light is passing through them.
  */
+
+type V3 = [number, number, number];
+
+interface Facet {
+  /** Outward plane normal — kept so triangle winding can be corrected. */
+  n: V3;
+  verts: V3[];
+}
+
+const dot3 = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+/** Deterministic RNG: the cut must be identical on every load and every device. */
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function startingBox(h: number): Facet[] {
+  const axes: V3[] = [
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+  ];
+  return axes.map((n) => {
+    // Two in-plane axes, so the face can be written as a quad.
+    const up: V3 = Math.abs(n[1]) > 0.9 ? [0, 0, 1] : [0, 1, 0];
+    const e1: V3 = [
+      up[1] * n[2] - up[2] * n[1],
+      up[2] * n[0] - up[0] * n[2],
+      up[0] * n[1] - up[1] * n[0],
+    ];
+    const e2: V3 = [
+      n[1] * e1[2] - n[2] * e1[1],
+      n[2] * e1[0] - n[0] * e1[2],
+      n[0] * e1[1] - n[1] * e1[0],
+    ];
+    const c: V3 = [n[0] * h, n[1] * h, n[2] * h];
+    const corner = (s1: number, s2: number): V3 => [
+      c[0] + e1[0] * s1 * h + e2[0] * s2 * h,
+      c[1] + e1[1] * s1 * h + e2[1] * s2 * h,
+      c[2] + e1[2] * s1 * h + e2[2] * s2 * h,
+    ];
+    return { n, verts: [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)] };
+  });
+}
 
 /**
- * A table-cut gem: flat top, crown facets down to a girdle band, then a pavilion
- * to a point. Non-indexed with per-triangle normals — flat shading is what makes
- * facets read as facets.
+ * Intersect a convex solid with the half-space `dot(p, n) <= d`.
+ *
+ * Every existing face is clipped in place (Sutherland–Hodgman — valid here
+ * because each face is planar and convex, so the cut is a single segment), the
+ * segment endpoints are collected, and they close into one new cap facet. Doing
+ * the cut this way is what produces *irregular* facets: the plane angles and
+ * offsets are random, so no two faces come out the same size, which is exactly
+ * what a symmetric table cut cannot give you.
  */
-function buildGem({
-  sides = 6,
-  r = 1,
-  tableR = 0.6,
-  crownH = 0.4,
-  girdleH = 0.16,
-  pavilionH = 0.95,
-}) {
-  const pos: number[] = [];
-  const nrm: number[] = [];
+function clipHalfSpace(faces: Facet[], n: V3, d: number): Facet[] {
+  const EPS = 1e-6;
+  const out: Facet[] = [];
+  const cap: V3[] = [];
 
-  const ring = (radius: number, y: number, offset = 0) =>
-    Array.from({ length: sides }, (_, i) => {
-      const a = ((i + offset) / sides) * Math.PI * 2;
-      return [Math.cos(a) * radius, y, Math.sin(a) * radius] as [number, number, number];
-    });
-
-  const table = ring(tableR, crownH, 0.5);
-  const gTop = ring(r, girdleH / 2);
-  const gBot = ring(r, -girdleH / 2);
-  const apex: [number, number, number] = [0, -girdleH / 2 - pavilionH, 0];
-  const tableC: [number, number, number] = [0, crownH, 0];
-
-  const tri = (a: number[], b: number[], c: number[]) => {
-    // Flat normal from the triangle's own plane.
-    const u = [b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!];
-    const v = [c[0]! - a[0]!, c[1]! - a[1]!, c[2]! - a[2]!];
-    const n = [
-      u[1]! * v[2]! - u[2]! * v[1]!,
-      u[2]! * v[0]! - u[0]! * v[2]!,
-      u[0]! * v[1]! - u[1]! * v[0]!,
-    ];
-    const len = Math.hypot(n[0]!, n[1]!, n[2]!) || 1;
-    for (const p of [a, b, c]) {
-      pos.push(p[0]!, p[1]!, p[2]!);
-      nrm.push(n[0]! / len, n[1]! / len, n[2]! / len);
+  for (const f of faces) {
+    const poly = f.verts;
+    const kept: V3[] = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i]!;
+      const b = poly[(i + 1) % poly.length]!;
+      const da = dot3(a, n) - d;
+      const db = dot3(b, n) - d;
+      if (da <= EPS) kept.push(a);
+      if ((da > EPS && db < -EPS) || (da < -EPS && db > EPS)) {
+        const t = da / (da - db);
+        const p: V3 = [
+          a[0] + (b[0] - a[0]) * t,
+          a[1] + (b[1] - a[1]) * t,
+          a[2] + (b[2] - a[2]) * t,
+        ];
+        kept.push(p);
+        cap.push(p);
+      }
     }
-  };
-
-  for (let i = 0; i < sides; i++) {
-    const j = (i + 1) % sides;
-    // Table
-    tri(tableC, table[i]!, table[j]!);
-    // Crown — each table edge fans out to two girdle vertices
-    tri(table[i]!, gTop[i]!, gTop[j]!);
-    tri(table[i]!, gTop[j]!, table[j]!);
-    // Girdle band
-    tri(gTop[i]!, gBot[i]!, gBot[j]!);
-    tri(gTop[i]!, gBot[j]!, gTop[j]!);
-    // Pavilion
-    tri(gBot[j]!, gBot[i]!, apex);
+    if (kept.length >= 3) out.push({ n: f.n, verts: kept });
   }
 
+  // Close the opening the cut just made.
+  const uniq: V3[] = [];
+  for (const p of cap) {
+    if (!uniq.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) < 1e-5)) {
+      uniq.push(p);
+    }
+  }
+  if (uniq.length >= 3) {
+    const c: V3 = [0, 0, 0];
+    for (const p of uniq) {
+      c[0] += p[0] / uniq.length;
+      c[1] += p[1] / uniq.length;
+      c[2] += p[2] / uniq.length;
+    }
+    const ref: V3 = Math.abs(n[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const e1: V3 = [
+      ref[1] * n[2] - ref[2] * n[1],
+      ref[2] * n[0] - ref[0] * n[2],
+      ref[0] * n[1] - ref[1] * n[0],
+    ];
+    const l1 = Math.hypot(e1[0], e1[1], e1[2]) || 1;
+    e1[0] /= l1;
+    e1[1] /= l1;
+    e1[2] /= l1;
+    const e2: V3 = [
+      n[1] * e1[2] - n[2] * e1[1],
+      n[2] * e1[0] - n[0] * e1[2],
+      n[0] * e1[1] - n[1] * e1[0],
+    ];
+    uniq.sort((p, q) => {
+      const pa = Math.atan2(
+        (p[0] - c[0]) * e2[0] + (p[1] - c[1]) * e2[1] + (p[2] - c[2]) * e2[2],
+        (p[0] - c[0]) * e1[0] + (p[1] - c[1]) * e1[1] + (p[2] - c[2]) * e1[2]
+      );
+      const qa = Math.atan2(
+        (q[0] - c[0]) * e2[0] + (q[1] - c[1]) * e2[1] + (q[2] - c[2]) * e2[2],
+        (q[0] - c[0]) * e1[0] + (q[1] - c[1]) * e1[1] + (q[2] - c[2]) * e1[2]
+      );
+      return pa - qa;
+    });
+    out.push({ n, verts: uniq });
+  }
+
+  return out;
+}
+
+/**
+ * A rough-cut crystal: a box hacked down by `cuts` random planes, then squashed
+ * anisotropically so it reads as a mineral shard rather than a jewel. Non-indexed
+ * with per-triangle normals — flat shading is what makes facets read as facets.
+ */
+function buildCrystal({
+  seed,
+  cuts = 22,
+  // A wide offset range is what varies facet *size*: a plane near the low end
+  // takes a deep bite, one near the high end only shaves a corner.
+  minOffset = 0.46,
+  maxOffset = 1.0,
+  stretch = [0.94, 1.2, 0.88] as V3,
+}: {
+  seed: number;
+  cuts?: number;
+  minOffset?: number;
+  maxOffset?: number;
+  stretch?: V3;
+}) {
+  const rnd = mulberry32(seed);
+  // Start close to the cut radius: a roomy box leaves cuts that miss, and the
+  // hull comes out with six big faces instead of a scatter of small ones.
+  let faces = startingBox(1.02);
+
+  for (let i = 0; i < cuts; i++) {
+    // Uniform on the sphere, so the facet directions have no residual axis bias.
+    const z = rnd() * 2 - 1;
+    const th = rnd() * Math.PI * 2;
+    const r = Math.sqrt(Math.max(0, 1 - z * z));
+    const n: V3 = [r * Math.cos(th), z, r * Math.sin(th)];
+    faces = clipHalfSpace(faces, n, minOffset + rnd() * (maxOffset - minOffset));
+  }
+
+  const pos: number[] = [];
+  const nrm: number[] = [];
+  let maxR = 0;
+
+  for (const f of faces) {
+    const v = f.verts.map(
+      (p): V3 => [p[0] * stretch[0], p[1] * stretch[1], p[2] * stretch[2]]
+    );
+    for (const p of v) maxR = Math.max(maxR, Math.hypot(p[0], p[1], p[2]));
+    for (let i = 1; i < v.length - 1; i++) {
+      const a = v[0]!;
+      const b = v[i]!;
+      const c = v[i + 1]!;
+      const u: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      const w: V3 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+      const nx = u[1] * w[2] - u[2] * w[1];
+      const ny = u[2] * w[0] - u[0] * w[2];
+      const nz = u[0] * w[1] - u[1] * w[0];
+      const len = Math.hypot(nx, ny, nz);
+      if (len < 1e-9) continue; // sliver from a near-tangent cut
+      // The stretch can flip winding, so orient against the stored plane normal.
+      const s = dot3([nx / len, ny / len, nz / len], f.n) < 0 ? -1 : 1;
+      for (const p of [a, b, c]) {
+        pos.push(p[0], p[1], p[2]);
+        nrm.push((s * nx) / len, (s * ny) / len, (s * nz) / len);
+      }
+    }
+  }
+
+  // Normalise so every seed yields the same on-screen size.
+  const k = maxR > 0 ? 1 / maxR : 1;
+  for (let i = 0; i < pos.length; i++) pos[i]! *= k;
+
   return { position: new Float32Array(pos), normal: new Float32Array(nrm) };
+}
+
+/** The site hue ramp — shards pick from it so the field reads as brand, not confetti. */
+const SHARD_TINTS: V3[] = [
+  [1.0, 0.69, 0.13], // gold
+  [1.0, 0.3, 0.55], // rose
+  [0.84, 0.12, 0.62], // magenta
+  [0.61, 0.36, 1.0], // violet
+  [0.16, 0.85, 0.9], // cyan
+  [0.2, 0.88, 0.71], // teal
+];
+
+const SHARD_COUNT = 68;
+const SHARD_SEEDS = [9127, 4413, 20261];
+
+/** Instance attributes for one shard group, laid out for `instanced: 1`. */
+function buildShardField(groups: number) {
+  const rnd = mulberry32(77345);
+  const per = Array.from({ length: groups }, () => ({
+    offset: [] as number[],
+    axis: [] as number[],
+    scaleSpin: [] as number[],
+    phase: [] as number[],
+    tint: [] as number[],
+  }));
+
+  for (let i = 0; i < SHARD_COUNT; i++) {
+    // Reject anything that would sit on top of the crystal — the field should
+    // frame it, not crowd it.
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    for (let guard = 0; guard < 40; guard++) {
+      x = rnd() * 2 - 1;
+      y = (rnd() * 2 - 1) * 1.28;
+      z = rnd() * 3.2 - 2.1;
+      if (Math.hypot(x * 2.4, y) > 1.75 || z < -0.8) break;
+    }
+
+    const az = rnd() * 2 - 1;
+    const ath = rnd() * Math.PI * 2;
+    const ar = Math.sqrt(Math.max(0, 1 - az * az));
+    // Shards nearer the camera are drawn a touch larger, so the field has depth.
+    const scale = (0.04 + rnd() * 0.068) * (1 + z * 0.12);
+    const tint = SHARD_TINTS[Math.floor(rnd() * SHARD_TINTS.length)] ?? SHARD_TINTS[0]!;
+
+    const g = per[i % groups]!;
+    g.offset.push(x, y, z);
+    g.axis.push(ar * Math.cos(ath), az, ar * Math.sin(ath));
+    g.scaleSpin.push(scale, (rnd() * 0.5 + 0.18) * (rnd() > 0.5 ? 1 : -1));
+    g.phase.push(rnd() * Math.PI * 2);
+    g.tint.push(tint[0], tint[1], tint[2]);
+  }
+
+  return per.map((g) => ({
+    iOffset: new Float32Array(g.offset),
+    iAxis: new Float32Array(g.axis),
+    iScaleSpin: new Float32Array(g.scaleSpin),
+    iPhase: new Float32Array(g.phase),
+    iTint: new Float32Array(g.tint),
+  }));
 }
 
 const BACKDROP_VERT = `#version 300 es
@@ -116,6 +326,9 @@ void main() {
   col += vec3(0.84, 0.12, 0.62) * 0.10 * smoothstep(0.85, 0.0, length(p - vec2(0.22, 0.74 + cos(t * 0.9) * 0.05)));
   col += vec3(0.16, 0.85, 0.90) * 0.09 * smoothstep(0.75, 0.0, length(p - vec2(0.52, 0.9)));
   col += vec3(1.00, 0.69, 0.13) * 0.05 * smoothstep(0.55, 0.0, length(p - vec2(0.9, 0.85)));
+  // A faint core glow, so the story the shards tell — lit from the centre — has
+  // a visible source. Low enough that it does not wash the crystal out.
+  col += vec3(0.60, 0.48, 1.00) * 0.055 * smoothstep(0.42, 0.0, length(p - vec2(0.5, 0.5)));
 
   // Stars carry the whole trick: a bent gradient looks like nothing, while bent
   // points of light read instantly as glass. Two densities, so the smear has
@@ -209,8 +422,143 @@ void main() {
   col += uEdge * fres * 0.44;                  // rim, kept off the broad facets
   col += vec3(1.0, 0.97, 0.92) * spec * 2.2;   // highlight
   col += vec3(0.55, 0.40, 1.0) * pow(max(dot(N, L), 0.0), 6.0) * 0.07;
+  // The refracted sky is nearly uniform at this size, so without a broad,
+  // normal-dependent term every facet resolves to the same value and the cut
+  // disappears. This is what separates one facet from the next.
+  col += vec3(0.44, 0.36, 0.82) * pow(max(dot(N, L), 0.0), 1.6) * 0.30;
+  col *= 0.80 + 0.30 * abs(N.z);               // facets angled away sit back
 
   fragColor = vec4(col, 1.0);
+}`;
+
+const SHARD_VERT = `#version 300 es
+in vec3 position;
+in vec3 normal;
+in vec3 iOffset;
+in vec3 iAxis;
+in vec2 iScaleSpin;
+in float iPhase;
+in vec3 iTint;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+uniform mat3 normalMatrix;
+uniform float uTime;
+uniform float uSpreadX;
+uniform vec2 uTilt;
+out vec3 vNormal;
+out vec3 vViewPos;
+out vec3 vLight;
+out vec3 vTint;
+out float vAtten;
+
+vec3 rotAxis(vec3 v, vec3 axis, float a) {
+  float c = cos(a), s = sin(a);
+  return v * c + cross(axis, v) * s + axis * dot(axis, v) * (1.0 - c);
+}
+
+void main() {
+  vec3 axis = normalize(iAxis);
+  float a = uTime * iScaleSpin.y + iPhase;
+
+  // Spread only in X: the card is far wider than it is tall, and the field
+  // should reach the corners at any aspect without stretching the shards.
+  vec3 centre = vec3(iOffset.x * uSpreadX, iOffset.y, iOffset.z);
+  centre.xy += uTilt * (iOffset.z + 2.2) * 0.055;   // depth parallax on pointer
+
+  vec3 local = rotAxis(position * iScaleSpin.x, axis, a);
+  vNormal = normalize(normalMatrix * rotAxis(normal, axis, a));
+
+  // Lit from the origin — where the crystal is. Everything in this field owes
+  // its visibility to that one source.
+  vec3 toCentre = -centre;
+  float d = max(length(toCentre), 0.001);
+  // Gentler than inverse-square: true falloff leaves the corners of a wide card
+  // completely unlit, and the field is meant to reach them.
+  vAtten = 1.0 / (1.0 + 0.16 * d * d);
+  vLight = normalize(normalMatrix * (toCentre / d));
+  vTint = iTint;
+
+  vec4 mv = modelViewMatrix * vec4(local + centre, 1.0);
+  vViewPos = mv.xyz;
+  gl_Position = projectionMatrix * mv;
+}`;
+
+/**
+ * Shards have no body of their own: the shader outputs premultiplied colour with
+ * an alpha built purely out of light terms — rim, specular, and transmission
+ * through the far face. Where no light from the centre reaches a facet, alpha is
+ * zero and the shard is simply not there.
+ */
+const SHARD_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D uBackdrop;
+uniform vec2 uResolution;
+uniform float uIOR;
+uniform float uDispersion;
+uniform float uStrength;
+in vec3 vNormal;
+in vec3 vViewPos;
+in vec3 vLight;
+in vec3 vTint;
+in float vAtten;
+out vec4 fragColor;
+
+void main() {
+  vec3 N = normalize(vNormal);
+  vec3 V = normalize(-vViewPos);
+  vec3 L = normalize(vLight);
+  vec2 screen = gl_FragCoord.xy / uResolution;
+
+  float facing = clamp(dot(N, V), 0.0, 1.0);
+  float thick = mix(0.35, 1.25, 1.0 - facing);
+
+  vec3 rR = refract(-V, N, 1.0 / (uIOR - uDispersion));
+  vec3 rG = refract(-V, N, 1.0 / uIOR);
+  vec3 rB = refract(-V, N, 1.0 / (uIOR + uDispersion));
+  vec3 refracted = vec3(
+    texture(uBackdrop, screen + rR.xy * uStrength * thick).r,
+    texture(uBackdrop, screen + rG.xy * uStrength * thick).g,
+    texture(uBackdrop, screen + rB.xy * uStrength * thick).b
+  );
+
+  // A steep exponent matters far more here than on the crystal: a shard is only
+  // a few pixels across, so nearly every fragment on it is close to grazing. At
+  // a shallow exponent the rim term covers the whole silhouette and the shard
+  // flattens into a coloured chip.
+  float fres = pow(1.0 - facing, 5.0);
+  vec3 H = normalize(L + V);
+  // Two lobes: a broad one so most shards catch *something* as they turn, and a
+  // tight one for the flash. With only the tight lobe almost nothing fires at
+  // this size and the field reads as dead grey chips.
+  float ndh = max(dot(N, H), 0.0);
+  float spec = pow(ndh, 22.0) * 0.55 + pow(ndh, 160.0) * 1.6;
+  // Light entering the far side and coming out towards the eye — the term that
+  // makes a clear shard visible at all.
+  float trans = pow(max(dot(-N, L), 0.0), 2.4) * facing;
+
+  // Weighted towards the two terms that read as glass — the rim and the
+  // highlight — and away from a flat body, which would turn each shard into a
+  // coloured sticker rather than something you are looking through.
+  // Almost all of the alpha comes from the rim and the highlight. The
+  // transmission term is kept small on purpose: weighted up it fills the whole
+  // silhouette evenly, and a shard with a filled body is a paper cutout, not
+  // glass. Capped below 1 so even the brightest facet stays see-through.
+  float energy = vAtten * (fres * 0.45 + spec * 1.9 + trans * 0.14);
+  float alpha = clamp(energy, 0.0, 0.72);
+
+  // Mostly white — the hue is a wash carried by the light, not the shard's own
+  // colour, which is what keeps the field reading as glass dust in a beam.
+  vec3 tint = mix(vec3(1.0), vTint, 0.62);
+  // The glint splits into colour the way a prism does, so each flash arrives
+  // tinted rather than white.
+  vec3 prism = 0.55 + 0.45 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + dot(N, L) * 1.4));
+  // Weighted down: the sky behind a shard is almost black out at the corners,
+  // so carrying much of it into the body only muddies the colour.
+  vec3 col = refracted * alpha * 0.5;
+  col += tint * (fres * 0.42 + trans * 0.12) * vAtten;
+  col += mix(vec3(1.0, 0.97, 0.93), prism, 0.55) * spec * vAtten * 3.0;
+
+  fragColor = vec4(col, alpha);   // premultiplied
 }`;
 
 export default function GlassGem() {
@@ -235,6 +583,7 @@ export default function GlassGem() {
     let backdrop: Mesh | null = null;
     let blit: Mesh | null = null;
     let gem: Mesh | null = null;
+    let shards: Mesh[] = [];
     let target: RenderTarget | null = null;
     let t0 = 0;
 
@@ -251,15 +600,22 @@ export default function GlassGem() {
       s.x += (s.tx - s.x) * 0.06;
       s.y += (s.ty - s.y) * 0.06;
 
+      for (const m of shards) {
+        (m.program.uniforms.uTime as { value: number }).value = time;
+        (m.program.uniforms.uResolution as { value: number[] }).value = res;
+        (m.program.uniforms.uTilt as { value: number[] }).value = [s.x, -s.y];
+      }
+
       gem.rotation.y = time * 0.42 + s.x * 0.6;
       gem.rotation.x = -0.32 + s.y * 0.35 + Math.sin(time * 0.33) * 0.08;
       gem.rotation.z = Math.sin(time * 0.21) * 0.12;
 
       // Pass 1: the sky, offscreen. Pass 2: the same sky to screen. Pass 3: the
-      // crystal, sampling pass 1.
+      // crystal, sampling pass 1. Pass 4: the shards, additive over both.
       renderer.render({ scene: backdrop, camera, target });
       renderer.render({ scene: blit, camera });
       renderer.render({ scene: gem, camera, clear: false });
+      for (const m of shards) renderer.render({ scene: m, camera, clear: false });
     };
 
     const loop = (ms: number) => {
@@ -316,7 +672,7 @@ export default function GlassGem() {
         }),
       });
 
-      const cut = buildGem({ sides: 6 });
+      const cut = buildCrystal({ seed: 20260810 });
       gem = new Mesh(gl, {
         geometry: new Geometry(gl, {
           position: { size: 3, data: cut.position },
@@ -344,6 +700,54 @@ export default function GlassGem() {
       });
       gem.scale.set(1.18);
 
+      // One mesh per distinct shard cut, instanced across its share of the field.
+      const fields = buildShardField(SHARD_SEEDS.length);
+      const shardMeshes = SHARD_SEEDS.map((seed, i) => {
+        const shard = buildCrystal({
+          seed,
+          cuts: 8,
+          minOffset: 0.5,
+          maxOffset: 1.2,
+          stretch: [0.8 + i * 0.14, 1.5 - i * 0.2, 0.74],
+        });
+        const f = fields[i]!;
+        return new Mesh(gl!, {
+          geometry: new Geometry(gl!, {
+            position: { size: 3, data: shard.position },
+            normal: { size: 3, data: shard.normal },
+            iOffset: { instanced: 1, size: 3, data: f.iOffset },
+            iAxis: { instanced: 1, size: 3, data: f.iAxis },
+            iScaleSpin: { instanced: 1, size: 2, data: f.iScaleSpin },
+            iPhase: { instanced: 1, size: 1, data: f.iPhase },
+            iTint: { instanced: 1, size: 3, data: f.iTint },
+          }),
+          program: new Program(gl!, {
+            vertex: SHARD_VERT,
+            fragment: SHARD_FRAG,
+            cullFace: null,
+            transparent: true,
+            // Premultiplied additive-over: order-independent, so the shards need
+            // no depth sort among themselves — but they still test against the
+            // crystal's depth, so the ones behind it stay behind it.
+            depthWrite: false,
+            uniforms: {
+              uBackdrop: { value: target!.texture },
+              uResolution: { value: [1, 1] },
+              uTime: { value: 0 },
+              uSpreadX: { value: 2.4 },
+              uTilt: { value: [0, 0] },
+              uIOR: { value: 1.38 },
+              uDispersion: { value: 0.13 },
+              uStrength: { value: 0.05 },
+            },
+          }),
+        });
+      });
+      for (const m of shardMeshes) {
+        m.program.setBlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      }
+      shards = shardMeshes;
+
       const resize = () => {
         if (!renderer || !gl || !camera) return;
         const w = host.clientWidth || 1;
@@ -351,6 +755,12 @@ export default function GlassGem() {
         renderer.setSize(w, h);
         camera.perspective({ aspect: gl.canvas.width / gl.canvas.height });
         target?.setSize(gl.canvas.width, gl.canvas.height);
+        // Reach the corners on a wide card without letting the field collapse
+        // onto the crystal on a narrow one.
+        const spread = Math.min(Math.max((w / Math.max(h, 1)) * 1.35, 1.5), 4.2);
+        for (const m of shards) {
+          (m.program.uniforms.uSpreadX as { value: number }).value = spread;
+        }
       };
       resize();
       ro = new ResizeObserver(resize);
@@ -401,6 +811,7 @@ export default function GlassGem() {
       surface.removeEventListener("pointerleave", onLeave);
       if (gl?.canvas.parentElement === host) host.removeChild(gl.canvas);
       gl?.getExtension("WEBGL_lose_context")?.loseContext();
+      shards = [];
       renderer = null;
       gl = null;
     };
