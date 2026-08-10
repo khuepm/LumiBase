@@ -9,7 +9,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
-import type { CacheProvider, QueueProvider } from '@lumibase/runtime';
+import type { CacheProvider, EdgeCacheProvider, QueueProvider } from '@lumibase/runtime';
 import { createSwrCache, type SwrCache } from '@lumibase/runtime';
 import type { CdcOperation, CdcResource, FieldClassification } from '@lumibase/shared';
 import { invalidateDeliverTag } from './content-invalidation';
@@ -312,6 +312,8 @@ export interface SchemaServiceDeps {
   db: Database;
   siteId: string;
   cache?: CacheProvider;
+  /** Optional HTTP edge cache, so a schema apply also purges the edge (#392). */
+  edgeCache?: EdgeCacheProvider;
   events?: {
     emit(event: SchemaChangedEvent): Promise<void>;
   };
@@ -1169,7 +1171,7 @@ export class SchemaService {
     await this.deps.cache.delete(`typegen:${this.deps.siteId}`);
     await this.deps.cache.delete(`typegen:${this.deps.siteId}:schema`);
     await this.deps.cache.delete(`perm:${this.deps.siteId}:schema`);
-    await invalidateDeliverTag(this.deps.cache, this.deps.siteId);
+    await invalidateDeliverTag(this.deps.cache, this.deps.siteId, this.deps.edgeCache);
   }
 
   private assertUniqueSchemaInputs(fieldInputs?: FieldInput[], relationInputs?: RelationInput[]) {

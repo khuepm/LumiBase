@@ -8,6 +8,7 @@ import { formatSafeError } from '@lumibase/shared/utils';
 import { scopeSite, settings, transformPresets } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { type TransformDsl, transformDslSchema, transformKey, verifyTransform } from '@lumibase/shared';
+import { etagMatches, weakEtag } from '../services/delivery-cache';
 
 type ResolvedTransform = { dsl: TransformDsl; fromPreset: boolean };
 
@@ -96,6 +97,65 @@ function storageKey(siteId: string, key: string): string {
 function publicKey(siteId: string, key: string): string {
   const prefix = tenantPrefix(siteId);
   return key.startsWith(prefix) ? key.slice(prefix.length) : key;
+}
+
+/**
+ * Storage metadata field holding the content fingerprint written at upload
+ * time. Objects uploaded before this field existed (and every object written
+ * through the streaming `PUT /files/upload/:key` receiver, which never buffers
+ * the body) simply have no version — they degrade to the revalidating policy
+ * below, never to `immutable`.
+ */
+const CONTENT_HASH_METADATA = 'contentHash';
+
+/** Revalidating default: safe on a key whose bytes can be replaced in place. */
+const MEDIA_MUTABLE_CACHE_CONTROL = 'public, max-age=300, must-revalidate';
+
+/** One year, unrevocable. Only ever correct on a version-pinned URL. */
+const MEDIA_IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
+/** Short content fingerprint over the uploaded bytes. */
+async function contentHashOf(bytes: BufferSource): Promise<string> {
+  // Typed as BufferSource, not cast to ArrayBuffer: an upload `Buffer` can be a
+  // view into a larger pooled allocation, and hashing the backing buffer rather
+  // than the view would fingerprint bytes that are not part of this object.
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 32);
+}
+
+/**
+ * Decide the `Cache-Control` for a media response (#388).
+ *
+ * `immutable` tells every cache between here and the user's browser that the
+ * bytes will never change — and there is no channel to take that back. It is
+ * only honest when the *URL* is a function of the *content*, so that changed
+ * bytes are reached through a different URL.
+ *
+ * `POST /media/:key` overwrites in place (`storage.put` on a caller-chosen
+ * key), so the key alone is not that function. The caller opts into the
+ * immutable promise by pinning `?v=<contentHash>` — that param is what makes
+ * the URL change when the content does.
+ *
+ * When the stored fingerprint is at hand we also *verify* the pin: a stale or
+ * invented `?v=` downgrades to revalidation rather than freezing whatever
+ * bytes happen to be there for a year. On the redirect path the source is
+ * never fetched, so there is nothing to verify against and the pin is taken at
+ * face value — the URL still changes with the content, which is what the
+ * promise rests on.
+ */
+function mediaCacheControl(requestUrl: string, storedVersion: string | null): string {
+  const pinned = new URL(requestUrl).searchParams.get('v');
+  if (!pinned) return MEDIA_MUTABLE_CACHE_CONTROL;
+  if (storedVersion !== null && pinned !== storedVersion) return MEDIA_MUTABLE_CACHE_CONTROL;
+  return MEDIA_IMMUTABLE_CACHE_CONTROL;
+}
+
+/** Stored content fingerprint, or null for objects written before it existed. */
+function storedVersionOf(obj: { metadata?: Record<string, string> }): string | null {
+  const version = obj.metadata?.[CONTENT_HASH_METADATA];
+  return typeof version === 'string' && version.length > 0 ? version : null;
 }
 
 /**
@@ -251,15 +311,25 @@ mediaRouter.get('/:key{.+}', async (c) => {
           return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Media asset not found.' }] }, 404);
         }
         const srcBytes = await new Response(obj.body as BodyInit).arrayBuffer();
+        // The source bytes are already in hand here, so the fingerprint is the
+        // real one even for objects uploaded before the metadata field existed.
+        const version = storedVersionOf(obj) ?? (await contentHashOf(srcBytes));
+        const derivativeKey = transformKey(scoped, dsl);
+        const etag = await weakEtag([version, derivativeKey]);
+        const headers: Record<string, string> = {
+          'Cache-Control': mediaCacheControl(c.req.url, version),
+          ETag: etag,
+          'X-Transform-Key': derivativeKey,
+          'X-Content-Type-Options': 'nosniff',
+        };
+        if (etagMatches(c.req.header('if-none-match'), etag)) {
+          return new Response(null, { status: 304, headers });
+        }
+
         const out = await media.transform(srcBytes, options);
         return new Response(out.body as unknown as BodyInit, {
           status: 200,
-          headers: {
-            'Content-Type': out.contentType,
-            'Cache-Control': 'public, max-age=31536000, immutable',
-            'X-Transform-Key': transformKey(scoped, dsl),
-            'X-Content-Type-Options': 'nosniff',
-          },
+          headers: { ...headers, 'Content-Type': out.contentType },
         });
       } catch (err) {
         // Fall through to the URL path if the in-process transform is unavailable.
@@ -267,9 +337,11 @@ mediaRouter.get('/:key{.+}', async (c) => {
       }
     }
 
+    // Redirect path (CF Image Resizing / Imgproxy): the source is never read
+    // here, so there is no stored fingerprint to check the pin against.
     const targetUrl = media.getUrl(scoped, options);
     const res = c.redirect(targetUrl, 302);
-    res.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    res.headers.set('Cache-Control', mediaCacheControl(c.req.url, null));
     res.headers.set('X-Transform-Key', transformKey(scoped, dsl));
     return res;
   }
@@ -290,6 +362,24 @@ mediaRouter.get('/:key{.+}', async (c) => {
     const contentType = obj.contentType ?? obj.metadata?.contentType;
     if (contentType) headers['Content-Type'] = contentType;
     if (obj.size != null) headers['Content-Length'] = String(obj.size);
+
+    // An explicit policy, rather than leaving the response with no
+    // `Cache-Control` at all and letting each cache apply its own heuristic
+    // (#388). Versioned only when the caller pinned a matching `?v=`.
+    const version = storedVersionOf(obj);
+    headers['Cache-Control'] = mediaCacheControl(c.req.url, version);
+    if (version) {
+      // Surfaced so a client can build the pinned `?v=` URL from a plain GET,
+      // without having to have seen the upload response.
+      headers['X-Lumi-Media-Version'] = version;
+      const etag = await weakEtag([version]);
+      headers.ETag = etag;
+      if (etagMatches(c.req.header('if-none-match'), etag)) {
+        // 304 carries no body, so drop the body-describing header with it.
+        delete headers['Content-Length'];
+        return new Response(null, { status: 304, headers });
+      }
+    }
     // Serve user-uploaded bytes as a download, never as an inline document.
     // Combined with the global `X-Content-Type-Options: nosniff` + CSP, this
     // stops a stored HTML/SVG payload from being rendered (and its script
@@ -343,7 +433,11 @@ mediaRouter.post('/:key{.+}', async (c) => {
     const data = Buffer.from(body);
     const scopedKey = storageKey(c.get('siteId'), key);
 
-    const metadata: Record<string, string> = { contentType };
+    // Fingerprint the bytes on the way in. This is what lets a reader pin
+    // `?v=` and get an immutable URL: the upload overwrites in place, so the
+    // key is stable across content changes but this value is not (#388).
+    const version = await contentHashOf(data);
+    const metadata: Record<string, string> = { contentType, [CONTENT_HASH_METADATA]: version };
     await storage.put(scopedKey, data, metadata);
 
     // Fire-and-forget: enqueue thumbnail generation for image uploads
@@ -367,7 +461,7 @@ mediaRouter.post('/:key{.+}', async (c) => {
       }
     }
 
-    return c.json({ data: { key, size: data.byteLength, contentType } }, 201);
+    return c.json({ data: { key, size: data.byteLength, contentType, version } }, 201);
   } catch (err) {
     console.error('[media] upload error', formatSafeError(err));
     return c.json(

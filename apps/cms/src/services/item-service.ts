@@ -17,6 +17,7 @@ import { validateItem } from './validation';
 import {
   searchIndexName,
   type CacheProvider,
+  type EdgeCacheProvider,
   type SearchProvider,
   type QueueProvider,
   type RealtimeProvider,
@@ -205,6 +206,11 @@ export interface ItemServiceDeps {
   db: Database;
   /** Optional cache used by SchemaService for compiled manifests. */
   cache?: CacheProvider;
+  /**
+   * Optional HTTP edge cache. Supplied so a content write can reach the copy
+   * stored at the edge, not just the application cache (#392).
+   */
+  edgeCache?: EdgeCacheProvider;
   /**
    * Negative-cache TTL (seconds) forwarded to SchemaService (Req 19.5).
    * Resolved from the runtime env by the caller — see the note on
@@ -2084,7 +2090,12 @@ export class ItemService {
 
   /** Tag purge + ISR revalidation after published content changes (Req 8). */
   private async invalidateContentCache(collectionName: string): Promise<void> {
-    await invalidateItemsTag(this.deps.cache, this.deps.siteId, collectionName);
+    await invalidateItemsTag(
+      this.deps.cache,
+      this.deps.siteId,
+      collectionName,
+      this.deps.edgeCache,
+    );
     await dispatchItemRevalidation({
       db: this.deps.db,
       queue: this.deps.queue,

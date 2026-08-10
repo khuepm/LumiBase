@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Database } from '@lumibase/database';
 import { MemoryCacheProvider } from '@lumibase/runtime';
-import { PermissionService, type PermissionBundle } from '../permission-service';
+import {
+  PermissionService,
+  __resetPermissionProcessCacheForTests,
+  type PermissionBundle,
+} from '../permission-service';
 import type { MagicContext } from '../permission-dsl';
 
 /**
@@ -82,6 +86,12 @@ function serviceFor(
 }
 
 describe('PermissionService cache revocation — API key principal', () => {
+  // The #391 process store is module-level, so it survives between cases and
+  // would otherwise answer a case that means to start from an empty cache.
+  beforeEach(() => {
+    __resetPermissionProcessCacheForTests();
+  });
+
   it('stores under api_key principal, bump after revoke forces recompile (Req 2.5)', async () => {
     const cache = new MemoryCacheProvider();
     const { service, compileSpy } = serviceFor(cache, async () => bundleWithPostsRead());

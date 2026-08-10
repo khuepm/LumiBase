@@ -19,14 +19,24 @@ export { MemoryCacheProvider } from './memory-cache';
 export { MemoryRateLimiter } from './memory-rate-limiter';
 export { RedisRateLimiter } from './adapters/redis-rate-limiter';
 export { CacheBackedRateLimiter } from './adapters/cache-rate-limiter';
-export { createNegativeCache, createSwrCache } from './cache-helpers';
+export { createNegativeCache, createSwrCache, withProcessCache } from './cache-helpers';
 export type {
   NegativeCache,
   NegativeCacheOptions,
+  ProcessCacheEntry,
+  ProcessCacheOptions,
+  ProcessCacheStore,
   SwrCache,
   SwrCacheEntry,
   SwrCacheOptions,
 } from './cache-helpers';
 export { classifyCacheValue, negativeCacheWireValue } from './cache-entry';
+export {
+  EDGE_URL_INDEX_LIMIT,
+  edgeUrlIndexKey,
+  purgeEdgeByTag,
+  recordEdgeUrl,
+} from './edge-url-index';
+export type { CloudflareZonePurgeConfig } from './adapters/cloudflare/edge-cache';
 export { withLeaderLock, leaderLockedCallback, __resetLeaderLockWarningsForTests } from './leader-lock';
 export type { LeaderLockRedis, WithLeaderLockOptions } from './leader-lock';
