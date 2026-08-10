@@ -327,8 +327,10 @@ void main() {
   col += vec3(0.16, 0.85, 0.90) * 0.09 * smoothstep(0.75, 0.0, length(p - vec2(0.52, 0.9)));
   col += vec3(1.00, 0.69, 0.13) * 0.05 * smoothstep(0.55, 0.0, length(p - vec2(0.9, 0.85)));
   // A faint core glow, so the story the shards tell — lit from the centre — has
-  // a visible source. Low enough that it does not wash the crystal out.
-  col += vec3(0.60, 0.48, 1.00) * 0.055 * smoothstep(0.42, 0.0, length(p - vec2(0.5, 0.5)));
+  // a visible source. Kept tight and dim: the crystal sits directly on top of
+  // it, and anything stronger is refracted straight through its body as a
+  // colour cast, which is what made it read as amethyst.
+  col += vec3(0.66, 0.60, 1.00) * 0.03 * smoothstep(0.30, 0.0, length(p - vec2(0.5, 0.5)));
 
   // Stars carry the whole trick: a bent gradient looks like nothing, while bent
   // points of light read instantly as glass. Two densities, so the smear has
@@ -404,11 +406,16 @@ void main() {
 
   // A second sample off the flipped normal stands in for the far surface, so the
   // body carries internal structure instead of one flat wash.
+  // Kept light: the more of this second, heavily-offset sample is mixed in, the
+  // more the body averages into a milky wash instead of showing crisp bent
+  // stars — and crisp bent stars are the whole reason the glass reads as clear.
   vec3 back = texture(uBackdrop, screen + refract(-V, -N, uIOR).xy * uStrength * 0.6).rgb;
-  refracted = mix(refracted, back, 0.32);
+  refracted = mix(refracted, back, 0.18);
 
-  // Barely tinted: glass is mostly whatever is behind it.
-  refracted *= mix(vec3(1.1), vec3(0.86, 0.82, 1.0), 1.0 - abs(dot(N, V)));
+  // Neutral on purpose. Any hue applied to the body reads as *coloured glass*
+  // — the body should be the backdrop and nothing else, with all the colour
+  // coming from dispersion at the edges.
+  refracted *= mix(vec3(1.14), vec3(0.97, 0.98, 1.03), 1.0 - abs(dot(N, V)));
 
   // Grazing facets brighten; facets pointed at you stay clear.
   float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 4.0);
@@ -418,15 +425,20 @@ void main() {
   vec3 H = normalize(L + V);
   float spec = pow(max(dot(N, H), 0.0), 140.0);
 
-  vec3 col = refracted * 1.18;
-  col += uEdge * fres * 0.44;                  // rim, kept off the broad facets
-  col += vec3(1.0, 0.97, 0.92) * spec * 2.2;   // highlight
-  col += vec3(0.55, 0.40, 1.0) * pow(max(dot(N, L), 0.0), 6.0) * 0.07;
-  // The refracted sky is nearly uniform at this size, so without a broad,
-  // normal-dependent term every facet resolves to the same value and the cut
-  // disappears. This is what separates one facet from the next.
-  col += vec3(0.44, 0.36, 0.82) * pow(max(dot(N, L), 0.0), 1.6) * 0.30;
-  col *= 0.80 + 0.30 * abs(N.z);               // facets angled away sit back
+  vec3 col = refracted * 1.22;
+  col += uEdge * fres * 0.40;                  // rim, kept off the broad facets
+  col += vec3(1.0, 0.99, 0.97) * spec * 1.3;   // highlight
+  // Facets still have to separate from one another, but the term doing it is
+  // near-white now: separating them by *luminance* keeps the glass colourless,
+  // where separating them by hue is what made the whole body read as amethyst.
+  col += vec3(0.90, 0.93, 1.0) * pow(max(dot(N, L), 0.0), 1.6) * 0.05;
+  col *= 0.82 + 0.26 * abs(N.z);               // facets angled away sit back
+
+  // A facet is one flat normal, so a sharp highlight lights the *entire* facet
+  // at once rather than a spot on it. Without a rolloff that facet clips to
+  // solid white and the stone reads as opaque plastic; the soft shoulder keeps
+  // the bent starfield visible even through the brightest face.
+  col = col / (1.0 + col * 0.62);
 
   fragColor = vec4(col, 1.0);
 }`;
@@ -692,9 +704,11 @@ export default function GlassGem() {
             uDispersion: { value: 0.11 },
             // Screen-UV units — 0.24 flung samples a quarter of the canvas away,
             // which averaged into flat colour instead of bending anything.
-            uStrength: { value: 0.12 },
+            uStrength: { value: 0.16 },
             uLightDir: { value: [-0.5, 0.85, 0.7] },
-            uEdge: { value: [0.72, 0.42, 1.0] },
+            // Near-white with the faintest cool cast. A saturated rim colour
+            // bleeds inwards across small facets and tints the whole stone.
+            uEdge: { value: [0.88, 0.92, 1.0] },
           },
         }),
       });
