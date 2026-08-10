@@ -19,10 +19,13 @@ export { MemoryCacheProvider } from './memory-cache';
 export { MemoryRateLimiter } from './memory-rate-limiter';
 export { RedisRateLimiter } from './adapters/redis-rate-limiter';
 export { CacheBackedRateLimiter } from './adapters/cache-rate-limiter';
-export { createNegativeCache, createSwrCache } from './cache-helpers';
+export { createNegativeCache, createSwrCache, withProcessCache } from './cache-helpers';
 export type {
   NegativeCache,
   NegativeCacheOptions,
+  ProcessCacheEntry,
+  ProcessCacheOptions,
+  ProcessCacheStore,
   SwrCache,
   SwrCacheEntry,
   SwrCacheOptions,

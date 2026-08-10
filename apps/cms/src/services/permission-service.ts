@@ -15,7 +15,12 @@ import {
 } from '@lumibase/database';
 import type { PolicyRule } from '@lumibase/shared';
 import type { CacheProvider } from '@lumibase/runtime';
-import { createSwrCache, type SwrCache } from '@lumibase/runtime';
+import {
+  createSwrCache,
+  withProcessCache,
+  type ProcessCacheStore,
+  type SwrCache,
+} from '@lumibase/runtime';
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { isIP } from 'node:net';
 import {
@@ -102,6 +107,47 @@ export interface PermissionServiceDeps {
 const CACHE_TTL_SECONDS = 60;
 
 /**
+ * In-process layer in front of the shared bundle cache (#391).
+ *
+ * Compiled bundles are read on nearly every authenticated request, and each
+ * read below this layer costs a network round-trip (Redis at millisecond
+ * scale, Workers KV higher). Holding the decoded bundle in the isolate that
+ * built it removes one of the two hops `bundle()` makes.
+ *
+ * Deliberately applied to the **bundle** and not to the version pointer. The
+ * bundle key carries `v{n}`, so its value is immutable — a permission change
+ * bumps the pointer, which produces a different key, and the stale entry is
+ * never read again. Caching the pointer instead would delay revocation by the
+ * TTL and break the guarantee Req 2 exists to provide (Property P9: revoke →
+ * next request denied, without waiting out a TTL). One network read per
+ * request is the price of that guarantee, and it is worth paying.
+ *
+ * The bound matters on both runtimes: a Docker process is long-lived, and a
+ * Workers isolate is reused across requests from *different tenants*.
+ */
+const PROCESS_CACHE_MAX_ENTRIES = 256;
+const PROCESS_CACHE_TTL_MS = 5_000;
+
+/**
+ * Module-level, deliberately.
+ *
+ * A `PermissionService` is built per request, so a store owned by the
+ * instance would be created and discarded within that request and never
+ * return a hit — a cache that looks wired and does nothing. Sharing it across
+ * instances is what makes this a process cache at all.
+ *
+ * Safe to share because every key carries both `siteId` and the version
+ * segment: two tenants cannot collide, and a stale entry cannot be addressed
+ * once the version moves.
+ */
+const processBundleStore: ProcessCacheStore<PermissionBundle> = new Map();
+
+/** Test seam: drop process-cached bundles between cases. */
+export function __resetPermissionProcessCacheForTests(): void {
+  processBundleStore.clear();
+}
+
+/**
  * Site-wide cache version pointer (high-load-cache-readiness Req 2; design
  * §5.1). Bundles are stored under `perm:{site}:v{n}:{principal}`; bumping the
  * pointer orphans every cached bundle for the site in ONE write — no
@@ -133,12 +179,24 @@ export class PermissionService {
   private getBundleSwr(): SwrCache<PermissionBundle> | null {
     if (!this.deps.cache) return null;
     if (!this.bundleSwr) {
-      this.bundleSwr = createSwrCache({
-        cache: this.deps.cache,
-        softTtl: 30,
-        hardTtl: CACHE_TTL_SECONDS,
-        compute: async () => this.compile(),
-      });
+      this.bundleSwr = withProcessCache(
+        createSwrCache({
+          cache: this.deps.cache,
+          softTtl: 30,
+          hardTtl: CACHE_TTL_SECONDS,
+          compute: async () => this.compile(),
+        }),
+        {
+          store: processBundleStore,
+          maxEntries: PROCESS_CACHE_MAX_ENTRIES,
+          ttlMs: PROCESS_CACHE_TTL_MS,
+          onLookup: (result) => {
+            void import('../routes/metrics').then((m) =>
+              m.cacheOperationsTotal.inc({ op: 'get', result, backend: 'process' }),
+            );
+          },
+        },
+      );
     }
     return this.bundleSwr;
   }

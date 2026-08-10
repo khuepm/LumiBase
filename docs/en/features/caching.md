@@ -1,12 +1,12 @@
 ---
 title: Caching
 description: Edge HTTP cache, application CacheProvider, and cache-penetration defences
-version: 3
-lastUpdated: 2026-08-10T19:37:22.648Z
+version: 4
+lastUpdated: 2026-08-10T20:04:00.102Z
 sourceLang: en
-contentHash: 7f89482a7396e01c
-codeVerified: 2026-08-10T19:37:22.648Z
-codeVerifiedHash: 7f89482a7396e01c
+contentHash: 218e2a3a0ef0179c
+codeVerified: 2026-08-10T20:04:00.102Z
+codeVerifiedHash: 218e2a3a0ef0179c
 codeVerifiedClaims: 16
 ---
 
@@ -23,7 +23,7 @@ A request is answered by the first layer that has it, and each layer keeps a cop
 | Browser | The user's own cache | **Nothing reaches it.** Change the URL instead — see the section above | Whatever `max-age` you promised |
 | CDN / edge | `EdgeCacheProvider` (`caches.default` on Workers; no-op on Docker) | `purge({urls, tags})` — tag purge, falling back to URL purge; see below | `s-maxage` (default 60s) when purge is unavailable |
 | Reverse proxy | Caddy | Not a cache — it proxies, no caching directive is configured | n/a |
-| In-process | Single-flight map in `createSwrCache` | Coalesces in-flight work only; holds no values between requests | n/a |
+| In-process | `withProcessCache` over the permission bundle, plus the single-flight map in `createSwrCache` | Not invalidated — entries are only reachable under a versioned key, so a version bump makes them unaddressable | 5s process TTL |
 | Application cache | `CacheProvider` — Redis or Workers KV | `invalidateByTag`, `POST /api/v1/utils/cache/purge` | Immediate on Redis; KV is eventually consistent (~60s) |
 | Database | Postgres buffer pool, OS page cache | Not ours to manage | n/a |
 
@@ -47,6 +47,19 @@ Everything on this path fails soft. A lost index entry, an expired token, a 403 
 |----------|---------|
 | `CF_PURGE_ZONE_ID` | Cloudflare zone id for global edge purge. Absent → colo-local purge only. |
 | `CF_PURGE_API_TOKEN` | API token holding the `Cache Purge` permission on that zone. |
+
+### The in-process layer
+
+A hit in Redis or Workers KV still costs a network round-trip; a hit in process memory does not. `withProcessCache` holds decoded values in the isolate that computed them, in front of the shared cache.
+
+It is applied to **one** thing today: the compiled permission bundle, read on nearly every authenticated request. Two rules make that safe, and both are load-bearing:
+
+- **Only keys that carry a version segment.** `perm:{site}:v{n}:{principal}` addresses an immutable value — a permission change bumps the pointer, the next read addresses a different key, and the stale entry is never read again. Nothing in this layer can be invalidated across instances, so a key whose value can change underneath it must never be wrapped.
+- **Never the version pointer itself.** That pointer is read from the shared cache on every request. Caching it would delay revocation by the process TTL and break exactly the guarantee key versioning exists to provide (Property P9: revoke → next request denied, no TTL wait). One network read per request is what that guarantee costs.
+
+The store is module-level and bounded (256 entries, 5s TTL). Both matter: a per-request store would never return a hit, and an unbounded one leaks — a Docker process is long-lived and a Workers isolate is reused across requests from *different tenants*. Every key carries `siteId`, so no layer above needs to separate them.
+
+`lumibase_cache_operations_total{backend="process"}` reports hit and miss, so whether this layer earns its keep is measurable rather than assumed.
 
 ## Media URLs and the `immutable` promise
 

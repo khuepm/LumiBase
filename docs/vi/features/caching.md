@@ -2,14 +2,14 @@
 title: Caching
 description: HTTP cache ở edge, CacheProvider tầng ứng dụng, và các lớp phòng thủ cache penetration
 translatedFrom: en
-sourceHash: 7f89482a7396e01c
-version: 3
-lastUpdated: 2026-08-10T19:37:22.648Z
+sourceHash: 218e2a3a0ef0179c
+version: 4
+lastUpdated: 2026-08-10T20:04:00.102Z
 sourceLang: en
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-10T19:37:22.648Z
-codeVerifiedHash: 7f89482a7396e01c
+codeVerified: 2026-08-10T20:04:00.102Z
+codeVerifiedHash: 218e2a3a0ef0179c
 codeVerifiedClaims: 16
 ---
 
@@ -26,7 +26,7 @@ Một request được trả lời bởi tầng đầu tiên có sẵn dữ li�
 | Browser | Cache của chính người dùng | **Không gì chạm tới được.** Phải đổi URL — xem mục phía trên | Bằng đúng `max-age` bạn đã hứa |
 | CDN / edge | `EdgeCacheProvider` (`caches.default` trên Workers; no-op trên Docker) | `purge({urls, tags})` — purge theo tag, lùi về theo URL; xem bên dưới | `s-maxage` (mặc định 60s) khi không purge được |
 | Reverse proxy | Caddy | Không phải cache — chỉ proxy, không cấu hình directive cache nào | n/a |
-| In-process | Map single-flight trong `createSwrCache` | Chỉ gộp các lần tính đang bay; không giữ giá trị giữa các request | n/a |
+| In-process | `withProcessCache` cho permission bundle, cộng map single-flight trong `createSwrCache` | Không invalidate — entry chỉ chạm tới được qua key có version, nên bump version làm nó thành không địa chỉ hoá được | TTL 5s trong process |
 | Application cache | `CacheProvider` — Redis hoặc Workers KV | `invalidateByTag`, `POST /api/v1/utils/cache/purge` | Tức thì với Redis; KV eventually consistent (~60s) |
 | Database | Buffer pool Postgres, page cache OS | Không thuộc quyền quản lý của ta | n/a |
 
@@ -50,6 +50,19 @@ Mọi thứ trên đường này đều degrade an toàn. Mất một entry inde
 |------|---------|
 | `CF_PURGE_ZONE_ID` | Zone id Cloudflare cho purge edge toàn cầu. Vắng → chỉ purge colo cục bộ. |
 | `CF_PURGE_API_TOKEN` | API token có quyền `Cache Purge` trên zone đó. |
+
+### Tầng in-process
+
+Một hit ở Redis hay Workers KV vẫn tốn một round-trip mạng; hit trong bộ nhớ process thì không. `withProcessCache` giữ giá trị đã giải mã ngay trong isolate đã tính ra nó, đứng trước shared cache.
+
+Hiện chỉ áp cho **một** thứ: compiled permission bundle, thứ được đọc ở gần như mọi request đã xác thực. Hai quy tắc làm cho việc đó an toàn, và cả hai đều chịu lực:
+
+- **Chỉ những key mang segment version.** `perm:{site}:v{n}:{principal}` trỏ tới một giá trị bất biến — đổi quyền thì bump pointer, lần đọc kế tiếp trỏ sang key khác, và entry cũ không bao giờ được đọc lại. Không gì ở tầng này invalidate được xuyên instance, nên tuyệt đối không bọc một key mà giá trị của nó đổi được ngay dưới chân.
+- **Tuyệt đối không cache chính version pointer.** Pointer đó được đọc từ shared cache ở mọi request. Cache nó lại sẽ làm việc thu hồi quyền chậm đi đúng bằng TTL của process, tức phá đúng cái bảo đảm mà key versioning sinh ra để giữ (Property P9: thu hồi → request kế tiếp bị từ chối, không phải chờ hết TTL). Một lần đọc mạng mỗi request chính là cái giá của bảo đảm đó.
+
+Store nằm ở cấp module và có chặn trên (256 entry, TTL 5s). Cả hai đều quan trọng: store theo từng request sẽ không bao giờ hit, còn store không chặn thì rò rỉ — process Docker sống lâu, và isolate Workers được tái dùng cho request của **nhiều tenant khác nhau**. Mọi key đều mang `siteId`, nên không tầng nào phía trên phải tách tenant hộ.
+
+`lumibase_cache_operations_total{backend="process"}` báo hit và miss, nên việc tầng này có đáng giữ hay không là thứ đo được chứ không phải tin.
 
 ## URL media và lời hứa `immutable`
 
