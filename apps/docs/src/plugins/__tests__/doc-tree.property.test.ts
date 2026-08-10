@@ -19,10 +19,7 @@ import { buildDocTree, type DocEntry, type DocNode } from '../vite-plugin-docs-l
  * Generate a valid path segment (directory or file name without extension).
  * Constrained to lowercase alphanumeric + hyphens to avoid OS-specific issues.
  */
-const pathSegment = fc.stringOf(
-  fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789-'.split('')),
-  { minLength: 1, maxLength: 12 },
-).filter((s) => !s.startsWith('-') && !s.endsWith('-') && !s.includes('--'));
+const pathSegment = fc.string({ unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789-'.split('')), minLength: 1, maxLength: 12 }).filter((s) => !s.startsWith('-') && !s.endsWith('-') && !s.includes('--'));
 
 /**
  * Generate a relative file path like "dir1/dir2/file.md".

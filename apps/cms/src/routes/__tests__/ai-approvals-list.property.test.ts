@@ -30,6 +30,13 @@ interface ApprovalRecord {
   decidedBy: string | null;
 }
 
+/** One generated approvals-list scenario: the sites in play plus the records to query. */
+interface ApprovalScenario {
+  siteIds: string[];
+  records: ApprovalRecord[];
+  currentSiteId: string;
+}
+
 // ---------------------------------------------------------------------------
 // Pure function that replicates the query logic from GET /approvals endpoint
 // ---------------------------------------------------------------------------
@@ -55,10 +62,11 @@ function queryPendingApprovals(
 // Arbitraries
 // ---------------------------------------------------------------------------
 
-const siteIdArb = fc.stringOf(
-  fc.char().filter((c) => /[a-zA-Z0-9]/.test(c)),
-  { minLength: 1, maxLength: 21 },
-);
+const siteIdArb = fc.string({
+  unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('')),
+  minLength: 1,
+  maxLength: 21,
+});
 
 const statusArb = fc.constantFrom('pending', 'approved', 'rejected') as fc.Arbitrary<
   'pending' | 'approved' | 'rejected'
@@ -73,10 +81,22 @@ const approvalRecordArb = (siteIds: string[]): fc.Arbitrary<ApprovalRecord> =>
     arguments: fc.constant({} as Record<string, unknown>),
     status: statusArb,
     context: fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: null }),
-    createdAt: fc.date({ min: new Date('2020-01-01'), max: new Date('2030-12-31') }),
-    decidedAt: fc.option(fc.date({ min: new Date('2020-01-01'), max: new Date('2030-12-31') }), {
-      nil: null,
+    // noInvalidDate: a bounded fc.date() may still emit `Invalid Date` (it
+    // defaults to false), and these tests order records by createdAt — NaN
+    // timestamps are out of scope for the ordering property.
+    createdAt: fc.date({
+      min: new Date('2020-01-01'),
+      max: new Date('2030-12-31'),
+      noInvalidDate: true,
     }),
+    decidedAt: fc.option(
+      fc.date({
+        min: new Date('2020-01-01'),
+        max: new Date('2030-12-31'),
+        noInvalidDate: true,
+      }),
+      { nil: null },
+    ),
     decidedBy: fc.option(fc.string({ minLength: 1, maxLength: 21 }), { nil: null }),
   });
 
@@ -85,27 +105,31 @@ describe('Feature: ai-first-cms-engine, Property 11: Approvals list query', () =
     fc.assert(
       fc.property(
         // Generate 2-5 distinct siteIds
-        fc.array(siteIdArb, { minLength: 2, maxLength: 5 }).chain((siteIds) => {
-          const uniqueSiteIds = [...new Set(siteIds)];
-          // Ensure at least 2 unique siteIds
-          if (uniqueSiteIds.length < 2) {
-            return fc.constant({
-              siteIds: [uniqueSiteIds[0]!, uniqueSiteIds[0]! + '_other'],
-              records: [] as ApprovalRecord[],
-              currentSiteId: uniqueSiteIds[0]!,
-            });
-          }
-          return fc
-            .tuple(
-              fc.array(approvalRecordArb(uniqueSiteIds), { minLength: 0, maxLength: 50 }),
-              fc.constantFrom(...uniqueSiteIds),
-            )
-            .map(([records, currentSiteId]) => ({
-              siteIds: uniqueSiteIds,
-              records,
-              currentSiteId,
-            }));
-        }),
+        fc
+          .array(siteIdArb, { minLength: 2, maxLength: 5 })
+          // Explicit scenario type: fast-check v4 infers readonly tuples from
+          // literal shapes, so the two branches below no longer unify on their own.
+          .chain((siteIds): fc.Arbitrary<ApprovalScenario> => {
+            const uniqueSiteIds = [...new Set(siteIds)];
+            // Ensure at least 2 unique siteIds
+            if (uniqueSiteIds.length < 2) {
+              return fc.constant({
+                siteIds: [uniqueSiteIds[0]!, uniqueSiteIds[0]! + '_other'],
+                records: [] as ApprovalRecord[],
+                currentSiteId: uniqueSiteIds[0]!,
+              });
+            }
+            return fc
+              .tuple(
+                fc.array(approvalRecordArb(uniqueSiteIds), { minLength: 0, maxLength: 50 }),
+                fc.constantFrom(...uniqueSiteIds),
+              )
+              .map(([records, currentSiteId]) => ({
+                siteIds: uniqueSiteIds,
+                records,
+                currentSiteId,
+              }));
+          }),
         ({ records, currentSiteId }) => {
           const result = queryPendingApprovals(records, currentSiteId);
 

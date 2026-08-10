@@ -57,7 +57,7 @@ function makeDb(state: FakeState): Database {
   } as unknown as Database;
 }
 
-const hashArb = fc.hexaString({ minLength: 8, maxLength: 16 }).map((h) => `sha256:${h}`);
+const hashArb = fc.string({ unit: fc.constantFrom(...'0123456789abcdef'.split('')), minLength: 8, maxLength: 16 }).map((h) => `sha256:${h}`);
 
 describe('Feature: content-os, Property 12: constitution pinning', () => {
   it('the hash pinned at run start survives any later activation', async () => {
