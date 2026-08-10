@@ -9,7 +9,22 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Fixed
+
+- **MCP path-traversal tripwire no longer blind to spliced path segments.**
+  The registry scan in `path-hardening.wiring.test.ts` probed each argument
+  with the literal `..` and then looked for `..` as a path segment of its own.
+  When a call site splices the value into a *larger* segment
+  (`` `/exports/report-${id}.json` ``), the probe produced
+  `/exports/report-...json` — no `..` segment — so the field was treated as
+  path-free and skipped before it ever reached the assertion. The source scan
+  missed the same shape independently, because its regex only matches an
+  interpolation directly preceded by `/`. Both halves of the guard were blind
+  to the identical call-site shape. Detection now probes with an alphanumeric
+  sentinel (unchanged by `encodePathSegment`) and checks the path portion of
+  the recorded URL, so an argument is found wherever it is spliced. Guard-only
+  change — no tool or runtime behaviour is affected, and no offender exists on
+  `main` today (32/32 pass unchanged).
 
 ## [0.25.0] - 2026-08-02
 

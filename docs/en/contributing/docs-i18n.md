@@ -1,11 +1,11 @@
 ---
 title: Docs i18n Sync
 sourceLang: en
-version: 2
-lastUpdated: 2026-08-02T16:58:45.665Z
-contentHash: 62d2d2e9de759062
-codeVerified: 2026-08-02T16:58:45.665Z
-codeVerifiedHash: 62d2d2e9de759062
+version: 3
+lastUpdated: 2026-08-02T17:29:27.319Z
+contentHash: fe0bd18530a46592
+codeVerified: 2026-08-02T17:29:27.319Z
+codeVerifiedHash: fe0bd18530a46592
 codeVerifiedClaims: 10
 ---
 
@@ -63,6 +63,9 @@ translating nothing at all.
 # Detect only — classify files, write log + report, change no docs.
 pnpm docs:i18n:detect
 
+# Structural parity of every pair (or one rel). Read-only.
+pnpm docs:i18n:parity
+
 # Preserve at-risk Vietnamese content + stamp versions, but do not translate.
 pnpm docs:i18n:preserve
 
@@ -70,25 +73,42 @@ pnpm docs:i18n:preserve
 pnpm docs:i18n:sync
 ```
 
-Translating a file by hand — the actual workflow — is four steps:
+Translating a file by hand — the actual workflow — is five steps:
 
 ```bash
 # 1. Read docs/<src>/<rel>, write the translation into docs/<tgt>/<rel>.
-# 2. Check the doc's claims against the source tree (mandatory before stamping).
+# 2. Check the two sides are still the same document.
+pnpm docs:i18n:parity <rel>
+
+# 3. Check the doc's claims against the source tree (mandatory before stamping).
 pnpm docs:i18n:verify <rel>
 
-# 3. Record provenance for both locales (never hand-write this front matter).
+# 4. Record provenance for both locales (never hand-write this front matter).
 node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> --verified
 
-# 4. Confirm the pair now reads up-to-date, then drop the machine artifacts.
+# 5. Confirm the pair now reads up-to-date, then drop the machine artifacts.
 pnpm docs:i18n:detect
 git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md
 ```
 
-`--verified` refuses to write the `codeVerified` marker while any claim is stale,
-and also refuses when a doc makes no testable claim at all — "nothing to check"
-is not a pass, so such a file is stamped without the marker and needs a human
-read. Per-file rules and the outstanding backlog live in `docs/.i18n/TASKS.md`.
+Three checkers, three different questions, and the split matters:
+`docs:i18n:detect` asks *same source revision?*; `docs:i18n:parity` asks *is the
+translation the same document?*; `docs:i18n:verify` asks *is what it says still
+true of the code?* A pair can pass any one of them and fail the others.
+
+`stamp-pair.mjs` runs the parity check itself and **refuses to stamp** a pair that
+has drifted — a target still in the source language, dropped sections, translated
+identifiers, broken link targets, a truncated tail. Stamping is what makes a pair
+read "up-to-date" everywhere else, so it is the last point at which a bad
+translation can be stopped, and there is no reviewer standing after it. Use
+`--allow-structure-drift` only for a deliberate divergence, and prefer a
+`<!-- check-parity: allow <check> -->` waiver in the doc so the reason lives next
+to it. `--verified` likewise refuses while any code claim is stale, and refuses
+when a doc makes no testable claim at all — "nothing to check" is not a pass, so
+such a file is stamped without the marker and needs a human read.
+
+Per-file rules, the priority order and the outstanding backlog live in
+`docs/.i18n/TASKS.md`.
 
 Environment variables:
 
@@ -108,8 +128,10 @@ Without an API key, `--apply` exits `2` and points you at `docs:i18n:detect` /
 `.github/workflows/docs-i18n-sync.yml` runs on changes under `docs/**` or
 `scripts/docs-i18n/**`:
 
-- **Pull requests:** detect-only. Uploads the report as an artifact; writes
-  nothing.
+- **Pull requests:** detect + code-reference + parity checks, all report-only.
+  Uploads the reports as artifacts; writes nothing. Report-only because the
+  existing corpus still carries findings — the gate that bites today is
+  `stamp-pair.mjs`, which no new translation can get past unchecked.
 - **Push to `main`:** preservation + version stamps, committed back. It does
   **not** translate, and the outstanding-pair count is echoed into the job
   summary so the backlog stays visible.

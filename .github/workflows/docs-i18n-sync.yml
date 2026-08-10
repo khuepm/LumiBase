@@ -76,6 +76,23 @@ jobs:
       - name: Write code-reference report
         run: node scripts/docs-i18n/verify-code-refs.mjs --json > docs/.i18n/code-refs-report.json || true
 
+      # Structural parity between the two locales: same headings, same code, same
+      # link targets, target actually in the target language. This is the check
+      # that stands in for a human reviewer — translations are hand-written and
+      # merged without a second pass (`docs/.i18n/TASKS.md`).
+      #
+      # Report-only here for the same reason as the verifier above: 77 of 142
+      # existing pairs still fail, mostly legacy machine-translated ones, and
+      # failing the job would block PRs that never touched them. The gate that
+      # bites today is in `stamp-pair.mjs`, which refuses to stamp a drifting
+      # pair — so no NEW translation can land unchecked. Drop the `|| true` when
+      # the backlog is clear.
+      - name: Check EN/VI structural parity (report only)
+        run: node scripts/docs-i18n/check-parity.mjs || true
+
+      - name: Write parity report
+        run: node scripts/docs-i18n/check-parity.mjs --json > docs/.i18n/parity-report.json || true
+
       - name: Upload sync report
         uses: actions/upload-artifact@v7
         with:
@@ -83,6 +100,7 @@ jobs:
           path: |
             docs/.i18n/last-report.json
             docs/.i18n/code-refs-report.json
+            docs/.i18n/parity-report.json
             docs/i18n-sync-log.md
           if-no-files-found: warn
 
