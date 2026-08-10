@@ -1,18 +1,38 @@
 ---
 title: Caching
 description: Edge HTTP cache, application CacheProvider, and cache-penetration defences
-version: 1
-lastUpdated: 2026-08-10T07:26:56.146Z
+version: 2
+lastUpdated: 2026-08-10T19:15:41.181Z
 sourceLang: en
-contentHash: 51a8d58a17e1a120
-codeVerified: 2026-08-10T07:26:56.146Z
-codeVerifiedHash: 51a8d58a17e1a120
+contentHash: bd9425e6a0b75941
+codeVerified: 2026-08-10T19:15:41.181Z
+codeVerifiedHash: bd9425e6a0b75941
 codeVerifiedClaims: 16
 ---
 
 # Caching
 
 LumiBase caches on three layers: HTTP/edge (`Cache-Control` + ETag on the Delivery API), application cache (`CacheProvider` — Workers KV or Redis), and short-lived process caches. Invalidation is tag-oriented where the provider supports it (see [ADR-004](../architecture/decisions/adr-004-tag-based-cache-invalidation.md)).
+
+## How far invalidation reaches
+
+A request is answered by the first layer that has it, and each layer keeps a copy on the way back. "Invalidate the cache" therefore has to name a layer — tag purge reaches one of them, and the layers in front of it expire on their own clock:
+
+| Layer | What holds the copy | How it is revoked | Worst-case staleness |
+|-------|--------------------|-------------------|----------------------|
+| Browser | The user's own cache | **Nothing reaches it.** Change the URL instead — see the section above | Whatever `max-age` you promised |
+| CDN / edge | `EdgeCacheProvider` (`caches.default` on Workers; no-op on Docker) | **No purge exists** — `match`/`put` only | `s-maxage` (default 60s) |
+| Reverse proxy | Caddy | Not a cache — it proxies, no caching directive is configured | n/a |
+| In-process | Single-flight map in `createSwrCache` | Coalesces in-flight work only; holds no values between requests | n/a |
+| Application cache | `CacheProvider` — Redis or Workers KV | `invalidateByTag`, `POST /api/v1/utils/cache/purge` | Immediate on Redis; KV is eventually consistent (~60s) |
+| Database | Postgres buffer pool, OS page cache | Not ours to manage | n/a |
+
+Two consequences worth stating plainly, because both are easy to assume away:
+
+- **Tag purge stops at the application cache.** `invalidateItemsTag` / `invalidateDeliverTag` call `CacheProvider.invalidateByTag`; nothing in the codebase purges the edge. On Workers, published content is stored in `caches.default` with no invalidation path, so `s-maxage` is the real staleness bound and shortening it is the only lever available today.
+- **The browser layer has no revocation channel at all**, by design of HTTP. That is why the `immutable` rule above is a rule and not a preference.
+
+Prefer a shorter `s-maxage` over a longer one you intend to purge — the purge does not exist yet.
 
 ## Media URLs and the `immutable` promise
 

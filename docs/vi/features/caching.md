@@ -2,20 +2,40 @@
 title: Caching
 description: HTTP cache ở edge, CacheProvider tầng ứng dụng, và các lớp phòng thủ cache penetration
 translatedFrom: en
-sourceHash: 51a8d58a17e1a120
-version: 1
-lastUpdated: 2026-08-10T07:26:56.146Z
+sourceHash: bd9425e6a0b75941
+version: 2
+lastUpdated: 2026-08-10T19:15:41.181Z
 sourceLang: en
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-10T07:26:56.146Z
-codeVerifiedHash: 51a8d58a17e1a120
+codeVerified: 2026-08-10T19:15:41.181Z
+codeVerifiedHash: bd9425e6a0b75941
 codeVerifiedClaims: 16
 ---
 
 # Caching
 
 LumiBase cache trên ba tầng: HTTP/edge (`Cache-Control` + ETag trên Delivery API), application cache (`CacheProvider` — Workers KV hoặc Redis), và các process cache ngắn hạn. Invalidation theo tag ở những provider hỗ trợ (xem [ADR-004](../architecture/decisions/adr-004-tag-based-cache-invalidation.md)).
+
+## Invalidation đi được tới đâu
+
+Một request được trả lời bởi tầng đầu tiên có sẵn dữ liệu, và trên đường về mỗi tầng giữ lại một bản. Vì vậy "xoá cache" bắt buộc phải nói rõ **tầng nào** — tag purge chạm đúng một tầng, còn các tầng phía trước nó tự hết hạn theo đồng hồ riêng:
+
+| Tầng | Ai giữ bản sao | Thu hồi bằng cách nào | Stale tối đa |
+|------|----------------|------------------------|--------------|
+| Browser | Cache của chính người dùng | **Không gì chạm tới được.** Phải đổi URL — xem mục phía trên | Bằng đúng `max-age` bạn đã hứa |
+| CDN / edge | `EdgeCacheProvider` (`caches.default` trên Workers; no-op trên Docker) | **Chưa có purge** — chỉ có `match`/`put` | `s-maxage` (mặc định 60s) |
+| Reverse proxy | Caddy | Không phải cache — chỉ proxy, không cấu hình directive cache nào | n/a |
+| In-process | Map single-flight trong `createSwrCache` | Chỉ gộp các lần tính đang bay; không giữ giá trị giữa các request | n/a |
+| Application cache | `CacheProvider` — Redis hoặc Workers KV | `invalidateByTag`, `POST /api/v1/utils/cache/purge` | Tức thì với Redis; KV eventually consistent (~60s) |
+| Database | Buffer pool Postgres, page cache OS | Không thuộc quyền quản lý của ta | n/a |
+
+Hai hệ quả cần nói thẳng, vì cả hai đều dễ bị mặc định là đã có:
+
+- **Tag purge dừng ở application cache.** `invalidateItemsTag` / `invalidateDeliverTag` gọi `CacheProvider.invalidateByTag`; không có chỗ nào trong codebase purge tầng edge. Trên Workers, nội dung đã publish được lưu ở `caches.default` mà không có đường invalidate, nên `s-maxage` mới là biên stale thật và rút ngắn nó là đòn bẩy duy nhất đang có.
+- **Tầng browser không có kênh thu hồi nào cả**, do bản chất HTTP. Đó là lý do quy tắc `immutable` phía trên là một luật chứ không phải một sở thích.
+
+Hãy chọn `s-maxage` ngắn thay vì để dài rồi định purge — cái purge đó chưa tồn tại.
 
 ## URL media và lời hứa `immutable`
 

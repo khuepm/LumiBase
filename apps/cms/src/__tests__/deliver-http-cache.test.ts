@@ -93,7 +93,9 @@ describe('GET /deliver/page — HTTP caching', () => {
     expect(res.headers.get('cache-control')).toBe(
       'public, s-maxage=60, stale-while-revalidate=300',
     );
-    expect(res.headers.get('vary')).toBe('X-Lumi-Site');
+    // Every input `middleware/tenant.ts` resolves the site from, except
+    // `?site=` which is already part of the cache key (#390).
+    expect(res.headers.get('vary')).toBe('X-Lumi-Site, Host');
 
     const body = (await res.json()) as { sections: Array<{ data: { items: unknown[] } }> };
     expect(body.sections[0]?.data.items).toHaveLength(1);
@@ -152,6 +154,30 @@ describe('GET /deliver/page — HTTP caching', () => {
 
     expect(res.status).toBe(404);
     expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+
+  /**
+   * #390 — `Vary` must name every header the tenant is resolved from, so a
+   * shared cache keys on them instead of relying on each CDN to include
+   * `Host` by convention.
+   */
+  it('declares Host alongside X-Lumi-Site on every publicly cacheable response', async () => {
+    const page = fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]);
+    const pageRes = await appWith(page).request(URL);
+
+    // llms.txt is browser-cacheable (`max-age`, not just `s-maxage`) and
+    // previously carried no Vary at all.
+    const site = fakeDb([
+      [{ id: 'site-a', name: 'Site A', domain: null }],
+      [],
+      [],
+    ]);
+    const llmsRes = await appWith(site).request('/api/v1/deliver/llms.txt/site-a');
+
+    expect(pageRes.headers.get('vary')).toBe('X-Lumi-Site, Host');
+    expect(llmsRes.status).toBe(200);
+    expect(llmsRes.headers.get('cache-control')).toBe('public, max-age=300');
+    expect(llmsRes.headers.get('vary')).toBe('X-Lumi-Site, Host');
   });
 
   it('calls edgeCache.put on a cacheable 200 response (Req 1.6)', async () => {

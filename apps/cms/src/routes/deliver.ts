@@ -8,6 +8,7 @@ import {
   deliverAppCacheTags,
   deliveryVariantHash,
   etagMatches,
+  PUBLIC_DELIVERY_VARY,
   resolveDeliveryCachePolicy,
   weakEtag,
   type DeliverAppCacheEntry,
@@ -388,7 +389,10 @@ deliverRouter.get('/llms.txt/:site_id', async (c) => {
 
   return c.text(lines.join('\n'), 200, {
     'Content-Type': 'text/plain; charset=utf-8',
+    // `max-age` (not `s-maxage`) — this one is browser-cacheable too, so it
+    // needs the tenant-input declaration just as much as the page route (#390).
     'Cache-Control': 'public, max-age=300',
+    Vary: PUBLIC_DELIVERY_VARY,
   });
 });
 
@@ -455,8 +459,8 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
   const { site_id: siteId, slug } = c.req.param();
 
   // Shared caches must never mix tenants: the site is in the URL here, but
-  // other API surfaces route on this header (design §15.4).
-  c.header('Vary', 'X-Lumi-Site');
+  // other API surfaces route on these headers (design §15.4; #390).
+  c.header('Vary', PUBLIC_DELIVERY_VARY);
 
   // Tier 1 — shape guard (Req 19.1): reject before any DB / cache op.
   // Same 404 body as a real miss so the endpoint is not an oracle.
