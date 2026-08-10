@@ -184,7 +184,8 @@ describe('GET /deliver/page — HTTP caching', () => {
     const db = fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]);
     const put = vi.fn(async (_req: Request, _response: Response) => undefined);
     const match = vi.fn(async (_req: Request) => null);
-    const edgeCache: EdgeCacheProvider = { match, put };
+    const purge = vi.fn(async (_target: { urls: string[]; tags?: string[] }) => 0);
+    const edgeCache: EdgeCacheProvider = { match, put, purge };
 
     const res = await appWith(db, edgeCache).request(URL);
 

@@ -1,12 +1,12 @@
 ---
 title: Caching
 description: Edge HTTP cache, application CacheProvider, and cache-penetration defences
-version: 2
-lastUpdated: 2026-08-10T19:15:41.181Z
+version: 3
+lastUpdated: 2026-08-10T19:37:22.648Z
 sourceLang: en
-contentHash: bd9425e6a0b75941
-codeVerified: 2026-08-10T19:15:41.181Z
-codeVerifiedHash: bd9425e6a0b75941
+contentHash: 7f89482a7396e01c
+codeVerified: 2026-08-10T19:37:22.648Z
+codeVerifiedHash: 7f89482a7396e01c
 codeVerifiedClaims: 16
 ---
 
@@ -21,18 +21,32 @@ A request is answered by the first layer that has it, and each layer keeps a cop
 | Layer | What holds the copy | How it is revoked | Worst-case staleness |
 |-------|--------------------|-------------------|----------------------|
 | Browser | The user's own cache | **Nothing reaches it.** Change the URL instead — see the section above | Whatever `max-age` you promised |
-| CDN / edge | `EdgeCacheProvider` (`caches.default` on Workers; no-op on Docker) | **No purge exists** — `match`/`put` only | `s-maxage` (default 60s) |
+| CDN / edge | `EdgeCacheProvider` (`caches.default` on Workers; no-op on Docker) | `purge({urls, tags})` — tag purge, falling back to URL purge; see below | `s-maxage` (default 60s) when purge is unavailable |
 | Reverse proxy | Caddy | Not a cache — it proxies, no caching directive is configured | n/a |
 | In-process | Single-flight map in `createSwrCache` | Coalesces in-flight work only; holds no values between requests | n/a |
 | Application cache | `CacheProvider` — Redis or Workers KV | `invalidateByTag`, `POST /api/v1/utils/cache/purge` | Immediate on Redis; KV is eventually consistent (~60s) |
 | Database | Postgres buffer pool, OS page cache | Not ours to manage | n/a |
 
-Two consequences worth stating plainly, because both are easy to assume away:
+**The browser layer has no revocation channel at all**, by design of HTTP. That is why the `immutable` rule above is a rule and not a preference.
 
-- **Tag purge stops at the application cache.** `invalidateItemsTag` / `invalidateDeliverTag` call `CacheProvider.invalidateByTag`; nothing in the codebase purges the edge. On Workers, published content is stored in `caches.default` with no invalidation path, so `s-maxage` is the real staleness bound and shortening it is the only lever available today.
-- **The browser layer has no revocation channel at all**, by design of HTTP. That is why the `immutable` rule above is a rule and not a preference.
+### Purging the edge
 
-Prefer a shorter `s-maxage` over a longer one you intend to purge — the purge does not exist yet.
+Purging by tag is one call however many URLs are affected, and it reaches copies this process never recorded. Purging by URL needs no tag support at the CDN but only reaches what we indexed. Whether an account can do the first is not visible from code, so LumiBase does not make you configure the answer — it tries tags and falls back:
+
+1. Every publicly cacheable delivery response carries `Cache-Tag: deliver:<siteId>, items:<siteId>:<collection>` and records its URL under those same tags in `edgeurls:<tag>` — capped at 200 URLs per tag.
+2. A write calls `invalidateItemsTag` / `invalidateDeliverTag`, which reads that list and hands both the tag and the URLs to `EdgeCacheProvider.purge()`.
+3. The provider clears the local colo through `caches.default.delete`, then — when `CF_PURGE_ZONE_ID` + `CF_PURGE_API_TOKEN` are set — calls the zone purge API with the **tag**, and only if that call is refused retries with the **URL** list, in batches of 30.
+
+The fallback is why the URL index exists at all. Where tag purge works, the index is redundant; where it does not, it is the whole mechanism.
+
+Without those two variables the purge degrades to colo-local, which is **not** global invalidation: other PoPs keep serving until `s-maxage`. Configure them for any deployment where a content fix has to land faster than the `s-maxage` window.
+
+Everything on this path fails soft. A lost index entry, an expired token, a 403 from the purge API — each degrades to the old behaviour (expire on `s-maxage`) and none of them fails the write that triggered the purge. `lumibase_cache_operations_total{op="purgeEdge"}` separates `ok` from `error` so the difference is visible.
+
+| Variable | Meaning |
+|----------|---------|
+| `CF_PURGE_ZONE_ID` | Cloudflare zone id for global edge purge. Absent → colo-local purge only. |
+| `CF_PURGE_API_TOKEN` | API token holding the `Cache Purge` permission on that zone. |
 
 ## Media URLs and the `immutable` promise
 

@@ -28,5 +28,12 @@ export type {
   SwrCacheOptions,
 } from './cache-helpers';
 export { classifyCacheValue, negativeCacheWireValue } from './cache-entry';
+export {
+  EDGE_URL_INDEX_LIMIT,
+  edgeUrlIndexKey,
+  purgeEdgeByTag,
+  recordEdgeUrl,
+} from './edge-url-index';
+export type { CloudflareZonePurgeConfig } from './adapters/cloudflare/edge-cache';
 export { withLeaderLock, leaderLockedCallback, __resetLeaderLockWarningsForTests } from './leader-lock';
 export type { LeaderLockRedis, WithLeaderLockOptions } from './leader-lock';

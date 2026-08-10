@@ -2,14 +2,14 @@
 title: Caching
 description: HTTP cache ở edge, CacheProvider tầng ứng dụng, và các lớp phòng thủ cache penetration
 translatedFrom: en
-sourceHash: bd9425e6a0b75941
-version: 2
-lastUpdated: 2026-08-10T19:15:41.181Z
+sourceHash: 7f89482a7396e01c
+version: 3
+lastUpdated: 2026-08-10T19:37:22.648Z
 sourceLang: en
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-10T19:15:41.181Z
-codeVerifiedHash: bd9425e6a0b75941
+codeVerified: 2026-08-10T19:37:22.648Z
+codeVerifiedHash: 7f89482a7396e01c
 codeVerifiedClaims: 16
 ---
 
@@ -24,18 +24,32 @@ Một request được trả lời bởi tầng đầu tiên có sẵn dữ li�
 | Tầng | Ai giữ bản sao | Thu hồi bằng cách nào | Stale tối đa |
 |------|----------------|------------------------|--------------|
 | Browser | Cache của chính người dùng | **Không gì chạm tới được.** Phải đổi URL — xem mục phía trên | Bằng đúng `max-age` bạn đã hứa |
-| CDN / edge | `EdgeCacheProvider` (`caches.default` trên Workers; no-op trên Docker) | **Chưa có purge** — chỉ có `match`/`put` | `s-maxage` (mặc định 60s) |
+| CDN / edge | `EdgeCacheProvider` (`caches.default` trên Workers; no-op trên Docker) | `purge({urls, tags})` — purge theo tag, lùi về theo URL; xem bên dưới | `s-maxage` (mặc định 60s) khi không purge được |
 | Reverse proxy | Caddy | Không phải cache — chỉ proxy, không cấu hình directive cache nào | n/a |
 | In-process | Map single-flight trong `createSwrCache` | Chỉ gộp các lần tính đang bay; không giữ giá trị giữa các request | n/a |
 | Application cache | `CacheProvider` — Redis hoặc Workers KV | `invalidateByTag`, `POST /api/v1/utils/cache/purge` | Tức thì với Redis; KV eventually consistent (~60s) |
 | Database | Buffer pool Postgres, page cache OS | Không thuộc quyền quản lý của ta | n/a |
 
-Hai hệ quả cần nói thẳng, vì cả hai đều dễ bị mặc định là đã có:
+**Tầng browser không có kênh thu hồi nào cả**, do bản chất HTTP. Đó là lý do quy tắc `immutable` phía trên là một luật chứ không phải một sở thích.
 
-- **Tag purge dừng ở application cache.** `invalidateItemsTag` / `invalidateDeliverTag` gọi `CacheProvider.invalidateByTag`; không có chỗ nào trong codebase purge tầng edge. Trên Workers, nội dung đã publish được lưu ở `caches.default` mà không có đường invalidate, nên `s-maxage` mới là biên stale thật và rút ngắn nó là đòn bẩy duy nhất đang có.
-- **Tầng browser không có kênh thu hồi nào cả**, do bản chất HTTP. Đó là lý do quy tắc `immutable` phía trên là một luật chứ không phải một sở thích.
+### Purge tầng edge
 
-Hãy chọn `s-maxage` ngắn thay vì để dài rồi định purge — cái purge đó chưa tồn tại.
+Purge theo tag là một lời gọi bất kể bao nhiêu URL bị ảnh hưởng, và nó chạm được cả những bản mà tiến trình này chưa từng ghi lại. Purge theo URL không cần CDN hỗ trợ tag, nhưng chỉ chạm được những gì ta đã index. Việc một tài khoản có làm được cách thứ nhất hay không thì code không nhìn thấy, nên LumiBase không bắt bạn cấu hình câu trả lời — nó thử tag trước rồi tự lùi:
+
+1. Mỗi response delivery công khai mang `Cache-Tag: deliver:<siteId>, items:<siteId>:<collection>` và ghi URL của nó dưới đúng các tag đó trong `edgeurls:<tag>` — giới hạn 200 URL mỗi tag.
+2. Một lần ghi gọi `invalidateItemsTag` / `invalidateDeliverTag`, hàm này đọc danh sách đó và đưa **cả tag lẫn URL** cho `EdgeCacheProvider.purge()`.
+3. Provider xoá colo cục bộ qua `caches.default.delete`, rồi — khi có `CF_PURGE_ZONE_ID` + `CF_PURGE_API_TOKEN` — gọi zone purge API bằng **tag**, và chỉ khi lời gọi đó bị từ chối mới thử lại bằng danh sách **URL**, theo lô 30.
+
+Chính cơ chế lùi này là lý do index URL tồn tại. Ở nơi purge theo tag chạy được, index là thừa; ở nơi không chạy được, nó là toàn bộ cơ chế.
+
+Không có hai biến đó thì purge tụt xuống mức colo-local, và đấy **không phải** invalidate toàn cầu: các PoP khác vẫn phục vụ bản cũ tới hết `s-maxage`. Hãy cấu hình chúng cho mọi triển khai mà một lần sửa nội dung phải tới đích nhanh hơn cửa sổ `s-maxage`.
+
+Mọi thứ trên đường này đều degrade an toàn. Mất một entry index, token hết hạn, purge API trả 403 — mỗi trường hợp đều lùi về hành vi cũ (hết hạn theo `s-maxage`) và không trường hợp nào làm hỏng lần ghi đã kích hoạt purge. `lumibase_cache_operations_total{op="purgeEdge"}` tách `ok` khỏi `error` để nhìn ra khác biệt đó.
+
+| Biến | Ý nghĩa |
+|------|---------|
+| `CF_PURGE_ZONE_ID` | Zone id Cloudflare cho purge edge toàn cầu. Vắng → chỉ purge colo cục bộ. |
+| `CF_PURGE_API_TOKEN` | API token có quyền `Cache Purge` trên zone đó. |
 
 ## URL media và lời hứa `immutable`
 
