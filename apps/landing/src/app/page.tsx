@@ -18,7 +18,7 @@ import Scene from "@/components/scroll/Scene";
 import WipeTitle from "@/components/scroll/WipeTitle";
 import DotBand from "@/components/DotBand";
 import DotField from "@/components/DotField";
-import GlassGem from "@/components/GlassGem";
+import IntentStage from "@/components/IntentStage";
 import TrustLadderScene from "@/components/TrustLadderScene";
 import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
 
@@ -148,6 +148,10 @@ const sections: SectionData[] = [
     tagline: "Declare the desired state. LumiBase reconciles content toward it, continuously.",
     cta: "Read the vision",
     ctaHref: `${DOCS}/en/docs/ai-native-vision`,
+    // The crystal *is* the intent, and the shards around it are the items of the
+    // collection it governs — so it leads the section rather than sitting in a
+    // tile at the bottom of it.
+    hero: <IntentStage />,
     features: [
       {
         title: "Intent-driven, not click-driven",
@@ -161,13 +165,9 @@ const sections: SectionData[] = [
         node: <EclipsePhase phase={2} size={96} />,
       },
       {
-        // The constitution as a cut crystal: versioned, hashed, immutable —
-        // everything that ships passes through it, and comes out bent by it.
         title: "Tenant Constitution",
         desc: "Versioned, hashed publish gates encode your taste and policy. What fails the constitution never ships — at any autonomy level.",
-        span: 2,
-        vh: 280,
-        node: <GlassGem />,
+        node: <EclipsePhase phase={1} size={96} />,
       },
       {
         title: "Multi-agent newsroom",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { Camera, Geometry, Mesh, Plane, Program, Renderer, RenderTarget } from "ogl";
 import { useStaticMotion } from "@/components/scroll/useStaticMotion";
 
@@ -246,10 +246,17 @@ const SHARD_TINTS: V3[] = [
   [0.2, 0.88, 0.71], // teal
 ];
 
-const SHARD_COUNT = 68;
+export const SHARD_COUNT = 68;
 const SHARD_SEEDS = [9127, 4413, 20261];
 
-/** Instance attributes for one shard group, laid out for `instanced: 1`. */
+/**
+ * Instance attributes for one shard group, laid out for `instanced: 1`.
+ *
+ * `index` maps each slot back to its position in the caller's flat convergence
+ * array: instances are dealt round-robin across groups, so group g slot k is
+ * item `k * groups + g`. Keeping the map explicit means the caller can think in
+ * terms of "item 37" without knowing how the field is packed into meshes.
+ */
 function buildShardField(groups: number) {
   const rnd = mulberry32(77345);
   const per = Array.from({ length: groups }, () => ({
@@ -258,6 +265,7 @@ function buildShardField(groups: number) {
     scaleSpin: [] as number[],
     phase: [] as number[],
     tint: [] as number[],
+    index: [] as number[],
   }));
 
   for (let i = 0; i < SHARD_COUNT; i++) {
@@ -286,6 +294,7 @@ function buildShardField(groups: number) {
     g.scaleSpin.push(scale, (rnd() * 0.5 + 0.18) * (rnd() > 0.5 ? 1 : -1));
     g.phase.push(rnd() * Math.PI * 2);
     g.tint.push(tint[0], tint[1], tint[2]);
+    g.index.push(i);
   }
 
   return per.map((g) => ({
@@ -294,6 +303,10 @@ function buildShardField(groups: number) {
     iScaleSpin: new Float32Array(g.scaleSpin),
     iPhase: new Float32Array(g.phase),
     iTint: new Float32Array(g.tint),
+    // Starts fully converged, so the field is settled on the first frame rather
+    // than snapping into place while the section scrolls in.
+    iState: new Float32Array(g.index.length).fill(1),
+    index: Int32Array.from(g.index),
   }));
 }
 
@@ -451,6 +464,8 @@ in vec3 iAxis;
 in vec2 iScaleSpin;
 in float iPhase;
 in vec3 iTint;
+/** 1 = this item satisfies the intent, 0 = it has drifted out of its SLO. */
+in float iState;
 uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
 uniform mat3 normalMatrix;
@@ -462,6 +477,7 @@ out vec3 vViewPos;
 out vec3 vLight;
 out vec3 vTint;
 out float vAtten;
+out float vState;
 
 vec3 rotAxis(vec3 v, vec3 axis, float a) {
   float c = cos(a), s = sin(a);
@@ -474,8 +490,14 @@ void main() {
 
   // Spread only in X: the card is far wider than it is tall, and the field
   // should reach the corners at any aspect without stretching the shards.
-  vec3 centre = vec3(iOffset.x * uSpreadX, iOffset.y, iOffset.z);
+  // Convergence is spatial: an item that satisfies the intent is held close to
+  // it, and one that has drifted out of its SLO is pushed outward and away from
+  // the light. This is the whole point of the field — you can see which items
+  // are in state and which are not without reading a single label.
+  float pull = mix(1.62, 1.0, iState);
+  vec3 centre = vec3(iOffset.x * uSpreadX * pull, iOffset.y * pull, iOffset.z - (1.0 - iState) * 0.5);
   centre.xy += uTilt * (iOffset.z + 2.2) * 0.055;   // depth parallax on pointer
+  vState = iState;
 
   vec3 local = rotAxis(position * iScaleSpin.x, axis, a);
   vNormal = normalize(normalMatrix * rotAxis(normal, axis, a));
@@ -513,6 +535,7 @@ in vec3 vViewPos;
 in vec3 vLight;
 in vec3 vTint;
 in float vAtten;
+in float vState;
 out vec4 fragColor;
 
 void main() {
@@ -560,20 +583,41 @@ void main() {
 
   // Mostly white — the hue is a wash carried by the light, not the shard's own
   // colour, which is what keeps the field reading as glass dust in a beam.
-  vec3 tint = mix(vec3(1.0), vTint, 0.62);
+  // An item out of SLO goes amber, the one colour on this page that means
+  // "incident" and nothing else.
+  vec3 tint = mix(vec3(1.0), mix(vec3(1.0, 0.58, 0.16), vTint, vState), 0.62);
+  // Drifting items are also *dimmer*: they are further from the intent, so less
+  // of its light reaches them. Distance and brightness tell the same story.
+  float dim = mix(0.42, 1.0, vState);
+  alpha *= dim;
   // The glint splits into colour the way a prism does, so each flash arrives
   // tinted rather than white.
   vec3 prism = 0.55 + 0.45 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + dot(N, L) * 1.4));
   // Weighted down: the sky behind a shard is almost black out at the corners,
   // so carrying much of it into the body only muddies the colour.
   vec3 col = refracted * alpha * 0.5;
-  col += tint * (fres * 0.42 + trans * 0.12) * vAtten;
-  col += mix(vec3(1.0, 0.97, 0.93), prism, 0.55) * spec * vAtten * 3.0;
+  // These two are added outside the alpha term, so they have to be dimmed
+  // explicitly — otherwise a drifting shard fades its body but keeps a full
+  // strength glint, and reads brighter than the converged ones around it.
+  col += tint * (fres * 0.42 + trans * 0.12) * vAtten * dim;
+  col += mix(vec3(1.0, 0.97, 0.93), prism, 0.55) * spec * vAtten * 3.0 * dim;
 
   fragColor = vec4(col, alpha);   // premultiplied
 }`;
 
-export default function GlassGem() {
+export interface GlassGemProps {
+  /**
+   * Per-item convergence targets, index-aligned with the shard field and read
+   * every frame. A ref rather than a prop value on purpose: the intent state
+   * machine ticks several times a second, and pushing that through React state
+   * would re-render the whole section to move a few floats into a GL buffer.
+   */
+  targets?: RefObject<Float32Array | null>;
+  /** Overall crystal size, so the same component works as a tile or as a hero. */
+  gemScale?: number;
+}
+
+export default function GlassGem({ targets, gemScale = 1.18 }: GlassGemProps = {}) {
   const reduced = useStaticMotion();
   const hostRef = useRef<HTMLDivElement>(null);
   // Pointer tilt, in normalised card coordinates.
@@ -596,6 +640,8 @@ export default function GlassGem() {
     let blit: Mesh | null = null;
     let gem: Mesh | null = null;
     let shards: Mesh[] = [];
+    /** Eased convergence per mesh, plus the map back to caller-space indices. */
+    let convergence: Array<{ state: Float32Array; index: Int32Array }> = [];
     let target: RenderTarget | null = null;
     let t0 = 0;
 
@@ -612,10 +658,31 @@ export default function GlassGem() {
       s.x += (s.tx - s.x) * 0.06;
       s.y += (s.ty - s.y) * 0.06;
 
-      for (const m of shards) {
+      const wanted = targets?.current ?? null;
+      for (let g = 0; g < shards.length; g++) {
+        const m = shards[g]!;
         (m.program.uniforms.uTime as { value: number }).value = time;
         (m.program.uniforms.uResolution as { value: number[] }).value = res;
         (m.program.uniforms.uTilt as { value: number[] }).value = [s.x, -s.y];
+
+        // Ease each item toward its target rather than snapping. Reconciliation
+        // is a control loop, not a switch, and it should look like one.
+        const c = convergence[g];
+        if (!c) continue;
+        let moved = false;
+        for (let k = 0; k < c.state.length; k++) {
+          const want = wanted ? (wanted[c.index[k]!] ?? 1) : 1;
+          const cur = c.state[k]!;
+          const next = cur + (want - cur) * 0.045;
+          if (Math.abs(next - cur) > 1e-4) {
+            c.state[k] = next;
+            moved = true;
+          }
+        }
+        if (moved) {
+          const attr = m.geometry.attributes.iState as { needsUpdate: boolean };
+          attr.needsUpdate = true;
+        }
       }
 
       gem.rotation.y = time * 0.42 + s.x * 0.6;
@@ -712,7 +779,7 @@ export default function GlassGem() {
           },
         }),
       });
-      gem.scale.set(1.18);
+      gem.scale.set(gemScale);
 
       // One mesh per distinct shard cut, instanced across its share of the field.
       const fields = buildShardField(SHARD_SEEDS.length);
@@ -734,6 +801,7 @@ export default function GlassGem() {
             iScaleSpin: { instanced: 1, size: 2, data: f.iScaleSpin },
             iPhase: { instanced: 1, size: 1, data: f.iPhase },
             iTint: { instanced: 1, size: 3, data: f.iTint },
+            iState: { instanced: 1, size: 1, data: f.iState },
           }),
           program: new Program(gl!, {
             vertex: SHARD_VERT,
@@ -761,6 +829,7 @@ export default function GlassGem() {
         m.program.setBlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       }
       shards = shardMeshes;
+      convergence = fields.map((f) => ({ state: f.iState, index: f.index }));
 
       const resize = () => {
         if (!renderer || !gl || !camera) return;
@@ -826,10 +895,11 @@ export default function GlassGem() {
       if (gl?.canvas.parentElement === host) host.removeChild(gl.canvas);
       gl?.getExtension("WEBGL_lose_context")?.loseContext();
       shards = [];
+      convergence = [];
       renderer = null;
       gl = null;
     };
-  }, [reduced]);
+  }, [reduced, gemScale, targets]);
 
   return (
     <div

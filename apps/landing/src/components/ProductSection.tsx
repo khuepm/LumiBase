@@ -30,6 +30,8 @@ export interface SectionData {
   features: SectionFeature[];
   /** Show multiplayer agent cursors over this section (AI Harness). */
   presence?: boolean;
+  /** Full-bleed stage between the title and the grid — the section's lead image. */
+  hero?: React.ReactNode;
 }
 
 /** Column-based drift so grid cards parallax at slightly different rates. */
@@ -50,6 +52,7 @@ export default function ProductSection({
   ctaHref,
   features,
   presence,
+  hero,
 }: SectionData) {
   const no = String(index).padStart(2, "0");
   const [hue] = PHASE_HUES[phase] ?? PHASE_HUES[0]!;
@@ -91,6 +94,8 @@ export default function ProductSection({
           </Link>
         </div>
       </WipeTitle>
+
+      {hero && <div className="mt-10 md:mt-14">{hero}</div>}
 
       <RevealGroup className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 md:mt-16 lg:grid-cols-3">
         {features.map((f, i) => (
