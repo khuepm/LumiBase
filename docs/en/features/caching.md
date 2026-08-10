@@ -1,11 +1,39 @@
 ---
 title: Caching
 description: Edge HTTP cache, application CacheProvider, and cache-penetration defences
+version: 1
+lastUpdated: 2026-08-10T07:26:56.146Z
+sourceLang: en
+contentHash: 51a8d58a17e1a120
+codeVerified: 2026-08-10T07:26:56.146Z
+codeVerifiedHash: 51a8d58a17e1a120
+codeVerifiedClaims: 16
 ---
 
 # Caching
 
 LumiBase caches on three layers: HTTP/edge (`Cache-Control` + ETag on the Delivery API), application cache (`CacheProvider` — Workers KV or Redis), and short-lived process caches. Invalidation is tag-oriented where the provider supports it (see [ADR-004](../architecture/decisions/adr-004-tag-based-cache-invalidation.md)).
+
+## Media URLs and the `immutable` promise
+
+`Cache-Control: immutable` is a promise that cannot be withdrawn. Once a browser has stored the response, no purge reaches it — not a CDN purge, not `POST /api/v1/utils/cache/purge`, not a redeploy. The promise is only truthful when the **URL** is a function of the **content**, so that changed bytes are reached through a different URL.
+
+`POST /api/v1/media/:key` overwrites in place under a caller-chosen key, so the key alone is not that function. Media URLs therefore carry an explicit version pin:
+
+| URL | `Cache-Control` |
+|-----|-----------------|
+| `/api/v1/media/logo.png` | `public, max-age=300, must-revalidate` |
+| `/api/v1/media/logo.png?v=<contentHash>` (pin matches stored bytes) | `public, max-age=31536000, immutable` |
+| `/api/v1/media/logo.png?v=<stale>` (pin does not match) | `public, max-age=300, must-revalidate` |
+
+The fingerprint is written to storage metadata (`contentHash`) at upload time and returned as `version` in the upload response. A plain `GET` also reports it as `X-Lumi-Media-Version`, so a client can build the pinned URL without having seen the upload. Responses carry a weak `ETag` over the fingerprint and answer `If-None-Match` with `304`.
+
+Two cases never get the immutable policy, by design:
+
+- **Objects with no stored fingerprint** — uploaded before the field existed, or written through the streaming `PUT /api/v1/files/upload/:key` receiver, which never buffers the body and so cannot hash it.
+- **The transform redirect path** (CF Image Resizing / Imgproxy) when the pin cannot be checked — the source is never read there, so a pin is taken at face value and an unpinned URL revalidates.
+
+**Rule for new endpoints:** if you cannot state which URL change corresponds to a content change, you cannot use `immutable`. Reach for `must-revalidate` plus an `ETag`, which costs one conditional request and stays revocable.
 
 ## Cache penetration
 
