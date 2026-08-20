@@ -44,7 +44,7 @@ importers:
         version: 5.9.3
       wrangler:
         specifier: ^4.115.0
-        version: 4.115.0(@cloudflare/workers-types@4.20260601.1)(@types/node@26.1.2)
+        version: 4.115.0(@cloudflare/workers-types@5.20260817.1)(@types/node@26.1.2)
 
   apps/cms:
     dependencies:
@@ -68,10 +68,10 @@ importers:
         version: link:../../packages/shared
       '@sentry/cloudflare':
         specifier: ^10.68.0
-        version: 10.68.0(@cloudflare/workers-types@4.20260601.1)(wrangler@4.115.0(@cloudflare/workers-types@4.20260601.1)(@types/node@26.1.2))
+        version: 10.68.0(@cloudflare/workers-types@5.20260817.1)(wrangler@4.115.0(@cloudflare/workers-types@5.20260817.1)(@types/node@26.1.2))
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@cloudflare/workers-types@4.20260601.1)(@opentelemetry/api@1.9.1)(postgres@3.4.9)
+        version: 0.45.2(@cloudflare/workers-types@5.20260817.1)(@opentelemetry/api@1.9.1)(postgres@3.4.9)
       graphql:
         specifier: ^17.0.2
         version: 17.0.2
@@ -113,8 +113,8 @@ importers:
         version: 4.4.3
     devDependencies:
       '@cloudflare/workers-types':
-        specifier: ^4.20260601.1
-        version: 4.20260601.1
+        specifier: ^5.20260817.1
+        version: 5.20260817.1
       '@types/node':
         specifier: ^26.1.2
         version: 26.1.2
@@ -141,7 +141,7 @@ importers:
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.1.2)(jsdom@29.1.1)(vite@7.3.6(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.1))
       wrangler:
         specifier: ^4.115.0
-        version: 4.115.0(@cloudflare/workers-types@4.20260601.1)(@types/node@26.1.2)
+        version: 4.115.0(@cloudflare/workers-types@5.20260817.1)(@types/node@26.1.2)
 
   apps/consumer:
     dependencies:
@@ -529,7 +529,7 @@ importers:
     dependencies:
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@cloudflare/workers-types@4.20260601.1)(@opentelemetry/api@1.9.1)(postgres@3.4.9)
+        version: 0.45.2(@cloudflare/workers-types@5.20260817.1)(@opentelemetry/api@1.9.1)(postgres@3.4.9)
       nanoid:
         specifier: ^5.1.16
         version: 5.1.16
@@ -743,6 +743,9 @@ packages:
   '@aws-sdk/core@3.977.2':
     resolution: {integrity: sha512-8sT/M5vDcagx5/iM0Bfx7f6i3mfVOQkA34+GTMwp0lIWZb6ma+bjkzDS/r9yqU2yTPBqqMBFPT3+d9kUuuNDJA==}
     engines: {node: '>=20.0.0'}
+    deprecated: |-
+      Deprecated due to Document number parsing bug in JSON, see
+        https://github.com/aws/aws-sdk-js-v3/issues/8246. Newer version available.
 
   '@aws-sdk/credential-provider-env@3.972.63':
     resolution: {integrity: sha512-VSS9dftt7r7GiZ4gs8z0PNaMLVAaSj/MXVr6WQBtsrQQB9miJo7I6lQuJND1/ugFwK9x7OHCYZDkLSYh0FIZtA==}
@@ -959,8 +962,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@cloudflare/workers-types@4.20260601.1':
-    resolution: {integrity: sha512-pYORr1EKlDu55HCHhln8XSXoOSvKAkrTkovJL66bX8xw6DAT2fhs39B6FLjCJD+x++hjBEE2bmKB1TcFKS+0Dw==}
+  '@cloudflare/workers-types@5.20260817.1':
+    resolution: {integrity: sha512-5Dv+cyjusBTPLMRedUCiLJu3zqeeupgyn1QcHmpHJV9k/TjQAxx79AO8RVtpjVaO2CB+Oh3ywAp1UuNpbyDjGQ==}
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -3387,6 +3390,9 @@ packages:
 
   dompurify@3.4.13:
     resolution: {integrity: sha512-2vmYIoqjze2d+kakP8S/nS5shfsl587kzwEjcGlTdiksUVgFHnFCsLYDVj/JNqJVOQZGSYBTmuycv0PodwmnMQ==}
+
+  dompurify@3.4.14:
+    resolution: {integrity: sha512-dVoH9z+MY+C9IilgGCk3YfFqjLi3fChm2OiKJMzh6axrJ5qwxqWaZamgmHrpv22CN/KdbZJuGEGgfQoL00LTdg==}
 
   drizzle-kit@0.31.10:
     resolution: {integrity: sha512-7OZcmQUrdGI+DUNNsKBn1aW8qSoKuTH7d0mYgSP8bAzdFzKoovxEFnoGQp2dVs82EOJeYycqRtciopszwUf8bw==}
@@ -6337,7 +6343,7 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20260722.1':
     optional: true
 
-  '@cloudflare/workers-types@4.20260601.1': {}
+  '@cloudflare/workers-types@5.20260817.1': {}
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
@@ -7244,15 +7250,15 @@ snapshots:
 
   '@sec-ant/readable-stream@0.4.1': {}
 
-  '@sentry/cloudflare@10.68.0(@cloudflare/workers-types@4.20260601.1)(wrangler@4.115.0(@cloudflare/workers-types@4.20260601.1)(@types/node@26.1.2))':
+  '@sentry/cloudflare@10.68.0(@cloudflare/workers-types@5.20260817.1)(wrangler@4.115.0(@cloudflare/workers-types@5.20260817.1)(@types/node@26.1.2))':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@sentry/core': 10.68.0
       '@sentry/server-utils': 10.68.0
       magic-string: 0.30.21
     optionalDependencies:
-      '@cloudflare/workers-types': 4.20260601.1
-      wrangler: 4.115.0(@cloudflare/workers-types@4.20260601.1)(@types/node@26.1.2)
+      '@cloudflare/workers-types': 5.20260817.1
+      wrangler: 4.115.0(@cloudflare/workers-types@5.20260817.1)(@types/node@26.1.2)
     transitivePeerDependencies:
       - supports-color
 
@@ -8525,6 +8531,10 @@ snapshots:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
+  dompurify@3.4.14:
+    optionalDependencies:
+      '@types/trusted-types': 2.0.7
+
   drizzle-kit@0.31.10:
     dependencies:
       '@drizzle-team/brocli': 0.10.2
@@ -8532,9 +8542,9 @@ snapshots:
       esbuild: 0.28.1
       tsx: 4.23.1
 
-  drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260601.1)(@opentelemetry/api@1.9.1)(postgres@3.4.9):
+  drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260817.1)(@opentelemetry/api@1.9.1)(postgres@3.4.9):
     optionalDependencies:
-      '@cloudflare/workers-types': 4.20260601.1
+      '@cloudflare/workers-types': 5.20260817.1
       '@opentelemetry/api': 1.9.1
       postgres: 3.4.9
 
@@ -8723,7 +8733,7 @@ snapshots:
       eslint: 10.6.0(jiti@2.7.0)
       eslint-import-resolver-node: 0.3.10
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.65.0(eslint@10.6.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.6.0(jiti@2.7.0)))(eslint@10.6.0(jiti@2.7.0))
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.65.0(eslint@10.6.0(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.65.0(eslint@10.6.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.6.0(jiti@2.7.0)))(eslint@10.6.0(jiti@2.7.0)))(eslint@10.6.0(jiti@2.7.0))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.65.0(eslint@10.6.0(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@10.6.0(jiti@2.7.0))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@10.6.0(jiti@2.7.0))
       eslint-plugin-react: 7.37.5(eslint@10.6.0(jiti@2.7.0))
       eslint-plugin-react-hooks: 7.1.1(eslint@10.6.0(jiti@2.7.0))
@@ -8776,7 +8786,7 @@ snapshots:
       tinyglobby: 0.2.17
       unrs-resolver: 1.12.2
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.65.0(eslint@10.6.0(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.65.0(eslint@10.6.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.6.0(jiti@2.7.0)))(eslint@10.6.0(jiti@2.7.0)))(eslint@10.6.0(jiti@2.7.0))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.65.0(eslint@10.6.0(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@10.6.0(jiti@2.7.0))
     transitivePeerDependencies:
       - supports-color
 
@@ -8816,7 +8826,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.65.0(eslint@10.6.0(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.65.0(eslint@10.6.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.6.0(jiti@2.7.0)))(eslint@10.6.0(jiti@2.7.0)))(eslint@10.6.0(jiti@2.7.0)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.65.0(eslint@10.6.0(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@10.6.0(jiti@2.7.0)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
@@ -10348,7 +10358,7 @@ snapshots:
 
   monaco-editor@0.55.1:
     dependencies:
-      dompurify: 3.4.13
+      dompurify: 3.4.14
       marked: 14.0.0
 
   motion-dom@12.43.0:
@@ -11733,7 +11743,7 @@ snapshots:
       '@cloudflare/workerd-linux-arm64': 1.20260722.1
       '@cloudflare/workerd-windows-64': 1.20260722.1
 
-  wrangler@4.115.0(@cloudflare/workers-types@4.20260601.1)(@types/node@26.1.2):
+  wrangler@4.115.0(@cloudflare/workers-types@5.20260817.1)(@types/node@26.1.2):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.5.0
       '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260722.1)
@@ -11744,7 +11754,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       workerd: 1.20260722.1
     optionalDependencies:
-      '@cloudflare/workers-types': 4.20260601.1
+      '@cloudflare/workers-types': 5.20260817.1
       fsevents: 2.3.3
     transitivePeerDependencies:
       - '@types/node'
