@@ -161,20 +161,31 @@ describe('Anomaly flow — integration', () => {
 
   /**
    * Build a Hono app that mounts only the production `authRouter`
-   * and pins the per-request DB on the context. Same skeleton the
-   * lockout-flow integration test uses (task 6.8) — `/auth/login`
-   * doesn't read `siteId` and bypasses `withAuth`, so the slimmer
-   * harness is correct.
+   * and pins the per-request DB **and site** on the context. Same
+   * skeleton the lockout-flow integration test uses (task 6.8), with
+   * the same correction: the claim that "/auth/login doesn't read
+   * siteId" went stale when the login handler gained a site-scoped
+   * `user_sites` membership check, so an unset siteId reaches Drizzle
+   * as `undefined` and the request 500s. `withAuth` still stays out —
+   * login bypasses it in production too.
    */
-  function buildApp(): Hono<AppEnv> {
+  function buildApp(siteId: string): Hono<AppEnv> {
     const app = new Hono<AppEnv>();
     app.use('*', async (c, next) => {
       c.set('db', db);
+      c.set('siteId', siteId);
       c.set('requestId', `req_test_${Math.random().toString(36).slice(2)}`);
       await next();
     });
     app.route('/auth', authRouter);
     return app;
+  }
+
+  /** Site row `SetupService.complete` creates, read back rather than hardcoded. */
+  async function seededSiteId(): Promise<string> {
+    const [row] = await db.select({ id: sites.id }).from(sites).limit(1);
+    if (!row) throw new Error('expected SetupService to have created a site');
+    return row.id;
   }
 
   /**
@@ -391,7 +402,7 @@ describe('Anomaly flow — integration', () => {
     // test into an integration test — the lock written by the
     // anomaly path is enforced by the same middleware that handles
     // the credential-failure lock.
-    const app = buildApp();
+    const app = buildApp(await seededSiteId());
     const lockedRes = await postLogin(app, {
       email: ADMIN_EMAIL,
       password: ADMIN_PASSWORD,
@@ -493,7 +504,7 @@ describe('Anomaly flow — integration', () => {
     // to `value=0` because there's no MMDB in the test container,
     // so the threshold isn't crossed even on this fresh request
     // and the login passes cleanly.
-    const app = buildApp();
+    const app = buildApp(await seededSiteId());
     const res = await postLogin(app, {
       email: ADMIN_EMAIL,
       password: ADMIN_PASSWORD,

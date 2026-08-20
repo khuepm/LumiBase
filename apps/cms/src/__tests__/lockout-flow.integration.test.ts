@@ -108,25 +108,39 @@ describe('Lockout flow — integration', () => {
 
   /**
    * Build a Hono app that mounts only the production `authRouter` and
-   * pins the per-request DB on the context. We deliberately skip
-   * `withTenant` / `withAuth` / `withRuntime` because:
-   *   - `/auth/login` bypasses `withAuth` in production anyway.
-   *   - `/auth/login` doesn't read `c.get('siteId')`, so `withTenant`
-   *     is not needed.
-   *   - The LoginGuard middleware reads the DB via `c.get('db')`
-   *     (set here), the policy via `loadLockoutPolicyFromSettings`,
-   *     and the counter via `createCounterStore`. None of those need
-   *     the runtime adapter.
+   * pins the per-request DB **and site** on the context. `withAuth` /
+   * `withRuntime` stay out — `/auth/login` bypasses the former in
+   * production, and the LoginGuard reads the DB via `c.get('db')`, the
+   * policy via `loadLockoutPolicyFromSettings` and the counter via
+   * `createCounterStore`, none of which need the runtime adapter.
+   *
+   * `siteId` is NOT optional, which is a correction: this harness used
+   * to skip it on the stated grounds that "/auth/login doesn't read
+   * c.get('siteId')". The login handler has since gained a
+   * site-scoped `user_sites` membership check (`routes/auth.ts`), so an
+   * unset siteId reaches Drizzle as `undefined` and the request 500s —
+   * and `loadLockoutPolicyFromSettings` silently falls back to the
+   * Standard preset, which is why a custom `ipMaxFailedAttempts` never
+   * took effect. `withTenant` always sets it in production; the
+   * harness has to as well.
    */
-  function buildApp(): Hono<AppEnv> {
+  function buildApp(siteId: string): Hono<AppEnv> {
     const app = new Hono<AppEnv>();
     app.use('*', async (c, next) => {
       c.set('db', db);
+      c.set('siteId', siteId);
       c.set('requestId', `req_test_${Math.random().toString(36).slice(2)}`);
       await next();
     });
     app.route('/auth', authRouter);
     return app;
+  }
+
+  /** Site row `SetupService.complete` creates, read back rather than hardcoded. */
+  async function seededSiteId(): Promise<string> {
+    const [row] = await db.select({ id: sites.id }).from(sites).limit(1);
+    if (!row) throw new Error('expected SetupService to have created a site');
+    return row.id;
   }
 
   /**
@@ -189,7 +203,7 @@ describe('Lockout flow — integration', () => {
     }
 
     await seedBootstrapAdmin();
-    const app = buildApp();
+    const app = buildApp(await seededSiteId());
 
     // Drive 5 wrong-password attempts. Each individual attempt
     // returns 401 INVALID_CREDENTIALS — the lock transition happens
@@ -253,7 +267,7 @@ describe('Lockout flow — integration', () => {
     }
 
     await seedBootstrapAdmin();
-    const app = buildApp();
+    const app = buildApp(await seededSiteId());
 
     // Trip the lockout with 5 wrong-password attempts.
     for (let i = 0; i < 5; i++) {
@@ -364,7 +378,13 @@ describe('Lockout flow — integration', () => {
       value: customPolicy,
     });
 
-    const app = buildApp();
+    // The request context carries the same site the policy row is scoped
+    // to. Note this is NOT what selects the policy: the loader looks the
+    // row up by `key` alone with `LIMIT 1` and no ORDER BY (design open
+    // question 8 — siteId ownership of the settings row is unresolved),
+    // so when a second `login_security_policy` row exists the row that
+    // wins is whichever Postgres returns first. See the skip note below.
+    const app = buildApp(siteId);
 
     // 10 wrong-password attempts from the same IP, each against a
     // distinct (non-existent) email. Each attempt returns 401
