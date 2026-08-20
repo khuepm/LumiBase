@@ -76,6 +76,13 @@ jobs:
       - name: Check registry numbering
         run: pnpm registry:check
 
+      # pnpm 9 reads install settings from package.json; pnpm 10+ reads them
+      # from pnpm-workspace.yaml. Both copies exist during the transition
+      # (#295), so fail fast when they drift instead of discovering it as a
+      # wall of audit failures after a future pnpm bump.
+      - name: Check pnpm settings parity
+        run: pnpm settings:check
+
       # `pnpm -r` runs tsc in every workspace package directly — no turbo cache
       # in between — so a stale cache can never mask a type error on CI.
       - name: Typecheck
@@ -308,7 +315,9 @@ jobs:
       # advisories do not (CWE-1104).
       #
       # Advisories deliberately excluded from this gate live in
-      # `pnpm.auditConfig.ignoreGhsas` (root package.json). Each entry needs a
+      # `auditConfig.ignoreGhsas` — declared in BOTH root package.json (pnpm 9)
+      # and pnpm-workspace.yaml (pnpm 10+), kept in step by
+      # `pnpm settings:check`. Each entry needs a
       # written justification + revisit trigger in the "Audit ignore registry"
       # of `docs/en/security/dependency-overrides.md` — never add one just to
       # make CI green.
