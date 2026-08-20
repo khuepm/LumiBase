@@ -56,9 +56,9 @@
   "devDependencies": {
     "glob": "^13.0.6",
     "husky": "^9.1.7",
-    "turbo": "^2.10.7",
+    "turbo": "^2.10.10",
     "typescript": "^5.6.2",
-    "wrangler": "^4.115.0"
+    "wrangler": "^4.123.0"
   },
   "pnpm": {
     "overrides": {
