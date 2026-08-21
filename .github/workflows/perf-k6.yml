@@ -147,7 +147,7 @@ jobs:
         run: k6 run --summary-export=load-deliver-summary.json apps/cms/k6/load-deliver.js
 
       - name: Upload k6 summary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: k6-perf-summary
