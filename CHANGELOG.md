@@ -9,6 +9,27 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Changed
+
+- **The landing page's "Set intent" control now does something.** The Content OS
+  section's *Intent-driven, not click-driven* card was a static mock: a
+  `btn-solid` span labelled "Set intent" with no handler, over a hardcoded
+  "82% converged" bar. It is now a working composer
+  (`apps/landing/src/components/IntentComposerViz.tsx`) — edit the sentence or
+  pick a collection preset, and the card compiles it into the `intent-rule.v1`
+  payload you would `POST /api/v1/agent/intents`, evaluates an eight-item sample
+  against those rules, and runs the beats (compile → evaluate → incident →
+  reconcile → converged), ending with a copyable payload. Compilation is
+  deliberately local and labelled as such: the real endpoint is control-plane
+  admin-only and `apps/landing` ships as a static export, so
+  `apps/landing/src/lib/intent-compile.ts` implements a deterministic matcher
+  over the same six rule shapes as `intent-service.ts`. It mirrors the shipped
+  semantics rather than the marketing phrasing — `field_constraint` measures
+  characters (`drift-service.ts` compares `value.length`), so "50–200 words"
+  compiles to 300–1200 chars *with the conversion surfaced as a warning*, and
+  each fix is attributed to the role `RULE_ROLE_ROUTING` would route that rule
+  to. Landing-only: no API, schema, env or CMS behaviour changes.
+
 ### Fixed
 
 - **MCP path-traversal tripwire no longer blind to spliced path segments.**

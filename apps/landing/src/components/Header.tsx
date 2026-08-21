@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { Github, Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import PillNav from "@/components/cosmic/PillNav";
+import { EclipseMark } from "@/components/EclipseMark";
+import { useLenis } from "@/components/scroll/SmoothScroll";
 
 const SECTIONS = [
   { label: "AI Harness", slug: "ai-harness" },
@@ -23,6 +25,7 @@ export default function Header() {
   const [active, setActive] = useState("AI Harness");
   const pathname = usePathname();
   const router = useRouter();
+  const lenisRef = useLenis();
   const isHome = pathname === "/";
 
   // Scroll-spy: light up the pill of the section in view (home page only)
@@ -52,7 +55,11 @@ export default function Header() {
     setActive(label);
     if (isHome) {
       const el = document.getElementById(section.slug);
-      if (el) window.scrollTo({ top: el.offsetTop - 90, behavior: "smooth" });
+      if (!el) return;
+      const top = el.offsetTop - 90;
+      const lenis = lenisRef?.current;
+      if (lenis) lenis.scrollTo(top);
+      else window.scrollTo({ top, behavior: "smooth" });
     } else {
       router.push(`/#${section.slug}`);
     }
@@ -61,10 +68,14 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-50 flex h-[72px] w-full items-center justify-between px-5 md:px-10">
       <Link href="/" className="flex items-center gap-2.5">
-        <span className="sphere-logo h-6 w-6" />
+        <EclipseMark size={26} />
         <span
-          className="text-white"
-          style={{ font: "700 19px/1 var(--font-sans, inherit)", letterSpacing: "-0.4px" }}
+          className="uppercase"
+          style={{
+            font: "800 17px/1 var(--font-sans, inherit)",
+            letterSpacing: "0.04em",
+            color: "var(--foreground)",
+          }}
         >
           LumiBase
         </span>
@@ -86,7 +97,7 @@ export default function Header() {
             key={l.label}
             href={l.href}
             {...(l.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-            className="text-[13px] font-semibold tracking-[0.2px] text-white/65 transition-colors hover:text-white"
+            className="font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-cream/60 transition-colors hover:text-cream"
           >
             {l.label}
           </Link>
@@ -116,9 +127,9 @@ export default function Header() {
         <div
           className="absolute left-0 right-0 top-[72px] px-6 py-5 md:hidden"
           style={{
-            background: "rgba(16,16,19,0.92)",
+            background: "rgba(16,9,4,0.94)",
             backdropFilter: "blur(12px)",
-            borderBottom: "1px solid var(--color-border)",
+            borderBottom: "1px dashed var(--color-dashline)",
           }}
         >
           <div className="flex flex-col gap-4">
