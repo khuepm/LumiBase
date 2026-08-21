@@ -31,7 +31,7 @@
     "cmdk": "^1.0.0",
     "dompurify": "^3.4.12",
     "i18next": "^26.3.6",
-    "lucide-react": "^0.452.0",
+    "lucide-react": "^1.31.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.83.0",
