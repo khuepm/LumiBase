@@ -28,7 +28,7 @@
 
 - [x] 6. DeploymentService (Req 1, 2, 3, 4, 9)
   - [x] 6.1 `services/deployment/deployment-service.ts`: createTarget (verify+encrypt), trigger (decrypt→provider→insert), syncDeployment, fetchLogs, applyWebhookRef. Mọi query filter `siteId`.
-  - [~] 6.2 Rate-limit: hiện gate bằng `status='active'` + admin; rate-limit cứng theo target để TODO (Req 9.5) — chưa chặn lạm dụng nặng. **Open**.
+  - [ ] 6.2 Rate-limit: hiện gate bằng `status='active'` + admin; rate-limit cứng theo target để TODO (Req 9.5) — chưa chặn lạm dụng nặng. **Open**.
   - [x] 6.3 Mask secret trong log/excerpt (`maskLog`, cap 16KB) (Req 4.4).
 - [x] 7. Routes (Req 1.6, 2, 3.3, 4.1, 3.5) — `routes/deployments.ts` (admin router + inbound webhook router); đăng ký vào `index.ts` (`/api/v1/deployments`) + webhook mount public + `withTenant`/`withDb`.
 - [x] 8. Audit (Req 2.4, 6.4) — `auditLog` cho target.created/updated/deleted + deploy.triggered (mask secret, never-throw).
@@ -38,7 +38,7 @@
 - [x] 9. Status poller (Req 3.4, 3.6, 9.4)
   - [x] 9.1 `services/deployment/status-poller.ts`: `DEPLOYMENT_POLL_QUEUE`, `registerStatusPoller` (queue.process), `sweepPending`/`sweepAllSites`; conditional UPDATE chỉ flip `queued|building` (idempotent); set `completedAt`; lỗi từng cái không vỡ sweep. Đăng ký cron 30s trong `serve.ts`.
   - [x] 9.2 Fallback `POST /:id/refresh` đồng bộ (Req 3.5).
-  - [~] 9.3 Idempotency được bảo đảm bằng `inArray(status, ['queued','building'])` guard; unit test idempotent end-to-end qua DB để TODO (cần Postgres). Pure-logic đã cover qua mapping + webhook tests. **Partial**.
+  - [ ] 9.3 Idempotency được bảo đảm bằng `inArray(status, ['queued','building'])` guard; unit test idempotent end-to-end qua DB để TODO (cần Postgres). Pure-logic đã cover qua mapping + webhook tests. **Partial**.
 
 ## Phase E — Flows & AI Skills
 
@@ -57,7 +57,7 @@
 - [x] 12. Inbound webhook (Req 7)
   - [x] 12.1 `POST /api/v1/deployments/webhook/:provider`: verify chữ ký (401 nếu sai) → parse → `applyWebhookRef` (match `providerDeploymentId`, idempotent với poller).
   - [x] 12.2 Test reject chữ ký sai + parse Vercel/Netlify event (`webhook-parse.test.ts`).
-  - [~] Lưu ý: `verifyWebhook` hiện là presence + secret guard (reject thiếu chữ ký). HMAC/JWS đầy đủ để TODO (design §4 ghi rõ). **Partial**.
+  - [ ] Lưu ý: `verifyWebhook` hiện là presence + secret guard (reject thiếu chữ ký). HMAC/JWS đầy đủ để TODO (design §4 ghi rõ). **Partial**.
 
 ## Phase G — Studio UI
 

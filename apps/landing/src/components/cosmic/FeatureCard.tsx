@@ -3,6 +3,12 @@ interface FeatureCardProps {
   description: string;
   visual?: React.ReactNode;
   visualHeight?: number;
+  /**
+   * Tailwind height classes for the visual slot, for visuals whose natural
+   * height changes with the breakpoint (a two-column panel that stacks on
+   * mobile needs more room there, not less). Wins over `visualHeight`.
+   */
+  visualHeightClass?: string;
   visualBg?: string;
   glow?: "none" | "violet" | "blue";
 }
@@ -16,6 +22,7 @@ export default function FeatureCard({
   description,
   visual,
   visualHeight = 190,
+  visualHeightClass,
   visualBg,
   glow = "none",
 }: FeatureCardProps) {
@@ -51,8 +58,8 @@ export default function FeatureCard({
       </div>
       {visual && (
         <div
-          className="relative mt-auto overflow-hidden"
-          style={{ height: visualHeight }}
+          className={`relative mt-auto overflow-hidden ${visualHeightClass ?? ""}`}
+          style={visualHeightClass ? undefined : { height: visualHeight }}
         >
           <div
             className="absolute inset-0 flex items-center justify-center"

@@ -5,20 +5,18 @@ import ProductSection, { type SectionData } from "@/components/ProductSection";
 import {
   CdcViz,
   CodeViz,
-  IntentViz,
   McpViz,
-  NewsroomViz,
   ProvenanceViz,
   RunsViz,
   SchemaViz,
 } from "@/components/SectionVisuals";
+import ContentOsSplit from "@/components/content-os/content-os-split";
 import { EclipsePhase } from "@/components/EclipseMark";
 import EclipseStage from "@/components/scroll/EclipseStage";
 import Scene from "@/components/scroll/Scene";
 import WipeTitle from "@/components/scroll/WipeTitle";
 import DotBand from "@/components/DotBand";
 import DotField from "@/components/DotField";
-import IntentStage from "@/components/IntentStage";
 import TrustLadderScene from "@/components/TrustLadderScene";
 import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
 
@@ -148,34 +146,11 @@ const sections: SectionData[] = [
     tagline: "Declare the desired state. LumiBase reconciles content toward it, continuously.",
     cta: "Read the vision",
     ctaHref: `${DOCS}/en/docs/ai-native-vision`,
-    // The crystal *is* the intent, and the shards around it are the items of the
-    // collection it governs — so it leads the section rather than sitting in a
-    // tile at the bottom of it.
-    hero: <IntentStage />,
-    features: [
-      {
-        title: "Intent-driven, not click-driven",
-        desc: "The unit of work is an intent with an SLO. Content that violates its SLO is an incident — detected, raised as a goal, fixed within a write budget.",
-        span: 2,
-        node: <IntentViz />,
-      },
-      {
-        title: "Reconciliation loop",
-        desc: "Content drifts; a control loop pulls it back. Live state, not last-edit state — the Kubernetes idea, applied to content.",
-        node: <EclipsePhase phase={2} size={96} />,
-      },
-      {
-        title: "Tenant Constitution",
-        desc: "Versioned, hashed publish gates encode your taste and policy. What fails the constitution never ships — at any autonomy level.",
-        node: <EclipsePhase phase={1} size={96} />,
-      },
-      {
-        title: "Multi-agent newsroom",
-        desc: "Writer, reviewer, translator, SEO — narrow per-role grants, cross-review between agents, and a hard self-review ban.",
-        bg: "var(--color-surface-sunken)",
-        node: <NewsroomViz />,
-      },
-    ],
+    // Editorial hierarchy instead of a uniform feature grid: the operable
+    // intent card is the large sticky lead on the left; the generated JSON and
+    // three illustrated concepts form the narrow scrolling rail on the right.
+    body: <ContentOsSplit />,
+    features: [],
   },
   {
     id: "studio",
