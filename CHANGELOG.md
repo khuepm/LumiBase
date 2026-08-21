@@ -40,6 +40,17 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Changed
 
+- **The repo guards now run before the commit, not after the push.** `version:check`,
+  `registry:check`, `settings:check`, `drift:check` and `scripts:test` existed only as
+  CI steps, so the feedback loop for a mechanical mistake was commit → push → open PR →
+  wait for CI → red, even though every one of them runs in well under a second against
+  files already on disk. They are now a single `pnpm check:all`, invoked by
+  `.husky/pre-commit` **before** `pnpm test` so a bad row number or a half-declared
+  override fails immediately instead of after a full suite run. CI calls the same script
+  rather than keeping its own list of five steps, so the local and CI guard sets cannot
+  drift apart — adding a guard to `check:all` arms it in both places at once.
+  Closes #406.
+
 - **The landing page's "Set intent" control now does something.** The Content OS
   section's *Intent-driven, not click-driven* card was a static mock: a
   `btn-solid` span labelled "Set intent" with no handler, over a hardcoded
