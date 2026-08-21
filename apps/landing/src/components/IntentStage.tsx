@@ -188,11 +188,11 @@ export default function IntentStage() {
             animation is doing underneath. */}
         <div
           className="pointer-events-none absolute inset-x-0 top-0 h-[34%]"
-          style={{ background: "linear-gradient(180deg, rgba(7,6,12,0.86), rgba(7,6,12,0))" }}
+          style={{ background: "linear-gradient(180deg, rgba(7,6,12,0.94), rgba(7,6,12,0))" }}
         />
         <div
           className="pointer-events-none absolute inset-x-0 bottom-0 h-[46%]"
-          style={{ background: "linear-gradient(0deg, rgba(7,6,12,0.9), rgba(7,6,12,0))" }}
+          style={{ background: "linear-gradient(0deg, rgba(7,6,12,0.95), rgba(7,6,12,0))" }}
         />
 
         {/* Everything below is DOM on top of the canvas: the canvas shows the

@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useRef, type RefObject } from "react";
-import { Camera, Geometry, Mesh, Plane, Program, Renderer, RenderTarget } from "ogl";
+import {
+  Camera,
+  Geometry,
+  Mesh,
+  Plane,
+  Program,
+  Renderer,
+  RenderTarget,
+  Texture,
+} from "ogl";
 import { useStaticMotion } from "@/components/scroll/useStaticMotion";
 
 /**
@@ -246,6 +255,9 @@ const SHARD_TINTS: V3[] = [
   [0.2, 0.88, 0.71], // teal
 ];
 
+/** Lives in public/, so it is copied verbatim by the static export. */
+const SKY_SRC = "/assets/intent-sky.webp";
+
 export const SHARD_COUNT = 68;
 const SHARD_SEEDS = [9127, 4413, 20261];
 
@@ -317,49 +329,52 @@ out vec2 vUv;
 void main() { vUv = uv; gl_Position = vec4(position, 0.0, 1.0); }`;
 
 /** The page's own sky, redrawn so the crystal has something real to bend. */
+/**
+ * The sky the crystal bends. A supplied nebula plate rather than the procedural
+ * one it replaced: refraction needs high-frequency detail to read at all — a
+ * bent gradient looks like nothing, bent points of light read instantly as
+ * glass — and a real starfield of planet rims and stars has far more of that
+ * than a shader can cheaply fake.
+ *
+ * `uCover` is a cover-fit correction computed on the CPU per resize. Sampling
+ * vUv straight would stretch the 16:9 plate across a 2.3:1 band on desktop and
+ * squash it on mobile.
+ */
 const BACKDROP_FRAG = `#version 300 es
 precision highp float;
+uniform sampler2D uSky;
+uniform vec2 uCover;
 uniform float uTime;
-uniform vec2 uResolution;
 in vec2 vUv;
 out vec4 fragColor;
 
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-
 void main() {
-  vec2 uv = vUv;
-  float aspect = uResolution.x / max(uResolution.y, 1.0);
-  vec2 p = vec2((uv.x - 0.5) * aspect + 0.5, uv.y);
+  // A slow drift, so the plate is not a dead still. Zoomed in slightly first,
+  // which gives the pan somewhere to go without ever reaching the edges.
+  vec2 uv = (vUv - 0.5) * uCover / 1.08;
+  uv += vec2(sin(uTime * 0.021) * 0.012, cos(uTime * 0.017) * 0.009);
+  vec3 col = texture(uSky, uv + 0.5).rgb;
 
-  vec3 col = vec3(0.027, 0.024, 0.047);
-  float t = uTime * 0.06;
-  // Kept faint on purpose: a strong colour wash behind the crystal turns it into
-  // a solid amethyst. The colour should come from dispersion, not from the sky.
-  col += vec3(0.38, 0.20, 0.85) * 0.13 * smoothstep(0.85, 0.0, length(p - vec2(0.72 + sin(t) * 0.06, 0.28)));
-  col += vec3(0.84, 0.12, 0.62) * 0.10 * smoothstep(0.85, 0.0, length(p - vec2(0.22, 0.74 + cos(t * 0.9) * 0.05)));
-  col += vec3(0.16, 0.85, 0.90) * 0.09 * smoothstep(0.75, 0.0, length(p - vec2(0.52, 0.9)));
-  col += vec3(1.00, 0.69, 0.13) * 0.05 * smoothstep(0.55, 0.0, length(p - vec2(0.9, 0.85)));
+  // Brought well down. The plate is far brighter than the near-black the rest
+  // of the page sits in, and at full exposure two things break: the band reads
+  // as a photo pasted into the layout rather than part of it, and the shards —
+  // which are additive and carry no body — simply vanish against it.
+  col *= 0.5;
+
+  // Vignette. Does double duty: it settles the plate into the page at the band
+  // edges, and it darkens the corners the shard field occupies so those shards
+  // have something to be brighter than.
+  float vig = smoothstep(1.05, 0.25, length((vUv - 0.5) * vec2(1.0, 0.92)) * 1.45);
+  col *= mix(0.34, 1.0, vig);
+
   // A faint core glow, so the story the shards tell — lit from the centre — has
   // a visible source. Kept tight and dim: the crystal sits directly on top of
   // it, and anything stronger is refracted straight through its body as a
   // colour cast, which is what made it read as amethyst.
-  col += vec3(0.66, 0.60, 1.00) * 0.03 * smoothstep(0.30, 0.0, length(p - vec2(0.5, 0.5)));
+  float aspect = uCover.y / max(uCover.x, 0.0001);
+  vec2 p = (vUv - 0.5) * vec2(max(aspect, 1.0), 1.0);
+  col += vec3(0.66, 0.60, 1.00) * 0.03 * smoothstep(0.30, 0.0, length(p));
 
-  // Stars carry the whole trick: a bent gradient looks like nothing, while bent
-  // points of light read instantly as glass. Two densities, so the smear has
-  // both fine grain and a few bright anchors.
-  for (int k = 0; k < 2; k++) {
-    float scale = k == 0 ? 72.0 : 30.0;
-    float cut = k == 0 ? 0.93 : 0.975;
-    float gain = k == 0 ? 0.7 : 1.6;
-    vec2 g = floor(p * scale);
-    float s = hash(g + float(k) * 17.0);
-    if (s > cut) {
-      vec2 f = fract(p * scale) - 0.5;
-      float d = 1.0 - smoothstep(0.0, 0.3, length(f));
-      col += vec3(0.86, 0.84, 1.0) * d * gain * (0.65 + 0.35 * sin(uTime * 1.8 + s * 40.0));
-    }
-  }
   fragColor = vec4(col, 1.0);
 }`;
 
@@ -644,13 +659,15 @@ export default function GlassGem({ targets, gemScale = 1.18 }: GlassGemProps = {
     let convergence: Array<{ state: Float32Array; index: Int32Array }> = [];
     let target: RenderTarget | null = null;
     let t0 = 0;
+    /** Plate aspect, used for the cover fit. Overwritten once it loads. */
+    let skyAspect = 16 / 9;
+    let resize = () => {};
 
     const draw = (ms: number) => {
       if (!renderer || !gl || !camera || !backdrop || !blit || !gem || !target) return;
       const time = (ms - t0) / 1000;
       (backdrop.program.uniforms.uTime as { value: number }).value = time;
       const res: [number, number] = [gl.canvas.width, gl.canvas.height];
-      (backdrop.program.uniforms.uResolution as { value: number[] }).value = res;
       (gem.program.uniforms.uResolution as { value: number[] }).value = res;
 
       // Ease the pointer tilt so it glides instead of snapping.
@@ -726,6 +743,33 @@ export default function GlassGem({ targets, gemScale = 1.18 }: GlassGemProps = {
 
       target = new RenderTarget(gl);
 
+      // Seeded with a single near-black pixel so the first frames — and any
+      // load failure — render the same dark sky rather than WebGL's default
+      // white, which would blow the crystal out.
+      const sky = new Texture(gl, {
+        image: new Uint8Array([7, 6, 12, 255]),
+        width: 1,
+        height: 1,
+        generateMipmaps: false,
+      });
+      const plate = new Image();
+      plate.decoding = "async";
+      plate.onload = () => {
+        if (disposed) return;
+        sky.image = plate;
+        // Mipmaps matter here: refraction samples this texture with wildly
+        // varying screen-space derivatives, and without them the plate aliases
+        // into sparkling noise across the crystal's steeper facets.
+        sky.generateMipmaps = true;
+        sky.needsUpdate = true;
+        skyAspect = plate.naturalWidth / Math.max(plate.naturalHeight, 1);
+        resize();
+        // Under reduced motion nothing is looping, so the one settled frame has
+        // already been drawn against the placeholder — redraw it now.
+        if (reduced && started) draw(t0 + 2200);
+      };
+      plate.src = SKY_SRC;
+
       const quad = () => new Plane(gl!, { width: 2, height: 2 });
       // Both fullscreen passes must leave the depth buffer alone. Their vertex
       // shader writes gl_Position.z = 0, which is *nearer* than the gem sitting
@@ -737,7 +781,11 @@ export default function GlassGem({ targets, gemScale = 1.18 }: GlassGemProps = {
           fragment: BACKDROP_FRAG,
           depthTest: false,
           depthWrite: false,
-          uniforms: { uTime: { value: 0 }, uResolution: { value: [1, 1] } },
+          uniforms: {
+            uTime: { value: 0 },
+            uSky: { value: sky },
+            uCover: { value: [1, 1] },
+          },
         }),
       });
       blit = new Mesh(gl, {
@@ -831,7 +879,7 @@ export default function GlassGem({ targets, gemScale = 1.18 }: GlassGemProps = {
       shards = shardMeshes;
       convergence = fields.map((f) => ({ state: f.iState, index: f.index }));
 
-      const resize = () => {
+      resize = () => {
         if (!renderer || !gl || !camera) return;
         const w = host.clientWidth || 1;
         const h = host.clientHeight || 1;
@@ -843,6 +891,20 @@ export default function GlassGem({ targets, gemScale = 1.18 }: GlassGemProps = {
         const spread = Math.min(Math.max((w / Math.max(h, 1)) * 1.35, 1.5), 4.2);
         for (const m of shards) {
           (m.program.uniforms.uSpreadX as { value: number }).value = spread;
+        }
+
+        // Cover fit, the CSS `background-size: cover` rule written out: shrink
+        // the sampling window on whichever axis is relatively longer, so the
+        // plate fills the band and crops rather than stretching. The band is
+        // ~2.3:1 on desktop and taller than wide on mobile, and a 16:9 plate
+        // sampled straight from vUv would visibly distort at both.
+        const canvasAspect = w / Math.max(h, 1);
+        const cover: [number, number] =
+          canvasAspect > skyAspect
+            ? [1, skyAspect / canvasAspect]
+            : [canvasAspect / skyAspect, 1];
+        if (backdrop) {
+          (backdrop.program.uniforms.uCover as { value: number[] }).value = cover;
         }
       };
       resize();
