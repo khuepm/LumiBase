@@ -37,6 +37,10 @@ interface CloudflareEnv {
   QUEUES?: Record<string, CloudflareQueue>;
   REALTIME_QUEUE?: CloudflareQueue;
   MEDIA_BASE_URL?: string;
+  /** Zone id for global edge purge (#392). Absent → colo-local purge only. */
+  CF_PURGE_ZONE_ID?: string;
+  /** API token with the `Cache Purge` permission on that zone. */
+  CF_PURGE_API_TOKEN?: string;
   /** SiteRoom Durable Object namespace — realtime fan-out hub. */
   SITE_ROOM?: DurableObjectNamespaceLike;
   /** PageviewCounter Durable Object namespace — atomic hot-counter/HLL backend. */
@@ -84,7 +88,17 @@ export function createCloudflareRuntime(env: Record<string, unknown>): RuntimeCo
   return {
     cache,
     rateLimiter: new CacheBackedRateLimiter(cache, new MemoryRateLimiter()),
-    edgeCache: new CloudflareEdgeCacheProvider(),
+    // Global edge purge is opt-in: with no zone credentials the provider still
+    // clears the local colo, and everything else expires on `s-maxage` exactly
+    // as it did before (#392).
+    edgeCache: new CloudflareEdgeCacheProvider(
+      typeof cfEnv.CF_PURGE_ZONE_ID === 'string' &&
+      cfEnv.CF_PURGE_ZONE_ID.length > 0 &&
+      typeof cfEnv.CF_PURGE_API_TOKEN === 'string' &&
+      cfEnv.CF_PURGE_API_TOKEN.length > 0
+        ? { zoneId: cfEnv.CF_PURGE_ZONE_ID, apiToken: cfEnv.CF_PURGE_API_TOKEN }
+        : undefined,
+    ),
     storage: new CloudflareStorageProvider(cfEnv.MEDIA),
     database: new CloudflareDatabaseProvider(cfEnv.HYPERDRIVE),
     search: new CloudflareSearchProvider(

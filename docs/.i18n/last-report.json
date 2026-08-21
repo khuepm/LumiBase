@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-04T21:58:42.913Z",
+  "generatedAt": "2026-08-20T20:07:50.101Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,8 +8,8 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 86,
-    "planned": 60
+    "upToDate": 87,
+    "planned": 59
   },
   "actions": [
     {
@@ -962,13 +962,13 @@
     },
     {
       "rel": "features/caching.md",
-      "type": "translate",
-      "reason": "missing vi translation",
+      "type": "up-to-date",
+      "reason": "in sync",
       "enLang": "en",
-      "viLang": null,
+      "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": true,
+      "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
     },

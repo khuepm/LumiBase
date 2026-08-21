@@ -70,6 +70,23 @@ export function resolveDeliveryCachePolicy(options: {
 }
 
 /**
+ * `Vary` for every publicly cacheable delivery response (#390).
+ *
+ * `middleware/tenant.ts` resolves the active site from three inputs: the
+ * `X-Lumi-Site` header, the `Host` header (custom domains and free
+ * subdomains), and `?site=` in dev. The query string is part of the cache key
+ * already; the two headers are not unless declared here.
+ *
+ * Today both public delivery routes carry `site_id` in the path, so tenant
+ * identity is in the URL and no shared cache can mix two sites on these
+ * routes. This header is therefore hardening, not a fix for a live leak: it
+ * states the dependency in the response instead of relying on every CDN in
+ * front of us to key on `Host` by convention — and it keeps holding if a
+ * future public route drops the site from its path.
+ */
+export const PUBLIC_DELIVERY_VARY = 'X-Lumi-Site, Host';
+
+/**
  * Weak ETag over an ordered list of fingerprint inputs. Weak (`W/`) because
  * the tag asserts semantic equivalence of the payload, not byte identity —
  * the JSON body is never buffered to compute it.

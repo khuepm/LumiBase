@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Database } from '@lumibase/database';
 import type { CacheProvider } from '@lumibase/runtime';
-import { PermissionService, type PermissionBundle } from '../permission-service';
+import {
+  PermissionService,
+  __resetPermissionProcessCacheForTests,
+  type PermissionBundle,
+} from '../permission-service';
 import type { MagicContext } from '../permission-dsl';
 
 /**
@@ -84,6 +88,13 @@ function serviceFor(siteId: string, cache: CacheProvider) {
 }
 
 describe('PermissionService cache versioning', () => {
+  // The process-cache store (#391) is module-level by design, so it outlives a
+  // single case. Without this reset a later case could be answered from an
+  // earlier one's entry and pass for the wrong reason.
+  beforeEach(() => {
+    __resetPermissionProcessCacheForTests();
+  });
+
   it('stores bundles under a versioned, tenant-prefixed key (Property P4)', async () => {
     const cache = new FakeCache();
     const { service } = serviceFor('site-a', cache);
@@ -154,5 +165,45 @@ describe('PermissionService cache versioning', () => {
       increment: vi.fn(),
     } as unknown as CacheProvider;
     await expect(PermissionService.bumpVersion(broken, 'site-a')).resolves.toBeUndefined();
+  });
+
+  /**
+   * #391 — the in-process layer must not buy latency at the cost of the
+   * guarantee Req 2 exists for. Bundles are cached under a versioned key; the
+   * version pointer itself is read from the shared cache every time, so a bump
+   * is visible on the very next request rather than after a process TTL.
+   */
+  it('does not delay revocation: a bump is seen on the next request (Property P9)', async () => {
+    const cache = new FakeCache();
+    await serviceFor('site-a', cache).service.bundle();
+
+    // Same process, entry still well inside its 5s process TTL.
+    await PermissionService.bumpVersion(cache, 'site-a');
+
+    const { service, compileSpy } = serviceFor('site-a', cache);
+    await service.bundle();
+
+    expect(compileSpy).toHaveBeenCalledTimes(1);
+    expect(cache.store.has('perm:site-a:v2:anon')).toBe(true);
+  });
+
+  it('answers a repeat read from the process store without a second bundle fetch', async () => {
+    const cache = new FakeCache();
+    await serviceFor('site-a', cache).service.bundle();
+
+    const reads: string[] = [];
+    const original = cache.get.bind(cache);
+    cache.get = (async (key: string) => {
+      reads.push(key);
+      return original(key);
+    }) as typeof cache.get;
+
+    const { service, compileSpy } = serviceFor('site-a', cache);
+    await service.bundle();
+
+    expect(compileSpy).not.toHaveBeenCalled();
+    // The version pointer is still read — that is what keeps revocation
+    // immediate — but the bundle itself came from process memory.
+    expect(reads).toEqual(['perm-ver:site-a']);
   });
 });

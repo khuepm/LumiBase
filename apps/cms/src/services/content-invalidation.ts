@@ -5,7 +5,8 @@
 
 import { settings, type Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
-import type { CacheProvider, QueueProvider } from '@lumibase/runtime';
+import type { CacheProvider, EdgeCacheProvider, QueueProvider } from '@lumibase/runtime';
+import { purgeEdgeByTag } from '@lumibase/runtime';
 import { dispatchRevalidation, parseTargets } from './revalidation';
 
 export const REVALIDATION_DISPATCH_QUEUE = 'revalidation-dispatch';
@@ -23,13 +24,43 @@ export function deliverTag(siteId: string): string {
   return `deliver:${siteId}`;
 }
 
+/**
+ * Purge the edge copies recorded under `tag`, then report the count (#392).
+ *
+ * Split out so both tag-purge entry points below reach the same two layers.
+ * Never throws: an edge that cannot be purged falls back to expiring on
+ * `s-maxage`, which is exactly where this was before the index existed.
+ */
+async function purgeEdge(
+  cache: CacheProvider | null | undefined,
+  edgeCache: EdgeCacheProvider | null | undefined,
+  tag: string,
+): Promise<void> {
+  if (!edgeCache) return;
+  try {
+    const purged = await purgeEdgeByTag(cache, edgeCache, tag);
+    if (purged > 0) {
+      void import('../routes/metrics').then((m) =>
+        m.cacheOperationsTotal.inc({ op: 'purgeEdge', result: 'ok', backend: 'edge' }),
+      );
+    }
+  } catch (error) {
+    console.warn('[content-invalidation] edge purge failed', { tag, error });
+    void import('../routes/metrics').then((m) =>
+      m.cacheOperationsTotal.inc({ op: 'purgeEdge', result: 'error', backend: 'edge' }),
+    );
+  }
+}
+
 /** Best-effort tag purge for item collection writes — never fails the caller. */
 export async function invalidateItemsTag(
   cache: CacheProvider | null | undefined,
   siteId: string,
   collection: string,
+  edgeCache?: EdgeCacheProvider | null,
 ): Promise<void> {
   if (!cache || !siteId) return;
+  await purgeEdge(cache, edgeCache, itemsTag(siteId, collection));
   try {
     await cache.invalidateByTag(itemsTag(siteId, collection));
   } catch (error) {
@@ -48,8 +79,10 @@ export async function invalidateItemsTag(
 export async function invalidateDeliverTag(
   cache: CacheProvider | null | undefined,
   siteId: string,
+  edgeCache?: EdgeCacheProvider | null,
 ): Promise<void> {
   if (!cache || !siteId) return;
+  await purgeEdge(cache, edgeCache, deliverTag(siteId));
   try {
     await cache.invalidateByTag(deliverTag(siteId));
   } catch (error) {

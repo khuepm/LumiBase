@@ -1,42 +1,52 @@
 # Dependency Overrides & Patches
 
-This document tracks every `pnpm.overrides` pin, `pnpm.patchedDependencies` patch, and
-`pnpm.auditConfig.ignoreGhsas` exclusion in the root
-[`package.json`](../../../package.json), why each exists, and the condition under which
-it can be safely removed.
+This document tracks every `overrides` pin, `patchedDependencies` patch, and
+`auditConfig.ignoreGhsas` exclusion, why each exists, and the condition under which it
+can be safely removed.
+
+**All three are declared twice, on purpose.** pnpm 9 — the pinned version — reads them
+from the `pnpm` key in root [`package.json`](../../../package.json). pnpm 10+ reads them
+from [`pnpm-workspace.yaml`](../../../pnpm-workspace.yaml) instead, warning once about
+the `package.json` key before ignoring it. Keeping both means a future pnpm bump does not
+silently drop the security overrides, the `gray-matter` patch, or the audit ignore
+(#295). `pnpm settings:check` fails CI when the two copies drift; when pnpm 9 support
+ends, delete the `pnpm` key from `package.json` and that script with it.
 
 > **Why this file exists:** overrides and patches are invisible footguns — they silently
 > change what version of a transitive dependency the whole workspace resolves. Without a
 > record of *why*, a future maintainer can't tell a deliberate security pin from leftover
 > cruft, and removing one can silently reintroduce a vulnerability. Update this table
-> whenever you add, change, or remove an entry under the `pnpm` key in `package.json`.
+> whenever you add, change, or remove an entry — **in both files**.
 
 ## How overrides work here
 
-- **`pnpm.overrides`** force a single resolved version of a package across the entire
+- **`overrides`** force a single resolved version of a package across the entire
   workspace, including transitive dependencies that requested a different (often
   vulnerable) range.
-- **`pnpm.patchedDependencies`** apply a local source patch to an installed package.
+- **`patchedDependencies`** apply a local source patch to an installed package.
   Patches live in [`patches/`](../../../patches/) and are referenced by exact version.
   Regenerate with `pnpm patch <pkg>@<version>` → edit → `pnpm patch-commit <dir>`.
-- **`pnpm.auditConfig.ignoreGhsas`** excludes a specific advisory from the
+- **`auditConfig.ignoreGhsas`** excludes a specific advisory from the
   `pnpm audit --prod --audit-level high` gate in
   [`ci.yml`](../../../.github/workflows/ci.yml). Use this **only** when the advisory is
   structurally inapplicable to how we consume the package and no patched version is
   installable — never to silence a real risk. Every entry needs a row below.
 
 After changing either, run `pnpm install` so the lockfile (`pnpm-lock.yaml`) records the
-new resolution / patch hash.
+new resolution / patch hash, then `pnpm settings:check` to confirm the two declarations
+still agree.
 
 ## Overrides registry
 
 | Package | Pinned to | Reason | Remove when |
 | --- | --- | --- | --- |
-| `js-yaml` | `^4.2.0` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — quadratic-complexity DoS in YAML merge-key handling (moderate). Pulled in transitively by `gray-matter@4.0.3`, which hard-pins js-yaml 3.x. See the patch note below. | `gray-matter` (or whatever consumes it) depends on js-yaml `>=4.2.0` directly, **and** no other dependency reintroduces a 3.x range. Verify with `pnpm why js-yaml`. |
-| `dompurify` | `^3.4.11` | Security advisory (resolved via Dependabot). | A direct/transitive consumer requires `>=3.4.11` on its own. |
+| `js-yaml` | `^4.3.1` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — quadratic-complexity DoS in YAML merge-key handling (moderate), and [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — quadratic CPU consumption resolving `!!omap`, unpatched below `4.3.1` (high). Pulled in transitively by `gray-matter@4.0.3`, which hard-pins js-yaml 3.x. See the patch note below. | `gray-matter` (or whatever consumes it) depends on js-yaml `>=4.2.0` directly, **and** no other dependency reintroduces a 3.x range. Verify with `pnpm why js-yaml`. |
+| `dompurify` | `^3.4.13` | Security advisory (resolved via Dependabot), then raised for [GHSA-8v5p-ggcr-6q56](https://github.com/advisories/GHSA-8v5p-ggcr-6q56) — an `IN_PLACE` hook removal leaves a detached subtree, allowing sanitizer bypass at `<=3.4.12` (moderate). | A direct/transitive consumer requires `>=3.4.13` on its own. |
 | `esbuild` | `^0.28.1` | esbuild dev-server request RCE advisory (`<=0.24.2`). | All consumers (vite, tsx, etc.) require `>=0.28.1`. |
 | `form-data` | `^4.0.6` | Security advisory (unsafe random boundary). | All consumers require `>=4.0.6`. |
-| `postcss` | `^8.5.14` | Security advisory (resolved via Dependabot). | All consumers require `>=8.5.14`. |
+| `postcss` | `^8.5.24` | Security advisory (resolved via Dependabot). | All consumers require `>=8.5.24`. |
+| `nanoid@3` | `^3.3.17` | [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8) — a custom generator loops indefinitely when `size` is zero, unpatched below `3.3.17` (high). Reached only transitively: `next` → `postcss` → `nanoid@3`. Scoped to the 3.x range so it cannot fight the 5.x pin below. | `postcss` (or whatever consumes it) requires `nanoid >=3.3.17`. Verify with `pnpm why nanoid`. |
+| `nanoid@5` | `^5.1.16` | [GHSA-28wg-ghj8-5hjv](https://github.com/advisories/GHSA-28wg-ghj8-5hjv) — non-secure generators loop indefinitely on a negative size, unpatched below `5.1.16` (high). This is the range `apps/cms` and `packages/database` declare directly (`^5.0.7`) for domain-table IDs, so the pin raises the floor without forcing a major. | Both packages declare `>=5.1.16` themselves, at which point the override is redundant. |
 | `undici` | `^7.28.0` | Security advisory (resolved via Dependabot). | All consumers require `>=7.28.0`. |
 | `uuid` | `^11.1.1` | Version unification / advisory (resolved via Dependabot). | Version drift across packages is no longer a concern. |
 | `vite` | `^7.3.5` | Unify on Vite 7 and pull esbuild past the `0.28.1` RCE advisory. | The workspace no longer needs a single forced Vite major. |
@@ -86,7 +96,7 @@ unrelated package. `react-router-dom` appears in `apps/docs` only.
 **Why it's needed:** `gray-matter@4.0.3` is the latest published release and is effectively
 unmaintained. It hard-pins `js-yaml@^3.13.1` and calls `safeLoad`/`safeDump`. Those
 functions were **removed** in js-yaml 4.x (where `load`/`dump` are safe by default — and
-where `safeLoad` is a stub that *throws*). Because the `js-yaml: ^4.2.0` override (above)
+where `safeLoad` is a stub that *throws*). Because the `js-yaml: ^4.3.1` override (above)
 upgrades js-yaml tree-wide to fix [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68),
 gray-matter would crash at parse time without this patch. gray-matter is used only at
 build/dev time in [`apps/docs`](../../../apps/docs/src/plugins/vite-plugin-docs-loader.ts)
@@ -96,7 +106,8 @@ to parse trusted, repo-owned Markdown front matter.
 (at which point drop both the override-driven need and this patch), **or** `apps/docs`
 stops using `gray-matter` (e.g. replaced with a small in-repo front-matter parser calling
 js-yaml 4.x `load()` directly). After removing, delete this section, the
-`patchedDependencies` entry in `package.json`, and the patch file, then re-run
+`patchedDependencies` entry in **both** `package.json` and `pnpm-workspace.yaml`, and the
+patch file, then re-run
 `pnpm install`.
 
 ## Dependabot note

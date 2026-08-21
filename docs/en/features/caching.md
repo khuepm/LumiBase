@@ -1,11 +1,86 @@
 ---
 title: Caching
 description: Edge HTTP cache, application CacheProvider, and cache-penetration defences
+version: 4
+lastUpdated: 2026-08-10T20:04:00.102Z
+sourceLang: en
+contentHash: 218e2a3a0ef0179c
+codeVerified: 2026-08-10T20:04:00.102Z
+codeVerifiedHash: 218e2a3a0ef0179c
+codeVerifiedClaims: 16
 ---
 
 # Caching
 
 LumiBase caches on three layers: HTTP/edge (`Cache-Control` + ETag on the Delivery API), application cache (`CacheProvider` — Workers KV or Redis), and short-lived process caches. Invalidation is tag-oriented where the provider supports it (see [ADR-004](../architecture/decisions/adr-004-tag-based-cache-invalidation.md)).
+
+## How far invalidation reaches
+
+A request is answered by the first layer that has it, and each layer keeps a copy on the way back. "Invalidate the cache" therefore has to name a layer — tag purge reaches one of them, and the layers in front of it expire on their own clock:
+
+| Layer | What holds the copy | How it is revoked | Worst-case staleness |
+|-------|--------------------|-------------------|----------------------|
+| Browser | The user's own cache | **Nothing reaches it.** Change the URL instead — see the section above | Whatever `max-age` you promised |
+| CDN / edge | `EdgeCacheProvider` (`caches.default` on Workers; no-op on Docker) | `purge({urls, tags})` — tag purge, falling back to URL purge; see below | `s-maxage` (default 60s) when purge is unavailable |
+| Reverse proxy | Caddy | Not a cache — it proxies, no caching directive is configured | n/a |
+| In-process | `withProcessCache` over the permission bundle, plus the single-flight map in `createSwrCache` | Not invalidated — entries are only reachable under a versioned key, so a version bump makes them unaddressable | 5s process TTL |
+| Application cache | `CacheProvider` — Redis or Workers KV | `invalidateByTag`, `POST /api/v1/utils/cache/purge` | Immediate on Redis; KV is eventually consistent (~60s) |
+| Database | Postgres buffer pool, OS page cache | Not ours to manage | n/a |
+
+**The browser layer has no revocation channel at all**, by design of HTTP. That is why the `immutable` rule above is a rule and not a preference.
+
+### Purging the edge
+
+Purging by tag is one call however many URLs are affected, and it reaches copies this process never recorded. Purging by URL needs no tag support at the CDN but only reaches what we indexed. Whether an account can do the first is not visible from code, so LumiBase does not make you configure the answer — it tries tags and falls back:
+
+1. Every publicly cacheable delivery response carries `Cache-Tag: deliver:<siteId>, items:<siteId>:<collection>` and records its URL under those same tags in `edgeurls:<tag>` — capped at 200 URLs per tag.
+2. A write calls `invalidateItemsTag` / `invalidateDeliverTag`, which reads that list and hands both the tag and the URLs to `EdgeCacheProvider.purge()`.
+3. The provider clears the local colo through `caches.default.delete`, then — when `CF_PURGE_ZONE_ID` + `CF_PURGE_API_TOKEN` are set — calls the zone purge API with the **tag**, and only if that call is refused retries with the **URL** list, in batches of 30.
+
+The fallback is why the URL index exists at all. Where tag purge works, the index is redundant; where it does not, it is the whole mechanism.
+
+Without those two variables the purge degrades to colo-local, which is **not** global invalidation: other PoPs keep serving until `s-maxage`. Configure them for any deployment where a content fix has to land faster than the `s-maxage` window.
+
+Everything on this path fails soft. A lost index entry, an expired token, a 403 from the purge API — each degrades to the old behaviour (expire on `s-maxage`) and none of them fails the write that triggered the purge. `lumibase_cache_operations_total{op="purgeEdge"}` separates `ok` from `error` so the difference is visible.
+
+| Variable | Meaning |
+|----------|---------|
+| `CF_PURGE_ZONE_ID` | Cloudflare zone id for global edge purge. Absent → colo-local purge only. |
+| `CF_PURGE_API_TOKEN` | API token holding the `Cache Purge` permission on that zone. |
+
+### The in-process layer
+
+A hit in Redis or Workers KV still costs a network round-trip; a hit in process memory does not. `withProcessCache` holds decoded values in the isolate that computed them, in front of the shared cache.
+
+It is applied to **one** thing today: the compiled permission bundle, read on nearly every authenticated request. Two rules make that safe, and both are load-bearing:
+
+- **Only keys that carry a version segment.** `perm:{site}:v{n}:{principal}` addresses an immutable value — a permission change bumps the pointer, the next read addresses a different key, and the stale entry is never read again. Nothing in this layer can be invalidated across instances, so a key whose value can change underneath it must never be wrapped.
+- **Never the version pointer itself.** That pointer is read from the shared cache on every request. Caching it would delay revocation by the process TTL and break exactly the guarantee key versioning exists to provide (Property P9: revoke → next request denied, no TTL wait). One network read per request is what that guarantee costs.
+
+The store is module-level and bounded (256 entries, 5s TTL). Both matter: a per-request store would never return a hit, and an unbounded one leaks — a Docker process is long-lived and a Workers isolate is reused across requests from *different tenants*. Every key carries `siteId`, so no layer above needs to separate them.
+
+`lumibase_cache_operations_total{backend="process"}` reports hit and miss, so whether this layer earns its keep is measurable rather than assumed.
+
+## Media URLs and the `immutable` promise
+
+`Cache-Control: immutable` is a promise that cannot be withdrawn. Once a browser has stored the response, no purge reaches it — not a CDN purge, not `POST /api/v1/utils/cache/purge`, not a redeploy. The promise is only truthful when the **URL** is a function of the **content**, so that changed bytes are reached through a different URL.
+
+`POST /api/v1/media/:key` overwrites in place under a caller-chosen key, so the key alone is not that function. Media URLs therefore carry an explicit version pin:
+
+| URL | `Cache-Control` |
+|-----|-----------------|
+| `/api/v1/media/logo.png` | `public, max-age=300, must-revalidate` |
+| `/api/v1/media/logo.png?v=<contentHash>` (pin matches stored bytes) | `public, max-age=31536000, immutable` |
+| `/api/v1/media/logo.png?v=<stale>` (pin does not match) | `public, max-age=300, must-revalidate` |
+
+The fingerprint is written to storage metadata (`contentHash`) at upload time and returned as `version` in the upload response. A plain `GET` also reports it as `X-Lumi-Media-Version`, so a client can build the pinned URL without having seen the upload. Responses carry a weak `ETag` over the fingerprint and answer `If-None-Match` with `304`.
+
+Two cases never get the immutable policy, by design:
+
+- **Objects with no stored fingerprint** — uploaded before the field existed, or written through the streaming `PUT /api/v1/files/upload/:key` receiver, which never buffers the body and so cannot hash it.
+- **The transform redirect path** (CF Image Resizing / Imgproxy) when the pin cannot be checked — the source is never read there, so a pin is taken at face value and an unpinned URL revalidates.
+
+**Rule for new endpoints:** if you cannot state which URL change corresponds to a content change, you cannot use `immutable`. Reach for `must-revalidate` plus an `ETag`, which costs one conditional request and stays revocable.
 
 ## Cache penetration
 

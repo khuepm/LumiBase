@@ -285,7 +285,7 @@ An toàn nhất: chỉ tạo file mới, không ghi đè gì.
 
 | # | File (rel) | Chiều | Dòng nguồn | parity | Trạng thái | Agent |
 |---|---|---|---|---|---|---|
-| 5 | `features/caching.md` | en→vi | 60 | — | TODO | — |
+| 5 | ~~`features/caching.md`~~ | en→vi | 60 | 0 problems | **XONG** — dịch trong PR của #388 (rule #7 buộc hai locale cùng commit), stamp `--verified`, 16 claim | — |
 | 6 | `roadmap/post-v1.md` | en→vi | 71 | — | TODO | — |
 
 Hai doc mới còn lại của 0.25.0 — `architecture/decisions/adr-012-…` (#4) và
