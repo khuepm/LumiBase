@@ -158,9 +158,9 @@ export default function EclipseStage() {
   const ship1X = useTransform(p, [0.015, 0.1], [-360, 360]);
   const ship1Y = useTransform(p, [0.015, 0.1], [130, -130]);
   const ship1Opacity = useTransform(p, [0.015, 0.03, 0.085, 0.1], [0, 1, 1, 0]);
-  const ship2X = useTransform(p, [0.84, 0.96], [-360, 360]);
-  const ship2Y = useTransform(p, [0.84, 0.96], [130, -130]);
-  const ship2Opacity = useTransform(p, [0.84, 0.87, 0.93, 0.96], [0, 1, 1, 0]);
+  const ship2X = useTransform(p, [0.9, 0.98], [-360, 360]);
+  const ship2Y = useTransform(p, [0.9, 0.98], [130, -130]);
+  const ship2Opacity = useTransform(p, [0.9, 0.92, 0.96, 0.98], [0, 1, 1, 0]);
 
   const [caption, setCaption] = useState<string>(DEFAULT_CAPTION);
   useMotionValueEvent(scrollYProgress, "change", (v) => {
