@@ -35,7 +35,7 @@
     "@lumibase/runtime": "workspace:*",
     "@lumibase/sdk": "workspace:*",
     "@lumibase/shared": "workspace:*",
-    "@sentry/cloudflare": "^10.69.0",
+    "@sentry/cloudflare": "^10.70.0",
     "drizzle-orm": "^0.45.2",
     "graphql": "^17.0.2",
     "graphql-yoga": "^5.10.0",
@@ -44,11 +44,11 @@
     "maxmind": "5.0.7",
     "nanoid": "^5.1.16",
     "node-cron": "^4.6.0",
-    "nodemailer": "9.0.4",
+    "nodemailer": "9.0.5",
     "postgres": "^3.4.9",
     "prom-client": "^15.1.0",
     "uuid": "^14.0.1",
-    "ws": "^8.21.2",
+    "ws": "^8.21.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -58,9 +58,9 @@
     "@types/ws": "^8.5.10",
     "esbuild": "^0.28.0",
     "fast-check": "^4.9.0",
-    "tsx": "^4.23.9",
+    "tsx": "^4.23.12",
     "typescript": "^5.6.2",
     "vitest": "^4.1.10",
-    "wrangler": "^4.119.0"
+    "wrangler": "^4.123.0"
   }
 }

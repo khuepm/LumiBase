@@ -82,6 +82,16 @@ jobs:
       # wall of audit failures after a future pnpm bump.
       - name: Check pnpm settings parity
         run: pnpm settings:check
+      # An override applies to direct dependencies too, so it can silently
+      # overrule what a manifest declares — `overrides.vite` sat at ^7.3.5
+      # while apps/studio and apps/docs declared ^8.1.3, and both shipped
+      # Vite 7 builds under manifests claiming Vite 8. The parity check above
+      # cannot see this: the two override copies agreed with each other, they
+      # were only both wrong relative to the manifests.
+      - name: Check override drift
+        run: pnpm drift:check
+      - name: Test repo scripts
+        run: pnpm scripts:test
 
       # `pnpm -r` runs tsc in every workspace package directly — no turbo cache
       # in between — so a stale cache can never mask a type error on CI.
