@@ -11,6 +11,7 @@ import {
   SchemaViz,
 } from "@/components/SectionVisuals";
 import ContentOsSplit from "@/components/content-os/content-os-split";
+import StudioStage from "@/components/StudioStage";
 import { EclipsePhase } from "@/components/EclipseMark";
 import EclipseStage from "@/components/scroll/EclipseStage";
 import Scene from "@/components/scroll/Scene";
@@ -160,31 +161,35 @@ const sections: SectionData[] = [
     tagline: "Mission control — humans supervise the system instead of hand-editing every item.",
     cta: "Tour the Studio",
     ctaHref: `${DOCS}/en/docs/features/studio`,
+    // The console as a cut crystal: everything an agent proposes passes through
+    // one human's field of view before it ships. The stage carries the section,
+    // so the cards below it stay short.
+    hero: <StudioStage />,
     features: [
       {
         title: "No-code Collection Builder",
-        desc: "Model any content shape without migrations or code — drag-drop UI and live JSON schema, kept in sync both ways.",
+        desc: "Any content shape, no migration. Drag-drop UI and live JSON schema, in sync both ways.",
         badge: "Builder",
         badgeTone: "green",
         node: <SchemaViz />,
       },
       {
         title: "Field-level permissions",
-        desc: "RBAC down to the individual field via a JSON policy engine — plus per-field AES-GCM encryption for the data that matters.",
+        desc: "RBAC down to one field, and AES-GCM on the fields that need it.",
         badge: "Security",
         badgeTone: "accent",
         vh: 170,
       },
       {
-        title: "Exception inbox & trust ledger",
-        desc: "Approvals, veto windows, incidents, and the kill switch in one queue. You review exceptions — not everything.",
+        title: "Exception inbox",
+        desc: "Approvals, veto windows, incidents and the kill switch in one queue.",
         badge: "Mission Control",
         badgeTone: "blue",
         vh: 170,
       },
       {
         title: "Realtime collaboration",
-        desc: "Presence, live subscriptions, and per-field pin badges over WebSocket — humans and agents on the same content.",
+        desc: "Presence and live subscriptions over WebSocket — humans and agents on the same item.",
         node: <EclipsePhase phase={3} size={96} />,
       },
     ],
