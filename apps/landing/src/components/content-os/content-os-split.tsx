@@ -372,21 +372,26 @@ function PayloadCard() {
 // Right: three small illustrated cards
 // ---------------------------------------------------------------------------
 
+const VISION_DOC = "https://docs.lumibase.dev/en/docs/ai-native-vision";
+
 const CONCEPTS = [
   {
     title: "Reconciliation loop",
     desc: "Content drifts. The loop pulls it back.",
     art: <LoopArt />,
+    href: `${VISION_DOC}#p2-desired-state--reconciliation-learned-from-kubernetes-applied-to-content`,
   },
   {
     title: "Tenant Constitution",
     desc: "Versioned publish gates. What fails never ships.",
     art: <GateArt />,
+    href: `${VISION_DOC}#p4-content-constitution-tenant-constitution--editorial-taste-becomes-machine-checkable`,
   },
   {
     title: "Multi-agent newsroom",
     desc: "Separate roles, cross-review, no self-approval.",
     art: <RelayArt />,
+    href: `${VISION_DOC}#p6-an-agent-newsroom-multi-agent-organization-not-one-big-agent`,
   },
 ];
 
@@ -394,32 +399,42 @@ function ConceptCard({
   title,
   desc,
   art,
+  href,
 }: {
   title: string;
   desc: string;
   art: React.ReactNode;
+  href: string;
 }) {
   return (
-    <article>
-      <div
-        className="overflow-hidden rounded-[14px]"
-        style={{ aspectRatio: "16 / 9", boxShadow: "var(--ring-glass)" }}
-      >
-        {art}
-      </div>
-      <h4
-        className="mt-2.5"
-        style={{ font: `600 14px/20px ${sans}`, color: "var(--foreground)" }}
-      >
-        {title}
-      </h4>
-      <p
-        className="mt-1"
-        style={{ font: `500 12px/18px ${sans}`, color: "var(--color-text-muted)" }}
-      >
-        {desc}
-      </p>
-    </article>
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block no-underline"
+      style={{ color: "inherit" }}
+    >
+      <article>
+        <div
+          className="overflow-hidden rounded-[14px]"
+          style={{ aspectRatio: "16 / 9", boxShadow: "var(--ring-glass)" }}
+        >
+          {art}
+        </div>
+        <h4
+          className="mt-2.5"
+          style={{ font: `600 14px/20px ${sans}`, color: "var(--foreground)" }}
+        >
+          {title}
+        </h4>
+        <p
+          className="mt-1"
+          style={{ font: `500 12px/18px ${sans}`, color: "var(--color-text-muted)" }}
+        >
+          {desc}
+        </p>
+      </article>
+    </a>
   );
 }
 
