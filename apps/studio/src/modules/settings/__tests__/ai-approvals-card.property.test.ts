@@ -81,17 +81,20 @@ const approvalRecordArb: fc.Arbitrary<ApprovalRecord> = fc.record({
   id: fc.string({ minLength: 21, maxLength: 21 }).filter((s) => s.length === 21),
   siteId: fc.string({ minLength: 1, maxLength: 30 }),
   agentName: fc.constant('lumibase-copilot'),
-  skillName: fc.stringOf(
-    fc.char().filter((c) => /[a-zA-Z0-9_-]/.test(c)),
-    { minLength: 1, maxLength: 50 },
-  ),
+  skillName: fc.string({
+    unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-'.split('')),
+    minLength: 1,
+    maxLength: 50,
+  }),
   arguments: argumentsArb,
   status: fc.constant('pending'),
   context: fc.oneof(
     fc.constant(null),
     fc.string({ minLength: 0, maxLength: 200 }),
   ),
-  createdAt: fc.date().map((d) => d.toISOString()),
+  // noInvalidDate: fc.date() can emit `Invalid Date` by default, and
+  // `new Date(NaN).toISOString()` throws.
+  createdAt: fc.date({ noInvalidDate: true }).map((d) => d.toISOString()),
   decidedAt: fc.constant(null),
   decidedBy: fc.constant(null),
 });

@@ -19,18 +19,12 @@ import { pathFor, parseUrl } from '../url';
 /**
  * Generate a valid locale string (2-3 lowercase letters).
  */
-const localeArb = fc.stringOf(
-  fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz'.split('')),
-  { minLength: 2, maxLength: 3 },
-);
+const localeArb = fc.string({ unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz'.split('')), minLength: 2, maxLength: 3 });
 
 /**
  * Generate a valid slug segment (alphanumeric + hyphens, non-empty).
  */
-const slugSegment = fc.stringOf(
-  fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789-'.split('')),
-  { minLength: 1, maxLength: 10 },
-);
+const slugSegment = fc.string({ unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789-'.split('')), minLength: 1, maxLength: 10 });
 
 /**
  * Generate a valid slug (1-3 segments joined by '/').

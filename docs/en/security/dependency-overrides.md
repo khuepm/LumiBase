@@ -42,16 +42,17 @@ still agree.
 | --- | --- | --- | --- |
 | `js-yaml` | `^4.3.1` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — quadratic-complexity DoS in YAML merge-key handling (moderate), and [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — quadratic CPU consumption resolving `!!omap`, unpatched below `4.3.1` (high). Pulled in transitively by `gray-matter@4.0.3`, which hard-pins js-yaml 3.x. See the patch note below. | `gray-matter` (or whatever consumes it) depends on js-yaml `>=4.2.0` directly, **and** no other dependency reintroduces a 3.x range. Verify with `pnpm why js-yaml`. |
 | `dompurify` | `^3.4.13` | Security advisory (resolved via Dependabot), then raised for [GHSA-8v5p-ggcr-6q56](https://github.com/advisories/GHSA-8v5p-ggcr-6q56) — an `IN_PLACE` hook removal leaves a detached subtree, allowing sanitizer bypass at `<=3.4.12` (moderate). | A direct/transitive consumer requires `>=3.4.13` on its own. |
-| `esbuild` | `^0.28.1` | esbuild dev-server request RCE advisory (`<=0.24.2`). | All consumers (vite, tsx, etc.) require `>=0.28.1`. |
+| `esbuild` | `^0.28.2` | esbuild dev-server request RCE advisory (`<=0.24.2`). | All consumers (vite, tsx, etc.) require `>=0.28.2`. |
 | `form-data` | `^4.0.6` | Security advisory (unsafe random boundary). | All consumers require `>=4.0.6`. |
-| `postcss` | `^8.5.24` | Security advisory (resolved via Dependabot). | All consumers require `>=8.5.24`. |
+| `postcss` | `^8.5.26` | Security advisory (resolved via Dependabot). | All consumers require `>=8.5.26`. |
 | `nanoid@3` | `^3.3.17` | [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8) — a custom generator loops indefinitely when `size` is zero, unpatched below `3.3.17` (high). Reached only transitively: `next` → `postcss` → `nanoid@3`. Scoped to the 3.x range so it cannot fight the 5.x pin below. | `postcss` (or whatever consumes it) requires `nanoid >=3.3.17`. Verify with `pnpm why nanoid`. |
 | `nanoid@5` | `^5.1.16` | [GHSA-28wg-ghj8-5hjv](https://github.com/advisories/GHSA-28wg-ghj8-5hjv) — non-secure generators loop indefinitely on a negative size, unpatched below `5.1.16` (high). This is the range `apps/cms` and `packages/database` declare directly (`^5.0.7`) for domain-table IDs, so the pin raises the floor without forcing a major. | Both packages declare `>=5.1.16` themselves, at which point the override is redundant. |
 | `undici` | `^7.28.0` | Security advisory (resolved via Dependabot). | All consumers require `>=7.28.0`. |
-| `uuid` | `^11.1.1` | Version unification / advisory (resolved via Dependabot). | Version drift across packages is no longer a concern. |
-| `vite` | `^7.3.5` | Unify on Vite 7 and pull esbuild past the `0.28.1` RCE advisory. | The workspace no longer needs a single forced Vite major. |
-| `@types/react` | `19.2.0` | **Not a security pin** — enforces React 19 types workspace-wide so Studio/Docs/Landing/`@lumibase/ui` typecheck against the same major as runtime React 19. | Drift between apps is no longer a concern, or the workspace splits React majors again intentionally. |
-| `@types/react-dom` | `19.2.0` | Same as `@types/react` — React 19 type consistency. | Same as `@types/react`. |
+| `ws` | `^8.21.3` | Security advisory (resolved via Dependabot). Declared directly by `apps/cms` for the realtime surface. | `apps/cms` declares `>=8.21.3` itself. |
+| `uuid` | `^14.0.1` | Version unification / advisory (resolved via Dependabot). Only one import site exists (`apps/cms/src/modules/audit/worker.ts`, `v7`), so the major carries little surface — but v12+ reshaped the package `exports` map, so bumping it needs a real bundle check, not just a typecheck. | Version drift across packages is no longer a concern. |
+| `vite` | `^8.2.0` | Unify on one Vite major and pull esbuild past the `0.28.1` RCE advisory. **This entry is why `pnpm drift:check` exists:** it sat at `^7.3.5` while `apps/studio` and `apps/docs` both declared `^8.1.3`, and because overrides apply to direct dependencies too, both apps were built with Vite 7 for as long as their manifests claimed Vite 8. Raise this in step with the manifests or the bump is cosmetic. | The workspace no longer needs a single forced Vite major. |
+| `@types/react` | `19.2.18` | **Not a security pin** — enforces React 19 types workspace-wide so Studio/Docs/Landing/`@lumibase/ui` typecheck against the same major as runtime React 19. | Drift between apps is no longer a concern, or the workspace splits React majors again intentionally. |
+| `@types/react-dom` | `19.2.4` | Same as `@types/react` — React 19 type consistency. | Same as `@types/react`. |
 
 ## Audit ignore registry
 
@@ -109,6 +110,35 @@ js-yaml 4.x `load()` directly). After removing, delete this section, the
 `patchedDependencies` entry in **both** `package.json` and `pnpm-workspace.yaml`, and the
 patch file, then re-run
 `pnpm install`.
+
+## Override drift — why `pnpm drift:check` exists
+
+An override applies to **direct** dependencies, not just transitive ones. That
+makes it possible for an override to quietly overrule what a workspace package
+declares, with nothing warning about it.
+
+This happened. `overrides.vite` was `^7.3.5` while both `apps/studio` and
+`apps/docs` declared `vite: ^8.1.3`. The override won, the lockfile importer
+recorded `specifier: ^7.3.5 → 7.3.6`, and both apps were built with Vite 7 for
+as long as their manifests claimed Vite 8. Every "we're on Vite 8" statement in
+that window was false, and no gate said so.
+
+`pnpm settings:check` cannot catch this class: the two override copies agreed
+with each other perfectly: they were only both wrong relative to the manifests.
+So [`scripts/check-override-drift.mjs`](../../../scripts/check-override-drift.mjs)
+fails CI when an override range does not intersect a range some workspace
+package declares directly. Overrides with no direct declaration anywhere are
+skipped, because that is the intended use of a security override.
+
+The guard is dependency-free for the same reason the parity script is: a check
+on install settings must not itself depend on a successful install. Its range
+logic is covered by [`scripts/__tests__/check-override-drift.test.mjs`](../../../scripts/__tests__/check-override-drift.test.mjs)
+(`pnpm scripts:test`), including the vite case, so the guard cannot silently
+degrade into one that always passes.
+
+**When it fires, do not silence it.** Either raise the override to meet the
+manifests, or lower the manifests to admit the override. Leaving them apart is
+the bug.
 
 ## Dependabot note
 

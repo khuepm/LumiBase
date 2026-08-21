@@ -9,6 +9,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Security
+
+- **Closed two high-severity advisories that were live on `main`.** `nanoid`
+  was pinned below 5.1.16 (GHSA-28wg-ghj8-5hjv — non-secure generators can loop
+  indefinitely on a negative size) and `js-yaml` below 4.3.1
+  (GHSA-5p4m-2wfm-xmqj — quadratic CPU consumption in `!!omap`). Both were held
+  down by root `pnpm.overrides`, so the bump had to land there rather than in
+  the individual manifests. `pnpm audit --prod --audit-level high` is clean
+  again.
+
 ### Changed
 
 - **The landing page's "Set intent" control now does something.** The Content OS
@@ -30,7 +40,58 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   each fix is attributed to the role `RULE_ROLE_ROUTING` would route that rule
   to. Landing-only: no API, schema, env or CMS behaviour changes.
 
+- **Consolidated every open Dependabot upgrade into one lockfile-consistent
+  change** rather than merging them serially, where each merge invalidated the
+  next PR's lockfile. Majors taken: `uuid` 11→14, `vite` 7→8, `nanoid` 5.0→5.1,
+  `@dnd-kit/sortable` 8→10, `lucide-react` 0.452→1.28, `fast-check` 3→4,
+  `@testing-library/jest-dom` 6→7, `@cloudflare/workers-types` 4→5, `eslint`
+  9→10, `next` 16.2→16.3. Three breaking changes needed source follow-up, all
+  behaviour-preserving: `@cloudflare/workers-types` v5 declares its own
+  `Buffer: any` and widened `ExecutionContext`; `lucide-react` v1 dropped brand
+  marks (`Github` was the only removed export in use, across 121 import sites);
+  and `fast-check` v4 replaced the per-unit string builders with
+  `string({ unit })`. No runtime, schema, or setup behaviour changes — no
+  migration or backfill is required on upgrade.
 ### Fixed
+
+- **`fc.date()` generators could emit `Invalid Date`.** `noInvalidDate`
+  defaults to false, so bounded date arbitraries still produced NaN
+  timestamps — the approvals-list ordering property compared them, and the
+  Studio approval-card arbitrary would have thrown on
+  `new Date(NaN).toISOString()`. A latent test bug, surfaced (not caused) by
+  `fast-check` v4's different generation bias.
+
+- **Vite 8 was never actually in effect.** `pnpm.overrides.vite` sat at `^7.3.5`
+  while `apps/studio` and `apps/docs` both declared `^8.1.3`. pnpm overrides
+  apply to direct dependencies too, so the override won and the lockfile
+  importer read `specifier: ^7.3.5 → 7.3.6` — both apps were built with Vite 7
+  for as long as their manifests claimed Vite 8. Raising the override in step
+  with the manifests flips the toolchain for real (importers now resolve 8.2.2).
+
+- **Node floor raised to `>=22.13.0`,** and `.nvmrc` pinned to `24` to match
+  CI's `NODE_VERSION` instead of floating on `22`. The old `>=22` admitted
+  22.0–22.12, a range that breaks both `vite` 8 (needs `>=22.12.0`) and `eslint`
+  10 (needs `^22.13.0`). **Contributors on Node 22.0–22.12 must upgrade.**
+  `packages/mcp-server` keeps `>=18`: its floor is a contract with consumers of
+  a published package, not with this toolchain.
+
+- **ESLint unified on 10** — `apps/landing` was still on 9 while `apps/consumer`
+  already declared 10. `@dnd-kit/core` raised to `^6.3.0` so `@dnd-kit/sortable`
+  10's peer is satisfied by declaration rather than by the lockfile happening to
+  resolve 6.3.1. `apps/docs` moved to `@testing-library/jest-dom` 7 so the
+  workspace no longer carries two majors of one test library.
+
+### Added
+
+- **`pnpm drift:check` — a guard against overrides overruling manifests.**
+  `scripts/check-override-drift.mjs` fails CI when an override range does not
+  intersect a range some workspace package declares directly. The existing
+  `settings:check` could not catch this class: the two override copies agreed
+  with each other, they were only both wrong relative to the manifests.
+  Dependency-free like the parity script — a check on install settings must not
+  depend on a successful install — and covered by `pnpm scripts:test`
+  (`node --test`), including the vite case, so it cannot degrade into a guard
+  that always passes. See `docs/en/security/dependency-overrides.md`.
 
 - **MCP path-traversal tripwire no longer blind to spliced path segments.**
   The registry scan in `path-hardening.wiring.test.ts` probed each argument
