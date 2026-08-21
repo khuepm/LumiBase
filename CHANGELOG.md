@@ -18,6 +18,25 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   down by root `pnpm.overrides`, so the bump had to land there rather than in
   the individual manifests. `pnpm audit --prod --audit-level high` is clean
   again.
+- **Closed the two dev-only `brace-expansion` advisories.** `brace-expansion@1`
+  `->` `^1.1.16` ([GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp)
+  — exponential-time expansion of consecutive non-expanding `{}` groups) and
+  `brace-expansion@5` `->` `^5.0.8`
+  ([GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) —
+  unbounded expansion length crashing the process on OOM). Both are **dev-only**
+  — `brace-expansion` never enters the `pnpm audit --prod` tree — so the CI gate
+  was already green and this closes the standing Dependabot alerts rather than
+  unblocking a build. Natural drift had already lifted most of the tree to
+  `1.1.18` / `5.0.9`; the straggler was a `5.0.7` copy held by `minimatch@10.2.5`.
+  Keyed per-major, the same shape as the existing `nanoid@3` / `nanoid@5` pair,
+  because `brace-expansion@1` exports the function itself while 5.x exports a
+  namespace object — collapsing both onto 5.x makes `minimatch@3` (ESLint and its
+  plugins) throw `TypeError: m is not a function`. A new "Known-unfixable alerts"
+  section in
+  [`docs/en/security/dependency-overrides.md`](docs/en/security/dependency-overrides.md)
+  records the two advisories that cannot be closed at all: GHSA-mh99 also matches
+  the 1.x line by range, and `glib@0.18.5` is pinned across the Tauri Linux GTK
+  stack.
 
 ### Changed
 

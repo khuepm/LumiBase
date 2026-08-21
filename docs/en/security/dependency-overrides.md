@@ -51,6 +51,8 @@ still agree.
 | `ws` | `^8.21.3` | Security advisory (resolved via Dependabot). Declared directly by `apps/cms` for the realtime surface. | `apps/cms` declares `>=8.21.3` itself. |
 | `uuid` | `^14.0.1` | Version unification / advisory (resolved via Dependabot). Only one import site exists (`apps/cms/src/modules/audit/worker.ts`, `v7`), so the major carries little surface — but v12+ reshaped the package `exports` map, so bumping it needs a real bundle check, not just a typecheck. | Version drift across packages is no longer a concern. |
 | `vite` | `^8.2.0` | Unify on one Vite major and pull esbuild past the `0.28.1` RCE advisory. **This entry is why `pnpm drift:check` exists:** it sat at `^7.3.5` while `apps/studio` and `apps/docs` both declared `^8.1.3`, and because overrides apply to direct dependencies too, both apps were built with Vite 7 for as long as their manifests claimed Vite 8. Raise this in step with the manifests or the bump is cosmetic. | The workspace no longer needs a single forced Vite major. |
+| `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS via exponential-time expansion of consecutive non-expanding `{}` groups (high), backported to the 1.x line in `1.1.16`. **Dev-only** — reached through `minimatch@3` from ESLint and its plugins, so it never appears in `pnpm audit --prod`. Keyed per-major (same shape as the `nanoid@3` / `nanoid@5` pair) because two incompatible majors coexist; see [Known-unfixable alerts](#known-unfixable-alerts) for why 1.x cannot be folded into 5.x. | Nothing in the tree resolves `minimatch@3` any more (`pnpm why brace-expansion -r`), at which point both `brace-expansion@*` rows collapse into one. |
+| `brace-expansion@5` | `^5.0.8` | [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) — DoS via unbounded expansion length causing an OOM process crash (high), patched in `5.0.8`. **Dev-only** — reached through `minimatch@10` from `glob`, `eslint`, `@typescript-eslint/typescript-estree`. Natural drift already lifted most of the tree to `5.0.9`, but `minimatch@10.2.5` still pinned a `5.0.7` copy; this floor removes that straggler. | Same as the `@1` row. |
 | `@types/react` | `19.2.18` | **Not a security pin** — enforces React 19 types workspace-wide so Studio/Docs/Landing/`@lumibase/ui` typecheck against the same major as runtime React 19. | Drift between apps is no longer a concern, or the workspace splits React majors again intentionally. |
 | `@types/react-dom` | `19.2.4` | Same as `@types/react` — React 19 type consistency. | Same as `@types/react`. |
 
@@ -85,6 +87,53 @@ now targets React 19 for Studio/Docs/Landing (`@lumibase/ui` peers
 
 **Scope check:** `apps/studio` is unaffected — it uses `@tanstack/react-router`, an
 unrelated package. `react-router-dom` appears in `apps/docs` only.
+
+## Known-unfixable alerts
+
+Advisories that stay open on GitHub but have no installable fix and no effect on the
+`pnpm audit --prod --audit-level high` gate. They get no [audit ignore](#audit-ignore-registry)
+entry — that gate is `--prod` and these live outside the production tree — so this section
+is the only record.
+
+### GHSA-mh99-v99m-4gvg still matches `brace-expansion@1.1.16`
+
+The advisory's affected range is `<= 5.0.7`, which by plain semver **includes every 1.x
+version** — so bumping the 1.x line to `1.1.16` closes
+[GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) but not this one.
+The only version that satisfies it is `>=5.0.8`.
+
+**Folding 1.x into 5.x breaks ESLint.** `brace-expansion@1` exports the function itself
+(`module.exports = expandTop`); the 5.x CommonJS build exports a namespace object
+(`{ EXPANSION_MAX, EXPANSION_MAX_LENGTH, expand }`). `minimatch@3` — pulled in by
+`eslint`, `@eslint/eslintrc`, `eslint-plugin-import`, `eslint-plugin-react`, and
+`eslint-plugin-jsx-a11y` — does `require('brace-expansion')(...)`, which throws
+`TypeError: m is not a function` against 5.x. Verify before revisiting:
+
+```bash
+node -e "const m=require('brace-expansion'); console.log(typeof m, Object.keys(m))"
+```
+
+**Why the residual risk is accepted:** `brace-expansion` is dev-only here (it does not
+appear in `pnpm audit --prod`), and the expansion input is ESLint's own glob patterns from
+repo-owned config — not attacker-controlled. The impact is a slow lint run on a
+hand-crafted pattern, not a production DoS.
+
+**Revisit when** nothing resolves `minimatch@3` any more, or upstream backports the length
+cap to a `1.1.17`.
+
+### `glib` 0.18.5 (Rust / Tauri) — GHSA-wrw7-89jp-8q8g
+
+`apps/shell/src-tauri/Cargo.lock` pins `glib@0.18.5`; the advisory (moderate,
+unsoundness in the `Iterator`/`DoubleEndedIterator` impls for `glib::VariantStrIter`)
+wants `>=0.20.0`. `glib` is not a direct dependency — it arrives through the GTK stack
+(`gtk`, `gdk`, `gdkx11`, `gdk-pixbuf`, `atk`, `pango`, `cairo-rs`, `gio`, `soup3`,
+`webkit2gtk`, `javascriptcore-rs`, `libappindicator`), all of which pin `0.18.x`. `cargo
+update -p glib` therefore cannot cross the minor, and this stack is **compiled only into
+Linux builds** — the macOS (WebKit) and Windows (WebView2) targets never link it. Nothing
+in `apps/shell` constructs a `VariantStrIter`.
+
+**Revisit when** Tauri 2's Linux backend moves to the `glib` 0.20 / `gtk` 0.19+ generation.
+Check with `cargo tree -i glib` after a `tauri` bump.
 
 ## Patches registry
 
