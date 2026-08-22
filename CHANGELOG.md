@@ -84,6 +84,25 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   migration or backfill is required on upgrade.
 ### Fixed
 
+- **The test suite no longer fails because the machine was busy — and the ReDoS
+  guard it contained now actually guards something.** Two separate time-based
+  assertions were failing under parallel load on unmodified `main`, and the
+  turbo cache was hiding it (`pnpm test` replayed a cache hit; only
+  `turbo run test --force` exposed it). The `CloudflareSearchProvider` host
+  normalization test asserted an absolute `< 100ms` that the correct linear scan
+  itself can exceed (133ms observed in CI) — **and** it timed inputs ending in
+  slashes, which `/\/+$/` matches greedily without backtracking, so the test
+  would have passed with the vulnerable regex in place (measured 0.4ms). It now
+  compares an adversarial slash run against a benign string of the same length
+  and bounds the ratio, which load scales on both sides; the separation between
+  implementations is ~4 orders of magnitude. Confirmed by reintroducing the
+  regex: the new test fails at 35,699x. React Testing Library's
+  `asyncUtilTimeout` in Studio is also raised from its 1000ms default, which was
+  an implicit wall-clock budget causing "Unable to find role=..." failures in
+  suites that pass standalone. The docs search smoke test keeps a ceiling but a
+  generous one, with a note that it only catches catastrophic regressions.
+  Closes #408.
+
 - **`fc.date()` generators could emit `Invalid Date`.** `noInvalidDate`
   defaults to false, so bounded date arbitraries still produced NaN
   timestamps — the approvals-list ordering property compared them, and the
