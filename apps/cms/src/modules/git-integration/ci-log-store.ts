@@ -23,8 +23,12 @@ function logKey(siteId: string, integrationId: string, runId: string): string {
 async function readBody(
   body: ReadableStream | Buffer,
 ): Promise<string> {
-  if (typeof (body as Buffer).byteLength === 'number' && Buffer.isBuffer(body)) {
-    return (body as Buffer).toString('utf-8');
+  // @cloudflare/workers-types v5 declares its own `Buffer: any`, so neither
+  // `Buffer.isBuffer` nor `buf.toString('utf-8')` type-checks under the Worker
+  // build. Narrow on the view shape and decode with TextDecoder instead.
+  if (ArrayBuffer.isView(body as ArrayBufferView)) {
+    const view = body as unknown as Uint8Array;
+    return new TextDecoder().decode(view);
   }
   const reader = (body as ReadableStream<Uint8Array>).getReader();
   const chunks: Uint8Array[] = [];

@@ -62,6 +62,19 @@ Với feature đụng tới auth/token, base URL API, build output của Studio,
 - [ ] **Webview compat**: API trình duyệt mới phải degrade gracefully trên WKWebView/WebView2/WebKitGTK (C5).
 - [ ] **Không ảnh hưởng**: nếu feature không đụng các contract trên → không cần làm gì, nhưng câu hỏi phải được hỏi (ghi một dòng trong mô tả PR). `pnpm -F @lumibase/shell exec tauri` + workflow `shell-check.yml` (cargo check desktop + android) là hàng rào cơ giới một phần.
 
+
+## 2e. Dependency & override hygiene — RÀ SOÁT khi bump version hoặc sửa `overrides`
+
+> Sinh sau ca `vite`: `pnpm.overrides.vite` đứng ở `^7.3.5` trong khi `apps/studio` và `apps/docs` đều khai `^8.1.3`. Override của pnpm áp **cả cho direct dependency**, nên override thắng và lockfile importer ghi `specifier: ^7.3.5 → 7.3.6` — hai app build bằng Vite 7 suốt thời gian manifest tuyên bố Vite 8, và mọi phát biểu "đã lên Vite 8" trong khoảng đó đều sai. Không gate nào nói ra: `settings:check` chỉ so hai bản khai override với **nhau**, và chúng khớp nhau hoàn hảo — chúng chỉ cùng sai so với manifest. Cùng class "quên, không phải sai" như §2c, chỉ khác là failure nằm ở tầng resolution nên không thấy trong diff.
+
+- [ ] **Bump một package đang có `overrides` → nâng override cùng lúc.** Override thắng manifest, nên chỉ sửa manifest là cú bump hình thức. Cơ giới hoá bằng `pnpm drift:check` (`scripts/check-override-drift.mjs`): fail khi range override không giao với range khai trực tiếp. Nếu nó nổ, sửa một trong hai bên — **đừng** làm nó im.
+- [ ] **Sửa `overrides`/`patchedDependencies`/`auditConfig` → sửa ở CẢ HAI chỗ**: `package.json` (pnpm 9 đọc) và `pnpm-workspace.yaml` (pnpm 10+ đọc). Khoá bằng `pnpm settings:check`.
+- [ ] **Verify "đã có hiệu lực" bằng lockfile, không bằng manifest.** Đọc `version:` ở importer của package liên quan trong `pnpm-lock.yaml`. Manifest chỉ nói ý định; lockfile nói thực tế.
+- [ ] **Bump major đổi `exports` map (uuid 12+, các package ESM-hoá) → verify bằng build thật**, không chỉ typecheck. Resolution của bundler mới là chỗ vỡ, và `tsc` không thấy nó. Nhớ chọn đúng target: cùng một dependency có thể chỉ vào một trong hai bundle (uuid chỉ vào build Node vì `audit/worker.ts` không được đăng ký ở đường Cloudflare — xem B10).
+- [ ] **Bump toolchain (vite/eslint/vitest/node) → đối chiếu `engines.node` của nó với `engines.node` của repo và `.nvmrc`.** Sàn khai báo phải thoả giao của mọi toolchain đang cài. Đã xảy ra: `>=22` nhận 22.0–22.12, dải làm vỡ cả vite 8 (`>=22.12.0`) và eslint 10 (`^22.13.0`).
+- [ ] **Một thư viện test, một major.** Đừng để workspace mang hai major của cùng một thư viện test (đã xảy ra với `fast-check` 3/4 và `@testing-library/jest-dom` 6/7) — drift kiểu này chỉ càng đắt khi để lâu.
+- [ ] **Peer thoả "tình cờ" không tính là thoả.** Nếu peer chỉ đúng vì lockfile happen-to-resolve một bản cao hơn range khai báo (ca `@dnd-kit/core ^6.1.0` với peer `^6.3.0` của sortable 10), nâng range khai báo lên. Một lần dedupe là vỡ.
+
 ## 3. Spec hygiene
 
 - [ ] `requirements.md`, `design.md`, `tasks.md` của spec phản ánh đúng trạng thái cuối (task done được tick, quyết định mở được chốt hoặc ghi rõ TODO có owner)

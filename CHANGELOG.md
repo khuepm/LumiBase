@@ -9,7 +9,47 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Security
+
+- **Closed two high-severity advisories that were live on `main`.** `nanoid`
+  was pinned below 5.1.16 (GHSA-28wg-ghj8-5hjv — non-secure generators can loop
+  indefinitely on a negative size) and `js-yaml` below 4.3.1
+  (GHSA-5p4m-2wfm-xmqj — quadratic CPU consumption in `!!omap`). Both were held
+  down by root `pnpm.overrides`, so the bump had to land there rather than in
+  the individual manifests. `pnpm audit --prod --audit-level high` is clean
+  again.
+- **Closed the two dev-only `brace-expansion` advisories.** `brace-expansion@1`
+  `->` `^1.1.16` ([GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp)
+  — exponential-time expansion of consecutive non-expanding `{}` groups) and
+  `brace-expansion@5` `->` `^5.0.8`
+  ([GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) —
+  unbounded expansion length crashing the process on OOM). Both are **dev-only**
+  — `brace-expansion` never enters the `pnpm audit --prod` tree — so the CI gate
+  was already green and this closes the standing Dependabot alerts rather than
+  unblocking a build. Natural drift had already lifted most of the tree to
+  `1.1.18` / `5.0.9`; the straggler was a `5.0.7` copy held by `minimatch@10.2.5`.
+  Keyed per-major, the same shape as the existing `nanoid@3` / `nanoid@5` pair,
+  because `brace-expansion@1` exports the function itself while 5.x exports a
+  namespace object — collapsing both onto 5.x makes `minimatch@3` (ESLint and its
+  plugins) throw `TypeError: m is not a function`. A new "Known-unfixable alerts"
+  section in
+  [`docs/en/security/dependency-overrides.md`](docs/en/security/dependency-overrides.md)
+  records the two advisories that cannot be closed at all: GHSA-mh99 also matches
+  the 1.x line by range, and `glib@0.18.5` is pinned across the Tauri Linux GTK
+  stack.
+
 ### Changed
+
+- **The repo guards now run before the commit, not after the push.** `version:check`,
+  `registry:check`, `settings:check`, `drift:check` and `scripts:test` existed only as
+  CI steps, so the feedback loop for a mechanical mistake was commit → push → open PR →
+  wait for CI → red, even though every one of them runs in well under a second against
+  files already on disk. They are now a single `pnpm check:all`, invoked by
+  `.husky/pre-commit` **before** `pnpm test` so a bad row number or a half-declared
+  override fails immediately instead of after a full suite run. CI calls the same script
+  rather than keeping its own list of five steps, so the local and CI guard sets cannot
+  drift apart — adding a guard to `check:all` arms it in both places at once.
+  Closes #406.
 
 - **The landing page's "Set intent" control now does something.** The Content OS
   section's *Intent-driven, not click-driven* card was a static mock: a
@@ -30,7 +70,77 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   each fix is attributed to the role `RULE_ROLE_ROUTING` would route that rule
   to. Landing-only: no API, schema, env or CMS behaviour changes.
 
+- **Consolidated every open Dependabot upgrade into one lockfile-consistent
+  change** rather than merging them serially, where each merge invalidated the
+  next PR's lockfile. Majors taken: `uuid` 11→14, `vite` 7→8, `nanoid` 5.0→5.1,
+  `@dnd-kit/sortable` 8→10, `lucide-react` 0.452→1.28, `fast-check` 3→4,
+  `@testing-library/jest-dom` 6→7, `@cloudflare/workers-types` 4→5, `eslint`
+  9→10, `next` 16.2→16.3. Three breaking changes needed source follow-up, all
+  behaviour-preserving: `@cloudflare/workers-types` v5 declares its own
+  `Buffer: any` and widened `ExecutionContext`; `lucide-react` v1 dropped brand
+  marks (`Github` was the only removed export in use, across 121 import sites);
+  and `fast-check` v4 replaced the per-unit string builders with
+  `string({ unit })`. No runtime, schema, or setup behaviour changes — no
+  migration or backfill is required on upgrade.
 ### Fixed
+
+- **The test suite no longer fails because the machine was busy — and the ReDoS
+  guard it contained now actually guards something.** Two separate time-based
+  assertions were failing under parallel load on unmodified `main`, and the
+  turbo cache was hiding it (`pnpm test` replayed a cache hit; only
+  `turbo run test --force` exposed it). The `CloudflareSearchProvider` host
+  normalization test asserted an absolute `< 100ms` that the correct linear scan
+  itself can exceed (133ms observed in CI) — **and** it timed inputs ending in
+  slashes, which `/\/+$/` matches greedily without backtracking, so the test
+  would have passed with the vulnerable regex in place (measured 0.4ms). It now
+  compares an adversarial slash run against a benign string of the same length
+  and bounds the ratio, which load scales on both sides; the separation between
+  implementations is ~4 orders of magnitude. Confirmed by reintroducing the
+  regex: the new test fails at 35,699x. React Testing Library's
+  `asyncUtilTimeout` in Studio is also raised from its 1000ms default, which was
+  an implicit wall-clock budget causing "Unable to find role=..." failures in
+  suites that pass standalone. The docs search smoke test keeps a ceiling but a
+  generous one, with a note that it only catches catastrophic regressions.
+  Closes #408.
+
+- **`fc.date()` generators could emit `Invalid Date`.** `noInvalidDate`
+  defaults to false, so bounded date arbitraries still produced NaN
+  timestamps — the approvals-list ordering property compared them, and the
+  Studio approval-card arbitrary would have thrown on
+  `new Date(NaN).toISOString()`. A latent test bug, surfaced (not caused) by
+  `fast-check` v4's different generation bias.
+
+- **Vite 8 was never actually in effect.** `pnpm.overrides.vite` sat at `^7.3.5`
+  while `apps/studio` and `apps/docs` both declared `^8.1.3`. pnpm overrides
+  apply to direct dependencies too, so the override won and the lockfile
+  importer read `specifier: ^7.3.5 → 7.3.6` — both apps were built with Vite 7
+  for as long as their manifests claimed Vite 8. Raising the override in step
+  with the manifests flips the toolchain for real (importers now resolve 8.2.2).
+
+- **Node floor raised to `>=22.13.0`,** and `.nvmrc` pinned to `24` to match
+  CI's `NODE_VERSION` instead of floating on `22`. The old `>=22` admitted
+  22.0–22.12, a range that breaks both `vite` 8 (needs `>=22.12.0`) and `eslint`
+  10 (needs `^22.13.0`). **Contributors on Node 22.0–22.12 must upgrade.**
+  `packages/mcp-server` keeps `>=18`: its floor is a contract with consumers of
+  a published package, not with this toolchain.
+
+- **ESLint unified on 10** — `apps/landing` was still on 9 while `apps/consumer`
+  already declared 10. `@dnd-kit/core` raised to `^6.3.0` so `@dnd-kit/sortable`
+  10's peer is satisfied by declaration rather than by the lockfile happening to
+  resolve 6.3.1. `apps/docs` moved to `@testing-library/jest-dom` 7 so the
+  workspace no longer carries two majors of one test library.
+
+### Added
+
+- **`pnpm drift:check` — a guard against overrides overruling manifests.**
+  `scripts/check-override-drift.mjs` fails CI when an override range does not
+  intersect a range some workspace package declares directly. The existing
+  `settings:check` could not catch this class: the two override copies agreed
+  with each other, they were only both wrong relative to the manifests.
+  Dependency-free like the parity script — a check on install settings must not
+  depend on a successful install — and covered by `pnpm scripts:test`
+  (`node --test`), including the vite case, so it cannot degrade into a guard
+  that always passes. See `docs/en/security/dependency-overrides.md`.
 
 - **MCP path-traversal tripwire no longer blind to spliced path segments.**
   The registry scan in `path-hardening.wiring.test.ts` probed each argument
@@ -161,6 +271,30 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **Security / marketplace:** `POST /api/v1/marketplace/publish` had no
+  permission or ownership check, unlike every sibling write route. Any
+  authenticated user with any site membership could publish or overwrite rows in
+  the shared global catalog that every tenant reads, bypass community
+  moderation, and spoof the `verified` badge by supplying `signature` /
+  `publisherKeyId` / `bundleSha256` in the request body. The route is now gated
+  on `extensions:configure` (the same moderator capability as
+  `/submissions/review`), the supplied signature is verified against the
+  **stored** bundle via `ExtensionVerifierService`, `isOfficial` / `verifiedAt`
+  are server-derived, and publishing a community submission that is not
+  `approved` returns `409`. Upgrade note: automation that published with an
+  ordinary token now receives `403` and must use a principal holding
+  `extensions:configure`.
+- **Delivery API and pageview beacon were unreachable anonymously.** Both are
+  anonymous-by-design (tenancy is in the URL) but were mounted *after*
+  `app.route('/api/v1', api)`. The authenticated sub-app's `use('*')` chain
+  flattens to `/api/v1/*` and Hono runs middleware registered before a handler,
+  so every credential-less request died in `withTenant` / `withAuth` with
+  `400 TENANT_REQUIRED` / `401 UNAUTHENTICATED` before reaching the handler. The
+  public mounts now precede the `api` mount (the same disjoint-leaf mechanism
+  the shares and email-unsubscribe mounts already relied on), and the beacon
+  middleware is scoped to the `/pageviews/:site_id/hit` leaf so the
+  authenticated `/pageviews/stats` no longer runs `withDb` / `withRateLimit`
+  twice. The golden-path E2E gains the anonymous read leg that caught this.
 - **Public access grants were inert on the content API.**
   `buildRequestPermissionContext` hardcoded `roleId: null` (two more call sites
   hand-rolled the same literal). `withAuth` does set `roleId` to the site's
