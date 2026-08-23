@@ -1,9 +1,9 @@
 ---
-version: 3
-lastUpdated: 2026-08-02T19:14:03.976Z
+version: 4
+lastUpdated: 2026-08-23T18:54:43.652Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 9a43d397acbe9042
+sourceHash: 55e499f080225866
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -49,7 +49,7 @@ File `apps/landing/public/robots.txt` trong repo là sạch (`Allow: /` cho tấ
   còn mở.** License là **Apache-2.0**, được ghi trong `CHANGELOG.md` ở mục
   `[0.23.0]` (2026-07-14): "Project license updated to the Apache License,
   Version 2.0 (from MIT), effective this release", với `v0.22.0` là bản MIT cuối
-  cùng. Repo đang ở `0.25.0` nên Apache-2.0 là license áp dụng. File `LICENSE` ở
+  cùng. Repo đang ở `0.26.0` nên Apache-2.0 là license áp dụng. File `LICENSE` ở
   gốc, cả bốn package được publish, `README.md`, và chính nội dung của landing app
   (`layout.tsx`, `page.tsx`, `pricing/page.tsx`, `Footer.tsx`, `/license`) đều đã
   khớp nhau.

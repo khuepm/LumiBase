@@ -1,8 +1,8 @@
 ---
-version: 4
-lastUpdated: 2026-08-02T19:12:12.830Z
+version: 5
+lastUpdated: 2026-08-23T18:54:43.713Z
 sourceLang: en
-contentHash: 325307dcbbb6e106
+contentHash: bff91a77ab12750a
 codeVerified: 2026-08-02T19:12:19.389Z
 codeVerifiedHash: 325307dcbbb6e106
 codeVerifiedClaims: 4
@@ -79,7 +79,7 @@ Building a business this way means the founding team stays tiny while the operat
   **Apache-2.0**, not MIT, and this is settled rather than open: `CHANGELOG.md`
   records the relicense under `[0.23.0]` (2026-07-14) — "Project license updated
   to the Apache License, Version 2.0 (from MIT), effective this release", with
-  `v0.22.0` the final MIT release. The repo is on `0.25.0`, the root `LICENSE` is
+  `v0.22.0` the final MIT release. The repo is on `0.26.0`, the root `LICENSE` is
   Apache-2.0, and all four published packages declare `"Apache-2.0"`. The MIT
   mentions in this draft have been corrected.
 - Stripe dashboard export / bank statement / simple P&L (template: https://docs.google.com/spreadsheets/d/1pAJrEMo7_QID6V62sA4C8XwGBHkxDTVX3wtYNE2fulI/edit)

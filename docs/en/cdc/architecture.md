@@ -1,9 +1,9 @@
 ---
 title: CDC Architecture Overview
-version: 2
-lastUpdated: 2026-08-23T18:30:49.723Z
+version: 3
+lastUpdated: 2026-08-23T18:54:43.575Z
 sourceLang: en
-contentHash: 6d4cc679dc7f37e1
+contentHash: 7c1f8005b11fbad9
 codeVerified: 2026-08-23T18:32:01.625Z
 codeVerifiedHash: 6d4cc679dc7f37e1
 codeVerifiedClaims: 8
@@ -135,7 +135,7 @@ interface CdcConnector {
 ### Cache Invalidator — removed
 
 A `CacheInvalidator` module once mirrored CDC row changes into Redis under
-`config:${table}:${recordId}`. It was **removed** in 0.25.0 and never shipped
+`config:${table}:${recordId}`. It was **removed** in 0.26.0 and never shipped
 wired to a pipeline: its keys omitted `siteId` (a multi-tenancy violation) and
 did not match the tag-based keys the CMS read paths actually use. Application
 cache invalidation happens at the API write path via

@@ -1,10 +1,10 @@
 ---
 title: CDC Architecture Overview
-version: 2
-lastUpdated: 2026-08-23T18:30:49.723Z
+version: 3
+lastUpdated: 2026-08-23T18:54:43.575Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6d4cc679dc7f37e1
+sourceHash: 7c1f8005b11fbad9
 mtEngine: manual
 syncStatus: human-translated
 codeVerified: 2026-08-23T18:32:01.625Z
@@ -138,7 +138,7 @@ interface CdcConnector {
 ### Cache Invalidator — đã bị loại bỏ
 
 Từng có module `CacheInvalidator` mirror các row change của CDC vào Redis dưới
-`config:${table}:${recordId}`. Nó đã bị **loại bỏ** ở 0.25.0 và chưa bao giờ
+`config:${table}:${recordId}`. Nó đã bị **loại bỏ** ở 0.26.0 và chưa bao giờ
 được nối vào pipeline nào: key của nó thiếu `siteId` (vi phạm multi-tenancy) và
 không khớp với các key theo tag mà đường đọc của CMS thực sự dùng. Việc
 invalidate application cache diễn ra ở đường ghi qua API bằng
