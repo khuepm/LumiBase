@@ -1,14 +1,14 @@
 ---
 title: CDC Architecture Overview
-version: 1
-lastUpdated: 2026-07-28T11:32:42.873Z
+version: 2
+lastUpdated: 2026-08-23T18:30:49.723Z
 sourceLang: en
 translatedFrom: en
-sourceHash: cb0efdb972f07f03
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T11:32:42.873Z
-codeVerifiedHash: cb0efdb972f07f03
+sourceHash: 6d4cc679dc7f37e1
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-23T18:32:01.625Z
+codeVerifiedHash: 6d4cc679dc7f37e1
 codeVerifiedClaims: 8
 ---
 
@@ -135,9 +135,19 @@ interface CdcConnector {
 - **`MaterializedEngineConnector`** — Quản lý việc tạo database/table `MaterializedPostgreSQL` của ClickHouse và vòng đời của replication slot, bao gồm kết nối lại theo exponential backoff và phát hiện schema drift. `destroy()` detach database và drop replication slot.
 - **`AirbyteConnector`** — Quản lý source/destination/connection của Airbyte qua Airbyte API. Không dựa trên replication slot, nên `destroy()` bỏ các tài nguyên Airbyte mà không cần dọn slot.
 
-### Cache Invalidator (`apps/cms/src/modules/cdc/cache-invalidator.ts`)
+### Cache Invalidator — đã bị loại bỏ
 
-Dịch các CDC change event thành operation trên Redis: INSERT → SET (pre-warm), UPDATE → SET (refresh), DELETE → DEL. Nó dedupe các event **UPDATE liên tiếp** cho cùng một key trong một cửa sổ 1 giây; event INSERT/DELETE không bao giờ bị dedupe và sẽ flush mọi UPDATE đang chờ trước, để giữ đúng thứ tự. Khi Redis mất kết nối, nó buffer tối đa 10.000 event (bỏ cái cũ nhất khi tràn) và replay đúng thứ tự khi kết nối lại.
+Từng có module `CacheInvalidator` mirror các row change của CDC vào Redis dưới
+`config:${table}:${recordId}`. Nó đã bị **loại bỏ** ở 0.25.0 và chưa bao giờ
+được nối vào pipeline nào: key của nó thiếu `siteId` (vi phạm multi-tenancy) và
+không khớp với các key theo tag mà đường đọc của CMS thực sự dùng. Việc
+invalidate application cache diễn ra ở đường ghi qua API bằng
+`CacheProvider.invalidateByTag`; với các đường ghi vòng qua API, hãy purge thủ
+công bằng `POST /api/v1/utils/cache/purge`.
+
+Xem [ADR-012](../architecture/decisions/adr-012-remove-cdc-cache-invalidator.md)
+để biết quyết định và điều kiện để đưa nó trở lại. Phần dispatch change-feed của
+CDC (webhook, extension) không bị ảnh hưởng.
 
 ### Health Monitor (`apps/cms/src/modules/cdc/health-monitor.ts`)
 

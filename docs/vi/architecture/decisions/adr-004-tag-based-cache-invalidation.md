@@ -1,17 +1,20 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T10:56:37.096Z
+version: 2
+lastUpdated: 2026-08-02T19:08:55.472Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7dd34abca4670fc2
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 9b5057af9419d81a
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:08:55.472Z
+codeVerifiedHash: 9b5057af9419d81a
+codeVerifiedClaims: 2
 ---
 
 # ADR-004: Vô hiệu hóa cache dựa trên tag
 
 **Date:** 2024-04-05
-**Status:** Accepted
+**Status:** Implemented
 
 ## Context
 

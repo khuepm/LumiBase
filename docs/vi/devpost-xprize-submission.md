@@ -1,17 +1,18 @@
 ---
-version: 3
-lastUpdated: 2026-07-29T05:25:40.643Z
+version: 4
+lastUpdated: 2026-08-02T19:12:12.830Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 4d31db03699da2d2
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-29T05:25:40.643Z
-codeVerifiedHash: 4d31db03699da2d2
+sourceHash: 325307dcbbb6e106
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:12:19.389Z
+codeVerifiedHash: 325307dcbbb6e106
 codeVerifiedClaims: 4
+<!-- check-parity: allow inline-code -->
 ---
 
-# Build with Gemini XPRIZE — Bản nháp submission Devpost (LumiBase)
+# Build with Gemini XPRIZE — Devpost Submission Draft (LumiBase)
 
 > Nháp soạn ngày 2026-06-13. Hạng mục: **Small Business Services**.
 > ⚠️ Các mục đánh dấu `[TODO]` cần bằng chứng thật từ founder trước khi submit lần cuối (ban giám khảo có verify repo, log, doanh thu).

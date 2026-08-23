@@ -107,15 +107,23 @@ for (const p of [srcAbs, tgtAbs]) {
 
 // Structural gate, before anything is written. `check-parity` is imported rather
 // than shelled out to: it needs both files on disk, which they already are.
+// The `front-matter` check is excluded from this gate on purpose: it fires when
+// the target side has no `translatedFrom`/`sourceHash` and its stated remedy is
+// "run stamp-pair.mjs" — this script. Treating it as structural drift made the
+// gate unsatisfiable, so an unstamped pair could never be bootstrapped (hit on
+// security/dependency-overrides.md, whose VI side was a complete translation
+// that merely predated the provenance stamps). Every other check still blocks:
+// those describe the two locales genuinely diverging as documents.
 const parity = checkPair(rel);
-if (parity.problems.length > 0) {
+const blocking = parity.problems.filter((p) => p.check !== 'front-matter');
+if (blocking.length > 0) {
   const label = ALLOW_DRIFT ? 'structure drift (allowed)' : 'refusing to stamp';
   console.error(`${label}: ${rel} — the two locales are not the same document`);
-  for (const p of parity.problems) console.error(`  [${p.check}] ${p.detail}`);
+  for (const p of blocking) console.error(`  [${p.check}] ${p.detail}`);
   if (!ALLOW_DRIFT) {
     console.error(
       'Fix the translation, or pass --allow-structure-drift / add a\n' +
-        '  <!-- check-parity: allow <check> --> waiver if the divergence is deliberate.',
+      '  <!-- check-parity: allow <check> --> waiver if the divergence is deliberate.',
     );
     process.exit(6);
   }
@@ -141,7 +149,7 @@ if (WANT_VERIFIED) {
   if ((report.unverifiable ?? []).length > 0) {
     console.error(
       `refusing --verified: ${rel} makes no claim this tooling can test, so nothing was ` +
-        'actually verified. Review it by hand and stamp without --verified.',
+      'actually verified. Review it by hand and stamp without --verified.',
     );
     for (const u of report.unverifiable) console.error(`  ${u}`);
     process.exit(5);
@@ -195,5 +203,5 @@ fs.writeFileSync(srcAbs, buildFile(upsertKeys(srcFm, {
 
 console.log(
   `stamped ${rel}  (${sourceLocale}->${targetLocale})  srcHash=${srcHash}` +
-    (WANT_VERIFIED ? '  codeVerified' : ''),
+  (WANT_VERIFIED ? '  codeVerified' : ''),
 );

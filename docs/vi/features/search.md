@@ -1,3 +1,16 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:14:29.861Z
+sourceLang: en
+translatedFrom: en
+sourceHash: ff4339b1b2f269c5
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:14:34.597Z
+codeVerifiedHash: ff4339b1b2f269c5
+codeVerifiedClaims: 12
+---
+
 # Full-text Search
 
 LumiBase tích hợp **MeiliSearch** làm full-text search backend, qua interface
@@ -12,6 +25,9 @@ LumiBase tích hợp **MeiliSearch** làm full-text search backend, qua interfac
 
 Cả hai cùng implement interface `SearchProvider` — code application không cần
 biết cái nào đang chạy.
+
+Để self-host backend Docker trên AWS (Lightsail / ECS Fargate) thay vì chạy
+cùng CMS, xem [Deploying MeiliSearch on AWS](../deployment/meilisearch-aws.md).
 
 ## API endpoint
 
@@ -94,8 +110,8 @@ không có queue, `ItemService` index trực tiếp (inline).
 Build lại index từ database (khởi tạo instance mới, hoặc rebuild sau thay đổi):
 
 ```bash
-lumibase reindex                      # mọi collection của mọi site
-lumibase reindex --site <siteId>      # một site
+lumibase reindex                      # every collection of every site
+lumibase reindex --site <siteId>      # one site
 lumibase reindex --site <siteId> --collection posts
 ```
 

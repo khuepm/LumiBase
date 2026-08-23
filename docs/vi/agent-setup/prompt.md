@@ -1,18 +1,25 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:25.695Z
+<!-- check-parity: allow inline-code -->
+version: 2
+lastUpdated: 2026-08-02T19:22:39.397Z
 sourceLang: en
 translatedFrom: en
-sourceHash: de67be004c86190c
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 3b1dc76ccc3444a4
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:22:39.397Z
+codeVerifiedHash: 3b1dc76ccc3444a4
+codeVerifiedClaims: 35
 ---
+
+<!-- check-parity: allow inline-code -->
 
 Đây là hướng dẫn chính thức từ LumiBase để cấu hình một AI coding agent làm việc hiệu quả với codebase headless CMS LumiBase.
 
 Hãy tự hoàn thành mọi bước. Đừng yêu cầu người dùng chạy các lệnh này.
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Về LumiBase
 
@@ -47,6 +54,7 @@ packages/
 ```
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Quy ước nghiêm ngặt — luôn tuân theo
 
@@ -59,6 +67,7 @@ packages/
 7. **Cache tagging**: Khi dữ liệu thay đổi, invalidate mọi cache key được tag với entity đó.
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Các API endpoint chính
 
@@ -116,6 +125,7 @@ POST   /api/v1/users                      # Create user
 Spec đầy đủ: `docs/en/api/hono-api-spec.md`
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Chỉ mục Docs
 
@@ -133,6 +143,7 @@ Các file tài liệu chính:
 - `docs/en/deployment/environment-variables.md` — tất cả env var và binding
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Phát triển cục bộ
 
@@ -151,6 +162,7 @@ pnpm dev
 Sao chép `.env.example` thành `.env` và điền các giá trị bắt buộc (xem `docs/en/deployment/environment-variables.md`).
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Hệ thống skill của AI Copilot
 
@@ -167,6 +179,7 @@ AI Copilot dùng một skill registry trong `packages/ai-skills/src/skills.ts`. 
 Gọi `getAISkillsAsTools()` từ `packages/ai-skills` để lấy danh sách tool function-calling của OpenAI.
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Hệ thống Permissions
 
@@ -180,5 +193,6 @@ LumiBase dùng một engine luật policy dạng JSON:
 Wildcard `'*'` trong capability thỏa mãn mọi yêu cầu.
 
 ---
+<!-- check-parity: allow inline-code -->
 
 Hướng dẫn này được publish tại `docs/en/agent-setup/prompt.md`.

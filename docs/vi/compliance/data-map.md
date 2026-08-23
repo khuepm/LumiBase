@@ -1,4 +1,17 @@
-# Bản đồ dữ liệu — Kiểm kê dữ liệu cá nhân
+---
+version: 1
+lastUpdated: 2026-08-02T19:08:28.393Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 5bbd5842ee2e602c
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:08:28.393Z
+codeVerifiedHash: 5bbd5842ee2e602c
+codeVerifiedClaims: 12
+---
+
+# Data Map — Personal Data Inventory
 
 > Kiểm kê nơi LumiBase lưu dữ liệu cá nhân, làm cơ sở cho thông báo quyền riêng tư
 > và khai báo trên store (Google Play **Data safety**, Apple **Privacy Nutrition

@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:22:27.836Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 29b0c5c9b54e50f5
+mtEngine: manual
+syncStatus: human-translated
+---
+
 # Agent Harness Layer
 
 LumiBase định vị thế hệ tiếp theo không chỉ là headless CMS cho con người, mà là **control plane để AI Agent làm việc cùng con người trên dữ liệu, schema, workflow và artifact của business**.

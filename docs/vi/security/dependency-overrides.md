@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-23T18:32:17.000Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 37b4156f0b315dad
+mtEngine: manual
+syncStatus: human-translated
+---
+
 # Dependency Overrides & Patches (Ghi đè và vá dependency)
 
 Tài liệu này theo dõi mọi pin `overrides`, patch `patchedDependencies` và loại trừ

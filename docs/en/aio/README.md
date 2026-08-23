@@ -1,8 +1,8 @@
 ---
-version: 2
-lastUpdated: 2026-07-29T05:25:40.844Z
+version: 3
+lastUpdated: 2026-08-02T19:14:03.976Z
 sourceLang: en
-contentHash: dd5e3a429d798c06
+contentHash: 9a43d397acbe9042
 ---
 
 # AIO (AI Overviews Optimization) — LumiBase

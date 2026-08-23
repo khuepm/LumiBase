@@ -1,14 +1,17 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T11:00:40.159Z
+version: 2
+lastUpdated: 2026-08-02T19:09:21.814Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 200624c06dc3da89
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: dcfa4f547e6476fb
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:09:30.532Z
+codeVerifiedHash: dcfa4f547e6476fb
+codeVerifiedClaims: 20
 ---
 
-# Route guards — chuỗi bảo mật `/api/v1`
+# Route guards — the `/api/v1` security chain
 
 Mọi request API đã xác thực đi qua một chuỗi middleware cố định
 được gắn trong `apps/cms/src/index.ts`:
@@ -79,4 +82,4 @@ Các test hành vi đi kèm:
 | PR #152 (đã port) | Refactor bỏ `adminOnly` khỏi `extensionsRouter.all('/:name/*')` — người dùng không phải admin có thể thực thi các bundle endpoint với host binding. |
 | PR #153/#154 | `/api/v1/agent` thiếu khỏi `CONTROL_PLANE_PATHS` — các token đặc quyền thấp có thể đọc/thay đổi trạng thái Agent Harness. |
 | PR #150 | MCP server nối `collection`/`id` chưa validate vào các đường dẫn API — path traversal đến các endpoint `/api/v1/*` lân cận với token operator. |
-| PR #130 (phần lỗi đã port) | `/auth/register` nằm trên danh sách bypass `withAuth` trong khi handler của nó đọc principal (chắc chắn 500), và ràng buộc người dùng mới với literal role id `'member'` (vi phạm FK; role member đã seed là một nanoid). |
+| PR #130 (lỗi ban đầu, nay đã thay thế) | `/auth/register` ban đầu bị crash (handler đọc principal trên đường dẫn bỏ qua `withAuth`) và gán người dùng với role id `'member'`. PR #190 tạm thời khóa thành admin-only; PR #130 thay thế bằng thiết kế **dịch vụ tự phục vụ công khai** như ý định — an toàn vì role được giải quyết ở phía server thành `subscriber` không có đặc quyền và tài khoản bắt đầu ở trạng thái `invited` cho đến khi xác thực email. Register công khai trở lại, nhưng mạng lưới an toàn hiện là role phía server + xác thực, được khẳng định bởi các tripwire ở trên. |

@@ -1,11 +1,11 @@
 ---
 title: CDC Architecture Overview
-version: 1
-lastUpdated: 2026-07-28T11:32:42.873Z
+version: 2
+lastUpdated: 2026-08-23T18:30:49.723Z
 sourceLang: en
-contentHash: cb0efdb972f07f03
-codeVerified: 2026-07-28T11:32:42.873Z
-codeVerifiedHash: cb0efdb972f07f03
+contentHash: 6d4cc679dc7f37e1
+codeVerified: 2026-08-23T18:32:01.625Z
+codeVerifiedHash: 6d4cc679dc7f37e1
 codeVerifiedClaims: 8
 ---
 
@@ -132,9 +132,19 @@ interface CdcConnector {
 - **`MaterializedEngineConnector`** — Manages the ClickHouse `MaterializedPostgreSQL` database/table creation and the replication-slot lifecycle, including exponential-backoff reconnection and schema-drift detection. `destroy()` detaches the database and drops the replication slot.
 - **`AirbyteConnector`** — Manages the Airbyte source/destination/connection via the Airbyte API. Not replication-slot-based, so `destroy()` removes the Airbyte resources without slot cleanup.
 
-### Cache Invalidator (`apps/cms/src/modules/cdc/cache-invalidator.ts`)
+### Cache Invalidator — removed
 
-Translates CDC change events into Redis operations: INSERT → SET (pre-warm), UPDATE → SET (refresh), DELETE → DEL. It deduplicates **consecutive UPDATE** events for the same key within a 1-second window; INSERT/DELETE events are never deduplicated and flush any pending UPDATE first to preserve ordering. During a Redis outage it buffers up to 10,000 events (dropping the oldest on overflow) and replays them in order on reconnection.
+A `CacheInvalidator` module once mirrored CDC row changes into Redis under
+`config:${table}:${recordId}`. It was **removed** in 0.25.0 and never shipped
+wired to a pipeline: its keys omitted `siteId` (a multi-tenancy violation) and
+did not match the tag-based keys the CMS read paths actually use. Application
+cache invalidation happens at the API write path via
+`CacheProvider.invalidateByTag`; for writes that bypass the API, purge
+operationally with `POST /api/v1/utils/cache/purge`.
+
+See [ADR-012](../architecture/decisions/adr-012-remove-cdc-cache-invalidator.md)
+for the decision and the conditions under which it would be reintroduced. CDC
+change-feed dispatch (webhooks, extensions) is unaffected.
 
 ### Health Monitor (`apps/cms/src/modules/cdc/health-monitor.ts`)
 

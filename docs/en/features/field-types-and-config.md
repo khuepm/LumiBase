@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:21:09.911Z
+sourceLang: en
+contentHash: cdfa0dc4c9c60641
+codeVerified: 2026-08-02T19:21:09.911Z
+codeVerifiedHash: cdfa0dc4c9c60641
+codeVerifiedClaims: 3
+---
+
 # Field Types And Configuration
 
 LumiBase treats each field as a first-class schema object. A field has independent storage, editor, display, validation, permission, and runtime metadata. The same field contract is used by Studio, REST schema endpoints, SDK schema resources, and typegen.

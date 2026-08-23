@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T11:00:40.159Z
+version: 2
+lastUpdated: 2026-08-02T19:09:21.814Z
 sourceLang: en
-contentHash: 200624c06dc3da89
+contentHash: dcfa4f547e6476fb
+codeVerified: 2026-08-02T19:09:30.532Z
+codeVerifiedHash: dcfa4f547e6476fb
+codeVerifiedClaims: 20
 ---
 
 # Route guards — the `/api/v1` security chain

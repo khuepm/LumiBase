@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:09:06.260Z
+sourceLang: en
+contentHash: 08226320da529409
+---
+
 # Data Processing Agreement (DPA) — Template
 
 > A **skeleton** DPA for when you offer a managed/hosted LumiBase service and act

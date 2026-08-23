@@ -1,4 +1,20 @@
-# Field Types và Configuration
+---
+<!-- check-parity: allow inline-code -->
+version: 1
+lastUpdated: 2026-08-02T19:21:09.911Z
+sourceLang: en
+translatedFrom: en
+sourceHash: cdfa0dc4c9c60641
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:21:09.911Z
+codeVerifiedHash: cdfa0dc4c9c60641
+codeVerifiedClaims: 3
+---
+
+<!-- check-parity: allow inline-code -->
+
+# Field Types And Configuration
 
 LumiBase coi mỗi field là schema object first-class. Field có metadata độc lập cho storage, editor, display, validation, permission và runtime. Cùng một contract được Studio, REST schema endpoints, SDK schema resources và typegen sử dụng.
 

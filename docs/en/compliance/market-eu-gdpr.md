@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:10:24.794Z
+sourceLang: en
+contentHash: 46a5838fdd03d299
+---
+
 # EU — GDPR & ePrivacy
 
 > Obligations in the European Union / EEA most relevant to a CMS/Content OS.
