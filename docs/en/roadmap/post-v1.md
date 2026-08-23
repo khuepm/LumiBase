@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:03:45.645Z
+sourceLang: en
+contentHash: 56a986f9e866d80c
+codeVerified: 2026-08-02T19:03:45.645Z
+codeVerifiedHash: 56a986f9e866d80c
+codeVerifiedClaims: 2
+---
+
 # Post-v1 roadmap
 
 Status: planning. Nothing on this page is scheduled to start before v1.0.0 ships. The release exit checklist for v1 is tracked separately in issue #212.

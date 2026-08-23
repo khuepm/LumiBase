@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:12:32.781Z
+sourceLang: en
+contentHash: a5f42d06c14d4be3
+codeVerified: 2026-08-02T19:12:32.781Z
+codeVerifiedHash: a5f42d06c14d4be3
+codeVerifiedClaims: 58
+---
+
 # Implementation Checklist
 
 > Prioritized backlog to close the gaps in [gap-analysis.md](./gap-analysis.md).

@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:25.695Z
+version: 3
+lastUpdated: 2026-08-23T18:41:40.372Z
 sourceLang: en
-contentHash: de67be004c86190c
+contentHash: 4de63659a994cc69
+codeVerified: 2026-08-23T18:41:40.372Z
+codeVerifiedHash: 4de63659a994cc69
+codeVerifiedClaims: 36
 ---
 
 These are official instructions from LumiBase to configure an AI coding agent to work effectively with the LumiBase headless CMS codebase.
@@ -55,6 +58,7 @@ packages/
 6. **Config-as-code**: Collections, fields, and permissions can be exported/imported as JSON/YAML (`apps/cms/scripts/config-cli.ts`).
 7. **Cache tagging**: When data changes, invalidate all cache keys tagged with that entity.
 8. **Endpoint deprecation (opt-in only)**: `withDeprecation` in `apps/cms/src/middleware/deprecation.ts` is a reusable RFC 8594 helper. **Do not** mount it on live endpoints. Attach it **only** when an explicit instruction says to retire / deprecate / sunset a specific route (or router). Leaving it unwired is correct when nothing is being retired.
+9. **Docs bilingual (EN ↔ VI)**: Any edit under `docs/en/` or `docs/vi/` must update the other locale in the **same PR** when a counterpart exists (or create one). Prefer over-syncing. After a 1-1 pair is complete, run `pnpm docs:i18n:verify` + `stamp-pair.mjs` so versions/provenance stay aligned. See `.kiro/steering/definition-of-done.md` §4a.
 
 ### When an instruction says to deprecate an endpoint
 

@@ -1,3 +1,10 @@
+---
+version: 2
+lastUpdated: 2026-08-23T18:49:09.284Z
+sourceLang: en
+contentHash: 7d74bd5bdaa39456
+---
+
 # Dependency Overrides & Patches
 
 This document tracks every `overrides` pin, `patchedDependencies` patch, and

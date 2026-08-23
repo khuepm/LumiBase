@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:10:57.033Z
+sourceLang: en
+contentHash: 45474f4e992dcfdc
+---
+
 # Access Manifest `lumibase.access@v1`
 
 Schema file: [`docs/schemas/lumibase.access.v1.schema.json`](../../schemas/lumibase.access.v1.schema.json).

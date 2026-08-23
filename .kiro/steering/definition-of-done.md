@@ -83,10 +83,67 @@ Với feature đụng tới auth/token, base URL API, build output của Studio,
 
 - [ ] `docs/en/api/hono-api-spec.md` cập nhật nếu API thay đổi
 - [ ] `docs/en/data-model.md` cập nhật nếu schema thay đổi
-- [ ] `docs/en/agent-setup/prompt.md` cập nhật nếu hành vi setup/bootstrap thay đổi
+- [ ] `docs/en/agent-setup/prompt.md` cập nhật nếu hành vi setup/bootstrap / quy ước agent thay đổi (kèm bản VI — xem §4a)
 - [ ] CHANGELOG có entry, kèm upgrade steps nếu cần backfill
 - [ ] `README.md` cập nhật thông tin phiên bản mới ở mục **Release policy**: dòng `Current release`, ngày phát hành, lệnh `LUMIBASE_VERSION=...`, phạm vi migration (nếu có)
   - ⚠️ **Cập nhật vừa đủ — giữ di sản bản 0.5.0:** chỉ chỉnh số phiên bản / ngày / migration / điểm mới của bản hiện tại. KHÔNG viết lại narrative "Content OS" của 0.5.0, KHÔNG xoá mô tả các trụ cột đã ship ở 0.5.0 (intents/SLO, control loop reconciliation, trust ledger L0–L4, veto window, four-scope kill switch, tenant constitution, provenance-first revisions, multi-agent newsroom, Studio Mission Control). 0.5.0 là mốc nền — phiên bản mới bổ sung lên trên, không thay thế.
+
+### 4a. Docs song ngữ (EN ↔ VI) — BẮT BUỘC khi đụng `docs/en/` hoặc `docs/vi/`
+
+> Hàng rào này sinh vì dễ "sửa một locale rồi quên locale kia" — reviewer tưởng doc đã
+> xong trong khi nửa kia vẫn cũ (cùng class *quên, không phải sai* như §2c).
+>
+> **Đã xảy ra hai lần, cả hai đều lọt tới `main`:** (1) `docs/vi/agent-setup/prompt.md`
+> thiếu hoàn toàn quy tắc `withDeprecation` mà bản EN có từ 0.24.x — nghĩa là agent nào
+> đọc bản VI cũng không biết luật đó, trên đúng file mà §4 xếp vào release surface;
+> (2) một backlog **60 cặp** lệch tích lại tới 0.25.0, trong đó 3 cặp bản VI thực chất
+> là tiếng Anh. Đóng backlog đó ở 0.26.0 mất một đợt dịch riêng. Rẻ hơn nhiều nếu mỗi
+> PR tự giữ parity.
+>
+> Cơ giới hoá hiện có (chạy được nhưng **advisory**): `pnpm docs:i18n:detect` báo cặp
+> lệch, `pnpm docs:i18n:parity` so cấu trúc, `pnpm docs:i18n:verify` so claim với code.
+> Workflow `docs-i18n-sync.yml` gọi `check-parity` với `|| true` nên **không chặn CI** —
+> vì vậy checklist dưới đây là hàng rào thật, đừng trông vào CI đỏ.
+>
+> **Tiêu chí thừa còn hơn thiếu:** phân vân file có cần sync → sync; phân vân có cần
+> stamp → stamp.
+
+Với **mọi** PR chạm file dưới `docs/en/` **hoặc** `docs/vi/` (kể cả agent-setup,
+security audit, tutorial, API spec, feature guide):
+
+- [ ] **Đồng thời cả hai locale trong cùng PR:** sửa `docs/en/<rel>` thì **phải** cập nhật
+      `docs/vi/<rel>` (và ngược lại) trong **cùng commit/PR** — không để "VI follow-up
+      sau". Nội dung tương đương 1-1: cùng mục, cùng ví dụ/code block, cùng claim kỹ
+      thuật; chỉ khác ngôn ngữ prose.
+- [ ] **Xác định chiều dịch bằng `detect`, đừng đoán:** một số cặp là **VI-source** với
+      bản EN là bản dịch. Đọc `sourceLocale`/`targetLocale` trong
+      `docs/.i18n/last-report.json`. Sửa sai chiều là ghi đè lên bản gốc do người viết.
+- [ ] **Không sửa phía nguồn để làm parity xanh.** Nguồn là sự thật; chỉ sửa nguồn khi
+      chính nó sai về mặt kỹ thuật — và khi đó tách thành thay đổi riêng, đừng gộp vào
+      commit dịch.
+- [ ] **Stamp lại provenance** sau khi nội dung khớp (đừng viết front matter tay):
+      ```bash
+      pnpm docs:i18n:verify                                            # claim vs source tree
+      node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> --verified    # bump cả hai locale
+      pnpm docs:i18n:detect                                            # cặp phải up-to-date
+      ```
+      `--verified` từ chối stamp khi còn claim stale. File không có claim nào tool test
+      được (`unverifiable`) → stamp **không** kèm `--verified` và ghi rõ đã review tay
+      trong mô tả PR. `docs/.i18n/last-report.json` + `docs/i18n-sync-log.md` là artifact
+      máy sinh **có git-track**: commit bản refresh là đúng, nhưng đừng sửa tay.
+- [ ] **File mới chỉ có một locale:** tạo luôn counterpart ở locale kia trong cùng PR
+      (dịch đủ), rồi stamp pair. Không merge doc "EN-only tạm" nếu path đó đã có cây
+      `docs/vi/` (hoặc ngược lại).
+- [ ] **Đừng dịch file có nguồn đang nằm trong PR chưa merge.** `sourceHash` lệch ngay khi
+      PR kia vào `main`, cặp quay về `planned`, và verify + stamp phải làm lại từ đầu —
+      dịch hai lần cho một kết quả (tiền lệ ghi ở `docs/.i18n/TASKS.md` §7.5).
+- [ ] **Ngoại lệ hẹp (phải ghi lý do trong mô tả PR):** (a) file tooling/index cố ý không
+      có pair (vd `docs/en/agent-setup/llms.txt` khi tree chưa có bản VI — thêm pair sau
+      thì PR đó phải dịch đủ); (b) sửa thuần typo/whitespace không đổi nghĩa **vẫn** nên
+      sync nếu counterpart tồn tại (thừa > thiếu); (c) artifact máy (`docs/.i18n/*`,
+      `docs/i18n-sync-log.md`) không dịch.
+- [ ] **Tutorial:** §5 vẫn áp dụng — sửa tutorial một locale thì locale kia + bump bảng
+      Compatibility / comment version theo §5.
 
 ## 5. Tutorial impact — RÀ SOÁT khi đổi API/SDK/luồng setup
 

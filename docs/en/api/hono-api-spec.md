@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-25T08:11:35.148Z
+version: 2
+lastUpdated: 2026-08-02T19:06:39.579Z
 sourceLang: en
-contentHash: 42b4c9322dccd73d
-codeVerified: 2026-07-25T08:11:35.148Z
-codeVerifiedHash: 42b4c9322dccd73d
-codeVerifiedClaims: 208
+contentHash: a061ef3b5d842ed3
+codeVerified: 2026-08-02T19:06:59.464Z
+codeVerifiedHash: a061ef3b5d842ed3
+codeVerifiedClaims: 356
 ---
 
 # Hono API Specification — LumiBase

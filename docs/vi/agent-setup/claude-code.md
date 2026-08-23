@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:25.753Z
+version: 2
+lastUpdated: 2026-08-02T19:13:16.483Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 24a4ff7faa0c8795
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 58eee638b9682bbc
+mtEngine: manual
+syncStatus: human-translated
 ---
 
-# Claude Code — Thiết lập Agent cho LumiBase
+# Claude Code — LumiBase Agent Setup
 
 > **Claude Code** là một coding agent chạy trên terminal do Anthropic tạo ra. Nó hiểu codebase của bạn, chạy lệnh, chỉnh sửa file, và quản lý git.
 >

@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:25.753Z
+version: 2
+lastUpdated: 2026-08-02T19:13:16.483Z
 sourceLang: en
-contentHash: 24a4ff7faa0c8795
+contentHash: 58eee638b9682bbc
 ---
 
 # Claude Code — LumiBase Agent Setup

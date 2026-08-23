@@ -9,6 +9,26 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [0.26.0] - 2026-08-24
+
+### Version
+
+- `v0.26.0`
+
+### Date
+
+- `2026-08-24`
+
+### Highlights
+
+- The landing page ships its new eclipse identity — the reason `lumibase.dev` looked unchanged is that Pages only deploys on a tag.
+- The EN/VI documentation backlog is closed: 146/146 pairs up-to-date, no single-sided pair left.
+- `high-load-cache-readiness` P0-P2 code is complete; only the k6 re-measurements remain, and §7 does not gate the 1.0 tag on them.
+- Five cache-stack correctness gaps closed, including an `immutable` media promise no purge channel could reach.
+- The dependency-audit gate is green again, and pnpm 10 can no longer drop the overrides silently.
+
 ### Security
 
 - **Closed two high-severity advisories that were live on `main`.** `nanoid`
@@ -37,6 +57,98 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   records the two advisories that cannot be closed at all: GHSA-mh99 also matches
   the 1.x line by range, and `glib@0.18.5` is pinned across the Tauri Linux GTK
   stack.
+
+### Added
+
+- **`pnpm drift:check` — a guard against overrides overruling manifests.**
+  `scripts/check-override-drift.mjs` fails CI when an override range does not
+  intersect a range some workspace package declares directly. The existing
+  `settings:check` could not catch this class: the two override copies agreed
+  with each other, they were only both wrong relative to the manifests.
+  Dependency-free like the parity script — a check on install settings must not
+  depend on a successful install — and covered by `pnpm scripts:test`
+  (`node --test`), including the vite case, so it cannot degrade into a guard
+  that always passes. See `docs/en/security/dependency-overrides.md`.
+
+- **MCP path-traversal tripwire no longer blind to spliced path segments.**
+  The registry scan in `path-hardening.wiring.test.ts` probed each argument
+  with the literal `..` and then looked for `..` as a path segment of its own.
+  When a call site splices the value into a *larger* segment
+  (`` `/exports/report-${id}.json` ``), the probe produced
+  `/exports/report-...json` — no `..` segment — so the field was treated as
+  path-free and skipped before it ever reached the assertion. The source scan
+  missed the same shape independently, because its regex only matches an
+  interpolation directly preceded by `/`. Both halves of the guard were blind
+  to the identical call-site shape. Detection now probes with an alphanumeric
+  sentinel (unchanged by `encodePathSegment`) and checks the path portion of
+  the recorded URL, so an argument is found wherever it is spliced. Guard-only
+  change — no tool or runtime behaviour is affected, and no offender exists on
+  `main` today (32/32 pass unchanged).
+
+- **The landing page is a new visual identity.** `apps/landing` is restyled from
+  the orbital-solar-system look into an editorial "eclipse" language: a warm-black
+  ground, cream ink, a prismatic nebula palette, Archivo display / Literata serif /
+  DM Mono labels, uppercase bracketed mono captions, dashed rules and numbered
+  sections. The brand mark is a total solar eclipse with a small spaceship
+  transiting the moon (`logo-mark.svg`, `EclipseMark` / `EclipsePhase`), and the OG
+  image matches. The page is now scroll-driven rather than a stack of sections:
+  `EclipseStage` is a fixed backdrop where scroll *is* the eclipse — totality fills
+  the hero, the stage shrinks to the top-right as the moon slides off through the
+  product sections (light returns), then returns to centre for a second totality
+  behind the final CTA, with the spaceship transiting twice on scroll scrub.
+  `Scene` / `WipeTitle` / `EclipsePhaseScrub` drive dashed-rule draw, clip-path
+  title wipes and per-section eclipse-phase glyphs off a `--active-ratio` per-section
+  progress value; feature grids get per-column parallax. Smooth scrolling is Lenis
+  through a context (the header nav uses `lenis.scrollTo`), disabled under
+  `prefers-reduced-motion`, which instead renders a dimmed static totality —
+  hydration-safe via `useStaticMotion`. Implemented with framer-motion scrub rather
+  than THREE/GSAP. Marketing surface only: no API, schema, env or CMS behaviour
+  change.
+
+- **`docs/en/roadmap/post-v1.md` — the post-1.0 roadmap, written down.** The
+  narrative companion to the Post-v1 Roadmap board: it scores the four candidate
+  themes against the actual code, records why they are ordered the way they are,
+  and notes the positioning corrections found while reviewing MCP, GitOps, the
+  Change Feed and the authorization realms. Pairs with the `post-v1`-labelled
+  issues so "later" has a written definition instead of living in a project board.
+
+- **A structural parity gate for translations — `scripts/docs-i18n/check-parity.mjs`.**
+  The two existing checkers answer different questions: `sync.mjs` compares hashes
+  ("same source revision?") and `verify-code-refs.mjs` compares claims against the
+  source tree ("is it true?"). Neither can tell you the translation is *the same
+  document*. This one does: target actually in the target language, same heading
+  count and level sequence, same fenced-block count with byte-identical code
+  (comment lines excluded — those are prose), same inline-code and link-target
+  multisets, same table row counts, provenance front matter present, body length
+  inside a truncation band. It is tuned against the real corpus: in-page anchors are
+  compared by count rather than value, because a translated heading *must* produce a
+  different slug, and prose-shaped fences (`text`, `tree`, `mermaid`, untagged) are
+  compared by count only, because translating an ASCII diagram's labels is correct.
+  Per-doc `<!-- check-parity: allow <check> -->` waivers keep a deliberate divergence
+  visible next to the divergence. `stamp-pair.mjs` runs it and **refuses to stamp**
+  on drift — that is the gate that bites, since stamping is what makes a pair read
+  "up-to-date" to every other tool.
+
+- **The EN/VI translation backlog is closed: 146/146 pairs up-to-date.** `detect`
+  went from 87 up-to-date / 59 planned to 146 / 0; `check-parity` from 187 problems
+  across 76 pairs with 3 single-sided pairs to 52 across 36 with **none**
+  single-sided. Single-sided was the reader-facing failure: someone choosing
+  Vietnamese and being served English. The 52 that remain are cosmetic — comment
+  text inside code fences, anchor slugs that differ because the headings differ.
+  `docs/.i18n/TASKS.md` keeps the task table as a record rather than a queue.
+
+- **DoD §4a — EN/VI parity is a condition of the PR that breaks it.** Two failures
+  drove this, both of which reached `main`: `docs/vi/agent-setup/prompt.md` never
+  received the `withDeprecation` opt-in rule the EN side had carried since 0.24.x, so
+  an agent reading the Vietnamese instructions was never told about it — on a file
+  §4 lists as release surface; and the 60-pair backlog above accumulated to the point
+  of needing its own translation campaign. §4a makes both locales a checklist item,
+  states plainly that CI will *not* catch this (`docs-i18n-sync.yml` runs
+  `check-parity` with `|| true`, so the human is the enforcement), and carries up the
+  rules that were previously only visible to someone already mid-batch: establish the
+  translation direction from `detect` rather than guessing (some pairs are
+  VI-source), never edit the source side to make parity green, and do not translate a
+  file whose EN source is sitting in an unmerged PR.
 
 ### Changed
 
@@ -82,6 +194,40 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   and `fast-check` v4 replaced the per-unit string builders with
   `string({ unit })`. No runtime, schema, or setup behaviour changes — no
   migration or backfill is required on upgrade.
+
+- **`high-load-cache-readiness` P0–P2 complete (tasks 0–21).** The programme's code
+  is now in: `PageService` + `/api/v1/pages` with negative-cache forget on create and
+  slug rename; `runtime.edgeCache` (Cloudflare `caches.default`, Docker no-op) behind
+  the runtime abstraction on the deliver path; Cache Provider v2 with tags,
+  `invalidateByTag`, `onEvent` and an LRU `MemoryCacheProvider` plus contract tests;
+  `POST /api/v1/utils/cache/purge`; content invalidation and deliver app-cache;
+  `createSwrCache` (single-flight / stale-while-revalidate); middleware consolidation;
+  async audit; a `RateLimiterProvider`; cache observability; process roles with a
+  leader lock; `flow_runs` async with `Prefer: respond-async`; `items` indexes and
+  transactional writes; a `perf-k6` CI workflow; and ADR-012 removing the unused CDC
+  `CacheInvalidator`. **The k6 re-measurements are still open** (tasks 7.1, 15.1,
+  21.1) — the code landed, the numbers were not taken, and per Req 0.3 estimated
+  figures are not allowed in the roadmap table. `v1-release-criteria.md` §7 classifies
+  performance baselines as non-blocking for the 1.0 tag; the one real measurement is
+  DB-query-per-404 = 0.0308.
+
+- **Per-request identity lookups de-duplicated (Req 10).** `withAuth` now stashes
+  the resolved `users` row and `user_sites` membership on the Hono context
+  (`c.set('principal', …)`); `withSiteMembership` reads that bundle instead of
+  re-issuing the same queries, and `withStudioAccess` reuses the `access` bundle
+  `withSiteMembership` already computed rather than calling `PermissionService.bundle()`
+  a second time. Each guard still falls back to querying when the bundle is absent, so
+  the middleware stay independently correct and standalone-testable, and guard
+  semantics are unchanged — a request rejected before is rejected with the same status
+  now. `request-context-bundle.test.ts` asserts the principal × route matrix and the
+  query-count reduction; the `security-guards.wiring` tripwire is preserved.
+
+- **A high-load Phase 0 baseline exists.** k6 seed and run tooling under
+  `apps/cms/k6/`, with reproducible measurement and runs that continue when a
+  threshold is advisory. This is what makes the remaining re-measurement tasks
+  possible at all: Req 0.3 forbids filling the roadmap table with estimates, so
+  without a baseline no phase could be closed.
+
 ### Fixed
 
 - **The test suite no longer fails because the machine was busy — and the ReDoS
@@ -130,32 +276,84 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   resolve 6.3.1. `apps/docs` moved to `@testing-library/jest-dom` 7 so the
   workspace no longer carries two majors of one test library.
 
-### Added
+- **The `immutable` media cache promise was not one.** `/api/v1/media/:key`
+  transform URLs were served `Cache-Control: immutable, max-age=31536000`, but
+  `POST /media/:key` overwrites in place under a caller-chosen key (`storage.put`,
+  no existence check). The URL was therefore not a function of the content:
+  re-uploading different bytes left every browser that had already fetched the old
+  ones holding them for a year, with **no channel able to reach them** — neither tag
+  purge nor CDN purge reaches the browser cache. Uploaded bytes are now fingerprinted
+  into storage metadata (`contentHash`), returned as `version` and surfaced on reads
+  as `X-Lumi-Media-Version`; `immutable` is served only for a URL pinned with
+  `?v=<contentHash>`, and a pin that does not match the stored fingerprint is
+  downgraded rather than freezing whatever bytes happen to be there. The
+  original-bytes path, which previously carried no `Cache-Control` at all and left
+  each cache to its own heuristic, now gets `must-revalidate` + a weak `ETag` + `304`
+  on `If-None-Match`. Objects with no stored fingerprint — earlier uploads, and
+  anything written through the streaming `PUT /files/upload/:key` receiver, which
+  cannot hash a body it never buffers — degrade to revalidation and never to
+  `immutable`. Refs #388.
 
-- **`pnpm drift:check` — a guard against overrides overruling manifests.**
-  `scripts/check-override-drift.mjs` fails CI when an override range does not
-  intersect a range some workspace package declares directly. The existing
-  `settings:check` could not catch this class: the two override copies agreed
-  with each other, they were only both wrong relative to the manifests.
-  Dependency-free like the parity script — a check on install settings must not
-  depend on a successful install — and covered by `pnpm scripts:test`
-  (`node --test`), including the vite case, so it cannot degrade into a guard
-  that always passes. See `docs/en/security/dependency-overrides.md`.
+- **`Vary` omitted `Host`.** It named only `X-Lumi-Site`, while
+  `middleware/tenant.ts` resolves the site from that header, from `Host`, **and**
+  from `?site=` in development. The query string is already part of the cache key,
+  but `Host` was declared nowhere — leaving correctness on the delivery routes
+  dependent on every CDN in front of the app keying on `Host` by convention. Also
+  documents how far invalidation actually reaches, and adds an operational edge
+  purge plus an in-process cache layer.
 
-- **MCP path-traversal tripwire no longer blind to spliced path segments.**
-  The registry scan in `path-hardening.wiring.test.ts` probed each argument
-  with the literal `..` and then looked for `..` as a path segment of its own.
-  When a call site splices the value into a *larger* segment
-  (`` `/exports/report-${id}.json` ``), the probe produced
-  `/exports/report-...json` — no `..` segment — so the field was treated as
-  path-free and skipped before it ever reached the assertion. The source scan
-  missed the same shape independently, because its regex only matches an
-  interpolation directly preceded by `/`. Both halves of the guard were blind
-  to the identical call-site shape. Detection now probes with an alphanumeric
-  sentinel (unchanged by `encodePathSegment`) and checks the path portion of
-  the recorded URL, so an argument is found wherever it is spliced. Guard-only
-  change — no tool or runtime behaviour is affected, and no offender exists on
-  `main` today (32/32 pass unchanged).
+- **`fast-uri` and `hono` advisories in the production tree.** The dependency-audit
+  gate had been red on every branch since
+  [GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7) was
+  published — **fast-uri host confusion via a backslash authority introducer**, high,
+  `>=4.0.0 <4.1.2`. Nothing in the repo changed; the advisory did. The root override
+  read `">=3.1.4"`, written for the earlier 3.x advisory, which resolved happily to
+  the vulnerable 4.1.1; it now reads `">=4.1.2"`. `fast-uri` reaches the production
+  tree through `ajv@8`. `hono` in `apps/cms` also goes `^4.12.32` → `^4.12.34` for
+  [GHSA-8j4g-w8fx-2239](https://github.com/advisories/GHSA-8j4g-w8fx-2239) — **ReDoS
+  in the CORS middleware via `Access-Control-Request-Headers`**. That one is only
+  moderate, so `--audit-level high` would never have caught it, but this is the
+  framework every request passes through and the CORS middleware is wired
+  (`apps/cms/src/config/cors.ts`), so it takes a patch bump rather than a backlog row.
+
+- **pnpm 10 would have silently dropped every override.** The `pnpm` field in
+  `package.json` — overrides, `patchedDependencies`, `auditConfig` — is no longer read
+  by pnpm 10, which reads `pnpm-workspace.yaml` instead and only warns once before
+  ignoring the rest. Nothing was broken yet, because `packageManager` pins 9.12.0, but
+  the first `packageManager` bump would have reverted every security pin and unapplied
+  the `gray-matter` patch without a single error. All three keys are now declared in
+  **both** files, and `pnpm settings:check` fails the build when the two drift apart.
+  Refs #295.
+
+- **`CHANGELOG.md` asserted a release that does not exist.** A
+  `## [1.0.0] - 2026-07-11` section sat wedged between `[0.22.0]` and `[0.21.0]`,
+  which read as 1.0.0 having shipped *before* 0.22.0, 0.23.0 and 0.24.x. It would also
+  have broken this release: `/release` inserts the new section directly under
+  `## [Unreleased]`, so cutting 1.0.0 would have produced two `## [1.0.0]` headings and
+  the `awk` extractor stops at the first — the GitHub Release would have shipped the
+  stale text. The prose is preserved in `.kiro/steering/v1-changelog-draft.md` with the
+  list of what it still needs. Also stops CI from stamping translations it never made.
+
+- **`stamp-pair.mjs` could not bootstrap an unstamped pair.** Its pre-write gate
+  treated `check-parity`'s `front-matter` problems as "the two locales are not the same
+  document" — but those fire precisely when the target side has no `translatedFrom` /
+  `sourceHash`, and their printed remedy is to run `stamp-pair.mjs`. The gate was
+  unsatisfiable: exit 6, pointing at itself. Found on
+  `security/dependency-overrides.md`, whose VI side was a complete and current
+  translation that merely predated the provenance stamps. `front-matter` is now
+  excluded from that gate; every other check still blocks.
+
+- **`docs/{en,vi}/cdc/architecture.md` documented a module ADR-012 deleted.** Both
+  locales described `apps/cms/src/modules/cdc/cache-invalidator.ts` — its Redis key
+  scheme, its dedup window, its outage buffer — for a file that no longer exists. The
+  section now records what actually happened and why (keys omitted `siteId`; they never
+  matched the tag-based keys the read paths use), and points at ADR-012 and the real
+  invalidation path. This was the only `verify-code-refs` finding on `main`, and it was
+  a reader-facing inaccuracy rather than a broken link.
+
+### Migrations
+
+- None.
 
 ## [0.25.0] - 2026-08-02
 

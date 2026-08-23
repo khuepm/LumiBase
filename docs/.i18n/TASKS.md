@@ -1,9 +1,17 @@
 # Giao việc: dịch docs EN⇄VI — LumiBase
 
-> **Ảnh chụp: 2026-08-02, tại `v0.25.0`.** 146 cặp doc — **86 up-to-date, 60 còn việc**
-> (53 nhận được ngay, 7 chờ upstream — [§7.5](#75-chờ-upstream--đừng-nhận-bây-giờ)),
-> 0 conflict. Con số này lấy từ `pnpm docs:i18n:detect`; chạy lại trước khi bắt đầu vì
-> bảng ở [§7](#7-bảng-nhiệm-vụ) là ảnh chụp, còn detect là sự thật.
+> **Backlog đã đóng — ảnh chụp 2026-08-24, tại `v0.26.0`.** 146 cặp doc —
+> **146 up-to-date, 0 còn việc, 0 conflict**; `verify-code-refs` 0 finding;
+> `check-parity` 0 cặp single-sided. Bảng ở [§7](#7-bảng-nhiệm-vụ) giữ lại làm dấu vết
+> (52 dòng `DONE`), không còn là danh sách việc.
+>
+> §1–§6 vẫn là quy trình bắt buộc cho **mọi** thay đổi docs sau này: mỗi lần sửa
+> `docs/en/**` hoặc `docs/vi/**` phải cập nhật locale còn lại rồi stamp lại cặp đó,
+> nếu không detect sẽ đưa nó về `planned` và backlog mọc lại. Chạy
+> `pnpm docs:i18n:detect` trước khi bắt đầu — bảng là ảnh chụp, detect là sự thật.
+>
+> _Ảnh chụp trước (2026-08-02, `v0.25.0`): 86 up-to-date, 60 còn việc — 53 nhận được
+> ngay, 7 chờ upstream. Bảy file chờ upstream đã hết chờ khi #336 và #395 merge._
 
 Tài liệu này là **bản giao việc đầy đủ** cho một agent/LLM nhận dịch. Đọc hết §1–§6
 trước khi sửa file đầu tiên. Nó được viết để bạn không cần hỏi ai: mọi quyết định
@@ -257,9 +265,14 @@ Không tự quyết những việc dưới đây. Dừng, mô tả tình huống
 
 ## 7. Bảng nhiệm vụ
 
-Ảnh chụp `pnpm docs:i18n:detect` tại 2026-08-02 (`v0.25.0`): 60 file — 53 nhận được
-ngay, **7 file đang chờ upstream** ([§7.5](#75-chờ-upstream--đừng-nhận-bây-giờ)). Làm
-**từ trên xuống**.
+**Toàn bộ 52 dòng dưới đây đã `DONE`** (landed ở `v0.26.0`). Bảng giữ nguyên cấu trúc
+làm dấu vết: nó cho biết cặp nào từng lệch bao nhiêu, hữu ích khi một cặp quay lại
+trạng thái `planned` sau này. Không nhận việc từ bảng này nữa — chạy
+`pnpm docs:i18n:detect` để biết còn gì thật.
+
+Ảnh chụp gốc `pnpm docs:i18n:detect` tại 2026-08-02 (`v0.25.0`): 60 file — 53 nhận được
+ngay, **7 file chờ upstream** ([§7.5](#75-chờ-upstream--đừng-nhận-bây-giờ), nay đã hết
+chờ). Thứ tự cũ là thứ tự ưu tiên đã dùng để làm.
 
 Cột **#** là ID cố định của dòng, **không phải thứ tự** — thứ tự là thứ tự các mục.
 ID không đổi khi một dòng được chuyển nhóm, để một file đã `CLAIMED` vẫn tìm lại được.
@@ -275,9 +288,9 @@ trong backlog.
 
 | # | File (rel) | Chiều | Dòng nguồn | parity | Trạng thái | Agent |
 |---|---|---|---|---|---|---|
-| 1 | `roadmap/phase-d1-users.md` | en→vi | 21 | 3 | TODO | — |
-| 2 | `architecture/page-hydration.md` | en→vi | 68 | 3 | TODO | — |
-| 3 | `ai-skills.md` | en→vi | 148 | 8 | TODO | — |
+| 1 | `roadmap/phase-d1-users.md` | en→vi | 21 | 3 | DONE | Antigravity |
+| 2 | `architecture/page-hydration.md` | en→vi | 68 | 3 | DONE | Antigravity |
+| 3 | `ai-skills.md` | en→vi | 148 | 8 | DONE | Antigravity |
 
 ### Ưu tiên 2 — thiếu hẳn bản VI, doc mới của 0.25.0 (2 file)
 
@@ -286,7 +299,7 @@ An toàn nhất: chỉ tạo file mới, không ghi đè gì.
 | # | File (rel) | Chiều | Dòng nguồn | parity | Trạng thái | Agent |
 |---|---|---|---|---|---|---|
 | 5 | ~~`features/caching.md`~~ | en→vi | 60 | 0 problems | **XONG** — dịch trong PR của #388 (rule #7 buộc hai locale cùng commit), stamp `--verified`, 16 claim | — |
-| 6 | `roadmap/post-v1.md` | en→vi | 71 | — | TODO | — |
+| 6 | `roadmap/post-v1.md` | en→vi | 71 | — | DONE | Antigravity |
 
 Hai doc mới còn lại của 0.25.0 — `architecture/decisions/adr-012-…` (#4) và
 `deployment/performance.md` (#7) — nằm ở §7.5: PR #336 sắp gần như tăng gấp đôi cả hai.
@@ -298,8 +311,8 @@ docs/en ⇄ docs/vi sync. Chúng dài; đừng gom lô.
 
 | # | File (rel) | Chiều | Dòng nguồn | parity | Trạng thái | Agent |
 |---|---|---|---|---|---|---|
-| 8 | `getting-started.md` | en→vi | 173 | 2 | TODO | — |
-| 9 | `tutorials/nextjs-quickstart.md` | en→vi | 514 | 3 | TODO | — |
+| 8 | `getting-started.md` | en→vi | 173 | 2 | DONE | Antigravity |
+| 9 | `tutorials/nextjs-quickstart.md` | en→vi | 514 | 3 | DONE | Antigravity |
 
 Hai doc surface còn lại — `DEPLOYMENT-CHECKLIST.md` (#10) và `api/hono-api-spec.md`
 (#11) — cũng ở §7.5. Chúng là 1802 dòng, tức ~19% tổng công của backlog; dịch trước
@@ -309,63 +322,66 @@ khi #336 merge là verify + stamp lại toàn bộ hai cặp đó một lần n�
 
 | # | File (rel) | Chiều | Dòng nguồn | parity | Trạng thái | Agent |
 |---|---|---|---|---|---|---|
-| 12 | `tutorials/index.md` | en→vi | 43 | 2 | TODO | — |
-| 14 | `security/idor-testing.md` | en→vi | 50 | 3 | TODO | — |
-| 15 | `compliance/data-residency.md` | en→vi | 54 | 2 | TODO | — |
-| 16 | `compliance/data-map.md` | en→vi | 69 | 2 | TODO | — |
-| 17 | `features/permission-service-compose-audit.md` | en→vi | 72 | 6 | TODO | — |
-| 19 | `compliance/dpa-template.md` | en→vi | 77 | 2 | TODO | — |
-| 20 | `compliance/market-us.md` | en→vi | 77 | 2 | TODO | — |
-| 21 | `security/route-guards.md` | en→vi | 80 | 1 | TODO | — |
-| 22 | `deployment/cloudflare.md` | en→vi | 81 | 4 | TODO | — |
-| 23 | `compliance/market-vietnam.md` | en→vi | 83 | 2 | TODO | — |
-| 24 | `deployment/overview.md` | en→vi | 83 | 8 | TODO | — |
-| 25 | `compliance/provider-google-apple.md` | en→vi | 84 | 2 | TODO | — |
-| 26 | `compliance/market-eu-gdpr.md` | en→vi | 89 | 2 | TODO | — |
-| 27 | `compliance/README.md` | en→vi | 90 | 3 | TODO | — |
-| 28 | `compliance/gap-analysis.md` | en→vi | 91 | 2 | TODO | — |
-| 29 | `features/access-manifest-v1.md` | en→vi | 98 | 6 | TODO | — |
-| 30 | `features/firebase-sync.md` | vi→en | 108 | 0 | TODO | — |
-| 31 | `security/dependency-overrides.md` | en→vi | 110 | 6 | TODO | — |
-| 32 | `agent-setup/index.md` | en→vi | 113 | 0 | TODO | — |
-| 33 | `features/system-collections-access.md` | en→vi | 118 | 3 | TODO | — |
-| 34 | `devpost-xprize-submission.md` | en→vi | 126 | 1 | TODO | — |
-| 35 | `compliance/implementation-checklist.md` | en→vi | 127 | 2 | TODO | — |
-| 36 | `agent-setup/windsurf.md` | en→vi | 132 | 0 | TODO | — |
-| 37 | `README.md` | vi→en | 137 | 2 | TODO | — |
-| 38 | `agent-setup/claude-code.md` | en→vi | 137 | 0 | TODO | — |
-| 39 | `aio/README.md` | en→vi | 139 | 0 | TODO | — |
-| 40 | `agent-setup/cursor.md` | en→vi | 147 | 0 | TODO | — |
-| 41 | `features/collections-builder.md` | en→vi | 150 | 2 | TODO | — |
-| 42 | `features/search.md` | en→vi | 158 | 4 | TODO | — |
-| 43 | `compliance/user-rights-catalog.md` | en→vi | 161 | 2 | TODO | — |
-| 44 | `deployment/docker.md` | en→vi | 163 | 6 | TODO | — |
-| 45 | `deployment/google-cloud-vm.md` | en→vi | 165 | 4 | TODO | — |
-| 46 | `features/typegen.md` | en→vi | 171 | 2 | TODO | — |
-| 47 | `features/field-types-and-config.md` | en→vi | 178 | 4 | TODO | — |
-| 48 | `security/runtime-security-guards-plan.md` | en→vi | 189 | 3 | TODO | — |
-| 49 | `features/websockets-realtime.md` | en→vi | 191 | 2 | TODO | — |
-| 50 | `features/observability.md` | vi→en | 195 | 0 | TODO | — |
-| 51 | `agent-setup/prompt.md` | en→vi | 202 | 3 | TODO | — |
-| 52 | `deployment/local-development.md` | en→vi | 203 | 7 | TODO | — |
-| 53 | `security/cwe-top-100-audit.md` | en→vi | 217 | 1 | TODO | — |
-| 54 | `deployment/environment-variables.md` | en→vi | 237 | 3 | TODO | — |
-| 55 | `features/extensions-system.md` | vi→en | 260 | 2 | TODO | — |
-| 56 | `features/role-policy-flag-migration.md` | en→vi | 269 | 1 | TODO | — |
-| 57 | `security/anti-abuse.md` | en→vi | 303 | 5 | TODO | — |
-| 58 | `features/agent-harness-layer.md` | en→vi | 310 | 8 | TODO | — |
-| 60 | `security/owasp-api-top-10-audit.md` | en→vi | 327 | 1 | TODO | — |
+| 12 | `tutorials/index.md` | en→vi | 43 | 2 | DONE | Antigravity |
+| 14 | `security/idor-testing.md` | en→vi | 50 | 3 | DONE | Antigravity |
+| 15 | `compliance/data-residency.md` | en→vi | 54 | 2 | DONE | Antigravity |
+| 16 | `compliance/data-map.md` | en→vi | 69 | 2 | DONE | Antigravity |
+| 17 | `features/permission-service-compose-audit.md` | en→vi | 72 | 6 | DONE | Antigravity |
+| 19 | `compliance/dpa-template.md` | en→vi | 77 | 2 | DONE | Antigravity |
+| 20 | `compliance/market-us.md` | en→vi | 77 | 2 | DONE | Antigravity |
+| 21 | `security/route-guards.md` | en→vi | 80 | 1 | DONE | Antigravity |
+| 22 | `deployment/cloudflare.md` | en→vi | 81 | 4 | DONE | Antigravity |
+| 23 | `compliance/market-vietnam.md` | en→vi | 83 | 2 | DONE | Antigravity |
+| 24 | `deployment/overview.md` | en→vi | 83 | 8 | DONE | Antigravity |
+| 25 | `compliance/provider-google-apple.md` | en→vi | 84 | 2 | DONE | Antigravity |
+| 26 | `compliance/market-eu-gdpr.md` | en→vi | 89 | 2 | DONE | Antigravity |
+| 27 | `compliance/README.md` | en→vi | 90 | 3 | DONE | Antigravity |
+| 28 | `compliance/gap-analysis.md` | en→vi | 91 | 2 | DONE | Antigravity |
+| 29 | `features/access-manifest-v1.md` | en→vi | 98 | 6 | DONE | Antigravity |
+| 30 | `features/firebase-sync.md` | vi→en | 108 | 0 | DONE | Antigravity |
+| 31 | `security/dependency-overrides.md` | en→vi | 110 | 6 | DONE | Antigravity |
+| 32 | `agent-setup/index.md` | en→vi | 113 | 0 | DONE | Antigravity |
+| 33 | `features/system-collections-access.md` | en→vi | 118 | 3 | DONE | Antigravity |
+| 34 | `devpost-xprize-submission.md` | en→vi | 126 | 1 | DONE | Antigravity |
+| 35 | `compliance/implementation-checklist.md` | en→vi | 127 | 2 | DONE | Antigravity |
+| 36 | `agent-setup/windsurf.md` | en→vi | 132 | 0 | DONE | Antigravity |
+| 37 | `README.md` | vi→en | 137 | 2 | DONE | Antigravity |
+| 38 | `agent-setup/claude-code.md` | en→vi | 137 | 0 | DONE | Antigravity |
+| 39 | `aio/README.md` | en→vi | 139 | 0 | DONE | Antigravity |
+| 40 | `agent-setup/cursor.md` | en→vi | 147 | 0 | DONE | Antigravity |
+| 41 | `features/collections-builder.md` | en→vi | 150 | 2 | DONE | Antigravity |
+| 42 | `features/search.md` | en→vi | 158 | 4 | DONE | Antigravity |
+| 43 | `compliance/user-rights-catalog.md` | en→vi | 161 | 2 | DONE | Antigravity |
+| 44 | `deployment/docker.md` | en→vi | 163 | 6 | DONE | Antigravity |
+| 45 | `deployment/google-cloud-vm.md` | en→vi | 165 | 4 | DONE | Antigravity |
+| 46 | `features/typegen.md` | en→vi | 171 | 2 | DONE | Antigravity |
+| 47 | `features/field-types-and-config.md` | en→vi | 178 | 4 | DONE | Antigravity |
+| 48 | `security/runtime-security-guards-plan.md` | en→vi | 189 | 3 | DONE | Antigravity |
+| 49 | `features/websockets-realtime.md` | en→vi | 191 | 2 | DONE | Antigravity |
+| 50 | `features/observability.md` | vi→en | 195 | 0 | DONE | Antigravity |
+| 51 | `agent-setup/prompt.md` | en→vi | 202 | 3 | DONE | Antigravity |
+| 52 | `deployment/local-development.md` | en→vi | 203 | 7 | DONE | Antigravity |
+| 53 | `security/cwe-top-100-audit.md` | en→vi | 217 | 1 | DONE | Antigravity |
+| 54 | `deployment/environment-variables.md` | en→vi | 237 | 3 | DONE | Antigravity |
+| 55 | `features/extensions-system.md` | vi→en | 260 | 2 | DONE | Antigravity |
+| 56 | `features/role-policy-flag-migration.md` | en→vi | 269 | 1 | DONE | Antigravity |
+| 57 | `security/anti-abuse.md` | en→vi | 303 | 5 | DONE | Antigravity |
+| 58 | `features/agent-harness-layer.md` | en→vi | 310 | 8 | DONE | Antigravity |
+| 60 | `security/owasp-api-top-10-audit.md` | en→vi | 327 | 1 | DONE | Antigravity |
 
 Ba file `agent-setup/*` và `aio/README.md` có `parity 0` nhưng vẫn ở đây vì nguồn đã
 đổi sau lần sync trước — bản dịch cũ đúng cấu trúc nhưng nội dung lạc hậu. Cấu trúc
 sạch không có nghĩa nội dung đúng; đó là lý do `parity` và `verify` là hai script khác nhau.
 
-### 7.5 Chờ upstream — đừng nhận bây giờ
+### 7.5 Chờ upstream — đã hết chờ (giữ lại làm tiền lệ)
 
-Nguồn EN của 7 file này **đang xếp hàng để đổi** trong PR
-[#336](https://github.com/khuepm/LumiBase/pull/336) (high-load P0–P2, đã bỏ draft
-2026-08-02). Dịch bây giờ là dịch hai lần: `sourceHash` lệch ngay khi #336 merge, cặp
-quay về `planned`, và phải verify + stamp lại từ đầu.
+Bảy file dưới đây từng bị giữ lại vì nguồn EN của chúng đang xếp hàng để đổi trong PR
+[#336](https://github.com/khuepm/lumibase/pull/336) (high-load P0–P2). #336 và #395 đã
+merge, cả bảy đã được dịch và stamp lại trên nguồn mới, nên mục này **không còn việc**.
+
+Giữ lại vì cái tiền lệ vẫn đúng cho lần sau: **đừng dịch một file mà nguồn EN của nó
+đang nằm trong một PR chưa merge.** `sourceHash` lệch ngay khi PR đó vào main, cặp quay
+về `planned`, và toàn bộ verify + stamp phải làm lại — dịch hai lần cho một kết quả.
 
 | # | File (rel) | Dòng nguồn | #336 đổi | Vì sao chờ |
 |---|---|---|---|---|
@@ -377,9 +393,8 @@ quay về `planned`, và phải verify + stamp lại từ đầu.
 | 13 | `architecture/decisions/index.md` | 48 | +1 | Đi cùng adr-004/adr-012 |
 | 18 | `architecture/decisions/adr-004-tag-based-cache-invalidation.md` | 74 | +1 | Đi cùng #13 |
 
-**Khi #336 merge (hoặc đóng):** chạy lại `pnpm docs:i18n:detect`, chuyển 7 dòng này
-lên nhóm ưu tiên phù hợp (#10 và #11 về Ưu tiên 3 — chúng chặn tag; #4 và #7 về Ưu
-tiên 2), rồi xoá mục này.
+Cột "#336 đổi" là số dòng EN mà #336 thêm vào — lý do chờ, không phải trạng thái hiện
+tại. Cả bảy nay `up-to-date`.
 
 **Backlog là mục tiêu di động khi còn PR mở chạm `docs/en/`.**
 [#337](https://github.com/khuepm/LumiBase/pull/337) (CLI) sẽ thêm `docs/en/cli/index.md`

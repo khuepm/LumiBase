@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:10:46.613Z
+sourceLang: en
+contentHash: 3f6a0185762a468d
+codeVerified: 2026-08-02T19:10:46.613Z
+codeVerifiedHash: 3f6a0185762a468d
+codeVerifiedClaims: 58
+---
+
 # Gap Analysis — Rights ↔ LumiBase Features
 
 > Maps each user right/obligation to LumiBase's current implementation, with

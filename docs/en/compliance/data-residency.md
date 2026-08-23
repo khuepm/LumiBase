@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:08:20.200Z
+sourceLang: en
+contentHash: b4c3cb49368f85ba
+codeVerified: 2026-08-02T19:08:20.200Z
+codeVerifiedHash: b4c3cb49368f85ba
+codeVerifiedClaims: 4
+---
+
 # Data Residency & Cross-Border Transfers
 
 > Guidance for keeping personal data in required regions (EU adequacy/SCCs,

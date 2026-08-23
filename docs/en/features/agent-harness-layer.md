@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:22:27.836Z
+sourceLang: en
+contentHash: 29b0c5c9b54e50f5
+---
+
 # Agent Harness Layer
 
 LumiBase is moving beyond a human-only headless CMS toward a control plane where AI agents can work with people on business data, schema, workflows, and reusable artifacts.
