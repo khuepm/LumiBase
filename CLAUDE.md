@@ -37,7 +37,9 @@ packages/
 5. **Response format:** `{ data: T, meta?: PaginationMeta }` or `{ errors: [...] }`.
 6. **TypeScript:** Strict mode, `import type`, no `any`.
 7. **Docs are bilingual:** every user-facing doc change lands in **both** `docs/en/`
-   and `docs/vi/`, in the same commit. Never edit one locale only.
+   and `docs/vi/`, in the same commit. Never edit one locale only. Full checklist:
+   `.kiro/steering/definition-of-done.md` §4a (prefer over-syncing; re-stamp
+   provenance with `stamp-pair.mjs` when the pair is already 1-1 translated).
 8. **Deprecation is opt-in:** `withDeprecation` (`apps/cms/src/middleware/deprecation.ts`) is a reusable RFC 8594 tool. Attach it **only** when explicitly told to deprecate/retire/sunset a specific route — never globally, never on healthy endpoints. Unwired while nothing is retiring is correct.
 
 ## Docs i18n — mandatory workflow

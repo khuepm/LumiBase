@@ -75,6 +75,10 @@
 - No arbitrary Tailwind classes from backend — use CSS variables instead
 - TanStack Query for server state; React state for local UI state
 
+### 9. Docs bilingual (EN ↔ VI)
+- Edits under `docs/en/` or `docs/vi/` **must** update the other locale in the same PR when a counterpart exists (or create one). Prefer over-syncing.
+- After a full 1-1 pair: `pnpm docs:i18n:verify` + `stamp-pair.mjs` (see DoD §4a / `CLAUDE.md`).
+
 ## Key File Reference
 
 | What | Where |

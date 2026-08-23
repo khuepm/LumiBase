@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 2
-lastUpdated: 2026-08-02T19:22:39.397Z
+version: 3
+lastUpdated: 2026-08-23T18:41:40.372Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3b1dc76ccc3444a4
+sourceHash: 4de63659a994cc69
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:22:39.397Z
-codeVerifiedHash: 3b1dc76ccc3444a4
-codeVerifiedClaims: 35
+codeVerified: 2026-08-23T18:41:40.372Z
+codeVerifiedHash: 4de63659a994cc69
+codeVerifiedClaims: 36
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -65,6 +65,27 @@ packages/
 5. **HITL cho các hành động AI nguy hiểm**: Các skill yêu cầu `schema:write` hoặc `delete*` phải tạo một row `ai_approvals` và chờ human approval trước khi thực thi.
 6. **Config-as-code**: Collection, field, và permission có thể xuất/nhập dưới dạng JSON/YAML (`apps/cms/scripts/config-cli.ts`).
 7. **Cache tagging**: Khi dữ liệu thay đổi, invalidate mọi cache key được tag với entity đó.
+8. **Endpoint deprecation (chỉ gắn khi khai tử)**: `withDeprecation` trong `apps/cms/src/middleware/deprecation.ts` là helper RFC 8594 tái sử dụng. **Không** gắn lên endpoint đang sống bình thường. Chỉ gắn khi có chỉ thị rõ ràng deprecate / retire / sunset một route (hoặc router) cụ thể. Để unwired khi chưa có API nào bị khai tử là đúng.
+9. **Docs song ngữ (EN ↔ VI)**: Mọi sửa dưới `docs/en/` hoặc `docs/vi/` phải cập nhật locale còn lại trong **cùng PR** khi đã có counterpart (hoặc tạo counterpart mới). Ưu tiên sync thừa hơn thiếu. Sau khi cặp đã dịch 1-1 đủ, chạy `pnpm docs:i18n:verify` + `stamp-pair.mjs` để version/provenance khớp. Xem `.kiro/steering/definition-of-done.md` §4a.
+
+### Khi có chỉ thị deprecate một endpoint
+
+1. Import `withDeprecation` từ `apps/cms/src/middleware/deprecation.ts`.
+2. Gắn **chỉ** vào route/sub-router sắp gỡ (không gắn vào chuỗi middleware global của app).
+3. Nên truyền đủ ngày + `link` changelog để client có cửa sổ migrate:
+
+```typescript
+import { withDeprecation } from '../middleware/deprecation'
+
+// Gắn CHỈ vào route/router sắp gỡ — không gắn global
+legacyRouter.use('*', withDeprecation({
+  since: '2026-08-01',
+  sunset: '2026-11-01',
+  link: 'https://docs.lumibase.dev/changelog#items-legacy',
+}))
+```
+
+Header phát ra: `Deprecation` (HTTP-date hoặc `true`), optional `Sunset`, optional `Link rel="deprecation"`. Mọi option đều optional — bỏ ngày thì chỉ có `Deprecation: true`. Ghi changelog; nếu có consumer FE, xem hướng dẫn trong `docs/vi/tutorials/nextjs-quickstart.md` mục Production & security notes.
 
 ---
 <!-- check-parity: allow inline-code -->
