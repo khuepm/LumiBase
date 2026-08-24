@@ -81,9 +81,24 @@ function writeHtml(urlPath, html) {
 }
 
 /**
+ * Inline "visually hidden but accessible" style — keeps content in the DOM
+ * (and accessibility tree) for crawlers and screen readers, while never
+ * painting it for sighted users. Inline (not a CSS class) so it applies
+ * immediately at first paint, before the stylesheet or JS bundle loads —
+ * this is required here because the client route for `/` and `/:locale`
+ * is an immediate <Navigate> redirect (see src/routes.tsx), so this static
+ * markup never matches the hydrated tree and would otherwise flash as
+ * unstyled visible content until hydration replaces it.
+ */
+const VISUALLY_HIDDEN_STYLE =
+  'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;';
+
+/**
  * Build a crawlable landing page: a plain <a> link list to every doc in the
  * locale. No client JS is needed for a bot to follow these into the
  * prerendered doc pages — this is the link graph the SPA <Navigate> hid.
+ * Visually hidden for sighted users (see VISUALLY_HIDDEN_STYLE) since the
+ * client immediately redirects away from this route.
  */
 function buildIndexBody({ locale, pages }) {
   const heading = locale === 'en' ? 'LumiBase Documentation' : 'Tài liệu LumiBase';
@@ -93,7 +108,7 @@ function buildIndexBody({ locale, pages }) {
         `<li><a href="${escapeAttr(withTrailingSlash(p.url))}">${escapeAttr(p.title)}</a></li>`,
     )
     .join('\n      ');
-  return `<main>
+  return `<main style="${VISUALLY_HIDDEN_STYLE}">
     <h1>${escapeAttr(heading)}</h1>
     <ul>
       ${items}
