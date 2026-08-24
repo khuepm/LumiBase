@@ -19,7 +19,7 @@
     "@lumibase/shared": "workspace:*",
     "@lumibase/ui": "workspace:*",
     "@shikijs/rehype": "^4.4.3",
-    "dompurify": "^3.4.13",
+    "dompurify": "^3.4.14",
     "gray-matter": "^4.0.3",
     "lucide-react": "^1.28.0",
     "minisearch": "^7.1.0",
@@ -47,6 +47,6 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^5.6.2",
     "vite": "^8.2.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

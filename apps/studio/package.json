@@ -29,13 +29,13 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
-    "dompurify": "^3.4.13",
-    "i18next": "^26.3.6",
+    "dompurify": "^3.4.14",
+    "i18next": "^26.4.0",
     "lucide-react": "^1.28.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.85.0",
-    "react-i18next": "^17.0.11",
+    "react-i18next": "^17.0.12",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.15",
@@ -57,6 +57,6 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^5.6.2",
     "vite": "^8.2.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
