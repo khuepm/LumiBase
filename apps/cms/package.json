@@ -42,7 +42,7 @@
     "hono": "^4.13.3",
     "jose": "^6.2.8",
     "maxmind": "5.0.7",
-    "nanoid": "^5.1.16",
+    "nanoid": "^6.0.1",
     "node-cron": "^4.6.0",
     "nodemailer": "9.0.5",
     "postgres": "^3.4.9",
