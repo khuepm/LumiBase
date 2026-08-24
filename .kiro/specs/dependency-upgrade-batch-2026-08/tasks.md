@@ -160,18 +160,18 @@ Ràng buộc không thể đảo:
   - [x] 7.5 Test guard với 5 fixture ở §Components and Interfaces — bao gồm ca `vite` thật (fail) và ca scoped `nanoid@3` (pass) (Req 4.4, Property 1)
   - [x] 7.6 Chạy guard trên cây hiện tại — phải xanh sau task 2–6, và phải **đỏ** nếu tạm hạ `overrides.vite` về `^7.3.5` (chứng minh nó bắt được ca thật)
 
-- [ ] 8. Đẩy #396' và merge
-  - [ ] 8.1 Force-push nhánh `chore/deps-consolidated-upgrade` (cần cho phép — rewrite history nhánh đã push) (Req 1.2)
-  - [ ] 8.2 Cập nhật mô tả PR #396: nêu việc hấp thu #399, đồng bộ `pnpm-workspace.yaml`, Node_Floor, guard drift, và ca drift `vite` phát hiện trên `main`
-  - [ ] 8.3 Chờ CI xanh toàn bộ, gồm `e2e-golden-path` (Req 10.4)
-  - [ ] 8.4 Merge #396'
+- [x] 8. Đẩy #396' và merge
+  - [x] 8.1 Force-push nhánh `chore/deps-consolidated-upgrade` — **hai lần**: lần đầu lên base sau #397, lần hai sau khi `main` nhận thêm #250. Rollback SHA ghi lại trước mỗi lần (`f96a4363`, rồi `3f83e72a`); cả hai dùng `--force-with-lease` (Req 1.2)
+  - [x] 8.2 Cập nhật mô tả PR #396 — **chặn một nhịp**: tài khoản `gh` đang active (`khuepham-tp`) chỉ có quyền `pull`, phải `gh auth switch --user khuepm` và switch không giữ qua các shell nên phải switch ngay trong cùng lệnh
+  - [x] 8.3 CI xanh toàn bộ, gồm `E2E golden path` và `Dependency vulnerability audit` (Req 10.4)
+  - [x] 8.4 Merge #396' — squash, landed `70030fe1`
 
-- [ ] 9. Dọn PR
-  - [ ] 9.1 Đóng #382 (trùng #396) và #383 (đã bị #385 trên `main` vượt) (Req 1.4)
-  - [ ] 9.2 **KHÔNG đóng #399** — chỉ 10/26 package của nó chồng lấn và đã hấp thu; `hono`, `@types/node`, `graphql-yoga` và phần còn lại thì chưa. Sau khi #396' merge, comment `@dependabot rebase` để nó tự dựng lại trên lockfile mới rồi merge (Req 1.5)
-  - [ ] 9.3 Sau khi #396' merge: đóng #369, #371, #373, #374, #375, #376, #377, #378, #379, #380, #381 kèm comment trỏ #396' (Req 1.3)
-  - [ ] 9.4 Xử lý #398 (`codeql-action/upload-sarif` 4.36.2 → 4.37.7) độc lập — xác nhận workflow CodeQL vẫn chạy (Req 8.3)
-  - [ ] 9.5 Rà `actions/upload-artifact` 4 → 7 của #369: nếu #396' không mang nó thì kiểm mọi call site trong `.github/workflows/` cho thay đổi API qua major (Req 8.2)
+- [x] 9. Dọn PR
+  - [x] 9.1 Đóng #382 (trùng #396) và #383 (đã bị #385 trên `main` vượt) (Req 1.4)
+  - [x] 9.2 **KHÔNG đóng #399** — chỉ 10/26 package chồng lấn. Đã comment nêu rõ phần chưa hấp thu + hai lưu ý khi rebase (gate `drift:check` mới, và yoga 5.21.3 không đóng B14). Dependabot **tự đóng #399 và tạo #403** thay thế: từ 26 update xuống còn 5 (`graphql-yoga` 5.21.3, `hono` 4.13.3, `@types/node` 26.2.0, `eslint` 10.8.1, `lenis` 1.3.26) — bằng chứng phần hấp thu có tác dụng. #403 xanh toàn bộ và đã merge `d796343b` (Req 1.5)
+  - [x] 9.3 Đóng #369, #371, #373–#381 sau khi #396' merge — **ba PR bị đóng sai lý do**, xem B23. #396 chỉ gộp npm deps nên không đụng action version (#369, #371), và nó dừng `nanoid` ở 5.1.16 để đóng advisory chứ không lên 6.x (#377). Không reopen được vì branch dependabot đã bị xoá lúc đóng → đã đăng comment sửa trên cả ba (Req 1.3)
+  - [x] 9.4 #398 (`codeql-action/upload-sarif` 4.36.2 → 4.37.7) — CI của nó là bản cũ và `Dependency vulnerability audit` fail **chính vì** các advisory mà #396 vừa đóng; `@dependabot rebase` rồi xanh, merge `c1ce166d` (Req 8.3)
+  - [x] 9.5 Rà `actions/upload-artifact` 4 → 7: #396 KHÔNG mang nó. `docs-i18n-sync.yml` + `scorecard.yml` đã ở v7 nhưng **`perf-k6.yml:150` còn v4**. Đọc `action.yml` của v7 trước khi bump thay vì đoán — `if-no-files-found` vẫn default `warn`, đúng thứ step này dựa vào vì path list có glob `load-deliver-summary-*.json` hợp lệ khi không match gì; các input mới của v5–v7 đều default về hành vi cũ; job không có matrix nên không có va chạm tên artifact. Làm cùng `ossf/scorecard-action` 2.4.3 → 2.4.4 (SHA-pinned) trong PR #404, merge `9686d19c` (Req 8.2)
 
 - [x] 10. Verify source migration của các Breaking_Major (đã có trong #396, xác nhận còn nguyên sau rebase)
   - [x] 10.1 `@cloudflare/workers-types` 5: 3 call site Buffer đã chuyển Web-standard (`ArrayBuffer.isView`, `TextDecoder`, `btoa`), không có `@types/node` nào bị thêm vào `types` của Worker build (Req 6.1)
@@ -200,10 +200,6 @@ Ràng buộc không thể đảo:
   - [x] 12.5 Cập nhật `out-of-scope-backlog.md`: B15 → Settings_Parity xong, bump pnpm 10 giờ an toàn; B14 → peer `graphql@17` ↔ yoga **vẫn còn** sau batch, yoga hiện 5.21.3 (Req 9.2, 9.3)
   - [x] 12.6 Log mọi phát hiện ngoài scope mới vào `out-of-scope-backlog.md` trong cùng PR (Req 9.4)
 
----
-
-**Implementation status:** Not started. Spec viết 2026-08-20 sau khảo sát trực tiếp `main` tại `b8c5137c` (v0.25.0) + một lần rebase khô đã dọn.
-
 ## Notes
 
 - **`pnpm test` reset setup state** qua DB integration test (`AGENTS.md`). Dùng DB scratch, đừng chạy lên DB local đang có dữ liệu.
@@ -212,3 +208,20 @@ Ràng buộc không thể đảo:
 - **Verify Toolchain_Flip đọc lockfile, không đọc manifest** (6.2). Đây chính là chỗ `main` đang sai: manifest ghi vite 8, thực cài 7.3.6.
 - **`uuid` 14 cần build Worker thật** (10.7). Thay đổi là export map, không phải API — typecheck không bắt được.
 - **Ghi SHA trước khi force-push** (1.3). Đó là đường về duy nhất nếu #396' sai.
+
+---
+
+**Implementation status:** Hoàn tất 2026-08-21. Toàn bộ 12 task xong; không còn PR dependabot nào mở.
+
+Đã merge: **#397** (`b9e98d3e`) → **#396** (`70030fe1`) → **#398** (`c1ce166d`) → **#403** (`d796343b`) → **#404** (`9686d19c`). Đã đóng: #382, #383, #369, #371, #373–#381. #399 được dependabot thay bằng #403.
+
+Verified trên base cuối: `pnpm -r typecheck` 16/16 · `pnpm test` 11/11 (cms 2474 pass/3 skip, studio 378, docs 144, runtime 131, landing 57, sdk 37, mcp-server 32, database 15, create-lumibase 14) · `pnpm lint` 6/6 · `pnpm build` 9/9 · `pnpm audit --prod --audit-level high` sạch · version/registry/settings/drift/scripts checks xanh. Vite verify từ **lockfile importer** (8.2.2, không đọc manifest); `uuid` 14 verify từ **bundle Node thật** vì rủi ro của nó là export map — nó không vào bundle Worker (B10).
+
+**Bốn chỗ lệch khỏi design, đều có lý do:**
+
+1. **`semver` KHÔNG được thêm.** Script parity của #397 nêu nguyên tắc "a check on install settings must not depend on a successful install"; thêm dep sẽ phá nguyên tắc đó. Viết range-logic tối thiểu thay thế — và viết test cho nó đã bắt được một bug: `3` trong scope key `nanoid@3` là nhánh 3.x, không phải bản 3.0.0.
+2. **#399 không đóng như "đã hấp thu"** (Req 1.5 sửa lại) — nói vậy là tuyên bố sai. Dependabot tự thay nó bằng #403.
+3. **Rebase hai lần, không một lần.** `main` chạy tiếp giữa lúc làm (#397, rồi #250), và lần hai lộ ra hai va chạm số dùng chung: Registry #102 bị lấy hai lần (batch này chuyển sang **#103**, `registry:check` bắt được) và backlog id B17 bị lấy hai lần (ba phát hiện của batch chuyển thành **B20/B21/B22**).
+4. **Ba PR bị đóng sai lý do** (task 9.3) → B23, và phần việc thật của #369/#371 làm trong #404; `nanoid` 5→6 của #377 còn mở ở **B24**.
+
+**Còn mở sau batch:** B14 (`graphql@17` vs peer `graphql-yoga` `^15 || ^16` — yoga 5.21.3 không đổi peer range) · B21 (plugin `eslint-config-next` khai peer chặn ở eslint 9 trong khi workspace cài 10; lint pass thật, chỉ là gap khai báo) · B22 (`__dirname` trong vitest config của Studio) · B24 (`nanoid` 5→6, cần thêm scope `nanoid@6`) · B15 tiền đề đã xong nên bump pnpm 10 giờ an toàn.
