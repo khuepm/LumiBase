@@ -97,6 +97,7 @@ Custom JWTs carry an `aud` claim pinned at sign time
 | `frontend` | subscribers / appAccess-less roles | ❌ **hard-rejected by `withStudioAccess`** | `30d` (`FRONTEND_SESSION_TTL`) | `90d` (`FRONTEND_REFRESH_TTL`) |
 | `email-verify` | one-shot registration link token | n/a (not a session token) | 24h (link) | — |
 | `password-reset` | one-shot password-reset link token | n/a (not a session token) | 1h (link) | — |
+| `mfa-challenge` | one-shot step-up token between password and TOTP (§4f) | n/a (not a session token) | 5m | — |
 
 **Per-realm TTL** (`sessionTtlFor` / `refreshTtlFor`): the two realms no
 longer share one lifetime — staff sessions are short (higher-value target,
@@ -298,6 +299,58 @@ For a logged-in user (`bearer`, under `/api/v1/me`):
   `DELETE /me/sessions/:id` revokes one, and `DELETE /me/sessions` revokes
   all (logout everywhere). Expired/revoked rows are swept by the hourly
   prune (§4d).
+
+## 4f. Two-factor authentication (TOTP)
+
+Native, per-user, **opt-in**. Enrollment lives in Studio under
+**Settings → Security**; there is no wizard step and no tenant-wide switch
+(the existing `enforceTfa` policy flag is what makes 2FA mandatory for a
+role). Only the `studio` realm is challenged — subscriber (`frontend`)
+logins are unaffected.
+
+**Login becomes two legs.** `POST /auth/login` verifies the password as
+before, then, if the user has a verified TOTP credential, returns
+`{ status: 'mfa_required', challengeToken, expiresIn }` instead of a session.
+The client posts that token plus a code to `POST /auth/verify-totp`, which
+returns the normal login payload with `amr: ["pwd", "totp"]`.
+
+The challenge token is a 5-minute HS256 JWT on the `mfa-challenge` audience,
+so `withAuth` will never accept it as a session; its `jti` is recorded in the
+cache provider on use, so a captured token cannot be replayed. `verify-totp`
+is a public path (the caller has no session yet) and is therefore listed in
+the `withAuth`, `site-membership`, and `studio-access` public sets — the
+handler derives `userId`/`siteId` from the signed challenge, never from
+client input, and re-checks the challenge's `siteId` against the resolved
+tenant. Attempts are rate-limited per user (10) and per IP (30) per 15 min.
+
+**Where secrets live.** The base32 seed is written only as a KeyProvider AEAD
+envelope (`lumibase_user_totp_credentials.secret_ciphertext` +
+`secret_key_id`), so production enrollment requires `ENCRYPTION_KEY`. The
+plaintext seed is returned exactly once, by `POST /me/tfa/setup`, and is not
+readable afterwards. The eight recovery codes are shown once and persisted as
+PBKDF2 hashes (`lumibase_user_totp_recovery_codes`), single-use, with the
+consuming IP recorded. Replay inside the verify window is blocked by
+`last_used_step`. `users.tfa` holds only non-secret enrollment state.
+
+**Mutating 2FA needs step-up.** Setup, recovery-code regeneration, and
+disable all require the current password; the latter two also require a live
+TOTP code. Disabling bumps `tokenVersion` and revokes refresh tokens, so a
+stolen session cannot quietly downgrade the account's protection. Enroll and
+disable both write audit events (`mfa_enrolled` / `mfa_disabled`); failed
+verifies write `mfa_verify_failed`. TOTP codes, seeds, recovery codes, and
+challenge tokens are on the audit logger's drop list, so none of them can
+reach the audit trail.
+
+**Multi-tenancy.** A TOTP credential belongs to the **identity**, not to a
+site — the tables are keyed by `user_id` only, matching the single identity
+store (§2) and the existing `lumibase_admin_backup_codes`. Enrolling once
+protects the user's login on every site they belong to, which is the intended
+behaviour; there is no per-site enrollment and nothing to isolate by
+`site_id`. Tenant-scoped side effects still are: the audit events are written
+with the request's `siteId`, and disable revokes refresh tokens for the
+current site. Env knobs are deployment-wide: `ENCRYPTION_KEY` (required to
+enroll) and `LUMIBASE_TOTP_ISSUER` (label in authenticator apps, default
+`LumiBase`).
 
 ## 5. Staff onboarding (do NOT use self-service)
 

@@ -9,7 +9,57 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Added
+
+- **Native two-factor authentication (TOTP) for Studio logins.** Opt-in, per
+  user, enrolled from **Settings → Security**. Until now `users.tfa` was a
+  placeholder delegated to Logto and the `require_mfa` anomaly action had no
+  module behind it; both are now real. A Studio login by an enrolled user
+  returns `{ status: 'mfa_required', challengeToken, expiresIn }` instead of a
+  session, and `POST /api/v1/auth/verify-totp` exchanges that token plus a
+  6-digit code — or a recovery code — for the normal login payload
+  (`amr: ["pwd", "totp"]`). The challenge is a 5-minute JWT on its own
+  `mfa-challenge` audience, so `withAuth` cannot mistake it for a session, and
+  its `jti` is single-use. Verification is rate-limited per user (10) and per
+  IP (30) per 15 minutes. Self-service management lives under
+  `/api/v1/me/tfa*`: `setup` (password step-up → one-time secret +
+  `otpauthUrl`), `confirm` (proves possession, returns eight single-use
+  recovery codes), `recovery-codes` (regenerate), and `DELETE` (disable, which
+  bumps `tokenVersion` and revokes refresh tokens so a stolen session cannot
+  silently remove the second factor). Subscriber (`frontend`) logins are
+  untouched. Migration `0014_user_totp` adds
+  `lumibase_user_totp_credentials` + `lumibase_user_totp_recovery_codes`
+  (additive, idempotent, no backfill). The TOTP seed is stored only as a
+  KeyProvider AEAD envelope, so **enrolling in production requires
+  `ENCRYPTION_KEY`**; recovery codes are stored as PBKDF2 hashes. Optional
+  `LUMIBASE_TOTP_ISSUER` sets the label authenticator apps display. Docs:
+  `docs/en/security/user-management.md` §4f.
+
 ### Fixed
+
+- **`isTfaEnrolled` no longer treats a bare secret as proof of enrollment.**
+  The helper accepted `tfa.secret` / `tfa.tfaSecret` as "enrolled", which was
+  written for the Logto-delegated placeholder shape. With native TOTP a secret
+  exists from the moment setup begins, so that reading would have counted a
+  half-finished, never-verified enrollment as satisfying an `enforceTfa`
+  policy. Enrollment is now decided only by the explicit
+  `enabled`/`enrolled`/`verified` flags, which `confirm` sets.
+- **Settings → Security resolves on custom admin paths.** The new page was
+  added to the plain `/settings` route tree only, so on an instance running a
+  custom admin path the sidebar item would have led nowhere — the same
+  omission recorded as backlog B9 for `change-feed`/`encryption`. The
+  `/$adminPath/settings/security` twin is wired in the same change.
+- **Migration `0014_user_totp` is re-runnable.** Its two foreign keys were
+  emitted as bare `ADD CONSTRAINT`, which fails with `duplicate_object` on a
+  second apply; they now carry the repo's standard `DO $$ … EXCEPTION` guard.
+- **Studio component tests no longer flake under load.** Testing Library's
+  async timeout is separate from Vitest's `testTimeout` and defaults to
+  1000ms, so `findBy*` on a query-driven page could give up while the
+  component still showed "Loading…". The failing file moved between runs
+  (backlog B13), turning the pre-commit gate red for reasons unrelated to the
+  diff. The suite now configures `asyncUtilTimeout: 5000`; async utilities
+  still resolve as soon as the assertion passes, so fast machines are
+  unaffected.
 
 - **MCP path-traversal tripwire no longer blind to spliced path segments.**
   The registry scan in `path-hardening.wiring.test.ts` probed each argument

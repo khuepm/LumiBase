@@ -26,6 +26,7 @@ import { accessGrantsRouter } from './routes/access-grants';
 import { adminRouter } from './routes/admin';
 import { configRouter } from './routes/config';
 import { authRouter, meRouter } from './routes/auth';
+import { tfaAuthRouter, tfaMeRouter } from './routes/tfa';
 import { adminSecurityRouter } from './routes/admin-security';
 import { adminAuthIssuersRouter } from './routes/admin-auth-issuers';
 import { adminEncryptionRouter } from './routes/admin-encryption';
@@ -215,11 +216,13 @@ app.route('/api/v1/integrations/git', gitPublicRouter);
 const api = new Hono<AppEnv>();
 api.use('*', withTenant(), withDb(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
 api.route('/auth', authRouter);
+authRouter.route('/', tfaAuthRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).
 // Mounted on the authenticated `api` Hono so `withAuth` already enforces
 // that the caller has a valid session before the handler runs.
 api.route('/me', meRouter);
+meRouter.route('/', tfaMeRouter);
 // `/me/consents` — self-service consent management (GDPR Art. 7, PDPD).
 // Separate router from `meRouter`; mounted under the same authenticated `api`
 // chain so the caller can only read/write their own consent.
