@@ -3,16 +3,21 @@ import { Layout } from './components/Layout';
 import { LegacyRedirect } from './components/LegacyRedirect';
 import { LocaleGuard } from './components/LocaleGuard';
 import { DocPage } from './pages/DocPage';
+import { LandingPage } from './pages/LandingPage';
 import { NotFoundPage } from './pages/NotFoundPage';
-import { pathFor } from './lib/url';
 import { getPreferredLocale } from './lib/locale-storage';
 
 /**
- * Root → previously chosen locale's README (defaultLocale on first visit,
- * during SSR, or when no preference is stored).
+ * Root (`/`) → the previously chosen locale's landing page (defaultLocale on
+ * first visit, during SSR, or when no preference is stored).
+ *
+ * Only the bare locale prefix is redirected, never a doc slug: `/` and `/en/`
+ * both resolve to a real, styled LandingPage rather than bouncing on to
+ * docs/README. The prerenderer renders that same page through this route tree,
+ * so the static HTML and the hydrated app agree and nothing flashes.
  */
 function RootRedirect() {
-  return <Navigate to={pathFor(getPreferredLocale(), 'README')} replace />;
+  return <Navigate to={`/${getPreferredLocale()}/`} replace />;
 }
 
 /**
@@ -44,7 +49,7 @@ export const routes: RouteObject[] = [
       </LocaleGuard>
     ),
     children: [
-      { index: true, element: <Navigate to="docs/README" replace /> },
+      { index: true, element: <LandingPage /> },
       { path: 'docs/*', element: <DocPage /> },
     ],
   },
