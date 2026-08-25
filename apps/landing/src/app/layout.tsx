@@ -5,6 +5,8 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import CosmicBackground from "@/components/CosmicBackground";
 import SmoothScroll from "@/components/scroll/SmoothScroll";
+import Analytics from "@/components/analytics/Analytics";
+import { resolveMeasurementId } from "@/lib/analytics/consent";
 
 const archivo = Archivo({ subsets: ["latin"], variable: "--font-sans" });
 const literata = Literata({ subsets: ["latin"], variable: "--font-serif" });
@@ -79,6 +81,10 @@ const webSiteJsonLd = {
     "The Content Operating System: declare intent, agents reconcile content, humans keep the veto.",
 };
 
+// Read at build time: `output: 'export'` inlines the value, so an unset
+// NEXT_PUBLIC_GA_ID ships a bundle with no GA tag and no cookie banner.
+const gaMeasurementId = resolveMeasurementId(process.env.NEXT_PUBLIC_GA_ID);
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -109,6 +115,7 @@ export default function RootLayout({
             <Footer />
           </div>
         </SmoothScroll>
+        {gaMeasurementId && <Analytics measurementId={gaMeasurementId} />}
       </body>
     </html>
   );

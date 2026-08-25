@@ -132,6 +132,48 @@ production. Without step 3 the module keeps working, but only in memory.
 The table DDL lives in `migrations/0001_sponsors.sql` and is mirrored by
 `SPONSORS_TABLE_DDL` in `src/lib/rewards/d1-store.ts` — keep the two in sync.
 
+## Analytics and consent
+
+Two measurement paths run side by side, and they are not interchangeable:
+
+| Source | Cookies | Consent | Where it is configured |
+| --- | --- | --- | --- |
+| Cloudflare Web Analytics | none | not required | Cloudflare dashboard (Pages injects the beacon) — **not in this repo** |
+| Google Analytics 4 | `_ga`, `_ga_<id>` | opt-in required | `NEXT_PUBLIC_GA_ID` at build time |
+
+`src/lib/analytics/` owns the logic; `src/components/analytics/` owns the UI.
+
+- **GA never loads before a grant.** `Analytics.tsx` does not render the tag
+  `<Script>` at all until consent is `granted`. That is stricter than Consent Mode
+  on its own, which loads the tag and merely withholds storage.
+- **Advertising signals stay denied.** `buildGtagBootstrap()` emits
+  `ad_storage`/`ad_user_data`/`ad_personalization` as `denied` plus
+  `allow_google_signals: false`, and the test suite fails if a `granted` ever
+  appears next to one of them.
+- **The measurement ID is validated before it is interpolated.** It lands inside
+  an inline `<script>`, so `resolveMeasurementId()` accepts only `G-XXXXXXX`; an
+  ID of any other shape resolves to `null` (analytics off) and the builders throw.
+- **Unset means invisible.** With no `NEXT_PUBLIC_GA_ID`, the layout renders no
+  `<Analytics>`, the privacy page shows "not configured on this deployment", and
+  no banner appears. Verify with `grep -rl googletagmanager out/`.
+- **Withdrawal works after the fact.** The privacy page control clears the stored
+  decision, flips Consent Mode back to `denied`, and deletes the `_ga*` cookies,
+  then re-opens the banner so the visitor chooses again.
+
+Page views on client-side navigations rely on GA4 enhanced measurement
+("page changes based on browser history events", on by default). We deliberately
+do **not** fire our own `page_view` on route change — that would double-count.
+
+Deployment: set the repo variable `NEXT_PUBLIC_GA_ID` (Settings → Variables), which
+`release.yml` and `pages-deploy.yml` pass to the build. It is inlined into the
+static export, so rotating the property needs a rebuild, not a runtime change.
+
+### Test coverage caveat
+
+The landing vitest project runs `environment: 'node'` and only picks up
+`src/**/*.test.ts`, so the pure logic above is covered but the banner interaction
+is not. See `B17` in `.kiro/steering/out-of-scope-backlog.md`.
+
 ## Environment Variables
 
 Copy `.env.example` to `.env.local` and configure:
@@ -139,6 +181,8 @@ Copy `.env.example` to `.env.local` and configure:
 ```env
 NEXT_PUBLIC_GITHUB_REPO=https://github.com/khuepm/lumibase
 NEXT_PUBLIC_DOCS_URL=https://docs.lumibase.dev
+# Optional — enables the GA4 tag behind an opt-in banner. Unset = no cookies.
+NEXT_PUBLIC_GA_ID=G-XXXXXXXXXX
 ```
 
 ## Project Structure

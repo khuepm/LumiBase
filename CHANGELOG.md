@@ -34,6 +34,33 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `ENCRYPTION_KEY`**; recovery codes are stored as PBKDF2 hashes. Optional
   `LUMIBASE_TOTP_ISSUER` sets the label authenticator apps display. Docs:
   `docs/en/security/user-management.md` §4f.
+- **Google Analytics 4 on the landing page, behind an opt-in.** `lumibase.dev`
+  already reported traffic through Cloudflare Web Analytics, which is cookieless
+  and needs no consent. GA4 answers a different question (campaign attribution,
+  funnels) and does set cookies, so it ships gated: the tag `<Script>` is not
+  rendered at all until the visitor allows analytics — stricter than Consent Mode
+  alone, which loads the tag and only withholds storage. Advertising signals are
+  pinned to `denied` (`ad_storage`, `ad_user_data`, `ad_personalization`, plus
+  `allow_google_signals: false`), and the measurement ID is validated against
+  `G-XXXXXXX` before it is interpolated into an inline script. Enable it by setting
+  the `NEXT_PUBLIC_GA_ID` repo variable, which `release.yml` and `pages-deploy.yml`
+  pass to the build; leave it unset and the export contains no tag, no banner, and
+  no cookies. See `apps/landing/README.md` → "Analytics and consent".
+- **A working opt-out on the privacy page.** The policy already claimed the right
+  to "opt out of analytics tracking" with nothing implementing it. There is now a
+  control that clears the stored decision, flips Consent Mode back to `denied`,
+  deletes the `_ga*` cookies, and re-opens the banner so the visitor chooses again.
+
+### Changed
+
+- **Landing privacy policy rewritten around what is actually collected.** It named
+  no processor and said only "analytics services (if enabled)" — not enough once
+  GA4 is in play. It now separates the always-on cookieless measurement from the
+  consent-gated GA4 path, names the cookies, states that Google may process data
+  outside your country, and confirms no ads and no data sales.
+- `turbo.json` adds `NEXT_PUBLIC_*` to the `build` task's cache key. Next.js inlines
+  those at build time, so without it, flipping `NEXT_PUBLIC_GA_ID` could replay a
+  cached build that still has the old tag baked in.
 
 ### Fixed
 

@@ -250,6 +250,11 @@ jobs:
 
       - name: Build Pages app
         if: matrix.app.name != 'marketplace'
+        # NEXT_PUBLIC_GA_ID is inlined at build time (the landing app is a static
+        # export), so it has to be present here rather than set at runtime. Unset
+        # means no GA tag and no cookie banner.
+        env:
+          NEXT_PUBLIC_GA_ID: ${{ vars.NEXT_PUBLIC_GA_ID }}
         run: pnpm --filter ${{ matrix.app.package }} build
 
       - name: Check Cloudflare credentials
