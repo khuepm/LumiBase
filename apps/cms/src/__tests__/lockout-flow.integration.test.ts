@@ -339,29 +339,12 @@ describe('Lockout flow — integration', () => {
   // ── 3. IP block from multi-email ────────────────────────────────────
 
   /**
-   * SKIPPED — blocked on design open question 8, not on this test.
-   *
-   * The assertion is correct and the counter reaches 10 as intended; what
-   * fails is *which policy is in force*. Two `login_security_policy` rows
-   * exist by the time the 11th request runs:
-   *
-   *   [{"site_id":"__default__","ip":"20"},{"site_id":"<throwaway>","ip":"10"}]
-   *
-   * and `loadLockoutPolicyFromSettings` selects by `key` alone with
-   * `LIMIT 1` and no `ORDER BY`, so the row that wins is whichever one
-   * Postgres hands back first — here the instance-wide row with
-   * ipMaxFailedAttempts=20, which 10 failures never cross.
-   *
-   * That loader comment states the reason plainly: open question 8
-   * (design §15.8) leaves the settings row's `siteId` ownership
-   * unresolved, so the lookup deliberately ignores siteId "until that
-   * lands". Choosing a winner here would be inventing security
-   * behaviour under cover of a test fix, so it is left skipped with the
-   * cause recorded instead of silently deleted or loosened.
-   *
-   * Un-skip together with the loader change that resolves open question 8.
+   * Un-skipped by the loader fix in the same change: the policy lookup is
+   * now ordered, so the instance-wide row this test writes is the one in
+   * force rather than whichever row Postgres returned first. See
+   * `loadLockoutPolicyFromSettings` and the row-selection suite next to it.
    */
-  it.skip('blocks an IP after 10 failed attempts across different emails with 429 IP_BLOCKED (Req 8.2, 8.3)', async () => {
+  it('blocks an IP after 10 failed attempts across different emails with 429 IP_BLOCKED (Req 8.2, 8.3)', async () => {
     if (!canConnect) {
       console.warn('Skipping: DATABASE_URL not set or database not reachable');
       return;
