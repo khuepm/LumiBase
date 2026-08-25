@@ -62,10 +62,7 @@ const docContent = fc.array(sentence, { minLength: 3, maxLength: 8 }).map((sente
  */
 const slug = fc.tuple(
   fc.constantFrom('guides', 'features', 'api', 'reference', 'tutorials'),
-  fc.stringOf(fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789'.split('')), {
-    minLength: 3,
-    maxLength: 10,
-  }),
+  fc.string({ unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789'.split('')), minLength: 3, maxLength: 10 }),
 ).map(([dir, name]) => `${dir}/${name}`);
 
 /**

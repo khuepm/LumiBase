@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 2
+lastUpdated: 2026-08-02T19:22:34.503Z
 sourceLang: vi
-contentHash: d668bbc29e7fdaba
+contentHash: 3a4ed673b2da93ce
 ---
 
 # Observability — Metrics, Logs, Dashboards, Tracing

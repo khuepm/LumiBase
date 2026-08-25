@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T10:56:36.955Z
+version: 2
+lastUpdated: 2026-08-02T19:08:03.859Z
 sourceLang: en
-contentHash: fa73f811c20a5c31
+contentHash: 5d9af79a03dae779
 ---
 
 # Architecture Decision Records (ADR)

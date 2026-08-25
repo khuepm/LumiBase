@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:21:20.573Z
+sourceLang: en
+contentHash: 3fcc9c501310e61f
+codeVerified: 2026-08-02T19:21:20.573Z
+codeVerifiedHash: 3fcc9c501310e61f
+codeVerifiedClaims: 4
+---
+
 # Realtime / WebSocket
 
 Realtime lets clients receive item changes and presence updates over WebSocket. LumiBase uses Cloudflare Durable Objects as a per-site hub, while enablement is split into several layers so operators can control it safely.

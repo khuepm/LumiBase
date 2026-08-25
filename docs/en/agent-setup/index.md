@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:25.632Z
+version: 2
+lastUpdated: 2026-08-02T19:11:28.854Z
 sourceLang: en
-contentHash: 605ac6e8cf30748d
+contentHash: 9730149bdbd5cb5c
 ---
 
 # Agent Setup — LumiBase

@@ -1,4 +1,14 @@
-# Tuân thủ & Quyền của người dùng
+---
+version: 1
+lastUpdated: 2026-08-02T19:10:34.119Z
+sourceLang: en
+translatedFrom: en
+sourceHash: b2197c8ff5d8c316
+mtEngine: manual
+syncStatus: human-translated
+---
+
+# Compliance & User Rights
 
 > Mục này ánh xạ **các quyền pháp lý mà người dùng cuối được hưởng** theo quy định
 > của các thị trường lớn (EU, US, Việt Nam) và **yêu cầu chính sách của các nền tảng
@@ -27,7 +37,7 @@
 | [dpa-template.md](./dpa-template.md) | Khung Thoả thuận xử lý dữ liệu (GDPR Điều 28) cho dịch vụ hosted. |
 | [implementation-checklist.md](./implementation-checklist.md) | Backlog ưu tiên (P0/P1/P2) để lấp khoảng trống. |
 
-Bản tiếng Anh nằm ở `docs/en/compliance/`.
+Bản tiếng Việt của phần này nằm ở `docs/vi/compliance/`.
 
 ## 2. Ma trận Quyền × Thị trường
 

@@ -1,14 +1,14 @@
 ---
 version: 1
-lastUpdated: 2026-07-28T11:48:31.596Z
+lastUpdated: 2026-08-02T19:05:49.466Z
 sourceLang: en
 translatedFrom: en
-sourceHash: bec65a2bb768bb4d
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T11:48:31.596Z
-codeVerifiedHash: bec65a2bb768bb4d
-codeVerifiedClaims: 22
+sourceHash: 8213b15617869cfe
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:05:54.545Z
+codeVerifiedHash: 8213b15617869cfe
+codeVerifiedClaims: 26
 ---
 
 # Checklist deploy LumiBase lên production
@@ -198,26 +198,26 @@ pnpm -F @lumibase/database migrate
     "AllowedHeaders": ["*"]
   }
   ```
-- [ ] Có lifecycle rule cho các upload tạm (tuỳ chọn)
+- [ ] Lifecycle rule cho temp upload (tuỳ chọn)
 
 ### MeiliSearch
 
 - [ ] Instance MeiliSearch đang chạy
-- [ ] Đã đặt master key (không dùng mặc định)
-- [ ] Đã tạo index cho việc tìm kiếm nội dung
+- [ ] Master key đã đặt (không dùng mặc định)
+- [ ] Index đã tạo cho tìm kiếm nội dung
 
 ### Redis
 
 - [ ] Instance Redis đang chạy
-- [ ] Đã bật xác thực bằng password
+- [ ] Đã bật mật khẩu xác thực
 - [ ] Đã bật TLS (nếu ở xa)
-- [ ] Đã cấu hình persistence (RDB/AOF)
+- [ ] Đã cấu hình tính lưu bền (RDB/AOF)
 
 ### Imgproxy
 
 - [ ] Instance Imgproxy đang chạy
 - [ ] Đã cấu hình signing key
-- [ ] Đã đặt giới hạn bộ nhớ phù hợp
+- [ ] Giới hạn memory được đặt phù hợp
 
 ---
 
@@ -225,13 +225,13 @@ pnpm -F @lumibase/database migrate
 
 ### Kiểm tra trước khi deploy
 
-- [ ] Đã rà `wrangler.toml` cho env production
-- [ ] Đã điền hết các binding ID:
-  - [ ] `HYPERDRIVE` id
-  - [ ] `CONFIG_CACHE` KV id
-  - [ ] Tên R2 bucket `MEDIA`
-  - [ ] Tên queue `REALTIME_QUEUE`
-- [ ] Đã cấu hình route đúng:
+- [ ] `wrangler.toml` đã rà soát cho môi trường production
+- [ ] Mọi binding ID đã điền:
+  - [ ] ID `HYPERDRIVE`
+  - [ ] KV ID `CONFIG_CACHE`
+  - [ ] R2 bucket name `MEDIA`
+  - [ ] Queue name `REALTIME_QUEUE`
+- [ ] Route được cấu hình đúng:
   ```toml
   [[env.production.routes]]
   pattern = "api.yourdomain.com"
@@ -241,7 +241,7 @@ pnpm -F @lumibase/database migrate
 ### Deploy
 
 ```bash
-# Build (bundle dry-run cho env production)
+# Build (bundle dry-run cho môi trường production)
 pnpm -F @lumibase/cms build:production
 
 # Deploy
@@ -300,10 +300,30 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
 
 ### Scale (tuỳ chọn)
 
+**Single process (mặc định)** — một container chạy cả HTTP + cron + queue consumer (`LUMIBASE_PROCESS_ROLE=all`):
+
 ```bash
-# Scale CMS theo chiều ngang
-docker compose up -d --scale cms=3
+docker compose up -d cms
 ```
+
+**Tách biệt web / worker (khuyến nghị cho mở rộng theo chiều ngang)** — các bản sao HTTP không bị trùng lặp cron; một hoặc nhiều bản sao worker với khóa leader trên Redis:
+
+```bash
+# Khởi động hạ tầng + các vai trò tách biệt (profile compose `split`)
+docker compose --profile split up -d postgres redis minio minio-init meilisearch imgproxy cms-web cms-worker
+
+# Scale tầng HTTP (worker giữ ở 1 trừ khi bạn thêm worker với khóa Redis chia sẻ)
+docker compose --profile split up -d --scale cms-web=3
+```
+
+| Service | `LUMIBASE_PROCESS_ROLE` | Lắng nghe trên |
+|---------|-------------------------|------------|
+| `cms` / `cms-web` | `all` / `web` | `PORT` (mặc định 1989) — Delivery + API |
+| `cms-worker` | `worker` | `LUMIBASE_WORKER_HEALTH_PORT` (mặc định 1988) — chỉ `/health` |
+
+Các tiến trình Worker tiêu thụ hàng đợi và chạy các job `node-cron`; chỉ có tiến trình giữ khóa Redis mới thực thi mỗi nhịp cron khi `REDIS_URL` được đặt.
+
+> **Tránh** `docker compose up -d --scale cms=3` trên service đơn khối `cms` — điều đó sẽ làm trùng lặp mọi cron và queue consumer. Hãy sử dụng profile tách biệt (split profile) để thay thế.
 
 ---
 
@@ -492,7 +512,7 @@ wrangler rollback --env production
 
 # Docker
 docker compose down
-docker compose pull  # pull tag trước đó
+docker compose pull  # pull previous tag
 docker compose up -d
 ```
 

@@ -1,8 +1,18 @@
 ---
 title: Trình tạo Collection
+version: 1
+lastUpdated: 2026-08-02T19:14:13.087Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 98a39c55026d8f08
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:14:13.087Z
+codeVerifiedHash: 98a39c55026d8f08
+codeVerifiedClaims: 4
 ---
 
-# Trình tạo Collection
+# Collections Builder
 
 Collections Builder là bề mặt no-code để định nghĩa content model trong LumiBase. Contract parity với Directus được khai báo rõ: metadata collection, chiến lược primary key, storage mode, fields, relations, schema diff/apply, SDK typegen và các giới hạn runtime đều là dữ liệu schema first-class.
 

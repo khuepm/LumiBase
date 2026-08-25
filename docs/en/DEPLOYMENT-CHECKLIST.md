@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:48:31.596Z
+version: 2
+lastUpdated: 2026-08-02T19:05:49.466Z
 sourceLang: en
-contentHash: bec65a2bb768bb4d
-codeVerified: 2026-07-28T11:48:31.596Z
-codeVerifiedHash: bec65a2bb768bb4d
-codeVerifiedClaims: 22
+contentHash: 8213b15617869cfe
+codeVerified: 2026-08-02T19:05:54.545Z
+codeVerifiedHash: 8213b15617869cfe
+codeVerifiedClaims: 26
 ---
 
 # LumiBase Production Deployment Checklist

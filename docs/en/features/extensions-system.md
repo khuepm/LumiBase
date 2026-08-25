@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 3
+lastUpdated: 2026-08-02T19:24:22.964Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 380b330ad8455252
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: ffe9ae1d87df7293
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:22:34.688Z
+codeVerifiedHash: ea702bc10561b02e
+codeVerifiedClaims: 2
 ---
 
 # Extension System

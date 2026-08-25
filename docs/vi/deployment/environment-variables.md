@@ -1,15 +1,18 @@
 ---
-version: 2
-lastUpdated: 2026-07-28T10:30:25.628Z
+<!-- check-parity: allow inline-code -->
+version: 3
+lastUpdated: 2026-08-02T19:21:21.951Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 9d27520c67af75a0
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T10:30:25.628Z
-codeVerifiedHash: 9d27520c67af75a0
-codeVerifiedClaims: 60
+sourceHash: 3d391bafaa36323f
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:21:21.951Z
+codeVerifiedHash: 3d391bafaa36323f
+codeVerifiedClaims: 62
 ---
+
+<!-- check-parity: allow inline-code -->
 
 # Tham chiếu biến môi trường
 
@@ -20,6 +23,7 @@ codeVerifiedClaims: 60
 Trang này liệt kê mọi biến môi trường và binding Cloudflare mà LumiBase sử dụng.
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Runtime lõi
 
@@ -39,6 +43,7 @@ trong build artifact.
 Đây là trạng thái vận hành riêng tư. Không phơi bày qua biến môi trường `VITE_*` hay client build metadata, và không tự động redirect các route public/setup tới nó ở production. Xem [Admin path riêng tư](./private-admin-path.md).
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Xác thực (Logto)
 
@@ -52,6 +57,7 @@ trong build artifact.
 | `CF_ACCESS_AUDIENCE` | Chỉ CF Access | Audience tag của ứng dụng Cloudflare Access |
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Cơ sở dữ liệu
 
@@ -65,6 +71,7 @@ trong build artifact.
 Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#binding-cloudflare)).
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Cache
 
@@ -76,6 +83,7 @@ Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#
 | `CACHE_TTL_SETTINGS` | ✗ | TTL cache settings, đơn vị giây (mặc định: `60`) |
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Lưu trữ object
 
@@ -89,6 +97,7 @@ Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#
 | `S3_PUBLIC_URL` | ✗ | Base URL công khai cho asset (vd URL CDN trỏ tới bucket) |
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Tìm kiếm (MeiliSearch)
 
@@ -98,6 +107,7 @@ Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#
 | `MEILISEARCH_API_KEY` | Nếu bật search | Master key hoặc search API key của MeiliSearch |
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## AI Copilot
 
@@ -118,6 +128,7 @@ Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#
 > **Provider ↔ billing:** `nvidia` và `vertex` gọi các cloud *bên ngoài* — lần lượt là NVIDIA và Google Cloud — nên usage của chúng **không** được tính vào credit AWS. `nvidia` (hoặc NIM self-host qua `NVIDIA_BASE_URL`) và MeiliSearch là các phần ăn khớp tự nhiên với hạ tầng host trên AWS.
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Email (Resend)
 
@@ -127,6 +138,7 @@ Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#
 | `EMAIL_FROM` | Nếu bật email | Địa chỉ người gửi (vd `noreply@yourdomain.com`) |
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## SCIM provisioning
 
@@ -135,6 +147,7 @@ Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#
 | `SCIM_TOKEN` | Nếu bật SCIM | Bearer token xác thực endpoint `/scim/v2/` |
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Pressure limiter (Docker / Node.js)
 
@@ -150,6 +163,7 @@ CMS chạy bằng Docker có cơ chế bảo vệ quá tải cho event loop Node
 | `LUMIBASE_PRESSURE_LIMITER_EXCLUDED_PATHS` | ✗ | `/health,/metrics` | Danh sách prefix phân tách bằng dấu phẩy vẫn được phục vụ khi guard phát hiện quá tải. |
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Rate limiting
 
@@ -164,6 +178,7 @@ Import lớn có thể chạm ngân sách mặc định. Tăng `LUMIBASE_RATE_LI
 | `LUMIBASE_RATE_LIMIT_DISABLED` | ✗ | (không đặt) | Đặt `true` để tắt hẳn throttle. |
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## GraphQL
 
@@ -176,6 +191,7 @@ Mọi operation GraphQL đều được validate trước khi chạy, đối chi
 | `LUMIBASE_GQL_MAX_LIST_MULTIPLIER` | ✗ | `100` | Trần clamp cho hệ số nhân chi phí của một list field bất kỳ. |
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Observability
 
@@ -186,6 +202,7 @@ Mọi operation GraphQL đều được validate trước khi chạy, đối chi
 | `LOG_FORMAT` | ✗ | `json` (mặc định) hoặc `pretty` (local dev) |
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Binding Cloudflare
 
@@ -218,6 +235,7 @@ bindings = [{ name = "SITE_ROOM", class_name = "SiteRoom" }]
 ```
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Checklist bảo mật
 

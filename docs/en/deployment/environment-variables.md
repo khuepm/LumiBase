@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-07-28T10:30:25.628Z
+version: 3
+lastUpdated: 2026-08-02T19:21:21.951Z
 sourceLang: en
-contentHash: 9d27520c67af75a0
-codeVerified: 2026-07-28T10:30:25.628Z
-codeVerifiedHash: 9d27520c67af75a0
-codeVerifiedClaims: 60
+contentHash: 3d391bafaa36323f
+codeVerified: 2026-08-02T19:21:21.951Z
+codeVerifiedHash: 3d391bafaa36323f
+codeVerifiedClaims: 62
 ---
 
 # Environment Variables Reference

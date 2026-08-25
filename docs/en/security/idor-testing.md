@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:08:11.984Z
+sourceLang: en
+contentHash: 96605efe226fc3ad
+codeVerified: 2026-08-02T19:08:11.984Z
+codeVerifiedHash: 96605efe226fc3ad
+codeVerifiedClaims: 2
+---
+
 # Insecure Direct Object References (IDOR) Testing Guidelines
 
 ## Overview

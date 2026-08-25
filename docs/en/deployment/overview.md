@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:10:07.375Z
+sourceLang: en
+contentHash: 36ae5aa938f6c83d
+codeVerified: 2026-08-02T19:10:07.375Z
+codeVerifiedHash: 36ae5aa938f6c83d
+codeVerifiedClaims: 8
+---
+
 # Deployment Overview
 
 LumiBase supports two deployment modes from the same CMS codebase:

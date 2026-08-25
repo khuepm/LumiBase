@@ -1,3 +1,14 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:11:44.060Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 3b3decebac998a79
+mtEngine: manual
+syncStatus: human-translated
+<!-- check-parity: allow inline-code -->
+---
+
 # System Collections & Sensitive Access Contract
 
 Ngày chốt: 2026-06-03.
@@ -11,7 +22,7 @@ Tài liệu này là contract cho:
 
 Nguồn: `packages/database/src/schema/*`.
 
-## 1. Nguyên tắc
+## Principles
 
 1. Không coi system collection như content collection mặc định.
 2. Public policy không được grant system collection trừ khi explicit và đã review.
@@ -20,7 +31,7 @@ Nguồn: `packages/database/src/schema/*`.
 5. Khi thêm bảng system mới, phải phân loại vào tài liệu này trước khi seed production.
 6. Các bảng chứa secret/hash/token/audit/security state chỉ cho `policy_admin` hoặc policy security chuyên dụng.
 
-## 2. Seed policy keys chuẩn
+## Standard Seed Policy Keys
 
 | Policy key | Mục tiêu |
 |---|---|
@@ -35,7 +46,7 @@ Nguồn: `packages/database/src/schema/*`.
 | `policy_studio_self` | User đăng nhập Studio: đọc/update profile, notifications, presets của chính mình. |
 | `policy_public` | Không app access; chỉ grant content public explicit. |
 
-## 3. Bảng phân loại hiện tại
+## Current Classification
 
 | Nhóm UI | Collections | Hiển thị trong Permission Builder | Seed mặc định | Ghi chú |
 |---|---|---|---|---|
@@ -50,10 +61,10 @@ Nguồn: `packages/database/src/schema/*`.
 | Extensions | `extensions` | Extension manager | `policy_extension_manager` | Grant capability/install/enable/delete là privileged. |
 | Translation memory | `translation_memory`, `glossary` | Translation manager | Dedicated translation policy | Có thể chứa nội dung nội bộ; không public mặc định. |
 | AI | `ai_approvals`, `ai_conversations`, `ai_messages`, `ai_embeddings` | AI manager / owner scoped | `policy_ai_manager` | Conversations/messages có thể chứa PII hoặc secrets do user nhập. |
-| CDC | `cdc_pipelines`, `cdc_pipeline_health`, `cdc_deployments` | Automation/ops manager | `policy_automation_manager` hoặc ops policy | Pipeline connection/env config là sensitive. |
+| CDC | `cdc_pipelines`, `cdc_pipeline_health`, `cdc_deployments` | Automation/ops manager | Automation hoặc ops policy | Pipeline connection/env config là sensitive. |
 | Security sensitive | `system_state`, `audit_log`, `login_attempts`, `login_baselines`, `admin_backup_codes`, `scim_tokens` | Hidden for non-admin | `policy_admin`, `policy_security_manager` | Không hiển thị cho non-admin; không public; không export secrets. |
 
-## 4. Sensitive collections hard rule
+## Sensitive Collections Hard Rule
 
 Các collection sau là **sensitive/admin-only**:
 
@@ -83,7 +94,7 @@ Rules:
 - Export/import không chứa plaintext secret/token/hash material.
 - Nếu cần cho security manager đọc, dùng read-only và field mask.
 
-## 5. Future virtual/system access targets
+## Future Virtual/System Access Targets
 
 Các target này có thể không phải bảng DB trực tiếp nhưng phải xuất hiện trong Permission Builder:
 
@@ -96,7 +107,7 @@ Các target này có thể không phải bảng DB trực tiếp nhưng phải x
 | `shares` | Quản lý share link. |
 | `admin_security` | Unlock user, unblock IP, recovery/audit security actions. |
 
-## 6. Seed tối thiểu
+## Minimum Seed
 
 Seed local/staging/prod tối thiểu:
 
@@ -113,7 +124,7 @@ Không seed:
 - plaintext API/static token;
 - non-admin write vào access/security collections.
 
-## 7. Checklist khi thêm system collection mới
+## Checklist For New System Collections
 
 1. Thêm collection vào bảng phân loại ở tài liệu này.
 2. Chọn seed policy owner.
