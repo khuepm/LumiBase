@@ -29,6 +29,7 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
+import { DEFAULT_SITE_ID } from './site-constants';
 import {
   adminBackupCodes,
   agentAutonomyGrants,
@@ -535,7 +536,6 @@ export class SetupService {
         //       run (e.g. after a crash mid-initializing) is idempotent.
         //       The operator can rename/reconfigure the site via the Studio
         //       after first-run.
-        const DEFAULT_SITE_ID = '__default__';
         // The `sites` row is the source of truth for site identity. Persist the
         // wizard's project config onto it directly (the `project_configuration`
         // settings key below is kept for back-compat readers). Theme/branding
