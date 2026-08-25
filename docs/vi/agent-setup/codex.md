@@ -4,11 +4,11 @@ lastUpdated: 2026-07-08T20:22:25.809Z
 sourceLang: en
 translatedFrom: en
 sourceHash: 051a5ab7df48ac91
-mtEngine: claude
-syncStatus: machine-translated
+mtEngine: manual
+syncStatus: human-translated
 ---
 
-# Codex — Thiết lập Agent cho LumiBase
+# Codex — LumiBase Agent Setup
 
 > **Codex** là một terminal agent nhẹ, mã nguồn mở, có thể đọc và ghi file, chạy lệnh, và duyệt web trong một sandbox. Do OpenAI tạo ra.
 >

@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:10:24.794Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 46a5838fdd03d299
+mtEngine: manual
+syncStatus: human-translated
+---
+
 # EU — GDPR & ePrivacy
 
 > Các nghĩa vụ tại Liên minh châu Âu / EEA liên quan nhất đến một CMS/Content OS.

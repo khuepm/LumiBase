@@ -70,18 +70,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check package versions
-        run: pnpm version:check
-
-      - name: Check registry numbering
-        run: pnpm registry:check
-
-      # pnpm 9 reads install settings from package.json; pnpm 10+ reads them
-      # from pnpm-workspace.yaml. Both copies exist during the transition
-      # (#295), so fail fast when they drift instead of discovering it as a
-      # wall of audit failures after a future pnpm bump.
-      - name: Check pnpm settings parity
-        run: pnpm settings:check
+      # One aggregate step so the local pre-commit hook and CI cannot drift
+      # apart: `.husky/pre-commit` runs this same `pnpm check:all`. Adding a
+      # guard to the script therefore arms it in both places at once. Covers
+      # version:check, registry:check, settings:check, drift:check, scripts:test.
+      #
+      # Why each one earns its place:
+      #  - settings:check — pnpm 9 reads install settings from package.json;
+      #    pnpm 10+ reads them from pnpm-workspace.yaml. Both copies exist
+      #    during the transition (#295), so fail fast when they drift instead
+      #    of discovering it as a wall of audit failures after a pnpm bump.
+      #  - drift:check — an override applies to direct dependencies too, so it
+      #    can silently overrule what a manifest declares: `overrides.vite` sat
+      #    at ^7.3.5 while apps/studio and apps/docs declared ^8.1.3, and both
+      #    shipped Vite 7 builds under manifests claiming Vite 8. The parity
+      #    check cannot see this — the two override copies agreed with each
+      #    other, they were only both wrong relative to the manifests.
+      - name: Check repo guards (versions, registry, pnpm settings, override drift, scripts)
+        run: pnpm check:all
 
       # `pnpm -r` runs tsc in every workspace package directly — no turbo cache
       # in between — so a stale cache can never mask a type error on CI.
@@ -191,6 +197,107 @@ jobs:
       # step on purpose — both suites share the database.
       - name: Run upgrade-path E2E (0.x → 1.0 RBAC backfill)
         run: pnpm --filter @lumibase/cms exec vitest --run src/__tests__/upgrade-path.e2e.test.ts
+
+  db-integration:
+    name: DB integration suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The 19 `*.db.integration.test.ts` suites self-skip without DATABASE_URL,
+    # so before this job existed they were green-by-absence in CI: `pnpm test`
+    # in `checks` has no database, every one of them skipped, and nothing they
+    # assert could ever fail a PR. They ran only on a developer's machine.
+    #
+    # A separate job rather than adding services to `checks`: vitest turns off
+    # file parallelism whenever DATABASE_URL is set (see apps/cms/vitest.config.ts
+    # — the suites share one database and reset shared tables), so folding them
+    # into `checks` would serialize the whole 2400-test suite on every PR. Here
+    # the cost runs alongside `checks` instead of on top of it.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lumibase
+          POSTGRES_PASSWORD: lumibase_ci
+          POSTGRES_DB: lumibase
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lumibase"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # Same reason as the E2E job: the login and audit paths enqueue work
+      # through Redis, so suites that touch them stall or 500 without one.
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://lumibase:lumibase_ci@localhost:5432/lumibase
+      REDIS_URL: redis://localhost:6379
+      LUMIBASE_RUNTIME: docker
+      LUMIBASE_ENV: development
+      # Non-secret CI-only signing key — several auth suites read it off c.env.
+      JWT_SECRET: ci_db_integration_secret
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      - name: Get pnpm store directory
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare cache directories
+        shell: bash
+        run: |
+          mkdir -p "${{ steps.pnpm-store.outputs.path }}"
+
+      - name: Restore pnpm cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply database migrations
+        run: pnpm --filter @lumibase/database migrate
+
+      # Fail loudly if the filter stops matching. A rename that made this
+      # select zero files would otherwise reproduce exactly the silence this
+      # job exists to end.
+      - name: Assert the integration suites are discoverable
+        run: |
+          count=$(find apps/cms/src -name '*.integration.test.ts' | wc -l)
+          echo "found $count integration suite(s)"
+          test "$count" -ge 20
+
+      - name: Run integration suites against Postgres
+        run: pnpm --filter @lumibase/cms exec vitest --run integration
 
   lint-allowlist:
     name: Lint stable packages

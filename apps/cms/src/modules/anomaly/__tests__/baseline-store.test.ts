@@ -376,11 +376,11 @@ describe('mergeDevice — Req 11.5, 11.6 (LRU cap 20, MRU at front)', () => {
   it('property: cap holds and new fingerprint lands at MRU position', () => {
     fc.assert(
       fc.property(
-        fc.array(fc.hexaString({ minLength: 16, maxLength: 16 }), {
+        fc.array(fc.string({ unit: fc.constantFrom(...'0123456789abcdef'.split('')), minLength: 16, maxLength: 16 }), {
           minLength: 0,
           maxLength: 30,
         }),
-        fc.hexaString({ minLength: 16, maxLength: 16 }),
+        fc.string({ unit: fc.constantFrom(...'0123456789abcdef'.split('')), minLength: 16, maxLength: 16 }),
         (seedFps, newFp) => {
           const seed: DeviceFingerprintEntry[] = seedFps.map((fp, i) =>
             entry(fp, new Date(2024, 0, 1, 0, i).toISOString()),

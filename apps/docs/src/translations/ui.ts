@@ -13,6 +13,15 @@ export const ui = {
     en: 'Type at least 2 characters to search',
     vi: 'Gõ ít nhất 2 ký tự để tìm',
   },
+  'landing.title': {
+    en: 'LumiBase Documentation',
+    vi: 'Tài liệu LumiBase',
+  },
+  'landing.tagline': {
+    en: 'Complete documentation for LumiBase — the edge-native, multi-tenant headless CMS built on Cloudflare Workers.',
+    vi: 'Tài liệu đầy đủ cho LumiBase — headless CMS đa tenant, edge-native trên Cloudflare Workers.',
+  },
+  'landing.get-started': { en: 'Get started', vi: 'Bắt đầu' },
   'notfound.title': { en: 'Document Not Found', vi: 'Không tìm thấy tài liệu' },
   'notfound.home': { en: 'Back to home', vi: 'Về trang chủ' },
   'banner.translation-pending': {

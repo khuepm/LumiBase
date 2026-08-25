@@ -1,4 +1,16 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:02:55.280Z
+sourceLang: en
+contentHash: 0bbce68a2aca2873
+codeVerified: 2026-08-02T19:02:55.280Z
+codeVerifiedHash: 0bbce68a2aca2873
+codeVerifiedClaims: 2
+---
+
 # ADR-012: Remove CDC CacheInvalidator
+
+<!-- verify-code-refs: planned apps/cms/src/modules/cdc/cache-invalidator.ts -->
 
 **Date:** 2026-08-02  
 **Status:** Accepted

@@ -1,4 +1,14 @@
-# Chính sách nền tảng — Google Play & Apple App Store
+---
+version: 1
+lastUpdated: 2026-08-02T19:10:17.463Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 09dfe40abc90cd0e
+mtEngine: manual
+syncStatus: human-translated
+---
+
+# Distributor Policy — Google Play & Apple App Store
 
 > Chính sách app-store là yêu cầu **hợp đồng**: vi phạm có thể khiến ứng dụng bị từ
 > chối hoặc gỡ bỏ, độc lập với luật định. Chúng quan trọng với mọi ứng dụng dùng

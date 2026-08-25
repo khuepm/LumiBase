@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:04:04.473Z
+sourceLang: en
+contentHash: b0bd87080db91fc0
+codeVerified: 2026-08-02T19:04:04.473Z
+codeVerifiedHash: b0bd87080db91fc0
+codeVerifiedClaims: 6
+---
+
 # Performance tuning — operator guide
 
 High-load-cache-readiness (Req 16.6): index strategy and safe rollout for

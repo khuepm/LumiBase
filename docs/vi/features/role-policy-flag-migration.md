@@ -1,12 +1,18 @@
 ---
-version: 1
-lastUpdated: 2026-07-25T08:11:36.295Z
+<!-- check-parity: allow inline-code -->
+version: 2
+lastUpdated: 2026-08-02T19:21:22.343Z
 sourceLang: en
 translatedFrom: en
-sourceHash: dfe37d468d6dd7e6
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: c1ca4ca739543cc9
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:21:22.343Z
+codeVerifiedHash: c1ca4ca739543cc9
+codeVerifiedClaims: 4
 ---
+
+<!-- check-parity: allow inline-code -->
 
 # Migration role flags sang policy flags
 

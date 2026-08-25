@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:19:45.470Z
+sourceLang: en
+contentHash: ea5ce40da5193629
+---
+
 # User Rights Catalog
 
 > Plain-language explanation of each right an end user may be entitled to. For

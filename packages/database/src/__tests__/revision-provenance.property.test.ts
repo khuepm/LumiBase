@@ -78,7 +78,7 @@ describe('Feature: content-os, Property 13: Provenance round-trip', () => {
   );
   const hashArb = fc.oneof(
     fc.constant(null),
-    fc.hexaString({ minLength: 8, maxLength: 64 }).map((h) => `sha256:${h}`),
+    fc.string({ unit: fc.constantFrom(...'0123456789abcdef'.split('')), minLength: 8, maxLength: 64 }).map((h) => `sha256:${h}`),
   );
   const sourcesArb = fc.oneof(
     fc.constant(null),

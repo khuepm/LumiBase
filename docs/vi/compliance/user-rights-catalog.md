@@ -1,4 +1,14 @@
-# Danh mục Quyền của người dùng
+---
+version: 1
+lastUpdated: 2026-08-02T19:19:45.470Z
+sourceLang: en
+translatedFrom: en
+sourceHash: ea5ce40da5193629
+mtEngine: manual
+syncStatus: human-translated
+---
+
+# User Rights Catalog
 
 > Giải thích dễ hiểu từng quyền mà người dùng cuối có thể được hưởng. Với mỗi quyền:
 > nghĩa là gì, ví dụ thực tế, và chế độ pháp lý nào công nhận. Xem từng tài liệu thị

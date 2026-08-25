@@ -41,3 +41,10 @@ Thumbs.db
 coverage/
 docs/.i18n/code-refs-report.json
 docs/.i18n/parity-report.json
+
+# Agent skills are personal tooling, not project source. `.claude/commands/`
+# and `.claude/settings.json` stay tracked because they encode repo conventions
+# (the release runbook, the git identity hook); skills do not. Vendoring one in
+# put 23 files of third-party MIT code in the tree that nothing here imports —
+# keep them in `~/.claude/skills/` so they follow the developer, not the repo.
+.claude/skills/

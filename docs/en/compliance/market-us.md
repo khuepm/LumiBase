@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:09:13.561Z
+sourceLang: en
+contentHash: 27831c129c2af649
+---
+
 # US — CCPA/CPRA & CAN-SPAM
 
 > Key US obligations relevant to a CMS/Content OS. The US has no single federal

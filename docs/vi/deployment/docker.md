@@ -1,4 +1,20 @@
-# Triển khai Docker
+---
+<!-- check-parity: allow inline-code -->
+version: 1
+lastUpdated: 2026-08-02T19:21:08.504Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 562cf0016bbc6d0f
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:21:08.504Z
+codeVerifiedHash: 562cf0016bbc6d0f
+codeVerifiedClaims: 9
+---
+
+<!-- check-parity: allow inline-code -->
+
+# Docker Deployment
 
 Docker mode chạy CMS API bằng Node.js và dùng hạ tầng tự host cho các dịch vụ stateful.
 
