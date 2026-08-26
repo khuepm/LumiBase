@@ -14,7 +14,7 @@ import {
   useConsent,
   writeConsent,
   type ConsentDecision,
-} from "@/lib/analytics";
+} from "@lumibase/analytics-consent/react";
 
 /**
  * Loads GA4 behind an opt-in, and renders the banner that asks for it.

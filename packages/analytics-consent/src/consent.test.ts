@@ -11,7 +11,7 @@ import {
   writeConsent,
   type ConsentStorage,
 } from './consent';
-import { DENIED_CONSENT_SIGNALS, buildGtagBootstrap, gtagScriptUrl } from './gtag';
+import { DENIED_CONSENT_SIGNALS, buildGtagBootstrap, gtagScriptUrl, loadGtag } from './gtag';
 
 function memoryStorage(initial: Record<string, string> = {}): ConsentStorage {
   const map = new Map(Object.entries(initial));
@@ -155,8 +155,9 @@ describe('buildGtagBootstrap', () => {
       expect(snippet).toContain(`${signal}: 'denied'`);
       expect(snippet).not.toContain(`${signal}: 'granted'`);
     }
-    expect(snippet).toContain('allow_google_signals: false');
-    expect(snippet).toContain('allow_ad_personalization_signals: false');
+    // Tolerant of quoting/spacing: what matters is that both are off.
+    expect(snippet).toMatch(/allow_google_signals"?\s*:\s*false/);
+    expect(snippet).toMatch(/allow_ad_personalization_signals"?\s*:\s*false/);
   });
 
   it('grants analytics storage exactly once', () => {
@@ -182,5 +183,96 @@ describe('gtagScriptUrl', () => {
 
   it('refuses an unvalidated ID', () => {
     expect(() => gtagScriptUrl('G-A&id=G-EVIL')).toThrow(/invalid measurement ID/);
+  });
+});
+
+/**
+ * A document stub, so the imperative loader is testable without jsdom. Only the
+ * four members `loadGtag` touches are implemented.
+ */
+function fakeDocument() {
+  const head: { children: FakeScript[] } = { children: [] };
+  const win: { dataLayer?: unknown[] } = {};
+
+  interface FakeScript {
+    id: string;
+    async: boolean;
+    src: string;
+  }
+
+  const doc = {
+    defaultView: win,
+    getElementById: (id: string) => head.children.find((el) => el.id === id) ?? null,
+    createElement: (): FakeScript => ({ id: '', async: false, src: '' }),
+    head: {
+      appendChild: (el: FakeScript) => void head.children.push(el),
+    },
+  };
+
+  return { doc: doc as unknown as Document, win, scripts: head.children };
+}
+
+describe('loadGtag', () => {
+  it('injects an async tag script and applies Consent Mode', () => {
+    const { doc, win, scripts } = fakeDocument();
+
+    expect(loadGtag('G-ABC1234', { doc })).toBe(true);
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0]).toMatchObject({
+      async: true,
+      src: 'https://www.googletagmanager.com/gtag/js?id=G-ABC1234',
+    });
+
+    // Pushed as Arguments objects, which is what gtag.js expects; read them back
+    // positionally.
+    const calls = (win.dataLayer ?? []).map((entry) => Array.from(entry as ArrayLike<unknown>));
+    expect(calls.map((call) => [call[0], call[1]])).toEqual([
+      ['consent', 'default'],
+      ['consent', 'update'],
+      ['js', expect.any(Date)],
+      ['config', 'G-ABC1234'],
+    ]);
+    expect(calls[0]?.[2]).toEqual({
+      ad_storage: 'denied',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+      analytics_storage: 'denied',
+    });
+    expect(calls[1]?.[2]).toEqual({ analytics_storage: 'granted' });
+    expect(calls[3]?.[2]).toEqual({
+      allow_google_signals: false,
+      allow_ad_personalization_signals: false,
+    });
+  });
+
+  it('is idempotent — a re-render cannot stack duplicate tags', () => {
+    const { doc, win, scripts } = fakeDocument();
+
+    expect(loadGtag('G-ABC1234', { doc })).toBe(true);
+    expect(loadGtag('G-ABC1234', { doc })).toBe(false);
+    expect(scripts).toHaveLength(1);
+    expect(win.dataLayer).toHaveLength(4);
+  });
+
+  it('preserves a dataLayer that another script already created', () => {
+    const { doc, win } = fakeDocument();
+    const existing = [{ event: 'pre-existing' }];
+    win.dataLayer = existing;
+
+    loadGtag('G-ABC1234', { doc });
+
+    expect(win.dataLayer).toBe(existing);
+    expect(existing[0]).toEqual({ event: 'pre-existing' });
+  });
+
+  it('does nothing under SSR, where there is no document', () => {
+    expect(loadGtag('G-ABC1234', { doc: undefined })).toBe(false);
+  });
+
+  it('refuses an unvalidated ID before touching the document', () => {
+    const { doc, scripts } = fakeDocument();
+
+    expect(() => loadGtag('GTM-ABCD', { doc })).toThrow(/invalid measurement ID/);
+    expect(scripts).toHaveLength(0);
   });
 });

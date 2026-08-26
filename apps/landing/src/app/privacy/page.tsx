@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import CookiePreferences from "@/components/analytics/CookiePreferences";
-import { resolveMeasurementId } from "@/lib/analytics/consent";
+import { resolveMeasurementId } from "@lumibase/analytics-consent";
 
 const gaMeasurementId = resolveMeasurementId(process.env.NEXT_PUBLIC_GA_ID);
 
@@ -36,7 +36,8 @@ export default function PrivacyPolicy() {
             self-hosted instances.
           </p>
           <p>
-            For our public website (lumibase.dev), we collect two separate things:
+            On our public websites (lumibase.dev and docs.lumibase.dev), we collect two separate
+            things:
           </p>
           <ul>
             <li>
@@ -120,6 +121,18 @@ export default function PrivacyPolicy() {
             Your choice is stored locally in your browser, not on our servers, so it does not
             identify you. Withdrawing removes the analytics cookies we set and stops further
             collection.
+          </p>
+          <p>
+            Because that choice lives in your browser&apos;s per-site storage, it applies to one
+            site at a time. Our documentation site (
+            <a
+              href="https://docs.lumibase.dev"
+              className="underline transition-colors hover:text-foreground"
+            >
+              docs.lumibase.dev
+            </a>
+            ) asks separately and carries its own control in the page footer — allowing analytics
+            here does not allow it there, and neither does declining.
           </p>
           {gaMeasurementId ? (
             <CookiePreferences />

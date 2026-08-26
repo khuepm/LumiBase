@@ -141,28 +141,27 @@ Two measurement paths run side by side, and they are not interchangeable:
 | Cloudflare Web Analytics | none | not required | Cloudflare dashboard (Pages injects the beacon) — **not in this repo** |
 | Google Analytics 4 | `_ga`, `_ga_<id>` | opt-in required | `NEXT_PUBLIC_GA_ID` at build time |
 
-`src/lib/analytics/` owns the logic; `src/components/analytics/` owns the UI.
+The rules live in **`packages/analytics-consent`** (shared with `apps/docs`) — read
+its README for the invariants and why each exists. This app contributes the UI in
+`src/components/analytics/`:
 
-- **GA never loads before a grant.** `Analytics.tsx` does not render the tag
-  `<Script>` at all until consent is `granted`. That is stricter than Consent Mode
-  on its own, which loads the tag and merely withholds storage.
-- **Advertising signals stay denied.** `buildGtagBootstrap()` emits
-  `ad_storage`/`ad_user_data`/`ad_personalization` as `denied` plus
-  `allow_google_signals: false`, and the test suite fails if a `granted` ever
-  appears next to one of them.
-- **The measurement ID is validated before it is interpolated.** It lands inside
-  an inline `<script>`, so `resolveMeasurementId()` accepts only `G-XXXXXXX`; an
-  ID of any other shape resolves to `null` (analytics off) and the builders throw.
+- `Analytics.tsx` renders the tag `<Script>` only once consent is `granted`, plus
+  the banner that asks for it.
+- `CookiePreferences.tsx` is the withdrawal control on the privacy page.
+
+App-specific notes:
+
 - **Unset means invisible.** With no `NEXT_PUBLIC_GA_ID`, the layout renders no
-  `<Analytics>`, the privacy page shows "not configured on this deployment", and
-  no banner appears. Verify with `grep -rl googletagmanager out/`.
-- **Withdrawal works after the fact.** The privacy page control clears the stored
-  decision, flips Consent Mode back to `denied`, and deletes the `_ga*` cookies,
-  then re-opens the banner so the visitor chooses again.
-
-Page views on client-side navigations rely on GA4 enhanced measurement
-("page changes based on browser history events", on by default). We deliberately
-do **not** fire our own `page_view` on route change — that would double-count.
+  `<Analytics>`, the privacy page shows "not configured on this deployment", and no
+  banner appears. Verify with `grep -rl googletagmanager out/**/*.html` — empty. The
+  string does still appear in `out/_next/static/chunks/*.js` as unreachable code,
+  because the bundler keeps the component either way; that is not a loaded tag.
+- **The ID reaches the client through the RSC payload**, not a JS chunk: the layout
+  is a server component, so `out/*.html` carries the ID but never a
+  `googletagmanager` reference. The tag appears only after hydration, and only with
+  a grant.
+- **`transpilePackages`** in `next.config.ts` is required because workspace
+  packages publish raw TypeScript.
 
 Deployment: set the repo variable `NEXT_PUBLIC_GA_ID` (Settings → Variables), which
 `release.yml` and `pages-deploy.yml` pass to the build. It is inlined into the
@@ -171,8 +170,10 @@ static export, so rotating the property needs a rebuild, not a runtime change.
 ### Test coverage caveat
 
 The landing vitest project runs `environment: 'node'` and only picks up
-`src/**/*.test.ts`, so the pure logic above is covered but the banner interaction
-is not. See `B17` in `.kiro/steering/out-of-scope-backlog.md`.
+`src/**/*.test.ts`, so the shared rules are covered by the package suite but this
+app's banner interaction is not. `apps/docs` has the equivalent components under
+jsdom test cover; the landing half is still open as `B17` in
+`.kiro/steering/out-of-scope-backlog.md`.
 
 ## Environment Variables
 

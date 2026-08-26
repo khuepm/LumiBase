@@ -6,7 +6,7 @@ import Footer from "@/components/Footer";
 import CosmicBackground from "@/components/CosmicBackground";
 import SmoothScroll from "@/components/scroll/SmoothScroll";
 import Analytics from "@/components/analytics/Analytics";
-import { resolveMeasurementId } from "@/lib/analytics/consent";
+import { resolveMeasurementId } from "@lumibase/analytics-consent";
 
 const archivo = Archivo({ subsets: ["latin"], variable: "--font-sans" });
 const literata = Literata({ subsets: ["latin"], variable: "--font-serif" });

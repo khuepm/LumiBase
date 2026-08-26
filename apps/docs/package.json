@@ -16,6 +16,7 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
+    "@lumibase/analytics-consent": "workspace:*",
     "@lumibase/shared": "workspace:*",
     "@lumibase/ui": "workspace:*",
     "@shikijs/rehype": "^4.4.3",

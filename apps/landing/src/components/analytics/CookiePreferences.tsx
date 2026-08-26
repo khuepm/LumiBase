@@ -7,7 +7,7 @@ import {
   safeLocalStorage,
   useConsent,
   type ConsentDecision,
-} from "@/lib/analytics";
+} from "@lumibase/analytics-consent/react";
 
 const LABELS: Record<ConsentDecision, string> = {
   granted: "Analytics cookies: allowed",

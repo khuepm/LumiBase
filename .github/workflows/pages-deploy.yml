@@ -112,6 +112,10 @@ jobs:
           fi
 
       - name: Build docs
+        # VITE_GA_ID is inlined at build time, same contract as the landing app's
+        # NEXT_PUBLIC_GA_ID below. Unset means no GA tag and no cookie banner.
+        env:
+          VITE_GA_ID: ${{ vars.VITE_GA_ID }}
         run: pnpm docs:build
 
       - name: Deploy docs to Cloudflare Pages

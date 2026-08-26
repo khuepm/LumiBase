@@ -1,13 +1,17 @@
 /**
- * Consent state for the landing page's Google Analytics tag.
+ * Consent state for the public sites' Google Analytics tag.
  *
  * Cloudflare Web Analytics (injected by Pages) is cookieless and needs no
  * consent, so everything here exists for GA4 alone: GA4 writes `_ga` cookies
  * and is a third-country processor, which puts it behind an opt-in.
  *
- * The module is deliberately free of React and of direct `window` access so it
- * can be unit-tested under `vitest` with `environment: 'node'` (see
- * `apps/landing/vitest.config.mts` — the landing suite only picks up `.ts`).
+ * The module is deliberately free of React and of direct `window` access, so the
+ * same rules apply to a Next.js app and a Vite SPA and can be unit-tested under
+ * `environment: 'node'`.
+ *
+ * Note that consent is per-origin, because `localStorage` is: a decision made on
+ * `lumibase.dev` does not carry to `docs.lumibase.dev`. Each site asks for
+ * itself and must offer its own withdrawal control.
  */
 
 /** Where the visitor's choice is persisted. Bump the suffix to re-ask. */
