@@ -37,6 +37,32 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **The TOTP endpoints are actually reachable.** All six of them answered
+  `404 NOT_FOUND` against a running server. `index.ts` attached the sub-routers
+  *after* mounting their parents (`api.route('/auth', authRouter)` then
+  `authRouter.route('/', tfaAuthRouter)`), and Hono's `route()` copies a child's
+  routes at call time — so the handlers existed but nothing could reach them.
+  326 CMS test files passed throughout, because none of them drove these paths
+  through the composed app. Attachment now precedes mounting, and
+  `router-mount-order.wiring.test.ts` fails on the old order: it scans
+  `index.ts` for any sub-router attached after its parent was mounted, and pins
+  the Hono semantics that make the rule necessary.
+- **Enrollment no longer 500s at the confirm step.** `confirmTotpSetup` read the
+  pending record with `JSON.parse(await cache.get(...))`, but `CacheProvider.get`
+  already returns the value parsed (`set` takes a serialized string, `get` gives
+  back an object) — so confirming raised
+  `SyntaxError: "[object Object]" is not valid JSON` and no user could finish
+  enrolling.
+- **Settings → Security authenticates its requests.** The page fetched
+  `/api/v1/me/tfa*` with `credentials: 'same-origin'` and no `Authorization`
+  header, but `withAuth` only reads the bearer header — there is no cookie
+  branch — so every call returned 401. Worse than a dead page: the failed status
+  query fell through to `enabled = false`, so a user with 2FA **on** was shown
+  `Status: Disabled` and invited to enroll again. Requests now carry
+  `Authorization: Bearer` and resolve through `getApiBaseUrl()` (shell contract
+  C2), and a failed load renders an explicit error instead of a confident
+  security state. The same pattern elsewhere in Settings is logged as backlog
+  B26.
 - **`isTfaEnrolled` no longer treats a bare secret as proof of enrollment.**
   The helper accepted `tfa.secret` / `tfa.tfaSecret` as "enrolled", which was
   written for the Logto-delegated placeholder shape. With native TOTP a secret

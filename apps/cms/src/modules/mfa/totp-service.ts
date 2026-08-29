@@ -96,8 +96,12 @@ export async function confirmTotpSetup(
   secret: string,
   code: string,
 ): Promise<{ recoveryCodes: string[] }> {
-  const pendingRaw = await cache.get(pendingSetupKey(userId));
-  if (!pendingRaw) {
+  // `CacheProvider.set` takes an already-serialized string, but `get` returns
+  // the value JSON-parsed — so this is the pending record itself, not a string.
+  const pending = await cache.get<{ secretEnc: string; secretKeyId: string }>(
+    pendingSetupKey(userId),
+  );
+  if (!pending) {
     throw new TotpError('SETUP_EXPIRED', 'Setup session expired. Start again from Settings.');
   }
 
@@ -106,7 +110,6 @@ export async function confirmTotpSetup(
     throw new TotpError('INVALID_CODE', 'Invalid verification code.');
   }
 
-  const pending = JSON.parse(pendingRaw) as { secretEnc: string; secretKeyId: string };
   const codes = await mintRecoveryCodes(8);
   const now = new Date();
 

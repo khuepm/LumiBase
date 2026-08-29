@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 import { Loader2, Shield } from 'lucide-react';
-import { getActiveSite } from '@/lib/api';
+import { getActiveSite, getActiveToken } from '@/lib/api';
+import { getApiBaseUrl } from '@/lib/api-base';
 
 interface TotpStatus {
   enabled: boolean;
@@ -9,15 +10,25 @@ interface TotpStatus {
   recoveryCodesRemaining: number;
 }
 
+/**
+ * `/api/v1/me/tfa*` sits behind `withAuth`, which only reads the
+ * `Authorization` header — there is no session cookie. The bearer token has to
+ * be attached explicitly, and the base URL resolved through `getApiBaseUrl()`
+ * so the page also works when the Studio is served from a different origin
+ * than the CMS (standalone Pages deploy, desktop shell — contract C2).
+ */
 const headers = () => ({
   Accept: 'application/json',
   'Content-Type': 'application/json',
   'X-Lumi-Site': getActiveSite(),
   'X-Lumi-Client': 'studio',
+  Authorization: `Bearer ${getActiveToken()}`,
 });
 
+const url = (path: string) => `${getApiBaseUrl()}${path}`;
+
 async function fetchStatus(): Promise<TotpStatus> {
-  const res = await fetch('/api/v1/me/tfa', { credentials: 'same-origin', headers: headers() });
+  const res = await fetch(url('/api/v1/me/tfa'), { headers: headers() });
   if (!res.ok) throw new Error('Failed to load two-factor settings.');
   const json = (await res.json()) as { data: TotpStatus };
   return json.data;
@@ -39,9 +50,8 @@ export function SecuritySettingsPage() {
 
   const setupMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/v1/me/tfa/setup', {
+      const res = await fetch(url('/api/v1/me/tfa/setup'), {
         method: 'POST',
-        credentials: 'same-origin',
         headers: headers(),
         body: JSON.stringify({ password }),
       });
@@ -61,9 +71,8 @@ export function SecuritySettingsPage() {
   const confirmMutation = useMutation({
     mutationFn: async () => {
       if (!setupSecret) throw new Error('Start setup first.');
-      const res = await fetch('/api/v1/me/tfa/confirm', {
+      const res = await fetch(url('/api/v1/me/tfa/confirm'), {
         method: 'POST',
-        credentials: 'same-origin',
         headers: headers(),
         body: JSON.stringify({ secret: setupSecret, code }),
       });
@@ -83,9 +92,8 @@ export function SecuritySettingsPage() {
 
   const disableMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/v1/me/tfa', {
+      const res = await fetch(url('/api/v1/me/tfa'), {
         method: 'DELETE',
-        credentials: 'same-origin',
         headers: headers(),
         body: JSON.stringify({ password, code }),
       });
@@ -119,14 +127,24 @@ export function SecuritySettingsPage() {
 
       <section className="rounded-md border border-border bg-background p-4 space-y-3">
         <h2 className="font-medium">Two-factor authentication (TOTP)</h2>
-        <p className="text-sm text-muted-foreground">
-          Status: {enabled ? 'Enabled' : 'Disabled'}
-          {enabled && statusQuery.data?.recoveryCodesRemaining != null
-            ? ` · ${statusQuery.data.recoveryCodesRemaining} recovery codes remaining`
-            : null}
-        </p>
+        {statusQuery.isPending ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : statusQuery.isError ? (
+          // Never fall through to "Disabled" on a failed load: that reads as a
+          // definite security state and would invite a second enrollment.
+          <p role="alert" className="text-sm text-red-600">
+            Could not load two-factor status. Reload to try again.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Status: {enabled ? 'Enabled' : 'Disabled'}
+            {enabled && statusQuery.data?.recoveryCodesRemaining != null
+              ? ` · ${statusQuery.data.recoveryCodesRemaining} recovery codes remaining`
+              : null}
+          </p>
+        )}
 
-        {!enabled && !setupSecret ? (
+        {statusQuery.isSuccess && !enabled && !setupSecret ? (
           <div className="space-y-3">
             <label htmlFor={passwordId} className="block text-sm font-medium">Confirm password to begin setup</label>
             <input
