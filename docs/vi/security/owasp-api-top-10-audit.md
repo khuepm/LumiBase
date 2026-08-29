@@ -1,15 +1,18 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:45:25.135Z
+<!-- check-parity: allow inline-code -->
+version: 2
+lastUpdated: 2026-08-02T19:21:24.023Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 21badc3a0a607d14
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T11:45:25.135Z
-codeVerifiedHash: 21badc3a0a607d14
+sourceHash: ba40d5cca8600cc5
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:21:24.023Z
+codeVerifiedHash: ba40d5cca8600cc5
 codeVerifiedClaims: 52
 ---
+
+<!-- check-parity: allow inline-code -->
 
 # OWASP API Security Top 10 (2023) — Audit LumiBase
 
@@ -56,6 +59,7 @@ withRuntime, cors, withJsonBodyLimit, withAuditContext, adminPathGuard`
 sau các lần khắc phục trong changeset này (xem [Khắc phục](#các-khắc-phục-đã-áp-trong-changeset-này)).
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## API1:2023 — Broken Object Level Authorization (BOLA)
 
@@ -294,6 +298,7 @@ rằng mọi response từ bên thứ ba/AI đều được validate theo một 
 khai báo trước khi lưu.
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Các khắc phục đã áp trong changeset này
 

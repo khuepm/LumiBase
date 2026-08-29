@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:21:08.504Z
+sourceLang: en
+contentHash: 562cf0016bbc6d0f
+codeVerified: 2026-08-02T19:21:08.504Z
+codeVerifiedHash: 562cf0016bbc6d0f
+codeVerifiedClaims: 9
+---
+
 # Docker Deployment
 
 Docker mode runs the same CMS API in Node.js and uses self-hosted infrastructure for stateful services.

@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Archivo, Literata, DM_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import CosmicBackground from "@/components/CosmicBackground";
+import SmoothScroll from "@/components/scroll/SmoothScroll";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
-const jetbrainsMono = JetBrains_Mono({
+const archivo = Archivo({ subsets: ["latin"], variable: "--font-sans" });
+const literata = Literata({ subsets: ["latin"], variable: "--font-serif" });
+const dmMono = DM_Mono({
   subsets: ["latin"],
+  weight: ["300", "400", "500"],
   variable: "--font-mono",
 });
 
@@ -81,7 +85,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`dark ${inter.variable} ${jetbrainsMono.variable}`}>
+    <html
+      lang="en"
+      className={`dark ${archivo.variable} ${literata.variable} ${dmMono.variable}`}
+    >
       <head>
         <link rel="llms-txt" href="https://lumibase.dev/llms.txt" />
         <script
@@ -93,12 +100,15 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteJsonLd) }}
         />
       </head>
-      <body className={`${inter.className} text-foreground antialiased`}>
-        <div className="relative z-[1]">
-          <Header />
-          <main className="min-h-screen">{children}</main>
-          <Footer />
-        </div>
+      <body className={`${archivo.className} text-foreground antialiased`}>
+        <CosmicBackground />
+        <SmoothScroll>
+          <div className="relative z-[1]">
+            <Header />
+            <main className="min-h-screen">{children}</main>
+            <Footer />
+          </div>
+        </SmoothScroll>
       </body>
     </html>
   );

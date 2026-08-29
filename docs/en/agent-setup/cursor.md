@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:25.860Z
+version: 2
+lastUpdated: 2026-08-02T19:13:26.452Z
 sourceLang: en
-contentHash: 26c4353b91d32cc8
+contentHash: cc662908e0e104bb
 ---
 
 # Cursor — LumiBase Agent Setup

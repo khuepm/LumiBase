@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:21:10.159Z
+sourceLang: en
+contentHash: d068ceb3e5aabaee
+codeVerified: 2026-08-02T19:21:10.159Z
+codeVerifiedHash: d068ceb3e5aabaee
+codeVerifiedClaims: 34
+---
+
 # Task/Plan: Runtime security guards for LumiBase
 
 ## Goal

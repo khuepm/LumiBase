@@ -7,14 +7,21 @@
 import '@testing-library/jest-dom/vitest';
 import { configure } from '@testing-library/react';
 
-// Testing Library's async timeout is independent of Vitest's `testTimeout`
-// (15s in `vitest.config.ts`) and defaults to just 1000ms. That default is
-// what made component suites flake under load: `findBy*` on a query-driven
-// page gives up while the component still renders "Loading…", so the failing
-// test moves around between runs and the pre-commit gate goes red for reasons
-// unrelated to the diff (backlog B13). Async utilities still resolve as soon
-// as the assertion passes, so a larger ceiling costs nothing on a fast
-// machine — it only stops a slow one from being reported as a failure.
+// Raise React Testing Library's async budget. `waitFor` / `findBy*` default to
+// 1000ms, independent of Vitest's `testTimeout` (15s in `vitest.config.ts`) —
+// a wall-clock assertion in disguise. When turbo runs eleven packages
+// concurrently, a state update that normally lands in ~50ms can miss that
+// window: `findBy*` gives up while the component still renders "Loading…" and
+// the query fails with "Unable to find role=... name=...", pointing at the
+// component instead of at the contention that actually caused it. The failing
+// file moves between runs, so the pre-commit gate goes red for reasons
+// unrelated to the diff (backlog B13); suites that fail this way pass
+// standalone (67/67).
+//
+// This does not weaken the assertions: a genuinely broken component never
+// renders the element, so the test still fails — it just takes longer to say
+// so. Async utilities resolve as soon as the assertion passes, so the larger
+// ceiling costs a fast machine nothing.
 configure({ asyncUtilTimeout: 5_000 });
 
 // Node >= 25 ships built-in Web Storage globals. Vitest's jsdom environment

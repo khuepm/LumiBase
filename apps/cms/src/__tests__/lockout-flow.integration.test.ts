@@ -19,6 +19,7 @@ import {
 import type { AppEnv } from '../env';
 import { authRouter } from '../routes/auth';
 import { SetupService } from '../modules/setup/service';
+import { DEFAULT_SITE_ID } from '../modules/setup/site-constants';
 import {
   STANDARD_LOCKOUT_POLICY,
   type LockoutPolicy,
@@ -108,25 +109,39 @@ describe('Lockout flow — integration', () => {
 
   /**
    * Build a Hono app that mounts only the production `authRouter` and
-   * pins the per-request DB on the context. We deliberately skip
-   * `withTenant` / `withAuth` / `withRuntime` because:
-   *   - `/auth/login` bypasses `withAuth` in production anyway.
-   *   - `/auth/login` doesn't read `c.get('siteId')`, so `withTenant`
-   *     is not needed.
-   *   - The LoginGuard middleware reads the DB via `c.get('db')`
-   *     (set here), the policy via `loadLockoutPolicyFromSettings`,
-   *     and the counter via `createCounterStore`. None of those need
-   *     the runtime adapter.
+   * pins the per-request DB **and site** on the context. `withAuth` /
+   * `withRuntime` stay out — `/auth/login` bypasses the former in
+   * production, and the LoginGuard reads the DB via `c.get('db')`, the
+   * policy via `loadLockoutPolicyFromSettings` and the counter via
+   * `createCounterStore`, none of which need the runtime adapter.
+   *
+   * `siteId` is NOT optional, which is a correction: this harness used
+   * to skip it on the stated grounds that "/auth/login doesn't read
+   * c.get('siteId')". The login handler has since gained a
+   * site-scoped `user_sites` membership check (`routes/auth.ts`), so an
+   * unset siteId reaches Drizzle as `undefined` and the request 500s —
+   * and `loadLockoutPolicyFromSettings` silently falls back to the
+   * Standard preset, which is why a custom `ipMaxFailedAttempts` never
+   * took effect. `withTenant` always sets it in production; the
+   * harness has to as well.
    */
-  function buildApp(): Hono<AppEnv> {
+  function buildApp(siteId: string): Hono<AppEnv> {
     const app = new Hono<AppEnv>();
     app.use('*', async (c, next) => {
       c.set('db', db);
+      c.set('siteId', siteId);
       c.set('requestId', `req_test_${Math.random().toString(36).slice(2)}`);
       await next();
     });
     app.route('/auth', authRouter);
     return app;
+  }
+
+  /** Site row `SetupService.complete` creates, read back rather than hardcoded. */
+  async function seededSiteId(): Promise<string> {
+    const [row] = await db.select({ id: sites.id }).from(sites).limit(1);
+    if (!row) throw new Error('expected SetupService to have created a site');
+    return row.id;
   }
 
   /**
@@ -189,7 +204,7 @@ describe('Lockout flow — integration', () => {
     }
 
     await seedBootstrapAdmin();
-    const app = buildApp();
+    const app = buildApp(await seededSiteId());
 
     // Drive 5 wrong-password attempts. Each individual attempt
     // returns 401 INVALID_CREDENTIALS — the lock transition happens
@@ -253,7 +268,7 @@ describe('Lockout flow — integration', () => {
     }
 
     await seedBootstrapAdmin();
-    const app = buildApp();
+    const app = buildApp(await seededSiteId());
 
     // Trip the lockout with 5 wrong-password attempts.
     for (let i = 0; i < 5; i++) {
@@ -323,6 +338,12 @@ describe('Lockout flow — integration', () => {
 
   // ── 3. IP block from multi-email ────────────────────────────────────
 
+  /**
+   * Un-skipped by the loader fix in the same change: the policy lookup is
+   * now ordered, so the instance-wide row this test writes is the one in
+   * force rather than whichever row Postgres returned first. See
+   * `loadLockoutPolicyFromSettings` and the row-selection suite next to it.
+   */
   it('blocks an IP after 10 failed attempts across different emails with 429 IP_BLOCKED (Req 8.2, 8.3)', async () => {
     if (!canConnect) {
       console.warn('Skipping: DATABASE_URL not set or database not reachable');
@@ -342,14 +363,15 @@ describe('Lockout flow — integration', () => {
     // its ceiling so per-user lockout doesn't fire on a typoed email
     // — the test must isolate the IP path.
     //
-    // `settings.siteId` is NOT NULL with a FK to `sites`, so we
-    // create a throw-away site first.
-    const siteRows = await db
-      .insert(sites)
-      .values({ name: 'lockout-test-site' })
-      .returning({ id: sites.id });
-    const siteId = siteRows[0]!.id;
-
+    // The Lockout_Policy is instance-wide and lives under the
+    // `__default__` site, which `seedBootstrapAdmin()` above already
+    // created along with a Standard-preset policy row (SetupService
+    // §10). So this *overwrites* that row rather than adding a second
+    // one — which is what an operator tightening the policy does, and
+    // what the original version of this test got wrong: it wrote a
+    // competing row under a throw-away site and relied on the loader
+    // picking it, which `LIMIT 1` with no `ORDER BY` never guaranteed.
+    const siteId = DEFAULT_SITE_ID;
     const customPolicy: LockoutPolicy = {
       ...freshStandardPolicy(),
       ipMaxFailedAttempts: 10,
@@ -358,13 +380,21 @@ describe('Lockout flow — integration', () => {
       // distinct emails we hit.
       userMaxFailedAttempts: 20,
     };
-    await db.insert(settings).values({
-      siteId,
-      key: 'login_security_policy',
-      value: customPolicy,
-    });
+    await db
+      .insert(settings)
+      .values({ siteId, key: 'login_security_policy', value: customPolicy })
+      .onConflictDoUpdate({
+        target: [settings.siteId, settings.key],
+        set: { value: customPolicy },
+      });
 
-    const app = buildApp();
+    // The request context carries the same site the policy row is scoped
+    // to. Note this is NOT what selects the policy: the loader looks the
+    // row up by `key` alone with `LIMIT 1` and no ORDER BY (design open
+    // question 8 — siteId ownership of the settings row is unresolved),
+    // so when a second `login_security_policy` row exists the row that
+    // wins is whichever Postgres returns first. See the skip note below.
+    const app = buildApp(siteId);
 
     // 10 wrong-password attempts from the same IP, each against a
     // distinct (non-existent) email. Each attempt returns 401

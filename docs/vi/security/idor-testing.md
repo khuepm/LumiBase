@@ -1,3 +1,16 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:08:11.984Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 96605efe226fc3ad
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:08:11.984Z
+codeVerifiedHash: 96605efe226fc3ad
+codeVerifiedClaims: 2
+---
+
 # Hướng dẫn kiểm thử Insecure Direct Object References (IDOR)
 
 ## Tổng quan
@@ -41,9 +54,9 @@ Trong integration test, tenant context được thiết lập qua HTTP header `X
 const res = await app.request('/api/v1/items/lumibase_example/target_id', {
   method: 'GET',
   headers: {
-    'X-Lumi-Site': 'tenant-b-id', // Tenant context mô phỏng
+    'X-Lumi-Site': 'tenant-b-id', // Simulated tenant context
     'Authorization': 'Bearer <token_for_tenant_a_user>'
   }
 });
-// Kỳ vọng 403 hoặc 404
+// Expect 403 or 404
 ```

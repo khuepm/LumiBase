@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:14:29.861Z
+sourceLang: en
+contentHash: ff4339b1b2f269c5
+codeVerified: 2026-08-02T19:14:34.597Z
+codeVerifiedHash: ff4339b1b2f269c5
+codeVerifiedClaims: 12
+---
+
 # Full-text Search
 
 LumiBase integrates **MeiliSearch** as its full-text search backend, behind the
