@@ -101,6 +101,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [deployment/local-development.md](./deployment/local-development.md) — Quy trình local dev và kiểm tra trước deploy.
 - **Operations** (`operations/`)
   - [operations/upgrades.md](./operations/upgrades.md) — Chính sách nâng cấp phiên bản cố định, Cloudflare/Docker flow, backup, migration và giới hạn rollback.
+  - [operations/encryption-keys.md](./operations/encryption-keys.md) — `ENCRYPTION_KEY` bảo vệ những gì, rotate re-wrap được gì và không được gì, xử lý khi mất hoặc lộ khoá.
 - **Security** (`security/`)
   - [security/anti-abuse.md](./security/anti-abuse.md) — Cơ chế chống lạm dụng & thực hành tốt nhất: danh mục phòng thủ nhiều lớp + các khoảng trống đã biết.
   - [security/route-guards.md](./security/route-guards.md) — Danh mục guard cho route / control-plane.

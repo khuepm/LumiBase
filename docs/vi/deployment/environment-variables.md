@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 3
-lastUpdated: 2026-08-02T19:21:21.951Z
+version: 4
+lastUpdated: 2026-08-30T08:11:17.536Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3d391bafaa36323f
+sourceHash: 476b4029000a09f2
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:21:21.951Z
-codeVerifiedHash: 3d391bafaa36323f
-codeVerifiedClaims: 62
+codeVerified: 2026-08-30T08:11:17.536Z
+codeVerifiedHash: 476b4029000a09f2
+codeVerifiedClaims: 66
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -41,6 +41,27 @@ lưu trong database, nên có thể rotate mà không cần redeploy — và kh�
 trong build artifact.
 
 Đây là trạng thái vận hành riêng tư. Không phơi bày qua biến môi trường `VITE_*` hay client build metadata, và không tự động redirect các route public/setup tới nó ở production. Xem [Admin path riêng tư](./private-admin-path.md).
+
+---
+
+## Encryption
+
+| Biến | Bắt buộc | Mặc định | Mô tả |
+|------|----------|----------|-------|
+| `ENCRYPTION_KEY` | Trước lần dùng đầu tiên | — | Base64 của 32 byte ngẫu nhiên (`openssl rand -base64 32`). Bọc các field item được mã hoá và seed 2FA TOTP. Được hiểu là khoá version `v0`. **Đặt như một secret** (`wrangler secret put ENCRYPTION_KEY --env production`); không commit và không đặt trong `[env.production.vars]` |
+| `ENCRYPTION_KEY_<id>` | ✗ | — | Khoá có version, ví dụ `ENCRYPTION_KEY_v1`, dùng khi rotate |
+| `ENCRYPTION_ACTIVE_KEY_ID` | ✗ | khoá duy nhất đang cấu hình, nếu không thì `v0` | Version nào mã hoá dữ liệu mới |
+| `ENCRYPTION_KEY[_<id>]_FILE` | ✗ | — | Đường dẫn file để đọc khoá thay cho biến (Docker secrets). Biến trực tiếp thắng |
+
+"Trước lần dùng đầu tiên" nghĩa là trước khi có ai enroll 2FA hoặc ghi một
+field được mã hoá — không phải trước khi boot. Thiếu khoá thì enroll fail
+closed với `500` chứ không phải một lỗi có mã.
+
+> **Khi đã có seed thì không bao giờ được xoá khoá.** Seed TOTP ghim version
+> khoá đã bọc chúng và **không** được migration envelope bọc lại, nên cho một
+> khoá cũ về hưu sẽ khoá những user đó ra khỏi yếu tố thứ hai của họ. Rotate
+> cũng không phải biện pháp khắc phục khi lộ khoá. Xem
+> [Vận hành khoá mã hoá](../operations/encryption-keys.md).
 
 ---
 <!-- check-parity: allow inline-code -->
@@ -176,9 +197,15 @@ Import lớn có thể chạm ngân sách mặc định. Tăng `LUMIBASE_RATE_LI
 | `LUMIBASE_RATE_LIMIT_MAX` | ✗ | `300` | Số request tối đa mỗi cửa sổ, mỗi principal, mỗi site. |
 | `LUMIBASE_RATE_LIMIT_WINDOW_S` | ✗ | `60` | Độ dài cửa sổ, đơn vị giây. |
 | `LUMIBASE_RATE_LIMIT_DISABLED` | ✗ | (không đặt) | Đặt `true` để tắt hẳn throttle. |
+| `LUMIBASE_DELIVER_RATE_LIMIT` | ✗ | `1200` | Số request tối đa mỗi phút, theo IP client, trên Delivery API công khai (`/api/v1/deliver/*`). `0` là tắt. Xem [Caching — penetration](../features/caching.md). |
+| `LUMIBASE_NEGATIVE_CACHE_TTL` | ✗ | `30` | TTL tombstone (giây) cho các trường hợp xác nhận không tồn tại trên đường đọc công khai, trước khi cộng jitter ±20%. `0` là tắt. |
 
 ---
 <!-- check-parity: allow inline-code -->
+<!-- check-parity: allow links -->
+<!-- Lý do waiver: link tới `graphql-api-spec.md` mang anchor trong trang, và
+     heading bên VI là "## Chống lạm dụng" nên slug bắt buộc khác EN
+     (#abuse-guards). Trỏ về anchor EN sẽ thành link chết trong bản VI. -->
 
 ## GraphQL
 

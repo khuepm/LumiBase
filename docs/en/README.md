@@ -104,6 +104,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [deployment/local-development.md](./deployment/local-development.md) — Local dev workflow and pre-deploy checks.
 - **Operations** (`operations/`)
   - [operations/upgrades.md](./operations/upgrades.md) — Fixed-version upgrade policy, Cloudflare/Docker flows, backup, migrations, and rollback limits.
+  - [operations/encryption-keys.md](./operations/encryption-keys.md) — What `ENCRYPTION_KEY` protects, what rotation does and does not re-wrap, and how to respond to a lost or leaked key.
 - **Security** (`security/`)
   - [security/anti-abuse.md](./security/anti-abuse.md) — Anti-abuse mechanisms & best practices: defense-in-depth registry (rate-limiting, brute-force, anomaly, control-plane guard, RLS, body/upload limits, SSRF, AI load-guard, audit) + known gaps.
   - [security/route-guards.md](./security/route-guards.md) — Route / control-plane guard catalogue.
