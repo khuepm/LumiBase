@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-08-30T08:11:16.438Z
+version: 2
+lastUpdated: 2026-08-30T09:36:17.873Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b7cd3114fdf34d2a
+sourceHash: 5c222ffed069414f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T08:11:16.438Z
-codeVerifiedHash: b7cd3114fdf34d2a
-codeVerifiedClaims: 14
+codeVerified: 2026-08-30T09:36:17.873Z
+codeVerifiedHash: 5c222ffed069414f
+codeVerifiedClaims: 16
 ---
 
 # Vận hành khoá mã hoá
@@ -62,12 +62,11 @@ Mọi key id xuất hiện ở đây phải được giữ trong cấu hình, v�
 
 ## Kịch bản lỗi: thiếu khoá đang được tham chiếu
 
-Nếu khoá mà một enrollment cần không có trong cấu hình, các endpoint 2FA fail closed — không có chỗ nào đọc hay ghi seed ở dạng thô — nhưng lộ ra thành `500` đục:
+Nếu khoá mà một enrollment cần không có trong cấu hình, các endpoint 2FA fail closed — không có chỗ nào đọc hay ghi seed ở dạng thô — và trả `409` kèm `TFA_KEY_UNAVAILABLE`, có nêu tên key id để biết cần phục hồi khoá nào:
 
 ```
-POST /api/v1/auth/verify-totp        -> 500   KeyProvider: no encryption key configured for keyId 'v0'
-DELETE /api/v1/me/tfa                -> 500
-POST /api/v1/me/tfa/recovery-codes   -> 500
+POST /api/v1/auth/verify-totp        -> 409  TFA_KEY_UNAVAILABLE
+POST /api/v1/me/tfa/recovery-codes   -> 409  TFA_KEY_UNAVAILABLE
 ```
 
 Recovery code vẫn hoạt động, vì chúng là hash PBKDF2 chứ không bọc bằng KEK:
@@ -76,9 +75,16 @@ Recovery code vẫn hoạt động, vì chúng là hash PBKDF2 chứ không bọ
 POST /api/v1/auth/verify-totp  { recoveryCode }  -> 200
 ```
 
-Nên user bị ảnh hưởng vẫn đăng nhập được bằng 8 recovery code dùng-một-lần, nhưng **không tháo được và không enroll lại được** yếu tố thứ hai — cả hai đường đều đòi một TOTP code sống. Hết code là tài khoản đó mất quyền vào Studio. Phần thông báo lỗi và đường thoát còn thiếu được theo dõi ở [#429](https://github.com/khuepm/lumibase/issues/429).
+Nên user bị ảnh hưởng đăng nhập bằng một recovery code rồi **tự tháo được yếu tố đã chết** — `DELETE /me/tfa` chấp nhận recovery code thay cho TOTP code đúng cho tình huống này, và enroll lại sau đó sẽ bọc một seed mới bằng khoá hiện hành:
 
-Nếu một khoá thật sự không thể khôi phục, operator phải xoá các enrollment bị ảnh hưởng để user enroll lại. Hiện **chưa có endpoint admin** cho việc này:
+```
+DELETE /api/v1/me/tfa  { password, recoveryCode }  -> 200
+POST   /api/v1/me/tfa/setup                        -> 200
+```
+
+Tạo lại recovery code thì **cố ý không** cho đi đường này: bơm thêm code cho một enrollment vĩnh viễn không sinh được TOTP code hợp lệ chỉ kéo dài thời gian sự cố.
+
+Nếu khoá không thể khôi phục và bạn không muốn đợi từng user tự phát hiện, operator có thể xoá hàng loạt các enrollment bị ảnh hưởng. Hiện **chưa có endpoint admin** cho việc này:
 
 ```sql
 -- Theo từng user. Xoá credential và recovery code của nó (FK cascade),
@@ -106,7 +112,7 @@ Muốn thoát hẳn khỏi tính chất này thì phải đổi cơ chế chứ 
 
 ## Trước lần enroll đầu tiên
 
-`ENCRYPTION_KEY` phải được cấu hình **trước** khi có ai enroll 2FA hoặc ghi một field mã hoá. Nếu thiếu, `POST /api/v1/me/tfa/setup` trả `500` (`no encryption key configured for active keyId 'v0'`) thay vì một lỗi có mã, rất dễ bị đọc nhầm thành lỗi của feature.
+`ENCRYPTION_KEY` phải được cấu hình **trước** khi có ai enroll 2FA hoặc ghi một field mã hoá. Nếu thiếu, `POST /api/v1/me/tfa/setup` trả `503` kèm `ENCRYPTION_NOT_CONFIGURED`; không có gì bị ghi nửa vời, nên chỉ cần đặt khoá vào là enroll chạy ngay.
 
 Đặt nó như một secret thật, không bao giờ nằm trong config được commit:
 
