@@ -1,11 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-08-23T18:49:09.284Z
+version: 3
+lastUpdated: 2026-08-30T16:44:53.762Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7d74bd5bdaa39456
+sourceHash: aee0ac3265b6420f
 mtEngine: manual
 syncStatus: human-translated
+codeVerified: 2026-08-30T16:44:53.762Z
+codeVerifiedHash: aee0ac3265b6420f
+codeVerifiedClaims: 6
 ---
 
 # Dependency Overrides & Patches (Ghi đè và vá dependency)
@@ -53,13 +56,12 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 | `esbuild` | `^0.28.2` | Advisory RCE qua request tới dev-server của esbuild (`<=0.24.2`). | Mọi consumer (vite, tsx, v.v.) yêu cầu `>=0.28.2`. |
 | `form-data` | `^4.0.6` | Advisory bảo mật (random boundary không an toàn). | Mọi consumer yêu cầu `>=4.0.6`. |
 | `postcss` | `^8.5.26` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=8.5.26`. |
-| `nanoid@3` | `^3.3.17` | [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8) — generator tuỳ biến lặp vô hạn khi `size` bằng 0, chưa vá ở dưới `3.3.17` (high). Chỉ tới được gián tiếp: `next` → `postcss` → `nanoid@3`. Giới hạn trong range 3.x để không đánh nhau với pin 5.x bên dưới. | `postcss` (hoặc thứ tiêu thụ nó) yêu cầu `nanoid >=3.3.17`. Xác minh bằng `pnpm why nanoid`. |
-| `nanoid@5` | `^5.1.16` | [GHSA-28wg-ghj8-5hjv](https://github.com/advisories/GHSA-28wg-ghj8-5hjv) — generator không-an-toàn lặp vô hạn với size âm, chưa vá ở dưới `5.1.16` (high). Đây chính là range mà `apps/cms` và `packages/database` khai trực tiếp (`^5.0.7`) để sinh ID cho domain table, nên pin này nâng sàn mà không ép đổi major. | Cả hai package tự khai `>=5.1.16`, lúc đó override thành thừa. |
+| `nanoid@3` | `^3.3.17` | [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8) — generator tuỳ biến lặp vô hạn khi `size` bằng 0, chưa vá ở dưới `3.3.17` (high). Chỉ tới được gián tiếp: `next` → `postcss` → `nanoid@3`. Giới hạn trong range 3.x để không nâng sàn cho nhánh 6.x mà `apps/cms` và `packages/database` khai trực tiếp. | `postcss` (hoặc thứ tiêu thụ nó) yêu cầu `nanoid >=3.3.17`. Xác minh bằng `pnpm why nanoid`. |
 | `undici` | `^7.28.0` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=7.28.0`. |
 | `ws` | `^8.21.3` | Advisory bảo mật (đã xử lý qua Dependabot). Được `apps/cms` khai trực tiếp cho bề mặt realtime. | `apps/cms` tự khai `>=8.21.3`. |
 | `uuid` | `^14.0.1` | Hợp nhất phiên bản / advisory (đã xử lý qua Dependabot). Chỉ có **một** chỗ import (`apps/cms/src/modules/audit/worker.ts`, `v7`) nên major này mang rất ít bề mặt — nhưng v12+ đã sắp xếp lại `exports` map của package, nên bump nó cần kiểm tra bundle thật, không chỉ typecheck. | Trôi lệch phiên bản giữa các package không còn là mối lo. |
 | `vite` | `^8.2.0` | Hợp nhất về một major Vite và kéo esbuild vượt advisory RCE `0.28.1`. **Chính entry này là lý do `pnpm drift:check` tồn tại:** nó đứng ở `^7.3.5` trong khi `apps/studio` và `apps/docs` đều khai `^8.1.3`, và vì override áp cả cho direct dependency, hai app build bằng Vite 7 suốt thời gian manifest tuyên bố Vite 8. Nâng entry này cùng nhịp với manifest, không thì cú bump chỉ là hình thức. | Workspace không còn cần ép một major Vite duy nhất. |
-| `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS do expansion thời gian mũ với các nhóm `{}` không expand liên tiếp (high), được backport về nhánh 1.x ở `1.1.16`. **Chỉ dev** — đi vào qua `minimatch@3` từ ESLint và các plugin, nên không bao giờ xuất hiện trong `pnpm audit --prod`. Key theo major (cùng dạng với cặp `nanoid@3` / `nanoid@5`) vì hai major không tương thích cùng tồn tại; xem [Advisory không vá được](#advisory-không-vá-được) để biết vì sao không gộp 1.x vào 5.x được. | Không còn gì trong cây resolve `minimatch@3` (`pnpm why brace-expansion -r`), lúc đó hai dòng `brace-expansion@*` gộp lại làm một. |
+| `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS do expansion thời gian mũ với các nhóm `{}` không expand liên tiếp (high), được backport về nhánh 1.x ở `1.1.16`. **Chỉ dev** — đi vào qua `minimatch@3` từ ESLint và các plugin, nên không bao giờ xuất hiện trong `pnpm audit --prod`. Key theo major (cùng dạng với scope `nanoid@3`) vì hai major không tương thích cùng tồn tại; xem [Advisory không vá được](#advisory-không-vá-được) để biết vì sao không gộp 1.x vào 5.x được. | Không còn gì trong cây resolve `minimatch@3` (`pnpm why brace-expansion -r`), lúc đó hai dòng `brace-expansion@*` gộp lại làm một. |
 | `brace-expansion@5` | `^5.0.8` | [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) — DoS do độ dài expansion không giới hạn gây crash OOM tiến trình (high), vá ở `5.0.8`. **Chỉ dev** — đi vào qua `minimatch@10` từ `glob`, `eslint`, `@typescript-eslint/typescript-estree`. Dependency trôi tự nhiên đã kéo phần lớn cây lên `5.0.9`, nhưng `minimatch@10.2.5` vẫn giữ một bản `5.0.7`; sàn này dọn nốt bản sót đó. | Giống dòng `@1`. |
 | `@types/react` | `19.2.18` | **Không phải pin bảo mật** — ép React 19 types toàn workspace để Studio/Docs/Landing/`@lumibase/ui` typecheck cùng major với runtime React 19. | Trôi lệch giữa các app không còn là mối lo, hoặc workspace cố ý tách React major trở lại. |
 | `@types/react-dom` | `19.2.4` | Giống `@types/react` — nhất quán type React 19. | Giống `@types/react`. |
@@ -87,10 +89,12 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 `react-router-dom` đã ngừng sau `7.18.1` — không có 8.x dưới tên đó, và 7.x không được
 backport (`7.18.1` là bản 7.x cuối). Vì vậy cách vá nghĩa là migrate `apps/docs` khỏi
 `react-router-dom` sang `react-router@8`, vốn khai peer `react >=19.2.7` /
-`react-dom >=19.2.7` và `engines.node >=22.22.0`. Workspace hiện nhắm React 19 cho
-Studio/Docs/Landing (`@lumibase/ui` peer `^18.3.1 || ^19.0.0`, `engines.node >=22`).
-Migrate `apps/docs` sang `react-router@8` vẫn là việc follow-up cần phối hợp (không phải
-một lần bump phiên bản đơn thuần).
+`react-dom >=19.2.7` và `engines.node >=22.22.0`. Cả hai điều kiện đó nay đều không còn
+là rào cản — workspace nhắm React 19 cho Studio/Docs/Landing (`@lumibase/ui` peer
+`^18.3.1 || ^19.0.0`) và sàn `engines.node` giờ là
+`^22.22.2 || ^24.15.0 || >=26.0.0`, thoả `>=22.22.0`. Việc còn lại là bản thân cuộc
+migrate: `react-router@8` là một lần port `apps/docs` cần phối hợp, không phải một lần
+bump phiên bản đơn thuần.
 
 **Kiểm tra phạm vi:** `apps/studio` không bị ảnh hưởng — nó dùng `@tanstack/react-router`,
 một package không liên quan. `react-router-dom` chỉ xuất hiện ở `apps/docs`.

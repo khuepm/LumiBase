@@ -70,6 +70,34 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - `turbo.json` adds `NEXT_PUBLIC_*` and `VITE_*` to the `build` task's cache key.
   Next.js and Vite both inline those at build time, so without it, flipping a
   measurement ID could replay a cached build that still has the old tag baked in.
+- **Dependency majors: ioredis 6, BullMQ 6, nanoid 6, shiki 4, jsdom 30,
+  `@vitejs/plugin-react` 6.** Two of these change behaviour rather than just
+  version numbers.
+  - **ioredis 6 negotiates RESP3 by default** (`protocol: 2` restores the v5
+    wire protocol). This affects the Docker/Node runtime only — the Cloudflare
+    path has no Redis. Verified against a live Redis 7.4: `HELLO` reports
+    `proto: 3`, and the tag fan-out in `RedisCacheProvider` (`SMEMBERS`, where
+    RESP3's set reply type would have broken it), `RedisRateLimiter`
+    (`INCR`/`EXPIRE NX`/`TTL`), `withLeaderLock` (`EVAL`) and a full
+    enqueue→process round-trip through `BullMQProvider` all behave as before.
+    No configuration change is required on upgrade.
+  - **nanoid 6 is ESM-only.** Both consumers (`apps/cms`, `packages/database`)
+    already resolve it through a bundler or `tsx`, and it inlines into the
+    Cloudflare Worker bundle with no `require()` shim. Only `nanoid()` and
+    `nanoid(size)` are used, so there is no API change to absorb. Closes `B24`
+    and retires the now-dead `nanoid@5` override; `nanoid@3` stays for the
+    `next` → `postcss` branch.
+  - **shiki 4 also removes a version skew that was already live.**
+    `@shikijs/rehype` was at `^4.4.3` and depends on `shiki@4.4.3` exactly,
+    while `apps/docs` declared `shiki@^1.22.0` — so `MarkdownRenderer` was
+    handing a 1.x `Highlighter` to a 4.x rehype plugin. The docs test suite
+    mocks shiki, so nothing caught it; the pair is now on one major.
+- **`engines.node` raised to `^22.22.2 || ^24.15.0 || >=26.0.0`** (was
+  `>=22.13.0`), the floor jsdom 30 requires. The previous range admitted Node
+  22.13–22.22.1, 23.x and 24.0–24.14, all of which jsdom 30 rejects; nanoid 6
+  additionally excludes odd majors. CI runs Node 24 so this was invisible there
+  and would only have surfaced on a contributor's machine. `.nvmrc` (24) already
+  satisfies it.
 
 ### Known gaps
 
