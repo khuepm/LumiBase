@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-23T19:33:48.831Z",
+  "generatedAt": "2026-08-30T04:23:35.780Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,8 +8,8 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 146,
-    "planned": 0
+    "upToDate": 144,
+    "planned": 2
   },
   "actions": [
     {
@@ -182,13 +182,13 @@
     },
     {
       "rel": "api/hono-api-spec.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1706,13 +1706,13 @@
     },
     {
       "rel": "security/user-management.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
