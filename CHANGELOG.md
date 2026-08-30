@@ -34,6 +34,50 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `ENCRYPTION_KEY`**; recovery codes are stored as PBKDF2 hashes. Optional
   `LUMIBASE_TOTP_ISSUER` sets the label authenticator apps display. Docs:
   `docs/en/security/user-management.md` §4f.
+- **Google Analytics 4 on the public sites, behind an opt-in.** `lumibase.dev` and
+  `docs.lumibase.dev` already reported traffic through Cloudflare Web Analytics,
+  which is cookieless and needs no consent. GA4 answers a different question
+  (campaign attribution, funnels) and does set cookies, so it ships gated: the tag
+  is not rendered or injected at all until the visitor allows analytics — stricter
+  than Consent Mode alone, which loads the tag and only withholds storage.
+  Advertising signals are pinned to `denied` (`ad_storage`, `ad_user_data`,
+  `ad_personalization`, plus `allow_google_signals: false`), and the measurement ID
+  is validated against `G-XXXXXXX` before it is interpolated into an inline script.
+  Enable per site with the `NEXT_PUBLIC_GA_ID` (landing) and `VITE_GA_ID` (docs)
+  repo variables, which `release.yml` and `pages-deploy.yml` pass to the builds;
+  leave one unset and that site's output contains no tag, no banner, and no cookies.
+- **`@lumibase/analytics-consent`** — the consent rules as one package rather than a
+  copy per site: storage semantics, measurement-ID validation, gating predicates,
+  the Consent Mode snippet, and an idempotent imperative loader for apps without a
+  declarative `<Script>`. The framework-free core is importable from a server
+  component or a Node test; `@lumibase/analytics-consent/react` adds `useConsent()`.
+  Its README documents the five invariants the test suite protects.
+- **A working opt-out on both sites.** The policy already claimed the right to "opt
+  out of analytics tracking" with nothing implementing it. There is now a control
+  that clears the stored decision, flips Consent Mode back to `denied`, deletes the
+  `_ga*` cookies, and re-opens the banner so the visitor chooses again — on the
+  landing privacy page, and in the docs footer. Consent is per-origin because
+  `localStorage` is, so each site asks and withdraws for itself.
+
+### Changed
+
+- **Landing privacy policy rewritten around what is actually collected.** It named
+  no processor and said only "analytics services (if enabled)" — not enough once
+  GA4 is in play. It now separates the always-on cookieless measurement from the
+  consent-gated GA4 path, names the cookies, states that Google may process data
+  outside your country, covers both public hostnames, spells out that a choice
+  applies to one site at a time, and confirms no ads and no data sales.
+- `turbo.json` adds `NEXT_PUBLIC_*` and `VITE_*` to the `build` task's cache key.
+  Next.js and Vite both inline those at build time, so without it, flipping a
+  measurement ID could replay a cached build that still has the old tag baked in.
+
+### Known gaps
+
+- **`apps/marketplace` has no consent banner yet.** It is a private submodule that
+  cannot be edited from this repository, and it sits outside the pnpm workspace, so
+  it cannot consume `@lumibase/analytics-consent` through `workspace:*` either.
+  Tracked as `B29` in `.kiro/steering/out-of-scope-backlog.md` with the two options
+  (publish the package, or copy the logic with a pointer back to the source).
 
 ### Fixed
 

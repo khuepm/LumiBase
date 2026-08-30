@@ -7,7 +7,10 @@ import { SearchDialog } from './SearchDialog';
 import { TableOfContents } from './TableOfContents';
 import { LocaleSwitcher } from './LocaleSwitcher';
 import { ThemeToggle } from './ThemeToggle';
+import { AnalyticsConsent } from './analytics/AnalyticsConsent';
+import { CookiePreferences } from './analytics/CookiePreferences';
 import { siteConfig, resolveLabel, buildSidebarTreeFromConfig } from '../lib/site-config';
+import { gaMeasurementId } from '../lib/analytics';
 import { useLocale } from '../hooks/useLocale';
 import { useCurrentSlug } from '../hooks/useCurrentSlug';
 import { useT } from '../hooks/useT';
@@ -210,23 +213,26 @@ export function Layout() {
                   .replace('{year}', String(new Date().getFullYear()))
                   .split('LumiBase')
                   .map((part, i, arr) =>
-                  i < arr.length - 1 ? (
-                    <span key={i}>
-                      {part}
-                      <a
-                        href="https://lumibase.dev"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="transition-colors hover:text-foreground hover:underline"
-                      >
-                        LumiBase
-                      </a>
-                    </span>
-                  ) : (
-                    <span key={i}>{part}</span>
-                  ),
-                )}
+                    i < arr.length - 1 ? (
+                      <span key={i}>
+                        {part}
+                        <a
+                          href="https://lumibase.dev"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="transition-colors hover:text-foreground hover:underline"
+                        >
+                          LumiBase
+                        </a>
+                      </span>
+                    ) : (
+                      <span key={i}>{part}</span>
+                    ),
+                  )}
               </p>
+              {/* Only shown when GA is configured — with no tag there are no
+                  cookies to withdraw, and nothing to explain. */}
+              {gaMeasurementId && <CookiePreferences />}
             </footer>
           </main>
 
@@ -238,6 +244,10 @@ export function Layout() {
           </aside>
         </div>
       </div>
+
+      {/* Sits outside the scroll containers so the banner stays pinned to the
+          viewport. Renders nothing when GA is not configured. */}
+      {gaMeasurementId && <AnalyticsConsent measurementId={gaMeasurementId} />}
     </div>
   );
 }

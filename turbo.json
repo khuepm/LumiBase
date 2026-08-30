@@ -4,6 +4,11 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      // Next.js and Vite both inline these at build time (landing is a static
+      // Next export, docs a prerendered Vite SPA), so they belong in the cache
+      // key — otherwise flipping NEXT_PUBLIC_GA_ID / VITE_GA_ID would replay a
+      // cached build without the analytics tag.
+      "env": ["NEXT_PUBLIC_*", "VITE_*"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**", "out/**"]
     },
     "dev": {

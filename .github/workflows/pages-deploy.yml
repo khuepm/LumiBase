@@ -112,6 +112,10 @@ jobs:
           fi
 
       - name: Build docs
+        # VITE_GA_ID is inlined at build time, same contract as the landing app's
+        # NEXT_PUBLIC_GA_ID below. Unset means no GA tag and no cookie banner.
+        env:
+          VITE_GA_ID: ${{ vars.VITE_GA_ID }}
         run: pnpm docs:build
 
       - name: Deploy docs to Cloudflare Pages
@@ -167,6 +171,11 @@ jobs:
           echo "SPA 404 shell fallback OK ($probe -> $status, shell served)."
 
       - name: Build landing
+        # NEXT_PUBLIC_GA_ID is inlined at build time (static export). Leave the
+        # repo variable unset to ship the landing page with no GA tag and no
+        # cookie banner — Cloudflare Web Analytics is cookieless and needs neither.
+        env:
+          NEXT_PUBLIC_GA_ID: ${{ vars.NEXT_PUBLIC_GA_ID }}
         run: pnpm landing:build
 
       - name: Deploy landing to Cloudflare Pages
