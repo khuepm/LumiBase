@@ -81,6 +81,25 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **A missing encryption key no longer reads as `500`, and no longer strands
+  the user.** Every 2FA path failed with an opaque `500 INTERNAL` when the AEAD
+  key it needed was unavailable. Fail-closed was correct — no seed is ever
+  handled in plaintext — but nothing told the operator that `ENCRYPTION_KEY`
+  was the problem. Enrollment now returns `503 ENCRYPTION_NOT_CONFIGURED` when
+  the deployment has no active key, and verify/regenerate return
+  `409 TFA_KEY_UNAVAILABLE`, naming the key id that is missing, when the key
+  that wrapped *that* seed was retired by a rotation. The worse half was the
+  dead end: recovery codes still worked (they are PBKDF2 hashes, not
+  KEK-wrapped), so the user could sign in, but `DELETE /me/tfa` and
+  `POST /me/tfa/recovery-codes` both demanded a live TOTP code that the missing
+  key could never verify — so the broken factor could be neither removed nor
+  replaced, and the account lost Studio access once the codes ran out.
+  `DELETE /me/tfa` now accepts a recovery code in place of a TOTP code
+  (password step-up unchanged, and it still bumps `tokenVersion` + revokes
+  refresh tokens), and Studio's Settings → Security offers that path. Topping
+  up recovery codes deliberately still requires a real TOTP code, since new
+  codes for an unusable enrollment would only extend the outage. Runbook:
+  `docs/en/operations/encryption-keys.md`.
 - **The TOTP endpoints are actually reachable.** All six of them answered
   `404 NOT_FOUND` against a running server. `index.ts` attached the sub-routers
   *after* mounting their parents (`api.route('/auth', authRouter)` then

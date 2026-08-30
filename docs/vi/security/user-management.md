@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-08-30T08:11:16.929Z
+version: 3
+lastUpdated: 2026-08-30T09:36:15.719Z
 sourceLang: en
 translatedFrom: en
-sourceHash: efc7fe166b15c901
+sourceHash: 644f0f4b2f32179b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T08:11:16.929Z
-codeVerifiedHash: efc7fe166b15c901
+codeVerified: 2026-08-30T09:36:15.719Z
+codeVerifiedHash: 644f0f4b2f32179b
 codeVerifiedClaims: 112
 ---
 
@@ -344,7 +344,9 @@ Replay trong cùng cửa sổ verify bị `last_used_step` chặn. `users.tfa` c
 trạng thái enrollment không bí mật.
 
 **Thay đổi 2FA cần step-up.** Setup, tạo lại recovery code, và tháo — cả ba
-đều đòi mật khẩu hiện tại; hai cái sau còn đòi thêm một TOTP code sống. Tháo
+đều đòi mật khẩu hiện tại; hai cái sau còn đòi thêm yếu tố thứ hai — một TOTP
+code sống, hoặc, chỉ với thao tác tháo, một recovery code, để user có seed
+không còn giải mã được vẫn tháo được yếu tố đã chết. Tháo
 2FA sẽ bump `tokenVersion` và thu hồi refresh token, nên một session bị đánh
 cắp không thể âm thầm hạ mức bảo vệ của tài khoản. Enroll và tháo đều ghi
 audit event (`mfa_enrolled` / `mfa_disabled`); verify thất bại ghi

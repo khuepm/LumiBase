@@ -43,6 +43,8 @@ export function SecuritySettingsPage() {
   const [setupSecret, setSetupSecret] = useState<string | null>(null);
   const [otpauthUrl, setOtpauthUrl] = useState<string | null>(null);
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [disableWithRecovery, setDisableWithRecovery] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const statusQuery = useQuery({ queryKey: ['me-tfa'], queryFn: fetchStatus });
@@ -95,7 +97,12 @@ export function SecuritySettingsPage() {
       const res = await fetch(url('/api/v1/me/tfa'), {
         method: 'DELETE',
         headers: headers(),
-        body: JSON.stringify({ password, code }),
+        // A recovery code is the only way out when the encryption key that
+        // wrapped this seed is gone: authenticator codes can no longer be
+        // verified, so requiring one would strand the account.
+        body: JSON.stringify(
+          disableWithRecovery ? { password, recoveryCode } : { password, code },
+        ),
       });
       const body = await res.json().catch(() => null) as { errors?: { message?: string }[] };
       if (!res.ok) throw new Error(body?.errors?.[0]?.message ?? 'Disable failed.');
@@ -103,6 +110,8 @@ export function SecuritySettingsPage() {
     onSuccess: () => {
       setPassword('');
       setCode('');
+      setRecoveryCode('');
+      setDisableWithRecovery(false);
       setRecoveryCodes(null);
       void qc.invalidateQueries({ queryKey: ['me-tfa'] });
     },
@@ -211,23 +220,51 @@ export function SecuritySettingsPage() {
             <input
               type="password"
               placeholder="Password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="block w-full rounded-md border border-border px-3 py-2 text-sm"
             />
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="Current TOTP code"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              className="block w-full rounded-md border border-border px-3 py-2 text-sm"
-            />
+            {disableWithRecovery ? (
+              <input
+                type="text"
+                placeholder="Recovery code"
+                value={recoveryCode}
+                onChange={(e) => setRecoveryCode(e.target.value)}
+                className="block w-full rounded-md border border-border px-3 py-2 text-sm"
+              />
+            ) : (
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="Current TOTP code"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                className="block w-full rounded-md border border-border px-3 py-2 text-sm"
+              />
+            )}
             <button
               type="button"
-              disabled={disableMutation.isPending}
+              className="text-sm text-primary underline-offset-2 hover:underline"
+              onClick={() => {
+                setDisableWithRecovery((v) => !v);
+                setMessage(null);
+              }}
+            >
+              {disableWithRecovery
+                ? 'Use an authenticator code instead'
+                : "Use a recovery code instead (if your authenticator no longer works)"}
+            </button>
+            <button
+              type="button"
+              disabled={
+                disableMutation.isPending ||
+                password.length === 0 ||
+                (disableWithRecovery ? recoveryCode.length === 0 : code.length < 6)
+              }
               onClick={() => disableMutation.mutate()}
-              className="rounded-md border border-destructive px-4 py-2 text-sm text-destructive"
+              className="block rounded-md border border-destructive px-4 py-2 text-sm text-destructive disabled:opacity-60"
             >
               Disable 2FA
             </button>

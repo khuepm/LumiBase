@@ -90,10 +90,19 @@ tfaAuthRouter.post('/verify-totp', async (c) => {
 
   const keys = c.get('runtime').keys;
   let verified = false;
-  if (parsed.data.code) {
-    verified = await verifyUserTotpCode(db, keys, claims.userId, parsed.data.code);
-  } else if (parsed.data.recoveryCode) {
-    verified = await verifyUserRecoveryCode(db, claims.userId, parsed.data.recoveryCode, ip);
+  try {
+    if (parsed.data.code) {
+      verified = await verifyUserTotpCode(db, keys, claims.userId, parsed.data.code);
+    } else if (parsed.data.recoveryCode) {
+      verified = await verifyUserRecoveryCode(db, claims.userId, parsed.data.recoveryCode, ip);
+    }
+  } catch (err) {
+    if (err instanceof TotpError) {
+      // The challenge `jti` is already consumed above, so the client must start
+      // a new login either way. Say why, and point at the path that still works.
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, 409);
+    }
+    throw err;
   }
 
   const audit = new AuditLogger({ db, siteId: claims.siteId });
@@ -176,7 +185,7 @@ tfaMeRouter.post('/tfa/setup', async (c) => {
 
   try {
     const issuer = process.env.LUMIBASE_TOTP_ISSUER || 'LumiBase';
-    const result = await beginTotpSetup(
+    const result: { secret: string; otpauthUrl: string } = await beginTotpSetup(
       c.get('db'),
       c.get('runtime').cache,
       c.get('runtime').keys,
@@ -187,7 +196,10 @@ tfaMeRouter.post('/tfa/setup', async (c) => {
     return c.json({ data: result });
   } catch (err) {
     if (err instanceof TotpError) {
-      return c.json({ errors: [{ code: err.code, message: err.message }] }, 409);
+      // A deployment missing its encryption key is not the caller's fault and
+      // is fixable, so it reads as "unavailable", not "conflict".
+      const status = err.code === 'ENCRYPTION_NOT_CONFIGURED' ? 503 : 409;
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, status);
     }
     throw err;
   }
@@ -266,7 +278,18 @@ tfaMeRouter.post('/tfa/recovery-codes', async (c) => {
     return c.json({ errors: [{ code: 'INVALID_CREDENTIALS', message: 'Password verification failed.' }] }, 401);
   }
 
-  const codeOk = await verifyUserTotpCode(c.get('db'), c.get('runtime').keys, userId, parsed.data.code);
+  let codeOk: boolean;
+  try {
+    codeOk = await verifyUserTotpCode(c.get('db'), c.get('runtime').keys, userId, parsed.data.code);
+  } catch (err) {
+    if (err instanceof TotpError) {
+      // Deliberately NOT accepting a recovery code here: minting fresh codes
+      // for an enrollment that can no longer produce a valid TOTP code would
+      // just extend the lockout. Disable and re-enroll instead.
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, 409);
+    }
+    throw err;
+  }
   if (!codeOk) {
     return c.json({ errors: [{ code: 'INVALID_CODE', message: 'Invalid verification code.' }] }, 401);
   }
@@ -308,7 +331,25 @@ tfaMeRouter.delete('/tfa', async (c) => {
     return c.json({ errors: [{ code: 'INVALID_CREDENTIALS', message: 'Password verification failed.' }] }, 401);
   }
 
-  const codeOk = await verifyUserTotpCode(c.get('db'), c.get('runtime').keys, userId, parsed.data.code);
+  // A recovery code is accepted here on purpose: when the key that wrapped this
+  // seed is gone, a TOTP code can never be verified again, and refusing the
+  // recovery code would leave the user unable to remove the dead factor.
+  let codeOk: boolean;
+  try {
+    codeOk = parsed.data.recoveryCode
+      ? await verifyUserRecoveryCode(
+          c.get('db'),
+          userId,
+          parsed.data.recoveryCode,
+          extractClientIp(c),
+        )
+      : await verifyUserTotpCode(c.get('db'), c.get('runtime').keys, userId, parsed.data.code!);
+  } catch (err) {
+    if (err instanceof TotpError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, 409);
+    }
+    throw err;
+  }
   if (!codeOk) {
     return c.json({ errors: [{ code: 'INVALID_CODE', message: 'Invalid verification code.' }] }, 401);
   }

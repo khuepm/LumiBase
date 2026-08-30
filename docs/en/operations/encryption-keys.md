@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-08-30T08:11:16.438Z
+version: 2
+lastUpdated: 2026-08-30T09:36:17.873Z
 sourceLang: en
-contentHash: b7cd3114fdf34d2a
-codeVerified: 2026-08-30T08:11:16.438Z
-codeVerifiedHash: b7cd3114fdf34d2a
-codeVerifiedClaims: 14
+contentHash: 5c222ffed069414f
+codeVerified: 2026-08-30T09:36:17.873Z
+codeVerifiedHash: 5c222ffed069414f
+codeVerifiedClaims: 16
 ---
 
 # Encryption Key Operations
@@ -58,12 +58,11 @@ Keep every key id that appears here configured, indefinitely.
 
 ## Failure mode: a referenced key is missing
 
-If the key an enrollment needs is not configured, the 2FA endpoints fail closed — no seed is ever read or written in plaintext — but they surface as an opaque `500`:
+If the key an enrollment needs is not configured, the 2FA endpoints fail closed — no seed is ever read or written in plaintext — and report `409` with `TFA_KEY_UNAVAILABLE`, naming the key id so you know which one to restore:
 
 ```
-POST /api/v1/auth/verify-totp        -> 500   KeyProvider: no encryption key configured for keyId 'v0'
-DELETE /api/v1/me/tfa                -> 500
-POST /api/v1/me/tfa/recovery-codes   -> 500
+POST /api/v1/auth/verify-totp        -> 409  TFA_KEY_UNAVAILABLE
+POST /api/v1/me/tfa/recovery-codes   -> 409  TFA_KEY_UNAVAILABLE
 ```
 
 Recovery codes keep working, because they are PBKDF2 hashes rather than KEK-wrapped:
@@ -72,9 +71,16 @@ Recovery codes keep working, because they are PBKDF2 hashes rather than KEK-wrap
 POST /api/v1/auth/verify-totp  { recoveryCode }  -> 200
 ```
 
-So an affected user can still sign in with their eight single-use recovery codes, but **cannot disable or re-enroll the factor** — both paths require a live TOTP code. When the codes are spent, that account loses Studio access. The error surface and the missing escape hatch are tracked in [#429](https://github.com/khuepm/lumibase/issues/429).
+So an affected user signs in with a recovery code and then **removes the dead factor themselves** — `DELETE /me/tfa` accepts a recovery code in place of a TOTP code for exactly this case, and re-enrolling afterwards wraps a fresh seed under the current key:
 
-If a key is genuinely unrecoverable, an operator must clear the affected enrollments so users can enroll again. There is **no admin endpoint** for this today:
+```
+DELETE /api/v1/me/tfa  { password, recoveryCode }  -> 200
+POST   /api/v1/me/tfa/setup                        -> 200
+```
+
+Regenerating recovery codes is deliberately **not** available this way: topping up codes for an enrollment that can never produce a valid TOTP code again would only extend the outage.
+
+If the key is unrecoverable and you would rather not wait for each user to notice, an operator can clear the affected enrollments in bulk. There is **no admin endpoint** for this today:
 
 ```sql
 -- Per user. Removes the credential and its recovery codes (FK cascade),
@@ -102,7 +108,7 @@ Escaping the property altogether means changing the mechanism rather than the st
 
 ## Before first enrollment
 
-`ENCRYPTION_KEY` must be configured **before** anyone enrolls in 2FA or writes an encrypted field. Without it, `POST /api/v1/me/tfa/setup` returns `500` (`no encryption key configured for active keyId 'v0'`) rather than a typed error, which is easy to misread as a bug in the feature.
+`ENCRYPTION_KEY` must be configured **before** anyone enrolls in 2FA or writes an encrypted field. Without it, `POST /api/v1/me/tfa/setup` returns `503` with `ENCRYPTION_NOT_CONFIGURED`; nothing is half-written, so enrollment works as soon as the key is in place.
 
 Set it as a real secret, never in committed config:
 
