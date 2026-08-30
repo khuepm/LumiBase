@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-30T04:23:35.780Z",
+  "generatedAt": "2026-08-30T09:12:57.754Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 144,
+    "upToDate": 145,
     "planned": 2
   },
   "actions": [
@@ -26,13 +26,13 @@
     },
     {
       "rel": "README.md",
-      "type": "up-to-date",
-      "reason": "in sync",
+      "type": "translate",
+      "reason": "source changed since last sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
-      "willTranslate": false,
+      "willTranslate": true,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
@@ -1441,6 +1441,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "operations/encryption-keys.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "operations/upgrades.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1706,13 +1718,13 @@
     },
     {
       "rel": "security/user-management.md",
-      "type": "translate",
-      "reason": "source changed since last sync",
+      "type": "up-to-date",
+      "reason": "in sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": true,
+      "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
     },
