@@ -21,6 +21,7 @@ const PUBLIC_AUTH_PATHS = new Set([
   '/api/v1/auth/reset-password',
   '/api/v1/auth/refresh',
   '/api/v1/auth/logout',
+  '/api/v1/auth/verify-totp',
 ]);
 
 const STUDIO_ACCESS_PATH_PREFIXES = [
@@ -182,8 +183,6 @@ export function isTfaEnrolled(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const tfa = value as Record<string, unknown>;
   if (tfa.enabled === true || tfa.enrolled === true || tfa.verified === true) return true;
-  if (typeof tfa.secret === 'string' && tfa.secret.length > 0) return true;
-  if (typeof tfa.tfaSecret === 'string' && tfa.tfaSecret.length > 0) return true;
   return false;
 }
 

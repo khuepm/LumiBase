@@ -234,7 +234,14 @@ export interface AuditFallbackRecord {
  * hash has no correlation value in an audit trail and must never be
  * stored (Req 3.7, 15.3), so we drop it entirely rather than hashing it.
  */
-const SENSITIVE_NULL_KEYS = new Set<string>(['passwordHash', 'apiKeyTokenHash']);
+const SENSITIVE_NULL_KEYS = new Set<string>([
+  'passwordHash',
+  'apiKeyTokenHash',
+  'totpCode',
+  'totpSecret',
+  'recoveryCode',
+  'challengeToken',
+]);
 
 /**
  * Keys whose string value is replaced with the first 8 hex chars of its

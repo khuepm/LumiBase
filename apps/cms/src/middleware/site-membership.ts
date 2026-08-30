@@ -9,6 +9,7 @@ import { getRequestContext, mergeRequestContext } from './request-context';
 // endpoint, so the caller must also be bound to the selected site.
 const PUBLIC_AUTH_PATHS = new Set([
   '/api/v1/auth/login',
+  '/api/v1/auth/verify-totp',
 ]);
 
 /**

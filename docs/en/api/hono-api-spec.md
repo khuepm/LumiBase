@@ -158,7 +158,13 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/auth/reset-password` | public | Consume a reset token, set new password, revoke refresh tokens |
 | `POST` | `/api/v1/auth/refresh` | public | Rotate the refresh token (cookie or body) → fresh access JWT + new refresh token |
 | `POST` | `/api/v1/auth/logout` | public | Revoke the presented refresh token's family + clear the cookie |
+| `POST` | `/api/v1/auth/verify-totp` | public | Second leg of a two-step Studio login — exchange an MFA challenge token + TOTP (or recovery) code for a session |
 | `GET` | `/api/v1/auth/me` | bearer | Get current user profile |
+| `GET` | `/api/v1/me/tfa` | bearer | TOTP enrollment status (`{ enabled, enrolledAt, recoveryCodesRemaining }`) |
+| `POST` | `/api/v1/me/tfa/setup` | bearer | Begin enrollment (password step-up) → one-time `secret` + `otpauthUrl` |
+| `POST` | `/api/v1/me/tfa/confirm` | bearer | Confirm enrollment with a live code → single-use recovery codes |
+| `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Regenerate recovery codes (password + TOTP code) |
+| `DELETE` | `/api/v1/me/tfa` | bearer | Disable TOTP (password + TOTP code); revokes sessions and bumps `tokenVersion` |
 | `POST` | `/api/v1/me/change-password` | bearer | Verify current password, set new hash, revoke refresh tokens + bump `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | List the caller's active sessions (live refresh tokens, redacted) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Revoke one of the caller's sessions |
@@ -185,6 +191,37 @@ cross-domain cookie env (`REFRESH_COOKIE_SAMESITE`/`_DOMAIN`/`_SECURE`).
 > Account erasure (GDPR Art. 17) and Subject Access Requests are served by the
 > regulated-content-readiness feature at `/api/v1/admin/erasure` and
 > `/api/v1/admin/sar`.
+
+**Two-factor login (TOTP).** Optional and per-user. When a user with TOTP
+enrolled logs into the Studio realm, `POST /api/v1/auth/login` does **not**
+return a session. It returns a challenge instead:
+
+```jsonc
+// POST /api/v1/auth/login  →  200
+{ "data": { "status": "mfa_required",
+            "challengeToken": "eyJ…",   // aud: mfa-challenge, 5 min TTL
+            "expiresIn": 300 } }
+
+// POST /api/v1/auth/verify-totp  →  200 (same shape as a normal login)
+{ "challengeToken": "eyJ…", "code": "123456" }
+// …or, if the authenticator is lost:
+{ "challengeToken": "eyJ…", "recoveryCode": "XXXX-XXXX-XXXX" }
+```
+
+The challenge token carries the `mfa-challenge` audience, so it cannot be
+replayed as a session JWT, and its `jti` is single-use (tracked in the cache
+provider). Verification is rate-limited per user and per IP. A successful
+verify issues the access JWT with `amr: ["pwd", "totp"]`. Policy-driven
+step-up (`anomalyAction: 'require_mfa'`) uses the same challenge flow when the
+user has TOTP enrolled, and still returns `401 MFA_REQUIRED` when they do not.
+
+Enrollment is a two-step, password-stepped-up flow: `POST /me/tfa/setup`
+returns the base32 secret and `otpauthUrl` once (never re-readable), then
+`POST /me/tfa/confirm` proves possession with a live code and returns eight
+single-use recovery codes. The TOTP seed is persisted only as a KeyProvider
+AEAD envelope, so enrollment requires `ENCRYPTION_KEY` in production;
+recovery codes are stored as PBKDF2 hashes. Set `LUMIBASE_TOTP_ISSUER` to
+control the label shown in authenticator apps (default `LumiBase`).
 
 **Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 

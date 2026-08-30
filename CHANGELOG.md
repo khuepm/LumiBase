@@ -9,7 +9,83 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **Native two-factor authentication (TOTP) for Studio logins.** Opt-in, per
+  user, enrolled from **Settings → Security**. Until now `users.tfa` was a
+  placeholder delegated to Logto and the `require_mfa` anomaly action had no
+  module behind it; both are now real. A Studio login by an enrolled user
+  returns `{ status: 'mfa_required', challengeToken, expiresIn }` instead of a
+  session, and `POST /api/v1/auth/verify-totp` exchanges that token plus a
+  6-digit code — or a recovery code — for the normal login payload
+  (`amr: ["pwd", "totp"]`). The challenge is a 5-minute JWT on its own
+  `mfa-challenge` audience, so `withAuth` cannot mistake it for a session, and
+  its `jti` is single-use. Verification is rate-limited per user (10) and per
+  IP (30) per 15 minutes. Self-service management lives under
+  `/api/v1/me/tfa*`: `setup` (password step-up → one-time secret +
+  `otpauthUrl`), `confirm` (proves possession, returns eight single-use
+  recovery codes), `recovery-codes` (regenerate), and `DELETE` (disable, which
+  bumps `tokenVersion` and revokes refresh tokens so a stolen session cannot
+  silently remove the second factor). Subscriber (`frontend`) logins are
+  untouched. Migration `0014_user_totp` adds
+  `lumibase_user_totp_credentials` + `lumibase_user_totp_recovery_codes`
+  (additive, idempotent, no backfill). The TOTP seed is stored only as a
+  KeyProvider AEAD envelope, so **enrolling in production requires
+  `ENCRYPTION_KEY`**; recovery codes are stored as PBKDF2 hashes. Optional
+  `LUMIBASE_TOTP_ISSUER` sets the label authenticator apps display. Docs:
+  `docs/en/security/user-management.md` §4f.
+
+### Fixed
+
+- **The TOTP endpoints are actually reachable.** All six of them answered
+  `404 NOT_FOUND` against a running server. `index.ts` attached the sub-routers
+  *after* mounting their parents (`api.route('/auth', authRouter)` then
+  `authRouter.route('/', tfaAuthRouter)`), and Hono's `route()` copies a child's
+  routes at call time — so the handlers existed but nothing could reach them.
+  326 CMS test files passed throughout, because none of them drove these paths
+  through the composed app. Attachment now precedes mounting, and
+  `router-mount-order.wiring.test.ts` fails on the old order: it scans
+  `index.ts` for any sub-router attached after its parent was mounted, and pins
+  the Hono semantics that make the rule necessary.
+- **Enrollment no longer 500s at the confirm step.** `confirmTotpSetup` read the
+  pending record with `JSON.parse(await cache.get(...))`, but `CacheProvider.get`
+  already returns the value parsed (`set` takes a serialized string, `get` gives
+  back an object) — so confirming raised
+  `SyntaxError: "[object Object]" is not valid JSON` and no user could finish
+  enrolling.
+- **Settings → Security authenticates its requests.** The page fetched
+  `/api/v1/me/tfa*` with `credentials: 'same-origin'` and no `Authorization`
+  header, but `withAuth` only reads the bearer header — there is no cookie
+  branch — so every call returned 401. Worse than a dead page: the failed status
+  query fell through to `enabled = false`, so a user with 2FA **on** was shown
+  `Status: Disabled` and invited to enroll again. Requests now carry
+  `Authorization: Bearer` and resolve through `getApiBaseUrl()` (shell contract
+  C2), and a failed load renders an explicit error instead of a confident
+  security state. The same pattern elsewhere in Settings is logged as backlog
+  B26.
+- **`isTfaEnrolled` no longer treats a bare secret as proof of enrollment.**
+  The helper accepted `tfa.secret` / `tfa.tfaSecret` as "enrolled", which was
+  written for the Logto-delegated placeholder shape. With native TOTP a secret
+  exists from the moment setup begins, so that reading would have counted a
+  half-finished, never-verified enrollment as satisfying an `enforceTfa`
+  policy. Enrollment is now decided only by the explicit
+  `enabled`/`enrolled`/`verified` flags, which `confirm` sets.
+- **Settings → Security resolves on custom admin paths.** The new page was
+  added to the plain `/settings` route tree only, so on an instance running a
+  custom admin path the sidebar item would have led nowhere — the same
+  omission recorded as backlog B9 for `change-feed`/`encryption`. The
+  `/$adminPath/settings/security` twin is wired in the same change.
+- **Migration `0014_user_totp` is re-runnable.** Its two foreign keys were
+  emitted as bare `ADD CONSTRAINT`, which fails with `duplicate_object` on a
+  second apply; they now carry the repo's standard `DO $$ … EXCEPTION` guard.
+- **Studio component tests no longer flake under load.** Testing Library's
+  async timeout is separate from Vitest's `testTimeout` and defaults to
+  1000ms, so `findBy*` on a query-driven page could give up while the
+  component still showed "Loading…". The failing file moved between runs
+  (backlog B13), turning the pre-commit gate red for reasons unrelated to the
+  diff. The suite now configures `asyncUtilTimeout: 5000`; async utilities
+  still resolve as soon as the assertion passes, so fast machines are
+  unaffected.
 
 ## [0.26.0] - 2026-08-24
 

@@ -35,6 +35,8 @@ export const TOKEN_AUDIENCE = {
   emailVerify: 'email-verify',
   /** Single-purpose password-reset link token (not a session token). */
   passwordReset: 'password-reset',
+  /** Single-purpose MFA step-up token after password verify (not a session). */
+  mfaChallenge: 'mfa-challenge',
 } as const;
 
 export type TokenAudience = (typeof TOKEN_AUDIENCE)[keyof typeof TOKEN_AUDIENCE];

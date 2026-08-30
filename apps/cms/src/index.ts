@@ -26,6 +26,7 @@ import { accessGrantsRouter } from './routes/access-grants';
 import { adminRouter } from './routes/admin';
 import { configRouter } from './routes/config';
 import { authRouter, meRouter } from './routes/auth';
+import { tfaAuthRouter, tfaMeRouter } from './routes/tfa';
 import { adminSecurityRouter } from './routes/admin-security';
 import { adminAuthIssuersRouter } from './routes/admin-auth-issuers';
 import { adminEncryptionRouter } from './routes/admin-encryption';
@@ -214,11 +215,17 @@ app.route('/api/v1/integrations/git', gitPublicRouter);
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
 api.use('*', withTenant(), withDb(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
+// Sub-routers must be attached to their parent BEFORE the parent is mounted
+// on `api`: Hono's `route()` copies the child's routes at call time, so
+// anything registered on `authRouter`/`meRouter` afterwards is invisible to
+// the composed app and answers 404.
+authRouter.route('/', tfaAuthRouter);
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).
 // Mounted on the authenticated `api` Hono so `withAuth` already enforces
 // that the caller has a valid session before the handler runs.
+meRouter.route('/', tfaMeRouter);
 api.route('/me', meRouter);
 // `/me/consents` — self-service consent management (GDPR Art. 7, PDPD).
 // Separate router from `meRouter`; mounted under the same authenticated `api`
