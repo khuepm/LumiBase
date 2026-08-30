@@ -1,11 +1,11 @@
 ---
-version: 3
-lastUpdated: 2026-08-02T19:21:21.951Z
+version: 4
+lastUpdated: 2026-08-30T08:11:17.536Z
 sourceLang: en
-contentHash: 3d391bafaa36323f
-codeVerified: 2026-08-02T19:21:21.951Z
-codeVerifiedHash: 3d391bafaa36323f
-codeVerifiedClaims: 62
+contentHash: 476b4029000a09f2
+codeVerified: 2026-08-30T08:11:17.536Z
+codeVerifiedHash: 476b4029000a09f2
+codeVerifiedClaims: 66
 ---
 
 # Environment Variables Reference
@@ -37,6 +37,27 @@ It is private operational state. Do not expose it through `VITE_*` environment
 variables or client build metadata, and do not automatically redirect
 public/setup routes to it in production. See
 [Private admin path](./private-admin-path.md).
+
+---
+
+## Encryption
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ENCRYPTION_KEY` | Before first use | — | Base64 of 32 random bytes (`openssl rand -base64 32`). Wraps encrypted item fields and TOTP two-factor seeds. Resolved as key version `v0`. **Set as a secret** (`wrangler secret put ENCRYPTION_KEY --env production`); never commit it or place it in `[env.production.vars]` |
+| `ENCRYPTION_KEY_<id>` | ✗ | — | Versioned key material, e.g. `ENCRYPTION_KEY_v1`, used for rotation |
+| `ENCRYPTION_ACTIVE_KEY_ID` | ✗ | only configured key, else `v0` | Which key version encrypts new data |
+| `ENCRYPTION_KEY[_<id>]_FILE` | ✗ | — | Path to read the key from instead of the variable (Docker secrets). The direct variable wins |
+
+"Before first use" means before anyone enrolls in 2FA or writes an encrypted
+field — not before boot. Without a key, enrollment fails closed with a `500`
+rather than a typed error.
+
+> **Once seeds exist, a key can never be removed.** TOTP seeds pin the key
+> version that wrapped them and are **not** re-wrapped by the envelope
+> migration, so retiring an old key locks those users out of their second
+> factor. Rotation is also not a remedy for a leaked key. See
+> [Encryption key operations](../operations/encryption-keys.md).
 
 ---
 

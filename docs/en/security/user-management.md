@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:23:24.787Z
+version: 2
+lastUpdated: 2026-08-30T08:11:16.929Z
 sourceLang: en
-contentHash: c274dd38cd5da85d
+contentHash: efc7fe166b15c901
+codeVerified: 2026-08-30T08:11:16.929Z
+codeVerifiedHash: efc7fe166b15c901
+codeVerifiedClaims: 112
 ---
 
 # User Management Best Practices
@@ -294,8 +297,8 @@ For a logged-in user (`bearer`, under `/api/v1/me`):
   password, sets the new hash, and revokes all refresh tokens so other
   sessions can't be silently renewed. SSO/passwordless accounts get
   `NO_PASSWORD`.
-- **Session management** — now that refresh tokens are tracked, `GET
-  /me/sessions` lists the caller's active sessions (no token material),
+- **Session management** — now that refresh tokens are tracked,
+  `GET /me/sessions` lists the caller's active sessions (no token material),
   `DELETE /me/sessions/:id` revokes one, and `DELETE /me/sessions` revokes
   all (logout everywhere). Expired/revoked rows are swept by the hourly
   prune (§4d).
@@ -340,6 +343,18 @@ disable both write audit events (`mfa_enrolled` / `mfa_disabled`); failed
 verifies write `mfa_verify_failed`. TOTP codes, seeds, recovery codes, and
 challenge tokens are on the audit logger's drop list, so none of them can
 reach the audit trail.
+
+**Key lifecycle.** The seed is wrapped by whichever key was active at
+enrollment, and the row pins that version in `secret_key_id`; decryption
+resolves the key from the envelope. Two consequences operators get wrong: the
+envelope migration (`POST /admin/encryption/envelope/migrate`) re-wraps item
+fields only and never touches this table, so **an old key must stay configured
+for as long as any seed references it**; and because one deployment-wide key
+wraps every seed, **rotating after a key leak does not protect existing
+enrollments** — those users must re-enroll. The AAD (`totp-secret|<userId>`)
+prevents replaying one user's ciphertext under another id; it is not a
+confidentiality boundary. Full procedures in
+[Encryption key operations](../operations/encryption-keys.md).
 
 **Multi-tenancy.** A TOTP credential belongs to the **identity**, not to a
 site — the tables are keyed by `user_id` only, matching the single identity
