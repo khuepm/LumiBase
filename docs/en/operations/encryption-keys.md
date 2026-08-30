@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-08-30T09:36:17.873Z
+version: 3
+lastUpdated: 2026-08-30T14:41:52.446Z
 sourceLang: en
-contentHash: 5c222ffed069414f
-codeVerified: 2026-08-30T09:36:17.873Z
-codeVerifiedHash: 5c222ffed069414f
-codeVerifiedClaims: 16
+contentHash: fdb879739b50b8df
+codeVerified: 2026-08-30T14:41:52.446Z
+codeVerifiedHash: fdb879739b50b8df
+codeVerifiedClaims: 20
 ---
 
 # Encryption Key Operations
@@ -109,6 +109,16 @@ Escaping the property altogether means changing the mechanism rather than the st
 ## Before first enrollment
 
 `ENCRYPTION_KEY` must be configured **before** anyone enrolls in 2FA or writes an encrypted field. Without it, `POST /api/v1/me/tfa/setup` returns `503` with `ENCRYPTION_NOT_CONFIGURED`; nothing is half-written, so enrollment works as soon as the key is in place.
+
+Three places check for you, in order of how early they catch it:
+
+| Where | Behaviour when the key is missing |
+|-------|-----------------------------------|
+| `pnpm release:check` | Fails before a Cloudflare deploy — `ENCRYPTION_KEY` is in the required-secrets list |
+| CMS boot, production only | Refuses to start (`REQUIRED_PRODUCTION_VARS` in `config/production.ts`) |
+| Setup wizard, every runtime | `GET /setup/capabilities` reports `encryption.available: false` and the Security step shows a notice that 2FA cannot be enrolled |
+
+The wizard notice exists because the first two only cover production and deploys: a local, Docker-staging or Workers-preview instance boots happily without a key, and the first sign used to be a `503` the first time someone opened Settings → Security.
 
 Set it as a real secret, never in committed config:
 

@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-08-30T09:36:17.873Z
+version: 3
+lastUpdated: 2026-08-30T14:41:52.446Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5c222ffed069414f
+sourceHash: fdb879739b50b8df
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T09:36:17.873Z
-codeVerifiedHash: 5c222ffed069414f
-codeVerifiedClaims: 16
+codeVerified: 2026-08-30T14:41:52.446Z
+codeVerifiedHash: fdb879739b50b8df
+codeVerifiedClaims: 20
 ---
 
 # Vận hành khoá mã hoá
@@ -113,6 +113,16 @@ Muốn thoát hẳn khỏi tính chất này thì phải đổi cơ chế chứ 
 ## Trước lần enroll đầu tiên
 
 `ENCRYPTION_KEY` phải được cấu hình **trước** khi có ai enroll 2FA hoặc ghi một field mã hoá. Nếu thiếu, `POST /api/v1/me/tfa/setup` trả `503` kèm `ENCRYPTION_NOT_CONFIGURED`; không có gì bị ghi nửa vời, nên chỉ cần đặt khoá vào là enroll chạy ngay.
+
+Có ba chỗ kiểm hộ bạn, xếp theo mức bắt sớm:
+
+| Ở đâu | Hành vi khi thiếu khoá |
+|-------|------------------------|
+| `pnpm release:check` | Fail trước khi deploy lên Cloudflare — `ENCRYPTION_KEY` nằm trong danh sách secret bắt buộc |
+| CMS boot, chỉ ở production | Từ chối khởi động (`REQUIRED_PRODUCTION_VARS` trong `config/production.ts`) |
+| Setup wizard, mọi runtime | `GET /setup/capabilities` trả `encryption.available: false` và bước Security hiện notice rằng không enroll được 2FA |
+
+Notice ở wizard tồn tại vì hai chỗ đầu chỉ phủ production và lúc deploy: một instance local, Docker staging hay Workers preview vẫn boot bình thường khi thiếu khoá, và trước đây dấu hiệu đầu tiên là `503` lúc có người mở Settings → Security lần đầu.
 
 Đặt nó như một secret thật, không bao giờ nằm trong config được commit:
 
