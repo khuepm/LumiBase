@@ -430,3 +430,39 @@ jobs:
       # make CI green.
       - name: Audit (fail on high/critical)
         run: pnpm audit --prod --audit-level high
+
+  workflow-lint:
+    name: Workflow files are valid
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # A workflow file with an invalid expression does not degrade gracefully:
+    # GitHub cannot parse it, so it never resolves `name:` or any job, and it
+    # records a bare failed run against whatever event fired. `perf-k6.yml`
+    # sat in exactly that state for weeks — `env.PERF_K6_FULL_RUN` in a
+    # job-level `if:`, where the `env` context is not available — failing on
+    # every single push. Nothing was watching, because nothing lints the
+    # workflows themselves. This job is that watcher.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      # Pinned by version AND checksum rather than pulling a third-party
+      # action: one fewer `uses:` SHA to keep current, and the binary is
+      # verified before it runs.
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.10
+          ACTIONLINT_SHA256: f4c76b71db5755a713e6055cbb0857ed07e103e028bda117817660ebadb4386f
+        run: |
+          set -euo pipefail
+          curl -fsSL -o actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum --check --strict
+          tar xzf actionlint.tar.gz actionlint
+          ./actionlint --version
+
+      # shellcheck/pyflakes are left on: `run:` blocks here drive Postgres,
+      # Redis and deploy steps, and a quoting bug in one of those is the same
+      # class of silent breakage.
+      - name: Lint workflow files
+        run: ./actionlint

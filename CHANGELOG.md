@@ -92,6 +92,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
     while `apps/docs` declared `shiki@^1.22.0` — so `MarkdownRenderer` was
     handing a 1.x `Highlighter` to a 4.x rehype plugin. The docs test suite
     mocks shiki, so nothing caught it; the pair is now on one major.
+- **`@types/react-dom` override raised `19.2.4` → `19.2.5`.** The pin is exact,
+  so it wins over whatever the manifests declare — which is why the pending
+  minor-and-patch group bump (manifests to `^19.2.5`) failed `drift:check`: the
+  two ranges no longer intersected. Raising the override first clears that
+  without the group PR having to touch it, and `19.2.5` still satisfies today's
+  `^19.2.4` declarations, so this is a no-op for anyone not on the group bump.
 - **`engines.node` raised to `^22.22.2 || ^24.15.0 || >=26.0.0`** (was
   `>=22.13.0`), the floor jsdom 30 requires. The previous range admitted Node
   22.13–22.22.1, 23.x and 24.0–24.14, all of which jsdom 30 rejects; nanoid 6
@@ -109,6 +115,26 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **`perf-k6.yml` was an invalid workflow file, failing on every push for
+  weeks.** Its `on:` never declared `push` at all — the failures were not the
+  load-test job running and breaking. The `perf-gate` job's `if:` referenced
+  `env.PERF_K6_FULL_RUN`, and the `env` context does not exist in a job-level
+  `if:` (only `github`, `inputs`, `needs`, `vars`). That does not evaluate to
+  empty; it makes the whole file unparseable, so GitHub never resolved `name:`
+  or any job and recorded a bare failed run against every event, `on:` filters
+  included. The giveaway was the API reporting the run's `name` as the file path
+  with an empty job list. Switched to `vars.PERF_K6_FULL_RUN`; the workflow now
+  honours `on:` and no longer runs on push. Set the repo variable
+  `PERF_K6_FULL_RUN=true` to let the nightly schedule run the full compose + k6
+  job. Closes backlog `B31`.
+- **CI now lints the workflow files themselves** (`workflow-lint` job running
+  `actionlint`, pinned by version and SHA-256 rather than adding another
+  third-party action to keep current). The reason a broken workflow could stay
+  broken for weeks is that nothing checked this class at all: an unparseable
+  workflow looks, from the outside, exactly like a workflow that ran and failed.
+  `actionlint` reports zero findings across `.github/workflows` today, with
+  shellcheck enabled over the `run:` blocks that drive Postgres, Redis and the
+  deploy steps.
 - **The TOTP endpoints are actually reachable.** All six of them answered
   `404 NOT_FOUND` against a running server. `index.ts` attached the sub-routers
   *after* mounting their parents (`api.route('/auth', authRouter)` then
