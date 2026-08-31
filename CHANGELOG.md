@@ -127,6 +127,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   honours `on:` and no longer runs on push. Set the repo variable
   `PERF_K6_FULL_RUN=true` to let the nightly schedule run the full compose + k6
   job. Closes backlog `B31`.
+- **`registry:check` now also guards the out-of-scope backlog's `ID` column,**
+  not just the Setup Impact Registry's `#` column. Two PRs claimed `B30` for
+  unrelated findings and the collision only surfaced as a rebase conflict, which
+  is the same failure the `#` guard already existed to prevent — the backlog
+  table had simply been left out. It matters more than it looks: backlog ids are
+  cited by id from other rows ("Nối tiếp B13") and from CHANGELOG entries, so a
+  silent renumber breaks references nothing tests. Closes `B34`.
 - **CI now lints the workflow files themselves** (`workflow-lint` job running
   `actionlint`, pinned by version and SHA-256 rather than adding another
   third-party action to keep current). The reason a broken workflow could stay
