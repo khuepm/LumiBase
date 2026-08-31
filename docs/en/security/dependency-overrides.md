@@ -1,8 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-08-23T18:49:09.284Z
+version: 3
+lastUpdated: 2026-08-30T16:44:53.762Z
 sourceLang: en
-contentHash: 7d74bd5bdaa39456
+contentHash: aee0ac3265b6420f
+codeVerified: 2026-08-30T16:44:53.762Z
+codeVerifiedHash: aee0ac3265b6420f
+codeVerifiedClaims: 6
 ---
 
 # Dependency Overrides & Patches
@@ -52,13 +55,12 @@ still agree.
 | `esbuild` | `^0.28.2` | esbuild dev-server request RCE advisory (`<=0.24.2`). | All consumers (vite, tsx, etc.) require `>=0.28.2`. |
 | `form-data` | `^4.0.6` | Security advisory (unsafe random boundary). | All consumers require `>=4.0.6`. |
 | `postcss` | `^8.5.26` | Security advisory (resolved via Dependabot). | All consumers require `>=8.5.26`. |
-| `nanoid@3` | `^3.3.17` | [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8) — a custom generator loops indefinitely when `size` is zero, unpatched below `3.3.17` (high). Reached only transitively: `next` → `postcss` → `nanoid@3`. Scoped to the 3.x range so it cannot fight the 5.x pin below. | `postcss` (or whatever consumes it) requires `nanoid >=3.3.17`. Verify with `pnpm why nanoid`. |
-| `nanoid@5` | `^5.1.16` | [GHSA-28wg-ghj8-5hjv](https://github.com/advisories/GHSA-28wg-ghj8-5hjv) — non-secure generators loop indefinitely on a negative size, unpatched below `5.1.16` (high). This is the range `apps/cms` and `packages/database` declare directly (`^5.0.7`) for domain-table IDs, so the pin raises the floor without forcing a major. | Both packages declare `>=5.1.16` themselves, at which point the override is redundant. |
+| `nanoid@3` | `^3.3.17` | [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8) — a custom generator loops indefinitely when `size` is zero, unpatched below `3.3.17` (high). Reached only transitively: `next` → `postcss` → `nanoid@3`. Scoped to the 3.x range so it cannot raise the floor for the 6.x line `apps/cms` and `packages/database` declare directly. | `postcss` (or whatever consumes it) requires `nanoid >=3.3.17`. Verify with `pnpm why nanoid`. |
 | `undici` | `^7.28.0` | Security advisory (resolved via Dependabot). | All consumers require `>=7.28.0`. |
 | `ws` | `^8.21.3` | Security advisory (resolved via Dependabot). Declared directly by `apps/cms` for the realtime surface. | `apps/cms` declares `>=8.21.3` itself. |
 | `uuid` | `^14.0.1` | Version unification / advisory (resolved via Dependabot). Only one import site exists (`apps/cms/src/modules/audit/worker.ts`, `v7`), so the major carries little surface — but v12+ reshaped the package `exports` map, so bumping it needs a real bundle check, not just a typecheck. | Version drift across packages is no longer a concern. |
 | `vite` | `^8.2.0` | Unify on one Vite major and pull esbuild past the `0.28.1` RCE advisory. **This entry is why `pnpm drift:check` exists:** it sat at `^7.3.5` while `apps/studio` and `apps/docs` both declared `^8.1.3`, and because overrides apply to direct dependencies too, both apps were built with Vite 7 for as long as their manifests claimed Vite 8. Raise this in step with the manifests or the bump is cosmetic. | The workspace no longer needs a single forced Vite major. |
-| `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS via exponential-time expansion of consecutive non-expanding `{}` groups (high), backported to the 1.x line in `1.1.16`. **Dev-only** — reached through `minimatch@3` from ESLint and its plugins, so it never appears in `pnpm audit --prod`. Keyed per-major (same shape as the `nanoid@3` / `nanoid@5` pair) because two incompatible majors coexist; see [Known-unfixable alerts](#known-unfixable-alerts) for why 1.x cannot be folded into 5.x. | Nothing in the tree resolves `minimatch@3` any more (`pnpm why brace-expansion -r`), at which point both `brace-expansion@*` rows collapse into one. |
+| `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS via exponential-time expansion of consecutive non-expanding `{}` groups (high), backported to the 1.x line in `1.1.16`. **Dev-only** — reached through `minimatch@3` from ESLint and its plugins, so it never appears in `pnpm audit --prod`. Keyed per-major (same shape as the `nanoid@3` scope) because two incompatible majors coexist; see [Known-unfixable alerts](#known-unfixable-alerts) for why 1.x cannot be folded into 5.x. | Nothing in the tree resolves `minimatch@3` any more (`pnpm why brace-expansion -r`), at which point both `brace-expansion@*` rows collapse into one. |
 | `brace-expansion@5` | `^5.0.8` | [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) — DoS via unbounded expansion length causing an OOM process crash (high), patched in `5.0.8`. **Dev-only** — reached through `minimatch@10` from `glob`, `eslint`, `@typescript-eslint/typescript-estree`. Natural drift already lifted most of the tree to `5.0.9`, but `minimatch@10.2.5` still pinned a `5.0.7` copy; this floor removes that straggler. | Same as the `@1` row. |
 | `@types/react` | `19.2.18` | **Not a security pin** — enforces React 19 types workspace-wide so Studio/Docs/Landing/`@lumibase/ui` typecheck against the same major as runtime React 19. | Drift between apps is no longer a concern, or the workspace splits React majors again intentionally. |
 | `@types/react-dom` | `19.2.4` | Same as `@types/react` — React 19 type consistency. | Same as `@types/react`. |
@@ -87,10 +89,12 @@ neither:
 `react-router-dom` was discontinued after `7.18.1` — no 8.x exists under that name, and
 7.x received no backport (`7.18.1` is the final 7.x release). The fix therefore means
 migrating `apps/docs` off `react-router-dom` onto `react-router@8`, which declares peers
-`react >=19.2.7` / `react-dom >=19.2.7` and `engines.node >=22.22.0`. The workspace
-now targets React 19 for Studio/Docs/Landing (`@lumibase/ui` peers
-`^18.3.1 || ^19.0.0`, `engines.node >=22`). Migrating `apps/docs` onto
-`react-router@8` remains a coordinated follow-up (not a straight version bump).
+`react >=19.2.7` / `react-dom >=19.2.7` and `engines.node >=22.22.0`. Neither of those
+is an obstacle any more — the workspace targets React 19 for Studio/Docs/Landing
+(`@lumibase/ui` peers `^18.3.1 || ^19.0.0`) and its `engines.node` floor is now
+`^22.22.2 || ^24.15.0 || >=26.0.0`, which clears `>=22.22.0`. What remains is the
+migration itself: `react-router@8` is a coordinated port of `apps/docs`, not a
+straight version bump.
 
 **Scope check:** `apps/studio` is unaffected — it uses `@tanstack/react-router`, an
 unrelated package. `react-router-dom` appears in `apps/docs` only.
