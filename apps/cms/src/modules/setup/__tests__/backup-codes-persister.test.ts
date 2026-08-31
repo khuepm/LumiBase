@@ -233,7 +233,7 @@ describe('SetupService.complete() backup-code persistence (Req 14.1, 14.2)', () 
       auditRows: [] as Array<Record<string, unknown>>,
     };
     const db = makeFakeDb(captured) as never;
-    const svc = new SetupService({ db, requireSetupToken: false, smtpAvailable: false });
+    const svc = new SetupService({ db, requireSetupToken: false, smtpAvailable: false, encryptionAvailable: true });
 
     const outcome = await svc.complete(makeInput(), { requestId: 'req-1' });
 
@@ -263,7 +263,7 @@ describe('SetupService.complete() backup-code persistence (Req 14.1, 14.2)', () 
       auditRows: [] as Array<Record<string, unknown>>,
     };
     const db = makeFakeDb(captured) as never;
-    const svc = new SetupService({ db, requireSetupToken: false, smtpAvailable: false });
+    const svc = new SetupService({ db, requireSetupToken: false, smtpAvailable: false, encryptionAvailable: true });
 
     const outcome = await svc.complete(makeInput(), {});
     expect(outcome.ok).toBe(true);
@@ -294,7 +294,7 @@ describe('SetupService.complete() backup-code persistence (Req 14.1, 14.2)', () 
     const svc = new SetupService({
       db,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
       backupCodesPersister: spy,
     });
 
@@ -323,7 +323,7 @@ describe('backup code format property (Req 14.1)', () => {
         const svc = new SetupService({
           db,
           requireSetupToken: false,
-          smtpAvailable: false,
+          smtpAvailable: false, encryptionAvailable: true,
         });
         const outcome = await svc.complete(
           {

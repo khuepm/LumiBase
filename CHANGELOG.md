@@ -115,6 +115,38 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **The setup wizard says when no encryption key is configured.**
+  `GET /api/v1/setup/capabilities` gains `encryption.available`, and the
+  wizard's Security step shows a non-dismissible notice when it is `false`:
+  without a key, TOTP enrollment and encrypted item fields do not work.
+  Production already refused to boot without `ENCRYPTION_KEY` and
+  `pnpm release:check` already blocked deploys, but every other runtime —
+  local, Docker staging, a Workers preview — booted happily and only revealed
+  the gap when someone opened Settings → Security. The probe resolves keys
+  through the runtime's own `collectKeys`, so versioned keys
+  (`ENCRYPTION_KEY_v1`) count; `*_FILE` needs no special case because
+  `loadSecretFiles` has already materialised it. Studio treats an **absent**
+  field as available so an older CMS cannot make a healthy instance announce
+  that 2FA is impossible — only an explicit `false` raises the notice.
+- **A missing encryption key no longer reads as `500`, and no longer strands
+  the user.** Every 2FA path failed with an opaque `500 INTERNAL` when the AEAD
+  key it needed was unavailable. Fail-closed was correct — no seed is ever
+  handled in plaintext — but nothing told the operator that `ENCRYPTION_KEY`
+  was the problem. Enrollment now returns `503 ENCRYPTION_NOT_CONFIGURED` when
+  the deployment has no active key, and verify/regenerate return
+  `409 TFA_KEY_UNAVAILABLE`, naming the key id that is missing, when the key
+  that wrapped *that* seed was retired by a rotation. The worse half was the
+  dead end: recovery codes still worked (they are PBKDF2 hashes, not
+  KEK-wrapped), so the user could sign in, but `DELETE /me/tfa` and
+  `POST /me/tfa/recovery-codes` both demanded a live TOTP code that the missing
+  key could never verify — so the broken factor could be neither removed nor
+  replaced, and the account lost Studio access once the codes ran out.
+  `DELETE /me/tfa` now accepts a recovery code in place of a TOTP code
+  (password step-up unchanged, and it still bumps `tokenVersion` + revokes
+  refresh tokens), and Studio's Settings → Security offers that path. Topping
+  up recovery codes deliberately still requires a real TOTP code, since new
+  codes for an unusable enrollment would only extend the outage. Runbook:
+  `docs/en/operations/encryption-keys.md`.
 - **`perf-k6.yml` was an invalid workflow file, failing on every push for
   weeks.** Its `on:` never declared `push` at all — the failures were not the
   load-test job running and breaking. The `perf-gate` job's `if:` referenced

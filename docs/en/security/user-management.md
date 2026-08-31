@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-08-30T08:11:16.929Z
+version: 3
+lastUpdated: 2026-08-30T09:36:15.719Z
 sourceLang: en
-contentHash: efc7fe166b15c901
-codeVerified: 2026-08-30T08:11:16.929Z
-codeVerifiedHash: efc7fe166b15c901
+contentHash: 644f0f4b2f32179b
+codeVerified: 2026-08-30T09:36:15.719Z
+codeVerifiedHash: 644f0f4b2f32179b
 codeVerifiedClaims: 112
 ---
 
@@ -336,8 +336,9 @@ consuming IP recorded. Replay inside the verify window is blocked by
 `last_used_step`. `users.tfa` holds only non-secret enrollment state.
 
 **Mutating 2FA needs step-up.** Setup, recovery-code regeneration, and
-disable all require the current password; the latter two also require a live
-TOTP code. Disabling bumps `tokenVersion` and revokes refresh tokens, so a
+disable all require the current password; the latter two also require a second
+factor — a live TOTP code, or, for disable only, a recovery code, so that a
+user whose seed can no longer be decrypted can still remove the dead factor. Disabling bumps `tokenVersion` and revokes refresh tokens, so a
 stolen session cannot quietly downgrade the account's protection. Enroll and
 disable both write audit events (`mfa_enrolled` / `mfa_disabled`); failed
 verifies write `mfa_verify_failed`. TOTP codes, seeds, recovery codes, and

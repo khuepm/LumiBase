@@ -21,7 +21,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { PasswordSchema } from '@lumibase/shared/schemas';
 import type { RateLimiterProvider } from '@lumibase/runtime';
-import { MemoryRateLimiter } from '@lumibase/runtime';
+import { MemoryRateLimiter, collectKeys } from '@lumibase/runtime';
 import type { AppEnv } from '../../env';
 import { withDb } from '../../middleware/db';
 import { consumeRateLimit } from '../../middleware/rate-limit-helper';
@@ -120,6 +120,33 @@ async function checkCompleteRateLimit(
  * from the runtime context; tests can short-circuit by overriding
  * `c.set('setupServiceOverride', svc)` before mounting the router.
  */
+/**
+ * Is any AEAD key resolvable for this deployment?
+ *
+ * Uses the runtime's own `collectKeys` rather than a bare `env.ENCRYPTION_KEY`
+ * check so the answer matches what `KeyProvider` will actually do at enrollment
+ * time — versioned keys (`ENCRYPTION_KEY_v1`) count too.
+ *
+ * `*_FILE` indirections need no special case: `loadSecretFiles` (`serve.ts`
+ * calls it before the server starts listening) has already materialised them
+ * into the direct variable, and Cloudflare Workers have no filesystem to read.
+ *
+ * Cloudflare surfaces secrets on `c.env`; Node reads `process.env`, so both are
+ * merged. Never throws — a capabilities probe must not be able to break setup.
+ */
+function resolveEncryptionAvailable(env: AppEnv['Bindings']): boolean {
+  try {
+    return (
+      collectKeys({
+        ...(typeof process !== 'undefined' ? process.env : {}),
+        ...(env as unknown as Record<string, string | undefined>),
+      }).size > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 function buildService(c: {
   env: AppEnv['Bindings'];
   get: <K extends keyof AppEnv['Variables']>(k: K) => AppEnv['Variables'][K];
@@ -131,6 +158,7 @@ function buildService(c: {
     db,
     requireSetupToken,
     smtpAvailable,
+    encryptionAvailable: resolveEncryptionAvailable(c.env),
     officialPublisherKey: resolveOfficialPublisherKey(c.env),
   });
 }

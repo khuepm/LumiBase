@@ -402,6 +402,28 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
         </p>
       </header>
 
+      {/* ── Encryption key notice ─────────────────────────────────── */}
+      {/* Not dismissible and not tied to a checkbox, unlike the GeoIP warning:
+          this is a deployment fact the operator cannot fix from the wizard, and
+          it decides whether a whole security feature exists on this instance.
+          Without it the first sign is a 503 in Settings → Security, long after
+          setup. */}
+      {!capabilities.encryption.available ? (
+        <div
+          role="alert"
+          aria-live="polite"
+          className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-100"
+          data-testid="encryption-unavailable-warning"
+        >
+          <p>
+            No encryption key is configured on this instance, so two-factor
+            authentication cannot be enrolled and encrypted fields cannot be
+            written. Set <code>ENCRYPTION_KEY</code> and restart the CMS — the
+            rest of setup is unaffected.
+          </p>
+        </div>
+      ) : null}
+
       {/* ── Preset chooser ────────────────────────────────────────── */}
       <PresetChooser
         active={activePreset}

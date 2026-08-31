@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 1
-lastUpdated: 2026-08-02T19:06:39.579Z
+version: 2
+lastUpdated: 2026-08-30T09:36:09.209Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a061ef3b5d842ed3
+sourceHash: aeb93d6616d2f86b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:06:59.464Z
-codeVerifiedHash: a061ef3b5d842ed3
-codeVerifiedClaims: 356
+codeVerified: 2026-08-30T09:36:09.209Z
+codeVerifiedHash: aeb93d6616d2f86b
+codeVerifiedClaims: 374
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -147,7 +147,13 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/auth/reset-password` | public | Sử dụng token đặt lại, thiết lập mật khẩu mới, thu hồi các refresh token |
 | `POST` | `/api/v1/auth/refresh` | public | Xoay vòng (rotate) refresh token (cookie hoặc body) → access JWT mới + refresh token mới |
 | `POST` | `/api/v1/auth/logout` | public | Thu hồi họ (family) refresh token được xuất trình + xóa cookie |
+| `POST` | `/api/v1/auth/verify-totp` | public | Chặng thứ hai của login Studio hai bước — đổi MFA challenge token + TOTP code (hoặc recovery code) lấy một session |
 | `GET` | `/api/v1/auth/me` | bearer | Lấy thông tin người dùng hiện tại |
+| `GET` | `/api/v1/me/tfa` | bearer | Trạng thái enroll TOTP (`{ enabled, enrolledAt, recoveryCodesRemaining }`) |
+| `POST` | `/api/v1/me/tfa/setup` | bearer | Bắt đầu enroll (step-up mật khẩu) → `secret` + `otpauthUrl` dùng một lần |
+| `POST` | `/api/v1/me/tfa/confirm` | bearer | Xác nhận enroll bằng một code sống → recovery code dùng-một-lần |
+| `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Tạo lại recovery code (mật khẩu + TOTP code) |
+| `DELETE` | `/api/v1/me/tfa` | bearer | Tắt TOTP (mật khẩu + một TOTP code hoặc một recovery code); thu hồi session và tăng `tokenVersion` |
 | `POST` | `/api/v1/me/change-password` | bearer | Xác nhận mật khẩu hiện tại, đặt hash mới, thu hồi refresh token + tăng `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | Liệt kê các phiên hoạt động của người gọi (live refresh tokens, đã ẩn thông tin nhạy cảm) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Thu hồi một phiên làm việc của người gọi |
@@ -168,6 +174,45 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 Các endpoint `/auth/refresh` + `/auth/logout` lấy từ Cookie yêu cầu header `X-LumiBase-Refresh` (chống CSRF). Refresh token được cung cấp dưới dạng `httpOnly` cookie và trong response body; xem `docs/en/security/user-management.md` §4d để biết TTL theo từng realm và env cookie cross-domain (`REFRESH_COOKIE_SAMESITE`/`_DOMAIN`/`_SECURE`).
 
 > Việc xóa tài khoản (GDPR Art. 17) và Yêu cầu truy cập của chủ thể (SAR) được phục vụ bởi tính năng regulated-content-readiness tại `/api/v1/admin/erasure` và `/api/v1/admin/sar`.
+
+**Login hai yếu tố (TOTP).** Tuỳ chọn và theo từng user. Khi một user đã enroll
+TOTP đăng nhập vào realm Studio, `POST /api/v1/auth/login` **không** trả về một
+session. Nó trả về một challenge:
+
+```jsonc
+// POST /api/v1/auth/login  →  200
+{ "data": { "status": "mfa_required",
+            "challengeToken": "eyJ…",   // aud: mfa-challenge, 5 min TTL
+            "expiresIn": 300 } }
+
+// POST /api/v1/auth/verify-totp  →  200 (cùng shape với login thường)
+{ "challengeToken": "eyJ…", "code": "123456" }
+// …hoặc, nếu mất authenticator:
+{ "challengeToken": "eyJ…", "recoveryCode": "XXXX-XXXX-XXXX" }
+```
+
+Challenge token mang audience `mfa-challenge` nên không thể replay như một
+session JWT, và `jti` của nó dùng-một-lần (được theo dõi trong cache provider).
+Verify bị giới hạn tần suất theo user và theo IP. Verify thành công thì access
+JWT được cấp với `amr: ["pwd", "totp"]`. Step-up theo policy
+(`anomalyAction: 'require_mfa'`) dùng đúng luồng challenge này khi user đã
+enroll TOTP, và vẫn trả `401 MFA_REQUIRED` khi họ chưa enroll.
+
+Enroll là luồng hai bước có step-up mật khẩu: `POST /me/tfa/setup` trả secret
+base32 và `otpauthUrl` một lần (không đọc lại được), rồi `POST /me/tfa/confirm`
+chứng minh sở hữu bằng một code sống và trả về tám recovery code dùng-một-lần.
+Seed TOTP chỉ được lưu dưới dạng envelope AEAD của KeyProvider, nên enroll ở
+production đòi `ENCRYPTION_KEY`; recovery code được lưu dưới dạng hash PBKDF2.
+Đặt `LUMIBASE_TOTP_ISSUER` để điều khiển nhãn hiện trong app authenticator (mặc
+định `LumiBase`).
+
+Tình trạng khoá được báo tường minh chứ không phải `500`: `setup` trả
+`503 ENCRYPTION_NOT_CONFIGURED` khi deployment không có khoá active nào, còn
+verify / regenerate trả `409 TFA_KEY_UNAVAILABLE` khi khoá đã bọc chính seed đó
+không còn trong cấu hình. Ở trường hợp sau, `DELETE /me/tfa` chấp nhận một
+**recovery code** thay cho TOTP code, để user tháo được một enrollment mà seed
+của nó không còn giải mã được. Xem
+[Vận hành khoá mã hoá](../operations/encryption-keys.md).
 
 **Quản lý chấp thuận (Consent management)** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 
