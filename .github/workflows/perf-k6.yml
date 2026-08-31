@@ -17,8 +17,6 @@ concurrency:
 
 env:
   NODE_VERSION: 24
-  # Set to "true" in repo/org variables to run the full compose + k6 job nightly.
-  PERF_K6_FULL_RUN: ${{ vars.PERF_K6_FULL_RUN || 'false' }}
 
 jobs:
   validate-scripts:
@@ -57,10 +55,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: validate-scripts
+    # `vars`, not `env`: the `env` context is not available in a job-level `if`
+    # (only `github`, `inputs`, `needs`, `vars` are). Referencing it there does
+    # not evaluate to empty — it makes the whole workflow file invalid, which is
+    # why this file failed instantly on every event for weeks. Set the repo/org
+    # variable PERF_K6_FULL_RUN to "true" to let the nightly schedule run the
+    # full compose + k6 job; unset means the scheduled run stops after
+    # validate-scripts.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.event.label.name == 'perf-k6') ||
-      (github.event_name == 'schedule' && env.PERF_K6_FULL_RUN == 'true')
+      (github.event_name == 'schedule' && vars.PERF_K6_FULL_RUN == 'true')
     steps:
       - uses: actions/checkout@v7
 
@@ -77,7 +82,7 @@ jobs:
 
       - name: Wait for Postgres
         run: |
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             docker compose -f docker/docker-compose.yml exec -T postgres pg_isready -U lumibase && exit 0
             sleep 2
           done
@@ -109,7 +114,7 @@ jobs:
           PORT: '1989'
         run: |
           pnpm -F @lumibase/cms exec tsx src/serve.ts &
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             curl -sf http://127.0.0.1:1989/health && exit 0
             sleep 2
           done

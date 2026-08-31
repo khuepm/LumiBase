@@ -92,12 +92,27 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
     while `apps/docs` declared `shiki@^1.22.0` — so `MarkdownRenderer` was
     handing a 1.x `Highlighter` to a 4.x rehype plugin. The docs test suite
     mocks shiki, so nothing caught it; the pair is now on one major.
+- **`@types/react-dom` override raised `19.2.4` → `19.2.5`.** The pin is exact,
+  so it wins over whatever the manifests declare — which is why the pending
+  minor-and-patch group bump (manifests to `^19.2.5`) failed `drift:check`: the
+  two ranges no longer intersected. Raising the override first clears that
+  without the group PR having to touch it, and `19.2.5` still satisfies today's
+  `^19.2.4` declarations, so this is a no-op for anyone not on the group bump.
 - **`engines.node` raised to `^22.22.2 || ^24.15.0 || >=26.0.0`** (was
   `>=22.13.0`), the floor jsdom 30 requires. The previous range admitted Node
   22.13–22.22.1, 23.x and 24.0–24.14, all of which jsdom 30 rejects; nanoid 6
   additionally excludes odd majors. CI runs Node 24 so this was invisible there
   and would only have surfaced on a contributor's machine. `.nvmrc` (24) already
   satisfies it.
+- **`graphql-yoga` 5.21.3 → 5.22.0 closes the `graphql` 17 peer violation.** Yoga
+  now declares `graphql: ^15.2.0 || ^16.0.0 || ^17.0.0`, so the workspace's
+  `graphql@17.0.2` is satisfied by declaration instead of by the install happening
+  to work. The violation had been open since 2026-08-01 and survived #399, which
+  bumped Yoga without the peer range moving. Verified in the lockfile per DoD §2e —
+  the `apps/cms` importer resolves `17.0.2` and the `graphql-yoga@5.22.0` block
+  lists `^17.0.0` — not from the manifest. `B14` in
+  `.kiro/steering/out-of-scope-backlog.md` moves to `fixed`; pinning `graphql` back
+  to `^16` is no longer on the table.
 
 ### Known gaps
 
@@ -109,6 +124,69 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **The setup wizard says when no encryption key is configured.**
+  `GET /api/v1/setup/capabilities` gains `encryption.available`, and the
+  wizard's Security step shows a non-dismissible notice when it is `false`:
+  without a key, TOTP enrollment and encrypted item fields do not work.
+  Production already refused to boot without `ENCRYPTION_KEY` and
+  `pnpm release:check` already blocked deploys, but every other runtime —
+  local, Docker staging, a Workers preview — booted happily and only revealed
+  the gap when someone opened Settings → Security. The probe resolves keys
+  through the runtime's own `collectKeys`, so versioned keys
+  (`ENCRYPTION_KEY_v1`) count; `*_FILE` needs no special case because
+  `loadSecretFiles` has already materialised it. Studio treats an **absent**
+  field as available so an older CMS cannot make a healthy instance announce
+  that 2FA is impossible — only an explicit `false` raises the notice.
+- **A missing encryption key no longer reads as `500`, and no longer strands
+  the user.** Every 2FA path failed with an opaque `500 INTERNAL` when the AEAD
+  key it needed was unavailable. Fail-closed was correct — no seed is ever
+  handled in plaintext — but nothing told the operator that `ENCRYPTION_KEY`
+  was the problem. Enrollment now returns `503 ENCRYPTION_NOT_CONFIGURED` when
+  the deployment has no active key, and verify/regenerate return
+  `409 TFA_KEY_UNAVAILABLE`, naming the key id that is missing, when the key
+  that wrapped *that* seed was retired by a rotation. The worse half was the
+  dead end: recovery codes still worked (they are PBKDF2 hashes, not
+  KEK-wrapped), so the user could sign in, but `DELETE /me/tfa` and
+  `POST /me/tfa/recovery-codes` both demanded a live TOTP code that the missing
+  key could never verify — so the broken factor could be neither removed nor
+  replaced, and the account lost Studio access once the codes ran out.
+  `DELETE /me/tfa` now accepts a recovery code in place of a TOTP code
+  (password step-up unchanged, and it still bumps `tokenVersion` + revokes
+  refresh tokens), and Studio's Settings → Security offers that path. Topping
+  up recovery codes deliberately still requires a real TOTP code, since new
+  codes for an unusable enrollment would only extend the outage. Runbook:
+  `docs/en/operations/encryption-keys.md`.
+- **`perf-k6.yml` was an invalid workflow file, failing on every push for
+  weeks.** Its `on:` never declared `push` at all — the failures were not the
+  load-test job running and breaking. The `perf-gate` job's `if:` referenced
+  `env.PERF_K6_FULL_RUN`, and the `env` context does not exist in a job-level
+  `if:` (only `github`, `inputs`, `needs`, `vars`). That does not evaluate to
+  empty; it makes the whole file unparseable, so GitHub never resolved `name:`
+  or any job and recorded a bare failed run against every event, `on:` filters
+  included. The giveaway was the API reporting the run's `name` as the file path
+  with an empty job list. Switched to `vars.PERF_K6_FULL_RUN`; the workflow now
+  honours `on:` and no longer runs on push. Set the repo variable
+  `PERF_K6_FULL_RUN=true` to let the nightly schedule run the full compose + k6
+  job. Closes backlog `B31`.
+- **`registry:check` now also guards the out-of-scope backlog's `ID` column,**
+  not just the Setup Impact Registry's `#` column. Two PRs claimed `B30` for
+  unrelated findings and the collision only surfaced as a rebase conflict, which
+  is the same failure the `#` guard already existed to prevent — the backlog
+  table had simply been left out. It matters more than it looks: backlog ids are
+  cited by id from other rows ("Nối tiếp B13") and from CHANGELOG entries, so a
+  silent renumber breaks references nothing tests. Closes `B34`.
+- **CI now lints the workflow files themselves** (`workflow-lint` job running
+  `actionlint`, pinned by version and SHA-256 rather than adding another
+  third-party action to keep current). The reason a broken workflow could stay
+  broken for weeks is that nothing checked this class at all: an unparseable
+  workflow looks, from the outside, exactly like a workflow that ran and failed.
+  `actionlint` reports zero findings across `.github/workflows`, shellcheck
+  included over the `run:` blocks that drive Postgres, Redis and the deploy
+  steps — which required fixing five pre-existing findings it surfaced on first
+  run: two unquoted `${TARGET_ENV}` expansions in `deploy-cms.yml` (SC2086), two
+  unused loop variables in `perf-k6.yml` (SC2034), and a run of individual
+  redirects in `release.yml` (SC2129). The job also asserts shellcheck is on
+  PATH, because actionlint skips it *silently* when it is absent.
 - **The TOTP endpoints are actually reachable.** All six of them answered
   `404 NOT_FOUND` against a running server. `index.ts` attached the sub-routers
   *after* mounting their parents (`api.route('/auth', authRouter)` then
