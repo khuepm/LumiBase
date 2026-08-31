@@ -24,7 +24,7 @@ packages:
 
 overrides:
   "@types/react": "19.2.18"
-  "@types/react-dom": "19.2.4"
+  "@types/react-dom": "19.2.5"
   "brace-expansion@1": "^1.1.16"
   "brace-expansion@5": "^5.0.8"
   "dompurify": "^3.4.13"
