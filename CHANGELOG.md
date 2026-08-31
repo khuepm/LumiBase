@@ -132,9 +132,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   third-party action to keep current). The reason a broken workflow could stay
   broken for weeks is that nothing checked this class at all: an unparseable
   workflow looks, from the outside, exactly like a workflow that ran and failed.
-  `actionlint` reports zero findings across `.github/workflows` today, with
-  shellcheck enabled over the `run:` blocks that drive Postgres, Redis and the
-  deploy steps.
+  `actionlint` reports zero findings across `.github/workflows`, shellcheck
+  included over the `run:` blocks that drive Postgres, Redis and the deploy
+  steps — which required fixing five pre-existing findings it surfaced on first
+  run: two unquoted `${TARGET_ENV}` expansions in `deploy-cms.yml` (SC2086), two
+  unused loop variables in `perf-k6.yml` (SC2034), and a run of individual
+  redirects in `release.yml` (SC2129). The job also asserts shellcheck is on
+  PATH, because actionlint skips it *silently* when it is absent.
 - **The TOTP endpoints are actually reachable.** All six of them answered
   `404 NOT_FOUND` against a running server. `index.ts` attached the sub-routers
   *after* mounting their parents (`api.route('/auth', authRouter)` then

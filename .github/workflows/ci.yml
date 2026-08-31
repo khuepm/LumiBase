@@ -461,8 +461,14 @@ jobs:
           tar xzf actionlint.tar.gz actionlint
           ./actionlint --version
 
-      # shellcheck/pyflakes are left on: `run:` blocks here drive Postgres,
-      # Redis and deploy steps, and a quoting bug in one of those is the same
-      # class of silent breakage.
+      # actionlint runs shellcheck over `run:` blocks only when the binary is
+      # on PATH, and it *skips silently* when it is not — which is how a local
+      # run can report clean while this job finds five issues. ubuntu-latest
+      # ships shellcheck, so assert it rather than trust it: if a future runner
+      # image drops it, the gate would quietly stop checking the `run:` blocks
+      # that drive Postgres, Redis and the deploy steps.
+      - name: Assert shellcheck is available
+        run: shellcheck --version
+
       - name: Lint workflow files
         run: ./actionlint

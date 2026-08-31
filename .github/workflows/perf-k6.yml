@@ -82,7 +82,7 @@ jobs:
 
       - name: Wait for Postgres
         run: |
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             docker compose -f docker/docker-compose.yml exec -T postgres pg_isready -U lumibase && exit 0
             sleep 2
           done
@@ -114,7 +114,7 @@ jobs:
           PORT: '1989'
         run: |
           pnpm -F @lumibase/cms exec tsx src/serve.ts &
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             curl -sf http://127.0.0.1:1989/health && exit 0
             sleep 2
           done
