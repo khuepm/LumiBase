@@ -101,9 +101,11 @@ jobs:
               range="$tag"
               echo "Changes included in ${tag}:" > release-notes.md
             fi
-            echo >> release-notes.md
-            git log --pretty=format:'- %s (%h)' "$range" >> release-notes.md
-            echo >> release-notes.md
+            {
+              echo
+              git log --pretty=format:'- %s (%h)' "$range"
+              echo
+            } >> release-notes.md
           fi
 
       - name: Create GitHub Release
