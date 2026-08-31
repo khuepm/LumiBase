@@ -104,6 +104,15 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   additionally excludes odd majors. CI runs Node 24 so this was invisible there
   and would only have surfaced on a contributor's machine. `.nvmrc` (24) already
   satisfies it.
+- **`graphql-yoga` 5.21.3 → 5.22.0 closes the `graphql` 17 peer violation.** Yoga
+  now declares `graphql: ^15.2.0 || ^16.0.0 || ^17.0.0`, so the workspace's
+  `graphql@17.0.2` is satisfied by declaration instead of by the install happening
+  to work. The violation had been open since 2026-08-01 and survived #399, which
+  bumped Yoga without the peer range moving. Verified in the lockfile per DoD §2e —
+  the `apps/cms` importer resolves `17.0.2` and the `graphql-yoga@5.22.0` block
+  lists `^17.0.0` — not from the manifest. `B14` in
+  `.kiro/steering/out-of-scope-backlog.md` moves to `fixed`; pinning `graphql` back
+  to `^16` is no longer on the table.
 
 ### Known gaps
 
