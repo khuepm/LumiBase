@@ -80,6 +80,15 @@ export interface SetupStateResponse {
 export interface SetupCapabilities {
   readonly geoip: { readonly available: boolean; readonly source?: 'maxmind' };
   readonly smtp: { readonly available: boolean };
+  /**
+   * Whether an AEAD key (`ENCRYPTION_KEY` / `ENCRYPTION_KEY_<id>`, directly or
+   * via `*_FILE`) is resolvable. Reported so the wizard can say up front that
+   * TOTP two-factor enrollment and encrypted item fields will be unavailable,
+   * instead of letting the operator discover it from a `503` the first time
+   * someone opens Settings → Security. Production already refuses to boot
+   * without it (`config/production.ts`); this covers every other runtime.
+   */
+  readonly encryption: { readonly available: boolean };
 }
 
 export interface SetupCompleteAccount {
@@ -215,6 +224,7 @@ export interface SetupServiceDeps {
   readonly db: Database;
   readonly requireSetupToken: boolean;
   readonly smtpAvailable: boolean;
+  readonly encryptionAvailable: boolean;
   readonly geoipProbe?: GeoipProbe;
   readonly backupCodesPersister?: BackupCodesPersister;
   /**
@@ -324,6 +334,7 @@ export class SetupService {
         ? { available: true, source: 'maxmind' }
         : { available: false },
       smtp: { available: this.deps.smtpAvailable },
+      encryption: { available: this.deps.encryptionAvailable },
     };
   }
 

@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:06:39.579Z
+version: 3
+lastUpdated: 2026-08-30T09:36:09.209Z
 sourceLang: en
-contentHash: a061ef3b5d842ed3
-codeVerified: 2026-08-02T19:06:59.464Z
-codeVerifiedHash: a061ef3b5d842ed3
-codeVerifiedClaims: 356
+contentHash: aeb93d6616d2f86b
+codeVerified: 2026-08-30T09:36:09.209Z
+codeVerifiedHash: aeb93d6616d2f86b
+codeVerifiedClaims: 374
 ---
 
 # Hono API Specification — LumiBase
@@ -164,7 +164,7 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/me/tfa/setup` | bearer | Begin enrollment (password step-up) → one-time `secret` + `otpauthUrl` |
 | `POST` | `/api/v1/me/tfa/confirm` | bearer | Confirm enrollment with a live code → single-use recovery codes |
 | `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Regenerate recovery codes (password + TOTP code) |
-| `DELETE` | `/api/v1/me/tfa` | bearer | Disable TOTP (password + TOTP code); revokes sessions and bumps `tokenVersion` |
+| `DELETE` | `/api/v1/me/tfa` | bearer | Disable TOTP (password + either a TOTP code or a recovery code); revokes sessions and bumps `tokenVersion` |
 | `POST` | `/api/v1/me/change-password` | bearer | Verify current password, set new hash, revoke refresh tokens + bump `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | List the caller's active sessions (live refresh tokens, redacted) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Revoke one of the caller's sessions |
@@ -222,6 +222,14 @@ single-use recovery codes. The TOTP seed is persisted only as a KeyProvider
 AEAD envelope, so enrollment requires `ENCRYPTION_KEY` in production;
 recovery codes are stored as PBKDF2 hashes. Set `LUMIBASE_TOTP_ISSUER` to
 control the label shown in authenticator apps (default `LumiBase`).
+
+Key availability is reported explicitly rather than as a `500`: `setup` returns
+`503 ENCRYPTION_NOT_CONFIGURED` when the deployment has no active key, and
+verify / regenerate return `409 TFA_KEY_UNAVAILABLE` when the key that wrapped
+that particular seed is no longer configured. In the latter case `DELETE
+/me/tfa` accepts a **recovery code** in place of a TOTP code, so the user can
+remove an enrollment whose seed can no longer be decrypted. See
+[Encryption key operations](../operations/encryption-keys.md).
 
 **Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 

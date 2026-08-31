@@ -41,6 +41,39 @@ export class TotpError extends Error {
   }
 }
 
+/**
+ * `KeyProvider` reports a missing key by throwing a plain `Error`, which would
+ * otherwise reach the global error boundary as an opaque `500` — the operator
+ * sees "Internal Server Error" with no hint that `ENCRYPTION_KEY` is the
+ * problem, and the user cannot tell a misconfigured deployment from a broken
+ * feature. Translate it into a `TotpError` the routes can map to a real status.
+ *
+ * Two distinct causes, deliberately two codes:
+ *
+ *   - `ENCRYPTION_NOT_CONFIGURED` — no active key at all, so nobody can enroll.
+ *     A deployment-level mistake; fix the env and retry.
+ *   - `TFA_KEY_UNAVAILABLE` — the key that wrapped *this* seed is gone, usually
+ *     because a rotation retired it. Everyone else may be fine; this user's
+ *     factor is unusable until the key returns or they re-enroll.
+ *
+ * See `docs/en/operations/encryption-keys.md`.
+ */
+async function withKeyErrors<T>(
+  op: () => Promise<T>,
+  code: 'ENCRYPTION_NOT_CONFIGURED' | 'TFA_KEY_UNAVAILABLE',
+  message: string,
+): Promise<T> {
+  try {
+    return await op();
+  } catch (err) {
+    if (err instanceof TotpError) throw err;
+    if (err instanceof Error && /no encryption key configured/i.test(err.message)) {
+      throw new TotpError(code, message);
+    }
+    throw err;
+  }
+}
+
 export async function getTotpStatus(db: Db, userId: string): Promise<TotpStatus> {
   const cred = await loadCredential(db, userId);
   if (!cred?.verifiedAt) {
@@ -76,7 +109,11 @@ export async function beginTotpSetup(
   }
 
   const secret = generateTotpSecret();
-  const encrypted = await encryptTotpSecret(keys, userId, secret);
+  const encrypted = await withKeyErrors(
+    () => encryptTotpSecret(keys, userId, secret),
+    'ENCRYPTION_NOT_CONFIGURED',
+    'Two-factor enrollment requires ENCRYPTION_KEY to be configured on this deployment.',
+  );
   await cache.set(
     pendingSetupKey(userId),
     JSON.stringify({ secretEnc: encrypted.ciphertext, secretKeyId: encrypted.keyId }),
@@ -170,7 +207,11 @@ export async function verifyUserTotpCode(
   const cred = await loadCredential(db, userId);
   if (!cred?.verifiedAt) return false;
 
-  const secret = await decryptTotpSecret(keys, userId, cred.secretCiphertext);
+  const secret = await withKeyErrors(
+    () => decryptTotpSecret(keys, userId, cred.secretCiphertext),
+    'TFA_KEY_UNAVAILABLE',
+    `The encryption key that protects this enrollment (${cred.secretKeyId}) is not configured, so authenticator codes cannot be checked. Use a recovery code.`,
+  );
   const result = await verifyTotpCode(secret, code, {
     digits: cred.digits,
     period: cred.periodSeconds,

@@ -166,7 +166,7 @@ describe('SetupService.complete() → audit events (Req 15.1)', () => {
     const svc = new SetupService({
       db,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
       audit,
     });
 
@@ -191,7 +191,7 @@ describe('SetupService.complete() → audit events (Req 15.1)', () => {
     const svc = new SetupService({
       db,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
       audit,
     });
 
@@ -212,7 +212,7 @@ describe('SetupService.complete() → audit events (Req 15.1)', () => {
     const svc = new SetupService({
       db,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
       audit,
     });
 
@@ -237,7 +237,7 @@ describe('SetupService.complete() → audit events (Req 15.1)', () => {
     const svc = new SetupService({
       db,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
       audit,
     });
 
@@ -265,7 +265,7 @@ describe('SetupService.complete() → audit events (Req 15.1)', () => {
     const svc = new SetupService({
       db,
       requireSetupToken: true,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
       audit,
     });
 
@@ -290,7 +290,7 @@ describe('SetupService.complete() → audit events (Req 15.1)', () => {
     const svc = new SetupService({
       db,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
     });
     const outcome = await svc.complete(makeInput(), { requestId: 'req-default' });
     expect(outcome.ok).toBe(true);
