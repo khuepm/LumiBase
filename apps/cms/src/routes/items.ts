@@ -5,7 +5,7 @@ import { ItemServiceError, parseDeepQueryParams, parseFilterQueryParams, bulkMax
 import { itemServiceForRequest, permissionServiceForRequest } from '../services/item-service-factory';
 import { ContentVersionError, ContentVersionService } from '../services/content-version-service';
 import { DependentsError, DependentsService, type ResolveAction } from '../services/dependents-service';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 /**
  * /items/:collection — generic CRUD over the items store.

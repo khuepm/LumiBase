@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T10:56:37.131Z
+version: 2
+lastUpdated: 2026-09-01T19:24:39.596Z
 sourceLang: en
-contentHash: 872eb1bddf553837
+contentHash: 41a801988d3ce523
+codeVerified: 2026-09-01T19:24:39.596Z
+codeVerifiedHash: 41a801988d3ce523
+codeVerifiedClaims: 4
 ---
 
 # ADR-005: Hono.js over Express / Elysia
@@ -54,4 +57,4 @@ All router and middleware code lives in shared files that import only from `hono
 - Documentation is less extensive than Express for advanced patterns
 
 **Neutral:**
-- `@hono/zod-validator` used for request validation (aligns well with our zod schemas in `packages/shared`)
+- `@hono/zod-validator` used for request validation (aligns well with our zod schemas in `packages/contracts`)

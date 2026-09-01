@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { CONFIG_MANIFEST_VERSION, parseConfigManifest } from '@lumibase/shared/schemas';
+import { CONFIG_MANIFEST_VERSION, parseConfigManifest } from '@lumibase/contracts/schemas';
 import {
   canonicalize,
   serializeConfig,

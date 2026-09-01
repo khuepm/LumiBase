@@ -1,6 +1,6 @@
 import { createPrivateKey, sign as nodeSign } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { sha256Hex } from '@lumibase/shared/extensions';
+import { sha256Hex } from '@lumibase/contracts/extensions';
 
 /**
  * Sign an extension bundle with an Ed25519 private key.

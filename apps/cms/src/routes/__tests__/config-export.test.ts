@@ -2,7 +2,7 @@ import type { Database } from '@lumibase/database';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import type { AppEnv } from '../../env';
-import { CONFIG_MANIFEST_VERSION } from '@lumibase/shared/schemas';
+import { CONFIG_MANIFEST_VERSION } from '@lumibase/contracts/schemas';
 import { configRouter } from '../config';
 
 /**

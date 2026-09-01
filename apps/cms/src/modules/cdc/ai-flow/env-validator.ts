@@ -23,13 +23,13 @@
  *     generator.
  *
  * The validator reuses the shared `EnvVarSchema` key constraint
- * (`/^[A-Z_][A-Z0-9_]*$/`, see `packages/shared/src/schemas/cdc.ts`) so the
+ * (`/^[A-Z_][A-Z0-9_]*$/`, see `packages/contracts/src/schemas/cdc.ts`) so the
  * notion of a "well-formed environment variable name" stays in one place.
  *
  * Validates: Requirements 7.4, 7.5
  */
 
-import { EnvVarSchema } from '@lumibase/shared';
+import { EnvVarSchema } from '@lumibase/contracts';
 
 // ── validation rule descriptors ────────────────────────────────────────────
 

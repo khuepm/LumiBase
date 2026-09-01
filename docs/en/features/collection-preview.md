@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-07-27T23:52:33.645Z
+version: 2
+lastUpdated: 2026-09-01T19:25:54.674Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: da33d4283b788ba9
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-27T23:52:33.645Z
-codeVerifiedHash: da33d4283b788ba9
+sourceHash: 17fd5198b3a06b2c
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-01T19:25:54.674Z
+codeVerifiedHash: 17fd5198b3a06b2c
 codeVerifiedClaims: 20
 ---
 
@@ -46,7 +46,7 @@ No new column, no migration. Use `collections.meta` (the jsonb "UI hints" blob, 
 }
 ```
 
-Zod (placed in `packages/shared/src/schemas/`, exported for both CMS and Studio):
+Zod (placed in `packages/contracts/src/schemas/`, exported for both CMS and Studio):
 
 ```ts
 export const previewConfigSchema = z.object({
@@ -142,7 +142,7 @@ In the collection settings screen (`apps/studio/src/modules/data-model/detail.ts
 
 **Stage 1 (MVP):**
 
-1. `packages/shared`: `previewConfigSchema`.
+1. `packages/contracts`: `previewConfigSchema`.
 2. `apps/cms`: the `PREVIEW_ALLOWED_ORIGINS` env (`env.ts` + `wrangler.toml`) · origin validation when saving `meta.preview.url` · the production guard · exposing the allowlist to Studio · `frame-src` CSP in `security-headers.ts`.
 3. `apps/studio/data-model`: the Preview configuration tab (reusing the Mustache editor).
 4. `apps/studio/content`: the Preview tab in `item-detail.tsx` plus the iframe component (sandbox + debounced reload).

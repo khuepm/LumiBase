@@ -1,11 +1,14 @@
 ---
-version: 3
-lastUpdated: 2026-08-02T19:13:06.930Z
+version: 4
+lastUpdated: 2026-09-01T19:24:37.025Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: fc3ffd93cb612901
+sourceHash: 35c9bb80abddd0e4
 mtEngine: manual
 syncStatus: human-translated
+codeVerified: 2026-09-01T19:24:37.025Z
+codeVerifiedHash: 35c9bb80abddd0e4
+codeVerifiedClaims: 4
 ---
 
 # LumiBase Documentation
@@ -138,7 +141,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 - **`packages/database`** — Drizzle ORM schema + migrations (Postgres).
 - **`packages/runtime`** — The abstraction layer (CacheProvider, StorageProvider, DatabaseProvider, SearchProvider, QueueProvider, MediaProcessor) with two adapter sets (Cloudflare and Docker).
 - **`packages/ai-skills`** — The skill registry for the AI Copilot (CORE_SKILLS) + OpenAI-compatible tool definitions.
-- **`packages/shared`** — Types, zod schemas, the policy DSL, the field DSL.
+- **`packages/contracts`** — Types, zod schemas, the policy DSL, the field DSL.
 - **`packages/sdk`** — The JS SDK (REST + WS + typegen).
 - **`packages/ui`** — shadcn components + CVA tokens.
 - **`packages/extension-sdk`** — Types and helpers for developers writing extensions.

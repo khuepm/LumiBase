@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@lumibase/analytics-consent": "workspace:*",
-    "@lumibase/shared": "workspace:*",
+    "@lumibase/contracts": "workspace:*",
     "@lumibase/ui": "workspace:*",
     "@shikijs/rehype": "^4.4.3",
     "dompurify": "^3.4.14",

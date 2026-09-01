@@ -1,8 +1,8 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:12:50.738Z
+version: 3
+lastUpdated: 2026-09-01T19:25:54.624Z
 sourceLang: en
-contentHash: 9ec0cbf5e5010696
+contentHash: 86d3fe673e599c75
 ---
 
 # Windsurf — LumiBase Agent Setup
@@ -76,7 +76,7 @@ Flow: Add realtime notifications to the Flows engine
 1. Read docs/en/features/flows-automation.md and docs/en/features/websockets-realtime.md
 2. Add a "notify" operation type to the operation registry in apps/cms/src/services/
 3. Implement the WebSocket push in the existing realtime service
-4. Update types in packages/shared
+4. Update types in packages/contracts
 5. Run pnpm typecheck to confirm no errors
 ```
 

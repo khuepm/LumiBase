@@ -50,5 +50,9 @@
     "type": "git",
     "url": "git+https://github.com/khuepm/lumibase.git",
     "directory": "packages/create-lumibase"
+  },
+  "homepage": "https://docs.lumibase.dev",
+  "bugs": {
+    "url": "https://github.com/khuepm/lumibase/issues"
   }
 }

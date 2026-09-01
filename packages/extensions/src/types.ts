@@ -1,4 +1,4 @@
-import type { ExtensionManifest, ExtensionType } from '@lumibase/shared/schemas';
+import type { ExtensionManifest, ExtensionType } from '@lumibase/contracts/schemas';
 
 /** Filename every extension ships in its source directory. */
 export const MANIFEST_FILENAME = 'lumibase-extension.json';

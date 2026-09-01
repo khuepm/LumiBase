@@ -1,8 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:13:06.930Z
+version: 3
+lastUpdated: 2026-09-01T19:24:37.025Z
 sourceLang: vi
-contentHash: fc3ffd93cb612901
+contentHash: 35c9bb80abddd0e4
+codeVerified: 2026-09-01T19:24:37.025Z
+codeVerifiedHash: 35c9bb80abddd0e4
+codeVerifiedClaims: 4
 ---
 
 # LumiBase Documentation
@@ -135,7 +138,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **`packages/database`** — Drizzle ORM schema + migrations (Postgres).
 - **`packages/runtime`** — Abstraction layer (CacheProvider, StorageProvider, DatabaseProvider, SearchProvider, QueueProvider, MediaProcessor) với hai bộ adapter (Cloudflare và Docker).
 - **`packages/ai-skills`** — Registry skill cho AI Copilot (CORE_SKILLS) + tool definitions OpenAI-compatible.
-- **`packages/shared`** — Types, zod schemas, policy DSL, field DSL.
+- **`packages/contracts`** — Types, zod schemas, policy DSL, field DSL.
 - **`packages/sdk`** — JS SDK (REST + WS + typegen).
 - **`packages/ui`** — shadcn components + CVA tokens.
 - **`packages/extension-sdk`** — Types và helpers cho dev viết extension.

@@ -1,4 +1,4 @@
-import type { KeybindingMap } from '@lumibase/shared/schemas';
+import type { KeybindingMap } from '@lumibase/contracts/schemas';
 
 /**
  * Static registry of keyboard actions — the single source of truth for

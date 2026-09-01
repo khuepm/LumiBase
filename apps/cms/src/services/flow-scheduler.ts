@@ -1,6 +1,6 @@
 import { flows, type Database } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, eq, isNotNull, lte } from 'drizzle-orm';
 import { FLOW_EVENTS_QUEUE, type FlowEventJob } from './flow-dispatch';
 

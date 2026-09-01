@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { BuildMetadata } from '@lumibase/shared';
+import type { BuildMetadata } from '@lumibase/contracts';
 import type { AppEnv, Bindings } from '../env';
 
 const UNKNOWN_METADATA_VALUE = 'unknown';

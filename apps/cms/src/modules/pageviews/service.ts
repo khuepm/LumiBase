@@ -6,7 +6,7 @@ import {
   parsePageviewSettings,
   PAGEVIEWS_SETTINGS_KEY,
   type PageviewSettings,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import type {
   HitContext,
   PageviewStats,

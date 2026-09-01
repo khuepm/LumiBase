@@ -6,7 +6,7 @@
  * service/routes stay thin.
  */
 
-import type { CdcCursor, CdcSubscriptionStatus } from '@lumibase/shared/schemas';
+import type { CdcCursor, CdcSubscriptionStatus } from '@lumibase/contracts/schemas';
 
 /** Who is attempting a status transition. */
 export type TransitionVia = 'admin' | 'dispatcher' | 'retention' | 'replay';

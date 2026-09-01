@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T10:56:37.131Z
+version: 2
+lastUpdated: 2026-09-01T19:24:39.596Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 872eb1bddf553837
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 41a801988d3ce523
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-01T19:24:39.596Z
+codeVerifiedHash: 41a801988d3ce523
+codeVerifiedClaims: 4
 ---
 
 # ADR-005: Hono.js thay cho Express / Elysia
@@ -57,4 +60,4 @@ Toàn bộ code router và middleware nằm trong các file dùng chung, chỉ i
 - Tài liệu ít đầy đủ hơn Express cho các mẫu nâng cao
 
 **Trung tính:**
-- `@hono/zod-validator` được dùng để validate request (khớp tốt với các schema zod của chúng ta trong `packages/shared`)
+- `@hono/zod-validator` được dùng để validate request (khớp tốt với các schema zod của chúng ta trong `packages/contracts`)

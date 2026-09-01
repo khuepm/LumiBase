@@ -87,7 +87,7 @@ import type { AuditLogger, AuditLogWriteInput } from '../audit/logger';
 import type { LockoutPolicy } from '../setup/policy-codec';
 import type { CounterStore } from './counter';
 import { normalizeEmail } from './email-normalize';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 // ── Public types ───────────────────────────────────────────────────────
 

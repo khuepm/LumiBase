@@ -22,7 +22,7 @@ import {
   type CdcSubscriptionCreateInput,
   type CdcSubscriptionPatchInput,
   type CdcSubscriptionStatus,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import type { CdcEventStore } from './feed-reader';
 import { eventKeyset } from './feed-reader';
 import {

@@ -3,7 +3,7 @@ import {
   verifyBundle,
   type BundleSignature,
   type ResolvedKey,
-} from '@lumibase/shared/extensions';
+} from '@lumibase/contracts/extensions';
 
 /**
  * Locally verify a signed bundle against a public key — a pre-publish check.

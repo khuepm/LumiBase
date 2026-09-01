@@ -24,7 +24,7 @@ import {
   PANEL_MAX_LIMIT,
   type PanelQuery,
   type PanelResult,
-} from '@lumibase/shared';
+} from '@lumibase/contracts';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { type ConditionRule, evaluateRule } from './conditions';
 import { sanitizeTableName } from './materialize-service';

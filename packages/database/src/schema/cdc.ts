@@ -116,7 +116,7 @@ export const cdcDeployments = pgTable(
  * from the composite keyset `(occurred_at, id)` — `occurred_at` is stamped by
  * Postgres `now()` (one clock), with `id` as a deterministic tie-breaker —
  * not from the id itself. Cursors are opaque tokens encoding that pair
- * (`encodeCdcCursor` in `@lumibase/shared/schemas`).
+ * (`encodeCdcCursor` in `@lumibase/contracts/schemas`).
  */
 
 /**

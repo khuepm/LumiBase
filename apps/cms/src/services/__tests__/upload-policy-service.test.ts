@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CacheProvider } from '@lumibase/runtime';
-import { DEFAULT_UPLOAD_MAX_BYTES, DEFAULT_UPLOAD_MIME_TYPES } from '@lumibase/shared/schemas';
+import { DEFAULT_UPLOAD_MAX_BYTES, DEFAULT_UPLOAD_MIME_TYPES } from '@lumibase/contracts/schemas';
 import {
   envFallbackPolicy,
   resolveUploadPolicy,

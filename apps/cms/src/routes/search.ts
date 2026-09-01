@@ -6,7 +6,7 @@ import { searchIndexName, SEARCH_META_ATTRS } from '@lumibase/runtime';
 import type { AppEnv } from '../env';
 import { type CompiledPermission } from '../services/permission-service';
 import { permissionServiceForRequest } from '../services/item-service-factory';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 /**
  * /search — full-text search endpoint powered by the SearchProvider.

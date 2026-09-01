@@ -8,7 +8,7 @@ import {
   resolvePrimaryKey,
 } from '../item-service';
 import { evaluate, type MagicContext } from '../permission-dsl';
-import type { PolicyRule } from '@lumibase/shared';
+import type { PolicyRule } from '@lumibase/contracts';
 
 const ctx: MagicContext = {
   userId: 'user-1',

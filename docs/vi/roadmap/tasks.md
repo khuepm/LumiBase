@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:13:36.000Z
+version: 2
+lastUpdated: 2026-09-01T19:24:38.140Z
 sourceLang: vi
-contentHash: 75a34bb34c05772c
+contentHash: 6098c0e82c5fc62c
+codeVerified: 2026-09-01T19:24:38.140Z
+codeVerifiedHash: 6098c0e82c5fc62c
+codeVerifiedClaims: 46
 ---
 
 # Roadmap & Task Breakdown
@@ -51,7 +54,7 @@ Mục tiêu: bộ khung monorepo chạy được, schema lõi, auth Logto, CI.
 
 - [x] `[OPS]` Tạo `apps/cms` (Hono + Cloudflare Workers template + wrangler config).
 - [x] `[OPS]` Tạo `apps/studio` (Vite + React + TS + Tailwind + shadcn init).
-- [x] `[OPS]` Tạo `packages/shared`, `packages/sdk`, `packages/ui`, `packages/extension-sdk` (boilerplate + tsconfig + lint).
+- [x] `[OPS]` Tạo `packages/contracts`, `packages/sdk`, `packages/ui`, `packages/extension-sdk` (boilerplate + tsconfig + lint).
 - [x] `[DB]` Bổ sung schema: `users`, `user_sites`, `teams`, `team_members`, `roles`, `policies`, `role_policies`, `user_policies`, `permissions` (xem `data-model.md`).
 - [x] `[DB]` Drizzle migration runner cho Hyperdrive (local + remote scripts).
 - [x] `[BE]` Middleware `withAuth` (Logto JWKS), `withTenant` (`site_id` từ subdomain/header), `withLogger`.

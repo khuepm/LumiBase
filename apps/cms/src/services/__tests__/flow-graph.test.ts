@@ -3,7 +3,7 @@ import {
   canonicalToFe,
   feToCanonical,
   validateGraph,
-} from '@lumibase/shared';
+} from '@lumibase/contracts';
 import { describe, expect, it } from 'vitest';
 
 describe('flow graph conversion', () => {

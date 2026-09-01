@@ -7,8 +7,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@lumibase/shared": ["../../packages/shared/src/index.ts"],
-      "@lumibase/shared/*": ["../../packages/shared/src/*"],
+      "@lumibase/contracts": ["../../packages/contracts/src/index.ts"],
+      "@lumibase/contracts/*": ["../../packages/contracts/src/*"],
       "@lumibase/extensions": ["../../packages/extensions/src/index.ts"]
     },
     "noEmit": true

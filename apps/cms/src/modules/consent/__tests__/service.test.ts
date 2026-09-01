@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { ConsentSetSchema, ConsentTypeSchema } from '@lumibase/shared/schemas';
+import { ConsentSetSchema, ConsentTypeSchema } from '@lumibase/contracts/schemas';
 import { ConsentService } from '../service';
 import type { Database } from '@lumibase/database';
 

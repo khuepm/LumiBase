@@ -1,34 +1,40 @@
 ---
-version: 2
-lastUpdated: 2026-08-01T23:58:27.871Z
+version: 3
+lastUpdated: 2026-09-01T19:24:38.000Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 41f061bd96e9ea1a
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-08-01T23:58:27.871Z
-codeVerifiedHash: 41f061bd96e9ea1a
+sourceHash: e02b53cef4b651a3
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-01T19:24:38.000Z
+codeVerifiedHash: e02b53cef4b651a3
 codeVerifiedClaims: 2
 ---
 
 # Publish npm packages
 
-LumiBase keeps every package in source control at `private: true` until the project is ready to go public. The npm publish flow only un-privates packages in the release workflow's temporary copy; the manifests in the repository stay private so nothing can be published by accident while the project is still closed.
+LumiBase keeps package sources in the monorepo; the npm publish job only pushes packages that do **not** have `private: true`. In other words, the `private` flag in a package's own `package.json` *is* the allowlist.
 
 ## Public package allowlist
 
 There is no separate allowlist file. The `publish-npm-packages` job in
 `.github/workflows/release.yml` scans `packages/*/package.json` and publishes only the
-packages that do **not** have `private: true`. In other words, the `private` flag in a
-package's own `package.json` *is* the allowlist:
+packages that do **not** have `private: true`:
 
+- `packages/create-lumibase` (`create-lumibase`)
 - `packages/sdk` (`@lumibase/sdk`)
 - `packages/extension-sdk` (`@lumibase/extension-sdk`)
+- `packages/mcp-server` (`@lumibase/mcp-server`)
 - `packages/cli` (`lumibase` — the CLI, unscoped name)
+- `packages/contracts` (`@lumibase/contracts`)
 
 To make another package public: drop `private: true` from that package's
-`package.json`, and make sure it does not depend on an internal `workspace:*`
+`package.json`, add `publishConfig.access: public` plus a `build` script that emits
+`dist/`, and make sure it does not depend on an internal `workspace:*`
 dependency that is not public yet.
+
+Every public package should ship a `README.md`, `homepage`, `bugs`, and `keywords` —
+the npm page is the discovery funnel; an empty manifest suppresses installs.
 
 ## Version fixed from root
 
@@ -43,7 +49,7 @@ git tag v0.4.3
 git push origin v0.4.3
 ```
 
-The workflow uses npm trusted publishing/OIDC via the `id-token: write` permission and `actions/setup-node` with the npm registry. Do not configure a long-lived npm token unless the npm registry does not support trusted publishing for that package.
+The workflow uses npm trusted publishing/OIDC via the `id-token: write` permission and `actions/setup-node` with the npm registry. The job also supports `NPM_TOKEN` when `PUBLISH_NPM_PACKAGES` is enabled. Do not configure a long-lived npm token unless the npm registry does not support trusted publishing for that package.
 
 ## Provenance
 
@@ -55,6 +61,9 @@ After a successful publish, the workflow creates or updates the GitHub Release f
 
 ```md
 ## npm packages published
-- @lumibase/sdk@0.4.3 (packages/sdk)
-- @lumibase/extension-sdk@0.4.3 (packages/extension-sdk)
+- create-lumibase@0.24.1 (packages/create-lumibase)
+- @lumibase/sdk@0.24.1 (packages/sdk)
+- @lumibase/extension-sdk@0.24.1 (packages/extension-sdk)
+- @lumibase/mcp-server@0.24.1 (packages/mcp-server)
+- @lumibase/contracts@0.24.1 (packages/contracts)
 ```

@@ -21,7 +21,7 @@ import {
   type FlowGraph,
   type FeGraph,
   type GraphError,
-} from '@lumibase/shared';
+} from '@lumibase/contracts';
 import {
   Save,
   Play,

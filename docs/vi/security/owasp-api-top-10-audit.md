@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 2
-lastUpdated: 2026-08-02T19:21:24.023Z
+version: 3
+lastUpdated: 2026-09-01T19:24:40.610Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ba40d5cca8600cc5
+sourceHash: 11243114e1f63c3b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:21:24.023Z
-codeVerifiedHash: ba40d5cca8600cc5
+codeVerified: 2026-09-01T19:24:40.610Z
+codeVerifiedHash: 11243114e1f63c3b
 codeVerifiedClaims: 52
 ---
 
@@ -99,7 +99,7 @@ dev thiếu lớp chốt ở DB. [Inference] các service không phải `ItemSer
   việc đổi/reset password nâng nó lên (`auth.ts:408-417`, `routes/auth.ts:216-217`).
 - **Xử lý password** — PBKDF2-SHA256, 100k iteration, salt 16 byte
   (`services/auth/password.ts:19-22`); policy 12+ ký tự qua `PasswordSchema` dùng
-  chung (`packages/shared/src/schemas/password.ts:12-28`).
+  chung (`packages/contracts/src/schemas/password.ts:12-28`).
 - **Chống brute-force/lockout** — limiter theo IP dựa trên Postgres + lockout
   account (`modules/login-guard/`), làm chặt chống liệt kê qua việc chuẩn hoá
   email + thời gian phản hồi đồng nhất.

@@ -16,7 +16,7 @@ import {
   type SettingConfig,
   type WebhookConfig,
   stableKey,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 
 /** Row shapes as loaded from the DB (a structural subset of the Drizzle rows). */
 export interface ConfigState {

@@ -1,6 +1,6 @@
 import { auditLog, fieldAccessLog, type Database } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import { v7 as uuidv7 } from 'uuid';
 import type { AuditLogWriteInput } from './logger';
 

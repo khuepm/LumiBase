@@ -1,6 +1,6 @@
 import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
-import type { GridPosition, PanelQuery, PanelResult, PanelType } from '@lumibase/shared';
+import type { GridPosition, PanelQuery, PanelResult, PanelType } from '@lumibase/contracts';
 
 /**
  * Insights API access. Thin typed fetchers over `/api/v1/dashboards`, same

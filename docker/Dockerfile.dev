@@ -17,7 +17,7 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY patches/ ./patches/
 COPY packages/runtime/package.json ./packages/runtime/
 COPY packages/database/package.json ./packages/database/
-COPY packages/shared/package.json ./packages/shared/
+COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/sdk/package.json ./packages/sdk/
 COPY apps/cms/package.json ./apps/cms/
 

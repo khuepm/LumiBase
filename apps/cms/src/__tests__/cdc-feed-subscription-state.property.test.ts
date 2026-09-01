@@ -6,7 +6,7 @@ import {
   isAckAllowed,
   type TransitionVia,
 } from '../modules/cdc/change-feed/subscription-state';
-import type { CdcCursor, CdcSubscriptionStatus } from '@lumibase/shared';
+import type { CdcCursor, CdcSubscriptionStatus } from '@lumibase/contracts';
 
 /**
  * Feature: cdc-extension-integration, Property 11: Ack không lùi

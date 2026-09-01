@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { Check, ChevronDown, ChevronLeft, Copy, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
-import type { SaveAction } from '@lumibase/shared/schemas';
+import type { SaveAction } from '@lumibase/contracts/schemas';
 import { useSaveAction, saveActionLabel } from './use-save-action';
 import { useEffect, useMemo, useState } from 'react';
 import type { FieldResource, ItemRow, RevisionRow } from '@lumibase/sdk';

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { TypegenService } from '../services/typegen-service';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 const buildService = (c: { get: AppEnv['Variables'] extends infer V ? (k: keyof V) => V[keyof V] : never }) =>
   new TypegenService({

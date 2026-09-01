@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:10:46.613Z
+version: 2
+lastUpdated: 2026-09-01T19:24:39.765Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3f6a0185762a468d
+sourceHash: 1f15fcdd2bd8aaf8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:10:46.613Z
-codeVerifiedHash: 3f6a0185762a468d
+codeVerified: 2026-09-01T19:24:39.765Z
+codeVerifiedHash: 1f15fcdd2bd8aaf8
 codeVerifiedClaims: 58
 ---
 
@@ -30,7 +30,7 @@ codeVerifiedClaims: 58
 | Di chuyển dữ liệu (portability) | ✅ | `apps/cms/src/routes/data-export.ts` — JSON có cấu trúc của dữ liệu chính người dùng, kèm header tải `Content-Disposition` | Bổ sung biến thể CSV nếu cần; tái dùng cho preview erasure. |
 | Chỉnh sửa (rectification) | ✅ | `apps/cms/src/routes/users.ts` (cập nhật user); sửa hồ sơ | Không cần cho hồ sơ; đảm bảo mọi trường PII người dùng sửa được. |
 | Hạn chế xử lý | ✅ | `apps/cms/src/modules/data-rights/restriction-service.ts`; bảng `processing_restrictions`; tự phục vụ `GET`/`PUT /api/v1/me/restriction`; helper `isRestricted` cho service | Gắn `isRestricted` vào agent run + marketing làm điểm thực thi. |
-| Phản đối / opt-out (bán/chia sẻ) | ✅ | Loại consent `sale_share` qua `PUT /api/v1/me/consents/sale_share` (`packages/shared/src/schemas/consent.ts`) | Gắn link "Do Not Sell or Share" + tín hiệu Global Privacy Control ở frontend. |
+| Phản đối / opt-out (bán/chia sẻ) | ✅ | Loại consent `sale_share` qua `PUT /api/v1/me/consents/sale_share` (`packages/contracts/src/schemas/consent.ts`) | Gắn link "Do Not Sell or Share" + tín hiệu Global Privacy Control ở frontend. |
 | Đồng ý + rút lại | ✅ | `packages/database/src/schema/consent.ts` (`user_consents`); `apps/cms/src/modules/consent/service.ts`; `apps/cms/src/routes/consent.ts` (`GET`/`PUT /api/v1/me/consents`); audit `consent_granted`/`consent_withdrawn` | Thêm UI preference center. |
 | Đồng ý cookie / theo dõi | ⚠️ | Đã có store backend (`user_consents`, loại `analytics`/`functional`); chưa có thu thập ở frontend | Banner đồng ý + thu thập cho cookie/theo dõi không thiết yếu, ghi qua `/me/consents`. |
 | Huỷ đăng ký email | ✅ | `packages/database/src/schema/compliance.ts` (`email_suppressions`); `apps/cms/src/modules/email/suppression.ts`; public `GET`/`POST /api/v1/email/unsubscribe`; send path lọc người nhận marketing | Thêm header SMTP `List-Unsubscribe` (RFC 8058) khi `OutboundEmail` hỗ trợ custom header. |

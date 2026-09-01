@@ -8,7 +8,7 @@ import {
   TotpRegenerateRecoverySchema,
   TotpSetupSchema,
   TotpVerifyLoginSchema,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import { extractClientIp } from '../modules/login-guard/ip-extract';
 import { recordLoginSuccess } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';

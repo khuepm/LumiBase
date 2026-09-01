@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-07-07T12:01:03.930Z
+version: 2
+lastUpdated: 2026-09-01T19:25:54.674Z
 sourceLang: vi
-contentHash: da33d4283b788ba9
-codeVerified: 2026-07-27T23:52:33.645Z
-codeVerifiedHash: da33d4283b788ba9
+contentHash: 17fd5198b3a06b2c
+codeVerified: 2026-09-01T19:25:54.674Z
+codeVerifiedHash: 17fd5198b3a06b2c
 codeVerifiedClaims: 20
 ---
 
@@ -43,7 +43,7 @@ Không thêm cột/migration. Dùng `collections.meta` (jsonb "UI hints", `packa
 }
 ```
 
-Zod (đặt trong `packages/shared/src/schemas/`, export cho CMS + Studio):
+Zod (đặt trong `packages/contracts/src/schemas/`, export cho CMS + Studio):
 
 ```ts
 export const previewConfigSchema = z.object({
@@ -139,7 +139,7 @@ Trong màn settings collection (`apps/studio/src/modules/data-model/detail.tsx`,
 
 **Giai đoạn 1 (MVP):**
 
-1. `packages/shared`: `previewConfigSchema`.
+1. `packages/contracts`: `previewConfigSchema`.
 2. `apps/cms`: env `PREVIEW_ALLOWED_ORIGINS` (`env.ts` + `wrangler.toml`) · validate origin khi lưu `meta.preview.url` · production guard · expose allowlist cho Studio · `frame-src` CSP trong `security-headers.ts`.
 3. `apps/studio/data-model`: tab cấu hình Preview (tái dùng Mustache editor).
 4. `apps/studio/content`: tab Preview trong `item-detail.tsx` + component iframe (sandbox + debounce reload).

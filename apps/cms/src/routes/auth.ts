@@ -67,8 +67,8 @@ import type { LoginAttemptDraft } from '../modules/anomaly/types';
 import { getSecurityNotificationDispatcher, scheduleWorkersDrain } from '../modules/notifications/security-dispatcher';
 import type { NotificationDeps } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';
-import { formatSafeError } from '@lumibase/shared/utils';
-import { UserPreferencesUpdateSchema, PasswordSchema } from '@lumibase/shared/schemas';
+import { formatSafeError } from '@lumibase/contracts/utils';
+import { UserPreferencesUpdateSchema, PasswordSchema } from '@lumibase/contracts/schemas';
 import { isUserTotpEnabled } from '../modules/mfa/totp-service';
 import { signMfaChallengeToken } from '../services/auth/mfa-challenge';
 

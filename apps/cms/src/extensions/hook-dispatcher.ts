@@ -25,7 +25,7 @@
 import type { extensions as extensionsTable } from '@lumibase/database';
 import type { InferSelectModel } from 'drizzle-orm';
 import { ExtensionSandbox, type ExtensionHookContext } from './sandbox';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 type ExtensionRow = InferSelectModel<typeof extensionsTable>;
 

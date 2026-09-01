@@ -79,6 +79,15 @@ pnpm dev                   # http://localhost:8787
 - For the Docker template: Docker + Docker Compose
 - For the Cloudflare template: a Cloudflare account + `wrangler`
 
+## Related packages
+
+| Package | Role |
+| --- | --- |
+| [`@lumibase/sdk`](https://www.npmjs.com/package/@lumibase/sdk) | Typed REST / realtime client for a running CMS |
+| [`@lumibase/contracts`](https://www.npmjs.com/package/@lumibase/contracts) | Shared Zod schemas / policy & field DSLs |
+| [`@lumibase/extension-sdk`](https://www.npmjs.com/package/@lumibase/extension-sdk) | Author hooks, endpoints, UI extensions |
+| [`@lumibase/mcp-server`](https://www.npmjs.com/package/@lumibase/mcp-server) | Stdio MCP server for AI assistants |
+
 ## License
 
-Part of the LumiBase monorepo.
+Apache-2.0 — part of the [LumiBase](https://github.com/khuepm/lumibase) monorepo.

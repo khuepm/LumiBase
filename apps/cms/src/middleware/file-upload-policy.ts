@@ -5,7 +5,7 @@ import {
   normalizeMimeType,
   resolveMaxBytes,
   resolveMimeAllowlist,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { resolveUploadPolicy } from '../services/upload-policy-service';
 import { auditSecurityGuardDenied } from './security-audit';

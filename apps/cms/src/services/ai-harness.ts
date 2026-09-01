@@ -1845,7 +1845,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       dangerous: true,
       handler: async (args) => {
         const service = await cdcFeedService();
-        const { CdcSubscriptionCreateSchema } = await import('@lumibase/shared/schemas');
+        const { CdcSubscriptionCreateSchema } = await import('@lumibase/contracts/schemas');
         const input = CdcSubscriptionCreateSchema.parse({
           name: String(args['name'] ?? ''),
           kind: String(args['kind'] ?? 'pull'),

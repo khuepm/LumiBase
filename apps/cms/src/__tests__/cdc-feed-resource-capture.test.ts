@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { cdcEventType, EventEnvelopeSchema } from '@lumibase/shared';
+import { cdcEventType, EventEnvelopeSchema } from '@lumibase/contracts';
 import { buildEnvelope } from '../modules/cdc/change-feed/dispatcher';
 import {
   OutboxWriter,

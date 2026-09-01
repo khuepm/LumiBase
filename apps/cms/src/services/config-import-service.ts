@@ -32,7 +32,7 @@ import {
   type FieldConfig,
   type RelationConfig,
   stableKey,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import type { CacheProvider } from '@lumibase/runtime';
 import { SchemaService, type FieldInput, type RelationInput, type CollectionInput } from './schema-service';
 import { ConfigExportService } from './config-export-service';
@@ -366,7 +366,7 @@ function unionByKey<T>(primary: T[], secondary: T[], key: (t: T) => string): T[]
   return [...primary, ...secondary.filter((s) => !seen.has(key(s)))];
 }
 
-function toCollectionInput(c: import('@lumibase/shared/schemas').CollectionConfig): CollectionInput {
+function toCollectionInput(c: import('@lumibase/contracts/schemas').CollectionConfig): CollectionInput {
   const { ...rest } = c;
   return rest as unknown as CollectionInput;
 }

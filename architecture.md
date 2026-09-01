@@ -20,10 +20,12 @@ Bản tóm tắt kiến trúc cho LumiBase. Chi tiết theo từng tầng xem tr
 - **`packages/database`** — Drizzle schema + migrations. Tách theo domain: `core.ts` (sites/users/teams), `access.ts` (roles/policies/permissions/scim_tokens), `cms.ts` (collections/fields/items/flows/operations/materialized), `platform.ts` (files/presets/translations/settings/webhooks/extensions/translation-memory/glossary), `ai.ts` (ai_approvals/ai_conversations/ai_messages/ai_embeddings).
 - **`packages/runtime`** — Runtime abstraction layer. Định nghĩa các interface `CacheProvider`, `StorageProvider`, `DatabaseProvider`, `SearchProvider`, `QueueProvider`, `MediaProcessor` và hai bộ adapter (Cloudflare, Docker). Factory `createRuntime(env)`.
 - **`packages/ai-skills`** — CORE_SKILLS registry cho AI Copilot. Mỗi skill khai báo `requiredCapabilities`, `parameters` (JSON Schema OpenAI-compatible), `description`.
-- **`packages/shared`** — types, zod schemas, policy DSL, field DSL (dùng chung BE/FE/SDK).
-- **`packages/sdk`** — JS SDK (REST + WS) cho client/extension + typegen core.
+- **`packages/contracts`** (`@lumibase/contracts`, public) — types, Zod schemas, policy DSL, field DSL (dùng chung BE/FE/SDK và tool bên ngoài). Trước đây là `packages/shared` / `@lumibase/shared`.
+- **`packages/sdk`** (`@lumibase/sdk`, public) — JS SDK (REST + WS) cho client/extension + typegen core.
 - **`packages/ui`** — shadcn components + CVA tokens.
-- **`packages/extension-sdk`** — types & helpers cho dev viết extension.
+- **`packages/extension-sdk`** (`@lumibase/extension-sdk`, public) — types & helpers cho dev viết extension.
+- **`packages/mcp-server`** (`@lumibase/mcp-server`, public) — stdio MCP server (`lumibase-mcp`).
+- **`packages/create-lumibase`** (`create-lumibase`, public) — scaffolder `npm create lumibase`.
 
 ## Interactions
 

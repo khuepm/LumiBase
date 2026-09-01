@@ -15,7 +15,7 @@ import { encodePathSegment, idPathSegmentSchema } from './path.js';
  * path. Aggregation is capped and field-whitelisted server-side by
  * `InsightsService`, so query injection is not reachable from here.
  *
- * The panel-query shape mirrors `panelQuerySchema` in `@lumibase/shared`; it is
+ * The panel-query shape mirrors `panelQuerySchema` in `@lumibase/contracts`; it is
  * re-declared locally because this package ships standalone (zod + the MCP SDK
  * only). Cross-field validation ("field required for non-count aggregates") is
  * enforced authoritatively by the CMS, which returns a VALIDATION error the

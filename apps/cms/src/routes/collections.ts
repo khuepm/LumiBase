@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { SchemaService, SchemaServiceError } from '../services/schema-service';
 import { requireSchemaPermission } from './schema-permissions';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 /**
  * /collections, /fields, /relations — Phase A schema admin surface.

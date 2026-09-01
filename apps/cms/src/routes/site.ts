@@ -1,5 +1,5 @@
 import { sites } from '@lumibase/database';
-import { SiteConfigUpdateSchema } from '@lumibase/shared/schemas';
+import { SiteConfigUpdateSchema } from '@lumibase/contracts/schemas';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';

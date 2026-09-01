@@ -11,7 +11,7 @@ import {
 import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import type { CacheProvider, EdgeCacheProvider, QueueProvider } from '@lumibase/runtime';
 import { createSwrCache, type SwrCache } from '@lumibase/runtime';
-import type { CdcOperation, CdcResource, FieldClassification } from '@lumibase/shared';
+import type { CdcOperation, CdcResource, FieldClassification } from '@lumibase/contracts';
 import { invalidateDeliverTag } from './content-invalidation';
 import { AuditLogger } from '../modules/audit/logger';
 import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';

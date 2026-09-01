@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildEnvelope } from '../modules/cdc/change-feed/dispatcher';
-import { EventEnvelopeSchema, decodeCdcCursor } from '@lumibase/shared';
+import { EventEnvelopeSchema, decodeCdcCursor } from '@lumibase/contracts';
 
 /**
  * Envelope v1 golden contract (task 15.2, Req 9.4).

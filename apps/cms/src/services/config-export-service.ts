@@ -15,7 +15,7 @@ import {
   webhooks,
   type Database,
 } from '@lumibase/database';
-import type { ConfigManifest } from '@lumibase/shared/schemas';
+import type { ConfigManifest } from '@lumibase/contracts/schemas';
 import {
   serializeConfig,
   type ConfigState,

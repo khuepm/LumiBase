@@ -24,7 +24,7 @@ import { teams, teamMembers, userSites, users, scimTokens, activity } from "@lum
 import { and, eq, ilike, or, isNull, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import type { AppEnv } from "../env";
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 export const scimRouter = new Hono<AppEnv>();
 

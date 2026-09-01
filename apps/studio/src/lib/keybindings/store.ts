@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { KeybindingMap } from '@lumibase/shared/schemas';
+import type { KeybindingMap } from '@lumibase/contracts/schemas';
 import { DEFAULT_KEYMAP, resolveKeymap } from './actions';
 
 /**

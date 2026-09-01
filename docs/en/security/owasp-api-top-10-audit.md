@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:21:24.023Z
+version: 3
+lastUpdated: 2026-09-01T19:24:40.610Z
 sourceLang: en
-contentHash: ba40d5cca8600cc5
-codeVerified: 2026-08-02T19:21:24.023Z
-codeVerifiedHash: ba40d5cca8600cc5
+contentHash: 11243114e1f63c3b
+codeVerified: 2026-09-01T19:24:40.610Z
+codeVerifiedHash: 11243114e1f63c3b
 codeVerifiedClaims: 52
 ---
 
@@ -93,7 +93,7 @@ themselves; RLS is the production backstop for any miss.
   `routes/auth.ts:216-217`).
 - **Password handling** — PBKDF2-SHA256, 100k iterations, 16-byte salt
   (`services/auth/password.ts:19-22`); 12+ char policy via shared
-  `PasswordSchema` (`packages/shared/src/schemas/password.ts:12-28`).
+  `PasswordSchema` (`packages/contracts/src/schemas/password.ts:12-28`).
 - **Brute-force/lockout** — Postgres-backed per-IP limiter + account lockout
   (`modules/login-guard/`), enumeration hardening via email normalization +
   uniform timing.

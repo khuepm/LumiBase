@@ -25,7 +25,7 @@ import {
   type ResolvedKey,
   type SignatureAlg,
   type VerifyResult,
-} from '@lumibase/shared/extensions';
+} from '@lumibase/contracts/extensions';
 import type { Bindings } from '../env';
 import { validateOutboundUrl } from './ssrf-guard';
 

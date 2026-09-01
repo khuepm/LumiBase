@@ -4,7 +4,7 @@ import {
   type QueueProvider,
   type SearchProvider,
 } from '@lumibase/runtime';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import { buildSearchDocument } from './search-document';
 
 /**

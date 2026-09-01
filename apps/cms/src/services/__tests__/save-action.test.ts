@@ -4,7 +4,7 @@ import {
   UserPreferencesUpdateSchema,
   resolveSaveAction,
   SAVE_ACTIONS,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 
 /**
  * Feature: save-default-preference

@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:13:36.000Z
+version: 2
+lastUpdated: 2026-09-01T19:24:38.140Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 75a34bb34c05772c
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 6098c0e82c5fc62c
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-01T19:24:38.140Z
+codeVerifiedHash: 6098c0e82c5fc62c
+codeVerifiedClaims: 46
 ---
 
 # Roadmap & Task Breakdown
@@ -54,7 +57,7 @@ Goal: a working monorepo skeleton, the core schema, Logto auth, CI.
 
 - [x] `[OPS]` Create `apps/cms` (Hono + Cloudflare Workers template + wrangler config).
 - [x] `[OPS]` Create `apps/studio` (Vite + React + TS + Tailwind + shadcn init).
-- [x] `[OPS]` Create `packages/shared`, `packages/sdk`, `packages/ui`, `packages/extension-sdk` (boilerplate + tsconfig + lint).
+- [x] `[OPS]` Create `packages/contracts`, `packages/sdk`, `packages/ui`, `packages/extension-sdk` (boilerplate + tsconfig + lint).
 - [x] `[DB]` Add schema: `users`, `user_sites`, `teams`, `team_members`, `roles`, `policies`, `role_policies`, `user_policies`, `permissions` (see `data-model.md`).
 - [x] `[DB]` Drizzle migration runner for Hyperdrive (local + remote scripts).
 - [x] `[BE]` `withAuth` middleware (Logto JWKS), `withTenant` (`site_id` from subdomain/header), `withLogger`.

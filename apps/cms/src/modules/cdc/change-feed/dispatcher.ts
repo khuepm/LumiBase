@@ -33,7 +33,7 @@ import {
   type CdcOperation,
   type CdcResource,
   type CdcSource,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import type { CacheProvider, QueueProvider } from '@lumibase/runtime';
 import {
   eventKeyset,

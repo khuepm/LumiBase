@@ -1,5 +1,5 @@
 import { userConsents, type Database } from '@lumibase/database';
-import type { ConsentRecord, ConsentType } from '@lumibase/shared/schemas';
+import type { ConsentRecord, ConsentType } from '@lumibase/contracts/schemas';
 import { and, eq } from 'drizzle-orm';
 
 /**

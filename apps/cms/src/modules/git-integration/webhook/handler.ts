@@ -10,7 +10,7 @@
 import type { Context } from 'hono';
 import { and, eq } from 'drizzle-orm';
 import { gitIntegrations, gitWebhookEvents } from '@lumibase/database';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import type { AppEnv } from '../../../env';
 import type { Database } from '@lumibase/database';
 import { AuditLogger } from '../../audit/logger';

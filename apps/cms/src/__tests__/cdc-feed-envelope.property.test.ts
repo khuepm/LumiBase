@@ -7,7 +7,7 @@ import {
   CdcSubscriptionCreateSchema,
   encodeCdcCursor,
   decodeCdcCursor,
-} from '@lumibase/shared';
+} from '@lumibase/contracts';
 
 /**
  * Feature: cdc-extension-integration, Property 3: Envelope round-trip

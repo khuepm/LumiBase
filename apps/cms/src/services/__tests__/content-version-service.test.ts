@@ -1,5 +1,5 @@
 import type { Database } from '@lumibase/database';
-import { diffFields } from '@lumibase/shared';
+import { diffFields } from '@lumibase/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ContentVersionError,

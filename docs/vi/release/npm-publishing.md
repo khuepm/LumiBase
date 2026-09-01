@@ -1,30 +1,36 @@
 ---
-version: 2
-lastUpdated: 2026-08-01T23:58:27.871Z
+version: 3
+lastUpdated: 2026-09-01T19:24:38.000Z
 sourceLang: vi
-contentHash: 41f061bd96e9ea1a
-codeVerified: 2026-08-01T23:58:27.871Z
-codeVerifiedHash: 41f061bd96e9ea1a
+contentHash: e02b53cef4b651a3
+codeVerified: 2026-09-01T19:24:38.000Z
+codeVerifiedHash: e02b53cef4b651a3
 codeVerifiedClaims: 2
 ---
 
 # Publish npm packages
 
-LumiBase giữ toàn bộ package trong source control ở trạng thái `private: true` cho đến khi dự án sẵn sàng public. Quy trình publish npm chỉ mở package trong bản copy tạm thời của workflow release; manifest trong repository vẫn private để tránh publish nhầm trong giai đoạn chưa public.
+LumiBase giữ contract/source của package trong monorepo; job publish npm chỉ đẩy những package **không** có `private: true`. Cờ `private` trong `package.json` của chính package đó *là* allowlist.
 
 ## Allowlist package public
 
 Không có file allowlist riêng. Job `publish-npm-packages` trong
 `.github/workflows/release.yml` quét `packages/*/package.json` và chỉ publish những
-package **không** có `private: true`. Nói cách khác, cờ `private` trong `package.json`
-của chính package đó *là* allowlist:
+package **không** có `private: true`:
 
+- `packages/create-lumibase` (`create-lumibase`)
 - `packages/sdk` (`@lumibase/sdk`)
 - `packages/extension-sdk` (`@lumibase/extension-sdk`)
+- `packages/mcp-server` (`@lumibase/mcp-server`)
 - `packages/cli` (`lumibase` — CLI, tên không scope)
+- `packages/contracts` (`@lumibase/contracts`)
 
-Muốn thêm package public: bỏ `private: true` khỏi `package.json` của package đó, và
-bảo đảm nó không phụ thuộc vào dependency nội bộ dùng `workspace:*` chưa public.
+Muốn thêm package public: bỏ `private: true` khỏi `package.json` của package đó, thêm
+`publishConfig.access: public` + script `build` ra `dist/`, và bảo đảm nó không phụ
+thuộc vào dependency nội bộ dùng `workspace:*` chưa public.
+
+Mỗi package public nên có `README.md`, `homepage`, `bugs`, và `keywords` — trang npm
+là phễu discovery; manifest trống làm giảm lượt cài.
 
 ## Version fixed từ root
 
@@ -39,7 +45,7 @@ git tag v0.4.3
 git push origin v0.4.3
 ```
 
-Workflow dùng npm trusted publishing/OIDC qua quyền `id-token: write` và `actions/setup-node` với registry npm. Không cấu hình npm token dài hạn trừ khi npm registry không hỗ trợ trusted publishing cho package đó.
+Workflow dùng npm trusted publishing/OIDC qua quyền `id-token: write` và `actions/setup-node` với registry npm. Job cũng hỗ trợ `NPM_TOKEN` khi biến `PUBLISH_NPM_PACKAGES` bật. Không cấu hình npm token dài hạn trừ khi npm registry không hỗ trợ trusted publishing cho package đó.
 
 ## Provenance
 
@@ -51,6 +57,9 @@ Sau khi publish thành công, workflow tạo hoặc cập nhật GitHub Release 
 
 ```md
 ## npm packages published
-- @lumibase/sdk@0.4.3 (packages/sdk)
-- @lumibase/extension-sdk@0.4.3 (packages/extension-sdk)
+- create-lumibase@0.24.1 (packages/create-lumibase)
+- @lumibase/sdk@0.24.1 (packages/sdk)
+- @lumibase/extension-sdk@0.24.1 (packages/extension-sdk)
+- @lumibase/mcp-server@0.24.1 (packages/mcp-server)
+- @lumibase/contracts@0.24.1 (packages/contracts)
 ```

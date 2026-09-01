@@ -8,7 +8,7 @@
  */
 
 import { scopeSite, transformPresets } from '@lumibase/database';
-import { transformDslSchema } from '@lumibase/shared';
+import { transformDslSchema } from '@lumibase/contracts';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';

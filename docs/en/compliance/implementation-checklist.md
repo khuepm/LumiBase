@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:12:32.781Z
+version: 2
+lastUpdated: 2026-09-01T19:24:39.966Z
 sourceLang: en
-contentHash: a5f42d06c14d4be3
-codeVerified: 2026-08-02T19:12:32.781Z
-codeVerifiedHash: a5f42d06c14d4be3
+contentHash: 837aedc0578446f8
+codeVerified: 2026-09-01T19:24:39.966Z
+codeVerifiedHash: 837aedc0578446f8
 codeVerifiedClaims: 58
 ---
 
@@ -49,7 +49,7 @@ codeVerifiedClaims: 58
 - **Delivered:**
   - Schema `packages/database/src/schema/consent.ts` (+ migration
     `drizzle/0000_lumibase_init.sql` (consolidated), RLS in `migrations/rls-policies.sql`).
-  - DTOs `packages/shared/src/schemas/consent.ts` (`CONSENT_TYPES`, `ConsentSetSchema`).
+  - DTOs `packages/contracts/src/schemas/consent.ts` (`CONSENT_TYPES`, `ConsentSetSchema`).
   - `ConsentService` (`apps/cms/src/modules/consent/service.ts`) — upsert on the
     `(site,user,type)` unique index.
   - Routes `apps/cms/src/routes/consent.ts` — `GET /api/v1/me/consents`,
@@ -75,7 +75,7 @@ codeVerifiedClaims: 58
 ## P1 — Strongly recommended
 
 ### P1.1 Opt-out of sale/share ("Do Not Sell or Share") — ✅ Done (v0.8.x)
-- Implemented as the `sale_share` consent type (`packages/shared/src/schemas/consent.ts`),
+- Implemented as the `sale_share` consent type (`packages/contracts/src/schemas/consent.ts`),
   recorded via `PUT /api/v1/me/consents/sale_share`. Semantics: `granted: false` (or
   no record) = opted out — the safe CCPA default.
 - **Follow-up:** surface the required "Do Not Sell or Share" link and honor the

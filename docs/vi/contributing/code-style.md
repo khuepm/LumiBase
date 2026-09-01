@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-07-25T08:11:35.404Z
+version: 3
+lastUpdated: 2026-09-01T19:24:40.180Z
 sourceLang: en
 translatedFrom: en
-sourceHash: d03ce24e459e0232
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-25T08:11:35.404Z
-codeVerifiedHash: d03ce24e459e0232
+sourceHash: 7d1601ecafc706d6
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-01T19:24:40.180Z
+codeVerifiedHash: 7d1601ecafc706d6
 codeVerifiedClaims: 4
 ---
 
@@ -39,10 +39,10 @@ Luôn dùng `import type` cho các import chỉ chứa type:
 
 ```typescript
 // ✓ Good
-import type { Collection } from '@lumibase/shared'
+import type { Collection } from '@lumibase/contracts'
 
 // ✗ Bad — imports value at runtime
-import { Collection } from '@lumibase/shared'
+import { Collection } from '@lumibase/contracts'
 ```
 
 ### Không dùng `any`
@@ -62,7 +62,7 @@ function parseItem(value: any): Item { ... }
 
 ### Zod cho runtime validation
 
-Mọi shape của API request/response đều được validate bằng Zod. Định nghĩa schema trong `packages/shared/src/schemas/`:
+Mọi shape của API request/response đều được validate bằng Zod. Định nghĩa schema trong `packages/contracts/src/schemas/`:
 
 ```typescript
 import { z } from 'zod'

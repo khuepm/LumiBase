@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:21:10.159Z
+version: 2
+lastUpdated: 2026-09-01T19:24:40.830Z
 sourceLang: en
-contentHash: d068ceb3e5aabaee
-codeVerified: 2026-08-02T19:21:10.159Z
-codeVerifiedHash: d068ceb3e5aabaee
+contentHash: a549172ced3a3d26
+codeVerified: 2026-09-01T19:24:40.830Z
+codeVerifiedHash: a549172ced3a3d26
 codeVerifiedClaims: 34
 ---
 
@@ -64,7 +64,7 @@ team can understand, review, and later enforce Harness usage of it.
    `per-site DB config → env override → default` via
    `services/upload-policy-service.ts` (cached, fail-safe — falls back to
    env/default if the DB/cache are unavailable so the guard never fails open).
-   The catalogue of selectable types lives in `@lumibase/shared/schemas`
+   The catalogue of selectable types lives in `@lumibase/contracts/schemas`
    (`upload-policy.ts`) so the server allowlist and the Studio file picker share
    one source. Admins edit it at **Studio → Settings → Uploads**, backed by
    `GET/PUT /api/v1/uploads/config` (`GET` for any member to drive the picker's

@@ -72,7 +72,7 @@ export interface HealthCheckResult {
 
 /**
  * Request body for creating a pipeline (`POST /api/v1/cdc/pipelines`). Mirrors
- * `PipelineCreateSchema` in `@lumibase/shared` — snake_case to match the
+ * `PipelineCreateSchema` in `@lumibase/contracts` — snake_case to match the
  * server contract.
  */
 export interface PipelineCreatePayload {

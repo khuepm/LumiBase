@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:34:33.530Z
+version: 2
+lastUpdated: 2026-09-01T19:25:55.310Z
 sourceLang: en
-contentHash: f22cd1fddd83f8e8
-codeVerified: 2026-07-28T11:34:33.530Z
-codeVerifiedHash: f22cd1fddd83f8e8
+contentHash: f969bfdcd82da644
+codeVerified: 2026-09-01T19:25:55.310Z
+codeVerifiedHash: f969bfdcd82da644
 codeVerifiedClaims: 10
 ---
 
@@ -54,7 +54,7 @@ ItemService mutation ──(same request)──▶ lumibase_cdc_change_events (o
 
 - `payloadMode: 'reference'` (default) omits `data` — the consumer re-fetches `GET /items/:collection/:id` with its own token, so its RBAC decides what it sees. `snapshot` inlines the post-mutation record with `pii`/`phi` fields already replaced by `[masked]` **before** the event was stored.
 - **Resource kinds**: `items.*` are content-row changes (the default). Schema DDL emits `collections.*` (with `collection`/`itemId` = the collection name) and `fields.*` (`collection` = owning collection, `itemId` = field name); their `data` is the definition, stored verbatim (schema metadata carries no per-field pii/phi classification, so masking is item-only). A consumer that only wants content changes filters on the `items.` prefix. (`settings.*` is a planned follow-up — see `.kiro/specs/cdc-feed-roadmap/`.)
-- Versioning: additive fields keep `schemaVersion: 1`; renames/removals bump it, and the previous version stays serializable for at least one minor release. `EventEnvelopeSchema` in `@lumibase/shared/schemas` is the source of truth.
+- Versioning: additive fields keep `schemaVersion: 1`; renames/removals bump it, and the previous version stays serializable for at least one minor release. `EventEnvelopeSchema` in `@lumibase/contracts/schemas` is the source of truth.
 
 ## 3. Pull consumers
 

@@ -28,7 +28,7 @@ import {
   CdcSubscriptionPatchSchema,
   decodeCdcCursor,
   type CdcOperation,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import { and, eq } from 'drizzle-orm';
 import { settings } from '@lumibase/database';
 import type { AppEnv } from '../../../env';

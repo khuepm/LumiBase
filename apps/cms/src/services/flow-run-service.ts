@@ -1,6 +1,6 @@
 import { flows, flowRuns, type Database } from '@lumibase/database';
 import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, eq } from 'drizzle-orm';
 import { runFlow, type FlowGraph, type FlowRunResult } from './flow-service';
 

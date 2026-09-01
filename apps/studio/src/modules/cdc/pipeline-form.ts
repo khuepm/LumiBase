@@ -6,7 +6,7 @@
  * {@link validatePipelineForm} without rendering any component).
  *
  * The constraints mirror the server-side contract in
- * `packages/shared/src/schemas/cdc.ts` (`PipelineCreateSchema`,
+ * `packages/contracts/src/schemas/cdc.ts` (`PipelineCreateSchema`,
  * `SyncScheduleSchema`) so the wizard rejects the same inputs the API would,
  * and surfaces field-level messages BEFORE a round-trip.
  *
@@ -35,7 +35,7 @@
 
 import type { CdcConnectorType } from './types';
 
-// ── constraints (mirror packages/shared/src/schemas/cdc.ts) ───────────────
+// ── constraints (mirror packages/contracts/src/schemas/cdc.ts) ───────────────
 
 /** Maximum pipeline name length (Req 1.7 / PipelineCreateSchema). */
 export const PIPELINE_NAME_MAX_LENGTH = 128;

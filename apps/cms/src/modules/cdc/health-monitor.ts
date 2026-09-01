@@ -44,7 +44,7 @@
 
 import { and, eq, gte, lt } from 'drizzle-orm';
 import { cdcPipelineHealth, type Database } from '@lumibase/database';
-import { MonitorConfigSchema } from '@lumibase/shared';
+import { MonitorConfigSchema } from '@lumibase/contracts';
 
 import type {
   HealthCheckResult,

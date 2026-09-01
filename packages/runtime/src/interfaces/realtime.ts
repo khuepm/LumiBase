@@ -10,12 +10,12 @@
  *                        or Redis pub/sub is future work).
  *
  * The event shape is kept structural here (`RealtimeEventLike`) so the runtime
- * package does not need to depend on `@lumibase/shared`. The canonical schema
- * lives in `@lumibase/shared` (`realtimeEventSchema`) and is structurally
+ * package does not need to depend on `@lumibase/contracts`. The canonical schema
+ * lives in `@lumibase/contracts` (`realtimeEventSchema`) and is structurally
  * compatible with this type.
  */
 
-/** Which realtime plane an event belongs to (see @lumibase/shared protocol). */
+/** Which realtime plane an event belongs to (see @lumibase/contracts protocol). */
 export type RealtimePlane = 'studio' | 'public';
 
 /** Recipient selector — OR-combined; empty means broadcast-by-collection. */
@@ -25,7 +25,7 @@ export interface RealtimeTargetLike {
   channel?: string;
 }
 
-/** Structural mirror of `@lumibase/shared` `RealtimeEvent`. */
+/** Structural mirror of `@lumibase/contracts` `RealtimeEvent`. */
 export interface RealtimeEventLike {
   type: 'event' | 'notification';
   plane: RealtimePlane;

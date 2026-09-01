@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 2
-lastUpdated: 2026-08-30T09:36:09.209Z
+version: 3
+lastUpdated: 2026-09-01T19:24:38.846Z
 sourceLang: en
 translatedFrom: en
-sourceHash: aeb93d6616d2f86b
+sourceHash: f0c3698b7ea88443
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T09:36:09.209Z
-codeVerifiedHash: aeb93d6616d2f86b
+codeVerified: 2026-09-01T19:24:38.846Z
+codeVerifiedHash: f0c3698b7ea88443
 codeVerifiedClaims: 374
 ---
 
@@ -549,7 +549,7 @@ Các release lên lịch được xuất bản qua nhịp `content-scheduler` d�
 ?width=800&height=600&format=webp&quality=80&fit=cover&focal=0.5,0.5
 ?preset=thumbnail
 ```
-Tại `/media/:key`, các tham số biến đổi được xác thực đối với `transformDslSchema` (`@lumibase/shared`; `MAX_DIM=5000`) và request chuyển hướng 302 tới URL hình ảnh runtime (CF Image Resizing / Imgproxy). Không có tham số → bytes gốc. `?preset=<key>` giải quyết một hàng `transform_presets` đã lưu cho site. Xem `.kiro/specs/image-transform-dsl`.
+Tại `/media/:key`, các tham số biến đổi được xác thực đối với `transformDslSchema` (`@lumibase/contracts`; `MAX_DIM=5000`) và request chuyển hướng 302 tới URL hình ảnh runtime (CF Image Resizing / Imgproxy). Không có tham số → bytes gốc. `?preset=<key>` giải quyết một hàng `transform_presets` đã lưu cho site. Xem `.kiro/specs/image-transform-dsl`.
 
 **Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `POST /api/v1/media/:key`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
 
@@ -585,7 +585,7 @@ Phạm vi được suy ra từ các cột sở hữu: `userId` được đặt �
 | `POST` | `/api/v1/tm/lookup` | Trực quan khớp mờ tốt nhất `{ query, sourceLang, targetLang, threshold? }` → `{ match }` |
 | `POST` | `/api/v1/tm/translate` | Pipeline dịch máy `{ text, from, to }` (TM → thuật ngữ → nhà cung cấp) |
 
-`TM_DEFAULT_THRESHOLD = 75` (`@lumibase/shared`). Học-TM (Studio) upsert các bản dịch người dùng khi lưu nếu `translations.learnTm` được bật. Xem `.kiro/specs/translation-memory-ui`.
+`TM_DEFAULT_THRESHOLD = 75` (`@lumibase/contracts`). Học-TM (Studio) upsert các bản dịch người dùng khi lưu nếu `translations.learnTm` được bật. Xem `.kiro/specs/translation-memory-ui`.
 
 ---
 
@@ -964,7 +964,7 @@ Dashboard do người dùng xây dựng gồm các panel tổng hợp trên các
 | `POST` | `/api/v1/dashboards/:id/panels/:panelId/data` | Chạy panel → `{ data, meta: { executedAt, rowCount, durationMs } }` |
 | `POST` | `/api/v1/dashboards/:id/panels/preview` | Chạy thử `PanelQuery` (xem trước trong trình chỉnh sửa) |
 
-`PanelQuery` (hợp đồng dùng chung `@lumibase/shared`): `{ collection, aggregate (count|sum|avg|min|max), field?, groupBy?, filter? (quy tắc điều kiện), dateRange?, limit? }`. `field` is required for non-`count` aggregates. Trường nằm ngoài danh sách trắng của collection sẽ trả về `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
+`PanelQuery` (hợp đồng dùng chung `@lumibase/contracts`): `{ collection, aggregate (count|sum|avg|min|max), field?, groupBy?, filter? (quy tắc điều kiện), dateRange?, limit? }`. `field` is required for non-`count` aggregates. Trường nằm ngoài danh sách trắng của collection sẽ trả về `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
 
 ---
 

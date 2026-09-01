@@ -55,6 +55,9 @@ importers:
       '@lumibase/ai-skills':
         specifier: workspace:*
         version: link:../../packages/ai-skills
+      '@lumibase/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@lumibase/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -64,9 +67,6 @@ importers:
       '@lumibase/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
-      '@lumibase/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@sentry/cloudflare':
         specifier: ^10.71.0
         version: 10.71.0(@cloudflare/workers-types@5.20260827.1)(wrangler@4.127.0(@cloudflare/workers-types@5.20260827.1)(@types/node@26.4.0))
@@ -189,9 +189,9 @@ importers:
       '@lumibase/analytics-consent':
         specifier: workspace:*
         version: link:../../packages/analytics-consent
-      '@lumibase/shared':
+      '@lumibase/contracts':
         specifier: workspace:*
-        version: link:../../packages/shared
+        version: link:../../packages/contracts
       '@lumibase/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -381,12 +381,12 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.8.0
         version: 5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.86.0(react@19.2.8))(zod@4.4.3)
+      '@lumibase/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@lumibase/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
-      '@lumibase/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@lumibase/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -547,6 +547,19 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12))
 
+  packages/contracts:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.5.4
+    devDependencies:
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.6.2
+        version: 5.9.3
+
   packages/create-lumibase:
     dependencies:
       execa:
@@ -611,9 +624,9 @@ importers:
 
   packages/extension-cli:
     dependencies:
-      '@lumibase/shared':
+      '@lumibase/contracts':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../contracts
     devDependencies:
       '@types/node':
         specifier: ^26.4.0
@@ -633,9 +646,9 @@ importers:
 
   packages/extensions:
     dependencies:
-      '@lumibase/shared':
+      '@lumibase/contracts':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../contracts
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -714,16 +727,6 @@ importers:
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12))
-
-  packages/shared:
-    dependencies:
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      typescript:
-        specifier: ^5.6.2
-        version: 5.9.3
 
   packages/ui:
     dependencies:

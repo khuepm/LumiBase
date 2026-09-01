@@ -5,7 +5,7 @@ import {
   resolveMaxBytes,
   resolveMimeAllowlist,
   type UploadPolicyConfig,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import type { CacheProvider } from '@lumibase/runtime';
 import type { Database } from '@lumibase/database';
 import type { Bindings } from '../env';

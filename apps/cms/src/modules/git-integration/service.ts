@@ -10,7 +10,7 @@ import type {
   GitIntegrationCreateInput,
   GitIntegrationResource,
   GitIntegrationUpdateInput,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 import { and, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import {

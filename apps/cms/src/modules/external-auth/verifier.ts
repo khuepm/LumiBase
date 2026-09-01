@@ -18,7 +18,7 @@
  */
 
 import { decodeJwt, decodeProtectedHeader, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from 'jose';
-import type { ExternalIssuerClaimMapping, ExternalIssuerRoleMapping } from '@lumibase/shared/schemas';
+import type { ExternalIssuerClaimMapping, ExternalIssuerRoleMapping } from '@lumibase/contracts/schemas';
 
 /** A trusted issuer config row (subset the verifier needs). */
 export interface TrustedIssuer {

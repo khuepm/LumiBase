@@ -3,7 +3,7 @@ import { useRef, useState, type DragEvent } from 'react';
 import { cn } from '@/lib/cn';
 import { getApiClient } from '@/lib/api';
 import { readOptions, type InterfaceComponent } from './types';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 
 interface FileOptions {
   accept?: string;

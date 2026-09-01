@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-07-25T08:11:35.404Z
+version: 3
+lastUpdated: 2026-09-01T19:24:40.180Z
 sourceLang: en
-contentHash: d03ce24e459e0232
-codeVerified: 2026-07-25T08:11:35.404Z
-codeVerifiedHash: d03ce24e459e0232
+contentHash: 7d1601ecafc706d6
+codeVerified: 2026-09-01T19:24:40.180Z
+codeVerifiedHash: 7d1601ecafc706d6
 codeVerifiedClaims: 4
 ---
 
@@ -36,10 +36,10 @@ Always use `import type` for type-only imports:
 
 ```typescript
 // ✓ Good
-import type { Collection } from '@lumibase/shared'
+import type { Collection } from '@lumibase/contracts'
 
 // ✗ Bad — imports value at runtime
-import { Collection } from '@lumibase/shared'
+import { Collection } from '@lumibase/contracts'
 ```
 
 ### No `any`
@@ -59,7 +59,7 @@ function parseItem(value: any): Item { ... }
 
 ### Zod for runtime validation
 
-All API request/response shapes are validated with Zod. Define schemas in `packages/shared/src/schemas/`:
+All API request/response shapes are validated with Zod. Define schemas in `packages/contracts/src/schemas/`:
 
 ```typescript
 import { z } from 'zod'

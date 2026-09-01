@@ -40,5 +40,20 @@
   },
   "files": [
     "dist"
+  ],
+  "homepage": "https://docs.lumibase.dev",
+  "bugs": {
+    "url": "https://github.com/khuepm/lumibase/issues"
+  },
+  "keywords": [
+    "lumibase",
+    "cms",
+    "headless-cms",
+    "sdk",
+    "typescript",
+    "rest",
+    "graphql",
+    "realtime",
+    "typegen"
   ]
 }

@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-07-25T08:11:35.843Z
+version: 2
+lastUpdated: 2026-09-01T19:25:55.469Z
 sourceLang: en
-contentHash: 0582bd39b6bfd061
-codeVerified: 2026-07-25T08:11:35.843Z
-codeVerifiedHash: 0582bd39b6bfd061
+contentHash: 08e616cc9431daf2
+codeVerified: 2026-09-01T19:25:55.469Z
+codeVerifiedHash: 08e616cc9431daf2
 codeVerifiedClaims: 20
 ---
 
@@ -256,7 +256,7 @@ The sections above cover the **studio plane** — admin users (`users` table) su
 
 Key pieces:
 
-- **Protocol** (`@lumibase/shared` `realtime/protocol.ts`): the shared `lumibase-sync-v1` Zod schema, extended with `join`/`leave` frames, a `notification` frame, `welcome.plane`, and a targeted `RealtimeEvent` envelope `{ plane, target: { userId | subjectId | channel } }`. Studio frames are byte-compatible.
+- **Protocol** (`@lumibase/contracts` `realtime/protocol.ts`): the shared `lumibase-sync-v1` Zod schema, extended with `join`/`leave` frames, a `notification` frame, `welcome.plane`, and a targeted `RealtimeEvent` envelope `{ plane, target: { userId | subjectId | channel } }`. Studio frames are byte-compatible.
 - **Runtime provider** (`RealtimeProvider`, ADR-002): `runtime.realtime.publish(siteId, event)`. Cloudflare forwards to the `SiteRoom` DO; Docker publishes into an in-process hub backing a `ws` server (`apps/cms/src/realtime/node-hub.ts`) attached in `serve.ts`. Multi-node Docker (Postgres `LISTEN/NOTIFY` or Redis) is future work.
 - **Fan-out** (`apps/cms/src/realtime/fan-out.ts`, `shouldDeliver`): plane → target (userId/subjectId/channel) → collection subscription. Studio-only skip-echo. Strict plane isolation.
 - **Tickets** (`POST /api/v1/realtime/audience-ticket`): authz lives at the route via `resolveAudienceGrant` — it maps the authenticated frontend principal to a `subjectId` and a channel allowlist from verified claims. The signed ticket carries `plane:'public'`, `subjectId`, `channels`; the DO/hub trusts these and never reads identity from the client.

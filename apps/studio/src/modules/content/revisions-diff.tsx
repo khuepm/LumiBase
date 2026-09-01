@@ -1,4 +1,4 @@
-import { type Change, diffFields } from '@lumibase/shared';
+import { type Change, diffFields } from '@lumibase/contracts';
 import { useMemo } from 'react';
 
 interface RevisionsDiffProps {

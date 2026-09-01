@@ -74,7 +74,7 @@ import {
 
 /**
  * Loose shape for `users.preferences`. The CMS validates the strict schema
- * (`@lumibase/shared/schemas#UserPreferences`); the SDK stays decoupled and
+ * (`@lumibase/contracts/schemas#UserPreferences`); the SDK stays decoupled and
  * passes the blob through, so callers keep full type-safety on the Studio side
  * where the shared schema is imported.
  */

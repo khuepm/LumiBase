@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { formatSafeError } from '@lumibase/shared/utils';
+import { formatSafeError } from '@lumibase/contracts/utils';
 import { AuditLogger } from '../modules/audit/logger';
 import { itemServiceForRequest } from '../services/item-service-factory';
 import {

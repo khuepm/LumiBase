@@ -20,7 +20,7 @@
 
 /**
  * The three supported CDC connector approaches. Mirrors the
- * `CdcConnectorTypeSchema` enum in `packages/shared/src/schemas/cdc.ts`
+ * `CdcConnectorTypeSchema` enum in `packages/contracts/src/schemas/cdc.ts`
  * so runtime validation and type-level checks stay in sync.
  *
  *   - `'debezium_kafka'` — Debezium reads PostgreSQL WAL and publishes

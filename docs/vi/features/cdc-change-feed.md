@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:34:33.530Z
+version: 2
+lastUpdated: 2026-09-01T19:25:55.310Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f22cd1fddd83f8e8
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T11:34:33.530Z
-codeVerifiedHash: f22cd1fddd83f8e8
+sourceHash: f969bfdcd82da644
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-01T19:25:55.310Z
+codeVerifiedHash: f969bfdcd82da644
 codeVerifiedClaims: 10
 ---
 
@@ -57,7 +57,7 @@ ItemService mutation ──(cùng request)──▶ lumibase_cdc_change_events (
 
 - `payloadMode: 'reference'` (mặc định) bỏ `data` — consumer tự fetch lại `GET /items/:collection/:id` bằng token của chính nó, nên RBAC của nó quyết định nó thấy gì. `snapshot` nhúng thẳng record sau mutation, với các field `pii`/`phi` đã được thay bằng `[masked]` **trước khi** event được lưu.
 - **Các loại resource**: `items.*` là thay đổi ở row nội dung (mặc định). Schema DDL phát ra `collections.*` (với `collection`/`itemId` = tên collection) và `fields.*` (`collection` = collection sở hữu, `itemId` = tên field); `data` của chúng là phần định nghĩa, lưu nguyên văn (metadata schema không mang phân loại pii/phi theo từng field, nên việc mask chỉ áp cho item). Một consumer chỉ muốn thay đổi nội dung thì filter theo tiền tố `items.`. (`settings.*` là bước tiếp theo đã lên kế hoạch — xem `.kiro/specs/cdc-feed-roadmap/`.)
-- Versioning: các field thêm vào vẫn giữ `schemaVersion: 1`; việc rename/bỏ sẽ nâng nó lên, và version trước vẫn serialize được trong ít nhất một bản minor release. `EventEnvelopeSchema` trong `@lumibase/shared/schemas` là source of truth.
+- Versioning: các field thêm vào vẫn giữ `schemaVersion: 1`; việc rename/bỏ sẽ nâng nó lên, và version trước vẫn serialize được trong ít nhất một bản minor release. `EventEnvelopeSchema` trong `@lumibase/contracts/schemas` là source of truth.
 
 ## 3. Pull consumer
 

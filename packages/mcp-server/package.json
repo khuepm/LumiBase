@@ -47,5 +47,19 @@
   ],
   "engines": {
     "node": ">=18"
-  }
+  },
+  "homepage": "https://docs.lumibase.dev",
+  "bugs": {
+    "url": "https://github.com/khuepm/lumibase/issues"
+  },
+  "keywords": [
+    "lumibase",
+    "cms",
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "claude",
+    "cursor",
+    "stdio"
+  ]
 }

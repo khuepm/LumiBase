@@ -8,7 +8,7 @@
 import type {
   CiRunResource,
   PullRequestResource,
-} from '@lumibase/shared/schemas';
+} from '@lumibase/contracts/schemas';
 
 /** A repository reference parsed from `owner/repo`. */
 export interface RepoRef {

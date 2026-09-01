@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-08-30T09:36:09.209Z
+version: 4
+lastUpdated: 2026-09-01T19:24:38.846Z
 sourceLang: en
-contentHash: aeb93d6616d2f86b
-codeVerified: 2026-08-30T09:36:09.209Z
-codeVerifiedHash: aeb93d6616d2f86b
+contentHash: f0c3698b7ea88443
+codeVerified: 2026-09-01T19:24:38.846Z
+codeVerifiedHash: f0c3698b7ea88443
 codeVerifiedClaims: 374
 ---
 
@@ -642,7 +642,7 @@ Scheduled releases publish via the shared `content-scheduler` tick
 ?preset=thumbnail
 ```
 On `/media/:key`, transform params are validated against `transformDslSchema`
-(`@lumibase/shared`; `MAX_DIM=5000`) and the request 302-redirects to the runtime
+(`@lumibase/contracts`; `MAX_DIM=5000`) and the request 302-redirects to the runtime
 image URL (CF Image Resizing / Imgproxy). No params → the original bytes.
 `?preset=<key>` resolves a saved `transform_presets` row for the site. See
 `.kiro/specs/image-transform-dsl`.
@@ -692,7 +692,7 @@ See `.kiro/specs/presets-inheritance`.
 | `POST` | `/api/v1/tm/lookup` | Best fuzzy match `{ query, sourceLang, targetLang, threshold? }` → `{ match }` |
 | `POST` | `/api/v1/tm/translate` | MT pipeline `{ text, from, to }` (TM → glossary → provider) |
 
-`TM_DEFAULT_THRESHOLD = 75` (`@lumibase/shared`). Learn-TM (Studio) upserts
+`TM_DEFAULT_THRESHOLD = 75` (`@lumibase/contracts`). Learn-TM (Studio) upserts
 human translations on save when `translations.learnTm` is enabled.
 See `.kiro/specs/translation-memory-ui`.
 
@@ -1128,7 +1128,7 @@ identifiers.
 | `POST` | `/api/v1/dashboards/:id/panels/:panelId/data` | Run a panel → `{ data, meta: { executedAt, rowCount, durationMs } }` |
 | `POST` | `/api/v1/dashboards/:id/panels/preview` | Dry-run a `PanelQuery` (editor preview) |
 
-`PanelQuery` (shared contract `@lumibase/shared`): `{ collection, aggregate
+`PanelQuery` (shared contract `@lumibase/contracts`): `{ collection, aggregate
 (count|sum|avg|min|max), field?, groupBy?, filter? (condition rule), dateRange?,
 limit? }`. `field` is required for non-`count` aggregates. A field outside the
 collection whitelist returns `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
