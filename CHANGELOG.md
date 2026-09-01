@@ -11,6 +11,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
+- **`lumibase` CLI (`packages/cli`).** The unscoped npm name now carries a real
+  dev tool: `lumibase init` (delegates to `create-lumibase`, so the scaffold has
+  one implementation), `lumibase types` (generates `.d.ts` from
+  `GET /api/v1/typegen/schema` — closing the "there is no typegen CLI" gap in
+  `docs/en/sdk/typegen.md`), and `lumibase doctor` (reports resolved config and
+  probes connectivity). Settings resolve flag > env > `lumibase.config.json`;
+  the token is never read from that file. Typegen output is deterministic, so
+  `lumibase types --check` works as a CI gate. See `docs/en/cli/index.md`.
 - **Native two-factor authentication (TOTP) for Studio logins.** Opt-in, per
   user, enrolled from **Settings → Security**. Until now `users.tfa` was a
   placeholder delegated to Logto and the `require_mfa` anomaly action had no

@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-07-25T08:13:22.051Z
+version: 2
+lastUpdated: 2026-08-01T23:58:27.871Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 851d0c3d29a694cb
+sourceHash: 41f061bd96e9ea1a
 mtEngine: claude
 syncStatus: machine-translated
-codeVerified: 2026-07-25T08:13:22.051Z
-codeVerifiedHash: 851d0c3d29a694cb
+codeVerified: 2026-08-01T23:58:27.871Z
+codeVerifiedHash: 41f061bd96e9ea1a
 codeVerifiedClaims: 2
 ---
 
@@ -24,6 +24,7 @@ package's own `package.json` *is* the allowlist:
 
 - `packages/sdk` (`@lumibase/sdk`)
 - `packages/extension-sdk` (`@lumibase/extension-sdk`)
+- `packages/cli` (`lumibase` — the CLI, unscoped name)
 
 To make another package public: drop `private: true` from that package's
 `package.json`, and make sure it does not depend on an internal `workspace:*`
