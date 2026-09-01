@@ -23,12 +23,22 @@ export function isNegativeCacheEnvelope(value: unknown): value is NegativeCacheE
 
 export interface CacheSetOptions {
   ttl?: number;
+  tags?: string[];
 }
+
+export type CacheEvent = {
+  op: 'get' | 'set' | 'delete' | 'invalidateByTag' | 'getEntry' | 'setNegative';
+  result: 'hit' | 'miss' | 'ok' | 'error' | 'negative' | 'unavailable';
+  backend: string;
+};
 
 export interface CacheProvider {
   get<T = string>(key: string): Promise<T | null>;
   set(key: string, value: string, options?: CacheSetOptions): Promise<void>;
   delete(key: string): Promise<void>;
+  invalidateByTag(tag: string): Promise<void>;
+  /** Optional observability hook — CMS may wire to Prometheus (Req 13). */
+  onEvent?: (e: CacheEvent) => void;
   /**
    * Atomically increment a counter and return its post-increment value.
    *

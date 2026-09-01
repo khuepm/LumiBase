@@ -131,7 +131,7 @@ registerHandler('transform', async (ctx, options) => {
   return { ...(ctx.steps['previous'] ?? {}), ...(options['set'] as Record<string, unknown>) };
 });
 
-registerHandler('http', async (_ctx, options) => {
+registerHandler('http', async (ctx, options) => {
   const url = String(options['url'] ?? '');
   const method = String(options['method'] ?? 'GET').toUpperCase();
   const headers = (options['headers'] as Record<string, string>) ?? {};
@@ -147,11 +147,17 @@ registerHandler('http', async (_ctx, options) => {
     );
   }
 
+  const parentSignal = ctx.env['_signal'] as AbortSignal | undefined;
+  const timeoutSignal = AbortSignal.timeout(30_000);
+  const signal = parentSignal
+    ? AbortSignal.any([parentSignal, timeoutSignal])
+    : timeoutSignal;
+
   const res = await fetch(guard.url, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(30_000),
+    signal,
   });
 
   return {
@@ -161,9 +167,30 @@ registerHandler('http', async (_ctx, options) => {
   };
 });
 
-registerHandler('sleep', async (_ctx, options) => {
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new Error('Aborted'));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    if (signal) {
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          reject(signal.reason ?? new Error('Flow aborted'));
+        },
+        { once: true },
+      );
+    }
+  });
+}
+
+registerHandler('sleep', async (ctx, options) => {
   const ms = Math.min(60_000, Number(options['ms'] ?? 0));
-  await new Promise((r) => setTimeout(r, ms));
+  const signal = ctx.env['_signal'] as AbortSignal | undefined;
+  await abortableSleep(ms, signal);
   return { slept: ms };
 });
 

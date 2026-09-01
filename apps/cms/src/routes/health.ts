@@ -1,8 +1,15 @@
 import { Hono, type Context } from 'hono';
+import type { RuntimeContext } from '@lumibase/runtime';
 import type { AppEnv } from '../env';
 import { canReadObservabilityDetail } from './metrics';
+import {
+  getCacheOperationalStatus,
+  markCacheConnectivityProbeFailed,
+  markCacheConnectivityProbeSucceeded,
+} from '../services/cache-observability';
 
 type ServiceStatus = 'healthy' | 'unhealthy';
+type CacheServiceStatus = 'healthy' | 'degraded' | 'unhealthy';
 type OverallStatus = 'healthy' | 'degraded';
 type ServiceName = keyof HealthResponse['services'];
 
@@ -10,7 +17,7 @@ interface HealthResponse {
   status: OverallStatus;
   services: {
     database: ServiceStatus;
-    cache: ServiceStatus;
+    cache: CacheServiceStatus;
     search: ServiceStatus;
     storage: ServiceStatus;
     queue: ServiceStatus;
@@ -20,16 +27,9 @@ interface HealthResponse {
 /**
  * Health check route.
  *
- * Checks connectivity to all backing services (database, cache/Redis,
- * search/MeiliSearch, storage/S3, queue). Returns 200 with `status: 'healthy'`
- * when all services are reachable, or 200 with `status: 'degraded'` when one
- * or more non-critical services are down.
- *
- * This endpoint does NOT require authentication so load balancers and uptime
- * probes can reach it. To avoid leaking infrastructure topology to anonymous
- * callers (CWE-668), the per-subsystem breakdown is only returned to callers
- * presenting a valid observability token; everyone else sees the overall
- * status only.
+ * Cache probe returns `healthy` / `degraded` / `unhealthy` based on
+ * connectivity plus a 60s operational error-rate window (>50% errors →
+ * degraded). `/health/ready` returns 503 when cache is degraded or down.
  */
 export const healthRouter = new Hono<AppEnv>();
 
@@ -63,48 +63,52 @@ async function probeService(
   }
 }
 
+async function probeCache(runtime: RuntimeContext): Promise<CacheServiceStatus> {
+  try {
+    const healthKey = '__lumibase_health_check__';
+    await runtime.cache.set(healthKey, JSON.stringify('ok'), { ttl: 60 });
+    const val = await runtime.cache.get(healthKey);
+    if (val === null) {
+      markCacheConnectivityProbeFailed();
+      return 'unhealthy';
+    }
+    markCacheConnectivityProbeSucceeded();
+  } catch {
+    markCacheConnectivityProbeFailed();
+    return 'unhealthy';
+  }
+
+  const operational = getCacheOperationalStatus();
+  if (operational === 'down') return 'unhealthy';
+  if (operational === 'degraded') return 'degraded';
+  return 'healthy';
+}
+
 async function collectHealth(c: Context<AppEnv>): Promise<HealthResponse> {
   const runtime = c.get('runtime');
 
-  const probes: Record<ServiceName, Promise<ServiceStatus>> = {
-    database: probeService(async () => {
+  const [database, cache, search, storage, queue] = await Promise.all([
+    probeService(async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sql = runtime.database.getConnection() as any;
       await sql`SELECT 1`;
       return true;
-      // A cold Hyperdrive connection to a distant Postgres can exceed the
-      // default 750ms probe budget, so give the DB probe extra headroom.
     }, 3000),
-
-    cache: probeService(async () => {
-      const healthKey = '__lumibase_health_check__';
-      // Cloudflare KV enforces a 60s minimum expirationTtl; anything lower
-      // (the old 10s) makes kv.put throw and the probe report unhealthy even
-      // though KV is reachable.
-      await runtime.cache.set(healthKey, JSON.stringify('ok'), { ttl: 60 });
-      const val = await runtime.cache.get(healthKey);
-      return val !== null;
-    }),
-
-    search: probeService(async () => {
+    probeCache(runtime),
+    probeService(async () => {
       try {
         await runtime.search.getIndex('_health');
         return true;
       } catch (err: unknown) {
-        // MeiliSearch returns an error for non-existent indexes, but if we get
-        // a response at all it means the service is reachable. Distinguish
-        // between "index not found" (service is up) and "connection refused".
         const message = err instanceof Error ? err.message : String(err);
         return message.includes('index_not_found') || message.includes('not found');
       }
     }),
-
-    storage: probeService(async () => {
+    probeService(async () => {
       await runtime.storage.list('__health__');
       return true;
     }),
-
-    queue: probeService(async () => {
+    probeService(async () => {
       const jobId = await runtime.queue.enqueue(
         '_health',
         'health_check',
@@ -112,19 +116,24 @@ async function collectHealth(c: Context<AppEnv>): Promise<HealthResponse> {
         { attempts: 1 },
       );
       return Boolean(jobId);
-      // First enqueue after a cold start can exceed the default 750ms budget.
     }, 3000),
+  ]);
+
+  const results: HealthResponse['services'] = {
+    database,
+    cache,
+    search,
+    storage,
+    queue,
   };
 
-  const entries = await Promise.all(
-    Object.entries(probes).map(async ([service, probe]) => [service, await probe] as const),
-  );
-  const results = Object.fromEntries(entries) as HealthResponse['services'];
+  const cacheBlocksReady = cache === 'unhealthy' || cache === 'degraded';
+  const otherUnhealthy = Object.entries(results)
+    .filter(([name]) => name !== 'cache')
+    .some(([, status]) => status === 'unhealthy');
 
-  // Determine overall status.
-  const allHealthy = Object.values(results).every((s) => s === 'healthy');
   const response: HealthResponse = {
-    status: allHealthy ? 'healthy' : 'degraded',
+    status: cacheBlocksReady || otherUnhealthy ? 'degraded' : 'healthy',
     services: results,
   };
 
@@ -139,9 +148,16 @@ function shapeHealth(c: Context<AppEnv>, full: HealthResponse): HealthResponse |
   return { status: full.status };
 }
 
+function isReady(response: HealthResponse): boolean {
+  return response.services.cache !== 'degraded' && response.services.cache !== 'unhealthy'
+    && Object.entries(response.services)
+      .filter(([name]) => name !== 'cache')
+      .every(([, status]) => status === 'healthy');
+}
+
 healthRouter.get('/', async (c) => c.json(shapeHealth(c, await collectHealth(c)), 200));
 
 healthRouter.get('/ready', async (c) => {
   const response = await collectHealth(c);
-  return c.json(shapeHealth(c, response), response.status === 'healthy' ? 200 : 503);
+  return c.json(shapeHealth(c, response), isReady(response) ? 200 : 503);
 });

@@ -60,11 +60,11 @@ export const httpRequestDuration = new Histogram({
   registers: [register],
 });
 
-/** Cache operations counter (hit/miss). */
+/** Cache operations counter (op/result/backend — Req 13). */
 export const cacheOperationsTotal = new Counter({
   name: 'lumibase_cache_operations_total',
   help: 'Total cache operations',
-  labelNames: ['operation', 'hit'] as const,
+  labelNames: ['op', 'result', 'backend'] as const,
   registers: [register],
 });
 
@@ -79,6 +79,14 @@ export const cacheNegativeHitsTotal = new Counter({
 export const cacheNegativeWritesTotal = new Counter({
   name: 'lumibase_cache_negative_writes_total',
   help: 'Tombstone entries written after a confirmed absence',
+  registers: [register],
+});
+
+/** ISR revalidation dispatch attempts (high-load-cache-readiness Req 8.4). */
+export const revalidationDispatchesTotal = new Counter({
+  name: 'lumibase_revalidation_dispatches_total',
+  help: 'ISR revalidation HTTP dispatches per target result',
+  labelNames: ['ok'] as const,
   registers: [register],
 });
 
@@ -140,6 +148,13 @@ export const webhookDispatchTotal = new Counter({
   name: 'lumibase_webhook_dispatch_total',
   help: 'Total webhook dispatches',
   labelNames: ['target', 'status'] as const,
+  registers: [register],
+});
+
+/** Audit writes that fell through to the structured stderr fallback (Req 11.4). */
+export const auditFallbackTotal = new Counter({
+  name: 'lumibase_audit_fallback_total',
+  help: 'Audit log writes that used the structured stderr fallback after enqueue and sync insert failed',
   registers: [register],
 });
 

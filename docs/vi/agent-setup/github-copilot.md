@@ -4,11 +4,11 @@ lastUpdated: 2026-07-08T20:22:25.910Z
 sourceLang: en
 translatedFrom: en
 sourceHash: ce887b90495381f9
-mtEngine: claude
-syncStatus: machine-translated
+mtEngine: manual
+syncStatus: human-translated
 ---
 
-# GitHub Copilot — Thiết lập Agent cho LumiBase
+# GitHub Copilot — LumiBase Agent Setup
 
 > **GitHub Copilot** là một editor extension và CLI với chế độ agent, ngữ cảnh workspace, và tích hợp PR native. Do GitHub tạo ra.
 >

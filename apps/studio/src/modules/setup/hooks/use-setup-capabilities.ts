@@ -36,6 +36,16 @@ export interface SetupCapabilitiesResponse {
   readonly smtp: {
     readonly available: boolean;
   };
+  /**
+   * `encryption.available` — whether the CMS can resolve an AEAD key
+   * (`ENCRYPTION_KEY` / `ENCRYPTION_KEY_<id>`, directly or via `*_FILE`).
+   * Without one, TOTP two-factor enrollment and encrypted item fields are
+   * unavailable, so the wizard says so here rather than letting the operator
+   * find out from a `503` the first time someone opens Settings → Security.
+   */
+  readonly encryption: {
+    readonly available: boolean;
+  };
 }
 
 /**
@@ -111,6 +121,10 @@ export function normalizeCapabilities(value: unknown): SetupCapabilitiesResponse
     obj.smtp && typeof obj.smtp === 'object'
       ? (obj.smtp as Record<string, unknown>)
       : {};
+  const encryption =
+    obj.encryption && typeof obj.encryption === 'object'
+      ? (obj.encryption as Record<string, unknown>)
+      : {};
   const result: SetupCapabilitiesResponse = {
     geoip: {
       available: Boolean(geoip.available),
@@ -118,6 +132,13 @@ export function normalizeCapabilities(value: unknown): SetupCapabilitiesResponse
     },
     smtp: {
       available: Boolean(smtp.available),
+    },
+    encryption: {
+      // Absent → assume available, unlike `geoip`/`smtp`. Studio and the CMS
+      // can be deployed separately (Pages vs Workers), so an older CMS that
+      // does not report this field must not make the wizard announce that 2FA
+      // is impossible. Only an explicit `false` raises the notice.
+      available: encryption.available === undefined ? true : Boolean(encryption.available),
     },
   };
   return result;
@@ -169,6 +190,11 @@ export function useSetupCapabilities(): UseQueryResult<
 export const UNAVAILABLE_CAPABILITIES: SetupCapabilitiesResponse = Object.freeze({
   geoip: { available: false },
   smtp: { available: false },
+  // `encryption` is the one probe where the conservative default is "available".
+  // The others gate a warning, so guessing "unavailable" over-warns harmlessly;
+  // this one would claim a working deployment cannot do 2FA whenever the probe
+  // itself fails, which is both wrong and alarming.
+  encryption: { available: true },
 });
 
 /**

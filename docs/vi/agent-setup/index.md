@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:25.632Z
+version: 2
+lastUpdated: 2026-08-02T19:11:28.854Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 605ac6e8cf30748d
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 9730149bdbd5cb5c
+mtEngine: manual
+syncStatus: human-translated
 ---
 
-# Thiết lập Agent — LumiBase
+# Agent Setup — LumiBase
 
 > **Dành cho AI agent:** Trang này cũng có sẵn ở dạng Markdown thuần. Nếu bạn đang đọc HTML, hãy yêu cầu `index.md` thay thế. Để xem chỉ mục đầy đủ của trang, xem [`llms.txt`](../llms.txt).
 

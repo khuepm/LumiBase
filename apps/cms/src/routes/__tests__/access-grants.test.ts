@@ -114,6 +114,9 @@ function buildApp(dbOpts: Parameters<typeof stubDb>[1] = {}): {
     async delete(key: string) {
       store.delete(key);
     },
+    async invalidateByTag() {
+      // not used
+    },
     async increment() {
       return 1;
     },

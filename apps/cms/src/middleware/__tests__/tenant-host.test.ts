@@ -19,6 +19,7 @@ function makeCache(seed: Record<string, string> = {}): CacheProvider {
       store.set(key, JSON.stringify({ __lumi: 'neg', v: 1 }));
     },
     delete: async (key) => void store.delete(key),
+    invalidateByTag: async () => undefined,
     increment: async (key, by = 1) => {
       const next = Number(store.get(key) ?? '0') + by;
       store.set(key, String(next));

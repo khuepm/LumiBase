@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:09:49.563Z
+sourceLang: en
+contentHash: 1efe42fea561c073
+---
+
 # Vietnam — PDPD, Cybersecurity & Content Licensing
 
 > Vietnam-specific obligations: personal data protection, data localization, and the

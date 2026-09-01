@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:23:24.787Z
+version: 3
+lastUpdated: 2026-08-30T09:36:15.719Z
 sourceLang: en
 translatedFrom: en
-sourceHash: c274dd38cd5da85d
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 644f0f4b2f32179b
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-30T09:36:15.719Z
+codeVerifiedHash: 644f0f4b2f32179b
+codeVerifiedClaims: 112
 ---
 
 # User Management Best Practices
@@ -101,6 +104,7 @@ Custom JWT mang một claim `aud` được ghim tại thời điểm ký
 | `frontend` | subscriber / role không có appAccess | ❌ **bị `withStudioAccess` từ chối cứng** | `30d` (`FRONTEND_SESSION_TTL`) | `90d` (`FRONTEND_REFRESH_TTL`) |
 | `email-verify` | token link đăng ký dùng một lần | n/a (không phải session token) | 24h (link) | — |
 | `password-reset` | token link đặt lại mật khẩu dùng một lần | n/a (không phải session token) | 1h (link) | — |
+| `mfa-challenge` | token step-up dùng một lần, giữa mật khẩu và TOTP (§4f) | n/a (không phải session token) | 5m | — |
 
 **TTL theo từng realm** (`sessionTtlFor` / `refreshTtlFor`): hai realm không
 còn dùng chung một vòng đời — session của staff ngắn (mục tiêu giá trị cao,
@@ -307,6 +311,71 @@ nó (bất kỳ giá trị non-empty nào).
   `DELETE /me/sessions` revoke tất cả (logout mọi nơi). Các hàng đã
   hết-hạn/revoke được dọn bởi tiến trình prune hằng giờ (§4d).
 
+## 4f. Xác thực hai yếu tố (TOTP)
+
+Native, theo từng user, **opt-in**. Việc enroll nằm trong Studio ở
+**Settings → Security**; không có bước wizard và không có công tắc ở mức
+tenant (chính cờ policy `enforceTfa` sẵn có mới là thứ làm 2FA thành bắt
+buộc cho một role). Chỉ realm `studio` bị thử thách — login của subscriber
+(`frontend`) không bị ảnh hưởng.
+
+**Login thành hai chặng.** `POST /auth/login` xác minh mật khẩu như trước,
+rồi nếu user có credential TOTP đã verify, nó trả về
+`{ status: 'mfa_required', challengeToken, expiresIn }` thay vì một session.
+Client post token đó cùng một code tới `POST /auth/verify-totp`, và nhận lại
+payload login thông thường với `amr: ["pwd", "totp"]`.
+
+Challenge token là một JWT HS256 sống 5 phút trên audience `mfa-challenge`,
+nên `withAuth` sẽ không bao giờ nhận nó như một session; `jti` của nó được
+ghi vào cache provider khi dùng, nên một token bị chặn bắt cũng không replay
+được. `verify-totp` là public path (caller chưa có session) nên nó nằm trong
+các tập public của `withAuth`, `site-membership` và `studio-access` — handler
+lấy `userId`/`siteId` từ challenge đã ký, không bao giờ từ input của client,
+và kiểm lại `siteId` của challenge với tenant đã resolve. Số lần thử bị giới
+hạn theo user (10) và theo IP (30) mỗi 15 phút.
+
+**Secret nằm ở đâu.** Seed base32 chỉ được ghi dưới dạng envelope AEAD của
+KeyProvider (`lumibase_user_totp_credentials.secret_ciphertext` +
+`secret_key_id`), nên enroll ở production đòi `ENCRYPTION_KEY`. Seed thô được
+trả về đúng một lần, bởi `POST /me/tfa/setup`, và sau đó không đọc lại được.
+Tám recovery code hiện một lần và được lưu dưới dạng hash PBKDF2
+(`lumibase_user_totp_recovery_codes`), dùng-một-lần, có ghi lại IP đã dùng.
+Replay trong cùng cửa sổ verify bị `last_used_step` chặn. `users.tfa` chỉ giữ
+trạng thái enrollment không bí mật.
+
+**Thay đổi 2FA cần step-up.** Setup, tạo lại recovery code, và tháo — cả ba
+đều đòi mật khẩu hiện tại; hai cái sau còn đòi thêm yếu tố thứ hai — một TOTP
+code sống, hoặc, chỉ với thao tác tháo, một recovery code, để user có seed
+không còn giải mã được vẫn tháo được yếu tố đã chết. Tháo
+2FA sẽ bump `tokenVersion` và thu hồi refresh token, nên một session bị đánh
+cắp không thể âm thầm hạ mức bảo vệ của tài khoản. Enroll và tháo đều ghi
+audit event (`mfa_enrolled` / `mfa_disabled`); verify thất bại ghi
+`mfa_verify_failed`. TOTP code, seed, recovery code và challenge token đều
+nằm trong danh sách loại bỏ của audit logger, nên không cái nào chạm được
+vào audit trail.
+
+**Vòng đời khoá.** Seed được bọc bằng khoá đang active tại thời điểm enroll,
+và dòng dữ liệu ghim version đó ở `secret_key_id`; lúc giải mã thì khoá được
+lấy theo envelope. Hai hệ quả mà operator hay hiểu sai: migration envelope
+(`POST /admin/encryption/envelope/migrate`) chỉ bọc lại field item và không
+bao giờ chạm bảng này, nên **khoá cũ phải được giữ trong cấu hình chừng nào
+còn seed tham chiếu tới nó**; và vì một khoá dùng chung toàn deployment bọc
+mọi seed, **rotate sau khi lộ khoá không bảo vệ được các enrollment đã có** —
+những user đó phải enroll lại. AAD (`totp-secret|<userId>`) chặn việc replay
+ciphertext của user này dưới id của user khác; nó không phải một biên bảo
+mật. Quy trình đầy đủ ở
+[Vận hành khoá mã hoá](../operations/encryption-keys.md).
+
+**Đa tenant.** Một credential TOTP thuộc về **định danh**, không thuộc về
+site — các bảng chỉ khoá theo `user_id`, khớp với kho định danh duy nhất (§2)
+và bảng `lumibase_admin_backup_codes` sẵn có. Enroll một lần là bảo vệ login
+của user trên mọi site họ thuộc về, và đó là hành vi mong muốn; không có
+enroll theo từng site và không có gì phải cô lập theo `site_id`. Các tác dụng
+phụ có phạm vi tenant thì vẫn có: audit event được ghi với `siteId` của
+request, và tháo 2FA thu hồi refresh token của site hiện tại. Các env knob là
+ở mức deployment: `ENCRYPTION_KEY` (bắt buộc để enroll) và
+`LUMIBASE_TOTP_ISSUER` (nhãn trong app authenticator, mặc định `LumiBase`).
+
 ## 5. Onboarding staff (KHÔNG dùng tự phục vụ)
 
 Staff được tạo **invite-only**:
@@ -438,9 +507,9 @@ Các bản vá đã xác minh ship kèm feature này (xem CHANGELOG):
 - **Email duy nhất toàn cục (H3).** Unique index trên `lower(email)`
   (migration `0006`) là lớp DB dự phòng đằng sau check-then-insert trong
   `/register`; một race đăng ký bị thua sẽ hiện ra như cùng một `202` chung.
-- **Xoay refresh atomic (M1).** Rotation giành hàng bằng một `UPDATE …
-  WHERE revoked_at IS NULL` có điều kiện; một bên thua đồng thời được coi là
-  dùng lại và family bị revoke.
+- **Xoay refresh atomic (M1).** Rotation giành hàng bằng một
+  `UPDATE … WHERE revoked_at IS NULL` có điều kiện; một bên thua đồng thời
+  được coi là dùng lại và family bị revoke.
 - **Session verify ghim audience (M5).** `verifyCustomJwt` yêu cầu
   `aud ∈ {studio, frontend}`; một JWT `email-verify`/`password-reset` một-mục
   đích không bao giờ có thể bị replay như một session token. Các token được

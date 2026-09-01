@@ -1,0 +1,43 @@
+groups:
+  - name: lumibase-cache
+    rules:
+      - alert: LumibaseCacheHighErrorRate
+        expr: |
+          (
+            sum(rate(lumibase_cache_operations_total{result=~"error|unavailable"}[5m]))
+            /
+            sum(rate(lumibase_cache_operations_total[5m]))
+          ) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: LumiBase cache error rate above 50%
+          description: >-
+            More than half of cache operations are failing over the last 5 minutes.
+            Check Redis/KV connectivity and recent deploy changes.
+
+      - alert: LumibaseCacheLowHitRate
+        expr: |
+          (
+            sum(rate(lumibase_cache_operations_total{result="hit"}[15m]))
+            /
+            sum(rate(lumibase_cache_operations_total{op=~"get|getEntry"}[15m]))
+          ) < 0.5
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: LumiBase cache hit ratio below 50%
+          description: >-
+            Positive cache hit ratio has been below 50% for 10 minutes. This may
+            be expected after a cold start or large invalidation burst.
+
+      - alert: LumibaseCacheInvalidationFailures
+        expr: sum(rate(lumibase_cache_operations_total{op="invalidateByTag",result="error"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: LumiBase cache tag invalidation errors
+          description: invalidateByTag operations are failing — stale content may persist until TTL expiry.

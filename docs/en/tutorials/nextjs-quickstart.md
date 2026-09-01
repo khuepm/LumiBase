@@ -1,5 +1,12 @@
 ---
 title: Next.js Quickstart — Display LumiBase Content
+version: 1
+lastUpdated: 2026-08-02T19:05:15.812Z
+sourceLang: en
+contentHash: 36f30e29b1d22d3e
+codeVerified: 2026-08-02T19:05:15.812Z
+codeVerifiedHash: 36f30e29b1d22d3e
+codeVerifiedClaims: 14
 ---
 
 <!--

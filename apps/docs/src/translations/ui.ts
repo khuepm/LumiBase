@@ -13,6 +13,15 @@ export const ui = {
     en: 'Type at least 2 characters to search',
     vi: 'Gõ ít nhất 2 ký tự để tìm',
   },
+  'landing.title': {
+    en: 'LumiBase Documentation',
+    vi: 'Tài liệu LumiBase',
+  },
+  'landing.tagline': {
+    en: 'Complete documentation for LumiBase — the edge-native, multi-tenant headless CMS built on Cloudflare Workers.',
+    vi: 'Tài liệu đầy đủ cho LumiBase — headless CMS đa tenant, edge-native trên Cloudflare Workers.',
+  },
+  'landing.get-started': { en: 'Get started', vi: 'Bắt đầu' },
   'notfound.title': { en: 'Document Not Found', vi: 'Không tìm thấy tài liệu' },
   'notfound.home': { en: 'Back to home', vi: 'Về trang chủ' },
   'banner.translation-pending': {
@@ -33,6 +42,28 @@ export const ui = {
     en: 'Theme: {mode} — click to switch',
     vi: 'Giao diện: {mode} — nhấn để chuyển',
   },
+  'consent.title': { en: 'Analytics cookies', vi: 'Cookie phân tích' },
+  'consent.body': {
+    en: 'We measure page traffic without cookies by default. Turning on Google Analytics adds cookies so we can see which pages actually help. No ads, no profiling, no data sold.',
+    vi: 'Mặc định chúng tôi đo lượng truy cập mà không dùng cookie. Bật Google Analytics sẽ thêm cookie để biết trang nào thực sự hữu ích. Không quảng cáo, không lập hồ sơ, không bán dữ liệu.',
+  },
+  'consent.privacy-link': { en: 'Privacy policy', vi: 'Chính sách bảo mật' },
+  'consent.allow': { en: 'Allow analytics', vi: 'Cho phép' },
+  'consent.decline': { en: 'Decline', vi: 'Từ chối' },
+  'consent.status-granted': {
+    en: 'Analytics cookies: allowed',
+    vi: 'Cookie phân tích: đã cho phép',
+  },
+  'consent.status-denied': {
+    en: 'Analytics cookies: declined',
+    vi: 'Cookie phân tích: đã từ chối',
+  },
+  'consent.status-unset': {
+    en: 'Analytics cookies: not set (none stored)',
+    vi: 'Cookie phân tích: chưa chọn (chưa lưu gì)',
+  },
+  'consent.change': { en: 'Change my choice', vi: 'Đổi lựa chọn' },
+  'consent.review': { en: 'Review choices', vi: 'Xem lựa chọn' },
 } satisfies Record<string, Record<string, string>>;
 
 export type UiKey = keyof typeof ui;

@@ -137,7 +137,7 @@ Backward compatible: caller cũ không đổi. `tags` là opt-in per-entry.
 
 ### 4.5 CDC CacheInvalidator — quyết định (Req 17)
 
-**Chọn phương án (B) Remove** [khuyến nghị — chốt khi review design]:
+**Chọn phương án (B) Remove** — **CHỐT 2026-08-02 (§21.1)**; see ADR-012:
 
 - Lý do: (1) mọi đường ghi qua API đã được Req 8 phủ bằng tag purge tại nguồn; (2) invalidator hiện key `config:${table}:${recordId}` không khớp bất kỳ key nào CMS đọc và thiếu siteId — muốn dùng phải viết lại phần lõi; (3) use-case "ghi thẳng DB không qua API" chưa có yêu cầu thực.
 - Hành động: xoá `modules/cdc/cache-invalidator.ts` + property test + export; ADR ngắn ghi lý do và điều kiện tái mở (khi có connector ghi ngoài API).
@@ -613,10 +613,10 @@ Nguyên tắc: mọi knob là env (không settings row) → không đụng setup
 
 ## 21. Open questions (chốt trước khi code phase liên quan)
 
-1. §4.5 phương án B (remove CDC invalidator) — cần maintainer xác nhận không có roadmap ghi-ngoài-API.
+1. ~~§4.5 phương án B (remove CDC invalidator) — cần maintainer xác nhận không có roadmap ghi-ngoài-API.~~ **CHỐT (2026-08-02): phương án B (remove).** `cache-invalidator.ts` deleted; ADR-012. Tái mở khi có connector ghi ngoài API + key có siteId khớp reader thật.
 2. ~~§8 delivery có nằm trong rate limiter không (hiện: không) — xem lại sau baseline.~~ **CHỐT: có** — §14.9 (Req 19.10), limiter riêng keyed theo IP. Sửa "skip deliver" ở tasks task 13.2.
 3. §11 Caddy plugin ratelimit vs app-level only — phụ thuộc chấp nhận custom Caddy build.
-4. §12 tương tác transaction tường minh với `withRls` set_config — cần spike xác nhận trên cả 3 connection path (`db.ts:19-65`) trước khi viết Req 16.5.
-5. §10.3 AI chat async tái dùng `flow_runs` hay bảng riêng.
+4. ~~§12 tương tác transaction tường minh với `withRls` set_config — cần spike xác nhận trên cả 3 connection path (`db.ts:19-65`) trước khi viết Req 16.5.~~ **CHỐT (2026-08-02):** `withRls` gọi `set_config(..., true)` trên connection **trước** handler; `db.transaction()` mở transaction lồng/riêng — setting transaction-local từ middleware **không** đảm bảo còn hiệu lực trong transaction tường minh. **Mitigation:** `runSiteTransaction()` (`apps/cms/src/services/rls-transaction.ts`) gọi lại `set_config` **bên trong** callback transaction; `ItemService` create/patch/bulk-create dùng helper này. Ba path `db.ts` (dev per-request, runtime Hyperdrive, Hyperdrive fallback) đều dùng cùng Drizzle `transaction()` → cùng hành vi; test P16: `rls-transaction.test.ts`. Dev mode (`LUMIBASE_ENV=development`) cố ý bỏ qua RLS ở cả middleware lẫn helper.
+5. ~~§10.3 AI chat async tái dùng `flow_runs` hay bảng riêng.~~ **CHỐT (2026-08-02): tái dùng `lumibase_flow_runs`.** Cột `run_type = 'ai_chat'`, `flow_id` nullable; poll `GET /api/v1/flows/runs/:runId`. HITL không đổi — harness vẫn trả `pending_approval` trong `output` JSON.
 6. ~~§14.9 ngưỡng `LUMIBASE_DELIVER_RATE_LIMIT` = 1200/phút/IP là ước lượng chưa đo.~~ **CHỐT (2026-08-01):** giữ **1200/phút/IP**. Đo bằng `load-penetration.js` (50 RPS ≈ 3000/phút, một IP, cửa sổ 40s): sau ~24s limiter trả **429** (~40% request trong mẫu) — đúng vai trò lưới chống lạm dụng origin, không phải quota CDN. Synthetic single-IP load test đo DB-query-per-404 nên đặt `LUMIBASE_DELIVER_RATE_LIMIT=0` (hoặc nâng tạm). IP đã lấy qua helper XFF/`CF-Connecting-IP` sẵn có; nếu CDN gộp nhiều user vào ít IP egress thì tầng 3 kém hiệu quả — tầng 1+2 (guard + tombstone) vẫn độc lập. Không hạ default dưới 1200 sau phép đo này.
 7. ~~§14.3 `unavailable` trên KV chỉ phát khi `get` ném.~~ **CHỐT (2026-08-01, spike Workers KV docs):** `KVNamespace.get` **trả `null` khi miss** (không ném). Platform docs khuyến nghị `try/catch` cho lỗi hạ tầng/runtime — khi `get` thực sự ném, adapter map sang `unavailable` (đúng). Soft failure nếu surface như `null` sẽ sụp về `miss` → gọi `load`/DB (Req 19.9 degrade an toàn, không 5xx giả). **`unavailable` quan sát được chủ yếu trên Docker/Redis**; trên CF nó là đường hiếm (throw thật), không phải tín hiệu miss.

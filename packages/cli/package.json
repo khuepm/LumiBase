@@ -1,0 +1,57 @@
+{
+  "name": "lumibase",
+  "version": "0.26.0",
+  "description": "The LumiBase CLI — scaffold a project, generate TypeScript types from a live schema, and check your setup.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "lumibase": "./bin/lumibase.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest --run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo dist"
+  },
+  "dependencies": {
+    "create-lumibase": "workspace:*",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@lumibase/sdk": "workspace:*",
+    "@types/node": "^26.4.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.6.2",
+    "vitest": "^4.1.11"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "lumibase",
+    "cli",
+    "cms",
+    "headless-cms",
+    "typegen",
+    "codegen",
+    "typescript",
+    "scaffold"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khuepm/lumibase.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://docs.lumibase.dev",
+  "bugs": {
+    "url": "https://github.com/khuepm/lumibase/issues"
+  }
+}

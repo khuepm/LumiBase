@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:48:31.596Z
+version: 2
+lastUpdated: 2026-08-02T19:05:49.466Z
 sourceLang: en
-contentHash: bec65a2bb768bb4d
-codeVerified: 2026-07-28T11:48:31.596Z
-codeVerifiedHash: bec65a2bb768bb4d
-codeVerifiedClaims: 22
+contentHash: 8213b15617869cfe
+codeVerified: 2026-08-02T19:05:54.545Z
+codeVerifiedHash: 8213b15617869cfe
+codeVerifiedClaims: 26
 ---
 
 # LumiBase Production Deployment Checklist
@@ -297,10 +297,30 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
 
 ### Scaling (Optional)
 
+**Single process (default)** — one container runs HTTP + cron + queue consumers (`LUMIBASE_PROCESS_ROLE=all`):
+
 ```bash
-# Scale CMS horizontally
-docker compose up -d --scale cms=3
+docker compose up -d cms
 ```
+
+**Split web / worker (recommended for horizontal scale)** — HTTP replicas without duplicated cron; one or more worker replicas with Redis leader locks:
+
+```bash
+# Start infra + split roles (compose profile `split`)
+docker compose --profile split up -d postgres redis minio minio-init meilisearch imgproxy cms-web cms-worker
+
+# Scale HTTP tier (workers stay at 1 unless you add more with shared Redis locks)
+docker compose --profile split up -d --scale cms-web=3
+```
+
+| Service | `LUMIBASE_PROCESS_ROLE` | Listens on |
+|---------|-------------------------|------------|
+| `cms` / `cms-web` | `all` / `web` | `PORT` (default 1989) — Delivery + API |
+| `cms-worker` | `worker` | `LUMIBASE_WORKER_HEALTH_PORT` (default 1988) — `/health` only |
+
+Worker processes consume queues and run `node-cron` jobs; only the Redis lock holder executes each cron tick when `REDIS_URL` is set.
+
+> **Avoid** `docker compose up -d --scale cms=3` on the monolithic `cms` service — that duplicates every cron and queue consumer. Use the split profile instead.
 
 ---
 

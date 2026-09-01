@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:22:18.301Z
+sourceLang: en
+contentHash: af86294c13f54058
+codeVerified: 2026-08-02T19:22:18.301Z
+codeVerifiedHash: af86294c13f54058
+codeVerifiedClaims: 4
+---
+
 # Local Development
 
 > **Prerequisites:** Node.js ≥ 22, pnpm ≥ 9, Docker + Docker Compose, Git ≥ 2.40

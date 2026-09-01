@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:10:34.119Z
+sourceLang: en
+contentHash: b2197c8ff5d8c316
+---
+
 # Compliance & User Rights
 
 > This section maps the **legal rights end users are entitled to** under major

@@ -1,11 +1,18 @@
 import { schema } from '@lumibase/database';
 import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { recordEdgeUrl } from '@lumibase/runtime';
 import type { AppEnv, Variables } from '../env';
 import {
+  DELIVER_APP_CACHE_TTL_SECONDS,
+  deliverAppCacheKey,
+  deliverAppCacheTags,
+  deliveryVariantHash,
   etagMatches,
+  PUBLIC_DELIVERY_VARY,
   resolveDeliveryCachePolicy,
   weakEtag,
+  type DeliverAppCacheEntry,
 } from '../services/delivery-cache';
 import {
   assertPublicIdentifier,
@@ -383,9 +390,24 @@ deliverRouter.get('/llms.txt/:site_id', async (c) => {
 
   return c.text(lines.join('\n'), 200, {
     'Content-Type': 'text/plain; charset=utf-8',
+    // `max-age` (not `s-maxage`) — this one is browser-cacheable too, so it
+    // needs the tenant-input declaration just as much as the page route (#390).
     'Cache-Control': 'public, max-age=300',
+    Vary: PUBLIC_DELIVERY_VARY,
   });
 });
+
+function sectionCollections(layoutConfig: unknown): string[] {
+  const layout = (layoutConfig ?? {}) as LayoutConfig;
+  const names = new Set<string>();
+  for (const section of layout.sections ?? []) {
+    const collection = section.source?.collection;
+    if (typeof collection === 'string' && collection.length > 0) {
+      names.add(collection);
+    }
+  }
+  return [...names];
+}
 
 /** Hydrate every section of a page into the delivery payload. */
 async function buildPagePayload(
@@ -438,8 +460,8 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
   const { site_id: siteId, slug } = c.req.param();
 
   // Shared caches must never mix tenants: the site is in the URL here, but
-  // other API surfaces route on this header (design §15.4).
-  c.header('Vary', 'X-Lumi-Site');
+  // other API surfaces route on these headers (design §15.4; #390).
+  c.header('Vary', PUBLIC_DELIVERY_VARY);
 
   // Tier 1 — shape guard (Req 19.1): reject before any DB / cache op.
   // Same 404 body as a real miss so the endpoint is not an oracle.
@@ -463,10 +485,78 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
     env: c.env,
   });
 
-  // Tier 2 — tombstone (Req 19.5/19.8): never serve negative cache to
+  const runtime = c.get('runtime');
+  const edgeCache = runtime?.edgeCache;
+  const useDeliverCache = policy.cacheable && !isPreview;
+  const appCache = useDeliverCache ? runtime?.cache : undefined;
+  const variantHash = await deliveryVariantHash({
+    locale: c.req.query('locale'),
+    lang: c.req.query('lang'),
+    provenance: withProvenance ? 'true' : undefined,
+  });
+  const appCacheKey =
+    appCache && useDeliverCache ? deliverAppCacheKey(siteId, slug, variantHash) : null;
+
+  /**
+   * Record this URL in the tag→edge-URL index so a later tag purge can reach
+   * the edge copy (#392). On the app-cache-hit path the page row is not
+   * hydrated, so only the site-level tag is known there; the fresh-build path
+   * below passes the section collections too. A URL indexed under fewer tags
+   * still gets purged by `deliver:<site>`, just not by a single collection.
+   */
+  const indexEdgeUrl = async (collections: string[] = []) => {
+    if (!edgeCache) return;
+    await recordEdgeUrl(appCache, deliverAppCacheTags(siteId, collections), c.req.url, {
+      ttl: DELIVER_APP_CACHE_TTL_SECONDS,
+    });
+  };
+
+  /**
+   * Label the response so a CDN that supports tag purge can act on it (#392).
+   *
+   * Emitted on public responses only: the tags carry `siteId`, and a
+   * credentialed response is `private, no-store` anyway — no shared cache
+   * should be holding it, so nothing should be labelling it either.
+   */
+  const tagResponse = (collections: string[] = []) => {
+    if (!policy.cacheable) return;
+    c.header('Cache-Tag', deliverAppCacheTags(siteId, collections).join(','));
+  };
+
+  // Tier 1b — HTTP edge cache (Req 1.6): only for cacheable public traffic.
+  if (policy.cacheable && edgeCache) {
+    const cached = await edgeCache.match(c.req.raw);
+    if (cached) return cached;
+  }
+
+  // Tier 2a — application cache (Req 8.2): full page payload + ETag metadata.
+  if (appCache && appCacheKey) {
+    const cached = await appCache.get<DeliverAppCacheEntry>(appCacheKey);
+    if (cached) {
+      c.header('ETag', cached.etag);
+      c.header('Cache-Control', policy.cacheControl);
+      tagResponse();
+      if (etagMatches(c.req.header('if-none-match'), cached.etag)) {
+        const notModified = c.body(null, 304);
+        if (edgeCache) {
+          await edgeCache.put(c.req.raw, notModified.clone());
+          await indexEdgeUrl();
+        }
+        return notModified;
+      }
+      const response = c.json(cached.body);
+      if (edgeCache) {
+        await edgeCache.put(c.req.raw, response.clone());
+        await indexEdgeUrl();
+      }
+      return response;
+    }
+  }
+
+  // Tier 2b — tombstone (Req 19.5/19.8): never serve negative cache to
   // credentialed / preview traffic (same boundary as Req 1.4).
   const allowTombstone = !hasCredentials && !isPreview;
-  const cache = c.get('runtime')?.cache;
+  const cache = runtime?.cache;
   const ttl = resolveNegativeTtl(c.env);
   const neg =
     allowTombstone && cache && ttl > 0
@@ -515,9 +605,32 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
 
   c.header('ETag', etag);
   c.header('Cache-Control', policy.cacheControl);
+  tagResponse(sectionCollections(page.layoutConfig));
   if (etagMatches(c.req.header('if-none-match'), etag)) {
-    return c.body(null, 304);
+    const notModified = c.body(null, 304);
+    if (edgeCache) {
+      await edgeCache.put(c.req.raw, notModified.clone());
+      await indexEdgeUrl(sectionCollections(page.layoutConfig));
+    }
+    return notModified;
   }
 
-  return c.json(await buildPagePayload(db, siteId, page, withProvenance));
+  const body = await buildPagePayload(db, siteId, page, withProvenance);
+  if (appCache && appCacheKey) {
+    try {
+      await appCache.set(appCacheKey, JSON.stringify({ body, etag } satisfies DeliverAppCacheEntry), {
+        ttl: DELIVER_APP_CACHE_TTL_SECONDS,
+        tags: deliverAppCacheTags(siteId, sectionCollections(page.layoutConfig)),
+      });
+    } catch {
+      // App-cache write is best-effort — never fail the read path.
+    }
+  }
+
+  const response = c.json(body);
+  if (edgeCache) {
+    await edgeCache.put(c.req.raw, response.clone());
+    await indexEdgeUrl(sectionCollections(page.layoutConfig));
+  }
+  return response;
 });

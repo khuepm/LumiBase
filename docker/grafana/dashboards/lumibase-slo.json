@@ -200,7 +200,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(rate(lumibase_cache_operations_total{hit=\"true\"}[5m])) / sum(rate(lumibase_cache_operations_total[5m])) * 100",
+          "expr": "sum(rate(lumibase_cache_operations_total{result=\"hit\"}[5m])) / sum(rate(lumibase_cache_operations_total{op=~\"get|getEntry\"}[5m])) * 100",
           "legendFormat": "Hit %",
           "refId": "A"
         }

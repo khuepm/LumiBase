@@ -1,16 +1,29 @@
-# Page Hydration API Contract
+---
+version: 2
+lastUpdated: 2026-08-02T19:02:08.528Z
+sourceLang: en
+translatedFrom: en
+sourceHash: f0f9348fb05a5190
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:02:08.528Z
+codeVerifiedHash: f0f9348fb05a5190
+codeVerifiedClaims: 2
+---
 
-To solve the "2-roundtrip" problem, the CMS provides a BFF (Backend-for-Frontend) endpoint for Next.js.
+# Hợp đồng API Page Hydration
 
-## Endpoint: `GET /api/v1/deliver/page/:site_id/:slug`
+Để giải quyết vấn đề "2 lần khứ hồi" (2-roundtrip), CMS cung cấp một điểm cuối BFF (Backend-for-Frontend) dành cho Next.js.
 
-### Workflow triggered by API:
-1. **Fetch Page Config:** Retrieve the `pages` record matching `:slug` and `:site_id`.
-2. **Analyze Dependencies:** Read `layoutConfig.sections`. Identify which collections are needed (e.g., "Hero section needs latest 3 items from `posts` collection").
-3. **Parallel Fetch:** Execute Drizzle DB queries to fetch the required collection data.
-4. **Merge & Deliver:** Combine layout configuration and data into one unified JSON response.
+## Điểm cuối: `GET /api/v1/deliver/page/:site_id/:slug`
 
-Sections can declare a data source:
+### Luồng công việc được kích hoạt bởi API:
+1. **Lấy cấu hình trang (Fetch Page Config):** Truy xuất bản ghi `pages` khớp với `:slug` và `:site_id`.
+2. **Phân tích phụ thuộc (Analyze Dependencies):** Đọc `layoutConfig.sections`. Xác định bộ sưu tập (collection) nào cần thiết (ví dụ: "Phần Hero cần 3 mục mới nhất từ bộ sưu tập `posts`").
+3. **Truy xuất song song (Parallel Fetch):** Thực thi các truy vấn Drizzle DB để lấy dữ liệu bộ sưu tập bắt buộc.
+4. **Hợp nhất & Phân phối (Merge & Deliver):** Kết hợp cấu hình bố cục (layout) và dữ liệu thành một phản hồi JSON hợp nhất.
+
+Các phần (section) có thể khai báo một nguồn dữ liệu (data source):
 
 ```json
 {
@@ -25,12 +38,9 @@ Sections can declare a data source:
 }
 ```
 
-The delivery resolver scopes the query by `site_id`, defaults to
-`status: "published"` for public delivery, clamps `limit` to 50 items, and
-merges the hydrated rows into `data.items`. Set `source.status` only when a
-public page intentionally needs a different item status.
+Trình phân giải phân phối (delivery resolver) giới hạn truy vấn theo `site_id`, mặc định thành `status: "published"` cho phân phối công khai, giới hạn `limit` tối đa 50 mục, và hợp nhất các dòng đã điền dữ liệu (hydrated rows) vào `data.items`. Chỉ đặt `source.status` khi một trang công khai cố ý cần trạng thái mục khác.
 
-### Expected JSON Response Structure:
+### Cấu trúc phản hồi JSON dự kiến:
 ```json
 {
   "page": {
@@ -65,3 +75,4 @@ public page intentionally needs a different item status.
     }
   ]
 }
+```

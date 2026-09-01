@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:21:03.641Z
+version: 2
+lastUpdated: 2026-08-02T19:04:40.044Z
 sourceLang: en
-contentHash: 9c6c07b7161c8e59
+contentHash: 415d80a8367fca52
 ---
 
 # Getting Started — Scaffold a new project with `create-lumibase`

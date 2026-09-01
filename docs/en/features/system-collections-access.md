@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:11:44.060Z
+sourceLang: en
+contentHash: 3b3decebac998a79
+---
+
 # System Collections & Sensitive Access Contract
 
 Decision date: 2026-06-03.

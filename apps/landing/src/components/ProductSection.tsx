@@ -1,8 +1,12 @@
-import Image from "next/image";
 import Link from "next/link";
 import Badge, { type BadgeTone } from "@/components/cosmic/Badge";
 import FeatureCard from "@/components/cosmic/FeatureCard";
-import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
+import Scene, { ParallaxItem } from "@/components/scroll/Scene";
+import WipeTitle from "@/components/scroll/WipeTitle";
+import EclipsePhaseScrub from "@/components/scroll/EclipsePhaseScrub";
+import { PHASE_HUES } from "@/components/EclipseMark";
+import PresenceCursors from "@/components/PresenceCursors";
+import { RevealGroup, RevealItem } from "@/components/motion";
 
 export interface SectionFeature {
   title: string;
@@ -10,71 +14,99 @@ export interface SectionFeature {
   span?: number;
   node?: React.ReactNode;
   bg?: string;
-  img?: string;
-  imgW?: number;
   badge?: string;
   badgeTone?: BadgeTone;
   vh?: number;
+  /** Responsive height classes for the visual slot; wins over `vh`. */
+  vhClass?: string;
 }
 
 export interface SectionData {
   id: string;
-  planet: string;
-  glow: string;
+  index: number;
+  phase: 0 | 1 | 2 | 3;
   title: string;
   tagline: string;
   cta: string;
   ctaHref: string;
   features: SectionFeature[];
+  /** Show multiplayer agent cursors over this section (AI Harness). */
+  presence?: boolean;
+  /** Full-bleed stage between the title and the grid — the section's lead image. */
+  hero?: React.ReactNode;
+  /**
+   * A section-specific body. When present it replaces the generic feature grid.
+   * Used sparingly where the content has a real hierarchy rather than a set of
+   * equal feature cards (Content OS: sticky intent lead + narrow story rail).
+   */
+  body?: React.ReactNode;
 }
 
+/** Column-based drift so grid cards parallax at slightly different rates. */
+const DRIFT = [0, 26, -20];
+
 /**
- * Product section — centred planet + title + tagline + CTA pill, then a
- * 3-column feature grid. One per product pillar.
+ * Grid span per `span` value. The grid is 1 / 2 / 3 columns, so a 3-span tile
+ * has to take the full row at each breakpoint, not just at `lg`.
+ */
+const SPANS: Record<number, string | undefined> = {
+  1: undefined,
+  2: "sm:col-span-2",
+  3: "sm:col-span-2 lg:col-span-3",
+};
+
+/**
+ * Product section — one scroll scene per pillar: the eclipse-phase glyph and
+ * title wipe are scrubbed by this scene's own progress, then a 3-column
+ * feature grid with per-column parallax.
  */
 export default function ProductSection({
   id,
-  planet,
-  glow,
+  index,
+  phase,
   title,
   tagline,
   cta,
   ctaHref,
   features,
+  presence,
+  hero,
+  body,
 }: SectionData) {
+  const no = String(index).padStart(2, "0");
+  const [hue] = PHASE_HUES[phase] ?? PHASE_HUES[0]!;
+
+  const cards = features.map((f, i) => (
+    <RevealItem key={f.title} className={SPANS[f.span ?? 1]}>
+      <ParallaxItem className="h-full" drift={DRIFT[i % 3] ?? 0}>
+        <FeatureCard
+          title={f.title}
+          description={f.desc}
+          visualHeight={f.vh ?? 190}
+          visualHeightClass={f.vhClass}
+          visualBg={f.bg}
+          visual={
+            f.node ??
+            (f.badge ? <Badge tone={f.badgeTone ?? "accent"}>{f.badge}</Badge> : undefined)
+          }
+        />
+      </ParallaxItem>
+    </RevealItem>
+  ));
   return (
-    <section id={id} className="mx-auto max-w-[1200px] px-5 pt-[90px] md:pt-[120px]">
-      <Reveal className="flex flex-col items-center text-center">
-        {/*
-         * Glow is rendered as a decoupled radial-gradient halo behind the
-         * planet rather than via `filter: drop-shadow()` on the <Image>.
-         * The planet PNGs are indexed-color with tRNS (palette) transparency,
-         * and some mobile GPUs mis-resolve that alpha during the drop-shadow
-         * SourceAlpha pass when the element is on its own composited layer
-         * (promoted here by the Reveal transform) with no clipping ancestor —
-         * painting the whole bounding box as an opaque black square. The
-         * in-card planets escape it only because they sit inside overflow-hidden
-         * cards. A gradient halo doesn't touch the image alpha, so it renders
-         * consistently across desktop and mobile.
-         */}
-        <div className="relative mb-6 flex items-center justify-center">
-          <span
-            aria-hidden
-            className="pointer-events-none absolute left-1/2 top-1/2 h-[150px] w-[150px] -translate-x-1/2 -translate-y-1/2 rounded-full"
-            style={{ background: `radial-gradient(circle, ${glow} 0%, transparent 70%)` }}
-          />
-          <Image src={planet} alt="" width={96} height={96} className="relative" />
-        </div>
-        <h2
-          className="m-0 text-white [font:700_34px/40px_var(--font-sans)] md:[font:700_48px/56px_var(--font-sans)]"
-          style={{ letterSpacing: "-0.4px" }}
-        >
-          {title}
-        </h2>
+    <Scene
+      id={id}
+      className="relative mx-auto max-w-[1200px] px-5 pt-[90px] md:pt-[140px]"
+    >
+      {presence && <PresenceCursors />}
+      <div className="mb-4 flex items-center justify-center">
+        <EclipsePhaseScrub phase={phase} size={84} />
+      </div>
+      <WipeTitle label={`[ ${no} / ${title.toUpperCase()} ]`} title={title}>
         <p
-          className="mx-auto mt-3.5 max-w-[460px]"
+          className="font-serif-body mx-auto mt-3.5 max-w-[480px]"
           style={{
-            font: "500 20px/33px var(--font-sans, inherit)",
+            font: "400 19px/31px var(--font-serif-stack)",
             color: "var(--color-text-secondary)",
           }}
         >
@@ -90,42 +122,23 @@ export default function ProductSection({
           >
             <span
               className="h-2 w-2 rounded-full"
-              style={{ background: glow }}
+              style={{
+                background: hue,
+                boxShadow: `0 0 8px ${hue}`,
+              }}
             />
             <span>{cta}</span>
           </Link>
         </div>
-      </Reveal>
+      </WipeTitle>
 
-      <RevealGroup className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 md:mt-16 lg:grid-cols-3">
-        {features.map((f) => (
-          <RevealItem
-            key={f.title}
-            className={f.span === 2 ? "sm:col-span-2" : undefined}
-          >
-            <FeatureCard
-              title={f.title}
-              description={f.desc}
-              visualHeight={f.vh ?? 190}
-              visualBg={f.bg}
-              visual={
-                f.node ??
-                (f.badge ? (
-                  <Badge tone={f.badgeTone ?? "violet"}>{f.badge}</Badge>
-                ) : f.img ? (
-                  <Image
-                    src={f.img}
-                    alt=""
-                    width={f.imgW ?? 120}
-                    height={f.imgW ?? 120}
-                    style={{ filter: `drop-shadow(0 0 36px ${glow})` }}
-                  />
-                ) : undefined)
-              }
-            />
-          </RevealItem>
-        ))}
-      </RevealGroup>
-    </section>
+      {hero && <div className="mt-10 md:mt-14">{hero}</div>}
+
+      {body ?? (
+        <RevealGroup className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 md:mt-16 lg:grid-cols-3">
+          {cards}
+        </RevealGroup>
+      )}
+    </Scene>
   );
 }

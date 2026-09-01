@@ -1,3 +1,10 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:10:17.463Z
+sourceLang: en
+contentHash: 09dfe40abc90cd0e
+---
+
 # Distributor Policy — Google Play & Apple App Store
 
 > App-store policies are **contractual** requirements: violating them can get an app

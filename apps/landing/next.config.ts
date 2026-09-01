@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: 'export',
+  // Workspace packages publish raw TypeScript (`main: ./src/index.ts`), so Next
+  // has to compile this one rather than treat it as pre-built JS.
+  transpilePackages: ['@lumibase/analytics-consent'],
   images: {
     unoptimized: true,
   },

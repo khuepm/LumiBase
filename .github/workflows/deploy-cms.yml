@@ -104,7 +104,7 @@ jobs:
         run: pnpm --filter @lumibase/cms test
 
       - name: Build CMS
-        run: pnpm --filter @lumibase/cms run build:${TARGET_ENV}
+        run: pnpm --filter @lumibase/cms run "build:${TARGET_ENV}"
 
       - name: Check Cloudflare deploy credentials
         id: cloudflare-credentials
@@ -120,7 +120,7 @@ jobs:
 
       - name: Deploy CMS
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
-        run: pnpm --filter @lumibase/cms run deploy:${TARGET_ENV}
+        run: pnpm --filter @lumibase/cms run "deploy:${TARGET_ENV}"
 
       - name: Verify deployment health
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'

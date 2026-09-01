@@ -57,6 +57,7 @@ const MaterializePage = lazy(() => import('./modules/settings/materialize-page')
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const EncryptionSettingsPage = lazy(() => import('./modules/settings/encryption-page').then((m) => ({ default: m.EncryptionSettingsPage })));
+const SecuritySettingsPage = lazy(() => import('./modules/settings/security-page').then((m) => ({ default: m.SecuritySettingsPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const UploadsSettingsPage = lazy(() => import('./modules/settings/uploads-page').then((m) => ({ default: m.UploadsSettingsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
@@ -686,6 +687,12 @@ const encryptionSettingsRoute = createRoute({
   component: withSuspense(EncryptionSettingsPage),
 });
 
+const securitySettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'security',
+  component: withSuspense(SecuritySettingsPage),
+});
+
 const extensionsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'extensions',
@@ -813,6 +820,15 @@ const adminPathActivityRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'activity',
   component: withSuspense(ActivityPage),
+});
+
+// Mirrors `securitySettingsRoute` in the plain `/settings` tree. The sidebar
+// renders the "Security" item on every instance, so an instance running a
+// custom admin path needs this twin or the link resolves to nothing.
+const adminPathSecuritySettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'security',
+  component: withSuspense(SecuritySettingsPage),
 });
 
 const adminPathExtensionsRoute = createRoute({
@@ -1264,6 +1280,7 @@ const routeTree = rootRoute.addChildren([
       translationMemoryRoute,
       activityRoute,
       encryptionSettingsRoute,
+      securitySettingsRoute,
       extensionsRoute,
       uploadsSettingsRoute,
       marketplaceRoute,
@@ -1332,6 +1349,7 @@ const routeTree = rootRoute.addChildren([
       adminPathMaterializeSettingsRoute,
       adminPathTranslationMemoryRoute,
       adminPathActivityRoute,
+      adminPathSecuritySettingsRoute,
       adminPathExtensionsRoute,
       adminPathUploadsSettingsRoute,
       adminPathMarketplaceRoute,

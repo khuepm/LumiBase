@@ -178,7 +178,7 @@ describe('Recovery flow — integration', () => {
     const svc = new SetupService({
       db,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
     });
     const outcome = await svc.complete(
       {

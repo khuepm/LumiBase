@@ -62,7 +62,7 @@ export const users = pgTable(
     status: text('status').default('active').notNull(),
     /** `{ language, theme, timezone, defaultPresets }` */
     preferences: jsonb('preferences').default({}).notNull(),
-    /** TFA registration metadata (delegated to Logto). */
+    /** TFA enrollment metadata (non-secret; secret stored in user_totp_credentials). */
     tfa: jsonb('tfa').default({}).notNull(),
     lastSeenAt: timestamp('last_seen_at'),
     /**

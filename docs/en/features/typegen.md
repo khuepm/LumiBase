@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:21:09.581Z
+sourceLang: en
+contentHash: a17b76eead4e1b5f
+codeVerified: 2026-08-02T19:21:09.581Z
+codeVerifiedHash: a17b76eead4e1b5f
+codeVerifiedClaims: 4
+---
+
 # Schema Type Generation
 
 LumiBase typegen turns a tenant schema into TypeScript types for apps that use `@lumibase/sdk`. It is multi-tenant aware: the manifest is fetched for one site and can be filtered by collection.

@@ -270,6 +270,19 @@ export {
   type Password,
 } from './password';
 export {
+  TotpCodeSchema,
+  TotpVerifyLoginSchema,
+  TotpSetupSchema,
+  TotpConfirmSchema,
+  TotpDisableSchema,
+  TotpRegenerateRecoverySchema,
+  type TotpVerifyLoginInput,
+  type TotpSetupInput,
+  type TotpConfirmInput,
+  type TotpDisableInput,
+  type TotpRegenerateRecoveryInput,
+} from './tfa';
+export {
   PAGEVIEW_STRATEGIES,
   PAGEVIEWS_SETTINGS_KEY,
   PageviewSettingsSchema,

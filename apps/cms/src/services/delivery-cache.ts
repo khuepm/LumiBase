@@ -13,8 +13,18 @@
  *    `If-None-Match`, so revalidation requests can be answered with 304.
  */
 
+import { deliverTag, itemsTag } from './content-invalidation';
+
 const DEFAULT_SMAXAGE_SECONDS = 60;
 const DEFAULT_SWR_SECONDS = 300;
+
+/** Application-cache TTL for deliver page payloads (design §3.1). */
+export const DELIVER_APP_CACHE_TTL_SECONDS = 300;
+
+export interface DeliverAppCacheEntry {
+  body: unknown;
+  etag: string;
+}
 
 export interface DeliveryCacheEnv {
   /** Shared-cache lifetime in seconds. `0` disables public caching entirely. */
@@ -60,6 +70,23 @@ export function resolveDeliveryCachePolicy(options: {
 }
 
 /**
+ * `Vary` for every publicly cacheable delivery response (#390).
+ *
+ * `middleware/tenant.ts` resolves the active site from three inputs: the
+ * `X-Lumi-Site` header, the `Host` header (custom domains and free
+ * subdomains), and `?site=` in dev. The query string is part of the cache key
+ * already; the two headers are not unless declared here.
+ *
+ * Today both public delivery routes carry `site_id` in the path, so tenant
+ * identity is in the URL and no shared cache can mix two sites on these
+ * routes. This header is therefore hardening, not a fix for a live leak: it
+ * states the dependency in the response instead of relying on every CDN in
+ * front of us to key on `Host` by convention — and it keeps holding if a
+ * future public route drops the site from its path.
+ */
+export const PUBLIC_DELIVERY_VARY = 'X-Lumi-Site, Host';
+
+/**
  * Weak ETag over an ordered list of fingerprint inputs. Weak (`W/`) because
  * the tag asserts semantic equivalence of the payload, not byte identity —
  * the JSON body is never buffered to compute it.
@@ -99,4 +126,33 @@ function parseSeconds(raw: string | undefined, fallback: number): number {
   const value = Number(raw);
   if (!Number.isFinite(value) || value < 0) return fallback;
   return Math.floor(value);
+}
+
+/** Application-cache key for a deliver page variant (design §3.1). */
+export function deliverAppCacheKey(siteId: string, slug: string, variantHash: string): string {
+  return `deliver:${siteId}:${slug}:${variantHash}`;
+}
+
+/**
+ * Stable hash of locale / query params that affect the delivery payload for
+ * cacheable (public) traffic. Returns a fixed sentinel when no variants apply.
+ */
+export async function deliveryVariantHash(
+  params: Readonly<Record<string, string | undefined>>,
+): Promise<string> {
+  const parts: string[] = [];
+  if (params.locale) parts.push(`locale=${params.locale}`);
+  if (params.lang) parts.push(`lang=${params.lang}`);
+  if (params.provenance === 'true') parts.push('provenance=true');
+  if (parts.length === 0) return '0';
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(parts.join('&')));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+}
+
+/** Build tag list for a deliver page app-cache entry (design §3.1). */
+export function deliverAppCacheTags(
+  siteId: string,
+  collectionNames: ReadonlyArray<string>,
+): string[] {
+  return [deliverTag(siteId), ...collectionNames.map((c) => itemsTag(siteId, c))];
 }

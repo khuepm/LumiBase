@@ -101,9 +101,11 @@ jobs:
               range="$tag"
               echo "Changes included in ${tag}:" > release-notes.md
             fi
-            echo >> release-notes.md
-            git log --pretty=format:'- %s (%h)' "$range" >> release-notes.md
-            echo >> release-notes.md
+            {
+              echo
+              git log --pretty=format:'- %s (%h)' "$range"
+              echo
+            } >> release-notes.md
           fi
 
       - name: Create GitHub Release
@@ -250,6 +252,13 @@ jobs:
 
       - name: Build Pages app
         if: matrix.app.name != 'marketplace'
+        # Both GA measurement IDs are inlined at build time (landing is a static
+        # Next export, docs is a prerendered Vite SPA), so they have to be present
+        # here rather than set at runtime. Each is read by one app only; unset
+        # means that app ships no GA tag and no cookie banner.
+        env:
+          NEXT_PUBLIC_GA_ID: ${{ vars.NEXT_PUBLIC_GA_ID }}
+          VITE_GA_ID: ${{ vars.VITE_GA_ID }}
         run: pnpm --filter ${{ matrix.app.package }} build
 
       - name: Check Cloudflare credentials

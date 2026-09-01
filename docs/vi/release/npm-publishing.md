@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-07-25T08:13:22.051Z
+version: 2
+lastUpdated: 2026-08-01T23:58:27.871Z
 sourceLang: vi
-contentHash: 851d0c3d29a694cb
-codeVerified: 2026-07-25T08:13:22.051Z
-codeVerifiedHash: 851d0c3d29a694cb
+contentHash: 41f061bd96e9ea1a
+codeVerified: 2026-08-01T23:58:27.871Z
+codeVerifiedHash: 41f061bd96e9ea1a
 codeVerifiedClaims: 2
 ---
 
@@ -21,6 +21,7 @@ của chính package đó *là* allowlist:
 
 - `packages/sdk` (`@lumibase/sdk`)
 - `packages/extension-sdk` (`@lumibase/extension-sdk`)
+- `packages/cli` (`lumibase` — CLI, tên không scope)
 
 Muốn thêm package public: bỏ `private: true` khỏi `package.json` của package đó, và
 bảo đảm nó không phụ thuộc vào dependency nội bộ dùng `workspace:*` chưa public.

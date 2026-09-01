@@ -73,13 +73,15 @@ const VALID_STATUSES = ['executed', 'pending_approval', 'denied'] as const;
 // ---------------------------------------------------------------------------
 
 // Collection name generator
-const collectionNameArb = fc.stringOf(fc.char().filter((c) => /\w/.test(c)), {
+const collectionNameArb = fc.string({
+  unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'.split('')),
   minLength: 1,
   maxLength: 15,
 });
 
 // Item id generator
-const itemIdArb = fc.stringOf(fc.char().filter((c) => /\w/.test(c)), {
+const itemIdArb = fc.string({
+  unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'.split('')),
   minLength: 1,
   maxLength: 15,
 });
@@ -101,8 +103,10 @@ const intentMessageArb = fc.oneof(
 );
 
 // Capabilities generator: either wildcard or a subset of known capabilities
-const capabilitiesArb = fc.oneof(
-  fc.constant(['*']),
+// Annotated because fast-check v4 infers `fc.constant(['*'])` as a readonly
+// tuple, which stops the `oneof` union collapsing to `string[]` on its own.
+const capabilitiesArb: fc.Arbitrary<string[]> = fc.oneof(
+  fc.constant(['*'] as string[]),
   fc.subarray(['schema:read', 'schema:create', 'schema:update', 'schema:delete', 'schema:migrate', 'items:read', 'items:write'], {
     minLength: 0,
     maxLength: 7,

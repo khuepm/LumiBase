@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:08:40.211Z
+sourceLang: en
+contentHash: 470f7657bd8de6b6
+codeVerified: 2026-08-02T19:08:40.211Z
+codeVerifiedHash: 470f7657bd8de6b6
+codeVerifiedClaims: 8
+---
+
 # PermissionService Compose Behavior Audit
 
 Audit date: 2026-06-03.
