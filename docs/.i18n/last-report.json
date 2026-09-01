@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-31T18:36:13.494Z",
+  "generatedAt": "2026-09-01T01:16:53.660Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 146,
+    "upToDate": 147,
     "planned": 1
   },
   "actions": [
@@ -494,6 +494,18 @@
     },
     {
       "rel": "cdc/troubleshooting.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "cli/index.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
