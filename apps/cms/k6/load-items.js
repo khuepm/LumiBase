@@ -41,7 +41,6 @@ export const options = {
       vus: 10,
       duration: '60s',
       startTime: '30s',
-      tags: { scenario: 'detail' },
     },
   },
   thresholds: {
