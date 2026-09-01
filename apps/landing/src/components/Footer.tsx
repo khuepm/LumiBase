@@ -10,7 +10,6 @@ const columns = [
       { label: "Content OS", href: "/#content-os", external: false },
       { label: "Studio", href: "/#studio", external: false },
       { label: "Runtime", href: "/#runtime", external: false },
-      { label: "Pricing", href: "/pricing", external: false },
     ],
   },
   {
