@@ -118,10 +118,16 @@ export interface Bindings {
   LUMIBASE_NEGATIVE_CACHE_TTL?: string;
   /** Delivery API IP rate limit (req/min). Default 1200; `0` = off. */
   LUMIBASE_DELIVER_RATE_LIMIT?: string;
+  /** Authenticated API rate limit (req/min per principal). Default 600; `0` = off. */
+  LUMIBASE_API_RATE_LIMIT?: string;
   /** Debounce window (seconds) for API-key `lastUsedAt` writes. Default 60; `0` = touch every request. */
   LUMIBASE_APIKEY_TOUCH_INTERVAL?: string;
   /** Max JSON request body in bytes for the app-level guard. Default 1 MiB. */
   LUMIBASE_MAX_JSON_BODY?: string;
+  /** Sync flow run ceiling in ms when no queue worker (default 30000). */
+  LUMIBASE_FLOW_SYNC_TIMEOUT?: string;
+  /** Max items per bulk() batch (default 500). */
+  LUMIBASE_BULK_MAX?: string;
   /** Set to 'true' to disable the general API rate limiter (CWE-400). */
   LUMIBASE_RATE_LIMIT_DISABLED?: string;
   /** Max requests per window for the general API rate limiter (default 300). */

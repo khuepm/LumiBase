@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:21:22.765Z
+sourceLang: en
+contentHash: e1112e0c60482f60
+codeVerified: 2026-08-02T19:21:22.765Z
+codeVerifiedHash: e1112e0c60482f60
+codeVerifiedClaims: 70
+---
+
 # Anti-Abuse Mechanisms & Best Practices
 
 ## Overview

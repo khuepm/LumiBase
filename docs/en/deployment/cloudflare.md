@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:09:39.809Z
+sourceLang: en
+contentHash: 2bdc828c1f456441
+codeVerified: 2026-08-02T19:09:39.809Z
+codeVerifiedHash: 2bdc828c1f456441
+codeVerifiedClaims: 2
+---
+
 # Cloudflare Deployment
 
 This guide covers the Cloudflare deployment used by the monorepo: the CMS API runs as a Worker and the docs app is deployed as a Cloudflare Pages static site.

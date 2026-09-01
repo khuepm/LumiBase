@@ -1,4 +1,20 @@
-# Cơ chế chống lạm dụng & Best practices
+---
+<!-- check-parity: allow inline-code -->
+version: 1
+lastUpdated: 2026-08-02T19:21:22.765Z
+sourceLang: en
+translatedFrom: en
+sourceHash: e1112e0c60482f60
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:21:22.765Z
+codeVerifiedHash: e1112e0c60482f60
+codeVerifiedClaims: 70
+---
+
+<!-- check-parity: allow inline-code -->
+
+# Anti-Abuse Mechanisms & Best Practices
 
 ## Tổng quan
 

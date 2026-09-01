@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:21:09.252Z
+sourceLang: en
+contentHash: 2bc7ce42ef0ae829
+codeVerified: 2026-08-02T19:21:09.252Z
+codeVerifiedHash: 2bc7ce42ef0ae829
+codeVerifiedClaims: 8
+---
+
 # Google Cloud Deployment (single VM)
 
 This guide deploys the full LumiBase stack to a single **Google Compute Engine**

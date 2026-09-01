@@ -132,6 +132,49 @@ production. Without step 3 the module keeps working, but only in memory.
 The table DDL lives in `migrations/0001_sponsors.sql` and is mirrored by
 `SPONSORS_TABLE_DDL` in `src/lib/rewards/d1-store.ts` — keep the two in sync.
 
+## Analytics and consent
+
+Two measurement paths run side by side, and they are not interchangeable:
+
+| Source | Cookies | Consent | Where it is configured |
+| --- | --- | --- | --- |
+| Cloudflare Web Analytics | none | not required | Cloudflare dashboard (Pages injects the beacon) — **not in this repo** |
+| Google Analytics 4 | `_ga`, `_ga_<id>` | opt-in required | `NEXT_PUBLIC_GA_ID` at build time |
+
+The rules live in **`packages/analytics-consent`** (shared with `apps/docs`) — read
+its README for the invariants and why each exists. This app contributes the UI in
+`src/components/analytics/`:
+
+- `Analytics.tsx` renders the tag `<Script>` only once consent is `granted`, plus
+  the banner that asks for it.
+- `CookiePreferences.tsx` is the withdrawal control on the privacy page.
+
+App-specific notes:
+
+- **Unset means invisible.** With no `NEXT_PUBLIC_GA_ID`, the layout renders no
+  `<Analytics>`, the privacy page shows "not configured on this deployment", and no
+  banner appears. Verify with `grep -rl googletagmanager out/**/*.html` — empty. The
+  string does still appear in `out/_next/static/chunks/*.js` as unreachable code,
+  because the bundler keeps the component either way; that is not a loaded tag.
+- **The ID reaches the client through the RSC payload**, not a JS chunk: the layout
+  is a server component, so `out/*.html` carries the ID but never a
+  `googletagmanager` reference. The tag appears only after hydration, and only with
+  a grant.
+- **`transpilePackages`** in `next.config.ts` is required because workspace
+  packages publish raw TypeScript.
+
+Deployment: set the repo variable `NEXT_PUBLIC_GA_ID` (Settings → Variables), which
+`release.yml` and `pages-deploy.yml` pass to the build. It is inlined into the
+static export, so rotating the property needs a rebuild, not a runtime change.
+
+### Test coverage caveat
+
+The landing vitest project runs `environment: 'node'` and only picks up
+`src/**/*.test.ts`, so the shared rules are covered by the package suite but this
+app's banner interaction is not. `apps/docs` has the equivalent components under
+jsdom test cover; the landing half is still open as `B17` in
+`.kiro/steering/out-of-scope-backlog.md`.
+
 ## Environment Variables
 
 Copy `.env.example` to `.env.local` and configure:
@@ -139,6 +182,8 @@ Copy `.env.example` to `.env.local` and configure:
 ```env
 NEXT_PUBLIC_GITHUB_REPO=https://github.com/khuepm/lumibase
 NEXT_PUBLIC_DOCS_URL=https://docs.lumibase.dev
+# Optional — enables the GA4 tag behind an opt-in banner. Unset = no cookies.
+NEXT_PUBLIC_GA_ID=G-XXXXXXXXXX
 ```
 
 ## Project Structure

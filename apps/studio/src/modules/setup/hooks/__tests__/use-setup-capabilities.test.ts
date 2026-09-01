@@ -31,10 +31,12 @@ describe('normalizeCapabilities', () => {
     const result = normalizeCapabilities({
       geoip: { available: true, source: 'maxmind' },
       smtp: { available: true },
+      encryption: { available: true },
     });
     expect(result).toEqual({
       geoip: { available: true, source: 'maxmind' },
       smtp: { available: true },
+      encryption: { available: true },
     });
   });
 
@@ -42,14 +44,29 @@ describe('normalizeCapabilities', () => {
     expect(normalizeCapabilities({})).toEqual({
       geoip: { available: false },
       smtp: { available: false },
+      // `encryption` deliberately defaults the other way: an omitted field
+      // means "this CMS does not report it" (version skew between separately
+      // deployed Studio and CMS), not "no key". Announcing that 2FA is
+      // impossible on a healthy instance is worse than staying quiet.
+      encryption: { available: true },
     });
   });
 
   it('coerces missing `available` flags to false', () => {
-    expect(normalizeCapabilities({ geoip: {}, smtp: {} })).toEqual({
+    expect(normalizeCapabilities({ geoip: {}, smtp: {}, encryption: {} })).toEqual({
       geoip: { available: false },
       smtp: { available: false },
+      encryption: { available: true },
     });
+  });
+
+  it('raises the encryption notice only on an explicit false', () => {
+    expect(
+      normalizeCapabilities({ encryption: { available: false } }).encryption.available,
+    ).toBe(false);
+    expect(
+      normalizeCapabilities({ encryption: { available: true } }).encryption.available,
+    ).toBe(true);
   });
 
   it('drops a non-maxmind source value', () => {
@@ -118,6 +135,7 @@ describe('getCapabilitiesWithFallback', () => {
     const data: SetupCapabilitiesResponse = {
       geoip: { available: true, source: 'maxmind' },
       smtp: { available: true },
+      encryption: { available: true },
     };
     const result = getCapabilitiesWithFallback(makeQuery({ data }));
     expect(result.capabilities).toBe(data);

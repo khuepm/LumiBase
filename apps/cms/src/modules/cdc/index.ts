@@ -45,8 +45,7 @@ export * as debeziumKafkaConnector from './connectors/debezium-kafka';
 export * as materializedEngineConnector from './connectors/materialized-engine';
 export * as airbyteConnector from './connectors/airbyte';
 
-// ── Redis cache auto-invalidation + pipeline health monitoring ────────────
-export * as cacheInvalidator from './cache-invalidator';
+// ── pipeline health monitoring ────────────────────────────────────────────
 export * as healthMonitor from './health-monitor';
 
 // ── Studio approach-recommendation engine ─────────────────────────────────

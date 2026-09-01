@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-// Stamp a manually-translated doc pair with the SAME provenance that
-// `sync.mjs --apply` would write, so a later `detect` run classifies the pair
-// as up-to-date. Use this after hand-writing a translation into the target
-// side (you already created/edited docs/<targetLocale>/<rel>).
+// Stamp a manually-translated doc pair with the provenance a later `detect` run
+// needs to classify the pair as up-to-date (`sourceHash` + `translatedFrom`).
+// Use this after hand-writing a translation into the target side (you already
+// created/edited docs/<targetLocale>/<rel>).
+//
+// It records the translation as what it is — `mtEngine: manual`,
+// `syncStatus: human-translated`. It used to copy `sync.mjs --apply`'s
+// machine-translation provenance verbatim, which labelled every hand-written
+// page as produced by an API this project does not call.
 //
 // Usage:
 //   node scripts/docs-i18n/stamp-pair.mjs <rel> <sourceLocale> [--verified]
@@ -14,6 +19,22 @@
 //                    `verify-code-refs.mjs` and REFUSES to write the marker if
 //                    anything is stale — or if the doc makes no claim the
 //                    tooling can test, since "nothing to check" is not a pass.
+//     --allow-structure-drift
+//                    stamp even though `check-parity.mjs` reports the two sides
+//                    are not the same document. Only for a deliberate divergence,
+//                    and say why in the commit message — prefer a
+//                    `<!-- check-parity: allow <check> -->` waiver in the doc so
+//                    the reason lives next to the divergence.
+//
+// STRUCTURAL GATE
+// ---------------
+// Stamping is what makes a pair read "up-to-date" to every other tool, so it is
+// the last point at which a bad translation can be stopped. Translations here are
+// hand-written and land without a second reviewer, so this runs
+// `check-parity.mjs` first and refuses on a mismatch: a target still in the
+// source language, dropped sections, translated code, broken link targets or a
+// truncated tail. Without that gate the stamp launders a broken translation into
+// "in sync".
 //
 // Assumes both docs/en/<rel> and docs/vi/<rel> already exist.
 //
@@ -30,6 +51,7 @@
 // assurance forward. Marking a translation as a full match requires both.
 
 import { splitFrontMatter, contentHash, upsertKeys, buildFile, readKey } from './frontmatter.mjs';
+import { checkPair } from './check-parity.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -40,9 +62,12 @@ const REPO = path.resolve(__dirname, '..', '..');
 
 const argv = process.argv.slice(2);
 const WANT_VERIFIED = argv.includes('--verified');
+const ALLOW_DRIFT = argv.includes('--allow-structure-drift');
 const [rel, sourceLocale] = argv.filter((a) => !a.startsWith('--'));
 if (!rel || !['en', 'vi'].includes(sourceLocale)) {
-  console.error('usage: node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> [--verified]');
+  console.error(
+    'usage: node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> [--verified] [--allow-structure-drift]',
+  );
   process.exit(1);
 }
 const targetLocale = sourceLocale === 'en' ? 'vi' : 'en';
@@ -80,6 +105,30 @@ for (const p of [srcAbs, tgtAbs]) {
   if (!fs.existsSync(p)) { console.error('missing:', p); process.exit(2); }
 }
 
+// Structural gate, before anything is written. `check-parity` is imported rather
+// than shelled out to: it needs both files on disk, which they already are.
+// The `front-matter` check is excluded from this gate on purpose: it fires when
+// the target side has no `translatedFrom`/`sourceHash` and its stated remedy is
+// "run stamp-pair.mjs" — this script. Treating it as structural drift made the
+// gate unsatisfiable, so an unstamped pair could never be bootstrapped (hit on
+// security/dependency-overrides.md, whose VI side was a complete translation
+// that merely predated the provenance stamps). Every other check still blocks:
+// those describe the two locales genuinely diverging as documents.
+const parity = checkPair(rel);
+const blocking = parity.problems.filter((p) => p.check !== 'front-matter');
+if (blocking.length > 0) {
+  const label = ALLOW_DRIFT ? 'structure drift (allowed)' : 'refusing to stamp';
+  console.error(`${label}: ${rel} — the two locales are not the same document`);
+  for (const p of blocking) console.error(`  [${p.check}] ${p.detail}`);
+  if (!ALLOW_DRIFT) {
+    console.error(
+      'Fix the translation, or pass --allow-structure-drift / add a\n' +
+      '  <!-- check-parity: allow <check> --> waiver if the divergence is deliberate.',
+    );
+    process.exit(6);
+  }
+}
+
 // source hash from its body
 const { fmRaw: srcFm, body: srcBody } = splitFrontMatter(fs.readFileSync(srcAbs, 'utf8'));
 const srcHash = contentHash(srcBody);
@@ -100,7 +149,7 @@ if (WANT_VERIFIED) {
   if ((report.unverifiable ?? []).length > 0) {
     console.error(
       `refusing --verified: ${rel} makes no claim this tooling can test, so nothing was ` +
-        'actually verified. Review it by hand and stamp without --verified.',
+      'actually verified. Review it by hand and stamp without --verified.',
     );
     for (const u of report.unverifiable) console.error(`  ${u}`);
     process.exit(5);
@@ -132,8 +181,8 @@ fs.writeFileSync(tgtAbs, buildFile(upsertKeys(tgtFm, {
   sourceLang: sourceLocale,
   translatedFrom: sourceLocale,
   sourceHash: srcHash,
-  mtEngine: 'claude',
-  syncStatus: 'machine-translated',
+  mtEngine: 'manual',
+  syncStatus: 'human-translated',
   ...verifiedKeys,
 }), tgtBody), 'utf8');
 
@@ -154,5 +203,5 @@ fs.writeFileSync(srcAbs, buildFile(upsertKeys(srcFm, {
 
 console.log(
   `stamped ${rel}  (${sourceLocale}->${targetLocale})  srcHash=${srcHash}` +
-    (WANT_VERIFIED ? '  codeVerified' : ''),
+  (WANT_VERIFIED ? '  codeVerified' : ''),
 );

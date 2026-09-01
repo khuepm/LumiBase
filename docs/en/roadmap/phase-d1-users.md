@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:01:41.017Z
+sourceLang: en
+contentHash: 9d561ce21bd8e439
+codeVerified: 2026-08-02T19:01:41.017Z
+codeVerifiedHash: 9d561ce21bd8e439
+codeVerifiedClaims: 12
+---
+
 # Phase D1: Users & Teams Management
 
 This document summarizes the features implemented in Phase D1 for user and team management.

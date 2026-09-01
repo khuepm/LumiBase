@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:14:13.087Z
+sourceLang: en
+contentHash: 98a39c55026d8f08
+codeVerified: 2026-08-02T19:14:13.087Z
+codeVerifiedHash: 98a39c55026d8f08
+codeVerifiedClaims: 4
+---
+
 # Collections Builder
 
 The Collections Builder is the no-code surface for defining LumiBase content models. Its Directus-parity contract is explicit: collection metadata, primary key strategy, storage mode, fields, relations, schema diff/apply, SDK typegen, and runtime limitations are all first-class schema data.

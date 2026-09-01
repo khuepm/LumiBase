@@ -1,3 +1,16 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:21:20.573Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 3fcc9c501310e61f
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:21:20.573Z
+codeVerifiedHash: 3fcc9c501310e61f
+codeVerifiedClaims: 4
+---
+
 # Realtime / WebSocket
 
 Realtime cho phép client nhận thay đổi item và trạng thái presence qua WebSocket. LumiBase dùng Cloudflare Durable Objects làm hub theo từng site, còn quyền bật/tắt được chia thành nhiều lớp để dễ vận hành.

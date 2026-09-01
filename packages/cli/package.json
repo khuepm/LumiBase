@@ -1,6 +1,6 @@
 {
   "name": "lumibase",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "The LumiBase CLI — scaffold a project, generate TypeScript types from a live schema, and check your setup.",
   "license": "Apache-2.0",
   "type": "module",
@@ -23,10 +23,10 @@
   },
   "devDependencies": {
     "@lumibase/sdk": "workspace:*",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.4.0",
     "tsup": "^8.5.1",
     "typescript": "^5.6.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "files": [
     "dist",

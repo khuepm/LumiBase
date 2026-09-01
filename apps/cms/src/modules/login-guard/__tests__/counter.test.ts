@@ -5,6 +5,7 @@ import { loginAttempts, type Database } from '@lumibase/database';
 
 import {
   PostgresCounterStore,
+  RedisCounterStore,
   createCounterStore,
   ipFailedCount,
   userFailedCount,
@@ -294,12 +295,16 @@ describe('createCounterStore', () => {
     expect(store).toBeInstanceOf(PostgresCounterStore);
   });
 
-  it('returns the Postgres implementation even when LUMIBASE_REDIS_URL is set (Redis adapter is a future no-op)', () => {
+  it('returns RedisCounterStore when LUMIBASE_REDIS_URL is set and cache is provided', () => {
     const fake = makeFakeDb();
+    const cache = {
+      get: async () => null,
+      increment: async () => 1,
+    };
     const store = createCounterStore(fake.db, {
       LUMIBASE_REDIS_URL: 'redis://localhost:6379',
-    });
-    expect(store).toBeInstanceOf(PostgresCounterStore);
+    }, { cache: cache as never });
+    expect(store).toBeInstanceOf(RedisCounterStore);
   });
 });
 

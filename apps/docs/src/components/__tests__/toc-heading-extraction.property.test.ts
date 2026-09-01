@@ -19,20 +19,14 @@ import { extractHeadings, TocList } from '../TableOfContents';
  * Lowercase alphanumeric + hyphens, non-empty.
  */
 const headingId = fc
-  .stringOf(
-    fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789-'.split('')),
-    { minLength: 1, maxLength: 20 },
-  )
+  .string({ unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789-'.split('')), minLength: 1, maxLength: 20 })
   .filter((s) => !s.startsWith('-') && !s.endsWith('-') && !s.includes('--'));
 
 /**
  * Generate heading text content (non-empty, trimmed).
  */
 const headingText = fc
-  .stringOf(fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('')), {
-    minLength: 1,
-    maxLength: 30,
-  })
+  .string({ unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('')), minLength: 1, maxLength: 30 })
   .map((s) => s.trim())
   .filter((s) => s.length > 0);
 

@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-11T03:49:05.879Z
+version: 2
+lastUpdated: 2026-08-02T17:24:38.531Z
 sourceLang: en
 translatedFrom: en
-sourceHash: dc7a160b08b512cb
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 8bdc8a6b72516bd5
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T17:24:38.531Z
+codeVerifiedHash: 8bdc8a6b72516bd5
+codeVerifiedClaims: 4
 ---
 
 # Vận hành nâng cấp
@@ -121,18 +124,26 @@ Chạy migration có chủ đích và xác minh cả schema lẫn hành vi ứng
 
 | Từ | Đường lên 1.0.0 | Ghi chú |
 |------|---------------|-------|
-| `0.18.x` – `0.21.x` | Trực tiếp. | Table prefix và mô hình RBAC đã khớp 1.0. Chạy [migration checklist](#migration-checklist); không có bước dữ liệu thủ công. |
+| `0.18.x` – `0.25.x` | Trực tiếp. | Table prefix và mô hình RBAC đã khớp 1.0. Chạy [migration checklist](#migration-checklist); không có bước dữ liệu thủ công. Mọi migration trong dải này đều là additive — `CREATE TABLE` hoặc `ADD COLUMN IF NOT EXISTS`, cộng một constraint `CHECK` ở `0012` (xem [rollback](#rollback-từ-10)) — không có `DROP` hay `RENAME`. |
 | `0.6.x` – `0.17.x` | Trực tiếp, **kèm RBAC backfill bên dưới**. | Migration schema là cộng dồn và idempotent. Bước thủ công duy nhất là backfill role→policy (xem [RBAC backfill role→policy](#rbac-backfill-rolepolicy)). |
 | Trước `0.17.0` (bảng chưa có prefix) | **Không hỗ trợ nâng cấp tại chỗ.** | Thay đổi table-prefix ở `0.17.x` chỉ áp dụng cho fresh-install. Instance tạo trước `0.17.0` phải export dữ liệu (collections, items, files, roles/policies/permissions, flows, webhooks) và re-import vào một bản `1.0.0` mới. Không có migration tiến lên cho schema chưa prefix. |
-| Trước `0.6.0` | Qua một bản trung gian `0.17.x` – `0.21.x` trước. | Nâng lên một bản `0.x` gần đây (bản này áp dụng RBAC backfill và xử lý prefix), verify, rồi nâng lên `1.0.0`. Không nhảy thẳng. |
+| Trước `0.6.0` | Qua một bản trung gian `0.17.x` – `0.25.x` trước. | Nâng lên một bản `0.x` gần đây (bản này áp dụng RBAC backfill và xử lý prefix), verify, rồi nâng lên `1.0.0`. Không nhảy thẳng. |
 
 Xác định version hiện tại qua `/api/v1/system/version` trước khi chọn dòng phù hợp.
 
 ### RBAC backfill role→policy
 
-`1.0.0` coi **policy** là nguồn sự thật cho `admin_access` và `app_access` (cùng `enforce_tfa`, IP guard, và time window). Instance có trước mô hình policy lưu các cờ này trên **role**. Trong compatibility window, `PermissionService` vẫn đọc `cờ role OR cờ policy đang active`, nên access không vỡ khi nâng cấp — nhưng trước `1.0.0` bạn nên materialize cờ role legacy thành policy row để riêng lớp policy là authoritative.
+`1.0.0` coi **policy** là nguồn sự thật cho `admin_access` và `app_access` (cùng `enforce_tfa`, IP guard, và time window). Instance có trước mô hình policy lưu các cờ này trên **role**. Trong compatibility window, `PermissionService` vẫn đọc `role flags OR active policy flags`, nên access không vỡ khi nâng cấp — nhưng trước `1.0.0` bạn nên materialize cờ role legacy thành policy row để riêng lớp policy là authoritative.
 
-Backfill là idempotent và **không** sửa cờ role (chúng giữ nguyên làm mỏ neo rollback). Với mỗi role có `admin_access` hoặc `app_access` bằng true, nó tạo một policy chỉ chứa cờ — key `legacy_role_flags_<role_key>`, tên `Legacy role flags: <role name>`, copy đúng giá trị cờ, với `enforce_tfa=false`, IP guard rỗng, và time window null — rồi attach vào role qua `role_policies`. Hợp đồng đầy đủ và SQL: [Role Flag to Policy Flag Migration](../features/role-policy-flag-migration.md).
+Backfill là idempotent và **không** sửa cờ role (chúng giữ nguyên làm mỏ neo rollback). Với mỗi role có `admin_access` hoặc `app_access` bằng true, nó tạo một policy chỉ chứa cờ — key `legacy_role_flags_<role_key>_<role_id>` (hậu tố role id giữ các role có key normalize ra giống nhau trên những policy riêng biệt), tên `Legacy role flags: <role name>`, copy đúng giá trị cờ, với `enforce_tfa=false`, IP guard rỗng, và time window null — rồi attach vào role qua `role_policies`. Hợp đồng đầy đủ: [Role Flag to Policy Flag Migration](../features/role-policy-flag-migration.md).
+
+Chạy nó bằng script có sẵn (lệnh apply cũng chạy post-check và thoát khác 0 nếu post-check fail):
+
+```bash
+DATABASE_URL=postgresql://... pnpm --filter @lumibase/database backfill:role-policies          # apply + verify
+DATABASE_URL=postgresql://... pnpm --filter @lumibase/database backfill:role-policies verify   # post-check only
+DATABASE_URL=postgresql://... pnpm --filter @lumibase/database backfill:role-policies rollback # compat-window rollback
+```
 
 Chạy trên staging trước, rồi verify. Post-check phải trả về **không dòng nào** — mọi role mang cờ legacy đều phải có policy tương ứng:
 
@@ -150,11 +161,14 @@ AND NOT EXISTS (
 );
 ```
 
-Rồi xác nhận effective access không đổi: role admin legacy vẫn là admin, role chỉ-app legacy vẫn vào được Studio, và role không có app access vẫn không vào được. Bước verify này đã được chạy trên fixture của bản 1.0 và trả về sạch. Cột cờ role vẫn giữ nguyên qua 1.0 để rollback; chúng chỉ được lên lịch xoá ở một bản sau khi `LUMIBASE_RBAC_LEGACY_ROLE_FLAGS=false` đã ship và được verify.
+Rồi xác nhận effective access không đổi: role admin legacy vẫn là admin, role chỉ-app legacy vẫn vào được Studio, và role không có app access vẫn không vào được. Toàn bộ đường này — fixture pre-policy → backfill → post-check không dòng nào → chạy lại idempotent → rollback — được chạy tự động trong CI bởi `apps/cms/src/__tests__/upgrade-path.e2e.test.ts` (job `e2e-golden-path`), nên một build xanh chính là bằng chứng cho release gate. Cột cờ role vẫn giữ nguyên qua 1.0 để rollback; chúng chỉ được lên lịch xoá ở một bản sau khi `LUMIBASE_RBAC_LEGACY_ROLE_FLAGS=false` đã ship và được verify.
 
 ### Rollback từ 1.0
 
-- **Application:** rollback về deployment `0.21.x` trước đó theo [rollback app](#rollback-app). `1.0.0` không thêm thay đổi schema phá huỷ nào so với `0.21.x`, nên app version cũ vẫn tương thích với database 1.0.
+- **Application:** rollback về deployment `0.25.x` trước đó theo [rollback app](#rollback-app). Mọi migration từ `0.18.x` tới `1.0.0` đều là additive, nên app version cũ vẫn tương thích với database 1.0 — nó chỉ đơn giản bỏ qua những bảng và cột nó không biết.
+- **Hai constraint cần biết:** migration `0012_public_role_least_privilege` thêm hai constraint `CHECK` — `roles_public_least_privilege` trên `lumibase_roles` (`system_key = 'public'` ⇒ `admin_access` và `app_access` đều false) và `policies_public_least_privilege` trên `lumibase_policies` (`key = 'public'` ⇒ hai cờ đó cộng `enforce_tfa` false). Một cờ elevation trên realm ẩn danh chính là unauthenticated admin bypass, nên nó được ghim ở tầng database chứ không chỉ ở service layer. Chúng từ chối ghi, không xoá gì, và rollback không có gì phải hoàn tác: role public ship *cùng* `0.25.0`, nên không bản nào trước đó tạo ra role vi phạm. Hai hệ quả cần biết:
+  - Postgres validate một `CHECK` với các dòng đang có ngay khi thêm, nên nếu một operator từng tự tạo policy key `public` với cờ elevation trước khi nâng cấp thì migration **fail** thay vì âm thầm nới lỏng. Xoá cờ trên dòng đó rồi chạy lại.
+  - App version đã rollback nếu cố cấp elevated access cho role public sẽ nhận constraint violation thay vì thành công. Đó là constraint đang làm việc, không phải lỗi rollback.
 - **RBAC backfill:** có thể đảo ngược riêng trong compatibility window — xoá các policy `legacy_role_flags_%` và các dòng `role_policies` của chúng (cờ role không đụng đến, nên access được bảo toàn). Xem [§6 Rollback](../features/role-policy-flag-migration.md#6-rollback).
 - **Đường re-import pre-0.17:** không có rollback về schema chưa prefix cũ; giữ instance nguồn chạy read-only cho tới khi bản cài 1.0 được verify.
 

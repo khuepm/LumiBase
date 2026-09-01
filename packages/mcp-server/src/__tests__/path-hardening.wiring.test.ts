@@ -77,6 +77,29 @@ describe('path-segment encoding (source scan)', () => {
 
 const TRAVERSAL = '..';
 
+/**
+ * Sentinel used to discover whether an argument reaches the path at all.
+ *
+ * `..` cannot do this job. When a call site splices the value into a *larger*
+ * segment — `/exports/report-${id}.json` — the `..` is swallowed by the
+ * surrounding text (`report-...json`) and never appears as a segment of its
+ * own. The field then looks path-free, is skipped, and never reaches the
+ * assertion below — the exact shape the source scan above also misses, since
+ * that interpolation is not preceded by `/`.
+ *
+ * Deliberately alphanumeric: `encodePathSegment` leaves it byte-identical, so
+ * the probe detects the argument whether or not the call site encodes it.
+ */
+const REACH_PROBE = 'zqpathprobe';
+
+/**
+ * Path portion of a recorded URL. Query values are encoded by `buildQs` via
+ * `URLSearchParams`, so an argument that only lands after `?` is out of scope.
+ */
+function pathPortion(url: string): string {
+  return url.split('?')[0]!;
+}
+
 interface CapturedTool {
   config: { inputSchema?: Record<string, z.ZodTypeAny> };
   handler: (args: Record<string, unknown>) => Promise<unknown>;
@@ -120,9 +143,9 @@ function baselineArgs(fields: string[]): Record<string, unknown> {
   return args;
 }
 
-/** True if `..` survived into the path portion as its own segment. */
-function hasTraversalSegment(path: string): boolean {
-  return path.split('?')[0]!.split('/').includes(TRAVERSAL);
+/** True if the sentinel reached the path, however the call site spliced it. */
+function reachesPath(path: string): boolean {
+  return pathPortion(path).includes(REACH_PROBE);
 }
 
 describe('path-parameter validation (registry scan)', () => {
@@ -136,15 +159,16 @@ describe('path-parameter validation (registry scan)', () => {
     if (!schema) continue;
 
     for (const field of Object.keys(schema)) {
-      // Does this field reach the URL path at all?
+      // Does this field reach the URL path at all? Probe with the sentinel, not
+      // with `..`, so an argument spliced into a larger segment is still seen.
       const { tools: probeTools, paths } = harness();
       const probe = probeTools.get(name)!;
       const args = baselineArgs(Object.keys(schema));
-      args[field] = TRAVERSAL;
+      args[field] = REACH_PROBE;
       // `run()` swallows handler errors, so a bad probe simply records no path.
       void probe.handler(args);
 
-      if (!paths.some(hasTraversalSegment)) continue;
+      if (!paths.some(reachesPath)) continue;
 
       const label = `${name}.${field}`;
       guarded.push(label);

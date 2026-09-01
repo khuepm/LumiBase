@@ -255,6 +255,57 @@ export const loginBaselines = pgTable('lumibase_login_baselines', {
  *
  * Contract: see design §3.3 and Req 14.2.
  */
+/**
+ * Per-user TOTP credentials (optional 2FA).
+ *
+ * The TOTP seed is stored ONLY as a KeyProvider AEAD envelope — never
+ * plaintext. Recovery codes live in {@link userTotpRecoveryCodes}.
+ * Non-secret enrollment metadata is mirrored in `users.tfa` JSONB.
+ */
+export const userTotpCredentials = pgTable('lumibase_user_totp_credentials', {
+  /** Owning user; one credential row per user (global identity). */
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** Versioned AES-GCM envelope of the base32 TOTP secret. */
+  secretCiphertext: text('secret_ciphertext').notNull(),
+  /** KEK version active at encrypt time. */
+  secretKeyId: text('secret_key_id').notNull(),
+  digits: integer('digits').default(6).notNull(),
+  periodSeconds: integer('period_seconds').default(30).notNull(),
+  /** Last accepted TOTP time-step (replay guard within the verify window). */
+  lastUsedStep: integer('last_used_step'),
+  enrolledAt: timestamp('enrolled_at', { withTimezone: true }).notNull(),
+  verifiedAt: timestamp('verified_at', { withTimezone: true }),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Single-use TOTP recovery codes for general users (distinct from bootstrap
+ * {@link adminBackupCodes}). Plaintext shown once at enrollment; only PBKDF2
+ * hashes are persisted.
+ */
+export const userTotpRecoveryCodes = pgTable(
+  'lumibase_user_totp_recovery_codes',
+  {
+    id: id(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    codeHash: text('code_hash').notNull(),
+    createdAt: createdAt(),
+    usedAt: timestamp('used_at'),
+    usedFromIp: text('used_from_ip'),
+  },
+  (t) => ({
+    userUnused: index('user_totp_recovery_codes_user_unused_idx')
+      .on(t.userId)
+      .where(sql`${t.usedAt} IS NULL`),
+  }),
+);
+
 export const adminBackupCodes = pgTable(
   'lumibase_admin_backup_codes',
   {

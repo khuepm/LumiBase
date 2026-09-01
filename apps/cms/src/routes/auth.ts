@@ -69,6 +69,8 @@ import type { NotificationDeps } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';
 import { formatSafeError } from '@lumibase/shared/utils';
 import { UserPreferencesUpdateSchema, PasswordSchema } from '@lumibase/shared/schemas';
+import { isUserTotpEnabled } from '../modules/mfa/totp-service';
+import { signMfaChallengeToken } from '../services/auth/mfa-challenge';
 
 /**
  * True for a Postgres unique-constraint violation (SQLSTATE 23505),
@@ -1287,11 +1289,33 @@ authRouter.post('/login', async (c) => {
   }
 
   if (triggered && policy.anomalyAction === 'require_mfa') {
-    // Req 12.4 — 401 MFA_REQUIRED, no JWT issued, no lockout. MFA
-    // module isn't shipped yet (the wizard's StepSecurity disables
-    // this option per Req 6.3), but the route honours the policy
-    // decision if it ever gets set out-of-band so the security
-    // guarantee holds independently of the UI gating.
+    const totpEnabled = await isUserTotpEnabled(db, user.id);
+    if (totpEnabled && audience === TOKEN_AUDIENCE.studio) {
+      await recordAnomalyBlock(db, policy, {
+        userId: user.id,
+        email: emailLower,
+        ip,
+        userAgent,
+        attempt,
+        anomalyScore: anomaly.score,
+        baselineWarmup: anomaly.baselineWarmup,
+        action: 'require_mfa',
+      }, new Date(), notify);
+
+      const challenge = await signMfaChallengeToken(
+        { userId: user.id, siteId, loginAudience: audience },
+        jwtSecret,
+      );
+      return c.json({
+        data: {
+          status: 'mfa_required',
+          challengeToken: challenge.token,
+          expiresIn: challenge.expiresInSeconds,
+        },
+      });
+    }
+
+    // Req 12.4 — 401 MFA_REQUIRED when policy requires MFA but user has no TOTP yet.
     await recordAnomalyBlock(db, policy, {
       userId: user.id,
       email: emailLower,
@@ -1313,6 +1337,20 @@ authRouter.post('/login', async (c) => {
       },
       401,
     );
+  }
+
+  if (audience === TOKEN_AUDIENCE.studio && await isUserTotpEnabled(db, user.id)) {
+    const challenge = await signMfaChallengeToken(
+      { userId: user.id, siteId, loginAudience: audience },
+      jwtSecret,
+    );
+    return c.json({
+      data: {
+        status: 'mfa_required',
+        challengeToken: challenge.token,
+        expiresIn: challenge.expiresInSeconds,
+      },
+    });
   }
 
   // Generate JWT token. The success hook records the attempt and

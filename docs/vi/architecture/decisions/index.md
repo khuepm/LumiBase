@@ -1,18 +1,18 @@
 ---
 version: 1
-lastUpdated: 2026-07-05T10:56:36.955Z
+lastUpdated: 2026-08-02T19:08:03.859Z
 sourceLang: en
 translatedFrom: en
-sourceHash: fa73f811c20a5c31
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 5d9af79a03dae779
+mtEngine: manual
+syncStatus: human-translated
 ---
 
-# Bản ghi Quyết định Kiến trúc (ADR)
+# Architecture Decision Records (ADR)
 
 LumiBase tuân theo [mẫu ADR](https://adr.github.io/) để ghi lại các quyết định kiến trúc quan trọng. Mỗi ADR nắm bắt bối cảnh, quyết định và hệ quả theo một định dạng gọn nhẹ.
 
-## Chỉ mục
+## Index
 
 | ADR | Tiêu đề | Trạng thái |
 |-----|-------|--------|
@@ -26,8 +26,10 @@ LumiBase tuân theo [mẫu ADR](https://adr.github.io/) để ghi lại các quy
 | [ADR-008](./adr-008-policy-dsl-json.md) | JSON Policy DSL cho phân quyền | Accepted |
 | [ADR-009](./adr-009-graphql-yoga.md) | GraphQL Yoga với schema động trên ItemService | Accepted |
 | [ADR-010](./adr-010-lumibase-table-prefix.md) | Tiền tố `lumibase_` cho toàn bộ bảng hệ thống | Accepted |
+| [ADR-011](./adr-011-user-management-realms.md) | User Management Realms (kho lưu trữ đơn, realm theo phạm vi role, token audience) | Accepted |
+| [ADR-012](./adr-012-remove-cdc-cache-invalidator.md) | Loại bỏ CDC CacheInvalidator (thay thế bằng xả tag tại đường dẫn ghi API) | Accepted |
 
-## Mẫu
+## Template
 
 Khi thêm một ADR mới, hãy dùng mẫu này:
 

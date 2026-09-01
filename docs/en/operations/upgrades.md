@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-11T03:49:05.879Z
+version: 2
+lastUpdated: 2026-08-02T17:24:38.531Z
 sourceLang: en
-contentHash: dc7a160b08b512cb
+contentHash: 8bdc8a6b72516bd5
+codeVerified: 2026-08-02T17:24:38.531Z
+codeVerifiedHash: 8bdc8a6b72516bd5
+codeVerifiedClaims: 4
 ---
 
 # Upgrade Operations
@@ -118,10 +121,10 @@ Run migrations deliberately and verify both schema and application behavior:
 
 | From | Path to 1.0.0 | Notes |
 |------|---------------|-------|
-| `0.18.x` – `0.21.x` | Direct. | Table prefix and RBAC model already match 1.0. Run the [migration checklist](#migration-checklist); no manual data step. |
+| `0.18.x` – `0.25.x` | Direct. | Table prefix and RBAC model already match 1.0. Run the [migration checklist](#migration-checklist); no manual data step. Every migration in this range is additive — `CREATE TABLE` or `ADD COLUMN IF NOT EXISTS`, plus one `CHECK` constraint in `0012` (see [rollback](#rollback-from-10)) — with no `DROP` or `RENAME`. |
 | `0.6.x` – `0.17.x` | Direct, **with the RBAC backfill below**. | Schema migrations are cumulative and idempotent. The one manual verification is the role→policy backfill (see [RBAC role→policy backfill](#rbac-rolepolicy-backfill)). |
 | Before `0.17.0` (unprefixed tables) | **Not supported as an in-place upgrade.** | The `0.17.x` table-prefix change is fresh-install-only. Instances created before `0.17.0` must export their data (collections, items, files, roles/policies/permissions, flows, webhooks) and re-import into a fresh `1.0.0` install. There is no forward migration for the unprefixed schema. |
-| Before `0.6.0` | Via an intermediate `0.17.x` – `0.21.x` release first. | Upgrade to a recent `0.x` (which applies the RBAC backfill and any prefix handling), verify, then upgrade to `1.0.0`. Do not skip directly. |
+| Before `0.6.0` | Via an intermediate `0.17.x` – `0.25.x` release first. | Upgrade to a recent `0.x` (which applies the RBAC backfill and any prefix handling), verify, then upgrade to `1.0.0`. Do not skip directly. |
 
 Determine your current version from `/api/v1/system/version` before choosing a row.
 
@@ -159,7 +162,10 @@ Then confirm effective access is unchanged: a legacy admin role is still admin, 
 
 ### Rollback from 1.0
 
-- **Application:** roll back to the previous `0.21.x` deployment per [rollback app](#rollback-app). `1.0.0` adds no destructive schema change over `0.21.x`, so the prior app version remains compatible with the 1.0 database.
+- **Application:** roll back to the previous `0.25.x` deployment per [rollback app](#rollback-app). Every migration from `0.18.x` to `1.0.0` is additive, so the prior app version stays compatible with the 1.0 database — it simply ignores the tables and columns it does not know about.
+- **The two constraints to know about:** migration `0012_public_role_least_privilege` adds `CHECK` constraints — `roles_public_least_privilege` on `lumibase_roles` (`system_key = 'public'` ⇒ `admin_access` and `app_access` both false) and `policies_public_least_privilege` on `lumibase_policies` (`key = 'public'` ⇒ those two plus `enforce_tfa` false). An elevation flag on the anonymous realm is an unauthenticated admin bypass, so it is pinned in the database rather than only in the service layer. They reject writes, they delete nothing, and a rollback has nothing to undo: the public role ships *with* `0.25.0`, so no earlier release created one to violate them. Two consequences worth knowing:
+  - Postgres validates a `CHECK` against existing rows when it is added, so if an operator hand-created a policy keyed `public` with elevated flags before upgrading, the migration **fails** rather than silently relaxing. Clear the flags on that row, then re-run.
+  - A rolled-back app version that tries to grant the public role elevated access gets a constraint violation instead of succeeding. That is the constraint working, not a rollback defect.
 - **RBAC backfill:** it is separately reversible during the compatibility window — delete the `legacy_role_flags_%` policies and their `role_policies` rows (role flags are untouched, so access is preserved). See [§6 Rollback](../features/role-policy-flag-migration.md#6-rollback).
 - **Pre-0.17 re-import path:** there is no rollback to the old unprefixed schema; keep the source instance running read-only until the 1.0 install is verified.
 

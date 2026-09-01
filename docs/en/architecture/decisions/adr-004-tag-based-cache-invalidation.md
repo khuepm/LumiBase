@@ -1,14 +1,17 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T10:56:37.096Z
+version: 2
+lastUpdated: 2026-08-02T19:08:55.472Z
 sourceLang: en
-contentHash: 7dd34abca4670fc2
+contentHash: 9b5057af9419d81a
+codeVerified: 2026-08-02T19:08:55.472Z
+codeVerifiedHash: 9b5057af9419d81a
+codeVerifiedClaims: 2
 ---
 
 # ADR-004: Tag-based Cache Invalidation
 
 **Date:** 2024-04-05
-**Status:** Accepted
+**Status:** Implemented
 
 ## Context
 

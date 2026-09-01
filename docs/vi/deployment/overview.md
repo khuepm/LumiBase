@@ -1,157 +1,79 @@
-# Tổng quan Triển khai
+---
+version: 1
+lastUpdated: 2026-08-02T19:10:07.375Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 36ae5aa938f6c83d
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:10:07.375Z
+codeVerifiedHash: 36ae5aa938f6c83d
+codeVerifiedClaims: 8
+---
 
-LumiBase hỗ trợ hai chế độ triển khai: **Cloudflare Workers** (edge) và **Docker** (tự host). Cả hai chế độ đều dùng chung codebase CMS API và logic nghiệp vụ — chỉ khác nhau ở tầng adapter hạ tầng.
+# Deployment Overview
 
-Nếu muốn tự host trên cloud có sẵn, xem [Google Cloud (single VM)](./google-cloud-vm.md) — cách rẻ nhất để chạy toàn bộ stack Docker trên Google Cloud với Gemini làm LLM provider, vẫn giữ nguyên các background job dài hạn của CMS.
+LumiBase hỗ trợ hai chế độ triển khai từ cùng một codebase CMS:
 
-## Chọn chế độ triển khai
+- **Cloudflare Workers** cho runtime API tại edge.
+- **Docker tự vận hành (self-hosting)** cho các nhóm muốn vận hành toàn bộ stack trong các container.
 
-| Tiêu chí | Cloudflare Workers | Docker (Tự host) |
-|----------|-------------------|---------------------|
-| Độ trễ | Cực thấp (edge, PoPs toàn cầu) | Phụ thuộc vùng/nhà cung cấp |
-| Mở rộng | Tự động, theo request | Thủ công hoặc do nền tảng quản lý |
-| Chi phí | Trả theo request | Compute + storage cố định |
-| Lưu trữ dữ liệu | Vùng Cloudflare | Toàn quyền kiểm soát |
-| Phụ thuộc vendor | Hệ sinh thái Cloudflare | Bất kỳ nền tảng container nào |
-| Phát triển local | Wrangler dev (hạn chế) | Full stack qua Docker Compose |
-| Giám sát | Workers Analytics Engine | Prometheus + Grafana |
-| Tìm kiếm | MeiliSearch Cloud (HTTP) | MeiliSearch tự host |
-| Hàng đợi | Cloudflare Queues | BullMQ (Redis) |
-| Xử lý media | CF Image Resizing | Imgproxy |
+Để tự vận hành trên cloud quản lý, xem [Google Cloud (single VM)](./google-cloud-vm.md) — cách rẻ nhất để chạy toàn bộ stack Docker trên Google Cloud với Gemini làm nhà cung cấp LLM, trong khi vẫn giữ cho các background job dài hạn của CMS hoạt động.
 
-## Cloudflare targets
+Trang web tài liệu công khai là một ứng dụng Vite tĩnh được triển khai riêng biệt trên **Cloudflare Pages**.
+Trang web Marketplace công khai cũng được triển khai trên **Cloudflare Pages** và đọc danh mục marketplace của CMS tại thời điểm build/revalidation runtime.
+**Studio** admin SPA cũng là một ứng dụng Vite tĩnh được triển khai trên **Cloudflare Pages** — xem [Kết nối Studio API](#studio-api-connectivity).
+
+## Studio API connectivity
+
+Studio SPA giao tiếp với CMS qua một URL cơ sở duy nhất được giải quyết bởi `apps/studio/src/lib/api-base.ts` (`getApiBaseUrl()`):
+
+- **Dev / Docker cùng origin (single-origin):** để trống `VITE_API_URL`. Studio sử dụng các request cùng origin — Vite dev server proxy `/api` tới CMS local, và Docker phục vụ Studio từ cùng origin với CMS.
+- **Cloudflare Pages (ví dụ `studio.lumibase.dev`):** SPA tĩnh **không có backend đi kèm**, do đó nó phải gọi CMS cross-origin. Đặt `VITE_API_URL` tại thời điểm build thành origin của CMS (ví dụ `https://api.lumibase.dev`). Workflow release kết nối giá trị này từ biến repository `LUMIBASE_CMS_PRODUCTION_URL`.
+
+Vì Studio sau đó gọi CMS từ một origin khác, CMS phải cho phép origin đó qua `CORS_ALLOWED_ORIGINS` (xem `apps/cms/wrangler.toml`). Môi trường production từ chối `*`, vì vậy hãy liệt kê chính xác origin của Studio. Nếu thiếu `VITE_API_URL` trên một triển khai độc lập, Studio sẽ quay về cùng origin và cổng setup hiển thị **"Couldn't reach the server."**
+
+> Các môi trường **dev / staging / demo** thay vào đó phục vụ Studio và CMS từ **một hostname duy nhất** (`<env>.lumibase.dev`), vì vậy `VITE_API_URL` để trống (cùng origin) và không cần CORS. Xem [Shared-domain environments](./shared-domain-environments.md).
+
+## Cloudflare Targets
 
 | Target | Package | Output | Deploy command |
-|--------|---------|--------|----------------|
+| --- | --- | --- | --- |
 | CMS API Worker | `@lumibase/cms` | Worker bundle | `pnpm --filter @lumibase/cms deploy` |
 | Documentation site | `@lumibase/docs` | `apps/docs/dist` | `pnpm docs:deploy` |
 | Landing site | `@lumibase/landing` | `apps/landing/out` | `pnpm landing:deploy` |
 | Marketplace site | `@lumibase/marketplace` | `apps/marketplace/out` | `pnpm marketplace:deploy` |
 
-Public Marketplace cần các biến build-time:
-
-- `NEXT_PUBLIC_USE_REAL_API=true`
-- `NEXT_PUBLIC_CMS_API_URL=https://<cms-production-host>`
-
-Smoke test sau deploy: `/`, `/extensions/`, `/categories/seo/`, và `/extensions/<slug>/`.
-
-## Kiến trúc: Cloudflare Workers
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Cloudflare Edge                           │
-│                                                                 │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │              LumiBase CMS (Hono.js Worker)                │  │
-│  │                                                           │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐  │  │
-│  │  │   Routes    │  │ Middleware  │  │    Services      │  │  │
-│  │  └──────┬──────┘  └──────┬──────┘  └────────┬─────────┘  │  │
-│  │         └─────────────────┼──────────────────┘            │  │
-│  │                           │                               │  │
-│  │              ┌────────────▼────────────┐                  │  │
-│  │              │  @lumibase/runtime      │                  │  │
-│  │              │  (Cloudflare Adapter)   │                  │  │
-│  │              └────────────┬────────────┘                  │  │
-│  └───────────────────────────┼───────────────────────────────┘  │
-│                              │                                   │
-│  ┌───────────┐  ┌───────────▼───┐  ┌─────────────────────────┐ │
-│  │  KV Cache │  │  Hyperdrive   │  │  R2 Object Storage      │ │
-│  │           │  │  (PG Pooler)  │  │                         │ │
-│  └───────────┘  └───────┬───────┘  └─────────────────────────┘ │
-│                          │                                       │
-└──────────────────────────┼───────────────────────────────────────┘
-                           │
-                  ┌────────▼────────┐
-                  │   PostgreSQL    │
-                  │  (Neon / Supabase)│
-                  └─────────────────┘
-
-Dịch vụ bên ngoài:
-  ┌──────────────────┐  ┌──────────────────┐
-  │ MeiliSearch Cloud│  │ Cloudflare Queues │
-  └──────────────────┘  └──────────────────┘
-```
-
-## Kiến trúc: Docker (Tự host)
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Docker Host / Cluster                         │
-│                                                                   │
-│  ┌───────────────────────────────────────────────────────────┐   │
-│  │              LumiBase CMS (Node.js + Hono)                │   │
-│  │              Port 1989                                    │   │
-│  │                                                           │   │
-│  │              ┌────────────────────────────┐               │   │
-│  │              │  @lumibase/runtime         │               │   │
-│  │              │  (Docker Adapter)          │               │   │
-│  │              └────────────┬───────────────┘               │   │
-│  └───────────────────────────┼───────────────────────────────┘   │
-│                              │                                    │
-│         ┌────────────────────┼────────────────────┐              │
-│         │                    │                    │              │
-│  ┌──────▼──────┐  ┌─────────▼─────────┐  ┌──────▼──────┐       │
-│  │    Redis    │  │    PostgreSQL     │  │    MinIO    │       │
-│  │  Port 6379 │  │    Port 5432      │  │  Port 9000  │       │
-│  │  (Cache +  │  │                   │  │  (S3-compat │       │
-│  │   Queues)  │  │                   │  │   storage)  │       │
-│  └─────────────┘  └───────────────────┘  └─────────────┘       │
-│                                                                   │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │ MeiliSearch │  │  Imgproxy   │  │  Prometheus + Grafana   │  │
-│  │  Port 7700  │  │  Port 8080  │  │  Ports 9090 / 3002     │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
-│                                                                   │
-└───────────────────────────────────────────────────────────────────┘
-```
-
-## Tóm tắt Topology Dịch vụ
-
-### Dịch vụ cốt lõi (Bắt buộc)
-
-| Dịch vụ | Cloudflare | Docker |
-|---------|-----------|--------|
-| CMS API | Worker (edge) | Container Node.js |
-| Cơ sở dữ liệu | PostgreSQL qua Hyperdrive | Container PostgreSQL 16 |
-| Cache | Cloudflare KV | Redis 7 |
-| Lưu trữ đối tượng | Cloudflare R2 | MinIO (tương thích S3) |
-
-### Công cụ tích hợp (Docker)
-
-| Dịch vụ | Port | Mục đích |
-|---------|------|---------|
-| MeiliSearch | 7700 | Tìm kiếm toàn văn |
-| Imgproxy | 8080 | Chuyển đổi hình ảnh |
-| BullMQ (qua Redis) | — | Hàng đợi tác vụ nền |
-| Bull Board | 3001 | Giao diện giám sát hàng đợi |
-
-### Observability Stack (Tùy chọn)
-
-| Dịch vụ | Port | Mục đích |
-|---------|------|---------|
-| Prometheus | 9090 | Thu thập metrics |
-| Grafana | 3002 | Dashboard và trực quan hóa |
-| Loki | 3100 | Tổng hợp log |
-
-## Chọn Runtime
-
-Runtime được xác định bởi biến môi trường `LUMIBASE_RUNTIME`:
+Chạy lệnh build hoặc dry-run trước khi triển khai:
 
 ```bash
-# Cloudflare Workers (mặc định khi deploy qua Wrangler)
-LUMIBASE_RUNTIME=cloudflare
-
-# Docker / tự host (mặc định khi LUMIBASE_RUNTIME không được set trong Node.js)
-LUMIBASE_RUNTIME=docker
+pnpm --filter @lumibase/docs build
+NEXT_PUBLIC_USE_REAL_API=true NEXT_PUBLIC_CMS_API_URL=https://<cms-production-host> pnpm marketplace:build
+pnpm --filter @lumibase/cms build
 ```
 
-Runtime factory (`createRuntime(env)`) khởi tạo bộ adapter phù hợp khi khởi động. Toàn bộ logic nghiệp vụ, routes, và middleware giữ nguyên giữa hai chế độ.
+Các URL smoke test Marketplace sau khi triển khai: `/`, `/extensions/`, `/categories/seo/`, và `/extensions/<slug>/`.
 
-## Bước tiếp theo
+## Required Cloudflare Services
 
-- [Hướng dẫn triển khai Cloudflare](./cloudflare.md) — Deploy lên Cloudflare Workers
-- [Hướng dẫn triển khai Docker](./docker.md) — Deploy với Docker
-- [Phát triển Local](./local-development.md) — Bắt đầu phát triển local với Docker Compose
-- [Biến môi trường](./environment-variables.md) — Tham chiếu cấu hình đầy đủ
-- [Các topology triển khai đa tenant](./multi-tenant-topologies.md) — Bố trí cell, database và domain khi một deployment phục vụ nhiều tenant
+CMS Worker có thể chạy chỉ với các biến môi trường cho môi trường phát triển local, nhưng môi trường production yêu cầu các binding Cloudflare được mô tả trong `apps/cms/wrangler.toml`:
+
+- `HYPERDRIVE` cho việc truy cập PostgreSQL có connection pooling.
+- `CONFIG_CACHE` cho cache schema, quyền và cài đặt dựa trên KV.
+- `MEDIA` cho lưu trữ media R2.
+- `SITE_ROOM` Durable Object cho việc phát tán (fan-out) WebSocket realtime theo từng site.
+- Cron Triggers cho việc dọn dẹp lưu giữ audit/lần thử đăng nhập theo lịch.
+
+Các secret như `JWT_SECRET`, các giá trị Cloudflare Access và chứng thư database phải được đặt bằng Wrangler secrets hoặc các biến secret quản lý qua dashboard, không commit vào repository.
+
+## Recommended Release Flow
+
+1. Cài đặt các phụ thuộc với `pnpm install`.
+2. Chạy `pnpm --filter @lumibase/docs build` cho trang tài liệu.
+3. Chạy `pnpm --filter @lumibase/cms build` để dry-run gói Worker.
+4. Triển khai tài liệu với `pnpm docs:deploy`.
+5. Triển khai CMS Worker với `pnpm --filter @lumibase/cms deploy` sau khi các binding và secret production được cấu hình.
+
+Xem [Cloudflare deployment](./cloudflare.md) để biết các lệnh Worker và Pages chi tiết.
+Xem [Private admin path](./private-admin-path.md) để biết chính sách không chuyển hướng ở production giúp giữ bí mật điểm truy cập Studio.
+Xem [Multi-tenant deployment topologies](./multi-tenant-topologies.md) để biết cách sắp xếp các cell, database và domain khi một bản triển khai phục vụ nhiều tenant.

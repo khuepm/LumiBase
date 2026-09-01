@@ -45,6 +45,40 @@ title: My great doc
 ---
 ```
 
+## Analytics and consent
+
+Traffic is counted by Cloudflare Web Analytics, which is cookieless and always on.
+Google Analytics 4 is optional and consent-gated: set `VITE_GA_ID` at build time to
+offer it, leave it unset and the site ships no tag, no cookie, and no banner.
+
+The rules live in [`packages/analytics-consent`](../../packages/analytics-consent)
+(shared with `apps/landing`) — read its README for the invariants. This app
+contributes:
+
+| File | Role |
+| --- | --- |
+| `src/lib/analytics.ts` | Resolves `VITE_GA_ID` into a validated measurement ID, or `null` |
+| `src/components/analytics/AnalyticsConsent.tsx` | Injects the tag once granted; renders the banner while undecided |
+| `src/components/analytics/CookiePreferences.tsx` | Footer control to see and withdraw the choice |
+
+Two things worth knowing before changing them:
+
+- **Consent is per-origin.** `docs.lumibase.dev` and `lumibase.dev` have separate
+  `localStorage`, so this site asks for itself and needs its own withdrawal
+  control. Do not assume the landing page's banner covered it.
+- **The prerender must stay banner-free.** `useConsent()` reports `'unhydrated'`
+  during SSR so the 296 prerendered pages carry no banner and no tag. Verify with
+  `grep -rl googletagmanager dist/**/*.html` — that must stay empty.
+
+What an unset `VITE_GA_ID` does *not* do is remove the code: Vite still bundles the
+components, so `dist/assets/*.js` contains the string `googletagmanager.com` and the
+banner copy as unreachable code. Nothing renders and no request is made — confirm by
+network log rather than by grepping the bundle.
+
+Behaviour is covered by `src/components/__tests__/analytics-consent.test.tsx`
+(jsdom): undecided asks and loads nothing, a stored decline stays silent, and
+withdrawal brings the banner back.
+
 ## Deploying
 
 The build output (`dist/`) is a fully static site. The repository deploy script publishes it to Cloudflare Pages project `lumibase-docs`, which is intended to serve `docs.lumibase.dev`.

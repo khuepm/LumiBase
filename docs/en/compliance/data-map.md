@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:08:28.393Z
+sourceLang: en
+contentHash: 5bbd5842ee2e602c
+codeVerified: 2026-08-02T19:08:28.393Z
+codeVerifiedHash: 5bbd5842ee2e602c
+codeVerifiedClaims: 12
+---
+
 # Data Map — Personal Data Inventory
 
 > An inventory of where LumiBase stores personal data, to back accurate privacy

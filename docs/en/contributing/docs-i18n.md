@@ -1,22 +1,34 @@
 ---
 title: Docs i18n Sync
 sourceLang: en
-version: 1
-lastUpdated: 2026-07-08T20:22:56.098Z
-contentHash: e8086806e67522bc
+version: 3
+lastUpdated: 2026-08-02T17:29:27.319Z
+contentHash: fe0bd18530a46592
+codeVerified: 2026-08-02T17:29:27.319Z
+codeVerifiedHash: fe0bd18530a46592
+codeVerifiedClaims: 10
 ---
 
 # Documentation i18n Sync (EN ⇄ VI)
 
 LumiBase ships docs in two locales: `docs/en` (canonical) and `docs/vi`. The
 i18n sync tooling under `scripts/docs-i18n/` keeps them aligned, detects when a
-file is written in the wrong language, translates stale or missing targets, and
+file is written in the wrong language, reports which pairs are out of sync, and
 stamps every managed file with a version and update timestamp.
 
-Translation is performed by Claude (the Anthropic Messages API) — there are no
-third-party machine-translation services. Translation runs in CI where the
-`ANTHROPIC_API_KEY` lives as a secret; locally you can run detection (and the
-no-loss preservation step) without any key.
+**Translations are written by hand, not machine-translated.** A person — in
+practice an LLM reading the source document in the editor — writes the target
+side, then `stamp-pair.mjs` records the provenance. This is a deliberate project
+decision (cost, plus reviewable quality over an unsupervised pipeline); it is
+recorded in `docs/.i18n/TASKS.md` §6. There is **no `ANTHROPIC_API_KEY` secret
+in CI and none is wanted**, so nothing in this repository translates
+automatically.
+
+The machine-translation path (`--apply`, Anthropic Messages API) still exists in
+the code for anyone who reverses that decision, but it is unused: without a key
+it now **fails loudly** instead of quietly doing nothing. For a while it did the
+quiet thing, and CI committed "sync en/vi translations" on every docs push while
+translating nothing at all.
 
 ## What it does
 
@@ -28,17 +40,20 @@ no-loss preservation step) without any key.
    actually contains Vietnamese is treated as Vietnamese-authored.
 3. **No-loss preservation.** When an `en` file holds Vietnamese and there is no
    `docs/vi` counterpart, that Vietnamese content is copied into `docs/vi`
-   *before* anything translates over the `en` file. When a Vietnamese `en` file
+   *before* the `en` side is ever rewritten in English. When a Vietnamese `en` file
    conflicts with an existing, different `docs/vi` file, the tooling does **not**
    overwrite anything — it copies the at-risk content to
    `docs/.i18n/preserved/` and flags a conflict for manual review.
-4. **Machine translation.** Stale or missing targets are translated with
-   markdown-safe placeholder protection (code, links, inline code and HTML are
-   never sent to the translator).
+4. **Translation planning.** Stale or missing targets are listed as pending work
+   — the tooling reports *what* needs translating and in which direction; a human
+   writes the text. (The unused `--apply` path would translate with markdown-safe
+   placeholder protection, so code, links, inline code and HTML are never sent to
+   an API.)
 5. **Versioning.** Each written file gets front matter: `version`,
    `lastUpdated`, `sourceLang`, `translatedFrom`, `sourceHash`, `mtEngine`, and
-   `syncStatus` (`machine-translated` or `needs-review`). Re-translation only
-   happens when the source `sourceHash` changes, so output is stable.
+   `syncStatus`. A target is considered stale only when the source `sourceHash`
+   changes, so re-stamping is idempotent and the two locales' version numbers
+   stay comparable.
 6. **Audit trail.** Every run appends to `docs/i18n-sync-log.md` and writes a
    machine-readable `docs/.i18n/last-report.json`.
 
@@ -48,37 +63,82 @@ no-loss preservation step) without any key.
 # Detect only — classify files, write log + report, change no docs.
 pnpm docs:i18n:detect
 
-# Preserve at-risk Vietnamese content + stamp versions, but do not translate
-# (safe to run without an API key).
+# Structural parity of every pair (or one rel). Read-only.
+pnpm docs:i18n:parity
+
+# Preserve at-risk Vietnamese content + stamp versions, but do not translate.
 pnpm docs:i18n:preserve
 
-# Full sync: preserve + translate with Claude + version. Needs ANTHROPIC_API_KEY.
-ANTHROPIC_API_KEY=*** pnpm docs:i18n:sync
+# Not used by this project: needs ANTHROPIC_API_KEY and exits 2 without one.
+pnpm docs:i18n:sync
 ```
+
+Translating a file by hand — the actual workflow — is five steps:
+
+```bash
+# 1. Read docs/<src>/<rel>, write the translation into docs/<tgt>/<rel>.
+# 2. Check the two sides are still the same document.
+pnpm docs:i18n:parity <rel>
+
+# 3. Check the doc's claims against the source tree (mandatory before stamping).
+pnpm docs:i18n:verify <rel>
+
+# 4. Record provenance for both locales (never hand-write this front matter).
+node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> --verified
+
+# 5. Confirm the pair now reads up-to-date, then drop the machine artifacts.
+pnpm docs:i18n:detect
+git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md
+```
+
+Three checkers, three different questions, and the split matters:
+`docs:i18n:detect` asks *same source revision?*; `docs:i18n:parity` asks *is the
+translation the same document?*; `docs:i18n:verify` asks *is what it says still
+true of the code?* A pair can pass any one of them and fail the others.
+
+`stamp-pair.mjs` runs the parity check itself and **refuses to stamp** a pair that
+has drifted — a target still in the source language, dropped sections, translated
+identifiers, broken link targets, a truncated tail. Stamping is what makes a pair
+read "up-to-date" everywhere else, so it is the last point at which a bad
+translation can be stopped, and there is no reviewer standing after it. Use
+`--allow-structure-drift` only for a deliberate divergence, and prefer a
+`<!-- check-parity: allow <check> -->` waiver in the doc so the reason lives next
+to it. `--verified` likewise refuses while any code claim is stale, and refuses
+when a doc makes no testable claim at all — "nothing to check" is not a pass, so
+such a file is stamped without the marker and needs a human read.
+
+Per-file rules, the priority order and the outstanding backlog live in
+`docs/.i18n/TASKS.md`.
 
 Environment variables:
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `ANTHROPIC_API_KEY` | Anthropic API key (required to translate) | — |
+| `ANTHROPIC_API_KEY` | Anthropic API key — only for the unused `--apply` path | — |
 | `ANTHROPIC_MODEL` | Claude model id | `claude-sonnet-4-6` |
 | `ANTHROPIC_BASE_URL` | API base URL (proxy override) | `https://api.anthropic.com` |
 | `ANTHROPIC_MAX_TOKENS` | Max output tokens per request | `8192` |
 | `DOCS_ROOT` | Override docs root (testing/CI) | repo `docs/` |
 
-Without an API key, `--apply` automatically degrades to preservation +
-versioning and records why in the log.
+Without an API key, `--apply` exits `2` and points you at `docs:i18n:detect` /
+`docs:i18n:preserve`. It does not fall back silently.
 
 ## CI
 
 `.github/workflows/docs-i18n-sync.yml` runs on changes under `docs/**` or
 `scripts/docs-i18n/**`:
 
-- **Pull requests:** detect-only. Uploads the report as an artifact; writes
-  nothing.
-- **Push to `main`:** full sync, then commits the result back.
+- **Pull requests:** detect + code-reference + parity checks, all report-only.
+  Uploads the reports as artifacts; writes nothing. Report-only because the
+  existing corpus still carries findings — the gate that bites today is
+  `stamp-pair.mjs`, which no new translation can get past unchecked.
+- **Push to `main`:** preservation + version stamps, committed back. It does
+  **not** translate, and the outstanding-pair count is echoed into the job
+  summary so the backlog stays visible.
 
-Configure `ANTHROPIC_API_KEY` as a repository secret for translation to run.
+No repository secret is involved. Translations land through pull requests, by
+hand, in the same commit as the change that made them necessary — see the
+bilingual-docs rule in `CLAUDE.md`.
 
 ## Front-matter fields
 
@@ -90,8 +150,15 @@ Configure `ANTHROPIC_API_KEY` as a repository secret for translation to run.
 | `translatedFrom` | Source locale a translated file came from |
 | `sourceHash` | Hash of the source body the translation was built from |
 | `contentHash` | Hash of an authored file's own body (change detection) |
-| `mtEngine` | Engine used (`claude`) |
-| `syncStatus` | `machine-translated` or `needs-review` |
+| `mtEngine` | How the translation was produced: `manual` (hand-written, current) or `claude` (legacy `--apply` output) |
+| `syncStatus` | `human-translated` (current), or `machine-translated` / `needs-review` from the legacy path |
+| `codeVerified` | Timestamp at which the doc's code-facing claims were checked |
+| `codeVerifiedHash` | Body hash the check was pinned to — editing the body invalidates the assurance |
+
+`syncStatus`/`sourceHash` answer "do both locales describe the same source
+revision?"; `codeVerified` answers "were this doc's claims about the repository
+checked?". Two separate questions: two translations can agree perfectly and be
+wrong together. A full match needs both markers.
 
 The docs viewer reads `lastUpdated` for the displayed "last modified" date,
 falling back to filesystem mtime when the field is absent.
@@ -104,8 +171,7 @@ falling back to filesystem mtime when the field is absent.
 - The default authoring direction for an in-sync pair is `en → vi`. Files
   authored in Vietnamese under `docs/en` are detected and handled, but routine
   pairs assume English is canonical.
-- Translations are produced by Claude and `needs-review` output should be
-  proofread before release.
-- Each document is translated in a single request; very long docs may hit the
-  `ANTHROPIC_MAX_TOKENS` limit and need a higher value (the run fails loudly
-  rather than writing a truncated file).
+- Translation throughput is human, so a large backlog clears slowly: run
+  `pnpm docs:i18n:detect` for the current count rather than assuming CI caught up.
+- Legacy `machine-translated` pages predate the manual policy and have not all
+  been proofread.

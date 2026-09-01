@@ -1,6 +1,7 @@
 import Redis from 'ioredis';
 import type { RuntimeContext } from '../../interfaces';
 import { RedisCacheProvider } from './cache';
+import { NoOpEdgeCacheProvider } from './edge-cache';
 import { S3StorageProvider } from './storage';
 import { PostgresDatabaseProvider } from './database';
 import { MeiliSearchProvider } from './search';
@@ -8,6 +9,7 @@ import { BullMQProvider } from './queue';
 import { ImgproxyMediaProcessor } from './media';
 import { createDockerKeyProvider } from './keys';
 import { DockerRealtimeProvider, getSharedRealtimeHub } from './realtime';
+import { RedisRateLimiter } from '../redis-rate-limiter';
 
 export {
   DockerRealtimeProvider,
@@ -15,12 +17,14 @@ export {
   getSharedRealtimeHub,
 } from './realtime';
 export { RedisCacheProvider } from './cache';
+export { NoOpEdgeCacheProvider } from './edge-cache';
 export { S3StorageProvider } from './storage';
 export { PostgresDatabaseProvider } from './database';
 export { MeiliSearchProvider } from './search';
 export { BullMQProvider } from './queue';
 export { ImgproxyMediaProcessor } from './media';
 export { createDockerKeyProvider } from './keys';
+export { RedisRateLimiter } from '../redis-rate-limiter';
 
 /**
  * Creates a RuntimeContext configured for Docker/Node.js environments.
@@ -57,6 +61,8 @@ export function createDockerRuntime(env: Record<string, unknown>): RuntimeContex
 
   return {
     cache: new RedisCacheProvider(redis),
+    rateLimiter: new RedisRateLimiter(redis),
+    edgeCache: new NoOpEdgeCacheProvider(),
     storage: new S3StorageProvider({
       endpoint: s3Endpoint,
       accessKeyId: s3AccessKey,

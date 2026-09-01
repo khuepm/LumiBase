@@ -229,7 +229,7 @@ describe('auth/login — no user-enumeration timing parity (Property 8)', () => 
     const svc = new SetupService({
       db,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
     });
     const outcome = await svc.complete(
       {

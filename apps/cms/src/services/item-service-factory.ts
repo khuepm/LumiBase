@@ -109,6 +109,7 @@ export function itemServiceForRequest(
         ? { type: 'user', id: auth.userId }
         : undefined,
     cache: runtime.cache,
+    edgeCache: runtime.edgeCache,
     // Resolved here (not inside SchemaService) so the knob works on Workers too
     // — `process.env` there does not carry wrangler vars (Req 19.5).
     negativeCacheTtl: resolveNegativeTtl(c.env),

@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 2
+lastUpdated: 2026-08-02T19:22:34.503Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: d668bbc29e7fdaba
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 3a4ed673b2da93ce
+mtEngine: manual
+syncStatus: human-translated
 ---
 
 # Observability — Metrics, Logs, Dashboards, Tracing

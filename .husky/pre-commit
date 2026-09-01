@@ -2,4 +2,9 @@
 # (VS Code, GitKraken, etc.) which launches with a minimal PATH.
 export PATH="$HOME/Library/pnpm:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
+# Cheap repo guards first (all well under a second, no build needed) so a
+# mechanical mistake fails here instead of a full CI cycle after push. Same
+# script CI runs, so the two guard sets stay in step.
+pnpm check:all
+
 pnpm test

@@ -1,4 +1,17 @@
-# Lưu trú dữ liệu & Chuyển dữ liệu xuyên biên giới
+---
+version: 1
+lastUpdated: 2026-08-02T19:08:20.200Z
+sourceLang: en
+translatedFrom: en
+sourceHash: b4c3cb49368f85ba
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:08:20.200Z
+codeVerifiedHash: b4c3cb49368f85ba
+codeVerifiedClaims: 4
+---
+
+# Data Residency & Cross-Border Transfers
 
 > Hướng dẫn giữ dữ liệu cá nhân trong khu vực bắt buộc (EU adequacy/SCCs, nội địa
 > hoá theo Nghị định 53/2022 của VN) với mô hình triển khai kép edge/Docker của

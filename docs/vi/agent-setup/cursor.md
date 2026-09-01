@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:25.860Z
+version: 2
+lastUpdated: 2026-08-02T19:13:26.452Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 26c4353b91d32cc8
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: cc662908e0e104bb
+mtEngine: manual
+syncStatus: human-translated
 ---
 
-# Cursor — Thiết lập Agent cho LumiBase
+# Cursor — LumiBase Agent Setup
 
 > **Cursor** là một IDE ưu tiên AI được xây dựng trên VS Code với các chỉnh sửa Composer đa file và background agent. Do Cursor tạo ra.
 >

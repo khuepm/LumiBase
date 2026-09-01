@@ -1,4 +1,17 @@
-# Checklist triển khai
+---
+version: 1
+lastUpdated: 2026-08-02T19:12:32.781Z
+sourceLang: en
+translatedFrom: en
+sourceHash: a5f42d06c14d4be3
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:12:32.781Z
+codeVerifiedHash: a5f42d06c14d4be3
+codeVerifiedClaims: 58
+---
+
+# Implementation Checklist
 
 > Backlog ưu tiên để lấp khoảng trống trong [gap-analysis.md](./gap-analysis.md).
 > Đây là **định hướng**, không phải code — mỗi mục nêu các điểm chạm schema/module để

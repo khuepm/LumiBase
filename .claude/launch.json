@@ -31,6 +31,12 @@
       "runtimeArgs": ["-F", "@lumibase/docs", "dev"],
       "port": 5174,
       "autoPort": true
+    },
+    {
+      "name": "docs-dist",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4312", "--directory", "apps/docs/dist"],
+      "port": 4312
     }
   ]
 }

@@ -1,4 +1,14 @@
-# Việt Nam — PDPD, An ninh mạng & Giấy phép nội dung
+---
+version: 1
+lastUpdated: 2026-08-02T19:09:49.563Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 1efe42fea561c073
+mtEngine: manual
+syncStatus: human-translated
+---
+
+# Vietnam — PDPD, Cybersecurity & Content Licensing
 
 > Nghĩa vụ riêng của Việt Nam: bảo vệ dữ liệu cá nhân, nội địa hoá dữ liệu, và chế độ
 > giấy phép xuất bản nội dung có thể áp dụng cho một CMS dùng để công bố nội dung công

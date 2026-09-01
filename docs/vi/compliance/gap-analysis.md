@@ -1,4 +1,17 @@
-# Phân tích khoảng trống — Quyền ↔ Tính năng LumiBase
+---
+version: 1
+lastUpdated: 2026-08-02T19:10:46.613Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 3f6a0185762a468d
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:10:46.613Z
+codeVerifiedHash: 3f6a0185762a468d
+codeVerifiedClaims: 58
+---
+
+# Gap Analysis — Rights ↔ LumiBase Features
 
 > Ánh xạ mỗi quyền/nghĩa vụ của người dùng vào hiện trạng triển khai của LumiBase,
 > kèm bằng chứng đường dẫn file và phần việc cần làm để lấp.

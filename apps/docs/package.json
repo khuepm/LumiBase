@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/docs",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "private": true,
   "description": "LumiBase Docs Viewer — browse project documentation (React + Vite).",
   "type": "module",
@@ -16,12 +16,13 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
+    "@lumibase/analytics-consent": "workspace:*",
     "@lumibase/shared": "workspace:*",
     "@lumibase/ui": "workspace:*",
-    "@shikijs/rehype": "^4.3.1",
-    "dompurify": "^3.4.12",
+    "@shikijs/rehype": "^4.4.3",
+    "dompurify": "^3.4.14",
     "gray-matter": "^4.0.3",
-    "lucide-react": "^0.452.0",
+    "lucide-react": "^1.34.0",
     "minisearch": "^7.1.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -31,22 +32,22 @@
     "rehype-slug": "^6.0.0",
     "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.0",
-    "shiki": "^1.22.0"
+    "shiki": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
-    "@testing-library/jest-dom": "^6.6.2",
-    "@testing-library/react": "^16.0.1",
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.2.0",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.5.4",
-    "fast-check": "^3.22.0",
-    "jsdom": "^29.1.1",
-    "postcss": "^8.5.24",
+    "fast-check": "^4.9.0",
+    "jsdom": "^30.0.1",
+    "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.6.2",
-    "vite": "^8.1.3",
-    "vitest": "^4.1.10"
+    "vite": "^8.2.0",
+    "vitest": "^4.1.11"
   }
 }

@@ -4,16 +4,18 @@
 
 ## Trạng thái đóng phase
 
-- **Phase P0 (tasks 1–6): đã triển khai + rà DoD 2026-07-05.** typecheck workspace sạch; 1838 test CMS pass (24 test P0.1/P0.2 + 27 test P0.3–P0.6 + count opt-in). Setup Impact Registry dòng #37 = `n/a` (mọi knob là env, không seed/wizard/backfill). Tutorial impact: không đổi contract (delivery chỉ thêm header, list `meta` default giữ nguyên) → không tutorial nào bị ảnh hưởng. CHANGELOG [Unreleased] cập nhật. Còn mở: task 1.3 (edge-cache adapter CF), 2.3 (integration test Postgres thật), 7.1 (k6 baseline — cần môi trường load-test).
+- **Phase 0 (tasks 0.1–0.4): đã hoàn tất + rà DoD 2026-08-02.** Đã thêm `load-deliver.js` (90% Zipf delivery trên 100 slug, 10% item list), `seed.ts` (2 site × 5 collection/site × 100k item/collection ở site chính), chạy smoke/items/realtime/delivery bằng Docker/k6, và lưu artifact + cấu hình phần cứng tại `baseline/2026-08-02/`. Roadmap §2 có p50/p95/p99 + RPS thực cho items list/detail/deliver. Setup Impact Registry dòng #37 = `n/a`; không có migration, seed setup, settings key, policy/grant hay wizard step trong production. `pnpm typecheck`, `pnpm test`, và k6 script inspection pass. Dataset và seed đều scope rõ `site_id`; manual delivery smoke với cùng slug trên hai site trả payload riêng (site chính có sections/items, site phụ không có items), nhưng chưa thêm một automated two-site isolation test mới — đây vẫn là gate bắt buộc trước khi đóng các phase cache tiếp theo. Phase 0 mở khóa việc re-run P0 ở task 7.1; không đồng nghĩa P0 đã đóng.
+- **Phase P0 (tasks 1–6): đã triển khai + rà DoD 2026-07-05.** typecheck workspace sạch; 1838 test CMS pass (24 test P0.1/P0.2 + 27 test P0.3–P0.6 + count opt-in). Setup Impact Registry dòng #37 = `n/a` (mọi knob là env, không seed/wizard/backfill). Tutorial impact: không đổi contract (delivery chỉ thêm header, list `meta` default giữ nguyên) → không tutorial nào bị ảnh hưởng. CHANGELOG [Unreleased] cập nhật. Còn mở: task 1.3 (edge-cache adapter CF), 2.3 (integration test Postgres thật), 7.1 (k6 re-run sau P0).
 - **Bổ sung Req 19 / tasks 22.x (cache penetration): follow-up DoD 2026-08-01.** k6 `load-penetration.js` trên docker postgres+redis: **DB-query-per-404 = 0.0308** (≤ 0.05) → điền roadmap §2; Grafana panel negative hits/writes; §21.6 giữ `LUMIBASE_DELIVER_RATE_LIMIT=1200`; §21.7 CHỐT (KV `get` → `null` on miss; `unavailable` chủ yếu Docker). Pages `forgetNegative` **deferred** (B16 — chưa có pages CRUD).
-- Phase P1 (tasks 8–15), P2: chưa bắt đầu (22.3 đã ship phần interface âm tối thiểu mà không chờ đủ task 8 tag-based).
+- **Phase P1 (tasks 8–15): đóng code 2026-08-02.** Cache Provider v2 + tag purge, content invalidation/revalidation, SWR/single-flight, middleware consolidation, async audit, distributed rate limiter, cache observability, penetration defence (22.x). DoD 2b: two-site tests (P6, P20), Multi-tenancy mục trong `docs/en/features/caching.md`. Setup Impact #93 + #94 = `n/a`. DoD §2b evolution: dòng checklist tag-purge + test stale **accepted** (`.kiro/steering/definition-of-done.md` §2b, 2026-08-02). k6 re-run (7.1/15.1): **pending_env** — không đo origin offload trong agent.
+- **Phase P2 (tasks 16–21): đóng code 2026-08-02.** Worker role + leader lock, flow/AI async (202 + poll), DB indexes migration `0013`, transactional writes, CDC CacheInvalidator removed (ADR-012), CI perf-k6 workflow. Task 18.2 EXPLAIN 100k **deferred** (index columns match design; no measured EXPLAIN in CI). Programme closeout (21.x): roadmap §2 điền số thật + `pending_env` footnote; Registry programme row #95; CHANGELOG programme summary; tutorial flow 202-contract — **no tutorial pins flows run endpoint** (rà 2026-08-02, additive async path only when queue configured).
 
 ## DoD §1 — Code & test
 
 | Mục DoD | Hàng rào trong spec |
 |---|---|
 | `pnpm typecheck` + `pnpm test` pass | Điều kiện đóng mọi task; ghi trong tasks 7.2 / 15.2 / 21.2 |
-| Unit test cho logic chính | Properties P1–P16 (design §13.4) — mỗi task implement gắn ít nhất một property |
+| Unit test cho logic chính | Properties P1–P20 (design §13.4) — mỗi task implement gắn ít nhất một property |
 | Non-negotiable rules | Rule #1: `flow_runs` dùng nanoid, audit giữ uuidv7 (design §16.1, §7). Rule #2: xem DoD §2b bên dưới. Rule #3: edge-cache, rate-limiter, SWR helper đều đặt trong `packages/runtime` sau abstraction — route/service không import binding (design §3.1, §5.2, §8). Rule #4: HITL không đổi khi flow/AI chạy async — Req 15.6 + test approvals. Rule #5: mọi endpoint mới theo envelope `{data}/{errors}` — design §15 |
 
 ## DoD §2 — Setup impact
@@ -21,9 +23,9 @@
 Đã trả lời 6 câu hỏi registry trong `requirements.md` mục "Setup impact". Kết luận sơ bộ:
 
 - (1)–(5): **không** — không seed, không settings key (toàn bộ knob là env, design §19), không policy/grant DB, không bước wizard, không capability flag.
-- (6) backfill: **có một phần** — migration index Req 16 cần chạy trên instance cũ; idempotent (`CREATE INDEX CONCURRENTLY IF NOT EXISTS`), upgrade note trong CHANGELOG.
+- (6) backfill: **có một phần** — migration index Req 16 + migration `0013` flow-run history; idempotent (`CREATE INDEX CONCURRENTLY IF NOT EXISTS` / additive columns); upgrade note trong CHANGELOG + `docs/en/deployment/performance.md`.
 
-**Hành động khi merge:** thêm dòng vào Registry (`admin-setup-wizard/setup-impact.md`) — dự kiến `n/a` kèm ghi chú migration index và ngày rà soát. KHÔNG được bỏ qua dù kết quả là n/a (tasks 7.2, 15.2, 21.2).
+**Hành động khi merge:** Registry rows #37, #93, #94, **#95 (programme total)** — tất cả `n/a` kèm ghi chú migration `0013` + items indexes khi cần. KHÔNG được bỏ qua dù kết quả là n/a (tasks 7.2, 15.2, 21.2).
 
 ## DoD §2b — Multi-tenant (BẮT BUỘC — chương trình này đụng cache, queue, lock, rate limit)
 
@@ -37,9 +39,10 @@
 | Định danh/secret shared không lộ dữ liệu tenant | Purge endpoint ép namespace site (design §15.1); 404 đồng nhất cho cross-site flow run (design §15.3) |
 | Two-site smoke test | Property P6 (purge isolation) + **P20** (tombstone isolation: cùng slug ở hai site không lẫn; request có Authorization không nhận tombstone) + mở rộng k6 `cross-site-leak.js`; bắt buộc trước khi đóng mỗi phase (design §17) |
 | Background/cron/queue context | Worker resolve `siteId` từ payload (Zod schema payload có siteId required), KHÔNG từ request context; cron job fan-out theo site từ DB (design §17, §10.2) |
-| Tài liệu Multi-tenancy trong docs feature | Task bổ sung khi ship P1: mục Multi-tenancy trong `docs/en/features/caching.md` (mẫu `push-notifications.md`) |
+| Tài liệu Multi-tenancy trong docs feature | **Done:** mục Multi-tenancy trong `docs/en/features/caching.md` (2026-08-02) |
+| Tag-purge + test stale (DoD evolution) | **Accepted 2026-08-02:** dòng checklist §2b trong `.kiro/steering/definition-of-done.md` + blockquote invalidate-dead-code |
 
-**Phát hiện tồn đọng từ audit (phải xử lý trong chương trình):** CDC `CacheInvalidator` hiện có key KHÔNG chứa siteId (`config:${table}:${recordId}`) — vi phạm 2b nếu được bật. Req 17 chốt wire-có-siteId hoặc xoá; không có phương án giữ nguyên.
+**Phát hiện tồn đọng từ audit (phải xử lý trong chương trình):** CDC `CacheInvalidator` hiện có key KHÔNG chứa siteId (`config:${table}:${recordId}`) — **resolved:** removed (task 19, ADR-012).
 
 ## DoD §2c — Route-guard security
 
@@ -62,7 +65,7 @@
 |---|---|---|
 | `docs/en/api/hono-api-spec.md` | P0.1, P0.5, P1 (purge), P2 (flow runs) | Header caching, param `meta`, endpoint mới |
 | `docs/en/data-model.md` | P2 | Bảng `flow_runs`, index mới trên items |
-| ADR-004 | P1 (task 8.7) | Đổi trạng thái sang implemented, khớp code 100% — xoá mâu thuẫn doc-vs-code hiện tại |
+| ADR-004 | P1 (task 8.7) | **Implemented** — khớp code (tag index, invalidateByTag, purge API, write-path callers task 9) |
 | `docs/en/deployment/docker.md` + `DEPLOYMENT-CHECKLIST.md` | P0.6, P2 (task 16.3) | Knob proxy, role split, thay khuyến nghị `--scale cms=3` không an toàn |
 | `docs/en/deployment/performance.md` (mới) | P2 (task 18.6) | Hướng dẫn operator tạo expression index cho field JSONB nóng |
 | CHANGELOG | mỗi phase | Entry + upgrade steps (đặc biệt `CREATE INDEX CONCURRENTLY`) |
@@ -75,7 +78,7 @@ Rà theo nguyên tắc "pin theo version tối thiểu":
 
 - **Req 5 (`meta` param):** default giữ `total_count` → response shape hiện tại không đổi → tutorial hiện có KHÔNG bị ảnh hưởng. Nếu tutorial nào sau này dùng `meta=none` thì là additive.
 - **Req 1 (headers):** thêm header response, không đổi body/contract → không ảnh hưởng.
-- **Req 15 (flow async):** `POST /flows/:id/run` đổi response từ 200-kết-quả sang 202-runId **khi có queue** — ĐÂY LÀ THAY ĐỔI CONTRACT. Khi ship P2: rà mục Compatibility của tutorial nào đụng flows; nếu có → cập nhật đúng tutorial đó + bump bảng version (dòng mới trên cùng), cập nhật `verified_on`/`applies_to_min`. Ghi kết luận rà soát vào PR.
+- **Req 15 (flow async):** `POST /flows/:id/run` đổi response từ 200-kết-quả sang 202-runId **khi có queue** — ĐÂY LÀ THAY ĐỔI CONTRACT. **Rà soát closeout 2026-08-02:** không tutorial nào pin endpoint `POST /flows/:id/run` — sync fallback vẫn 200 khi không có queue. Khi ship: tutorial đụng flows cần bump version + ghi Compatibility.
 - **Req 12 (rate limit):** default 600/phút đủ nới cho tutorial; ghi chú trong docs, không đổi contract.
 - Các Req còn lại: nội bộ, không đụng contract tutorial.
 
@@ -84,5 +87,5 @@ Rà theo nguyên tắc "pin theo version tối thiểu":
 - **Bug fix — chống tái diễn cả class?** Có hai class trong chương trình này:
   1. *"Viết invalidation nhưng quên gọi"* (PermissionService.invalidate dead code, CDC invalidator unwired): cơ giới hóa bằng integration test hành vi (P9 — thu hồi quyền có hiệu lực ngay; P6 — mutation purge đúng tag), không chỉ unit test hàm invalidate. Test hành vi sẽ fail nếu ai đó tháo lời gọi.
   2. *"Khoá hạ tầng thiếu tiền tố tenant"* (CDC key không siteId): DoD 2b đã có dòng checklist; chương trình này **cơ giới hóa** nó bằng tripwire P4 (source-scan tag literal) — đúng tinh thần DoD §6 "ưu tiên cơ giới hóa, rồi mới tới checklist".
-- **Feature — failure-mode mới chưa DoD nào phủ?** Có: từ P1, hệ thống có **cache dữ liệu tenant với invalidation chủ động** — một class lỗi mới là "thêm đường ghi mới nhưng quên purge tag". Đề xuất khi đóng P1 (task 15.2): thêm vào DoD 2b một dòng: *"Feature có ghi dữ liệu được cache theo tag không? → phải gọi purge tag tương ứng + test hành vi stale"*, kèm blockquote dẫn sự cố PermissionService.invalidate dead code. Cập nhật DoD trong CÙNG PR đóng P1, ghi CHANGELOG.
+- **Feature — failure-mode mới chưa DoD nào phủ?** **Accepted 2026-08-02:** dòng checklist §2b *"ghi dữ liệu được cache theo tag → phải purge + test stale"* + blockquote invalidate-dead-code đã merge vào `.kiro/steering/definition-of-done.md` §2b.
 - Nếu maintainer thấy class lỗi đã đủ hàng rào → ghi một dòng lý do trong PR description (theo đúng lối thoát DoD §6 cho phép).

@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:03:22.000Z
+version: 2
+lastUpdated: 2026-08-02T19:13:06.930Z
 sourceLang: vi
-contentHash: eefbd2c6ae81722e
+contentHash: fc3ffd93cb612901
 ---
 
 # LumiBase Documentation
@@ -17,17 +17,17 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 
 - [getting-started.md](./getting-started.md) — Khởi tạo dự án LumiBase mới bằng `npm create lumibase@latest` (CLI `create-lumibase`), từ thư mục trống đến server chạy được (Docker hoặc Cloudflare Workers).
 
+## Tutorials (hướng dẫn thực hành)
+
+- [tutorials/index.md](./tutorials/index.md) — Danh mục các tutorial end-to-end cho người mới.
+- [tutorials/nextjs-quickstart.md](./tutorials/nextjs-quickstart.md) — **Hiển thị nội dung LumiBase trên app Next.js**: chạy CMS local, tạo collection `posts`, rồi fetch & render bằng `fetch` thuần hoặc `@lumibase/sdk`.
+
 ## Agent Setup (cho AI agent)
 
 - [agent-setup/index.md](./agent-setup/index.md) — Trang tổng hợp thiết lập AI agent cho LumiBase.
 - [agent-setup/prompt.md](./agent-setup/prompt.md) — Hướng dẫn máy đọc được (machine-readable), agent fetch và execute trực tiếp.
 - [agent-setup/claude-code.md](./agent-setup/claude-code.md) · [cursor.md](./agent-setup/cursor.md) · [github-copilot.md](./agent-setup/github-copilot.md) · [codex.md](./agent-setup/codex.md) · [windsurf.md](./agent-setup/windsurf.md) — Hướng dẫn từng agent.
 - [llms.txt](../llms.txt) — Index toàn bộ docs cho LLM. [en/llms.txt](./llms.txt) — Index English docs.
-
-## Tutorials (hướng dẫn thực hành)
-
-- [tutorials/index.md](./tutorials/index.md) — Danh mục các tutorial end-to-end cho người mới.
-- [tutorials/nextjs-quickstart.md](./tutorials/nextjs-quickstart.md) — **Hiển thị nội dung LumiBase trên app Next.js**: chạy CMS local, tạo collection `posts`, rồi fetch & render bằng `fetch` thuần hoặc `@lumibase/sdk`.
 
 ## Cấu trúc tài liệu
 
@@ -44,8 +44,8 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [collections-builder.md](./features/collections-builder.md) — No-code Collection Builder.
   - [field-types-and-config.md](./features/field-types-and-config.md) — Hệ thống field types & interface/display config.
   - [permissions-rbac.md](./features/permissions-rbac.md) — Roles, Policies, Permissions tới field (JSON rule engine).
-  - [access-manifest-v1.md](./features/access-manifest-v1.md) — JSON schema contract `lumibase.access@v1` for access import/export.
-  - [system-collections-access.md](./features/system-collections-access.md) — System/sensitive collection grouping for seeding and Permission Builder.
+  - [access-manifest-v1.md](./features/access-manifest-v1.md) — JSON schema contract `lumibase.access@v1` cho access import/export.
+  - [system-collections-access.md](./features/system-collections-access.md) — Gom nhóm system/sensitive collection cho seed và Permission Builder.
   - [raw-data-editing.md](./features/raw-data-editing.md) — Raw editor cho mọi field.
   - [user-management.md](./features/user-management.md) — Quản lý user, invitation, SSO/Logto.
   - [extensions-system.md](./features/extensions-system.md) — SDK extension + phân quyền sandbox.
@@ -63,7 +63,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [.kiro/specs/content-os/tasks.md](../../.kiro/specs/content-os/tasks.md) — 20 nhóm task theo module A–E.
 - **Tính năng nâng cao (POST-GA / Dual-runtime)** (`features/`)
   - [ai-copilot.md](./features/ai-copilot.md) — AI Chat + Human-in-the-Loop approvals (Studio Copilot).
-  - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, and app generation governance.
+  - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, và quản trị sinh ứng dụng.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — Lớp `@lumibase/runtime` cho phép chạy trên Cloudflare và Docker.
   - [flows-automation.md](./features/flows-automation.md) — Flows / Operations engine (workflow automation).
   - [marketplace.md](./features/marketplace.md) — Marketplace extensions có ký số (signed bundles).
@@ -72,6 +72,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [translation-memory.md](./features/translation-memory.md) — Translation Memory + glossary + MT providers.
   - [materialized-collections.md](./features/materialized-collections.md) — Materialized read tables cho hot path.
   - [firebase-sync.md](./features/firebase-sync.md) — Sync content (`items`) sang Firebase Firestore/RTDB theo thời gian thực.
+  - [deployment-integrations.md](./features/deployment-integrations.md) — Kích hoạt, giám sát và debug các bản triển khai Vercel/Netlify/HTTP từ Studio.
   - [observability.md](./features/observability.md) — Metrics, logs, dashboards (Prometheus/Grafana/Loki).
   - [ai-first-specification.md](./features/ai-first-specification.md) — Đặc tả gốc cho AI agent triển khai (lịch sử).
 - **ClickHouse CDC** (`cdc/`)
@@ -88,8 +89,8 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **API**
   - [api/hono-api-spec.md](./api/hono-api-spec.md) — REST/WS endpoints chuẩn hoá với đầy đủ request/response examples.
 - **UI Studio**
-  - [ui/README.md](../ui/README.md) — Spec for the redesigned LumiBase Studio and detailed screen specifications.
-  - [en/ui/studio-ui-spec.md](./ui/studio-ui-spec.md) — Original page structure, modules, layouts, components, and state.
+  - [ui/README.md](../ui/README.md) — Spec cho LumiBase Studio tái thiết kế và đặc tả màn hình chi tiết.
+  - [en/ui/studio-ui-spec.md](./ui/studio-ui-spec.md) — Cấu trúc trang ban đầu, module, layout, component và state.
 - **Triển khai** (`deployment/`)
   - [deployment/overview.md](./deployment/overview.md) — Tổng quan các target Cloudflare Workers, Cloudflare Pages và Docker.
   - [deployment/cloudflare.md](./deployment/cloudflare.md) — Lệnh build/deploy CMS Worker và docs Pages.
@@ -99,7 +100,22 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [deployment/environment-variables.md](./deployment/environment-variables.md) — Biến môi trường và bindings.
   - [deployment/local-development.md](./deployment/local-development.md) — Quy trình local dev và kiểm tra trước deploy.
 - **Operations** (`operations/`)
-  - [operations/upgrades.md](./operations/upgrades.md) — Fixed-version upgrade policy, Cloudflare/Docker flows, backup, migrations, and rollback limits.
+  - [operations/upgrades.md](./operations/upgrades.md) — Chính sách nâng cấp phiên bản cố định, Cloudflare/Docker flow, backup, migration và giới hạn rollback.
+  - [operations/encryption-keys.md](./operations/encryption-keys.md) — `ENCRYPTION_KEY` bảo vệ những gì, rotate re-wrap được gì và không được gì, xử lý khi mất hoặc lộ khoá.
+- **Security** (`security/`)
+  - [security/anti-abuse.md](./security/anti-abuse.md) — Cơ chế chống lạm dụng & thực hành tốt nhất: danh mục phòng thủ nhiều lớp + các khoảng trống đã biết.
+  - [security/route-guards.md](./security/route-guards.md) — Danh mục guard cho route / control-plane.
+  - [security/runtime-security-guards-plan.md](./security/runtime-security-guards-plan.md) — Nền tảng bảo mật runtime: trách nhiệm guard và điểm gắn pipeline.
+  - [security/cwe-top-100-audit.md](./security/cwe-top-100-audit.md) — Audit bảo mật theo ánh xạ CWE.
+  - [security/idor-testing.md](./security/idor-testing.md) — Hướng dẫn kiểm thử xuyên tenant (IDOR).
+  - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — Xác thực nhà phát hành JWT bên ngoài.
+  - [security/user-management.md](./security/user-management.md) — Quản lý người dùng & auth realms (ADR-010).
+  - [security/dependency-overrides.md](./security/dependency-overrides.md) — Thắt chặt chuỗi cung ứng / ghi đè dependency.
+- **Compliance & Quyền của người dùng** (`compliance/`)
+  - [compliance/README.md](./compliance/README.md) — Tổng quan + ma trận quyền × thị trường (EU/US/VN, Google/Apple) ánh xạ vào LumiBase. **Không phải tư vấn pháp lý.**
+  - [compliance/user-rights-catalog.md](./compliance/user-rights-catalog.md) — Danh mục dễ hiểu của từng quyền (quyền được lãng quên, truy cập, di chuyển, đồng ý, huỷ đăng ký, xoá tài khoản…).
+  - Theo thị trường: [EU GDPR/ePrivacy](./compliance/market-eu-gdpr.md) · [US CCPA/CPRA & CAN-SPAM](./compliance/market-us.md) · [Việt Nam PDPD & giấy phép nội dung](./compliance/market-vietnam.md) · [Chính sách store Google & Apple](./compliance/provider-google-apple.md).
+  - [compliance/gap-analysis.md](./compliance/gap-analysis.md) — Ánh xạ Quyền ↔ tính năng LumiBase (✅/⚠️/❌) + [implementation-checklist.md](./compliance/implementation-checklist.md).
 - **Đóng góp** (`contributing/`)
   - [contributing/index.md](./contributing/index.md) — Setup, branching, commit conventions, PR checklist.
   - [contributing/code-style.md](./contributing/code-style.md) — TypeScript, naming, service patterns.
