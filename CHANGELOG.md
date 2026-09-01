@@ -11,6 +11,26 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
+- **`@lumibase/contracts` is published, replacing the private
+  `@lumibase/shared`.** The Zod schemas, shared types, policy DSL and field DSL
+  were always the contract between the API, Studio, the SDK and any external
+  tool — but they lived in a `private: true` package, so nobody outside the
+  monorepo could depend on the same definitions and had to restate them. The
+  package moves to `packages/contracts`, drops `private`, and ships a `tsup`
+  build with subpath entries (`/schemas`, `/policy`, `/field`, `/extensions`,
+  `/version`, `/utils`) so a consumer importing one schema does not pull the
+  whole surface. As with `@lumibase/sdk`, `exports` points at `src` for the
+  workspace and `publishConfig` redirects to `dist` at publish time.
+  **No public contract changed** — `@lumibase/shared` was private, so it had no
+  external consumers and nothing to break. In-repo imports move to
+  `@lumibase/contracts`; there is no migration and no data change.
+- **The existing public packages have a usable npm page.** `@lumibase/sdk`,
+  `@lumibase/extension-sdk` and `@lumibase/mcp-server` gain a `README.md`,
+  `homepage`, `bugs` and `keywords`, and `create-lumibase` gains the same links.
+  An empty manifest renders an empty npm page, which is where installs are won
+  or lost. `docs/{en,vi}/release/npm-publishing.md` now lists all six public
+  packages: the allowlist had never mentioned `@lumibase/mcp-server`, which has
+  been public since well before this change.
 - **`lumibase` CLI (`packages/cli`).** The unscoped npm name now carries a real
   dev tool: `lumibase init` (delegates to `create-lumibase`, so the scaffold has
   one implementation), `lumibase types` (generates `.d.ts` from
@@ -1367,7 +1387,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   media uploads); the app also rejects oversized JSON bodies with `413`
   (`LUMIBASE_MAX_JSON_BODY`, default 1 MiB) as defense-in-depth.
 - **Image-transform presets.** Shared `TransformDsl` contract in
-  `@lumibase/contracts`, a `lumibase_transform_presets` table, site-scoped
+  `@lumibase/shared`, a `lumibase_transform_presets` table, site-scoped
   `/api/v1/transform-presets` CRUD (media-permission gated), on-the-fly
   delivery transform via `GET /media/:key?preset=|?width=&…` (302 to the
   runtime image URL; no-param path unchanged), and an SDK `mediaUrl` builder.

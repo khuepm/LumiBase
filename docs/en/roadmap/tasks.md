@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:13:36.000Z
+version: 2
+lastUpdated: 2026-09-01T19:24:38.140Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 75a34bb34c05772c
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 6098c0e82c5fc62c
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-01T19:24:38.140Z
+codeVerifiedHash: 6098c0e82c5fc62c
+codeVerifiedClaims: 46
 ---
 
 # Roadmap & Task Breakdown

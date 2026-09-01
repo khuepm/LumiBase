@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-07-07T12:01:03.930Z
+version: 2
+lastUpdated: 2026-09-01T19:25:54.674Z
 sourceLang: vi
-contentHash: da33d4283b788ba9
-codeVerified: 2026-07-27T23:52:33.645Z
-codeVerifiedHash: da33d4283b788ba9
+contentHash: 17fd5198b3a06b2c
+codeVerified: 2026-09-01T19:25:54.674Z
+codeVerifiedHash: 17fd5198b3a06b2c
 codeVerifiedClaims: 20
 ---
 

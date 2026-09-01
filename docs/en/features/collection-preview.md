@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-07-27T23:52:33.645Z
+version: 2
+lastUpdated: 2026-09-01T19:25:54.674Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: da33d4283b788ba9
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-27T23:52:33.645Z
-codeVerifiedHash: da33d4283b788ba9
+sourceHash: 17fd5198b3a06b2c
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-01T19:25:54.674Z
+codeVerifiedHash: 17fd5198b3a06b2c
 codeVerifiedClaims: 20
 ---
 

@@ -2,6 +2,44 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
+## 2026-09-01T19:26:04.697Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 148
+
+Summary — up-to-date: 148, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-09-01T19:03:19.847Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 148
+
+Summary — up-to-date: 131, translated: 0, preserved: 0, conflicts: 0, planned: 17
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `README.md` | vi → en | source changed since last sync |
+| `agent-setup/cursor.md` | en → vi | source changed since last sync |
+| `agent-setup/windsurf.md` | en → vi | source changed since last sync |
+| `api/hono-api-spec.md` | en → vi | source changed since last sync |
+| `architecture/decisions/adr-005-hono-over-express.md` | en → vi | source changed since last sync |
+| `architecture/realtime-websocket-implementation.md` | en → vi | source changed since last sync |
+| `compliance/gap-analysis.md` | en → vi | source changed since last sync |
+| `compliance/implementation-checklist.md` | en → vi | source changed since last sync |
+| `contributing/code-style.md` | en → vi | source changed since last sync |
+| `contributing/testing.md` | en → vi | source changed since last sync |
+| `features/cdc-change-feed.md` | en → vi | source changed since last sync |
+| `features/collection-preview.md` | vi → en | source changed since last sync |
+| `release/npm-publishing.md` | vi → en | source changed since last sync |
+| `roadmap/tasks.md` | vi → en | source changed since last sync |
+| `security/cwe-top-100-audit.md` | en → vi | source changed since last sync |
+| `security/owasp-api-top-10-audit.md` | en → vi | source changed since last sync |
+| `security/runtime-security-guards-plan.md` | en → vi | source changed since last sync |
+
+---
+
 ## 2026-09-01T01:16:53.660Z — mode `preserve-only` (effective `preserve-only`)
 
 Engine: `claude` · API key: absent · files scanned: 148

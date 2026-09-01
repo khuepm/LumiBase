@@ -1,9 +1,9 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:12:50.738Z
+version: 3
+lastUpdated: 2026-09-01T19:25:54.624Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 9ec0cbf5e5010696
+sourceHash: 86d3fe673e599c75
 mtEngine: manual
 syncStatus: human-translated
 ---

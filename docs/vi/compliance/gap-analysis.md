@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:10:46.613Z
+version: 2
+lastUpdated: 2026-09-01T19:24:39.765Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3f6a0185762a468d
+sourceHash: 1f15fcdd2bd8aaf8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:10:46.613Z
-codeVerifiedHash: 3f6a0185762a468d
+codeVerified: 2026-09-01T19:24:39.765Z
+codeVerifiedHash: 1f15fcdd2bd8aaf8
 codeVerifiedClaims: 58
 ---
 

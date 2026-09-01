@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 2
-lastUpdated: 2026-08-30T09:36:09.209Z
+version: 3
+lastUpdated: 2026-09-01T19:24:38.846Z
 sourceLang: en
 translatedFrom: en
-sourceHash: aeb93d6616d2f86b
+sourceHash: f0c3698b7ea88443
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T09:36:09.209Z
-codeVerifiedHash: aeb93d6616d2f86b
+codeVerified: 2026-09-01T19:24:38.846Z
+codeVerifiedHash: f0c3698b7ea88443
 codeVerifiedClaims: 374
 ---
 

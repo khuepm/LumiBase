@@ -1,11 +1,14 @@
 ---
-version: 3
-lastUpdated: 2026-08-02T19:13:06.930Z
+version: 4
+lastUpdated: 2026-09-01T19:24:37.025Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: fc3ffd93cb612901
+sourceHash: 35c9bb80abddd0e4
 mtEngine: manual
 syncStatus: human-translated
+codeVerified: 2026-09-01T19:24:37.025Z
+codeVerifiedHash: 35c9bb80abddd0e4
+codeVerifiedClaims: 4
 ---
 
 # LumiBase Documentation
