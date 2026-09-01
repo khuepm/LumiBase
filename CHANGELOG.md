@@ -244,6 +244,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   diff. The suite now configures `asyncUtilTimeout: 5000`; async utilities
   still resolve as soon as the assertion passes, so fast machines are
   unaffected.
+- **The k6 `detail_throughput` error-rate threshold could not fail.** The
+  scenario set `tags: { scenario: 'detail' }`, which overrides the tag k6
+  applies automatically from the scenario name, so the
+  `http_req_failed{scenario:detail_throughput}` sub-metric the threshold is
+  written against collected no samples at all — the same shape as the
+  `perf-k6.yml` breakage above, a guard that looks present and can never fire.
+  Dropping the override restores it: the committed Phase 0 baseline, produced
+  without the tag, records 1221 samples on that sub-metric. The `list` and
+  `create` scenarios had the same override and were already corrected when
+  their thresholds were renamed to the real scenario names.
 
 ## [0.26.0] - 2026-08-24
 
