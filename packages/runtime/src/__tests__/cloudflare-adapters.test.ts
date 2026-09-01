@@ -394,11 +394,51 @@ describe("CloudflareSearchProvider — host normalization", () => {
     expect(hostOf("https://h.example.com/base/")).toBe("https://h.example.com/base");
   });
 
-  it("handles a pathological all-slashes / long input in linear time", () => {
-    // A backtracking `/\/+$/` would stall here; the linear scan returns fast.
-    const start = performance.now();
+  it("normalizes a long all-slashes tail correctly", () => {
     expect(hostOf("/".repeat(100_000))).toBe("");
     expect(hostOf("https://h" + "/".repeat(100_000))).toBe("https://h");
-    expect(performance.now() - start).toBeLessThan(100);
+  });
+
+  // The ReDoS guard. Two things were wrong with the earlier version of this
+  // test, and both matter:
+  //
+  //  1. It timed inputs ending in slashes. `/\/+$/` matches those greedily at
+  //     the anchor and never backtracks — measured 0.4ms against the very
+  //     input the test used, *faster* than the linear scan it was defending.
+  //     So the test would have passed with the vulnerable regex in place.
+  //     Catastrophic backtracking needs a non-slash character AFTER the run,
+  //     so the engine retries the whole run from every offset.
+  //  2. It asserted an absolute `< 100ms`, which the linear scan itself can
+  //     exceed on a loaded machine (observed 133ms in CI) — flaky in the one
+  //     direction that costs a CI cycle, blind in the direction that matters.
+  //
+  // The assertion is now relative: normalizing an adversarial host must not
+  // cost dramatically more than normalizing a benign host of the same length.
+  // Ambient load scales both measurements, so the ratio holds regardless of
+  // how busy the machine is. Measured separation is ~4 orders of magnitude
+  // (linear scan ≈ 0x, backtracking regex ≈ 36,000x), so the 100x threshold
+  // is nowhere near either side.
+  it("is ReDoS-proof: an adversarial slash run costs no more than a benign one", () => {
+    const RUN = 50_000;
+    const adversarial = "https://h" + "/".repeat(RUN) + "x";
+    const benign = "https://h" + "x".repeat(RUN) + "x";
+
+    // Neither input ends in a slash, so nothing is stripped from either.
+    expect(hostOf(adversarial)).toBe(adversarial);
+    expect(hostOf(benign)).toBe(benign);
+
+    const median = (input: string) => {
+      const runs = Array.from({ length: 5 }, () => {
+        const start = performance.now();
+        hostOf(input);
+        return performance.now() - start;
+      }).sort((a, b) => a - b);
+      return runs[2]!;
+    };
+
+    // Floor the denominator: both are sub-millisecond with the linear scan, and
+    // dividing by a value that close to zero would make the ratio meaningless.
+    const ratio = median(adversarial) / Math.max(median(benign), 0.05);
+    expect(ratio).toBeLessThan(100);
   });
 });

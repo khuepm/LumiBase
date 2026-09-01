@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
 
+import CookiePreferences from "@/components/analytics/CookiePreferences";
+import { resolveMeasurementId } from "@lumibase/analytics-consent";
+
+const gaMeasurementId = resolveMeasurementId(process.env.NEXT_PUBLIC_GA_ID);
+
 export const metadata: Metadata = {
   title: "Privacy Policy - LumiBase",
   description: "Privacy Policy for LumiBase — the Content Operating System.",
@@ -12,7 +17,7 @@ export default function PrivacyPolicy() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-16">
       <h1 className="text-4xl font-bold">Privacy Policy</h1>
-      <p className="mt-4 text-gray-400">Last updated: June 7, 2026</p>
+      <p className="mt-4 text-gray-400">Last updated: August 24, 2026</p>
 
       <div className="mt-12 space-y-8 [&_h2]:text-2xl [&_h2]:font-semibold [&_h2]:text-foreground [&_p]:mt-2 [&_p]:leading-7 [&_p]:text-gray-400 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1 [&_li]:text-gray-400">
         <section>
@@ -31,13 +36,27 @@ export default function PrivacyPolicy() {
             self-hosted instances.
           </p>
           <p>
-            For our public website (lumibase.dev), we may collect:
+            On our public websites (lumibase.dev and docs.lumibase.dev), we collect two separate
+            things:
           </p>
           <ul>
-            <li>Anonymous analytics data to improve our service</li>
-            <li>Basic telemetry for performance monitoring</li>
-            <li>Cookie preferences and browser information</li>
+            <li>
+              <strong className="text-foreground">Aggregate traffic measurement, always on.</strong>{" "}
+              Cloudflare Web Analytics counts page views and page-load timings. It sets no
+              cookies, stores no identifier in your browser, and does not fingerprint you, so
+              it needs no consent and cannot follow you between sites.
+            </li>
+            <li>
+              <strong className="text-foreground">Google Analytics 4, only if you allow it.</strong>{" "}
+              If you accept analytics cookies, Google Analytics records which pages you visit
+              and how you reached them. This is off until you opt in, and you can withdraw at
+              any time in section 6.
+            </li>
           </ul>
+          <p>
+            Neither collects your name, email, or account data — we have no accounts on this
+            website. We do not sell data, run advertising, or share it with ad networks.
+          </p>
         </section>
 
         <section>
@@ -71,9 +90,20 @@ export default function PrivacyPolicy() {
             Our website may use third-party services such as:
           </p>
           <ul>
-            <li>Cloudflare for content delivery and DDoS protection</li>
-            <li>GitHub for code hosting and issue tracking</li>
-            <li>Analytics services (if enabled)</li>
+            <li>
+              <strong className="text-foreground">Cloudflare</strong> — content delivery, DDoS
+              protection, and cookieless Web Analytics
+            </li>
+            <li>
+              <strong className="text-foreground">Google Analytics 4</strong> — page analytics,
+              loaded only after you opt in. Google acts as a data processor and may process
+              data outside your country. Google Signals and ad personalisation are disabled on
+              our property.
+            </li>
+            <li>
+              <strong className="text-foreground">GitHub</strong> — code hosting and issue
+              tracking
+            </li>
           </ul>
           <p>
             These services have their own privacy policies. We encourage you to review them.
@@ -81,11 +111,36 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">6. Cookies</h2>
+          <h2 className="text-2xl font-semibold">6. Cookies and your choice</h2>
           <p>
-            We use cookies to enhance your browsing experience. You can control cookie settings through your
-            browser preferences. Disabling cookies may affect some features of our website.
+            This website sets no cookies until you allow analytics. If you do, Google Analytics
+            stores <code>_ga</code> and <code>_ga_&lt;id&gt;</code> cookies to tell repeat visits
+            apart. Declining keeps the site fully functional — nothing here depends on cookies.
           </p>
+          <p>
+            Your choice is stored locally in your browser, not on our servers, so it does not
+            identify you. Withdrawing removes the analytics cookies we set and stops further
+            collection.
+          </p>
+          <p>
+            Because that choice lives in your browser&apos;s per-site storage, it applies to one
+            site at a time. Our documentation site (
+            <a
+              href="https://docs.lumibase.dev"
+              className="underline transition-colors hover:text-foreground"
+            >
+              docs.lumibase.dev
+            </a>
+            ) asks separately and carries its own control in the page footer — allowing analytics
+            here does not allow it there, and neither does declining.
+          </p>
+          {gaMeasurementId ? (
+            <CookiePreferences />
+          ) : (
+            <p>
+              Analytics cookies are not configured on this deployment, so none are set at all.
+            </p>
+          )}
         </section>
 
         <section>
@@ -104,7 +159,7 @@ export default function PrivacyPolicy() {
           <ul>
             <li>Access information we hold about you (for our public services)</li>
             <li>Request deletion of your data (for our public services)</li>
-            <li>Opt-out of analytics tracking</li>
+            <li>Opt out of analytics cookies at any time (see section 6)</li>
             <li>Self-host your own instance with complete data control</li>
           </ul>
         </section>

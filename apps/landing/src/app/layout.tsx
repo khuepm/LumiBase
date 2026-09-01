@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Archivo, Literata, DM_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import CosmicBackground from "@/components/CosmicBackground";
+import SmoothScroll from "@/components/scroll/SmoothScroll";
+import Analytics from "@/components/analytics/Analytics";
+import { resolveMeasurementId } from "@lumibase/analytics-consent";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
-const jetbrainsMono = JetBrains_Mono({
+const archivo = Archivo({ subsets: ["latin"], variable: "--font-sans" });
+const literata = Literata({ subsets: ["latin"], variable: "--font-serif" });
+const dmMono = DM_Mono({
   subsets: ["latin"],
+  weight: ["300", "400", "500"],
   variable: "--font-mono",
 });
 
@@ -75,13 +81,20 @@ const webSiteJsonLd = {
     "The Content Operating System: declare intent, agents reconcile content, humans keep the veto.",
 };
 
+// Read at build time: `output: 'export'` inlines the value, so an unset
+// NEXT_PUBLIC_GA_ID ships a bundle with no GA tag and no cookie banner.
+const gaMeasurementId = resolveMeasurementId(process.env.NEXT_PUBLIC_GA_ID);
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`dark ${inter.variable} ${jetbrainsMono.variable}`}>
+    <html
+      lang="en"
+      className={`dark ${archivo.variable} ${literata.variable} ${dmMono.variable}`}
+    >
       <head>
         <link rel="llms-txt" href="https://lumibase.dev/llms.txt" />
         <script
@@ -93,12 +106,16 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteJsonLd) }}
         />
       </head>
-      <body className={`${inter.className} text-foreground antialiased`}>
-        <div className="relative z-[1]">
-          <Header />
-          <main className="min-h-screen">{children}</main>
-          <Footer />
-        </div>
+      <body className={`${archivo.className} text-foreground antialiased`}>
+        <CosmicBackground />
+        <SmoothScroll>
+          <div className="relative z-[1]">
+            <Header />
+            <main className="min-h-screen">{children}</main>
+            <Footer />
+          </div>
+        </SmoothScroll>
+        {gaMeasurementId && <Analytics measurementId={gaMeasurementId} />}
       </body>
     </html>
   );

@@ -89,17 +89,18 @@ export interface LocaleIndex {
   locale: string;
   /** URL path of the locale landing page, e.g. /en/ (root uses /). */
   url: string;
-  /** Every doc in this locale, sorted by slug, for a crawlable link list. */
-  pages: { title: string; url: string; slug: string }[];
   /** Newest lastModified across the locale's pages, for sitemap lastmod. */
   lastModified?: string;
 }
 
 /**
- * Per-locale landing-page data. The default locale also owns the site root
- * (`/`). Each landing page renders a plain <a> link list so crawlers reach
- * every prerendered doc from the homepage — the SPA <Navigate> redirect that
- * the client uses is invisible to bots.
+ * Per-locale landing-page routes to prerender. The default locale also owns the
+ * site root (`/`).
+ *
+ * The page body is NOT built here — the prerenderer calls `render(url)` so the
+ * landing page comes from the LandingPage route component, the same tree the
+ * client hydrates. Its curated link list therefore lands in the static HTML as
+ * real <a href> elements (crawlable without JS) and survives hydration.
  */
 export function getLocaleIndexes(): LocaleIndex[] {
   const indexes: LocaleIndex[] = [];
@@ -107,13 +108,6 @@ export function getLocaleIndexes(): LocaleIndex[] {
     const slugs = [...(docSlugsByLocale[locale] ?? [])].sort((a, b) =>
       a.localeCompare(b),
     );
-    const pages = slugs
-      .map((slug) => {
-        const entry = docIndexByLocale[locale]?.[slug];
-        if (!entry) return null;
-        return { title: entry.title, url: pathFor(locale, slug), slug };
-      })
-      .filter((p): p is { title: string; url: string; slug: string } => p !== null);
 
     let lastModified: string | undefined;
     for (const slug of slugs) {
@@ -121,7 +115,7 @@ export function getLocaleIndexes(): LocaleIndex[] {
       if (lm && (!lastModified || lm > lastModified)) lastModified = lm;
     }
 
-    indexes.push({ locale, url: `/${locale}/`, pages, lastModified });
+    indexes.push({ locale, url: `/${locale}/`, lastModified });
   }
   return indexes;
 }

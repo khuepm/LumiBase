@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-08-01T23:45:00.000Z
+version: 2
+lastUpdated: 2026-08-01T23:58:27.871Z
 sourceLang: vi
-contentHash: track0-public-funnel
-codeVerified: 2026-08-01T23:45:00.000Z
-codeVerifiedHash: track0-public-funnel
-codeVerifiedClaims: 1
+contentHash: 41f061bd96e9ea1a
+codeVerified: 2026-08-01T23:58:27.871Z
+codeVerifiedHash: 41f061bd96e9ea1a
+codeVerifiedClaims: 2
 ---
 
 # Publish npm packages
@@ -22,6 +22,7 @@ package **không** có `private: true`:
 - `packages/sdk` (`@lumibase/sdk`)
 - `packages/extension-sdk` (`@lumibase/extension-sdk`)
 - `packages/mcp-server` (`@lumibase/mcp-server`)
+- `packages/cli` (`lumibase` — CLI, tên không scope)
 - `packages/contracts` (`@lumibase/contracts`)
 
 Muốn thêm package public: bỏ `private: true` khỏi `package.json` của package đó, thêm

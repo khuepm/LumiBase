@@ -159,7 +159,7 @@ describe('SetupService.complete() → invites', () => {
     const svc = new SetupService({
       db: makeFakeDb(inserts) as never,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
       audit,
     });
 
@@ -184,7 +184,7 @@ describe('SetupService.complete() → invites', () => {
     const svc = new SetupService({
       db: makeFakeDb(inserts) as never,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
       audit,
     });
 
@@ -243,7 +243,7 @@ describe('SetupService.complete() → invites', () => {
     const svc = new SetupService({
       db: makeFakeDb(inserts) as never,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
     });
 
     const outcome = await svc.complete(
@@ -262,7 +262,7 @@ describe('SetupService.complete() → invites', () => {
     const svc = new SetupService({
       db: makeFakeDb(inserts) as never,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
     });
 
     const outcome = await svc.complete(

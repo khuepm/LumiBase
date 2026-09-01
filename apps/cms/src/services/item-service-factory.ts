@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import type { AppEnv, AuthPrincipal } from '../env';
 import type { MagicContext } from './permission-dsl';
 import { ItemService, type ItemServiceDeps } from './item-service';
+import { resolveNegativeTtl } from './negative-cache';
 import { PermissionService } from './permission-service';
 
 /**
@@ -108,6 +109,10 @@ export function itemServiceForRequest(
         ? { type: 'user', id: auth.userId }
         : undefined,
     cache: runtime.cache,
+    edgeCache: runtime.edgeCache,
+    // Resolved here (not inside SchemaService) so the knob works on Workers too
+    // — `process.env` there does not carry wrangler vars (Req 19.5).
+    negativeCacheTtl: resolveNegativeTtl(c.env),
     search: runtime.search,
     queue: runtime.queue,
     realtime: runtime.realtime,

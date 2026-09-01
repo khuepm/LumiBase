@@ -14,6 +14,7 @@ import {
   isPublishablePrefix,
   readAllowedOrigins,
 } from '../services/api-key-publishable';
+import { mergeRequestContext } from './request-context';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -131,6 +132,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     path === '/api/v1/auth/refresh' ||
     path === '/api/v1/auth/logout' ||
     path === '/api/v1/auth/login' ||
+    path === '/api/v1/auth/verify-totp' ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/') ||
     // Flow webhook trigger authenticates with a per-flow token inside the
@@ -214,6 +216,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         .get('db')
         .select({
           id: users.id,
+          externalId: users.externalId,
+          email: users.email,
           status: users.status,
           isBootstrap: users.isBootstrap,
         })
@@ -242,6 +246,16 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
+      mergeRequestContext(c, {
+        user: {
+          id: user.id,
+          externalId: String(payload.sub),
+          email,
+          isBootstrap: user.isBootstrap,
+        },
+        membership: membership?.roleId ? { roleId: membership.roleId } : null,
+      });
+
       const principal: AuthPrincipal = {
         userId: user.id,
         externalId: String(payload.sub),
@@ -250,6 +264,9 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);
+      // Request_Context_Bundle (Req 10; design §6.4): cache the `users` row +
+      // membership just resolved so `withSiteMembership` reuses them instead of
+      // re-querying for the same request.
       return next();
     } catch (err) {
       console.warn('[withAuth] CF Access verification failed:', formatSafeError(err));
@@ -427,6 +444,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         .get('db')
         .select({
           id: users.id,
+          externalId: users.externalId,
+          email: users.email,
           status: users.status,
           isBootstrap: users.isBootstrap,
           tokenVersion: users.tokenVersion,
@@ -469,6 +488,16 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       // (`studio` vs `frontend`). `isFrontendUser` tracks it for the
       // `/me` surface; `withStudioAccess` enforces the hard wall using
       // the same claim carried on `raw`.
+      mergeRequestContext(c, {
+        user: {
+          id: user.id,
+          externalId: null,
+          email: typeof payload.email === 'string' ? payload.email : user.id,
+          isBootstrap: user.isBootstrap,
+        },
+        membership: membership?.roleId ? { roleId: membership.roleId } : null,
+      });
+
       const principal: AuthPrincipal = {
         userId,
         email: typeof payload.email === 'string' ? payload.email : undefined,
@@ -477,6 +506,9 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         raw: payload as Record<string, unknown>,
       };
       c.set('auth', principal);
+      // Request_Context_Bundle (Req 10; design §6.4): cache the `users` row +
+      // membership just resolved so `withSiteMembership` reuses them instead of
+      // re-querying for the same request.
       return next();
     } catch (err) {
       console.warn('[withAuth] Custom JWT verification failed:', formatSafeError(err));

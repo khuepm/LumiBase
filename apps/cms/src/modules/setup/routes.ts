@@ -20,8 +20,11 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { PasswordSchema } from '@lumibase/contracts/schemas';
+import type { RateLimiterProvider } from '@lumibase/runtime';
+import { MemoryRateLimiter, collectKeys } from '@lumibase/runtime';
 import type { AppEnv } from '../../env';
 import { withDb } from '../../middleware/db';
+import { consumeRateLimit } from '../../middleware/rate-limit-helper';
 import {
   SetupService,
   type SetupCompleteContext,
@@ -75,56 +78,38 @@ export const completeBodySchema = z.object({
     .optional(),
 });
 
-// ── rate limit (in-memory sliding window) ──────────────────────────────
+// ── rate limit (distributed via RateLimiterProvider) ───────────────────
 
-interface RateBucket {
-  count: number;
-  resetAt: number;
-}
 const STATE_RATE_LIMIT = 60; // req/min/IP
-const STATE_RATE_WINDOW_MS = 60_000;
+const STATE_RATE_WINDOW_SECONDS = 60;
 
-// `POST /complete` is an expensive, one-shot mutation (password hashing +
-// DB lock), so it gets a tighter per-IP brake than the cheap `/state` read.
-// It guards the pre-initialized window against setupToken brute-force and
-// CPU-exhaustion spam (analog of Strapi #26494). The DB advisory lock +
-// unique index remain the hard guard against duplicate admins; this is
-// defence-in-depth, in-memory per isolate (see design "known limits").
 const COMPLETE_RATE_LIMIT = 10; // req/min/IP
-const COMPLETE_RATE_WINDOW_MS = 60_000;
+const COMPLETE_RATE_WINDOW_SECONDS = 60;
 
-/** Module-level so tests can reset between runs. */
-const stateRateBuckets = new Map<string, RateBucket>();
-const completeRateBuckets = new Map<string, RateBucket>();
+const fallbackSetupLimiter = new MemoryRateLimiter();
 
 export function __resetSetupRateLimitForTests(): void {
-  stateRateBuckets.clear();
-  completeRateBuckets.clear();
+  fallbackSetupLimiter.clear();
 }
 
-function checkStateRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const bucket = stateRateBuckets.get(ip);
-  if (!bucket || bucket.resetAt <= now) {
-    stateRateBuckets.set(ip, { count: 1, resetAt: now + STATE_RATE_WINDOW_MS });
-    return true;
-  }
-  if (bucket.count >= STATE_RATE_LIMIT) return false;
-  bucket.count += 1;
-  return true;
+async function checkStateRateLimit(
+  rateLimiter: RateLimiterProvider | undefined,
+  ip: string,
+): Promise<boolean> {
+  const limiter = rateLimiter ?? fallbackSetupLimiter;
+  const key = `rl:setup:state:${ip}`;
+  const verdict = await consumeRateLimit(limiter, key, STATE_RATE_LIMIT, STATE_RATE_WINDOW_SECONDS);
+  return verdict.status === 'allow' || verdict.status === 'unavailable';
 }
 
-function checkCompleteRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const key = ip || 'unknown'; // always key deterministically
-  const bucket = completeRateBuckets.get(key);
-  if (!bucket || bucket.resetAt <= now) {
-    completeRateBuckets.set(key, { count: 1, resetAt: now + COMPLETE_RATE_WINDOW_MS });
-    return true;
-  }
-  if (bucket.count >= COMPLETE_RATE_LIMIT) return false;
-  bucket.count += 1;
-  return true;
+async function checkCompleteRateLimit(
+  rateLimiter: RateLimiterProvider | undefined,
+  ip: string,
+): Promise<boolean> {
+  const limiter = rateLimiter ?? fallbackSetupLimiter;
+  const key = `rl:setup:complete:${ip || 'unknown'}`;
+  const verdict = await consumeRateLimit(limiter, key, COMPLETE_RATE_LIMIT, COMPLETE_RATE_WINDOW_SECONDS);
+  return verdict.status === 'allow' || verdict.status === 'unavailable';
 }
 
 // ── service factory ─────────────────────────────────────────────────────
@@ -135,6 +120,33 @@ function checkCompleteRateLimit(ip: string): boolean {
  * from the runtime context; tests can short-circuit by overriding
  * `c.set('setupServiceOverride', svc)` before mounting the router.
  */
+/**
+ * Is any AEAD key resolvable for this deployment?
+ *
+ * Uses the runtime's own `collectKeys` rather than a bare `env.ENCRYPTION_KEY`
+ * check so the answer matches what `KeyProvider` will actually do at enrollment
+ * time — versioned keys (`ENCRYPTION_KEY_v1`) count too.
+ *
+ * `*_FILE` indirections need no special case: `loadSecretFiles` (`serve.ts`
+ * calls it before the server starts listening) has already materialised them
+ * into the direct variable, and Cloudflare Workers have no filesystem to read.
+ *
+ * Cloudflare surfaces secrets on `c.env`; Node reads `process.env`, so both are
+ * merged. Never throws — a capabilities probe must not be able to break setup.
+ */
+function resolveEncryptionAvailable(env: AppEnv['Bindings']): boolean {
+  try {
+    return (
+      collectKeys({
+        ...(typeof process !== 'undefined' ? process.env : {}),
+        ...(env as unknown as Record<string, string | undefined>),
+      }).size > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 function buildService(c: {
   env: AppEnv['Bindings'];
   get: <K extends keyof AppEnv['Variables']>(k: K) => AppEnv['Variables'][K];
@@ -146,6 +158,7 @@ function buildService(c: {
     db,
     requireSetupToken,
     smtpAvailable,
+    encryptionAvailable: resolveEncryptionAvailable(c.env),
     officialPublisherKey: resolveOfficialPublisherKey(c.env),
   });
 }
@@ -275,11 +288,11 @@ setupRouter.use('*', withDb());
 
 setupRouter.get('/state', async (c) => {
   const ip = extractClientIp(c.req.raw);
-  if (!checkStateRateLimit(ip)) {
+  if (!(await checkStateRateLimit(c.get('runtime')?.rateLimiter, ip))) {
     return c.json(
       { errors: [{ code: 'RATE_LIMITED' }] },
       429,
-      { 'retry-after': Math.ceil(STATE_RATE_WINDOW_MS / 1000).toString() },
+      { 'retry-after': String(STATE_RATE_WINDOW_SECONDS) },
     );
   }
 
@@ -305,11 +318,11 @@ setupRouter.post('/complete', async (c) => {
   // Rate-brake *before* parsing the body or hashing a password, so a
   // blocked request costs nothing (CWE-770; analog of Strapi #26494).
   const ip = extractClientIp(c.req.raw);
-  if (!checkCompleteRateLimit(ip)) {
+  if (!(await checkCompleteRateLimit(c.get('runtime')?.rateLimiter, ip))) {
     return c.json(
       { errors: [{ code: 'RATE_LIMITED' }] },
       429,
-      { 'retry-after': Math.ceil(COMPLETE_RATE_WINDOW_MS / 1000).toString() },
+      { 'retry-after': String(COMPLETE_RATE_WINDOW_SECONDS) },
     );
   }
 

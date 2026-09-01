@@ -238,6 +238,16 @@ export const items = pgTable(
     /** Scheduler scans for items due to publish/unpublish (Req 7.3, 7.4). */
     publishDueIdx: index('items_publish_due_idx').on(t.siteId, t.status, t.publishAt),
     unpublishDueIdx: index('items_unpublish_due_idx').on(t.siteId, t.status, t.unpublishAt),
+    /** Default list sort by updated_at (high-load-cache-readiness Req 16). */
+    siteCollUpdatedIdx: index('items_site_coll_updated_idx').on(
+      t.siteId,
+      t.collectionId,
+      t.updatedAt,
+    ),
+    /** Delivery publish-window filter (high-load-cache-readiness Req 16). */
+    deliverIdx: index('items_deliver_idx')
+      .on(t.siteId, t.collectionId, t.status, t.publishAt, t.unpublishAt)
+      .where(sql`${t.deletedAt} is null`),
   }),
 );
 
@@ -354,24 +364,31 @@ export const flowRuns = pgTable(
     siteId: text('site_id')
       .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
-    flowId: text('flow_id')
-      .notNull()
-      .references(() => flows.id, { onDelete: 'cascade' }),
+    /** Null for `run_type = ai_chat` async jobs (high-load §21.5). */
+    flowId: text('flow_id').references(() => flows.id, { onDelete: 'cascade' }),
+    /** `flow` | `ai_chat` — AI chat async reuses this table (design §10.3). */
+    runType: text('run_type').default('flow').notNull(),
     /** `pending` | `running` | `success` | `error` | `cancelled` */
     status: text('status').default('pending').notNull(),
-    /** Initial payload (trigger event / webhook body). */
+    /** Initial payload (trigger event / webhook body / AI chat context). */
     input: jsonb('input').default({}).notNull(),
     /** Per-node output, keyed by node id. */
     steps: jsonb('steps').default({}).notNull(),
-    /** Final output (last node) or error stack trace. */
+    /** Final output (last node / AI harness result). */
     output: jsonb('output').default({}).notNull(),
     error: text('error'),
-    startedAt: timestamp('started_at').defaultNow().notNull(),
+    createdAt: createdAt(),
+    startedAt: timestamp('started_at'),
     finishedAt: timestamp('finished_at'),
   },
   (t) => ({
     flowIdx: index('flow_runs_flow_idx').on(t.flowId, t.startedAt),
     statusIdx: index('flow_runs_status_idx').on(t.siteId, t.status),
+    siteFlowCreatedIdx: index('flow_runs_site_flow_created_idx').on(
+      t.siteId,
+      t.flowId,
+      t.createdAt,
+    ),
   }),
 );
 

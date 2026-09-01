@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:25.961Z
+version: 2
+lastUpdated: 2026-08-02T19:12:50.738Z
 sourceLang: en
-contentHash: 424c130dc0d3e319
+contentHash: 9ec0cbf5e5010696
 ---
 
 # Windsurf — LumiBase Agent Setup

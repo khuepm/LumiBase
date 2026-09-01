@@ -1,3 +1,13 @@
+---
+version: 1
+lastUpdated: 2026-08-02T19:09:13.561Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 27831c129c2af649
+mtEngine: manual
+syncStatus: human-translated
+---
+
 # US — CCPA/CPRA & CAN-SPAM
 
 > Các nghĩa vụ chính ở Mỹ liên quan đến CMS/Content OS. Mỹ không có một luật quyền

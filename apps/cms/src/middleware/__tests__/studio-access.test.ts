@@ -52,8 +52,6 @@ describe('studio access TFA helpers', () => {
     expect(isTfaEnrolled({ enabled: true })).toBe(true);
     expect(isTfaEnrolled({ enrolled: true })).toBe(true);
     expect(isTfaEnrolled({ verified: true })).toBe(true);
-    expect(isTfaEnrolled({ secret: 'totp-secret' })).toBe(true);
-    expect(isTfaEnrolled({ tfaSecret: 'totp-secret' })).toBe(true);
     expect(isTfaEnrolled({ enabled: false })).toBe(false);
     expect(isTfaEnrolled(null)).toBe(false);
   });

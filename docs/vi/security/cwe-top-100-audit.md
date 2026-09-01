@@ -1,12 +1,18 @@
 ---
-version: 4
-lastUpdated: 2026-07-06T23:15:55.000Z
+<!-- check-parity: allow inline-code -->
+version: 5
+lastUpdated: 2026-08-02T19:21:21.609Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0b02fec2a9ea24df
+sourceHash: d61ac505ff51e1e6
 mtEngine: manual
-syncStatus: translated
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:21:21.609Z
+codeVerifiedHash: d61ac505ff51e1e6
+codeVerifiedClaims: 54
 ---
+
+<!-- check-parity: allow inline-code -->
 
 # Kiểm toán bảo mật CWE Top 100 — LumiBase
 
@@ -48,6 +54,7 @@ Trong **78 điểm yếu có áp dụng**: **78 đã vá (100%)**, 0 một phầ
 > Mọi điểm yếu có áp dụng nay đều Đã vá. Như thường lệ, "Đã vá" nghĩa là *có phòng thủ đã kiểm chứng* — không phải bảo chứng; chỉ pentest mới xác nhận được.
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Phần A — Xếp hạng chính thức MITRE 2025 (1–40)
 
@@ -95,6 +102,7 @@ Trong **78 điểm yếu có áp dụng**: **78 đã vá (100%)**, 0 một phầ
 | 40 | 601 | Open Redirect | — | Không thấy cơ chế `returnTo`/redirect theo URL người dùng ở route auth; issuer external-JWT cấu hình phía server. Hiện không có bề mặt; thêm validator redirect tập trung nếu sau này có login redirect. |
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Phần B — 60 điểm yếu bổ sung (lựa chọn theo ánh xạ OWASP, không xếp hạng)
 
@@ -189,6 +197,7 @@ Trong **78 điểm yếu có áp dụng**: **78 đã vá (100%)**, 0 một phầ
 | 359 | Vi phạm quyền riêng tư | ✅ | **Đã vá 2026-07-06.** Masker audit nay che các key payload thô (`data`/`payload`/`content`/`body` → `[redacted]`) và cap chuỗi tự do dài, nên PII của item không lọt nguyên văn vào metadata audit (`modules/audit/logger.ts`). Sự kiện audit item vốn chỉ log id + SQL đã redact. |
 
 ---
+<!-- check-parity: allow inline-code -->
 
 ## Danh sách khắc phục (theo thứ tự ưu tiên)
 

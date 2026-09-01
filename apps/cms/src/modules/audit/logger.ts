@@ -117,6 +117,9 @@
  */
 
 import { auditLog, type Database } from '@lumibase/database';
+import type { QueueProvider } from '@lumibase/runtime';
+import { auditFallbackTotal } from '../../routes/metrics';
+import { enqueueAuditJob, getAuditLogQueue } from './worker';
 
 // ── audit event vocabulary (Req 15.1) ────────────────────────────────────
 
@@ -231,7 +234,14 @@ export interface AuditFallbackRecord {
  * hash has no correlation value in an audit trail and must never be
  * stored (Req 3.7, 15.3), so we drop it entirely rather than hashing it.
  */
-const SENSITIVE_NULL_KEYS = new Set<string>(['passwordHash', 'apiKeyTokenHash']);
+const SENSITIVE_NULL_KEYS = new Set<string>([
+  'passwordHash',
+  'apiKeyTokenHash',
+  'totpCode',
+  'totpSecret',
+  'recoveryCode',
+  'challengeToken',
+]);
 
 /**
  * Keys whose string value is replaced with the first 8 hex chars of its
@@ -405,41 +415,20 @@ export async function maskSensitive(
 
 // ── logger ───────────────────────────────────────────────────────────────
 
-/** Default ≤1s synchronous-write budget (design §10.1). */
-const DEFAULT_BUDGET_MS = 1000;
-
-/**
- * Internal sentinel thrown when the insert exceeds {@link
- * AuditLoggerDeps.budgetMs}. Never escapes `write()`.
- */
-class AuditBudgetExceededError extends Error {
-  constructor(public readonly budgetMs: number) {
-    super(`audit write exceeded ${budgetMs}ms budget`);
-    this.name = 'AuditBudgetExceededError';
-  }
-}
-
 export interface AuditLoggerDeps {
   /** Active tenant/site id applied to entries that do not provide one explicitly. */
   readonly siteId?: string | null;
   /** Drizzle client used for the `INSERT INTO audit_log`. */
   readonly db: Database;
+  /** Optional queue — defaults to the process-wide audit-log queue when set. */
+  readonly queue?: QueueProvider;
   /**
-   * Sink for the structured fallback record when a write fails or times
-   * out. Defaults to a `console.error(JSON.stringify(record))` so a log
+   * Sink for the structured fallback record when a write fails.
+   * Defaults to a `console.error(JSON.stringify(record))` so a log
    * aggregator scraping stderr can replay the lost event. Injectable so
-   * tests can capture the record without touching the console — the
-   * clean testable seam for the fallback path.
+   * tests can capture the record without touching the console.
    */
   readonly errorSink?: (record: AuditFallbackRecord) => void;
-  /**
-   * Synchronous-write budget in milliseconds. The insert is raced
-   * against this deadline; on timeout we emit the fallback and resolve
-   * so a slow/hung DB cannot stall the request thread. Defaults to
-   * {@link DEFAULT_BUDGET_MS} (1000ms). Injectable so tests can drive
-   * the timeout path with a tiny budget.
-   */
-  readonly budgetMs?: number;
 }
 
 /** Default fallback sink: structured JSON on stderr for aggregator replay. */
@@ -456,28 +445,22 @@ function defaultErrorSink(record: AuditFallbackRecord): void {
 export class AuditLogger {
   private readonly db: Database;
   private readonly errorSink: (record: AuditFallbackRecord) => void;
-  private readonly budgetMs: number;
   private readonly siteId: string | null;
+  private readonly queue?: QueueProvider;
 
   constructor(deps: AuditLoggerDeps) {
     this.db = deps.db;
     this.siteId = deps.siteId ?? null;
     this.errorSink = deps.errorSink ?? defaultErrorSink;
-    this.budgetMs = deps.budgetMs ?? DEFAULT_BUDGET_MS;
+    this.queue = deps.queue ?? getAuditLogQueue();
   }
 
   /**
-   * Persist an audit entry. Masks the metadata, then races the
-   * `INSERT` against the configured budget. NEVER throws or rejects: a
-   * rejecting insert, a budget timeout, a throwing mask, or a throwing
-   * `errorSink` all collapse to a resolved `Promise<void>` after
-   * (best-effort) emitting the structured fallback. See the module
-   * doc-block for the full contract.
+   * Persist an audit entry. Masks metadata, then prefers enqueue on the
+   * `audit-log` topic. On enqueue failure, awaits a synchronous INSERT;
+   * on total failure emits the structured fallback + metric. NEVER throws.
    */
   async write(entry: AuditLogWriteInput): Promise<void> {
-    // 1. Mask secrets BEFORE anything touches the DB or the fallback.
-    //    Masking should never throw, but if it somehow does we drop the
-    //    metadata wholesale rather than risk leaking raw secrets.
     let masked: AuditLogWriteInput;
     try {
       const maskedMetadata = await maskSensitive(entry.metadata);
@@ -485,19 +468,25 @@ export class AuditLogger {
     } catch {
       masked = { ...entry, metadata: {} };
       this.emitFallback(masked, 'mask_failed');
+      auditFallbackTotal.inc();
       return;
     }
 
-    // 2. Insert within budget; on any failure, emit the fallback.
+    const siteId = masked.siteId ?? this.siteId;
+    if (this.queue && siteId) {
+      try {
+        await enqueueAuditJob(this.queue, { kind: 'audit', siteId, entry: masked });
+        return;
+      } catch {
+        // enqueue failed — fall through to synchronous insert
+      }
+    }
+
     try {
-      await this.insertWithinBudget(masked);
-    } catch (err) {
-      this.emitFallback(
-        masked,
-        err instanceof AuditBudgetExceededError
-          ? 'budget_exceeded'
-          : 'db_error',
-      );
+      await this.runInsert(masked);
+    } catch {
+      this.emitFallback(masked, 'db_error');
+      auditFallbackTotal.inc();
     }
   }
 
@@ -513,40 +502,6 @@ export class AuditLogger {
   }
 
   // ── internals ──────────────────────────────────────────────────────────
-
-  /**
-   * Run the insert, racing it against the budget timer. Rejects with
-   * {@link AuditBudgetExceededError} if the budget elapses first; in
-   * that case the underlying insert keeps running in the background
-   * with a no-op rejection handler attached (see the budget trade-off
-   * in the module doc-block).
-   */
-  private async insertWithinBudget(entry: AuditLogWriteInput): Promise<void> {
-    const insertPromise = this.runInsert(entry);
-    // Swallow a late background rejection so a post-budget DB failure
-    // never surfaces as an unhandled rejection. This handler is in
-    // addition to the one Promise.race attaches, so the race still sees
-    // the rejection if the insert loses the race.
-    insertPromise.catch(() => {
-      /* settled (or failed) in the background after the budget */
-    });
-
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const budget = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(
-        () => reject(new AuditBudgetExceededError(this.budgetMs)),
-        this.budgetMs,
-      );
-      // Don't let the budget timer keep a Node process alive on its own.
-      (timer as { unref?: () => void }).unref?.();
-    });
-
-    try {
-      await Promise.race([insertPromise, budget]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
 
   /** The bare `INSERT INTO audit_log` with the masked entry's columns. */
   private async runInsert(entry: AuditLogWriteInput): Promise<void> {

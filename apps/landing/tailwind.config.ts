@@ -12,52 +12,63 @@ const config: Config = {
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
-        // Cosmic surface ramp (raised cards → sunken wells)
+        // Warm surface ramp (raised cards → sunken wells)
         surface: {
-          1: "rgb(29, 28, 32)",
-          2: "rgb(36, 35, 37)",
-          3: "rgb(41, 41, 43)",
-          4: "rgb(52, 50, 54)",
-          sunken: "rgb(23, 22, 25)",
+          1: "#1c120a",
+          2: "#241709",
+          3: "#2c1c0e",
+          4: "#382416",
+          sunken: "#150c05",
         },
-        // Brand accents — violet is primary
+        // Brand accents — totality orange is primary
+        accent: {
+          DEFAULT: "#e6500a",
+          bright: "#ff8c00",
+          amber: "#ffa000",
+        },
+        cream: {
+          DEFAULT: "#f4f2ff",
+          soft: "#c4a8ff",
+        },
+        // Legacy accent names remapped to the eclipse palette
         violet: {
-          DEFAULT: "rgb(123, 97, 255)",
-          soft: "rgb(149, 128, 255)",
+          DEFAULT: "#9b5cff",
+          soft: "#b06bff",
         },
         cosmic: {
-          blue: "rgb(24, 160, 251)",
-          green: "rgb(46, 196, 124)",
-          red: "rgb(232, 86, 86)",
+          blue: "#ffa000",
+          green: "#5d6c49",
+          red: "#ff6b6b",
         },
         // Text ramp
-        secondary: "rgb(189, 189, 192)",
-        muted: "rgb(169, 169, 169)",
+        secondary: "rgba(255, 237, 215, 0.72)",
+        muted: "rgba(255, 237, 215, 0.52)",
         // Legacy control-room ramp (pricing/legal pages)
         ink: {
-          950: "#0e0e11",
-          900: "#141316",
-          800: "#1d1c20",
-          700: "#29292b",
-          600: "#343236",
-          500: "#4a484e",
+          950: "#07060c",
+          900: "#0b0a11",
+          800: "#100f18",
+          700: "#15141f",
+          600: "#1b1926",
+          500: "#262433",
         },
-        // Legacy accents remapped to the cosmic palette
+        // Legacy accents remapped to the eclipse palette
         signal: {
-          400: "#9580ff",
-          500: "#7b61ff",
-          600: "#6a50ea",
+          400: "#ff8c00",
+          500: "#e6500a",
+          600: "#dc5000",
         },
         warn: {
-          400: "#fbbf24",
-          500: "#f59e0b",
+          400: "#ffbf02",
+          500: "#ffa000",
         },
       },
       borderRadius: {
         pill: "32px",
-        card: "24px",
+        card: "20px",
       },
       fontFamily: {
+        serif: ["var(--font-serif)", "Georgia", "serif"],
         mono: [
           "var(--font-mono)",
           "ui-monospace",

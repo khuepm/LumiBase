@@ -1,4 +1,17 @@
-# Triển khai Google Cloud (single VM)
+---
+version: 1
+lastUpdated: 2026-08-02T19:21:09.252Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 2bc7ce42ef0ae829
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:21:09.252Z
+codeVerifiedHash: 2bc7ce42ef0ae829
+codeVerifiedClaims: 8
+---
+
+# Google Cloud Deployment (single VM)
 
 Hướng dẫn này triển khai toàn bộ stack LumiBase lên **một** VM **Google Compute
 Engine** bằng `docker compose`, dùng **Gemini** làm LLM provider. Đây là cách

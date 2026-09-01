@@ -1,4 +1,20 @@
-# Task/Plan: Các guard bảo mật runtime cho LumiBase
+---
+<!-- check-parity: allow inline-code -->
+version: 1
+lastUpdated: 2026-08-02T19:21:10.159Z
+sourceLang: en
+translatedFrom: en
+sourceHash: d068ceb3e5aabaee
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:21:10.159Z
+codeVerifiedHash: d068ceb3e5aabaee
+codeVerifiedClaims: 34
+---
+
+<!-- check-parity: allow inline-code -->
+
+# Task/Plan: Runtime security guards for LumiBase
 
 ## Mục tiêu
 

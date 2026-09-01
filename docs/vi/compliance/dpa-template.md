@@ -1,4 +1,14 @@
-# Thoả thuận xử lý dữ liệu (DPA) — Mẫu
+---
+version: 1
+lastUpdated: 2026-08-02T19:09:06.260Z
+sourceLang: en
+translatedFrom: en
+sourceHash: 08226320da529409
+mtEngine: manual
+syncStatus: human-translated
+---
+
+# Data Processing Agreement (DPA) — Template
 
 > **Khung mẫu** DPA cho trường hợp bạn cung cấp dịch vụ LumiBase được quản lý/hosted
 > và đóng vai **bên xử lý (processor)** cho khách hàng (GDPR Điều 28). Điền các trường

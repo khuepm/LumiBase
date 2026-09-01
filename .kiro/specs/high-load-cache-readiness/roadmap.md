@@ -45,14 +45,16 @@
 
 | Chỉ số | Baseline | Sau P0 | Sau P1 | Sau P2 |
 |--------|----------|--------|--------|--------|
-| Delivery API p95 (cache hit) | đo ở task 0 | ≤ 50ms tại edge/proxy | ≤ 30ms | ≤ 30ms |
-| Origin offload cho delivery đọc lặp | 0% | ≥ 70% (HTTP cache) | ≥ 90% (app + edge cache) | ≥ 90% |
-| DB round-trip / request authenticated | 5–7 | 4–5 | ≤ 3 | ≤ 3 |
-| Cửa sổ stale sau khi đổi quyền | ≤ 60s | ≤ 5s | ≤ 1s (event-driven) | ≤ 1s |
-| Cửa sổ stale nội dung sau ghi | không xác định (không invalidation) | n/a | ≤ 5s (tag purge + revalidate) | ≤ 5s |
-| Scale ngang Docker | không an toàn (cron nhân bản) | không đổi | không đổi | an toàn với N replica |
-| k6 `load-items` throughput | đo ở task 0 | +x% (đo) | +x% (đo) | +x% (đo) |
-| DB query / request 404 (slug rác) | 1 (mọi request chạm DB) | ≤ 1 (guard hình dạng chặn phần rác thô) | ≤ 0.05 (tombstone) | ≤ 0.05 |
+| Delivery API p95 (chưa có cache) | p50 1,659ms / p95 3,146ms / p99 3,681ms @ 9.95 RPS (k6, 2026-08-02; origin-only, chưa có app/edge cache) | ≤ 50ms tại edge/proxy | ≤ 30ms | ≤ 30ms |
+| Origin offload cho delivery đọc lặp | chưa đo (Phase 0 chưa có cache-hit/origin counter) | ≥ 70% (HTTP cache) | ≥ 90% (app + edge cache) | ≥ 90% |
+| DB round-trip / request authenticated | chưa đo (k6 chưa xuất DB query metric) | 4–5 | ≤ 3 | ≤ 3 |
+| Cửa sổ stale sau khi đổi quyền | chưa đo (không thuộc workload Phase 0) | ≤ 5s | ≤ 1s (event-driven) | ≤ 1s |
+| Cửa sổ stale nội dung sau ghi | chưa đo (không invalidation trong workload Phase 0) | n/a | ≤ 5s (tag purge + revalidate) | ≤ 5s |
+| Scale ngang Docker | chưa đo (baseline chạy 1 CMS process) | không đổi | không đổi | an toàn với N replica |
+| k6 `load-items` throughput | list 42.16 RPS, p50 214ms / p95 675ms / p99 1,042ms; detail 10.15 RPS, p50 120ms / p95 339ms / p99 470ms; create 16.96 RPS, p50 344ms / p95 822ms / p99 1,244ms (2026-08-02; offset pagination; detail đọc **một item cố định** — hot row, không phải random read trên 100k) | +x% (đo) | +x% (đo) | +x% (đo) |
+| DB query / request 404 (slug rác) | 1 (mọi request chạm DB) | ≤ 1 (guard hình dạng chặn phần rác thô) | **0.0308** (k6 `load-penetration.js` 2026-08-01, MISS_POOL=40, 50 RPS × 2m, docker postgres+redis; ≤ 0.05 ✓ — xem `baseline/2026-08-01-penetration-docker-notes.json`) | ≤ 0.05 |
+
+> **Lưu ý đọc bảng (2026-08-02):** cột Baseline là số đo thật từ PR #360. Code của P1 và P2 đã land (PR #336) nhưng **chưa re-measure** — các cột "Sau P1"/"Sau P2" vẫn là target, không phải số đo. Chạy lại `apps/cms/k6/baseline/run.sh` rồi điền số thật; Req 0.3 cấm điền ước lượng.
 
 ## 3. Các phase
 
@@ -138,7 +140,7 @@ P2.3, P2.4, P2.5 (độc lập)
 | Tombstone làm tài nguyên vừa tạo "biến mất" tới 30s | Req 19.7: write path xoá tombstone sau commit — TTL chỉ là lưới an toàn; test P19 chặn regression |
 | Tombstone hết hạn hàng loạt → penetration biến thành avalanche | Jitter ±20% trên TTL (design §14.4); tombstone không bao giờ TTL cố định |
 | Guard hình dạng chặn nhầm slug hợp lệ của user hiện có | Regex chốt từ dữ liệu thật trước khi bật; slug ngoài `[a-z0-9/_-]` phải được khảo sát trên DB production-like ở task 22.1, không suy đoán |
-| Rate limit theo IP vô dụng khi traffic đến sau CDN (ít IP egress) | Open question design §21.6 — chốt bằng số đo sau `load-penetration.js`; tầng 1+2 vẫn hiệu quả độc lập với tầng 3 |
+| Rate limit theo IP vô dụng khi traffic đến sau CDN (ít IP egress) | **§21.6 CHỐT:** giữ 1200; tầng 1+2 vẫn hiệu lực; synthetic single-IP load test dùng `LUMIBASE_DELIVER_RATE_LIMIT=0` |
 
 ## 6. Ngoài phạm vi (non-goals)
 

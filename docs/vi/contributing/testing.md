@@ -1,12 +1,18 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:56.199Z
+<!-- check-parity: allow inline-code -->
+version: 2
+lastUpdated: 2026-08-02T19:21:23.495Z
 sourceLang: en
 translatedFrom: en
-sourceHash: cdcd5dfe1e155963
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 527afa3b2b0bd405
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:21:23.495Z
+codeVerifiedHash: 527afa3b2b0bd405
+codeVerifiedClaims: 7
 ---
+
+<!-- check-parity: allow inline-code -->
 
 # Testing Guide
 

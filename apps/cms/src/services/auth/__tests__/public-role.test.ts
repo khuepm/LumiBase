@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { permissions, policies, rolePolicies, roles } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import type { CacheProvider } from '@lumibase/runtime';
+import { mapCacheProvider } from '../../../test-utils/cache-provider';
 import {
   PUBLIC_ALLOWED_ACTIONS,
   PUBLIC_SYSTEM_KEY,
@@ -68,23 +69,8 @@ function stubDb(captured: Insert[], selectRows: unknown[][] = []): Database {
   return db as unknown as Database;
 }
 
-function stubCache(store = new Map<string, string>()): CacheProvider & { store: Map<string, string> } {
-  return {
-    store,
-    async get<T>(key: string): Promise<T | null> {
-      const raw = store.get(key);
-      return raw === undefined ? null : (JSON.parse(raw) as T);
-    },
-    async set(key: string, value: string) {
-      store.set(key, value);
-    },
-    async delete(key: string) {
-      store.delete(key);
-    },
-    async increment() {
-      return 1;
-    },
-  };
+function stubCache(): CacheProvider {
+  return mapCacheProvider();
 }
 
 describe('enablePublicAccess', () => {

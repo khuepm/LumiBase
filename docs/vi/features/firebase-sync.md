@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T09:48:37.000Z
+version: 2
+lastUpdated: 2026-08-02T19:11:08.580Z
 sourceLang: vi
-contentHash: 66736ba66e39afe3
+contentHash: d5bc9b2c5e589f3f
+codeVerified: 2026-08-02T19:11:08.580Z
+codeVerifiedHash: d5bc9b2c5e589f3f
+codeVerifiedClaims: 16
 ---
 
 # LumiBase Firebase Sync

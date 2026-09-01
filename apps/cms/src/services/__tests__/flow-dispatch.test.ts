@@ -120,7 +120,13 @@ describe('processFlowEventJob (Req 1.4)', () => {
   it('records a flow run and persists the outcome', async () => {
     const { db, inserted, updates } = makeDb([flow('f1', {})]);
     await processFlowEventJob(db, job);
-    expect(inserted[0]).toMatchObject({ siteId: 's1', flowId: 'f1', status: 'running', input: { event: EVENT } });
+    expect(inserted[0]).toMatchObject({
+      siteId: 's1',
+      flowId: 'f1',
+      status: 'running',
+      input: { event: EVENT },
+      startedAt: expect.any(Date),
+    });
     expect(updates[0]).toMatchObject({ status: 'success' });
     expect(updates[0]?.finishedAt).toBeInstanceOf(Date);
   });

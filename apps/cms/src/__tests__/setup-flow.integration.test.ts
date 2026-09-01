@@ -86,7 +86,7 @@ describe('Setup flow — integration', () => {
     return new SetupService({
       db,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
     });
   }
 
@@ -291,7 +291,7 @@ describe('Setup flow — integration', () => {
     const svc = new SetupService({
       db,
       requireSetupToken: false,
-      smtpAvailable: false,
+      smtpAvailable: false, encryptionAvailable: true,
       backupCodesPersister: async () => {
         throw boom;
       },
@@ -359,7 +359,7 @@ describe('Setup flow — integration', () => {
         new SetupService({
           db: d,
           requireSetupToken: false,
-          smtpAvailable: false,
+          smtpAvailable: false, encryptionAvailable: true,
         }),
       );
     }

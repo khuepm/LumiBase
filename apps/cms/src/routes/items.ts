@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { ItemServiceError, parseDeepQueryParams, parseFilterQueryParams } from '../services/item-service';
+import { ItemServiceError, parseDeepQueryParams, parseFilterQueryParams, bulkMaxItems } from '../services/item-service';
 import { itemServiceForRequest, permissionServiceForRequest } from '../services/item-service-factory';
 import { ContentVersionError, ContentVersionService } from '../services/content-version-service';
 import { DependentsError, DependentsService, type ResolveAction } from '../services/dependents-service';
@@ -123,7 +123,12 @@ itemsRouter.post('/:collection/bulk', async (c) => {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
   try {
-    const data = await buildService(c).bulk(c.req.param('collection'), parsed.data.op, parsed.data.items);
+    const data = await buildService(c).bulk(
+      c.req.param('collection'),
+      parsed.data.op,
+      parsed.data.items,
+      { bulkMax: bulkMaxItems(c.env as unknown as Record<string, string | undefined>) },
+    );
     return c.json({ data });
   } catch (err) {
     const { status, body } = toError(err);

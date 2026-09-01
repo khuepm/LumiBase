@@ -6,7 +6,7 @@
 //   2. Decide a source-of-truth per file pair and what action is required.
 //   3. Preserve Vietnamese content that currently lives in an en-labelled file
 //      BEFORE any translation overwrites it (no-loss requirement).
-//   4. Machine-translate stale/missing targets (DeepL or Google) — only in --apply.
+//   4. Machine-translate stale/missing targets with Claude — only in --apply.
 //   5. Stamp every written file with `version` + `lastUpdated` + provenance front
 //      matter so changes are versioned and auditable.
 //   6. Append a human-readable sync log + a machine-readable JSON report.
@@ -16,7 +16,11 @@
 //   --preserve-only  also perform the safe no-MT preservation copies + version stamps.
 //   --apply          full run: preservation + machine translation + version stamps.
 //
-// Without an MT API key, --apply degrades to --preserve-only and records why.
+// --apply requires ANTHROPIC_API_KEY and this project deliberately does not set
+// one: translations are written by hand by an LLM reading the source (decision
+// recorded in docs/.i18n/TASKS.md §6). So --apply without a key **fails** rather
+// than quietly falling back to --preserve-only. The quiet fallback is what let CI
+// commit "sync en/vi translations" for weeks while translating nothing.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -150,8 +154,20 @@ async function main() {
   const now = new Date().toISOString();
   const engine = engineLabel();
   const hasEngine = engineAvailable();
-  let effectiveMode = MODE;
-  if (MODE === 'apply' && !hasEngine) effectiveMode = 'preserve-only';
+  if (MODE === 'apply' && !hasEngine) {
+    console.error(
+      [
+        '[docs-i18n] --apply needs ANTHROPIC_API_KEY, and this project deliberately does not set one.',
+        '            Translations are written by hand by an LLM reading the source in the editor',
+        '            (docs/.i18n/TASKS.md §6). Refusing to run instead of silently translating nothing.',
+        '',
+        '            pnpm docs:i18n:detect     list what is out of sync (read-only)',
+        '            pnpm docs:i18n:preserve   rescue mislabelled content + stamp versions, no translation',
+      ].join('\n'),
+    );
+    process.exit(2);
+  }
+  const effectiveMode = MODE;
 
   const docs = Object.fromEntries(LOCALES.map((l) => [l, collectDocs(l)]));
   const allPaths = new Set([...docs.en.keys(), ...docs.vi.keys()]);
@@ -220,7 +236,7 @@ async function main() {
       continue; // never auto-overwrite on conflict
     }
 
-    if (effectiveMode === 'apply' && hasEngine && a.willTranslate) {
+    if (effectiveMode === 'apply' && a.willTranslate) {
       const sourceAbs = path.join(localeDir(a.sourceLocale), a.rel);
       const targetAbs = path.join(localeDir(a.targetLocale), a.rel);
       const { text, missing } = await translateBody(

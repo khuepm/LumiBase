@@ -15,7 +15,10 @@ function makeKeypair(): { pem: string; privateKey: KeyObject } {
 }
 
 async function sign(bundle: Uint8Array, privateKey: KeyObject): Promise<string> {
-  return nodeSign(null, bundle, privateKey).toString('base64');
+  // `Buffer` is `any` under @cloudflare/workers-types v5, so `.toString('base64')`
+  // does not type-check here. Go through the Web-standard btoa path instead.
+  const sig = new Uint8Array(nodeSign(null, bundle, privateKey));
+  return btoa(String.fromCharCode(...sig));
 }
 
 const bundle = new TextEncoder().encode('export default {};');

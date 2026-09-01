@@ -71,6 +71,10 @@ legacyRouter.use('*', withDeprecation({
 }))
 ```
 
+## Docs
+
+- Edits under `docs/en/` or `docs/vi/` must update the other locale in the same PR when a counterpart exists (or create one); prefer over-syncing, then re-stamp the pair with `scripts/docs-i18n/stamp-pair.mjs`. Full checklist: `.kiro/steering/definition-of-done.md` §4a.
+
 ## Testing
 
 ```bash

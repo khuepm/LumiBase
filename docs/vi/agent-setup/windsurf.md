@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:25.961Z
+version: 2
+lastUpdated: 2026-08-02T19:12:50.738Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 424c130dc0d3e319
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 9ec0cbf5e5010696
+mtEngine: manual
+syncStatus: human-translated
 ---
 
-# Windsurf — Thiết lập Agent cho LumiBase
+# Windsurf — LumiBase Agent Setup
 
 > **Windsurf** là một IDE dạng agentic với engine ngữ cảnh Cascade và Flows automation cho các task nhiều bước. Do Cognition tạo ra.
 >

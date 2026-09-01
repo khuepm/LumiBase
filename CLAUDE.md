@@ -37,7 +37,9 @@ packages/
 5. **Response format:** `{ data: T, meta?: PaginationMeta }` or `{ errors: [...] }`.
 6. **TypeScript:** Strict mode, `import type`, no `any`.
 7. **Docs are bilingual:** every user-facing doc change lands in **both** `docs/en/`
-   and `docs/vi/`, in the same commit. Never edit one locale only.
+   and `docs/vi/`, in the same commit. Never edit one locale only. Full checklist:
+   `.kiro/steering/definition-of-done.md` §4a (prefer over-syncing; re-stamp
+   provenance with `stamp-pair.mjs` when the pair is already 1-1 translated).
 8. **Deprecation is opt-in:** `withDeprecation` (`apps/cms/src/middleware/deprecation.ts`) is a reusable RFC 8594 tool. Attach it **only** when explicitly told to deprecate/retire/sunset a specific route — never globally, never on healthy endpoints. Unwired while nothing is retiring is correct.
 
 ## Docs i18n — mandatory workflow
@@ -51,15 +53,20 @@ a release ago.
 So verification against source code comes **before** any full-match marking:
 
 ```bash
-pnpm docs:i18n:verify <rel>                         # 1. check claims vs source tree
-node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> --verified   # 2. version + flag both locales
-pnpm docs:i18n:detect                               # 3. confirm the pair reads up-to-date
-git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md   # 4. drop detect artifacts
+pnpm docs:i18n:parity <rel>                         # 1. same document? (structure, code, language)
+pnpm docs:i18n:verify <rel>                         # 2. check claims vs source tree
+node scripts/docs-i18n/stamp-pair.mjs <rel> <en|vi> --verified   # 3. version + flag both locales
+pnpm docs:i18n:detect                               # 4. confirm the pair reads up-to-date
+git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md   # 5. drop detect artifacts
 ```
 
+- **You write the translation yourself.** There is no `ANTHROPIC_API_KEY` and no
+  machine-translation step in CI — a deliberate decision (`docs/.i18n/TASKS.md` §6).
+  `--apply` exits 2 without a key; CI's push job only preserves + version-stamps.
+  Nothing translates behind your back, so an untranslated side stays untranslated.
 - **Which side is the source** is per-file, in the front matter (`sourceLang`). Some
-  docs are VI-source with a machine-translated EN side — editing the translated side
-  alone gets silently overwritten on the next `--apply`. Check before editing.
+  docs are VI-source with an EN side that is the translation — edit the source side,
+  then re-translate the other, or the pair reads stale. Check before editing.
 - `--verified` refuses to write `codeVerified` while any claim is stale, and refuses
   when a doc makes no testable claim at all (`unverifiable`) — "nothing to check" is
   not a pass, that file needs human review and is stamped without the flag.
@@ -67,9 +74,13 @@ git checkout -- docs/.i18n/last-report.json docs/i18n-sync-log.md   # 4. drop de
   assurance instead of carrying it forward.
 - Two separate markers, deliberately: `syncStatus`/`sourceHash` answer "same
   revision?"; `codeVerified` answers "claims checked?". A full match needs both.
+- `stamp-pair` **refuses** on structural drift (`check-parity`): target still in the
+  source language, dropped sections, translated identifiers, broken link targets,
+  truncated tail. No reviewer stands after the stamp, so fix the translation —
+  `--allow-structure-drift` is for a deliberate divergence and needs a stated reason.
 
-Backlog and per-file rules: `docs/.i18n/TASKS.md`. Do not add commits to a merged
-translation PR — branch from `main` and open a new one.
+Backlog, priority order and the full delegation brief: `docs/.i18n/TASKS.md`. Do not
+add commits to a merged translation PR — branch from `main` and open a new one.
 
 ## Common tasks
 

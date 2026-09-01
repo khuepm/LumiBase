@@ -42,7 +42,7 @@ packages/
 ### TypeScript
 - Always `import type` for type-only imports
 - No `any` — use `unknown` + type guards
-- Validate all API inputs with Zod schemas from `@lumibase/shared`
+- Validate all API inputs with Zod schemas from `@lumibase/contracts`
 
 ### Runtime abstraction
 - Business logic must NEVER import Cloudflare bindings (`KVNamespace`, `R2Bucket`) directly
@@ -72,7 +72,7 @@ All responses must follow the envelope:
 | HITL harness | `apps/cms/src/services/ai-harness.ts` |
 | Runtime factory | `packages/runtime/src/factory.ts` |
 | Permission DSL | `apps/cms/src/services/permission-dsl.ts` |
-| Zod schemas | `packages/shared/src/schemas/` |
+| Zod schemas | `packages/contracts/src/schemas/` |
 | API routes | `apps/cms/src/routes/` |
 
 ## Common patterns
@@ -81,7 +81,7 @@ All responses must follow the envelope:
 ```typescript
 // apps/cms/src/routes/my-resource.ts
 import { zValidator } from '@hono/zod-validator'
-import { CreateMyResourceSchema } from '@lumibase/shared'
+import { CreateMyResourceSchema } from '@lumibase/contracts'
 
 router.post('/', zValidator('json', CreateMyResourceSchema), async (c) => {
   const siteId = c.get('siteId')          // from tenant middleware

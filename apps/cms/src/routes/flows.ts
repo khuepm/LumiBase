@@ -17,8 +17,13 @@ import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { listOperations, runFlow, type FlowGraph } from '../services/flow-service';
+import { listOperations } from '../services/flow-service';
 import { isValidCron, nextCronRun } from '../services/flow-scheduler';
+import {
+  createPendingRun,
+  FLOW_RUNS_QUEUE,
+  runFlowSyncWithTimeout,
+} from '../services/flow-run-service';
 
 export const flowsRouter = new Hono<AppEnv>();
 
@@ -87,15 +92,11 @@ flowsRouter.post('/:id/trigger', async (c) => {
 
   const [run] = await db
     .insert(flowRuns)
-    .values({ siteId, flowId: id, status: 'running', input })
+    .values({ siteId, flowId: id, status: 'running', input, startedAt: new Date() })
     .returning();
 
-  const result = await runFlow(flow.graph as FlowGraph, input, {
-    db,
-    siteId,
-    keys: c.get('runtime').keys,
-    runId: run!.id,
-  });
+  const { executeFlowGraph } = await import('../services/flow-run-service');
+  const result = await executeFlowGraph(db, siteId, id, input, c.get('runtime').keys, run!.id);
 
   await db
     .update(flowRuns)
@@ -164,9 +165,22 @@ function cronCheckForSave(
   return { nextRunAt: null };
 }
 
-// Registered before `/:id` so "operations" is not captured as a flow id.
+// Registered before `/:id` so "operations" and "runs" are not captured as flow ids.
 flowsRouter.get('/operations', (c) => {
   return c.json({ data: { operations: listOperations() } });
+});
+
+// Site-scoped run poll endpoint (high-load §10.3; design §18).
+flowsRouter.get('/runs/:runId', async (c) => {
+  const siteId = c.get('siteId');
+  const db = c.get('db');
+  const runId = c.req.param('runId');
+  const [run] = await db
+    .select()
+    .from(flowRuns)
+    .where(and(eq(flowRuns.id, runId), eq(flowRuns.siteId, siteId)));
+  if (!run) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Run not found' }] }, 404);
+  return c.json({ data: run });
 });
 
 flowsRouter.get('/', async (c) => {
@@ -277,39 +291,35 @@ flowsRouter.delete('/:id', async (c) => {
 flowsRouter.post('/:id/run', async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
+  const runtime = c.get('runtime');
   const id = c.req.param('id');
   const [flow] = await db.select().from(flows).where(and(eq(flows.id, id), eq(flows.siteId, siteId)));
   if (!flow) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Flow not found' }] }, 404);
 
-  const input = await c.req.json().catch(() => ({}));
+  const input = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const run = await createPendingRun(db, { siteId, flowId: id, input });
 
-  // Insert run row.
-  const [run] = await db
-    .insert(flowRuns)
-    .values({ siteId, flowId: id, status: 'running', input })
-    .returning();
+  if (runtime.queue) {
+    await runtime.queue.enqueue(FLOW_RUNS_QUEUE, 'flow:run', {
+      kind: 'flow',
+      siteId,
+      runId: run.id,
+      flowId: id,
+      input,
+    });
+    return c.json({ data: { runId: run.id, status: 'pending' } }, 202);
+  }
 
-  // `db`/`siteId`/`keys`/`runId` in env let runtime-bound operations
-  // (drift-scan, deploy:trigger…) execute tenant-scoped with access to the
-  // KeyProvider, without widening the operation options surface.
-  const result = await runFlow(flow.graph as FlowGraph, input, {
+  const result = await runFlowSyncWithTimeout(
     db,
     siteId,
-    keys: c.get('runtime').keys,
-    runId: run!.id,
-  });
-
-  await db
-    .update(flowRuns)
-    .set({
-      status: result.status,
-      steps: result.steps,
-      error: result.error ?? null,
-      finishedAt: new Date(),
-    })
-    .where(eq(flowRuns.id, run!.id));
-
-  return c.json({ data: { runId: run!.id, ...result } });
+    id,
+    run.id,
+    input,
+    runtime.keys,
+    c.env as unknown as Record<string, string | undefined>,
+  );
+  return c.json({ data: { runId: run.id, ...result } });
 });
 
 flowsRouter.get('/:id/runs', async (c) => {
@@ -320,7 +330,7 @@ flowsRouter.get('/:id/runs', async (c) => {
     .select()
     .from(flowRuns)
     .where(and(eq(flowRuns.flowId, id), eq(flowRuns.siteId, siteId)))
-    .orderBy(desc(flowRuns.startedAt))
+    .orderBy(desc(flowRuns.createdAt))
     .limit(100);
   return c.json({ data: rows });
 });

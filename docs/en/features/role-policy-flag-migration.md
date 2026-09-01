@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-25T08:11:36.295Z
+version: 2
+lastUpdated: 2026-08-02T19:21:22.343Z
 sourceLang: en
-contentHash: dfe37d468d6dd7e6
+contentHash: c1ca4ca739543cc9
+codeVerified: 2026-08-02T19:21:22.343Z
+codeVerifiedHash: c1ca4ca739543cc9
+codeVerifiedClaims: 4
 ---
 
 # Role Flag to Policy Flag Migration

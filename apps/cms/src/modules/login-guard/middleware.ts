@@ -52,6 +52,7 @@
  */
 
 import type { Context, MiddlewareHandler } from 'hono';
+import { DEFAULT_SITE_ID } from '../setup/site-constants';
 import { eq, sql } from 'drizzle-orm';
 import { users, type Database } from '@lumibase/database';
 
@@ -151,10 +152,9 @@ export function loginGuardMiddleware(
     const email = await readEmailFromRequest(c);
     const ip = extractClientIp(c, options.ipExtraction);
     const policy = await loadPolicy(db, options);
-    const counter = (options.counterStore ?? createCounterStore)(
-      db,
-      readEnvForCounter(c),
-    );
+    const counter = options.counterStore
+      ? options.counterStore(db, readEnvForCounter(c))
+      : createCounterStore(db, readEnvForCounter(c), { cache: c.get('runtime')?.cache });
 
     const verdict = await precheckLogin({
       db,
@@ -291,11 +291,14 @@ export async function precheckLogin(
  * Load the active Lockout_Policy from the `settings` row keyed on
  * `login_security_policy` (Req 6.6).
  *
- * Open question 8 (design §15.8 / tasks notes #7) leaves the settings
- * row's `siteId` ownership unresolved — the bootstrap admin's instance-
- * wide policy doesn't naturally fit the per-site `(siteId, key)` unique
- * constraint. Until that lands, we look up the policy by `key` alone
- * and pick the first row (`LIMIT 1`). When no row exists yet (the
+ * The policy is **instance-wide**, stored under the `__default__` site
+ * (see `SetupService` §10). Open question 8 — whether policies should
+ * become per-site — stays open; what this resolves is the narrower and
+ * more urgent half: with more than one `login_security_policy` row
+ * present, the previous `LIMIT 1` with no `ORDER BY` made the governing
+ * lockout thresholds depend on Postgres's row order. The lookup now
+ * prefers the instance-wide row and falls back to a stable
+ * `site_id ASC` ordering. When no row exists yet (the
  * SetupService deferred the write — see service.ts comment at §10),
  * we fall back to the Standard preset so the LoginGuard still has
  * sensible thresholds. The same fallback applies if the JSON parse
@@ -304,16 +307,32 @@ export async function precheckLogin(
 export async function loadLockoutPolicyFromSettings(
   db: Database,
 ): Promise<LockoutPolicy> {
-  // Use a parameterised raw SQL fragment because the strict
-  // `(siteId, key)` unique constraint means we can't rely on a typed
-  // Drizzle helper without picking a siteId. Selecting all rows for
-  // `key='login_security_policy'` and taking the first lets us survive
-  // both "single-site instance" and "no site row yet" deployments.
+  // Order the lookup instead of taking an arbitrary row.
+  //
+  // The policy is instance-wide: `SetupService` writes it under the
+  // `__default__` site precisely because that is "the only site that
+  // exists at bootstrap" and the placement "satisfies the instance-wide
+  // semantics without prejudging the multi-tenancy decision". A bare
+  // `LIMIT 1` with no `ORDER BY` did prejudge it, in the worst way — as
+  // soon as a second `login_security_policy` row existed, which policy
+  // governed lockout thresholds was whichever row Postgres happened to
+  // return first. Non-deterministic security configuration is worse than
+  // either candidate rule.
+  //
+  // So: prefer the instance-wide row, and fall back to any other row for
+  // deployments that wrote the policy elsewhere before this ordering
+  // existed (their behaviour is unchanged as long as they have just one).
+  // Per-site policies remain an open decision — this only makes the
+  // current instance-wide semantics deterministic.
+  //
   // The schema guarantees `value` is `jsonb`, so the row is already
   // parsed by the driver.
   type Row = { value: unknown };
   const rows = (await db.execute(
-    sql`SELECT value FROM lumibase_settings WHERE key = ${POLICY_SETTINGS_KEY} LIMIT 1`,
+    sql`SELECT value FROM lumibase_settings
+        WHERE key = ${POLICY_SETTINGS_KEY}
+        ORDER BY (site_id = ${DEFAULT_SITE_ID}) DESC, site_id ASC
+        LIMIT 1`,
   )) as unknown as Row[] | { rows: Row[] };
 
   // postgres-js returns the array directly; node-postgres wraps it in

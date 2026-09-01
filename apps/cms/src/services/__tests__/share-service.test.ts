@@ -214,6 +214,7 @@ function makePermissionCache(entries: Record<string, unknown>): CacheProvider {
       return v === undefined ? { state: 'miss' as const } : { state: 'hit' as const, value: v };
     },
     setNegative: async () => undefined,
+    invalidateByTag: async () => undefined,
   } as unknown as CacheProvider;
 }
 

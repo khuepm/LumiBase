@@ -17,6 +17,55 @@
 | Frontend (consumer) | Next.js 15 App Router | Page hydration pattern |
 | Monorepo | Turborepo + pnpm | Incremental builds |
 
+## Common commands
+
+Package manager is pinned: **pnpm 9.12.0** (`packageManager` field), Node **>= 22** (`.nvmrc`). Turborepo fans commands out across the workspace; `-F` targets one package.
+
+```bash
+# setup
+pnpm install
+docker compose -f docker/docker-compose.yml up -d   # postgres, redis, minio, meilisearch, imgproxy
+pnpm db:migrate                                     # export DATABASE_URL first — not auto-loaded
+
+# dev (CMS :1989, Studio :2026)
+pnpm lumibase              # cms + studio (needs interactive TUI)
+pnpm cms:dev               # wrangler dev, CMS only
+pnpm studio:dev            # vite, Studio only
+pnpm docs:dev / landing:dev / marketplace:dev
+
+# verify — all three must pass before a feature is done
+pnpm typecheck             # tsc --noEmit, recursive
+pnpm test                  # vitest --run, all packages
+pnpm lint                  # several packages stub this and exit 0
+pnpm -F @lumibase/cms test src/services/__tests__/item-service-encryption.test.ts   # focused run
+
+# build
+pnpm build                 # all except @lumibase/shell
+pnpm -F @lumibase/cms build          # wrangler dry-run → dist (Workers)
+pnpm -F @lumibase/cms build:node     # esbuild → dist/serve.cjs (Docker)
+
+# database
+pnpm db:generate           # drizzle-kit generate after editing src/schema/
+pnpm db:migrate:preflight  # inspect pending migrations
+pnpm db:migrate:dry-run
+pnpm db:studio
+pnpm db:seed-dev
+pnpm -F @lumibase/database backfill:role-policies   # apply | verify | rollback
+
+# repo hygiene gates (also enforced in CI)
+pnpm version:check         # root version vs package versions
+pnpm registry:check        # duplicate Setup Impact Registry numbers
+pnpm docs:i18n:detect      # en ↔ vi drift
+pnpm docs:i18n:parity <rel>
+pnpm docs:i18n:verify <rel>
+
+# release / deploy
+pnpm release:check         # required CF env/secrets present
+pnpm cms:deploy            # production Worker
+```
+
+Notes: `.husky/pre-commit` runs the full `pnpm test`. Never start dev servers or watch mode in a blocking tool call — use `--run`. Full `@lumibase/cms` test runs include DB integration tests that reset setup state, so don't point them at a local DB you care about.
+
 ## Deployment modes
 
 **Cloudflare mode** (`LUMIBASE_RUNTIME=cloudflare`):

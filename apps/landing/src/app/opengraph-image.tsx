@@ -20,50 +20,68 @@ export default function Image() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: "#05070a",
-          color: "white",
-          fontFamily: "sans-serif",
+          background: "#07060c",
+          color: "#f4ecff",
+          fontFamily: "monospace",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 24,
-          }}
-        >
-          {/* Sphere mark — matches the site header (white→grey orb, violet glow). */}
+        <div style={{ display: "flex", alignItems: "center", gap: 40 }}>
+          {/* Eclipse mark — prismatic corona + moon at totality */}
           <div
             style={{
-              width: 88,
-              height: 88,
-              borderRadius: "50%",
-              background: "linear-gradient(180deg, #ffffff 0%, #cfcfcf 100%)",
-              boxShadow: "0 0 48px rgba(123,97,255,0.75)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 150,
+              height: 150,
+              borderRadius: 9999,
+              background:
+                "radial-gradient(circle, rgba(255,176,32,0.45) 34%, rgba(214,31,159,0.3) 55%, rgba(155,92,255,0.22) 68%, rgba(41,216,230,0) 80%)",
             }}
-          />
-          <div style={{ display: "flex", fontSize: 80, fontWeight: 700 }}>
-            <span>Lumi</span>
-            <span style={{ color: "#7B61FF" }}>Base</span>
+          >
+            <div
+              style={{
+                display: "flex",
+                width: 96,
+                height: 96,
+                borderRadius: 9999,
+                background: "#0d0c14",
+                boxShadow:
+                  "0 0 0 3px #ffb020, 0 0 40px rgba(214,31,159,0.75), 0 0 90px rgba(155,92,255,0.5)",
+              }}
+            />
+          </div>
+          <div style={{ display: "flex", fontSize: 84, fontWeight: 700 }}>
+            <span>LUMI</span>
+            <span
+              style={{
+                background: "linear-gradient(120deg,#b06bff,#d61f9f,#ff6a1a)",
+                backgroundClip: "text",
+                color: "transparent",
+              }}
+            >
+              BASE
+            </span>
           </div>
         </div>
         <div
           style={{
-            marginTop: 32,
-            fontSize: 40,
-            color: "#e6edf3",
+            marginTop: 36,
+            fontSize: 38,
+            color: "#f4ecff",
           }}
         >
-          The Content Operating System
+          THE CONTENT OPERATING SYSTEM
         </div>
         <div
           style={{
-            marginTop: 16,
-            fontSize: 24,
-            color: "#8b98a9",
+            marginTop: 18,
+            fontSize: 22,
+            letterSpacing: 3,
+            color: "rgba(244,236,255,0.55)",
           }}
         >
-          Declare intent · Agents reconcile · You keep the veto
+          [ DECLARE INTENT · AGENTS RECONCILE · YOU KEEP THE VETO ]
         </div>
       </div>
     ),

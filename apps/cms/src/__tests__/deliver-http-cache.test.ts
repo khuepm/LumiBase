@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { deliverRouter } from '../routes/deliver';
+import type { EdgeCacheProvider } from '@lumibase/runtime';
 
 /**
  * Route-level tests for Delivery API HTTP caching
@@ -40,10 +41,13 @@ function fakeDb(queue: Row[][]) {
   return db;
 }
 
-function appWith(db: ReturnType<typeof fakeDb>) {
+function appWith(db: ReturnType<typeof fakeDb>, edgeCache?: EdgeCacheProvider) {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
     c.set('db', db as never);
+    if (edgeCache) {
+      c.set('runtime', { edgeCache } as AppEnv['Variables']['runtime']);
+    }
     await next();
   });
   app.route('/api/v1/deliver', deliverRouter);
@@ -89,7 +93,9 @@ describe('GET /deliver/page — HTTP caching', () => {
     expect(res.headers.get('cache-control')).toBe(
       'public, s-maxage=60, stale-while-revalidate=300',
     );
-    expect(res.headers.get('vary')).toBe('X-Lumi-Site');
+    // Every input `middleware/tenant.ts` resolves the site from, except
+    // `?site=` which is already part of the cache key (#390).
+    expect(res.headers.get('vary')).toBe('X-Lumi-Site, Host');
 
     const body = (await res.json()) as { sections: Array<{ data: { items: unknown[] } }> };
     expect(body.sections[0]?.data.items).toHaveLength(1);
@@ -148,5 +154,46 @@ describe('GET /deliver/page — HTTP caching', () => {
 
     expect(res.status).toBe(404);
     expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+
+  /**
+   * #390 — `Vary` must name every header the tenant is resolved from, so a
+   * shared cache keys on them instead of relying on each CDN to include
+   * `Host` by convention.
+   */
+  it('declares Host alongside X-Lumi-Site on every publicly cacheable response', async () => {
+    const page = fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]);
+    const pageRes = await appWith(page).request(URL);
+
+    // llms.txt is browser-cacheable (`max-age`, not just `s-maxage`) and
+    // previously carried no Vary at all.
+    const site = fakeDb([
+      [{ id: 'site-a', name: 'Site A', domain: null }],
+      [],
+      [],
+    ]);
+    const llmsRes = await appWith(site).request('/api/v1/deliver/llms.txt/site-a');
+
+    expect(pageRes.headers.get('vary')).toBe('X-Lumi-Site, Host');
+    expect(llmsRes.status).toBe(200);
+    expect(llmsRes.headers.get('cache-control')).toBe('public, max-age=300');
+    expect(llmsRes.headers.get('vary')).toBe('X-Lumi-Site, Host');
+  });
+
+  it('calls edgeCache.put on a cacheable 200 response (Req 1.6)', async () => {
+    const db = fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]);
+    const put = vi.fn(async (_req: Request, _response: Response) => undefined);
+    const match = vi.fn(async (_req: Request) => null);
+    const purge = vi.fn(async (_target: { urls: string[]; tags?: string[] }) => 0);
+    const edgeCache: EdgeCacheProvider = { match, put, purge };
+
+    const res = await appWith(db, edgeCache).request(URL);
+
+    expect(res.status).toBe(200);
+    expect(match).toHaveBeenCalledOnce();
+    expect(put).toHaveBeenCalledOnce();
+    const stored = put.mock.calls[0]?.[1];
+    expect(stored).toBeInstanceOf(Response);
+    expect((stored as Response).status).toBe(200);
   });
 });

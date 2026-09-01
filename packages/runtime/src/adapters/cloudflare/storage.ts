@@ -56,8 +56,16 @@ export class CloudflareStorageProvider implements StorageProvider {
         options.httpMetadata = { contentType: metadata.contentType };
       }
     }
-    // Convert Buffer to ArrayBuffer for R2 compatibility
-    const body = Buffer.isBuffer(data) ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer : data;
+    // Convert Buffer to ArrayBuffer for R2 compatibility.
+    // `Buffer.isBuffer` is typed `any` under @cloudflare/workers-types v5 (which
+    // declares its own `Buffer: any` and is the only `types` entry for the Worker
+    // build), so it no longer narrows. Test the view shape instead — that works
+    // whichever `Buffer` type is in scope.
+    const isBufferView = (v: unknown): v is Uint8Array =>
+      typeof v === 'object' && v !== null && ArrayBuffer.isView(v as ArrayBufferView);
+    const body = isBufferView(data)
+      ? (data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer)
+      : data;
     await this.bucket.put(key, body, options);
   }
 

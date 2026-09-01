@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:56.199Z
+version: 2
+lastUpdated: 2026-08-02T19:21:23.495Z
 sourceLang: en
-contentHash: cdcd5dfe1e155963
+contentHash: 527afa3b2b0bd405
+codeVerified: 2026-08-02T19:21:23.495Z
+codeVerifiedHash: 527afa3b2b0bd405
+codeVerifiedClaims: 7
 ---
 
 # Testing Guide
@@ -265,3 +268,47 @@ Tests run automatically on every PR and push to `main`:
 ```
 
 PRs cannot be merged if tests fail or coverage drops below thresholds.
+
+## k6 performance tests
+
+Load scripts live in `apps/cms/k6/`. They use [Grafana k6](https://k6.io/) and are gated in CI via `.github/workflows/perf-k6.yml`.
+
+### Local workflow
+
+```bash
+# 1. Start dependencies
+docker compose -f docker/docker-compose.yml up -d postgres redis
+
+# 2. Migrate + seed (CI uses SEED_ITEMS=1000 per collection; full baseline = 100000)
+DATABASE_URL=postgres://lumibase:lumibase_dev@localhost:5432/lumibase \
+  pnpm -F @lumibase/database migrate
+SEED_ITEMS=1000 DATABASE_URL=postgres://lumibase:lumibase_dev@localhost:5432/lumibase \
+  pnpm exec tsx apps/cms/k6/seed.ts
+
+# 3. Start CMS
+DATABASE_URL=postgres://lumibase:lumibase_dev@localhost:5432/lumibase \
+  REDIS_URL=redis://localhost:6379 \
+  JWT_SECRET=local-dev \
+  pnpm -F @lumibase/cms exec tsx src/serve.ts
+
+# 4. Run scripts (install k6: https://k6.io/docs/get-started/installation/)
+k6 run --env BASE_URL=http://localhost:1989 apps/cms/k6/smoke.js
+k6 run --env BASE_URL=http://localhost:1989 \
+     --env SITE_ID=site_load_a \
+     --env COLLECTION=articles \
+     apps/cms/k6/load-deliver.js
+```
+
+Baseline numbers are stored under `.kiro/specs/high-load-cache-readiness/baseline/` as JSON (config + p50/p95/p99 + custom metrics). Re-run after meaningful cache or infra changes and commit a new dated file — do not edit old baselines in place.
+
+### Changing thresholds
+
+Thresholds are defined in each script's `export const options.thresholds` block (e.g. `load-deliver.js`). Change them only when:
+
+1. You have a new baseline JSON proving the old bar is unrealistic, or
+2. An intentional perf regression is accepted and recorded in the roadmap §2 table.
+
+For CI, keep thresholds at or below **baseline × 1.2** (design §13.3). After raising a threshold, update the corresponding baseline notes file and mention the change in the PR.
+
+The `perf-k6` workflow uploads `load-deliver-summary.json` as an artifact on full runs. The `validate-scripts` job always runs `k6 inspect` so broken scripts fail fast without Docker.
+

@@ -21,12 +21,12 @@ export function RunsViz() {
           style={{ background: "var(--color-surface-3)" }}
         >
           <span
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-cream"
             style={{ background: r.c, font: `700 11px ${sans}` }}
           >
             {r.s}
           </span>
-          <span className="flex-1 text-white" style={{ font: `600 13px ${sans}` }}>
+          <span className="flex-1 text-cream" style={{ font: `600 13px ${sans}` }}>
             {r.t}
           </span>
           <span style={{ font: `500 11px ${sans}`, color: "var(--color-text-muted)" }}>
@@ -56,7 +56,7 @@ export function ProvenanceViz() {
             className="h-[7px] w-[7px] rounded-full"
             style={{ background: i === 1 ? "var(--color-blue)" : "var(--color-violet)" }}
           />
-          <code className="text-white" style={{ font: "600 12px var(--font-mono, monospace)" }}>
+          <code className="text-cream" style={{ font: "600 12px var(--font-mono, monospace)" }}>
             {who}
           </code>
           <span>{what}</span>
@@ -66,73 +66,17 @@ export function ProvenanceViz() {
   );
 }
 
-export function IntentViz() {
-  return (
-    <div className="w-full max-w-[480px] p-6">
-      <div
-        className="ring-glass flex items-center gap-2.5 rounded-xl px-3.5"
-        style={{ height: 44, background: "var(--color-surface-sunken)" }}
-      >
-        <span
-          className="min-w-0 flex-1 truncate text-left"
-          style={{ font: `500 14px ${sans}`, color: "#fff" }}
-        >
-          Every product: ≥1 image · 50–200 words · vi+en
-        </span>
-        <span className="btn-pill btn-solid btn-sm shrink-0">
-          <span>Set intent</span>
-        </span>
-      </div>
-      <div className="mt-3.5 flex items-center gap-2.5">
-        <span style={{ font: `500 12px ${sans}`, color: "var(--color-text-muted)" }}>
-          desired
-        </span>
-        <div
-          className="relative h-1.5 flex-1 rounded-[3px]"
-          style={{ background: "var(--color-surface-4)" }}
-        >
-          <div
-            className="absolute inset-y-0 left-0 rounded-[3px]"
-            style={{ right: "18%", background: "var(--color-blue)" }}
-          />
-        </div>
-        <span className="text-white" style={{ font: `600 12px ${sans}` }}>
-          82% converged
-        </span>
-      </div>
-    </div>
-  );
-}
+/*
+ * The intent card's visual used to live here as a fake input and a `btn-solid`
+ * span. It now lives in `content-os/content-os-split.tsx`: a large sticky,
+ * operable intent card drives a separate JSON rail beside it.
+ */
 
-export function NewsroomViz() {
-  const agents: Array<[string, string]> = [
-    ["✍", "Writer"],
-    ["✦", "Reviewer"],
-    ["⟳", "Translator"],
-    ["◎", "SEO"],
-  ];
-  return (
-    <div className="grid w-full grid-cols-2 gap-2.5 p-5">
-      {agents.map(([icon, name]) => (
-        <div
-          key={name}
-          className="ring-glass flex items-center gap-2.5 rounded-xl px-3 py-2.5"
-          style={{ background: "var(--color-surface-3)" }}
-        >
-          <span
-            className="flex h-[26px] w-[26px] items-center justify-center rounded-lg text-sm text-white"
-            style={{ background: "linear-gradient(180deg,#2a2730,#17161a)" }}
-          >
-            {icon}
-          </span>
-          <span className="text-white" style={{ font: `600 12px ${sans}` }}>
-            {name}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
+/*
+ * The old newsroom visual was a 2×2 list of role names. The Content OS rail now
+ * uses `RelayArt` — a static illustration of the handoff and the rejected
+ * self-review path — so the card explains itself before its caption is read.
+ */
 
 export function SchemaViz() {
   const fields: Array<[string, string]> = [
@@ -149,7 +93,7 @@ export function SchemaViz() {
           className="ring-glass flex items-center justify-between rounded-[10px] px-3 py-2"
           style={{ background: "var(--color-surface-3)" }}
         >
-          <span className="text-white" style={{ font: `600 12px ${sans}` }}>
+          <span className="text-cream" style={{ font: `600 12px ${sans}` }}>
             {name}
           </span>
           <span
@@ -195,12 +139,12 @@ export function McpViz() {
   return (
     <div className="flex w-full flex-col items-center gap-3 p-6">
       <div
-        className="flex items-center justify-center rounded-[18px] text-white"
+        className="flex items-center justify-center rounded-[18px] text-cream"
         style={{
           width: 70,
           height: 70,
-          background: "linear-gradient(180deg,#2a2730,#17161a)",
-          boxShadow: "var(--ring-glass), 0 0 50px rgba(24,160,251,0.4)",
+          background: "linear-gradient(180deg,#1b1926,#0d0c14)",
+          boxShadow: "var(--ring-glass), 0 0 50px rgba(41,216,230,0.35)",
           font: `700 26px ${sans}`,
         }}
       >
@@ -220,7 +164,7 @@ export function CdcViz() {
       {nodes.map((n, i) => (
         <span key={n} className="flex items-center gap-2.5">
           <span
-            className="ring-glass rounded-[10px] px-3 py-2 text-white"
+            className="ring-glass rounded-[10px] px-3 py-2 text-cream"
             style={{ background: "var(--color-surface-3)", font: `600 12px ${sans}` }}
           >
             {n}

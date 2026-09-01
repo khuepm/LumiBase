@@ -1,17 +1,18 @@
 ---
-version: 3
-lastUpdated: 2026-07-29T05:25:40.643Z
+version: 5
+lastUpdated: 2026-08-23T18:54:43.713Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 4d31db03699da2d2
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-29T05:25:40.643Z
-codeVerifiedHash: 4d31db03699da2d2
+sourceHash: bff91a77ab12750a
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-08-02T19:12:19.389Z
+codeVerifiedHash: 325307dcbbb6e106
 codeVerifiedClaims: 4
+<!-- check-parity: allow inline-code -->
 ---
 
-# Build with Gemini XPRIZE — Bản nháp submission Devpost (LumiBase)
+# Build with Gemini XPRIZE — Devpost Submission Draft (LumiBase)
 
 > Nháp soạn ngày 2026-06-13. Hạng mục: **Small Business Services**.
 > ⚠️ Các mục đánh dấu `[TODO]` cần bằng chứng thật từ founder trước khi submit lần cuối (ban giám khảo có verify repo, log, doanh thu).
@@ -87,7 +88,7 @@ Building a business this way means the founding team stays tiny while the operat
   **Apache-2.0**, không phải MIT, và đây là việc đã chốt chứ không còn mở:
   `CHANGELOG.md` ghi việc đổi license ở mục `[0.23.0]` (2026-07-14) — "Project
   license updated to the Apache License, Version 2.0 (from MIT), effective this
-  release", với `v0.22.0` là bản MIT cuối cùng. Repo đang ở `0.24.1`, `LICENSE` ở
+  release", với `v0.22.0` là bản MIT cuối cùng. Repo đang ở `0.26.0`, `LICENSE` ở
   gốc là Apache-2.0, và cả bốn package được publish đều khai `"Apache-2.0"`. Các
   chỗ nhắc MIT trong bản nháp này đã được sửa.
 - Export dashboard Stripe / sao kê ngân hàng / P&L đơn giản (template: https://docs.google.com/spreadsheets/d/1pAJrEMo7_QID6V62sA4C8XwGBHkxDTVX3wtYNE2fulI/edit)

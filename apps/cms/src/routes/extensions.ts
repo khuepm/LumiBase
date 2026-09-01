@@ -140,7 +140,11 @@ function patchActions(input: Partial<z.infer<typeof extensionSchema>>): Permissi
   return [...actions];
 }
 
-function optionalExecutionCtx(c: Context<AppEnv>): ExecutionContext | undefined {
+// Return type is inferred from Hono's own `executionCtx`, which is a narrower
+// shape than the global `ExecutionContext` that @cloudflare/workers-types v5
+// widened (it now requires `tracing`/`abort`). The value only ever flows back
+// into `subApp.fetch()`, which expects exactly Hono's shape.
+function optionalExecutionCtx(c: Context<AppEnv>) {
   try {
     return c.executionCtx;
   } catch {

@@ -4,6 +4,7 @@ import { users } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { PermissionService, type PermissionBundle } from '../services/permission-service';
 import { isFrontendAudience } from '../services/auth/token-audience';
+import { getRequestContext, mergeRequestContext } from './request-context';
 
 const STUDIO_CLIENT_HEADER = 'x-lumi-client';
 const STUDIO_CLIENT_VALUE = 'studio';
@@ -20,6 +21,7 @@ const PUBLIC_AUTH_PATHS = new Set([
   '/api/v1/auth/reset-password',
   '/api/v1/auth/refresh',
   '/api/v1/auth/logout',
+  '/api/v1/auth/verify-totp',
 ]);
 
 const STUDIO_ACCESS_PATH_PREFIXES = [
@@ -86,21 +88,7 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
     );
   }
 
-  const bundle = await new PermissionService({
-    db: c.get('db'),
-    cache: c.get('runtime').cache,
-    ctx: {
-      userId: auth.userId,
-      siteId: c.get('siteId'),
-      // Always forward it — `ctx.roleId` is the only role source
-      // `PermissionService` has for a principal with no user/API-key row.
-      roleId: auth.roleId ?? null,
-      user: { id: auth.userId, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) },
-      ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
-      headers: collectHeaders(c.req.raw.headers),
-      apiKey: auth.apiKey ?? null,
-    },
-  }).bundle();
+  const bundle = await resolveAccessBundle(c, auth);
 
   if (!bundle.appAccess) {
     return c.json(
@@ -126,8 +114,41 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
   }
 
   c.set('access', bundle);
+  mergeRequestContext(c, { accessBundle: bundle });
   return next();
 };
+
+async function resolveAccessBundle(
+  c: Parameters<MiddlewareHandler<AppEnv>>[0],
+  auth: AuthPrincipal,
+): Promise<PermissionBundle> {
+  const existing = c.get('access');
+  if (existing) return existing;
+
+  const ctx = getRequestContext(c);
+  if (ctx.accessBundle) {
+    c.set('access', ctx.accessBundle);
+    return ctx.accessBundle;
+  }
+
+  const bundle = await new PermissionService({
+    db: c.get('db'),
+    cache: c.get('runtime').cache,
+    ctx: {
+      userId: auth.userId ?? null,
+      siteId: c.get('siteId'),
+      roleId: auth.roleId ?? null,
+      user: { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) },
+      ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+      headers: collectHeaders(c.req.raw.headers),
+      apiKey: auth.apiKey ?? null,
+    },
+  }).bundle();
+
+  c.set('access', bundle);
+  mergeRequestContext(c, { accessBundle: bundle });
+  return bundle;
+}
 
 declare module '../env' {
   interface Variables {
@@ -162,8 +183,6 @@ export function isTfaEnrolled(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const tfa = value as Record<string, unknown>;
   if (tfa.enabled === true || tfa.enrolled === true || tfa.verified === true) return true;
-  if (typeof tfa.secret === 'string' && tfa.secret.length > 0) return true;
-  if (typeof tfa.tfaSecret === 'string' && tfa.tfaSecret.length > 0) return true;
   return false;
 }
 

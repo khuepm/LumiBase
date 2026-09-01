@@ -11,6 +11,657 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
+- **`lumibase` CLI (`packages/cli`).** The unscoped npm name now carries a real
+  dev tool: `lumibase init` (delegates to `create-lumibase`, so the scaffold has
+  one implementation), `lumibase types` (generates `.d.ts` from
+  `GET /api/v1/typegen/schema` — closing the "there is no typegen CLI" gap in
+  `docs/en/sdk/typegen.md`), and `lumibase doctor` (reports resolved config and
+  probes connectivity). Settings resolve flag > env > `lumibase.config.json`;
+  the token is never read from that file. Typegen output is deterministic, so
+  `lumibase types --check` works as a CI gate. See `docs/en/cli/index.md`.
+- **Native two-factor authentication (TOTP) for Studio logins.** Opt-in, per
+  user, enrolled from **Settings → Security**. Until now `users.tfa` was a
+  placeholder delegated to Logto and the `require_mfa` anomaly action had no
+  module behind it; both are now real. A Studio login by an enrolled user
+  returns `{ status: 'mfa_required', challengeToken, expiresIn }` instead of a
+  session, and `POST /api/v1/auth/verify-totp` exchanges that token plus a
+  6-digit code — or a recovery code — for the normal login payload
+  (`amr: ["pwd", "totp"]`). The challenge is a 5-minute JWT on its own
+  `mfa-challenge` audience, so `withAuth` cannot mistake it for a session, and
+  its `jti` is single-use. Verification is rate-limited per user (10) and per
+  IP (30) per 15 minutes. Self-service management lives under
+  `/api/v1/me/tfa*`: `setup` (password step-up → one-time secret +
+  `otpauthUrl`), `confirm` (proves possession, returns eight single-use
+  recovery codes), `recovery-codes` (regenerate), and `DELETE` (disable, which
+  bumps `tokenVersion` and revokes refresh tokens so a stolen session cannot
+  silently remove the second factor). Subscriber (`frontend`) logins are
+  untouched. Migration `0014_user_totp` adds
+  `lumibase_user_totp_credentials` + `lumibase_user_totp_recovery_codes`
+  (additive, idempotent, no backfill). The TOTP seed is stored only as a
+  KeyProvider AEAD envelope, so **enrolling in production requires
+  `ENCRYPTION_KEY`**; recovery codes are stored as PBKDF2 hashes. Optional
+  `LUMIBASE_TOTP_ISSUER` sets the label authenticator apps display. Docs:
+  `docs/en/security/user-management.md` §4f.
+- **Google Analytics 4 on the public sites, behind an opt-in.** `lumibase.dev` and
+  `docs.lumibase.dev` already reported traffic through Cloudflare Web Analytics,
+  which is cookieless and needs no consent. GA4 answers a different question
+  (campaign attribution, funnels) and does set cookies, so it ships gated: the tag
+  is not rendered or injected at all until the visitor allows analytics — stricter
+  than Consent Mode alone, which loads the tag and only withholds storage.
+  Advertising signals are pinned to `denied` (`ad_storage`, `ad_user_data`,
+  `ad_personalization`, plus `allow_google_signals: false`), and the measurement ID
+  is validated against `G-XXXXXXX` before it is interpolated into an inline script.
+  Enable per site with the `NEXT_PUBLIC_GA_ID` (landing) and `VITE_GA_ID` (docs)
+  repo variables, which `release.yml` and `pages-deploy.yml` pass to the builds;
+  leave one unset and that site's output contains no tag, no banner, and no cookies.
+- **`@lumibase/analytics-consent`** — the consent rules as one package rather than a
+  copy per site: storage semantics, measurement-ID validation, gating predicates,
+  the Consent Mode snippet, and an idempotent imperative loader for apps without a
+  declarative `<Script>`. The framework-free core is importable from a server
+  component or a Node test; `@lumibase/analytics-consent/react` adds `useConsent()`.
+  Its README documents the five invariants the test suite protects.
+- **A working opt-out on both sites.** The policy already claimed the right to "opt
+  out of analytics tracking" with nothing implementing it. There is now a control
+  that clears the stored decision, flips Consent Mode back to `denied`, deletes the
+  `_ga*` cookies, and re-opens the banner so the visitor chooses again — on the
+  landing privacy page, and in the docs footer. Consent is per-origin because
+  `localStorage` is, so each site asks and withdraws for itself.
+
+### Changed
+
+- **Landing privacy policy rewritten around what is actually collected.** It named
+  no processor and said only "analytics services (if enabled)" — not enough once
+  GA4 is in play. It now separates the always-on cookieless measurement from the
+  consent-gated GA4 path, names the cookies, states that Google may process data
+  outside your country, covers both public hostnames, spells out that a choice
+  applies to one site at a time, and confirms no ads and no data sales.
+- `turbo.json` adds `NEXT_PUBLIC_*` and `VITE_*` to the `build` task's cache key.
+  Next.js and Vite both inline those at build time, so without it, flipping a
+  measurement ID could replay a cached build that still has the old tag baked in.
+- **Dependency majors: ioredis 6, BullMQ 6, nanoid 6, shiki 4, jsdom 30,
+  `@vitejs/plugin-react` 6.** Two of these change behaviour rather than just
+  version numbers.
+  - **ioredis 6 negotiates RESP3 by default** (`protocol: 2` restores the v5
+    wire protocol). This affects the Docker/Node runtime only — the Cloudflare
+    path has no Redis. Verified against a live Redis 7.4: `HELLO` reports
+    `proto: 3`, and the tag fan-out in `RedisCacheProvider` (`SMEMBERS`, where
+    RESP3's set reply type would have broken it), `RedisRateLimiter`
+    (`INCR`/`EXPIRE NX`/`TTL`), `withLeaderLock` (`EVAL`) and a full
+    enqueue→process round-trip through `BullMQProvider` all behave as before.
+    No configuration change is required on upgrade.
+  - **nanoid 6 is ESM-only.** Both consumers (`apps/cms`, `packages/database`)
+    already resolve it through a bundler or `tsx`, and it inlines into the
+    Cloudflare Worker bundle with no `require()` shim. Only `nanoid()` and
+    `nanoid(size)` are used, so there is no API change to absorb. Closes `B24`
+    and retires the now-dead `nanoid@5` override; `nanoid@3` stays for the
+    `next` → `postcss` branch.
+  - **shiki 4 also removes a version skew that was already live.**
+    `@shikijs/rehype` was at `^4.4.3` and depends on `shiki@4.4.3` exactly,
+    while `apps/docs` declared `shiki@^1.22.0` — so `MarkdownRenderer` was
+    handing a 1.x `Highlighter` to a 4.x rehype plugin. The docs test suite
+    mocks shiki, so nothing caught it; the pair is now on one major.
+- **`@types/react-dom` override raised `19.2.4` → `19.2.5`.** The pin is exact,
+  so it wins over whatever the manifests declare — which is why the pending
+  minor-and-patch group bump (manifests to `^19.2.5`) failed `drift:check`: the
+  two ranges no longer intersected. Raising the override first clears that
+  without the group PR having to touch it, and `19.2.5` still satisfies today's
+  `^19.2.4` declarations, so this is a no-op for anyone not on the group bump.
+- **`engines.node` raised to `^22.22.2 || ^24.15.0 || >=26.0.0`** (was
+  `>=22.13.0`), the floor jsdom 30 requires. The previous range admitted Node
+  22.13–22.22.1, 23.x and 24.0–24.14, all of which jsdom 30 rejects; nanoid 6
+  additionally excludes odd majors. CI runs Node 24 so this was invisible there
+  and would only have surfaced on a contributor's machine. `.nvmrc` (24) already
+  satisfies it.
+- **`graphql-yoga` 5.21.3 → 5.22.0 closes the `graphql` 17 peer violation.** Yoga
+  now declares `graphql: ^15.2.0 || ^16.0.0 || ^17.0.0`, so the workspace's
+  `graphql@17.0.2` is satisfied by declaration instead of by the install happening
+  to work. The violation had been open since 2026-08-01 and survived #399, which
+  bumped Yoga without the peer range moving. Verified in the lockfile per DoD §2e —
+  the `apps/cms` importer resolves `17.0.2` and the `graphql-yoga@5.22.0` block
+  lists `^17.0.0` — not from the manifest. `B14` in
+  `.kiro/steering/out-of-scope-backlog.md` moves to `fixed`; pinning `graphql` back
+  to `^16` is no longer on the table.
+
+### Known gaps
+
+- **`apps/marketplace` has no consent banner yet.** It is a private submodule that
+  cannot be edited from this repository, and it sits outside the pnpm workspace, so
+  it cannot consume `@lumibase/analytics-consent` through `workspace:*` either.
+  Tracked as `B29` in `.kiro/steering/out-of-scope-backlog.md` with the two options
+  (publish the package, or copy the logic with a pointer back to the source).
+
+### Fixed
+
+- **The setup wizard says when no encryption key is configured.**
+  `GET /api/v1/setup/capabilities` gains `encryption.available`, and the
+  wizard's Security step shows a non-dismissible notice when it is `false`:
+  without a key, TOTP enrollment and encrypted item fields do not work.
+  Production already refused to boot without `ENCRYPTION_KEY` and
+  `pnpm release:check` already blocked deploys, but every other runtime —
+  local, Docker staging, a Workers preview — booted happily and only revealed
+  the gap when someone opened Settings → Security. The probe resolves keys
+  through the runtime's own `collectKeys`, so versioned keys
+  (`ENCRYPTION_KEY_v1`) count; `*_FILE` needs no special case because
+  `loadSecretFiles` has already materialised it. Studio treats an **absent**
+  field as available so an older CMS cannot make a healthy instance announce
+  that 2FA is impossible — only an explicit `false` raises the notice.
+- **A missing encryption key no longer reads as `500`, and no longer strands
+  the user.** Every 2FA path failed with an opaque `500 INTERNAL` when the AEAD
+  key it needed was unavailable. Fail-closed was correct — no seed is ever
+  handled in plaintext — but nothing told the operator that `ENCRYPTION_KEY`
+  was the problem. Enrollment now returns `503 ENCRYPTION_NOT_CONFIGURED` when
+  the deployment has no active key, and verify/regenerate return
+  `409 TFA_KEY_UNAVAILABLE`, naming the key id that is missing, when the key
+  that wrapped *that* seed was retired by a rotation. The worse half was the
+  dead end: recovery codes still worked (they are PBKDF2 hashes, not
+  KEK-wrapped), so the user could sign in, but `DELETE /me/tfa` and
+  `POST /me/tfa/recovery-codes` both demanded a live TOTP code that the missing
+  key could never verify — so the broken factor could be neither removed nor
+  replaced, and the account lost Studio access once the codes ran out.
+  `DELETE /me/tfa` now accepts a recovery code in place of a TOTP code
+  (password step-up unchanged, and it still bumps `tokenVersion` + revokes
+  refresh tokens), and Studio's Settings → Security offers that path. Topping
+  up recovery codes deliberately still requires a real TOTP code, since new
+  codes for an unusable enrollment would only extend the outage. Runbook:
+  `docs/en/operations/encryption-keys.md`.
+- **`perf-k6.yml` was an invalid workflow file, failing on every push for
+  weeks.** Its `on:` never declared `push` at all — the failures were not the
+  load-test job running and breaking. The `perf-gate` job's `if:` referenced
+  `env.PERF_K6_FULL_RUN`, and the `env` context does not exist in a job-level
+  `if:` (only `github`, `inputs`, `needs`, `vars`). That does not evaluate to
+  empty; it makes the whole file unparseable, so GitHub never resolved `name:`
+  or any job and recorded a bare failed run against every event, `on:` filters
+  included. The giveaway was the API reporting the run's `name` as the file path
+  with an empty job list. Switched to `vars.PERF_K6_FULL_RUN`; the workflow now
+  honours `on:` and no longer runs on push. Set the repo variable
+  `PERF_K6_FULL_RUN=true` to let the nightly schedule run the full compose + k6
+  job. Closes backlog `B31`.
+- **`registry:check` now also guards the out-of-scope backlog's `ID` column,**
+  not just the Setup Impact Registry's `#` column. Two PRs claimed `B30` for
+  unrelated findings and the collision only surfaced as a rebase conflict, which
+  is the same failure the `#` guard already existed to prevent — the backlog
+  table had simply been left out. It matters more than it looks: backlog ids are
+  cited by id from other rows ("Nối tiếp B13") and from CHANGELOG entries, so a
+  silent renumber breaks references nothing tests. Closes `B34`.
+- **CI now lints the workflow files themselves** (`workflow-lint` job running
+  `actionlint`, pinned by version and SHA-256 rather than adding another
+  third-party action to keep current). The reason a broken workflow could stay
+  broken for weeks is that nothing checked this class at all: an unparseable
+  workflow looks, from the outside, exactly like a workflow that ran and failed.
+  `actionlint` reports zero findings across `.github/workflows`, shellcheck
+  included over the `run:` blocks that drive Postgres, Redis and the deploy
+  steps — which required fixing five pre-existing findings it surfaced on first
+  run: two unquoted `${TARGET_ENV}` expansions in `deploy-cms.yml` (SC2086), two
+  unused loop variables in `perf-k6.yml` (SC2034), and a run of individual
+  redirects in `release.yml` (SC2129). The job also asserts shellcheck is on
+  PATH, because actionlint skips it *silently* when it is absent.
+- **The TOTP endpoints are actually reachable.** All six of them answered
+  `404 NOT_FOUND` against a running server. `index.ts` attached the sub-routers
+  *after* mounting their parents (`api.route('/auth', authRouter)` then
+  `authRouter.route('/', tfaAuthRouter)`), and Hono's `route()` copies a child's
+  routes at call time — so the handlers existed but nothing could reach them.
+  326 CMS test files passed throughout, because none of them drove these paths
+  through the composed app. Attachment now precedes mounting, and
+  `router-mount-order.wiring.test.ts` fails on the old order: it scans
+  `index.ts` for any sub-router attached after its parent was mounted, and pins
+  the Hono semantics that make the rule necessary.
+- **Enrollment no longer 500s at the confirm step.** `confirmTotpSetup` read the
+  pending record with `JSON.parse(await cache.get(...))`, but `CacheProvider.get`
+  already returns the value parsed (`set` takes a serialized string, `get` gives
+  back an object) — so confirming raised
+  `SyntaxError: "[object Object]" is not valid JSON` and no user could finish
+  enrolling.
+- **Settings → Security authenticates its requests.** The page fetched
+  `/api/v1/me/tfa*` with `credentials: 'same-origin'` and no `Authorization`
+  header, but `withAuth` only reads the bearer header — there is no cookie
+  branch — so every call returned 401. Worse than a dead page: the failed status
+  query fell through to `enabled = false`, so a user with 2FA **on** was shown
+  `Status: Disabled` and invited to enroll again. Requests now carry
+  `Authorization: Bearer` and resolve through `getApiBaseUrl()` (shell contract
+  C2), and a failed load renders an explicit error instead of a confident
+  security state. The same pattern elsewhere in Settings is logged as backlog
+  B26.
+- **`isTfaEnrolled` no longer treats a bare secret as proof of enrollment.**
+  The helper accepted `tfa.secret` / `tfa.tfaSecret` as "enrolled", which was
+  written for the Logto-delegated placeholder shape. With native TOTP a secret
+  exists from the moment setup begins, so that reading would have counted a
+  half-finished, never-verified enrollment as satisfying an `enforceTfa`
+  policy. Enrollment is now decided only by the explicit
+  `enabled`/`enrolled`/`verified` flags, which `confirm` sets.
+- **Settings → Security resolves on custom admin paths.** The new page was
+  added to the plain `/settings` route tree only, so on an instance running a
+  custom admin path the sidebar item would have led nowhere — the same
+  omission recorded as backlog B9 for `change-feed`/`encryption`. The
+  `/$adminPath/settings/security` twin is wired in the same change.
+- **Migration `0014_user_totp` is re-runnable.** Its two foreign keys were
+  emitted as bare `ADD CONSTRAINT`, which fails with `duplicate_object` on a
+  second apply; they now carry the repo's standard `DO $$ … EXCEPTION` guard.
+- **Studio component tests no longer flake under load.** Testing Library's
+  async timeout is separate from Vitest's `testTimeout` and defaults to
+  1000ms, so `findBy*` on a query-driven page could give up while the
+  component still showed "Loading…". The failing file moved between runs
+  (backlog B13), turning the pre-commit gate red for reasons unrelated to the
+  diff. The suite now configures `asyncUtilTimeout: 5000`; async utilities
+  still resolve as soon as the assertion passes, so fast machines are
+  unaffected.
+- **The k6 `detail_throughput` error-rate threshold could not fail.** The
+  scenario set `tags: { scenario: 'detail' }`, which overrides the tag k6
+  applies automatically from the scenario name, so the
+  `http_req_failed{scenario:detail_throughput}` sub-metric the threshold is
+  written against collected no samples at all — the same shape as the
+  `perf-k6.yml` breakage above, a guard that looks present and can never fire.
+  Dropping the override restores it: the committed Phase 0 baseline, produced
+  without the tag, records 1221 samples on that sub-metric. The `list` and
+  `create` scenarios had the same override and were already corrected when
+  their thresholds were renamed to the real scenario names.
+
+## [0.26.0] - 2026-08-24
+
+### Version
+
+- `v0.26.0`
+
+### Date
+
+- `2026-08-24`
+
+### Highlights
+
+- The landing page ships its new eclipse identity — the reason `lumibase.dev` looked unchanged is that Pages only deploys on a tag.
+- The EN/VI documentation backlog is closed: 146/146 pairs up-to-date, no single-sided pair left.
+- `high-load-cache-readiness` P0-P2 code is complete; only the k6 re-measurements remain, and §7 does not gate the 1.0 tag on them.
+- Five cache-stack correctness gaps closed, including an `immutable` media promise no purge channel could reach.
+- The dependency-audit gate is green again, and pnpm 10 can no longer drop the overrides silently.
+
+### Security
+
+- **Closed two high-severity advisories that were live on `main`.** `nanoid`
+  was pinned below 5.1.16 (GHSA-28wg-ghj8-5hjv — non-secure generators can loop
+  indefinitely on a negative size) and `js-yaml` below 4.3.1
+  (GHSA-5p4m-2wfm-xmqj — quadratic CPU consumption in `!!omap`). Both were held
+  down by root `pnpm.overrides`, so the bump had to land there rather than in
+  the individual manifests. `pnpm audit --prod --audit-level high` is clean
+  again.
+- **Closed the two dev-only `brace-expansion` advisories.** `brace-expansion@1`
+  `->` `^1.1.16` ([GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp)
+  — exponential-time expansion of consecutive non-expanding `{}` groups) and
+  `brace-expansion@5` `->` `^5.0.8`
+  ([GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) —
+  unbounded expansion length crashing the process on OOM). Both are **dev-only**
+  — `brace-expansion` never enters the `pnpm audit --prod` tree — so the CI gate
+  was already green and this closes the standing Dependabot alerts rather than
+  unblocking a build. Natural drift had already lifted most of the tree to
+  `1.1.18` / `5.0.9`; the straggler was a `5.0.7` copy held by `minimatch@10.2.5`.
+  Keyed per-major, the same shape as the existing `nanoid@3` / `nanoid@5` pair,
+  because `brace-expansion@1` exports the function itself while 5.x exports a
+  namespace object — collapsing both onto 5.x makes `minimatch@3` (ESLint and its
+  plugins) throw `TypeError: m is not a function`. A new "Known-unfixable alerts"
+  section in
+  [`docs/en/security/dependency-overrides.md`](docs/en/security/dependency-overrides.md)
+  records the two advisories that cannot be closed at all: GHSA-mh99 also matches
+  the 1.x line by range, and `glib@0.18.5` is pinned across the Tauri Linux GTK
+  stack.
+
+### Added
+
+- **`pnpm drift:check` — a guard against overrides overruling manifests.**
+  `scripts/check-override-drift.mjs` fails CI when an override range does not
+  intersect a range some workspace package declares directly. The existing
+  `settings:check` could not catch this class: the two override copies agreed
+  with each other, they were only both wrong relative to the manifests.
+  Dependency-free like the parity script — a check on install settings must not
+  depend on a successful install — and covered by `pnpm scripts:test`
+  (`node --test`), including the vite case, so it cannot degrade into a guard
+  that always passes. See `docs/en/security/dependency-overrides.md`.
+
+- **MCP path-traversal tripwire no longer blind to spliced path segments.**
+  The registry scan in `path-hardening.wiring.test.ts` probed each argument
+  with the literal `..` and then looked for `..` as a path segment of its own.
+  When a call site splices the value into a *larger* segment
+  (`` `/exports/report-${id}.json` ``), the probe produced
+  `/exports/report-...json` — no `..` segment — so the field was treated as
+  path-free and skipped before it ever reached the assertion. The source scan
+  missed the same shape independently, because its regex only matches an
+  interpolation directly preceded by `/`. Both halves of the guard were blind
+  to the identical call-site shape. Detection now probes with an alphanumeric
+  sentinel (unchanged by `encodePathSegment`) and checks the path portion of
+  the recorded URL, so an argument is found wherever it is spliced. Guard-only
+  change — no tool or runtime behaviour is affected, and no offender exists on
+  `main` today (32/32 pass unchanged).
+
+- **The landing page is a new visual identity.** `apps/landing` is restyled from
+  the orbital-solar-system look into an editorial "eclipse" language: a warm-black
+  ground, cream ink, a prismatic nebula palette, Archivo display / Literata serif /
+  DM Mono labels, uppercase bracketed mono captions, dashed rules and numbered
+  sections. The brand mark is a total solar eclipse with a small spaceship
+  transiting the moon (`logo-mark.svg`, `EclipseMark` / `EclipsePhase`), and the OG
+  image matches. The page is now scroll-driven rather than a stack of sections:
+  `EclipseStage` is a fixed backdrop where scroll *is* the eclipse — totality fills
+  the hero, the stage shrinks to the top-right as the moon slides off through the
+  product sections (light returns), then returns to centre for a second totality
+  behind the final CTA, with the spaceship transiting twice on scroll scrub.
+  `Scene` / `WipeTitle` / `EclipsePhaseScrub` drive dashed-rule draw, clip-path
+  title wipes and per-section eclipse-phase glyphs off a `--active-ratio` per-section
+  progress value; feature grids get per-column parallax. Smooth scrolling is Lenis
+  through a context (the header nav uses `lenis.scrollTo`), disabled under
+  `prefers-reduced-motion`, which instead renders a dimmed static totality —
+  hydration-safe via `useStaticMotion`. Implemented with framer-motion scrub rather
+  than THREE/GSAP. Marketing surface only: no API, schema, env or CMS behaviour
+  change.
+
+- **`docs/en/roadmap/post-v1.md` — the post-1.0 roadmap, written down.** The
+  narrative companion to the Post-v1 Roadmap board: it scores the four candidate
+  themes against the actual code, records why they are ordered the way they are,
+  and notes the positioning corrections found while reviewing MCP, GitOps, the
+  Change Feed and the authorization realms. Pairs with the `post-v1`-labelled
+  issues so "later" has a written definition instead of living in a project board.
+
+- **A structural parity gate for translations — `scripts/docs-i18n/check-parity.mjs`.**
+  The two existing checkers answer different questions: `sync.mjs` compares hashes
+  ("same source revision?") and `verify-code-refs.mjs` compares claims against the
+  source tree ("is it true?"). Neither can tell you the translation is *the same
+  document*. This one does: target actually in the target language, same heading
+  count and level sequence, same fenced-block count with byte-identical code
+  (comment lines excluded — those are prose), same inline-code and link-target
+  multisets, same table row counts, provenance front matter present, body length
+  inside a truncation band. It is tuned against the real corpus: in-page anchors are
+  compared by count rather than value, because a translated heading *must* produce a
+  different slug, and prose-shaped fences (`text`, `tree`, `mermaid`, untagged) are
+  compared by count only, because translating an ASCII diagram's labels is correct.
+  Per-doc `<!-- check-parity: allow <check> -->` waivers keep a deliberate divergence
+  visible next to the divergence. `stamp-pair.mjs` runs it and **refuses to stamp**
+  on drift — that is the gate that bites, since stamping is what makes a pair read
+  "up-to-date" to every other tool.
+
+- **The EN/VI translation backlog is closed: 146/146 pairs up-to-date.** `detect`
+  went from 87 up-to-date / 59 planned to 146 / 0; `check-parity` from 187 problems
+  across 76 pairs with 3 single-sided pairs to 52 across 36 with **none**
+  single-sided. Single-sided was the reader-facing failure: someone choosing
+  Vietnamese and being served English. The 52 that remain are cosmetic — comment
+  text inside code fences, anchor slugs that differ because the headings differ.
+  `docs/.i18n/TASKS.md` keeps the task table as a record rather than a queue.
+
+- **DoD §4a — EN/VI parity is a condition of the PR that breaks it.** Two failures
+  drove this, both of which reached `main`: `docs/vi/agent-setup/prompt.md` never
+  received the `withDeprecation` opt-in rule the EN side had carried since 0.24.x, so
+  an agent reading the Vietnamese instructions was never told about it — on a file
+  §4 lists as release surface; and the 60-pair backlog above accumulated to the point
+  of needing its own translation campaign. §4a makes both locales a checklist item,
+  states plainly that CI will *not* catch this (`docs-i18n-sync.yml` runs
+  `check-parity` with `|| true`, so the human is the enforcement), and carries up the
+  rules that were previously only visible to someone already mid-batch: establish the
+  translation direction from `detect` rather than guessing (some pairs are
+  VI-source), never edit the source side to make parity green, and do not translate a
+  file whose EN source is sitting in an unmerged PR.
+
+### Changed
+
+- **The repo guards now run before the commit, not after the push.** `version:check`,
+  `registry:check`, `settings:check`, `drift:check` and `scripts:test` existed only as
+  CI steps, so the feedback loop for a mechanical mistake was commit → push → open PR →
+  wait for CI → red, even though every one of them runs in well under a second against
+  files already on disk. They are now a single `pnpm check:all`, invoked by
+  `.husky/pre-commit` **before** `pnpm test` so a bad row number or a half-declared
+  override fails immediately instead of after a full suite run. CI calls the same script
+  rather than keeping its own list of five steps, so the local and CI guard sets cannot
+  drift apart — adding a guard to `check:all` arms it in both places at once.
+  Closes #406.
+
+- **The landing page's "Set intent" control now does something.** The Content OS
+  section's *Intent-driven, not click-driven* card was a static mock: a
+  `btn-solid` span labelled "Set intent" with no handler, over a hardcoded
+  "82% converged" bar. It is now a working composer
+  (`apps/landing/src/components/IntentComposerViz.tsx`) — edit the sentence or
+  pick a collection preset, and the card compiles it into the `intent-rule.v1`
+  payload you would `POST /api/v1/agent/intents`, evaluates an eight-item sample
+  against those rules, and runs the beats (compile → evaluate → incident →
+  reconcile → converged), ending with a copyable payload. Compilation is
+  deliberately local and labelled as such: the real endpoint is control-plane
+  admin-only and `apps/landing` ships as a static export, so
+  `apps/landing/src/lib/intent-compile.ts` implements a deterministic matcher
+  over the same six rule shapes as `intent-service.ts`. It mirrors the shipped
+  semantics rather than the marketing phrasing — `field_constraint` measures
+  characters (`drift-service.ts` compares `value.length`), so "50–200 words"
+  compiles to 300–1200 chars *with the conversion surfaced as a warning*, and
+  each fix is attributed to the role `RULE_ROLE_ROUTING` would route that rule
+  to. Landing-only: no API, schema, env or CMS behaviour changes.
+
+- **Consolidated every open Dependabot upgrade into one lockfile-consistent
+  change** rather than merging them serially, where each merge invalidated the
+  next PR's lockfile. Majors taken: `uuid` 11→14, `vite` 7→8, `nanoid` 5.0→5.1,
+  `@dnd-kit/sortable` 8→10, `lucide-react` 0.452→1.28, `fast-check` 3→4,
+  `@testing-library/jest-dom` 6→7, `@cloudflare/workers-types` 4→5, `eslint`
+  9→10, `next` 16.2→16.3. Three breaking changes needed source follow-up, all
+  behaviour-preserving: `@cloudflare/workers-types` v5 declares its own
+  `Buffer: any` and widened `ExecutionContext`; `lucide-react` v1 dropped brand
+  marks (`Github` was the only removed export in use, across 121 import sites);
+  and `fast-check` v4 replaced the per-unit string builders with
+  `string({ unit })`. No runtime, schema, or setup behaviour changes — no
+  migration or backfill is required on upgrade.
+
+- **`high-load-cache-readiness` P0–P2 complete (tasks 0–21).** The programme's code
+  is now in: `PageService` + `/api/v1/pages` with negative-cache forget on create and
+  slug rename; `runtime.edgeCache` (Cloudflare `caches.default`, Docker no-op) behind
+  the runtime abstraction on the deliver path; Cache Provider v2 with tags,
+  `invalidateByTag`, `onEvent` and an LRU `MemoryCacheProvider` plus contract tests;
+  `POST /api/v1/utils/cache/purge`; content invalidation and deliver app-cache;
+  `createSwrCache` (single-flight / stale-while-revalidate); middleware consolidation;
+  async audit; a `RateLimiterProvider`; cache observability; process roles with a
+  leader lock; `flow_runs` async with `Prefer: respond-async`; `items` indexes and
+  transactional writes; a `perf-k6` CI workflow; and ADR-012 removing the unused CDC
+  `CacheInvalidator`. **The k6 re-measurements are still open** (tasks 7.1, 15.1,
+  21.1) — the code landed, the numbers were not taken, and per Req 0.3 estimated
+  figures are not allowed in the roadmap table. `v1-release-criteria.md` §7 classifies
+  performance baselines as non-blocking for the 1.0 tag; the one real measurement is
+  DB-query-per-404 = 0.0308.
+
+- **Per-request identity lookups de-duplicated (Req 10).** `withAuth` now stashes
+  the resolved `users` row and `user_sites` membership on the Hono context
+  (`c.set('principal', …)`); `withSiteMembership` reads that bundle instead of
+  re-issuing the same queries, and `withStudioAccess` reuses the `access` bundle
+  `withSiteMembership` already computed rather than calling `PermissionService.bundle()`
+  a second time. Each guard still falls back to querying when the bundle is absent, so
+  the middleware stay independently correct and standalone-testable, and guard
+  semantics are unchanged — a request rejected before is rejected with the same status
+  now. `request-context-bundle.test.ts` asserts the principal × route matrix and the
+  query-count reduction; the `security-guards.wiring` tripwire is preserved.
+
+- **A high-load Phase 0 baseline exists.** k6 seed and run tooling under
+  `apps/cms/k6/`, with reproducible measurement and runs that continue when a
+  threshold is advisory. This is what makes the remaining re-measurement tasks
+  possible at all: Req 0.3 forbids filling the roadmap table with estimates, so
+  without a baseline no phase could be closed.
+
+### Fixed
+
+- **The test suite no longer fails because the machine was busy — and the ReDoS
+  guard it contained now actually guards something.** Two separate time-based
+  assertions were failing under parallel load on unmodified `main`, and the
+  turbo cache was hiding it (`pnpm test` replayed a cache hit; only
+  `turbo run test --force` exposed it). The `CloudflareSearchProvider` host
+  normalization test asserted an absolute `< 100ms` that the correct linear scan
+  itself can exceed (133ms observed in CI) — **and** it timed inputs ending in
+  slashes, which `/\/+$/` matches greedily without backtracking, so the test
+  would have passed with the vulnerable regex in place (measured 0.4ms). It now
+  compares an adversarial slash run against a benign string of the same length
+  and bounds the ratio, which load scales on both sides; the separation between
+  implementations is ~4 orders of magnitude. Confirmed by reintroducing the
+  regex: the new test fails at 35,699x. React Testing Library's
+  `asyncUtilTimeout` in Studio is also raised from its 1000ms default, which was
+  an implicit wall-clock budget causing "Unable to find role=..." failures in
+  suites that pass standalone. The docs search smoke test keeps a ceiling but a
+  generous one, with a note that it only catches catastrophic regressions.
+  Closes #408.
+
+- **`fc.date()` generators could emit `Invalid Date`.** `noInvalidDate`
+  defaults to false, so bounded date arbitraries still produced NaN
+  timestamps — the approvals-list ordering property compared them, and the
+  Studio approval-card arbitrary would have thrown on
+  `new Date(NaN).toISOString()`. A latent test bug, surfaced (not caused) by
+  `fast-check` v4's different generation bias.
+
+- **Vite 8 was never actually in effect.** `pnpm.overrides.vite` sat at `^7.3.5`
+  while `apps/studio` and `apps/docs` both declared `^8.1.3`. pnpm overrides
+  apply to direct dependencies too, so the override won and the lockfile
+  importer read `specifier: ^7.3.5 → 7.3.6` — both apps were built with Vite 7
+  for as long as their manifests claimed Vite 8. Raising the override in step
+  with the manifests flips the toolchain for real (importers now resolve 8.2.2).
+
+- **Node floor raised to `>=22.13.0`,** and `.nvmrc` pinned to `24` to match
+  CI's `NODE_VERSION` instead of floating on `22`. The old `>=22` admitted
+  22.0–22.12, a range that breaks both `vite` 8 (needs `>=22.12.0`) and `eslint`
+  10 (needs `^22.13.0`). **Contributors on Node 22.0–22.12 must upgrade.**
+  `packages/mcp-server` keeps `>=18`: its floor is a contract with consumers of
+  a published package, not with this toolchain.
+
+- **ESLint unified on 10** — `apps/landing` was still on 9 while `apps/consumer`
+  already declared 10. `@dnd-kit/core` raised to `^6.3.0` so `@dnd-kit/sortable`
+  10's peer is satisfied by declaration rather than by the lockfile happening to
+  resolve 6.3.1. `apps/docs` moved to `@testing-library/jest-dom` 7 so the
+  workspace no longer carries two majors of one test library.
+
+- **The `immutable` media cache promise was not one.** `/api/v1/media/:key`
+  transform URLs were served `Cache-Control: immutable, max-age=31536000`, but
+  `POST /media/:key` overwrites in place under a caller-chosen key (`storage.put`,
+  no existence check). The URL was therefore not a function of the content:
+  re-uploading different bytes left every browser that had already fetched the old
+  ones holding them for a year, with **no channel able to reach them** — neither tag
+  purge nor CDN purge reaches the browser cache. Uploaded bytes are now fingerprinted
+  into storage metadata (`contentHash`), returned as `version` and surfaced on reads
+  as `X-Lumi-Media-Version`; `immutable` is served only for a URL pinned with
+  `?v=<contentHash>`, and a pin that does not match the stored fingerprint is
+  downgraded rather than freezing whatever bytes happen to be there. The
+  original-bytes path, which previously carried no `Cache-Control` at all and left
+  each cache to its own heuristic, now gets `must-revalidate` + a weak `ETag` + `304`
+  on `If-None-Match`. Objects with no stored fingerprint — earlier uploads, and
+  anything written through the streaming `PUT /files/upload/:key` receiver, which
+  cannot hash a body it never buffers — degrade to revalidation and never to
+  `immutable`. Refs #388.
+
+- **`Vary` omitted `Host`.** It named only `X-Lumi-Site`, while
+  `middleware/tenant.ts` resolves the site from that header, from `Host`, **and**
+  from `?site=` in development. The query string is already part of the cache key,
+  but `Host` was declared nowhere — leaving correctness on the delivery routes
+  dependent on every CDN in front of the app keying on `Host` by convention. Also
+  documents how far invalidation actually reaches, and adds an operational edge
+  purge plus an in-process cache layer.
+
+- **`fast-uri` and `hono` advisories in the production tree.** The dependency-audit
+  gate had been red on every branch since
+  [GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7) was
+  published — **fast-uri host confusion via a backslash authority introducer**, high,
+  `>=4.0.0 <4.1.2`. Nothing in the repo changed; the advisory did. The root override
+  read `">=3.1.4"`, written for the earlier 3.x advisory, which resolved happily to
+  the vulnerable 4.1.1; it now reads `">=4.1.2"`. `fast-uri` reaches the production
+  tree through `ajv@8`. `hono` in `apps/cms` also goes `^4.12.32` → `^4.12.34` for
+  [GHSA-8j4g-w8fx-2239](https://github.com/advisories/GHSA-8j4g-w8fx-2239) — **ReDoS
+  in the CORS middleware via `Access-Control-Request-Headers`**. That one is only
+  moderate, so `--audit-level high` would never have caught it, but this is the
+  framework every request passes through and the CORS middleware is wired
+  (`apps/cms/src/config/cors.ts`), so it takes a patch bump rather than a backlog row.
+
+- **pnpm 10 would have silently dropped every override.** The `pnpm` field in
+  `package.json` — overrides, `patchedDependencies`, `auditConfig` — is no longer read
+  by pnpm 10, which reads `pnpm-workspace.yaml` instead and only warns once before
+  ignoring the rest. Nothing was broken yet, because `packageManager` pins 9.12.0, but
+  the first `packageManager` bump would have reverted every security pin and unapplied
+  the `gray-matter` patch without a single error. All three keys are now declared in
+  **both** files, and `pnpm settings:check` fails the build when the two drift apart.
+  Refs #295.
+
+- **`CHANGELOG.md` asserted a release that does not exist.** A
+  `## [1.0.0] - 2026-07-11` section sat wedged between `[0.22.0]` and `[0.21.0]`,
+  which read as 1.0.0 having shipped *before* 0.22.0, 0.23.0 and 0.24.x. It would also
+  have broken this release: `/release` inserts the new section directly under
+  `## [Unreleased]`, so cutting 1.0.0 would have produced two `## [1.0.0]` headings and
+  the `awk` extractor stops at the first — the GitHub Release would have shipped the
+  stale text. The prose is preserved in `.kiro/steering/v1-changelog-draft.md` with the
+  list of what it still needs. Also stops CI from stamping translations it never made.
+
+- **`stamp-pair.mjs` could not bootstrap an unstamped pair.** Its pre-write gate
+  treated `check-parity`'s `front-matter` problems as "the two locales are not the same
+  document" — but those fire precisely when the target side has no `translatedFrom` /
+  `sourceHash`, and their printed remedy is to run `stamp-pair.mjs`. The gate was
+  unsatisfiable: exit 6, pointing at itself. Found on
+  `security/dependency-overrides.md`, whose VI side was a complete and current
+  translation that merely predated the provenance stamps. `front-matter` is now
+  excluded from that gate; every other check still blocks.
+
+- **`docs/{en,vi}/cdc/architecture.md` documented a module ADR-012 deleted.** Both
+  locales described `apps/cms/src/modules/cdc/cache-invalidator.ts` — its Redis key
+  scheme, its dedup window, its outage buffer — for a file that no longer exists. The
+  section now records what actually happened and why (keys omitted `siteId`; they never
+  matched the tag-based keys the read paths use), and points at ADR-012 and the real
+  invalidation path. This was the only `verify-code-refs` finding on `main`, and it was
+  a reader-facing inaccuracy rather than a broken link.
+
+### Migrations
+
+- None.
+
+## [0.25.0] - 2026-08-02
+
+### Version
+
+- `v0.25.0`
+
+### Date
+
+- `2026-08-02`
+
+### Highlights
+
+- **Public (anonymous) realm — the third authorization realm from ADR-011.**
+  An unauthenticated request now resolves to the site's `public` role instead
+  of a blanket 401, so content can be served publicly *through* the permission
+  layer rather than around it. Opt-in per site, GET/HEAD on allow-listed
+  content paths only, and structurally least-privilege (migration `0012`).
+
+- **Cache penetration defence.** Public reads stack identifier shape guards,
+  negative-cache tombstones, and a Delivery IP rate limiter in front of
+  Postgres, so a flood of nonexistent slugs no longer becomes database load.
+
+- **Dependency majors batched — this release requires Node 22+.** jose 6,
+  zod 4, node-cron 4, execa 10, react 19 alignment, graphql 17 and others land
+  together. Two breaking consequences for consumers: `create-lumibase` now
+  requires Node 22+, and jose v6 removed the `KeyLike` export. See *Changed*.
+
+### Added
+
+- **High-load & cache readiness programme closeout (spec tasks 0–22).** P0: Delivery HTTP caching (ETag, `Cache-Control`, edge-cache adapter), permission-cache version bump at every grant mutation, API-key `lastUsedAt` debounce, setup-state process cache, list `meta=total_count|none` opt-in, Caddy/app body limits, identifier shape guards. P1: Cache Provider v2 (`tags`, `invalidateByTag`, `getEntry`/`setNegative`, admin purge), content tag invalidation + deliver app-cache + auto revalidation, SWR/single-flight for schema/permission, middleware query consolidation, async audit queue, distributed rate limiter, cache observability (metrics/health/Grafana), cache penetration defence (tombstones, deliver IP limiter, k6 `load-penetration.js` — measured DB-query-per-404 **0.0308**). P2: `LUMIBASE_PROCESS_ROLE` web/worker split + Redis leader lock, flow/AI async (`202` + poll; `Prefer: respond-async`), migration `0013` + items deliver indexes, transactional item writes, CDC `CacheInvalidator` removed (ADR-012), nightly k6 workflow. ADR-004 → Implemented. DoD §2b gains tag-purge + behavioural-test checklist line. Setup Impact Registry #95 (`n/a` + migration `0013`/index upgrade note). k6 baseline re-run for deliver/items/smoke/realtime: **pending_env** (see `baseline/2026-08-02-baseline-notes.json`).
+- **High-load P2: flow/AI async + DB indexes (tasks 17–18).** `POST
+  /flows/:id/run` returns 202 when a queue worker is available; poll
+  `GET /flows/runs/:runId`. AI chat supports `Prefer: respond-async` (reuses
+  `lumibase_flow_runs.run_type = ai_chat`). Migration `0013` adds flow-run
+  history index + `items_site_coll_updated_idx` / `items_deliver_idx`.
+  **Upgrade note:** on large Postgres instances, create the two `items_*`
+  indexes with `CREATE INDEX CONCURRENTLY` outside the migration transaction
+  (see `docs/en/deployment/performance.md`).
+- **Cache Provider v2 (tags + purge).** `CacheSetOptions.tags`,
+  `invalidateByTag`, optional `onEvent` on Redis / KV / `MemoryCacheProvider`
+  (LRU); admin `POST /api/v1/utils/cache/purge` (control-plane,
+  tenant-scoped). ADR-004 → Implemented.
+- **Delivery edge cache adapter.** `runtime.edgeCache` — Cloudflare
+  `caches.default` match/put; Docker no-op — wired on cacheable deliver
+  page responses (task 1.3).
+- **Public (anonymous) role and principal (ADR-011, migration `0012`).**
+  `withAuth` previously returned an unconditional 401 for a caller with no
+  credential, so there was no way to serve content publicly through the
+  permission layer at all. An unauthenticated request now resolves to the
+  site's `public` role, which keeps row filters and field masks in force. Two
+  conditions gate it: the site has explicitly enabled public access (enabling
+  is what creates the role, so existing deployments are unchanged until an
+  operator turns it on), and the request is a GET/HEAD on an allow-listed
+  content path. The role is least-privilege by construction —
+  `admin_access`/`app_access` are pinned off by check constraints on
+  `lumibase_roles` and `lumibase_policies`, with route guards refusing the same
+  edits as a readable 4xx rather than a constraint violation, and hand-attached
+  policies screened at the attach point (a table check cannot see across the
+  `role_policies` join). Anonymous role lookups are cached per site, negative
+  results included, since every visitor shares one compiled bundle under the
+  `role:{id}` principal key. GraphQL is deliberately excluded: its operations
+  arrive over POST, so the read-method rule cannot cover it.
+
 - **Cache penetration defence (Delivery API + schema lookup).** Public reads
   now stack three cheap filters before Postgres: identifier shape guards
   (404, zero queries), short-lived negative-cache tombstones on
@@ -19,7 +670,128 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   IP rate limiter (`LUMIBASE_DELIVER_RATE_LIMIT`, default 1200/min). See
   `docs/en/features/caching.md`. No schema or setup change.
 
+- **Studio: edit a publishable key's origin allowlist.**
+  `PATCH /api-keys/:id/allowed-origins` and the SDK's `setAllowedOrigins()`
+  already existed — only the Studio affordance was missing, so an allowlist
+  could be set at create time and never again. Tightening it, or fixing a
+  mistyped origin, meant rotating the token and redeploying whatever ships the
+  key, which defeats a control that exists precisely because the key is already
+  out in clients. The API-key detail panel now has an *Allowed origins* box,
+  shown only for publishable keys (the `Origin` check is browser-only; a secret
+  key is used server-to-server where no `Origin` exists). Save stays disabled
+  until the parsed list actually differs, and clearing the box — which widens
+  access — is confirmed rather than silently accepted. No migration, no seed,
+  no new endpoint.
+
+- **OpenSSF Scorecard** workflow with published results, plus the badge in the
+  README. Supply-chain posture is now measured on a schedule instead of
+  assumed.
+
+### Changed
+
+- **Dependency majors batched ([#326](https://github.com/khuepm/LumiBase/pull/326),
+  follow-ups in [#327](https://github.com/khuepm/LumiBase/pull/327)):** jose 6,
+  zod 4, node-cron 4, execa 10, `@types/node` 26, react/react-dom 19 alignment,
+  graphql 17, tailwind-merge 3, eslint-config-next 16. Two consequences worth
+  knowing about when you upgrade:
+  - **Node 22+ is now required** for `create-lumibase` (execa 10), enforced by
+    an engines field plus a runtime guard.
+  - **jose v6 removed the `KeyLike` export**; key typing moved to `CryptoKey`.
+    Anything importing `KeyLike` from jose transitively through LumiBase needs
+    the same change.
+
+  After pulling this release, run `pnpm install` before `pnpm test` — a stale
+  `node_modules` resolves zod 3 against zod-4 call sites and fails at import
+  time, which looks like broken tests rather than a stale lockfile.
+
+### Removed
+
+- **`apps/enterprise` submodule.** Referenced only by `.gitmodules` and docs —
+  no workflow, build, or workspace target depended on it, and it tracked a
+  stale branch. `apps/marketplace` stays (it is built by `pages-deploy.yml`,
+  `release.yml`, and `ci.yml`).
+
 ### Fixed
+
+- **Security / marketplace:** `POST /api/v1/marketplace/publish` had no
+  permission or ownership check, unlike every sibling write route. Any
+  authenticated user with any site membership could publish or overwrite rows in
+  the shared global catalog that every tenant reads, bypass community
+  moderation, and spoof the `verified` badge by supplying `signature` /
+  `publisherKeyId` / `bundleSha256` in the request body. The route is now gated
+  on `extensions:configure` (the same moderator capability as
+  `/submissions/review`), the supplied signature is verified against the
+  **stored** bundle via `ExtensionVerifierService`, `isOfficial` / `verifiedAt`
+  are server-derived, and publishing a community submission that is not
+  `approved` returns `409`. Upgrade note: automation that published with an
+  ordinary token now receives `403` and must use a principal holding
+  `extensions:configure`.
+- **Delivery API and pageview beacon were unreachable anonymously.** Both are
+  anonymous-by-design (tenancy is in the URL) but were mounted *after*
+  `app.route('/api/v1', api)`. The authenticated sub-app's `use('*')` chain
+  flattens to `/api/v1/*` and Hono runs middleware registered before a handler,
+  so every credential-less request died in `withTenant` / `withAuth` with
+  `400 TENANT_REQUIRED` / `401 UNAUTHENTICATED` before reaching the handler. The
+  public mounts now precede the `api` mount (the same disjoint-leaf mechanism
+  the shares and email-unsubscribe mounts already relied on), and the beacon
+  middleware is scoped to the `/pageviews/:site_id/hit` leaf so the
+  authenticated `/pageviews/stats` no longer runs `withDb` / `withRateLimit`
+  twice. The golden-path E2E gains the anonymous read leg that caught this.
+- **Public access grants were inert on the content API.**
+  `buildRequestPermissionContext` hardcoded `roleId: null` (two more call sites
+  hand-rolled the same literal). `withAuth` does set `roleId` to the site's
+  `public` role for an anonymous principal, but `PermissionService.compile()`
+  resolves roles from `user_sites`, `user_roles`, `api_key_roles` and
+  `ctx.roleId` — and for an anonymous principal the first three are empty by
+  definition. The role never reached the bundle, so every public grant compiled
+  to an empty policy set and the feature silently did nothing. `auth.roleId` is
+  now forwarded everywhere a principal is in scope.
+
+- **`/disable` for public access was not sticky.** A grant used to provision the
+  anonymous realm as a side effect, and since "enabled" is not a flag here — it
+  *is* the existence of the `public` role — that gave two independent ways to
+  turn anonymous access on. An operator who deliberately closed anonymous access
+  could have it silently reopened by any later grant call, leaving only
+  `realm_access_granted` in the audit trail and no `public_access_enabled`.
+  `POST /access/grants/public` now returns 409 `PUBLIC_ACCESS_DISABLED` while
+  the site has public access off, naming `/access/grants/public/enable` as the
+  way in. Only `public` is gated; `subscriber` is provisioned on first
+  registration and is not operator-togglable.
+
+- **Cache-penetration follow-ups (audit of the Req 19 implementation).** Five
+  defects found reviewing what shipped above:
+  - **The Delivery 404 was an oracle.** A shape-rejected identifier answered
+    `{"error":"Not found."}` while a real miss answered
+    `{"error":"Page not found."}`, so a prober could tell "malformed" from
+    "well-formed but absent" — the one thing the guard is documented not to
+    leak. Both paths now return the same body and headers, with a regression
+    test that fails if they diverge again.
+  - **`LUMIBASE_NEGATIVE_CACHE_TTL` was ignored on Cloudflare Workers.**
+    `SchemaService` read `process.env`, which does not carry wrangler vars, so
+    the TTL was always the 30s default and `0` could not disable tombstones on
+    that runtime. The TTL is now resolved from the request env and threaded
+    through `ItemServiceDeps` / `SchemaServiceDeps`.
+  - **The tombstone sat in front of the hot path.** `getCompiled` probed the
+    tombstone before the positive schema cache, so every lookup of a
+    *real* collection paid a second cache round-trip — and that runs on every
+    item list/detail/patch. Positive cache is checked first now; penetration
+    traffic still never reaches Postgres.
+  - **Half the tombstones were invisible in Prometheus.** Only the Delivery
+    routes incremented `cache_negative_hits_total` /
+    `cache_negative_writes_total`; collection-name tombstones did not, despite
+    being wired. Both now report.
+  - **Unbounded key material, plus a dead key.** Collection names bound the
+    alphabet but not the length, so a long name minted a multi-KB Redis key —
+    now clamped to 256 like slugs. The `neg:*:item:*` key and its `forget` call
+    in `ItemService.create` are gone: nothing ever wrote that key (item-by-id
+    reads are all authenticated, and tombstones are never served to credentialed
+    requests), so each item create spent a Redis round-trip deleting something
+    that never existed.
+
+- **Studio flashed a full-page spinner when the API was down.** `GET
+  /setup/state` kept auto-refetching on window focus/reconnect after a failure,
+  and the error screen was not latched during manual retry, so an unreachable
+  `api.lumibase.dev` looked like continuous refreshing.
 
 - **Landing / sponsor rewards ([#296](https://github.com/khuepm/LumiBase/issues/296)):**
   `saveToDatabase()` in `apps/landing/src/lib/rewards.ts` was an exported no-op
@@ -73,7 +845,28 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   same path-traversal / confused-deputy class closed in 0.13.x; the CDC tools
   landed afterwards and reintroduced it.
 
-### Added
+- **Shell version drift could recur — `version:sync` now covers `src-tauri`.**
+  v0.24.1 existed only to hand-repair `apps/shell/src-tauri` metadata
+  (`tauri.conf.json`, `Cargo.toml`, `Cargo.lock`) that v0.24.0 shipped stale,
+  but the repair was a one-off edit: `scripts/sync-version.mjs` still swept
+  `package.json` files exclusively, so the three Tauri files drifted again the
+  moment the root version moved. They are now part of the sync (and of
+  `version:check`, which gates the release), with the `Cargo.lock` rewrite
+  pinned to the `lumibase-shell` entry so no third-party crate pin is touched.
+  A file that stops exposing its version where expected is reported as a
+  mismatch rather than skipped — silently syncing nothing is the failure mode
+  this guards against. `tauri.conf.json` is what the desktop auto-updater
+  compares against, so drift here ships a build that will not offer its own
+  update.
+
+- **CI: stale `apps/enterprise` gitlink broke the Scorecard workflow.** The
+  submodule's `.gitmodules` entry was removed without removing the `160000`
+  gitlink from the index, so `git submodule foreach` failed with `No url found
+  for submodule path 'apps/enterprise'`. That aborted checkout in the one
+  workflow using `persist-credentials: false` — Scorecard — which is why only
+  that job was red. The orphaned gitlink is gone.
+
+### Added — regression tripwires
 
 - **Harness KeyProvider tripwire.** `ai-harness-keys-context.test.ts` locks the
   class rather than the four call sites: a source scan requires every
@@ -102,6 +895,19 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   registered tool and fails if an argument that reaches a path segment accepts
   `..`. Both halves are needed — encoding alone cannot neutralize `..`. The scan
   found the CDC gap above.
+
+### Migrations
+
+- **`0012_public_role_least_privilege`** — adds two `CHECK` constraints:
+  `roles_public_least_privilege` on `lumibase_roles` and
+  `policies_public_least_privilege` on `lumibase_policies`. Both pin
+  `admin_access`/`app_access` (and `enforce_tfa` for policies) off for the
+  `public` system key, so an elevation flag on the anonymous role cannot be set
+  even by hand-written SQL or an import. The predicates use `is distinct from`
+  rather than `<>` so they evaluate FALSE-or-TRUE — not NULL — for the many
+  rows with a NULL `system_key`/`key`. Additive and non-destructive; no
+  backfill. If an existing row already carries an elevated `public` role the
+  `ALTER TABLE` will fail — clear those flags first, then re-run.
 
 ## [0.24.1] - 2026-07-21
 
@@ -444,83 +1250,6 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 - `0007_cdc_change_feed` — Change Feed outbox/capture tables (additive,
   idempotent). No destructive changes.
-
-## [1.0.0] - 2026-07-11
-
-### Version
-
-- `v1.0.0`
-
-### Date
-
-- `2026-07-11`
-
-### Highlights
-
-- **First release under a semver stability guarantee.** `1.0.0` freezes the
-  public surface — REST/GraphQL API, `@lumibase/sdk` exports, the
-  `{ data, meta }` / `{ errors }` response format, header contracts
-  (`X-Lumi-Site`…), environment variable names/semantics, and setup-wizard
-  flags. From here, breaking changes are deferred to `2.0.0`; additive changes
-  ship in minors and bug/security fixes in patches. See the versioning policy in
-  the README.
-- **Policies are the source of truth for access.** The role→policy migration
-  reaches its stable shape: `admin_access`/`app_access` (plus `enforce_tfa`, IP
-  guards, and time windows) are owned by policies. Legacy role flags remain as a
-  compatibility fallback through 1.0 for rollback safety. A verified,
-  idempotent backfill materializes legacy role flags into policies on upgrade.
-- **Backward-compatible upgrade path from `0.6.x`.** Instances on `0.6.x`–
-  `0.21.x` upgrade in place; the full "Upgrading to 1.0" runbook documents which
-  sources go direct, which need an intermediate stop, and the pre-`0.17.0`
-  re-import boundary. See Upgrade notes below.
-- **Golden-path E2E gate in CI.** No tag ships on hand-verified flows: CI now
-  drives setup wizard → create site → create collection → CRUD item → publish →
-  read via the public API, with a two-site isolation check.
-
-### Added
-
-- **CI golden-path E2E gate.** A new `e2e-golden-path` job in
-  `.github/workflows/ci.yml` exercises the end-to-end content lifecycle
-  (setup → site → collection → item CRUD → publish → public read) plus
-  cross-tenant isolation, on every PR and push to `main`. The v1 release
-  criteria (§3) require this gate to be green before tagging.
-- **"Upgrading to 1.0" operations runbook.** `docs/en/operations/upgrades.md`
-  (VI mirror in `docs/vi/`) gains a version-specific section: a supported-source
-  matrix, the RBAC role→policy backfill with its idempotent SQL and zero-row
-  verification query, and rollback guidance. Surfaced under a new "Operations"
-  docs category.
-
-### Changed
-
-- **RBAC access model finalized on policies.** Effective access continues to be
-  computed as `role flags OR active policy flags` during the 1.0 compatibility
-  window; the role flag columns are retained (not dropped) so rollback stays
-  safe. They are scheduled to drop in a later release only after
-  `LUMIBASE_RBAC_LEGACY_ROLE_FLAGS=false` has shipped and been verified.
-
-### Security
-
-- No new advisories in this release. The v1 security audit
-  (`docs/en/security/cwe-top-100-audit.md`) is the release gate: every
-  Partial/Not-addressed CWE must be fixed or accepted-with-rationale before the
-  `v1.0.0` tag. CWE-521 (password-policy alignment, `register` → 12-char
-  minimum) is tracked as a required v1 fix.
-
-### Upgrade notes
-
-- **Read `docs/en/operations/upgrades.md` → "Upgrading to 1.0" before
-  upgrading.** Summary:
-  - `0.18.x`–`0.21.x` → direct, no manual data step.
-  - `0.6.x`–`0.17.x` → direct, plus the RBAC role→policy backfill (run against
-    staging, verify the post-check returns zero rows).
-  - Before `0.17.0` (unprefixed tables) → **not an in-place upgrade**; export and
-    re-import into a fresh `1.0.0` install.
-  - Before `0.6.0` → upgrade to an intermediate `0.17.x`–`0.21.x` release first,
-    verify, then upgrade to `1.0.0`.
-- **No destructive schema change over `0.21.x`.** Application rollback to the
-  previous `0.21.x` deployment remains compatible with the 1.0 database. The
-  backfill is separately reversible during the compatibility window (delete the
-  `legacy_role_flags_%` policies; role flags are untouched).
 
 ## [0.21.0] - 2026-07-08
 

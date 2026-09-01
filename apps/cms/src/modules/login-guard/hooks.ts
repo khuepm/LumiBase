@@ -428,6 +428,10 @@ export async function recordLoginFailure(
     reason: ctx.reason,
   });
 
+  if (counter.onFailureRecorded) {
+    await counter.onFailureRecorded(emailLower, ip, policy.lockoutWindowSeconds);
+  }
+
   // Req 15.1 — `login_failed` audit entry for EVERY failed attempt
   // (task 11.2). Emitted right after the row is recorded so the audit
   // trail mirrors `login_attempts`. Best-effort + never-throws via

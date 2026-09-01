@@ -206,7 +206,7 @@ recoveryRouter.post('/recover', async (c) => {
   //    budget is SHARED with /forgot-path via the same module-level
   //    counter keyed by IP alone.
   const ip = extractClientIp(c);
-  const limit = checkRecoveryRateLimit(ip);
+  const limit = await checkRecoveryRateLimit(c.get('runtime')?.rateLimiter, ip);
   if (!limit.allowed) {
     return c.json(
       { errors: [{ code: RECOVERY_RATE_LIMIT_CODE }] },
@@ -275,7 +275,7 @@ recoveryRouter.post('/forgot-path', async (c) => {
   // 1. Rate limit FIRST — shares the SAME 3/IP/hour budget as /recover
   //    (Req 14.8). Denied → 429 + Retry-After.
   const ip = extractClientIp(c);
-  const limit = checkRecoveryRateLimit(ip);
+  const limit = await checkRecoveryRateLimit(c.get('runtime')?.rateLimiter, ip);
   if (!limit.allowed) {
     return c.json(
       { errors: [{ code: RECOVERY_RATE_LIMIT_CODE }] },
@@ -328,7 +328,7 @@ recoveryRouter.post('/forgot-path', async (c) => {
 
 recoveryRouter.post('/reset-password', async (c) => {
   const ip = extractClientIp(c);
-  const limit = checkRecoveryRateLimit(ip);
+  const limit = await checkRecoveryRateLimit(c.get('runtime')?.rateLimiter, ip);
   if (!limit.allowed) {
     return c.json(
       { errors: [{ code: RECOVERY_RATE_LIMIT_CODE }] },

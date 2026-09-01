@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/contracts",
-  "version": "0.24.1",
+  "version": "0.26.0",
   "description": "Shared Zod schemas, types, policy DSL, and field DSL for LumiBase. Pure ESM — no Hono/React runtime deps.",
   "license": "Apache-2.0",
   "type": "module",

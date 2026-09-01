@@ -1,8 +1,8 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T10:56:36.955Z
+version: 2
+lastUpdated: 2026-08-02T19:08:03.859Z
 sourceLang: en
-contentHash: fa73f811c20a5c31
+contentHash: 5d9af79a03dae779
 ---
 
 # Architecture Decision Records (ADR)
@@ -24,6 +24,7 @@ LumiBase follows the [ADR pattern](https://adr.github.io/) to document significa
 | [ADR-009](./adr-009-graphql-yoga.md) | GraphQL Yoga with Dynamic Schema over ItemService | Accepted |
 | [ADR-010](./adr-010-lumibase-table-prefix.md) | `lumibase_` prefix for all system tables | Accepted |
 | [ADR-011](./adr-011-user-management-realms.md) | User Management Realms (single store, role-scoped realms, token audiences) | Accepted |
+| [ADR-012](./adr-012-remove-cdc-cache-invalidator.md) | Remove CDC CacheInvalidator (superseded by tag purge at API write path) | Accepted |
 
 ## Template
 

@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import type { AppEnv } from '../env';
 import type { ItemService } from '../services/item-service';
 import { itemServiceForRequest } from '../services/item-service-factory';
+import { resolveNegativeTtl } from '../services/negative-cache';
 import { SchemaService } from '../services/schema-service';
 
 /**
@@ -44,7 +45,12 @@ export function buildGraphQLContext(c: Context<AppEnv>): GraphQLContext {
     siteId,
     userId: c.get('auth')?.userId ?? null,
     items: buildItemService(c),
-    schema: new SchemaService({ db: c.get('db'), siteId, cache: c.get('runtime').cache }),
+    schema: new SchemaService({
+      db: c.get('db'),
+      siteId,
+      cache: c.get('runtime').cache,
+      negativeCacheTtl: resolveNegativeTtl(c.env),
+    }),
     realtimeNamespace,
   };
 }

@@ -1,8 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-07-06T23:15:55.000Z
+version: 5
+lastUpdated: 2026-08-02T19:21:21.609Z
 sourceLang: en
-contentHash: 0b02fec2a9ea24df
+contentHash: d61ac505ff51e1e6
+codeVerified: 2026-08-02T19:21:21.609Z
+codeVerifiedHash: d61ac505ff51e1e6
+codeVerifiedClaims: 54
 ---
 
 # CWE Top 100 Security Audit — LumiBase

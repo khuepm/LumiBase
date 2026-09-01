@@ -125,7 +125,7 @@ export async function processFlowEventJob(
   const input = job.input ?? ({ event: job.event } as Record<string, unknown>);
   const [run] = await db
     .insert(flowRuns)
-    .values({ siteId: job.siteId, flowId: job.flowId, status: 'running', input })
+    .values({ siteId: job.siteId, flowId: job.flowId, status: 'running', input, startedAt: new Date() })
     .returning();
 
   const result = await runFlow(flow.graph as FlowGraph, input, {

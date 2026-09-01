@@ -1,5 +1,5 @@
 import { classifyCacheValue, negativeCacheWireValue } from '../../cache-entry';
-import type { CacheEntry, CacheProvider, UniqueCounterProvider } from '../../interfaces';
+import type { CacheEvent, CacheEntry, CacheProvider, CacheSetOptions, UniqueCounterProvider } from '../../interfaces';
 import { CounterUnavailableError } from '../../interfaces';
 import type { DurableObjectNamespaceLike } from './realtime';
 
@@ -20,50 +20,136 @@ export interface KVNamespace {
  * Wraps a Cloudflare Workers KVNamespace binding to implement the
  * CacheProvider interface for edge deployments.
  *
+ * Tag index: each tag maps to `tag:{tag}` holding a JSON string array of
+ * cache keys (read-modify-write on set). `invalidateByTag` reads the index,
+ * deletes each listed key, then deletes the index entry. KV eventual
+ * consistency (~60s global propagation) is a lower bound on purge speed;
+ * delivery compensates via short `s-maxage`.
+ *
  * KV cannot increment atomically, so `increment`/`addUnique`/`countUnique` are
  * delegated to the per-site `PageviewCounter` Durable Object when its namespace
  * binding is present. When the binding is absent (`PAGEVIEW_COUNTER` unset), the
  * counter methods throw {@link CounterUnavailableError} so the caller can fall
  * back to the DB-rollup strategy — get/set/delete are unaffected.
  *
- * Negative-cache note (Req 19.4 / open question §21.7): Workers KV typically
- * returns `null` on both miss and some backend failures rather than throwing,
- * so `unavailable` is only observed when `get` actually throws.
+ * Negative-cache note (Req 19.4 / design §21.7 CHỐT 2026-08-01): Workers KV
+ * `get` returns `null` on miss (does not throw). Soft failures that surface as
+ * `null` collapse to `miss` → safe DB fallback. `unavailable` is only observed
+ * when `get` actually throws (infra/runtime exceptions); primarily a Docker/
+ * Redis-observable state.
  */
 export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProvider {
+  onEvent?: (e: CacheEvent) => void;
+
   constructor(
     private kv: KVNamespace,
     private counterNs?: DurableObjectNamespaceLike,
   ) {}
 
+  private emit(event: CacheEvent): void {
+    this.onEvent?.(event);
+  }
+
+  private tagIndexKey(tag: string): string {
+    return `tag:${tag}`;
+  }
+
+  private async readTagIndex(tag: string): Promise<string[]> {
+    const raw = await this.kv.get(this.tagIndexKey(tag), 'text');
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async writeTagIndex(tag: string, keys: string[]): Promise<void> {
+    await this.kv.put(this.tagIndexKey(tag), JSON.stringify(keys));
+  }
+
   async getEntry<T>(key: string): Promise<CacheEntry<T>> {
     try {
       const val = await this.kv.get(key, 'json');
-      return classifyCacheValue<T>(val);
+      const classified = classifyCacheValue<T>(val);
+      if (classified.state === 'negative') {
+        this.emit({ op: 'getEntry', result: 'negative', backend: 'kv' });
+      } else if (classified.state === 'hit') {
+        this.emit({ op: 'getEntry', result: 'hit', backend: 'kv' });
+      } else if (classified.state === 'unavailable') {
+        this.emit({ op: 'getEntry', result: 'unavailable', backend: 'kv' });
+      } else {
+        this.emit({ op: 'getEntry', result: 'miss', backend: 'kv' });
+      }
+      return classified;
     } catch {
+      this.emit({ op: 'getEntry', result: 'unavailable', backend: 'kv' });
       return { state: 'unavailable' };
     }
   }
 
   async get<T = string>(key: string): Promise<T | null> {
     const entry = await this.getEntry<T>(key);
-    return entry.state === 'hit' ? entry.value : null;
+    if (entry.state === 'hit') {
+      this.emit({ op: 'get', result: 'hit', backend: 'kv' });
+      return entry.value;
+    }
+    if (entry.state === 'negative') {
+      this.emit({ op: 'get', result: 'negative', backend: 'kv' });
+    } else if (entry.state === 'unavailable') {
+      this.emit({ op: 'get', result: 'unavailable', backend: 'kv' });
+    } else {
+      this.emit({ op: 'get', result: 'miss', backend: 'kv' });
+    }
+    return null;
   }
 
-  async set(key: string, value: string, options?: { ttl?: number }): Promise<void> {
-    await this.kv.put(
-      key,
-      value,
-      options?.ttl ? { expirationTtl: options.ttl } : undefined,
-    );
+  async set(key: string, value: string, options?: CacheSetOptions): Promise<void> {
+    try {
+      await this.kv.put(
+        key,
+        value,
+        options?.ttl ? { expirationTtl: options.ttl } : undefined,
+      );
+      if (options?.tags?.length) {
+        for (const tag of options.tags) {
+          const existing = await this.readTagIndex(tag);
+          if (!existing.includes(key)) {
+            existing.push(key);
+            await this.writeTagIndex(tag, existing);
+          }
+        }
+      }
+      this.emit({ op: 'set', result: 'ok', backend: 'kv' });
+    } catch {
+      this.emit({ op: 'set', result: 'error', backend: 'kv' });
+    }
   }
 
   async setNegative(key: string, options?: { ttl?: number }): Promise<void> {
     await this.set(key, negativeCacheWireValue(), options);
+    this.emit({ op: 'setNegative', result: 'ok', backend: 'kv' });
   }
 
   async delete(key: string): Promise<void> {
-    await this.kv.delete(key);
+    try {
+      await this.kv.delete(key);
+      this.emit({ op: 'delete', result: 'ok', backend: 'kv' });
+    } catch {
+      this.emit({ op: 'delete', result: 'error', backend: 'kv' });
+    }
+  }
+
+  async invalidateByTag(tag: string): Promise<void> {
+    try {
+      const keys = await this.readTagIndex(tag);
+      await Promise.all(keys.map((k) => this.kv.delete(k)));
+      await this.kv.delete(this.tagIndexKey(tag));
+      this.emit({ op: 'invalidateByTag', result: 'ok', backend: 'kv' });
+    } catch {
+      this.emit({ op: 'invalidateByTag', result: 'error', backend: 'kv' });
+    }
   }
 
   /**
