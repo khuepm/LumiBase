@@ -197,6 +197,7 @@ apps/landing/
 │   │   ├── globals.css         # Global styles
 │   │   ├── sitemap.ts          # Sitemap generation
 │   │   ├── opengraph-image.tsx # Social share card
+│   │   ├── pricing/            # Pricing page (hidden: noindex, unlinked, not in sitemap)
 │   │   ├── tos/                # Terms of Service
 │   │   ├── privacy/            # Privacy Policy
 │   │   └── license/            # License page
@@ -206,7 +207,8 @@ apps/landing/
 │       ├── Hero.tsx            # Hero headline + orbital stage
 │       ├── ProductSection.tsx  # Product pillar sections
 │       ├── SectionVisuals.tsx  # Per-pillar mini-visuals
-│       └── TrustViz.tsx        # Trust-ladder visual
+│       ├── TrustViz.tsx        # Trust-ladder visual
+│       └── PricingCard.tsx     # Pricing tier card (hidden page only)
 ├── public/
 │   └── robots.txt              # SEO robots.txt
 ├── next.config.ts              # Next.js configuration
@@ -214,6 +216,21 @@ apps/landing/
 ├── tsconfig.json               # TypeScript configuration
 └── package.json                # Dependencies
 ```
+
+## Hidden pages
+
+`/pricing` is deliberately hidden rather than deleted: the route still renders for
+anyone with the direct link, but it is unlisted everywhere public. To bring it back,
+reverse all four:
+
+| What | Where |
+|---|---|
+| `robots: { index: false, follow: false }` | `src/app/pricing/page.tsx` metadata |
+| Header nav link | `textLinks` in `src/components/Header.tsx` |
+| Footer "Product" column link | `columns` in `src/components/Footer.tsx` |
+| Sitemap entry + `LAST_MODIFIED.pricing` | `src/app/sitemap.ts` |
+| `Offer` entries in `SoftwareApplication` JSON-LD | `src/app/page.tsx` |
+| Pricing line in the Product section | `public/llms.txt` |
 
 ## Customization
 
