@@ -158,7 +158,7 @@ body {
     font-family: var(--font-serif-stack);
   }
 
-  /* Legacy control-room utilities kept for the pricing/legal pages */
+  /* Legacy control-room utilities kept for the legal pages */
   .bg-grid {
     background-image:
       linear-gradient(to right, rgba(244, 242, 255, 0.04) 1px, transparent 1px),

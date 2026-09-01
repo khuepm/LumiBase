@@ -197,7 +197,6 @@ apps/landing/
 │   │   ├── globals.css         # Global styles
 │   │   ├── sitemap.ts          # Sitemap generation
 │   │   ├── opengraph-image.tsx # Social share card
-│   │   ├── pricing/            # Pricing page
 │   │   ├── tos/                # Terms of Service
 │   │   ├── privacy/            # Privacy Policy
 │   │   └── license/            # License page
@@ -207,8 +206,7 @@ apps/landing/
 │       ├── Hero.tsx            # Hero headline + orbital stage
 │       ├── ProductSection.tsx  # Product pillar sections
 │       ├── SectionVisuals.tsx  # Per-pillar mini-visuals
-│       ├── TrustViz.tsx        # Trust-ladder visual
-│       └── PricingCard.tsx     # Pricing tier card
+│       └── TrustViz.tsx        # Trust-ladder visual
 ├── public/
 │   └── robots.txt              # SEO robots.txt
 ├── next.config.ts              # Next.js configuration
