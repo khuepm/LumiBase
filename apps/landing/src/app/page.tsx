@@ -34,32 +34,6 @@ const softwareApplicationJsonLd = {
   codeRepository: "https://github.com/khuepm/lumibase",
   license: "https://lumibase.dev/license",
   isAccessibleForFree: true,
-  offers: [
-    {
-      "@type": "Offer",
-      name: "Community",
-      price: "0",
-      priceCurrency: "USD",
-      description: "Self-hosted, open-source, free forever under the Apache 2.0 license.",
-      url: "https://lumibase.dev/pricing/",
-    },
-    {
-      "@type": "Offer",
-      name: "Hobby",
-      price: "29",
-      priceCurrency: "USD",
-      description: "Managed hosting with priority support and advanced analytics.",
-      url: "https://lumibase.dev/pricing/",
-    },
-    {
-      "@type": "Offer",
-      name: "Enterprise",
-      price: "99",
-      priceCurrency: "USD",
-      description: "Dedicated support, custom SLA, SSO, and on-premise deployment.",
-      url: "https://lumibase.dev/pricing/",
-    },
-  ],
   author: {
     "@type": "Person",
     name: "Khuepm",

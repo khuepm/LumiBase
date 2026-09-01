@@ -12,7 +12,6 @@ LumiBase runs content APIs at the edge — close to users — instead of on a ce
 ## Product
 
 - [Homepage](https://lumibase.dev): Product overview and feature summary.
-- [Pricing](https://lumibase.dev/pricing/): Community (free, self-hosted), Hobby ($29/mo), Enterprise ($99/mo) tiers with feature comparison and FAQ.
 - [GitHub Repository](https://github.com/khuepm/lumibase): Source code, issues, and contribution guide.
 
 ## Legal

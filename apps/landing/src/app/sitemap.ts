@@ -6,7 +6,6 @@ export const dynamic = 'force-static';
 // identical auto-generated timestamps reduce crawl-scheduling value.
 const LAST_MODIFIED = {
   home: new Date('2026-06-10'),
-  pricing: new Date('2026-06-10'),
   tos: new Date('2026-06-07'),
   privacy: new Date('2026-06-07'),
   license: new Date('2026-06-07'),
@@ -21,12 +20,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified: LAST_MODIFIED.home,
       changeFrequency: 'weekly',
       priority: 1,
-    },
-    {
-      url: `${baseUrl}/pricing/`,
-      lastModified: LAST_MODIFIED.pricing,
-      changeFrequency: 'monthly',
-      priority: 0.8,
     },
     {
       url: `${baseUrl}/tos/`,
