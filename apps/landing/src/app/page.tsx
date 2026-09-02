@@ -11,6 +11,7 @@ import {
   SchemaViz,
 } from "@/components/SectionVisuals";
 import ContentOsSplit from "@/components/content-os/content-os-split";
+import PositioningSection from "@/components/PositioningSection";
 import StudioStage from "@/components/StudioStage";
 import { EclipsePhase } from "@/components/EclipseMark";
 import EclipseStage from "@/components/scroll/EclipseStage";
@@ -220,6 +221,10 @@ export default function Home() {
       <EclipseStage />
 
       <Hero />
+
+      {/* Orientation before the pillars: what a Content OS is, against the
+          category every reader already has a model for. */}
+      <PositioningSection />
 
       {sections.map((s, i) => (
         <div key={s.id}>
