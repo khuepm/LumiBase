@@ -4,10 +4,11 @@ import DotField from "@/components/DotField";
 import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
 import { Zap, Shield, Fingerprint, GitBranch, ScrollText, Headphones } from "lucide-react";
 
-// Hidden page: the route still resolves for anyone holding the direct link
-// (sales conversations, support threads), but nothing links to it and search
-// engines are told to leave it out. To bring it back, drop the `robots` block
-// below and restore the entries listed in the app README.
+// Hidden page: the route is still built, but nothing links to it, search engines
+// are told to leave it out, and `public/_redirects` sends every request for
+// /pricing to the home page — so in production this page is not reachable. It
+// stays in the tree so hiding is reversible: drop the redirect rules and the
+// `robots` block below, then restore the entries listed in the app README.
 export const metadata: Metadata = {
   title: "Pricing — LumiBase Content OS",
   description:

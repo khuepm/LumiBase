@@ -210,7 +210,8 @@ apps/landing/
 │       ├── TrustViz.tsx        # Trust-ladder visual
 │       └── PricingCard.tsx     # Pricing tier card (hidden page only)
 ├── public/
-│   └── robots.txt              # SEO robots.txt
+│   ├── robots.txt              # SEO robots.txt
+│   └── _redirects              # Cloudflare Pages redirects (see "Hidden pages")
 ├── next.config.ts              # Next.js configuration
 ├── tailwind.config.ts          # Tailwind CSS configuration
 ├── tsconfig.json               # TypeScript configuration
@@ -219,12 +220,13 @@ apps/landing/
 
 ## Hidden pages
 
-`/pricing` is deliberately hidden rather than deleted: the route still renders for
-anyone with the direct link, but it is unlisted everywhere public. To bring it back,
-reverse all four:
+`/pricing` is deliberately hidden rather than deleted: the route is still built, but
+it is unlisted everywhere public and every request to it is redirected to the home
+page. To bring it back, reverse all of these:
 
 | What | Where |
 |---|---|
+| `/pricing` → `/` redirect rules | `public/_redirects` |
 | `robots: { index: false, follow: false }` | `src/app/pricing/page.tsx` metadata |
 | Header nav link | `textLinks` in `src/components/Header.tsx` |
 | Footer "Product" column link | `columns` in `src/components/Footer.tsx` |
