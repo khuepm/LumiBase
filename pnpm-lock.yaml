@@ -524,16 +524,13 @@ importers:
 
   packages/cli:
     dependencies:
-      create-lumibase:
+      '@lumibase/sdk':
         specifier: workspace:*
-        version: link:../create-lumibase
+        version: link:../sdk
       picocolors:
         specifier: ^1.1.1
         version: 1.1.1
     devDependencies:
-      '@lumibase/sdk':
-        specifier: workspace:*
-        version: link:../sdk
       '@types/node':
         specifier: ^26.4.0
         version: 26.4.0

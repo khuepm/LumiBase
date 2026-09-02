@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-09-01T19:24:38.000Z
+version: 4
+lastUpdated: 2026-09-02T19:04:59.918Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: e02b53cef4b651a3
+sourceHash: e4938939b037622d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:24:38.000Z
-codeVerifiedHash: e02b53cef4b651a3
+codeVerified: 2026-09-02T19:04:59.918Z
+codeVerifiedHash: e4938939b037622d
 codeVerifiedClaims: 2
 ---
 
@@ -25,7 +25,7 @@ packages that do **not** have `private: true`:
 - `packages/sdk` (`@lumibase/sdk`)
 - `packages/extension-sdk` (`@lumibase/extension-sdk`)
 - `packages/mcp-server` (`@lumibase/mcp-server`)
-- `packages/cli` (`lumibase` — the CLI, unscoped name)
+- `packages/cli` (`lumibase` — unscoped name; the CLI plus a library entry that re-exports `@lumibase/sdk`, which must therefore be published first or in the same run)
 - `packages/contracts` (`@lumibase/contracts`)
 
 To make another package public: drop `private: true` from that package's

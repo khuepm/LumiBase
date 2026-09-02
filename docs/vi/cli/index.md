@@ -1,28 +1,39 @@
 ---
-version: 1
-lastUpdated: 2026-08-01T23:58:19.962Z
+version: 2
+lastUpdated: 2026-09-02T19:04:59.350Z
 sourceLang: en
 translatedFrom: en
-sourceHash: cfd657c0ddf0a6f6
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-08-01T23:58:19.962Z
-codeVerifiedHash: cfd657c0ddf0a6f6
-codeVerifiedClaims: 14
+sourceHash: fa9835f2347614ff
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-02T19:04:59.350Z
+codeVerifiedHash: fa9835f2347614ff
+codeVerifiedClaims: 16
 ---
 
 # LumiBase CLI
 
-> `lumibase` — tạo project, sinh type từ schema đang chạy, và kiểm tra cấu hình.
+> `lumibase` — client JS/TS và CLI trong một package: sinh type từ schema đang chạy, kiểm tra cấu hình, tạo project.
 
-CLI được publish dưới tên package không scope là `lumibase` (`packages/cli/`). Cài như một dev dependency, hoặc chạy nhanh bằng `npx`.
+Package không scope `lumibase` (`packages/cli/`) vừa là library vừa là CLI. Entry library (`src/lib.ts`) re-export `@lumibase/sdk`, nên một project chỉ cần một tên trong `dependencies` cho cả client runtime và lệnh `lumibase`:
 
 ```bash
-npm install -D lumibase
+npm install lumibase
+```
+
+```ts
+import { createLumiClient, readItems } from 'lumibase';
+```
+
+`@lumibase/sdk` vẫn là package nền bên dưới — `lumibase` phụ thuộc vào nó thay vì bundle, nên project import cả hai chỉ có một bản của mỗi class (kiểm tra `instanceof` với `LumiError`) và một bộ type. Entry library không có code riêng cho Node và an toàn để import từ bundle trình duyệt và edge.
+
+CLI cũng có thể chạy trực tiếp:
+
+```bash
 npx lumibase --help
 ```
 
-Yêu cầu Node.js 22+; launcher tại `packages/cli/bin/lumibase.js` từ chối các runtime cũ hơn trước khi nạp đồ thị ESM.
+CLI yêu cầu Node.js 22+; launcher tại `packages/cli/bin/lumibase.js` từ chối các runtime cũ hơn trước khi nạp đồ thị ESM.
 
 ## Các lệnh
 
@@ -69,20 +80,22 @@ Uỷ quyền cho `create-lumibase`, nơi giữ bản cài đặt duy nhất củ
 lumibase init my-site --template cloudflare --pm pnpm
 ```
 
+Scaffolder **không** phải dependency của `lumibase` — nó chạy một lần cho mỗi project, và các thư viện prompt/template của nó không có chỗ trong mọi lần cài một package runtime. `resolveScaffoldCommand` trong `packages/cli/src/commands/init.ts` lấy nó qua trình chạy một-lần của package manager đã gọi CLI (`npx --yes` / `pnpm dlx` / `yarn dlx` / `bunx`, đọc từ `npm_config_user_agent`; yarn classic rơi về `npx`), ghim vào đúng phiên bản của CLI (`create-lumibase@<version>`) để hai binary luôn đến từ cùng một release.
+
 ## `lumibase types`
 
 Lấy manifest collection từ `GET /api/v1/typegen/schema` (do `apps/cms/src/routes/typegen.ts` phục vụ) rồi render bằng `generateTypes` của `@lumibase/sdk`.
 
 ```bash
 lumibase types                                # -> lumibase-types.d.ts
-lumibase types --out src/lumibase-types.d.ts  # đường dẫn tuỳ ý; thư mục được tạo tự động
-lumibase types --include articles,authors     # chỉ những collection này
-lumibase types --exclude internal_logs        # bỏ qua những collection này
-lumibase types --no-branded                   # id kiểu string thường thay vì branded
-lumibase types --stdout                       # in ra stdout thay vì ghi file
+lumibase types --out src/lumibase-types.d.ts  # custom path; directories are created
+lumibase types --include articles,authors     # only these collections
+lumibase types --exclude internal_logs        # skip these collections
+lumibase types --no-branded                   # plain string ids instead of branded ones
+lumibase types --stdout                       # print instead of writing a file
 ```
 
-File sinh ra import type từ `@lumibase/sdk`, nên package đó phải được cài trong project tiêu thụ chúng.
+File sinh ra import type từ `@lumibase/sdk`, nên package đó phải được cài trong project tiêu thụ chúng (nó là dependency của `lumibase`, nhưng với layout strict của pnpm thì dependency bắc cầu không import được — hãy thêm tường minh).
 
 ### Output tất định và `--check`
 
