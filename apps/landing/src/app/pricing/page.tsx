@@ -4,12 +4,21 @@ import DotField from "@/components/DotField";
 import { Reveal, RevealGroup, RevealItem } from "@/components/motion";
 import { Zap, Shield, Fingerprint, GitBranch, ScrollText, Headphones } from "lucide-react";
 
+// Hidden page: the route still resolves for anyone holding the direct link
+// (sales conversations, support threads), but nothing links to it and search
+// engines are told to leave it out. To bring it back, drop the `robots` block
+// below and restore the entries listed in the app README.
 export const metadata: Metadata = {
   title: "Pricing — LumiBase Content OS",
   description:
     "Open-source core, free forever under Apache 2.0. Optional managed hosting and enterprise support for the LumiBase Content Operating System.",
   alternates: {
     canonical: "/pricing/",
+  },
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: { index: false, follow: false },
   },
 };
 

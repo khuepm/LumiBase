@@ -31,7 +31,6 @@ const SECTIONS = [
 
 const textLinks = [
   { href: "https://docs.lumibase.dev", label: "Docs", external: true },
-  { href: "/pricing", label: "Pricing", external: false },
 ];
 
 export default function Header() {
