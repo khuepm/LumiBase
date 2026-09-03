@@ -1,0 +1,9 @@
+# Cloudflare Pages redirect rules. The landing app is a Next.js static export
+# (`output: 'export'`), so `redirects()` in next.config.ts is never applied —
+# this file is the only redirect mechanism that reaches production.
+#
+# /pricing is a hidden page: the route is still built and still carries
+# `noindex`, but every request is sent to the home page. Delete the two rules
+# below to make it reachable again (see "Hidden pages" in README.md).
+/pricing     /  302
+/pricing/    /  302

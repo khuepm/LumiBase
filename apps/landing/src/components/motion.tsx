@@ -66,12 +66,14 @@ export function RevealGroup({
 export function RevealItem({
   children,
   className,
+  style,
 }: {
   children: ReactNode;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
-    <motion.div className={className} variants={fadeUp}>
+    <motion.div className={className} style={style} variants={fadeUp}>
       {children}
     </motion.div>
   );
