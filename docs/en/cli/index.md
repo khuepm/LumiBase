@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-09-02T19:04:59.350Z
+version: 3
+lastUpdated: 2026-09-03T03:08:24.413Z
 sourceLang: en
-contentHash: fa9835f2347614ff
-codeVerified: 2026-09-02T19:04:59.350Z
-codeVerifiedHash: fa9835f2347614ff
-codeVerifiedClaims: 16
+contentHash: d282d0c44f29ea3c
+codeVerified: 2026-09-03T03:08:24.413Z
+codeVerifiedHash: d282d0c44f29ea3c
+codeVerifiedClaims: 18
 ---
 
 # LumiBase CLI
@@ -89,10 +89,11 @@ lumibase types --out src/lumibase-types.d.ts  # custom path; directories are cre
 lumibase types --include articles,authors     # only these collections
 lumibase types --exclude internal_logs        # skip these collections
 lumibase types --no-branded                   # plain string ids instead of branded ones
+lumibase types --import-from @lumibase/sdk    # module the generated file imports from
 lumibase types --stdout                       # print instead of writing a file
 ```
 
-The generated file imports types from `@lumibase/sdk`, so that package must be installed in the project consuming them (it is a dependency of `lumibase`, but under pnpm's strict layout a transitive dependency is not importable — add it explicitly).
+The generated file imports its helper types (`ID`, `Locale`, `Brand`) from `lumibase` by default (`DEFAULT_IMPORT_FROM` in `packages/cli/src/commands/types.ts`) — the package a project running this command already has installed. A project that depends on the SDK directly can point the import elsewhere with `--import-from @lumibase/sdk` or `typegen.importFrom` in `lumibase.config.json`; the module named must be installed in the project consuming the types.
 
 ### Deterministic output and `--check`
 

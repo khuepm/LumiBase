@@ -162,4 +162,17 @@ describe("generateTypes", () => {
     expect(output).toContain("readonly id: number;");
     expect(output).toContain("export type OrdersExpanded = Orders;");
   });
+
+  it("imports helper types from @lumibase/sdk by default and from importSource when given", () => {
+    const manifest: TypegenManifest = { version: 2, site: "site_1", collections: [] };
+
+    expect(generateTypes(manifest)).toContain(
+      "import type { ID, Locale } from '@lumibase/sdk';",
+    );
+
+    const output = generateTypes(manifest, { importSource: "lumibase" });
+    expect(output).toContain("import type { ID, Locale } from 'lumibase';");
+    expect(output).toContain("import type { Brand } from 'lumibase';");
+    expect(output).not.toContain("@lumibase/sdk");
+  });
 });

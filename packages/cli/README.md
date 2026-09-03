@@ -61,10 +61,11 @@ lumibase types                                # -> lumibase-types.d.ts
 lumibase types --out src/lumibase-types.d.ts  # custom path (directories are created)
 lumibase types --include articles,authors     # subset of collections
 lumibase types --no-branded                   # plain string ids
+lumibase types --import-from @lumibase/sdk    # module the generated file imports from (default: lumibase)
 lumibase types --stdout                       # print instead of writing
 ```
 
-The generated file imports from `@lumibase/sdk`, so install that in the project consuming the types.
+The generated file imports its helper types from `lumibase` by default — the package you already have installed. Use `--import-from` (or `typegen.importFrom` in the config file) if your project depends on `@lumibase/sdk` directly.
 
 Output is **deterministic** — no timestamp, host, or site id in the header — so the file can be committed and verified in CI:
 

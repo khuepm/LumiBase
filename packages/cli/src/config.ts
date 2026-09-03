@@ -12,6 +12,7 @@ export interface TypegenFileConfig {
   include?: string[];
   exclude?: string[];
   branded?: boolean;
+  importFrom?: string;
 }
 
 export interface FileConfig {
@@ -95,6 +96,7 @@ function readTypegenSection(value: unknown): TypegenFileConfig | undefined {
     include: stringArray(section['include']),
     exclude: stringArray(section['exclude']),
     branded: typeof section['branded'] === 'boolean' ? section['branded'] : undefined,
+    importFrom: typeof section['importFrom'] === 'string' ? section['importFrom'] : undefined,
   };
 }
 

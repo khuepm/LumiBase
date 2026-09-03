@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-09-02T19:04:59.350Z
+version: 3
+lastUpdated: 2026-09-03T03:08:24.413Z
 sourceLang: en
 translatedFrom: en
-sourceHash: fa9835f2347614ff
+sourceHash: d282d0c44f29ea3c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-02T19:04:59.350Z
-codeVerifiedHash: fa9835f2347614ff
-codeVerifiedClaims: 16
+codeVerified: 2026-09-03T03:08:24.413Z
+codeVerifiedHash: d282d0c44f29ea3c
+codeVerifiedClaims: 18
 ---
 
 # LumiBase CLI
@@ -92,10 +92,11 @@ lumibase types --out src/lumibase-types.d.ts  # custom path; directories are cre
 lumibase types --include articles,authors     # only these collections
 lumibase types --exclude internal_logs        # skip these collections
 lumibase types --no-branded                   # plain string ids instead of branded ones
+lumibase types --import-from @lumibase/sdk    # module the generated file imports from
 lumibase types --stdout                       # print instead of writing a file
 ```
 
-File sinh ra import type từ `@lumibase/sdk`, nên package đó phải được cài trong project tiêu thụ chúng (nó là dependency của `lumibase`, nhưng với layout strict của pnpm thì dependency bắc cầu không import được — hãy thêm tường minh).
+File sinh ra mặc định import các helper type (`ID`, `Locale`, `Brand`) từ `lumibase` (`DEFAULT_IMPORT_FROM` trong `packages/cli/src/commands/types.ts`) — chính package mà project đang chạy lệnh này đã cài. Project phụ thuộc trực tiếp vào SDK có thể trỏ import sang chỗ khác bằng `--import-from @lumibase/sdk` hoặc `typegen.importFrom` trong `lumibase.config.json`; module được nêu phải được cài trong project tiêu thụ type.
 
 ### Output tất định và `--check`
 

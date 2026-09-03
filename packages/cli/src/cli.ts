@@ -33,6 +33,7 @@ ${pc.bold("lumibase types")}
   --include <a,b> Only these collections
   --exclude <a,b> Skip these collections
   --no-branded    Emit plain string ids instead of branded ones
+  --import-from <pkg>  Module the generated file imports from ${pc.dim('(default: lumibase)')}
   --check         Fail if the file is missing or stale ${pc.dim("(use in CI)")}
   --stdout        Print to stdout instead of writing a file
 
