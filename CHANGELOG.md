@@ -173,6 +173,7 @@ _No unreleased changes yet._
 
 ### Fixed
 
+- **The production dependency audit is green against the latest `fast-uri` advisories.** The root override now pins `fast-uri 4.1.3`, closing four high-severity host-confusion and SSRF advisories that reached the production tree through AJV. Version 4.1.3 had been published for more than seven days before this RC update.
 - **The setup wizard says when no encryption key is configured.**
   `GET /api/v1/setup/capabilities` gains `encryption.available`, and the
   wizard's Security step shows a non-dismissible notice when it is `false`:
