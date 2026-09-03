@@ -1,8 +1,8 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:04:40.044Z
+version: 3
+lastUpdated: 2026-09-03T03:28:27.348Z
 sourceLang: en
-contentHash: 415d80a8367fca52
+contentHash: 8cf1cd4a4d0711d2
 ---
 
 # Getting Started — Scaffold a new project with `create-lumibase`
@@ -22,7 +22,7 @@ similar to `create-next-app` or `create-vite`.
 
 > **Package:** [`create-lumibase`](../../packages/create-lumibase) ·
 > **Published as:** `create-lumibase` on npm ·
-> **Node:** `>= 20`
+> **Node:** `>= 22`
 
 ## Quick start
 

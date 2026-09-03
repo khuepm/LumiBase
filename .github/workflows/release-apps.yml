@@ -101,7 +101,7 @@ jobs:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: LumiBase ${{ github.event.inputs.tag || github.ref_name }}
           releaseDraft: false
-          prerelease: false
+          prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
           # Emit + upload latest.json so tauri-plugin-updater can find updates.
           includeUpdaterJson: true
           args: ${{ matrix.args }}

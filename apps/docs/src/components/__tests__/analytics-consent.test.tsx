@@ -31,7 +31,7 @@ function gaScripts() {
 }
 
 beforeEach(() => {
-  localStorage.clear();
+  window.localStorage.clear();
   for (const script of gaScripts()) script.remove();
   document.getElementById('lumibase-ga-tag')?.remove();
 });
@@ -49,7 +49,7 @@ describe('AnalyticsConsent', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Allow analytics' }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(localStorage.getItem(CONSENT_STORAGE_KEY)).toBe('granted');
+    expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBe('granted');
 
     const scripts = gaScripts();
     expect(scripts).toHaveLength(1);
@@ -63,12 +63,12 @@ describe('AnalyticsConsent', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(localStorage.getItem(CONSENT_STORAGE_KEY)).toBe('denied');
+    expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBe('denied');
     expect(gaScripts()).toHaveLength(0);
   });
 
   it('honours a stored decline across visits — no banner, no tag', () => {
-    localStorage.setItem(CONSENT_STORAGE_KEY, 'denied');
+    window.localStorage.setItem(CONSENT_STORAGE_KEY, 'denied');
 
     renderWithRouter(<AnalyticsConsent measurementId={MEASUREMENT_ID} />);
 
@@ -77,7 +77,7 @@ describe('AnalyticsConsent', () => {
   });
 
   it('honours a stored grant without asking again', () => {
-    localStorage.setItem(CONSENT_STORAGE_KEY, 'granted');
+    window.localStorage.setItem(CONSENT_STORAGE_KEY, 'granted');
 
     renderWithRouter(<AnalyticsConsent measurementId={MEASUREMENT_ID} />);
 
@@ -86,7 +86,7 @@ describe('AnalyticsConsent', () => {
   });
 
   it('ignores an unrecognised stored value rather than treating it as consent', () => {
-    localStorage.setItem(CONSENT_STORAGE_KEY, 'yes');
+    window.localStorage.setItem(CONSENT_STORAGE_KEY, 'yes');
 
     renderWithRouter(<AnalyticsConsent measurementId={MEASUREMENT_ID} />);
 
@@ -95,7 +95,7 @@ describe('AnalyticsConsent', () => {
   });
 
   it('does not stack tags when re-rendered', () => {
-    localStorage.setItem(CONSENT_STORAGE_KEY, 'granted');
+    window.localStorage.setItem(CONSENT_STORAGE_KEY, 'granted');
 
     const { rerender } = renderWithRouter(<AnalyticsConsent measurementId={MEASUREMENT_ID} />);
     rerender(<AnalyticsConsent measurementId={MEASUREMENT_ID} />);
@@ -106,16 +106,16 @@ describe('AnalyticsConsent', () => {
 
 describe('CookiePreferences', () => {
   it('reports the stored decision', () => {
-    localStorage.setItem(CONSENT_STORAGE_KEY, 'granted');
+    window.localStorage.setItem(CONSENT_STORAGE_KEY, 'granted');
     renderWithRouter(<CookiePreferences />);
 
     expect(screen.getByText('Analytics cookies: allowed')).toBeInTheDocument();
   });
 
   it('withdrawing clears the decision and brings the banner back', () => {
-    localStorage.setItem(CONSENT_STORAGE_KEY, 'granted');
+    window.localStorage.setItem(CONSENT_STORAGE_KEY, 'granted');
     renderWithRouter(
-<>
+      <>
         <AnalyticsConsent measurementId={MEASUREMENT_ID} />
         <CookiePreferences />
       </>
@@ -125,7 +125,7 @@ describe('CookiePreferences', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Change my choice' }));
 
-    expect(localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
+    expect(window.localStorage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByText('Analytics cookies: not set (none stored)')).toBeInTheDocument();
   });

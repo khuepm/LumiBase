@@ -9,6 +9,27 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [1.0.0-rc.1] - 2026-09-03
+
+### Version
+
+- `v1.0.0-rc.1`
+
+### Date
+
+- `2026-09-03`
+
+### Highlights
+
+- First release candidate for the stable LumiBase Content OS contract.
+- Introduces the unified `lumibase` library + CLI package while preserving `@lumibase/sdk` and `create-lumibase` compatibility.
+
+### Migrations
+
+- Follow the existing `0.26.0` migration path; final 1.0 upgrade validation remains a release-candidate gate.
+
 ### Added
 
 - **`@lumibase/contracts` is published, replacing the private

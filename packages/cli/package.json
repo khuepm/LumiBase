@@ -1,6 +1,6 @@
 {
   "name": "lumibase",
-  "version": "0.26.0",
+  "version": "1.0.0-rc.1",
   "description": "LumiBase in one package — the JS/TS client (re-exports @lumibase/sdk) plus the `lumibase` CLI: generate TypeScript types from a live schema, check your setup, scaffold a project.",
   "license": "Apache-2.0",
   "type": "module",

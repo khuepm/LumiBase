@@ -1,6 +1,6 @@
 {
   "name": "lumibase",
-  "version": "0.26.0",
+  "version": "1.0.0-rc.1",
   "private": true,
   "description": "LumiBase - Edge-native Headless CMS (Turborepo monorepo)",
   "packageManager": "pnpm@9.12.0",

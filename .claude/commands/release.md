@@ -1,6 +1,6 @@
 ---
 description: Cut a LumiBase release — bump version, update changelog & version-bearing files, verify, commit, tag.
-argument-hint: <x.y.z> (target SemVer, e.g. 0.11.0)
+argument-hint: <semver> (e.g. 1.0.0 or 1.0.0-rc.1)
 allowed-tools: Bash, Read, Edit, Write, Grep, Glob
 # Bash includes git + gh (GitHub CLI, for release/run status checks in Step 0)
 ---
@@ -9,9 +9,9 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob
 
 You are cutting a new LumiBase release. The target version is: **$ARGUMENTS**
 
-If `$ARGUMENTS` is empty, ask the user for the target `x.y.z` (SemVer, no `v` prefix) before doing anything else. Do not guess.
+If `$ARGUMENTS` is empty, ask the user for the target SemVer (for example `1.0.0` or `1.0.0-rc.1`, without a `v` prefix) before doing anything else. Do not guess.
 
-> ⚠️ Pushing the `v<x.y.z>` tag triggers `.github/workflows/release.yml`, which **deploys the Cloudflare Worker to `production`, publishes npm packages, and pushes a Docker image** — all outward-facing and hard to reverse (npm publish cannot be undone after 72h). Treat the tag push as the point of no return: confirm with the user before pushing the tag.
+> ⚠️ Pushing the release tag triggers `.github/workflows/release.yml`, which publishes npm packages and pushes a Docker image. Stable tags also deploy the Cloudflare Worker and Pages apps to production; prerelease tags skip production deployment, publish npm packages under the `next` dist-tag, and create a GitHub prerelease. These actions are outward-facing and hard to reverse (npm publish cannot be undone after 72h). Treat the tag push as the point of no return: confirm with the user before pushing the tag.
 
 ## Step 0 — Preflight & resume detection (ALWAYS run first)
 
