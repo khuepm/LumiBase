@@ -1,10 +1,21 @@
 # `lumibase`
 
-The CLI for [LumiBase](https://lumibase.dev) — scaffold a project, generate TypeScript types from a live schema, and check that your setup can reach the CMS.
+[LumiBase](https://lumibase.dev) in one package — the JS/TS client plus the `lumibase` CLI: generate TypeScript types from a live schema, check that your setup can reach the CMS, scaffold a project.
 
 ```bash
-npm install -D lumibase
-# or run it without installing
+npm install lumibase
+```
+
+```ts
+import { createLumiClient, readItems } from 'lumibase';
+
+const client = createLumiClient({ url: 'https://api.mysite.lumibase.dev', token, siteId });
+const { data } = await client.request(readItems('articles', { limit: 10 }));
+```
+
+The library entry re-exports [`@lumibase/sdk`](https://www.npmjs.com/package/@lumibase/sdk) (REST + GraphQL + realtime, isomorphic ESM) — same client, one name to install. The CLI can also be run without installing:
+
+```bash
 npx lumibase --help
 ```
 
@@ -12,7 +23,7 @@ npx lumibase --help
 
 | Command | What it does |
 | --- | --- |
-| `lumibase init [name]` | Scaffold a new project (delegates to `create-lumibase`) |
+| `lumibase init [name]` | Scaffold a new project (runs `create-lumibase@<same version>` via `npx` / `pnpm dlx` / `yarn dlx` / `bunx`) |
 | `lumibase types` | Generate TypeScript types from a running CMS |
 | `lumibase doctor` | Report resolved configuration and probe connectivity |
 
@@ -50,10 +61,11 @@ lumibase types                                # -> lumibase-types.d.ts
 lumibase types --out src/lumibase-types.d.ts  # custom path (directories are created)
 lumibase types --include articles,authors     # subset of collections
 lumibase types --no-branded                   # plain string ids
+lumibase types --import-from @lumibase/sdk    # module the generated file imports from (default: lumibase)
 lumibase types --stdout                       # print instead of writing
 ```
 
-The generated file imports from `@lumibase/sdk`, so install that in the project consuming the types.
+The generated file imports its helper types from `lumibase` by default — the package you already have installed. Use `--import-from` (or `typegen.importFrom` in the config file) if your project depends on `@lumibase/sdk` directly.
 
 Output is **deterministic** — no timestamp, host, or site id in the header — so the file can be committed and verified in CI:
 

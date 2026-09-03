@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:30:17.385Z
+version: 2
+lastUpdated: 2026-09-03T03:08:23.994Z
 sourceLang: en
-contentHash: e95bb0d2807f2a97
-codeVerified: 2026-07-28T11:30:17.385Z
-codeVerifiedHash: e95bb0d2807f2a97
+contentHash: 3385275ef5a15230
+codeVerified: 2026-09-03T03:08:23.994Z
+codeVerifiedHash: 3385275ef5a15230
 codeVerifiedClaims: 4
 ---
 
@@ -162,7 +162,8 @@ If the schema changes without updating the types file, CI fails and alerts the t
 
 ## Options reference
 
-There is **no typegen CLI** — `@lumibase/sdk` ships no `bin`, which is why the
+`@lumibase/sdk` itself ships no `bin` — the CLI lives in the `lumibase` package
+(`lumibase types`, see the [CLI guide](../cli/index.md)) — which is why the
 setup above writes a local script. `generateTypes(manifest, options)` takes the
 manifest returned by `GET /api/v1/typegen/schema` plus a `GenerateOptions`
 object (`packages/sdk/src/typegen/index.ts`):
@@ -171,6 +172,7 @@ object (`packages/sdk/src/typegen/index.ts`):
 |--------|------|---------|-------------|
 | `format` | `'single' \| 'per-collection'` | `'single'` | One file with every interface, or one module per collection |
 | `branded` | `boolean` | `true` | Emit branded primary-key types instead of bare `string` |
+| `importSource` | `string` | `'@lumibase/sdk'` | Module the generated file imports `ID` / `Locale` / `Brand` from; `lumibase types` passes `'lumibase'` |
 
 Everything else — which URL to call, which site, which token, where to write the
 file — is ordinary code in your own script, so it is configured there rather than

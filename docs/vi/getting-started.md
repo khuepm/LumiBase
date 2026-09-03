@@ -1,9 +1,9 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:04:40.044Z
+version: 2
+lastUpdated: 2026-09-03T03:28:27.348Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 415d80a8367fca52
+sourceHash: 8cf1cd4a4d0711d2
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -23,7 +23,7 @@ syncStatus: human-translated
 
 > **Package:** [`create-lumibase`](../../packages/create-lumibase) ·
 > **Published as:** `create-lumibase` trên npm ·
-> **Node:** `>= 20`
+> **Node:** `>= 22`
 
 ## Quick start
 

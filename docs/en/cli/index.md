@@ -1,25 +1,36 @@
 ---
-version: 1
-lastUpdated: 2026-08-01T23:58:19.962Z
+version: 3
+lastUpdated: 2026-09-03T03:08:24.413Z
 sourceLang: en
-contentHash: cfd657c0ddf0a6f6
-codeVerified: 2026-08-01T23:58:19.962Z
-codeVerifiedHash: cfd657c0ddf0a6f6
-codeVerifiedClaims: 14
+contentHash: d282d0c44f29ea3c
+codeVerified: 2026-09-03T03:08:24.413Z
+codeVerifiedHash: d282d0c44f29ea3c
+codeVerifiedClaims: 18
 ---
 
 # LumiBase CLI
 
-> `lumibase` — scaffold a project, generate types from a live schema, and check your setup.
+> `lumibase` — the JS/TS client and the CLI in one package: generate types from a live schema, check your setup, scaffold a project.
 
-The CLI is published as the unscoped package `lumibase` (`packages/cli/`). Install it as a dev dependency, or run it ad hoc with `npx`.
+The unscoped package `lumibase` (`packages/cli/`) is both a library and a CLI. Its library entry (`src/lib.ts`) re-exports `@lumibase/sdk`, so a project needs one name in `dependencies` for the runtime client and the `lumibase` command:
 
 ```bash
-npm install -D lumibase
+npm install lumibase
+```
+
+```ts
+import { createLumiClient, readItems } from 'lumibase';
+```
+
+`@lumibase/sdk` stays the underlying package — `lumibase` depends on it rather than bundling it, so a project that imports both gets one copy of every class (`LumiError` `instanceof` checks) and one set of types. The library entry has no Node-specific code and is safe to import from browser and edge bundles.
+
+The CLI can also be run ad hoc:
+
+```bash
 npx lumibase --help
 ```
 
-Node.js 22+ is required; the launcher in `packages/cli/bin/lumibase.js` refuses older runtimes before loading the ESM graph.
+Node.js 22+ is required for the CLI; the launcher in `packages/cli/bin/lumibase.js` refuses older runtimes before loading the ESM graph.
 
 ## Commands
 
@@ -66,6 +77,8 @@ Delegates to `create-lumibase`, which stays the single implementation of the sca
 lumibase init my-site --template cloudflare --pm pnpm
 ```
 
+The scaffolder is **not** a dependency of `lumibase` — it runs once per project, and its prompt/template libraries have no place in every install of a runtime package. `resolveScaffoldCommand` in `packages/cli/src/commands/init.ts` fetches it through the one-off runner of the package manager that invoked the CLI (`npx --yes` / `pnpm dlx` / `yarn dlx` / `bunx`, from `npm_config_user_agent`; yarn classic falls back to `npx`), pinned to the CLI's own version (`create-lumibase@<version>`) so both binaries always come from the same release.
+
 ## `lumibase types`
 
 Fetches the collection manifest from `GET /api/v1/typegen/schema` (served by `apps/cms/src/routes/typegen.ts`) and renders it with `generateTypes` from `@lumibase/sdk`.
@@ -76,10 +89,11 @@ lumibase types --out src/lumibase-types.d.ts  # custom path; directories are cre
 lumibase types --include articles,authors     # only these collections
 lumibase types --exclude internal_logs        # skip these collections
 lumibase types --no-branded                   # plain string ids instead of branded ones
+lumibase types --import-from @lumibase/sdk    # module the generated file imports from
 lumibase types --stdout                       # print instead of writing a file
 ```
 
-The generated file imports types from `@lumibase/sdk`, so that package must be installed in the project consuming them.
+The generated file imports its helper types (`ID`, `Locale`, `Brand`) from `lumibase` by default (`DEFAULT_IMPORT_FROM` in `packages/cli/src/commands/types.ts`) — the package a project running this command already has installed. A project that depends on the SDK directly can point the import elsewhere with `--import-from @lumibase/sdk` or `typegen.importFrom` in `lumibase.config.json`; the module named must be installed in the project consuming the types.
 
 ### Deterministic output and `--check`
 

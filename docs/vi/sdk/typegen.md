@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:30:17.385Z
+version: 2
+lastUpdated: 2026-09-03T03:08:23.994Z
 sourceLang: en
 translatedFrom: en
-sourceHash: e95bb0d2807f2a97
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T11:30:17.385Z
-codeVerifiedHash: e95bb0d2807f2a97
+sourceHash: 3385275ef5a15230
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-03T03:08:23.994Z
+codeVerifiedHash: 3385275ef5a15230
 codeVerifiedClaims: 4
 ---
 
@@ -86,7 +86,7 @@ export interface Article {
   title: string
   content: string | null
   status: 'draft' | 'published' | 'archived'
-  author: string | DirectusUser   // relation (ID hoặc đã expand)
+  author: string | DirectusUser   // relation (ID or expanded)
   tags: string[]
   published_at: string | null
   created_at: string
@@ -111,12 +111,12 @@ import type { Collections } from './lumibase-types'
 
 const lumibase = createClient<Collections>({ url: '...', siteId: '...' })
 
-// Response có type đầy đủ
+// Fully typed responses
 const article = await lumibase.items('articles').readOne('art_abc123')
 article.title         // string ✓
-article.nonexistent   // lỗi TypeScript ✓
+article.nonexistent   // TypeScript error ✓
 
-// Các key filter cũng có type
+// Filter keys are typed
 const articles = await lumibase.items('articles').readMany({
   filter: {
     status: { _eq: 'published' },  // 'draft' | 'published' | 'archived' ✓
@@ -165,7 +165,8 @@ Nếu schema đổi mà file type không được cập nhật, CI fail và báo
 
 ## Tham chiếu options
 
-**Không có typegen CLI** — `@lumibase/sdk` không ship `bin` nào, và đó chính là lý
+Bản thân `@lumibase/sdk` không ship `bin` nào — CLI nằm ở package `lumibase`
+(`lumibase types`, xem [hướng dẫn CLI](../cli/index.md)) — và đó chính là lý
 do phần thiết lập ở trên viết một script cục bộ. `generateTypes(manifest, options)`
 nhận manifest do `GET /api/v1/typegen/schema` trả về, cộng một object
 `GenerateOptions` (`packages/sdk/src/typegen/index.ts`):
@@ -174,6 +175,7 @@ nhận manifest do `GET /api/v1/typegen/schema` trả về, cộng một object
 |--------|------|---------|-------------|
 | `format` | `'single' \| 'per-collection'` | `'single'` | Một file chứa mọi interface, hoặc một module cho mỗi collection |
 | `branded` | `boolean` | `true` | Phát ra kiểu primary-key dạng branded thay vì `string` trơn |
+| `importSource` | `string` | `'@lumibase/sdk'` | Module mà file sinh ra import `ID` / `Locale` / `Brand` từ đó; `lumibase types` truyền `'lumibase'` |
 
 Mọi thứ còn lại — gọi URL nào, site nào, token nào, ghi file ra đâu — là code
 thông thường trong script của bạn, nên được cấu hình ở đó chứ không qua flag.

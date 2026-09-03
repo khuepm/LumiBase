@@ -1,25 +1,34 @@
 import type { TypegenCollection, TypegenField, TypegenManifest, TypegenRelation } from './types';
 export type { TypegenManifest, TypegenCollection, TypegenField, TypegenRelation } from './types';
 
+/** Default module specifier the generated file imports `ID` / `Locale` / `Brand` from. */
+export const DEFAULT_IMPORT_SOURCE = '@lumibase/sdk';
+
 export interface GenerateOptions {
   format?: 'single' | 'per-collection';
   branded?: boolean;
+  /**
+   * Module the generated file imports its helper types from. Defaults to
+   * `@lumibase/sdk`; the `lumibase` package re-exports the SDK, so a project
+   * that installs only `lumibase` should pass 'lumibase' here.
+   */
+  importSource?: string;
 }
 
 export function generateTypes(manifest: TypegenManifest, options: GenerateOptions = {}): string {
-  const { format = 'single', branded = true } = options;
+  const { format = 'single', branded = true, importSource = DEFAULT_IMPORT_SOURCE } = options;
 
   if (format === 'single') {
-    return generateSingleFile(manifest, branded);
+    return generateSingleFile(manifest, branded, importSource);
   }
 
-  return generatePerCollection(manifest, branded);
+  return generatePerCollection(manifest, branded, importSource);
 }
 
-function generateSingleFile(manifest: TypegenManifest, branded: boolean): string {
+function generateSingleFile(manifest: TypegenManifest, branded: boolean, importSource: string): string {
   const imports = [
-    "import type { ID, Locale } from '@lumibase/sdk';",
-    branded ? "import type { Brand } from '@lumibase/sdk';" : '',
+    `import type { ID, Locale } from '${importSource}';`,
+    branded ? `import type { Brand } from '${importSource}';` : '',
   ]
     .filter(Boolean)
     .join('\n');
@@ -41,10 +50,10 @@ ${manifest.collections.map((c) => `  ${c.name}: ${capitalize(c.name)};`).join('\
   return `${imports}\n\n${collectionInterfaces}\n\n${collectionsMap}\n\n${schemaType}`;
 }
 
-function generatePerCollection(manifest: TypegenManifest, branded: boolean): string {
+function generatePerCollection(manifest: TypegenManifest, branded: boolean, importSource: string): string {
   // For per-collection format, return a map of filename -> content
   // This is a placeholder - actual implementation would return an object
-  return generateSingleFile(manifest, branded);
+  return generateSingleFile(manifest, branded, importSource);
 }
 
 function generateCollectionInterface(coll: TypegenManifest['collections'][0], branded: boolean): string {

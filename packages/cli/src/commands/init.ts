@@ -1,56 +1,81 @@
-import { spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
-import process from 'node:process';
-import { CliError } from '../errors.js';
+import { spawnSync } from "node:child_process";
+import process from "node:process";
+import { CliError } from "../errors.js";
+import { readVersion } from "../version.js";
+
+export interface ScaffoldCommand {
+  command: string;
+  args: string[];
+}
 
 /**
- * Locates the `create-lumibase` executable inside this package's dependency
- * tree. `lumibase init` deliberately delegates instead of re-implementing the
- * scaffold: `npm create lumibase` and `lumibase init` must never drift.
+ * Builds the command that runs `create-lumibase` on demand.
+ *
+ * `lumibase init` deliberately delegates instead of re-implementing the
+ * scaffold: `npm create lumibase` and `lumibase init` must never drift. The
+ * scaffolder is *not* a dependency of this package, though — `lumibase` is
+ * meant to sit in a project's `dependencies` (it re-exports the SDK), and
+ * pulling handlebars/prompts/execa into every install for a command that runs
+ * once per project is the wrong trade. The scaffolder is fetched through the
+ * invoking package manager's one-off runner instead, pinned to the CLI's own
+ * version so both binaries always come from the same release.
  */
-export function resolveScaffoldBin(requireFrom: NodeRequire): string {
-  let manifestPath: string;
-  try {
-    manifestPath = requireFrom.resolve('create-lumibase/package.json');
-  } catch {
-    throw new CliError(
-      'Could not find the create-lumibase package.',
-      'Reinstall the CLI, or run `npm create lumibase@latest` directly.',
-    );
+export function resolveScaffoldCommand(
+  version: string,
+  userAgent: string = process.env["npm_config_user_agent"] ?? "",
+): ScaffoldCommand {
+  const pkg = `create-lumibase@${version}`;
+  const [name = "", ver = ""] = userAgent.split(" ")[0]?.split("/") ?? [];
+  const major = Number(ver.split(".")[0]);
+
+  switch (name) {
+    case "pnpm":
+      return { command: "pnpm", args: ["dlx", pkg] };
+    case "yarn":
+      // Yarn 1 (classic) has no `dlx`; fall through to npx for it.
+      if (major >= 2) return { command: "yarn", args: ["dlx", pkg] };
+      return { command: "npx", args: ["--yes", pkg] };
+    case "bun":
+      return { command: "bunx", args: [pkg] };
+    default:
+      return { command: "npx", args: ["--yes", pkg] };
   }
-
-  const manifest = requireFrom(manifestPath) as { bin?: Record<string, string> | string };
-  const bin =
-    typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.['create-lumibase'];
-
-  if (!bin) {
-    throw new CliError('The installed create-lumibase package declares no executable.');
-  }
-
-  return join(dirname(manifestPath), bin);
 }
 
 export interface InitCommandOptions {
-  /** Injected in tests; defaults to a require rooted at this module. */
-  requireFrom?: NodeRequire;
+  /** Injected in tests; defaults to this package's own version. */
+  version?: string;
+  /** Injected in tests; defaults to `npm_config_user_agent`. */
+  userAgent?: string;
   /** Injected in tests; defaults to spawning a real child process. */
   run?: (command: string, args: string[]) => number;
 }
 
-export function initCommand(argv: string[], options: InitCommandOptions = {}): number {
-  const requireFrom = options.requireFrom ?? createRequire(import.meta.url);
-  const binPath = resolveScaffoldBin(requireFrom);
+export function initCommand(
+  argv: string[],
+  options: InitCommandOptions = {},
+): number {
+  const scaffold = resolveScaffoldCommand(
+    options.version ?? readVersion(),
+    options.userAgent,
+  );
 
   const run =
     options.run ??
     ((command: string, args: string[]): number => {
-      const result = spawnSync(command, args, { stdio: 'inherit' });
+      const result = spawnSync(command, args, {
+        stdio: "inherit",
+        // npx/pnpm/yarn/bunx are `.cmd` shims on Windows; a shell resolves them.
+        shell: process.platform === "win32",
+      });
       if (result.error) {
-        throw new CliError(`Failed to run the scaffolder: ${result.error.message}`);
+        throw new CliError(
+          `Failed to run the scaffolder: ${result.error.message}`,
+          "Run `npm create lumibase@latest` directly.",
+        );
       }
       return result.status ?? 1;
     });
 
-  return run(process.execPath, [binPath, ...argv]);
+  return run(scaffold.command, [...scaffold.args, ...argv]);
 }

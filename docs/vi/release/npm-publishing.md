@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-09-01T19:24:38.000Z
+version: 4
+lastUpdated: 2026-09-02T19:04:59.918Z
 sourceLang: vi
-contentHash: e02b53cef4b651a3
-codeVerified: 2026-09-01T19:24:38.000Z
-codeVerifiedHash: e02b53cef4b651a3
+contentHash: e4938939b037622d
+codeVerified: 2026-09-02T19:04:59.918Z
+codeVerifiedHash: e4938939b037622d
 codeVerifiedClaims: 2
 ---
 
@@ -22,7 +22,7 @@ package **không** có `private: true`:
 - `packages/sdk` (`@lumibase/sdk`)
 - `packages/extension-sdk` (`@lumibase/extension-sdk`)
 - `packages/mcp-server` (`@lumibase/mcp-server`)
-- `packages/cli` (`lumibase` — CLI, tên không scope)
+- `packages/cli` (`lumibase` — tên không scope; CLI kèm entry library re-export `@lumibase/sdk`, nên package đó phải được publish trước hoặc trong cùng lượt chạy)
 - `packages/contracts` (`@lumibase/contracts`)
 
 Muốn thêm package public: bỏ `private: true` khỏi `package.json` của package đó, thêm

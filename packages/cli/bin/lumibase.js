@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// Guard BEFORE loading the ESM graph. `lumibase init` spawns create-lumibase,
-// which static-imports execa 10 and fails at import-time on Node <22. Checking
-// inside main() would be unreachable on those runtimes.
+// Guard BEFORE loading the ESM graph so the message is a plain sentence rather
+// than a syntax/import error from a Node 22+ feature further down the tree.
 const major = Number(process.versions.node.split('.')[0]);
 if (!Number.isFinite(major) || major < 22) {
   console.error(`lumibase requires Node.js 22+. Current: ${process.versions.node}`);

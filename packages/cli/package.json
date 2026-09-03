@@ -1,15 +1,31 @@
 {
   "name": "lumibase",
-  "version": "0.26.0",
-  "description": "The LumiBase CLI — scaffold a project, generate TypeScript types from a live schema, and check your setup.",
+  "version": "1.0.0-rc.1",
+  "description": "LumiBase in one package — the JS/TS client (re-exports @lumibase/sdk) plus the `lumibase` CLI: generate TypeScript types from a live schema, check your setup, scaffold a project.",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
     "lumibase": "./bin/lumibase.js"
   },
-  "publishConfig": {
-    "access": "public"
+  "main": "./src/lib.ts",
+  "types": "./src/lib.ts",
+  "exports": {
+    ".": "./src/lib.ts",
+    "./package.json": "./package.json"
   },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/lib.js",
+    "types": "./dist/lib.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/lib.d.ts",
+        "import": "./dist/lib.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "sideEffects": false,
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -18,11 +34,10 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
-    "create-lumibase": "workspace:*",
+    "@lumibase/sdk": "workspace:*",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
-    "@lumibase/sdk": "workspace:*",
     "@types/node": "^26.4.0",
     "tsup": "^8.5.1",
     "typescript": "^5.6.2",
@@ -37,6 +52,8 @@
   },
   "keywords": [
     "lumibase",
+    "sdk",
+    "client",
     "cli",
     "cms",
     "headless-cms",

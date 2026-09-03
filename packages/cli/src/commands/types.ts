@@ -11,6 +11,19 @@ import { log } from '../utils/log.js';
 export const DEFAULT_OUT = 'lumibase-types.d.ts';
 
 /**
+ * The generated file imports `ID` / `Locale` / `Brand` from here. `lumibase`
+ * re-exports the SDK, and it is the package a project running this CLI has
+ * installed — so it is the default, and `@lumibase/sdk` is the opt-in for
+ * projects that depend on the SDK directly (`--import-from @lumibase/sdk`).
+ */
+export const DEFAULT_IMPORT_FROM = 'lumibase';
+
+export interface RenderTypesOptions {
+  branded: boolean;
+  importFrom?: string;
+}
+
+/**
  * The banner deliberately carries no site id, host, or timestamp: `--check`
  * runs in CI against a different instance than the developer used, and any
  * environment-specific header would fail the check for no real reason.
@@ -20,8 +33,9 @@ const BANNER = [
   '// Re-run the command after changing collections or fields.',
 ].join('\n');
 
-export function renderTypes(manifest: TypegenManifest, branded: boolean): string {
-  const body = generateTypes(manifest, { format: 'single', branded });
+export function renderTypes(manifest: TypegenManifest, options: RenderTypesOptions): string {
+  const { branded, importFrom = DEFAULT_IMPORT_FROM } = options;
+  const body = generateTypes(manifest, { format: 'single', branded, importSource: importFrom });
   return `${BANNER}\n\n${body.trimEnd()}\n`;
 }
 
@@ -51,6 +65,8 @@ export async function typesCommand(
   const check = boolFlag(args, 'check');
   const toStdout = boolFlag(args, 'stdout');
   const branded = boolFlag(args, 'no-branded') ? false : (config.typegen.branded ?? true);
+  const importFrom =
+    stringFlag(args, 'import-from') ?? config.typegen.importFrom ?? DEFAULT_IMPORT_FROM;
 
   const outPath = resolve(
     cwd,
@@ -66,7 +82,7 @@ export async function typesCommand(
     options.request,
   );
 
-  const generated = renderTypes(manifest, branded);
+  const generated = renderTypes(manifest, { branded, importFrom });
   const collectionCount = manifest.collections.length;
 
   if (toStdout) {
@@ -103,9 +119,7 @@ export async function typesCommand(
   writeFileSync(outPath, generated, 'utf8');
 
   log.success(`Wrote ${displayPath} — ${collectionCount} collections.`);
-  if (branded) {
-    log.dim('  Generated types import from @lumibase/sdk — install it in this project.');
-  }
+  log.dim(`  Generated types import from ${importFrom} — install it in this project.`);
 
   return 0;
 }

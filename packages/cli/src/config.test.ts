@@ -85,7 +85,7 @@ describe('resolveConfig', () => {
   it('reads the typegen section', () => {
     const dir = tempProject({
       url: 'http://from-file',
-      typegen: { out: 'src/types.d.ts', exclude: ['drafts'], branded: false },
+      typegen: { out: 'src/types.d.ts', exclude: ['drafts'], branded: false, importFrom: '@lumibase/sdk' },
     });
 
     const config = resolveConfig(parseArgs(['types']), { cwd: dir, env: {} });
@@ -93,6 +93,7 @@ describe('resolveConfig', () => {
     expect(config.typegen.out).toBe('src/types.d.ts');
     expect(config.typegen.exclude).toEqual(['drafts']);
     expect(config.typegen.branded).toBe(false);
+    expect(config.typegen.importFrom).toBe('@lumibase/sdk');
   });
 
   it('rejects a config file that is not valid JSON', () => {

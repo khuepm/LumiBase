@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/analytics-consent",
-  "version": "0.26.0",
+  "version": "1.0.0-rc.1",
   "private": true,
   "description": "Consent-gated Google Analytics for the public sites (landing, docs). Framework-free core plus an optional React entry.",
   "type": "module",
