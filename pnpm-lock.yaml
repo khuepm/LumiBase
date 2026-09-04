@@ -186,6 +186,9 @@ importers:
 
   apps/docs:
     dependencies:
+      '@fontsource/inter':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@lumibase/analytics-consent':
         specifier: workspace:*
         version: link:../../packages/analytics-consent
@@ -1271,6 +1274,9 @@ packages:
 
   '@fastify/busboy@3.2.2':
     resolution: {integrity: sha512-yXSS27qPExaXeuLvMRMXOLtpipzfQYNjG3FkunDWKGfMYjKuhFXko9CVzqxm8jcF+lmtS9Fd89QNdh9XDjnbNg==}
+
+  '@fontsource/inter@5.3.0':
+    resolution: {integrity: sha512-RofMylZmjlJEfELXeNHFWBRcSs75rGU/6bV2S2jfnvv/3rPXPGe0LgUJTklcHZ9lM4OZmAVFhcJPnACfb91A3g==}
 
   '@graphql-tools/executor@2.0.0':
     resolution: {integrity: sha512-BjoqO5UfcV3BUqamGtHNm4ITBk040VOmWql/MrUefPo30x6t4v1+engfjgAjWikMsRPLU4ZC6e2QjICLucnOTA==}
@@ -6497,6 +6503,8 @@ snapshots:
   '@exodus/bytes@1.15.1': {}
 
   '@fastify/busboy@3.2.2': {}
+
+  '@fontsource/inter@5.3.0': {}
 
   '@graphql-tools/executor@2.0.0(graphql@17.0.2)':
     dependencies:
