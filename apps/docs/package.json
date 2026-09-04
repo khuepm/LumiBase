@@ -16,6 +16,7 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.3.0",
     "@lumibase/analytics-consent": "workspace:*",
     "@lumibase/contracts": "workspace:*",
     "@lumibase/ui": "workspace:*",

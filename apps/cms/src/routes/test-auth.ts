@@ -9,9 +9,6 @@ const htmlContent = `<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LumiBase Auth Playground</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
       --primary-gradient: linear-gradient(135deg, #6366f1 0%, #3b82f6 100%);
@@ -33,7 +30,14 @@ const htmlContent = `<!DOCTYPE html>
     }
 
     body {
-      font-family: 'Inter', sans-serif;
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        'Segoe UI',
+        Roboto,
+        'Helvetica Neue',
+        Arial,
+        sans-serif;
       background-color: var(--bg-color);
       color: var(--text-primary);
       min-height: 100vh;
@@ -87,7 +91,6 @@ const htmlContent = `<!DOCTYPE html>
     }
 
     header h1 {
-      font-family: 'Outfit', sans-serif;
       font-size: 2.8rem;
       font-weight: 800;
       background: linear-gradient(to right, #60a5fa, #c084fc);
@@ -242,7 +245,6 @@ const htmlContent = `<!DOCTYPE html>
     }
 
     .console-title {
-      font-family: 'Outfit', sans-serif;
       font-size: 1.25rem;
       font-weight: 700;
       margin-bottom: 15px;
@@ -271,7 +273,15 @@ const htmlContent = `<!DOCTYPE html>
       border-radius: 16px;
       padding: 20px;
       flex: 1;
-      font-family: 'Fira Code', monospace;
+      font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Monaco,
+        Consolas,
+        'Liberation Mono',
+        'Courier New',
+        monospace;
       font-size: 0.85rem;
       overflow-y: auto;
       white-space: pre-wrap;
@@ -286,7 +296,15 @@ const htmlContent = `<!DOCTYPE html>
       border: 1px dashed var(--border-color);
       border-radius: 12px;
       padding: 16px;
-      font-family: 'Fira Code', monospace;
+      font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Monaco,
+        Consolas,
+        'Liberation Mono',
+        'Courier New',
+        monospace;
       font-size: 0.8rem;
       color: var(--text-secondary);
       word-break: break-all;
